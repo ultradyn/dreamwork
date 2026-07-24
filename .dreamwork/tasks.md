@@ -10,19 +10,20 @@ Next id: **101**
 
 ## Open
 
+- **#77** — Cross-group morph when a question changes section · P2 · task ·
+  45m
+- **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
+  45m · the composer now renders from one `COMMANDS` table, so this is
+  an append rather than a redesign
+- **#98** — Show the open queue on the watch dashboard · P2 · idea · 40m ·
+  new page surface, fit-check at selection
+- **#95** — Goal hierarchies · P2 · task · 60m · **blocked**: human review
+  of `review/goal-hierarchies.html` (questions.md)
+- **#92** — Hand-rolled Ctrl+K command palette · P3 · task · 40m
 - **#99** — Popped-out composer should use the button group too · P3 ·
   task · 25m
 - **#100** — Shader lens world-space so blur matches at a window seam ·
   P3 · task · 30m · the last break in "same position, same dream"
-- **#77** — Cross-group morph when a question changes section · P2 · task ·
-  45m
-- **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
-  45m
-- **#98** — Show the open queue on the watch dashboard · P2 · idea · 40m ·
-  new page surface, fit-check at selection
-- **#95** — Goal hierarchies · P2 · task · 60m · **blocked**: human review
-  of `docs/plans/goal-hierarchies.md` (questions.md)
-- **#92** — Hand-rolled Ctrl+K command palette · P3 · task · 40m
 - **#73** — Split-view support for watch pages · P3 · experiment · 30m ·
   the shader half landed as #74; the open part is the affordance
 - **#50** — ud-dreamtask plugin · P3 · task · 90m · **blocked**: human
@@ -35,7 +36,8 @@ Next id: **101**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#97** durable task ledger
+Pruned in grooming; git is the real ledger. **#91** composer tweaks and
+**#101** scrollbar styling (2026-07-25), **#97** durable task ledger
 (2026-07-25, this file). #63-#68, #71, #72, #74, #75,
 #78, #79, #81-#85, #87-#89, #93, #94 landed 2026-07-24/25 (watch webui
 batches, plugin docs, coherence fixes).
