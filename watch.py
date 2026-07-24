@@ -148,7 +148,7 @@ STYLE = """<style>
     .qdock { position:static; }
     #reviewframe { height:60vh; }
   }
-  /* command palette: the + opener sits in the heading's left gutter; the
+  /* the composer: the + opener sits in the heading's left gutter; the
      panel it toggles drifts in through a soft blur (the dream language),
      not a hard pop. reduced-motion just shows/hides. */
   .htitlebar { display:flex; align-items:baseline; gap:.55rem; }
@@ -166,7 +166,7 @@ STYLE = """<style>
   @media (max-width:820px) { #cmdplus { margin-left:0; } }
   #cmdpalette { position:fixed; z-index:30; top:4rem; left:1rem;
     width:min(32ch,92vw); background:rgba(11,15,25,.94);
-    border:1px solid var(--border); border-radius:8px; padding:1rem;
+    border:1px solid var(--border); border-radius:8px; padding:1rem 1rem .85rem;
     box-shadow:0 14px 44px rgba(0,0,0,.5); backdrop-filter:blur(7px);
     visibility:hidden; opacity:0; transform:translateY(-8px) scale(.97);
     filter:blur(6px); pointer-events:none;
@@ -193,6 +193,10 @@ STYLE = """<style>
   .pipbtn svg { display:inline-block; vertical-align:-2px; }
   .cmdmsg { color:var(--dim); font-size:.7rem; min-height:1em; margin-top:.5rem;
     transition:color .4s ease; }
+  /* no reserved slack under the buttons: the status line only takes room
+     once it has something to say, and the panel grows downward to meet it
+     (nothing above it moves). */
+  .cmdmsg:empty { display:none; }
   .cmdmsg.ok { color:var(--accent); }
   /* dream ripple: a soft ring expanding from a received command / answer */
   .ripple { position:fixed; z-index:40; border-radius:50%; pointer-events:none;
@@ -918,13 +922,35 @@ function popoutDoc(url, label) {
   if (!pal) return;
   const cmsg = () => document.getElementById('cmdmsg');
   let open = false;
+  const CMD_GAP = 18;            // breathing room under the +/× opener
+  // The composer is position:fixed, but `.wrap` carries `perspective`, which
+  // makes IT the containing block — so `top`/`left` are measured from .wrap,
+  // not the viewport. Rects are viewport coords, so subtract that origin or
+  // the panel drifts right of the + and hangs a body-padding too low.
+  function fixedOrigin() {
+    const cb = document.querySelector('.wrap');
+    if (!cb) return { x: 0, y: 0 };
+    const b = cb.getBoundingClientRect();
+    return { x: b.left, y: b.top };
+  }
   function place() {
     const plus = document.getElementById('cmdplus');
     if (!plus) return;
     const r = plus.getBoundingClientRect();
     const w = pal.offsetWidth || Math.min(innerWidth * 0.92, 340);
-    pal.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
-    pal.style.top = (r.bottom + 8) + 'px';
+    const o = fixedOrigin();
+    // The opener rotates 45deg into an × when open, which swells its painted
+    // box by its half-diagonal. Anchor off the centre (invariant under that
+    // rotation) and the painted extent, so the breathing room is what the eye
+    // sees and is the same whether we place while closed or while open.
+    const bw = plus.offsetWidth || r.width;          // layout box, transform-free
+    const bh = plus.offsetHeight || r.height;
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const left = cx - bw / 2;
+    const bottom = cy + (bw + bh) * Math.SQRT2 / 4;   // rotated half-height
+    pal.style.left =
+      (Math.max(8, Math.min(left, innerWidth - w - 8)) - o.x) + 'px';
+    pal.style.top = (bottom + CMD_GAP - o.y) + 'px';
   }
   function openCmd() {
     place(); pal.classList.add('open'); open = true;

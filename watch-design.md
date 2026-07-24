@@ -3,7 +3,7 @@
 Human-authorized 2026-07-25; built the same night in committed increments
 (server core → dashboard → status.json → tests → components → questions →
 review artifacts → events log → shader → router/transitions → dev overlay
-→ review morph → command palette → world-space shader). This is the
+→ review morph → the composer → world-space shader). This is the
 authoritative reference for anyone changing the page: the standing design,
 plus the token / component / motion / voice styleguide below. The delivery
 plan it replaces is in git history (`docs/plans/watch-py.md`); keep this
@@ -123,13 +123,35 @@ Answered — also carries a follow-up thread (`- **Follow-up (via watch…)**`
 sub-bullets) and a quiet `add a note` box (`sendComment`, POST `/comment`);
 the Answered section is rendered structured from `answered_entries`, not raw
 text. A low-emphasis PiP glyph (`pipBtn`) sits after doc/review affordances
-(file + review headers, the dashboard reviews list, the palette); clicking it
+(file + review headers, the dashboard reviews list, the composer); clicking it
 floats the target in an identity-headed window (`openPopout` → Document
 Picture-in-Picture, `window.open` fallback) that stays put while the main tab
 navigates. Views are pure builders returning `#view`'s innerHTML
 (`buildDashboard`,
 `buildQuestions`, `buildFile`, `buildReview`); the router swaps them. Add a
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
+
+### The composer
+
+The `+` opener in every heading's left gutter toggles **the composer**
+(`#cmdpalette`) — the panel that steers the loop without a chat turn. It is
+anchored to its opener, not floated free: `place()` puts it `CMD_GAP` (18px)
+under the opener and flush with its left edge. Two things make that
+arithmetic non-obvious, and both are load-bearing:
+
+- **The panel is `position:fixed` but the viewport is not its containing
+  block.** `.wrap` carries `perspective` (for the dream dissolve's depth),
+  which makes `.wrap` the containing block for fixed descendants — so `top`
+  and `left` are measured from `.wrap`, while `getBoundingClientRect()`
+  returns viewport coords. Subtract `.wrap`'s origin or the panel drifts
+  right of the opener and hangs a body-padding too low.
+- **The opener rotates 45° into an ×**, which swells its painted box by its
+  half-diagonal. Anchor off the rect's *centre* (invariant under that
+  rotation) plus the painted extent, so the gap is what the eye sees and is
+  identical whether the panel is placed while closed or re-placed while open.
+
+Nothing under the buttons is reserved: `.cmdmsg:empty` collapses, so the
+panel grows downward only when there is something to say.
 
 ### Motion language (authored across the transition work)
 
@@ -138,7 +160,7 @@ also strictly opt-in — most state changes do **not** animate.
 
 - **When transitions apply.** Route changes (client nav) dissolve. The live
   mtime tick re-renders the active view **in place, instantly** — liveness
-  must never wait on an animation. The command palette reveals on a soft
+  must never wait on an animation. The composer reveals on a soft
   blur drift. Nothing else animates.
 - **The dream dissolve** (route change). The outgoing view becomes a
   `.ghost` (z-index above `#view`) that liquifies into a swirling mist and
@@ -184,7 +206,7 @@ also strictly opt-in — most state changes do **not** animate.
   reduced-motion swaps straight to the answered state.
 - **Reduced-motion is a hard contract.** `prefers-reduced-motion` changes
   *timing, never function or legibility*: route swaps are instant (no ghost,
-  no mist, tint/seed snap, no `warp`), the palette shows/hides at once, the
+  no mist, tint/seed snap, no `warp`), the composer shows/hides at once, the
   dock appears without a FLIP. Verify it on anything that moves.
 - **Two invariants that always hold.** (1) *Settled crispness* — at rest,
   no filter, text wins the luminance contract, nothing blurred. Transient
