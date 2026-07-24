@@ -32,7 +32,7 @@ discovery, DREAMWORK.md Load/Don't-load, wizard extension).
 
 ## Open design questions (need Max; recs inline)
 
-1. Poll cadence and quota: rec 90s, one batched `gh api` call with a
+1. Poll cadence: ~AMENDED 2026-07-25~ 5 min via tick flow (was rec 90s), one batched `gh api` call with a
    since-cursor — rate-trivial.
 2. Default authority when DREAMWORK.md is silent: rec read-only — watch,
    capture, progress locally; never comment/push/PR until authorized.

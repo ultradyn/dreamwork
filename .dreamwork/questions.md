@@ -16,6 +16,9 @@
   single-source rule all post-date the plan and all reinforce it. v1
   built the same morning: `skills/ud-dreamwork-github/SKILL.md`,
   installed + indexed. Dogfood on a real repo is the follow-up task.
+  - **Follow-up (in-session, 2026-07-25 07:18):** 90s poll too fast —
+    ~5 min, carried by the heartbeat tick flow by default. Applied to
+    the plugin SKILL.md same minute.
 - **#36 alignment review shape** → Confirmed (2026-07-25): fresh-eyes
   dreamer, not-done-until-clean, rare cadence (marker + commits-since
   trigger). First pass dispatched the same night.
