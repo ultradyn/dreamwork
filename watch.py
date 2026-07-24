@@ -76,6 +76,26 @@ STYLE = """<style>
   .age { color:var(--dim); margin-left:.5rem; }
   pre { white-space:pre-wrap; color:var(--muted); margin:.4rem 0 .8rem 1ch;
         border-left:1px solid var(--line); padding-left:1ch; }
+  /* rendered prose (#102). Same hairline rail and colour as the <pre> it
+     replaces — this changes how the text WRAPS, not how the page reads. */
+  .md { color:var(--muted); margin:.4rem 0 .8rem 1ch;
+        border-left:1px solid var(--line); padding-left:1ch; }
+  .md > :first-child { margin-top:0; }
+  .md > :last-child { margin-bottom:0; }
+  .md p { margin:.45rem 0; }
+  .md .mdh { color:var(--lit); margin:.7rem 0 .25rem; }
+  /* a bullet hangs: the marker sits in the gutter and wrapped lines line up
+     under the text, so nesting stays legible at any column width. */
+  .md .mdli { margin:.28rem 0 .28rem calc(var(--lvl, 0) * 1.9ch);
+              padding-left:1.6ch; text-indent:-1.6ch; }
+  .md .mdli::before { content:"\\00b7  "; color:var(--dim); }
+  .md pre.mdcode { margin:.45rem 0; white-space:pre; overflow-x:auto; }
+  /* emphasis is luminance, not weight (see mdSpans) */
+  .md strong, .anstext strong, .follow strong {
+    font-weight:inherit; color:var(--bright); }
+  .md em, .anstext em, .follow em { font-style:italic; color:var(--muted); }
+  code { color:var(--lit); background:var(--panel);
+         border-radius:3px; padding:0 .3ch; }
   .git div { color:var(--dim); }
   .git .maint { color:var(--accent); }
   .dim { color:var(--dimmer); }
@@ -104,8 +124,8 @@ STYLE = """<style>
   /* follow-up thread + a quiet add-a-note box on every question entry */
   .thread { border-left:1px solid var(--line); padding-left:1ch;
     margin:.3rem 0 .2rem; }
-  .follow { color:var(--muted); font-size:.75rem; margin:.2rem 0;
-    white-space:pre-wrap; }
+  .follow { color:var(--muted); font-size:.75rem; margin:.25rem 0;
+    padding-left:2.6ch; text-indent:-2.6ch; }
   .follow::before { content:"\\21b3  "; color:var(--dim); }
   .notewrap { display:flex; gap:.4rem; align-items:flex-start;
     margin:.3rem 0 .2rem; max-width:56ch; }
@@ -384,13 +404,87 @@ const linkifyReview = (escaped, title) => escaped.replace(
   (m, name) => '`<a class="rev" href="/review?p=' + encodeURIComponent(name) +
     '&q=' + encodeURIComponent(title) + '">.dreamwork/review/' + name +
     '</a>`');
-const preBReview = (t, title) =>
-  `<pre>${linkify(linkifyReview(esc(t), title))}</pre>`;
+/* ── rendered prose (#102) ────────────────────────────────────────────────
+   The loop writes its files hard-wrapped at ~72 columns. A <pre> renders
+   those breaks literally and the browser re-wraps them again at a narrower
+   reading column, so every paragraph breaks twice into a ragged mess. So we
+   join the wraps back into paragraphs and let the column do the wrapping.
+
+   The line this draws: MARKDOWN PROSE REFLOWS, RAW TEXT DOES NOT. Question
+   bodies, answers, follow-ups, dreams and the dashboard's .md peeks are
+   prose the page composes, and they reflow. `/file`, status JSON and the git
+   tail are shown as they are on disk, and stay verbatim in a <pre>.
+
+   Four things must survive the join, because each one carries meaning a
+   joined line would destroy:
+     · a blank line is a paragraph break
+     · a leading `- ` is a real list item and its INDENT is its nesting —
+       questions.md's whole parser rests on a sub-bullet never looking like
+       an entry, and flattening the marker would render the two identically
+     · a ``` fence is code, and code is not prose
+     · a `#` heading stands alone
+   Every other line break is a wrap, and gets joined with a space. */
+const MD_BULLET = /^(\\s*)[-*]\\s+(.*)$/;
+function mdBlocks(text) {
+  const out = [];
+  let cur = null, fence = null;
+  const flush = () => { if (cur) { out.push(cur); cur = null; } };
+  for (const line of String(text == null ? '' : text).split('\\n')) {
+    if (/^\\s*```/.test(line)) {                 // fence open or close
+      if (fence) { out.push({ kind:'fence', text: fence.join('\\n') }); fence = null; }
+      else { flush(); fence = []; }
+      continue;
+    }
+    if (fence) { fence.push(line); continue; }
+    if (!line.trim()) { flush(); continue; }      // blank line ends a block
+    if (/^\\s*#{1,6}\\s/.test(line)) {
+      flush(); out.push({ kind:'h', text: line.replace(/^\\s*#+\\s*/, '') }); continue;
+    }
+    const m = line.match(MD_BULLET);
+    if (m) { flush(); cur = { kind:'li', indent:m[1].length, text:m[2] }; continue; }
+    if (cur) { cur.text += ' ' + line.trim(); continue; }   // a wrap: join it
+    cur = { kind:'p', indent:0, text: line.trim() };
+  }
+  flush();
+  if (fence) out.push({ kind:'fence', text: fence.join('\\n') });
+  return out;
+}
+/* Nesting is the RANK of a bullet's indent among the indents actually used,
+   not the raw column count: a question body carries the source file's own
+   2-space indent, so absolute columns would push every sub-bullet one level
+   too deep. Rank is invariant to whatever base indent the text arrived with. */
+function mdRender(text, inline) {
+  const blocks = mdBlocks(text);
+  const levels = [...new Set(blocks.filter(b => b.kind === 'li')
+    .map(b => b.indent))].sort((a, b) => a - b);
+  return blocks.map(b =>
+    b.kind === 'fence' ? `<pre class="mdcode">${esc(b.text)}</pre>` :
+    b.kind === 'h' ? `<div class="mdh">${inline(b.text)}</div>` :
+    b.kind === 'li' ? `<div class="mdli" style="--lvl:${levels.indexOf(b.indent)}">` +
+                      `${inline(b.text)}</div>`
+                    : `<p>${inline(b.text)}</p>`).join('');
+}
+/* Inline markdown the loop actually writes: **bold**, *em*, `code`. Bold is
+   rendered as LUMINANCE — the page already says "more important" with its
+   text ramp, and a mono bold would change metrics to say no more. Order is
+   load-bearing: the linkifiers inject <a> INSIDE the backticks, so code
+   spans convert after them and swallow the link; ** before * so a bold pair
+   is never read as two emphases. */
+const mdSpans = h => h
+  .replace(/`([^`]+)`/g, '<code>$1</code>')
+  .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
+  .replace(/(^|[\\s(\\[])\\*([^*\\s][^*]*?)\\*(?=$|[\\s.,;:)\\]])/g, '$1<em>$2</em>');
+const mdInline = t => mdSpans(linkify(esc(t)));
+const mdInlineReview = title => t =>
+  mdSpans(linkify(linkifyReview(esc(t), title)));
+const mdB = t => `<div class="md">${mdRender(t, mdInline)}</div>`;
+const mdBReview = (t, title) =>
+  `<div class="md">${mdRender(t, mdInlineReview(title))}</div>`;
 /* a follow-up thread and a quiet add-a-note box, carried by every question
    entry in every state. */
 const followThread = follows => (follows && follows.length)
   ? `<div class="thread">` + follows.map(f =>
-      `<div class="follow">${linkify(esc(f))}</div>`).join('') + `</div>`
+      `<div class="follow">${mdInline(f)}</div>`).join('') + `</div>`
   : '';
 const noteBox = key =>
   `<div class="notewrap"><textarea class="notebox" id="nb${key}"` +
@@ -419,10 +513,10 @@ const qaState = (q, key) =>
   key[0] === 'a' ? 'folded' : (q.answer ? 'awaiting' : 'open');
 const qaInner = (q, key) => {
   const st = qaState(q, key);
-  const body = q.body && q.body.trim() ? preBReview(q.body.trim(), q.title) : '';
+  const body = q.body && q.body.trim() ? mdBReview(q.body.trim(), q.title) : '';
   const answer = st === 'awaiting'
     ? `<div class="anstag">answered · awaiting fold</div>` +
-      `<div class="anstext">${esc(q.answer)}</div>` : '';
+      `<div class="anstext">${mdInline(q.answer)}</div>` : '';
   const box = st === 'open'
     ? `<textarea id="qa${key}" placeholder="answer…"></textarea>` +
       `<button onclick="sendAnswer('${key}')">answer</button>` : '';
@@ -458,7 +552,7 @@ VIEWS_JS = """
 function dreamBlock(d) {
   return expand(
     `${esc(d.name)}<span class="age" data-mt="${d.mtime}"></span>`,
-    preB(d.content));
+    mdB(d.content));
 }
 function buildDashboard(d) {
   const q = d.open_questions > 0
@@ -491,7 +585,7 @@ function buildDashboard(d) {
   }
   h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
-         expand(n, preB(d.files[n]))).join('');
+         expand(n, mdB(d.files[n]))).join('');
   if (d.status)
     h += label('status') + preB(JSON.stringify(d.status, null, 2));
   h += label('commits') + `<div class="git">` +
@@ -1778,16 +1872,25 @@ def parse_open_questions(text):
     distinctly instead of an ambiguous open one. `answer` is None while
     unanswered. An Answer bullet is never mistaken for a new entry (even
     un-indented), so it can't swallow the questions that follow it.
+
+    A sub-bullet may be hard-wrapped over several lines. Its continuation
+    lines belong to it, not to the entry body — capturing only the first
+    line would truncate the note AND spill its tail into the body as
+    orphaned prose. Any line that starts a new bullet ends the capture, so
+    an unrecognised sub-bullet (e.g. an in-session follow-up, which the loop
+    writes by hand) can never be glued onto the previous one.
     """
     items = []
     if not text:
         return items
     in_open = False
     current = None
+    sub = None          # the sub-bullet currently absorbing wrapped lines
     for line in text.splitlines():
         if line.startswith("## "):
             in_open = line.strip() == "## Open"
             current = None
+            sub = None
             continue
         if not in_open:
             continue
@@ -1800,11 +1903,21 @@ def parse_open_questions(text):
                        "body": rest.strip() + "\n" if rest.strip() else "",
                        "answer": None, "follows": []}
             items.append(current)
+            sub = None
         elif current is not None:
             if is_answer:
                 current["answer"] = s.split(":**", 1)[-1].strip()
+                sub = "answer"
             elif is_follow:
                 current["follows"].append(s.split(":**", 1)[-1].strip())
+                sub = "follow"
+            elif not s or s.startswith("- ") or s.startswith("* "):
+                sub = None
+                current["body"] += line + "\n"
+            elif sub == "answer":
+                current["answer"] += " " + s
+            elif sub == "follow":
+                current["follows"][-1] += " " + s
             else:
                 current["body"] += line + "\n"
     return items
@@ -1813,16 +1926,21 @@ def parse_open_questions(text):
 def parse_answered(text):
     """[{title, body, follows}] for each entry in the Answered section, so the
     view can render each with its follow-up thread and an add-a-note box.
+
+    Hard-wrapped follow-ups keep their continuation lines (see
+    parse_open_questions).
     """
     items = []
     if not text:
         return items
     in_sec = False
     current = None
+    sub = False
     for line in text.splitlines():
         if line.startswith("## "):
             in_sec = line.strip() == "## Answered"
             current = None
+            sub = False
             continue
         if not in_sec:
             continue
@@ -1834,9 +1952,16 @@ def parse_answered(text):
                        "body": rest.strip() + "\n" if rest.strip() else "",
                        "follows": []}
             items.append(current)
+            sub = False
         elif current is not None:
             if is_follow:
                 current["follows"].append(s.split(":**", 1)[-1].strip())
+                sub = True
+            elif not s or s.startswith("- ") or s.startswith("* "):
+                sub = False
+                current["body"] += line + "\n"
+            elif sub:
+                current["follows"][-1] += " " + s
             else:
                 current["body"] += line + "\n"
     return items

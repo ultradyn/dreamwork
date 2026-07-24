@@ -153,6 +153,55 @@ navigates and carries the same dreaming field (see Shader). Views are pure build
 `buildQuestions`, `buildFile`, `buildReview`); the router swaps them. Add a
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
 
+### Prose rendering
+
+Everything the loop writes to disk is hard-wrapped at about 72 columns. A
+`<pre>` renders those breaks literally and the browser then re-wraps them
+inside a narrower card, so every paragraph breaks twice and reads as a
+ragged mess (human, 2026-07-25, with a screenshot). So prose is **reflowed**:
+wrapped lines are joined and the reading column does the wrapping.
+
+**The line: markdown prose reflows, raw text does not.** Question bodies,
+answers, follow-up notes, dreams, and the dashboard's `.md` peeks are prose
+the page composes, and they go through `mdB` / `mdBReview`. `/file`, the
+status blob, and the git tail are shown *as they are on disk*, and stay
+verbatim in a `<pre>` — the file viewer's whole job is to be literal, and it
+serves code as well as prose.
+
+Four things survive the join, because each carries meaning a joined line
+would destroy: a **blank line** is a paragraph break; a leading **`- `** is a
+real list item and its **indent is its nesting**; a **``` fence** is code;
+a **`#` heading** stands alone. Nesting is the *rank* of a bullet's indent
+among the indents actually present, not its column count — a question body
+arrives carrying the source file's own 2-space indent, and absolute columns
+would push every sub-bullet a level too deep.
+
+**Inline emphasis is luminance, not weight.** `**bold**` renders as
+`--bright` at the same weight; the page already says "more important" with
+its text ramp, and a mono bold would change metrics to say no more. `*em*`
+is italic, `` `code` `` gets `--lit` on a `--panel` ground (a reading aid for
+paths and identifiers, not a badge). Order in `mdSpans` is load-bearing: the
+linkifiers inject `<a>` *inside* the backticks, so code spans convert after
+them and swallow the link; `**` resolves before `*` so a bold pair is never
+read as two emphases.
+
+The parser feeds this: a sub-bullet may itself be hard-wrapped, and its
+continuation lines belong to *it*. Capturing only the first line truncated
+the note mid-phrase **and** spilled its tail into the body as orphaned prose
+(that pair of symptoms was #106 — reported as a "confusing cut-off preview",
+which is what data truncation looks like from the outside). Any line that
+starts a new bullet ends the capture, so an unrecognised sub-bullet — an
+in-session follow-up, say — can never be glued onto the one above it.
+
+`dev/capture/reflow.mjs` measures this rather than eyeballing it. Range
+`getClientRects()` returns one rect per inline *box*, so rects are grouped by
+top edge into real line boxes first. The decisive check is an A/B: every live
+question body rendered *both* ways at the same width, swept across widths.
+The win peaks in the middle of the sweep — at a very narrow column both
+renderers are ink-limited, and at a wide one the source's own 72 columns
+nearly fit; it is the widths a card actually gets where a `<pre>` wraps every
+line a second time.
+
 ### The question card
 
 A question is the page's one interactive object, and it appears on four

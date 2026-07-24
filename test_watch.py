@@ -160,6 +160,49 @@ class TestCollector(unittest.TestCase):
         self.assertEqual(ans[0]["follows"], ["reopen?"])
         self.assertNotIn("Follow-up", ans[0]["body"])
 
+    def test_parse_keeps_wrapped_subbullet_continuations(self):
+        # #102: the loop hard-wraps at ~72 columns, so a sub-bullet routinely
+        # spans several lines. Capturing only the first line truncated the
+        # note AND spilled its tail into the body as orphaned prose.
+        text = ("# Q\n\n## Open\n\n"
+                "- **First?** body line one\n"
+                "  body line two\n"
+                "  - **Answer (via watch, 2026-07-25 08:00):** an answer that\n"
+                "    runs onto a second line.\n"
+                "  - **Follow-up (via watch, 2026-07-25 08:05):** a note that\n"
+                "    also wraps, twice\n"
+                "    over.\n"
+                "- **Second?** ctx2.\n\n"
+                "## Answered\n\n"
+                "- **Old** resolved.\n"
+                "  - **Follow-up (via watch, 2026-07-25 08:10):** reopened for\n"
+                "    a reason.\n")
+        qs = watch.parse_open_questions(text)
+        self.assertEqual([q["title"] for q in qs], ["First?", "Second?"])
+        self.assertEqual(qs[0]["answer"], "an answer that runs onto a second line.")
+        self.assertEqual(qs[0]["follows"], ["a note that also wraps, twice over."])
+        # the tails belong to their bullet, never to the body
+        for stray in ("runs onto", "also wraps", "over."):
+            self.assertNotIn(stray, qs[0]["body"])
+        self.assertIn("body line two", qs[0]["body"])
+        self.assertEqual(watch.parse_answered(text)[0]["follows"],
+                         ["reopened for a reason."])
+
+    def test_parse_unrecognised_subbullet_never_joins_the_previous(self):
+        # An in-session follow-up (written by the loop, not via watch) is not
+        # a thread entry — it stays in the body. It must not be absorbed as a
+        # continuation of the via-watch bullet above it.
+        text = ("# Q\n\n## Open\n\n"
+                "- **First?** ctx.\n"
+                "  - **Follow-up (via watch, 2026-07-25 08:00):** typed here\n"
+                "    and wrapped.\n"
+                "  - **Follow-up (in-session, 2026-07-25 ~10:10):** written by\n"
+                "    the loop instead.\n")
+        q = watch.parse_open_questions(text)[0]
+        self.assertEqual(q["follows"], ["typed here and wrapped."])
+        self.assertIn("in-session", q["body"])
+        self.assertNotIn("in-session", q["follows"][0])
+
     def test_collect_lists_reviews(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
@@ -366,6 +409,23 @@ class TestAppShell(unittest.TestCase):
         # the folded Answered section no longer has look-alike markup
         self.assertNotIn('answeredEntry', watch.PAGE)
         self.assertNotIn('aentry', watch.PAGE)
+
+    def test_page_reflows_prose_but_not_raw_text(self):
+        # #102: markdown prose reflows (hard wraps joined, inline emphasis
+        # rendered); raw text stays verbatim in a <pre>. Both halves matter —
+        # reflowing a source file or a JSON blob would be a regression.
+        for token in ('function mdBlocks', 'function mdRender', 'const mdSpans',
+                      'const mdB =', 'const mdBReview =',
+                      # the four things a join must not destroy
+                      "kind:'fence'", "kind:'h'", "kind:'li'",
+                      'const MD_BULLET =',
+                      # prose surfaces
+                      'mdBReview(q.body.trim(), q.title)', 'mdB(d.content)',
+                      'expand(n, mdB(d.files[n]))', 'mdInline(f)'):
+            self.assertIn(token, watch.PAGE)
+        # raw surfaces keep <pre>: the file viewer and the status blob
+        self.assertIn('`<pre>${esc(text)}</pre>`', watch.PAGE)
+        self.assertIn('preB(JSON.stringify(d.status, null, 2))', watch.PAGE)
 
     def test_page_has_layer_switch_guard_and_feedback(self):
         # #78: the layer hotkey ignores text-field keystrokes, and any switch
