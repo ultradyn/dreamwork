@@ -120,3 +120,7 @@ source dream. Not a log — only things that should change future behavior.
   and after. An Edit whose old_string spans an entry boundary can drop the
   next entry's title and silently merge two records. (coordinator,
   2026-07-25 — I did this to a live human-facing question.)
+- A CSS class is either a style hook or an element address, never both:
+  sharing an addressing class turns a guaranteed lookup into a
+  first-match guess that stays correct until the container holds two of
+  them, then fails silently. (spike #115, docs/spikes/)
