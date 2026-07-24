@@ -107,3 +107,7 @@ source dream. Not a log — only things that should change future behavior.
   `transform`/`perspective`/`filter` — that ancestor becomes the containing
   block, so rect-derived coordinates need its origin subtracted.
   (2026-07-25-0846-composer-batch)
+- A judgement call raised only in chat is not recorded: the ask-discipline
+  covers questions the loop *asks*, and a "here is a change you did not
+  request, tell me if you hate it" is one of those. Caught in my own work
+  hours later. (coordinator, 2026-07-25)

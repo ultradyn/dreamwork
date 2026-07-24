@@ -2,7 +2,18 @@
 
 ## Open
 
-- **2026-07-25 — daemon-mode: stage-1 build go? (#96).** Brainstorm
+- **2026-07-25 — the shader's ambient density changed, and you did not
+  ask for it.** Fixing the world-space anchoring (#91 item 2, your
+  "deterministic across split tabs" ask) required dropping the
+  per-viewport normalisation: a pattern that rescales to window height
+  cannot be the same dream at the same screen position. So the main
+  page's ambient density is now slightly different from what you had
+  been looking at. Whisper-level — the dreamer checked 820px and 1300px
+  — and one constant reverts it (`WORLD_SCALE`, was `2.3/innerHeight`,
+  now `2.3/900`). Raised in chat 2026-07-25 ~08:50 and recorded here
+  late, which was my lapse: a judgement call that only lives in chat is
+  not recorded. Rec: keep it — it is entailed by what you asked for, and
+  the alternative is giving up the shared field. Brainstorm
   round complete — all five needs-Max decisions answered in-session
   (~09:45) and folded into `.dreamwork/docs/plans/daemon-mode.md`:
   herdr-preferred adapter runtime, web lifecycle rec, ssh swarm,
