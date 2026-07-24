@@ -46,7 +46,12 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8">
     padding:.4rem; margin:.3rem 0; min-height:3rem; box-sizing:border-box; }
   .qa button { background:#1e293b; color:#a5b4fc; border:1px solid #334155;
     border-radius:4px; font:inherit; padding:.25rem .8rem; cursor:pointer; }
-</style></head><body><div class="wrap">
+  #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
+             height:100vh; }
+  .wrap { position:relative; }
+</style></head><body>
+<canvas id="dreambg"></canvas>
+<div class="wrap">
 <header>dreamwork watch</header>
 <div id="meta">loading…</div>
 <div id="sections"></div>
@@ -122,6 +127,59 @@ async function tick() {
 }
 setInterval(ages, 1000);
 tick();
+
+/* dreambg: default placeholder shader — a dreamer subagent owns the
+   refinement loop (task #51). Perf pattern: render at 1/6 resolution,
+   CSS upscale is the v0 blur. Subtle by contract: text always wins. */
+(function () {
+  const cv = document.getElementById('dreambg');
+  const gl = cv.getContext('webgl', { antialias: false });
+  const rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!gl) return;
+  const vs = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
+  const fs = `precision mediump float;uniform float t;uniform vec2 r;
+    void main(){
+      vec2 u = gl_FragCoord.xy / r;
+      float a = sin(u.x*3.1 + t*.11) * cos(u.y*2.7 - t*.07);
+      float b = sin((u.x+u.y)*4.3 - t*.05) * .5;
+      float v = .5 + .5*sin(a*2.2 + b*1.7 + t*.03);
+      vec3 base = vec3(.043,.059,.098);           /* #0b0f19 */
+      vec3 tint = vec3(.28,.30,.62);              /* indigo  */
+      gl_FragColor = vec4(mix(base, tint, v*.10), 1.);
+    }`;
+  function sh(type, src) {
+    const s = gl.createShader(type); gl.shaderSource(s, src);
+    gl.compileShader(s); return s;
+  }
+  const pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs));
+  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(pr); gl.useProgram(pr);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER,
+    new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(pr, 'p');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const tU = gl.getUniformLocation(pr, 't');
+  const rU = gl.getUniformLocation(pr, 'r');
+  function size() {
+    cv.width = Math.max(2, innerWidth / 6);
+    cv.height = Math.max(2, innerHeight / 6);
+    gl.viewport(0, 0, cv.width, cv.height);
+  }
+  addEventListener('resize', size); size();
+  function frame(ms) {
+    gl.uniform1f(tU, ms / 1000);
+    gl.uniform2f(rU, cv.width, cv.height);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (!rm) requestAnimationFrame(step);
+  }
+  function step(ms) { if (!document.hidden) frame(ms);
+                      else setTimeout(() => requestAnimationFrame(step), 500); }
+  requestAnimationFrame(step);
+})();
 </script></div></body></html>
 """
 
