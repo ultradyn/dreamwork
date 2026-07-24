@@ -141,6 +141,12 @@ Two kinds, nothing in between:
   distillation is also appended to `.dreamwork/lessons.md`. The coordinator
   reads new dreams and captures any ideas into the task list.
 
+Delegation blocks files, not the loop. Record what a dispatched dreamer
+owns (files/dirs) at dispatch; the coordinator stays off those. After
+~10 minutes of a delegated task running, resume selection over
+non-conflicting tasks — one parallel increment at a time, so there is
+never a split brain over the same files.
+
 All subagents report to the coordinator and never use `attn`. Subagents
 never stop or pause loop machinery — the heartbeat monitor, the watch
 server, the loop itself; if one believes the loop should stop, it says so
