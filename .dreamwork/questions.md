@@ -2,6 +2,10 @@
 
 ## Open
 
+- **2026-07-25 — ud-dreamwork-github design review.** Incubation plan at
+  `.dreamwork/docs/plans/ud-dreamwork-github.md` — four open questions
+  (poll cadence, default authority, multi-repo, cursor-state home; recs
+  inline). Build waits on your read.
 - **2026-07-25 — ud-dreamtask design review.** Incubation plan is at
   `.dreamwork/docs/plans/ud-dreamtask.md` with four open design
   questions (composition, heartbeat cadence, state-dir naming, guardrail
