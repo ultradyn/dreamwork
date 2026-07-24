@@ -48,6 +48,8 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8">
     border-radius:4px; font:inherit; padding:.25rem .8rem; cursor:pointer; }
   #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
              height:100vh; }
+  #fps { position:fixed; top:.6rem; right:.8rem; z-index:10;
+         color:#4b5563; font-size:.7rem; }
   #layerhint { position:fixed; bottom:1rem; right:1rem; z-index:10;
     color:#a5b4fc; background:rgba(17,24,39,.82);
     border:1px solid #1f2937; border-radius:4px; padding:.25rem .6rem;
@@ -61,6 +63,7 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <div id="meta">loading…</div>
 <div id="sections"></div>
 <script>
+window.DEV=/*DEV*/false;
 const esc = t => { const d = document.createElement('div');
                    d.textContent = t ?? ''; return d.innerHTML; };
 const ageStr = mt => {
@@ -193,7 +196,7 @@ tick();
     uniform sampler2D tex; uniform vec2 r; uniform float t;` + FOCUS_GLSL + `
     void main(){
       vec2 uv=gl_FragCoord.xy/r;
-      float rad=mix(0.008,0.045,focusMask(uv));
+      float rad=mix(0.0,0.045,focusMask(uv));
       vec4 acc=texture2D(tex,uv); float w=1.0;
       for(int i=0;i<8;i++){
         float fi=float(i);
@@ -217,12 +220,14 @@ tick();
       if(mode==2){ gl_FragColor=vec4(raw.g,0.25,raw.b,1.0); return; }
       if(mode==3){ gl_FragColor=vec4(vec3(1.0-focusMask(uv)),1.0); return; }
       if(mode==4){ gl_FragColor=vec4(vec3(bl.r),1.0); return; }
-      float glow=smoothstep(0.34,0.92,bl.r);
+      float foc=focusMask(uv);
+      vec4 img=mix(raw,bl,smoothstep(0.0,0.55,foc));
+      float glow=smoothstep(0.34,0.92,img.r);
       vec3 indigo=vec3(0.28,0.30,0.62);
       vec3 violet=vec3(0.44,0.31,0.66);
       vec3 peri=vec3(0.33,0.41,0.74);
-      vec3 tint=mix(indigo,violet,clamp(bl.g,0.,1.));
-      tint=mix(tint,peri,smoothstep(0.42,0.72,bl.b));
+      vec3 tint=mix(indigo,violet,clamp(img.g,0.,1.));
+      tint=mix(tint,peri,smoothstep(0.42,0.72,img.b));
       vec3 base=vec3(0.043,0.059,0.098);
       vec3 col=base+tint*(glow*0.105);
       col*=1.0-0.22*smoothstep(0.35,1.25,length(uv-0.5));
@@ -276,8 +281,8 @@ tick();
     canW = Math.max(2, Math.floor(innerWidth / 2));
     canH = Math.max(2, Math.floor(innerHeight / 2));
     cv.width = canW; cv.height = canH;
-    fboW = Math.max(2, Math.floor(canW / 3));
-    fboH = Math.max(2, Math.floor(canH / 3));
+    fboW = Math.max(2, Math.floor(canW / 2));
+    fboH = Math.max(2, Math.floor(canH / 2));
     for (const tgt of [A, B, C]) if (tgt) {
       gl.deleteTexture(tgt.tex); gl.deleteFramebuffer(tgt.fbo);
     }
@@ -384,8 +389,20 @@ tick();
   });
 
   let rafId = 0, running = true;
+  let fpsEl = null, fpsN = 0, fpsT = 0;
+  if (window.DEV) {
+    fpsEl = document.createElement('div');
+    fpsEl.id = 'fps'; document.body.appendChild(fpsEl);
+  }
   function frame(ms) {
     draw(ms);
+    if (fpsEl) {
+      fpsN++;
+      if (ms - fpsT >= 1000) {
+        fpsEl.textContent = fpsN + ' fps';
+        fpsN = 0; fpsT = ms;
+      }
+    }
     if (running && !rm) rafId = requestAnimationFrame(step);
   }
   function step(ms) {
@@ -582,7 +599,9 @@ def persistent_port(target):
 ANSWER_LOCK = threading.Lock()
 
 
-def make_handler(target):
+def make_handler(target, dev=False):
+    page = PAGE.replace("/*DEV*/false", "true") if dev else PAGE
+
     class Handler(http.server.BaseHTTPRequestHandler):
         def _send(self, body, ctype):
             data = body.encode("utf-8")
@@ -594,7 +613,7 @@ def make_handler(target):
 
         def do_GET(self):
             if self.path == "/":
-                self._send(PAGE, "text/html")
+                self._send(page, "text/html")
             elif self.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
             elif self.path == "/mtime":
@@ -647,11 +666,13 @@ def main(argv=None):
     p.add_argument("--port", type=int, default=None)
     p.add_argument("--open", action="store_true",
                    help="open the dashboard in a browser")
+    p.add_argument("--dev", action="store_true",
+                   help="dev mode: show an fps counter on the page")
     args = p.parse_args(argv)
     port = args.port or persistent_port(args.target)
     try:
         server = http.server.ThreadingHTTPServer(
-            ("127.0.0.1", port), make_handler(args.target))
+            ("127.0.0.1", port), make_handler(args.target, dev=args.dev))
     except OSError as e:
         raise SystemExit(
             f"watch.py: cannot bind 127.0.0.1:{port} ({e.strerror}). "
