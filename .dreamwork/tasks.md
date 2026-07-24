@@ -28,6 +28,9 @@ Next id: **106**
   P2 · task · 45m · do with #111; states encode who it waits on
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
+- **#115** — Spike: cost of unifying qaCard/pageHeader onto the
+  vocabulary · P2 · experiment · 60m · *in progress (spike-components,
+  worktree `spike/components`)* · measures a claim I made in #112's plan
 - **#103** — One text input for answer and note, mode group + flush send ·
   P2 · task · 50m
 - **#104** — Questions fade out, neighbours slide into place · P2 · task ·
