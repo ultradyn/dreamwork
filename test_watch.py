@@ -190,7 +190,8 @@ class TestAppShell(unittest.TestCase):
         # so a refactor can't silently flatten the transition back to a
         # plain fade.
         for token in ('dissolveOut', 'dissolveIn', 'feTurbulence',
-                      'feDisplacementMap', 'uniform float warp', 'pulseWarp'):
+                      'feDisplacementMap', 'uniform float warp', 'pulseWarp',
+                      'const SEED = '):
             self.assertIn(token, watch.PAGE)
 
     def test_dev_overlay_measures_draw_time(self):

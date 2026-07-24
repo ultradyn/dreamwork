@@ -352,6 +352,10 @@ let view = { name: null, param: null, q: null };
 let fileCache = { param: null, text: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
 const TINT = { dashboard: 0.0, questions: 0.14, file: -0.14, review: 0.22 };
+/* per-route dissolve signature: each destination swirls from its own
+   turbulence seed, so arriving somewhere has a consistent feel (pairs with
+   the per-route tint). Distinct small integers give distinct fields. */
+const SEED = { dashboard: 7, questions: 23, file: 41, review: 61 };
 const TITLE = { dashboard: () => 'dreamwork watch',
                 questions: () => 'questions — dreamwork watch',
                 file: p => (p || 'file') + ' — dreamwork watch',
@@ -444,6 +448,10 @@ function crossfade(html, xopts) {
   const dIn = fxNode('dissolveIn', 'feDisplacementMap');
   const bIn = fxNode('dissolveIn', 'feGaussianBlur');
   const tIn = fxNode('dissolveIn', 'feTurbulence');
+  // per-destination swirl signature: this arrival's turbulence field
+  const seed = SEED[view.name] != null ? SEED[view.name] : 7;
+  if (tOut) tOut.setAttribute('seed', seed);
+  if (tIn) tIn.setAttribute('seed', seed);
   const smooth = x => x * x * (3 - 2 * x);
   const t0 = performance.now();
   let raf = 0;
