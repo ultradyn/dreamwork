@@ -58,8 +58,9 @@ STYLE = """<style>
     font:inherit; padding:.25rem .8rem; cursor:pointer; }
   #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
              height:100vh; }
-  #fps { position:fixed; top:.6rem; right:.8rem; z-index:10;
-         color:var(--dimmer); font-size:.7rem; }
+  #devbox { position:fixed; top:.6rem; right:.8rem; z-index:10;
+            color:var(--dimmer); font-size:.7rem; text-align:right; }
+  #devbox canvas { display:block; margin-top:.25rem; opacity:.55; }
   #layerhint { position:fixed; bottom:1rem; right:1rem; z-index:10;
     color:var(--accent); background:rgba(17,24,39,.82);
     border:1px solid var(--line); border-radius:var(--radius);
@@ -426,17 +427,46 @@ SHADER_JS = """
   });
 
   let rafId = 0, running = true;
-  let fpsEl = null, fpsN = 0, fpsT = 0;
+  let fpsEl = null, ftEl = null, sparkCtx = null;
+  let fpsN = 0, fpsT = 0, prevMs = 0;
+  const fts = [];                       // ring of recent frametimes (ms)
   if (window.DEV) {
+    const box = document.createElement('div');
+    box.id = 'devbox';
     fpsEl = document.createElement('div');
-    fpsEl.id = 'fps'; document.body.appendChild(fpsEl);
+    ftEl = document.createElement('div');
+    const sp = document.createElement('canvas');
+    sp.width = 120; sp.height = 22;
+    box.append(fpsEl, ftEl, sp);
+    document.body.appendChild(box);
+    sparkCtx = sp.getContext('2d');
+  }
+  function drawSpark() {
+    const c = sparkCtx; if (!c || !fts.length) return;
+    c.clearRect(0, 0, 120, 22);
+    const worst = Math.max(16.8, ...fts);
+    c.fillStyle = '#a5b4fc';
+    fts.forEach((v, i) =>
+      c.fillRect(i, 22 - (v / worst) * 22, 1, (v / worst) * 22));
+    c.fillStyle = '#4b5563';           // 60fps guide line
+    c.fillRect(0, 22 - (16.7 / worst) * 22, 120, 1);
   }
   function frame(ms) {
     draw(ms);
     if (fpsEl) {
       fpsN++;
+      if (prevMs) {
+        fts.push(ms - prevMs);
+        if (fts.length > 120) fts.shift();
+      }
+      prevMs = ms;
       if (ms - fpsT >= 1000) {
         fpsEl.textContent = fpsN + ' fps';
+        const avg = fts.reduce((a, b) => a + b, 0) / (fts.length || 1);
+        ftEl.textContent =
+          avg.toFixed(1) + 'ms avg · ' +
+          Math.max(0, ...fts).toFixed(1) + 'ms worst';
+        drawSpark();
         fpsN = 0; fpsT = ms;
       }
     }
