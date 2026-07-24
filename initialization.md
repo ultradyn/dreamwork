@@ -99,10 +99,10 @@ read, initialization has already happened; return to the loop.
    `bl idea`, `bl next` / `bl grab` / `bl cycle`. With `bl`, map the
    skill's task conventions (priority, type, size, next-up queue-jumps)
    onto bl's own fields and mechanisms — the loop semantics stay the same.
-   A backend whose ids and list survive a restart on their own (`bl`) is
-   already the ledger — skip `.dreamwork/tasks.md` there. For a
-   session-scoped backend (the native tools), that file is the durable
-   half: open tasks and their permanent ids, restored in step 8.
+   Note which kind you have, because the ledger follows from it: `bl`
+   survives a restart on its own and *is* the ledger, while the native
+   tools are session-scoped and need `.dreamwork/tasks.md` alongside
+   them (restored in step 8).
 
 7. **Orient.** Read the project's CLAUDE.md and any goals/philosophy docs —
    together with DREAMWORK.md these bound what the loop may do (including
@@ -133,15 +133,17 @@ read, initialization has already happened; return to the loop.
    the recent git log (~10 commits) to absorb current direction and
    granularity.
 
-8. **Reconcile.** A session-scoped backend starts empty — that is not an
-   empty queue. Restore it from `.dreamwork/tasks.md`, keeping the
-   ledger ids.
+8. **Reconcile.** First, get the queue in front of you. A session-scoped
+   backend starts empty — that is not an empty queue: restore it from
+   `.dreamwork/tasks.md`, keeping the ids. A durable backend already
+   has it.
 
-   Then check the restored queue against reality, because nothing else
-   will: `git status` and the recent log say what actually happened
-   since the ledger was written. Mark done what's done, split what's
-   half-done, drop what's moot, and rewrite the ledger to match. A dirty
-   tree is unfinished prior work — understand it first, then land it as
+   Then check that queue against reality, because nothing else will:
+   `git status` and the recent log say what actually happened since
+   anyone last looked. Mark done what's done, split what's half-done,
+   drop what's moot — trust neither a ledger line nor a stale
+   in-progress status — and bring the ledger back into line. A dirty
+   tree is unfinished prior work: understand it first, then land it as
    an increment or park it (stash + task) before starting anything new.
 
 9. **Green baseline.** With the tree reconciled, run the project's

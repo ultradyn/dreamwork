@@ -4,8 +4,7 @@ The durable half of the task list. The backend's list is session-scoped —
 this file is not, so ids here are permanent and everything else (commits,
 docs, questions, dreams) refers to tasks by them.
 
-**Written by the coordinator only.** Dreamers report queue changes; a
-shared id counter with several writers hands out duplicates.
+**Written by the coordinator only.** Dreamers report queue changes.
 
 Next id: **99**
 

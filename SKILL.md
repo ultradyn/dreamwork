@@ -201,21 +201,21 @@ results, no ceremony.
   by us, the dreamers: design notes, discovered conventions, gotchas,
   architecture understanding. Maintained means pruned and updated when
   stale, not append-only.
-- `.dreamwork/tasks.md` — the durable half of the task list. Task
-  backends are session-scoped; this file is not, so the queue survives a
-  restart and its ids stay meaningful. Ids are permanent and never
-  reused (the file carries the next one); everything that refers to a
-  task — commits, docs, questions, dreams — uses the ledger id, and the
-  backend's own ids are session-local plumbing. Open tasks only, one
-  line each (id, title, priority/type/size, owner or blocked-on, pointer
-  to any plan); it is rewritten as part of the increment that changes
-  the queue, not on a separate beat. **The coordinator is its only
-  writer** — it holds the id counter, and a dreamer reports a queue
-  change rather than editing the file: durable shared state wants a
-  single writer, or the next fan-out races it (two dreamers mint the
-  same id and the ledger loses exactly what it exists to keep). On a
-  backend whose own ids are durable (`bl`), skip the file — that backend
-  already is the ledger.
+- **The ledger** — the queue's durable record, which everything else in
+  this skill means by the word. On a backend whose list and ids survive
+  a restart (`bl`) it *is* the backend, and there is no extra file. On a
+  session-scoped backend (the native tools) it is
+  `.dreamwork/tasks.md`: open tasks only, one line each (id, title,
+  priority/type/size, owner or blocked-on, pointer to any plan), plus
+  the next id to hand out. Either way ids are permanent and never
+  reused, and everything that refers to a task — commits, docs,
+  questions, dreams — uses them; a session-scoped backend's own numbers
+  are local plumbing. The file version is rewritten as part of the
+  increment that changes the queue, not on a separate beat, and **the
+  coordinator is its only writer** — a dreamer reports a queue change
+  instead: durable shared state wants a single writer, or the next
+  fan-out races it (two dreamers mint the same id, and the ledger loses
+  exactly what it exists to keep).
 - `.dreamwork/questions.md` — open questions for the human: proposals
   awaiting a response, unclear-goals items, parked scope calls. Chat is
   not durable — every user-facing ask gets an entry here when made, with
@@ -256,9 +256,13 @@ results, no ceremony.
   mark (set by `do next`, cleared on start), and owner or blocked-on.
   Mirror them into the backend's `metadata` where it surfaces them —
   never depend on it unread.
-- Work that already has a durable id upstream (a forge issue a plugin
-  ingested) keeps that id and stays out of the ledger — the next poll
-  re-derives it. Ledger ids are for work the loop originated.
+- Work that arrives with a durable id upstream (a forge issue a plugin
+  ingested) keeps that id and stays out of the ledger *while it is only
+  a candidate* — the next poll re-derives it, so a busy forge never
+  floods the ledger. Starting it changes that: a poll re-derives the
+  item but never the loop's progress on it, so as work begins it takes a
+  ledger line carrying the upstream id, and from then on holds its own
+  state — owner, branch, blocked-on — like anything else.
 - Dependencies via `addBlockedBy` / `addBlocks`.
 - Big features get a planning doc on disk (`.dreamwork/docs/plans/<slug>.md`
   or the repo's convention); the task itself is a thin pointer. Bulk stays

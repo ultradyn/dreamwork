@@ -80,3 +80,10 @@ source dream. Not a log — only things that should change future behavior.
 - An id that is already durable upstream beats minting a new one: the
   ledger holds only work the loop originated, or a busy forge floods it.
   (2026-07-25-0832-ledger-coherence)
+- A fix stated in terms of its own implementation breaks the other
+  implementation: "the ledger" had to become a concept (durable record)
+  before backend-neutral lines could safely use the word.
+  (2026-07-25-0832-ledger-coherence, verify pass)
+- Re-deriving an item from upstream never re-derives the loop's progress
+  on it — external identity is enough until work starts, not after.
+  (2026-07-25-0832-ledger-coherence, verify pass)
