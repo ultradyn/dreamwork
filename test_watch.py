@@ -195,6 +195,14 @@ class TestAppShell(unittest.TestCase):
                       "'gpu'", "'draw'", 'performance.now()'):
             self.assertIn(token, watch.PAGE)
 
+    def test_page_has_review_route_wiring(self):
+        # Static guard: /review is an in-app route that embeds the artifact
+        # (from /reviewraw) and docks the originating question, which morphs
+        # into place (shared-element FLIP) from where it was clicked.
+        for token in ('buildReview', 'reviewframe', 'qdock', 'flipDock',
+                      '/reviewraw', 'linkifyReview'):
+            self.assertIn(token, watch.PAGE)
+
     def _serve(self, target):
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), watch.make_handler(target))
@@ -229,6 +237,33 @@ class TestAppShell(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 self._get(base + "/filedata?p=../etc/passwd")
             self.assertEqual(cm.exception.code, 404)
+
+    def test_review_serves_shell_reviewraw_serves_artifact(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            rd = os.path.join(d, ".dreamwork", "review")
+            os.makedirs(rd)
+            with open(os.path.join(rd, "plan-review.html"), "w") as f:
+                f.write("<!doctype html><title>R</title><p>review body")
+            base = self._serve(d)
+            # /review returns the app shell; the client renders the view
+            status, body = self._get(base + "/review?p=plan-review.html")
+            self.assertEqual(status, 200)
+            self.assertIn('id="view"', body)
+            # /reviewraw returns the raw artifact for the iframe
+            status, raw = self._get(base + "/reviewraw?p=plan-review.html")
+            self.assertEqual(status, 200)
+            self.assertIn("review body", raw)
+
+    def test_reviewraw_blocks_escape_and_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            for bad in ("/reviewraw?p=../questions.md",
+                        "/reviewraw?p=sub/dir.html",
+                        "/reviewraw?p=missing.html"):
+                with self.assertRaises(urllib.error.HTTPError) as cm:
+                    self._get(base + bad)
+                self.assertEqual(cm.exception.code, 404)
 
 
 if __name__ == "__main__":

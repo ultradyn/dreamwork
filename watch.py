@@ -84,6 +84,23 @@ STYLE = """<style>
   @media (prefers-reduced-motion: reduce) {
     #view, .ghost { transition:none; }
   }
+  /* review view: the artifact fills the main column; the originating
+     question docks beside it (sticky) so it can be answered with the
+     review in front of you. Wider than the 72ch reading column. */
+  body.review .wrap { max-width:1360px; }
+  #reviewwrap { display:grid; gap:1.3rem; align-items:start; margin-top:1rem;
+    grid-template-columns:minmax(0,1fr) minmax(24ch,34ch); }
+  #reviewwrap.nodock { grid-template-columns:minmax(0,1fr); }
+  #reviewframe { width:100%; height:74vh; border:1px solid var(--border);
+    border-radius:var(--radius); background:var(--bg); display:block; }
+  .revname { color:var(--dim); margin-left:.6rem; font-size:.8rem; }
+  .qdock { position:sticky; top:1rem; will-change:transform, filter; }
+  .qdock .label { margin-top:0; }
+  @media (max-width:900px) {
+    #reviewwrap { grid-template-columns:minmax(0,1fr); }
+    .qdock { position:static; }
+    #reviewframe { height:60vh; }
+  }
 </style>"""
 
 APP_BODY = """<canvas id="dreambg"></canvas>
@@ -128,9 +145,18 @@ const linkify = h => h.replace(
   /`([\\w.-]+(?:\\/[\\w.-]+)+\\/?|[\\w-]+\\.[\\w]{1,8})`/g,
   (m, p) => '`<a href="/file?p=' + encodeURIComponent(p) + '">' + p + '</a>`');
 const preB = t => `<pre>${linkify(esc(t))}</pre>`;
+/* a backticked path to a review artifact docks THIS question onto the
+   review page (carries its title); every other path stays a /file link. */
+const linkifyReview = (escaped, title) => escaped.replace(
+  /`\\.dreamwork\\/review\\/([\\w.-]+\\.html?)`/g,
+  (m, name) => '`<a class="rev" href="/review?p=' + encodeURIComponent(name) +
+    '&q=' + encodeURIComponent(title) + '">.dreamwork/review/' + name +
+    '</a>`');
+const preBReview = (t, title) =>
+  `<pre>${linkify(linkifyReview(esc(t), title))}</pre>`;
 const qaCard = (q, i) =>
   `<div class="qa"><div class="qt">${esc(q.title)}</div>` +
-  preB(q.body.trim()) +
+  preBReview(q.body.trim(), q.title) +
   `<textarea id="qa${i}" placeholder="answer…"></textarea>` +
   `<button onclick="sendAnswer(${i})">answer</button></div>`;
 async function postAnswer(title, text) {
@@ -198,6 +224,28 @@ function buildFile(param, text) {
     `<div id="meta"><a href="/">&larr; dashboard</a></div>` +
     `<div id="filebody">${body}</div>`;
 }
+/* review view: the raw artifact in an iframe (style-isolated) with the
+   originating question docked beside it (answer box included), so it can
+   be answered with the review in front of you. Deep-loads without a
+   question just show the artifact. */
+function buildReview(name, q, d) {
+  const src = '/reviewraw?p=' + encodeURIComponent(name || '');
+  let dock = '';
+  if (q && d) {
+    const i = d.questions_open.findIndex(x => x.title === q);
+    if (i >= 0)
+      dock = `<aside class="qdock" id="qdock">` +
+        label('answering') + qaCard(d.questions_open[i], i) + `</aside>`;
+  }
+  return `<header>review<span class="revname">${esc(name || '')}</span></header>` +
+    `<div id="meta"><a href="/questions">&larr; questions</a> · ` +
+    `<a href="/">dashboard</a></div>` +
+    `<div id="reviewwrap"${dock ? '' : ' class="nodock"'}>` +
+      `<div id="reviewdoc"><iframe id="reviewframe" src="${src}" ` +
+      `title="review artifact" loading="lazy"></iframe></div>` +
+      dock +
+    `</div>`;
+}
 function ages() {
   document.querySelectorAll('.age[data-mt]').forEach(el =>
     el.textContent = ageStr(parseFloat(el.dataset.mt)) + ' old');
@@ -216,23 +264,29 @@ ROUTER_JS = """
 /* Single-document router. Views swap inside #view; the shader canvas is
    its sibling and is never touched, so the background is unbroken across
    navigations. Deep links still work: the server hands back this same
-   shell for /, /questions and /file, and we render the matching view on
-   load. /review links are left to full navigation (foreign documents). */
+   shell for /, /questions, /file and /review, and we render the matching
+   view on load. /review embeds the raw artifact (served at /reviewraw) in
+   an iframe; a question that links to it travels along, docked. */
 const rmr = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let data = null, fetchedAt = 0, lastMtime = null;
-let view = { name: null, param: null };
+let view = { name: null, param: null, q: null };
 let fileCache = { param: null, text: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
-const TINT = { dashboard: 0.0, questions: 0.14, file: -0.14 };
+const TINT = { dashboard: 0.0, questions: 0.14, file: -0.14, review: 0.22 };
 const TITLE = { dashboard: () => 'dreamwork watch',
                 questions: () => 'questions — dreamwork watch',
-                file: p => (p || 'file') + ' — dreamwork watch' };
+                file: p => (p || 'file') + ' — dreamwork watch',
+                review: p => 'review ' + (p || '') + ' — dreamwork watch' };
 
 function routeOf(loc) {
   if (loc.pathname === '/questions') return { name: 'questions', param: null };
   if (loc.pathname === '/file')
     return { name: 'file',
              param: new URLSearchParams(loc.search).get('p') };
+  if (loc.pathname === '/review') {
+    const sp = new URLSearchParams(loc.search);
+    return { name: 'review', param: sp.get('p'), q: sp.get('q') };
+  }
   return { name: 'dashboard', param: null };
 }
 async function ensureData() {
@@ -258,6 +312,7 @@ async function buildCurrent() {
   if (view.name === 'file')
     return buildFile(view.param, await fetchFile(view.param));
   const d = await ensureData();
+  if (view.name === 'review') return buildReview(view.param, view.q, d);
   if (!d) return '<div class="dim">loading…</div>';
   return view.name === 'questions' ? buildQuestions(d) : buildDashboard(d);
 }
@@ -274,17 +329,31 @@ function setContent(html) {
    reduced-motion swaps instantly — no ghost, no mist. */
 const DREAM_MS = 1150;                     // dwell of the whole dissolve
 const fxNode = (id, tag) => document.querySelector('#' + id + ' ' + tag);
-function crossfade(html) {
+function crossfade(html, xopts) {
+  xopts = xopts || {};
   const viewEl = document.getElementById('view');
-  if (rmr) { setContent(html); return; }
+  if (rmr) {
+    document.body.classList.toggle('review', !!xopts.review);
+    setContent(html);
+    return;
+  }
   const ghost = viewEl.cloneNode(true);
   ghost.removeAttribute('id'); ghost.className = 'ghost';
+  // a cloned iframe would re-fetch and flash while dissolving — drop it;
+  // the ghost only needs the chrome/text to blur away.
+  ghost.querySelectorAll('iframe').forEach(f => f.remove());
   viewEl.parentNode.appendChild(ghost);
+  document.body.classList.toggle('review', !!xopts.review);   // width flips now
   setContent(html);
+  // measure the docked question's resting rect BEFORE the enter transform,
+  // so a shared-element FLIP from the clicked question lands true.
+  const dock = document.getElementById('qdock');
+  const dockRect = dock ? dock.getBoundingClientRect() : null;
   ghost.style.filter = 'url(#dissolveOut)';
   viewEl.style.filter = 'url(#dissolveIn)';
   viewEl.classList.add('enter');
   void viewEl.offsetWidth;                 // commit the hidden start state
+  if (xopts.fromRect && dock && dockRect) flipDock(dock, xopts.fromRect, dockRect);
   if (window.dreambg) window.dreambg.pulseWarp();
   requestAnimationFrame(() => {
     viewEl.classList.remove('enter');      // CSS eases opacity + drift in
@@ -322,25 +391,66 @@ function crossfade(html) {
   raf = requestAnimationFrame(stepFx);
   setTimeout(finish, DREAM_MS + 400);      // safety net
 }
+/* shared-element morph: the docked question travels from where it was
+   clicked (its list rect) to its docked rect — auto-animate style, but the
+   dream twist is a blurred, low-opacity drift rather than a crisp slide. */
+function flipDock(dock, fromRect, toRect) {
+  const dx = fromRect.left - toRect.left;
+  const dy = fromRect.top - toRect.top;
+  const sx = Math.max(0.15, fromRect.width / (toRect.width || 1));
+  const sy = Math.max(0.15, fromRect.height / (toRect.height || 1));
+  // Lift the travelling question above the page mist (z-index) and keep it
+  // luminous, so the eye tracks THIS element gliding to its dock while the
+  // rest of the page dissolves behind it — a shared-element morph, but
+  // dream-blurred not crisp. Its glide outlasts the mist so the travel reads.
+  dock.style.zIndex = '4';
+  dock.style.transformOrigin = 'top left';
+  dock.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+  dock.style.filter = 'blur(5px)';
+  dock.style.opacity = '0.4';
+  dock.style.transition = 'none';
+  void dock.offsetWidth;                    // commit the inverted start
+  requestAnimationFrame(() => {
+    dock.style.transition =
+      'transform 1.15s cubic-bezier(.22,.61,.36,1), filter .95s ease, ' +
+      'opacity .85s ease';
+    dock.style.transform = 'none';
+    dock.style.filter = '';
+    dock.style.opacity = '1';
+  });
+  const clear = () => {
+    for (const p of ['transition', 'transform', 'transformOrigin', 'filter',
+                     'opacity', 'zIndex']) dock.style[p] = '';
+  };
+  dock.addEventListener('transitionend', clear, { once: true });
+  setTimeout(clear, 1500);                  // safety net
+}
 async function navigate(name, param, opts) {
   opts = opts || {};
-  view = { name, param };
+  view = { name, param, q: opts.q || null };
   document.title = (TITLE[name] || TITLE.dashboard)(param);
   if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
   const url = name === 'questions' ? '/questions'
     : name === 'file' ? '/file?p=' + encodeURIComponent(param || '')
+    : name === 'review' ? '/review?p=' + encodeURIComponent(param || '') +
+        (opts.q ? '&q=' + encodeURIComponent(opts.q) : '')
     : '/';
-  if (opts.push) history.pushState({ name, param }, '', url);
+  if (opts.push) history.pushState({ name, param, q: opts.q || null }, '', url);
   const html = await buildCurrent();
-  if (opts.transition === false) setContent(html); else crossfade(html);
+  if (opts.transition === false) {
+    document.body.classList.toggle('review', name === 'review');
+    setContent(html);
+  } else {
+    crossfade(html, { fromRect: opts.fromRect, review: name === 'review' });
+  }
 }
-/* only same-document routes are intercepted; /review + external links,
-   new-tab and modified clicks fall through to the browser. */
+/* only same-document routes are intercepted; external links, new-tab and
+   modified clicks fall through to the browser. */
 function isInternal(a) {
   if (!a || a.target === '_blank' || a.hasAttribute('download')) return false;
   if (a.origin !== location.origin) return false;
   return a.pathname === '/' || a.pathname === '/questions'
-      || a.pathname === '/file';
+      || a.pathname === '/file' || a.pathname === '/review';
 }
 addEventListener('click', e => {
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey ||
@@ -349,11 +459,18 @@ addEventListener('click', e => {
   if (!isInternal(a)) return;
   e.preventDefault();
   const r = routeOf(a);
-  navigate(r.name, r.param, { push: true });
+  const opts = { push: true, q: r.q };
+  // a review link fired from inside a question card seeds the shared-element
+  // morph: remember where the question sat so it can travel to its dock.
+  if (r.name === 'review' && r.q) {
+    const card = a.closest('.qa');
+    if (card) opts.fromRect = card.getBoundingClientRect();
+  }
+  navigate(r.name, r.param, opts);
 });
 addEventListener('popstate', () => {
   const r = routeOf(location);
-  navigate(r.name, r.param, { push: false });
+  navigate(r.name, r.param, { push: false, q: r.q });
 });
 /* live tick: re-render the active data-driven view in place, no fade. */
 async function tick() {
@@ -371,7 +488,7 @@ async function tick() {
 setInterval(ages, 1000);
 (function () {                              // initial view from the URL
   const r = routeOf(location);
-  navigate(r.name, r.param, { push: false, transition: false });
+  navigate(r.name, r.param, { push: false, transition: false, q: r.q });
   tick();
 })();
 """
@@ -1040,7 +1157,7 @@ def make_handler(target, dev=False):
             parsed = urllib.parse.urlparse(self.path)
             # Same-document routes all return the one app shell; the client
             # router renders the matching view (deep links keep working).
-            if parsed.path in ("/", "/questions", "/file"):
+            if parsed.path in ("/", "/questions", "/file", "/review"):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
@@ -1055,7 +1172,10 @@ def make_handler(target, dev=False):
                     return
                 self._send(json.dumps({"path": rel, "content": text}),
                            "application/json")
-            elif parsed.path == "/review":
+            elif parsed.path == "/reviewraw":
+                # The raw self-contained artifact, for the /review view's
+                # iframe (style isolation). /review itself serves the shell;
+                # the client router renders the review view around this.
                 name = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
                 full = (resolve_confined(
                     target, os.path.join(".dreamwork", "review", name))
