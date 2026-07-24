@@ -231,6 +231,13 @@ def open_question_count(questions_text):
     return count
 
 
+def _safe_json(text):
+    try:
+        return json.loads(text) if text else None
+    except ValueError:      # torn mid-write read: degrade, don't 500
+        return None
+
+
 def collect(target):
     now = time.time()
     dw = os.path.join(target, ".dreamwork")
@@ -250,8 +257,7 @@ def collect(target):
         },
         "open_questions": open_question_count(questions),
         "questions_open": parse_open_questions(questions),
-        "status": json.loads(read_text(os.path.join(dw, "status.json"))
-                             or "null"),
+        "status": _safe_json(read_text(os.path.join(dw, "status.json"))),
         "git": git_tail(target),
     }
 
