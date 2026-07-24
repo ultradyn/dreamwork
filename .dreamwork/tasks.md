@@ -23,13 +23,6 @@ Next id: **118**
   task · 90m · plan: `docs/plans/artifact-templates.md`
 - **#117** — `just test` green while the real structural guards fail ·
   P1 · bug · 45m · found by #115; a page change can be green and broken
-- **#103** — One text input for answer and note, mode group + flush send ·
-  P2 · task · 50m · *in progress (dreamer-questions)* · goal: one place
-  to say anything to the loop ← "the dashboard is how you steer it"
-- **#104** — Questions fade out, neighbours slide into place · P2 · task ·
-  45m · do with #77; "things slide, never jump" is the principle
-- **#77** — Cross-group morph when a question changes section · P2 · task ·
-  45m · same regroup moment as #104
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
   45m · the composer now renders from one `COMMANDS` table, so this is
   an append rather than a redesign
@@ -54,7 +47,9 @@ Next id: **118**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#109 #116** author-tagged
+Pruned in grooming; git is the real ledger. **#103** one input per card
+routed by a mode group (5b2fde9); **#104 #77** the regroup — answered
+questions travel, neighbours close the gap (fc8185d). **#109 #116** author-tagged
 notes and one reader for questions.md (2026-07-25, 34f272f) — #116 also
 fixed a silent write failure: /answer and /comment could not match a
 wrapped-title entry at all. **#115** the component-cost
