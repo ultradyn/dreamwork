@@ -197,6 +197,15 @@ results, no ceremony.
   by us, the dreamers: design notes, discovered conventions, gotchas,
   architecture understanding. Maintained means pruned and updated when
   stale, not append-only.
+- `.dreamwork/tasks.md` — the durable half of the task list. Task
+  backends are session-scoped; this file is not, so the queue survives a
+  restart and its ids stay meaningful. Ids are permanent and never
+  reused (the file carries the next one); everything that refers to a
+  task — commits, docs, questions, dreams — uses the ledger id, and the
+  backend's own ids are session-local plumbing. Open tasks only, one
+  line each (id, title, priority/type/size, owner or blocked-on, pointer
+  to any plan); it is rewritten as part of the increment that changes
+  the queue, not on a separate beat.
 - `.dreamwork/questions.md` — open questions for the human: proposals
   awaiting a response, unclear-goals items, parked scope calls. Chat is
   not durable — every user-facing ask gets an entry here when made, with
@@ -226,6 +235,9 @@ results, no ceremony.
 
 ## Task-list conventions
 
+- Every task carries its ledger id (`metadata.id`, and in the subject so
+  it is visible everywhere) — see `.dreamwork/tasks.md`. New task → take
+  the ledger's next id and bump it.
 - `metadata`: `priority` (P1-P3), `type` (idea | task | bug | experiment |
   chore), `size` (estimated minutes), `feasibility` (note from triage),
   `next` (true while queued as next-up via `do next`; cleared on start).
@@ -272,6 +284,8 @@ if Max is away).
 - `pause` / `resume` — TaskStop the heartbeat monitor / re-arm it.
 - `wrap up` — land the current increment cleanly, commit, summarize, and
   note any friction with the loop itself — fix small, file the rest.
+  Leave the queue restorable: the ledger matches the backend before the
+  session ends.
 
 ## Guardrails
 

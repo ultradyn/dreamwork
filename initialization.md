@@ -99,6 +99,8 @@ read, initialization has already happened; return to the loop.
    `bl idea`, `bl next` / `bl grab` / `bl cycle`. With `bl`, map the
    skill's task conventions (priority, type, size, next-up queue-jumps)
    onto bl's own fields and mechanisms — the loop semantics stay the same.
+   Whichever backend: `.dreamwork/tasks.md` is the durable ledger of open
+   tasks and their permanent ids — restore from it in step 8.
 
 7. **Orient.** Read the project's CLAUDE.md and any goals/philosophy docs —
    together with DREAMWORK.md these bound what the loop may do (including
@@ -129,7 +131,11 @@ read, initialization has already happened; return to the loop.
    the recent git log (~10 commits) to absorb current direction and
    granularity.
 
-8. **Reconcile.** `git status` — a dirty tree is unfinished prior work:
+8. **Reconcile.** A session-scoped backend starts empty — that is not an
+   empty queue. Read `.dreamwork/tasks.md` and recreate its open tasks in
+   the backend (keeping their ledger ids) before judging anything;
+   verify each against git rather than trusting the ledger blindly, and
+   rewrite it if reality has moved on. Then: `git status` — a dirty tree is unfinished prior work:
    understand it first, then land it as an increment or park it (stash +
    task) before starting anything new. Check the task list for in_progress
    tasks left by a previous session and verify each against reality (git
