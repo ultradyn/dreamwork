@@ -93,8 +93,9 @@ what a yes builds. A bridge:
 plugin end to end — process discovery (init), issue/PR monitoring
 (tick/Monitor), progression-until-blocked (tasks), per-action authority
 (wizard + DREAMWORK.md), cursor state (config dir). Read it as the
-template for how a plugin justifies each seam it uses; when it ships,
-building it validates this document.
+template for how a plugin justifies each seam it uses; it shipped
+2026-07-25 (`skills/ud-dreamwork-github/`) — building it validated this
+document.
 
 ## Checklist
 

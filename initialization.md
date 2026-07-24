@@ -89,9 +89,9 @@ read, initialization has already happened; return to the loop.
    stop-then-arm is the clean swap.
 
    If watch.py runs and a Monitor tool exists, also arm a tail on
-   `.dreamwork/watch-events.log` — dashboard actions (answers) then wake
-   you immediately instead of waiting for a tick. Without a Monitor tool,
-   check that file's mtime in the tick loop.
+   `.dreamwork/watch-events.log` — dashboard actions (answers and
+   commands) then wake you immediately instead of waiting for a tick.
+   Without a Monitor tool, check that file's mtime in the tick loop.
 
 6. **Task backend.** Native Claude Code task tools (TaskCreate / TaskList /
    TaskGet / TaskUpdate) by default. If the target already has backlog

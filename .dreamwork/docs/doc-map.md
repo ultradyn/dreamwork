@@ -14,7 +14,7 @@ cover it too.
 | `initialization.md` | The 11-step init procedure | Yes |
 | `reflection.md` | Post-change checklist | Yes |
 | `writing-plugins.md` | Plugin-authoring contract, extension seams, state split | Yes — validate against each new plugin |
-| `watch-design.md` | watch.py standing design: routes, confinement, write exception, contract | Yes — shipped beside the tool it documents |
+| `watch-design.md` | watch.py standing design: routes, confinement, write exceptions, contract | Yes — shipped beside the tool it documents |
 | `stop-hook-variant.md` | Unimplemented wake fallback design | Only if implemented or invalidated |
 | `DREAMWORK.template.md` | Wizard seed for new targets | Yes — must track wizard section changes |
 | `migrations/` | Versioned target-affecting changes; latest filename = version | Append-only; README holds the protocol |
