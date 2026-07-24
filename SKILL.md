@@ -124,6 +124,11 @@ All subagents report to the coordinator and never use `attn`.
   by us, the dreamers: design notes, discovered conventions, gotchas,
   architecture understanding. Maintained means pruned and updated when
   stale, not append-only.
+- `.dreamwork/questions.md` — open questions for the human: proposals
+  awaiting a response, unclear-goals items, parked scope calls. Chat is
+  not durable — every user-facing ask gets an entry here when made, with
+  enough context to answer cold. Answers fold into DREAMWORK.md or tasks
+  and the entry moves to a short Answered section (pruned in grooming).
 - All of it is committable project content, like CLAUDE.md.
 
 ## Task-list conventions
@@ -151,7 +156,8 @@ if Max is away).
   selection algorithm now.
 - `add idea: <text>` — capture. Add to the task list slotted by priority
   (feasibility-triage if complex); doesn't jump the queue.
-- `status` — current task, queue summary, recent completions.
+- `status` — current task, queue summary, recent completions, open
+  questions from `.dreamwork/questions.md`.
 - `pause` / `resume` — TaskStop the heartbeat monitor / re-arm it.
 - `wrap up` — land the current increment cleanly, commit, summarize.
 
@@ -169,6 +175,10 @@ if Max is away).
   itself — e.g. the cwd doesn't match the work being discussed, the task
   list contradicts git — don't guess and don't proceed on the wrong
   assumption: ask the human.
+- Every ask is recorded. Never propose something needing the human's
+  response without writing it to `.dreamwork/questions.md` in the same
+  breath — they may be afk or miss the message. Unclear goals park there
+  too, instead of being guessed at.
 - Communication: brief updates as you go; `attn` only for genuine blockers,
   questions, or notable milestones. Subagents never use `attn`.
 
