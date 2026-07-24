@@ -97,6 +97,26 @@ template for how a plugin justifies each seam it uses; it shipped
 2026-07-25 (`skills/ud-dreamwork-github/`) — building it validated this
 document.
 
+## Reviewing a plugin
+
+Every new or substantially-changed plugin gets a fresh-eyes review — a
+dreamer that did not write it, using the checklist below as its rubric.
+The review checks the plugin against three sources: this contract, the
+plugin's approved plan *including later amendments* (cadence changes,
+authority tweaks — recorded in the plan's status header or questions.md
+thread), and the core SKILL.md guardrails it inherits.
+
+- **Fix in place**: prose drift, stale values superseded by amendments,
+  checklist gaps with an obvious resolution, frontmatter defects. Commit
+  in the plugin's repo, matching its log style.
+- **Report, don't guess**: anything needing a human call — scope or
+  authority ambiguity, a seam whose justification is unclear, behavior
+  the plan never authorized. These go to the coordinator, who parks them
+  in `questions.md`.
+- **Verdict**: `PASS` (with fixes listed) or `issues found` (with the
+  human-decision items). A review that changes nothing still reports —
+  silence is indistinguishable from not looking.
+
 ## Checklist
 
 1. Name `ud-dreamwork-<thing>`; description written for the load-ask.
