@@ -58,3 +58,7 @@ source dream. Not a log — only things that should change future behavior.
 - Prefer impossible-by-construction over validation: parse so a sub-bullet
   can never be mistaken for an entry; key list rows by index not a
   DOM-round-tripped title. (2026-07-25-0806-question-flow-and-reload-batch)
+- Busy-dreamer mailboxes deliver between turns, so coordinator orders
+  routinely cross dreamer reports — write orders idempotently, expect
+  "DONE" lines that predate them, and re-state once on the next idle
+  rather than assuming receipt. (coordinator, 2026-07-25 wrap)

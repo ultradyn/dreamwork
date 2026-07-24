@@ -110,10 +110,11 @@ there — extend it; rename "command palette" → "composer".
 - **Popout identity is shared:** `openPopout` + `popoutShell` give every
   floated window the tint band + project basename + path. Item 2's shader
   goes inside that shell.
-- Test capture scripts + instrumentation live in the session scratchpad
-  (`/tmp/claude-1000/-home-xertrov-src-grok-hark/.../scratchpad/`) —
-  `beautycap.mjs`, `optrace.mjs` (per-frame opacity), `rm-check2.mjs`,
-  `reviewcap.mjs`, `cmdcap.mjs`, `note82.mjs`, `pip83.mjs`. They target a
-  running server; adapt the port. They may be cleaned between sessions —
-  the patterns (per-frame trace for motion; multi-timestamp for dissolves;
-  fresh page per frame to dodge screenshot stall) are the durable part.
+- Test capture scripts + instrumentation are preserved in `dev/capture/`
+  (skill root, committed — the coordinator moved them out of the
+  session scratchpad at wrap): `beautycap.mjs`, `optrace.mjs`
+  (per-frame opacity), `rm-check2.mjs`, `reviewcap.mjs`, `cmdcap.mjs`,
+  `note82.mjs`, `pip83.mjs`. They target a running server; adapt the
+  port. The durable patterns: per-frame trace for motion,
+  multi-timestamp for dissolves, fresh page per frame to dodge
+  headless screenshot stall.
