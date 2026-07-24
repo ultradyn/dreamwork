@@ -178,6 +178,10 @@ tick();
       vec2 p=vec2(uv.x*(r.x/r.y),uv.y)*2.3;
       float tt=t*0.03;
       vec2 q=vec2(fbm(p+vec2(0.0,tt)), fbm(p+vec2(5.2,1.3)-tt));
+      /* pinch of curl: divergence-free swirl advecting the domain —
+         fluid (navier-stokes-ish) drift without a sim */
+      vec2 curl=vec2(q.y-0.5, 0.5-q.x);
+      p+=curl*(0.38+0.14*sin(tt*1.7));
       vec2 s=vec2(fbm(p+2.6*q+vec2(1.7,9.2)+tt*0.6),
                   fbm(p+2.6*q+vec2(8.3,2.8)-tt*0.4));
       float f=fbm(p+3.2*s);
