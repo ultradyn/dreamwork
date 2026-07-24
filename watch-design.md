@@ -164,9 +164,15 @@ also strictly opt-in — most state changes do **not** animate.
   and make its glide **outlast** the dissolve, or it drowns in the page mist
   and reads as "page changed + thing appeared" rather than "thing
   travelled".
-- **The ripple.** A soft expanding ring marks a received command or answer
-  (with a brief "received" / "sent to the dream"); confirmation is a felt
+- **The ripple.** A soft expanding ring marks a received command; a felt
   pulse, not a modal.
+- **Answer-submit morph.** Submitting an answer (button or **Ctrl/Cmd+Enter**,
+  which works from any answer box) *is* the confirmation: the card reshapes
+  in place into its answered-awaiting-fold state and the typed text lifts
+  from the box into the rendered answer (the lifted-hero FLIP — the answer
+  is the tracked element), a ripple accenting it. The live re-render is held
+  ~1.6s so the morph settles before the loop's fresh data regroups the card.
+  reduced-motion swaps straight to the answered state.
 - **Reduced-motion is a hard contract.** `prefers-reduced-motion` changes
   *timing, never function or legibility*: route swaps are instant (no ghost,
   no mist, tint/seed snap, no `warp`), the palette shows/hides at once, the

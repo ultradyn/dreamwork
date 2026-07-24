@@ -256,13 +256,18 @@ const preBReview = (t, title) =>
    answered from the dashboard (awaiting the loop to fold it) shows the
    answer distinctly with no box — never ambiguous; the folded Answered
    section is rendered separately by the view. */
+/* the inner of an answered-awaiting-fold card — reused by qaCard and by the
+   submit morph, so both render identically. */
+const answeredInner = q => {
+  const body = q.body && q.body.trim() ? preBReview(q.body.trim(), q.title) : '';
+  return `<div class="qt">${esc(q.title)}</div>${body}` +
+    `<div class="anstag">answered · awaiting fold</div>` +
+    `<div class="anstext">${esc(q.answer)}</div>`;
+};
 const qaCard = (q, i) => {
+  if (q.answer) return `<div class="qa answered">${answeredInner(q)}</div>`;
   const head = `<div class="qt">${esc(q.title)}</div>`;
   const body = q.body.trim() ? preBReview(q.body.trim(), q.title) : '';
-  if (q.answer)
-    return `<div class="qa answered">${head}${body}` +
-      `<div class="anstag">answered · awaiting fold</div>` +
-      `<div class="anstext">${esc(q.answer)}</div></div>`;
   return `<div class="qa">${head}${body}` +
     `<textarea id="qa${i}" placeholder="answer…"></textarea>` +
     `<button onclick="sendAnswer(${i})">answer</button></div>`;
@@ -380,15 +385,24 @@ function ages() {
 async function sendAnswer(i) {
   const el = document.getElementById('qa' + i);
   if (!el || !el.value.trim() || !data) return;
-  const btn = el.parentNode.querySelector('button');
-  await postAnswer(data.questions_open[i].title, el.value.trim());
-  el.value = '';
-  if (btn && typeof ripple === 'function') {          // dream confirmation
-    const r = btn.getBoundingClientRect();
-    ripple(r.left + r.width / 2, r.top + r.height / 2);
-    btn.textContent = 'received';
-    setTimeout(() => { btn.textContent = 'answer'; }, 1600);
-  }
+  const val = el.value.trim();
+  const q = data.questions_open[i];
+  const card = el.closest('.qa');
+  const fromRect = el.getBoundingClientRect();   // the box the text lived in
+  await postAnswer(q.title, val);
+  if (!card) return;
+  holdRerenderUntil = Date.now() + 1600;   // let the morph settle before regroup
+  // the morph IS the confirmation: the box reshapes into the answered state,
+  // the typed text lifting from the box into the rendered answer (the
+  // lifted-hero rule — the answer text is the tracked element). A soft
+  // ripple accents it. reduced-motion just swaps to the answered state.
+  card.className = 'qa answered';
+  card.innerHTML = answeredInner({ title: q.title, body: q.body, answer: val });
+  const anstext = card.querySelector('.anstext');
+  if (typeof ripple === 'function')
+    ripple(fromRect.left + fromRect.width / 2, fromRect.top + 22);
+  if (!rmr && anstext && typeof flipDock === 'function')
+    flipDock(anstext, fromRect, anstext.getBoundingClientRect());
 }
 """
 
@@ -401,6 +415,9 @@ ROUTER_JS = """
    an iframe; a question that links to it travels along, docked. */
 const rmr = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let data = null, fetchedAt = 0, lastMtime = null, serverGen = null;
+/* after a local answer morph, hold the live re-render briefly so the card
+   settles in place before the loop's fresh data regroups it (#79/#81). */
+let holdRerenderUntil = 0;
 /* /mtime is "<generation> <mtime>": a changed generation means the server
    was rebuilt (--autoreload) or restarted (redeploy) — reload to pick up the
    new shell; a changed mtime just re-renders the live data. */
@@ -631,7 +648,7 @@ async function tick() {
     const { gen, mtime } = parseMtime(await (await fetch('/mtime')).text());
     if (serverGen === null) serverGen = gen;
     else if (gen && gen !== serverGen) { location.reload(); return; }
-    if (mtime !== lastMtime) {
+    if (mtime !== lastMtime && Date.now() >= holdRerenderUntil) {
       lastMtime = mtime; fetchedAt = Date.now();
       data = await (await fetch('/data.json')).json();
       if (view.name === 'dashboard') setContent(buildDashboard(data));
@@ -726,6 +743,11 @@ function mountPopout(w, base, path, tint) {
   doc.body.innerHTML = POPOUT_BODY(base, path);
   const endpoint = location.origin + '/command';   // opener origin, absolute
   const msg = doc.getElementById('pmsg');
+  doc.addEventListener('keydown', ev => {           // Ctrl/Cmd+Enter submits
+    if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
+      ev.preventDefault(); doc.getElementById('pform').requestSubmit();
+    }
+  });
   doc.getElementById('pform').addEventListener('submit', async ev => {
     ev.preventDefault();
     const kind = doc.getElementById('pkind').value;
@@ -796,6 +818,18 @@ async function requestPopout() {
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && open) closeCmd();
+  });
+  // Ctrl/Cmd+Enter submits from a text field: an answer box (anywhere —
+  // questions view, review dock) or the command palette.
+  document.addEventListener('keydown', e => {
+    if (!((e.ctrlKey || e.metaKey) && e.key === 'Enter')) return;
+    const t = e.target;
+    if (t && t.tagName === 'TEXTAREA' && /^qa\\d+$/.test(t.id)) {
+      e.preventDefault(); sendAnswer(+t.id.slice(2));
+    } else if (t && t.id === 'cmdtext') {
+      e.preventDefault();
+      document.getElementById('cmdform').requestSubmit();
+    }
   });
   addEventListener('resize', () => { if (open) place(); });
   document.getElementById('cmdform').addEventListener('submit', async e => {

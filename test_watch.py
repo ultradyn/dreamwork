@@ -263,6 +263,13 @@ class TestAppShell(unittest.TestCase):
         for token in ('parseMtime', 'location.reload', 'serverGen'):
             self.assertIn(token, watch.PAGE)
 
+    def test_page_has_answer_submit_morph(self):
+        # #79: submitting an answer morphs the box into the answered state
+        # (shared answeredInner), and Ctrl/Cmd+Enter submits from a field.
+        for token in ('answeredInner', 'requestSubmit',
+                      "(e.ctrlKey || e.metaKey) && e.key === 'Enter'"):
+            self.assertIn(token, watch.PAGE)
+
     def _serve(self, target):
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), watch.make_handler(target))
