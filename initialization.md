@@ -99,8 +99,10 @@ read, initialization has already happened; return to the loop.
    `bl idea`, `bl next` / `bl grab` / `bl cycle`. With `bl`, map the
    skill's task conventions (priority, type, size, next-up queue-jumps)
    onto bl's own fields and mechanisms — the loop semantics stay the same.
-   Whichever backend: `.dreamwork/tasks.md` is the durable ledger of open
-   tasks and their permanent ids — restore from it in step 8.
+   A backend whose ids and list survive a restart on their own (`bl`) is
+   already the ledger — skip `.dreamwork/tasks.md` there. For a
+   session-scoped backend (the native tools), that file is the durable
+   half: open tasks and their permanent ids, restored in step 8.
 
 7. **Orient.** Read the project's CLAUDE.md and any goals/philosophy docs —
    together with DREAMWORK.md these bound what the loop may do (including

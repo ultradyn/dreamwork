@@ -10,7 +10,9 @@ point is noticing, not box-ticking.
 4. Did this break a promise made elsewhere — docs, cross-references,
    numbering, callers?
 5. Did anything occur to you that was out of scope? Task list, now.
-   If the queue changed at all, `.dreamwork/tasks.md` changes in this
-   same commit — the backend forgets, the ledger doesn't.
+   If the queue changed at all, the ledger (`.dreamwork/tasks.md`)
+   changes in the same commit — the backend forgets, the ledger doesn't.
+   Dreamers: report the queue change instead; the coordinator writes the
+   ledger, so ids can't collide.
 6. Is the increment committable as-is? If not, what is the smallest step
    that makes it so?

@@ -40,9 +40,12 @@ The loop offers five seams; use the ones you need:
   log tail) that wakes the session on real events — with a tick-loop
   fallback for harnesses without a Monitor tool.
 - **Tasks.** Feed work into the shared task list using the core
-  conventions (priority/type/size metadata, plus a namespaced key like
+  conventions (ledger id at the front of the subject;
+  priority/type/size on the ledger line, plus a namespaced key like
   `gh:` for plugin-specific identity). Plugin tasks join normal
-  selection — no private queues.
+  selection — no private queues. A plugin never writes
+  `.dreamwork/tasks.md` itself: ids come from the coordinator, which is
+  the ledger's only writer.
 - **Commands.** Add `<plugin-thing>: ...`-style commands if genuinely
   needed; never repurpose or shadow core commands.
 - **Maintenance.** Contribute rotation items; custom roll.py weights

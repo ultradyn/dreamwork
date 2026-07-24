@@ -24,7 +24,9 @@ open-ended improvement of a project.
   are still on the path that made them. Split anything bigger into multiple
   tasks; each increment must end in a verifiable, committable state.
 - **Ideas always go in the task list.** No idea is lost, and no work happens
-  that isn't a task. The task list is the durable brain of the loop.
+  that isn't a task. The list is the loop's brain; the ledger
+  (`.dreamwork/tasks.md`) is what makes it durable — a backend that
+  forgets on restart is a cache, not a memory.
 - **Know what the human wants.** `DREAMWORK.md` (repo root) records the
   human's high-level goals, philosophy, preferences, and routines. We should
   always know what the human wants so we can make what the human needs —
@@ -80,7 +82,7 @@ fold them first: act on the answer, then move the entry to Answered.
 
 0. **Sync.** Check the task list first. Resume unblocked in-progress work
    before starting anything new; then take any task marked next-up
-   (`metadata.next: true`, newest first, clearing the mark on start) —
+   (marked next-up in the ledger, newest first, clearing the mark on start) —
    an explicit human steer outranks the agent's own ideas. Then: any known
    goal/philosophy misalignment (DREAMWORK.md stale or contradicted)
    outranks everything below — restore alignment before other work.
@@ -207,7 +209,13 @@ results, no ceremony.
   backend's own ids are session-local plumbing. Open tasks only, one
   line each (id, title, priority/type/size, owner or blocked-on, pointer
   to any plan); it is rewritten as part of the increment that changes
-  the queue, not on a separate beat.
+  the queue, not on a separate beat. **The coordinator is its only
+  writer** — it holds the id counter, and a dreamer reports a queue
+  change rather than editing the file: durable shared state wants a
+  single writer, or the next fan-out races it (two dreamers mint the
+  same id and the ledger loses exactly what it exists to keep). On a
+  backend whose own ids are durable (`bl`), skip the file — that backend
+  already is the ledger.
 - `.dreamwork/questions.md` — open questions for the human: proposals
   awaiting a response, unclear-goals items, parked scope calls. Chat is
   not durable — every user-facing ask gets an entry here when made, with
@@ -224,7 +232,9 @@ results, no ceremony.
   questions.md entry for the response. watch.py lists and serves them.
   Archive alongside the answered question.
 - `.dreamwork/status.json` — live loop status for the watch.py dashboard,
-  rewritten each tick. The one `.dreamwork/` file that is **gitignored**:
+  rewritten each tick. Its timestamps come from the system clock, never
+  from memory — a dashboard whose whole thesis is liveness must not
+  render an invented time. The one `.dreamwork/` file that is **gitignored**:
   it's ephemera, not history. The dashboard itself is `watch.py` in this
   skill's directory (read-only, localhost-only):
   `python3 <skill-dir>/watch.py --target . --open`; its port persists in
@@ -237,12 +247,15 @@ results, no ceremony.
 
 ## Task-list conventions
 
-- Every task carries its ledger id (`metadata.id`, and in the subject so
-  it is visible everywhere) — see `.dreamwork/tasks.md`. New task → take
-  the ledger's next id and bump it.
-- `metadata`: `priority` (P1-P3), `type` (idea | task | bug | experiment |
-  chore), `size` (estimated minutes), `feasibility` (note from triage),
-  `next` (true while queued as next-up via `do next`; cleared on start).
+- Every task's subject opens with its ledger id (`#91 — …`); the subject
+  is the field every backend reads back. New task → the coordinator
+  takes the ledger's next id and bumps it.
+- The ledger line carries what selection and triage read: `priority`
+  (P1-P3), `type` (idea | task | bug | experiment | chore), `size`
+  (estimated minutes), `feasibility` (note from triage), the next-up
+  mark (set by `do next`, cleared on start), and owner or blocked-on.
+  Mirror them into the backend's `metadata` where it surfaces them —
+  never depend on it unread.
 - Dependencies via `addBlockedBy` / `addBlocks`.
 - Big features get a planning doc on disk (`.dreamwork/docs/plans/<slug>.md`
   or the repo's convention); the task itself is a thin pointer. Bulk stays
@@ -257,7 +270,7 @@ if Max is away).
   point (commit it, or stash and split a remainder task), create the task
   as in_progress, and work it right away.
 - `do next: <text>` — queue-jump. Create the task and mark it next-up
-  (`metadata.next: true`); it gets picked as soon as the current task
+  (next-up mark in the ledger); it gets picked as soon as the current task
   lands, ahead of priority order. Several next-ups: newest first — the
   human's latest steer wins. Bare `do next` (no text): just run the
   selection algorithm now.
@@ -299,9 +312,14 @@ if Max is away).
 - Verification before completion: the project's verification passes
   (tests/lint, or its stated routine) before a task is marked completed.
 - Experiments are feature-gated.
-- Compaction-safe: durable state lives in the task list, DREAMWORK.md,
-  `.dreamwork/` (dreams, docs, plans), and commits — never only in
-  conversation.
+- Compaction-safe: durable state lives in files — DREAMWORK.md,
+  `.dreamwork/` (ledger, dreams, docs, plans), and commits — never only
+  in conversation, and never only in a session-scoped task backend.
+- Never let the loop depend on a channel you have not read back. Task
+  backends accept metadata they may never surface (Claude Code's
+  `TaskGet` returns subject, status, and description — no metadata), so
+  anything selection or triage reads lives in the subject, the
+  description, or the ledger.
 - Mismatched signals mean something is wrong. When context disagrees with
   itself — e.g. the cwd doesn't match the work being discussed, the task
   list contradicts git — don't guess and don't proceed on the wrong

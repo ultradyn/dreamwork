@@ -68,3 +68,12 @@ source dream. Not a log — only things that should change future behavior.
 - `git add -A` while a dreamer holds the same tree silently commits its
   in-flight edits — stage by explicit path whenever work is parallel.
   (coordinator, 2026-07-25 restart)
+- Durable shared state wants a single writer: naming an owner is cheap and
+  invisible to omit, and the race only appears under fan-out — when nobody
+  is watching. (2026-07-25-0832-ledger-coherence)
+- Write a migration's "How to apply" against the broken target that
+  motivated it, not the healthy one you are sitting in.
+  (2026-07-25-0832-ledger-coherence)
+- Never let selection depend on a channel you have not read back: Claude
+  Code's TaskGet returns subject/status/description only, so task
+  `metadata` is write-only there. (2026-07-25-0832-ledger-coherence)
