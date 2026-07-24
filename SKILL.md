@@ -159,8 +159,12 @@ if Max is away).
   lands, ahead of priority order. Several next-ups: newest first — the
   human's latest steer wins. Bare `do next` (no text): just run the
   selection algorithm now.
-- `add idea: <text>` — capture. Add to the task list slotted by priority
-  (feasibility-triage if complex); doesn't jump the queue.
+- `add idea: <text>` — capture, then expand. Add to the task list slotted
+  by priority (feasibility-triage if complex); doesn't jump the queue.
+  Then briefly develop the idea in line with the project's philosophy and
+  goals: clearly-aligned implications and subtasks enter the task list as
+  normal tasks; unclear extras park in `.dreamwork/questions.md`; and
+  since the human just typed this, a one-line consult now beats guessing.
 - `status` — current task, queue summary, recent completions, open
   questions from `.dreamwork/questions.md`.
 - `pause` / `resume` — TaskStop the heartbeat monitor / re-arm it.
