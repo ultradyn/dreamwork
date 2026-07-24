@@ -157,18 +157,27 @@ STYLE = """<style>
   .follow.human { color:var(--lit); }
   .who { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
     font-size:.62rem; margin-right:.7ch; }
-  .notewrap { display:flex; gap:.4rem; align-items:flex-start;
-    margin:.3rem 0 .2rem; max-width:56ch; }
-  .notebox { flex:1; background:var(--panel); color:var(--text);
-    border:1px solid var(--line); border-radius:var(--radius); font:inherit;
-    font-size:.75rem; padding:.25rem .45rem; min-height:1.7rem; resize:vertical;
-    box-sizing:border-box; opacity:.65; transition:opacity .3s ease; }
-  .notebox:focus { opacity:1; }
-  .notebtn { background:transparent; color:var(--dim); border:1px solid var(--line);
-    border-radius:var(--radius); font:inherit; font-size:.7rem;
-    padding:.2rem .6rem; cursor:pointer; align-self:stretch;
-    transition:color .3s ease, border-color .3s ease; }
-  .notebtn:hover { color:var(--accent); border-color:var(--border); }
+  /* ONE input per card (#103, the human's words): the same field sends an
+     answer or a note. The field and its send button share a single border
+     and a single rounded box — the wrapper carries them and clips the
+     button's corners — so they read as one object rather than a control
+     placed next to a control. The mode group sits beneath. */
+  .qcompose { margin:.45rem 0 .2rem; max-width:56ch; }
+  .qfield { display:flex; align-items:stretch;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--radius); overflow:hidden;
+    transition:border-color .3s ease; }
+  .qfield:focus-within { border-color:var(--border); }
+  .qfield textarea { flex:1; min-width:0; background:none; border:0;
+    color:var(--text); font:inherit; font-size:.75rem; padding:.4rem .55rem;
+    min-height:2.4rem; resize:vertical; outline:none; }
+  .qsend { flex:none; background:var(--panel2); color:var(--accent);
+    border:0; border-left:1px solid var(--line); font:inherit;
+    font-size:.7rem; padding:0 1rem; cursor:pointer;
+    transition:background .3s ease, color .3s ease; }
+  .qsend:hover { background:#26344a; }
+  .qmodes { margin-top:.3rem; }
+  .qmodes .sgbtn { padding:.2rem .5rem; font-size:.7rem; }
   #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
              height:100vh; }
   #devbox { position:fixed; top:.6rem; right:.8rem; z-index:10;
@@ -294,22 +303,28 @@ STYLE = """<style>
      soft (.3s, the dream easing). The selected label glows rather than
      changing metrics — a text effect that moved layout would resize the
      buttons and so move the target the indicator is chasing. */
-  .cmdkinds { position:relative; display:flex; flex-wrap:wrap; gap:.1rem;
-    margin:.3rem 0 .1rem; }
-  .cmdind { position:absolute; top:0; left:0; z-index:0; width:0; height:0;
+  /* ONE sliding selection group, shared by the composer's command kinds and
+     by every question card's answer/note switch (#103). Geometry and motion
+     live here; each user styles only its own buttons. */
+  .sgroup { position:relative; display:flex; flex-wrap:wrap; gap:.1rem; }
+  .sgind { position:absolute; top:0; left:0; z-index:0; width:0; height:0;
     background:var(--panel2); border:1px solid var(--border);
     border-radius:var(--radius); box-sizing:border-box;
     transition:transform .3s cubic-bezier(.32,.12,.2,1),
                width .3s cubic-bezier(.32,.12,.2,1),
                height .3s cubic-bezier(.32,.12,.2,1); }
-  .cmdind.snap { transition:none; }        /* land, never slide (see JS) */
-  .cmdkind { position:relative; z-index:1; background:none; font:inherit;
+  .sgind.snap { transition:none; }         /* land, never slide (see JS) */
+  .sgbtn { position:relative; z-index:1; background:none; font:inherit;
     border:1px solid transparent; border-radius:var(--radius);
-    color:var(--dim); padding:.28rem .45rem; cursor:pointer;
+    color:var(--dim); cursor:pointer;
     transition:color .3s ease, text-shadow .3s ease; }
-  .cmdkind:hover { color:var(--muted); }
-  .cmdkind.on { color:var(--accent);
+  .sgbtn:hover { color:var(--muted); }
+  /* the selected label GLOWS rather than re-metricking: a text effect that
+     changed layout would resize the button the indicator is chasing */
+  .sgbtn.on { color:var(--accent);
     text-shadow:0 0 12px rgba(165,180,252,.45); }
+  .cmdkinds { margin:.3rem 0 .1rem; }
+  .cmdkind { padding:.28rem .45rem; }
   /* Hover discoverability: the row carries the common kinds, and the ⋯ icon
      reveals EVERY command with a one-line description — so a rarely-used kind
      is discoverable rather than hidden knowledge. Rendered from COMMANDS at
@@ -368,7 +383,7 @@ STYLE = """<style>
   .ripple { position:fixed; z-index:40; border-radius:50%; pointer-events:none;
     border:1px solid var(--accent); }
   @media (prefers-reduced-motion: reduce) {
-    #cmdplus, #cmdpalette, #layerhint, .cmdind, .cmdkind, .cmdmenu,
+    #cmdplus, #cmdpalette, #layerhint, .sgind, .sgbtn, .cmdmenu,
     .cmdmenuitem, .cmdmorebtn { transition:none; }
   }
 </style>"""
@@ -405,7 +420,7 @@ APP_BODY = """<canvas id="dreambg"></canvas>
  <form id="cmdform" autocomplete="off">
   <div class="label">command the dream</div>
   <div class="cmdpick">
-   <div class="cmdkinds" id="cmdkinds" role="radiogroup"
+   <div class="sgroup cmdkinds" id="cmdkinds" role="radiogroup"
         aria-label="command"></div>
    <div class="cmdmore" id="cmdmore">
     <button type="button" class="cmdmorebtn" aria-haspopup="menu"
@@ -559,11 +574,74 @@ const followThread = follows => (follows && follows.length)
         `${mdInline(txt)}</div>`;
     }).join('') + `</div>`
   : '';
-const noteBox = key =>
-  `<div class="notewrap"><textarea class="notebox" id="nb${key}"` +
-  ` placeholder="add a note…"></textarea>` +
-  `<button class="notebtn" onclick="sendComment('${key}')">note</button></div>`;
-const qaFoot = (follows, key) => followThread(follows) + noteBox(key);
+/* ── the sliding selection group ──────────────────────────────────────────
+   One indicator that slides to the active option, shared by the composer's
+   command kinds and by every question card's answer/note switch (#103).
+   Three rules, learned in the composer and true for any user of it:
+
+   - **Land, don't slide, on first paint and on reflow** (`snap`). The
+     indicator starts 0-wide at the group's origin, so animating from there
+     reads as a glitch rather than a choice — the enter-snap rule. Add
+     `.snap` (transition:none), set the geometry, force a reflow, remove it.
+   - **Size to the active BUTTON, never to the group.** The row wraps once a
+     vocabulary outgrows one line, and a height:100% indicator would span
+     every line at once.
+   - **The selected label glows, it does not re-metric** (CSS): a text effect
+     that changed layout would resize the very target being chased. */
+function slideIndicator(group, snap) {
+  if (!group) return;
+  const ind = group.querySelector(':scope > .sgind');
+  const btn = group.querySelector(':scope > .sgbtn.on');
+  if (!ind || !btn) return;
+  const g = group.getBoundingClientRect(), b = btn.getBoundingClientRect();
+  if (!b.width) return;                  // not laid out yet; nothing to chase
+  if (snap || rmr) ind.classList.add('snap');
+  ind.style.width = b.width + 'px';
+  ind.style.height = b.height + 'px';
+  ind.style.transform = 'translate(' + (b.left - g.left) + 'px,' +
+                        (b.top - g.top) + 'px)';
+  if (snap && !rmr) {
+    void ind.offsetWidth;                // reflow so the landing is not a slide
+    ind.classList.remove('snap');
+  }
+}
+/* every group that exists right now lands its indicator — called after any
+   render, and on resize, since a wrapped row moves its buttons */
+const paintIndicators = snap =>
+  document.querySelectorAll('.sgroup').forEach(g => slideIndicator(g, snap));
+/* ── the card's one input (#103) ──────────────────────────────────────────
+   The human's words: "use same text input for answer and note. below text
+   input, have a button group choose between [ Answer | Add Note ]. on the
+   RHS of the text field, integrate a 'send' button that sits flush with the
+   text field so they appear to be one thing."
+
+   The mode picks the endpoint. Only modes the entry's state can actually
+   accept are offered — /answer appends into the Open section, so a folded
+   entry is note-only and the group does not render at all rather than
+   offering a choice that would fail. A card that already has an answer
+   defaults to note: answering again is an amendment, not the obvious act. */
+const QMODES = { answer: 'answer', note: 'add note' };
+const qaModesFor = st => st === 'folded' ? ['note'] : ['answer', 'note'];
+const qaDefaultMode = st => st === 'open' ? 'answer' : 'note';
+const QPLACE = { answer: 'answer…', note: 'add a note…' };
+const qaCompose = (key, st) => {
+  const modes = qaModesFor(st), mode = qaDefaultMode(st);
+  const group = modes.length < 2 ? '' :
+    `<div class="sgroup qmodes" role="radiogroup"` +
+    ` aria-label="answer or add a note" data-modes="${key}">` +
+    `<div class="sgind"></div>` +
+    modes.map(m => `<button type="button" role="radio" data-mode="${m}"` +
+      ` class="sgbtn qmode${m === mode ? ' on' : ''}"` +
+      ` aria-checked="${m === mode ? 'true' : 'false'}">${QMODES[m]}</button>`
+    ).join('') + `</div>`;
+  return `<div class="qcompose" data-mode="${mode}">` +
+    `<div class="qfield">` +
+    `<textarea id="qi${key}" placeholder="${QPLACE[mode]}"></textarea>` +
+    `<button type="button" class="qsend"` +
+    ` onclick="submitCard('${key}')">send</button></div>` +
+    group + `</div>`;
+};
+const qaFoot = (follows, key, st) => followThread(follows) + qaCompose(key, st);
 /* THE question component (#105). Every question on every surface —
    dashboard, /questions, the review dock, and the answer-submit morph —
    renders through this one card, so a change to how a question looks is one
@@ -590,11 +668,8 @@ const qaInner = (q, key) => {
   const answer = st === 'awaiting'
     ? `<div class="anstag">answered · awaiting fold</div>` +
       `<div class="anstext">${mdInline(q.answer)}</div>` : '';
-  const box = st === 'open'
-    ? `<textarea id="qa${key}" placeholder="answer…"></textarea>` +
-      `<button onclick="sendAnswer('${key}')">answer</button>` : '';
-  return `<div class="qt">${esc(q.title)}</div>${body}${answer}${box}` +
-    qaFoot(q.follows, key);
+  return `<div class="qt">${esc(q.title)}</div>${body}${answer}` +
+    qaFoot(q.follows, key, st);
 };
 const qaCard = (q, key) =>
   `<div class="qa ${qaState(q, key)}" data-qkey="${key}">` +
@@ -712,8 +787,19 @@ function ages() {
   if (upd && fetchedAt) upd.textContent =
     `updated ${ageStr(fetchedAt/1000)} ago`;
 }
+/* one field, two destinations: the mode group under the box picks which
+   (#103). Everything downstream — the morph, the ripple, the re-render hold
+   — is unchanged; only the routing is new. */
+const cardMode = key => {
+  const el = document.getElementById('qi' + key);
+  const c = el && el.closest('.qcompose');
+  return (c && c.dataset.mode) || 'note';
+};
+function submitCard(key) {
+  return cardMode(key) === 'answer' ? sendAnswer(key) : sendComment(key);
+}
 async function sendAnswer(key) {
-  const el = document.getElementById('qa' + key);
+  const el = document.getElementById('qi' + key);
   const q = qaEntry(key);
   if (!el || !el.value.trim() || !q) return;
   const val = el.value.trim();
@@ -740,7 +826,7 @@ async function sendAnswer(key) {
 /* thread a follow-up note onto any entry — same lifted-hero morph as an
    answer: the note lifts from the box into the thread, ripple accenting. */
 async function sendComment(key) {
-  const el = document.getElementById('nb' + key);
+  const el = document.getElementById('qi' + key);
   const entry = qaEntry(key);
   if (!el || !el.value.trim() || !entry) return;
   const val = el.value.trim();
@@ -753,7 +839,7 @@ async function sendComment(key) {
   let thread = card.querySelector('.thread');
   if (!thread) {
     thread = document.createElement('div'); thread.className = 'thread';
-    card.insertBefore(thread, card.querySelector('.notewrap'));
+    card.insertBefore(thread, card.querySelector('.qcompose'));
   }
   const f = document.createElement('div');
   f.className = 'follow human';        // it is his; say so, same as a reload
@@ -841,8 +927,32 @@ async function buildCurrent() {
 }
 function setContent(html) {
   document.getElementById('view').innerHTML = html;
+  // fresh groups carry a 0-width indicator, so land it rather than let it
+  // slide up out of nothing (the enter-snap rule)
+  paintIndicators(true);
   ages();
 }
+/* switching a card's mode: the indicator slides, the placeholder follows,
+   and the field keeps whatever is typed in it — the text is the point, the
+   mode is only where it goes. */
+addEventListener('click', e => {
+  const btn = e.target.closest && e.target.closest('.qmode');
+  if (!btn) return;
+  e.preventDefault();
+  const group = btn.closest('.sgroup'), wrap = btn.closest('.qcompose');
+  if (!group || !wrap) return;
+  const mode = btn.dataset.mode;
+  wrap.dataset.mode = mode;
+  group.querySelectorAll('.sgbtn').forEach(b => {
+    const on = b === btn;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  const ta = wrap.querySelector('textarea');
+  if (ta) ta.placeholder = QPLACE[mode] || '';
+  slideIndicator(group, false);           // membership is fixed: it slides
+});
+addEventListener('resize', () => paintIndicators(true));
 /* ── the persistent chrome (#110) ─────────────────────────────────────────
    The heading is not content, it is the page's frame: the same + opener, a
    title, and a crumb row, on every route. While it lived inside #view it
@@ -1374,7 +1484,6 @@ function popoutDoc(url, label) {
   // its 0-width start reads as a glitch, not a choice (the enter-snap rule).
   const kindsEl = document.getElementById('cmdkinds');
   const menuEl = document.getElementById('cmdmenu');
-  let indEl = null;
   let activeKind = (COMMANDS[0] || {}).kind;
   // The row carries the common kinds PLUS the active one when it is uncommon,
   // so whatever is selected always has a button for the indicator to sit on.
@@ -1389,12 +1498,11 @@ function popoutDoc(url, label) {
     if (want.join('\\u0000') === rowKinds.join('\\u0000')) return false;
     rowKinds = want;
     kindsEl.innerHTML =
-      '<span class="cmdind" id="cmdind" aria-hidden="true"></span>' +
+      '<span class="sgind cmdind" id="cmdind" aria-hidden="true"></span>' +
       COMMANDS.filter(c => want.indexOf(c.kind) >= 0).map(c =>
-        '<button type="button" class="cmdkind" data-kind="' + esc(c.kind) +
+        '<button type="button" class="sgbtn cmdkind" data-kind="' + esc(c.kind) +
         '" role="radio" aria-checked="false" title="' + esc(c.desc) + '">' +
         esc(c.label) + '</button>').join('');
-    indEl = document.getElementById('cmdind');
     return true;
   }
   // The menu lists EVERY kind with its description — the discoverability
@@ -1406,22 +1514,9 @@ function popoutDoc(url, label) {
       esc(c.kind) + '"><span class="cmk">' + esc(c.label) +
       '</span><span class="cmd">' + esc(c.desc) + '</span></button>').join('');
   }
-  function moveIndicator(snap) {
-    if (!kindsEl || !indEl) return;
-    const btn = kindsEl.querySelector('.cmdkind.on');
-    if (!btn) return;
-    const g = kindsEl.getBoundingClientRect(), b = btn.getBoundingClientRect();
-    if (!b.width) return;                  // not laid out yet; nothing to chase
-    if (snap || rmr) indEl.classList.add('snap');
-    indEl.style.width = b.width + 'px';
-    indEl.style.height = b.height + 'px';
-    indEl.style.transform = 'translate(' + (b.left - g.left) + 'px,' +
-                            (b.top - g.top) + 'px)';
-    if (snap && !rmr) {
-      void indEl.offsetWidth;              // reflow so the landing is not a slide
-      indEl.classList.remove('snap');
-    }
-  }
+  // the same slideIndicator every question card uses (#103) — one
+  // implementation, so the composer and the cards can never drift apart
+  const moveIndicator = snap => slideIndicator(kindsEl, snap);
   function setKind(kind) {
     activeKind = kind;
     // a rebuilt row has a brand-new 0-width indicator, so land it rather than
@@ -1488,10 +1583,8 @@ function popoutDoc(url, label) {
   document.addEventListener('keydown', e => {
     if (!((e.ctrlKey || e.metaKey) && e.key === 'Enter')) return;
     const t = e.target;
-    if (t && t.tagName === 'TEXTAREA' && /^qa[oa]\\d+$/.test(t.id)) {
-      e.preventDefault(); sendAnswer(t.id.slice(2));
-    } else if (t && /^nb[oa]\\d+$/.test(t.id)) {
-      e.preventDefault(); sendComment(t.id.slice(2));
+    if (t && t.tagName === 'TEXTAREA' && /^qi[oa]\\d+$/.test(t.id)) {
+      e.preventDefault(); submitCard(t.id.slice(2));
     } else if (t && t.id === 'cmdtext') {
       e.preventDefault();
       document.getElementById('cmdform').requestSubmit();

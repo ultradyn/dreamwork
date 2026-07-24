@@ -344,9 +344,29 @@ change to how a question looks is one edit rather than a hunt.
   can restate a *live* card in its new state without assembling look-alike
   markup. Any future in-place state change uses the same seam.
 
-Every state carries the follow-up thread (`- **Follow-up (via watch…)**`
-sub-bullets) and the `add a note` box (`sendComment`, POST `/comment`); the
-Answered section is rendered structured from `answered_entries`, not raw
+Every state carries the follow-up thread and **one input** (`qaCompose`).
+The human's words: *"use same text input for answer and note. below text
+input, have a button group choose between [ Answer | Add Note ]. on the RHS
+of the text field, integrate a 'send' button that sits flush with the text
+field so they appear to be one thing."*
+
+- **Field and send are one object.** The `.qfield` wrapper carries the
+  border, the radius, and `overflow:hidden`; the textarea has no border of
+  its own and the button spans the wrapper's full height and sits at its
+  edge. Two controls side by side would read as two controls.
+- **The mode picks the endpoint** (`/answer` vs `/comment`) and nothing else
+  — the typed text, the submit morph, Ctrl/Cmd+Enter and the ~1.6s
+  `holdRerenderUntil` guard are identical either way. The mode group is the
+  shared sliding group, not a second implementation of one.
+- **Only offer modes the state can accept.** `/answer` appends into the Open
+  section, so a **folded** entry is note-only and the group is not rendered
+  at all — a choice that would fail is better absent than validated. An
+  **awaiting** entry defaults to note: answering again is an amendment, not
+  the obvious act.
+- The placeholder follows the mode; the typed text does not, because the
+  text is the point and the mode is only where it goes.
+
+The Answered section is rendered structured from `answered_entries`, not raw
 text. The questions/dashboard views group cards by state with their own
 counts — grouping is the view's job, rendering is the card's.
 
@@ -384,27 +404,37 @@ fills its `<option>`s from it. A new kind is one entry and nothing else;
 plugin-contributed kinds (#86) append to the list, so nothing downstream may
 assume a fixed set or a fixed length.
 
-**Choosing a kind** is a radiogroup of buttons with one background indicator
-that slides between them — `.cmdkinds` / `.cmdind` / `.cmdkind`, driven by
-`moveIndicator(snap)`. The row carries the `common` kinds plus the active one
-when it is uncommon, so whatever is selected always has a button for the
-indicator to sit on. The indicator is sized to the active *button*, never to
-the group: the row wraps once a vocabulary outgrows one line, and a
-`height:100%` indicator would span every line at once. Three rules:
+**Choosing a kind** uses the shared sliding group (below): `.sgroup` /
+`.sgind` / `.sgbtn`, plus its own `cmdkinds` / `cmdkind` styling. The row
+carries the `common` kinds plus the active one when it is uncommon, so
+whatever is selected always has a button for the indicator to sit on.
 
-- **Land, don't slide, on open** (`moveIndicator(true)`) and on reflow. The
+**Rebuild only on membership change.** `renderKinds()` returns early when the
+row's kinds are unchanged, so a common→common switch leaves the DOM (and the
+indicator) alone and it slides. A rebuild replaces the indicator with a fresh
+0-width one, so that path lands instead.
+
+### The sliding selection group
+
+One indicator that slides to the active option, used by the composer's
+command kinds and by every question card's answer/note switch — one
+implementation (`slideIndicator`, `.sgroup` / `.sgind` / `.sgbtn`), so the
+two can never drift apart. Geometry and motion live in the shared classes;
+each user styles only its own buttons. Three rules, learned in the composer
+and true for any user of it:
+
+- **Land, don't slide, on first paint and on reflow** (`snap`). The
   indicator starts 0-wide at the group's origin, so animating from there
   reads as a glitch rather than a choice — the enter-snap rule again. Add
   `.snap` (`transition:none`), set the geometry, force a reflow, then remove
-  it. Verify with a per-frame trace (`dev/capture/indtrace.mjs`), never a
-  screenshot.
+  it. Verify with a per-frame trace (`dev/capture/indtrace.mjs`,
+  `oneinput.mjs`), never a screenshot.
+- **Size to the active BUTTON, never to the group.** The row wraps once a
+  vocabulary outgrows one line, and a `height:100%` indicator would span
+  every line at once.
 - **The selected label glows, it does not re-metric.** `text-shadow`, not
   letter-spacing or weight: a text effect that changes layout would resize
   the buttons and so move the very target the indicator is chasing.
-- **Rebuild only on membership change.** `renderKinds()` returns early when
-  the row's kinds are unchanged, so a common→common switch leaves the DOM
-  (and the indicator) alone and it slides. A rebuild replaces the indicator
-  with a fresh 0-width one, so that path lands instead.
 
 **Discoverability is the ⋯ menu.** Hovering (or focusing) `.cmdmorebtn`
 reveals `.cmdmenu` — *every* kind, common or not, each with its one-line

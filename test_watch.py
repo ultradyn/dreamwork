@@ -437,8 +437,12 @@ class TestAppShell(unittest.TestCase):
     def test_command_selection_is_a_button_group(self):
         # The kind picker is a radiogroup with a sliding indicator, not a
         # <select>; the indicator must land (snap) rather than tween in.
+        # Since #103 it is the SHARED .sgroup group the question cards use,
+        # so there is one implementation and the two cannot drift.
         for token in ('id="cmdkinds"', 'id="cmdind"', 'role="radiogroup"',
-                      'moveIndicator(true)', "indEl.classList.add('snap')",
+                      'moveIndicator(true)', 'class="sgroup cmdkinds"',
+                      'function slideIndicator', "ind.classList.add('snap')",
+                      'const moveIndicator = snap => slideIndicator(kindsEl, snap)',
                       'const kind = activeKind;'):
             self.assertIn(token, watch.PAGE)
         self.assertNotIn('id="cmdkind"', watch.PAGE)   # the old <select>
@@ -579,10 +583,12 @@ class TestAppShell(unittest.TestCase):
             self.assertIn(token, watch.PAGE)
 
     def test_page_has_followup_wiring(self):
-        # #82: every entry gets a follow-up thread + add-a-note box that POSTs
-        # /comment; answered entries are rendered structured (answered_entries).
+        # #82: every entry gets a follow-up thread and a box that POSTs
+        # /comment; answered entries are rendered structured
+        # (answered_entries). Since #103 that box is the card's ONE input,
+        # shared with the answer path and routed by its mode group.
         for token in ('sendComment', 'postComment', "fetch('/comment'",
-                      'followThread', 'noteBox', 'answered_entries'):
+                      'followThread', 'qaCompose', 'answered_entries'):
             self.assertIn(token, watch.PAGE)
 
     def test_page_has_pip_popout_buttons(self):
