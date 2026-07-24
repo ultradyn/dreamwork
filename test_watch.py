@@ -94,6 +94,17 @@ class TestCollector(unittest.TestCase):
             QUESTIONS, "No such question", "x", "2026-07-25")
         self.assertFalse(matched)
 
+    def test_log_event_appends(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            watch.log_event(d, 'answer: "x" -> questions.md')
+            watch.log_event(d, 'answer: "y" -> questions.md')
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            with open(log) as f:
+                lines = f.read().splitlines()
+            self.assertEqual(len(lines), 2)
+            self.assertIn('answer: "y"', lines[1])
+
     def test_persistent_port_stable(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)

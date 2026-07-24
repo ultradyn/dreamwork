@@ -629,6 +629,21 @@ def persistent_port(target):
 ANSWER_LOCK = threading.Lock()
 
 
+def log_event(target, line):
+    """One-line user-action summary for agents (.dreamwork/watch-events.log).
+
+    Best-effort append; points an agent at the right file and next step.
+    Gitignored ephemera. Agents tail it with a Monitor tool (instant wake)
+    or check its mtime each tick.
+    """
+    try:
+        path = os.path.join(target, ".dreamwork", "watch-events.log")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {line}\n")
+    except OSError:
+        pass
+
+
 def make_handler(target, dev=False):
     page = PAGE.replace("/*DEV*/false", "true") if dev else PAGE
 
@@ -682,6 +697,9 @@ def make_handler(target, dev=False):
                     return
                 with open(qpath, "w", encoding="utf-8") as f:
                     f.write(new_text)
+            log_event(target,
+                      f'answer: "{title}" -> .dreamwork/questions.md '
+                      f'(fold the answer, act, move to Answered)')
             self._send(json.dumps({"ok": True}), "application/json")
 
         def log_message(self, *_args):
