@@ -30,7 +30,8 @@ read, initialization has already happened; return to the loop.
    - No DREAMWORK.md yet: if any plugins are visible, ask now; the wizard
      records the decisions.
    Invoke the chosen plugins before continuing. None visible: skip
-   silently.
+   silently. (Authoring guide: `writing-plugins.md` in this skill's
+   directory.)
 
 4. **Setup wizard (only when DREAMWORK.md is absent).** Runs after plugins
    so loaded plugins can extend or reshape the interview. A short
