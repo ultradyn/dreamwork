@@ -149,6 +149,15 @@ owns (files/dirs) at dispatch; the coordinator stays off those. After
 non-conflicting tasks — one parallel increment at a time, so there is
 never a split brain over the same files.
 
+Dreamers are batches, not careers. A long-lived dreamer's context grows
+until fresh eyes are cheaper — bound its scope to the current batch,
+retire it when the batch lands, and spawn fresh for new work (it
+inherits the styleguide, docs, and lessons; that's the shared memory).
+Exception: a tight follow-up to its in-flight work (a bug in what it
+just built, a refinement of its own motion language) goes to the
+incumbent, prioritized, before it wraps — context that hot is worth
+spending.
+
 All subagents report to the coordinator and never use `attn`. Subagents
 never stop or pause loop machinery — the heartbeat monitor, the watch
 server, the loop itself; if one believes the loop should stop, it says so
