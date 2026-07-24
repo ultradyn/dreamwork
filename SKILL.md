@@ -25,26 +25,29 @@ open-ended improvement of a project.
   tasks; each increment must end in a verifiable, committable state.
 - **Ideas always go in the task list.** No idea is lost, and no work happens
   that isn't a task. The task list is the durable brain of the loop.
+- **Know what the human wants.** `DREAMWORK.md` (repo root) records the
+  human's high-level goals, philosophy, preferences, and routines. We should
+  always know what the human wants so we can make what the human needs —
+  when in doubt about whether work fits, that file is the reference. It
+  grows incrementally: when the human expresses a durable preference or
+  goal mid-loop, record it there.
 - **Reflection over momentum.** The heartbeat buys thinking time after each
   change. Use it — a beat spent noticing a mistake is cheaper than an hour
   spent undoing it.
 
-## Setup (on load)
+## Initialization (once per session)
 
-1. **Heartbeat.** Start the wake timer — 4.75 min stays under the 5-minute
-   prompt-cache TTL, keeping the loop cheap:
+Read `initialization.md` from this skill's base directory and follow it —
+in order: confirm the target project, read the
+target's DREAMWORK.md (if present), resolve plugins (`ud-dreamwork-*`
+skills, which may extend later steps), run the setup wizard when
+DREAMWORK.md is absent, then heartbeat, task backend, orientation,
+reconciliation, green baseline, first-run seeding, and the opening status
+report.
 
-   `Monitor command="heartbeat 4.75m 'dream tick'" triggerTurn=true persistent=true`
-
-   No regex filter. If the `heartbeat` CLI is absent, fall back to
-   `while true; do echo 'dream tick'; sleep 285; done`. Re-arm after session
-   restart or resume. (Same mechanism as the heartbeat-monitor skill.)
-2. **Task backend.** Native Claude Code task tools (TaskCreate / TaskList /
-   TaskGet / TaskUpdate) by default. If the repo already has backlog
-   configured (a `.backlog/` dir exists), use `bl` instead: `bl howto`,
-   `bl idea`, `bl next` / `bl grab` / `bl cycle`.
-3. **Orient.** Read the project's CLAUDE.md and any goals/philosophy docs,
-   review the task list, and give Max a one-paragraph status.
+Initialization runs once per session (or on resume). This SKILL.md may be
+loaded multiple times in a long session — if the heartbeat is already armed
+and DREAMWORK.md has been read, skip initialization and return to the loop.
 
 ## The loop — on every heartbeat tick
 
@@ -62,7 +65,9 @@ approval. Real user messages always take priority over the loop.
 ## Selecting the next task
 
 0. **Sync.** Check the task list first. Resume unblocked in-progress work
-   before starting anything new.
+   before starting anything new; then take any task marked next-up
+   (`metadata.next: true`, newest first, clearing the mark on start) —
+   an explicit human steer outranks the agent's own ideas.
 1. **Out-of-scope leftovers.** In recent work, did anything occur to you that
    was out of scope at the time? If complex: do a quick feasibility check,
    then add it to the task list. Otherwise: do it now (add it as in_progress
@@ -77,13 +82,14 @@ approval. Real user messages always take priority over the loop.
 3. **Still nothing:**
    1. **Brainstorm (rare).** Only when few actionable ideas remain (fewer
       than ~3 pending unblocked tasks) and no brainstorm has run recently:
-      dispatch a subagent with the superpowers:brainstorming skill.
-      Constraints for it: ideas must be consistent with the project's goals
-      and philosophy; experiments are fine but must be feature-gated; big
-      feature swings and pivots are rejected (big changes genuinely necessary
-      to solve a problem are exempt — those are a fact of life). The subagent
-      must NOT use `attn`. Record when the brainstorm ran (metadata on a
-      marker task) so it stays occasional.
+      dispatch a dreamer subagent (see Subagents) with the
+      superpowers:brainstorming skill. Constraints for it: ideas must be
+      consistent with the project's goals and philosophy (per DREAMWORK.md
+      and CLAUDE.md — pass the relevant parts into the subagent prompt);
+      experiments are fine but must be feature-gated; big feature swings
+      and pivots are rejected (big changes genuinely necessary to solve a
+      problem are exempt — those are a fact of life). Record when the
+      brainstorm ran (metadata on a marker task) so it stays occasional.
    2. **Backlog.** Otherwise pick the highest-priority unblocked pending
       task.
 4. **Maintenance rotation.** List empty and brainstorm recent? Rotate
@@ -91,43 +97,86 @@ approval. Real user messages always take priority over the loop.
    gaps; docs freshness; task-list grooming (dedupe, reprioritize, prune
    stale). If truly nothing: idle quietly until the next tick — no make-work.
 
+## Subagents — utilities and dreamers
+
+Two kinds, nothing in between:
+
+- **Utility subagents** — narrow tools: answer a question (e.g. an Explore
+  agent for "how does X work?" or "what's relevant to Y?") or run a scoped
+  mechanical job. Focused prompt in, focused answer out. No dream files.
+- **Dreamers** — little versions of us, dispatched for substantive work
+  (brainstorming, an increment, a review). They share our memories: pass
+  them DREAMWORK.md, the relevant `.dreamwork/docs/`, recent dreams, and
+  the task's context. When a dreamer finishes, if it had anything to say
+  beyond its direct result — insights, surprises, out-of-scope ideas,
+  warnings — it writes `.dreamwork/dreams/<date>-<time>-<slug>.md` (e.g.
+  `2026-07-25-0140-export-panel-jank.md`). Nothing to say → no file; empty
+  dreams are noise. The coordinator reads new dreams and captures any ideas
+  into the task list.
+
+All subagents report to the coordinator and never use `attn`.
+
+## Durable state — `.dreamwork/`
+
+- `DREAMWORK.md` (repo root) — what the human wants; see Initialization.
+- `.dreamwork/dreams/` — dream journals from dreamer subagents.
+- `.dreamwork/docs/` — living docs collaboratively added to and maintained
+  by us, the dreamers: design notes, discovered conventions, gotchas,
+  architecture understanding. Maintained means pruned and updated when
+  stale, not append-only.
+- All of it is committable project content, like CLAUDE.md.
+
 ## Task-list conventions
 
 - `metadata`: `priority` (P1-P3), `type` (idea | task | bug | experiment |
-  chore), `size` (estimated minutes), `feasibility` (note from triage).
+  chore), `size` (estimated minutes), `feasibility` (note from triage),
+  `next` (true while queued as next-up via `do next`; cleared on start).
 - Dependencies via `addBlockedBy` / `addBlocks`.
-- Big features get a planning doc on disk (`docs/plans/<slug>.md` or the
-  repo's convention); the task itself is a thin pointer. Bulk stays out of
-  the task list until it's actually time to implement.
+- Big features get a planning doc on disk (`.dreamwork/docs/plans/<slug>.md`
+  or the repo's convention); the task itself is a thin pointer. Bulk stays
+  out of the task list until it's actually time to implement.
 
 ## Commands
 
 Most bare user messages map to one of these; when ambiguous, ask (via `attn`
 if Max is away).
 
-- `add idea: <text>` — capture to the task list; feasibility-triage if
-  complex.
-- `do next` / `do next: <hint>` — run the selection algorithm now.
+- `do now: <text>` — immediate. Park the current increment at a coherent
+  point (commit it, or stash and split a remainder task), create the task
+  as in_progress, and work it right away.
+- `do next: <text>` — queue-jump. Create the task and mark it next-up
+  (`metadata.next: true`); it gets picked as soon as the current task
+  lands, ahead of priority order. Several next-ups: newest first — the
+  human's latest steer wins. Bare `do next` (no text): just run the
+  selection algorithm now.
+- `add idea: <text>` — capture. Add to the task list slotted by priority
+  (feasibility-triage if complex); doesn't jump the queue.
 - `status` — current task, queue summary, recent completions.
 - `pause` / `resume` — TaskStop the heartbeat monitor / re-arm it.
 - `wrap up` — land the current increment cleanly, commit, summarize.
 
 ## Guardrails
 
-- Commit each increment. Never push or deploy unless the project's CLAUDE.md
-  or config explicitly authorizes it.
+- Commit each increment. Never push or deploy unless DREAMWORK.md or the
+  project's CLAUDE.md/config explicitly authorizes it.
 - Verification before completion: tests/lint pass before a task is marked
   completed.
 - Experiments are feature-gated.
-- Compaction-safe: durable state lives in the task list, planning docs, and
-  commits — never only in conversation.
+- Compaction-safe: durable state lives in the task list, DREAMWORK.md,
+  `.dreamwork/` (dreams, docs, plans), and commits — never only in
+  conversation.
+- Mismatched signals mean something is wrong. When context disagrees with
+  itself — e.g. the cwd doesn't match the work being discussed, the task
+  list contradicts git — don't guess and don't proceed on the wrong
+  assumption: ask the human.
 - Communication: brief updates as you go; `attn` only for genuine blockers,
   questions, or notable milestones. Subagents never use `attn`.
 
 ## Wake mechanisms (variants)
 
-The Monitor heartbeat above is the default and preferred mechanism. A
-Stop-hook variant ("fire back after a time": the Stop hook sleeps ~285s then
+The Monitor heartbeat (armed in `initialization.md`) is the default and
+preferred mechanism. A Stop-hook variant ("fire back after a time": the
+Stop hook sleeps ~285s then
 returns `{"decision":"block","reason":"dream tick"}`) is viable — the hook
 default timeout is 600s — but it is a workaround: loop prevention is entirely
 on the hook author (guard with a counter or marker file), and user input
