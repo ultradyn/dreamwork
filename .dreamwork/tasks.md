@@ -12,8 +12,6 @@ Next id: **106**
 
 - **#102** — Reflow hard-wrapped source text in the webui · P1 · bug ·
   40m · human-reported with a screenshot; inline markdown leaks too
-- **#105** — One question component, rendered the same everywhere · P2 ·
-  task · 45m · foundation for #102/#103/#104
 - **#103** — One text input for answer and note, mode group + flush send ·
   P2 · task · 50m
 - **#104** — Questions fade out, neighbours slide into place · P2 · task ·
@@ -44,7 +42,8 @@ Next id: **106**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#91** composer tweaks and
+Pruned in grooming; git is the real ledger. **#105** one qaCard for all
+four question surfaces (2026-07-25, ec6721f). **#91** composer tweaks and
 **#101** scrollbar styling (2026-07-25), **#97** durable task ledger
 (2026-07-25, this file). #63-#68, #71, #72, #74, #75,
 #78, #79, #81-#85, #87-#89, #93, #94 landed 2026-07-24/25 (watch webui
