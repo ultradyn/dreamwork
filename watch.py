@@ -2,8 +2,10 @@
 """watch.py — read-only localhost dashboard for a running dreamloop.
 
 Plan: .dreamwork/docs/plans/watch-py.md (human-authorized 2026-07-25).
-Stdlib only. Binds 127.0.0.1 exclusively; no write endpoints exist.
-Stage 1: server core (/ , /data.json , /mtime), port persistence, --open.
+Stdlib only. Binds 127.0.0.1 exclusively. Read-only with ONE deliberate
+exception (human-authorized 2026-07-25): POST /answer appends a marked
+answer block under an open question in questions.md — the loop folds it
+on its next tick. No other write paths exist.
 """
 
 import argparse
@@ -12,6 +14,7 @@ import json
 import os
 import random
 import subprocess
+import threading
 import time
 import webbrowser
 
@@ -36,6 +39,13 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8">
   .git div { color:#6b7280; }
   .git .maint { color:#a5b4fc; }
   .dim { color:#4b5563; }
+  .qa { margin:.6rem 0 1rem; }
+  .qa .qt { color:#e5e7eb; }
+  .qa textarea { width:100%; background:#111827; color:#d1d5db;
+    border:1px solid #1f2937; border-radius:4px; font:inherit;
+    padding:.4rem; margin:.3rem 0; min-height:3rem; box-sizing:border-box; }
+  .qa button { background:#1e293b; color:#a5b4fc; border:1px solid #334155;
+    border-radius:4px; font:inherit; padding:.25rem .8rem; cursor:pointer; }
 </style></head><body><div class="wrap">
 <header>dreamwork watch</header>
 <div id="meta">loading…</div>
@@ -65,6 +75,15 @@ function render(d) {
        (d.dreams_archive.length
          ? `<details><summary class="dim">archive (${d.dreams_archive.length})</summary>` +
            d.dreams_archive.map(dreamBlock).join('') + `</details>` : '');
+  if (d.questions_open.length) {
+    h += `<div class="label">answer questions</div>` +
+      d.questions_open.map((q, i) =>
+        `<div class="qa"><div class="qt">${esc(q.title)}</div>` +
+        `<pre>${esc(q.body.trim())}</pre>` +
+        `<textarea id="qa${i}" placeholder="answer…"></textarea>` +
+        `<button onclick="sendAnswer(${i})">answer</button></div>`
+      ).join('');
+  }
   h += `<div class="label">files</div>` +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
          `<details><summary>${n}</summary><pre>${esc(d.files[n])}</pre></details>`
@@ -83,6 +102,14 @@ function ages() {
   const upd = document.getElementById('upd');
   if (upd) upd.textContent =
     `updated ${ageStr(fetchedAt/1000)} ago`;
+}
+async function sendAnswer(i) {
+  const el = document.getElementById('qa' + i);
+  if (!el || !el.value.trim()) return;
+  await fetch('/answer', { method:'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ question: data.questions_open[i].title,
+                           answer: el.value.trim() }) });
 }
 let last = null;
 async function tick() {
@@ -138,6 +165,59 @@ def git_tail(target, n=15):
         return []
 
 
+def parse_open_questions(text):
+    """[{title, body}] for each '- **Title**' entry in the Open section."""
+    items = []
+    if not text:
+        return items
+    in_open = False
+    current = None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            in_open = line.strip() == "## Open"
+            current = None
+        elif in_open and line.startswith("- **"):
+            title, _, rest = line[4:].partition("**")
+            current = {"title": title,
+                       "body": rest.strip() + "\n" if rest.strip() else ""}
+            items.append(current)
+        elif in_open and current is not None:
+            current["body"] += line + "\n"
+    return items
+
+
+def append_answer(text, title, answer, stamp):
+    """Insert an answer bullet at the end of the titled Open entry.
+
+    Returns (new_text, matched). Pure — testable without a filesystem.
+    """
+    block = f"  - **Answer (via watch, {stamp}):** {answer}"
+    lines = text.splitlines()
+    out = []
+    in_open = False
+    in_target = False
+    matched = False
+
+    def close_target():
+        nonlocal in_target
+        if in_target:
+            out.append(block)
+            in_target = False
+
+    for line in lines:
+        if line.startswith("## "):
+            close_target()
+            in_open = line.strip() == "## Open"
+        elif in_open and line.startswith("- **"):
+            close_target()
+            if line[4:].split("**", 1)[0] == title:
+                in_target = True
+                matched = True
+        out.append(line)
+    close_target()
+    return "\n".join(out) + "\n", matched
+
+
 def open_question_count(questions_text):
     if not questions_text:
         return 0
@@ -169,6 +249,7 @@ def collect(target):
                 os.path.join(dw, "skill-version")) or "").strip(),
         },
         "open_questions": open_question_count(questions),
+        "questions_open": parse_open_questions(questions),
         "status": json.loads(read_text(os.path.join(dw, "status.json"))
                              or "null"),
         "git": git_tail(target),
@@ -205,6 +286,9 @@ def persistent_port(target):
     return port
 
 
+ANSWER_LOCK = threading.Lock()
+
+
 def make_handler(target):
     class Handler(http.server.BaseHTTPRequestHandler):
         def _send(self, body, ctype):
@@ -224,6 +308,39 @@ def make_handler(target):
                 self._send(str(watched_mtime(target)), "text/plain")
             else:
                 self.send_error(404)
+
+        def do_POST(self):
+            if self.path != "/answer":
+                self.send_error(404)
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            if not 0 < length <= 20_000:
+                self.send_error(413)
+                return
+            try:
+                req = json.loads(self.rfile.read(length))
+                title = str(req["question"]).strip()
+                answer = str(req["answer"]).strip()
+            except (ValueError, KeyError):
+                self.send_error(400)
+                return
+            if not title or not answer:
+                self.send_error(400)
+                return
+            qpath = os.path.join(target, ".dreamwork", "questions.md")
+            stamp = time.strftime("%Y-%m-%d %H:%M")
+            with ANSWER_LOCK:
+                text = read_text(qpath)
+                if text is None:
+                    self.send_error(404)
+                    return
+                new_text, matched = append_answer(text, title, answer, stamp)
+                if not matched:
+                    self.send_error(409)
+                    return
+                with open(qpath, "w", encoding="utf-8") as f:
+                    f.write(new_text)
+            self._send(json.dumps({"ok": True}), "application/json")
 
         def log_message(self, *_args):
             pass

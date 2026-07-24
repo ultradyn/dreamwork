@@ -72,7 +72,9 @@ starting new increments — resume autonomous work when the stream pauses.
 
 On each tick, best-effort, refresh `.dreamwork/status.json` (current task,
 queue depth, last tick time, last commit) — the watch.py dashboard reads
-it; failing to write it never blocks the loop.
+it; failing to write it never blocks the loop. And if `questions.md`
+changed since your last look, check for new "(via watch)" answer blocks —
+fold them first: act on the answer, then move the entry to Answered.
 
 ## Selecting the next task
 

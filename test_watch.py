@@ -75,6 +75,25 @@ class TestCollector(unittest.TestCase):
                 f.write("- new lesson\n")
             self.assertGreater(watch.watched_mtime(d), before)
 
+    def test_parse_open_questions(self):
+        qs = watch.parse_open_questions(QUESTIONS)
+        self.assertEqual(len(qs), 1)
+        self.assertEqual(qs[0]["title"], "A real open question?")
+        self.assertIn("context here", qs[0]["body"])
+        self.assertEqual(watch.parse_open_questions(None), [])
+
+    def test_append_answer(self):
+        new, matched = watch.append_answer(
+            QUESTIONS, "A real open question?", "yes do it", "2026-07-25")
+        self.assertTrue(matched)
+        self.assertIn("**Answer (via watch, 2026-07-25):** yes do it", new)
+        # answer lands inside Open, before the Answered section
+        self.assertLess(new.index("Answer (via watch"),
+                        new.index("## Answered"))
+        _new, matched = watch.append_answer(
+            QUESTIONS, "No such question", "x", "2026-07-25")
+        self.assertFalse(matched)
+
     def test_persistent_port_stable(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
