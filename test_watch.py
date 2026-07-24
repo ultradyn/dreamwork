@@ -94,6 +94,41 @@ class TestCollector(unittest.TestCase):
             QUESTIONS, "No such question", "x", "2026-07-25")
         self.assertFalse(matched)
 
+    def test_append_answer_last_open_entry(self):
+        # the answer block must land inside Open even when the target is
+        # the final entry before the Answered header
+        text = ("# Q\n\n## Open\n\n- **Only question?** ctx.\n\n"
+                "## Answered\n\n- **Old** done.\n")
+        new, matched = watch.append_answer(text, "Only question?",
+                                           "yes", "2026-07-25")
+        self.assertTrue(matched)
+        self.assertLess(new.index("Answer (via watch"),
+                        new.index("## Answered"))
+
+    def test_collect_lists_reviews(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            rd = os.path.join(d, ".dreamwork", "review")
+            os.makedirs(rd)
+            with open(os.path.join(rd, "plan-review.html"), "w") as f:
+                f.write("<!doctype html><p>x")
+            with open(os.path.join(rd, "notes.txt"), "w") as f:
+                f.write("not an artifact")
+            data = watch.collect(d)
+            self.assertEqual([r["name"] for r in data["reviews"]],
+                             ["plan-review.html"])
+
+    def test_resolve_confined_nested(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            rd = os.path.join(d, ".dreamwork", "review")
+            os.makedirs(rd)
+            with open(os.path.join(rd, "a.html"), "w") as f:
+                f.write("x")
+            ok = watch.resolve_confined(
+                d, os.path.join(".dreamwork", "review", "a.html"))
+            self.assertTrue(ok and ok.endswith("a.html"))
+
     def test_resolve_confined(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
