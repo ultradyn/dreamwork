@@ -193,6 +193,9 @@ if Max is away).
   goals: clearly-aligned implications and subtasks enter the task list as
   normal tasks; unclear extras park in `.dreamwork/questions.md`; and
   since the human just typed this, a one-line consult now beats guessing.
+- `maintenance` / `do maintenance` / `maintenance: <item>` — run the
+  maintenance rotation now, regardless of backlog state; without an item
+  named, `roll.py --no-backlog` can pick one.
 - `status` — current task, queue summary, recent completions, open
   questions from `.dreamwork/questions.md`.
 - `pause` / `resume` — TaskStop the heartbeat monitor / re-arm it.
