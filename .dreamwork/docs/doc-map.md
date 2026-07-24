@@ -25,6 +25,7 @@ cover it too.
 | `README.md` | Public face of the repo: what dreamwork is, install, where to start | Yes — must not drift from SKILL.md |
 | `roll.py` / `watch.py` docstrings | Tool contracts (advisory dice; dashboard) | Yes — contracts live in the docstrings |
 | `test_watch.py` / `test_roll.py` | The verification every increment runs; no CI exists, so this is the only safety net | Yes — a behaviour change ships with its test |
+| `justfile` | Common tasks: test, watch, audit-styleguide | Yes — a new routine worth repeating becomes a recipe |
 | `DREAMWORK.md` (repo root) | This target's own goals, philosophy, preferences, plugin decisions | Yes — folded whenever the human reveals a durable preference |
 
 SKILL.md is the entry point for the harness; README.md is the entry

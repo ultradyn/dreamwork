@@ -43,6 +43,11 @@
   index entries for this skill concise pointers — details live in the
   skill folder. Dogfood findings: fix immediately when small, file
   otherwise.
+- Common tasks live in the `justfile`: `just test` (the verification
+  every increment runs — there is no CI), `just watch`, and
+  `just audit-styleguide`, which fails if any commit changed the page
+  without updating the styleguide. The rule was already recorded; now it
+  is checkable rather than remembered.
 - watch.py webui: `watch-design.md` (skill root) is the authoritative
   styleguide — tokens, component idioms, the motion language (dream
   dissolve, mist filter, lifted-hero FLIP, reduced-motion + frame-continuity
