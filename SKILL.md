@@ -100,7 +100,11 @@ starting new increments — resume autonomous work when the stream pauses.
       problem are exempt — those are a fact of life). Record when the
       brainstorm ran (metadata on a marker task) so it stays occasional.
    2. **Backlog.** Otherwise pick the highest-priority unblocked pending
-      task.
+      task. When torn between backlog and maintenance (or which
+      maintenance item), you may roll `roll.py` in this skill's directory
+      — advisory, never binding: a mess, an easier-now-than-later, or a
+      human steer always overrides. Custom weights persist as a Routines
+      line in DREAMWORK.md.
 4. **Maintenance rotation.** List empty and brainstorm recent? Rotate
    through: goal alignment first — does DREAMWORK.md still reflect what
    the human wants and what the loop has learned? fold in any drift; then

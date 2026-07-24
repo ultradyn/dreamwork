@@ -9,11 +9,11 @@
   fresh-eyes dreamer runs it, not-done-until-clean (findings spawn tasks,
   review stays open), rare cadence via marker + commits-since trigger.
   Also: fire the first pass now, post-burst? (Rec: yes to both.)
-- **2026-07-25 — #37 roll.py timing.** Approved in substance (Max's
-  idea). Tonight's tick vs next session? Default if no answer: the loop
-  picks it up when idle.
-
 ## Answered
+
+- **#37 roll.py timing** → Default applied (2026-07-25): no answer by the
+  next idle tick, so the loop built it then. Shipped with tests, wiring,
+  and a migration entry.
 
 - **Dogfood reflection: standing or one-off?** → Standing (2026-07-25):
   wired into `wrap up` and the maintenance rotation.
