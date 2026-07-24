@@ -206,8 +206,8 @@ if Max is away).
 
 - Commit each increment. Never push or deploy unless DREAMWORK.md or the
   project's CLAUDE.md/config explicitly authorizes it.
-- Verification before completion: tests/lint pass before a task is marked
-  completed.
+- Verification before completion: the project's verification passes
+  (tests/lint, or its stated routine) before a task is marked completed.
 - Experiments are feature-gated.
 - Compaction-safe: durable state lives in the task list, DREAMWORK.md,
   `.dreamwork/` (dreams, docs, plans), and commits — never only in

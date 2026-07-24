@@ -11,3 +11,7 @@ source dream. Not a log — only things that should change future behavior.
 - Watch for over-investing in one finished sub-feature (polish, extra
   mechanisms) while primary paths and principles stay unexercised — it's the
   make-work gradient in miniature. (2026-07-25-0244-alignment-roll-py-hotspot)
+- In an alignment review, "ungated polish" may be human-authorized surface
+  whose trail lived only in chat — check before recommending a trim; the
+  durable fix for chat-authorized work is a verifiable in-band provenance
+  note, not a revert. (2026-07-25-0310-alignment-pass2-clean)
