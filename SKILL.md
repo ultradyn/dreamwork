@@ -151,7 +151,9 @@ increments — the coordinator's own, or several dreamers' — only ever
 touch disjoint files, so there is never a split brain over the same
 files. The `parallelize` command is the explicit fan-out of this same
 rule; the coordinator itself still works one inline increment at a
-time.
+time. Disjoint files also means disjoint staging: while anyone else
+holds the tree, commit by explicit path — `git add -A` sweeps up their
+half-finished work and buries it in your increment.
 
 When disjointness can't be arranged — the work overlaps owned files, or
 the change is large or risky — dispatch the dreamer in a worktree (the

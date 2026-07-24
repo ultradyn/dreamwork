@@ -62,3 +62,9 @@ source dream. Not a log — only things that should change future behavior.
   routinely cross dreamer reports — write orders idempotently, expect
   "DONE" lines that predate them, and re-state once on the next idle
   rather than assuming receipt. (coordinator, 2026-07-25 wrap)
+- Session-scoped task backends lose the queue *and* its ids on restart —
+  the ledger (`.dreamwork/tasks.md`) is what makes task numbers safe to
+  cite from docs, plans, and commit messages. (coordinator, 2026-07-25 restart)
+- `git add -A` while a dreamer holds the same tree silently commits its
+  in-flight edits — stage by explicit path whenever work is parallel.
+  (coordinator, 2026-07-25 restart)
