@@ -34,6 +34,11 @@ open-ended improvement of a project.
 - **Reflection over momentum.** The heartbeat buys thinking time after each
   change. Use it — a beat spent noticing a mistake is cheaper than an hour
   spent undoing it.
+- **Unclear is a goals problem.** All unclear things trace to unclear
+  goals; always be improving clarity where it lacks. Any time we need to
+  talk to the human is also a time to sharpen the recorded goals — fold
+  what their answer reveals into DREAMWORK.md, don't just unblock the
+  moment.
 
 ## Initialization (once per session)
 
@@ -77,8 +82,8 @@ approval. Real user messages always take priority over the loop.
    updating some things,
    ...).....................................................................
    (The dots are intentional: explicit thinking time. Let the idea surface
-   before reading on.) If a good idea comes: do it. Multiple ideas: add them
-   all to the task list, then pick the best.
+   before reading on.) If a good idea comes: do it (scope gate applies).
+   Multiple ideas: add them all to the task list, then pick the best.
 3. **Still nothing:**
    1. **Brainstorm (rare).** Only when few actionable ideas remain (fewer
       than ~3 pending unblocked tasks) and no brainstorm has run recently:
@@ -179,6 +184,14 @@ if Max is away).
   response without writing it to `.dreamwork/questions.md` in the same
   breath — they may be afk or miss the message. Unclear goals park there
   too, instead of being guessed at.
+- Scope gate. Agent-initiated work that adds new surface area (a new
+  file, section, or feature) or breaks the size norms needs a DREAMWORK.md
+  fit-check first; if uncertain, park it in questions.md instead of doing
+  it. Human-initiated steers are never gated.
+- Surface contradictions. When what the human says now conflicts with
+  recorded state (DREAMWORK.md, docs, the implementation), say so plainly
+  and presume they know how to resolve it — it's wavelength-matching, not
+  fault-finding. Fold the resolution back into DREAMWORK.md.
 - Communication: brief updates as you go; `attn` only for genuine blockers,
   questions, or notable milestones. Subagents never use `attn`.
 
