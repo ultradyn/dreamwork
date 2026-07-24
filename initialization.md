@@ -67,8 +67,15 @@ read, initialization has already happened; return to the loop.
    `Monitor command="heartbeat 4.75m 'dream tick'" triggerTurn=true persistent=true`
 
    No regex filter. If the `heartbeat` CLI is absent, fall back to
-   `while true; do echo 'dream tick'; sleep 285; done`. Re-arm after session
-   restart or resume. (Same mechanism as the heartbeat-monitor skill.)
+   `while true; do echo 'dream tick'; sleep 285; done`. (Same mechanism as
+   the heartbeat-monitor skill.)
+
+   Arm exactly one. Already armed = tick notifications are arriving in
+   this session (or you armed one and haven't stopped it) — never arm a
+   second; duplicate heartbeats multiply cost. Monitors die with the
+   session, so a fresh or resumed session re-arms; when replacing one
+   (interval change, uncertain state), `TaskStop` the old monitor first —
+   stop-then-arm is the clean swap.
 
 6. **Task backend.** Native Claude Code task tools (TaskCreate / TaskList /
    TaskGet / TaskUpdate) by default. If the target already has backlog
