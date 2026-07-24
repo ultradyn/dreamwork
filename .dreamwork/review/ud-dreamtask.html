@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en-au">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ud-dreamtask — design review (#50)</title>
+<style>
+  :root { --bg:#0b0f19; --panel:#111827; --panel2:#1e293b;
+    --line:#1f2937; --border:#334155; --text:#d1d5db; --bright:#f3f4f6;
+    --lit:#e5e7eb; --muted:#9ca3af; --dim:#6b7280; --dimmer:#4b5563;
+    --accent:#a5b4fc; --space:1.6rem; --radius:4px; color-scheme:dark; }
+  * { box-sizing:border-box;
+      scrollbar-width:thin; scrollbar-color:var(--dimmer) transparent; }
+  ::-webkit-scrollbar { width:7px; height:7px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--dimmer);
+                              border-radius:var(--radius); }
+  ::-webkit-scrollbar-thumb:hover { background:var(--dim); }
+  body { background:var(--bg); color:var(--text); margin:0;
+    padding:2.5rem 1rem 4rem;
+    font-family:ui-monospace,'JetBrains Mono',monospace; font-size:.8rem;
+    line-height:1.65; }
+  .wrap { max-width:78ch; margin:0 auto; }
+  h1 { color:var(--bright); font-size:1rem; font-weight:normal; margin:0; }
+  .sub { color:var(--dim); margin:.25rem 0 2rem; }
+  .label { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
+    font-size:.7rem; margin:var(--space) 0 .5rem; }
+  p { margin:.6rem 0; }
+  a { color:var(--accent); }
+  code { color:var(--lit); }
+  hr { border:0; border-top:1px solid var(--line); margin:var(--space) 0; }
+  .quiet { color:var(--muted); }
+  ul { margin:.4rem 0; padding-left:2ch; }
+  li { margin:.3rem 0; }
+  figure { margin:1rem 0 1.4rem; overflow-x:auto; }
+  svg { display:block; min-width:520px; }
+  .q { border-left:1px solid var(--border); padding:0 0 0 1.4ch;
+       margin:1.2rem 0; }
+  .q h3 { font-size:.8rem; font-weight:normal; color:var(--lit);
+          margin:0 0 .35rem; }
+  .cmp { display:grid; grid-template-columns:repeat(auto-fit,minmax(26ch,1fr));
+         gap:0 2ch; margin:.5rem 0; }
+  .cmp div { border-top:1px solid var(--line); padding-top:.4rem; }
+  .cmp .h { color:var(--dim); text-transform:uppercase;
+            letter-spacing:.08em; font-size:.7rem; }
+  footer { color:var(--dimmer); margin-top:3rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>ud-dreamtask</h1>
+<div class="sub">design review · task #50 · plan at <code>.dreamwork/docs/plans/ud-dreamtask.md</code></div>
+
+<p>A sister skill to dreamwork: the same philosophy — small verified
+increments, reflection over momentum, capture everything — pointed at
+finishing <em>one</em> task and then stopping. <strong>Dreamwork is a
+garden; dreamtask is an errand.</strong></p>
+
+<div class="label">Where the two differ</div>
+
+<figure>
+<svg viewBox="0 0 620 210" width="100%" height="210" role="img"
+     aria-label="Comparison of dreamwork and dreamtask loops">
+  <g font-family="ui-monospace,monospace" font-size="11">
+    <text x="0" y="12" fill="#4b5563" letter-spacing="1">DREAMWORK — THE GARDEN</text>
+    <text x="330" y="12" fill="#4b5563" letter-spacing="1">DREAMTASK — THE ERRAND</text>
+
+    <rect x="0" y="22" width="300" height="24" fill="#111827" stroke="#1f2937"/>
+    <text x="10" y="38" fill="#9ca3af">wizard: goals, philosophy, routines</text>
+    <rect x="320" y="22" width="300" height="24" fill="#111827" stroke="#1f2937"/>
+    <text x="330" y="38" fill="#9ca3af">wizard: what does done look like?</text>
+
+    <rect x="0" y="52" width="300" height="24" fill="#111827" stroke="#1f2937"/>
+    <text x="10" y="68" fill="#9ca3af">selection: open-ended algorithm</text>
+    <rect x="320" y="52" width="300" height="24" fill="#1e293b" stroke="#334155"/>
+    <text x="330" y="68" fill="#e5e7eb">selection: walk the decomposition</text>
+
+    <rect x="0" y="82" width="300" height="24" fill="#111827" stroke="#1f2937"/>
+    <text x="10" y="98" fill="#9ca3af">ideas: brainstorm, backlog, grow</text>
+    <rect x="320" y="82" width="300" height="24" fill="#1e293b" stroke="#334155"/>
+    <text x="330" y="98" fill="#e5e7eb">ideas: captured, handed off, never worked</text>
+
+    <rect x="0" y="112" width="300" height="24" fill="#111827" stroke="#1f2937"/>
+    <text x="10" y="128" fill="#9ca3af">maintenance: rotation, forever</text>
+    <rect x="320" y="112" width="300" height="24" fill="#1e293b" stroke="#334155"/>
+    <text x="330" y="128" fill="#e5e7eb">maintenance: budgeted by size</text>
+
+    <rect x="0" y="142" width="300" height="24" fill="#111827" stroke="#1f2937"/>
+    <text x="10" y="158" fill="#9ca3af">ends: when you say so</text>
+    <rect x="320" y="142" width="300" height="24" fill="#1e293b" stroke="#334155"/>
+    <text x="330" y="158" fill="#a5b4fc">ends: when the criteria verify</text>
+
+    <rect x="0" y="172" width="300" height="24" fill="#111827" stroke="#1f2937"/>
+    <text x="10" y="188" fill="#9ca3af">state: .dreamwork/ in the repo, durable</text>
+    <rect x="320" y="172" width="300" height="24" fill="#111827" stroke="#1f2937"/>
+    <text x="330" y="188" fill="#9ca3af">state: ~/.config, ephemeral, archived</text>
+  </g>
+</svg>
+</figure>
+
+<p class="quiet">Everything the two share — the tick flow, the reflection
+checklist, the guardrails, the commit discipline — dreamtask takes by
+reference rather than by copy. That is the whole design risk and the
+whole design opportunity: a second skill that duplicates the first will
+drift from it within a fortnight.</p>
+
+<div class="label">The part that earns its keep</div>
+
+<p>Errands accumulate wavelength. Each dreamtask leaves a small ephemeral
+state directory behind, and when full dreamwork later initializes on that
+same target it <strong>harvests</strong> them: the wizard proposes Goals
+and Philosophy drafts from what the errands revealed, captured-but-unworked
+ideas become task seeds, and the ephemeral state graduates into the repo's
+durable <code>.dreamwork/</code>. You get a loop that starts already knowing
+you, instead of starting with an interview.</p>
+
+<hr>
+
+<div class="label">Four decisions</div>
+
+<div class="q">
+<h3>1. Can a dreamtask run inside an active dreamwork session?</h3>
+<div class="cmp">
+  <div><span class="h">Rec — standalone first</span><br>
+    A sub-loop inside a running loop means two tick flows, two selection
+    rules and one task list — the failure modes are the hard kind. Ship
+    the errand alone, then compose once its shape is proven.</div>
+  <div><span class="h">Alternative — sub-loop from day one</span><br>
+    Tempting because "focus on this one thing" is exactly what a running
+    dreamwork session sometimes needs. But that need is already served
+    by <code>do now</code>.</div>
+</div>
+</div>
+
+<div class="q">
+<h3>2. Same 4.75-minute heartbeat regardless of task size?</h3>
+<div class="cmp">
+  <div><span class="h">Rec — yes, same cadence</span><br>
+    The interval is set by cache economics, not by the work: it sits
+    under the prompt-cache TTL. A short errand simply sees fewer ticks.</div>
+  <div><span class="h">Alternative — scale with size</span><br>
+    Sounds proportionate, reads as arbitrary: a slower heartbeat on a
+    small task costs more, not less, because the cache goes cold.</div>
+</div>
+</div>
+
+<div class="q">
+<h3>3. State at <code>~/.config/dreamwork/tasks/&lt;slug&gt;/</code>?</h3>
+<div class="cmp">
+  <div><span class="h">Rec — yes</span><br>
+    Matches the machine-local precedent already set by roll state and the
+    GitHub plugin's cursors, and keeps errand scratch out of a repo that
+    never asked for it. Archived to <code>tasks/archive/</code> on
+    completion.</div>
+  <div><span class="h">Alternative — in-repo</span><br>
+    Visible and greppable, but an errand on someone else's repo would
+    litter it, and the harvest story wants a single place to look.</div>
+</div>
+</div>
+
+<div class="q">
+<h3>4. Adopt dreamwork's guardrails wholesale?</h3>
+<div class="cmp">
+  <div><span class="h">Rec — yes, by reference</span><br>
+    Commit markers, verification-before-completion, scope gate, the
+    no-push default: inherited by pointing at ud-dreamwork, minus the
+    rotation-specific parts. One source, no drift.</div>
+  <div><span class="h">Alternative — restate them</span><br>
+    A self-contained skill reads better standalone, at the cost of two
+    copies of every guardrail — and this project has already watched
+    duplicated rules drift apart within a day.</div>
+</div>
+</div>
+
+<hr>
+
+<div class="label">What lands, if you say go</div>
+
+<ul>
+  <li>A lean SKILL.md that references <code>reflection.md</code> and the
+      shared conventions instead of copying them.</li>
+  <li>Init-lite: the acceptance-criteria wizard, dreamstate creation, the
+      heartbeat.</li>
+  <li>The completion path: verify → wrap → offer learnings upstream →
+      archive.</li>
+  <li>The harvest hook in ud-dreamwork's initialization, plus a migration
+      entry.</li>
+  <li>A dogfood run on a real errand before it is called done.</li>
+</ul>
+
+<p>The risk to name: this is a second skill with the same philosophy, and
+the failure mode is not that it works badly but that it slowly stops
+agreeing with its sibling. Everything shared must be referenced, never
+restated — and the coherence rotation should read both.</p>
+
+<footer>Answer on the dashboard question card, or in chat — either folds
+back into the plan. Prepared by the loop, 2026-07-25.</footer>
+
+</div>
+</body>
+</html>
