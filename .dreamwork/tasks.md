@@ -11,18 +11,10 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **106**
+Next id: **118**
 
 ## Open
 
-- **#102** — Reflow hard-wrapped source text in the webui · P1 · bug ·
-  40m · human-reported with a screenshot; inline markdown leaks too
-- **#106** — Follow-up preview truncates mid-phrase with no affordance ·
-  P1 · bug · 25m · human-reported; reads as damaged text
-- **#116** — Reflow swallows the next entry when a title wraps · P1 ·
-  bug · 30m · REGRESSION from #102; an entry vanished from the page
-- **#109** — Human notes must be obviously human, in file and on page ·
-  P1 · bug · 35m · file half landed (04968d1); page half with the dreamer
 - **#111** — Answered questions distinct and collapsed by default · P2 ·
   task · 30m · human-asked; awaiting-fold probably stays open
 - **#113** — Awaiting-fold looks alive; every state transition covered ·
@@ -32,7 +24,8 @@ Next id: **106**
 - **#117** — `just test` green while the real structural guards fail ·
   P1 · bug · 45m · found by #115; a page change can be green and broken
 - **#103** — One text input for answer and note, mode group + flush send ·
-  P2 · task · 50m
+  P2 · task · 50m · *in progress (dreamer-questions)* · goal: one place
+  to say anything to the loop ← "the dashboard is how you steer it"
 - **#104** — Questions fade out, neighbours slide into place · P2 · task ·
   45m · do with #77; "things slide, never jump" is the principle
 - **#77** — Cross-group morph when a question changes section · P2 · task ·
@@ -61,7 +54,10 @@ Next id: **106**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#115** the component-cost
+Pruned in grooming; git is the real ledger. **#109 #116** author-tagged
+notes and one reader for questions.md (2026-07-25, 34f272f) — #116 also
+fixed a silent write failure: /answer and /comment could not match a
+wrapped-title entry at all. **#115** the component-cost
 spike — split verdict, findings in `docs/spikes/` (2026-07-25).
 **#107 #108 #110** the
 travelling heading, the ghost-pinned width glide, the clamped opener
