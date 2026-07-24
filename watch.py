@@ -675,19 +675,33 @@ SHADER_JS = """
   });
 
   let rafId = 0, running = true;
-  let fpsEl = null, ftEl = null, sparkCtx = null;
+  let fpsEl = null, dtEl = null, ftEl = null, sparkCtx = null;
   let fpsN = 0, fpsT = 0, prevMs = 0;
-  const fts = [];                       // ring of recent frametimes (ms)
+  const fts = [];                       // inter-frame deltas (missed-vsync)
+  const dts = [];                       // measured CPU-side draw time (ms)
+  const gts = [];                       // measured GPU frame time (ms), if any
+  // GPU timer (dev-only): true per-frame GPU cost via one in-flight
+  // TIME_ELAPSED query. Feature-gated to WebGL2 + the disjoint-timer ext;
+  // dormant (the CPU number shows) otherwise, and never touched when the
+  // overlay is off — no query machinery runs in prod.
+  let gpuExt = null, gpuQuery = null, gpuPending = false, gpuOpen = false;
+  function acquireGpuTimer() {
+    gpuExt = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    if (!(gpuExt && typeof gl.createQuery === 'function')) gpuExt = null;
+    gpuQuery = null; gpuPending = false; gpuOpen = false;
+  }
   if (window.DEV) {
     const box = document.createElement('div');
     box.id = 'devbox';
     fpsEl = document.createElement('div');
+    dtEl = document.createElement('div');
     ftEl = document.createElement('div');
     const sp = document.createElement('canvas');
     sp.width = 120; sp.height = 22;
-    box.append(fpsEl, ftEl, sp);
+    box.append(fpsEl, dtEl, ftEl, sp);
     document.body.appendChild(box);
     sparkCtx = sp.getContext('2d');
+    acquireGpuTimer();
   }
   function drawSpark() {
     const c = sparkCtx; if (!c || !fts.length) return;
@@ -699,8 +713,35 @@ SHADER_JS = """
     c.fillStyle = '#4b5563';           // 60fps guide line
     c.fillRect(0, 22 - (16.7 / worst) * 22, 120, 1);
   }
-  function frame(ms) {
+  const avgOf = a => a.reduce((x, y) => x + y, 0) / (a.length || 1);
+  // draw() wrapped with a CPU stopwatch (JS + GL submission) and, when the
+  // GPU timer is live, a TIME_ELAPSED query straddling the same draw.
+  function timedDraw(ms) {
+    if (gpuExt && gpuPending) {                    // reap the prior query
+      const ready = gl.getQueryParameter(gpuQuery, gl.QUERY_RESULT_AVAILABLE);
+      const disjoint = gl.getParameter(gpuExt.GPU_DISJOINT_EXT);
+      if (ready || disjoint) {
+        if (ready && !disjoint) {
+          const ns = gl.getQueryParameter(gpuQuery, gl.QUERY_RESULT);
+          gts.push(ns / 1e6); if (gts.length > 120) gts.shift();
+        }
+        gpuPending = false;
+      }
+    }
+    if (gpuExt && !gpuPending) {
+      gpuQuery = gpuQuery || gl.createQuery();
+      gl.beginQuery(gpuExt.TIME_ELAPSED_EXT, gpuQuery); gpuOpen = true;
+    }
+    const t0 = performance.now();
     draw(ms);
+    const cpuMs = performance.now() - t0;
+    if (gpuOpen) {
+      gl.endQuery(gpuExt.TIME_ELAPSED_EXT); gpuOpen = false; gpuPending = true;
+    }
+    return cpuMs;
+  }
+  function frame(ms) {
+    const cpuMs = fpsEl ? timedDraw(ms) : (draw(ms), 0);
     if (fpsEl) {
       fpsN++;
       if (prevMs) {
@@ -708,11 +749,17 @@ SHADER_JS = """
         if (fts.length > 120) fts.shift();
       }
       prevMs = ms;
+      dts.push(cpuMs); if (dts.length > 120) dts.shift();
       if (ms - fpsT >= 1000) {
         fpsEl.textContent = fpsN + ' fps';
-        const avg = fts.reduce((a, b) => a + b, 0) / (fts.length || 1);
+        // measured work per frame: real GPU time when the timer is live,
+        // else CPU-side draw (JS + GL submission — understates true GPU).
+        const useGpu = gts.length > 0, work = useGpu ? gts : dts;
+        dtEl.textContent =
+          avgOf(work).toFixed(1) + '·' + Math.max(0, ...work).toFixed(1) +
+          'ms ' + (useGpu ? 'gpu' : 'draw');
         ftEl.textContent =
-          avg.toFixed(1) + 'ms avg · ' +
+          avgOf(fts).toFixed(1) + 'ms avg · ' +
           Math.max(0, ...fts).toFixed(1) + 'ms worst';
         drawSpark();
         fpsN = 0; fpsT = ms;
@@ -734,6 +781,7 @@ SHADER_JS = """
   });
   cv.addEventListener('webglcontextrestored', () => {
     initGL();
+    if (window.DEV) acquireGpuTimer();     // ext + query died with the context
     running = true;
     if (rm) draw(lastMs);
     else rafId = requestAnimationFrame(step);

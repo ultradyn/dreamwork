@@ -187,6 +187,14 @@ class TestAppShell(unittest.TestCase):
                       'feDisplacementMap', 'uniform float warp', 'pulseWarp'):
             self.assertIn(token, watch.PAGE)
 
+    def test_dev_overlay_measures_draw_time(self):
+        # Static guard: the overlay must carry measured per-frame work — a CPU
+        # stopwatch around draw() plus GPU-timer feature detection — not just
+        # the inter-frame delta that sits at vsync regardless of shader cost.
+        for token in ('EXT_disjoint_timer_query_webgl2', 'TIME_ELAPSED_EXT',
+                      "'gpu'", "'draw'", 'performance.now()'):
+            self.assertIn(token, watch.PAGE)
+
     def _serve(self, target):
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), watch.make_handler(target))
