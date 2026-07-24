@@ -9,9 +9,17 @@
 ## Goals
 
 <!-- Very high level, human-focused: what should this project be or do
-     for you and for its users? A few sentences or bullets, not a spec. -->
+     for you and for its users? A few sentences or bullets, not a spec.
+
+     Goals nest. Top-level ones are yours and change rarely; indented
+     sub-goals accrete underneath as work reveals them, and the loop
+     names the chain from one of them down to whatever it is doing.
+     Only the top level needs you — the rest fills in over time. -->
 
 -
+  <!-- - a sub-goal, once one becomes clear -->
+
+
 
 ## Philosophy
 

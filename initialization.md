@@ -160,4 +160,9 @@ read, initialization has already happened; return to the loop.
     step handles a thin list later.
 
 11. **Status.** One-paragraph opening status to the human: project,
-    baseline state, loaded plugins, what you'll do first, queue depth.
+    baseline state, loaded plugins, what you'll do first, queue depth —
+    and the **session goal**: one line naming what this session is for
+    and which DREAMWORK.md goal it hangs under. Write it to
+    `status.json` (`goal`). It is a claim, not a contract: the human's
+    next steer may replace it, and a pivot means re-declaring it rather
+    than quietly working to the old one.

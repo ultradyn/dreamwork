@@ -13,20 +13,6 @@
   - **Follow-up (in-session, 2026-07-25 ~10:10):** a go was started
     then explicitly retracted ("please hold") — dreamhub is ON HOLD;
     do not plan or build until Max re-opens it.
-- **2026-07-25 — goal-hierarchies design review (#95).** Rich artifact:
-  `.dreamwork/review/goal-hierarchies.html` (the tree, a worked chain
-  from this morning's own work, the three decisions side by side with
-  their alternatives). Plan behind it:
-  `.dreamwork/docs/plans/goal-hierarchies.md`. Recs: session goals don't
-  persist (wrap-time promotion into DREAMWORK.md instead); state the
-  chain rather than enforcing branch focus, at least first; free-text
-  parent names matching DREAMWORK.md headings. Build waits on your read.
-  - **Follow-up (via watch, 2026-07-25 08:50):** the diagram here is
-    really nice, we should be sure to remember it. / oh also note this
-    text box scroll bar needs styling. *(Left on the ud-dreamtask card;
-    moved here, since the diagram is this entry's artifact. Both acted
-    on: the idiom is recorded in `watch-design.md` under review
-    artifacts, and the scrollbar is task #101.)*
 - **2026-07-25 — ud-dreamtask design review (#50).** Rich artifact:
   `.dreamwork/review/ud-dreamtask.html` (garden vs errand side by side,
   the harvest story, the four decisions each beside their alternative).
@@ -37,6 +23,20 @@
   - **Follow-up (via watch, 2026-07-25 08:51):** the scroll bar for the .html needs styling too. the way this whole page is laid out is great though.
 ## Answered
 
+- **Goal hierarchies (#95)** → "rec" via watch (2026-07-25 09:13): all
+  three recommendations taken. Session goals do not persist beyond
+  status.json — a session goal that outlives its session was a durable
+  sub-goal all along, and wrap promotes it into DREAMWORK.md. Selection
+  *states* the chain rather than enforcing branch focus, at least first.
+  Task `parent` is free text matching DREAMWORK.md headings. Building
+  per the stages in `docs/plans/goal-hierarchies.md`.
+  - **Note (human, via watch, 2026-07-25 09:13):** "the notes i left
+    appear in the design review question text in the webui. they should
+    be demarcated as notes in the file if they're appended (or wherever
+    they're stored they should have some tag or be oviously user notes,
+    not something written by a dreamer)" — became task #109; the file
+    half landed in 04968d1 with migration 2026-07-25-11, and the
+    rendering half is with the dreamer.
 - **Forge presence: three polarities** → "rec" via watch (2026-07-25
   08:48), all three recommendations taken, all three acted on the same
   hour. (a) `ud-dreamwork-github` is loaded for this target; its

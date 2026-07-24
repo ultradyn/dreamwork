@@ -257,6 +257,12 @@ results, no ceremony.
   back. A backend that mints durable ids does that itself; where the
   ledger is a separate file, the coordinator takes its next id and bumps
   it.
+- Every task also knows what it is *for*: a one-line `goal`, and the
+  `parent` it serves (a session goal, or a DREAMWORK.md sub-goal by
+  name). Starting a task means saying the chain aloud — task goal →
+  session goal → the DREAMWORK.md branch above it — in the status
+  update. One line, never a document; a chain that needs a paragraph is
+  a sign the work does not belong to it.
 - The ledger carries what selection and triage read: `priority` (P1-P3),
   `type` (idea | task | bug | experiment | chore), `size` (estimated
   minutes), `feasibility` (note from triage), the next-up mark (set by
@@ -318,7 +324,10 @@ if Max is away).
   Check the queue is restorable — where the ledger is a separate file it
   should already match the backend; if it doesn't, an increment skipped
   its reflection. (A check, not the mechanism: the restart that cost
-  eight tasks had no wrap-up.)
+  eight tasks had no wrap-up.) Then look at the session goal: if it
+  turned out to be something the project will keep wanting, promote it
+  into DREAMWORK.md as a sub-goal — that is how the tree grows, and the
+  only reason a session goal needs to outlive its session.
 
 ## Guardrails
 
@@ -346,10 +355,12 @@ if Max is away).
   response without writing it to `.dreamwork/questions.md` in the same
   breath — they may be afk or miss the message. Unclear goals park there
   too, instead of being guessed at.
-- Scope gate. Agent-initiated work that adds new surface area (a new
-  file, section, or feature) or breaks the size norms needs a DREAMWORK.md
-  fit-check first; if uncertain, park it in questions.md instead of doing
-  it. Human-initiated steers are never gated. Defaults and silence may
+- Scope gate — **name the chain**. Agent-initiated work that adds new
+  surface area (a new file, section, or feature) or breaks the size norms
+  has to state its chain out loud first: this task serves *that* session
+  goal, which serves *that* goal in DREAMWORK.md. If you can't name it
+  without inventing a link, that is the answer — park it in questions.md
+  instead of doing it. Human-initiated steers are never gated. Defaults and silence may
   resolve *how* or *when* for already-authorized work — never *whether*
   to add new surface; parked scope questions stay parked until answered.
 - Surface contradictions. When what the human says now conflicts with

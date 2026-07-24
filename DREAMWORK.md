@@ -4,6 +4,10 @@
 
 - Make "leave an agent dreaming on a project" a real workflow: the human
   can walk away and come back to steady, safe, well-chosen progress.
+  - The loop's memory survives anything that ends a session — restart,
+    compaction, a fresh agent. What it knew, it still knows.
+  - The dashboard is how you check on it and steer it without a chat
+    turn, and it is worth looking at.
 - The loop stays cheap (cache-warm heartbeat), never gets stuck or bored,
   and is always steerable in a few words (`do now` / `do next` /
   `add idea`).

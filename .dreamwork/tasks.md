@@ -22,6 +22,8 @@ Next id: **106**
   P1 · bug · 35m · file half landed (04968d1); page half with the dreamer
 - **#110** — Heading persists and travels across route changes · P2 ·
   task · 50m · do with #107; breadcrumbs dissolve, survivors slide
+- **#111** — Answered questions distinct and collapsed by default · P2 ·
+  task · 30m · human-asked; awaiting-fold probably stays open
 - **#103** — One text input for answer and note, mode group + flush send ·
   P2 · task · 50m
 - **#104** — Questions fade out, neighbours slide into place · P2 · task ·
