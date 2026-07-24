@@ -19,6 +19,8 @@ Next id: **106**
   40m · human-reported with a screenshot; inline markdown leaks too
 - **#106** — Follow-up preview truncates mid-phrase with no affordance ·
   P1 · bug · 25m · human-reported; reads as damaged text
+- **#116** — Reflow swallows the next entry when a title wraps · P1 ·
+  bug · 30m · REGRESSION from #102; an entry vanished from the page
 - **#109** — Human notes must be obviously human, in file and on page ·
   P1 · bug · 35m · file half landed (04968d1); page half with the dreamer
 - **#111** — Answered questions distinct and collapsed by default · P2 ·

@@ -2,8 +2,8 @@
 
 ## Open
 
-- **2026-07-25 — the shader's ambient density changed, and you did not
-  ask for it.** Fixing the world-space anchoring (#91 item 2, your
+- **2026-07-25 — the shader's ambient density changed unasked.**
+  Fixing the world-space anchoring (#91 item 2, your
   "deterministic across split tabs" ask) required dropping the
   per-viewport normalisation: a pattern that rescales to window height
   cannot be the same dream at the same screen position. So the main
