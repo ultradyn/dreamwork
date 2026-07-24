@@ -12,6 +12,13 @@
   stay commit-only-push-on-ask? Rec: (a) yes, load; (b) push at
   session wrap + on ask, not per-increment.
 
+- **2026-07-25 — goal-hierarchies design review (#95).** Incubation
+  plan at `.dreamwork/docs/plans/goal-hierarchies.md`: one goal tree
+  (DREAMWORK.md nested Goals → session goal → task goal metadata),
+  active chain stated at task start, scope gate = "name the chain".
+  Three open questions with recs (session-goal persistence via
+  wrap-time promotion; state-only vs enforced branch focus; free-text
+  parent names). Build waits on your read.
 - **2026-07-25 — ud-dreamtask design review.** Incubation plan is at
   `.dreamwork/docs/plans/ud-dreamtask.md` with four open design
   questions (composition, heartbeat cadence, state-dir naming, guardrail
