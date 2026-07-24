@@ -789,6 +789,7 @@ SHADER_JS = """
   const VS = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
   const FRACTAL_FS = `precision highp float;
     uniform float t; uniform vec2 r; uniform float warp;
+    uniform vec2 domainOffset;   /* screen-space anchor: world-space dream */
     float hash(vec2 p){ p=fract(p*vec2(123.34,345.45));
       p+=dot(p,p+34.345); return fract(p.x*p.y); }
     float noise(vec2 p){ vec2 i=floor(p),f=fract(p);
@@ -800,7 +801,10 @@ SHADER_JS = """
       for(int i=0;i<5;i++){ s+=a*noise(p); p=m*p; a*=0.5; } return s; }
     void main(){
       vec2 uv=gl_FragCoord.xy/r;
-      vec2 p=vec2(uv.x*(r.x/r.y),uv.y)*2.3;
+      /* world-space: offset the sampling domain by the window's on-screen
+         position, so adjacent watch windows sample one continuous field and
+         the pattern stays pinned to the screen as a window is dragged. */
+      vec2 p=vec2(uv.x*(r.x/r.y),uv.y)*2.3 + domainOffset;
       float tt=t*0.03;
       vec2 q=vec2(fbm(p+vec2(0.0,tt)), fbm(p+vec2(5.2,1.3)-tt));
       /* pinch of curl: divergence-free swirl advecting the domain —
@@ -945,7 +949,8 @@ SHADER_JS = """
     progC = program(COMPOSITE_FS);
     uF = { t: gl.getUniformLocation(progF, 't'),
            r: gl.getUniformLocation(progF, 'r'),
-           warp: gl.getUniformLocation(progF, 'warp') };
+           warp: gl.getUniformLocation(progF, 'warp'),
+           domainOffset: gl.getUniformLocation(progF, 'domainOffset') };
     uB = { tex: gl.getUniformLocation(progB, 'tex'),
            r: gl.getUniformLocation(progB, 'r'),
            t: gl.getUniformLocation(progB, 't') };
@@ -986,8 +991,19 @@ SHADER_JS = """
   }
   function draw(ms) {
     lastMs = ms;
-    const secs = ms / 1000;
+    // Shader phase comes from the wall clock (shared by every window), not
+    // page-local time — so windows animate in lockstep. UTC-day-wrapped to
+    // stay small enough for float precision (a single simultaneous reshuffle
+    // at UTC midnight; frame deltas below still use page-local ms).
+    const secs = (Date.now() * 0.001) % 86400;
     if (!fboOK || gl.isContextLost()) return;
+    // world-space anchor: shift the fractal domain by the window's on-screen
+    // position (polled per frame, so dragging pins the pattern to the
+    // screen). Same units as the domain's per-pixel mapping (2.3/innerHeight).
+    const wScale = 2.3 / Math.max(1, innerHeight);
+    const chromeTop = Math.max(0, outerHeight - innerHeight);
+    const domX = (window.screenX || 0) * wScale;
+    const domY = ((window.screenY || 0) + chromeTop) * wScale;
     const dt = lastDrawMs ? Math.min(0.1, (ms - lastDrawMs) / 1000) : 0;
     lastDrawMs = ms;
     tintCur += (tintTarget - tintCur) * (1.0 - Math.exp(-dt / 0.6));
@@ -1008,6 +1024,7 @@ SHADER_JS = """
     gl.useProgram(progF); bindQuad(progF);
     gl.uniform1f(uF.t, secs); gl.uniform2f(uF.r, fboW, fboH);
     gl.uniform1f(uF.warp, w);
+    gl.uniform2f(uF.domainOffset, domX, domY);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     // passes 2 & 3: tilt-shift blur A -> B -> C
     blurPass(A, B, secs);

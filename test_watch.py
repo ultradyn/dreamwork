@@ -219,6 +219,14 @@ class TestAppShell(unittest.TestCase):
                       'window.open', 'ripple('):
             self.assertIn(token, watch.PAGE)
 
+    def test_shader_world_space_wiring(self):
+        # Static guard: the shader anchors its domain to the window's screen
+        # position and takes its phase from the wall clock (UTC-day-wrapped),
+        # so adjacent windows share one continuous, screen-pinned field.
+        for token in ('uniform vec2 domainOffset', 'window.screenX',
+                      '% 86400'):
+            self.assertIn(token, watch.PAGE)
+
     def _serve(self, target):
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), watch.make_handler(target))
