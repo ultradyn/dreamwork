@@ -36,7 +36,15 @@ carries a `+` command opener (steer the loop without a chat turn).
 - **Port** persisted to `.dreamwork/watch-port` (random 3000–63000 once)
   so bookmarks survive restarts; port-in-use error names the port.
 - **Live reload**: poll `/mtime` ~2s → re-fetch `/data.json` → re-render
-  the active view in place (no transition). No websockets.
+  the active view in place (no transition). No websockets. `/mtime` is
+  `"<generation> <mtime>"`: a changed *mtime* re-renders the data; a changed
+  *generation* (the server was restarted/redeployed, or rebuilt under
+  `--autoreload`) triggers a full `location.reload()` so open tabs never go
+  stale. The poll tolerates the brief unreachable window during a restart.
+- **`--autoreload`** (implied by `--dev`): the server re-execs itself
+  (`os.execv`) when its own source mtime changes — edit-and-see with no
+  manual restart; the close-on-exec listening socket frees the port and the
+  generation bump reloads clients.
 - **Single-document router**: `/`, `/questions`, `/file`, `/review` serve
   one shell; the client router renders the view, pushState/popstate drive
   the URL. The `#dreambg` canvas is a sibling of `#view` — never unmounted,

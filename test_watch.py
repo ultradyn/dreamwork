@@ -257,6 +257,12 @@ class TestAppShell(unittest.TestCase):
                       'press l to cycle', 'layerhint'):
             self.assertIn(token, watch.PAGE)
 
+    def test_page_has_autoreload_client(self):
+        # #84: /mtime carries a server generation; the client reloads when it
+        # changes (server rebuilt/redeployed) and tolerates the restart gap.
+        for token in ('parseMtime', 'location.reload', 'serverGen'):
+            self.assertIn(token, watch.PAGE)
+
     def _serve(self, target):
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), watch.make_handler(target))
@@ -325,6 +331,16 @@ class TestAppShell(unittest.TestCase):
                 with self.assertRaises(urllib.error.HTTPError) as cm:
                     self._get(base + bad)
                 self.assertEqual(cm.exception.code, 404)
+
+    def test_mtime_carries_generation(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            status, body = self._get(base + "/mtime")
+            self.assertEqual(status, 200)
+            gen, _, mtime = body.partition(" ")
+            self.assertEqual(gen, watch.GENERATION)   # generation first
+            self.assertTrue(mtime)
+            float(mtime)                              # watched-mtime parses
 
     def test_command_appends_event_and_validates(self):
         with tempfile.TemporaryDirectory() as d:

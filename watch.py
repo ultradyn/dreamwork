@@ -14,10 +14,17 @@ import json
 import os
 import random
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
 import webbrowser
+
+# Server generation: a fresh value every time this process (re)starts, so a
+# client can tell "same server, data changed" from "server rebuilt, reload
+# the shell". Sent on /mtime; the client reloads when it changes. This alone
+# (no --autoreload) fixes stale open tabs after a manual restart/redeploy.
+GENERATION = "%.6f" % time.time()
 
 # Design tokens + shared shell: every watch page renders through these,
 # so a redesign is a token/component edit, not a page-by-page hunt.
@@ -381,7 +388,16 @@ ROUTER_JS = """
    view on load. /review embeds the raw artifact (served at /reviewraw) in
    an iframe; a question that links to it travels along, docked. */
 const rmr = matchMedia('(prefers-reduced-motion: reduce)').matches;
-let data = null, fetchedAt = 0, lastMtime = null;
+let data = null, fetchedAt = 0, lastMtime = null, serverGen = null;
+/* /mtime is "<generation> <mtime>": a changed generation means the server
+   was rebuilt (--autoreload) or restarted (redeploy) — reload to pick up the
+   new shell; a changed mtime just re-renders the live data. */
+const parseMtime = raw => {
+  raw = (raw || '').trim();
+  const sp = raw.indexOf(' ');
+  return sp >= 0 ? { gen: raw.slice(0, sp), mtime: raw.slice(sp + 1) }
+                 : { gen: '', mtime: raw };
+};
 let view = { name: null, param: null, q: null };
 let fileCache = { param: null, text: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
@@ -409,7 +425,9 @@ function routeOf(loc) {
 async function ensureData() {
   if (data) return data;
   try {
-    lastMtime = await (await fetch('/mtime')).text();
+    const { gen, mtime } = parseMtime(await (await fetch('/mtime')).text());
+    if (serverGen === null) serverGen = gen;
+    lastMtime = mtime;
     fetchedAt = Date.now();
     data = await (await fetch('/data.json')).json();
   } catch (e) {}
@@ -594,17 +612,20 @@ addEventListener('popstate', () => {
   const r = routeOf(location);
   navigate(r.name, r.param, { push: false, q: r.q });
 });
-/* live tick: re-render the active data-driven view in place, no fade. */
+/* live tick: re-render the active data-driven view in place, no fade.
+   Tolerates the brief unreachable window while the server restarts. */
 async function tick() {
   try {
-    const m = await (await fetch('/mtime')).text();
-    if (m !== lastMtime) {
-      lastMtime = m; fetchedAt = Date.now();
+    const { gen, mtime } = parseMtime(await (await fetch('/mtime')).text());
+    if (serverGen === null) serverGen = gen;
+    else if (gen && gen !== serverGen) { location.reload(); return; }
+    if (mtime !== lastMtime) {
+      lastMtime = mtime; fetchedAt = Date.now();
       data = await (await fetch('/data.json')).json();
       if (view.name === 'dashboard') setContent(buildDashboard(data));
       else if (view.name === 'questions') setContent(buildQuestions(data));
     }
-  } catch (e) { /* server restarting; retry */ }
+  } catch (e) { /* server restarting; retry next tick */ }
   setTimeout(tick, 2000);
 }
 setInterval(ages, 1000);
@@ -1511,7 +1532,10 @@ def make_handler(target, dev=False):
             elif parsed.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
             elif parsed.path == "/mtime":
-                self._send(str(watched_mtime(target)), "text/plain")
+                # "<generation> <watched-mtime>": generation gates a full
+                # reload (new server build), mtime gates a data re-render.
+                self._send(f"{GENERATION} {watched_mtime(target)}",
+                           "text/plain")
             elif parsed.path == "/filedata":
                 rel = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
                 full = resolve_confined(target, rel)
@@ -1612,6 +1636,26 @@ def make_handler(target, dev=False):
     return Handler
 
 
+def _watch_source_and_restart(interval=1.0):
+    """--autoreload: re-exec this process when its own source changes, so an
+    edit takes effect with no manual restart. The listening socket is
+    close-on-exec (Python default) so the port frees for the new image;
+    clients reload on the changed GENERATION. Daemon thread; never blocks."""
+    try:
+        last = os.path.getmtime(__file__)
+    except OSError:
+        return
+    while True:
+        time.sleep(interval)
+        try:
+            now = os.path.getmtime(__file__)
+        except OSError:
+            continue
+        if now != last:
+            sys.stdout.flush()
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--target", default=".", metavar="DIR")
@@ -1620,6 +1664,8 @@ def main(argv=None):
                    help="open the dashboard in a browser")
     p.add_argument("--dev", action="store_true",
                    help="dev mode: show an fps counter on the page")
+    p.add_argument("--autoreload", action="store_true",
+                   help="re-exec on source change (implied by --dev)")
     args = p.parse_args(argv)
     port = args.port or persistent_port(args.target)
     try:
@@ -1634,6 +1680,9 @@ def main(argv=None):
     print(f"dreamwork watch: {url} (target {os.path.abspath(args.target)})")
     if args.open:
         webbrowser.open(url)
+    if args.autoreload or args.dev:
+        threading.Thread(target=_watch_source_and_restart,
+                         daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
