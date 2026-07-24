@@ -230,6 +230,14 @@ redesign, which is the whole point of the shape.
 The page *dreams*: motion is soft, slow, and never crisp-mechanical. It is
 also strictly opt-in — most state changes do **not** animate.
 
+**Things that move, slide** (human, 2026-07-25): "in general when things
+need to move they should slide gently, ethereally, not jump around." Read
+this as the tie-breaker it is — it does not overturn the opt-in rule (a
+live tick still re-renders instantly), but wherever the page *has* decided
+to change layout, the elements that survive travel to their new positions
+instead of teleporting. FLIP is the mechanism; reduced-motion is the
+exception; an element leaving fades rather than vanishing.
+
 - **When transitions apply.** Route changes (client nav) dissolve. The live
   mtime tick re-renders the active view **in place, instantly** — liveness
   must never wait on an animation. The composer reveals on a soft

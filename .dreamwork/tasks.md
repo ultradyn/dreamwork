@@ -6,12 +6,20 @@ docs, questions, dreams) refers to tasks by them.
 
 **Written by the coordinator only.** Dreamers report queue changes.
 
-Next id: **101**
+Next id: **106**
 
 ## Open
 
+- **#102** — Reflow hard-wrapped source text in the webui · P1 · bug ·
+  40m · human-reported with a screenshot; inline markdown leaks too
+- **#105** — One question component, rendered the same everywhere · P2 ·
+  task · 45m · foundation for #102/#103/#104
+- **#103** — One text input for answer and note, mode group + flush send ·
+  P2 · task · 50m
+- **#104** — Questions fade out, neighbours slide into place · P2 · task ·
+  45m · do with #77; "things slide, never jump" is the principle
 - **#77** — Cross-group morph when a question changes section · P2 · task ·
-  45m
+  45m · same regroup moment as #104
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
   45m · the composer now renders from one `COMMANDS` table, so this is
   an append rather than a redesign
