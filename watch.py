@@ -74,7 +74,7 @@ BODY = """<canvas id="dreambg"></canvas>
 <div id="meta">loading…</div>
 <div id="sections"></div>"""
 
-APP_JS = """
+COMPONENTS_JS = """
 window.DEV=/*DEV*/false;
 const esc = t => { const d = document.createElement('div');
                    d.textContent = t ?? ''; return d.innerHTML; };
@@ -84,7 +84,7 @@ const ageStr = mt => {
     if (s >= div) return `${Math.floor(s/div)}${u}`;
   return `${Math.floor(s)}s`;
 };
-/* components: every section renders through these */
+/* components: every section on every watch page renders through these */
 const label = t => `<div class="label">${t}</div>`;
 const expand = (s, inner, cls='') =>
   `<details><summary class="${cls}">${s}</summary>${inner}</details>`;
@@ -93,6 +93,19 @@ const linkify = h => h.replace(
   /`([\\w.-]+(?:\\/[\\w.-]+)+\\/?|[\\w-]+\\.[\\w]{1,8})`/g,
   (m, p) => '`<a href="/file?p=' + encodeURIComponent(p) + '">' + p + '</a>`');
 const preB = t => `<pre>${linkify(esc(t))}</pre>`;
+const qaCard = (q, i) =>
+  `<div class="qa"><div class="qt">${esc(q.title)}</div>` +
+  preB(q.body.trim()) +
+  `<textarea id="qa${i}" placeholder="answer…"></textarea>` +
+  `<button onclick="sendAnswer(${i})">answer</button></div>`;
+async function postAnswer(title, text) {
+  await fetch('/answer', { method:'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ question: title, answer: text }) });
+}
+"""
+
+APP_JS = """
 function dreamBlock(d) {
   return expand(
     `${esc(d.name)}<span class="age" data-mt="${d.mtime}"></span>`,
@@ -101,8 +114,8 @@ function dreamBlock(d) {
 let data = null, fetchedAt = 0;
 function render(d) {
   const q = d.open_questions > 0
-    ? ` · <span class="q">${d.open_questions} open question${d.open_questions>1?'s':''}</span>`
-    : '';
+    ? ` · <a class="q" href="/questions">${d.open_questions} open question${d.open_questions>1?'s':''}</a>`
+    : ` · <a class="q" href="/questions" style="color:var(--dimmer)">questions</a>`;
   document.getElementById('meta').innerHTML =
     `${esc(d.target)} · ${esc(d.files['skill-version'])} · <span id="upd"></span>${q}`;
   let h = '';
@@ -112,13 +125,7 @@ function render(d) {
          ? expand(`archive (${d.dreams_archive.length})`,
                   d.dreams_archive.map(dreamBlock).join(''), 'dim') : '');
   if (d.questions_open.length) {
-    h += label('answer questions') +
-      d.questions_open.map((q, i) =>
-        `<div class="qa"><div class="qt">${esc(q.title)}</div>` +
-        preB(q.body.trim()) +
-        `<textarea id="qa${i}" placeholder="answer…"></textarea>` +
-        `<button onclick="sendAnswer(${i})">answer</button></div>`
-      ).join('');
+    h += label('answer questions') + d.questions_open.map(qaCard).join('');
   }
   h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
@@ -141,10 +148,7 @@ function ages() {
 async function sendAnswer(i) {
   const el = document.getElementById('qa' + i);
   if (!el || !el.value.trim()) return;
-  await fetch('/answer', { method:'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ question: data.questions_open[i].title,
-                           answer: el.value.trim() }) });
+  await postAnswer(data.questions_open[i].title, el.value.trim());
 }
 let last = null;
 async function tick() {
@@ -456,6 +460,42 @@ SHADER_JS = """
 })();
 """
 
+QUESTIONS_BODY = """<div class="wrap">
+<header>questions</header>
+<div id="meta"><a href="/">&larr; dashboard</a></div>
+<div id="qsections">loading…</div>"""
+
+QUESTIONS_JS = """
+window.DEV=false;
+function sendAnswer(i) {
+  const el = document.getElementById('qa' + i);
+  if (!el || !el.value.trim()) return;
+  postAnswer(window.qopen[i].title, el.value.trim());
+}
+function renderQ(d) {
+  window.qopen = d.questions_open;
+  const raw = d.files['questions.md'] || '';
+  const answered = raw.split(/^## Answered$/m)[1] || '';
+  let h = '';
+  h += label(`open (${d.questions_open.length})`) +
+       (d.questions_open.map(qaCard).join('') ||
+        '<div class="dim">none — all answered</div>');
+  h += label('answered') + preB(answered.trim() || '(none yet)');
+  document.getElementById('qsections').innerHTML = h;
+}
+let last = null;
+async function qtick() {
+  try {
+    const m = await (await fetch('/mtime')).text();
+    if (m !== last) { last = m;
+      renderQ(await (await fetch('/data.json')).json()); }
+  } catch (e) {}
+  setTimeout(qtick, 2000);
+}
+qtick();
+"""
+
+
 def page_shell(title, body, js):
     """Shared page shell. Contract: `body` opens `<div class="wrap">`
     (the shell closes it) so every watch page shares chrome and tokens."""
@@ -465,7 +505,10 @@ def page_shell(title, body, js):
             + '</script></div></body></html>')
 
 
-PAGE = page_shell('dreamwork watch', BODY, APP_JS + SHADER_JS)
+PAGE = page_shell('dreamwork watch', BODY,
+                  COMPONENTS_JS + APP_JS + SHADER_JS)
+QUESTIONS_PAGE = page_shell('questions — dreamwork watch', QUESTIONS_BODY,
+                            COMPONENTS_JS + QUESTIONS_JS)
 
 
 def age_str(seconds):
@@ -687,6 +730,8 @@ def make_handler(target, dev=False):
                 self._send(json.dumps(collect(target)), "application/json")
             elif parsed.path == "/mtime":
                 self._send(str(watched_mtime(target)), "text/plain")
+            elif parsed.path == "/questions":
+                self._send(QUESTIONS_PAGE, "text/html")
             elif parsed.path == "/file":
                 rel = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
                 full = resolve_confined(target, rel)
