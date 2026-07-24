@@ -92,10 +92,14 @@ read, initialization has already happened; return to the loop.
    one-line lessons — the cheapest memory), skim recent
    `.dreamwork/dreams/` entries — they carry memory from earlier sessions
    and subagents — and check `.dreamwork/questions.md` for open questions
-   to surface in the opening status. Learn the
-   project's verify commands (justfile, package scripts: test, lint,
-   build) — you'll run them every increment. Skim the recent git log
-   (~10 commits) to absorb current direction and granularity.
+   to surface in the opening status. Update check: compare
+   `.dreamwork/skill-version` against the latest entry in the skill's
+   `migrations/` — behind means read the intervening entries, apply
+   what's relevant, bump the version file (`migrations/README.md` has the
+   protocol). Learn the project's verify commands (justfile, package
+   scripts: test, lint, build) — you'll run them every increment. Skim
+   the recent git log (~10 commits) to absorb current direction and
+   granularity.
 
 8. **Reconcile.** `git status` — a dirty tree is unfinished prior work:
    understand it first, then land it as an increment or park it (stash +

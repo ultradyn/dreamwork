@@ -148,6 +148,10 @@ Everything else stays minimal: raw results, no ceremony.
   not durable — every user-facing ask gets an entry here when made, with
   enough context to answer cold. Answers fold into DREAMWORK.md or tasks
   and the entry moves to a short Answered section (pruned in grooming).
+- `.dreamwork/skill-version` — the skill version (latest `migrations/`
+  filename) this target last ran under; init's update check compares it
+  and applies intervening migrations (see `migrations/README.md` in the
+  skill directory).
 - All of it is committable project content, like CLAUDE.md.
 
 ## Task-list conventions
