@@ -15,10 +15,18 @@ auto-enable on a TTY (--color always|never|auto). The breakdown and
 colors were an explicit human request (2026-07-25: "print raw rolls and
 probability gates ... make it rich text") for weight-tuning sessions —
 not agent-added polish.
+
+Staleness: inside a git target, item weights grow with commits since the
+item's last `dreamwork(maintain:<item>)` marker commit — git is the
+maintenance ledger (machine-shared, project-level; see SKILL.md
+guardrails). Outside git, staleness silently disables (plain weights); a
+per-machine state store (~/.config/dreamwork/) is a possible future
+fallback for non-git targets.
 """
 
 import argparse
 import random
+import subprocess
 import sys
 
 # goal-alignment is deliberately absent: it is never rolled. Alignment
@@ -51,8 +59,14 @@ def parse_args(argv):
     )
     p.add_argument("--backlog", type=int, default=70,
                    help="weight of picking a backlog task (default 70)")
-    p.add_argument("--maintenance", type=int, default=30,
-                   help="weight of the maintenance pool (default 30)")
+    p.add_argument("--maintenance", type=int, default=None,
+                   help="weight of the maintenance pool "
+                        "(default: 5 x item count, so adding items grows "
+                        "the pool instead of diluting it)")
+    p.add_argument("--target", default=".", metavar="DIR",
+                   help="target repo for staleness lookup (default cwd)")
+    p.add_argument("--no-staleness", action="store_true",
+                   help="ignore dreamwork(maintain:...) commit markers")
     p.add_argument("--weight", action="append", default=[], metavar="ITEM=N",
                    help="override a maintenance item weight (repeatable)")
     p.add_argument("--no-backlog", action="store_true",
@@ -81,18 +95,59 @@ def effective_weights(overrides):
     return {k: v for k, v in weights.items() if v > 0}
 
 
+STALE_WINDOW = 200   # how far back to look for markers
+STALE_K = 25         # age divisor: age 0 -> x1, age 200 -> x9
+
+
+def marker_ages(target, items, window=STALE_WINDOW):
+    """Commits since each item's last dreamwork(maintain:<item>) marker.
+
+    Git is the maintenance ledger (machine-shared, project-level). Returns
+    None outside a git repo — staleness then silently disables.
+    """
+    try:
+        res = subprocess.run(
+            ["git", "-C", target, "log", "-n", str(window), "--pretty=%s"],
+            capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if res.returncode != 0:
+        return None
+    subjects = res.stdout.splitlines()
+    ages = {}
+    for item in items:
+        needle = f"dreamwork(maintain:{item})"
+        ages[item] = next(
+            (i for i, s in enumerate(subjects) if needle in s), window)
+    return ages
+
+
+def apply_staleness(weights, ages):
+    """Integer-scaled hunger: eff = base * (K + age) // K."""
+    return {item: max(1, w * (STALE_K + ages[item]) // STALE_K)
+            for item, w in weights.items()}
+
+
 def main(argv=None):
     args = parse_args(argv)
     weights = effective_weights(args.weight)
+    pool = (args.maintenance if args.maintenance is not None
+            else 5 * len(weights))
+    ages = None if args.no_staleness else marker_ages(args.target, weights)
+    rolled = apply_staleness(weights, ages) if ages else weights
     use_color = args.color == "always" or (
         args.color == "auto" and sys.stdout.isatty())
     st = Style(use_color)
 
     if args.list:
         print(st.head("weights"))
-        print(f"  backlog: {args.backlog}  maintenance-pool: {args.maintenance}")
+        print(f"  backlog: {args.backlog}  maintenance-pool: {pool}")
         for item, w in weights.items():
-            print(f"  {item}: {w}")
+            if ages:
+                print(f"  {item}: {w} -> {rolled[item]} "
+                      f"(age {ages[item]})")
+            else:
+                print(f"  {item}: {w}")
         return
 
     rng = random.Random(args.seed)
@@ -103,7 +158,7 @@ def main(argv=None):
             out.append(line)
 
     if not args.no_backlog:
-        gate_total = args.backlog + args.maintenance
+        gate_total = args.backlog + pool
         r = rng.randrange(gate_total)
         hit_backlog = r < args.backlog
         note(st.head("gate 1: backlog vs maintenance"))
@@ -118,13 +173,14 @@ def main(argv=None):
     else:
         note(st.dim("gate 1 skipped: --no-backlog"))
 
-    total = sum(weights.values())
+    total = sum(rolled.values())
     r = rng.randrange(total)
-    note(st.head("gate 2: maintenance item"))
+    note(st.head("gate 2: maintenance item"
+                 + (" (staleness-weighted)" if ages else "")))
     note(f"  roll {st.roll(r)} of 0..{total - 1}")
     cursor = 0
     pick = None
-    for item, w in weights.items():
+    for item, w in rolled.items():
         lo, hi = cursor, cursor + w - 1
         marker = "→" if (pick is None and lo <= r <= hi) else " "
         line = f"  {marker} {item} {st.dim(f'[{lo}..{hi}]')}"

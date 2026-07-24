@@ -3,6 +3,7 @@
 
 import contextlib
 import io
+import tempfile
 import unittest
 
 import roll
@@ -11,7 +12,7 @@ import roll
 def run(argv):
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        roll.main(argv)
+        roll.main(["--no-staleness"] + argv)
     return buf.getvalue().rstrip("\n")
 
 
@@ -56,6 +57,23 @@ class TestRoll(unittest.TestCase):
         # M1 regression: alignment is deterministic-first, never in the pool.
         with self.assertRaises(SystemExit):
             run(["--weight", "goal-alignment=1"])
+
+    def test_default_pool_scales_with_items(self):
+        # 6 items x5 = 30; removing one item shrinks the pool to 25.
+        self.assertIn("maintenance-pool: 30", run(["--list"]))
+        self.assertIn("maintenance-pool: 25",
+                      run(["--list", "--weight", "docs=0"]))
+
+    def test_apply_staleness_hunger(self):
+        weights = {"a": 3, "b": 3}
+        ages = {"a": 0, "b": roll.STALE_WINDOW}
+        eff = roll.apply_staleness(weights, ages)
+        self.assertEqual(eff["a"], 3)          # fresh: x1
+        self.assertEqual(eff["b"], 27)         # starved: x9
+
+    def test_marker_ages_none_outside_git(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(roll.marker_ages(d, ["docs"]))
 
 
 if __name__ == "__main__":
