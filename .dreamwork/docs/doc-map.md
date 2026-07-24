@@ -20,6 +20,7 @@ cover it too.
 | `migrations/` | Versioned target-affecting changes; latest filename = version | Append-only; README holds the protocol |
 | `.dreamwork/docs/plans/` | Active feature plans (ud-dreamtask, ud-dreamwork-github) | Prune when features fully land |
 | `.dreamwork/{lessons,questions}.md` | Distilled lessons; asks for the human | Yes — groomed in rotation |
+| `.dreamwork/tasks.md` | The queue's durable half: open tasks, permanent ids, next id | Yes — same commit as any queue change |
 | `roll.py` / `watch.py` docstrings | Tool contracts (advisory dice; dashboard) | Yes — contracts live in the docstrings |
 
 No public-facing README exists; SKILL.md is the entry point by design

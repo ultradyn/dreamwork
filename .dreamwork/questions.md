@@ -11,6 +11,13 @@
   should the loop now push each landed increment (or per-session), or
   stay commit-only-push-on-ask? Rec: (a) yes, load; (b) push at
   session wrap + on ask, not per-increment.
+  - **Follow-up (in-session, 2026-07-25 ~10:55):** a third polarity rides
+    along — `doc-map.md` records "no public-facing README by design
+    (skills are consumed in-harness, not browsed on a forge)", which the
+    push made half-true. Same answer probably settles it: (c) does the
+    repo want a README? Rec: yes but minimal — what the skill is, how to
+    install it, where SKILL.md starts — while SKILL.md stays the entry
+    point for the harness.
 
 - **2026-07-25 — daemon-mode: stage-1 build go? (#96).** Brainstorm
   round complete — all five needs-Max decisions answered in-session
