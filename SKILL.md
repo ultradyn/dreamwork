@@ -72,7 +72,9 @@ approval. Real user messages always take priority over the loop.
 0. **Sync.** Check the task list first. Resume unblocked in-progress work
    before starting anything new; then take any task marked next-up
    (`metadata.next: true`, newest first, clearing the mark on start) —
-   an explicit human steer outranks the agent's own ideas.
+   an explicit human steer outranks the agent's own ideas. Then: any known
+   goal/philosophy misalignment (DREAMWORK.md stale or contradicted)
+   outranks everything below — restore alignment before other work.
 1. **Out-of-scope leftovers.** In recent work, did anything occur to you that
    was out of scope at the time? If complex: do a quick feasibility check,
    then add it to the task list. Otherwise: do it now (add it as in_progress
@@ -197,7 +199,9 @@ if Max is away).
 - Surface contradictions. When what the human says now conflicts with
   recorded state (DREAMWORK.md, docs, the implementation), say so plainly
   and presume they know how to resolve it — it's wavelength-matching, not
-  fault-finding. Fold the resolution back into DREAMWORK.md.
+  fault-finding. Fold the resolution back into DREAMWORK.md. Restoring
+  alignment is priority work, not deferred maintenance: small drift folds
+  in immediately; bigger drift becomes a top-of-queue task.
 - Communication: brief updates as you go; `attn` only for genuine blockers,
   questions, or notable milestones. Subagents never use `attn`.
 
