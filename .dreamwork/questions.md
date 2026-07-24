@@ -12,6 +12,12 @@
   stay commit-only-push-on-ask? Rec: (a) yes, load; (b) push at
   session wrap + on ask, not per-increment.
 
+- **2026-07-25 — daemon-mode brainstorm (#96).** Big idea mapped at
+  `.dreamwork/docs/plans/daemon-mode.md`: aggregator-first rec
+  (dreamhub `/` list + `/{project}/` proxy over existing watch
+  instances, zero loop changes), then supervisor daemon; needs-Max
+  decisions listed (bg runtime, lifecycle authority, exposure,
+  channels, PWA-vs-Tauri). Brainstorm with you before any plan.
 - **2026-07-25 — goal-hierarchies design review (#95).** Incubation
   plan at `.dreamwork/docs/plans/goal-hierarchies.md`: one goal tree
   (DREAMWORK.md nested Goals → session goal → task goal metadata),
