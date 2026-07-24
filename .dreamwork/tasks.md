@@ -4,7 +4,7 @@ The durable half of the task list. The backend's list is session-scoped —
 this file is not, so ids here are permanent and everything else (commits,
 docs, questions, dreams) refers to tasks by them.
 
-Next id: **98**
+Next id: **99**
 
 ## Open
 
@@ -15,6 +15,8 @@ Next id: **98**
   45m
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
   45m
+- **#98** — Show the open queue on the watch dashboard · P2 · idea · 40m ·
+  new page surface, fit-check at selection
 - **#95** — Goal hierarchies · P2 · task · 60m · **blocked**: human review
   of `docs/plans/goal-hierarchies.md` (questions.md)
 - **#92** — Hand-rolled Ctrl+K command palette · P3 · task · 40m
