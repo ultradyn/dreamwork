@@ -153,6 +153,69 @@ navigates and carries the same dreaming field (see Shader). Views are pure build
 `buildQuestions`, `buildFile`, `buildReview`); the router swaps them. Add a
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
 
+### The persistent chrome
+
+The heading is not content. It is the page's frame — the same `+` opener, a
+title, and a crumb row, on every route — and it lives in the shell as a
+**sibling of `#view`**, the standing `#dreambg` already has. While it lived
+*inside* `#view` it dissolved and was rebuilt on every navigation, which is
+why a route change read as "the elements jump around" rather than as the page
+opening up (human, 2026-07-25). View builders return their body only; a new
+view adds a `TITLES` entry and a `crumbsFor` branch, not a heading.
+
+**Crumbs are keyed** (`data-k`), and that is the whole trick: a survivor must
+be *literally the same element* before and after, or a FLIP has nothing to
+measure and you get a fade where a glide was asked for. `home` is one crumb
+across three routes even though its text gains and loses an arrow. Departing
+crumbs are lifted out of flow at the rect they occupied — so survivors can
+close the gap underneath them — and dream away in place on the mist idiom;
+arrivals SNAP to their start state (`.dreamin`) before easing in.
+
+The separator belongs to the crumb that **follows**, so a departing crumb
+takes no punctuation with it. It is written with non-breaking spaces: an
+inline-block collapses the leading and trailing whitespace of generated
+content, and `content:" · "` renders flush against its neighbour.
+
+**The column travels.** `/review` is the styleguide's one width exception,
+and changing width is a layout change, so it glides (`body.wsliding`) on the
+dissolve's own easing rather than snapping. Two consequences that are not
+optional:
+
+- **The departing ghost is pinned** to the box it was rendered in (top,
+  width, height, measured before the class flip). It is *leaving*: it must
+  not re-wrap every paragraph into a new column while still fully opaque.
+  That reflow, at frame 0 and at full opacity, *was* the reported jump.
+- **`body.wsliding` clips `overflow-x`**, because a ghost pinned to the wider
+  old column would otherwise push a horizontal scrollbar as the column
+  narrows underneath it.
+
+`.wsliding` is added only for a route change, so a direct load of `/review`
+arrives already wide instead of animating its column on first paint.
+
+**The opener clamps, it does not track.** The `+` hangs in the gutter left of
+the column, and the gutter does not exist on the review view or in a narrow
+window — the button was sliced in half by the page edge. The pull is clamped
+to the room that actually exists, in **CSS**:
+
+```css
+margin-left: calc(-1 * clamp(0px, (100vw - 100%) / 2 - .6rem, 2.4rem));
+```
+
+`100%` is the containing block's width — `.htitlebar`'s, which is the
+column's — so `(100vw - 100%)/2` *is* the gutter, without naming a column
+that is sized in `ch` (and `ch` would resolve against the button's own font,
+not the column's). CSS rather than a measure-then-write in rAF is what makes
+the guarantee hold on **every frame**: the column glides, and JS would always
+paint one frame behind it. At the tightest column the button parks flush,
+still inset by the body padding.
+
+`dev/capture/headertravel.mjs` traces all of this per frame, in both
+directions, plus reduced motion, plus every route at four window widths. Each
+check was shown to fail on its own deliberately-reintroduced bug — the
+unclamped opener measures **-22px**, i.e. off-screen. Note the ghost is
+measured with `offsetWidth`, not `getBoundingClientRect()`: the dissolve
+lifts it with `scale(1.07)`, and only layout width answers "did it re-wrap".
+
 ### Prose rendering
 
 Everything the loop writes to disk is hard-wrapped at about 72 columns. A

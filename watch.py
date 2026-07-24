@@ -67,6 +67,29 @@ STYLE = """<style>
   header { color:var(--bright); font-size:1rem; margin-bottom:.25rem; }
   #meta { color:var(--dim); margin-bottom:2rem; }
   #meta .q { color:var(--accent); }
+  /* The heading survives navigation, so its parts travel rather than
+     reload (#110). Crumbs are inline-block because a transform does nothing
+     to an inline box; the separator belongs to the crumb that FOLLOWS, so a
+     departing crumb takes no punctuation with it. */
+  #chrome { position:relative; }
+  .crumb, .htitle { display:inline-block;
+    transition:transform .85s cubic-bezier(.32,.1,.2,1),
+               opacity .55s ease, filter .55s ease; }
+  /* non-breaking spaces: an inline-block collapses the leading/trailing
+     whitespace of generated content, so " · " would render flush */
+  .crumb + .crumb::before { content:"\\00a0\\00b7\\00a0"; color:var(--dim); }
+  /* the snapped start state for anything arriving: transition:none so it
+     BEGINS here instead of animating toward here (the enter-snap rule) */
+  .dreamin { transition:none; opacity:0; filter:blur(4px);
+             transform:translateY(5px); }
+  /* a departing crumb is lifted out of flow at its own rect, so survivors
+     close the gap underneath it while it dreams away in place */
+  .crumb.crumbout { position:absolute; z-index:2; pointer-events:none; }
+  .crumb.crumbout::before { content:none; }
+  .crumb.crumbgone { opacity:0; filter:blur(5px); transform:translateY(-7px); }
+  @media (prefers-reduced-motion: reduce) {
+    .crumb, .htitle { transition:none; }
+  }
   .label { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
            font-size:.7rem; margin:var(--space) 0 .5rem; }
   details { margin:.25rem 0; }
@@ -170,7 +193,11 @@ STYLE = """<style>
      0 + pushed-back, then removing .enter, gives a true fade-up from depth. */
   #view.enter { transition:none; opacity:0;
                 transform:translateY(30px) translateZ(-110px) scale(.93); }
-  .ghost { position:absolute; inset:0; z-index:1; pointer-events:none;
+  /* the ghost is pinned to the box the outgoing view occupied (top/width/
+     height set in crossfade), not stretched to the wrapper — the chrome now
+     sits above #view, and a resizing column must not re-wrap the departing
+     content while it is still opaque (#107). */
+  .ghost { position:absolute; left:0; top:0; z-index:1; pointer-events:none;
            opacity:1; transform-origin:50% 40%;
            transition:opacity 1.05s cubic-bezier(.4,0,.66,.38),
                       transform 1.15s cubic-bezier(.34,0,.6,.4); }
@@ -183,6 +210,19 @@ STYLE = """<style>
      question docks beside it (sticky) so it can be answered with the
      review in front of you. Wider than the 72ch reading column. */
   body.review .wrap { max-width:1360px; }
+  /* The column is the one thing on this page that changes SIZE, and the
+     motion language says things that change travel rather than teleport
+     (#107). So the width glides, on the dissolve's own easing and duration.
+     Gated behind .wsliding, added only for a route change: a direct load of
+     /review must arrive already wide, not animate its column on first paint.
+     overflow-x is clipped for the same window because the departing ghost is
+     pinned to its OLD width and would otherwise push a horizontal scrollbar
+     while the column narrows underneath it. */
+  body.wsliding .wrap { transition:max-width 1s cubic-bezier(.32,.1,.2,1); }
+  body.wsliding { overflow-x:hidden; }
+  @media (prefers-reduced-motion: reduce) {
+    body.wsliding .wrap { transition:none; }
+  }
   #reviewwrap { display:grid; gap:1.3rem; align-items:start; margin-top:1rem;
     grid-template-columns:minmax(0,1fr) minmax(24ch,34ch); }
   #reviewwrap.nodock { grid-template-columns:minmax(0,1fr); }
@@ -201,7 +241,22 @@ STYLE = """<style>
      not a hard pop. reduced-motion just shows/hides. */
   .htitlebar { display:flex; align-items:baseline; gap:.55rem; }
   .htitle { display:inline; }
-  #cmdplus { flex:none; align-self:center; margin-left:-2.4rem;
+  /* The opener hangs in the gutter LEFT of the reading column, so its offset
+     is only affordable when the gutter exists. It does not on the review
+     view's 1360px column, or in any narrow window — the button was sliced in
+     half by the page edge (#108). So the pull is CLAMPED to the room that
+     actually exists: it hangs out as far as it can, then locks; 0 parks it
+     flush with the column, still inset by the body padding.
+
+     `100%` is the containing block's width — .htitlebar's, which is the
+     column's — so `(100vw - 100%)/2` IS the gutter, with no need to name the
+     column's width (it is `ch`-sized, and `ch` would resolve against the
+     button's own font rather than the column's). Doing this in CSS rather
+     than JS is what makes the guarantee hold on every frame: the column
+     GLIDES on a route change (#107), and a measure-then-write in rAF always
+     paints one frame behind that. */
+  #cmdplus { flex:none; align-self:center;
+    margin-left:calc(-1 * clamp(0px, (100vw - 100%) / 2 - .6rem, 2.4rem));
     width:1.7rem; height:1.7rem; display:grid; place-items:center;
     background:transparent; color:var(--muted);
     border:1px solid var(--border); border-radius:var(--radius);
@@ -211,7 +266,6 @@ STYLE = """<style>
   #cmdplus:hover, #cmdplus.on { color:var(--accent);
     border-color:var(--accent); background:rgba(99,102,241,.09); }
   #cmdplus.on { transform:rotate(45deg); }
-  @media (max-width:820px) { #cmdplus { margin-left:0; } }
   #cmdpalette { position:fixed; z-index:30; top:4rem; left:1rem;
     width:min(38ch,92vw); background:rgba(11,15,25,.94);
     border:1px solid var(--border); border-radius:8px; padding:1rem 1rem .85rem;
@@ -333,6 +387,12 @@ APP_BODY = """<canvas id="dreambg"></canvas>
  </filter>
 </svg>
 <div class="wrap">
+<div id="chrome">
+ <header class="htitlebar"><button id="cmdplus" type="button"
+   title="command the dream" aria-label="open command palette">+</button>
+  <span class="htitle"></span></header>
+ <div id="meta"></div>
+</div>
 <div id="view">loading…</div>
 <div id="cmdpalette" role="dialog" aria-label="command palette">
  <form id="cmdform" autocomplete="off">
@@ -372,12 +432,6 @@ const ageStr = mt => {
 };
 /* components: every section on every watch page renders through these */
 const label = t => `<div class="label">${t}</div>`;
-/* every view's heading carries the command-palette opener, tucked into the
-   left gutter — a persistent, subtle affordance to steer the dream. */
-const pageHeader = inner =>
-  `<header class="htitlebar"><button id="cmdplus" type="button"` +
-  ` title="command the dream" aria-label="open command palette">+</button>` +
-  `<span class="htitle">${inner}</span></header>`;
 /* a small standard picture-in-picture glyph — a low-emphasis button placed
    after doc/review affordances so pop-out is discoverable, never surprising.
    Clicking it floats the target (data-pipurl) in an identity-headed window. */
@@ -555,12 +609,7 @@ function dreamBlock(d) {
     mdB(d.content));
 }
 function buildDashboard(d) {
-  const q = d.open_questions > 0
-    ? ` · <a class="q" href="/questions">${d.open_questions} open question${d.open_questions>1?'s':''}</a>`
-    : ` · <a class="q" href="/questions" style="color:var(--dimmer)">questions</a>`;
-  let h = pageHeader('dreamwork watch') +
-    `<div id="meta">${esc(d.target)} · ${esc(d.files['skill-version'])} · ` +
-    `<span id="upd"></span>${q}</div><div id="sections">`;
+  let h = `<div id="sections">`;
   h += label(`dreams (${d.dreams.length})`) +
        (d.dreams.map(dreamBlock).join('') || '<div class="dim">none active</div>') +
        (d.dreams_archive.length
@@ -600,8 +649,7 @@ function buildQuestions(d) {
   const qo = d.questions_open.map((q, i) => [q, i]);
   const openQ = qo.filter(([q]) => !q.answer);
   const foldQ = qo.filter(([q]) => q.answer);
-  let h = pageHeader('questions') +
-    `<div id="meta"><a href="/">&larr; dashboard</a></div><div id="qsections">`;
+  let h = `<div id="qsections">`;
   h += label(`open (${openQ.length})`) +
        (openQ.map(([q, i]) => qaCard(q, 'o' + i)).join('') ||
         '<div class="dim">none — all answered</div>');
@@ -617,10 +665,7 @@ function buildFile(param, text) {
   const body = text == null
     ? '<div class="dim">not found</div>'
     : `<pre>${esc(text)}</pre>`;
-  return pageHeader(esc(param || '')) +
-    `<div id="meta"><a href="/">&larr; dashboard</a>` +
-    pipBtn('/file?p=' + encodeURIComponent(param || ''), param || 'file') +
-    `</div><div id="filebody">${body}</div>`;
+  return `<div id="filebody">${body}</div>`;
 }
 /* review view: the raw artifact in an iframe (style-isolated) with the
    originating question docked beside it (answer box included), so it can
@@ -635,12 +680,7 @@ function buildReview(name, q, d) {
       dock = `<aside class="qdock" id="qdock">` +
         label('answering') + qaCard(d.questions_open[i], 'o' + i) + `</aside>`;
   }
-  return pageHeader(`review<span class="revname">${esc(name || '')}</span>`) +
-    `<div id="meta"><a href="/questions">&larr; questions</a> · ` +
-    `<a href="/">dashboard</a>` +
-    pipBtn('/reviewraw?p=' + encodeURIComponent(name || ''),
-           'review: ' + (name || '')) + `</div>` +
-    `<div id="reviewwrap"${dock ? '' : ' class="nodock"'}>` +
+  return `<div id="reviewwrap"${dock ? '' : ' class="nodock"'}>` +
       `<div id="reviewdoc"><iframe id="reviewframe" src="${src}" ` +
       `title="review artifact" loading="lazy"></iframe></div>` +
       dock +
@@ -783,6 +823,121 @@ function setContent(html) {
   document.getElementById('view').innerHTML = html;
   ages();
 }
+/* ── the persistent chrome (#110) ─────────────────────────────────────────
+   The heading is not content, it is the page's frame: the same + opener, a
+   title, and a crumb row, on every route. While it lived inside #view it
+   dissolved and was rebuilt on every navigation, which is why a route change
+   read as "the elements jump around" rather than as the page opening up. So
+   it is a SIBLING of #view — the standing #dreambg already has — it survives
+   the route change, and it travels to its new position.
+
+   Crumbs are KEYED, and that is the whole trick: a survivor has to be
+   literally the same element before and after, or a FLIP has nothing to
+   measure and you get a fade where a glide was asked for. `home` is one
+   crumb across three routes even though its text gains and loses an arrow. */
+const TITLES = {
+  dashboard: () => 'dreamwork watch',
+  questions: () => 'questions',
+  file: v => esc(v.param || ''),
+  review: v => `review<span class="revname">${esc(v.param || '')}</span>`,
+};
+function crumbsFor(v, d) {
+  const home = { k:'home', html:'<a href="/">&larr; dashboard</a>' };
+  if (v.name === 'questions') return [home];
+  if (v.name === 'file') return [home,
+    { k:'pip', html: pipBtn('/file?p=' + encodeURIComponent(v.param || ''),
+                            v.param || 'file') }];
+  if (v.name === 'review') return [
+    { k:'qs', html:'<a href="/questions">&larr; questions</a>' },
+    { k:'home', html:'<a href="/">dashboard</a>' },
+    { k:'pip', html: pipBtn('/reviewraw?p=' + encodeURIComponent(v.param || ''),
+                            'review: ' + (v.param || '')) }];
+  if (!d) return [];
+  return [
+    { k:'target', html: esc(d.target) },
+    { k:'version', html: esc(d.files['skill-version']) },
+    { k:'updated', html:'<span id="upd"></span>' },
+    { k:'openq', html: d.open_questions > 0
+        ? `<a class="q" href="/questions">${d.open_questions} open ` +
+          `question${d.open_questions > 1 ? 's' : ''}</a>`
+        : `<a class="q" href="/questions" style="color:var(--dimmer)">` +
+          `questions</a>` },
+  ];
+}
+/* where the heading sits RIGHT NOW — taken before the column class flips,
+   because that flip is what moves everything. */
+function chromeSnapshot() {
+  const meta = document.getElementById('meta');
+  const titleEl = document.querySelector('#chrome .htitle');
+  if (!meta || !titleEl) return null;
+  const at = new Map();
+  for (const el of meta.children) at.set(el.dataset.k, el.getBoundingClientRect());
+  return { at, title: titleEl.getBoundingClientRect() };
+}
+/* a departing crumb dreams away where it stood: lifted out of flow at its own
+   rect so the survivors can close the gap underneath it, then dissolved on
+   the page's mist idiom rather than simply vanishing. */
+function departCrumbs(gone) {
+  const ch = document.getElementById('chrome');
+  if (!ch) return;
+  const org = ch.getBoundingClientRect();
+  for (const [el, r] of gone) {
+    if (!r) { el.remove(); continue; }
+    el.classList.add('crumbout');
+    el.style.left = (r.left - org.left) + 'px';
+    el.style.top = (r.top - org.top) + 'px';
+    el.style.width = r.width + 'px';
+    ch.appendChild(el);
+    void el.offsetWidth;
+    el.classList.add('crumbgone');
+    setTimeout(() => el.remove(), 900);
+  }
+}
+function renderChrome(v, d, snap) {
+  const meta = document.getElementById('meta');
+  const titleEl = document.querySelector('#chrome .htitle');
+  if (!meta || !titleEl) return;
+  const nextTitle = (TITLES[v.name] || TITLES.dashboard)(v, d);
+  const next = crumbsFor(v, d);
+  const prev = new Map([...meta.children].map(el => [el.dataset.k, el]));
+  const row = [], arrived = [];
+  for (const c of next) {
+    let el = prev.get(c.k);
+    if (el) { prev.delete(c.k); if (el.innerHTML !== c.html) el.innerHTML = c.html; }
+    else {
+      el = document.createElement('span');
+      el.className = 'crumb'; el.dataset.k = c.k; el.innerHTML = c.html;
+      if (snap && !rmr) { el.classList.add('dreamin'); arrived.push(el); }
+    }
+    row.push(el);
+  }
+  const gone = [...prev].map(([k, el]) => [el, snap ? snap.at.get(k) : null]);
+  meta.replaceChildren(...row);
+  if (snap && !rmr) departCrumbs(gone); else gone.forEach(([el]) => el.remove());
+  if (titleEl.innerHTML !== nextTitle) {
+    titleEl.innerHTML = nextTitle;
+    if (snap && !rmr) { titleEl.classList.add('dreamin'); arrived.push(titleEl); }
+  }
+  ages();
+  if (!snap || rmr) return;
+  // FLIP the survivors from where they stood to where the new row puts them,
+  // then release the arrivals from their snapped start state (the enter-snap
+  // rule: with an always-on transition, adding the start class animates
+  // TOWARD the start value instead of beginning there).
+  for (const el of row) {
+    const b = snap.at.get(el.dataset.k);
+    if (!b) continue;
+    const a = el.getBoundingClientRect();
+    const dx = b.left - a.left, dy = b.top - a.top;
+    if (!dx && !dy) continue;
+    el.style.transition = 'none';
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+    void el.offsetWidth;
+    el.style.transition = '';
+    el.style.transform = '';
+  }
+  requestAnimationFrame(() => arrived.forEach(el => el.classList.remove('dreamin')));
+}
 /* Dream dissolve: the outgoing view becomes a ghost that liquifies into a
    swirling mist (turbulence displacement + blur grow) and drifts upward as
    it fades; the incoming view coalesces from the same mist and settles
@@ -798,16 +953,38 @@ function crossfade(html, xopts) {
   if (rmr) {
     document.body.classList.toggle('review', !!xopts.review);
     setContent(html);
+    renderChrome(view, data, null);
     return;
   }
+  // The review view is a wider column, so a route change onto or off it
+  // RESIZES the page. Measure everything that is about to move BEFORE the
+  // class flip that moves it.
+  const outRect = viewEl.getBoundingClientRect();
+  const outW = outRect.width, outH = outRect.height;
+  const outTop = viewEl.offsetTop;
+  const snap = chromeSnapshot();
   const ghost = viewEl.cloneNode(true);
   ghost.removeAttribute('id'); ghost.className = 'ghost';
   // a cloned iframe would re-fetch and flash while dissolving — drop it;
   // the ghost only needs the chrome/text to blur away.
   ghost.querySelectorAll('iframe').forEach(f => f.remove());
   viewEl.parentNode.appendChild(ghost);
-  document.body.classList.toggle('review', !!xopts.review);   // width flips now
+  // Pin the ghost to the box it was rendered in. It is LEAVING: it should
+  // dissolve as it was, not re-wrap every paragraph into a new column while
+  // still fully opaque — that reflow, at frame 0 and at full opacity, was
+  // the "elements jump around" (#107). The chrome now sits above #view, so
+  // the ghost is placed at #view's own offset rather than stretched to the
+  // wrapper with `inset:0`.
+  ghost.style.top = outTop + 'px';
+  ghost.style.width = outW + 'px';
+  ghost.style.height = outH + 'px';
+  // ...and the column itself glides to its new width rather than snapping
+  // (see body.wsliding). The incoming view reflows as it widens, behind the
+  // mist and up from opacity 0, so the resize reads as the page opening.
+  document.body.classList.add('wsliding');
+  document.body.classList.toggle('review', !!xopts.review);
   setContent(html);
+  renderChrome(view, data, snap);   // the heading travels; it does not reload
   // measure the docked question's resting rect BEFORE the enter transform,
   // so a shared-element FLIP from the clicked question lands true.
   const dock = document.getElementById('qdock');
@@ -839,6 +1016,7 @@ function crossfade(html, xopts) {
     if (raf) cancelAnimationFrame(raf), raf = 0;
     if (ghost.isConnected) ghost.remove();
     viewEl.style.filter = '';              // crisp at rest, zero filter cost
+    document.body.classList.remove('wsliding');
   };
   function stepFx(now) {
     const u = Math.min(1, (now - t0) / DREAM_MS);
@@ -908,6 +1086,7 @@ async function navigate(name, param, opts) {
   if (opts.transition === false) {
     document.body.classList.toggle('review', name === 'review');
     setContent(html);
+    renderChrome(view, data, null);   // first paint: arrive, don't animate
   } else {
     crossfade(html, { fromRect: opts.fromRect, review: name === 'review' });
   }
@@ -952,6 +1131,9 @@ async function tick() {
       data = await (await fetch('/data.json')).json();
       if (view.name === 'dashboard') setContent(buildDashboard(data));
       else if (view.name === 'questions') setContent(buildQuestions(data));
+      // the crumbs carry live numbers too (open count, version) — and the
+      // tick re-renders in place, instantly, so they never animate
+      renderChrome(view, data, null);
     }
   } catch (e) { /* server restarting; retry next tick */ }
   setTimeout(tick, 2000);

@@ -307,7 +307,7 @@ class TestAppShell(unittest.TestCase):
         # Static guard: the + opener, the palette, POST /command, the dream
         # ripple, and the pop-out (Document Picture-in-Picture + window.open
         # fallback) must stay wired so a refactor can't drop the steer path.
-        for token in ('id="cmdplus"', 'id="cmdpalette"', 'pageHeader',
+        for token in ('id="cmdplus"', 'id="cmdpalette"', 'id="chrome"',
                       "fetch('/command'", 'documentPictureInPicture',
                       'window.open', 'ripple('):
             self.assertIn(token, watch.PAGE)
@@ -426,6 +426,45 @@ class TestAppShell(unittest.TestCase):
         # raw surfaces keep <pre>: the file viewer and the status blob
         self.assertIn('`<pre>${esc(text)}</pre>`', watch.PAGE)
         self.assertIn('preB(JSON.stringify(d.status, null, 2))', watch.PAGE)
+
+    def test_page_heading_is_persistent_chrome(self):
+        # #110: the heading is the page's frame, not view content — it lives
+        # in the shell as a sibling of #view, survives navigation, and its
+        # crumbs are keyed so a survivor is the same element before and after
+        # (a FLIP has nothing to measure otherwise).
+        for token in ('id="chrome"', 'function renderChrome',
+                      'function chromeSnapshot', 'function departCrumbs',
+                      'function crumbsFor', 'data-k', 'crumbout', 'dreamin',
+                      'renderChrome(view, data, snap)'):
+            self.assertIn(token, watch.PAGE)
+        # no view builder may emit its own heading any more
+        self.assertNotIn('pageHeader', watch.PAGE)
+        self.assertNotIn('<div id="meta">$', watch.PAGE)
+
+    def test_page_slides_the_column_and_pins_the_ghost(self):
+        # #107: the review column is wider, so a route change resizes the
+        # page. The departing ghost is pinned to the box it was rendered in
+        # (it must not re-wrap while still opaque) and the column glides.
+        for token in ('body.wsliding .wrap { transition:max-width',
+                      "ghost.style.width = outW + 'px'",
+                      "ghost.style.height = outH + 'px'",
+                      "document.body.classList.add('wsliding')",
+                      "document.body.classList.remove('wsliding')"):
+            self.assertIn(token, watch.PAGE)
+
+    def test_page_clamps_the_command_opener(self):
+        # #108: the + hangs in the gutter left of the column, which does not
+        # exist on the review view or in a narrow window — it was clipped by
+        # the page edge. The pull is clamped to the room available, and
+        # re-clamped per frame because the column glides (#107).
+        # The clamp is CSS, not a measure-then-write in rAF: the column
+        # glides on a route change (#107) and JS would always paint a frame
+        # behind it. `100%` is the column's own width, so the gutter is
+        # expressible without naming a `ch`-sized column.
+        self.assertIn('margin-left:calc(-1 * clamp(0px, (100vw - 100%) / 2',
+                      watch.PAGE)
+        # the old fixed breakpoint is gone: a clamp subsumes it
+        self.assertNotIn('@media (max-width:820px) { #cmdplus', watch.PAGE)
 
     def test_page_has_layer_switch_guard_and_feedback(self):
         # #78: the layer hotkey ignores text-field keystrokes, and any switch
