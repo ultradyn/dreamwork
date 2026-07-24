@@ -2,6 +2,16 @@
 
 ## Open
 
+- **2026-07-25 — forge presence changes two polarities.** The skill now
+  lives at github.com/ultradyn/dreamwork (private, pushed on your ask).
+  (a) DREAMWORK.md's Don't-load for `ud-dreamwork-github` said revisit
+  on forge presence — load it for this target now? (Its tick-carried
+  ~5min check would watch the repo's issues/PRs once any exist.)
+  (b) Standing push policy: tonight's push was one-time explicit;
+  should the loop now push each landed increment (or per-session), or
+  stay commit-only-push-on-ask? Rec: (a) yes, load; (b) push at
+  session wrap + on ask, not per-increment.
+
 - **2026-07-25 — ud-dreamtask design review.** Incubation plan is at
   `.dreamwork/docs/plans/ud-dreamtask.md` with four open design
   questions (composition, heartbeat cadence, state-dir naming, guardrail
