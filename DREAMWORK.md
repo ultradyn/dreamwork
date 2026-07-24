@@ -42,6 +42,11 @@
   index entries for this skill concise pointers — details live in the
   skill folder. Dogfood findings: fix immediately when small, file
   otherwise.
+- watch.py webui: `watch-design.md` (skill root) is the authoritative
+  styleguide — tokens, component idioms, the motion language (dream
+  dissolve, mist filter, lifted-hero FLIP, reduced-motion + frame-continuity
+  invariants), and copy voice. Read it before changing the page; keep it
+  current in the same commit as the change.
 
 ## Plugins
 
