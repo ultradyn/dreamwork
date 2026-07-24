@@ -13,7 +13,8 @@
   now `2.3/900`). Raised in chat 2026-07-25 ~08:50 and recorded here
   late, which was my lapse: a judgement call that only lives in chat is
   not recorded. Rec: keep it — it is entailed by what you asked for, and
-  the alternative is giving up the shared field. Brainstorm
+  the alternative is giving up the shared field.
+- **2026-07-25 — daemon-mode: stage-1 build go? (#96).** Brainstorm
   round complete — all five needs-Max decisions answered in-session
   (~09:45) and folded into `.dreamwork/docs/plans/daemon-mode.md`:
   herdr-preferred adapter runtime, web lifecycle rec, ssh swarm,

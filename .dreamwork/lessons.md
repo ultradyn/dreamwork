@@ -115,3 +115,8 @@ source dream. Not a log — only things that should change future behavior.
   something is durably carried to it — check the carriers before trusting
   the rule. "Name the chain" shipped with its middle link living nowhere
   readable. (2026-07-25-0926-goals-coherence)
+- Editing a file whose structure is data (questions.md entries, ledger
+  lines) needs a structural check, not a glance: count the entries before
+  and after. An Edit whose old_string spans an entry boundary can drop the
+  next entry's title and silently merge two records. (coordinator,
+  2026-07-25 — I did this to a live human-facing question.)
