@@ -15,24 +15,77 @@ import subprocess
 import time
 import webbrowser
 
-STAGE1_PAGE = """<!doctype html><meta charset="utf-8">
+PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <title>dreamwork watch</title>
-<body style="background:#0b0f19;color:#f3f4f6;font-family:monospace;padding:2rem">
-<h2>dreamwork watch — stage 1 (raw data)</h2>
-<pre id="out">loading…</pre>
+<style>
+  body { background:#0b0f19; color:#f3f4f6; margin:0; padding:2rem;
+         font-family:'JetBrains Mono',ui-monospace,monospace; }
+  .wrap { max-width:900px; margin:0 auto; }
+  h1 { font-size:1.3rem; background:linear-gradient(135deg,#6366f1,#a855f7);
+       -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .meta { color:#9ca3af; font-size:.8rem; margin-bottom:1.5rem; }
+  .badge { display:inline-block; padding:.1rem .55rem; border-radius:999px;
+           font-size:.75rem; background:#1e293b; color:#a5b4fc;
+           border:1px solid #334155; margin-left:.4rem; }
+  .badge.warn { background:#3b1e1e; color:#fca5a5; border-color:#7f1d1d; }
+  section { background:#111827; border:1px solid #1f2937; border-radius:16px;
+            padding:1rem 1.25rem; margin-bottom:1.25rem; }
+  h2 { font-size:.95rem; color:#c7d2fe; margin:.2rem 0 .8rem; }
+  details { margin:.35rem 0; border-left:3px solid #312e81; padding-left:.7rem; }
+  summary { cursor:pointer; color:#e0e7ff; }
+  summary .age { color:#9ca3af; font-size:.75rem; margin-left:.5rem; }
+  pre { white-space:pre-wrap; color:#cbd5e1; font-size:.8rem;
+        background:#0b0f19; border-radius:8px; padding:.75rem; }
+  .git div { font-size:.8rem; color:#9ca3af; padding:.08rem 0; }
+  .git .maint { color:#a855f7; }
+  .dim { color:#6b7280; font-size:.8rem; }
+</style></head><body><div class="wrap">
+<h1>dreamwork watch</h1>
+<div class="meta" id="meta">loading…</div>
+<div id="sections"></div>
 <script>
+const esc = t => { const d = document.createElement('div');
+                   d.textContent = t ?? ''; return d.innerHTML; };
+function dreamBlock(d) {
+  return `<details><summary>${esc(d.name)}<span class="age">${esc(d.age)} old</span></summary><pre>${esc(d.content)}</pre></details>`;
+}
+function render(d) {
+  const qb = d.open_questions > 0
+    ? `<span class="badge warn">${d.open_questions} open question${d.open_questions>1?'s':''}</span>`
+    : `<span class="badge">questions clear</span>`;
+  document.getElementById('meta').innerHTML =
+    `${esc(d.target)} · ${esc(d.files['skill-version'])} · ${esc(d.generated)} ${qb}`;
+  let h = '';
+  h += `<section><h2>Dreams (${d.dreams.length})</h2>` +
+       (d.dreams.map(dreamBlock).join('') || '<div class="dim">none active</div>') +
+       (d.dreams_archive.length
+         ? `<details><summary class="dim">archive (${d.dreams_archive.length})</summary>` +
+           d.dreams_archive.map(dreamBlock).join('') + `</details>` : '') +
+       `</section>`;
+  h += `<section><h2>Files</h2>` +
+       ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
+         `<details><summary>${n}</summary><pre>${esc(d.files[n])}</pre></details>`
+       ).join('') + `</section>`;
+  h += `<section><h2>Status</h2>` + (d.status
+        ? `<pre>${esc(JSON.stringify(d.status, null, 2))}</pre>`
+        : `<div class="dim">no status.json yet (loop writes it each tick once stage 3 lands)</div>`) +
+       `</section>`;
+  h += `<section class="git"><h2>Recent commits</h2>` +
+       d.git.map(l => `<div class="${l.includes('dreamwork(maintain:') ? 'maint' : ''}">${esc(l)}</div>`).join('') +
+       `</section>`;
+  document.getElementById('sections').innerHTML = h;
+}
 let last = null;
 async function tick() {
-  const m = await (await fetch('/mtime')).text();
-  if (m !== last) {
-    last = m;
-    const d = await (await fetch('/data.json')).json();
-    document.getElementById('out').textContent = JSON.stringify(d, null, 2);
-  }
+  try {
+    const m = await (await fetch('/mtime')).text();
+    if (m !== last) { last = m;
+      render(await (await fetch('/data.json')).json()); }
+  } catch (e) { /* server restarting; retry */ }
   setTimeout(tick, 2000);
 }
 tick();
-</script>
+</script></div></body></html>
 """
 
 
@@ -153,7 +206,7 @@ def make_handler(target):
 
         def do_GET(self):
             if self.path == "/":
-                self._send(STAGE1_PAGE, "text/html")
+                self._send(PAGE, "text/html")
             elif self.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
             elif self.path == "/mtime":
