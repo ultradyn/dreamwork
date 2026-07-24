@@ -18,8 +18,10 @@ import argparse
 import random
 import sys
 
+# goal-alignment is deliberately absent: it is never rolled. Alignment
+# precedes the roll deterministically (selection step 0; rotation leads
+# with it).
 MAINTENANCE = {
-    "goal-alignment": 3,
     "self-review": 3,
     "coverage": 2,
     "docs": 2,
