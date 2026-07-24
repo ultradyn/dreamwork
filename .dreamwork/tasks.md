@@ -19,14 +19,8 @@ Next id: **106**
   40m · human-reported with a screenshot; inline markdown leaks too
 - **#106** — Follow-up preview truncates mid-phrase with no affordance ·
   P1 · bug · 25m · human-reported; reads as damaged text
-- **#107** — Page width jumps navigating to/from /review · P1 · bug ·
-  30m · human-reported; `body.review` resizes outside the dissolve
-- **#108** — The `+` opener can be clipped off the left edge · P1 · bug ·
-  25m · human-reported; clamp it to a visible leftmost position
 - **#109** — Human notes must be obviously human, in file and on page ·
   P1 · bug · 35m · file half landed (04968d1); page half with the dreamer
-- **#110** — Heading persists and travels across route changes · P2 ·
-  task · 50m · do with #107; breadcrumbs dissolve, survivors slide
 - **#111** — Answered questions distinct and collapsed by default · P2 ·
   task · 30m · human-asked; awaiting-fold probably stays open
 - **#113** — Awaiting-fold looks alive; every state transition covered ·
@@ -68,7 +62,10 @@ Next id: **106**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#105** one qaCard for all
+Pruned in grooming; git is the real ledger. **#107 #108 #110** the
+travelling heading, the ghost-pinned width glide, the clamped opener
+(2026-07-25, 3f786fc). **#102 #106** prose reflow and the sub-bullet
+parser fix (d14c7b3). **#105** one qaCard for all
 four question surfaces (2026-07-25, ec6721f). **#91** composer tweaks and
 **#101** scrollbar styling (2026-07-25), **#97** durable task ledger
 (2026-07-25, this file). #63-#68, #71, #72, #74, #75,

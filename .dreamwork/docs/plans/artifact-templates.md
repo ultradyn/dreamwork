@@ -61,6 +61,15 @@ flag on the export path). Central updates are worth more than a file
 that is portable but frozen, and "portable" is recoverable in one
 function while "already diverged" is not.
 
+## What the heading work already gave us
+
+`3f786fc` (#110) moved the heading out of the view builders and into the
+shell chrome, so **view builders no longer emit their own heading**. An
+artifact-template surface therefore gets the chrome — heading, `+`
+opener, breadcrumbs, and their travel between routes — for free, and the
+fragment really can be only the important bits. That was not the goal of
+that change; it is a gift from it.
+
 ## Stages
 
 1. Wrapper: `.part.html` detection, shell injection, shader on by
