@@ -206,6 +206,9 @@ if Max is away).
 
 - Commit each increment. Never push or deploy unless DREAMWORK.md or the
   project's CLAUDE.md/config explicitly authorizes it.
+- Mark maintenance commits `dreamwork(maintain:<item>): ...` — git is the
+  maintenance ledger (roll.py reads it for staleness). A maintenance pass
+  that changes nothing may record an `--allow-empty` marker commit.
 - Verification before completion: the project's verification passes
   (tests/lint, or its stated routine) before a task is marked completed.
 - Experiments are feature-gated.
