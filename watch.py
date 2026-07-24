@@ -48,6 +48,11 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8">
     border-radius:4px; font:inherit; padding:.25rem .8rem; cursor:pointer; }
   #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
              height:100vh; }
+  #layerhint { position:fixed; bottom:1rem; right:1rem; z-index:10;
+    color:#a5b4fc; background:rgba(17,24,39,.82);
+    border:1px solid #1f2937; border-radius:4px; padding:.25rem .6rem;
+    font-size:.7rem; opacity:0; transition:opacity .5s ease;
+    pointer-events:none; letter-spacing:.04em; }
   .wrap { position:relative; }
 </style></head><body>
 <canvas id="dreambg"></canvas>
@@ -128,57 +133,281 @@ async function tick() {
 setInterval(ages, 1000);
 tick();
 
-/* dreambg: default placeholder shader — a dreamer subagent owns the
-   refinement loop (task #51). Perf pattern: render at 1/6 resolution,
-   CSS upscale is the v0 blur. Subtle by contract: text always wins. */
+/* dreambg: dream-like fractal background (task #51).
+   Four passes, all cheap by construction — the costly work stays on a
+   ~1/6-CSS-res buffer and only a flat upscale touches full res:
+     pass 1 — domain-warped fBm fractal -> low-res texture A.
+     pass 2 — tilt-shift blur A -> B (8 golden-angle taps; a drifting
+              focus band keeps radius small, growing away from it).
+     pass 3 — blur B -> C again; the two passes compound into a wide,
+              smooth depth-of-field (most of the frame softly defocused).
+     pass 4 — upscale C to screen, tint indigo/violet, dither, composite
+              very subtly over #0b0f19.
+   Blur stays low-res on purpose: it IS the perf budget, and splitting it
+   across two <=8-tap passes also sidesteps a headless-SwiftShader quirk
+   where many texture taps of a high-frequency buffer drop the context.
+   Text always wins: shader luminance is capped far below the dim text.
+   Hidden layer switcher: press 'l' (or triple-click the bottom-right
+   corner) to cycle raw components — fractal, warp field, focus mask,
+   blurred fractal. Pauses when tab hidden; reduced-motion => 1 frame;
+   no WebGL / no FBO => canvas hidden (flat #0b0f19 shows through). */
 (function () {
   const cv = document.getElementById('dreambg');
-  const gl = cv.getContext('webgl', { antialias: false });
+  const gl = cv.getContext('webgl',
+    { antialias: false, depth: false, alpha: false });
   const rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (!gl) return;
-  const vs = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
-  const fs = `precision mediump float;uniform float t;uniform vec2 r;
+  if (!gl) { cv.style.display = 'none'; return; }
+
+  const VS = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
+  const FRACTAL_FS = `precision highp float;
+    uniform float t; uniform vec2 r;
+    float hash(vec2 p){ p=fract(p*vec2(123.34,345.45));
+      p+=dot(p,p+34.345); return fract(p.x*p.y); }
+    float noise(vec2 p){ vec2 i=floor(p),f=fract(p);
+      vec2 u=f*f*(3.0-2.0*f);
+      return mix(mix(hash(i),hash(i+vec2(1,0)),u.x),
+                 mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x),u.y); }
+    float fbm(vec2 p){ float s=0.0,a=0.5;
+      mat2 m=mat2(1.6,1.2,-1.2,1.6);
+      for(int i=0;i<5;i++){ s+=a*noise(p); p=m*p; a*=0.5; } return s; }
     void main(){
-      vec2 u = gl_FragCoord.xy / r;
-      float a = sin(u.x*3.1 + t*.11) * cos(u.y*2.7 - t*.07);
-      float b = sin((u.x+u.y)*4.3 - t*.05) * .5;
-      float v = .5 + .5*sin(a*2.2 + b*1.7 + t*.03);
-      vec3 base = vec3(.043,.059,.098);           /* #0b0f19 */
-      vec3 tint = vec3(.28,.30,.62);              /* indigo  */
-      gl_FragColor = vec4(mix(base, tint, v*.10), 1.);
+      vec2 uv=gl_FragCoord.xy/r;
+      vec2 p=vec2(uv.x*(r.x/r.y),uv.y)*2.3;
+      float tt=t*0.03;
+      vec2 q=vec2(fbm(p+vec2(0.0,tt)), fbm(p+vec2(5.2,1.3)-tt));
+      vec2 s=vec2(fbm(p+2.6*q+vec2(1.7,9.2)+tt*0.6),
+                  fbm(p+2.6*q+vec2(8.3,2.8)-tt*0.4));
+      float f=fbm(p+3.2*s);
+      f=clamp(f*1.15-0.05,0.0,1.0);
+      gl_FragColor=vec4(f, clamp(q.x*0.5+0.5,0.,1.),
+                        clamp(s.y*0.5+0.5,0.,1.), 1.0);
     }`;
-  function sh(type, src) {
-    const s = gl.createShader(type); gl.shaderSource(s, src);
-    gl.compileShader(s); return s;
+  const FOCUS_GLSL = `
+    float focusMask(vec2 uv){
+      float band=0.5+0.30*sin(t*0.045);
+      float foc=smoothstep(0.05,0.44,abs(uv.y-band));
+      foc=clamp(foc+0.18*smoothstep(0.35,1.0,abs(uv.x-0.5)*2.0),0.0,1.0);
+      return foc;
+    }`;
+  const BLUR_FS = `precision highp float;
+    uniform sampler2D tex; uniform vec2 r; uniform float t;` + FOCUS_GLSL + `
+    void main(){
+      vec2 uv=gl_FragCoord.xy/r;
+      float rad=mix(0.008,0.045,focusMask(uv));
+      vec4 acc=texture2D(tex,uv); float w=1.0;
+      for(int i=0;i<8;i++){
+        float fi=float(i);
+        float rr=sqrt((fi+0.5)/8.0)*rad;
+        vec2 off=vec2(cos(fi*2.399963),sin(fi*2.399963))*rr;
+        off.x*=r.y/r.x;
+        acc+=texture2D(tex,uv+off); w+=1.0;
+      }
+      gl_FragColor=acc/w;
+    }`;
+  const COMPOSITE_FS = `precision highp float;
+    uniform sampler2D texRaw; uniform sampler2D texBlur;
+    uniform vec2 r; uniform float t; uniform int mode;
+    float hash(vec2 p){ p=fract(p*vec2(123.34,345.45));
+      p+=dot(p,p+34.345); return fract(p.x*p.y); }` + FOCUS_GLSL + `
+    void main(){
+      vec2 uv=gl_FragCoord.xy/r;
+      vec4 raw=texture2D(texRaw,uv);
+      vec4 bl=texture2D(texBlur,uv);
+      if(mode==1){ gl_FragColor=vec4(vec3(raw.r),1.0); return; }
+      if(mode==2){ gl_FragColor=vec4(raw.g,0.25,raw.b,1.0); return; }
+      if(mode==3){ gl_FragColor=vec4(vec3(1.0-focusMask(uv)),1.0); return; }
+      if(mode==4){ gl_FragColor=vec4(vec3(bl.r),1.0); return; }
+      float glow=smoothstep(0.34,0.92,bl.r);
+      vec3 indigo=vec3(0.28,0.30,0.62);
+      vec3 violet=vec3(0.44,0.31,0.66);
+      vec3 peri=vec3(0.33,0.41,0.74);
+      vec3 tint=mix(indigo,violet,clamp(bl.g,0.,1.));
+      tint=mix(tint,peri,smoothstep(0.42,0.72,bl.b));
+      vec3 base=vec3(0.043,0.059,0.098);
+      vec3 col=base+tint*(glow*0.105);
+      col*=1.0-0.22*smoothstep(0.35,1.25,length(uv-0.5));
+      col+=(hash(gl_FragCoord.xy+t)-0.5)/255.0;
+      gl_FragColor=vec4(col,1.0);
+    }`;
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+      console.warn('dreambg shader:', gl.getShaderInfoLog(s));
+    return s;
   }
-  const pr = gl.createProgram();
-  gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs));
-  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs));
-  gl.linkProgram(pr); gl.useProgram(pr);
-  const buf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER,
-    new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
-  const loc = gl.getAttribLocation(pr, 'p');
-  gl.enableVertexAttribArray(loc);
-  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  const tU = gl.getUniformLocation(pr, 't');
-  const rU = gl.getUniformLocation(pr, 'r');
+  function program(fs) {
+    const pr = gl.createProgram();
+    gl.attachShader(pr, compile(gl.VERTEX_SHADER, VS));
+    gl.attachShader(pr, compile(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(pr); return pr;
+  }
+  // GL objects live in these; initGL() (re)creates them so the whole
+  // pipeline can be rebuilt if the browser loses/restores the context.
+  let progF, progB, progC, uF, uB, uC, buf;
+  let A = null, B = null, C = null, fboOK = false;
+  let canW = 2, canH = 2, fboW = 2, fboH = 2;
+  function bindQuad(pr) {
+    const loc = gl.getAttribLocation(pr, 'p');
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  }
+  function makeTarget(w, h) {   // low-res RGBA render target
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0,
+      gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D, tex, 0);
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER)
+               === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return ok ? { fbo, tex } : null;
+  }
   function size() {
-    cv.width = Math.max(2, innerWidth / 6);
-    cv.height = Math.max(2, innerHeight / 6);
-    gl.viewport(0, 0, cv.width, cv.height);
+    canW = Math.max(2, Math.floor(innerWidth / 2));
+    canH = Math.max(2, Math.floor(innerHeight / 2));
+    cv.width = canW; cv.height = canH;
+    fboW = Math.max(2, Math.floor(canW / 3));
+    fboH = Math.max(2, Math.floor(canH / 3));
+    for (const tgt of [A, B, C]) if (tgt) {
+      gl.deleteTexture(tgt.tex); gl.deleteFramebuffer(tgt.fbo);
+    }
+    A = makeTarget(fboW, fboH);
+    B = makeTarget(fboW, fboH);
+    C = makeTarget(fboW, fboH);
+    fboOK = !!(A && B && C);
+    if (!fboOK) cv.style.display = 'none';
   }
-  addEventListener('resize', size); size();
-  function frame(ms) {
-    gl.uniform1f(tU, ms / 1000);
-    gl.uniform2f(rU, cv.width, cv.height);
+  function initGL() {
+    A = B = C = null;                 // context loss invalidated them
+    progF = program(FRACTAL_FS);
+    progB = program(BLUR_FS);
+    progC = program(COMPOSITE_FS);
+    uF = { t: gl.getUniformLocation(progF, 't'),
+           r: gl.getUniformLocation(progF, 'r') };
+    uB = { tex: gl.getUniformLocation(progB, 'tex'),
+           r: gl.getUniformLocation(progB, 'r'),
+           t: gl.getUniformLocation(progB, 't') };
+    uC = { raw: gl.getUniformLocation(progC, 'texRaw'),
+           blur: gl.getUniformLocation(progC, 'texBlur'),
+           r: gl.getUniformLocation(progC, 'r'),
+           t: gl.getUniformLocation(progC, 't'),
+           mode: gl.getUniformLocation(progC, 'mode') };
+    buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER,
+      new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+    size();
+  }
+  initGL();
+
+  let mode = 0, lastMs = 0;
+  function unbindTextures() {
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+  function blurPass(src, dst, secs) {   // src.tex -> dst.fbo, low res
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+    gl.viewport(0, 0, fboW, fboH);
+    gl.useProgram(progB); bindQuad(progB);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.uniform1i(uB.tex, 0);
+    gl.uniform2f(uB.r, fboW, fboH); gl.uniform1f(uB.t, secs);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
-    if (!rm) requestAnimationFrame(step);
   }
-  function step(ms) { if (!document.hidden) frame(ms);
-                      else setTimeout(() => requestAnimationFrame(step), 500); }
-  requestAnimationFrame(step);
+  function draw(ms) {
+    lastMs = ms;
+    const secs = ms / 1000;
+    if (!fboOK || gl.isContextLost()) return;
+    unbindTextures();                       // no cross-frame feedback
+    // pass 1: fractal -> A
+    gl.bindFramebuffer(gl.FRAMEBUFFER, A.fbo);
+    gl.viewport(0, 0, fboW, fboH);
+    gl.useProgram(progF); bindQuad(progF);
+    gl.uniform1f(uF.t, secs); gl.uniform2f(uF.r, fboW, fboH);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // passes 2 & 3: tilt-shift blur A -> B -> C
+    blurPass(A, B, secs);
+    blurPass(B, C, secs);
+    // pass 4: upscale + composite C (blurred) with A (raw) -> screen
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canW, canH);
+    gl.useProgram(progC); bindQuad(progC);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, A.tex);
+    gl.uniform1i(uC.raw, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, C.tex);
+    gl.uniform1i(uC.blur, 1);
+    gl.uniform2f(uC.r, canW, canH);
+    gl.uniform1f(uC.t, secs);
+    gl.uniform1i(uC.mode, mode);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  addEventListener('resize', () => { size(); if (rm) draw(lastMs); });
+
+  const MODES = ['dream (composite)', 'raw fractal', 'warp field',
+                 'focus mask', 'blurred fractal'];
+  let hint = null, hintT = 0;
+  function cycle() {
+    mode = (mode + 1) % MODES.length;
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.id = 'layerhint'; document.body.appendChild(hint);
+    }
+    hint.textContent = 'layer ' + mode + ' - ' + MODES[mode];
+    hint.style.opacity = '1';
+    clearTimeout(hintT);
+    hintT = setTimeout(() => { hint.style.opacity = '0'; }, 1500);
+    if (rm) draw(lastMs);
+  }
+  addEventListener('keydown', e => {
+    if (e.key === 'l' && !e.metaKey && !e.ctrlKey && !e.altKey) cycle();
+  });
+  let clicks = 0, clickT = 0;
+  addEventListener('click', e => {
+    if (!(e.clientX > innerWidth - 90 && e.clientY > innerHeight - 90)) {
+      clicks = 0; return;
+    }
+    const now = Date.now();
+    if (now - clickT > 600) clicks = 0;
+    clickT = now;
+    if (++clicks >= 3) { clicks = 0; cycle(); }
+  });
+
+  let rafId = 0, running = true;
+  function frame(ms) {
+    draw(ms);
+    if (running && !rm) rafId = requestAnimationFrame(step);
+  }
+  function step(ms) {
+    if (!running) return;
+    if (!document.hidden) frame(ms);
+    else setTimeout(() => { if (running) rafId = requestAnimationFrame(step); }, 500);
+  }
+  // Context loss (GPU reset, tab backgrounding, driver hiccup) is
+  // recoverable: rebuild every GL object on restore and resume.
+  cv.addEventListener('webglcontextlost', e => {
+    e.preventDefault();
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+  });
+  cv.addEventListener('webglcontextrestored', () => {
+    initGL();
+    running = true;
+    if (rm) draw(lastMs);
+    else rafId = requestAnimationFrame(step);
+  });
+  if (rm) draw(0);
+  else rafId = requestAnimationFrame(step);
 })();
 </script></div></body></html>
 """

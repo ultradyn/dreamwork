@@ -15,3 +15,8 @@ source dream. Not a log — only things that should change future behavior.
   whose trail lived only in chat — check before recommending a trim; the
   durable fix for chat-authorized work is a verifiable in-band provenance
   note, not a revert. (2026-07-25-0310-alignment-pass2-clean)
+- For a visual/WebGL task judged by headless screenshots, expect flaky
+  headless-GL (SwiftShader) context loss — a blank render is likely the
+  driver, not your shader. Add a webglcontextlost/restored rebuild handler
+  and reload-on-loss capture; measure pixels rather than trusting the eye.
+  (2026-07-25-0445-dreambg-shader-tilt-shift)
