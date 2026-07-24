@@ -32,8 +32,9 @@
 
 - Cadence & comms: brief updates; `attn` (TTS) only for blockers,
   questions, and notable milestones.
-- Autonomy: commit each increment (the skill folder is its own git repo);
-  push and deploy are not authorized.
+- Autonomy: commit each increment (the skill folder is its own git repo).
+  Push at session wrap and whenever asked — not per increment
+  (2026-07-25). Deploy is not authorized.
 - Routines: after structural edits, do a full coherence re-read of
   SKILL.md + initialization.md (this is the project's test suite).
   Periodically re-check this file against SKILL.md and recent decisions —
@@ -50,8 +51,13 @@
 
 ## Plugins
 
-- Load:
-- Don't load: `ud-dreamwork-github` (2026-07-25) — this target has no
-  GitHub remote/issues to watch; the plugin was *built* here (it ships
-  from the sibling skill folder) but doesn't apply to dreaming on the
-  skill itself. Revisit if the skill gains a forge presence.
+- Load: `ud-dreamwork-github` (2026-07-25) — the skill gained a forge
+  presence (`git@github.com:ultradyn/dreamwork.git`, private), which was
+  the recorded condition for revisiting. Its settings:
+  - Watch: all open issues and PRs (the repo has neither yet).
+  - Authority lines: none granted, so read-only — watch, capture, and
+    progress locally; never touch the remote. Grant `comment`, `push`,
+    `open-pr`, or `merge` by naming them here.
+  - Auto-progress: on. gh-sourced items join normal selection like any
+    other task; nothing about them is a private queue.
+- Don't load:

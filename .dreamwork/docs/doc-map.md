@@ -21,7 +21,11 @@ cover it too.
 | `.dreamwork/docs/plans/` | Active feature plans (ud-dreamtask, ud-dreamwork-github) | Prune when features fully land |
 | `.dreamwork/{lessons,questions}.md` | Distilled lessons; asks for the human | Yes — groomed in rotation |
 | `.dreamwork/tasks.md` | The queue's durable half: open tasks, permanent ids, next id | Yes — same commit as any queue change |
+| `.dreamwork/docs/github-processes.md` | The repo's GitHub shape and conventions (ud-dreamwork-github plugin) | Yes — re-survey when CI, labels, or PR flow appear |
+| `README.md` | Public face of the repo: what dreamwork is, install, where to start | Yes — must not drift from SKILL.md |
 | `roll.py` / `watch.py` docstrings | Tool contracts (advisory dice; dashboard) | Yes — contracts live in the docstrings |
 
-No public-facing README exists; SKILL.md is the entry point by design
-(skills are consumed in-harness, not browsed on a forge).
+SKILL.md is the entry point for the harness; README.md is the entry
+point for a human browsing the forge. The README stays minimal on
+purpose — what this is, how to install it, where to look — and every
+fact in it has its home in a doc above.

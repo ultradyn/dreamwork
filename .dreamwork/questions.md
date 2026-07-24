@@ -2,23 +2,6 @@
 
 ## Open
 
-- **2026-07-25 — forge presence changes two polarities.** The skill now
-  lives at github.com/ultradyn/dreamwork (private, pushed on your ask).
-  (a) DREAMWORK.md's Don't-load for `ud-dreamwork-github` said revisit
-  on forge presence — load it for this target now? (Its tick-carried
-  ~5min check would watch the repo's issues/PRs once any exist.)
-  (b) Standing push policy: tonight's push was one-time explicit;
-  should the loop now push each landed increment (or per-session), or
-  stay commit-only-push-on-ask? Rec: (a) yes, load; (b) push at
-  session wrap + on ask, not per-increment.
-  - **Follow-up (in-session, 2026-07-25 ~10:55):** a third polarity rides
-    along — `doc-map.md` records "no public-facing README by design
-    (skills are consumed in-harness, not browsed on a forge)", which the
-    push made half-true. Same answer probably settles it: (c) does the
-    repo want a README? Rec: yes but minimal — what the skill is, how to
-    install it, where SKILL.md starts — while SKILL.md stays the entry
-    point for the harness.
-
 - **2026-07-25 — daemon-mode: stage-1 build go? (#96).** Brainstorm
   round complete — all five needs-Max decisions answered in-session
   (~09:45) and folded into `.dreamwork/docs/plans/daemon-mode.md`:
@@ -46,6 +29,15 @@
 
 ## Answered
 
+- **Forge presence: three polarities** → "rec" via watch (2026-07-25
+  08:48), all three recommendations taken, all three acted on the same
+  hour. (a) `ud-dreamwork-github` is loaded for this target; its
+  discovery pass wrote `.dreamwork/docs/github-processes.md` and its
+  settings (watch all open issues/PRs, no authority lines so read-only,
+  auto-progress on) are recorded in DREAMWORK.md. (b) Push policy is now
+  session wrap + on ask, in DREAMWORK.md's Autonomy line. (c) A minimal
+  `README.md` exists; doc-map records SKILL.md as the harness entry
+  point and README.md as the forge one.
 - **ud-dreamwork-github design review** → LGTM via watch (2026-07-25
   06:54), all four recs accepted; "check if anything recently changed is
   relevant" done — writing-plugins contract, bridge pattern, and doc
