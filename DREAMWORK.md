@@ -7,6 +7,9 @@
 - The loop stays cheap (cache-warm heartbeat), never gets stuck or bored,
   and is always steerable in a few words (`do now` / `do next` /
   `add idea`).
+- The loop gets on the human's wavelength over time: goals and
+  preferences accrete here so questions get answered once and asking
+  trends down, not up.
 
 ## Philosophy
 
@@ -15,7 +18,15 @@
 - Know what the human wants so we make what the human needs.
 - Reflection over momentum.
 - The loop should feel like a colleague pottering productively — not
-  runaway automation: no make-work, no ungated experiments, no pivots.
+  runaway automation: no make-work, no ungated experiments, no pivots;
+  scope expansion defers to the human.
+- Unclear is a goals problem: every needed conversation with the human is
+  also a moment to sharpen this file; contradictions between this file
+  and what the human says now get surfaced, and the human resolves them.
+- Durable over ephemeral: asks, decisions, and memory live in files
+  (questions.md, dreams, docs) — never only in chat.
+- The skill itself stays lean: principle-level lines over procedure
+  bloat; reference files over SKILL.md growth.
 
 ## Preferences & Routines
 
@@ -24,10 +35,13 @@
 - Autonomy: commit each increment (the skill folder is its own git repo);
   push and deploy are not authorized.
 - Routines: after structural edits, do a full coherence re-read of
-  SKILL.md + initialization.md (this is the project's test suite). Keep
-  any external index entries for this skill concise pointers — details
-  live in the skill folder. Dogfood findings: fix immediately when small,
-  file otherwise.
+  SKILL.md + initialization.md (this is the project's test suite).
+  Periodically re-check this file against SKILL.md and recent decisions —
+  goal alignment is maintenance, not a one-off. Groom
+  `.dreamwork/questions.md` (fold answered entries). Keep any external
+  index entries for this skill concise pointers — details live in the
+  skill folder. Dogfood findings: fix immediately when small, file
+  otherwise.
 
 ## Plugins
 
