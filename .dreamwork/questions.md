@@ -21,12 +21,18 @@
   persist (wrap-time promotion into DREAMWORK.md instead); state the
   chain rather than enforcing branch focus, at least first; free-text
   parent names matching DREAMWORK.md headings. Build waits on your read.
+  - **Follow-up (via watch, 2026-07-25 08:50):** the diagram here is
+    really nice, we should be sure to remember it. / oh also note this
+    text box scroll bar needs styling. *(Left on the ud-dreamtask card;
+    moved here, since the diagram is this entry's artifact. Both acted
+    on: the idiom is recorded in `watch-design.md` under review
+    artifacts, and the scrollbar is task #101.)*
 - **2026-07-25 — ud-dreamtask design review.** Incubation plan is at
   `.dreamwork/docs/plans/ud-dreamtask.md` with four open design
   questions (composition, heartbeat cadence, state-dir naming, guardrail
   inheritance — recs inline). Build waits on your read; answerable here,
   in-session, or via the watch dashboard.
-
+  - **Follow-up (via watch, 2026-07-25 08:51):** the scroll bar for the .html needs styling too. the way this whole page is laid out is great though.
 ## Answered
 
 - **Forge presence: three polarities** → "rec" via watch (2026-07-25

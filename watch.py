@@ -50,6 +50,15 @@ STYLE = """<style>
     --line:#1f2937; --border:#334155; --text:#d1d5db; --bright:#f3f4f6;
     --lit:#e5e7eb; --muted:#9ca3af; --dim:#6b7280; --dimmer:#4b5563;
     --accent:#a5b4fc; --space:1.6rem; --radius:4px; }
+  /* Scrollbars are chrome, and chrome should recede: hairline track,
+     dim thumb, no arrows. Firefox first, then the WebKit pseudos. */
+  * { scrollbar-width:thin; scrollbar-color:var(--dimmer) transparent; }
+  ::-webkit-scrollbar { width:7px; height:7px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--dimmer);
+                              border-radius:var(--radius); }
+  ::-webkit-scrollbar-thumb:hover { background:var(--dim); }
+  ::-webkit-scrollbar-corner { background:transparent; }
   body { background:var(--bg); color:var(--text); margin:0;
          padding:2.5rem 1rem;
          font-family:ui-monospace,'JetBrains Mono',monospace; font-size:.8rem; }
@@ -875,6 +884,11 @@ function ripple(x, y) {                     // soft expanding ring, dream feel
    an identity band tinted like the page it came from. */
 const POPOUT_CSS = `
   :root { color-scheme:dark; }
+  * { scrollbar-width:thin; scrollbar-color:#4b5563 transparent; }
+  ::-webkit-scrollbar { width:7px; height:7px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:#4b5563; border-radius:4px; }
+  ::-webkit-scrollbar-thumb:hover { background:#6b7280; }
   body { margin:0; background:#0b0f19; color:#d1d5db;
     font-family:ui-monospace,'JetBrains Mono',monospace; font-size:13px; }
   #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;

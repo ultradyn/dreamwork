@@ -107,6 +107,35 @@ spaced). Reading column is `max-width:72ch`, centred; the review view is the
 one deliberate exception (`body.review` widens the column for the artifact +
 docked question). Dividers are hairlines (`--line`), not boxes.
 
+### Review artifacts
+
+Artifacts under `.dreamwork/review/` are standalone documents, but they
+are read inside this dashboard — so they carry the same `:root` tokens,
+the same mono stack, and the same restraint. Inline everything (no
+fetches; a strict reading of "offline-clean").
+
+An artifact is a separate document, so page-level chrome does not reach
+it: it carries its own scrollbar rules (the same hairline track and
+`--dimmer` thumb the shell uses) or it shows the browser's default
+inside our iframe. Same for any popped-out window.
+
+Two idioms, both endorsed by the human (2026-07-25, on the
+goal-hierarchies artifact — *"the diagram here is really nice, we should
+be sure to remember it"*):
+
+- **Diagrams are inline SVG in the token palette**, not images and not
+  ASCII. Nested boxes indented by depth, hairline arrows between them,
+  `--accent` reserved for the one row that is the point.
+- **Label the columns, not the gaps.** Every row states its own two
+  facts side by side under a header pair (`DEPTH` / `LIVES IN`) — a
+  label floating between two rows attaches itself to the wrong one, and
+  a reader will not notice they have learned it backwards. Found by
+  looking at the render; the markup read fine.
+
+A decision artifact shows each option beside its alternative rather than
+only the recommendation: the human is being asked to decide, not to
+ratify.
+
 ### Components (idioms)
 
 Everything renders through shared factories so a redesign is one edit, not a

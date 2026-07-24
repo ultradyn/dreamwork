@@ -6,13 +6,14 @@ docs, questions, dreams) refers to tasks by them.
 
 **Written by the coordinator only.** Dreamers report queue changes.
 
-Next id: **99**
+Next id: **101**
 
 ## Open
 
-- **#91** — Composer tweaks, the five human items · P1 · task · 90m ·
-  *in progress (dreamer-composer)* · spec + code pointers:
-  `docs/handoff-2026-07-25-beauty.md`
+- **#99** — Popped-out composer should use the button group too · P3 ·
+  task · 25m
+- **#100** — Shader lens world-space so blur matches at a window seam ·
+  P3 · task · 30m · the last break in "same position, same dream"
 - **#77** — Cross-group morph when a question changes section · P2 · task ·
   45m
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·

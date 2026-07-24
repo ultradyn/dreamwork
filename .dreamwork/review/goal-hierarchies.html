@@ -9,7 +9,13 @@
     --line:#1f2937; --border:#334155; --text:#d1d5db; --bright:#f3f4f6;
     --lit:#e5e7eb; --muted:#9ca3af; --dim:#6b7280; --dimmer:#4b5563;
     --accent:#a5b4fc; --space:1.6rem; --radius:4px; color-scheme:dark; }
-  * { box-sizing:border-box; }
+  * { box-sizing:border-box;
+      scrollbar-width:thin; scrollbar-color:var(--dimmer) transparent; }
+  ::-webkit-scrollbar { width:7px; height:7px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--dimmer);
+                              border-radius:var(--radius); }
+  ::-webkit-scrollbar-thumb:hover { background:var(--dim); }
   body { background:var(--bg); color:var(--text); margin:0;
     padding:2.5rem 1rem 4rem;
     font-family:ui-monospace,'JetBrains Mono',monospace; font-size:.8rem;
