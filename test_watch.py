@@ -345,8 +345,27 @@ class TestAppShell(unittest.TestCase):
     def test_page_has_answered_awaiting_fold_state(self):
         # Static guard: the questions view renders three states — an answered
         # (awaiting fold) entry is visually distinct with no input box (#81).
-        for token in ('qa answered', 'awaiting fold', 'q.answer'):
+        for token in ('.qa.awaiting', 'awaiting fold', 'q.answer'):
             self.assertIn(token, watch.PAGE)
+
+    def test_one_question_component_for_every_state(self):
+        # #105: ONE card renders a question everywhere. The state is derived
+        # from the key + entry (never passed in), so no caller can render an
+        # entry in a state its own data contradicts, and every surface —
+        # dashboard, /questions, the review dock, the folded Answered section
+        # — addresses it by the same 'o'/'a' key.
+        for token in ('const qaState =', 'const qaInner =', 'const qaCard =',
+                      'const qaEntry =',
+                      # every call site goes through the one component
+                      "qaCard(q, 'o' + i)", "qaCard(e, 'a' + j)",
+                      "qaCard(d.questions_open[i], 'o' + i)",
+                      # ...including the submit morph, which restates the card
+                      "card.className = 'qa ' + qaState(next, key)",
+                      'card.innerHTML = qaInner(next, key)'):
+            self.assertIn(token, watch.PAGE)
+        # the folded Answered section no longer has look-alike markup
+        self.assertNotIn('answeredEntry', watch.PAGE)
+        self.assertNotIn('aentry', watch.PAGE)
 
     def test_page_has_layer_switch_guard_and_feedback(self):
         # #78: the layer hotkey ignores text-field keystrokes, and any switch
@@ -363,8 +382,9 @@ class TestAppShell(unittest.TestCase):
 
     def test_page_has_answer_submit_morph(self):
         # #79: submitting an answer morphs the box into the answered state
-        # (shared answeredInner), and Ctrl/Cmd+Enter submits from a field.
-        for token in ('answeredInner', 'requestSubmit',
+        # (restated through the shared qaInner), and Ctrl/Cmd+Enter submits
+        # from a field.
+        for token in ('qaInner(next, key)', 'requestSubmit',
                       "(e.ctrlKey || e.metaKey) && e.key === 'Enter'"):
             self.assertIn(token, watch.PAGE)
 

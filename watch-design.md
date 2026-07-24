@@ -143,16 +143,8 @@ hunt: `page_shell` (the one HTML shell + `<script>` bundle); `pageHeader`
 (every heading, with the `+` opener in the left gutter); `label`, `expand`
 (`<details>`), `preB`/`linkify` (backticked repo paths become `/file`
 links; a `.dreamwork/review/*.html` path becomes a `/review` link that docks
-its question), `qaCard` (a question in one of three states — **open** shows
-an answer box; **answered-awaiting-fold** — a dashboard answer the loop
-hasn't folded yet — shows the answer on a quiet accent rail with a `✓`, no
-box, so it never reads as still-open; the **folded Answered** section is
-rendered separately. The questions/dashboard views group by state with their
-own counts). Every question entry — open, answered-awaiting-fold, and folded
-Answered — also carries a follow-up thread (`- **Follow-up (via watch…)**`
-sub-bullets) and a quiet `add a note` box (`sendComment`, POST `/comment`);
-the Answered section is rendered structured from `answered_entries`, not raw
-text. A low-emphasis PiP glyph (`pipBtn`) sits after doc/review affordances
+its question), `qaCard` (**the question card** — its own section below). A
+low-emphasis PiP glyph (`pipBtn`) sits after doc/review affordances
 (file + review headers, the dashboard reviews list, the composer); clicking it
 floats the target in an identity-headed window (`openPopout` → Document
 Picture-in-Picture, `window.open` fallback) that stays put while the main tab
@@ -160,6 +152,45 @@ navigates and carries the same dreaming field (see Shader). Views are pure build
 (`buildDashboard`,
 `buildQuestions`, `buildFile`, `buildReview`); the router swaps them. Add a
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
+
+### The question card
+
+A question is the page's one interactive object, and it appears on four
+surfaces — the dashboard, `/questions`, the review dock, and the card the
+submit morph restates in place. All four go through **one** component, so a
+change to how a question looks is one edit rather than a hunt.
+
+**Contract: `qaCard(q, key)`.**
+
+- **The key addresses the entry**, it does not describe it: `'o'+index` into
+  `questions_open`, `'a'+index` into `answered_entries`. `qaEntry(key)` is
+  the single place a key becomes an entry, for reads and writes alike. A
+  title round-tripped through the DOM is never the address — a stale render
+  must not be able to write to the wrong entry.
+- **The state is derived, never passed.** `qaState(q, key)` returns
+  `open` (needs the human — shows an answer box), `awaiting`
+  (answered from the page, the loop hasn't folded it — the answer on a quiet
+  accent rail with a `✓` and no box, so it never reads as still-open), or
+  `folded` (key is `a…`; the loop has filed it into `## Answered`, so it
+  recedes). Deriving it means no caller can render an entry in a state its
+  own data contradicts.
+- **The states are class modifiers on one card** (`.qa.open` / `.qa.awaiting`
+  / `.qa.folded`, plus `data-qkey`), so shared styling is written once and
+  only the differences are stated. A state that needs its own element tree is
+  a signal the state is really a different component.
+- **`qaInner` is split out from the card** purely so the answer-submit morph
+  can restate a *live* card in its new state without assembling look-alike
+  markup. Any future in-place state change uses the same seam.
+
+Every state carries the follow-up thread (`- **Follow-up (via watch…)**`
+sub-bullets) and the `add a note` box (`sendComment`, POST `/comment`); the
+Answered section is rendered structured from `answered_entries`, not raw
+text. The questions/dashboard views group cards by state with their own
+counts — grouping is the view's job, rendering is the card's.
+
+`dev/capture/qacard.mjs` guards this by *structural* comparison: it asserts
+the dashboard's and the review dock's cards have the same tag path and class
+vocabulary as `/questions`'s, which is exactly what a quiet fork would lose.
 
 ### The composer
 

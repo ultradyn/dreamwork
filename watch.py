@@ -89,17 +89,19 @@ STYLE = """<style>
   .qa button { background:var(--panel2); color:var(--accent);
     border:1px solid var(--border); border-radius:var(--radius);
     font:inherit; padding:.25rem .8rem; cursor:pointer; }
-  /* answered-awaiting-fold: a quiet accent rail marks it apart from open
-     questions; no input box, the answer shown plainly. */
-  .qa.answered { border-left:2px solid var(--accent); padding-left:.9rem;
+  /* the three qaCard states (#105) are class modifiers on one card, so the
+     shared parts are styled once and only the differences are stated here.
+     awaiting: a quiet accent rail marks it apart from open questions; no
+     input box, the answer shown plainly. folded: the loop has filed it, so
+     it recedes. */
+  .qa.awaiting { border-left:2px solid var(--accent); padding-left:.9rem;
     margin-left:-1.1rem; opacity:.82; }
-  .qa.answered .qt::before { content:"✓ "; color:var(--accent); }
+  .qa.awaiting .qt::before { content:"✓ "; color:var(--accent); }
+  .qa.folded .qt { color:var(--muted); }
   .anstag { color:var(--dim); text-transform:uppercase; letter-spacing:.07em;
     font-size:.65rem; margin:.35rem 0 .15rem; }
   .anstext { color:var(--muted); white-space:pre-wrap; }
   /* follow-up thread + a quiet add-a-note box on every question entry */
-  .aentry { margin:.6rem 0 1rem; }
-  .aentry .qt { color:var(--muted); }
   .thread { border-left:1px solid var(--line); padding-left:1ch;
     margin:.3rem 0 .2rem; }
   .follow { color:var(--muted); font-size:.75rem; margin:.2rem 0;
@@ -384,22 +386,8 @@ const linkifyReview = (escaped, title) => escaped.replace(
     '</a>`');
 const preBReview = (t, title) =>
   `<pre>${linkify(linkifyReview(esc(t), title))}</pre>`;
-/* three states: an open question shows an answer box; a question already
-   answered from the dashboard (awaiting the loop to fold it) shows the
-   answer distinctly with no box — never ambiguous; the folded Answered
-   section is rendered separately by the view. */
-/* the inner of an answered-awaiting-fold card — reused by qaCard and by the
-   submit morph, so both render identically. */
-const answeredInner = q => {
-  const body = q.body && q.body.trim() ? preBReview(q.body.trim(), q.title) : '';
-  return `<div class="qt">${esc(q.title)}</div>${body}` +
-    `<div class="anstag">answered · awaiting fold</div>` +
-    `<div class="anstext">${esc(q.answer)}</div>`;
-};
-/* a follow-up thread and a quiet add-a-note box, shared by every question
-   entry (open, answered-awaiting-fold, folded). `key` is 'o'+index (open) or
-   'a'+index (answered) so sendComment can look the entry up in live data
-   without trusting a title round-tripped through the DOM. */
+/* a follow-up thread and a quiet add-a-note box, carried by every question
+   entry in every state. */
 const followThread = follows => (follows && follows.length)
   ? `<div class="thread">` + follows.map(f =>
       `<div class="follow">${linkify(esc(f))}</div>`).join('') + `</div>`
@@ -409,15 +397,47 @@ const noteBox = key =>
   ` placeholder="add a note…"></textarea>` +
   `<button class="notebtn" onclick="sendComment('${key}')">note</button></div>`;
 const qaFoot = (follows, key) => followThread(follows) + noteBox(key);
-const qaCard = (q, i) => {
-  const foot = qaFoot(q.follows, 'o' + i);
-  if (q.answer)
-    return `<div class="qa answered">${answeredInner(q)}${foot}</div>`;
-  const head = `<div class="qt">${esc(q.title)}</div>`;
-  const body = q.body.trim() ? preBReview(q.body.trim(), q.title) : '';
-  return `<div class="qa">${head}${body}` +
-    `<textarea id="qa${i}" placeholder="answer…"></textarea>` +
-    `<button onclick="sendAnswer(${i})">answer</button>${foot}</div>`;
+/* THE question component (#105). Every question on every surface —
+   dashboard, /questions, the review dock, and the answer-submit morph —
+   renders through this one card, so a change to how a question looks is one
+   edit rather than a hunt.
+
+   Contract: `qaCard(q, key)`. The key ADDRESSES the entry in live `data`:
+   'o'+index into `questions_open`, 'a'+index into `answered_entries`. It is
+   never a title round-tripped through the DOM, so a stale render cannot
+   write to the wrong entry. The state is DERIVED from the key and the entry,
+   never passed in, so no caller can render an entry in a state its own data
+   contradicts:
+     open     — needs the human; shows an answer box
+     awaiting — answered from the page, the loop hasn't folded it yet; the
+                answer on a quiet accent rail with a ✓, no box, so it never
+                reads as still-open
+     folded   — key is 'a…'; the loop has folded it into `## Answered`
+   `qaInner` is split out so the submit morph can restate a live card in its
+   new state in place instead of assembling look-alike markup. */
+const qaState = (q, key) =>
+  key[0] === 'a' ? 'folded' : (q.answer ? 'awaiting' : 'open');
+const qaInner = (q, key) => {
+  const st = qaState(q, key);
+  const body = q.body && q.body.trim() ? preBReview(q.body.trim(), q.title) : '';
+  const answer = st === 'awaiting'
+    ? `<div class="anstag">answered · awaiting fold</div>` +
+      `<div class="anstext">${esc(q.answer)}</div>` : '';
+  const box = st === 'open'
+    ? `<textarea id="qa${key}" placeholder="answer…"></textarea>` +
+      `<button onclick="sendAnswer('${key}')">answer</button>` : '';
+  return `<div class="qt">${esc(q.title)}</div>${body}${answer}${box}` +
+    qaFoot(q.follows, key);
+};
+const qaCard = (q, key) =>
+  `<div class="qa ${qaState(q, key)}" data-qkey="${key}">` +
+  `${qaInner(q, key)}</div>`;
+/* resolve a card key against live data — the one place a key becomes an
+   entry, for both writes and re-renders. */
+const qaEntry = key => {
+  if (!data || !key) return null;
+  const list = key[0] === 'a' ? data.answered_entries : data.questions_open;
+  return (list || [])[+key.slice(1)] || null;
 };
 async function postAnswer(title, text) {
   await fetch('/answer', { method:'POST',
@@ -458,10 +478,10 @@ function buildDashboard(d) {
     const foldQ = qo.filter(([q]) => q.answer);
     if (openQ.length)
       h += label('answer questions') +
-           openQ.map(([q, i]) => qaCard(q, i)).join('');
+           openQ.map(([q, i]) => qaCard(q, 'o' + i)).join('');
     if (foldQ.length)
       h += label('answered · awaiting fold') +
-           foldQ.map(([q, i]) => qaCard(q, i)).join('');
+           foldQ.map(([q, i]) => qaCard(q, 'o' + i)).join('');
   }
   if (d.reviews.length) {
     h += label('reviews') + d.reviews.map(r =>
@@ -479,28 +499,23 @@ function buildDashboard(d) {
        `</div></div>`;
   return h;
 }
-function answeredEntry(e, j) {
-  return `<div class="qa aentry"><div class="qt">${esc(e.title)}</div>` +
-    (e.body.trim() ? preB(e.body.trim()) : '') +
-    qaFoot(e.follows, 'a' + j) + `</div>`;
-}
 function buildQuestions(d) {
   // three explicit states: open (needs the human), answered-awaiting-fold
-  // (the loop's to fold), and the folded Answered section. Every entry
-  // carries a follow-up thread + add-a-note box.
+  // (the loop's to fold), and the folded Answered section — all three the
+  // same qaCard, grouped by the state it derives from the key + entry.
   const qo = d.questions_open.map((q, i) => [q, i]);
   const openQ = qo.filter(([q]) => !q.answer);
   const foldQ = qo.filter(([q]) => q.answer);
   let h = pageHeader('questions') +
     `<div id="meta"><a href="/">&larr; dashboard</a></div><div id="qsections">`;
   h += label(`open (${openQ.length})`) +
-       (openQ.map(([q, i]) => qaCard(q, i)).join('') ||
+       (openQ.map(([q, i]) => qaCard(q, 'o' + i)).join('') ||
         '<div class="dim">none — all answered</div>');
   if (foldQ.length)
     h += label(`answered · awaiting fold (${foldQ.length})`) +
-         foldQ.map(([q, i]) => qaCard(q, i)).join('');
+         foldQ.map(([q, i]) => qaCard(q, 'o' + i)).join('');
   h += label('answered') + (d.answered_entries.length
-    ? d.answered_entries.map(answeredEntry).join('')
+    ? d.answered_entries.map((e, j) => qaCard(e, 'a' + j)).join('')
     : '<div class="dim">(none yet)</div>');
   return h + `</div>`;
 }
@@ -524,7 +539,7 @@ function buildReview(name, q, d) {
     const i = d.questions_open.findIndex(x => x.title === q);
     if (i >= 0)
       dock = `<aside class="qdock" id="qdock">` +
-        label('answering') + qaCard(d.questions_open[i], i) + `</aside>`;
+        label('answering') + qaCard(d.questions_open[i], 'o' + i) + `</aside>`;
   }
   return pageHeader(`review<span class="revname">${esc(name || '')}</span>`) +
     `<div id="meta"><a href="/questions">&larr; questions</a> · ` +
@@ -544,11 +559,11 @@ function ages() {
   if (upd && fetchedAt) upd.textContent =
     `updated ${ageStr(fetchedAt/1000)} ago`;
 }
-async function sendAnswer(i) {
-  const el = document.getElementById('qa' + i);
-  if (!el || !el.value.trim() || !data) return;
+async function sendAnswer(key) {
+  const el = document.getElementById('qa' + key);
+  const q = qaEntry(key);
+  if (!el || !el.value.trim() || !q) return;
   const val = el.value.trim();
-  const q = data.questions_open[i];
   const card = el.closest('.qa');
   const fromRect = el.getBoundingClientRect();   // the box the text lived in
   await postAnswer(q.title, val);
@@ -558,9 +573,11 @@ async function sendAnswer(i) {
   // the typed text lifting from the box into the rendered answer (the
   // lifted-hero rule — the answer text is the tracked element). A soft
   // ripple accents it. reduced-motion just swaps to the answered state.
-  card.className = 'qa answered';
-  card.innerHTML = answeredInner({ title: q.title, body: q.body, answer: val })
-    + qaFoot(q.follows, 'o' + i);
+  // Restated through the SAME component, so it cannot drift from a fresh
+  // render of the same entry.
+  const next = Object.assign({}, q, { answer: val });
+  card.className = 'qa ' + qaState(next, key);
+  card.innerHTML = qaInner(next, key);
   const anstext = card.querySelector('.anstext');
   if (typeof ripple === 'function')
     ripple(fromRect.left + fromRect.width / 2, fromRect.top + 22);
@@ -571,15 +588,12 @@ async function sendAnswer(i) {
    answer: the note lifts from the box into the thread, ripple accenting. */
 async function sendComment(key) {
   const el = document.getElementById('nb' + key);
-  if (!el || !el.value.trim() || !data) return;
+  const entry = qaEntry(key);
+  if (!el || !el.value.trim() || !entry) return;
   const val = el.value.trim();
-  const sec = key[0], idx = +key.slice(1);
-  const entry = sec === 'o' ? data.questions_open[idx]
-                            : data.answered_entries[idx];
-  if (!entry) return;
-  const card = el.closest('.qa, .aentry');
+  const card = el.closest('.qa');
   const fromRect = el.getBoundingClientRect();
-  await postComment(entry.title, val, sec === 'o' ? 'Open' : 'Answered');
+  await postComment(entry.title, val, key[0] === 'o' ? 'Open' : 'Answered');
   el.value = '';
   holdRerenderUntil = Date.now() + 1600;
   if (!card) return;
@@ -1178,8 +1192,8 @@ function popoutDoc(url, label) {
   document.addEventListener('keydown', e => {
     if (!((e.ctrlKey || e.metaKey) && e.key === 'Enter')) return;
     const t = e.target;
-    if (t && t.tagName === 'TEXTAREA' && /^qa\\d+$/.test(t.id)) {
-      e.preventDefault(); sendAnswer(+t.id.slice(2));
+    if (t && t.tagName === 'TEXTAREA' && /^qa[oa]\\d+$/.test(t.id)) {
+      e.preventDefault(); sendAnswer(t.id.slice(2));
     } else if (t && /^nb[oa]\\d+$/.test(t.id)) {
       e.preventDefault(); sendComment(t.id.slice(2));
     } else if (t && t.id === 'cmdtext') {
