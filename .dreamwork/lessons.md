@@ -35,3 +35,14 @@ source dream. Not a log — only things that should change future behavior.
   of cost; wrap draw() in performance.now() for the real signal. Measured:
   the ambient shader is ~0.1-0.3ms/frame — transition dips are SVG-filter
   compositing, not the shader. (2026-07-25-0646-review-morph-and-frametime)
+- Global single-key hotkeys must ignore keystrokes when a text field is
+  focused — add the guard WITH the first text input, not after the bug
+  report; the conflict is invisible until an input exists.
+  (2026-07-25-0713-palette-worldspace-batch)
+- A detached/floating control window (Document-PiP, window.open) must carry
+  its own identity (what it steers), because the context that spawned it is
+  gone and several may be open. (2026-07-25-0713-palette-worldspace-batch)
+- Wall-clock shader phase must be range-reduced (e.g. %86400) or highp float
+  precision dies at epoch magnitudes; world-space window anchoring needs
+  BOTH a screen-position domain offset and shared phase, or seams break.
+  (2026-07-25-0713-palette-worldspace-batch)
