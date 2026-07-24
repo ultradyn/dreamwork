@@ -141,10 +141,14 @@ Two kinds, nothing in between:
   distillation is also appended to `.dreamwork/lessons.md`. The coordinator
   reads new dreams and captures any ideas into the task list.
 
-All subagents report to the coordinator and never use `attn`. A report
-must always say what durable state changed — dream file written, docs
-added or updated, with paths — change notification is key and cheap.
-Everything else stays minimal: raw results, no ceremony.
+All subagents report to the coordinator and never use `attn`. Subagents
+never stop or pause loop machinery — the heartbeat monitor, the watch
+server, the loop itself; if one believes the loop should stop, it says so
+in its report and the human (or the coordinator on the human's
+instruction) decides. A report must always say what durable state
+changed — dream file written, docs added or updated, with paths — change
+notification is key and cheap. Everything else stays minimal: raw
+results, no ceremony.
 
 ## Durable state — `.dreamwork/`
 
