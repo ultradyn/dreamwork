@@ -98,8 +98,10 @@ approval. Real user messages always take priority over the loop.
    2. **Backlog.** Otherwise pick the highest-priority unblocked pending
       task.
 4. **Maintenance rotation.** List empty and brainstorm recent? Rotate
-   through: self-review recent commits for introduced errors; test-coverage
-   gaps; docs freshness; task-list grooming (dedupe, reprioritize, prune
+   through: goal alignment first — does DREAMWORK.md still reflect what
+   the human wants and what the loop has learned? fold in any drift; then
+   self-review recent commits for introduced errors; test-coverage gaps;
+   docs freshness; task-list grooming (dedupe, reprioritize, prune
    stale). If truly nothing: idle quietly until the next tick — no make-work.
 
 ## Subagents — utilities and dreamers
