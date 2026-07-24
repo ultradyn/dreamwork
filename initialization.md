@@ -88,10 +88,11 @@ read, initialization has already happened; return to the loop.
    together with DREAMWORK.md these bound what the loop may do (including
    whether push/deploy is authorized). Create `.dreamwork/{dreams,docs}/`
    if missing, then read `.dreamwork/docs/` (living docs
-   maintained by the dreamers), skim recent `.dreamwork/dreams/` entries
-   — they carry memory from earlier sessions and subagents — and check
-   `.dreamwork/questions.md` for open questions to surface in the opening
-   status. Learn the
+   maintained by the dreamers), read `.dreamwork/lessons.md` (distilled
+   one-line lessons — the cheapest memory), skim recent
+   `.dreamwork/dreams/` entries — they carry memory from earlier sessions
+   and subagents — and check `.dreamwork/questions.md` for open questions
+   to surface in the opening status. Learn the
    project's verify commands (justfile, package scripts: test, lint,
    build) — you'll run them every increment. Skim the recent git log
    (~10 commits) to absorb current direction and granularity.

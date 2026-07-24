@@ -122,8 +122,9 @@ Two kinds, nothing in between:
   beyond its direct result — insights, surprises, out-of-scope ideas,
   warnings — it writes `.dreamwork/dreams/<date>-<time>-<slug>.md` (e.g.
   `2026-07-25-0140-export-panel-jank.md`). Nothing to say → no file; empty
-  dreams are noise. The coordinator reads new dreams and captures any ideas
-  into the task list.
+  dreams are noise. If a dream contains an important lesson, its one-line
+  distillation is also appended to `.dreamwork/lessons.md`. The coordinator
+  reads new dreams and captures any ideas into the task list.
 
 All subagents report to the coordinator and never use `attn`. A report
 must always say what durable state changed — dream file written, docs
@@ -134,6 +135,10 @@ Everything else stays minimal: raw results, no ceremony.
 
 - `DREAMWORK.md` (repo root) — what the human wants; see Initialization.
 - `.dreamwork/dreams/` — dream journals from dreamer subagents.
+- `.dreamwork/lessons.md` — one concise line per important lesson learned,
+  each pointing at its source dream. No arbitrary length limit, but
+  genuinely one line — distilled, not stuffed. Lessons outlive pruned
+  dreams.
 - `.dreamwork/docs/` — living docs collaboratively added to and maintained
   by us, the dreamers: design notes, discovered conventions, gotchas,
   architecture understanding. Maintained means pruned and updated when
