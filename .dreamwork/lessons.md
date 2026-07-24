@@ -87,3 +87,7 @@ source dream. Not a log — only things that should change future behavior.
 - Re-deriving an item from upstream never re-derives the loop's progress
   on it — external identity is enough until work starts, not after.
   (2026-07-25-0832-ledger-coherence, verify pass)
+- Redefining a term silently rewrites every rule that uses it: after
+  turning "the ledger" into a concept, the rules resting on it had to be
+  re-read — one had quietly started saying forge issues could never be
+  selected. (2026-07-25-0832-ledger-coherence, final pass)
