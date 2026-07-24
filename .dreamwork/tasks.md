@@ -39,8 +39,8 @@ Next id: **106**
   an append rather than a redesign
 - **#98** — Show the open queue on the watch dashboard · P2 · idea · 40m ·
   new page surface, fit-check at selection
-- **#95** — Goal hierarchies · P2 · task · 60m · **blocked**: human review
-  of `review/goal-hierarchies.html` (questions.md)
+- **#114** — Dashboard renders the active goal chain · P3 · task · 25m ·
+  stage 3 of #95; status.json already carries `goal`
 - **#92** — Hand-rolled Ctrl+K command palette · P3 · task · 40m
 - **#99** — Popped-out composer should use the button group too · P3 ·
   task · 25m
