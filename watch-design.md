@@ -19,11 +19,16 @@ degrades gracefully without it).
 
 - **Stdlib only, self-contained**; no dependencies, no build step.
 - **Bind 127.0.0.1 only.** Localhost by construction, never exposed.
-- **Read-only, one exception**: POST `/answer` appends a human-typed
-  answer into questions.md's matching Open entry (human-authorized —
-  async question answering was the point). Every other route reads.
-  All file access goes through `resolve_confined()` (rejects absolute,
-  `~`, traversal); `/filedata` and `/review` are both behind it.
+- **Read-only, two write exceptions** (both human-authorized, localhost
+  trust): POST `/answer` appends a human-typed answer into questions.md's
+  matching Open entry (async question answering was the point); POST
+  `/command` appends a source-tagged steering line
+  (`command via watch: <kind>: <text>`, kinds add-idea / do-next / do-now /
+  maintenance) to `.dreamwork/watch-events.log` — the loop's tail monitor
+  wakes on it, same transport as answers; no file beyond the log is
+  written. Every other route reads. All file access goes through
+  `resolve_confined()` (rejects absolute, `~`, traversal); `/filedata` and
+  `/reviewraw` are both behind it.
 - **Port** persisted to `.dreamwork/watch-port` (random 3000–63000 once)
   so bookmarks survive restarts; port-in-use error names the port.
 - **Live reload**: poll `/mtime` ~2s → re-fetch `/data.json` → re-render

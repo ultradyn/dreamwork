@@ -101,6 +101,53 @@ STYLE = """<style>
     .qdock { position:static; }
     #reviewframe { height:60vh; }
   }
+  /* command palette: the + opener sits in the heading's left gutter; the
+     panel it toggles drifts in through a soft blur (the dream language),
+     not a hard pop. reduced-motion just shows/hides. */
+  .htitlebar { display:flex; align-items:baseline; gap:.55rem; }
+  .htitle { display:inline; }
+  #cmdplus { flex:none; align-self:center; margin-left:-2.4rem;
+    width:1.7rem; height:1.7rem; display:grid; place-items:center;
+    background:transparent; color:var(--muted);
+    border:1px solid var(--border); border-radius:var(--radius);
+    font:inherit; font-size:1.15rem; line-height:1; cursor:pointer;
+    transition:color .3s ease, border-color .3s ease, background .3s ease,
+               transform .35s cubic-bezier(.32,.12,.2,1); }
+  #cmdplus:hover, #cmdplus.on { color:var(--accent);
+    border-color:var(--accent); background:rgba(99,102,241,.09); }
+  #cmdplus.on { transform:rotate(45deg); }
+  @media (max-width:820px) { #cmdplus { margin-left:0; } }
+  #cmdpalette { position:fixed; z-index:30; top:4rem; left:1rem;
+    width:min(32ch,92vw); background:rgba(11,15,25,.94);
+    border:1px solid var(--border); border-radius:8px; padding:1rem;
+    box-shadow:0 14px 44px rgba(0,0,0,.5); backdrop-filter:blur(7px);
+    visibility:hidden; opacity:0; transform:translateY(-8px) scale(.97);
+    filter:blur(6px); pointer-events:none;
+    transition:opacity .5s cubic-bezier(.32,.12,.2,1),
+               transform .5s cubic-bezier(.32,.12,.2,1),
+               filter .5s ease, visibility 0s linear .5s; }
+  #cmdpalette.open { visibility:visible; opacity:1; transform:none;
+    filter:none; pointer-events:auto; transition-delay:0s; }
+  #cmdpalette .label { margin-top:0; }
+  #cmdform select, #cmdform textarea { width:100%; box-sizing:border-box;
+    background:var(--panel); color:var(--text); border:1px solid var(--line);
+    border-radius:var(--radius); font:inherit; padding:.4rem; margin:.3rem 0; }
+  #cmdform textarea { min-height:3.4rem; resize:vertical; }
+  .cmdrow { display:flex; gap:.5rem; align-items:center; margin-top:.2rem; }
+  .cmdrow button { background:var(--panel2); color:var(--accent);
+    border:1px solid var(--border); border-radius:var(--radius); font:inherit;
+    padding:.25rem .8rem; cursor:pointer; }
+  #cmdpop { margin-left:auto; color:var(--muted); }
+  #cmdpop:hover { color:var(--accent); }
+  .cmdmsg { color:var(--dim); font-size:.7rem; min-height:1em; margin-top:.5rem;
+    transition:color .4s ease; }
+  .cmdmsg.ok { color:var(--accent); }
+  /* dream ripple: a soft ring expanding from a received command / answer */
+  .ripple { position:fixed; z-index:40; border-radius:50%; pointer-events:none;
+    border:1px solid var(--accent); }
+  @media (prefers-reduced-motion: reduce) {
+    #cmdplus, #cmdpalette { transition:none; }
+  }
 </style>"""
 
 APP_BODY = """<canvas id="dreambg"></canvas>
@@ -124,7 +171,25 @@ APP_BODY = """<canvas id="dreambg"></canvas>
  </filter>
 </svg>
 <div class="wrap">
-<div id="view">loading…</div>"""
+<div id="view">loading…</div>
+<div id="cmdpalette" role="dialog" aria-label="command palette">
+ <form id="cmdform" autocomplete="off">
+  <div class="label">command the dream</div>
+  <select id="cmdkind" aria-label="command">
+   <option value="add-idea">add idea</option>
+   <option value="do-next">do next</option>
+   <option value="do-now">do now</option>
+   <option value="maintenance">maintenance</option>
+  </select>
+  <textarea id="cmdtext" placeholder="a thought for the dream…"></textarea>
+  <div class="cmdrow">
+   <button type="submit" id="cmdsend">send</button>
+   <button type="button" id="cmdpop"
+           title="pop out — stays while you navigate">pop out &#8689;</button>
+  </div>
+  <div class="cmdmsg" id="cmdmsg" aria-live="polite"></div>
+ </form>
+</div>"""
 
 COMPONENTS_JS = """
 window.DEV=/*DEV*/false;
@@ -138,6 +203,12 @@ const ageStr = mt => {
 };
 /* components: every section on every watch page renders through these */
 const label = t => `<div class="label">${t}</div>`;
+/* every view's heading carries the command-palette opener, tucked into the
+   left gutter — a persistent, subtle affordance to steer the dream. */
+const pageHeader = inner =>
+  `<header class="htitlebar"><button id="cmdplus" type="button"` +
+  ` title="command the dream" aria-label="open command palette">+</button>` +
+  `<span class="htitle">${inner}</span></header>`;
 const expand = (s, inner, cls='') =>
   `<details><summary class="${cls}">${s}</summary>${inner}</details>`;
 /* backticked repo-relative paths become /file links (zero agent burden) */
@@ -179,7 +250,7 @@ function buildDashboard(d) {
   const q = d.open_questions > 0
     ? ` · <a class="q" href="/questions">${d.open_questions} open question${d.open_questions>1?'s':''}</a>`
     : ` · <a class="q" href="/questions" style="color:var(--dimmer)">questions</a>`;
-  let h = `<header>dreamwork watch</header>` +
+  let h = pageHeader('dreamwork watch') +
     `<div id="meta">${esc(d.target)} · ${esc(d.files['skill-version'])} · ` +
     `<span id="upd"></span>${q}</div><div id="sections">`;
   h += label(`dreams (${d.dreams.length})`) +
@@ -208,7 +279,7 @@ function buildDashboard(d) {
 function buildQuestions(d) {
   const raw = d.files['questions.md'] || '';
   const answered = raw.split(/^## Answered$/m)[1] || '';
-  let h = `<header>questions</header>` +
+  let h = pageHeader('questions') +
     `<div id="meta"><a href="/">&larr; dashboard</a></div><div id="qsections">`;
   h += label(`open (${d.questions_open.length})`) +
        (d.questions_open.map(qaCard).join('') ||
@@ -220,7 +291,7 @@ function buildFile(param, text) {
   const body = text == null
     ? '<div class="dim">not found</div>'
     : `<pre>${esc(text)}</pre>`;
-  return `<header>${esc(param || '')}</header>` +
+  return pageHeader(esc(param || '')) +
     `<div id="meta"><a href="/">&larr; dashboard</a></div>` +
     `<div id="filebody">${body}</div>`;
 }
@@ -237,7 +308,7 @@ function buildReview(name, q, d) {
       dock = `<aside class="qdock" id="qdock">` +
         label('answering') + qaCard(d.questions_open[i], i) + `</aside>`;
   }
-  return `<header>review<span class="revname">${esc(name || '')}</span></header>` +
+  return pageHeader(`review<span class="revname">${esc(name || '')}</span>`) +
     `<div id="meta"><a href="/questions">&larr; questions</a> · ` +
     `<a href="/">dashboard</a></div>` +
     `<div id="reviewwrap"${dock ? '' : ' class="nodock"'}>` +
@@ -256,7 +327,15 @@ function ages() {
 async function sendAnswer(i) {
   const el = document.getElementById('qa' + i);
   if (!el || !el.value.trim() || !data) return;
+  const btn = el.parentNode.querySelector('button');
   await postAnswer(data.questions_open[i].title, el.value.trim());
+  el.value = '';
+  if (btn && typeof ripple === 'function') {          // dream confirmation
+    const r = btn.getBoundingClientRect();
+    ripple(r.left + r.width / 2, r.top + r.height / 2);
+    btn.textContent = 'received';
+    setTimeout(() => { btn.textContent = 'answer'; }, 1600);
+  }
 }
 """
 
@@ -427,6 +506,7 @@ function flipDock(dock, fromRect, toRect) {
 }
 async function navigate(name, param, opts) {
   opts = opts || {};
+  if (window.__closeCmd) window.__closeCmd();   // context is changing
   view = { name, param, q: opts.q || null };
   document.title = (TITLE[name] || TITLE.dashboard)(param);
   if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
@@ -490,6 +570,185 @@ setInterval(ages, 1000);
   const r = routeOf(location);
   navigate(r.name, r.param, { push: false, transition: false, q: r.q });
   tick();
+})();
+"""
+
+COMMAND_JS = """
+/* Command palette (#71): the heading's + opener reveals a small form to
+   steer the dreaming loop without a chat turn. Submitting POSTs /command,
+   which drops a source-tagged line into watch-events.log — the loop's tail
+   monitor wakes on it (same transport as answers). A pop-out (Document
+   Picture-in-Picture, window.open fallback) keeps the form handy while the
+   main tab navigates; it identifies its project so multi-target popouts
+   don't blur together. reduced-motion skips the drift, never the function. */
+function ripple(x, y) {                     // soft expanding ring, dream feel
+  if (rmr) return;
+  const r = document.createElement('div');
+  r.className = 'ripple';
+  const s = 14;
+  r.style.left = (x - s / 2) + 'px'; r.style.top = (y - s / 2) + 'px';
+  r.style.width = r.style.height = s + 'px';
+  r.style.transition = 'transform 1.1s cubic-bezier(.22,.61,.36,1), ' +
+    'opacity 1.1s ease';
+  r.style.opacity = '0.5';
+  document.body.appendChild(r);
+  requestAnimationFrame(() => {
+    r.style.transform = 'scale(18)'; r.style.opacity = '0';
+  });
+  setTimeout(() => r.remove(), 1200);
+}
+/* the popped-out window is a bare document — give it its own dark theme and
+   an identity band tinted like the page it came from. */
+const POPOUT_CSS = `
+  :root { color-scheme:dark; }
+  body { margin:0; background:#0b0f19; color:#d1d5db;
+    font-family:ui-monospace,'JetBrains Mono',monospace; font-size:13px; }
+  .strip { height:4px; background:__STRIP__; }
+  .phead { padding:.7rem .9rem .1rem; }
+  .ptitle { color:#f3f4f6; }
+  .ppath { color:#6b7280; font-size:.72rem; word-break:break-all;
+    margin-top:.15rem; }
+  form { padding:.3rem .9rem .9rem; }
+  .plabel { color:#6b7280; text-transform:uppercase; letter-spacing:.08em;
+    font-size:.66rem; margin:.6rem 0 .3rem; }
+  select, textarea { width:100%; box-sizing:border-box; background:#111827;
+    color:#d1d5db; border:1px solid #1f2937; border-radius:4px; font:inherit;
+    padding:.4rem; margin:.2rem 0; }
+  textarea { min-height:3.2rem; resize:vertical; }
+  button { background:#1e293b; color:__ACCENT__; border:1px solid #334155;
+    border-radius:4px; font:inherit; padding:.3rem .9rem; cursor:pointer;
+    margin-top:.4rem; }
+  .pmsg { color:#6b7280; font-size:.7rem; min-height:1em; margin-top:.4rem; }
+  .pmsg.ok { color:__ACCENT__; }`;
+const POPOUT_BODY = (base, path) => `
+  <div class="strip"></div>
+  <div class="phead"><div class="ptitle">+ command &middot; ${esc(base)}</div>
+    <div class="ppath">${esc(path)}</div></div>
+  <form id="pform" autocomplete="off">
+    <div class="plabel">command the dream</div>
+    <select id="pkind">
+      <option value="add-idea">add idea</option>
+      <option value="do-next">do next</option>
+      <option value="do-now">do now</option>
+      <option value="maintenance">maintenance</option>
+    </select>
+    <textarea id="ptext" placeholder="a thought for the dream…"></textarea>
+    <div><button type="submit">send</button></div>
+    <div class="pmsg" id="pmsg" aria-live="polite"></div>
+  </form>`;
+function mountPopout(w, base, path, tint) {
+  const doc = w.document;
+  doc.title = '+ ' + base + ' · dreamwork';
+  const warm = tint >= 0;                    // carry the page's hue as identity
+  const accent = warm ? '#c4b5fd' : '#a5b4fc';
+  const strip = warm ? 'linear-gradient(90deg,#6d5bd0,#a855f7)'
+                     : 'linear-gradient(90deg,#4f5bd5,#5b8def)';
+  doc.head.innerHTML = '<meta charset="utf-8">';
+  const st = doc.createElement('style');
+  st.textContent = POPOUT_CSS.replace(/__ACCENT__/g, accent)
+                             .replace('__STRIP__', strip);
+  doc.head.appendChild(st);
+  doc.body.innerHTML = POPOUT_BODY(base, path);
+  const endpoint = location.origin + '/command';   // opener origin, absolute
+  const msg = doc.getElementById('pmsg');
+  doc.getElementById('pform').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const kind = doc.getElementById('pkind').value;
+    const text = doc.getElementById('ptext').value.trim();
+    if (kind !== 'do-next' && !text) { msg.textContent = 'a thought is needed';
+      msg.className = 'pmsg'; return; }
+    try {
+      const r = await fetch(endpoint, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, text }) });
+      if (r.ok) { msg.textContent = 'sent to the dream'; msg.className = 'pmsg ok';
+        doc.getElementById('ptext').value = ''; }
+      else { msg.textContent = 'rejected (' + r.status + ')'; msg.className = 'pmsg'; }
+    } catch (e) { msg.textContent = 'no connection'; msg.className = 'pmsg'; }
+  });
+}
+async function requestPopout() {
+  const d = await ensureData();
+  const path = (d && d.target) || '';
+  const base = path.split('/').filter(Boolean).pop() || 'dreamwork';
+  const tint = TINT[view.name] || 0;
+  if (window.documentPictureInPicture &&
+      documentPictureInPicture.requestWindow) {
+    try {
+      const w = await documentPictureInPicture.requestWindow(
+        { width: 340, height: 320 });
+      mountPopout(w, base, path, tint);
+      if (window.__closeCmd) window.__closeCmd();
+      return;
+    } catch (e) { /* fall through to a positioned popup */ }
+  }
+  const w = window.open('', 'dreamcmd_' + base,
+    'width=360,height=340,left=80,top=80');
+  if (w) { mountPopout(w, base, path, tint);
+    if (window.__closeCmd) window.__closeCmd(); }
+}
+(function () {
+  const pal = document.getElementById('cmdpalette');
+  if (!pal) return;
+  const cmsg = () => document.getElementById('cmdmsg');
+  let open = false;
+  function place() {
+    const plus = document.getElementById('cmdplus');
+    if (!plus) return;
+    const r = plus.getBoundingClientRect();
+    const w = pal.offsetWidth || Math.min(innerWidth * 0.92, 340);
+    pal.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
+    pal.style.top = (r.bottom + 8) + 'px';
+  }
+  function openCmd() {
+    place(); pal.classList.add('open'); open = true;
+    const plus = document.getElementById('cmdplus');
+    if (plus) plus.classList.add('on');
+    const t = document.getElementById('cmdtext');
+    if (t) setTimeout(() => t.focus(), rmr ? 0 : 140);
+  }
+  function closeCmd() {
+    pal.classList.remove('open'); open = false;
+    document.querySelectorAll('#cmdplus.on').forEach(p =>
+      p.classList.remove('on'));
+    const m = cmsg(); if (m) { m.textContent = ''; m.className = 'cmdmsg'; }
+  }
+  window.__closeCmd = closeCmd;
+  document.addEventListener('click', e => {
+    const plus = e.target.closest && e.target.closest('#cmdplus');
+    if (plus) { e.preventDefault(); open ? closeCmd() : openCmd(); return; }
+    if (open && e.target.closest && !e.target.closest('#cmdpalette')) closeCmd();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && open) closeCmd();
+  });
+  addEventListener('resize', () => { if (open) place(); });
+  document.getElementById('cmdform').addEventListener('submit', async e => {
+    e.preventDefault();
+    const kind = document.getElementById('cmdkind').value;
+    const text = document.getElementById('cmdtext').value.trim();
+    const m = cmsg();
+    if (kind !== 'do-next' && !text) {
+      if (m) { m.textContent = 'a thought is needed'; m.className = 'cmdmsg'; }
+      return;
+    }
+    try {
+      const r = await fetch('/command', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, text }) });
+      if (r.ok) {
+        if (m) { m.textContent = 'sent to the dream'; m.className = 'cmdmsg ok'; }
+        const plus = document.getElementById('cmdplus');
+        if (plus) { const b = plus.getBoundingClientRect();
+          ripple(b.left + b.width / 2, b.top + b.height / 2); }
+        document.getElementById('cmdtext').value = '';
+        setTimeout(closeCmd, 950);
+      } else if (m) { m.textContent = 'rejected (' + r.status + ')';
+        m.className = 'cmdmsg'; }
+    } catch (e) { if (m) { m.textContent = 'no connection';
+      m.className = 'cmdmsg'; } }
+  });
+  document.getElementById('cmdpop').addEventListener('click', requestPopout);
 })();
 """
 
@@ -778,6 +1037,8 @@ SHADER_JS = """
     if (rm) draw(lastMs);
   }
   addEventListener('keydown', e => {
+    // never hijack a keystroke aimed at a text field (command palette etc.)
+    if (e.target.closest && e.target.closest('input, textarea, select')) return;
     if (e.key === 'l' && !e.metaKey && !e.ctrlKey && !e.altKey) cycle();
   });
   let clicks = 0, clickT = 0;
@@ -932,7 +1193,8 @@ def page_shell(title, body, js):
 # window.dreambg from the shader exists before it runs) picks the initial
 # view from the URL; SHADER_JS mounts the persistent background.
 PAGE = page_shell('dreamwork watch', APP_BODY,
-                  COMPONENTS_JS + VIEWS_JS + SHADER_JS + ROUTER_JS)
+                  COMPONENTS_JS + VIEWS_JS + SHADER_JS + ROUTER_JS
+                  + COMMAND_JS)
 
 
 def age_str(seconds):
@@ -1141,6 +1403,20 @@ def log_event(target, line):
         pass
 
 
+# Human-submitted loop commands (POST /command) — the canonical steering
+# vocabulary. Each becomes a source-tagged watch-events.log line the loop's
+# tail monitor wakes on (same transport as answers); no file is written.
+COMMAND_KINDS = ("add-idea", "do-next", "do-now", "maintenance")
+
+
+def command_line(kind, text):
+    """Source-tagged watch-events.log line for a human-submitted command.
+
+    Pure; testable. do-next may carry no text (it just nudges selection)."""
+    body = f": {text}" if text else ""
+    return f"command via watch: {kind}{body}"
+
+
 def make_handler(target, dev=False):
     page = PAGE.replace("/*DEV*/false", "true") if dev else PAGE
 
@@ -1188,19 +1464,36 @@ def make_handler(target, dev=False):
             else:
                 self.send_error(404)
 
-        def do_POST(self):
-            if self.path != "/answer":
-                self.send_error(404)
-                return
+        def _read_json(self):
             length = int(self.headers.get("Content-Length", 0))
             if not 0 < length <= 20_000:
                 self.send_error(413)
+                return None
+            try:
+                return json.loads(self.rfile.read(length))
+            except ValueError:
+                self.send_error(400)
+                return None
+
+        def do_POST(self):
+            # Two human-authorized write paths, both localhost-only: /answer
+            # folds an answer into questions.md; /command drops a steering
+            # line into the events log. Everything else is read-only.
+            if self.path == "/answer":
+                self._handle_answer()
+            elif self.path == "/command":
+                self._handle_command()
+            else:
+                self.send_error(404)
+
+        def _handle_answer(self):
+            req = self._read_json()
+            if req is None:
                 return
             try:
-                req = json.loads(self.rfile.read(length))
                 title = str(req["question"]).strip()
                 answer = str(req["answer"]).strip()
-            except (ValueError, KeyError):
+            except (KeyError, TypeError):
                 self.send_error(400)
                 return
             if not title or not answer:
@@ -1222,6 +1515,22 @@ def make_handler(target, dev=False):
             log_event(target,
                       f'answer: "{title}" -> .dreamwork/questions.md '
                       f'(fold the answer, act, move to Answered)')
+            self._send(json.dumps({"ok": True}), "application/json")
+
+        def _handle_command(self):
+            req = self._read_json()
+            if req is None:
+                return
+            try:
+                kind = str(req["kind"]).strip()
+                text = str(req.get("text", "")).strip()
+            except (KeyError, TypeError):
+                self.send_error(400)
+                return
+            if kind not in COMMAND_KINDS or (kind != "do-next" and not text):
+                self.send_error(400)
+                return
+            log_event(target, command_line(kind, text))
             self._send(json.dumps({"ok": True}), "application/json")
 
         def log_message(self, *_args):

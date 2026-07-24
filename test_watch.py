@@ -156,6 +156,12 @@ class TestCollector(unittest.TestCase):
             self.assertEqual(len(lines), 2)
             self.assertIn('answer: "y"', lines[1])
 
+    def test_command_line(self):
+        self.assertEqual(watch.command_line("add-idea", "a thought"),
+                         "command via watch: add-idea: a thought")
+        self.assertEqual(watch.command_line("do-next", ""),
+                         "command via watch: do-next")
+
     def test_persistent_port_stable(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
@@ -203,6 +209,15 @@ class TestAppShell(unittest.TestCase):
                       '/reviewraw', 'linkifyReview'):
             self.assertIn(token, watch.PAGE)
 
+    def test_page_has_command_palette_wiring(self):
+        # Static guard: the + opener, the palette, POST /command, the dream
+        # ripple, and the pop-out (Document Picture-in-Picture + window.open
+        # fallback) must stay wired so a refactor can't drop the steer path.
+        for token in ('id="cmdplus"', 'id="cmdpalette"', 'pageHeader',
+                      "fetch('/command'", 'documentPictureInPicture',
+                      'window.open', 'ripple('):
+            self.assertIn(token, watch.PAGE)
+
     def _serve(self, target):
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), watch.make_handler(target))
@@ -213,6 +228,13 @@ class TestAppShell(unittest.TestCase):
 
     def _get(self, url):
         with urllib.request.urlopen(url, timeout=5) as r:
+            return r.status, r.read().decode("utf-8")
+
+    def _post(self, url, obj):
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
             return r.status, r.read().decode("utf-8")
 
     def test_view_routes_serve_one_shell(self):
@@ -264,6 +286,26 @@ class TestAppShell(unittest.TestCase):
                 with self.assertRaises(urllib.error.HTTPError) as cm:
                     self._get(base + bad)
                 self.assertEqual(cm.exception.code, 404)
+
+    def test_command_appends_event_and_validates(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            status, _ = self._post(base + "/command",
+                                   {"kind": "add-idea", "text": "try X"})
+            self.assertEqual(status, 200)
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            with open(log) as f:
+                self.assertIn("command via watch: add-idea: try X", f.read())
+            # do-next may omit text
+            status, _ = self._post(base + "/command",
+                                   {"kind": "do-next", "text": ""})
+            self.assertEqual(status, 200)
+            # unknown kind, and a text-requiring kind with no text, are 400
+            for bad in ({"kind": "nope", "text": "x"},
+                        {"kind": "do-now", "text": ""}):
+                with self.assertRaises(urllib.error.HTTPError) as cm:
+                    self._post(base + "/command", bad)
+                self.assertEqual(cm.exception.code, 400)
 
 
 if __name__ == "__main__":
