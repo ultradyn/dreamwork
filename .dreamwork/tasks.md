@@ -18,6 +18,10 @@ Next id: **106**
   30m · human-reported; `body.review` resizes outside the dissolve
 - **#108** — The `+` opener can be clipped off the left edge · P1 · bug ·
   25m · human-reported; clamp it to a visible leftmost position
+- **#109** — Human notes must be obviously human, in file and on page ·
+  P1 · bug · 35m · file half landed (04968d1); page half with the dreamer
+- **#110** — Heading persists and travels across route changes · P2 ·
+  task · 50m · do with #107; breadcrumbs dissolve, survivors slide
 - **#103** — One text input for answer and note, mode group + flush send ·
   P2 · task · 50m
 - **#104** — Questions fade out, neighbours slide into place · P2 · task ·
