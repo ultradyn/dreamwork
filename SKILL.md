@@ -106,7 +106,9 @@ starting new increments — resume autonomous work when the stream pauses.
    the human wants and what the loop has learned? fold in any drift; then
    self-review recent commits for introduced errors; test-coverage gaps;
    docs freshness; task-list grooming (dedupe, reprioritize, prune
-   stale). If truly nothing: idle quietly until the next tick — no make-work.
+   stale); dogfood reflection — friction with the loop itself: fix small,
+   file the rest. If truly nothing: idle quietly until the next tick — no
+   make-work.
 
 ## Subagents — utilities and dreamers
 
@@ -186,7 +188,8 @@ if Max is away).
 - `status` — current task, queue summary, recent completions, open
   questions from `.dreamwork/questions.md`.
 - `pause` / `resume` — TaskStop the heartbeat monitor / re-arm it.
-- `wrap up` — land the current increment cleanly, commit, summarize.
+- `wrap up` — land the current increment cleanly, commit, summarize, and
+  note any friction with the loop itself — fix small, file the rest.
 
 ## Guardrails
 
