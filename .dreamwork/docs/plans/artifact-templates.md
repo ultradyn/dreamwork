@@ -111,7 +111,12 @@ the question.**
   the markup. The real problem is that `sendAnswer()` finds its FLIP
   hero with `card.querySelector('.anstext')` — that class is an
   **address, not a style hook**, and a shared vocabulary class cannot
-  safely be both.
+  safely be both. The failure mode is worse than a style conflict:
+  swapping in a shared `.note` turns a guaranteed-correct address into a
+  first-match guess, correct until the first card holding two notes and
+  then silently animating the wrong element. Every component the
+  dashboard borrowed would need a private-hook escape hatch that
+  artifacts never use.
 - **The asymmetry that settles it**: the components `qaCard` could not
   use are exactly the three that justify the vocabulary (`chain`,
   `compare`, `decision`). The ones it could use are trivially shared
