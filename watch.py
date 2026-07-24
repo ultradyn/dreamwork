@@ -649,8 +649,14 @@ def main(argv=None):
                    help="open the dashboard in a browser")
     args = p.parse_args(argv)
     port = args.port or persistent_port(args.target)
-    server = http.server.ThreadingHTTPServer(
-        ("127.0.0.1", port), make_handler(args.target))
+    try:
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", port), make_handler(args.target))
+    except OSError as e:
+        raise SystemExit(
+            f"watch.py: cannot bind 127.0.0.1:{port} ({e.strerror}). "
+            f"Another instance may be running (port persisted in "
+            f".dreamwork/watch-port); stop it or pass --port.")
     url = f"http://127.0.0.1:{port}/"
     print(f"dreamwork watch: {url} (target {os.path.abspath(args.target)})")
     if args.open:
