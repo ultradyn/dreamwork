@@ -1,3 +1,6 @@
 __pycache__/
 .dreamwork/status.json
 .dreamwork/watch-events.log
+
+# worktrees for isolated dreamer spikes
+.worktrees/
