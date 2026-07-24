@@ -124,7 +124,16 @@ STYLE = """<style>
   .dim { color:var(--dimmer); }
   a { color:var(--accent); text-decoration:none; }
   a:hover { text-decoration:underline; }
-  .qa { margin:.6rem 0 1rem; }
+  /* a card travels to its new place in the list rather than teleporting
+     there (#104/#77); the transform is set and cleared by regroupCards */
+  .qa { margin:.6rem 0 1rem;
+        transition:transform .85s cubic-bezier(.32,.1,.2,1),
+                   opacity .55s ease, filter .55s ease; }
+  /* a card that has left the list entirely dreams away where it stood */
+  .qaghost { position:absolute; z-index:3; pointer-events:none;
+    transition:opacity .7s ease, filter .7s ease, transform .7s ease; }
+  .qaghost.gone { opacity:0; filter:blur(6px); transform:translateY(-10px); }
+  @media (prefers-reduced-motion: reduce) { .qa { transition:none; } }
   .qa .qt { color:var(--lit); }
   .qa textarea { width:100%; background:var(--panel); color:var(--text);
     border:1px solid var(--line); border-radius:var(--radius); font:inherit;
@@ -671,9 +680,16 @@ const qaInner = (q, key) => {
   return `<div class="qt">${esc(q.title)}</div>${body}${answer}` +
     qaFoot(q.follows, key, st);
 };
+/* Two identities, deliberately. `data-qkey` ADDRESSES the entry in live data
+   and is positional, so it is what writes use. `data-qid` is the question
+   ITSELF, and it survives the entry moving between sections — which its key
+   cannot, since answering re-indexes it from questions_open into
+   answered_entries. The regroup animation keys off qid: it is the same
+   question, so it travels rather than being re-set (#77). URI-encoded
+   because a title may contain quotes and this is an attribute. */
 const qaCard = (q, key) =>
-  `<div class="qa ${qaState(q, key)}" data-qkey="${key}">` +
-  `${qaInner(q, key)}</div>`;
+  `<div class="qa ${qaState(q, key)}" data-qkey="${key}"` +
+  ` data-qid="${encodeURIComponent(q.title)}">${qaInner(q, key)}</div>`;
 /* resolve a card key against live data — the one place a key becomes an
    entry, for both writes and re-renders. */
 const qaEntry = key => {
@@ -931,6 +947,83 @@ function setContent(html) {
   // slide up out of nothing (the enter-snap rule)
   paintIndicators(true);
   ages();
+}
+/* ── the regroup (#104, #77) ──────────────────────────────────────────────
+   Answering a question moves it out of the open list and under a different
+   heading. That is one moment seen two ways: the questions below close the
+   gap it left (#104), and the question itself travels to its new section
+   rather than being re-set there (#77). So it is one mechanism — a FLIP over
+   the list, keyed by `data-qid`, which is the question and survives the move
+   its positional key cannot.
+
+   Liveness is not delayed by this. The new DOM is committed IMMEDIATELY, as
+   the tick always has; only the visual transform is animated, so what is on
+   screen is always the current data drawn from where it used to be. */
+/* which heading a card currently sits under — the thing #77 is actually
+   about. Not the card's own state class: the submit morph already changed
+   that locally when the answer was sent, so by regroup time it would report
+   no change even though the card is about to cross the page. */
+function cardGroup(el) {
+  for (let n = el.previousElementSibling; n; n = n.previousElementSibling)
+    if (n.classList.contains('label')) return n.textContent;
+  return '';
+}
+function snapshotCards() {
+  const m = new Map();
+  document.querySelectorAll('.qa[data-qid]').forEach(el => m.set(el.dataset.qid, {
+    rect: el.getBoundingClientRect(),
+    group: cardGroup(el),
+    // cloned up front because a departure has no node left to animate once
+    // the re-render has happened, and we cannot know which will depart
+    node: el.cloneNode(true),
+  }));
+  return m;
+}
+function regroupCards(before) {
+  if (rmr || !before || !before.size) return;
+  const wrap = document.querySelector('.wrap');
+  const seen = new Set();
+  document.querySelectorAll('.qa[data-qid]').forEach(el => {
+    const id = el.dataset.qid, was = before.get(id);
+    seen.add(id);
+    if (!was) {                       // newly arrived: snap, then ease in
+      el.classList.add('dreamin');
+      requestAnimationFrame(() => el.classList.remove('dreamin'));
+      return;
+    }
+    const now = el.getBoundingClientRect();
+    if (Math.abs(was.rect.left - now.left) < 1 &&
+        Math.abs(was.rect.top - now.top) < 1) return;
+    if (was.group !== cardGroup(el) && typeof flipDock === 'function') {
+      // it moved to a different HEADING: the lifted-hero morph, so the eye
+      // follows this one card across the page rather than reading the whole
+      // list as having been re-laid out (#77)
+      flipDock(el, was.rect, now);
+    } else {
+      // a neighbour closing the gap: it just slides
+      el.style.transition = 'none';
+      el.style.transform = `translate(${was.rect.left - now.left}px,` +
+                           `${was.rect.top - now.top}px)`;
+      void el.offsetWidth;
+      el.style.transition = '';
+      el.style.transform = '';
+    }
+  });
+  // gone entirely: dream away where it stood, so it fades rather than blinks
+  if (!wrap) return;
+  const org = wrap.getBoundingClientRect();
+  before.forEach((was, id) => {
+    if (seen.has(id)) return;
+    const g = was.node;
+    g.classList.add('qaghost');
+    g.style.left = (was.rect.left - org.left) + 'px';
+    g.style.top = (was.rect.top - org.top) + 'px';
+    g.style.width = was.rect.width + 'px';
+    wrap.appendChild(g);
+    void g.offsetWidth;
+    g.classList.add('gone');
+    setTimeout(() => g.remove(), 1000);
+  });
 }
 /* switching a card's mode: the indicator slides, the placeholder follows,
    and the field keeps whatever is typed in it — the text is the point, the
@@ -1259,8 +1352,12 @@ async function tick() {
     if (mtime !== lastMtime && Date.now() >= holdRerenderUntil) {
       lastMtime = mtime; fetchedAt = Date.now();
       data = await (await fetch('/data.json')).json();
+      // the data lands instantly; surviving cards then travel from where
+      // they were to where the new grouping put them (#104/#77)
+      const before = snapshotCards();
       if (view.name === 'dashboard') setContent(buildDashboard(data));
       else if (view.name === 'questions') setContent(buildQuestions(data));
+      regroupCards(before);
       // the crumbs carry live numbers too (open count, version) — and the
       // tick re-renders in place, instantly, so they never animate
       renderChrome(view, data, null);

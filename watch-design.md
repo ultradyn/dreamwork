@@ -462,9 +462,24 @@ instead of teleporting. FLIP is the mechanism; reduced-motion is the
 exception; an element leaving fades rather than vanishing.
 
 - **When transitions apply.** Route changes (client nav) dissolve. The live
-  mtime tick re-renders the active view **in place, instantly** — liveness
-  must never wait on an animation. The composer reveals on a soft
-  blur drift. Nothing else animates.
+  mtime tick commits its new DOM **immediately** — liveness never waits on an
+  animation — but where that re-render *moves* something that survived, the
+  survivor travels to its new place rather than appearing there (the
+  regroup, below). The composer reveals on a soft blur drift. Nothing else
+  animates.
+- **The regroup** (a question is answered). One moment seen two ways: the
+  questions below close the gap it left (#104), and the question itself
+  travels to its new heading rather than being re-set there (#77). One
+  mechanism — a FLIP over the list keyed by **`data-qid`**, the question's
+  own identity, which survives the move its positional `data-qkey` cannot.
+  A card whose **heading changed** gets the lifted-hero morph so the eye
+  follows it across the page; a card that merely shifted slides. Use the
+  heading, not the card's state class: the submit morph already changed that
+  class locally when the answer was sent, so by regroup time it reports no
+  change even as the card is about to cross the page. A card gone entirely
+  dreams away at the rect it occupied, which is why the snapshot clones every
+  card up front — after the re-render there is no node left to animate, and
+  you cannot know in advance which will go.
 - **The dream dissolve** (route change). The outgoing view becomes a
   `.ghost` (z-index above `#view`) that liquifies into a swirling mist and
   lifts up and toward the viewer as it fades — dissolving *in front*. The
