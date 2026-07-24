@@ -310,6 +310,13 @@ class TestAppShell(unittest.TestCase):
                       'followThread', 'noteBox', 'answered_entries'):
             self.assertIn(token, watch.PAGE)
 
+    def test_page_has_pip_popout_buttons(self):
+        # #83: discoverable PiP-glyph buttons float a doc/review in an
+        # identity-headed window, reusing the popout machinery.
+        for token in ('pipBtn', 'popoutDoc', 'data-pipurl', 'openPopout',
+                      'popoutShell'):
+            self.assertIn(token, watch.PAGE)
+
     def _serve(self, target):
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), watch.make_handler(target))

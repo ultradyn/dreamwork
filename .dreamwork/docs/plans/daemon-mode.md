@@ -48,30 +48,45 @@ needs an authority decision; (b) longer-form conversation (design
 reviews richer than a follow-up thread); (c) attn-equivalent outbound
 push when the human is away from the page. (c) is "channels" below.
 
-## Needs-Max decisions
+## Decisions (Max, 2026-07-25 ~09:45)
 
-- **Agent runtime for bg mode**: headless CLI sessions under the
-  daemon vs SDK-driven loop vs tmux-managed interactive sessions.
-  Cost, resumability, and tooling access differ; taste call.
-- **Lifecycle authority**: may the web UI start/stop loops? (Rec: yes
-  for pause/resume, wrap; project add/remove stays CLI.)
-- **Exposure**: localhost-only stands today; multi-device LAN use (the
-  hark ssh-pair spirit) would need explicit opt-in + auth story.
-- **Channels**: which outbound push (ntfy/Telegram/desktop
-  notifications via PWA) and does a channel accept inbound commands?
-- **PWA vs Tauri**: rec PWA first (manifest + service worker on the
-  hub — installable, push-capable, tiny); Tauri only if native needs
-  emerge (tray, global hotkeys). Both can wait for the hub.
+- **Runtime**: session-manager-managed CLI sessions — prefer **herdr**
+  (docs: `~/.llm-general/ai-coding/herdr/` — server, protocol, input,
+  stoppage), tmux as fallback, behind an **adapter model** so either
+  works. Dedicated herdr session per swarm so Max can attach to
+  debug/inspect.
+- **Any-CLI insight** (Max): herdr/tmux + stop hooks + send-keys +
+  dreamhub's own dynamic monitoring supports *any* coding CLI (e.g.
+  cursor agent) even without a Monitor tool — the hub injects messages
+  directly. Dreamhub becomes the wake/steer transport, not the
+  harness.
+- **Web lifecycle**: rec accepted — pause/resume/wrap from the web;
+  project add/remove stays CLI.
+- **Exposure**: not localhost-forever — spawning over **ssh** and
+  managing remote dreamers is wanted, one hub covering a swarm.
+  Implies URL/path adjustments and UX for host-qualified projects
+  (auth story to design before any non-local bind).
+- **Channels**: ntfy/Telegram/PWA-push defaults confirmed; add
+  **Discord and Teams**. Reference implementations to mine:
+  `~/src/clawq`. Channels are **plugins** that may install their own
+  dependencies — keeps the bug surface off the core.
+- **PWA**: yes, on the hub. **Tauri**: deferred, consideration-stage.
+- **Metadreamer** (new): in bg/daemon mode dreamers may spawn other
+  dreamers — enabling a metadreamer that manages projects in general
+  and the other dreamers. (Recursive delegation needs its own
+  guardrails: depth limits, budget, the no-attn and machinery rules
+  cascade.)
 
-## Staging sketch (post-brainstorm, if approved)
+## Staging (revised per decisions)
 
-1. dreamhub aggregator (`/` list + `/{project}/` proxy) — small,
-   stdlib, composes existing watch instances.
-2. Session-lifecycle controls in the hub (authority per decision).
-3. Daemon supervision + daemon-owned heartbeats (bg mode proper).
-4. PWA shell + channels.
+1. **dreamhub aggregator** — `/` list + `/{project}/` proxy over
+   existing watch instances; stdlib.
+2. **Runtime adapter** (herdr | tmux) + hub-driven wake/steer
+   (send-keys + stop hooks); lifecycle controls in the hub.
+3. **Swarm**: ssh spawn/attach of remote dreamers; host-qualified
+   URLs; auth story.
+4. **Channel plugin architecture** (own deps allowed) — ntfy,
+   Telegram, Discord, Teams; PWA shell + push on the hub.
+5. **Metadreamer** — dreamer-spawns-dreamer + management guardrails.
 
-## Open thread
-
-Brainstorm with Max: which gaps bite first in real use? His answers
-reshape staging before anything is planned in detail.
+Build not yet started; stage 1 is ready to plan in detail on Max's go.

@@ -186,6 +186,11 @@ STYLE = """<style>
     padding:.25rem .8rem; cursor:pointer; }
   #cmdpop { margin-left:auto; color:var(--muted); }
   #cmdpop:hover { color:var(--accent); }
+  .pipbtn { background:none; border:none; color:var(--dim); cursor:pointer;
+    padding:0 .35rem; line-height:1; vertical-align:middle;
+    transition:color .3s ease; }
+  .pipbtn:hover, .pipbtn:focus-visible { color:var(--accent); }
+  .pipbtn svg { display:inline-block; vertical-align:-2px; }
   .cmdmsg { color:var(--dim); font-size:.7rem; min-height:1em; margin-top:.5rem;
     transition:color .4s ease; }
   .cmdmsg.ok { color:var(--accent); }
@@ -232,7 +237,11 @@ APP_BODY = """<canvas id="dreambg"></canvas>
   <div class="cmdrow">
    <button type="submit" id="cmdsend">send</button>
    <button type="button" id="cmdpop"
-           title="pop out — stays while you navigate">pop out &#8689;</button>
+           title="pop out — stays while you navigate"><svg viewBox="0 0 22 18"
+     width="13" height="11" aria-hidden="true"><rect x="1" y="1" width="20"
+     height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"
+     /><rect x="10.5" y="8.5" width="9" height="7" rx="1.2"
+     fill="currentColor"/></svg> pop out</button>
   </div>
   <div class="cmdmsg" id="cmdmsg" aria-live="polite"></div>
  </form>
@@ -256,6 +265,18 @@ const pageHeader = inner =>
   `<header class="htitlebar"><button id="cmdplus" type="button"` +
   ` title="command the dream" aria-label="open command palette">+</button>` +
   `<span class="htitle">${inner}</span></header>`;
+/* a small standard picture-in-picture glyph — a low-emphasis button placed
+   after doc/review affordances so pop-out is discoverable, never surprising.
+   Clicking it floats the target (data-pipurl) in an identity-headed window. */
+const PIP_SVG = '<svg viewBox="0 0 22 18" width="14" height="12"' +
+  ' aria-hidden="true"><rect x="1" y="1" width="20" height="16" rx="2.5"' +
+  ' fill="none" stroke="currentColor" stroke-width="1.6"/>' +
+  '<rect x="10.5" y="8.5" width="9" height="7" rx="1.2"' +
+  ' fill="currentColor"/></svg>';
+const pipBtn = (url, label) =>
+  `<button class="pipbtn" type="button" title="pop out — floats while you` +
+  ` navigate" aria-label="pop out ${esc(label)}" data-pipurl="${esc(url)}"` +
+  ` data-piplabel="${esc(label)}">${PIP_SVG}</button>`;
 const expand = (s, inner, cls='') =>
   `<details><summary class="${cls}">${s}</summary>${inner}</details>`;
 /* backticked repo-relative paths become /file links (zero agent burden) */
@@ -354,6 +375,7 @@ function buildDashboard(d) {
   if (d.reviews.length) {
     h += label('reviews') + d.reviews.map(r =>
       `<div><a href="/review?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` +
+      pipBtn('/reviewraw?p=' + encodeURIComponent(r.name), r.name) +
       `<span class="age" data-mt="${r.mtime}"></span></div>`).join('');
   }
   h += label('files') +
@@ -396,8 +418,9 @@ function buildFile(param, text) {
     ? '<div class="dim">not found</div>'
     : `<pre>${esc(text)}</pre>`;
   return pageHeader(esc(param || '')) +
-    `<div id="meta"><a href="/">&larr; dashboard</a></div>` +
-    `<div id="filebody">${body}</div>`;
+    `<div id="meta"><a href="/">&larr; dashboard</a>` +
+    pipBtn('/file?p=' + encodeURIComponent(param || ''), param || 'file') +
+    `</div><div id="filebody">${body}</div>`;
 }
 /* review view: the raw artifact in an iframe (style-isolated) with the
    originating question docked beside it (answer box included), so it can
@@ -414,7 +437,9 @@ function buildReview(name, q, d) {
   }
   return pageHeader(`review<span class="revname">${esc(name || '')}</span>`) +
     `<div id="meta"><a href="/questions">&larr; questions</a> · ` +
-    `<a href="/">dashboard</a></div>` +
+    `<a href="/">dashboard</a>` +
+    pipBtn('/reviewraw?p=' + encodeURIComponent(name || ''),
+           'review: ' + (name || '')) + `</div>` +
     `<div id="reviewwrap"${dock ? '' : ' class="nodock"'}>` +
       `<div id="reviewdoc"><iframe id="reviewframe" src="${src}" ` +
       `title="review artifact" loading="lazy"></iframe></div>` +
@@ -786,7 +811,9 @@ const POPOUT_CSS = `
     border-radius:4px; font:inherit; padding:.3rem .9rem; cursor:pointer;
     margin-top:.4rem; }
   .pmsg { color:#6b7280; font-size:.7rem; min-height:1em; margin-top:.4rem; }
-  .pmsg.ok { color:__ACCENT__; }`;
+  .pmsg.ok { color:__ACCENT__; }
+  iframe { border:0; width:100%; height:calc(100vh - 54px); display:block;
+    background:#0b0f19; }`;
 const POPOUT_BODY = (base, path) => `
   <div class="strip"></div>
   <div class="phead"><div class="ptitle">+ command &middot; ${esc(base)}</div>
@@ -803,10 +830,13 @@ const POPOUT_BODY = (base, path) => `
     <div><button type="submit">send</button></div>
     <div class="pmsg" id="pmsg" aria-live="polite"></div>
   </form>`;
-function mountPopout(w, base, path, tint) {
+/* Every popped-out window (command form OR a doc/review iframe) wears the
+   same identity: a hue-tinted band, the project basename + full path, and a
+   matching title — so multiple target popouts never blur together. */
+function popoutShell(w, base, path, tint, titleWord) {
   const doc = w.document;
-  doc.title = '+ ' + base + ' · dreamwork';
-  const warm = tint >= 0;                    // carry the page's hue as identity
+  doc.title = titleWord + ' · ' + base + ' · dreamwork';
+  const warm = tint >= 0;
   const accent = warm ? '#c4b5fd' : '#a5b4fc';
   const strip = warm ? 'linear-gradient(90deg,#6d5bd0,#a855f7)'
                      : 'linear-gradient(90deg,#4f5bd5,#5b8def)';
@@ -815,49 +845,73 @@ function mountPopout(w, base, path, tint) {
   st.textContent = POPOUT_CSS.replace(/__ACCENT__/g, accent)
                              .replace('__STRIP__', strip);
   doc.head.appendChild(st);
-  doc.body.innerHTML = POPOUT_BODY(base, path);
-  const endpoint = location.origin + '/command';   // opener origin, absolute
-  const msg = doc.getElementById('pmsg');
-  doc.addEventListener('keydown', ev => {           // Ctrl/Cmd+Enter submits
-    if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
-      ev.preventDefault(); doc.getElementById('pform').requestSubmit();
-    }
-  });
-  doc.getElementById('pform').addEventListener('submit', async ev => {
-    ev.preventDefault();
-    const kind = doc.getElementById('pkind').value;
-    const text = doc.getElementById('ptext').value.trim();
-    if (kind !== 'do-next' && !text) { msg.textContent = 'a thought is needed';
-      msg.className = 'pmsg'; return; }
-    try {
-      const r = await fetch(endpoint, { method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, text }) });
-      if (r.ok) { msg.textContent = 'sent to the dream'; msg.className = 'pmsg ok';
-        doc.getElementById('ptext').value = ''; }
-      else { msg.textContent = 'rejected (' + r.status + ')'; msg.className = 'pmsg'; }
-    } catch (e) { msg.textContent = 'no connection'; msg.className = 'pmsg'; }
-  });
+  return doc;
 }
-async function requestPopout() {
+const popHead = (label, base, path) =>
+  `<div class="strip"></div><div class="phead">` +
+  `<div class="ptitle">${esc(label)} &middot; ${esc(base)}</div>` +
+  `<div class="ppath">${esc(path)}</div></div>`;
+/* open a floating window — Document Picture-in-Picture where available (stays
+   put while the main tab navigates), else a positioned window.open — and let
+   `fill` render into it with the shared identity. */
+async function openPopout(name, size, fill) {
   const d = await ensureData();
   const path = (d && d.target) || '';
   const base = path.split('/').filter(Boolean).pop() || 'dreamwork';
   const tint = TINT[view.name] || 0;
+  let w = null;
   if (window.documentPictureInPicture &&
       documentPictureInPicture.requestWindow) {
-    try {
-      const w = await documentPictureInPicture.requestWindow(
-        { width: 340, height: 320 });
-      mountPopout(w, base, path, tint);
-      if (window.__closeCmd) window.__closeCmd();
-      return;
-    } catch (e) { /* fall through to a positioned popup */ }
+    try { w = await documentPictureInPicture.requestWindow(size); }
+    catch (e) { /* fall through */ }
   }
-  const w = window.open('', 'dreamcmd_' + base,
-    'width=360,height=340,left=80,top=80');
-  if (w) { mountPopout(w, base, path, tint);
-    if (window.__closeCmd) window.__closeCmd(); }
+  if (!w) w = window.open('', name + '_' + base,
+    'width=' + (size.width + 20) + ',height=' + (size.height + 20) +
+    ',left=80,top=80');
+  if (w) fill(w, base, path, tint);
+  return w;
+}
+async function requestPopout() {
+  const w = await openPopout('dreamcmd', { width: 340, height: 320 },
+    (w, base, path, tint) => {
+      const doc = popoutShell(w, base, path, tint, '+ command');
+      doc.body.innerHTML = POPOUT_BODY(base, path);
+      const endpoint = location.origin + '/command';
+      const msg = doc.getElementById('pmsg');
+      doc.addEventListener('keydown', ev => {        // Ctrl/Cmd+Enter submits
+        if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
+          ev.preventDefault(); doc.getElementById('pform').requestSubmit();
+        }
+      });
+      doc.getElementById('pform').addEventListener('submit', async ev => {
+        ev.preventDefault();
+        const kind = doc.getElementById('pkind').value;
+        const text = doc.getElementById('ptext').value.trim();
+        if (kind !== 'do-next' && !text) {
+          msg.textContent = 'a thought is needed'; msg.className = 'pmsg'; return;
+        }
+        try {
+          const r = await fetch(endpoint, { method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind, text }) });
+          if (r.ok) { msg.textContent = 'sent to the dream';
+            msg.className = 'pmsg ok'; doc.getElementById('ptext').value = ''; }
+          else { msg.textContent = 'rejected (' + r.status + ')';
+            msg.className = 'pmsg'; }
+        } catch (e) { msg.textContent = 'no connection'; msg.className = 'pmsg'; }
+      });
+    });
+  if (w && window.__closeCmd) window.__closeCmd();
+}
+/* pop a doc/review into a floating iframe window (kept identity header) so it
+   stays handy while the main tab navigates. */
+function popoutDoc(url, label) {
+  openPopout('dreamdoc', { width: 620, height: 560 },
+    (w, base, path, tint) => {
+      const doc = popoutShell(w, base, path, tint, label);
+      doc.body.innerHTML = popHead(label, base, path) +
+        `<iframe src="${esc(url)}" title="${esc(label)}"></iframe>`;
+    });
 }
 (function () {
   const pal = document.getElementById('cmdpalette');
@@ -887,6 +941,9 @@ async function requestPopout() {
   }
   window.__closeCmd = closeCmd;
   document.addEventListener('click', e => {
+    const pip = e.target.closest && e.target.closest('.pipbtn');
+    if (pip) { e.preventDefault();
+      popoutDoc(pip.dataset.pipurl, pip.dataset.piplabel || 'doc'); return; }
     const plus = e.target.closest && e.target.closest('#cmdplus');
     if (plus) { e.preventDefault(); open ? closeCmd() : openCmd(); return; }
     if (open && e.target.closest && !e.target.closest('#cmdpalette')) closeCmd();

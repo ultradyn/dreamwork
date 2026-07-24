@@ -122,7 +122,12 @@ own counts). Every question entry — open, answered-awaiting-fold, and folded
 Answered — also carries a follow-up thread (`- **Follow-up (via watch…)**`
 sub-bullets) and a quiet `add a note` box (`sendComment`, POST `/comment`);
 the Answered section is rendered structured from `answered_entries`, not raw
-text. Views are pure builders returning `#view`'s innerHTML (`buildDashboard`,
+text. A low-emphasis PiP glyph (`pipBtn`) sits after doc/review affordances
+(file + review headers, the dashboard reviews list, the palette); clicking it
+floats the target in an identity-headed window (`openPopout` → Document
+Picture-in-Picture, `window.open` fallback) that stays put while the main tab
+navigates. Views are pure builders returning `#view`'s innerHTML
+(`buildDashboard`,
 `buildQuestions`, `buildFile`, `buildReview`); the router swaps them. Add a
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
 
