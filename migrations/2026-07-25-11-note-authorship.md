@@ -18,9 +18,18 @@ indistinguishable once folded into one thread.
 ## How to apply
 
 New notes use the new tags. Existing entries need no rewrite — read the
-old forms as their author implies: `(via watch, …)` was a human at the
-dashboard, `(in-session, …)` was the loop. Any tool that parses threads
-should accept all four forms.
+old forms as their author implies: any `(via <channel>, …)` was a human
+at that channel, and `(in-session, …)` was the loop. A parser accepts
+all four:
+
+| tag | author |
+|---|---|
+| `- **Note (human, via <channel>, <ts>):**` | human (current) |
+| `- **Follow-up (loop, <ts>):**` | the loop (current) |
+| `- **Follow-up (via <channel>, <ts>):**` | human (legacy) |
+| `- **Follow-up (in-session, <ts>):**` | the loop (legacy) |
+
+Anything unrecognised: render it, attribute nothing, never guess.
 
 The rendering half belongs to whatever surface displays questions: where
 both voices appear, authorship must be visible — quietly (a dim label or

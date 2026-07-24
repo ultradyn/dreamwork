@@ -11,8 +11,8 @@ read, initialization has already happened; return to the loop.
    root — the persistent memory of what the human wants from this project.
    If it exists, read it before anything else: it holds the human's very
    high-level goals, the project's philosophy, working preferences and
-   routines, and plugin decisions. It is the primary source for judging
-   what work fits. If it doesn't exist, note that — the wizard (step 4)
+   routines, and plugin decisions. Its goals are where every chain of
+   work terminates. If it doesn't exist, note that — the wizard (step 4)
    will create it.
 
 3. **Plugins.** Skills named `ud-dreamwork-*` are plugins to this loop;
@@ -163,6 +163,9 @@ read, initialization has already happened; return to the loop.
     baseline state, loaded plugins, what you'll do first, queue depth —
     and the **session goal**: one line naming what this session is for
     and which DREAMWORK.md goal it hangs under. Write it to
-    `status.json` (`goal`). It is a claim, not a contract: the human's
+    `status.json` (`goal`). It forms once the queue is reconciled and is
+    merely *reported* here — init's own recovery work (landing a dirty
+    tree at step 8, fixing a red baseline at step 9) predates it and is
+    exempt from stating a chain. It is a claim, not a contract: the human's
     next steer may replace it, and a pivot means re-declaring it rather
     than quietly working to the old one.

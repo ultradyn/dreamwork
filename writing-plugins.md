@@ -51,6 +51,12 @@ The loop offers five seams; use the ones you need:
   numbering. Once the loop actually starts such an item it does earn one
   (a poll re-derives the issue, never the branch or the half-landed
   increment) — the coordinator mints it at that moment.
+- **Forge items and the scope gate.** Ingesting an item is never gated;
+  *starting* one is. An item the human authored or triaged upstream is a
+  human-initiated steer and passes. Anything else is agent-initiated:
+  the gate applies, the issue's stated purpose serves as the task goal,
+  and the parent still has to be nameable — an issue nobody here asked
+  for is exactly the case the gate exists for.
 - **Commands.** Add `<plugin-thing>: ...`-style commands if genuinely
   needed; never repurpose or shadow core commands.
 - **Maintenance.** Contribute rotation items; custom roll.py weights

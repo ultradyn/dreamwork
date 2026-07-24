@@ -30,7 +30,7 @@ open-ended improvement of a project.
 - **Know what the human wants.** `DREAMWORK.md` (repo root) records the
   human's high-level goals, philosophy, preferences, and routines. We should
   always know what the human wants so we can make what the human needs —
-  when in doubt about whether work fits, that file is the reference. It
+  it is where every chain of work terminates. It
   grows incrementally: when the human expresses a durable preference or
   goal mid-loop, record it there.
 - **Reflection over momentum.** The heartbeat buys thinking time after each
@@ -73,9 +73,11 @@ starting new increments — resume autonomous work when the stream pauses.
 - **Idle** → run the selection algorithm below.
 
 On each tick, best-effort, refresh `.dreamwork/status.json` (current task,
-queue depth, last tick time, last commit) — the watch.py dashboard reads
-it; failing to write it never blocks the loop. And if `questions.md`
-changed since your last look, check for new "(via watch)" answer blocks —
+queue depth, last tick time, last commit, and the session goal — which
+persists across ticks, rewritten only on a pivot) — the watch.py
+dashboard reads it; failing to write it never blocks the loop. And if
+`questions.md` changed since your last look, check for new
+human-authored blocks (`Note (human, via …)`) —
 fold them first: act on the answer, then move the entry to Answered.
 
 ## Selecting the next task
@@ -116,7 +118,9 @@ fold them first: act on the answer, then move the entry to Answered.
       line in DREAMWORK.md.
 4. **Maintenance rotation.** List empty and brainstorm recent? Rotate
    through: goal alignment first — does DREAMWORK.md still reflect what
-   the human wants and what the loop has learned? fold in any drift; then
+   the human wants and what the loop has learned? fold in any drift, and
+   check every task `parent` still resolves to a DREAMWORK.md heading;
+   then
    self-review recent commits for introduced errors; test-coverage gaps;
    docs freshness — the repo's own docs, `.dreamwork/docs/`, the
    doc-map, and any reference docs the target ships for others to
@@ -229,8 +233,8 @@ results, no ceremony.
   doubt**: a human's note is tagged `- **Note (human, via <channel>,
   <ts>):**`, the loop's own is `- **Follow-up (loop, <ts>):**`. Mixing
   what the human said with what the loop wrote eventually misleads one
-  of them — and the loop is the one that would then act on its own
-  invention as if it were an instruction. A follow-up landing on an Answered entry
+  of them. Older entries may read `(via <channel>, …)`, which was a
+  human, or `(in-session, …)`, which was the loop. A follow-up landing on an Answered entry
   is a potential amendment — re-evaluate the fold: it may reopen the
   question or redirect in-flight work.
 - `.dreamwork/review/` — rich review artifacts: when something sizeable
@@ -262,10 +266,9 @@ results, no ceremony.
   it.
 - Every task also knows what it is *for*: a one-line `goal`, and the
   `parent` it serves (a session goal, or a DREAMWORK.md sub-goal by
-  name). Starting a task means saying the chain aloud — task goal →
-  session goal → the DREAMWORK.md branch above it — in the status
-  update. One line, never a document; a chain that needs a paragraph is
-  a sign the work does not belong to it.
+  name). It states its chain when it starts — see the scope gate. One
+  line, never a document; a chain that needs a paragraph is a sign the
+  work does not belong to it.
 - The ledger carries what selection and triage read: `priority` (P1-P3),
   `type` (idea | task | bug | experiment | chore), `size` (estimated
   minutes), `feasibility` (note from triage), the next-up mark (set by
@@ -332,8 +335,7 @@ if Max is away).
   its reflection. (A check, not the mechanism: the restart that cost
   eight tasks had no wrap-up.) Then look at the session goal: if it
   turned out to be something the project will keep wanting, promote it
-  into DREAMWORK.md as a sub-goal — that is how the tree grows, and the
-  only reason a session goal needs to outlive its session.
+  into DREAMWORK.md as a sub-goal.
 
 ## Guardrails
 
@@ -362,13 +364,18 @@ if Max is away).
   breath — they may be afk or miss the message. Unclear goals park there
   too, instead of being guessed at.
 - Scope gate — **name the chain**. Agent-initiated work that adds new
-  surface area (a new file, section, or feature) or breaks the size norms
-  has to state its chain out loud first: this task serves *that* session
-  goal, which serves *that* goal in DREAMWORK.md. If you can't name it
-  without inventing a link, that is the answer — park it in questions.md
-  instead of doing it. Human-initiated steers are never gated. Defaults and silence may
-  resolve *how* or *when* for already-authorized work — never *whether*
-  to add new surface; parked scope questions stay parked until answered.
+  surface area (a new file, section, or feature) or breaks the size
+  norms has to state its chain out loud first: this task serves *that*
+  session goal, which serves *that* goal in DREAMWORK.md. The chain
+  ends at the highest goal that exists — two rungs is a chain. If you
+  can't name it without inventing a link, that is the answer — park it
+  in questions.md instead of doing it. If *nothing* can be named
+  because DREAMWORK.md holds no goals yet, the gate is telling you
+  about the goals and not the work: park one question asking for them,
+  not one per task. Human-initiated steers are never gated. Defaults
+  and silence may resolve *how* or *when* for already-authorized work
+  — never *whether* to add new surface; parked scope questions stay
+  parked until answered.
 - Surface contradictions. When what the human says now conflicts with
   recorded state (DREAMWORK.md, docs, the implementation), say so plainly
   and presume they know how to resolve it — it's wavelength-matching, not
