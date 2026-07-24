@@ -106,8 +106,9 @@ starting new increments — resume autonomous work when the stream pauses.
    the human wants and what the loop has learned? fold in any drift; then
    self-review recent commits for introduced errors; test-coverage gaps;
    docs freshness; task-list grooming (dedupe, reprioritize, prune
-   stale); dogfood reflection — friction with the loop itself: fix small,
-   file the rest. If truly nothing: idle quietly until the next tick — no
+   stale); dream grooming (archive dreams whose ideas and lessons are
+   captured); dogfood reflection — friction with the loop itself: fix
+   small, file the rest. If truly nothing: idle quietly until the next tick — no
    make-work.
 
 ## Subagents — utilities and dreamers
@@ -136,7 +137,9 @@ Everything else stays minimal: raw results, no ceremony.
 ## Durable state — `.dreamwork/`
 
 - `DREAMWORK.md` (repo root) — what the human wants; see Initialization.
-- `.dreamwork/dreams/` — dream journals from dreamer subagents.
+- `.dreamwork/dreams/` — dream journals from dreamer subagents. Once a
+  dream's ideas are tasks and its lessons are in `lessons.md`, move it to
+  `dreams/archive/` — the journal stays lean, the memory survives.
 - `.dreamwork/lessons.md` — one concise line per important lesson learned,
   each pointing at its source dream. No arbitrary length limit, but
   genuinely one line — distilled, not stuffed. Lessons outlive pruned
