@@ -167,8 +167,11 @@ the dim text so text always wins. Domain anchored to `screenX/screenY`
 (+ chrome estimate), phase from the UTC-day-wrapped wall clock — one shared
 world-space field across windows. Per-route `SEED`/`TINT`; transition `warp`
 pulse. Recoverable context loss (rebuild on restore). Hidden layer switcher
-for debugging. `--dev` measures real per-frame work (steady state is
-~0.1–0.3ms CPU; transition dips are SVG-filter compositing, not the shader).
+for debugging — the hotkey is ignored inside text fields, and any switch
+(key or corner triple-click) shows a self-naming auto-fading toast
+("background: <layer> — press l to cycle") so an accidental change is
+legible. `--dev` measures real per-frame work (steady state is ~0.1–0.3ms
+CPU; transition dips are SVG-filter compositing, not the shader).
 
 ### Voice & tone (page copy)
 

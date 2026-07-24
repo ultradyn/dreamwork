@@ -250,6 +250,13 @@ class TestAppShell(unittest.TestCase):
         for token in ('qa answered', 'awaiting fold', 'q.answer'):
             self.assertIn(token, watch.PAGE)
 
+    def test_page_has_layer_switch_guard_and_feedback(self):
+        # #78: the layer hotkey ignores text-field keystrokes, and any switch
+        # (key or corner triple-click) shows a self-explanatory toast.
+        for token in ("closest('input, textarea, select')",
+                      'press l to cycle', 'layerhint'):
+            self.assertIn(token, watch.PAGE)
+
     def _serve(self, target):
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), watch.make_handler(target))

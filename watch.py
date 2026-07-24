@@ -154,7 +154,7 @@ STYLE = """<style>
   .ripple { position:fixed; z-index:40; border-radius:50%; pointer-events:none;
     border:1px solid var(--accent); }
   @media (prefers-reduced-motion: reduce) {
-    #cmdplus, #cmdpalette { transition:none; }
+    #cmdplus, #cmdpalette, #layerhint { transition:none; }
   }
 </style>"""
 
@@ -1089,10 +1089,13 @@ SHADER_JS = """
       hint = document.createElement('div');
       hint.id = 'layerhint'; document.body.appendChild(hint);
     }
-    hint.textContent = 'layer ' + mode + ' - ' + MODES[mode];
+    // Self-explanatory feedback: names the layer AND how to cycle, so an
+    // accidental switch (stray 'l', triple-click corner) is legible and
+    // reversible rather than a mysterious background change.
+    hint.textContent = 'background: ' + MODES[mode] + ' — press l to cycle';
     hint.style.opacity = '1';
     clearTimeout(hintT);
-    hintT = setTimeout(() => { hint.style.opacity = '0'; }, 1500);
+    hintT = setTimeout(() => { hint.style.opacity = '0'; }, 2200);
     if (rm) draw(lastMs);
   }
   addEventListener('keydown', e => {
