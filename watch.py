@@ -18,51 +18,59 @@ import threading
 import time
 import webbrowser
 
-PAGE = """<!doctype html><html><head><meta charset="utf-8">
-<title>dreamwork watch</title>
-<style>
-  body { background:#0b0f19; color:#d1d5db; margin:0; padding:2.5rem 1rem;
+# Design tokens + shared shell: every watch page renders through these,
+# so a redesign is a token/component edit, not a page-by-page hunt.
+STYLE = """<style>
+  :root { --bg:#0b0f19; --panel:#111827; --panel2:#1e293b;
+    --line:#1f2937; --border:#334155; --text:#d1d5db; --bright:#f3f4f6;
+    --lit:#e5e7eb; --muted:#9ca3af; --dim:#6b7280; --dimmer:#4b5563;
+    --accent:#a5b4fc; --space:1.6rem; --radius:4px; }
+  body { background:var(--bg); color:var(--text); margin:0;
+         padding:2.5rem 1rem;
          font-family:ui-monospace,'JetBrains Mono',monospace; font-size:.8rem; }
-  .wrap { max-width:72ch; margin:0 auto; }
-  header { color:#f3f4f6; font-size:1rem; margin-bottom:.25rem; }
-  #meta { color:#6b7280; margin-bottom:2rem; }
-  #meta .q { color:#a5b4fc; }
-  .label { color:#6b7280; text-transform:uppercase; letter-spacing:.08em;
-           font-size:.7rem; margin:1.6rem 0 .5rem; }
+  .wrap { max-width:72ch; margin:0 auto; position:relative; }
+  header { color:var(--bright); font-size:1rem; margin-bottom:.25rem; }
+  #meta { color:var(--dim); margin-bottom:2rem; }
+  #meta .q { color:var(--accent); }
+  .label { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
+           font-size:.7rem; margin:var(--space) 0 .5rem; }
   details { margin:.25rem 0; }
-  summary { cursor:pointer; color:#e5e7eb; list-style:none; }
-  summary::before { content:"+ "; color:#6b7280; }
+  summary { cursor:pointer; color:var(--lit); list-style:none; }
+  summary::before { content:"+ "; color:var(--dim); }
   details[open] > summary::before { content:"- "; }
-  .age { color:#6b7280; margin-left:.5rem; }
-  pre { white-space:pre-wrap; color:#9ca3af; margin:.4rem 0 .8rem 1ch;
-        border-left:1px solid #1f2937; padding-left:1ch; }
-  .git div { color:#6b7280; }
-  .git .maint { color:#a5b4fc; }
-  .dim { color:#4b5563; }
+  .age { color:var(--dim); margin-left:.5rem; }
+  pre { white-space:pre-wrap; color:var(--muted); margin:.4rem 0 .8rem 1ch;
+        border-left:1px solid var(--line); padding-left:1ch; }
+  .git div { color:var(--dim); }
+  .git .maint { color:var(--accent); }
+  .dim { color:var(--dimmer); }
   .qa { margin:.6rem 0 1rem; }
-  .qa .qt { color:#e5e7eb; }
-  .qa textarea { width:100%; background:#111827; color:#d1d5db;
-    border:1px solid #1f2937; border-radius:4px; font:inherit;
+  .qa .qt { color:var(--lit); }
+  .qa textarea { width:100%; background:var(--panel); color:var(--text);
+    border:1px solid var(--line); border-radius:var(--radius); font:inherit;
     padding:.4rem; margin:.3rem 0; min-height:3rem; box-sizing:border-box; }
-  .qa button { background:#1e293b; color:#a5b4fc; border:1px solid #334155;
-    border-radius:4px; font:inherit; padding:.25rem .8rem; cursor:pointer; }
+  .qa button { background:var(--panel2); color:var(--accent);
+    border:1px solid var(--border); border-radius:var(--radius);
+    font:inherit; padding:.25rem .8rem; cursor:pointer; }
   #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
              height:100vh; }
   #fps { position:fixed; top:.6rem; right:.8rem; z-index:10;
-         color:#4b5563; font-size:.7rem; }
+         color:var(--dimmer); font-size:.7rem; }
   #layerhint { position:fixed; bottom:1rem; right:1rem; z-index:10;
-    color:#a5b4fc; background:rgba(17,24,39,.82);
-    border:1px solid #1f2937; border-radius:4px; padding:.25rem .6rem;
-    font-size:.7rem; opacity:0; transition:opacity .5s ease;
-    pointer-events:none; letter-spacing:.04em; }
-  .wrap { position:relative; }
-</style></head><body>
-<canvas id="dreambg"></canvas>
+    color:var(--accent); background:rgba(17,24,39,.82);
+    border:1px solid var(--line); border-radius:var(--radius);
+    padding:.25rem .6rem; font-size:.7rem; opacity:0;
+    transition:opacity .5s ease; pointer-events:none;
+    letter-spacing:.04em; }
+</style>"""
+
+BODY = """<canvas id="dreambg"></canvas>
 <div class="wrap">
 <header>dreamwork watch</header>
 <div id="meta">loading…</div>
-<div id="sections"></div>
-<script>
+<div id="sections"></div>"""
+
+APP_JS = """
 window.DEV=/*DEV*/false;
 const esc = t => { const d = document.createElement('div');
                    d.textContent = t ?? ''; return d.innerHTML; };
@@ -135,7 +143,9 @@ async function tick() {
 }
 setInterval(ages, 1000);
 tick();
+"""
 
+SHADER_JS = """
 /* dreambg: dream-like fractal background (task #51).
    Four passes, all cheap by construction — the costly work stays on a
    ~1/6-CSS-res buffer and only a flat upscale touches full res:
@@ -430,8 +440,12 @@ tick();
   if (rm) draw(0);
   else rafId = requestAnimationFrame(step);
 })();
-</script></div></body></html>
 """
+
+PAGE = ('<!doctype html><html><head><meta charset="utf-8">'
+        '<title>dreamwork watch</title>' + STYLE + '</head><body>'
+        + BODY + '<script>' + APP_JS + SHADER_JS
+        + '</script></div></body></html>')
 
 
 def age_str(seconds):
