@@ -235,12 +235,6 @@ if Max is away).
 ## Wake mechanisms (variants)
 
 The Monitor heartbeat (armed in `initialization.md`) is the default and
-preferred mechanism. A Stop-hook variant ("fire back after a time": the
-Stop hook sleeps ~285s then
-returns `{"decision":"block","reason":"dream tick"}`) is viable — the hook
-default timeout is 600s — but it is a workaround: loop prevention is entirely
-on the hook author (guard with a counter or marker file), and user input
-during the sleep window is not well-defined. Prefer Monitor; consider `/loop`
-where available; reserve the Stop-hook pattern for harnesses that have hooks
-but no Monitor tool. Reference design:
-`.dreamwork/docs/plans/stop-hook-variant.md` (this project).
+preferred mechanism; consider `/loop` where available. For harnesses with
+hooks but no Monitor tool, a Stop-hook fallback exists — reference design
+and caveats in `stop-hook-variant.md` in this skill's directory.

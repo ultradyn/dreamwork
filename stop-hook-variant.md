@@ -1,7 +1,7 @@
 # Stop-hook wake variant — reference design (unimplemented)
 
-For harnesses that have hooks but no Monitor tool. The Monitor heartbeat
-remains the default; see SKILL.md "Wake mechanisms".
+Skill-level reference for harnesses that have hooks but no Monitor tool.
+The Monitor heartbeat remains the default; see SKILL.md "Wake mechanisms".
 
 ## Mechanism
 
