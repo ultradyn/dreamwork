@@ -77,3 +77,6 @@ source dream. Not a log — only things that should change future behavior.
 - Never let selection depend on a channel you have not read back: Claude
   Code's TaskGet returns subject/status/description only, so task
   `metadata` is write-only there. (2026-07-25-0832-ledger-coherence)
+- An id that is already durable upstream beats minting a new one: the
+  ledger holds only work the loop originated, or a busy forge floods it.
+  (2026-07-25-0832-ledger-coherence)

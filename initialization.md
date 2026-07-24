@@ -134,15 +134,15 @@ read, initialization has already happened; return to the loop.
    granularity.
 
 8. **Reconcile.** A session-scoped backend starts empty — that is not an
-   empty queue. Read `.dreamwork/tasks.md` and recreate its open tasks in
-   the backend (keeping their ledger ids) before judging anything;
-   verify each against git rather than trusting the ledger blindly, and
-   rewrite it if reality has moved on. Then: `git status` — a dirty tree is unfinished prior work:
-   understand it first, then land it as an increment or park it (stash +
-   task) before starting anything new. Check the task list for in_progress
-   tasks left by a previous session and verify each against reality (git
-   log/diff): mark done what's done, split what's half-done, don't trust
-   stale status.
+   empty queue. Restore it from `.dreamwork/tasks.md`, keeping the
+   ledger ids.
+
+   Then check the restored queue against reality, because nothing else
+   will: `git status` and the recent log say what actually happened
+   since the ledger was written. Mark done what's done, split what's
+   half-done, drop what's moot, and rewrite the ledger to match. A dirty
+   tree is unfinished prior work — understand it first, then land it as
+   an increment or park it (stash + task) before starting anything new.
 
 9. **Green baseline.** With the tree reconciled, run the project's
    verification once (tests/lint, or its stated routine — see

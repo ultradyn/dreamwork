@@ -256,6 +256,9 @@ results, no ceremony.
   mark (set by `do next`, cleared on start), and owner or blocked-on.
   Mirror them into the backend's `metadata` where it surfaces them —
   never depend on it unread.
+- Work that already has a durable id upstream (a forge issue a plugin
+  ingested) keeps that id and stays out of the ledger — the next poll
+  re-derives it. Ledger ids are for work the loop originated.
 - Dependencies via `addBlockedBy` / `addBlocks`.
 - Big features get a planning doc on disk (`.dreamwork/docs/plans/<slug>.md`
   or the repo's convention); the task itself is a thin pointer. Bulk stays
@@ -299,8 +302,9 @@ if Max is away).
 - `pause` / `resume` — TaskStop the heartbeat monitor / re-arm it.
 - `wrap up` — land the current increment cleanly, commit, summarize, and
   note any friction with the loop itself — fix small, file the rest.
-  Leave the queue restorable: the ledger matches the backend before the
-  session ends.
+  Check the queue is restorable — the ledger should already match the
+  backend; if it doesn't, an increment skipped its reflection. (A check,
+  not the mechanism: the restart that cost eight tasks had no wrap-up.)
 
 ## Guardrails
 
