@@ -34,7 +34,7 @@ async function run(rm) {
   await sleep(800);
   const openTrace = await page.evaluate(() => window.__trace);
   await arm();
-  await page.click('.cmdkind[data-kind="maintenance"]');
+  await page.click('.cmdkind[data-kind="do-now"]');
   await sleep(800);
   const selTrace = await page.evaluate(() => window.__trace);
   const state = await page.evaluate(() => ({

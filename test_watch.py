@@ -278,10 +278,27 @@ class TestAppShell(unittest.TestCase):
         for c in watch.COMMANDS:
             self.assertLessEqual({"kind", "label", "desc", "common"},
                                  set(c), "every kind needs a menu description")
-            self.assertIn('data-kind="%s"' % c["kind"], watch.PAGE)
-        self.assertIn("const COMMANDS = ", watch.PAGE)
-        # the popout must build its options from COMMANDS, not a second list
-        self.assertIn("COMMANDS.map(c =>", watch.PAGE)
+        # the whole vocabulary — descriptions included — reaches the client,
+        # which renders the row, the menu and the popout options from it
+        self.assertIn("const COMMANDS = " + json.dumps(list(watch.COMMANDS)),
+                      watch.PAGE)
+        self.assertIn("COMMANDS.map(c =>", watch.PAGE)      # popout options
+        self.assertIn("function renderKinds()", watch.PAGE)  # the button row
+        self.assertIn("function renderMenu()", watch.PAGE)   # the hover menu
+
+    def test_command_menu_lists_every_kind(self):
+        # Hover discoverability (#91): the row shows the common kinds, and the
+        # menu shows ALL of them with a one-line description — so an uncommon
+        # kind is discoverable, not hidden knowledge. Both render from
+        # COMMANDS at any length, so plugin kinds (#86) need no redesign.
+        self.assertTrue(any(not c["common"] for c in watch.COMMANDS),
+                        "menu is pointless if every kind is already a button")
+        for token in ('id="cmdmore"', 'id="cmdmenu"', 'role="menu"',
+                      'class="cmdmenuitem"', 'aria-haspopup="menu"',
+                      # the row must admit a selected uncommon kind, or the
+                      # indicator would have nothing to sit on
+                      'c.common || c.kind === activeKind'):
+            self.assertIn(token, watch.PAGE)
 
     def test_command_selection_is_a_button_group(self):
         # The kind picker is a radiogroup with a sliding indicator, not a

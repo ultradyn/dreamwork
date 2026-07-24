@@ -182,7 +182,7 @@ STYLE = """<style>
   #cmdplus.on { transform:rotate(45deg); }
   @media (max-width:820px) { #cmdplus { margin-left:0; } }
   #cmdpalette { position:fixed; z-index:30; top:4rem; left:1rem;
-    width:min(32ch,92vw); background:rgba(11,15,25,.94);
+    width:min(38ch,92vw); background:rgba(11,15,25,.94);
     border:1px solid var(--border); border-radius:8px; padding:1rem 1rem .85rem;
     box-shadow:0 14px 44px rgba(0,0,0,.5); backdrop-filter:blur(7px);
     visibility:hidden; opacity:0; transform:translateY(-8px) scale(.97);
@@ -204,19 +204,56 @@ STYLE = """<style>
      buttons and so move the target the indicator is chasing. */
   .cmdkinds { position:relative; display:flex; flex-wrap:wrap; gap:.1rem;
     margin:.3rem 0 .1rem; }
-  .cmdind { position:absolute; top:0; left:0; z-index:0; width:0; height:100%;
+  .cmdind { position:absolute; top:0; left:0; z-index:0; width:0; height:0;
     background:var(--panel2); border:1px solid var(--border);
     border-radius:var(--radius); box-sizing:border-box;
     transition:transform .3s cubic-bezier(.32,.12,.2,1),
-               width .3s cubic-bezier(.32,.12,.2,1); }
+               width .3s cubic-bezier(.32,.12,.2,1),
+               height .3s cubic-bezier(.32,.12,.2,1); }
   .cmdind.snap { transition:none; }        /* land, never slide (see JS) */
   .cmdkind { position:relative; z-index:1; background:none; font:inherit;
     border:1px solid transparent; border-radius:var(--radius);
-    color:var(--dim); padding:.28rem .6rem; cursor:pointer;
+    color:var(--dim); padding:.28rem .45rem; cursor:pointer;
     transition:color .3s ease, text-shadow .3s ease; }
   .cmdkind:hover { color:var(--muted); }
   .cmdkind.on { color:var(--accent);
     text-shadow:0 0 12px rgba(165,180,252,.45); }
+  /* Hover discoverability: the row carries the common kinds, and the ⋯ icon
+     reveals EVERY command with a one-line description — so a rarely-used kind
+     is discoverable rather than hidden knowledge. Rendered from COMMANDS at
+     any length, so plugin-contributed kinds (#86) just appear. */
+  .cmdpick { display:flex; align-items:flex-start; gap:.1rem; }
+  .cmdmore { position:relative; display:inline-flex; align-items:center; }
+  .cmdmorebtn { background:none; border:1px solid transparent; font:inherit;
+    color:var(--dimmer); padding:.28rem .5rem; cursor:pointer; line-height:1;
+    border-radius:var(--radius); transition:color .3s ease; }
+  .cmdmore:hover .cmdmorebtn, .cmdmore:focus-within .cmdmorebtn {
+    color:var(--accent); }
+  /* no gap between icon and menu: the pointer must be able to travel from one
+     to the other without ever leaving .cmdmore, or the menu closes en route */
+  .cmdmenu { position:absolute; z-index:31; top:100%; left:0;
+    width:max(32ch,100%); padding:.3rem;
+    background:rgba(11,15,25,.97); border:1px solid var(--border);
+    border-radius:8px; box-shadow:0 14px 44px rgba(0,0,0,.55);
+    backdrop-filter:blur(7px);
+    visibility:hidden; opacity:0; transform:translateY(-6px);
+    filter:blur(5px); pointer-events:none;
+    transition:opacity .34s cubic-bezier(.32,.12,.2,1),
+               transform .34s cubic-bezier(.32,.12,.2,1),
+               filter .34s ease, visibility 0s linear .34s; }
+  .cmdmore:hover .cmdmenu, .cmdmore:focus-within .cmdmenu {
+    visibility:visible; opacity:1; transform:none; filter:none;
+    pointer-events:auto; transition-delay:0s; }
+  .cmdmenuitem { display:block; width:100%; box-sizing:border-box;
+    text-align:left; background:none; border:1px solid transparent;
+    border-radius:var(--radius); font:inherit; color:var(--muted);
+    padding:.3rem .45rem; cursor:pointer;
+    transition:background .25s ease, color .25s ease; }
+  .cmdmenuitem:hover, .cmdmenuitem:focus-visible {
+    background:var(--panel2); color:var(--lit); }
+  .cmdmenuitem.on .cmk { color:var(--accent); }
+  .cmdmenuitem .cmd { display:block; color:var(--dim); font-size:.7rem;
+    margin-top:.1rem; }
   .cmdrow { display:flex; gap:.5rem; align-items:center; margin-top:.2rem; }
   .cmdrow button { background:var(--panel2); color:var(--accent);
     border:1px solid var(--border); border-radius:var(--radius); font:inherit;
@@ -239,7 +276,8 @@ STYLE = """<style>
   .ripple { position:fixed; z-index:40; border-radius:50%; pointer-events:none;
     border:1px solid var(--accent); }
   @media (prefers-reduced-motion: reduce) {
-    #cmdplus, #cmdpalette, #layerhint, .cmdind, .cmdkind { transition:none; }
+    #cmdplus, #cmdpalette, #layerhint, .cmdind, .cmdkind, .cmdmenu,
+    .cmdmenuitem, .cmdmorebtn { transition:none; }
   }
 </style>"""
 
@@ -268,8 +306,14 @@ APP_BODY = """<canvas id="dreambg"></canvas>
 <div id="cmdpalette" role="dialog" aria-label="command palette">
  <form id="cmdform" autocomplete="off">
   <div class="label">command the dream</div>
-  <div class="cmdkinds" id="cmdkinds" role="radiogroup" aria-label="command">
-   <span class="cmdind" id="cmdind" aria-hidden="true"></span>__CMDKINDS__
+  <div class="cmdpick">
+   <div class="cmdkinds" id="cmdkinds" role="radiogroup"
+        aria-label="command"></div>
+   <div class="cmdmore" id="cmdmore">
+    <button type="button" class="cmdmorebtn" aria-haspopup="menu"
+            aria-expanded="false" aria-label="all commands">&#8943;</button>
+    <div class="cmdmenu" id="cmdmenu" role="menu"></div>
+   </div>
   </div>
   <textarea id="cmdtext" placeholder="a thought for the dream…"></textarea>
   <div class="cmdrow">
@@ -1005,8 +1049,39 @@ function popoutDoc(url, label) {
   // first placement and for reflows, because an indicator that animates from
   // its 0-width start reads as a glitch, not a choice (the enter-snap rule).
   const kindsEl = document.getElementById('cmdkinds');
-  const indEl = document.getElementById('cmdind');
+  const menuEl = document.getElementById('cmdmenu');
+  let indEl = null;
   let activeKind = (COMMANDS[0] || {}).kind;
+  // The row carries the common kinds PLUS the active one when it is uncommon,
+  // so whatever is selected always has a button for the indicator to sit on.
+  // Rebuilding is membership-only: a common->common switch leaves the row
+  // (and so the indicator) alone, which is what lets it slide.
+  let rowKinds = [];
+  const rowWant = () => COMMANDS
+    .filter(c => c.common || c.kind === activeKind).map(c => c.kind);
+  function renderKinds() {
+    if (!kindsEl) return false;
+    const want = rowWant();
+    if (want.join('\\u0000') === rowKinds.join('\\u0000')) return false;
+    rowKinds = want;
+    kindsEl.innerHTML =
+      '<span class="cmdind" id="cmdind" aria-hidden="true"></span>' +
+      COMMANDS.filter(c => want.indexOf(c.kind) >= 0).map(c =>
+        '<button type="button" class="cmdkind" data-kind="' + esc(c.kind) +
+        '" role="radio" aria-checked="false" title="' + esc(c.desc) + '">' +
+        esc(c.label) + '</button>').join('');
+    indEl = document.getElementById('cmdind');
+    return true;
+  }
+  // The menu lists EVERY kind with its description — the discoverability
+  // surface. Built once from COMMANDS, whatever its length.
+  function renderMenu() {
+    if (!menuEl) return;
+    menuEl.innerHTML = COMMANDS.map(c =>
+      '<button type="button" role="menuitem" class="cmdmenuitem" data-kind="' +
+      esc(c.kind) + '"><span class="cmk">' + esc(c.label) +
+      '</span><span class="cmd">' + esc(c.desc) + '</span></button>').join('');
+  }
   function moveIndicator(snap) {
     if (!kindsEl || !indEl) return;
     const btn = kindsEl.querySelector('.cmdkind.on');
@@ -1015,6 +1090,7 @@ function popoutDoc(url, label) {
     if (!b.width) return;                  // not laid out yet; nothing to chase
     if (snap || rmr) indEl.classList.add('snap');
     indEl.style.width = b.width + 'px';
+    indEl.style.height = b.height + 'px';
     indEl.style.transform = 'translate(' + (b.left - g.left) + 'px,' +
                             (b.top - g.top) + 'px)';
     if (snap && !rmr) {
@@ -1024,17 +1100,39 @@ function popoutDoc(url, label) {
   }
   function setKind(kind) {
     activeKind = kind;
+    // a rebuilt row has a brand-new 0-width indicator, so land it rather than
+    // slide it up from nothing (the enter-snap rule)
+    const rebuilt = renderKinds();
     kindsEl.querySelectorAll('.cmdkind').forEach(b => {
       const on = b.dataset.kind === kind;
       b.classList.toggle('on', on);
       b.setAttribute('aria-checked', on ? 'true' : 'false');
     });
-    moveIndicator(false);
+    if (menuEl) menuEl.querySelectorAll('.cmdmenuitem').forEach(b =>
+      b.classList.toggle('on', b.dataset.kind === kind));
+    moveIndicator(rebuilt);
   }
   if (kindsEl) kindsEl.addEventListener('click', e => {
     const b = e.target.closest('.cmdkind');
     if (b) { e.preventDefault(); setKind(b.dataset.kind); }
   });
+  if (menuEl) menuEl.addEventListener('click', e => {
+    const b = e.target.closest('.cmdmenuitem');
+    if (b) { e.preventDefault(); setKind(b.dataset.kind); }
+  });
+  // the menu opens on hover/focus in CSS; mirror that into aria-expanded,
+  // which CSS cannot set.
+  const moreEl = document.getElementById('cmdmore');
+  if (moreEl) {
+    const btn = moreEl.querySelector('.cmdmorebtn');
+    const expose = v => btn && btn.setAttribute('aria-expanded', v);
+    moreEl.addEventListener('pointerenter', () => expose('true'));
+    moreEl.addEventListener('pointerleave', () => expose('false'));
+    moreEl.addEventListener('focusin', () => expose('true'));
+    moreEl.addEventListener('focusout', () => expose('false'));
+  }
+  renderMenu();
+  setKind(activeKind);              // paint the initial row + selection
   function openCmd() {
     place(); pal.classList.add('open'); open = true;
     moveIndicator(true);          // land under the active kind, never slide in
@@ -1596,23 +1694,9 @@ def page_shell(title, body, js):
 # One shell serves every same-document view. The router (last, so
 # window.dreambg from the shader exists before it runs) picks the initial
 # view from the URL; SHADER_JS mounts the persistent background.
-def _cmd_buttons():
-    """The composer's kind buttons, rendered from COMMANDS (any length)."""
-    out = []
-    for i, c in enumerate(COMMANDS):
-        on = " on" if i == 0 else ""
-        out.append(
-            f'\n   <button type="button" class="cmdkind{on}"'
-            f' data-kind="{c["kind"]}" role="radio"'
-            f' aria-checked="{"true" if i == 0 else "false"}"'
-            f' title="{c["desc"]}">{c["label"]}</button>')
-    return "".join(out)
-
-
-# The one vocabulary reaches the client here, so the composer and the popped-
-# out form never drift from what POST /command will accept.
-PAGE = page_shell('dreamwork watch',
-                  APP_BODY.replace("__CMDKINDS__", _cmd_buttons()),
+# The one vocabulary reaches the client here, so the composer's buttons, its
+# menu, and the popped-out form never drift from what POST /command accepts.
+PAGE = page_shell('dreamwork watch', APP_BODY,
                   "const COMMANDS = " + json.dumps(list(COMMANDS)) + ";\n"
                   + COMPONENTS_JS + VIEWS_JS + SHADER_JS + ROUTER_JS
                   + COMMAND_JS)

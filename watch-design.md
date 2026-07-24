@@ -164,8 +164,11 @@ assume a fixed set or a fixed length.
 
 **Choosing a kind** is a radiogroup of buttons with one background indicator
 that slides between them — `.cmdkinds` / `.cmdind` / `.cmdkind`, driven by
-`moveIndicator(snap)`. The row wraps when the vocabulary outgrows one line,
-so the indicator moves on both axes. Two rules:
+`moveIndicator(snap)`. The row carries the `common` kinds plus the active one
+when it is uncommon, so whatever is selected always has a button for the
+indicator to sit on. The indicator is sized to the active *button*, never to
+the group: the row wraps once a vocabulary outgrows one line, and a
+`height:100%` indicator would span every line at once. Three rules:
 
 - **Land, don't slide, on open** (`moveIndicator(true)`) and on reflow. The
   indicator starts 0-wide at the group's origin, so animating from there
@@ -176,6 +179,22 @@ so the indicator moves on both axes. Two rules:
 - **The selected label glows, it does not re-metric.** `text-shadow`, not
   letter-spacing or weight: a text effect that changes layout would resize
   the buttons and so move the very target the indicator is chasing.
+- **Rebuild only on membership change.** `renderKinds()` returns early when
+  the row's kinds are unchanged, so a common→common switch leaves the DOM
+  (and the indicator) alone and it slides. A rebuild replaces the indicator
+  with a fresh 0-width one, so that path lands instead.
+
+**Discoverability is the ⋯ menu.** Hovering (or focusing) `.cmdmorebtn`
+reveals `.cmdmenu` — *every* kind, common or not, each with its one-line
+`desc`. A rare kind is then discoverable rather than hidden knowledge, and
+picking one from the menu selects it and adds it to the row. The menu drifts
+in on the same soft blur as the composer itself, and there is deliberately
+**no gap between the icon and the menu**: `:hover` follows the DOM, not the
+box, so the pointer must be able to travel from one to the other without
+ever leaving `.cmdmore` or the menu closes en route. `aria-expanded` is
+mirrored from JS because CSS cannot set it. Both the row and the menu render
+from `COMMANDS` at whatever length it has — plugin kinds (#86) appear with no
+redesign, which is the whole point of the shape.
 
 ### Motion language (authored across the transition work)
 
