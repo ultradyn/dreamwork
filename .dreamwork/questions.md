@@ -2,10 +2,6 @@
 
 ## Open
 
-- **2026-07-25 — ud-dreamwork-github design review.** Incubation plan at
-  `.dreamwork/docs/plans/ud-dreamwork-github.md` — four open questions
-  (poll cadence, default authority, multi-repo, cursor-state home; recs
-  inline). Build waits on your read.
 - **2026-07-25 — ud-dreamtask design review.** Incubation plan is at
   `.dreamwork/docs/plans/ud-dreamtask.md` with four open design
   questions (composition, heartbeat cadence, state-dir naming, guardrail
@@ -14,6 +10,12 @@
 
 ## Answered
 
+- **ud-dreamwork-github design review** → LGTM via watch (2026-07-25
+  06:54), all four recs accepted; "check if anything recently changed is
+  relevant" done — writing-plugins contract, bridge pattern, and doc
+  single-source rule all post-date the plan and all reinforce it. v1
+  built the same morning: `skills/ud-dreamwork-github/SKILL.md`,
+  installed + indexed. Dogfood on a real repo is the follow-up task.
 - **#36 alignment review shape** → Confirmed (2026-07-25): fresh-eyes
   dreamer, not-done-until-clean, rare cadence (marker + commits-since
   trigger). First pass dispatched the same night.

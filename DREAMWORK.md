@@ -46,4 +46,7 @@
 ## Plugins
 
 - Load:
-- Don't load:
+- Don't load: `ud-dreamwork-github` (2026-07-25) — this target has no
+  GitHub remote/issues to watch; the plugin was *built* here (it ships
+  from the sibling skill folder) but doesn't apply to dreaming on the
+  skill itself. Revisit if the skill gains a forge presence.

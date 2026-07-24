@@ -1,5 +1,12 @@
 # ud-dreamwork-github — first plugin (incubation plan)
 
+> **Status (2026-07-25 ~07:10):** approved by Max via the watch
+> dashboard ("LGTM", all four recs accepted; recent-changes check done —
+> writing-plugins contract, bridge pattern, single-source rule all
+> reinforce the plan). v1 SKILL.md built, installed, indexed (build
+> stages 1–3 + 5). Remaining: stage 4 — dogfood on a real repo with
+> issues (tracked as its own task). Prune this plan when that lands.
+
 Human-proposed 2026-07-25 (~04:47). The first real `ud-dreamwork-*`
 plugin; it also validates the whole dormant plugin surface (init
 discovery, DREAMWORK.md Load/Don't-load, wizard extension).
