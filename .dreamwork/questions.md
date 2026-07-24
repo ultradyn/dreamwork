@@ -12,12 +12,14 @@
   stay commit-only-push-on-ask? Rec: (a) yes, load; (b) push at
   session wrap + on ask, not per-increment.
 
-- **2026-07-25 — daemon-mode brainstorm (#96).** Big idea mapped at
-  `.dreamwork/docs/plans/daemon-mode.md`: aggregator-first rec
-  (dreamhub `/` list + `/{project}/` proxy over existing watch
-  instances, zero loop changes), then supervisor daemon; needs-Max
-  decisions listed (bg runtime, lifecycle authority, exposure,
-  channels, PWA-vs-Tauri). Brainstorm with you before any plan.
+- **2026-07-25 — daemon-mode: stage-1 build go? (#96).** Brainstorm
+  round complete — all five needs-Max decisions answered in-session
+  (~09:45) and folded into `.dreamwork/docs/plans/daemon-mode.md`:
+  herdr-preferred adapter runtime, web lifecycle rec, ssh swarm,
+  channel plugins (+Discord/Teams, clawq as reference), PWA yes /
+  Tauri deferred, metadreamer integrated. Remaining: a go on stage 1
+  (dreamhub aggregator) — say the word and it gets a detailed plan +
+  fresh dreamer.
 - **2026-07-25 — goal-hierarchies design review (#95).** Incubation
   plan at `.dreamwork/docs/plans/goal-hierarchies.md`: one goal tree
   (DREAMWORK.md nested Goals → session goal → task goal metadata),
