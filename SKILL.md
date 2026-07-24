@@ -57,7 +57,9 @@ and DREAMWORK.md has been read, skip initialization and return to the loop.
 ## The loop — on every heartbeat tick
 
 Ticks are monitor events, not user input — never treat one as a reply or an
-approval. Real user messages always take priority over the loop.
+approval. Real user messages always take priority over the loop. When the
+human is actively streaming messages, prefer capture and consultation over
+starting new increments — resume autonomous work when the stream pauses.
 
 - **Mid-task** → checkpoint: still on track? Past the ~20-minute cap? (Land a
   coherent point, commit, split the remainder into a new task.) Did the last
