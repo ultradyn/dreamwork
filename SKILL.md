@@ -164,7 +164,10 @@ Everything else stays minimal: raw results, no ceremony.
   and the entry moves to a short Answered section (pruned in grooming).
 - `.dreamwork/status.json` — live loop status for the watch.py dashboard,
   rewritten each tick. The one `.dreamwork/` file that is **gitignored**:
-  it's ephemera, not history.
+  it's ephemera, not history. The dashboard itself is `watch.py` in this
+  skill's directory (read-only, localhost-only):
+  `python3 <skill-dir>/watch.py --target . --open`; its port persists in
+  `.dreamwork/watch-port`.
 - `.dreamwork/skill-version` — the skill version (latest `migrations/`
   filename) this target last ran under; init's update check compares it
   and applies intervening migrations (see `migrations/README.md` in the
