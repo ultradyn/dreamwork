@@ -79,7 +79,8 @@ read, initialization has already happened; return to the loop.
 
 7. **Orient.** Read the project's CLAUDE.md and any goals/philosophy docs —
    together with DREAMWORK.md these bound what the loop may do (including
-   whether push/deploy is authorized). Read `.dreamwork/docs/` (living docs
+   whether push/deploy is authorized). Create `.dreamwork/{dreams,docs}/`
+   if missing, then read `.dreamwork/docs/` (living docs
    maintained by the dreamers) and skim recent `.dreamwork/dreams/` entries
    — they carry memory from earlier sessions and subagents. Learn the
    project's verify commands (justfile, package scripts: test, lint,
