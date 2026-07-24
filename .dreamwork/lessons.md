@@ -26,3 +26,12 @@ source dream. Not a log — only things that should change future behavior.
   containing a non-interpolable `url(#…)`. Clear the inline filter at rest
   for a crisp, zero-cost settled state. Cost scales with filtered-layer
   area, not turbulence octaves. (2026-07-25-0623-dream-dissolve-transition)
+- For a shared-element FLIP that crosses a full view-swap, lift the hero
+  above the swap's dissolve (z-index, higher opacity floor, less own-blur)
+  and make its glide OUTLAST the dissolve — else it inherits the page mist
+  and reads as "page changed + thing appeared", not "thing travelled".
+  (2026-07-25-0646-review-morph-and-frametime)
+- Dev-overlay frametime that's inter-frame delta sits at vsync regardless
+  of cost; wrap draw() in performance.now() for the real signal. Measured:
+  the ambient shader is ~0.1-0.3ms/frame — transition dips are SVG-filter
+  compositing, not the shader. (2026-07-25-0646-review-morph-and-frametime)
