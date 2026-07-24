@@ -63,6 +63,30 @@ The loop offers five seams; use the ones you need:
   `.dreamwork/<plugin>-version` file in targets, update check at init.
   Skip all of it while the plugin owns no durable shape.
 
+## The bridge-plugin pattern
+
+The most common plugin isn't new machinery — it's a bridge to machinery
+the repo already has: another task backend, an installed skill suite, an
+improvement workflow the human already trusts. Orientation notices these
+(init step 7) and suggests the bridge via `questions.md`; the plugin is
+what a yes builds. A bridge:
+
+- **Wraps, never wholesale-adopts.** The foreign tool keeps its identity;
+  the bridge adapts each run to dreamwork's grain — scope reduced to an
+  increment-sized slice, not the tool's natural full sweep.
+- **Feeds, never bypasses.** Findings become tasks in the shared list and
+  unclear calls become questions.md entries; the bridged tool never
+  applies sweeping changes directly just because it could.
+- **Schedules through the rotation.** Periodic runs (e.g. an
+  architecture-improvement pass every few days) ride the maintenance
+  rotation — roll.py's staleness weighting on `dreamwork(maintain:<item>)`
+  markers produces that cadence naturally; no separate scheduler.
+- **Runs autonomously only with a recorded authority line.** An explicit
+  DREAMWORK.md line grants it, naming limits and the protocol for
+  dangerous operations (destructive refactors, dependency changes,
+  anything hard to revert → propose via questions.md instead of doing).
+  Silence keeps the read-only floor, as always.
+
 ## Worked example
 
 `.dreamwork/docs/plans/ud-dreamwork-github.md` designs the first real

@@ -99,7 +99,15 @@ read, initialization has already happened; return to the loop.
    a cross-reference of the repo's existing docs (what lives where, what
    it covers, what the loop must keep current). Build on top of existing
    docs and link outward — never fork or replace them; dreamwork docs
-   hold the internal, not-necessarily-public knowledge. Then read
+   hold the internal, not-necessarily-public knowledge. Notice the
+   repo's existing work-management and improvement systems — task
+   backends beyond `.backlog/`, installed skill suites, justfile
+   maintenance targets, TODO/issue conventions: the loop works *with*
+   them, never in parallel to them. Where one would repay deeper
+   integration (e.g. running a repo's improvement skill as a periodic
+   maintenance item), suggest a bridge plugin via `questions.md` —
+   suggesting is free; building needs a yes (see the bridge-plugin
+   pattern in `writing-plugins.md`). Then read
    `.dreamwork/docs/` (living docs maintained by the dreamers), read `.dreamwork/lessons.md` (distilled
    one-line lessons — the cheapest memory), skim recent
    `.dreamwork/dreams/` entries — they carry memory from earlier sessions
