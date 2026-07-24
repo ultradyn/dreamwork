@@ -6,6 +6,11 @@ docs, questions, dreams) refers to tasks by them.
 
 **Written by the coordinator only.** Dreamers report queue changes.
 
+A started task also carries its chain: `goal: <one line> ← <parent>`,
+where the parent is a session goal or a DREAMWORK.md heading. Pending
+tasks don't need one — the chain is named when work begins, which is
+when the scope gate asks for it.
+
 Next id: **106**
 
 ## Open
@@ -31,6 +36,8 @@ Next id: **106**
 - **#115** — Spike: cost of unifying qaCard/pageHeader onto the
   vocabulary · P2 · experiment · 60m · *in progress (spike-components,
   worktree `spike/components`)* · measures a claim I made in #112's plan
+  · goal: know the real cost before committing to one presentation
+  system ← "the dashboard is how you check on it and steer it"
 - **#103** — One text input for answer and note, mode group + flush send ·
   P2 · task · 50m
 - **#104** — Questions fade out, neighbours slide into place · P2 · task ·

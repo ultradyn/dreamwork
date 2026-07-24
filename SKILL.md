@@ -136,8 +136,11 @@ Two kinds, nothing in between:
   mechanical job. Focused prompt in, focused answer out. No dream files.
 - **Dreamers** — little versions of us, dispatched for substantive work
   (brainstorming, an increment, a review). They share our memories: pass
-  them DREAMWORK.md, the relevant `.dreamwork/docs/`, recent dreams, and
-  the task's context. When a dreamer finishes, if it had anything to say
+  them DREAMWORK.md, the relevant `.dreamwork/docs/`, recent dreams, the
+  task's context, and **the active chain** — the task's goal, the
+  session goal, and the DREAMWORK.md goal above them. A dreamer holds
+  the same scope gate we do; without the chain it would have to invent
+  the middle link, which the gate defines as the refusal. When a dreamer finishes, if it had anything to say
   beyond its direct result — insights, surprises, out-of-scope ideas,
   warnings — it writes `.dreamwork/dreams/<date>-<time>-<slug>.md` (e.g.
   `2026-07-25-0140-export-panel-jank.md`). Nothing to say → no file; empty
@@ -266,9 +269,12 @@ results, no ceremony.
 - The ledger carries what selection and triage read: `priority` (P1-P3),
   `type` (idea | task | bug | experiment | chore), `size` (estimated
   minutes), `feasibility` (note from triage), the next-up mark (set by
-  `do next`, cleared on start), and owner or blocked-on. Where the
-  ledger is a separate file, mirror them into the backend's `metadata`
-  if it surfaces them — but never depend on that unread.
+  `do next`, cleared on start), owner or blocked-on, and — once a task
+  is started — its `goal` and `parent`, because the scope gate asks
+  every actor to name a chain and a link no one can read is a link no
+  one can name. Where the ledger is a separate file, mirror them into
+  the backend's `metadata` if it surfaces them — but never depend on
+  that unread.
 - Work that arrives with a durable id upstream (a forge issue a plugin
   ingested) keeps that id instead of being given one of the loop's own.
   While it is only a candidate it sits in the backend and competes in

@@ -111,3 +111,7 @@ source dream. Not a log — only things that should change future behavior.
   covers questions the loop *asks*, and a "here is a change you did not
   request, tell me if you hate it" is one of those. Caught in my own work
   hours later. (coordinator, 2026-07-25)
+- A rule that asks an agent to *state* something binds only where that
+  something is durably carried to it — check the carriers before trusting
+  the rule. "Name the chain" shipped with its middle link living nowhere
+  readable. (2026-07-25-0926-goals-coherence)
