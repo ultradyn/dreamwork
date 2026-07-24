@@ -33,6 +33,14 @@ read, initialization has already happened; return to the loop.
    silently. (Authoring guide: `writing-plugins.md` in this skill's
    directory.)
 
+   Plugins can also appear mid-session (the harness surfaces
+   skills-list changes). Treat that like the unrecorded case above, but
+   live: offer the install to the human — on a yes, record it in
+   DREAMWORK.md and run the plugin's init extension immediately
+   (discovery, wizard questions, monitors), no session restart needed;
+   on a no, record that too. Unanswered offers follow the questions.md
+   discipline.
+
 4. **Setup wizard (only when DREAMWORK.md is absent).** Runs after plugins
    so loaded plugins can extend or reshape the interview. A short
    interview, not a questionnaire — smooth, and sized to the human:
