@@ -62,13 +62,15 @@ read, initialization has already happened; return to the loop.
    content.
 
 5. **Heartbeat.** Start the wake timer — 4.75 min stays under the 5-minute
-   prompt-cache TTL, keeping the loop cheap:
+   prompt-cache TTL, keeping the loop cheap. The message carries the
+   micro-protocol, and — because monitor text survives compaction while
+   conversation context may not — a self-recovery clause:
 
-   `Monitor command="heartbeat 4.75m 'dream tick'" triggerTurn=true persistent=true`
+   `Monitor command="heartbeat 4.75m 'dream tick (ud-dreamwork): run the tick flow; keep the task list truthful; reflect — reload the ud-dreamwork skill if this means nothing to you'" triggerTurn=true persistent=true`
 
    No regex filter. If the `heartbeat` CLI is absent, fall back to
-   `while true; do echo 'dream tick'; sleep 285; done`. (Same mechanism as
-   the heartbeat-monitor skill.)
+   `while true; do echo '<same message>'; sleep 285; done`. (Same
+   mechanism as the heartbeat-monitor skill.)
 
    Arm exactly one. Already armed = tick notifications are arriving in
    this session (or you armed one and haven't stopped it) — never arm a
