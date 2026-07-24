@@ -175,6 +175,12 @@ results, no ceremony.
   not durable — every user-facing ask gets an entry here when made, with
   enough context to answer cold. Answers fold into DREAMWORK.md or tasks
   and the entry moves to a short Answered section (pruned in grooming).
+- `.dreamwork/review/` — rich review artifacts: when something sizeable
+  or important needs the human's eyes (a plan, a design, an analysis),
+  generate a self-contained HTML artifact (inline everything — charts,
+  math, styles; offline-clean) as `<slug>.html`, paired with a
+  questions.md entry for the response. watch.py lists and serves them.
+  Archive alongside the answered question.
 - `.dreamwork/status.json` — live loop status for the watch.py dashboard,
   rewritten each tick. The one `.dreamwork/` file that is **gitignored**:
   it's ephemera, not history. The dashboard itself is `watch.py` in this

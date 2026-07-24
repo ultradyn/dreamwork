@@ -127,6 +127,11 @@ function render(d) {
   if (d.questions_open.length) {
     h += label('answer questions') + d.questions_open.map(qaCard).join('');
   }
+  if (d.reviews.length) {
+    h += label('reviews') + d.reviews.map(r =>
+      `<div><a href="/review?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` +
+      `<span class="age" data-mt="${r.mtime}"></span></div>`).join('');
+  }
   h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
          expand(n, preB(d.files[n]))).join('');
@@ -640,6 +645,13 @@ def collect(target):
             "skill-version": (read_text(
                 os.path.join(dw, "skill-version")) or "").strip(),
         },
+        "reviews": [
+            {"name": n, "mtime": os.path.getmtime(
+                os.path.join(dw, "review", n))}
+            for n in sorted(os.listdir(os.path.join(dw, "review")),
+                            reverse=True)
+            if n.endswith(".html")
+        ] if os.path.isdir(os.path.join(dw, "review")) else [],
         "open_questions": open_question_count(questions),
         "questions_open": parse_open_questions(questions),
         "status": _safe_json(read_text(os.path.join(dw, "status.json"))),
@@ -732,6 +744,16 @@ def make_handler(target, dev=False):
                 self._send(str(watched_mtime(target)), "text/plain")
             elif parsed.path == "/questions":
                 self._send(QUESTIONS_PAGE, "text/html")
+            elif parsed.path == "/review":
+                name = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
+                full = (resolve_confined(
+                    target, os.path.join(".dreamwork", "review", name))
+                    if name and "/" not in name else None)
+                text = read_text(full, limit=2_000_000) if full else None
+                if text is None:
+                    self.send_error(404)
+                    return
+                self._send(text, "text/html")   # self-contained artifact
             elif parsed.path == "/file":
                 rel = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
                 full = resolve_confined(target, rel)
