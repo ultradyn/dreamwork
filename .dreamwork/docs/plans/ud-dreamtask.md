@@ -35,6 +35,18 @@ then stopping. Dreamwork is a garden; dreamtask is an errand.
   (description + acceptance criteria), `questions.md`, `status.json`,
   `dreams/` if any. Archived (moved to `tasks/archive/`) on completion.
 
+## Seeding dreamwork (human-added 2026-07-25)
+
+The ephemeral dreamstates double as **seed for dreamwork initialization**:
+when full ud-dreamwork later initializes on a target that has past
+dreamtask state under `~/.config/dreamwork/tasks/` (match by target
+path), init harvests it — the wizard proposes Goals/Philosophy drafts
+from what the errands revealed, captured-but-unactioned ideas become
+task-list seeds, and the dreamstates promote into the repo's new
+`.dreamwork/` (ephemeral graduates to durable; config-dir copies archive).
+Errands accumulate wavelength; the garden starts with it. (Lands with the
+build as a ud-dreamwork init change + migration entry.)
+
 ## Open design questions (need Max)
 
 1. Composition: can a dreamtask run inside an active dreamwork session
