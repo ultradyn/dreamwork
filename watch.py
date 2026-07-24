@@ -55,6 +55,14 @@ STYLE = """<style>
   .qa button { background:var(--panel2); color:var(--accent);
     border:1px solid var(--border); border-radius:var(--radius);
     font:inherit; padding:.25rem .8rem; cursor:pointer; }
+  /* answered-awaiting-fold: a quiet accent rail marks it apart from open
+     questions; no input box, the answer shown plainly. */
+  .qa.answered { border-left:2px solid var(--accent); padding-left:.9rem;
+    margin-left:-1.1rem; opacity:.82; }
+  .qa.answered .qt::before { content:"✓ "; color:var(--accent); }
+  .anstag { color:var(--dim); text-transform:uppercase; letter-spacing:.07em;
+    font-size:.65rem; margin:.35rem 0 .15rem; }
+  .anstext { color:var(--muted); white-space:pre-wrap; }
   #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
              height:100vh; }
   #devbox { position:fixed; top:.6rem; right:.8rem; z-index:10;
@@ -225,11 +233,21 @@ const linkifyReview = (escaped, title) => escaped.replace(
     '</a>`');
 const preBReview = (t, title) =>
   `<pre>${linkify(linkifyReview(esc(t), title))}</pre>`;
-const qaCard = (q, i) =>
-  `<div class="qa"><div class="qt">${esc(q.title)}</div>` +
-  preBReview(q.body.trim(), q.title) +
-  `<textarea id="qa${i}" placeholder="answer…"></textarea>` +
-  `<button onclick="sendAnswer(${i})">answer</button></div>`;
+/* three states: an open question shows an answer box; a question already
+   answered from the dashboard (awaiting the loop to fold it) shows the
+   answer distinctly with no box — never ambiguous; the folded Answered
+   section is rendered separately by the view. */
+const qaCard = (q, i) => {
+  const head = `<div class="qt">${esc(q.title)}</div>`;
+  const body = q.body.trim() ? preBReview(q.body.trim(), q.title) : '';
+  if (q.answer)
+    return `<div class="qa answered">${head}${body}` +
+      `<div class="anstag">answered · awaiting fold</div>` +
+      `<div class="anstext">${esc(q.answer)}</div></div>`;
+  return `<div class="qa">${head}${body}` +
+    `<textarea id="qa${i}" placeholder="answer…"></textarea>` +
+    `<button onclick="sendAnswer(${i})">answer</button></div>`;
+};
 async function postAnswer(title, text) {
   await fetch('/answer', { method:'POST',
     headers: {'Content-Type':'application/json'},
@@ -258,8 +276,16 @@ function buildDashboard(d) {
        (d.dreams_archive.length
          ? expand(`archive (${d.dreams_archive.length})`,
                   d.dreams_archive.map(dreamBlock).join(''), 'dim') : '');
-  if (d.questions_open.length) {
-    h += label('answer questions') + d.questions_open.map(qaCard).join('');
+  {
+    const qo = d.questions_open.map((q, i) => [q, i]);
+    const openQ = qo.filter(([q]) => !q.answer);
+    const foldQ = qo.filter(([q]) => q.answer);
+    if (openQ.length)
+      h += label('answer questions') +
+           openQ.map(([q, i]) => qaCard(q, i)).join('');
+    if (foldQ.length)
+      h += label('answered · awaiting fold') +
+           foldQ.map(([q, i]) => qaCard(q, i)).join('');
   }
   if (d.reviews.length) {
     h += label('reviews') + d.reviews.map(r =>
@@ -279,11 +305,19 @@ function buildDashboard(d) {
 function buildQuestions(d) {
   const raw = d.files['questions.md'] || '';
   const answered = raw.split(/^## Answered$/m)[1] || '';
+  // three explicit states: open (needs the human), answered-awaiting-fold
+  // (the loop's to fold), and the folded Answered section.
+  const qo = d.questions_open.map((q, i) => [q, i]);
+  const openQ = qo.filter(([q]) => !q.answer);
+  const foldQ = qo.filter(([q]) => q.answer);
   let h = pageHeader('questions') +
     `<div id="meta"><a href="/">&larr; dashboard</a></div><div id="qsections">`;
-  h += label(`open (${d.questions_open.length})`) +
-       (d.questions_open.map(qaCard).join('') ||
+  h += label(`open (${openQ.length})`) +
+       (openQ.map(([q, i]) => qaCard(q, i)).join('') ||
         '<div class="dim">none — all answered</div>');
+  if (foldQ.length)
+    h += label(`answered · awaiting fold (${foldQ.length})`) +
+         foldQ.map(([q, i]) => qaCard(q, i)).join('');
   h += label('answered') + preB(answered.trim() || '(none yet)');
   return h + `</div>`;
 }
@@ -1262,7 +1296,15 @@ def git_tail(target, n=15):
 
 
 def parse_open_questions(text):
-    """[{title, body}] for each '- **Title**' entry in the Open section."""
+    """[{title, body, answer}] for each '- **Title**' entry in Open.
+
+    A `- **Answer (via watch...):** ...` sub-bullet (submitted from the
+    dashboard, not yet folded by the loop) is lifted out into `answer` and
+    kept out of `body`, so the view can show an answered-awaiting-fold state
+    distinctly instead of an ambiguous open one. `answer` is None while
+    unanswered. An Answer bullet is never mistaken for a new entry (even
+    un-indented), so it can't swallow the questions that follow it.
+    """
     items = []
     if not text:
         return items
@@ -1272,13 +1314,21 @@ def parse_open_questions(text):
         if line.startswith("## "):
             in_open = line.strip() == "## Open"
             current = None
-        elif in_open and line.startswith("- **"):
+            continue
+        if not in_open:
+            continue
+        is_answer = line.strip().startswith("- **Answer (via watch")
+        if line.startswith("- **") and not is_answer:
             title, _, rest = line[4:].partition("**")
             current = {"title": title,
-                       "body": rest.strip() + "\n" if rest.strip() else ""}
+                       "body": rest.strip() + "\n" if rest.strip() else "",
+                       "answer": None}
             items.append(current)
-        elif in_open and current is not None:
-            current["body"] += line + "\n"
+        elif current is not None:
+            if is_answer:
+                current["answer"] = line.strip().split(":**", 1)[-1].strip()
+            else:
+                current["body"] += line + "\n"
     return items
 
 
@@ -1315,16 +1365,11 @@ def append_answer(text, title, answer, stamp):
 
 
 def open_question_count(questions_text):
-    if not questions_text:
-        return 0
-    in_open = False
-    count = 0
-    for line in questions_text.splitlines():
-        if line.startswith("## "):
-            in_open = line.strip() == "## Open"
-        elif in_open and line.startswith("- **"):
-            count += 1
-    return count
+    """Count of Open entries still awaiting an answer — the badge should
+    reflect what needs the human, so answered-awaiting-fold entries don't
+    count (they're the loop's to fold, not the human's to answer)."""
+    return sum(1 for q in parse_open_questions(questions_text)
+               if not q["answer"])
 
 
 def _safe_json(text):

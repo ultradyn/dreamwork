@@ -104,8 +104,13 @@ hunt: `page_shell` (the one HTML shell + `<script>` bundle); `pageHeader`
 (every heading, with the `+` opener in the left gutter); `label`, `expand`
 (`<details>`), `preB`/`linkify` (backticked repo paths become `/file`
 links; a `.dreamwork/review/*.html` path becomes a `/review` link that docks
-its question), `qaCard` (question + answer box, the single answer idiom).
-Views are pure builders returning `#view`'s innerHTML (`buildDashboard`,
+its question), `qaCard` (a question in one of three states — **open** shows
+an answer box; **answered-awaiting-fold** — a dashboard answer the loop
+hasn't folded yet — shows the answer on a quiet accent rail with a `✓`, no
+box, so it never reads as still-open; the **folded Answered** section is
+rendered separately. The questions/dashboard views group by state with their
+own counts). Views are pure builders returning `#view`'s innerHTML
+(`buildDashboard`,
 `buildQuestions`, `buildFile`, `buildReview`); the router swaps them. Add a
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
 

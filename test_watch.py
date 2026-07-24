@@ -85,7 +85,24 @@ class TestCollector(unittest.TestCase):
         self.assertEqual(len(qs), 1)
         self.assertEqual(qs[0]["title"], "A real open question?")
         self.assertIn("context here", qs[0]["body"])
+        self.assertIsNone(qs[0]["answer"])          # unanswered
         self.assertEqual(watch.parse_open_questions(None), [])
+
+    def test_parse_open_questions_answer_awaiting_fold(self):
+        # a submitted-but-unfolded answer is lifted into `answer`, kept out of
+        # `body`, and never swallows the questions that follow it (#81).
+        text = ("# Q\n\n## Open\n\n"
+                "- **First?** ctx one.\n"
+                "  - **Answer (via watch, 2026-07-25 07:00):** go with A.\n"
+                "- **Second?** ctx two.\n\n"
+                "## Answered\n\n- **Old** done.\n")
+        qs = watch.parse_open_questions(text)
+        self.assertEqual([q["title"] for q in qs], ["First?", "Second?"])
+        self.assertEqual(qs[0]["answer"], "go with A.")
+        self.assertNotIn("Answer (via watch", qs[0]["body"])
+        self.assertIsNone(qs[1]["answer"])
+        # the badge counts only what still needs the human
+        self.assertEqual(watch.open_question_count(text), 1)
 
     def test_append_answer(self):
         new, matched = watch.append_answer(
@@ -225,6 +242,12 @@ class TestAppShell(unittest.TestCase):
         # so adjacent windows share one continuous, screen-pinned field.
         for token in ('uniform vec2 domainOffset', 'window.screenX',
                       '% 86400'):
+            self.assertIn(token, watch.PAGE)
+
+    def test_page_has_answered_awaiting_fold_state(self):
+        # Static guard: the questions view renders three states — an answered
+        # (awaiting fold) entry is visually distinct with no input box (#81).
+        for token in ('qa answered', 'awaiting fold', 'q.answer'):
             self.assertIn(token, watch.PAGE)
 
     def _serve(self, target):
