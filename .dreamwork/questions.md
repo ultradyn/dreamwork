@@ -20,6 +20,9 @@
   Tauri deferred, metadreamer integrated. Remaining: a go on stage 1
   (dreamhub aggregator) — say the word and it gets a detailed plan +
   fresh dreamer.
+  - **Follow-up (in-session, 2026-07-25 ~10:10):** a go was started
+    then explicitly retracted ("please hold") — dreamhub is ON HOLD;
+    do not plan or build until Max re-opens it.
 - **2026-07-25 — goal-hierarchies design review (#95).** Incubation
   plan at `.dreamwork/docs/plans/goal-hierarchies.md`: one goal tree
   (DREAMWORK.md nested Goals → session goal → task goal metadata),
