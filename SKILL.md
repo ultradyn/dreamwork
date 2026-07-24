@@ -247,22 +247,26 @@ results, no ceremony.
 
 ## Task-list conventions
 
-- Every task's subject opens with its ledger id (`#91 — …`); the subject
-  is the field every backend reads back. New task → the coordinator
-  takes the ledger's next id and bumps it.
-- The ledger line carries what selection and triage read: `priority`
-  (P1-P3), `type` (idea | task | bug | experiment | chore), `size`
-  (estimated minutes), `feasibility` (note from triage), the next-up
-  mark (set by `do next`, cleared on start), and owner or blocked-on.
-  Mirror them into the backend's `metadata` where it surfaces them —
-  never depend on it unread.
+- Every task needs a permanent id, and wears it at the front of its
+  subject (`#91 — …`) — the subject is the field every backend reads
+  back. A backend that mints durable ids does that itself; where the
+  ledger is a separate file, the coordinator takes its next id and bumps
+  it.
+- The ledger carries what selection and triage read: `priority` (P1-P3),
+  `type` (idea | task | bug | experiment | chore), `size` (estimated
+  minutes), `feasibility` (note from triage), the next-up mark (set by
+  `do next`, cleared on start), and owner or blocked-on. Where the
+  ledger is a separate file, mirror them into the backend's `metadata`
+  if it surfaces them — but never depend on that unread.
 - Work that arrives with a durable id upstream (a forge issue a plugin
-  ingested) keeps that id and stays out of the ledger *while it is only
-  a candidate* — the next poll re-derives it, so a busy forge never
-  floods the ledger. Starting it changes that: a poll re-derives the
-  item but never the loop's progress on it, so as work begins it takes a
-  ledger line carrying the upstream id, and from then on holds its own
-  state — owner, branch, blocked-on — like anything else.
+  ingested) keeps that id instead of being given one of the loop's own.
+  While it is only a candidate it sits in the backend and competes in
+  normal selection like anything else, but it takes no loop id and no
+  ledger line — the next poll re-derives it, so a busy forge never
+  floods the loop's numbering. Starting it changes that: a poll
+  re-derives the item, never the loop's progress on it, so as work
+  begins it takes a loop id and from then on holds its own state —
+  owner, branch, blocked-on.
 - Dependencies via `addBlockedBy` / `addBlocks`.
 - Big features get a planning doc on disk (`.dreamwork/docs/plans/<slug>.md`
   or the repo's convention); the task itself is a thin pointer. Bulk stays
@@ -306,9 +310,10 @@ if Max is away).
 - `pause` / `resume` — TaskStop the heartbeat monitor / re-arm it.
 - `wrap up` — land the current increment cleanly, commit, summarize, and
   note any friction with the loop itself — fix small, file the rest.
-  Check the queue is restorable — the ledger should already match the
-  backend; if it doesn't, an increment skipped its reflection. (A check,
-  not the mechanism: the restart that cost eight tasks had no wrap-up.)
+  Check the queue is restorable — where the ledger is a separate file it
+  should already match the backend; if it doesn't, an increment skipped
+  its reflection. (A check, not the mechanism: the restart that cost
+  eight tasks had no wrap-up.)
 
 ## Guardrails
 
@@ -321,8 +326,8 @@ if Max is away).
   (tests/lint, or its stated routine) before a task is marked completed.
 - Experiments are feature-gated.
 - Compaction-safe: durable state lives in files — DREAMWORK.md,
-  `.dreamwork/` (ledger, dreams, docs, plans), and commits — never only
-  in conversation, and never only in a session-scoped task backend.
+  `.dreamwork/` (dreams, docs, plans), and commits — never only in
+  conversation, and never only in a session-scoped task backend.
 - Never let the loop depend on a channel you have not read back. Task
   backends accept metadata they may never surface (Claude Code's
   `TaskGet` returns subject, status, and description — no metadata), so

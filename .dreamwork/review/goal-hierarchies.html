@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en-au">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Goal hierarchies — design review (#95)</title>
+<style>
+  :root { --bg:#0b0f19; --panel:#111827; --panel2:#1e293b;
+    --line:#1f2937; --border:#334155; --text:#d1d5db; --bright:#f3f4f6;
+    --lit:#e5e7eb; --muted:#9ca3af; --dim:#6b7280; --dimmer:#4b5563;
+    --accent:#a5b4fc; --space:1.6rem; --radius:4px; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); margin:0;
+    padding:2.5rem 1rem 4rem;
+    font-family:ui-monospace,'JetBrains Mono',monospace; font-size:.8rem;
+    line-height:1.65; }
+  .wrap { max-width:78ch; margin:0 auto; }
+  h1 { color:var(--bright); font-size:1rem; font-weight:normal; margin:0; }
+  .sub { color:var(--dim); margin:.25rem 0 2rem; }
+  .label { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
+    font-size:.7rem; margin:var(--space) 0 .5rem; }
+  p { margin:.6rem 0; }
+  a { color:var(--accent); }
+  code { color:var(--lit); }
+  hr { border:0; border-top:1px solid var(--line); margin:var(--space) 0; }
+  .quiet { color:var(--muted); }
+  ul { margin:.4rem 0; padding-left:2ch; }
+  li { margin:.3rem 0; }
+  figure { margin:1rem 0 1.4rem; overflow-x:auto; }
+  svg { display:block; min-width:520px; }
+  .q { border-left:1px solid var(--border); padding:0 0 0 1.4ch;
+       margin:1.2rem 0; }
+  .q h3 { font-size:.8rem; font-weight:normal; color:var(--lit);
+          margin:0 0 .35rem; }
+  .rec { color:var(--accent); }
+  .cmp { display:grid; grid-template-columns:repeat(auto-fit,minmax(26ch,1fr));
+         gap:0 2ch; margin:.5rem 0; }
+  .cmp div { border-top:1px solid var(--line); padding-top:.4rem; }
+  .cmp .h { color:var(--dim); text-transform:uppercase;
+            letter-spacing:.08em; font-size:.7rem; }
+  footer { color:var(--dimmer); margin-top:3rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Goal hierarchies</h1>
+<div class="sub">design review · task #95 · plan at <code>.dreamwork/docs/plans/goal-hierarchies.md</code></div>
+
+<p>You asked for goals, hierarchies of goals, a session goal and a task
+goal — and, for your own goals, a hierarchy with a known current branch.
+This is what that would mean mechanically, and the three decisions it
+needs from you.</p>
+
+<div class="label">The idea</div>
+
+<p>Alignment is currently a judgement call: the scope gate asks whether a
+piece of work "fits DREAMWORK.md". That works while the loop is small and
+you are watching. It degrades exactly where it matters — long sessions,
+delegated dreamers, work you did not see start.</p>
+
+<p>Making the chain explicit turns that judgement into something checkable:
+every piece of work names the path from your highest goals down to the
+increment in hand. The scope gate stops being "does this feel aligned"
+and becomes <em>name the chain</em> — and if you can't, it parks in
+questions.md rather than getting built.</p>
+
+<div class="label">One tree, four depths</div>
+
+<figure>
+<svg viewBox="0 0 620 268" width="100%" height="268" role="img"
+     aria-label="Goal tree: user goals, durable sub-goals, session goal, task goal">
+  <defs>
+    <marker id="a" markerWidth="7" markerHeight="7" refX="6" refY="3.5"
+            orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#4b5563"/></marker>
+  </defs>
+  <g font-family="ui-monospace,monospace" font-size="11">
+    <text x="0" y="14" fill="#6b7280" letter-spacing="1">DREAMWORK.MD — DURABLE, HUMAN-EDITED</text>
+    <rect x="0" y="24" width="620" height="46" fill="#111827" stroke="#1f2937"/>
+    <text x="10" y="42" fill="#f3f4f6">user goal</text>
+    <text x="10" y="60" fill="#9ca3af">"walk away and come back to steady, safe, well-chosen progress"</text>
+
+    <line x1="24" y1="70" x2="24" y2="92" stroke="#4b5563" marker-end="url(#a)"/>
+    <rect x="14" y="96" width="606" height="46" fill="#111827" stroke="#1f2937"/>
+    <text x="24" y="114" fill="#e5e7eb">durable sub-goal</text>
+    <text x="24" y="132" fill="#9ca3af">"the loop's memory survives a restart"</text>
+
+    <text x="330" y="88" fill="#6b7280" letter-spacing="1">STATUS.JSON — THIS SESSION</text>
+    <line x1="38" y1="142" x2="38" y2="164" stroke="#4b5563" marker-end="url(#a)"/>
+    <rect x="28" y="168" width="592" height="46" fill="#111827" stroke="#1f2937"/>
+    <text x="38" y="186" fill="#e5e7eb">session goal</text>
+    <text x="38" y="204" fill="#9ca3af">"restore the loop after the restart and dogfood what broke"</text>
+
+    <text x="330" y="160" fill="#6b7280" letter-spacing="1">TASK METADATA — THE LEAF</text>
+    <line x1="52" y1="214" x2="52" y2="236" stroke="#4b5563" marker-end="url(#a)"/>
+    <rect x="42" y="240" width="578" height="26" fill="#1e293b" stroke="#334155"/>
+    <text x="52" y="258" fill="#a5b4fc">#97 — the task queue must survive a session restart</text>
+  </g>
+</svg>
+</figure>
+
+<p class="quiet">That chain is not invented for the diagram — it is this
+morning, read bottom-up from the work you watched land. #97 existed
+because the restart proved the queue was not durable; that served a
+sub-goal about the loop's memory; which serves the goal you actually
+care about, which is being able to walk away.</p>
+
+<p>"User goals" and "task goals" are <strong>depths, not kinds</strong>.
+One tree: your goals at the root (DREAMWORK.md, nested, human-edited),
+durable sub-goals accreting underneath as work reveals them, the session
+goal declared at init and living in status.json, and the task goal as two
+fields on the task itself.</p>
+
+<div class="label">What it deliberately is not</div>
+
+<ul>
+  <li><strong>Not a planning bureaucracy.</strong> Chains are one-liners
+      named at task start — never a document per goal.</li>
+  <li><strong>Not a new file.</strong> The tree lives in files that already
+      exist: DREAMWORK.md, status.json, task metadata.</li>
+  <li><strong>Not retroactive.</strong> Existing tasks are not back-filled;
+      chains attach as work is started.</li>
+</ul>
+
+<hr>
+
+<div class="label">Three decisions</div>
+
+<div class="q">
+<h3>1. Where do session goals persist?</h3>
+<p>status.json is ephemera — gitignored, rewritten every tick. A session
+goal written only there dies with the session, which is precisely the
+failure that cost eight tasks this morning.</p>
+<div class="cmp">
+  <div><span class="h">Rec — they don't persist</span><br>
+    A session goal that outlives its session was a durable sub-goal all
+    along; wrap-up promotes it into DREAMWORK.md. Keeps the tree honest
+    and the file short.</div>
+  <div><span class="h">Alternative — a session log</span><br>
+    Append each session's goal to a durable list. More history, but it
+    accretes noise: most session goals are not worth keeping, and the
+    ones that are belong in the tree anyway.</div>
+</div>
+</div>
+
+<div class="q">
+<h3>2. Should selection <em>enforce</em> branch focus, or just <em>state</em> the chain?</h3>
+<p>Enforcing means the selection algorithm prefers tasks on the active
+branch of the tree, so the loop finishes a line of work before wandering.</p>
+<div class="cmp">
+  <div><span class="h">Rec — state only, first</span><br>
+    Naming the chain at task start makes drift <em>visible</em>. Add
+    preference weights only if drift actually shows up. Cheaper to add
+    later than to unpick.</div>
+  <div><span class="h">Alternative — enforce now</span><br>
+    Stronger focus, but it fights the loop's character: the free-flowing
+    "potter productively" quality comes partly from being allowed to pick
+    up the adjacent thing.</div>
+</div>
+</div>
+
+<div class="q">
+<h3>3. Task <code>parent</code>: free text or stable ids?</h3>
+<div class="cmp">
+  <div><span class="h">Rec — free text matching DREAMWORK.md headings</span><br>
+    Human-readable in the file and on the dashboard; the coherence
+    rotation catches dangling names, which is a real check that already
+    runs.</div>
+  <div><span class="h">Alternative — stable ids</span><br>
+    Rename-safe, but adds an id space to a file you edit by hand, and
+    makes the tree less readable in exchange for a rename that is rare.</div>
+</div>
+</div>
+
+<hr>
+
+<div class="label">What lands, if you say go</div>
+
+<ul>
+  <li>SKILL.md: task conventions gain goal/parent; selection states the
+      chain; the scope gate becomes "name the chain". DREAMWORK.md
+      template and this repo's own file gain nested Goals.</li>
+  <li>Init and wrap: session-goal declaration, and wrap-time promotion of
+      any session goal that turned out to be durable.</li>
+  <li>status.json gains <code>goal</code>; the dashboard renders the
+      active chain (a dreamer's job — it touches watch.py).</li>
+  <li>A migration entry for the task-metadata and status.json shape.</li>
+</ul>
+
+<p>One open risk worth naming: this is the loop adding ceremony to its own
+work, and ceremony is what the philosophy warns against. The mitigation is
+that a chain is one line stated aloud at task start, not a document — if
+it ever costs more than that, it has failed and should be cut.</p>
+
+<footer>Answer on the dashboard question card, or in chat — either folds
+back into the plan. Prepared by the loop, 2026-07-25.</footer>
+
+</div>
+</body>
+</html>

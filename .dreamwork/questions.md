@@ -30,13 +30,14 @@
   - **Follow-up (in-session, 2026-07-25 ~10:10):** a go was started
     then explicitly retracted ("please hold") — dreamhub is ON HOLD;
     do not plan or build until Max re-opens it.
-- **2026-07-25 — goal-hierarchies design review (#95).** Incubation
-  plan at `.dreamwork/docs/plans/goal-hierarchies.md`: one goal tree
-  (DREAMWORK.md nested Goals → session goal → task goal metadata),
-  active chain stated at task start, scope gate = "name the chain".
-  Three open questions with recs (session-goal persistence via
-  wrap-time promotion; state-only vs enforced branch focus; free-text
-  parent names). Build waits on your read.
+- **2026-07-25 — goal-hierarchies design review (#95).** Rich artifact:
+  `.dreamwork/review/goal-hierarchies.html` (the tree, a worked chain
+  from this morning's own work, the three decisions side by side with
+  their alternatives). Plan behind it:
+  `.dreamwork/docs/plans/goal-hierarchies.md`. Recs: session goals don't
+  persist (wrap-time promotion into DREAMWORK.md instead); state the
+  chain rather than enforcing branch focus, at least first; free-text
+  parent names matching DREAMWORK.md headings. Build waits on your read.
 - **2026-07-25 — ud-dreamtask design review.** Incubation plan is at
   `.dreamwork/docs/plans/ud-dreamtask.md` with four open design
   questions (composition, heartbeat cadence, state-dir naming, guardrail

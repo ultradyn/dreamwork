@@ -44,13 +44,13 @@ The loop offers five seams; use the ones you need:
   plugin-specific identity). Plugin tasks join normal selection — no
   private queues. A plugin never writes `.dreamwork/tasks.md`: the
   coordinator is its only writer. Work whose identity is already durable
-  upstream — a GitHub issue, an upstream ticket — keeps that id and
-  stays out of the ledger while it is just a candidate; the next poll
-  re-derives it, and a busy forge would otherwise flood the ledger with
-  lines it doesn't own. Once the loop actually starts such an item it
-  earns a ledger line (a poll re-derives the issue, never the branch or
-  the half-landed increment) — the coordinator mints it at that
-  moment.
+  upstream — a GitHub issue, an upstream ticket — keeps that id instead
+  of taking one of the loop's: as a candidate it competes in selection
+  like anything else, but it earns no loop id, because the next poll
+  re-derives it and a busy forge would otherwise flood the loop's
+  numbering. Once the loop actually starts such an item it does earn one
+  (a poll re-derives the issue, never the branch or the half-landed
+  increment) — the coordinator mints it at that moment.
 - **Commands.** Add `<plugin-thing>: ...`-style commands if genuinely
   needed; never repurpose or shadow core commands.
 - **Maintenance.** Contribute rotation items; custom roll.py weights
