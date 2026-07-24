@@ -70,6 +70,10 @@ starting new increments — resume autonomous work when the stream pauses.
   select the next task.
 - **Idle** → run the selection algorithm below.
 
+On each tick, best-effort, refresh `.dreamwork/status.json` (current task,
+queue depth, last tick time, last commit) — the watch.py dashboard reads
+it; failing to write it never blocks the loop.
+
 ## Selecting the next task
 
 0. **Sync.** Check the task list first. Resume unblocked in-progress work
@@ -158,6 +162,9 @@ Everything else stays minimal: raw results, no ceremony.
   not durable — every user-facing ask gets an entry here when made, with
   enough context to answer cold. Answers fold into DREAMWORK.md or tasks
   and the entry moves to a short Answered section (pruned in grooming).
+- `.dreamwork/status.json` — live loop status for the watch.py dashboard,
+  rewritten each tick. The one `.dreamwork/` file that is **gitignored**:
+  it's ephemera, not history.
 - `.dreamwork/skill-version` — the skill version (latest `migrations/`
   filename) this target last ran under; init's update check compares it
   and applies intervening migrations (see `migrations/README.md` in the
