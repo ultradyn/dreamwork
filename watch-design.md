@@ -154,6 +154,29 @@ arithmetic non-obvious, and both are load-bearing:
 Nothing under the buttons is reserved: `.cmdmsg:empty` collapses, so the
 panel grows downward only when there is something to say.
 
+**One vocabulary.** `COMMANDS` (top of `watch.py`) is the single source of
+steering kinds — `{kind, label, desc, common}`. The server derives
+`COMMAND_KINDS` from it to validate `POST /command`, the page embeds it as a
+JS `const`, the composer renders its buttons from it, and the popped-out form
+fills its `<option>`s from it. A new kind is one entry and nothing else;
+plugin-contributed kinds (#86) append to the list, so nothing downstream may
+assume a fixed set or a fixed length.
+
+**Choosing a kind** is a radiogroup of buttons with one background indicator
+that slides between them — `.cmdkinds` / `.cmdind` / `.cmdkind`, driven by
+`moveIndicator(snap)`. The row wraps when the vocabulary outgrows one line,
+so the indicator moves on both axes. Two rules:
+
+- **Land, don't slide, on open** (`moveIndicator(true)`) and on reflow. The
+  indicator starts 0-wide at the group's origin, so animating from there
+  reads as a glitch rather than a choice — the enter-snap rule again. Add
+  `.snap` (`transition:none`), set the geometry, force a reflow, then remove
+  it. Verify with a per-frame trace (`dev/capture/indtrace.mjs`), never a
+  screenshot.
+- **The selected label glows, it does not re-metric.** `text-shadow`, not
+  letter-spacing or weight: a text effect that changes layout would resize
+  the buttons and so move the very target the indicator is chasing.
+
 ### Motion language (authored across the transition work)
 
 The page *dreams*: motion is soft, slow, and never crisp-mechanical. It is
@@ -198,6 +221,10 @@ also strictly opt-in — most state changes do **not** animate.
   travelled".
 - **The ripple.** A soft expanding ring marks a received command; a felt
   pulse, not a modal.
+- **The composer's sliding indicator.** Choosing a command kind slides the
+  selection background to it (~.3s, the dream easing) — the composer's one
+  piece of crisp motion. It lands without sliding on open and on reflow; see
+  The composer.
 - **Answer-submit morph.** Submitting an answer (button or **Ctrl/Cmd+Enter**,
   which works from any answer box) *is* the confirmation: the card reshapes
   in place into its answered-awaiting-fold state and the typed text lifts
@@ -207,8 +234,9 @@ also strictly opt-in — most state changes do **not** animate.
   reduced-motion swaps straight to the answered state.
 - **Reduced-motion is a hard contract.** `prefers-reduced-motion` changes
   *timing, never function or legibility*: route swaps are instant (no ghost,
-  no mist, tint/seed snap, no `warp`), the composer shows/hides at once, the
-  dock appears without a FLIP. Verify it on anything that moves.
+  no mist, tint/seed snap, no `warp`), the composer shows/hides at once, its
+  selection indicator jumps rather than slides, the dock appears without a
+  FLIP. Verify it on anything that moves.
 - **Two invariants that always hold.** (1) *Settled crispness* — at rest,
   no filter, text wins the luminance contract, nothing blurred. Transient
   mid-transition haze is fine. (2) *Frame continuity* — the `#dreambg`

@@ -269,6 +269,29 @@ class TestAppShell(unittest.TestCase):
                       'window.open', 'ripple('):
             self.assertIn(token, watch.PAGE)
 
+    def test_command_vocabulary_has_one_source(self):
+        # COMMANDS is the single source: the server's accepted set derives
+        # from it, and the page carries it so the composer and the popped-out
+        # form cannot drift from what POST /command will accept (#91).
+        self.assertEqual(watch.COMMAND_KINDS,
+                         tuple(c["kind"] for c in watch.COMMANDS))
+        for c in watch.COMMANDS:
+            self.assertLessEqual({"kind", "label", "desc", "common"},
+                                 set(c), "every kind needs a menu description")
+            self.assertIn('data-kind="%s"' % c["kind"], watch.PAGE)
+        self.assertIn("const COMMANDS = ", watch.PAGE)
+        # the popout must build its options from COMMANDS, not a second list
+        self.assertIn("COMMANDS.map(c =>", watch.PAGE)
+
+    def test_command_selection_is_a_button_group(self):
+        # The kind picker is a radiogroup with a sliding indicator, not a
+        # <select>; the indicator must land (snap) rather than tween in.
+        for token in ('id="cmdkinds"', 'id="cmdind"', 'role="radiogroup"',
+                      'moveIndicator(true)', "indEl.classList.add('snap')",
+                      'const kind = activeKind;'):
+            self.assertIn(token, watch.PAGE)
+        self.assertNotIn('id="cmdkind"', watch.PAGE)   # the old <select>
+
     def test_shader_world_space_wiring(self):
         # Static guard: the shader anchors its domain to the window's screen
         # position and takes its phase from the wall clock (UTC-day-wrapped),

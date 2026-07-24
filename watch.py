@@ -26,6 +26,23 @@ import webbrowser
 # (no --autoreload) fixes stale open tabs after a manual restart/redeploy.
 GENERATION = "%.6f" % time.time()
 
+# The steering vocabulary — ONE source. The server validates POST /command
+# against it, the composer renders its buttons and its hover menu from it,
+# and the popped-out form fills its options from it, so a new kind is one
+# entry here and nothing else. Order is display order; `common` kinds get a
+# button in the composer, the rest live in the hover menu. Plugin-contributed
+# kinds (#86) append to this list — nothing downstream assumes a fixed set.
+COMMANDS = (
+    {"kind": "add-idea", "label": "add idea", "common": True,
+     "desc": "park a thought; the loop picks it up when it chooses next"},
+    {"kind": "do-next", "label": "do next", "common": True,
+     "desc": "jump this to the front of the queue (text optional)"},
+    {"kind": "do-now", "label": "do now", "common": True,
+     "desc": "interrupt the current increment and start this instead"},
+    {"kind": "maintenance", "label": "maintenance", "common": False,
+     "desc": "housekeeping: grooming, re-reads, alignment passes"},
+)
+
 # Design tokens + shared shell: every watch page renders through these,
 # so a redesign is a token/component edit, not a page-by-page hunt.
 STYLE = """<style>
@@ -176,10 +193,30 @@ STYLE = """<style>
   #cmdpalette.open { visibility:visible; opacity:1; transform:none;
     filter:none; pointer-events:auto; transition-delay:0s; }
   #cmdpalette .label { margin-top:0; }
-  #cmdform select, #cmdform textarea { width:100%; box-sizing:border-box;
+  #cmdform textarea { width:100%; box-sizing:border-box;
     background:var(--panel); color:var(--text); border:1px solid var(--line);
-    border-radius:var(--radius); font:inherit; padding:.4rem; margin:.3rem 0; }
-  #cmdform textarea { min-height:3.4rem; resize:vertical; }
+    border-radius:var(--radius); font:inherit; padding:.4rem; margin:.3rem 0;
+    min-height:3.4rem; resize:vertical; }
+  /* command selection: a button group whose background indicator SLIDES to
+     the active option. The one piece of crisp motion in the composer, kept
+     soft (.3s, the dream easing). The selected label glows rather than
+     changing metrics — a text effect that moved layout would resize the
+     buttons and so move the target the indicator is chasing. */
+  .cmdkinds { position:relative; display:flex; flex-wrap:wrap; gap:.1rem;
+    margin:.3rem 0 .1rem; }
+  .cmdind { position:absolute; top:0; left:0; z-index:0; width:0; height:100%;
+    background:var(--panel2); border:1px solid var(--border);
+    border-radius:var(--radius); box-sizing:border-box;
+    transition:transform .3s cubic-bezier(.32,.12,.2,1),
+               width .3s cubic-bezier(.32,.12,.2,1); }
+  .cmdind.snap { transition:none; }        /* land, never slide (see JS) */
+  .cmdkind { position:relative; z-index:1; background:none; font:inherit;
+    border:1px solid transparent; border-radius:var(--radius);
+    color:var(--dim); padding:.28rem .6rem; cursor:pointer;
+    transition:color .3s ease, text-shadow .3s ease; }
+  .cmdkind:hover { color:var(--muted); }
+  .cmdkind.on { color:var(--accent);
+    text-shadow:0 0 12px rgba(165,180,252,.45); }
   .cmdrow { display:flex; gap:.5rem; align-items:center; margin-top:.2rem; }
   .cmdrow button { background:var(--panel2); color:var(--accent);
     border:1px solid var(--border); border-radius:var(--radius); font:inherit;
@@ -202,7 +239,7 @@ STYLE = """<style>
   .ripple { position:fixed; z-index:40; border-radius:50%; pointer-events:none;
     border:1px solid var(--accent); }
   @media (prefers-reduced-motion: reduce) {
-    #cmdplus, #cmdpalette, #layerhint { transition:none; }
+    #cmdplus, #cmdpalette, #layerhint, .cmdind, .cmdkind { transition:none; }
   }
 </style>"""
 
@@ -231,12 +268,9 @@ APP_BODY = """<canvas id="dreambg"></canvas>
 <div id="cmdpalette" role="dialog" aria-label="command palette">
  <form id="cmdform" autocomplete="off">
   <div class="label">command the dream</div>
-  <select id="cmdkind" aria-label="command">
-   <option value="add-idea">add idea</option>
-   <option value="do-next">do next</option>
-   <option value="do-now">do now</option>
-   <option value="maintenance">maintenance</option>
-  </select>
+  <div class="cmdkinds" id="cmdkinds" role="radiogroup" aria-label="command">
+   <span class="cmdind" id="cmdind" aria-hidden="true"></span>__CMDKINDS__
+  </div>
   <textarea id="cmdtext" placeholder="a thought for the dream…"></textarea>
   <div class="cmdrow">
    <button type="submit" id="cmdsend">send</button>
@@ -826,12 +860,8 @@ const POPOUT_BODY = (base, path) => `
     <div class="ppath">${esc(path)}</div></div>
   <form id="pform" autocomplete="off">
     <div class="plabel">command the dream</div>
-    <select id="pkind">
-      <option value="add-idea">add idea</option>
-      <option value="do-next">do next</option>
-      <option value="do-now">do now</option>
-      <option value="maintenance">maintenance</option>
-    </select>
+    <select id="pkind">${COMMANDS.map(c =>
+      `<option value="${c.kind}">${esc(c.label)}</option>`).join('')}</select>
     <textarea id="ptext" placeholder="a thought for the dream…"></textarea>
     <div><button type="submit">send</button></div>
     <div class="pmsg" id="pmsg" aria-live="polite"></div>
@@ -970,8 +1000,44 @@ function popoutDoc(url, label) {
       (Math.max(8, Math.min(left, innerWidth - w - 8)) - o.x) + 'px';
     pal.style.top = (bottom + CMD_GAP - o.y) + 'px';
   }
+  // Command selection: a radiogroup of buttons with one background indicator
+  // that slides between them. `snap` lands it without a slide — used for the
+  // first placement and for reflows, because an indicator that animates from
+  // its 0-width start reads as a glitch, not a choice (the enter-snap rule).
+  const kindsEl = document.getElementById('cmdkinds');
+  const indEl = document.getElementById('cmdind');
+  let activeKind = (COMMANDS[0] || {}).kind;
+  function moveIndicator(snap) {
+    if (!kindsEl || !indEl) return;
+    const btn = kindsEl.querySelector('.cmdkind.on');
+    if (!btn) return;
+    const g = kindsEl.getBoundingClientRect(), b = btn.getBoundingClientRect();
+    if (!b.width) return;                  // not laid out yet; nothing to chase
+    if (snap || rmr) indEl.classList.add('snap');
+    indEl.style.width = b.width + 'px';
+    indEl.style.transform = 'translate(' + (b.left - g.left) + 'px,' +
+                            (b.top - g.top) + 'px)';
+    if (snap && !rmr) {
+      void indEl.offsetWidth;              // reflow so the landing is not a slide
+      indEl.classList.remove('snap');
+    }
+  }
+  function setKind(kind) {
+    activeKind = kind;
+    kindsEl.querySelectorAll('.cmdkind').forEach(b => {
+      const on = b.dataset.kind === kind;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    moveIndicator(false);
+  }
+  if (kindsEl) kindsEl.addEventListener('click', e => {
+    const b = e.target.closest('.cmdkind');
+    if (b) { e.preventDefault(); setKind(b.dataset.kind); }
+  });
   function openCmd() {
     place(); pal.classList.add('open'); open = true;
+    moveIndicator(true);          // land under the active kind, never slide in
     const plus = document.getElementById('cmdplus');
     if (plus) plus.classList.add('on');
     const t = document.getElementById('cmdtext');
@@ -1009,10 +1075,13 @@ function popoutDoc(url, label) {
       document.getElementById('cmdform').requestSubmit();
     }
   });
-  addEventListener('resize', () => { if (open) place(); });
+  addEventListener('resize', () => {
+    if (!open) return;
+    place(); moveIndicator(true);         // the group may have re-wrapped
+  });
   document.getElementById('cmdform').addEventListener('submit', async e => {
     e.preventDefault();
-    const kind = document.getElementById('cmdkind').value;
+    const kind = activeKind;
     const text = document.getElementById('cmdtext').value.trim();
     const m = cmsg();
     if (kind !== 'do-next' && !text) {
@@ -1527,8 +1596,25 @@ def page_shell(title, body, js):
 # One shell serves every same-document view. The router (last, so
 # window.dreambg from the shader exists before it runs) picks the initial
 # view from the URL; SHADER_JS mounts the persistent background.
-PAGE = page_shell('dreamwork watch', APP_BODY,
-                  COMPONENTS_JS + VIEWS_JS + SHADER_JS + ROUTER_JS
+def _cmd_buttons():
+    """The composer's kind buttons, rendered from COMMANDS (any length)."""
+    out = []
+    for i, c in enumerate(COMMANDS):
+        on = " on" if i == 0 else ""
+        out.append(
+            f'\n   <button type="button" class="cmdkind{on}"'
+            f' data-kind="{c["kind"]}" role="radio"'
+            f' aria-checked="{"true" if i == 0 else "false"}"'
+            f' title="{c["desc"]}">{c["label"]}</button>')
+    return "".join(out)
+
+
+# The one vocabulary reaches the client here, so the composer and the popped-
+# out form never drift from what POST /command will accept.
+PAGE = page_shell('dreamwork watch',
+                  APP_BODY.replace("__CMDKINDS__", _cmd_buttons()),
+                  "const COMMANDS = " + json.dumps(list(COMMANDS)) + ";\n"
+                  + COMPONENTS_JS + VIEWS_JS + SHADER_JS + ROUTER_JS
                   + COMMAND_JS)
 
 
@@ -1800,10 +1886,10 @@ def log_event(target, line):
         pass
 
 
-# Human-submitted loop commands (POST /command) — the canonical steering
-# vocabulary. Each becomes a source-tagged watch-events.log line the loop's
+# Accepted POST /command kinds, derived from the one vocabulary (COMMANDS,
+# top of file). Each becomes a source-tagged watch-events.log line the loop's
 # tail monitor wakes on (same transport as answers); no file is written.
-COMMAND_KINDS = ("add-idea", "do-next", "do-now", "maintenance")
+COMMAND_KINDS = tuple(c["kind"] for c in COMMANDS)
 
 
 def command_line(kind, text):
