@@ -132,13 +132,23 @@ also strictly opt-in — most state changes do **not** animate.
   must never wait on an animation. The command palette reveals on a soft
   blur drift. Nothing else animates.
 - **The dream dissolve** (route change). The outgoing view becomes a
-  `.ghost` that liquifies into a swirling mist and drifts up as it fades;
-  the incoming view coalesces from the same mist and settles crisp. ~1.15s
-  with a hazy dwell in the middle (`DREAM_MS`); opacity + upward transform
-  ride CSS, the mist is JS-enveloped. The `#dreambg` shader stirs in
-  sympathy (a `warp` pulse deepening the curl advection + a centred twist).
-  Each destination has its own turbulence `SEED` and `TINT` — arriving
-  somewhere feels consistent and distinct from arriving elsewhere.
+  `.ghost` (z-index above `#view`) that liquifies into a swirling mist and
+  lifts up and toward the viewer as it fades — dissolving *in front*. The
+  incoming view surfaces from *behind and below*, in depth: `.wrap` carries
+  a `perspective`, and `#view.enter` starts pushed back (`translateZ`),
+  lower and scaled down, at true opacity 0, then drifts forward into focus.
+  ~1.15s with a hazy dwell (`DREAM_MS`); opacity + 3D transform ride CSS,
+  the mist is JS-enveloped. The `#dreambg` shader stirs in sympathy (a
+  `warp` pulse deepening the curl advection + a centred twist). Each
+  destination has its own turbulence `SEED` and `TINT`.
+- **True-zero start — the enter-snap rule.** Because `#view` carries an
+  always-on opacity/transform transition, the enter (start) state **must**
+  set `transition:none` so it *snaps* to opacity 0 / pushed-back; otherwise
+  adding the class animates *toward* 0 and the class is removed a frame
+  later, so opacity never leaves ~1 (the incoming "pops in" instead of
+  fading up from nothing). Snap the start, force a reflow, then remove the
+  class on the next frame to animate in. A brief opacity delay keeps it
+  genuinely absent for the first ~150ms so it emerges rather than blends.
 - **The mist filter — the load-bearing rule.** Put *all* softening (blur
   **and** displacement) inside **one** SVG filter
   (`feTurbulence`→`feDisplacementMap`→`feGaussianBlur`) driven per-frame

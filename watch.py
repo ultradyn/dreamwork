@@ -36,7 +36,8 @@ STYLE = """<style>
   body { background:var(--bg); color:var(--text); margin:0;
          padding:2.5rem 1rem;
          font-family:ui-monospace,'JetBrains Mono',monospace; font-size:.8rem; }
-  .wrap { max-width:72ch; margin:0 auto; position:relative; }
+  .wrap { max-width:72ch; margin:0 auto; position:relative;
+          perspective:1500px; }
   header { color:var(--bright); font-size:1rem; margin-bottom:.25rem; }
   #meta { color:var(--dim); margin-bottom:2rem; }
   #meta .q { color:var(--accent); }
@@ -87,15 +88,26 @@ STYLE = """<style>
      from the same mist and settles perfectly crisp. Opacity + transform
      ride these CSS transitions; the mist (filter) is JS-driven so the
      middle of the dissolve lingers hazy. The shader stirs in sympathy. */
-  #view { transition:opacity .9s cubic-bezier(.32,.12,.2,1),
-                     transform .9s cubic-bezier(.32,.12,.2,1);
-          transform-origin:50% 42%; will-change:opacity, transform, filter; }
-  #view.enter { opacity:0; transform:translateY(12px) scale(.986); }
+  /* The incoming view surfaces from BEHIND the outgoing ghost (z-index): it
+     starts pushed back in depth (translateZ), lower and scaled down, at true
+     opacity 0 — a delayed, slow-start opacity so it's genuinely absent for
+     the first ~150ms, then rises as it drifts forward into focus. The ghost
+     (in front) lifts up and toward the viewer as it dissolves. */
+  #view { transition:opacity .8s cubic-bezier(.62,0,.34,1) .14s,
+                     transform 1s cubic-bezier(.32,.1,.2,1);
+          transform-origin:50% 40%; will-change:opacity, transform, filter; }
+  /* the start state must SNAP (transition:none) — with the transition live,
+     adding .enter would animate *toward* opacity 0 and get removed a frame
+     later, so it never actually left ~1 (the old "pops in" bug). Snapping to
+     0 + pushed-back, then removing .enter, gives a true fade-up from depth. */
+  #view.enter { transition:none; opacity:0;
+                transform:translateY(30px) translateZ(-110px) scale(.93); }
   .ghost { position:absolute; inset:0; z-index:1; pointer-events:none;
-           opacity:1; transform-origin:50% 42%;
+           opacity:1; transform-origin:50% 40%;
            transition:opacity 1.05s cubic-bezier(.4,0,.66,.38),
-                      transform 1.05s cubic-bezier(.4,0,.66,.38); }
-  .ghost.out { opacity:0; transform:translateY(-16px) scale(1.035); }
+                      transform 1.15s cubic-bezier(.34,0,.6,.4); }
+  .ghost.out { opacity:0;
+               transform:translateY(-34px) translateZ(70px) scale(1.07); }
   @media (prefers-reduced-motion: reduce) {
     #view, .ghost { transition:none; }
   }
