@@ -9,7 +9,6 @@ on its next tick. No other write paths exist.
 """
 
 import argparse
-import html
 import http.server
 import json
 import os
@@ -67,13 +66,23 @@ STYLE = """<style>
     padding:.25rem .6rem; font-size:.7rem; opacity:0;
     transition:opacity .5s ease; pointer-events:none;
     letter-spacing:.04em; }
+  /* single-document view swaps: content dissolves through a soft blur
+     while the shader background stays unbroken behind it. */
+  #view { transition:opacity .42s ease, filter .42s ease;
+          will-change:opacity, filter; }
+  #view.enter { opacity:0; filter:blur(7px); }
+  .ghost { position:absolute; inset:0; z-index:1; pointer-events:none;
+           opacity:1; filter:blur(0);
+           transition:opacity .5s ease, filter .5s ease; }
+  .ghost.out { opacity:0; filter:blur(10px); }
+  @media (prefers-reduced-motion: reduce) {
+    #view, .ghost { transition:none; }
+  }
 </style>"""
 
-BODY = """<canvas id="dreambg"></canvas>
+APP_BODY = """<canvas id="dreambg"></canvas>
 <div class="wrap">
-<header>dreamwork watch</header>
-<div id="meta">loading…</div>
-<div id="sections"></div>"""
+<div id="view">loading…</div>"""
 
 COMPONENTS_JS = """
 window.DEV=/*DEV*/false;
@@ -106,20 +115,22 @@ async function postAnswer(title, text) {
 }
 """
 
-APP_JS = """
+VIEWS_JS = """
+/* view builders: each returns the inner HTML of #view for one route.
+   The dashboard/questions views are data-driven (re-rendered live on
+   mtime change); the file view is a static read. */
 function dreamBlock(d) {
   return expand(
     `${esc(d.name)}<span class="age" data-mt="${d.mtime}"></span>`,
     preB(d.content));
 }
-let data = null, fetchedAt = 0;
-function render(d) {
+function buildDashboard(d) {
   const q = d.open_questions > 0
     ? ` · <a class="q" href="/questions">${d.open_questions} open question${d.open_questions>1?'s':''}</a>`
     : ` · <a class="q" href="/questions" style="color:var(--dimmer)">questions</a>`;
-  document.getElementById('meta').innerHTML =
-    `${esc(d.target)} · ${esc(d.files['skill-version'])} · <span id="upd"></span>${q}`;
-  let h = '';
+  let h = `<header>dreamwork watch</header>` +
+    `<div id="meta">${esc(d.target)} · ${esc(d.files['skill-version'])} · ` +
+    `<span id="upd"></span>${q}</div><div id="sections">`;
   h += label(`dreams (${d.dreams.length})`) +
        (d.dreams.map(dreamBlock).join('') || '<div class="dim">none active</div>') +
        (d.dreams_archive.length
@@ -140,33 +151,166 @@ function render(d) {
     h += label('status') + preB(JSON.stringify(d.status, null, 2));
   h += label('commits') + `<div class="git">` +
        d.git.map(l => `<div class="${l.includes('dreamwork(maintain:') ? 'maint' : ''}">${esc(l)}</div>`).join('') +
-       `</div>`;
-  document.getElementById('sections').innerHTML = h;
-  ages();
+       `</div></div>`;
+  return h;
+}
+function buildQuestions(d) {
+  const raw = d.files['questions.md'] || '';
+  const answered = raw.split(/^## Answered$/m)[1] || '';
+  let h = `<header>questions</header>` +
+    `<div id="meta"><a href="/">&larr; dashboard</a></div><div id="qsections">`;
+  h += label(`open (${d.questions_open.length})`) +
+       (d.questions_open.map(qaCard).join('') ||
+        '<div class="dim">none — all answered</div>');
+  h += label('answered') + preB(answered.trim() || '(none yet)');
+  return h + `</div>`;
+}
+function buildFile(param, text) {
+  const body = text == null
+    ? '<div class="dim">not found</div>'
+    : `<pre>${esc(text)}</pre>`;
+  return `<header>${esc(param || '')}</header>` +
+    `<div id="meta"><a href="/">&larr; dashboard</a></div>` +
+    `<div id="filebody">${body}</div>`;
 }
 function ages() {
   document.querySelectorAll('.age[data-mt]').forEach(el =>
     el.textContent = ageStr(parseFloat(el.dataset.mt)) + ' old');
   const upd = document.getElementById('upd');
-  if (upd) upd.textContent =
+  if (upd && fetchedAt) upd.textContent =
     `updated ${ageStr(fetchedAt/1000)} ago`;
 }
 async function sendAnswer(i) {
   const el = document.getElementById('qa' + i);
-  if (!el || !el.value.trim()) return;
+  if (!el || !el.value.trim() || !data) return;
   await postAnswer(data.questions_open[i].title, el.value.trim());
 }
-let last = null;
+"""
+
+ROUTER_JS = """
+/* Single-document router. Views swap inside #view; the shader canvas is
+   its sibling and is never touched, so the background is unbroken across
+   navigations. Deep links still work: the server hands back this same
+   shell for /, /questions and /file, and we render the matching view on
+   load. /review links are left to full navigation (foreign documents). */
+const rmr = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let data = null, fetchedAt = 0, lastMtime = null;
+let view = { name: null, param: null };
+let fileCache = { param: null, text: undefined };
+/* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
+const TINT = { dashboard: 0.0, questions: 0.14, file: -0.14 };
+const TITLE = { dashboard: () => 'dreamwork watch',
+                questions: () => 'questions — dreamwork watch',
+                file: p => (p || 'file') + ' — dreamwork watch' };
+
+function routeOf(loc) {
+  if (loc.pathname === '/questions') return { name: 'questions', param: null };
+  if (loc.pathname === '/file')
+    return { name: 'file',
+             param: new URLSearchParams(loc.search).get('p') };
+  return { name: 'dashboard', param: null };
+}
+async function ensureData() {
+  if (data) return data;
+  try {
+    lastMtime = await (await fetch('/mtime')).text();
+    fetchedAt = Date.now();
+    data = await (await fetch('/data.json')).json();
+  } catch (e) {}
+  return data;
+}
+async function fetchFile(param) {
+  if (fileCache.param === param) return fileCache.text;
+  let text = null;
+  try {
+    const res = await fetch('/filedata?p=' + encodeURIComponent(param || ''));
+    if (res.ok) text = (await res.json()).content;
+  } catch (e) {}
+  fileCache = { param, text };
+  return text;
+}
+async function buildCurrent() {
+  if (view.name === 'file')
+    return buildFile(view.param, await fetchFile(view.param));
+  const d = await ensureData();
+  if (!d) return '<div class="dim">loading…</div>';
+  return view.name === 'questions' ? buildQuestions(d) : buildDashboard(d);
+}
+function setContent(html) {
+  document.getElementById('view').innerHTML = html;
+  ages();
+}
+/* ethereal crossfade: snapshot the outgoing view as a ghost that blurs
+   and fades out while the incoming view resolves in from a soft blur. */
+function crossfade(html) {
+  const viewEl = document.getElementById('view');
+  if (rmr) { setContent(html); return; }
+  const ghost = viewEl.cloneNode(true);
+  ghost.removeAttribute('id'); ghost.className = 'ghost';
+  viewEl.parentNode.appendChild(ghost);
+  setContent(html);
+  viewEl.classList.add('enter');
+  void viewEl.offsetWidth;                 // commit the hidden start state
+  requestAnimationFrame(() => {
+    viewEl.classList.remove('enter');
+    ghost.classList.add('out');
+  });
+  const done = () => ghost.remove();
+  ghost.addEventListener('transitionend', done, { once: true });
+  setTimeout(done, 900);                    // safety net
+}
+async function navigate(name, param, opts) {
+  opts = opts || {};
+  view = { name, param };
+  document.title = (TITLE[name] || TITLE.dashboard)(param);
+  if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
+  const url = name === 'questions' ? '/questions'
+    : name === 'file' ? '/file?p=' + encodeURIComponent(param || '')
+    : '/';
+  if (opts.push) history.pushState({ name, param }, '', url);
+  const html = await buildCurrent();
+  if (opts.transition === false) setContent(html); else crossfade(html);
+}
+/* only same-document routes are intercepted; /review + external links,
+   new-tab and modified clicks fall through to the browser. */
+function isInternal(a) {
+  if (!a || a.target === '_blank' || a.hasAttribute('download')) return false;
+  if (a.origin !== location.origin) return false;
+  return a.pathname === '/' || a.pathname === '/questions'
+      || a.pathname === '/file';
+}
+addEventListener('click', e => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey ||
+      e.shiftKey || e.altKey) return;
+  const a = e.target.closest('a');
+  if (!isInternal(a)) return;
+  e.preventDefault();
+  const r = routeOf(a);
+  navigate(r.name, r.param, { push: true });
+});
+addEventListener('popstate', () => {
+  const r = routeOf(location);
+  navigate(r.name, r.param, { push: false });
+});
+/* live tick: re-render the active data-driven view in place, no fade. */
 async function tick() {
   try {
     const m = await (await fetch('/mtime')).text();
-    if (m !== last) { last = m; fetchedAt = Date.now();
-      data = await (await fetch('/data.json')).json(); render(data); }
+    if (m !== lastMtime) {
+      lastMtime = m; fetchedAt = Date.now();
+      data = await (await fetch('/data.json')).json();
+      if (view.name === 'dashboard') setContent(buildDashboard(data));
+      else if (view.name === 'questions') setContent(buildQuestions(data));
+    }
   } catch (e) { /* server restarting; retry */ }
   setTimeout(tick, 2000);
 }
 setInterval(ages, 1000);
-tick();
+(function () {                              // initial view from the URL
+  const r = routeOf(location);
+  navigate(r.name, r.param, { push: false, transition: false });
+  tick();
+})();
 """
 
 SHADER_JS = """
@@ -248,6 +392,7 @@ SHADER_JS = """
   const COMPOSITE_FS = `precision highp float;
     uniform sampler2D texRaw; uniform sampler2D texBlur;
     uniform vec2 r; uniform float t; uniform int mode;
+    uniform float pageTint;   /* per-page atmosphere: hue bias only */
     float hash(vec2 p){ p=fract(p*vec2(123.34,345.45));
       p+=dot(p,p+34.345); return fract(p.x*p.y); }` + FOCUS_GLSL + `
     void main(){
@@ -266,6 +411,14 @@ SHADER_JS = """
       vec3 peri=vec3(0.33,0.41,0.74);
       vec3 tint=mix(indigo,violet,clamp(img.g,0.,1.));
       tint=mix(tint,peri,smoothstep(0.42,0.72,img.b));
+      /* per-page identity: nudge the tint's hue a pinch. Luminance-safe —
+         the glow multiplier below is untouched, so the peak-brightness
+         cap that keeps text winning is unchanged. warm one page, cool
+         another; magnitude stays a whisper (<=0.07 mix). */
+      vec3 warmRef=vec3(0.50,0.33,0.62);
+      vec3 coolRef=vec3(0.30,0.42,0.72);
+      tint=mix(tint, pageTint>=0.0?warmRef:coolRef,
+               clamp(abs(pageTint),0.0,1.0)*0.5);
       vec3 base=vec3(0.043,0.059,0.098);
       vec3 col=base+tint*(glow*0.105);
       col*=1.0-0.22*smoothstep(0.35,1.25,length(uv-0.5));
@@ -344,7 +497,8 @@ SHADER_JS = """
            blur: gl.getUniformLocation(progC, 'texBlur'),
            r: gl.getUniformLocation(progC, 'r'),
            t: gl.getUniformLocation(progC, 't'),
-           mode: gl.getUniformLocation(progC, 'mode') };
+           mode: gl.getUniformLocation(progC, 'mode'),
+           pageTint: gl.getUniformLocation(progC, 'pageTint') };
     buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER,
@@ -354,6 +508,10 @@ SHADER_JS = """
   initGL();
 
   let mode = 0, lastMs = 0;
+  // per-page atmosphere lerped in JS then handed to the composite shader;
+  // frameCount is a monotonic draw tally (never resets) so a view swap's
+  // continuity can be checked from outside.
+  let tintCur = 0, tintTarget = 0, lastDrawMs = 0, frameCount = 0;
   function unbindTextures() {
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, null);
@@ -371,6 +529,10 @@ SHADER_JS = """
     lastMs = ms;
     const secs = ms / 1000;
     if (!fboOK || gl.isContextLost()) return;
+    const dt = lastDrawMs ? Math.min(0.1, (ms - lastDrawMs) / 1000) : 0;
+    lastDrawMs = ms;
+    tintCur += (tintTarget - tintCur) * (1.0 - Math.exp(-dt / 0.42));
+    frameCount++;
     unbindTextures();                       // no cross-frame feedback
     // pass 1: fractal -> A
     gl.bindFramebuffer(gl.FRAMEBUFFER, A.fbo);
@@ -392,6 +554,7 @@ SHADER_JS = """
     gl.uniform2f(uC.r, canW, canH);
     gl.uniform1f(uC.t, secs);
     gl.uniform1i(uC.mode, mode);
+    gl.uniform1f(uC.pageTint, tintCur);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -490,46 +653,18 @@ SHADER_JS = """
     if (rm) draw(lastMs);
     else rafId = requestAnimationFrame(step);
   });
+  // The router talks to the shader through this handle: setTint nudges
+  // the per-page atmosphere target (lerped inside draw); frames exposes
+  // the monotonic draw tally so a view swap's continuity is observable.
+  window.dreambg = {
+    setTint(v) { tintTarget = v; if (rm) { tintCur = v; draw(lastMs); } },
+    get frames() { return frameCount; },
+    get tint() { return tintCur; }
+  };
   if (rm) draw(0);
   else rafId = requestAnimationFrame(step);
 })();
 """
-
-QUESTIONS_BODY = """<div class="wrap">
-<header>questions</header>
-<div id="meta"><a href="/">&larr; dashboard</a></div>
-<div id="qsections">loading…</div>"""
-
-QUESTIONS_JS = """
-window.DEV=false;
-function sendAnswer(i) {
-  const el = document.getElementById('qa' + i);
-  if (!el || !el.value.trim()) return;
-  postAnswer(window.qopen[i].title, el.value.trim());
-}
-function renderQ(d) {
-  window.qopen = d.questions_open;
-  const raw = d.files['questions.md'] || '';
-  const answered = raw.split(/^## Answered$/m)[1] || '';
-  let h = '';
-  h += label(`open (${d.questions_open.length})`) +
-       (d.questions_open.map(qaCard).join('') ||
-        '<div class="dim">none — all answered</div>');
-  h += label('answered') + preB(answered.trim() || '(none yet)');
-  document.getElementById('qsections').innerHTML = h;
-}
-let last = null;
-async function qtick() {
-  try {
-    const m = await (await fetch('/mtime')).text();
-    if (m !== last) { last = m;
-      renderQ(await (await fetch('/data.json')).json()); }
-  } catch (e) {}
-  setTimeout(qtick, 2000);
-}
-qtick();
-"""
-
 
 def page_shell(title, body, js):
     """Shared page shell. Contract: `body` opens `<div class="wrap">`
@@ -540,10 +675,11 @@ def page_shell(title, body, js):
             + '</script></div></body></html>')
 
 
-PAGE = page_shell('dreamwork watch', BODY,
-                  COMPONENTS_JS + APP_JS + SHADER_JS)
-QUESTIONS_PAGE = page_shell('questions — dreamwork watch', QUESTIONS_BODY,
-                            COMPONENTS_JS + QUESTIONS_JS)
+# One shell serves every same-document view. The router (last, so
+# window.dreambg from the shader exists before it runs) picks the initial
+# view from the URL; SHADER_JS mounts the persistent background.
+PAGE = page_shell('dreamwork watch', APP_BODY,
+                  COMPONENTS_JS + VIEWS_JS + SHADER_JS + ROUTER_JS)
 
 
 def age_str(seconds):
@@ -766,14 +902,23 @@ def make_handler(target, dev=False):
 
         def do_GET(self):
             parsed = urllib.parse.urlparse(self.path)
-            if parsed.path == "/":
+            # Same-document routes all return the one app shell; the client
+            # router renders the matching view (deep links keep working).
+            if parsed.path in ("/", "/questions", "/file"):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
             elif parsed.path == "/mtime":
                 self._send(str(watched_mtime(target)), "text/plain")
-            elif parsed.path == "/questions":
-                self._send(QUESTIONS_PAGE, "text/html")
+            elif parsed.path == "/filedata":
+                rel = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
+                full = resolve_confined(target, rel)
+                text = read_text(full) if full else None
+                if text is None:
+                    self.send_error(404)
+                    return
+                self._send(json.dumps({"path": rel, "content": text}),
+                           "application/json")
             elif parsed.path == "/review":
                 name = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
                 full = (resolve_confined(
@@ -784,17 +929,6 @@ def make_handler(target, dev=False):
                     self.send_error(404)
                     return
                 self._send(text, "text/html")   # self-contained artifact
-            elif parsed.path == "/file":
-                rel = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
-                full = resolve_confined(target, rel)
-                text = read_text(full) if full else None
-                if text is None:
-                    self.send_error(404)
-                    return
-                body = ('<div class="wrap"><header>' + html.escape(rel)
-                        + '</header><pre>' + html.escape(text) + '</pre>')
-                self._send(page_shell(html.escape(rel), body, ""),
-                           "text/html")
             else:
                 self.send_error(404)
 

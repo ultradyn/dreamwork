@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Unit tests for watch.py's data collector. Run: python3 test_watch.py"""
 
+import http.server
+import json
 import os
 import tempfile
+import threading
 import time
 import unittest
+import urllib.error
+import urllib.request
 
 import watch
 
@@ -158,6 +163,55 @@ class TestCollector(unittest.TestCase):
             p2 = watch.persistent_port(d)
             self.assertEqual(p1, p2)
             self.assertTrue(3000 <= p1 < 63000)
+
+
+class TestAppShell(unittest.TestCase):
+    """The single-document router: /, /questions and /file all serve the
+    one shell (deep links render client-side), and /filedata backs the
+    in-app file view behind the same confinement gate."""
+
+    def test_page_has_router_and_tint_wiring(self):
+        # Static guard: the shell must carry the router + shader hooks so a
+        # refactor can't silently drop same-document nav or the per-page
+        # atmosphere uniform.
+        for token in ('id="view"', 'pushState', 'popstate',
+                      'window.dreambg', 'pageTint', 'setTint'):
+            self.assertIn(token, watch.PAGE)
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)   # LIFO: shutdown runs first
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _get(self, url):
+        with urllib.request.urlopen(url, timeout=5) as r:
+            return r.status, r.read().decode("utf-8")
+
+    def test_view_routes_serve_one_shell(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            for path in ("/", "/questions", "/file?p=DREAMWORK.md"):
+                status, body = self._get(base + path)
+                self.assertEqual(status, 200)
+                self.assertIn('id="view"', body)      # same app shell
+                self.assertIn("dreamwork watch", body)
+
+    def test_filedata_returns_confined_content(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            status, body = self._get(base + "/filedata?p=DREAMWORK.md")
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body)["content"], "# DREAMWORK\n")
+
+    def test_filedata_blocks_escape(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self._get(base + "/filedata?p=../etc/passwd")
+            self.assertEqual(cm.exception.code, 404)
 
 
 if __name__ == "__main__":
