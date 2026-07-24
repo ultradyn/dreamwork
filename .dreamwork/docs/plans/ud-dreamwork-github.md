@@ -4,8 +4,13 @@
 > dashboard ("LGTM", all four recs accepted; recent-changes check done —
 > writing-plugins contract, bridge pattern, single-source rule all
 > reinforce the plan). v1 SKILL.md built, installed, indexed (build
-> stages 1–3 + 5). Remaining: stage 4 — dogfood on a real repo with
-> issues (tracked as its own task). Prune this plan when that lands.
+> stages 1–3 + 5). Stage 4 (dogfood) began 2026-07-25 08:50: the plugin
+> is loaded on this target now that it has a forge presence, and its
+> discovery pass wrote `.dreamwork/docs/github-processes.md`. It is a
+> *thin* dogfood — the repo has no issues or PRs yet, so the monitoring
+> and progression paths are still unexercised; that needs a repo with
+> real traffic. Prune this plan when the plugin has actually turned a
+> forge item into a landed increment.
 
 Human-proposed 2026-07-25 (~04:47). The first real `ud-dreamwork-*`
 plugin; it also validates the whole dormant plugin surface (init

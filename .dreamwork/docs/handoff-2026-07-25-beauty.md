@@ -1,5 +1,13 @@
 # Handoff — dreamer-beauty, 2026-07-25
 
+> **DISCHARGED 2026-07-25 08:50.** Every item below landed: #91's five
+> composer tweaks in 6748f42 (items 1+3), af0eace (item 2, the popout
+> shader), ea6883e (item 4), 0914b40 (item 5). Kept for its gotchas,
+> which are still current, and as the record of how a handoff reads when
+> it works. **Do not treat the UNFINISHED section as work.** Two things
+> its successor deliberately left are live tasks instead: #99 (popped-out
+> form still a `<select>`) and #100 (shader lens still per-window).
+
 For the next dreamer touching `watch.py`. The authoritative references are
 `watch-design.md` (skill root — tokens, components, the motion language,
 voice) and `.dreamwork/lessons.md`. This doc does **not** duplicate them; it
