@@ -46,3 +46,15 @@ source dream. Not a log — only things that should change future behavior.
   precision dies at epoch magnitudes; world-space window anchoring needs
   BOTH a screen-position domain offset and shared phase, or seams break.
   (2026-07-25-0713-palette-worldspace-batch)
+- For an enter animation, the start state must SNAP not transition — set
+  `transition:none` on the start-state class, reflow, then remove it next
+  frame; with an always-on transition, adding the class animates *toward*
+  the start value and it never gets there (looks like a pop-in).
+  (2026-07-25-0806-question-flow-and-reload-batch)
+- A server generation on /mtime (client reloads when it changes) fixes stale
+  tabs on any restart for free; `--autoreload` = os.execv on source-mtime,
+  socket is close-on-exec so the port frees. Land dev-loop speedups early.
+  (2026-07-25-0806-question-flow-and-reload-batch)
+- Prefer impossible-by-construction over validation: parse so a sub-bullet
+  can never be mistaken for an entry; key list rows by index not a
+  DOM-round-tripped title. (2026-07-25-0806-question-flow-and-reload-batch)
