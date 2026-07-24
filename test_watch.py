@@ -127,6 +127,39 @@ class TestCollector(unittest.TestCase):
         self.assertLess(new.index("Answer (via watch"),
                         new.index("## Answered"))
 
+    def test_append_comment_open_and_answered(self):
+        text = ("# Q\n\n## Open\n\n- **Open one?** ctx.\n\n"
+                "## Answered\n\n- **Done one** resolved.\n")
+        new, matched = watch.append_comment(text, "Open one?", "a thought",
+                                            "2026-07-25 08:00", "Open")
+        self.assertTrue(matched)
+        self.assertIn("**Follow-up (via watch, 2026-07-25 08:00):** a thought",
+                      new)
+        # a follow-up on an Answered entry lands in the Answered section
+        new2, matched2 = watch.append_comment(text, "Done one", "amend it",
+                                              "2026-07-25 08:01", "Answered")
+        self.assertTrue(matched2)
+        self.assertGreater(new2.index("Follow-up"), new2.index("## Answered"))
+        _n, m3 = watch.append_comment(text, "Nope", "x", "2026-07-25", "Open")
+        self.assertFalse(m3)
+
+    def test_parse_follows_and_answered(self):
+        text = ("# Q\n\n## Open\n\n"
+                "- **First?** ctx.\n"
+                "  - **Follow-up (via watch, 2026-07-25 08:00):** note one.\n"
+                "- **Second?** ctx2.\n\n"
+                "## Answered\n\n"
+                "- **Old** resolved.\n"
+                "  - **Follow-up (via watch, 2026-07-25 08:10):** reopen?\n")
+        qs = watch.parse_open_questions(text)
+        self.assertEqual([q["title"] for q in qs], ["First?", "Second?"])
+        self.assertEqual(qs[0]["follows"], ["note one."])
+        self.assertNotIn("Follow-up", qs[0]["body"])
+        ans = watch.parse_answered(text)
+        self.assertEqual([e["title"] for e in ans], ["Old"])
+        self.assertEqual(ans[0]["follows"], ["reopen?"])
+        self.assertNotIn("Follow-up", ans[0]["body"])
+
     def test_collect_lists_reviews(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
@@ -270,6 +303,13 @@ class TestAppShell(unittest.TestCase):
                       "(e.ctrlKey || e.metaKey) && e.key === 'Enter'"):
             self.assertIn(token, watch.PAGE)
 
+    def test_page_has_followup_wiring(self):
+        # #82: every entry gets a follow-up thread + add-a-note box that POSTs
+        # /comment; answered entries are rendered structured (answered_entries).
+        for token in ('sendComment', 'postComment', "fetch('/comment'",
+                      'followThread', 'noteBox', 'answered_entries'):
+            self.assertIn(token, watch.PAGE)
+
     def _serve(self, target):
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), watch.make_handler(target))
@@ -348,6 +388,25 @@ class TestAppShell(unittest.TestCase):
             self.assertEqual(gen, watch.GENERATION)   # generation first
             self.assertTrue(mtime)
             float(mtime)                              # watched-mtime parses
+
+    def test_comment_threads_and_validates(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))   # QUESTIONS has an Open entry
+            status, _ = self._post(base + "/comment", {
+                "question": "A real open question?", "comment": "a note",
+                "section": "Open"})
+            self.assertEqual(status, 200)
+            qpath = os.path.join(d, ".dreamwork", "questions.md")
+            with open(qpath) as f:
+                self.assertIn("Follow-up (via watch", f.read())
+            for bad, code in ((
+                    {"question": "A real open question?", "comment": "x",
+                     "section": "Nope"}, 400),
+                    ({"question": "No such", "comment": "x",
+                      "section": "Open"}, 409)):
+                with self.assertRaises(urllib.error.HTTPError) as cm:
+                    self._post(base + "/comment", bad)
+                self.assertEqual(cm.exception.code, code)
 
     def test_command_appends_event_and_validates(self):
         with tempfile.TemporaryDirectory() as d:

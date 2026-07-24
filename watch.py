@@ -71,6 +71,26 @@ STYLE = """<style>
   .anstag { color:var(--dim); text-transform:uppercase; letter-spacing:.07em;
     font-size:.65rem; margin:.35rem 0 .15rem; }
   .anstext { color:var(--muted); white-space:pre-wrap; }
+  /* follow-up thread + a quiet add-a-note box on every question entry */
+  .aentry { margin:.6rem 0 1rem; }
+  .aentry .qt { color:var(--muted); }
+  .thread { border-left:1px solid var(--line); padding-left:1ch;
+    margin:.3rem 0 .2rem; }
+  .follow { color:var(--muted); font-size:.75rem; margin:.2rem 0;
+    white-space:pre-wrap; }
+  .follow::before { content:"\\21b3  "; color:var(--dim); }
+  .notewrap { display:flex; gap:.4rem; align-items:flex-start;
+    margin:.3rem 0 .2rem; max-width:56ch; }
+  .notebox { flex:1; background:var(--panel); color:var(--text);
+    border:1px solid var(--line); border-radius:var(--radius); font:inherit;
+    font-size:.75rem; padding:.25rem .45rem; min-height:1.7rem; resize:vertical;
+    box-sizing:border-box; opacity:.65; transition:opacity .3s ease; }
+  .notebox:focus { opacity:1; }
+  .notebtn { background:transparent; color:var(--dim); border:1px solid var(--line);
+    border-radius:var(--radius); font:inherit; font-size:.7rem;
+    padding:.2rem .6rem; cursor:pointer; align-self:stretch;
+    transition:color .3s ease, border-color .3s ease; }
+  .notebtn:hover { color:var(--accent); border-color:var(--border); }
   #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
              height:100vh; }
   #devbox { position:fixed; top:.6rem; right:.8rem; z-index:10;
@@ -264,18 +284,38 @@ const answeredInner = q => {
     `<div class="anstag">answered · awaiting fold</div>` +
     `<div class="anstext">${esc(q.answer)}</div>`;
 };
+/* a follow-up thread and a quiet add-a-note box, shared by every question
+   entry (open, answered-awaiting-fold, folded). `key` is 'o'+index (open) or
+   'a'+index (answered) so sendComment can look the entry up in live data
+   without trusting a title round-tripped through the DOM. */
+const followThread = follows => (follows && follows.length)
+  ? `<div class="thread">` + follows.map(f =>
+      `<div class="follow">${linkify(esc(f))}</div>`).join('') + `</div>`
+  : '';
+const noteBox = key =>
+  `<div class="notewrap"><textarea class="notebox" id="nb${key}"` +
+  ` placeholder="add a note…"></textarea>` +
+  `<button class="notebtn" onclick="sendComment('${key}')">note</button></div>`;
+const qaFoot = (follows, key) => followThread(follows) + noteBox(key);
 const qaCard = (q, i) => {
-  if (q.answer) return `<div class="qa answered">${answeredInner(q)}</div>`;
+  const foot = qaFoot(q.follows, 'o' + i);
+  if (q.answer)
+    return `<div class="qa answered">${answeredInner(q)}${foot}</div>`;
   const head = `<div class="qt">${esc(q.title)}</div>`;
   const body = q.body.trim() ? preBReview(q.body.trim(), q.title) : '';
   return `<div class="qa">${head}${body}` +
     `<textarea id="qa${i}" placeholder="answer…"></textarea>` +
-    `<button onclick="sendAnswer(${i})">answer</button></div>`;
+    `<button onclick="sendAnswer(${i})">answer</button>${foot}</div>`;
 };
 async function postAnswer(title, text) {
   await fetch('/answer', { method:'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ question: title, answer: text }) });
+}
+async function postComment(title, note, section) {
+  await fetch('/comment', { method:'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ question: title, comment: note, section }) });
 }
 """
 
@@ -326,11 +366,15 @@ function buildDashboard(d) {
        `</div></div>`;
   return h;
 }
+function answeredEntry(e, j) {
+  return `<div class="qa aentry"><div class="qt">${esc(e.title)}</div>` +
+    (e.body.trim() ? preB(e.body.trim()) : '') +
+    qaFoot(e.follows, 'a' + j) + `</div>`;
+}
 function buildQuestions(d) {
-  const raw = d.files['questions.md'] || '';
-  const answered = raw.split(/^## Answered$/m)[1] || '';
   // three explicit states: open (needs the human), answered-awaiting-fold
-  // (the loop's to fold), and the folded Answered section.
+  // (the loop's to fold), and the folded Answered section. Every entry
+  // carries a follow-up thread + add-a-note box.
   const qo = d.questions_open.map((q, i) => [q, i]);
   const openQ = qo.filter(([q]) => !q.answer);
   const foldQ = qo.filter(([q]) => q.answer);
@@ -342,7 +386,9 @@ function buildQuestions(d) {
   if (foldQ.length)
     h += label(`answered · awaiting fold (${foldQ.length})`) +
          foldQ.map(([q, i]) => qaCard(q, i)).join('');
-  h += label('answered') + preB(answered.trim() || '(none yet)');
+  h += label('answered') + (d.answered_entries.length
+    ? d.answered_entries.map(answeredEntry).join('')
+    : '<div class="dim">(none yet)</div>');
   return h + `</div>`;
 }
 function buildFile(param, text) {
@@ -397,12 +443,41 @@ async function sendAnswer(i) {
   // lifted-hero rule — the answer text is the tracked element). A soft
   // ripple accents it. reduced-motion just swaps to the answered state.
   card.className = 'qa answered';
-  card.innerHTML = answeredInner({ title: q.title, body: q.body, answer: val });
+  card.innerHTML = answeredInner({ title: q.title, body: q.body, answer: val })
+    + qaFoot(q.follows, 'o' + i);
   const anstext = card.querySelector('.anstext');
   if (typeof ripple === 'function')
     ripple(fromRect.left + fromRect.width / 2, fromRect.top + 22);
   if (!rmr && anstext && typeof flipDock === 'function')
     flipDock(anstext, fromRect, anstext.getBoundingClientRect());
+}
+/* thread a follow-up note onto any entry — same lifted-hero morph as an
+   answer: the note lifts from the box into the thread, ripple accenting. */
+async function sendComment(key) {
+  const el = document.getElementById('nb' + key);
+  if (!el || !el.value.trim() || !data) return;
+  const val = el.value.trim();
+  const sec = key[0], idx = +key.slice(1);
+  const entry = sec === 'o' ? data.questions_open[idx]
+                            : data.answered_entries[idx];
+  if (!entry) return;
+  const card = el.closest('.qa, .aentry');
+  const fromRect = el.getBoundingClientRect();
+  await postComment(entry.title, val, sec === 'o' ? 'Open' : 'Answered');
+  el.value = '';
+  holdRerenderUntil = Date.now() + 1600;
+  if (!card) return;
+  let thread = card.querySelector('.thread');
+  if (!thread) {
+    thread = document.createElement('div'); thread.className = 'thread';
+    card.insertBefore(thread, card.querySelector('.notewrap'));
+  }
+  const f = document.createElement('div');
+  f.className = 'follow'; f.innerHTML = linkify(esc(val));
+  thread.appendChild(f);
+  if (typeof ripple === 'function') ripple(fromRect.left + 24, fromRect.top + 14);
+  if (!rmr && typeof flipDock === 'function')
+    flipDock(f, fromRect, f.getBoundingClientRect());
 }
 """
 
@@ -826,6 +901,8 @@ async function requestPopout() {
     const t = e.target;
     if (t && t.tagName === 'TEXTAREA' && /^qa\\d+$/.test(t.id)) {
       e.preventDefault(); sendAnswer(+t.id.slice(2));
+    } else if (t && /^nb[oa]\\d+$/.test(t.id)) {
+      e.preventDefault(); sendComment(t.id.slice(2));
     } else if (t && t.id === 'cmdtext') {
       e.preventDefault();
       document.getElementById('cmdform').requestSubmit();
@@ -1387,30 +1464,66 @@ def parse_open_questions(text):
             continue
         if not in_open:
             continue
-        is_answer = line.strip().startswith("- **Answer (via watch")
-        if line.startswith("- **") and not is_answer:
+        s = line.strip()
+        is_answer = s.startswith("- **Answer (via watch")
+        is_follow = s.startswith("- **Follow-up (via watch")
+        if line.startswith("- **") and not is_answer and not is_follow:
             title, _, rest = line[4:].partition("**")
             current = {"title": title,
                        "body": rest.strip() + "\n" if rest.strip() else "",
-                       "answer": None}
+                       "answer": None, "follows": []}
             items.append(current)
         elif current is not None:
             if is_answer:
-                current["answer"] = line.strip().split(":**", 1)[-1].strip()
+                current["answer"] = s.split(":**", 1)[-1].strip()
+            elif is_follow:
+                current["follows"].append(s.split(":**", 1)[-1].strip())
             else:
                 current["body"] += line + "\n"
     return items
 
 
-def append_answer(text, title, answer, stamp):
-    """Insert an answer bullet at the end of the titled Open entry.
-
-    Returns (new_text, matched). Pure — testable without a filesystem.
+def parse_answered(text):
+    """[{title, body, follows}] for each entry in the Answered section, so the
+    view can render each with its follow-up thread and an add-a-note box.
     """
-    block = f"  - **Answer (via watch, {stamp}):** {answer}"
+    items = []
+    if not text:
+        return items
+    in_sec = False
+    current = None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            in_sec = line.strip() == "## Answered"
+            current = None
+            continue
+        if not in_sec:
+            continue
+        s = line.strip()
+        is_follow = s.startswith("- **Follow-up (via watch")
+        if line.startswith("- **") and not is_follow:
+            title, _, rest = line[4:].partition("**")
+            current = {"title": title,
+                       "body": rest.strip() + "\n" if rest.strip() else "",
+                       "follows": []}
+            items.append(current)
+        elif current is not None:
+            if is_follow:
+                current["follows"].append(s.split(":**", 1)[-1].strip())
+            else:
+                current["body"] += line + "\n"
+    return items
+
+
+def append_subbullet(text, title, block, section="Open"):
+    """Insert `block` at the end of the entry titled `title` inside
+    `## {section}` (Open or Answered). Indented sub-bullets (Answer /
+    Follow-up) never count as entry boundaries. Returns (new_text, matched).
+    Pure — testable without a filesystem.
+    """
     lines = text.splitlines()
     out = []
-    in_open = False
+    in_section = False
     in_target = False
     matched = False
 
@@ -1423,8 +1536,8 @@ def append_answer(text, title, answer, stamp):
     for line in lines:
         if line.startswith("## "):
             close_target()
-            in_open = line.strip() == "## Open"
-        elif in_open and line.startswith("- **"):
+            in_section = line.strip() == f"## {section}"
+        elif in_section and line.startswith("- **"):
             close_target()
             if line[4:].split("**", 1)[0] == title:
                 in_target = True
@@ -1432,6 +1545,20 @@ def append_answer(text, title, answer, stamp):
         out.append(line)
     close_target()
     return "\n".join(out) + "\n", matched
+
+
+def append_answer(text, title, answer, stamp):
+    """Insert an answer bullet at the end of the titled Open entry."""
+    return append_subbullet(
+        text, title, f"  - **Answer (via watch, {stamp}):** {answer}", "Open")
+
+
+def append_comment(text, title, note, stamp, section="Open"):
+    """Append a Follow-up note to an entry (Open or Answered) — a
+    chronological mini-thread inside the entry."""
+    return append_subbullet(
+        text, title, f"  - **Follow-up (via watch, {stamp}):** {note}",
+        section)
 
 
 def open_question_count(questions_text):
@@ -1475,6 +1602,7 @@ def collect(target):
         ] if os.path.isdir(os.path.join(dw, "review")) else [],
         "open_questions": open_question_count(questions),
         "questions_open": parse_open_questions(questions),
+        "answered_entries": parse_answered(questions),
         "status": _safe_json(read_text(os.path.join(dw, "status.json"))),
         "git": git_tail(target),
     }
@@ -1619,11 +1747,14 @@ def make_handler(target, dev=False):
                 return None
 
         def do_POST(self):
-            # Two human-authorized write paths, both localhost-only: /answer
-            # folds an answer into questions.md; /command drops a steering
-            # line into the events log. Everything else is read-only.
+            # Human-authorized write paths, all localhost-only: /answer folds
+            # an answer into questions.md; /comment threads a follow-up note
+            # onto any entry; /command drops a steering line into the events
+            # log. Everything else is read-only.
             if self.path == "/answer":
                 self._handle_answer()
+            elif self.path == "/comment":
+                self._handle_comment()
             elif self.path == "/command":
                 self._handle_command()
             else:
@@ -1658,6 +1789,40 @@ def make_handler(target, dev=False):
             log_event(target,
                       f'answer: "{title}" -> .dreamwork/questions.md '
                       f'(fold the answer, act, move to Answered)')
+            self._send(json.dumps({"ok": True}), "application/json")
+
+        def _handle_comment(self):
+            req = self._read_json()
+            if req is None:
+                return
+            try:
+                title = str(req["question"]).strip()
+                note = str(req["comment"]).strip()
+                section = str(req.get("section", "Open")).strip()
+            except (KeyError, TypeError):
+                self.send_error(400)
+                return
+            if not title or not note or section not in ("Open", "Answered"):
+                self.send_error(400)
+                return
+            qpath = os.path.join(target, ".dreamwork", "questions.md")
+            stamp = time.strftime("%Y-%m-%d %H:%M")
+            with ANSWER_LOCK:
+                text = read_text(qpath)
+                if text is None:
+                    self.send_error(404)
+                    return
+                new_text, matched = append_comment(text, title, note, stamp,
+                                                    section)
+                if not matched:
+                    self.send_error(409)
+                    return
+                with open(qpath, "w", encoding="utf-8") as f:
+                    f.write(new_text)
+            hint = ("(re-evaluate — a note on an answered entry may amend it)"
+                    if section == "Answered" else "(fold with the entry)")
+            log_event(target,
+                      f'follow-up: "{title}" -> .dreamwork/questions.md {hint}')
             self._send(json.dumps({"ok": True}), "application/json")
 
         def _handle_command(self):

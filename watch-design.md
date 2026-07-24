@@ -23,16 +23,17 @@ carries a `+` command opener (steer the loop without a chat turn).
 
 - **Stdlib only, self-contained**; no dependencies, no build step.
 - **Bind 127.0.0.1 only.** Localhost by construction, never exposed.
-- **Read-only, two write exceptions** (both human-authorized, localhost
-  trust): POST `/answer` appends a human-typed answer into questions.md's
-  matching Open entry (async question answering was the point); POST
-  `/command` appends a source-tagged steering line
+- **Read-only, three write exceptions** (all human-authorized, localhost
+  trust): POST `/answer` appends an answer into questions.md's matching Open
+  entry; POST `/comment` threads a `- **Follow-up (via watch, <ts>):** …`
+  note onto any entry (Open or Answered — a chronological mini-thread; a note
+  on an Answered entry is flagged as a potential amendment in the events
+  log); POST `/command` appends a source-tagged steering line
   (`command via watch: <kind>: <text>`, kinds add-idea / do-next / do-now /
-  maintenance) to `.dreamwork/watch-events.log` — the loop's tail monitor
-  wakes on it, same transport as answers; no file beyond the log is
-  written. Every other route reads. All file access goes through
-  `resolve_confined()` (rejects absolute, `~`, traversal); `/filedata` and
-  `/reviewraw` are both behind it.
+  maintenance) to `.dreamwork/watch-events.log`. All three also append an
+  events-log line so the loop's tail monitor wakes. Every other route reads.
+  All file access goes through `resolve_confined()` (rejects absolute, `~`,
+  traversal); `/filedata` and `/reviewraw` are both behind it.
 - **Port** persisted to `.dreamwork/watch-port` (random 3000–63000 once)
   so bookmarks survive restarts; port-in-use error names the port.
 - **Live reload**: poll `/mtime` ~2s → re-fetch `/data.json` → re-render
@@ -117,8 +118,11 @@ an answer box; **answered-awaiting-fold** — a dashboard answer the loop
 hasn't folded yet — shows the answer on a quiet accent rail with a `✓`, no
 box, so it never reads as still-open; the **folded Answered** section is
 rendered separately. The questions/dashboard views group by state with their
-own counts). Views are pure builders returning `#view`'s innerHTML
-(`buildDashboard`,
+own counts). Every question entry — open, answered-awaiting-fold, and folded
+Answered — also carries a follow-up thread (`- **Follow-up (via watch…)**`
+sub-bullets) and a quiet `add a note` box (`sendComment`, POST `/comment`);
+the Answered section is rendered structured from `answered_entries`, not raw
+text. Views are pure builders returning `#view`'s innerHTML (`buildDashboard`,
 `buildQuestions`, `buildFile`, `buildReview`); the router swaps them. Add a
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
 
