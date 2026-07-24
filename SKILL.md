@@ -146,8 +146,12 @@ Two kinds, nothing in between:
 Delegation blocks files, not the loop. Record what a dispatched dreamer
 owns (files/dirs) at dispatch; the coordinator stays off those. After
 ~10 minutes of a delegated task running, resume selection over
-non-conflicting tasks — one parallel increment at a time, so there is
-never a split brain over the same files.
+non-conflicting tasks. The invariant is disjointness: parallel
+increments — the coordinator's own, or several dreamers' — only ever
+touch disjoint files, so there is never a split brain over the same
+files. The `parallelize` command is the explicit fan-out of this same
+rule; the coordinator itself still works one inline increment at a
+time.
 
 Dreamers are batches, not careers. A long-lived dreamer's context grows
 until fresh eyes are cheaper — bound its scope to the current batch,
