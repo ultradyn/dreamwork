@@ -80,8 +80,15 @@ const ageStr = mt => {
     if (s >= div) return `${Math.floor(s/div)}${u}`;
   return `${Math.floor(s)}s`;
 };
+/* components: every section renders through these */
+const label = t => `<div class="label">${t}</div>`;
+const expand = (s, inner, cls='') =>
+  `<details><summary class="${cls}">${s}</summary>${inner}</details>`;
+const preB = t => `<pre>${esc(t)}</pre>`;
 function dreamBlock(d) {
-  return `<details><summary>${esc(d.name)}<span class="age" data-mt="${d.mtime}"></span></summary><pre>${esc(d.content)}</pre></details>`;
+  return expand(
+    `${esc(d.name)}<span class="age" data-mt="${d.mtime}"></span>`,
+    preB(d.content));
 }
 let data = null, fetchedAt = 0;
 function render(d) {
@@ -91,27 +98,26 @@ function render(d) {
   document.getElementById('meta').innerHTML =
     `${esc(d.target)} · ${esc(d.files['skill-version'])} · <span id="upd"></span>${q}`;
   let h = '';
-  h += `<div class="label">dreams (${d.dreams.length})</div>` +
+  h += label(`dreams (${d.dreams.length})`) +
        (d.dreams.map(dreamBlock).join('') || '<div class="dim">none active</div>') +
        (d.dreams_archive.length
-         ? `<details><summary class="dim">archive (${d.dreams_archive.length})</summary>` +
-           d.dreams_archive.map(dreamBlock).join('') + `</details>` : '');
+         ? expand(`archive (${d.dreams_archive.length})`,
+                  d.dreams_archive.map(dreamBlock).join(''), 'dim') : '');
   if (d.questions_open.length) {
-    h += `<div class="label">answer questions</div>` +
+    h += label('answer questions') +
       d.questions_open.map((q, i) =>
         `<div class="qa"><div class="qt">${esc(q.title)}</div>` +
-        `<pre>${esc(q.body.trim())}</pre>` +
+        preB(q.body.trim()) +
         `<textarea id="qa${i}" placeholder="answer…"></textarea>` +
         `<button onclick="sendAnswer(${i})">answer</button></div>`
       ).join('');
   }
-  h += `<div class="label">files</div>` +
+  h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
-         `<details><summary>${n}</summary><pre>${esc(d.files[n])}</pre></details>`
-       ).join('');
+         expand(n, preB(d.files[n]))).join('');
   if (d.status)
-    h += `<div class="label">status</div><pre>${esc(JSON.stringify(d.status, null, 2))}</pre>`;
-  h += `<div class="label">commits</div><div class="git">` +
+    h += label('status') + preB(JSON.stringify(d.status, null, 2));
+  h += label('commits') + `<div class="git">` +
        d.git.map(l => `<div class="${l.includes('dreamwork(maintain:') ? 'maint' : ''}">${esc(l)}</div>`).join('') +
        `</div>`;
   document.getElementById('sections').innerHTML = h;
@@ -442,10 +448,16 @@ SHADER_JS = """
 })();
 """
 
-PAGE = ('<!doctype html><html><head><meta charset="utf-8">'
-        '<title>dreamwork watch</title>' + STYLE + '</head><body>'
-        + BODY + '<script>' + APP_JS + SHADER_JS
-        + '</script></div></body></html>')
+def page(title, body, js):
+    """Shared page shell. Contract: `body` opens `<div class="wrap">`
+    (the shell closes it) so every watch page shares chrome and tokens."""
+    return ('<!doctype html><html><head><meta charset="utf-8">'
+            f'<title>{title}</title>' + STYLE + '</head><body>'
+            + body + '<script>' + js
+            + '</script></div></body></html>')
+
+
+PAGE = page('dreamwork watch', BODY, APP_JS + SHADER_JS)
 
 
 def age_str(seconds):
