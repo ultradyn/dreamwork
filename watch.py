@@ -66,21 +66,46 @@ STYLE = """<style>
     padding:.25rem .6rem; font-size:.7rem; opacity:0;
     transition:opacity .5s ease; pointer-events:none;
     letter-spacing:.04em; }
-  /* single-document view swaps: content dissolves through a soft blur
-     while the shader background stays unbroken behind it. */
-  #view { transition:opacity .42s ease, filter .42s ease;
-          will-change:opacity, filter; }
-  #view.enter { opacity:0; filter:blur(7px); }
+  /* single-document view swaps: the outgoing view liquifies into a
+     swirling mist (SVG turbulence displacement + blur, enveloped per-frame
+     in crossfade()) and drifts up as it fades; the incoming view coalesces
+     from the same mist and settles perfectly crisp. Opacity + transform
+     ride these CSS transitions; the mist (filter) is JS-driven so the
+     middle of the dissolve lingers hazy. The shader stirs in sympathy. */
+  #view { transition:opacity .9s cubic-bezier(.32,.12,.2,1),
+                     transform .9s cubic-bezier(.32,.12,.2,1);
+          transform-origin:50% 42%; will-change:opacity, transform, filter; }
+  #view.enter { opacity:0; transform:translateY(12px) scale(.986); }
   .ghost { position:absolute; inset:0; z-index:1; pointer-events:none;
-           opacity:1; filter:blur(0);
-           transition:opacity .5s ease, filter .5s ease; }
-  .ghost.out { opacity:0; filter:blur(10px); }
+           opacity:1; transform-origin:50% 42%;
+           transition:opacity 1.05s cubic-bezier(.4,0,.66,.38),
+                      transform 1.05s cubic-bezier(.4,0,.66,.38); }
+  .ghost.out { opacity:0; transform:translateY(-16px) scale(1.035); }
   @media (prefers-reduced-motion: reduce) {
     #view, .ghost { transition:none; }
   }
 </style>"""
 
 APP_BODY = """<canvas id="dreambg"></canvas>
+<svg id="dreamfx" width="0" height="0" aria-hidden="true"
+     style="position:absolute;width:0;height:0;pointer-events:none">
+ <filter id="dissolveOut" x="-25%" y="-25%" width="150%" height="150%"
+         color-interpolation-filters="sRGB">
+  <feTurbulence type="fractalNoise" baseFrequency="0.009" numOctaves="1"
+                seed="7" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
+                     xChannelSelector="R" yChannelSelector="G" result="d"/>
+  <feGaussianBlur in="d" stdDeviation="0"/>
+ </filter>
+ <filter id="dissolveIn" x="-25%" y="-25%" width="150%" height="150%"
+         color-interpolation-filters="sRGB">
+  <feTurbulence type="fractalNoise" baseFrequency="0.009" numOctaves="1"
+                seed="7" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
+                     xChannelSelector="R" yChannelSelector="G" result="d"/>
+  <feGaussianBlur in="d" stdDeviation="0"/>
+ </filter>
+</svg>
 <div class="wrap">
 <div id="view">loading…</div>"""
 
@@ -240,8 +265,15 @@ function setContent(html) {
   document.getElementById('view').innerHTML = html;
   ages();
 }
-/* ethereal crossfade: snapshot the outgoing view as a ghost that blurs
-   and fades out while the incoming view resolves in from a soft blur. */
+/* Dream dissolve: the outgoing view becomes a ghost that liquifies into a
+   swirling mist (turbulence displacement + blur grow) and drifts upward as
+   it fades; the incoming view coalesces from the same mist and settles
+   perfectly crisp. Opacity + transform ride CSS; the mist is an SVG filter
+   whose displacement + blur we envelope per-frame here, so the middle of
+   the dissolve lingers hazy. The shader stirs in sympathy (pulseWarp).
+   reduced-motion swaps instantly — no ghost, no mist. */
+const DREAM_MS = 1150;                     // dwell of the whole dissolve
+const fxNode = (id, tag) => document.querySelector('#' + id + ' ' + tag);
 function crossfade(html) {
   const viewEl = document.getElementById('view');
   if (rmr) { setContent(html); return; }
@@ -249,15 +281,46 @@ function crossfade(html) {
   ghost.removeAttribute('id'); ghost.className = 'ghost';
   viewEl.parentNode.appendChild(ghost);
   setContent(html);
+  ghost.style.filter = 'url(#dissolveOut)';
+  viewEl.style.filter = 'url(#dissolveIn)';
   viewEl.classList.add('enter');
   void viewEl.offsetWidth;                 // commit the hidden start state
+  if (window.dreambg) window.dreambg.pulseWarp();
   requestAnimationFrame(() => {
-    viewEl.classList.remove('enter');
-    ghost.classList.add('out');
+    viewEl.classList.remove('enter');      // CSS eases opacity + drift in
+    ghost.classList.add('out');            // CSS eases opacity + drift out
   });
-  const done = () => ghost.remove();
-  ghost.addEventListener('transitionend', done, { once: true });
-  setTimeout(done, 900);                    // safety net
+  const dOut = fxNode('dissolveOut', 'feDisplacementMap');
+  const bOut = fxNode('dissolveOut', 'feGaussianBlur');
+  const tOut = fxNode('dissolveOut', 'feTurbulence');
+  const dIn = fxNode('dissolveIn', 'feDisplacementMap');
+  const bIn = fxNode('dissolveIn', 'feGaussianBlur');
+  const tIn = fxNode('dissolveIn', 'feTurbulence');
+  const smooth = x => x * x * (3 - 2 * x);
+  const t0 = performance.now();
+  let raf = 0;
+  const finish = () => {
+    if (raf) cancelAnimationFrame(raf), raf = 0;
+    if (ghost.isConnected) ghost.remove();
+    viewEl.style.filter = '';              // crisp at rest, zero filter cost
+  };
+  function stepFx(now) {
+    const u = Math.min(1, (now - t0) / DREAM_MS);
+    const eo = smooth(u);                          // ghost: mist grows in
+    if (dOut) dOut.setAttribute('scale', (eo * 25).toFixed(2));
+    if (bOut) bOut.setAttribute('stdDeviation', (eo * 3.8).toFixed(2));
+    const ui = Math.min(1, Math.max(0, (now - t0 - 160) / (DREAM_MS - 160)));
+    const ei = smooth(ui);                         // incoming: mist clears
+    if (dIn) dIn.setAttribute('scale', ((1 - ei) * 19).toFixed(2));
+    if (bIn) bIn.setAttribute('stdDeviation', ((1 - ei) * 3.2).toFixed(2));
+    const bf = (0.009 + eo * 0.009).toFixed(4);    // field tightens: it flows
+    if (tOut) tOut.setAttribute('baseFrequency', bf);
+    if (tIn) tIn.setAttribute('baseFrequency', bf);
+    if (u < 1) raf = requestAnimationFrame(stepFx);
+    else finish();
+  }
+  raf = requestAnimationFrame(stepFx);
+  setTimeout(finish, DREAM_MS + 400);      // safety net
 }
 async function navigate(name, param, opts) {
   opts = opts || {};
@@ -341,7 +404,7 @@ SHADER_JS = """
 
   const VS = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
   const FRACTAL_FS = `precision highp float;
-    uniform float t; uniform vec2 r;
+    uniform float t; uniform vec2 r; uniform float warp;
     float hash(vec2 p){ p=fract(p*vec2(123.34,345.45));
       p+=dot(p,p+34.345); return fract(p.x*p.y); }
     float noise(vec2 p){ vec2 i=floor(p),f=fract(p);
@@ -360,6 +423,14 @@ SHADER_JS = """
          fluid (navier-stokes-ish) drift without a sim */
       vec2 curl=vec2(q.y-0.5, 0.5-q.x);
       p+=curl*(0.38+0.14*sin(tt*1.7));
+      /* transition: the dream stirs — deepen the curl advection and twist
+         the domain about screen-centre while a page dissolves, then relax
+         back (warp is a 0->1->0 pulse driven by the router). */
+      p+=curl*warp*0.6;
+      vec2 ctr=vec2(0.5*(r.x/r.y),0.5)*2.3;
+      float wa=warp*0.15;
+      float cw=cos(wa), sw=sin(wa);
+      p=ctr+mat2(cw,-sw,sw,cw)*(p-ctr);
       vec2 s=vec2(fbm(p+2.6*q+vec2(1.7,9.2)+tt*0.6),
                   fbm(p+2.6*q+vec2(8.3,2.8)-tt*0.4));
       float f=fbm(p+3.2*s);
@@ -489,7 +560,8 @@ SHADER_JS = """
     progB = program(BLUR_FS);
     progC = program(COMPOSITE_FS);
     uF = { t: gl.getUniformLocation(progF, 't'),
-           r: gl.getUniformLocation(progF, 'r') };
+           r: gl.getUniformLocation(progF, 'r'),
+           warp: gl.getUniformLocation(progF, 'warp') };
     uB = { tex: gl.getUniformLocation(progB, 'tex'),
            r: gl.getUniformLocation(progB, 'r'),
            t: gl.getUniformLocation(progB, 't') };
@@ -512,6 +584,9 @@ SHADER_JS = """
   // frameCount is a monotonic draw tally (never resets) so a view swap's
   // continuity can be checked from outside.
   let tintCur = 0, tintTarget = 0, lastDrawMs = 0, frameCount = 0;
+  // transition stir: a 0->1->0 envelope the router pulses per navigation;
+  // deepens the fractal's curl advection + twist, then relaxes back.
+  let warpStart = -1e9, lastWarp = 0;
   function unbindTextures() {
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, null);
@@ -531,7 +606,16 @@ SHADER_JS = """
     if (!fboOK || gl.isContextLost()) return;
     const dt = lastDrawMs ? Math.min(0.1, (ms - lastDrawMs) / 1000) : 0;
     lastDrawMs = ms;
-    tintCur += (tintTarget - tintCur) * (1.0 - Math.exp(-dt / 0.42));
+    tintCur += (tintTarget - tintCur) * (1.0 - Math.exp(-dt / 0.6));
+    // warp envelope: fast attack, slow relax to 0 by ~1.6s after a pulse.
+    const wage = (ms - warpStart) / 1000;
+    let w = 0;
+    if (wage >= 0 && wage < 1.6) {
+      const atk = 0.22;
+      w = wage < atk ? wage / atk : 1.0 - (wage - atk) / (1.6 - atk);
+      w = Math.max(0, w); w = w * w * (3 - 2 * w);
+    }
+    lastWarp = w;
     frameCount++;
     unbindTextures();                       // no cross-frame feedback
     // pass 1: fractal -> A
@@ -539,6 +623,7 @@ SHADER_JS = """
     gl.viewport(0, 0, fboW, fboH);
     gl.useProgram(progF); bindQuad(progF);
     gl.uniform1f(uF.t, secs); gl.uniform2f(uF.r, fboW, fboH);
+    gl.uniform1f(uF.warp, w);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     // passes 2 & 3: tilt-shift blur A -> B -> C
     blurPass(A, B, secs);
@@ -654,12 +739,15 @@ SHADER_JS = """
     else rafId = requestAnimationFrame(step);
   });
   // The router talks to the shader through this handle: setTint nudges
-  // the per-page atmosphere target (lerped inside draw); frames exposes
-  // the monotonic draw tally so a view swap's continuity is observable.
+  // the per-page atmosphere target (lerped inside draw); pulseWarp fires
+  // the transition stir; frames exposes the monotonic draw tally so a view
+  // swap's continuity is observable. reduced-motion never stirs.
   window.dreambg = {
     setTint(v) { tintTarget = v; if (rm) { tintCur = v; draw(lastMs); } },
+    pulseWarp() { if (!rm) warpStart = lastMs; },
     get frames() { return frameCount; },
-    get tint() { return tintCur; }
+    get tint() { return tintCur; },
+    get warp() { return lastWarp; }
   };
   if (rm) draw(0);
   else rafId = requestAnimationFrame(step);

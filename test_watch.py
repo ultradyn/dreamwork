@@ -178,6 +178,15 @@ class TestAppShell(unittest.TestCase):
                       'window.dreambg', 'pageTint', 'setTint'):
             self.assertIn(token, watch.PAGE)
 
+    def test_page_has_dream_transition_wiring(self):
+        # Static guard: the dissolve mist (SVG turbulence/displacement) and
+        # the shader stir (warp uniform + pulseWarp handle) must stay wired
+        # so a refactor can't silently flatten the transition back to a
+        # plain fade.
+        for token in ('dissolveOut', 'dissolveIn', 'feTurbulence',
+                      'feDisplacementMap', 'uniform float warp', 'pulseWarp'):
+            self.assertIn(token, watch.PAGE)
+
     def _serve(self, target):
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), watch.make_handler(target))
