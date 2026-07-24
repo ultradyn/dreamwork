@@ -14,6 +14,8 @@ Next id: **106**
   40m · human-reported with a screenshot; inline markdown leaks too
 - **#106** — Follow-up preview truncates mid-phrase with no affordance ·
   P1 · bug · 25m · human-reported; reads as damaged text
+- **#107** — Page width jumps navigating to/from /review · P1 · bug ·
+  30m · human-reported; `body.review` resizes outside the dissolve
 - **#103** — One text input for answer and note, mode group + flush send ·
   P2 · task · 50m
 - **#104** — Questions fade out, neighbours slide into place · P2 · task ·
