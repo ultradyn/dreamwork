@@ -216,6 +216,12 @@ if Max is away).
   goals: clearly-aligned implications and subtasks enter the task list as
   normal tasks; unclear extras park in `.dreamwork/questions.md`; and
   since the human just typed this, a one-line consult now beats guessing.
+  Generalized: any sensible `add <thing>:` matches (`add idea` stays
+  canonical) — the thing becomes the task's `type`. `add bug:` captures
+  richer detail (repro, expected vs actual, severity — ask one line if
+  missing); `add task:` / `add chore:` / `add experiment:` map directly;
+  `add question:` routes to questions.md instead of the task list;
+  anything else sensible maps to the best-fit type.
 - `maintenance` / `do maintenance` / `maintenance: <item>` — run the
   maintenance rotation now, regardless of backlog state; without an item
   named, `roll.py --no-backlog` can pick one.
