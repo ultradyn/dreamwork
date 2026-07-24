@@ -133,13 +133,14 @@ class TestCollector(unittest.TestCase):
         new, matched = watch.append_comment(text, "Open one?", "a thought",
                                             "2026-07-25 08:00", "Open")
         self.assertTrue(matched)
-        self.assertIn("**Follow-up (via watch, 2026-07-25 08:00):** a thought",
-                      new)
+        self.assertIn(
+            "**Note (human, via watch, 2026-07-25 08:00):** a thought", new)
         # a follow-up on an Answered entry lands in the Answered section
         new2, matched2 = watch.append_comment(text, "Done one", "amend it",
                                               "2026-07-25 08:01", "Answered")
         self.assertTrue(matched2)
-        self.assertGreater(new2.index("Follow-up"), new2.index("## Answered"))
+        self.assertGreater(new2.index("Note (human"),
+                           new2.index("## Answered"))
         _n, m3 = watch.append_comment(text, "Nope", "x", "2026-07-25", "Open")
         self.assertFalse(m3)
 
@@ -153,11 +154,13 @@ class TestCollector(unittest.TestCase):
                 "  - **Follow-up (via watch, 2026-07-25 08:10):** reopen?\n")
         qs = watch.parse_open_questions(text)
         self.assertEqual([q["title"] for q in qs], ["First?", "Second?"])
-        self.assertEqual(qs[0]["follows"], ["note one."])
+        self.assertEqual(qs[0]["follows"],
+                         [{"text": "note one.", "author": "human"}])
         self.assertNotIn("Follow-up", qs[0]["body"])
         ans = watch.parse_answered(text)
         self.assertEqual([e["title"] for e in ans], ["Old"])
-        self.assertEqual(ans[0]["follows"], ["reopen?"])
+        self.assertEqual(ans[0]["follows"],
+                         [{"text": "reopen?", "author": "human"}])
         self.assertNotIn("Follow-up", ans[0]["body"])
 
     def test_parse_keeps_wrapped_subbullet_continuations(self):
@@ -180,13 +183,16 @@ class TestCollector(unittest.TestCase):
         qs = watch.parse_open_questions(text)
         self.assertEqual([q["title"] for q in qs], ["First?", "Second?"])
         self.assertEqual(qs[0]["answer"], "an answer that runs onto a second line.")
-        self.assertEqual(qs[0]["follows"], ["a note that also wraps, twice over."])
+        self.assertEqual(qs[0]["follows"],
+                         [{"text": "a note that also wraps, twice over.",
+                           "author": "human"}])
         # the tails belong to their bullet, never to the body
         for stray in ("runs onto", "also wraps", "over."):
             self.assertNotIn(stray, qs[0]["body"])
         self.assertIn("body line two", qs[0]["body"])
         self.assertEqual(watch.parse_answered(text)[0]["follows"],
-                         ["reopened for a reason."])
+                         [{"text": "reopened for a reason.",
+                           "author": "human"}])
 
     def test_parse_unrecognised_subbullet_never_joins_the_previous(self):
         # An in-session follow-up (written by the loop, not via watch) is not
@@ -199,9 +205,94 @@ class TestCollector(unittest.TestCase):
                 "  - **Follow-up (in-session, 2026-07-25 ~10:10):** written by\n"
                 "    the loop instead.\n")
         q = watch.parse_open_questions(text)[0]
-        self.assertEqual(q["follows"], ["typed here and wrapped."])
-        self.assertIn("in-session", q["body"])
-        self.assertNotIn("in-session", q["follows"][0])
+        # both are notes now (#109) — the in-session one is the LOOP's, and
+        # it must not be absorbed as a continuation of the human's above it
+        self.assertEqual([f["text"] for f in q["follows"]],
+                         ["typed here and wrapped.", "written by the loop instead."])
+        self.assertEqual([f["author"] for f in q["follows"]], ["human", "loop"])
+
+    def test_parse_wrapped_title(self):
+        # #116: the loop writes this file wrapped at ~72 columns, so a bold
+        # title that spans lines is normal input. It closes at its `**`
+        # wherever that falls, and its tail is body — not literal asterisks.
+        text = ("# Q\n\n## Open\n\n"
+                "- **2026-07-25 — the shader's ambient density changed, and\n"
+                "  you did not ask for it.** Fixing the world-space anchoring\n"
+                "  required dropping the per-viewport normalisation.\n")
+        q = watch.parse_open_questions(text)[0]
+        self.assertEqual(
+            q["title"],
+            "2026-07-25 — the shader's ambient density changed, and "
+            "you did not ask for it.")
+        self.assertIn("Fixing the world-space anchoring", q["body"])
+        self.assertNotIn("**", q["body"])          # no leaked markers
+        self.assertNotIn("ask for it", q["body"])  # the title is not body
+
+    def test_wrapped_title_never_swallows_the_next_entry(self):
+        # The load-bearing invariant: a top-level `- **` ALWAYS starts an
+        # entry, so an unterminated title cannot absorb the entry after it
+        # and make one silently vanish from the page.
+        text = ("# Q\n\n## Open\n\n"
+                "- **A title that wraps across\n"
+                "  two lines.** body of the first.\n"
+                "- **Second entry.** body of the second.\n"
+                "- **Third entry.** body of the third.\n")
+        qs = watch.parse_open_questions(text)
+        self.assertEqual([q["title"] for q in qs],
+                         ["A title that wraps across two lines.",
+                          "Second entry.", "Third entry."])
+        self.assertNotIn("Second entry", qs[0]["body"])
+        # ...even when the title never closes at all
+        broken = ("# Q\n\n## Open\n\n"
+                  "- **An unterminated title\n"
+                  "- **Next entry.** body.\n")
+        self.assertEqual([q["title"] for q in watch.parse_open_questions(broken)],
+                         ["An unterminated title", "Next entry."])
+
+    def test_append_subbullet_matches_a_wrapped_title(self):
+        # The writer must find an entry exactly the way the reader named it,
+        # or /answer and /comment silently fail on an entry plainly on screen.
+        text = ("# Q\n\n## Open\n\n"
+                "- **A title that wraps across\n"
+                "  two lines.** body of the first.\n"
+                "- **Second entry.** body.\n")
+        title = watch.parse_open_questions(text)[0]["title"]
+        new, matched = watch.append_comment(text, title, "a note",
+                                            "2026-07-25 09:40", "Open")
+        self.assertTrue(matched)
+        # it lands inside the first entry, before the second
+        self.assertLess(new.index("Note (human"), new.index("Second entry"))
+        q = watch.parse_open_questions(new)[0]
+        self.assertEqual(q["follows"],
+                         [{"text": "a note", "author": "human"}])
+
+    def test_note_authorship(self):
+        # #109: four tag forms map to an author; two are legacy and must keep
+        # parsing because the file is a record and is never rewritten.
+        self.assertEqual(watch.note_author("- **Note (human, via watch, t):** x"),
+                         "human")
+        self.assertEqual(watch.note_author("- **Follow-up (via watch, t):** x"),
+                         "human")
+        self.assertEqual(watch.note_author("- **Follow-up (loop, t):** x"), "loop")
+        self.assertEqual(watch.note_author("- **Follow-up (in-session, t):** x"),
+                         "loop")
+        # an unknown tag attributes NOTHING — never guess
+        self.assertIsNone(watch.note_author("- **Follow-up (someone, t):** x"))
+        self.assertIsNone(watch.note_author("- **A question title.** body"))
+        text = ("# Q\n\n## Open\n\n- **T.** body.\n"
+                "  - **Note (human, via watch, t1):** his words.\n"
+                "  - **Follow-up (loop, t2):** the loop's words.\n")
+        self.assertEqual(watch.parse_open_questions(text)[0]["follows"],
+                         [{"text": "his words.", "author": "human"},
+                          {"text": "the loop's words.", "author": "loop"}])
+
+    def test_page_shows_note_authorship(self):
+        # the human's words sit a step up the text ramp from the loop's, each
+        # with a dim label; the accent is not spent on either.
+        for token in ("const WHO = { human: 'you', loop: 'loop' }",
+                      '.follow.human { color:var(--lit); }',
+                      "class=\"who\"", 'f.author'):
+            self.assertIn(token, watch.PAGE)
 
     def test_collect_lists_reviews(self):
         with tempfile.TemporaryDirectory() as d:
@@ -421,7 +512,7 @@ class TestAppShell(unittest.TestCase):
                       'const MD_BULLET =',
                       # prose surfaces
                       'mdBReview(q.body.trim(), q.title)', 'mdB(d.content)',
-                      'expand(n, mdB(d.files[n]))', 'mdInline(f)'):
+                      'expand(n, mdB(d.files[n]))', 'mdInline(txt)'):
             self.assertIn(token, watch.PAGE)
         # raw surfaces keep <pre>: the file viewer and the status blob
         self.assertIn('`<pre>${esc(text)}</pre>`', watch.PAGE)
@@ -589,7 +680,8 @@ class TestAppShell(unittest.TestCase):
             self.assertEqual(status, 200)
             qpath = os.path.join(d, ".dreamwork", "questions.md")
             with open(qpath) as f:
-                self.assertIn("Follow-up (via watch", f.read())
+                # #109: the tag names the AUTHOR, not just the channel
+                self.assertIn("Note (human, via watch", f.read())
             for bad, code in ((
                     {"question": "A real open question?", "comment": "x",
                      "section": "Nope"}, 400),

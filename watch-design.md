@@ -265,6 +265,56 @@ renderers are ink-limited, and at a wide one the source's own 72 columns
 nearly fit; it is the widths a card actually gets where a `<pre>` wraps every
 line a second time.
 
+### Authorship
+
+**Anywhere the human's words appear beside the loop's, authorship is
+visible.** A page that mixes them will eventually mislead one of them — and
+the loop is the one that would then act on its own invention as if it were an
+instruction. This is a correctness rule, not a decoration one.
+
+The file carries it: a note is tagged with its **author**, not just its
+channel. `- **Note (human, via <channel>, <ts>):**` and
+`- **Follow-up (loop, <ts>):**` are current; two legacy forms
+(`Follow-up (via watch…)` → human, `Follow-up (in-session…)` → loop) keep
+parsing forever, because the file is a record and is never rewritten. An
+unrecognised tag renders with **no attribution at all** — a wrong
+attribution is worse than an absent one, so `note_author` returns `None`
+rather than guessing.
+
+The page says it quietly: a dim uppercase label (`you` / `loop`, the same
+label idiom as every other label here) and the human's words one step up the
+text ramp (`--lit` against the loop's `--muted`), because emphasis on this
+page is luminance. An answer reads at that same brightness — it is his, in a
+card whose body the loop wrote. **No accent**: the accent is for live and
+actionable things, and a settled note is neither.
+
+### Reading questions.md
+
+`_parse_entries` is the single reader for both sections — they were
+near-duplicates, and the last two bugs each had to be fixed twice before
+that. Four invariants, each of which was a bug:
+
+1. **A top-level `- **` line ALWAYS starts an entry.** Nothing absorbs it —
+   not an unterminated title, not an open sub-bullet — so an entry can never
+   silently vanish into the one above it.
+2. **A title may be hard-wrapped**, closing at its `**` wherever that falls,
+   possibly lines later. The loop writes this file at ~72 columns, so a
+   wrapped title is normal input, not malformed. Cutting it at the first
+   line break truncated the title and leaked its tail into the body as
+   literal asterisks (#116).
+3. **A sub-bullet may be hard-wrapped too**, and its continuation lines
+   belong to it. Keeping only the first line truncated the note *and*
+   spilled its tail into the body (#106).
+4. **An Answer or Note sub-bullet is never an entry**, even un-indented.
+
+**The writer walks titles the same way, through the same `_join_title`.**
+Before that, `append_subbullet` compared against the first source line only,
+so a wrapped-title entry could not be matched at all and `/answer` and
+`/comment` failed silently on an entry plainly on screen. A silent write
+failure on the human's own input channel is worse than the visible symptom
+that leads you to it — whenever the reader learns a new way to name something,
+check the writer still finds it by that name.
+
 ### The question card
 
 A question is the page's one interactive object, and it appears on four

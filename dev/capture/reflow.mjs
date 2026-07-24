@@ -89,14 +89,19 @@ const ab = await p.evaluate(`(async () => {
 // nesting is content-dependent on a live page, so assert it on known input
 const nest = await p.evaluate(`(() => {
   const src = 'lead in that\\nwraps here\\n- top bullet that\\n  wraps too\\n' +
-              '  - deeper bullet\\n\\nnew para\\n\\n\`\`\`\\ncode  kept\\n\`\`\`\\n';
+              '  - deeper bullet\\n\\nnew **para** with *em* and \`a/path.md\`\\n' +
+              '\\n\`\`\`\\ncode  kept\\n\`\`\`\\n';
   const host = document.createElement('div');
   host.innerHTML = mdB(src);
   return { paras: host.querySelectorAll('p').length,
            lis: [...host.querySelectorAll('.mdli')]
                   .map(e => e.style.getPropertyValue('--lvl') + ':' + e.textContent),
            fence: (host.querySelector('pre.mdcode') || {}).textContent || null,
-           firstPara: (host.querySelector('p') || {}).textContent || null };
+           firstPara: (host.querySelector('p') || {}).textContent || null,
+           strong: (host.querySelector('strong') || {}).textContent || null,
+           em: (host.querySelector('em') || {}).textContent || null,
+           code: (host.querySelector('code') || {}).textContent || null,
+           stars: host.textContent.includes('**') };
 })()`);
 
 const inline = await p.evaluate(() => ({
@@ -138,9 +143,12 @@ ok('A/B measured real content (3+ bodies)', ab.bodies >= 3);
 ok('questions prose is not double-wrapped', qm.ratio < 1.45);
 ok('dashboard prose is not double-wrapped', dm.ratio < 1.45);
 ok('measured enough lines to be meaningful (>40)', qm.used > 40);
-ok('inline bold renders (no literal ** left)',
-   inline.strongs.length > 0 && inline.literalStars === 0);
-ok('code spans render', inline.codes.length > 0);
+// asserted on known input, not on whatever the live file happens to contain
+ok('inline **bold**, *em* and `code` render, no literal markers left',
+   nest.strong === 'para' && nest.em === 'em' && nest.code === 'a/path.md' &&
+   !nest.stars);
+ok('no literal ** leaks onto the live page', inline.literalStars === 0);
+ok('code spans render on live content', inline.codes.length > 0);
 ok('joined paragraphs hold no source newline', inline.newlinesInParas === 0);
 ok('a wrapped follow-up shows its whole note (#106)',
    inline.follows.some(f => f.length > 60));

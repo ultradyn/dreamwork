@@ -143,13 +143,20 @@ STYLE = """<style>
   .qa.folded .qt { color:var(--muted); }
   .anstag { color:var(--dim); text-transform:uppercase; letter-spacing:.07em;
     font-size:.65rem; margin:.35rem 0 .15rem; }
-  .anstext { color:var(--muted); white-space:pre-wrap; }
+  /* an answer is the human's, in a card whose body the loop wrote — so it
+     reads at the same brightness as his notes do (#109) */
+  .anstext { color:var(--lit); white-space:pre-wrap; }
   /* follow-up thread + a quiet add-a-note box on every question entry */
   .thread { border-left:1px solid var(--line); padding-left:1ch;
     margin:.3rem 0 .2rem; }
   .follow { color:var(--muted); font-size:.75rem; margin:.25rem 0;
     padding-left:2.6ch; text-indent:-2.6ch; }
   .follow::before { content:"\\21b3  "; color:var(--dim); }
+  /* authorship (#109): the human's words sit a step up the text ramp from
+     the loop's, and each carries a dim label. Luminance, not accent. */
+  .follow.human { color:var(--lit); }
+  .who { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
+    font-size:.62rem; margin-right:.7ch; }
   .notewrap { display:flex; gap:.4rem; align-items:flex-start;
     margin:.3rem 0 .2rem; max-width:56ch; }
   .notebox { flex:1; background:var(--panel); color:var(--text);
@@ -536,9 +543,21 @@ const mdBReview = (t, title) =>
   `<div class="md">${mdRender(t, mdInlineReview(title))}</div>`;
 /* a follow-up thread and a quiet add-a-note box, carried by every question
    entry in every state. */
+/* Authorship is visible wherever the human's words sit beside the loop's
+   (#109). A note carries who wrote it, and the page says so QUIETLY: a dim
+   uppercase label — the same idiom as every other label here — and the
+   human's words a step brighter on the text ramp, because emphasis on this
+   page is luminance. No accent: the accent is for live and actionable
+   things, and a note is neither. An unattributed note (an unknown tag) gets
+   no label at all — a wrong attribution is worse than an absent one. */
+const WHO = { human: 'you', loop: 'loop' };
 const followThread = follows => (follows && follows.length)
-  ? `<div class="thread">` + follows.map(f =>
-      `<div class="follow">${mdInline(f)}</div>`).join('') + `</div>`
+  ? `<div class="thread">` + follows.map(f => {
+      const a = f && f.author, txt = f && f.text != null ? f.text : f;
+      return `<div class="follow${a ? ' ' + a : ''}">` +
+        (WHO[a] ? `<span class="who">${WHO[a]}</span>` : '') +
+        `${mdInline(txt)}</div>`;
+    }).join('') + `</div>`
   : '';
 const noteBox = key =>
   `<div class="notewrap"><textarea class="notebox" id="nb${key}"` +
@@ -737,7 +756,8 @@ async function sendComment(key) {
     card.insertBefore(thread, card.querySelector('.notewrap'));
   }
   const f = document.createElement('div');
-  f.className = 'follow'; f.innerHTML = linkify(esc(val));
+  f.className = 'follow human';        // it is his; say so, same as a reload
+  f.innerHTML = `<span class="who">${WHO.human}</span>` + mdInline(val);
   thread.appendChild(f);
   if (typeof ripple === 'function') ripple(fromRect.left + 24, fromRect.top + 14);
   if (!rmr && typeof flipDock === 'function')
@@ -2045,121 +2065,164 @@ def git_tail(target, n=15):
         return []
 
 
-def parse_open_questions(text):
-    """[{title, body, answer}] for each '- **Title**' entry in Open.
+"""Who wrote a note (#109).
 
-    A `- **Answer (via watch...):** ...` sub-bullet (submitted from the
-    dashboard, not yet folded by the loop) is lifted out into `answer` and
-    kept out of `body`, so the view can show an answered-awaiting-fold state
-    distinctly instead of an ambiguous open one. `answer` is None while
-    unanswered. An Answer bullet is never mistaken for a new entry (even
-    un-indented), so it can't swallow the questions that follow it.
+A page that mixes what the human said with what the loop wrote will
+eventually mislead one of them — and the loop is the one that would then act
+on its own invention as if it were an instruction. So the tag records the
+AUTHOR, not just the channel, and the page shows it.
 
-    A sub-bullet may be hard-wrapped over several lines. Its continuation
-    lines belong to it, not to the entry body — capturing only the first
-    line would truncate the note AND spill its tail into the body as
-    orphaned prose. Any line that starts a new bullet ends the capture, so
-    an unrecognised sub-bullet (e.g. an in-session follow-up, which the loop
-    writes by hand) can never be glued onto the previous one.
-    """
-    items = []
-    if not text:
-        return items
-    in_open = False
-    current = None
-    sub = None          # the sub-bullet currently absorbing wrapped lines
-    for line in text.splitlines():
-        if line.startswith("## "):
-            in_open = line.strip() == "## Open"
-            current = None
-            sub = None
-            continue
-        if not in_open:
-            continue
-        s = line.strip()
-        is_answer = s.startswith("- **Answer (via watch")
-        is_follow = s.startswith("- **Follow-up (via watch")
-        if line.startswith("- **") and not is_answer and not is_follow:
-            title, _, rest = line[4:].partition("**")
-            current = {"title": title,
-                       "body": rest.strip() + "\n" if rest.strip() else "",
-                       "answer": None, "follows": []}
-            items.append(current)
-            sub = None
-        elif current is not None:
-            if is_answer:
-                current["answer"] = s.split(":**", 1)[-1].strip()
-                sub = "answer"
-            elif is_follow:
-                current["follows"].append(s.split(":**", 1)[-1].strip())
-                sub = "follow"
-            elif not s or s.startswith("- ") or s.startswith("* "):
-                sub = None
-                current["body"] += line + "\n"
-            elif sub == "answer":
-                current["answer"] += " " + s
-            elif sub == "follow":
-                current["follows"][-1] += " " + s
-            else:
-                current["body"] += line + "\n"
-    return items
+Four forms are live: the two current tags and two legacy ones that must keep
+parsing, because the file is a record and is never rewritten. An unknown tag
+attributes NOTHING — a wrong attribution is worse than an absent one.
+"""
+NOTE_TAGS = (
+    ("- **Note (human,", "human"),           # current: the human, any channel
+    ("- **Follow-up (via watch,", "human"),  # legacy: only he used it
+    ("- **Follow-up (loop,", "loop"),        # current: the loop
+    ("- **Follow-up (in-session,", "loop"),  # legacy: the loop, hand-written
+)
 
 
-def parse_answered(text):
-    """[{title, body, follows}] for each entry in the Answered section, so the
-    view can render each with its follow-up thread and an add-a-note box.
+def note_author(stripped):
+    """'human', 'loop', or None for a sub-bullet note line. None is a real
+    answer: render it, attribute nothing, never guess."""
+    for prefix, author in NOTE_TAGS:
+        if stripped.startswith(prefix):
+            return author
+    return None
 
-    Hard-wrapped follow-ups keep their continuation lines (see
-    parse_open_questions).
+
+def _note_entry(stripped, author):
+    return {"text": stripped.split(":**", 1)[-1].strip(), "author": author}
+
+
+ENTRY_MARK = "- **"
+
+
+def _entry_title_parts(segment):
+    """Split an entry line's text at the title's closing `**`.
+
+    Returns (title_segment, closed, rest). `closed` is False when the title
+    is hard-wrapped and continues on the next line."""
+    seg, closed, rest = segment.partition("**")
+    return seg, bool(closed), rest
+
+
+def _join_title(parts):
+    """One definition of how a wrapped title becomes a string, so the reader
+    and the writer can never disagree about what an entry is called."""
+    return " ".join(p.strip() for p in parts if p.strip())
+
+
+def _parse_entries(text, section, lift_answer):
+    """Entries under `## {section}` as [{title, body, follows[, answer]}].
+
+    Four invariants, each of which was a bug at some point:
+
+    1. A top-level `- **` line ALWAYS starts a new entry. Nothing can absorb
+       it — not an unterminated title, not an open sub-bullet — so an entry
+       can never silently vanish into the one above it.
+    2. A TITLE may be hard-wrapped: it closes at its `**` wherever that
+       falls, including several lines down. The loop writes this file at ~72
+       columns, so a wrapped title is normal input, not malformed (#116).
+    3. A SUB-BULLET may be hard-wrapped too: its continuation lines belong to
+       it, not to the body. Keeping only the first line truncated the note
+       AND spilled its tail into the body as orphaned prose (#106).
+    4. An Answer or Note sub-bullet is never mistaken for an entry, even
+       un-indented, so it cannot swallow the entries that follow it.
+
+    `lift_answer` pulls a `- **Answer (via watch…):**` bullet out into
+    `answer` (Open only), so the view can show answered-awaiting-fold
+    distinctly rather than as an ambiguous open question.
     """
     items = []
     if not text:
         return items
     in_sec = False
-    current = None
-    sub = False
+    cur = None
+    sub = None            # which sub-bullet is absorbing wrapped lines
+    title_parts = None    # non-None while a title is still open
     for line in text.splitlines():
         if line.startswith("## "):
-            in_sec = line.strip() == "## Answered"
-            current = None
-            sub = False
+            in_sec = line.strip() == f"## {section}"
+            cur, sub, title_parts = None, None, None
             continue
         if not in_sec:
             continue
         s = line.strip()
-        is_follow = s.startswith("- **Follow-up (via watch")
-        if line.startswith("- **") and not is_follow:
-            title, _, rest = line[4:].partition("**")
-            current = {"title": title,
-                       "body": rest.strip() + "\n" if rest.strip() else "",
-                       "follows": []}
-            items.append(current)
-            sub = False
-        elif current is not None:
-            if is_follow:
-                current["follows"].append(s.split(":**", 1)[-1].strip())
-                sub = True
-            elif not s or s.startswith("- ") or s.startswith("* "):
-                sub = False
-                current["body"] += line + "\n"
-            elif sub:
-                current["follows"][-1] += " " + s
-            else:
-                current["body"] += line + "\n"
+        is_answer = lift_answer and s.startswith("- **Answer (via watch")
+        author = note_author(s)
+        # invariant 1: this test comes FIRST and is unconditional
+        if line.startswith(ENTRY_MARK) and not is_answer and author is None:
+            seg, closed, rest = _entry_title_parts(line[len(ENTRY_MARK):])
+            cur = {"title": _join_title([seg]), "body": "", "follows": []}
+            if lift_answer:
+                cur["answer"] = None
+            items.append(cur)
+            sub = None
+            title_parts = None if closed else [seg]
+            if closed and rest.strip():
+                cur["body"] = rest.strip() + "\n"
+            continue
+        if cur is None:
+            continue
+        if title_parts is not None:            # invariant 2
+            seg, closed, rest = _entry_title_parts(s)
+            title_parts.append(seg)
+            cur["title"] = _join_title(title_parts)
+            if closed:
+                title_parts = None
+                if rest.strip():
+                    cur["body"] = rest.strip() + "\n"
+            continue
+        if is_answer:
+            cur["answer"] = s.split(":**", 1)[-1].strip()
+            sub = "answer"
+        elif author is not None:
+            cur["follows"].append(_note_entry(s, author))
+            sub = "follow"
+        elif not s or s.startswith("- ") or s.startswith("* "):
+            sub = None                          # a new bullet ends invariant 3
+            cur["body"] += line + "\n"
+        elif sub == "answer":
+            cur["answer"] += " " + s
+        elif sub == "follow":
+            cur["follows"][-1]["text"] += " " + s
+        else:
+            cur["body"] += line + "\n"
     return items
+
+
+def parse_open_questions(text):
+    """[{title, body, answer, follows}] for each entry in `## Open`."""
+    return _parse_entries(text, "Open", lift_answer=True)
+
+
+def parse_answered(text):
+    """[{title, body, follows}] for each entry in `## Answered`, so the view
+    can render each with its follow-up thread and an add-a-note box."""
+    return _parse_entries(text, "Answered", lift_answer=False)
 
 
 def append_subbullet(text, title, block, section="Open"):
     """Insert `block` at the end of the entry titled `title` inside
-    `## {section}` (Open or Answered). Indented sub-bullets (Answer /
-    Follow-up) never count as entry boundaries. Returns (new_text, matched).
+    `## {section}` (Open or Answered). Indented sub-bullets (Answer / Note)
+    never count as entry boundaries. Returns (new_text, matched).
     Pure — testable without a filesystem.
+
+    The writer must find an entry exactly the way the reader named it, so it
+    walks titles with the same rules and the same `_join_title` — including
+    hard-wrapped ones (#116). Comparing against the first source line only
+    meant a wrapped-title entry could never be matched, and /answer and
+    /comment would report failure for an entry plainly on screen.
     """
     lines = text.splitlines()
     out = []
     in_section = False
     in_target = False
     matched = False
+    title_parts = None       # non-None while a wrapped title is still open
 
     def close_target():
         nonlocal in_target
@@ -2167,15 +2230,34 @@ def append_subbullet(text, title, block, section="Open"):
             out.append(block)
             in_target = False
 
+    def claim(parts):
+        nonlocal in_target, matched
+        if _join_title(parts) == title:
+            in_target = True
+            matched = True
+
     for line in lines:
+        s = line.strip()
         if line.startswith("## "):
             close_target()
             in_section = line.strip() == f"## {section}"
-        elif in_section and line.startswith("- **"):
+            title_parts = None
+        elif (in_section and line.startswith(ENTRY_MARK)
+                and not s.startswith("- **Answer (via watch")
+                and note_author(s) is None):
             close_target()
-            if line[4:].split("**", 1)[0] == title:
-                in_target = True
-                matched = True
+            seg, closed, _rest = _entry_title_parts(line[len(ENTRY_MARK):])
+            if closed:
+                claim([seg])
+                title_parts = None
+            else:
+                title_parts = [seg]
+        elif in_section and title_parts is not None:
+            seg, closed, _rest = _entry_title_parts(s)
+            title_parts.append(seg)
+            if closed:
+                claim(title_parts)
+                title_parts = None
         out.append(line)
     close_target()
     return "\n".join(out) + "\n", matched
@@ -2188,10 +2270,14 @@ def append_answer(text, title, answer, stamp):
 
 
 def append_comment(text, title, note, stamp, section="Open"):
-    """Append a Follow-up note to an entry (Open or Answered) — a
-    chronological mini-thread inside the entry."""
+    """Append a note to an entry (Open or Answered) — a chronological
+    mini-thread inside the entry.
+
+    The tag names the AUTHOR as well as the channel (#109): a note left here
+    is the human's, and it must be impossible to mistake for something a
+    dreamer wrote. `note_author` reads it back."""
     return append_subbullet(
-        text, title, f"  - **Follow-up (via watch, {stamp}):** {note}",
+        text, title, f"  - **Note (human, via watch, {stamp}):** {note}",
         section)
 
 
