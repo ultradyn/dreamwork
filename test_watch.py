@@ -273,8 +273,33 @@ class TestAppShell(unittest.TestCase):
         # Static guard: the shader anchors its domain to the window's screen
         # position and takes its phase from the wall clock (UTC-day-wrapped),
         # so adjacent windows share one continuous, screen-pinned field.
-        for token in ('uniform vec2 domainOffset', 'window.screenX',
-                      '% 86400'):
+        for token in ('uniform vec2 domainOffset', 'win.screenX', '% 86400'):
+            self.assertIn(token, watch.PAGE)
+
+    def test_shader_scale_is_world_fixed(self):
+        # The domain scale is a WORLD constant, not a per-window one: two
+        # windows of different heights must sample one field at one zoom, or
+        # the seam between them can never line up (#91). Guards the regression
+        # back to a `2.3 / innerHeight` style per-window scale.
+        self.assertIn('const WORLD_SCALE = 2.3 / 900;', watch.PAGE)
+        self.assertIn('uniform float domScale', watch.PAGE)
+        self.assertNotIn('2.3 / Math.max(1, win.innerHeight)', watch.PAGE)
+        # gl_FragCoord.y is bottom-up and screenY is top-down, so the vertical
+        # anchor is the NEGATED screen position of the viewport's bottom edge.
+        self.assertIn('-((win.screenY || 0) + chromeTop + win.innerHeight)',
+                      watch.PAGE)
+
+    def test_popout_carries_the_shader(self):
+        # Static guard: the shader is a mountable function (not an IIFE bound
+        # to the main document) and every floated window gets one, so a popout
+        # shows the same world-space field as the page that spawned it (#91).
+        for token in ('function mountDreambg(win, cv, opts)',
+                      'function mountPopoutBg(w, tint)',
+                      'mountPopoutBg(w, tint); }',   # openPopout always mounts
+                      "cv.id = 'dreambg'",
+                      'mountDreambg(w, cv, {})',
+                      # and the popout stylesheet puts it behind the content
+                      '#dreambg { position:fixed; inset:0; z-index:-1;'):
             self.assertIn(token, watch.PAGE)
 
     def test_page_has_answered_awaiting_fold_state(self):

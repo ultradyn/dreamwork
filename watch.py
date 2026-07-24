@@ -799,6 +799,8 @@ const POPOUT_CSS = `
   :root { color-scheme:dark; }
   body { margin:0; background:#0b0f19; color:#d1d5db;
     font-family:ui-monospace,'JetBrains Mono',monospace; font-size:13px; }
+  #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
+             height:100vh; }
   .strip { height:4px; background:__STRIP__; }
   .phead { padding:.7rem .9rem .1rem; }
   .ptitle { color:#f3f4f6; }
@@ -855,6 +857,22 @@ const popHead = (label, base, path) =>
   `<div class="strip"></div><div class="phead">` +
   `<div class="ptitle">${esc(label)} &middot; ${esc(base)}</div>` +
   `<div class="ppath">${esc(path)}</div></div>`;
+/* Every floated window dreams the same dream. The shader is world-space
+   anchored (#74): it reads ITS OWN window's screenX/screenY, so a popout
+   parked anywhere over the page samples the identical deterministic field
+   and the pattern stays continuous across the seam. Mounted after `fill`,
+   because the fills assign body.innerHTML and would wipe the canvas. */
+function mountPopoutBg(w, tint) {
+  try {
+    const cv = w.document.createElement('canvas');
+    cv.id = 'dreambg';
+    w.document.body.appendChild(cv);
+    const bg = mountDreambg(w, cv, {});     // no dev overlay, no layer switcher
+    if (!bg) return;
+    bg.setTint(tint);                       // wear the spawning view's hue
+    w.addEventListener('pagehide', () => bg.stop());
+  } catch (e) { /* no WebGL here: the flat #0b0f19 still reads fine */ }
+}
 /* open a floating window — Document Picture-in-Picture where available (stays
    put while the main tab navigates), else a positioned window.open — and let
    `fill` render into it with the shared identity. */
@@ -872,7 +890,7 @@ async function openPopout(name, size, fill) {
   if (!w) w = window.open('', name + '_' + base,
     'width=' + (size.width + 20) + ',height=' + (size.height + 20) +
     ',left=80,top=80');
-  if (w) fill(w, base, path, tint);
+  if (w) { fill(w, base, path, tint); mountPopoutBg(w, tint); }
   return w;
 }
 async function requestPopout() {
@@ -1040,17 +1058,25 @@ SHADER_JS = """
    corner) to cycle raw components — fractal, warp field, focus mask,
    blurred fractal. Pauses when tab hidden; reduced-motion => 1 frame;
    no WebGL / no FBO => canvas hidden (flat #0b0f19 shows through). */
-(function () {
-  const cv = document.getElementById('dreambg');
+// Domain units per CSS pixel — a WORLD constant, not a per-window one. It
+// used to be 2.3/innerHeight, which pinned the field's origin to the screen
+// but let each window pick its own zoom; two windows then showed the same
+// dream at two scales and the seam between them could never line up. 900 is
+// the reference height that keeps the density it always had.
+const WORLD_SCALE = 2.3 / 900;
+function mountDreambg(win, cv, opts) {
+  opts = opts || {};
+  const doc = win.document;
   const gl = cv.getContext('webgl',
     { antialias: false, depth: false, alpha: false });
-  const rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (!gl) { cv.style.display = 'none'; return; }
+  const rm = win.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!gl) { cv.style.display = 'none'; return null; }
 
   const VS = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
   const FRACTAL_FS = `precision highp float;
     uniform float t; uniform vec2 r; uniform float warp;
     uniform vec2 domainOffset;   /* screen-space anchor: world-space dream */
+    uniform float domScale;      /* domain units per buffer pixel (world-fixed) */
     float hash(vec2 p){ p=fract(p*vec2(123.34,345.45));
       p+=dot(p,p+34.345); return fract(p.x*p.y); }
     float noise(vec2 p){ vec2 i=floor(p),f=fract(p);
@@ -1062,10 +1088,12 @@ SHADER_JS = """
       for(int i=0;i<5;i++){ s+=a*noise(p); p=m*p; a*=0.5; } return s; }
     void main(){
       vec2 uv=gl_FragCoord.xy/r;
-      /* world-space: offset the sampling domain by the window's on-screen
-         position, so adjacent watch windows sample one continuous field and
-         the pattern stays pinned to the screen as a window is dragged. */
-      vec2 p=vec2(uv.x*(r.x/r.y),uv.y)*2.3 + domainOffset;
+      /* World-space: the domain is a fixed number of units per SCREEN pixel
+         (domScale) offset by the window's on-screen position — so the pattern
+         is pinned to the screen under both dragging AND resizing, and two
+         windows of different sizes sample one continuous field rather than
+         the same field at two zooms. */
+      vec2 p=gl_FragCoord.xy*domScale + domainOffset;
       float tt=t*0.03;
       vec2 q=vec2(fbm(p+vec2(0.0,tt)), fbm(p+vec2(5.2,1.3)-tt));
       /* pinch of curl: divergence-free swirl advecting the domain —
@@ -1076,7 +1104,7 @@ SHADER_JS = """
          the domain about screen-centre while a page dissolves, then relax
          back (warp is a 0->1->0 pulse driven by the router). */
       p+=curl*warp*0.6;
-      vec2 ctr=vec2(0.5*(r.x/r.y),0.5)*2.3;
+      vec2 ctr=r*0.5*domScale + domainOffset;   /* this window's centre */
       float wa=warp*0.15;
       float cw=cos(wa), sw=sin(wa);
       p=ctr+mat2(cw,-sw,sw,cw)*(p-ctr);
@@ -1189,8 +1217,8 @@ SHADER_JS = """
     return ok ? { fbo, tex } : null;
   }
   function size() {
-    canW = Math.max(2, Math.floor(innerWidth / 2));
-    canH = Math.max(2, Math.floor(innerHeight / 2));
+    canW = Math.max(2, Math.floor(win.innerWidth / 2));
+    canH = Math.max(2, Math.floor(win.innerHeight / 2));
     cv.width = canW; cv.height = canH;
     fboW = Math.max(2, Math.floor(canW / 2));
     fboH = Math.max(2, Math.floor(canH / 2));
@@ -1211,7 +1239,8 @@ SHADER_JS = """
     uF = { t: gl.getUniformLocation(progF, 't'),
            r: gl.getUniformLocation(progF, 'r'),
            warp: gl.getUniformLocation(progF, 'warp'),
-           domainOffset: gl.getUniformLocation(progF, 'domainOffset') };
+           domainOffset: gl.getUniformLocation(progF, 'domainOffset'),
+           domScale: gl.getUniformLocation(progF, 'domScale') };
     uB = { tex: gl.getUniformLocation(progB, 'tex'),
            r: gl.getUniformLocation(progB, 'r'),
            t: gl.getUniformLocation(progB, 't') };
@@ -1261,10 +1290,17 @@ SHADER_JS = """
     // world-space anchor: shift the fractal domain by the window's on-screen
     // position (polled per frame, so dragging pins the pattern to the
     // screen). Same units as the domain's per-pixel mapping (2.3/innerHeight).
-    const wScale = 2.3 / Math.max(1, innerHeight);
-    const chromeTop = Math.max(0, outerHeight - innerHeight);
-    const domX = (window.screenX || 0) * wScale;
-    const domY = ((window.screenY || 0) + chromeTop) * wScale;
+    const chromeTop = Math.max(0, win.outerHeight - win.innerHeight);
+    const domX = (win.screenX || 0) * WORLD_SCALE;
+    // gl_FragCoord.y counts UP from the viewport's bottom while screenY counts
+    // DOWN from the desktop's top, so the vertical anchor is the negated screen
+    // position of the viewport's BOTTOM edge. (Adding the top edge instead
+    // makes the field slide the wrong way, at double rate, as a window moves.)
+    const domY = -((win.screenY || 0) + chromeTop + win.innerHeight)
+                 * WORLD_SCALE;
+    // buffer pixels are ~4 CSS px; convert so domScale is units per BUFFER
+    // pixel while WORLD_SCALE stays units per CSS pixel (window-independent).
+    const domScale = WORLD_SCALE * (win.innerHeight / Math.max(1, fboH));
     const dt = lastDrawMs ? Math.min(0.1, (ms - lastDrawMs) / 1000) : 0;
     lastDrawMs = ms;
     tintCur += (tintTarget - tintCur) * (1.0 - Math.exp(-dt / 0.6));
@@ -1286,6 +1322,7 @@ SHADER_JS = """
     gl.uniform1f(uF.t, secs); gl.uniform2f(uF.r, fboW, fboH);
     gl.uniform1f(uF.warp, w);
     gl.uniform2f(uF.domainOffset, domX, domY);
+    gl.uniform1f(uF.domScale, domScale);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     // passes 2 & 3: tilt-shift blur A -> B -> C
     blurPass(A, B, secs);
@@ -1305,7 +1342,7 @@ SHADER_JS = """
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
-  addEventListener('resize', () => { size(); if (rm) draw(lastMs); });
+  win.addEventListener('resize', () => { size(); if (rm) draw(lastMs); });
 
   const MODES = ['dream (composite)', 'raw fractal', 'warp field',
                  'focus mask', 'blurred fractal'];
@@ -1313,33 +1350,36 @@ SHADER_JS = """
   function cycle() {
     mode = (mode + 1) % MODES.length;
     if (!hint) {
-      hint = document.createElement('div');
-      hint.id = 'layerhint'; document.body.appendChild(hint);
+      hint = doc.createElement('div');
+      hint.id = 'layerhint'; doc.body.appendChild(hint);
     }
     // Self-explanatory feedback: names the layer AND how to cycle, so an
     // accidental switch (stray 'l', triple-click corner) is legible and
     // reversible rather than a mysterious background change.
     hint.textContent = 'background: ' + MODES[mode] + ' — press l to cycle';
     hint.style.opacity = '1';
-    clearTimeout(hintT);
-    hintT = setTimeout(() => { hint.style.opacity = '0'; }, 2200);
+    win.clearTimeout(hintT);
+    hintT = win.setTimeout(() => { hint.style.opacity = '0'; }, 2200);
     if (rm) draw(lastMs);
   }
-  addEventListener('keydown', e => {
-    // never hijack a keystroke aimed at a text field (command palette etc.)
-    if (e.target.closest && e.target.closest('input, textarea, select')) return;
-    if (e.key === 'l' && !e.metaKey && !e.ctrlKey && !e.altKey) cycle();
-  });
-  let clicks = 0, clickT = 0;
-  addEventListener('click', e => {
-    if (!(e.clientX > innerWidth - 90 && e.clientY > innerHeight - 90)) {
-      clicks = 0; return;
-    }
-    const now = Date.now();
-    if (now - clickT > 600) clicks = 0;
-    clickT = now;
-    if (++clicks >= 3) { clicks = 0; cycle(); }
-  });
+  // Debug switcher on the main page only: a popout carries no #layerhint
+  // styles, and a stray 'l' there should stay a keystroke.
+  if (opts.switcher) {
+    win.addEventListener('keydown', e => {
+      // never hijack a keystroke aimed at a text field (the composer etc.)
+      if (e.target.closest && e.target.closest('input, textarea, select')) return;
+      if (e.key === 'l' && !e.metaKey && !e.ctrlKey && !e.altKey) cycle();
+    });
+    let clicks = 0, clickT = 0;
+    win.addEventListener('click', e => {
+      if (!(e.clientX > win.innerWidth - 90 &&
+            e.clientY > win.innerHeight - 90)) { clicks = 0; return; }
+      const now = Date.now();
+      if (now - clickT > 600) clicks = 0;
+      clickT = now;
+      if (++clicks >= 3) { clicks = 0; cycle(); }
+    });
+  }
 
   let rafId = 0, running = true;
   let fpsEl = null, dtEl = null, ftEl = null, sparkCtx = null;
@@ -1357,16 +1397,16 @@ SHADER_JS = """
     if (!(gpuExt && typeof gl.createQuery === 'function')) gpuExt = null;
     gpuQuery = null; gpuPending = false; gpuOpen = false;
   }
-  if (window.DEV) {
-    const box = document.createElement('div');
+  if (opts.dev) {
+    const box = doc.createElement('div');
     box.id = 'devbox';
-    fpsEl = document.createElement('div');
-    dtEl = document.createElement('div');
-    ftEl = document.createElement('div');
-    const sp = document.createElement('canvas');
+    fpsEl = doc.createElement('div');
+    dtEl = doc.createElement('div');
+    ftEl = doc.createElement('div');
+    const sp = doc.createElement('canvas');
     sp.width = 120; sp.height = 22;
     box.append(fpsEl, dtEl, ftEl, sp);
-    document.body.appendChild(box);
+    doc.body.appendChild(box);
     sparkCtx = sp.getContext('2d');
     acquireGpuTimer();
   }
@@ -1432,41 +1472,47 @@ SHADER_JS = """
         fpsN = 0; fpsT = ms;
       }
     }
-    if (running && !rm) rafId = requestAnimationFrame(step);
+    if (running && !rm) rafId = win.requestAnimationFrame(step);
   }
   function step(ms) {
     if (!running) return;
-    if (!document.hidden) frame(ms);
-    else setTimeout(() => { if (running) rafId = requestAnimationFrame(step); }, 500);
+    if (!doc.hidden) frame(ms);
+    else win.setTimeout(() => {
+      if (running) rafId = win.requestAnimationFrame(step);
+    }, 500);
   }
   // Context loss (GPU reset, tab backgrounding, driver hiccup) is
   // recoverable: rebuild every GL object on restore and resume.
   cv.addEventListener('webglcontextlost', e => {
     e.preventDefault();
     running = false;
-    if (rafId) cancelAnimationFrame(rafId);
+    if (rafId) win.cancelAnimationFrame(rafId);
   });
   cv.addEventListener('webglcontextrestored', () => {
     initGL();
-    if (window.DEV) acquireGpuTimer();     // ext + query died with the context
+    if (opts.dev) acquireGpuTimer();       // ext + query died with the context
     running = true;
     if (rm) draw(lastMs);
-    else rafId = requestAnimationFrame(step);
+    else rafId = win.requestAnimationFrame(step);
   });
   // The router talks to the shader through this handle: setTint nudges
   // the per-page atmosphere target (lerped inside draw); pulseWarp fires
   // the transition stir; frames exposes the monotonic draw tally so a view
   // swap's continuity is observable. reduced-motion never stirs.
-  window.dreambg = {
+  const handle = {
     setTint(v) { tintTarget = v; if (rm) { tintCur = v; draw(lastMs); } },
     pulseWarp() { if (!rm) warpStart = lastMs; },
     get frames() { return frameCount; },
     get tint() { return tintCur; },
-    get warp() { return lastWarp; }
+    get warp() { return lastWarp; },
+    stop() { running = false; if (rafId) win.cancelAnimationFrame(rafId); }
   };
   if (rm) draw(0);
-  else rafId = requestAnimationFrame(step);
-})();
+  else rafId = win.requestAnimationFrame(step);
+  return handle;
+}
+window.dreambg = mountDreambg(window, document.getElementById('dreambg'),
+                              { dev: window.DEV, switcher: true });
 """
 
 def page_shell(title, body, js):

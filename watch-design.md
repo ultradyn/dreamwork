@@ -75,8 +75,9 @@ carries a `+` command opener (steer the loop without a chat turn).
   tilt-shift focus and a curl-advection pinch; hue-only per-route tint,
   luminance-capped so text always wins; static under reduced-motion,
   absent without WebGL. The sampling domain is anchored to the window's
-  on-screen position and its phase to the wall clock, so adjacent windows
-  share one continuous, screen-pinned field. Hidden layer switcher: `l`
+  on-screen position at a world-fixed scale, and its phase to the wall
+  clock, so every window — including popped-out ones — is a viewport onto
+  one continuous, screen-pinned field. Hidden layer switcher: `l`
   (ignored inside text fields) / triple-click bottom-right.
 - Single ambient dark theme — intentional exception (overnight
   monitoring tool; human's stated dark preference).
@@ -126,7 +127,7 @@ text. A low-emphasis PiP glyph (`pipBtn`) sits after doc/review affordances
 (file + review headers, the dashboard reviews list, the composer); clicking it
 floats the target in an identity-headed window (`openPopout` → Document
 Picture-in-Picture, `window.open` fallback) that stays put while the main tab
-navigates. Views are pure builders returning `#view`'s innerHTML
+navigates and carries the same dreaming field (see Shader). Views are pure builders returning `#view`'s innerHTML
 (`buildDashboard`,
 `buildQuestions`, `buildFile`, `buildReview`); the router swaps them. Add a
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
@@ -218,10 +219,37 @@ also strictly opt-in — most state changes do **not** animate.
 
 Domain-warped fBm, four cheap passes on a low-res buffer (fractal → two
 tilt-shift blur passes → composite/tint/dither); luminance-capped far below
-the dim text so text always wins. Domain anchored to `screenX/screenY`
-(+ chrome estimate), phase from the UTC-day-wrapped wall clock — one shared
-world-space field across windows. Per-route `SEED`/`TINT`; transition `warp`
-pulse. Recoverable context loss (rebuild on restore). Hidden layer switcher
+the dim text so text always wins. Per-route `SEED`/`TINT`; transition `warp`
+pulse. Recoverable context loss (rebuild on restore).
+
+**One world, many viewports.** `mountDreambg(win, cv, opts)` is a mountable
+function, not an IIFE bound to the main document — it reads everything from
+the `win` it is handed, so any window can carry the field. The main page
+mounts it on `#dreambg` (`{dev, switcher: true}`); `openPopout` mounts it on
+every floated window (`mountPopoutBg`, after the fill, which assigns
+`body.innerHTML` and would otherwise wipe the canvas), and the popout wears
+the spawning view's tint. Three rules make "same screen position ⇒ same
+pixels" actually true, and each was a bug until it wasn't:
+
+- **The scale is a world constant** (`WORLD_SCALE = 2.3 / 900`, domain units
+  per CSS pixel), not `2.3 / innerHeight`. A per-window scale pins the
+  field's *origin* while letting each window pick its own *zoom*, so two
+  windows show one dream at two magnifications and the seam can never line
+  up. World-fixed scale also makes resizing reveal more of the field rather
+  than rescale it — consistent with dragging, which already pinned.
+- **The vertical anchor is negated and measured from the viewport's BOTTOM**
+  (`-(screenY + chrome + innerHeight)`), because `gl_FragCoord.y` counts up
+  from the viewport bottom while `screenY` counts down from the desktop top.
+  Adding the top edge instead slides the field the wrong way at double rate.
+- **The lens is per-window, deliberately.** The tilt-shift focus band and
+  the edge defocus stay in each window's own `uv` space: one shared world,
+  seen through each window's own lens. So blur can differ at a seam even
+  though the field beneath it matches exactly.
+
+`dev/capture/worldspace.mjs` and `popbg.mjs` prove this by freezing
+`Date.now()` (the field is time-varying, so two screenshots are never
+simultaneous otherwise) and comparing plates — across window heights, and
+across the main/popout document boundary. Hidden layer switcher
 for debugging — the hotkey is ignored inside text fields, and any switch
 (key or corner triple-click) shows a self-naming auto-fading toast
 ("background: <layer> — press l to cycle") so an accidental change is
