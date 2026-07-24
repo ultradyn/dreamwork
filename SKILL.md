@@ -246,6 +246,11 @@ if Max is away).
 - `maintenance` / `do maintenance` / `maintenance: <item>` — run the
   maintenance rotation now, regardless of backlog state; without an item
   named, `roll.py --no-backlog` can pick one.
+- `parallelize` (or "parallel" and similar) — dispatch subagents across
+  disjoint pending tasks where possible. Disjoint means no shared file
+  ownership (the delegation rule is the conflict test). Report what was
+  parallelized and what couldn't be, with why (ownership overlap,
+  human-gated).
 - `status` — current task, queue summary, recent completions, open
   questions from `.dreamwork/questions.md`.
 - `pause` / `resume` — TaskStop the heartbeat monitor / re-arm it.
