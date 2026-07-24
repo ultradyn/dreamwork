@@ -9,6 +9,7 @@ on its next tick. No other write paths exist.
 """
 
 import argparse
+import html
 import http.server
 import json
 import os
@@ -16,6 +17,7 @@ import random
 import subprocess
 import threading
 import time
+import urllib.parse
 import webbrowser
 
 # Design tokens + shared shell: every watch page renders through these,
@@ -44,6 +46,8 @@ STYLE = """<style>
   .git div { color:var(--dim); }
   .git .maint { color:var(--accent); }
   .dim { color:var(--dimmer); }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
   .qa { margin:.6rem 0 1rem; }
   .qa .qt { color:var(--lit); }
   .qa textarea { width:100%; background:var(--panel); color:var(--text);
@@ -84,7 +88,11 @@ const ageStr = mt => {
 const label = t => `<div class="label">${t}</div>`;
 const expand = (s, inner, cls='') =>
   `<details><summary class="${cls}">${s}</summary>${inner}</details>`;
-const preB = t => `<pre>${esc(t)}</pre>`;
+/* backticked repo-relative paths become /file links (zero agent burden) */
+const linkify = h => h.replace(
+  /`([\\w.-]+(?:\\/[\\w.-]+)+\\/?|[\\w-]+\\.[\\w]{1,8})`/g,
+  (m, p) => '`<a href="/file?p=' + encodeURIComponent(p) + '">' + p + '</a>`');
+const preB = t => `<pre>${linkify(esc(t))}</pre>`;
 function dreamBlock(d) {
   return expand(
     `${esc(d.name)}<span class="age" data-mt="${d.mtime}"></span>`,
@@ -448,7 +456,7 @@ SHADER_JS = """
 })();
 """
 
-def page(title, body, js):
+def page_shell(title, body, js):
     """Shared page shell. Contract: `body` opens `<div class="wrap">`
     (the shell closes it) so every watch page shares chrome and tokens."""
     return ('<!doctype html><html><head><meta charset="utf-8">'
@@ -457,7 +465,7 @@ def page(title, body, js):
             + '</script></div></body></html>')
 
 
-PAGE = page('dreamwork watch', BODY, APP_JS + SHADER_JS)
+PAGE = page_shell('dreamwork watch', BODY, APP_JS + SHADER_JS)
 
 
 def age_str(seconds):
@@ -629,6 +637,21 @@ def persistent_port(target):
 ANSWER_LOCK = threading.Lock()
 
 
+def resolve_confined(target, rel):
+    """Absolute path for `rel` iff it stays under target root, else None.
+
+    The confinement gate for every file-serving path (/file, review
+    artifacts). Pure; testable.
+    """
+    if not rel or rel.startswith(("/", "~")):
+        return None
+    full = os.path.realpath(os.path.join(target, rel))
+    root = os.path.realpath(target)
+    if full == root or not full.startswith(root + os.sep):
+        return None
+    return full
+
+
 def log_event(target, line):
     """One-line user-action summary for agents (.dreamwork/watch-events.log).
 
@@ -657,12 +680,24 @@ def make_handler(target, dev=False):
             self.wfile.write(data)
 
         def do_GET(self):
-            if self.path == "/":
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == "/":
                 self._send(page, "text/html")
-            elif self.path == "/data.json":
+            elif parsed.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
-            elif self.path == "/mtime":
+            elif parsed.path == "/mtime":
                 self._send(str(watched_mtime(target)), "text/plain")
+            elif parsed.path == "/file":
+                rel = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
+                full = resolve_confined(target, rel)
+                text = read_text(full) if full else None
+                if text is None:
+                    self.send_error(404)
+                    return
+                body = ('<div class="wrap"><header>' + html.escape(rel)
+                        + '</header><pre>' + html.escape(text) + '</pre>')
+                self._send(page_shell(html.escape(rel), body, ""),
+                           "text/html")
             else:
                 self.send_error(404)
 

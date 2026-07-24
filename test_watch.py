@@ -94,6 +94,17 @@ class TestCollector(unittest.TestCase):
             QUESTIONS, "No such question", "x", "2026-07-25")
         self.assertFalse(matched)
 
+    def test_resolve_confined(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            ok = watch.resolve_confined(d, "DREAMWORK.md")
+            self.assertTrue(ok and ok.endswith("DREAMWORK.md"))
+            self.assertIsNone(watch.resolve_confined(d, "../etc/passwd"))
+            self.assertIsNone(watch.resolve_confined(d, "/etc/passwd"))
+            self.assertIsNone(watch.resolve_confined(d, "~x"))
+            self.assertIsNone(watch.resolve_confined(d, ""))
+            self.assertIsNone(watch.resolve_confined(d, "."))
+
     def test_log_event_appends(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
