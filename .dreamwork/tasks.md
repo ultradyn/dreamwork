@@ -24,6 +24,8 @@ Next id: **106**
   task · 50m · do with #107; breadcrumbs dissolve, survivors slide
 - **#111** — Answered questions distinct and collapsed by default · P2 ·
   task · 30m · human-asked; awaiting-fold probably stays open
+- **#113** — Awaiting-fold looks alive; every state transition covered ·
+  P2 · task · 45m · do with #111; states encode who it waits on
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
 - **#103** — One text input for answer and note, mode group + flush send ·
