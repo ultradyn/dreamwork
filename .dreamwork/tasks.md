@@ -16,6 +16,8 @@ Next id: **106**
   P1 · bug · 25m · human-reported; reads as damaged text
 - **#107** — Page width jumps navigating to/from /review · P1 · bug ·
   30m · human-reported; `body.review` resizes outside the dissolve
+- **#108** — The `+` opener can be clipped off the left edge · P1 · bug ·
+  25m · human-reported; clamp it to a visible leftmost position
 - **#103** — One text input for answer and note, mode group + flush send ·
   P2 · task · 50m
 - **#104** — Questions fade out, neighbours slide into place · P2 · task ·
