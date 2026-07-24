@@ -50,6 +50,19 @@ pins *how*; stages land as separate committed increments.
    over a directory), `--no-open` default in tests; README note in
    SKILL.md commands or durable-state section pointing at watch.py.
 
+## Design contract (2026-07-25, per web-artisan-core, minimalized)
+
+- Mode: Docs/Refined — a quiet tool page, "terminal readout" not product.
+- Thesis: glanceable status; **liveness is the design** — every number
+  that can drift without a disk change (dream ages, updated-ago) ticks
+  client-side every second; everything else re-renders on mtime change.
+- Type: one mono stack, two sizes. Geometry: no cards/borders/pills;
+  dim uppercase section labels; max-width 72ch.
+- Color: near-black bg, two grays, ONE accent (indigo) spent only on
+  maintenance-marker commits and a nonzero open-questions count.
+- Single ambient dark theme — intentional exception (overnight
+  monitoring tool; human's stated dark preference).
+
 ## Non-goals
 
 - No write/interact endpoints (steering stays in the session).

@@ -18,72 +18,82 @@ import webbrowser
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <title>dreamwork watch</title>
 <style>
-  body { background:#0b0f19; color:#f3f4f6; margin:0; padding:2rem;
-         font-family:'JetBrains Mono',ui-monospace,monospace; }
-  .wrap { max-width:900px; margin:0 auto; }
-  h1 { font-size:1.3rem; background:linear-gradient(135deg,#6366f1,#a855f7);
-       -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .meta { color:#9ca3af; font-size:.8rem; margin-bottom:1.5rem; }
-  .badge { display:inline-block; padding:.1rem .55rem; border-radius:999px;
-           font-size:.75rem; background:#1e293b; color:#a5b4fc;
-           border:1px solid #334155; margin-left:.4rem; }
-  .badge.warn { background:#3b1e1e; color:#fca5a5; border-color:#7f1d1d; }
-  section { background:#111827; border:1px solid #1f2937; border-radius:16px;
-            padding:1rem 1.25rem; margin-bottom:1.25rem; }
-  h2 { font-size:.95rem; color:#c7d2fe; margin:.2rem 0 .8rem; }
-  details { margin:.35rem 0; border-left:3px solid #312e81; padding-left:.7rem; }
-  summary { cursor:pointer; color:#e0e7ff; }
-  summary .age { color:#9ca3af; font-size:.75rem; margin-left:.5rem; }
-  pre { white-space:pre-wrap; color:#cbd5e1; font-size:.8rem;
-        background:#0b0f19; border-radius:8px; padding:.75rem; }
-  .git div { font-size:.8rem; color:#9ca3af; padding:.08rem 0; }
-  .git .maint { color:#a855f7; }
-  .dim { color:#6b7280; font-size:.8rem; }
+  body { background:#0b0f19; color:#d1d5db; margin:0; padding:2.5rem 1rem;
+         font-family:ui-monospace,'JetBrains Mono',monospace; font-size:.8rem; }
+  .wrap { max-width:72ch; margin:0 auto; }
+  header { color:#f3f4f6; font-size:1rem; margin-bottom:.25rem; }
+  #meta { color:#6b7280; margin-bottom:2rem; }
+  #meta .q { color:#a5b4fc; }
+  .label { color:#6b7280; text-transform:uppercase; letter-spacing:.08em;
+           font-size:.7rem; margin:1.6rem 0 .5rem; }
+  details { margin:.25rem 0; }
+  summary { cursor:pointer; color:#e5e7eb; list-style:none; }
+  summary::before { content:"+ "; color:#6b7280; }
+  details[open] > summary::before { content:"- "; }
+  .age { color:#6b7280; margin-left:.5rem; }
+  pre { white-space:pre-wrap; color:#9ca3af; margin:.4rem 0 .8rem 1ch;
+        border-left:1px solid #1f2937; padding-left:1ch; }
+  .git div { color:#6b7280; }
+  .git .maint { color:#a5b4fc; }
+  .dim { color:#4b5563; }
 </style></head><body><div class="wrap">
-<h1>dreamwork watch</h1>
-<div class="meta" id="meta">loading…</div>
+<header>dreamwork watch</header>
+<div id="meta">loading…</div>
 <div id="sections"></div>
 <script>
 const esc = t => { const d = document.createElement('div');
                    d.textContent = t ?? ''; return d.innerHTML; };
+const ageStr = mt => {
+  let s = Math.max(0, Date.now()/1000 - mt);
+  for (const [u, div] of [["d",86400],["h",3600],["m",60]])
+    if (s >= div) return `${Math.floor(s/div)}${u}`;
+  return `${Math.floor(s)}s`;
+};
 function dreamBlock(d) {
-  return `<details><summary>${esc(d.name)}<span class="age">${esc(d.age)} old</span></summary><pre>${esc(d.content)}</pre></details>`;
+  return `<details><summary>${esc(d.name)}<span class="age" data-mt="${d.mtime}"></span></summary><pre>${esc(d.content)}</pre></details>`;
 }
+let data = null, fetchedAt = 0;
 function render(d) {
-  const qb = d.open_questions > 0
-    ? `<span class="badge warn">${d.open_questions} open question${d.open_questions>1?'s':''}</span>`
-    : `<span class="badge">questions clear</span>`;
+  const q = d.open_questions > 0
+    ? ` · <span class="q">${d.open_questions} open question${d.open_questions>1?'s':''}</span>`
+    : '';
   document.getElementById('meta').innerHTML =
-    `${esc(d.target)} · ${esc(d.files['skill-version'])} · ${esc(d.generated)} ${qb}`;
+    `${esc(d.target)} · ${esc(d.files['skill-version'])} · <span id="upd"></span>${q}`;
   let h = '';
-  h += `<section><h2>Dreams (${d.dreams.length})</h2>` +
+  h += `<div class="label">dreams (${d.dreams.length})</div>` +
        (d.dreams.map(dreamBlock).join('') || '<div class="dim">none active</div>') +
        (d.dreams_archive.length
          ? `<details><summary class="dim">archive (${d.dreams_archive.length})</summary>` +
-           d.dreams_archive.map(dreamBlock).join('') + `</details>` : '') +
-       `</section>`;
-  h += `<section><h2>Files</h2>` +
+           d.dreams_archive.map(dreamBlock).join('') + `</details>` : '');
+  h += `<div class="label">files</div>` +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
          `<details><summary>${n}</summary><pre>${esc(d.files[n])}</pre></details>`
-       ).join('') + `</section>`;
-  h += `<section><h2>Status</h2>` + (d.status
-        ? `<pre>${esc(JSON.stringify(d.status, null, 2))}</pre>`
-        : `<div class="dim">no status.json yet (loop writes it each tick once stage 3 lands)</div>`) +
-       `</section>`;
-  h += `<section class="git"><h2>Recent commits</h2>` +
+       ).join('');
+  if (d.status)
+    h += `<div class="label">status</div><pre>${esc(JSON.stringify(d.status, null, 2))}</pre>`;
+  h += `<div class="label">commits</div><div class="git">` +
        d.git.map(l => `<div class="${l.includes('dreamwork(maintain:') ? 'maint' : ''}">${esc(l)}</div>`).join('') +
-       `</section>`;
+       `</div>`;
   document.getElementById('sections').innerHTML = h;
+  ages();
+}
+function ages() {
+  document.querySelectorAll('.age[data-mt]').forEach(el =>
+    el.textContent = ageStr(parseFloat(el.dataset.mt)) + ' old');
+  const upd = document.getElementById('upd');
+  if (upd) upd.textContent =
+    `updated ${ageStr(fetchedAt/1000)} ago`;
 }
 let last = null;
 async function tick() {
   try {
     const m = await (await fetch('/mtime')).text();
-    if (m !== last) { last = m;
-      render(await (await fetch('/data.json')).json()); }
+    if (m !== last) { last = m; fetchedAt = Date.now();
+      data = await (await fetch('/data.json')).json(); render(data); }
   } catch (e) { /* server restarting; retry */ }
   setTimeout(tick, 2000);
 }
+setInterval(ages, 1000);
 tick();
 </script></div></body></html>
 """
@@ -112,6 +122,7 @@ def list_dreams(dirpath, now):
         p = os.path.join(dirpath, name)
         if name.endswith(".md") and os.path.isfile(p):
             out.append({"name": name,
+                        "mtime": os.path.getmtime(p),
                         "age": age_str(now - os.path.getmtime(p)),
                         "content": read_text(p)})
     return out
