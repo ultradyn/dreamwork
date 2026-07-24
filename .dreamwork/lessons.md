@@ -20,3 +20,9 @@ source dream. Not a log — only things that should change future behavior.
   driver, not your shader. Add a webglcontextlost/restored rebuild handler
   and reload-on-loss capture; measure pixels rather than trusting the eye.
   (2026-07-25-0445-dreambg-shader-tilt-shift)
+- For morph/dissolve transitions: put ALL softening (blur + displacement)
+  inside ONE SVG filter and drive its attrs per-frame from rAF; keep only
+  opacity/transform on CSS transitions — you can't CSS-tween a `filter`
+  containing a non-interpolable `url(#…)`. Clear the inline filter at rest
+  for a crisp, zero-cost settled state. Cost scales with filtered-layer
+  area, not turbulence octaves. (2026-07-25-0623-dream-dissolve-transition)
