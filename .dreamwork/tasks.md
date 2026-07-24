@@ -11,8 +11,6 @@ Next id: **98**
 - **#91** — Composer tweaks, the five human items · P1 · task · 90m ·
   *in progress (dreamer-composer)* · spec + code pointers:
   `docs/handoff-2026-07-25-beauty.md`
-- **#97** — Task queue must survive a session restart · P1 · bug · 45m ·
-  *in progress (coordinator)* · this ledger is the fix
 - **#77** — Cross-group morph when a question changes section · P2 · task ·
   45m
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
@@ -32,6 +30,7 @@ Next id: **98**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. #63-#68, #71, #72, #74, #75,
+Pruned in grooming; git is the real ledger. **#97** durable task ledger
+(2026-07-25, this file). #63-#68, #71, #72, #74, #75,
 #78, #79, #81-#85, #87-#89, #93, #94 landed 2026-07-24/25 (watch webui
 batches, plugin docs, coherence fixes).
