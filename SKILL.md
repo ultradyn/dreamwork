@@ -116,8 +116,10 @@ fold them first: act on the answer, then move the entry to Answered.
    through: goal alignment first — does DREAMWORK.md still reflect what
    the human wants and what the loop has learned? fold in any drift; then
    self-review recent commits for introduced errors; test-coverage gaps;
-   docs freshness — the repo's own docs, `.dreamwork/docs/`, and the
-   doc-map alike (keeping the repo's docs current is loop work);
+   docs freshness — the repo's own docs, `.dreamwork/docs/`, the
+   doc-map, and any reference docs the target ships for others to
+   consume, alike (keeping the repo's docs current is loop work; the
+   doc-map's rows say what that covers);
    task-list grooming (dedupe, reprioritize, prune stale); dream grooming (archive dreams whose ideas and lessons are
    captured); dogfood reflection — friction with the loop itself: fix
    small, file the rest. If truly nothing: idle quietly until the next tick — no
