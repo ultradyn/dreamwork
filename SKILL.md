@@ -222,7 +222,12 @@ results, no ceremony.
   enough context to answer cold. Answers fold into DREAMWORK.md or tasks
   and the entry moves to a short Answered section (pruned in grooming).
   Entries thread: timestamped follow-ups accumulate inside an entry and
-  folds move the whole thread. A follow-up landing on an Answered entry
+  folds move the whole thread. **Whose words they are is never in
+  doubt**: a human's note is tagged `- **Note (human, via <channel>,
+  <ts>):**`, the loop's own is `- **Follow-up (loop, <ts>):**`. Mixing
+  what the human said with what the loop wrote eventually misleads one
+  of them — and the loop is the one that would then act on its own
+  invention as if it were an instruction. A follow-up landing on an Answered entry
   is a potential amendment — re-evaluate the fold: it may reopen the
   question or redirect in-flight work.
 - `.dreamwork/review/` — rich review artifacts: when something sizeable
