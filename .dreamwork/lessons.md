@@ -124,3 +124,36 @@ source dream. Not a log — only things that should change future behavior.
   sharing an addressing class turns a guaranteed lookup into a
   first-match guess that stays correct until the container holds two of
   them, then fails silently. (spike #115, docs/spikes/)
+- A UI symptom carries no information about which LAYER produced it:
+  reproduce the input before believing the diagnosis in the report. Three
+  reports today named the wrong layer, each confidently and reasonably; all
+  three were falsified in under five minutes.
+  (2026-07-25-1010-question-surface)
+- When the READER learns a new way to name something, go check the WRITER
+  still finds it by that name — `append_subbullet` matched titles by first
+  source line, so a wrapped-title entry silently dropped every /answer and
+  /comment with no error anywhere. Nothing surfaces a silent write failure
+  on the human's own input channel. (2026-07-25-1010-question-surface)
+- A measure-then-write in rAF always paints one frame behind a CSS
+  transition; if a constraint must hold every frame, express it in CSS.
+  `(100vw - 100%)/2` is the gutter, because `100%` is the containing block.
+  (2026-07-25-1010-question-surface)
+- Instrument bugs outnumber feature bugs: Range rects are per inline BOX not
+  per line, getBoundingClientRect includes transforms (use offsetWidth for
+  "did it re-lay-out"), and a page-wide selector measures the page rather
+  than the component. Budget for debugging the instrument.
+  (2026-07-25-1010-question-surface)
+- Prefer an A/B over an absolute threshold for a layout metric, and sweep the
+  parameter: the reflow win peaks in the MIDDLE of a width sweep, so any
+  single width would have made the fix look trivial or heroic.
+  (2026-07-25-1010-question-surface)
+- A guard that reads mutable content is testing the content; its false reds
+  train you to ignore it. Freeze a fixture, and reset it between guards that
+  write, or the first writer eats what the next one needs.
+  (2026-07-25-1010-question-surface)
+- A test count that changes for no reason you authored is a state signal, not
+  a curiosity — 63 vs 55 was how a wrong-branch checkout got noticed.
+  (2026-07-25-1010-question-surface)
+- Give a list row two identities when writes and animation need different
+  ones: a positional key addresses the entry, a stable id IS the entry and
+  survives it moving between sections. (2026-07-25-1010-question-surface)
