@@ -177,6 +177,10 @@ results, no ceremony.
   not durable — every user-facing ask gets an entry here when made, with
   enough context to answer cold. Answers fold into DREAMWORK.md or tasks
   and the entry moves to a short Answered section (pruned in grooming).
+  Entries thread: timestamped follow-ups accumulate inside an entry and
+  folds move the whole thread. A follow-up landing on an Answered entry
+  is a potential amendment — re-evaluate the fold: it may reopen the
+  question or redirect in-flight work.
 - `.dreamwork/review/` — rich review artifacts: when something sizeable
   or important needs the human's eyes (a plan, a design, an analysis),
   generate a self-contained HTML artifact (inline everything — charts,
