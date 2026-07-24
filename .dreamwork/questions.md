@@ -2,7 +2,11 @@
 
 ## Open
 
-(none)
+- **2026-07-25 — ud-dreamtask design review.** Incubation plan is at
+  `.dreamwork/docs/plans/ud-dreamtask.md` with four open design
+  questions (composition, heartbeat cadence, state-dir naming, guardrail
+  inheritance — recs inline). Build waits on your read; answerable here,
+  in-session, or via the watch dashboard.
 
 ## Answered
 
