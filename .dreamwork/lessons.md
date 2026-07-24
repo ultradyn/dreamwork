@@ -67,22 +67,6 @@ source dream. Not a log — only things that should change future behavior.
   cite from docs, plans, and commit messages. (coordinator, 2026-07-25 restart)
 - `git add -A` while a dreamer holds the same tree silently commits its
   in-flight edits — stage by explicit path whenever work is parallel.
-- Mounting a SECOND instance of a surface (second window, second render) is
-  the cheapest audit of the first: it falsifies coordinate, normalisation and
-  sign assumptions that are unfalsifiable while N=1. Budget a duplication
-  feature for finding bugs in the original. (2026-07-25-0846-composer-batch)
-- A passing pixel/visual comparison proves nothing until you show it FAILS on
-  the old code — temporarily restore the bug and re-run. Also assert the plate
-  has detail, or "identical" is satisfied by "identically blank".
-  (2026-07-25-0846-composer-batch)
-- To compare a time-varying visual across captures that can never be
-  simultaneous (two frames, two documents), freeze the clock via
-  `addInitScript` overriding `Date.now` rather than trying to synchronise
-  them. (2026-07-25-0846-composer-batch)
-- `position:fixed` is NOT viewport-relative when an ancestor has
-  `transform`/`perspective`/`filter` — that ancestor becomes the containing
-  block, so rect-derived coordinates need its origin subtracted.
-  (2026-07-25-0846-composer-batch)
   (coordinator, 2026-07-25 restart)
 - Durable shared state wants a single writer: naming an owner is cheap and
   invisible to omit, and the race only appears under fan-out — when nobody
@@ -107,3 +91,19 @@ source dream. Not a log — only things that should change future behavior.
   turning "the ledger" into a concept, the rules resting on it had to be
   re-read — one had quietly started saying forge issues could never be
   selected. (2026-07-25-0832-ledger-coherence, final pass)
+- Mounting a SECOND instance of a surface (second window, second render) is
+  the cheapest audit of the first: it falsifies coordinate, normalisation and
+  sign assumptions that are unfalsifiable while N=1. Budget a duplication
+  feature for finding bugs in the original. (2026-07-25-0846-composer-batch)
+- A passing pixel/visual comparison proves nothing until you show it FAILS on
+  the old code — temporarily restore the bug and re-run. Also assert the plate
+  has detail, or "identical" is satisfied by "identically blank".
+  (2026-07-25-0846-composer-batch)
+- To compare a time-varying visual across captures that can never be
+  simultaneous (two frames, two documents), freeze the clock via
+  `addInitScript` overriding `Date.now` rather than trying to synchronise
+  them. (2026-07-25-0846-composer-batch)
+- `position:fixed` is NOT viewport-relative when an ancestor has
+  `transform`/`perspective`/`filter` — that ancestor becomes the containing
+  block, so rect-derived coordinates need its origin subtracted.
+  (2026-07-25-0846-composer-batch)
