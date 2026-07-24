@@ -108,7 +108,12 @@ const inline = await p.evaluate(() => ({
   strongs: [...document.querySelectorAll('.md strong')].map(s => s.textContent).slice(0, 4),
   codes: [...document.querySelectorAll('.md code')].map(s => s.textContent).slice(0, 4),
   ems: [...document.querySelectorAll('.md em')].map(s => s.textContent).slice(0, 3),
-  literalStars: (document.querySelector('#view').innerText.match(/\*\*/g) || []).length,
+  // asterisks INSIDE a code span are content, not an unrendered marker
+  literalStars: (() => {
+    const v = document.querySelector('#view').cloneNode(true);
+    v.querySelectorAll('code, pre').forEach(c => c.remove());
+    return (v.innerText.match(/\*\*/g) || []).length;
+  })(),
   newlinesInParas: [...document.querySelectorAll('.md p')]
             .filter(e => e.textContent.includes('\n')).length,
   follows: [...document.querySelectorAll('.follow')].map(f => f.textContent),

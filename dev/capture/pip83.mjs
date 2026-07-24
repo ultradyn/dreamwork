@@ -1,9 +1,10 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
-const OUT=process.argv[2]; const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const OUT = process.argv[2], PORT = process.argv[3] || '39887';
+const BASE = `http://127.0.0.1:${PORT}`; const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT,{recursive:true});
 const b=await chromium.launch({args:['--use-gl=swiftshader','--enable-webgl']});
 const p=await b.newPage({viewport:{width:1000,height:820}});
-await p.goto('http://127.0.0.1:39890/',{waitUntil:'networkidle'}); await sleep(1200);
+await p.goto(BASE + '/',{waitUntil:'networkidle'}); await sleep(1200);
 const dash = await p.evaluate(()=>({ pip: document.querySelectorAll('.pipbtn').length,
   reviewsHavePip: !!document.querySelector('#sections .pipbtn') }));
 await p.screenshot({path:`${OUT}/dashboard-pip.png`});
@@ -23,9 +24,9 @@ if (popup) {
   await popup.screenshot({path:`${OUT}/popout-doc.png`});
 }
 // file view pip + review view pip present?
-await p.goto('http://127.0.0.1:39890/file?p=.dreamwork/lessons.md',{waitUntil:'networkidle'}); await sleep(600);
+await p.goto(BASE + '/file?p=.dreamwork/lessons.md',{waitUntil:'networkidle'}); await sleep(600);
 const filePip = await p.evaluate(()=>!!document.querySelector('#meta .pipbtn'));
-await p.goto('http://127.0.0.1:39890/review?p=ud-dreamwork-github-review.html',{waitUntil:'networkidle'}); await sleep(600);
+await p.goto(BASE + '/review?p=ud-dreamwork-github-review.html',{waitUntil:'networkidle'}); await sleep(600);
 const reviewPip = await p.evaluate(()=>!!document.querySelector('#meta .pipbtn'));
 console.log('dashboard: '+JSON.stringify(dash));
 console.log('popout: '+JSON.stringify(popInfo));

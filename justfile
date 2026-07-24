@@ -12,22 +12,23 @@ pytest:
 # the structural half — real browser, real server, real DOM. Only scripts
 # that exit non-zero belong here; the rest of dev/capture/ prints for a
 # human and gates nothing. A guard joins this list when its feature lands.
+#
+# Every guard runs against a COPY of dev/capture/fixture, never against this
+# repo. Two things follow, and both were #117:
+#   - content is frozen, so a red light means the code broke rather than
+#     that the loop folded the last awaiting-fold question overnight
+#   - guards may WRITE (POST /answer, /comment) without touching the real
+#     questions.md, which is what kept the most valuable ones ungated
+# Every script takes (OUT, PORT). One contract; adding a second doubles the
+# confusion and already cost one falsely-reported regression.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    # Gated: content-independent, so a red here means the code broke.
-    GUARDS="headertravel reflow"
-    # NOT gated yet, and why — silence about a gap reads as coverage:
-    #   qacard  asserts all three question states exist on /questions, so it
-    #           fails whenever the live questions.md happens not to hold one.
-    #           A guard that depends on mutable content tests the content.
-    #   popbg   takes (BASE_URL, OUT); every other script takes (OUT, PORT).
-    # Both need a fixture target and one argv contract — that is the rest
-    # of #117, and it belongs to whoever owns dev/capture/.
-    UNGATED="qacard popbg"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
-    python3 watch.py --target . --port {{port}} >"$OUT/server.log" 2>&1 &
+    cp -r dev/capture/fixture "$OUT/target"
+    python3 watch.py --target "$OUT/target" --port {{port}} >"$OUT/server.log" 2>&1 &
     SRV=$!
     trap 'kill $SRV 2>/dev/null; rm -rf "$OUT"' EXIT
     for _ in $(seq 1 40); do
@@ -40,6 +41,11 @@ guards port="39899":
     fi
     fail=0
     for g in $GUARDS; do
+      # Reset the target before EVERY guard. Several of them answer questions
+      # and leave notes, so without this the first writer eats the fixture the
+      # next one needs and you get a red light that is really a run-order bug.
+      # The server re-reads from disk per request, so no restart is needed.
+      rm -rf "$OUT/target" && cp -r dev/capture/fixture "$OUT/target"
       if node "dev/capture/$g.mjs" "$OUT/$g" {{port}} >"$OUT/$g.log" 2>&1; then
         echo "  PASS $g"
       else
@@ -52,7 +58,6 @@ guards port="39899":
     if [ "$fail" -ne 0 ] && grep -q "Cannot find module" "$OUT"/*.log 2>/dev/null; then
       echo "guards: playwright not resolvable — the structural half did NOT run"
     fi
-    echo "  not gated: $UNGATED (see the justfile comment — #117)"
     exit $fail
 
 # serve the dashboard on the persisted port, edit-and-see

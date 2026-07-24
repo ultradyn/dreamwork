@@ -4,8 +4,8 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 // Captures a navigation at several mid-transition timestamps so motion can be
 // judged across frames, plus a settled shot. Two scenarios: dashboard->questions
 // and questions->file. Records frames (continuity), warp pulse, ghost presence.
-const BASE = process.argv[2] || 'http://127.0.0.1:39890';
-const OUT = process.argv[3] || '/tmp/shots-beauty/iterX';
+const OUT = process.argv[2], PORT = process.argv[3] || '39887';
+const BASE = `http://127.0.0.1:${PORT}`;
 const OFFSETS = [150, 400, 800, 1200];   // ms after nav to snapshot
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

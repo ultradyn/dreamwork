@@ -3,8 +3,8 @@
 // and that the field matches the main window when the two are at the same
 // screen position (the world-space anchoring contract from #74).
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
-const BASE = process.argv[2] || 'http://127.0.0.1:39885';
-const OUT = process.argv[3] || '/tmp/shots-popbg';
+const OUT = process.argv[2], PORT = process.argv[3] || '39887';
+const BASE = `http://127.0.0.1:${PORT}`;
 import { mkdirSync } from 'node:fs';
 mkdirSync(OUT, { recursive: true });
 const sleep = ms => new Promise(r => setTimeout(r, ms));

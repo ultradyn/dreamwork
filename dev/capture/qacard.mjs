@@ -20,9 +20,10 @@ const SHAPE = `(card) => ({
   cls: card.className,
   key: card.dataset.qkey || null,
   hasTitle: !!card.querySelector(':scope > .qt'),
-  hasNoteBox: !!card.querySelector(':scope > .notewrap .notebox'),
-  noteId: (card.querySelector(':scope > .notewrap .notebox') || {}).id || null,
-  hasAnswerBox: !!card.querySelector(':scope > textarea[id^=qa]'),
+  hasInput: !!card.querySelector(':scope > .qcompose .qfield textarea'),
+  inputId: (card.querySelector(':scope > .qcompose textarea') || {}).id || null,
+  modes: [...card.querySelectorAll(':scope > .qcompose .qmode')]
+           .map(b => b.dataset.mode),
   hasAnsTag: !!card.querySelector(':scope > .anstag'),
   order: [...card.children].map(c => c.className || c.tagName.toLowerCase())
 })`;
@@ -55,18 +56,19 @@ if (title) {
 const byState = s => qs.filter(c => c.cls.includes(s));
 const open = byState('open'), awaiting = byState('awaiting'), folded = byState('folded');
 const sameShape = (a, b2) => JSON.stringify(a.order) === JSON.stringify(b2.order) &&
-  a.hasTitle === b2.hasTitle && a.hasNoteBox === b2.hasNoteBox &&
-  a.hasAnswerBox === b2.hasAnswerBox && a.cls === b2.cls;
+  a.hasTitle === b2.hasTitle && a.hasInput === b2.hasInput &&
+  JSON.stringify(a.modes) === JSON.stringify(b2.modes) && a.cls === b2.cls;
 
 const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 ok('no page errors', errs.length === 0);
 ok('all three states present on /questions',
    open.length > 0 && awaiting.length > 0 && folded.length > 0);
 ok('every card is a .qa with a data-qkey', qs.every(c => c.key));
-ok('every card carries a note box keyed to itself',
-   qs.every(c => c.hasNoteBox && c.noteId === 'nb' + c.key));
-ok('open cards (and only open cards) have an answer box',
-   qs.every(c => c.hasAnswerBox === c.cls.includes('open')));
+ok('every card carries ONE input, keyed to itself (#103)',
+   qs.every(c => c.hasInput && c.inputId === 'qi' + c.key));
+ok('a card that can be answered offers both modes; a folded one does not',
+   qs.every(c => JSON.stringify(c.modes) ===
+     (c.cls.includes('folded') ? '[]' : '["answer","note"]')));
 ok('awaiting cards (and only awaiting) show the answered tag',
    qs.every(c => c.hasAnsTag === c.cls.includes('awaiting')));
 ok('folded entries are keyed a<n>, open/awaiting o<n>',

@@ -7,8 +7,8 @@
 // DIFFERENT heights must show the SAME pixels.
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
-const BASE = process.argv[2] || 'http://127.0.0.1:39885';
-const OUT = process.argv[3] || '/tmp/shots-world';
+const OUT = process.argv[2], PORT = process.argv[3] || '39887';
+const BASE = `http://127.0.0.1:${PORT}`;
 mkdirSync(OUT, { recursive: true });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });

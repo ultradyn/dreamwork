@@ -79,12 +79,16 @@ for (const reduced of [false, true]) {
 
 // #108 at rest, on every route, in a window narrow enough to kill the gutter
 const nb = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
+// ask the target what artifact it has rather than naming one: the guard runs
+// against a fixture, and hardcoding a filename ties it back to live content
+const REVIEW = encodeURIComponent(
+  (await (await fetch(`${BASE}/data.json`)).json()).reviews[0].name);
 const edges = [];
 for (const w of [1500, 1000, 720, 520]) {
   const p = await nb.newPage({ viewport: { width: w, height: 800 } });
   for (const [route, url] of [['dashboard', '/'], ['questions', '/questions'],
                               ['file', '/file?p=DREAMWORK.md'],
-                              ['review', '/review?p=goal-hierarchies.html']]) {
+                              ['review', '/review?p=' + REVIEW]]) {
     await p.goto(BASE + url, { waitUntil: 'networkidle' }); await sleep(500);
     const r = await p.evaluate(() => {
       const b = document.getElementById('cmdplus').getBoundingClientRect();

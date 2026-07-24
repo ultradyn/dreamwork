@@ -1,6 +1,6 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
-const BASE = process.argv[2] || 'http://127.0.0.1:39890';
-const OUT = process.argv[3] || '/tmp/shots-review';
+const OUT = process.argv[2], PORT = process.argv[3] || '39887';
+const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync } from 'node:fs';
 mkdirSync(OUT, { recursive: true });
