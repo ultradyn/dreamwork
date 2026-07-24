@@ -84,11 +84,50 @@ that change; it is a gift from it.
 5. Skill side (coordinator): the review-artifact convention in SKILL.md
    becomes "write a fragment"; migration entry.
 
-## Open question for the human
+## Answered by measurement, not argument (#115 spike)
 
-Nothing blocking. One worth raising when he next looks: should the
-**dashboard's own pages** eventually render through the same component
-vocabulary, or does it stay artifact-only? Rec: artifact-only for now —
-the page has its own factories (`qaCard`, `pageHeader`) that predate
-this and work; unifying them is a bigger change than it looks and would
-be a poor use of the first version.
+The open question here used to be "should the dashboard's own pages
+render through this vocabulary too?", with my guess that unifying them
+was "a bigger change than it looks". Max asked for a real number instead
+of a guess. Findings:
+`.dreamwork/docs/spikes/2026-07-25-component-unification.md`.
+
+**The answer is split, and lumping the two together was the mistake in
+the question.**
+
+- **`pageHeader` → the vocabulary's `heading`: do it.** +37/−21, zero
+  test or guard changes, page renders identically. The dashboard's
+  header and an artifact's title were the same component under two
+  names; the `+` opener is just a gutter slot an artifact leaves empty.
+  It is a rename, not a refactor.
+- **`qaCard`: leave it.** +45/−14 plus guard changes, and four of those
+  CSS lines exist only to *undo* defaults the borrowed components bring
+  — a component whose context has to unsay it is forked with extra
+  steps, and that recurs for every future borrow.
+- **The obstacle is specific, and not what I guessed.** I assumed the
+  vocabulary would have nothing to say about behaviour. Wrong: static
+  components sit inside an interactive card fine, and
+  `holdRerenderUntil`, index keying and the submit handlers never touch
+  the markup. The real problem is that `sendAnswer()` finds its FLIP
+  hero with `card.querySelector('.anstext')` — that class is an
+  **address, not a style hook**, and a shared vocabulary class cannot
+  safely be both.
+- **The asymmetry that settles it**: the components `qaCard` could not
+  use are exactly the three that justify the vocabulary (`chain`,
+  `compare`, `decision`). The ones it could use are trivially shared
+  anyway. Arguing a design in prose and diagrams, and operating a loop,
+  overlap only in furniture.
+
+Two corrections to make **before** stage 2 ships, both found by looking
+at the render rather than the markup:
+
+- `compare` is two components under one name. Decision rows want a label
+  per cell; a comparison table wants the header pair once. The spike's
+  emitter stutters its header three times, visibly wrong. Split it, or
+  give it `headers: 'once' | 'per-row'`.
+- `compare`'s `point` flag accents the column label; it should accent
+  the cell.
+
+Stage 1 is confirmed cheap: `wrap_fragment()` is ~15 lines plus a
+three-line branch on `/reviewraw`, and a fragment emitted purely from
+the component functions renders correctly.

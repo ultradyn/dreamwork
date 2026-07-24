@@ -29,11 +29,8 @@ Next id: **106**
   P2 · task · 45m · do with #111; states encode who it waits on
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
-- **#115** — Spike: cost of unifying qaCard/pageHeader onto the
-  vocabulary · P2 · experiment · 60m · *in progress (spike-components,
-  worktree `spike/components`)* · measures a claim I made in #112's plan
-  · goal: know the real cost before committing to one presentation
-  system ← "the dashboard is how you check on it and steer it"
+- **#117** — `just test` green while the real structural guards fail ·
+  P1 · bug · 45m · found by #115; a page change can be green and broken
 - **#103** — One text input for answer and note, mode group + flush send ·
   P2 · task · 50m
 - **#104** — Questions fade out, neighbours slide into place · P2 · task ·
@@ -64,7 +61,9 @@ Next id: **106**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#107 #108 #110** the
+Pruned in grooming; git is the real ledger. **#115** the component-cost
+spike — split verdict, findings in `docs/spikes/` (2026-07-25).
+**#107 #108 #110** the
 travelling heading, the ghost-pinned width glide, the clamped opener
 (2026-07-25, 3f786fc). **#102 #106** prose reflow and the sub-bullet
 parser fix (d14c7b3). **#105** one qaCard for all
