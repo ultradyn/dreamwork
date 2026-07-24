@@ -57,9 +57,9 @@ approval. Real user messages always take priority over the loop.
 - **Mid-task** → checkpoint: still on track? Past the ~20-minute cap? (Land a
   coherent point, commit, split the remainder into a new task.) Did the last
   change introduce an error? Look before continuing.
-- **Task just finished** → reflect and verify: re-read the diff, run the
-  tests, commit the increment, mark the task completed. Then select the next
-  task.
+- **Task just finished** → reflect and verify (checklist: `reflection.md`
+  in this skill's directory): re-read the diff, run the tests, commit the
+  increment, mark the task completed. Then select the next task.
 - **Idle** → run the selection algorithm below.
 
 ## Selecting the next task
