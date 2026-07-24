@@ -11,7 +11,10 @@ in the target's DREAMWORK.md, e.g.:
 Output contract: the LAST line is always the machine-readable pick
 ("backlog" or "maintenance: <item>"). Above it, a human-friendly breakdown
 of raw rolls and probability gates (suppress with --quiet). ANSI colors
-auto-enable on a TTY (--color always|never|auto).
+auto-enable on a TTY (--color always|never|auto). The breakdown and
+colors were an explicit human request (2026-07-25: "print raw rolls and
+probability gates ... make it rich text") for weight-tuning sessions —
+not agent-added polish.
 """
 
 import argparse

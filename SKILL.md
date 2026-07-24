@@ -220,7 +220,9 @@ if Max is away).
 - Scope gate. Agent-initiated work that adds new surface area (a new
   file, section, or feature) or breaks the size norms needs a DREAMWORK.md
   fit-check first; if uncertain, park it in questions.md instead of doing
-  it. Human-initiated steers are never gated.
+  it. Human-initiated steers are never gated. Defaults and silence may
+  resolve *how* or *when* for already-authorized work — never *whether*
+  to add new surface; parked scope questions stay parked until answered.
 - Surface contradictions. When what the human says now conflicts with
   recorded state (DREAMWORK.md, docs, the implementation), say so plainly
   and presume they know how to resolve it — it's wavelength-matching, not
