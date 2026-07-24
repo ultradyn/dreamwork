@@ -65,8 +65,9 @@ starting new increments — resume autonomous work when the stream pauses.
   coherent point, commit, split the remainder into a new task.) Did the last
   change introduce an error? Look before continuing.
 - **Task just finished** → reflect and verify (checklist: `reflection.md`
-  in this skill's directory): re-read the diff, run the tests, commit the
-  increment, mark the task completed. Then select the next task.
+  in this skill's directory): re-read the diff, run the project's
+  verification, commit the increment, mark the task completed. Then
+  select the next task.
 - **Idle** → run the selection algorithm below.
 
 ## Selecting the next task

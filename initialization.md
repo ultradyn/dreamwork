@@ -108,11 +108,12 @@ read, initialization has already happened; return to the loop.
    log/diff): mark done what's done, split what's half-done, don't trust
    stale status.
 
-9. **Green baseline.** With the tree reconciled, run the test suite once
-   before any new work. Green means every later failure is attributable to
-   your own increments. Red means fixing (or explicitly documenting) the
-   breakage is your first task — never dream on top of an unexplained red
-   baseline.
+9. **Green baseline.** With the tree reconciled, run the project's
+   verification once (tests/lint, or its stated routine — see
+   DREAMWORK.md) before any new work. Green means every later failure is
+   attributable to your own increments. Red means fixing (or explicitly
+   documenting) the breakage is your first task — never dream on top of
+   an unexplained red baseline.
 
 10. **Seed (first run).** If the task list is empty, capture obvious
     candidates surfaced while orienting — TODO/FIXME markers, planning
