@@ -153,6 +153,18 @@ files. The `parallelize` command is the explicit fan-out of this same
 rule; the coordinator itself still works one inline increment at a
 time.
 
+When disjointness can't be arranged — the work overlaps owned files, or
+the change is large or risky — dispatch the dreamer in a worktree (the
+harness's worktree isolation, or a git worktree under `.worktrees/`,
+gitignored): the invariant then holds by construction. Worktree
+lifecycle is automatic: merge back to the parent branch on acceptance
+and clean up the worktree — checking first for valuable untracked files
+(scratch, reports), which move out before removal, never get
+force-deleted. Worktrees duplicate build state: when the toolchain
+supports a shared cache (compiler cache, shared target/store dirs), set
+it up; if the project lacks one, suggest it to the human (questions.md)
+— storage ballooning is a real cost.
+
 Dreamers are batches, not careers. A long-lived dreamer's context grows
 until fresh eyes are cheaper — bound its scope to the current batch,
 retire it when the batch lands, and spawn fresh for new work (it
