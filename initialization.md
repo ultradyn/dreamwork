@@ -89,8 +89,12 @@ read, initialization has already happened; return to the loop.
 7. **Orient.** Read the project's CLAUDE.md and any goals/philosophy docs —
    together with DREAMWORK.md these bound what the loop may do (including
    whether push/deploy is authorized). Create `.dreamwork/{dreams,docs}/`
-   if missing, then read `.dreamwork/docs/` (living docs
-   maintained by the dreamers), read `.dreamwork/lessons.md` (distilled
+   if missing — and on first creation, seed `.dreamwork/docs/doc-map.md`:
+   a cross-reference of the repo's existing docs (what lives where, what
+   it covers, what the loop must keep current). Build on top of existing
+   docs and link outward — never fork or replace them; dreamwork docs
+   hold the internal, not-necessarily-public knowledge. Then read
+   `.dreamwork/docs/` (living docs maintained by the dreamers), read `.dreamwork/lessons.md` (distilled
    one-line lessons — the cheapest memory), skim recent
    `.dreamwork/dreams/` entries — they carry memory from earlier sessions
    and subagents — and check `.dreamwork/questions.md` for open questions

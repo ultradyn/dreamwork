@@ -114,8 +114,9 @@ it; failing to write it never blocks the loop.
    through: goal alignment first — does DREAMWORK.md still reflect what
    the human wants and what the loop has learned? fold in any drift; then
    self-review recent commits for introduced errors; test-coverage gaps;
-   docs freshness; task-list grooming (dedupe, reprioritize, prune
-   stale); dream grooming (archive dreams whose ideas and lessons are
+   docs freshness — the repo's own docs, `.dreamwork/docs/`, and the
+   doc-map alike (keeping the repo's docs current is loop work);
+   task-list grooming (dedupe, reprioritize, prune stale); dream grooming (archive dreams whose ideas and lessons are
    captured); dogfood reflection — friction with the loop itself: fix
    small, file the rest. If truly nothing: idle quietly until the next tick — no
    make-work.
