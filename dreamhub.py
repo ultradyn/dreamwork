@@ -24,8 +24,12 @@ import hashlib
 import json
 import os
 import re
+import socket
 import sys
 import time
+import urllib.error
+import urllib.request
+from concurrent import futures
 from datetime import datetime
 
 # Where the machine-local state lives. Which projects exist is a fact about
@@ -332,6 +336,125 @@ def probe_disk(entry, now=None):
         for a in _as_list(status.get("agents")) if isinstance(a, dict)
     ]
     return row
+
+
+# ------------------------------------------------------- the live probe
+
+# One dead port must not hang the page — the classic aggregator failure and
+# the single most likely stage-1 bug. Two mechanisms, and BOTH are needed:
+# a hard per-request timeout (so one project cannot hang forever) and a
+# thread per project (so a slow one does not add its timeout to everyone
+# else's wait). A serial poll with timeouts is still N x timeout.
+PROBE_TIMEOUT_S = 1.5
+
+NEVER_WATCHED = "never watched"
+UP = "up"
+DOWN = "down"
+TIMEOUT = "timeout"
+UNREADABLE = "unreadable"
+
+
+def _get(port, path, timeout):
+    """GET http://127.0.0.1:<port><path> → body text. Raises on anything."""
+    url = f"http://127.0.0.1:{port}{path}"
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        if r.status != 200:
+            raise urllib.error.HTTPError(url, r.status, "not 200", r.headers,
+                                         None)
+        return r.read(1 << 20).decode("utf-8", "replace")
+
+
+def probe_live(row, cache, timeout=PROBE_TIMEOUT_S):
+    """Fill a row's live half from that project's own watch instance.
+
+    THE reuse seam. The hub polls `/mtime` (tiny) and re-reads `/data.json`
+    only when it changes — the same protocol watch's own client uses, so the
+    hub costs a running watch almost nothing and `/mtime` doubles as the
+    liveness check.
+
+    It follows that the hub never parses `questions.md`. The open-question
+    count keeps exactly one implementation, and when that implementation is
+    not running the answer is None — *unknown* — never a second, subtly
+    different count computed here. `None` renders as "?" and that is the
+    honest thing for it to say.
+
+    `cache` is `{slug: {"key": "<gen> <mtime>", "data": {...}}}`, in memory
+    and per-process: a persisted aggregate would be a second source of truth
+    with a longer life.
+    """
+    row.setdefault("watch", NEVER_WATCHED)
+    row.setdefault("open_questions", None)
+    row.setdefault("watch_url", None)
+    row.setdefault("live_note", None)
+    port = row.get("port")
+    if not port:
+        row["live_note"] = "no .dreamwork/watch-port — never watched"
+        return row
+    row["watch_url"] = f"http://127.0.0.1:{port}/"
+    try:
+        key = _get(port, "/mtime", timeout).strip()
+    except socket.timeout:
+        row["watch"], row["live_note"] = TIMEOUT, f":{port} did not answer"
+        return row
+    except urllib.error.HTTPError as e:
+        row["watch"] = UNREADABLE
+        row["live_note"] = f":{port} answered /mtime with {e.code}"
+        return row
+    except (urllib.error.URLError, OSError) as e:
+        # Connection refused is the common, boring case: watch is not
+        # running. It is not an error, it is a missing dashboard.
+        reason = getattr(e, "reason", e)
+        row["watch"] = TIMEOUT if isinstance(reason, socket.timeout) else DOWN
+        row["live_note"] = (f":{port} did not answer" if row["watch"] == TIMEOUT
+                            else f"no watch on :{port} — `just watch`")
+        return row
+
+    row["watch"] = UP
+    slot = cache.get(row["slug"])
+    if slot and slot.get("key") == key:
+        row["open_questions"] = slot["data"].get("open_questions")
+        return row
+    try:
+        data = json.loads(_get(port, "/data.json", timeout))
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+    except socket.timeout:
+        row["watch"], row["live_note"] = TIMEOUT, f":{port} did not answer"
+        return row
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        row["watch"] = UNREADABLE
+        row["live_note"] = f":{port} served an unreadable /data.json ({e})"
+        return row
+    cache[row["slug"]] = {"key": key, "data": data}
+    got = data.get("open_questions")
+    row["open_questions"] = got if isinstance(got, int) else None
+    return row
+
+
+def probe_all(reg, cache, now=None, timeout=PROBE_TIMEOUT_S):
+    """Every registry entry → a row. One thread per project.
+
+    Isolation is the requirement: a hub that 500s, or stalls, because one
+    project is broken has failed at the one job it has. Every failure mode
+    lands in that project's own row and nowhere else.
+    """
+    rows = [probe_disk(e, now=now) for e in reg["projects"]]
+    if not rows:
+        return rows
+    with futures.ThreadPoolExecutor(max_workers=min(16, len(rows))) as pool:
+        list(pool.map(lambda r: _probe_live_safe(r, cache, timeout), rows))
+    return rows
+
+
+def _probe_live_safe(row, cache, timeout):
+    try:
+        return probe_live(row, cache, timeout)
+    except Exception as e:                                  # noqa: BLE001
+        # Last resort. An unforeseen exception in one worker must not take
+        # the page down with it; it takes its own row down and says so.
+        row["watch"] = UNREADABLE
+        row["live_note"] = f"probe failed: {e.__class__.__name__}: {e}"
+        return row
 
 
 # ---------------------------------------------------------------- CLI

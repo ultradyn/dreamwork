@@ -6,9 +6,13 @@ against a copy of a fixture: a test that touches live state is testing the
 state.
 """
 
+import contextlib
+import http.server
 import json
 import os
+import socket
 import sys
+import threading
 import time
 
 import pytest
@@ -409,6 +413,216 @@ class TestProbeDisk:
         r = probe_disk({"slug": "skew", "path": str(tmp_path / "skew")})
         assert r["age"] == 0.0
         assert r["state"] == DREAMING
+
+
+# ------------------------------------------------------- the live probe
+
+class StubWatch:
+    """A stdlib stand-in for a watch instance, so the live probe can be
+    tested against every way a port can misbehave.
+
+    Deliberately not `watch.py`: the hub must not import it (that would
+    couple it to a 3000-line owned file and break the single-file deploy
+    snapshot), and the failures being tested here — 404, garbage, slow —
+    are ones a healthy watch never produces.
+    """
+
+    def __init__(self, mtime="1 100.0", open_questions=4, mtime_status=200,
+                 data_body=None, delay=0.0):
+        self.mtime = mtime
+        self.open_questions = open_questions
+        self.mtime_status = mtime_status
+        self.data_body = data_body
+        self.delay = delay
+        self.hits = []
+        stub = self
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                stub.hits.append(self.path)
+                if stub.delay:
+                    time.sleep(stub.delay)
+                if self.path == "/mtime":
+                    if stub.mtime_status != 200:
+                        self.send_error(stub.mtime_status)
+                        return
+                    body = stub.mtime
+                elif self.path == "/data.json":
+                    body = (stub.data_body if stub.data_body is not None
+                            else json.dumps(
+                                {"open_questions": stub.open_questions,
+                                 "target": "/somewhere"}))
+                else:
+                    self.send_error(404)
+                    return
+                raw = body.encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+        self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.port = self.srv.server_address[1]
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+
+
+@contextlib.contextmanager
+def stub_watch(**kw):
+    s = StubWatch(**kw)
+    try:
+        yield s
+    finally:
+        s.close()
+
+
+def free_port():
+    """A port nothing is listening on — connection refused, the common case
+    of a project whose watch simply is not running."""
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def live_row(port, cache=None, timeout=1.5, slug="p"):
+    row = {"slug": slug, "port": port}
+    return dreamhub.probe_live(row, {} if cache is None else cache, timeout)
+
+
+class TestProbeLive:
+    def test_up_reports_the_count_from_data_json(self):
+        with stub_watch(open_questions=7) as s:
+            r = live_row(s.port)
+        assert r["watch"] == dreamhub.UP
+        assert r["open_questions"] == 7
+        assert r["watch_url"].endswith(f":{s.port}/")
+
+    def test_data_json_is_refetched_only_when_mtime_changes(self):
+        """The reuse contract: /mtime is tiny and /data.json is not, so a
+        hub polling every 2s must cost a running watch almost nothing."""
+        cache = {}
+        with stub_watch() as s:
+            live_row(s.port, cache)
+            live_row(s.port, cache)
+            live_row(s.port, cache)
+            assert s.hits.count("/data.json") == 1
+            s.mtime = "1 200.0"
+            r = live_row(s.port, cache)
+            assert s.hits.count("/data.json") == 2
+            assert r["open_questions"] == 4
+
+    def test_a_restarted_watch_invalidates_the_cache(self):
+        """The generation half of /mtime: a rebuilt server means the shell
+        changed, and a cache keyed only on mtime would serve the old data."""
+        cache = {}
+        with stub_watch(mtime="1 100.0") as s:
+            live_row(s.port, cache)
+            s.mtime, s.open_questions = "2 100.0", 9
+            assert live_row(s.port, cache)["open_questions"] == 9
+
+    def test_connection_refused_is_down_not_an_error(self):
+        r = live_row(free_port())
+        assert r["watch"] == dreamhub.DOWN
+        assert r["open_questions"] is None    # unknown, never a second count
+        assert "just watch" in r["live_note"]
+
+    def test_404_on_mtime_is_unreadable(self):
+        with stub_watch(mtime_status=404) as s:
+            r = live_row(s.port)
+        assert r["watch"] == dreamhub.UNREADABLE
+        assert "404" in r["live_note"]
+        assert r["open_questions"] is None
+
+    def test_garbage_data_json_does_not_crash(self):
+        with stub_watch(data_body="<html>not json at all</html>") as s:
+            r = live_row(s.port)
+        assert r["watch"] == dreamhub.UNREADABLE
+        assert r["open_questions"] is None
+
+    def test_data_json_that_is_a_list_is_unreadable(self):
+        with stub_watch(data_body="[1, 2, 3]") as s:
+            r = live_row(s.port)
+        assert r["watch"] == dreamhub.UNREADABLE
+
+    def test_a_count_that_is_not_a_number_reads_as_unknown(self):
+        with stub_watch(data_body='{"open_questions": "lots"}') as s:
+            r = live_row(s.port)
+        assert r["watch"] == dreamhub.UP
+        assert r["open_questions"] is None
+
+    def test_slow_project_times_out_rather_than_hanging(self):
+        with stub_watch(delay=2.0) as s:
+            t0 = time.time()
+            r = live_row(s.port, timeout=0.3)
+            elapsed = time.time() - t0
+        assert r["watch"] == dreamhub.TIMEOUT
+        assert elapsed < 1.5, f"took {elapsed:.2f}s — the timeout did not bite"
+
+    def test_no_port_means_never_watched(self):
+        r = dreamhub.probe_live({"slug": "p", "port": None}, {})
+        assert r["watch"] == dreamhub.NEVER_WATCHED
+        assert r["watch_url"] is None
+        assert r["open_questions"] is None
+
+
+class TestProbeAll:
+    def test_one_slow_project_does_not_delay_the_others(self, tmp_path):
+        """The classic aggregator failure. A hard timeout alone is not
+        enough — serial polling still costs N x timeout, so a page with a
+        few dead ports becomes unusable exactly when it is most needed.
+
+        This goes through `probe_all` on purpose. An earlier version of this
+        test built its own thread pool and passed on a serial `probe_all`,
+        which is the same bug as testing a page by reading its source.
+        """
+        with stub_watch(delay=3.0) as slow, stub_watch(open_questions=2) as ok:
+            reg = {"version": 1, "projects": []}
+            for i in range(6):
+                d = tmp_path / f"p{i}" / ".dreamwork"
+                d.mkdir(parents=True)
+                (d / "watch-port").write_text(
+                    str(ok.port if i == 5 else slow.port))
+                reg["projects"].append(
+                    {"slug": f"p{i}", "path": str(tmp_path / f"p{i}")})
+            t0 = time.time()
+            rows = dreamhub.probe_all(reg, {}, timeout=0.4)
+            elapsed = time.time() - t0
+        assert elapsed < 1.2, f"{elapsed:.2f}s — the probes ran serially"
+        assert [r["watch"] for r in rows].count(dreamhub.TIMEOUT) == 5
+        assert rows[-1]["open_questions"] == 2
+
+    def test_every_entry_still_produces_a_row(self, hubfix):
+        rows = dreamhub.probe_all(hubfix, {}, timeout=0.4)
+        assert [r["slug"] for r in rows] == [
+            p["slug"] for p in hubfix["projects"]]
+        for r in rows:
+            assert r["watch"] in (dreamhub.UP, dreamhub.DOWN,
+                                  dreamhub.TIMEOUT, dreamhub.UNREADABLE,
+                                  dreamhub.NEVER_WATCHED)
+
+    def test_a_worker_that_raises_takes_down_only_its_own_row(self,
+                                                              monkeypatch):
+        rows = [{"slug": "a", "port": 1}, {"slug": "b", "port": 2}]
+
+        def boom(row, cache, timeout):
+            if row["slug"] == "a":
+                raise RuntimeError("kaboom")
+            row["watch"] = dreamhub.UP
+            return row
+
+        monkeypatch.setattr(dreamhub, "probe_live", boom)
+        out = [dreamhub._probe_live_safe(r, {}, 0.1) for r in rows]
+        assert out[0]["watch"] == dreamhub.UNREADABLE
+        assert "kaboom" in out[0]["live_note"]
+        assert out[1]["watch"] == dreamhub.UP
 
 
 class TestPrep:
