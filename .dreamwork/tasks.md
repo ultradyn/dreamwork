@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **132**
+Next id: **133**
 
 ## Open
 
@@ -63,6 +63,10 @@ Next id: **132**
   an append rather than a redesign
 - **#98** — Show the open queue on the watch dashboard · P2 · idea · 40m ·
   new page surface, fit-check at selection
+- **#132** — Commits on the webui carry a relative timestamp · P3 ·
+  idea · 30m · `05m 23s ago`, two units, two digits each until days
+  reach 100 · the ticking clock must NOT ride the tick's innerHTML
+  re-render, or it fights #118 and #113 once a second forever
 - **#114** — Dashboard renders the active goal chain · P3 · task · 25m ·
   stage 3 of #95; status.json already carries `goal`
 - **#92** — Hand-rolled Ctrl+K command palette · P3 · task · 40m

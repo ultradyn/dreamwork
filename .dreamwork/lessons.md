@@ -170,3 +170,9 @@ source dream. Not a log — only things that should change future behavior.
   through one dreamer no matter how many are free. The disjointness
   invariant is correct and the file is the constraint. (coordinator,
   2026-07-25)
+- A coordinator's diagnosis is a hypothesis and should be labelled one in
+  the dispatch. Five times on 2026-07-25 the coordinator named a
+  plausible layer and the dreamer measured a different one — #106, #107,
+  #121, #123 — and each time the cost of being wrong was zero *because
+  the dispatch said measure it first*. The practice, not the accuracy, is
+  what protects the work. (coordinator, 2026-07-25)
