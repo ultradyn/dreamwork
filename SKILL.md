@@ -404,7 +404,12 @@ if Max is away).
   hypothesis and gets labelled as one. A dreamer handed "the joiner is
   swallowing entries" will go and fix the joiner — and a confident wrong
   layer costs hours, where reproducing the input costs minutes. Reproduce
-  before building.
+  before building. Two specific liars, both of which have cost time here:
+  the human sees the **deployed** dashboard, which may be older than HEAD
+  (`deployed.py --target .` says by how much, and the hub shows it per
+  project — a fix sat undeployed and read as broken on #129); and the
+  element whose re-render he can SEE gets blamed for what happens on
+  every re-render (#179, #184).
 - Mismatched signals mean something is wrong. When context disagrees with
   itself — e.g. the cwd doesn't match the work being discussed, the task
   list contradicts git — don't guess and don't proceed on the wrong
@@ -432,11 +437,6 @@ if Max is away).
   fault-finding. Fold the resolution back into DREAMWORK.md. Restoring
   alignment is priority work, not deferred maintenance: small drift folds
   in immediately; bigger drift becomes a top-of-queue task.
-- Deploying a dashboard hides what it is running: the snapshot lives
-  outside the repo on purpose, so a fix can sit committed and undeployed
-  while the human stares at the bug it fixed. `deployed.py --target .`
-  answers it by comparing bytes, and the hub shows it per project. Check
-  it before concluding a reported bug is real — twice now it was not.
 - Communication: brief updates as you go; `attn` only for genuine blockers,
   questions, or notable milestones. Subagents never use `attn`. **Check
   that the push actually left** — `attn` exits non-zero when its backend
