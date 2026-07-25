@@ -6,10 +6,17 @@ docs, questions, dreams) refers to tasks by them.
 
 **Written by the coordinator only.** Dreamers report queue changes.
 
-A started task also carries its chain: `goal: <one line> ← <parent>`,
-where the parent is a session goal or a DREAMWORK.md heading. Pending
-tasks don't need one — the chain is named when work begins, which is
-when the scope gate asks for it.
+**Scope-gated** work carries its chain on the ledger line:
+`goal: <one line> ← <parent>`, where the parent is a session goal or a
+DREAMWORK.md heading. That is agent-initiated work adding new surface or
+breaking the size norms — the cases SKILL.md's scope gate stops for.
+
+It is deliberately NOT every started task. This header used to say it
+was, and after a day of heavy use exactly one line in the ledger carried
+a chain — because almost everything came from the human, and human
+steers are never gated. A convention that fires on everything gets
+written on nothing; narrowed here to match the gate that actually asks
+for it.
 
 Next id: **153**
 
