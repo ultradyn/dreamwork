@@ -639,8 +639,15 @@ STYLE = """<style>
     transition:color .3s ease; }
   .pipbtn:hover, .pipbtn:focus-visible { color:var(--accent); }
   .pipbtn svg { display:inline-block; vertical-align:-2px; }
+  /* the composer's one piece of feedback, so it ARRIVES rather than appearing
+     (#159): `setCmdMsg` snaps it to `.dreamin` and it eases up into place, the
+     same enter every other arrival on this page uses. Faster than the page's
+     0.85s dream, and that is a property of this surface rather than a taste:
+     the panel auto-dismisses 1425ms after a send, so a card-speed arrival
+     would still be arriving when the panel began to leave. */
   .cmdmsg { color:var(--dim); font-size:.7rem; min-height:1em; margin-top:.5rem;
-    transition:color .4s ease; }
+    transition:color .4s ease, opacity .35s ease, filter .35s ease,
+               transform .35s cubic-bezier(.32,.1,.2,1); }
   /* no reserved slack under the buttons: the status line only takes room
      once it has something to say, and the panel grows downward to meet it
      (nothing above it moves). */
@@ -651,7 +658,7 @@ STYLE = """<style>
     border:1px solid var(--accent); }
   @media (prefers-reduced-motion: reduce) {
     #cmdplus, #cmdpalette, #layerhint, .sgind, .sgbtn, .cmdmenu,
-    .cmdmenuitem, .cmdmorebtn { transition:none; }
+    .cmdmenuitem, .cmdmorebtn, .cmdmsg { transition:none; }
   }
 </style>"""
 
@@ -2800,6 +2807,46 @@ function popoutDoc(url, label) {
   const pal = document.getElementById('cmdpalette');
   if (!pal) return;
   const cmsg = () => document.getElementById('cmdmsg');
+  /* ── the status line ARRIVES, it does not appear (#159) ──────────────────
+     It used to be four bare `textContent` assignments: the text landed,
+     `:empty` stopped applying, and the line was simply THERE on the next
+     paint. Everything else on this page that turns up eases in, and this is
+     the composer's only feedback that a steer reached the loop at all.
+
+     ONE implementation, for the usual reason: there were four assignment
+     sites and a fifth message would otherwise have arrived differently from
+     the other four.
+
+     The enter is the page's standing `.dreamin` snap — which only started
+     working at all today (#154), so this is its first new user. The forced
+     reflow is not decoration: without a style recalc between adding the class
+     and removing it, the element never commits opacity 0 and the transition
+     has nothing to run from. That IS #154, and it is cheaper to be correct by
+     construction here than to rely on some other read forcing the layout. */
+  function setCmdMsg(text, ok) {
+    const m = cmsg(); if (!m) return;
+    m.className = 'cmdmsg' + (ok ? ' ok' : '');
+    m.textContent = text;
+    if (rmr || !text) return;             // reduced motion: it is simply there
+    m.classList.add('dreamin');           // snap to nothing...
+    void m.offsetWidth;                   // ...and COMMIT that, or see above
+    requestAnimationFrame(() => m.classList.remove('dreamin'));
+  }
+  /* Clearing is NOT a departure, and it deliberately does not animate. Both
+     callers are the page WITHDRAWING a claim that has become false: he has
+     resumed typing, so `sent to the dream` now sits above an unsent thought
+     (#131), or the panel is closing and taking the line with it. A false
+     confirmation that faded out slowly would be a false confirmation that is
+     merely quieter — which is the failure #131 exists to prevent, not a
+     gentler version of it.
+
+     The confirmation's real departure is the PANEL's: it drifts away on the
+     same soft blur it arrived on, 1425ms after the send, and takes this line
+     with it. There was never a missing exit animation here to write. */
+  const clearCmdMsg = () => {
+    const m = cmsg(); if (!m) return;
+    m.textContent = ''; m.className = 'cmdmsg';
+  };
   let open = false;
   const CMD_GAP = 18;            // breathing room under the +/× opener
   /* ── the panel does not close under him (#131) ───────────────────────────
@@ -2929,7 +2976,7 @@ function popoutDoc(url, label) {
       // A stale "sent to the dream" sitting above a fresh, unsent thought is
       // a false confirmation on his steering channel — he could read it as
       // the new command having landed. It goes the moment he resumes.
-      const m = cmsg(); if (m) { m.textContent = ''; m.className = 'cmdmsg'; }
+      clearCmdMsg();
     });
   function openCmd() {
     cancelDismiss(); composing = false;
@@ -2945,7 +2992,7 @@ function popoutDoc(url, label) {
     pal.classList.remove('open'); open = false;
     document.querySelectorAll('#cmdplus.on').forEach(p =>
       p.classList.remove('on'));
-    const m = cmsg(); if (m) { m.textContent = ''; m.className = 'cmdmsg'; }
+    clearCmdMsg();
   }
   window.__closeCmd = closeCmd;
   document.addEventListener('click', e => {
@@ -2979,9 +3026,8 @@ function popoutDoc(url, label) {
     e.preventDefault();
     const kind = activeKind;
     const text = document.getElementById('cmdtext').value.trim();
-    const m = cmsg();
     if (kind !== 'do-next' && !text) {
-      if (m) { m.textContent = 'a thought is needed'; m.className = 'cmdmsg'; }
+      setCmdMsg('a thought is needed', false);
       return;
     }
     composing = false;          // from here, anything he does means "still here"
@@ -2990,7 +3036,7 @@ function popoutDoc(url, label) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind, text, from: fromPath() }) });
       if (r.ok) {
-        if (m) { m.textContent = 'sent to the dream'; m.className = 'cmdmsg ok'; }
+        setCmdMsg('sent to the dream', true);
         const plus = document.getElementById('cmdplus');
         if (plus) { const b = plus.getBoundingClientRect();
           ripple(b.left + b.width / 2, b.top + b.height / 2); }
@@ -2999,10 +3045,8 @@ function popoutDoc(url, label) {
         // flight, before there was any timer to cancel
         cancelDismiss();
         if (!composing) dismissT = setTimeout(closeCmd, CMD_DISMISS_MS);
-      } else if (m) { m.textContent = 'rejected (' + r.status + ')';
-        m.className = 'cmdmsg'; }
-    } catch (e) { if (m) { m.textContent = 'no connection';
-      m.className = 'cmdmsg'; } }
+      } else setCmdMsg('rejected (' + r.status + ')', false);
+    } catch (e) { setCmdMsg('no connection', false); }
   });
   document.getElementById('cmdpop').addEventListener('click', requestPopout);
 })();

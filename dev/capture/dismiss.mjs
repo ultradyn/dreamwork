@@ -1,5 +1,16 @@
-/* The composer's behaviour guard: #131 (it must not close under him) and #126
-   (a command carries the page it was sent from).
+/* The composer's behaviour guard: #131 (it must not close under him), #159
+   (its status line arrives rather than appearing) and #126 (a command carries
+   the page it was sent from).
+
+   #159 — the confirmation ARRIVES.
+
+   Traced per frame, and that is the whole design of the check: "did the text
+   turn up" passes on the bug, and so does a two-frame fade — it looks instant
+   and satisfies every end-state assertion. What separates arriving from
+   appearing is the NUMBER of intermediate values on the way, so that is what
+   is asserted, on opacity and on the drift. It was shown red by returning
+   early from `setCmdMsg` before the `.dreamin` snap: one distinct opacity
+   (100), one distinct transform (none), from the first lit frame.
 
    #131 — the composer must not close under him.
 
@@ -56,6 +67,27 @@ const RUN = (resumeAt, ms) => `((resumeAt, ms) => new Promise(res => {
   })();
 }))(${resumeAt}, ${ms})`;
 
+/* #159: submit through the real UI and sample the status line every frame.
+   The computed values, not the class — a class that is added and removed
+   proves the code ran, never that anything moved. */
+const ARRIVE = ms => `((ms) => new Promise(res => {
+  const m = document.getElementById('cmdmsg');
+  const ta = document.getElementById('cmdtext');
+  const seen = [];
+  ta.value = 'a thought whose confirmation is traced';
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+  document.getElementById('cmdform').requestSubmit();
+  const t0 = performance.now();
+  (function step() {
+    const cs = getComputedStyle(m);
+    seen.push({ t: Math.round(performance.now() - t0),
+                text: (m.textContent || '').slice(0, 24),
+                op: Math.round(parseFloat(cs.opacity) * 100),
+                tf: cs.transform });
+    if (performance.now() - t0 < ms) requestAnimationFrame(step); else res(seen);
+  })();
+}))(${ms})`;
+
 const openPanel = async p => {
   await p.click('#cmdplus');
   await p.waitForFunction(
@@ -72,6 +104,34 @@ const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webg
 const p = await br.newPage({ viewport: { width: 1200, height: 900 } });
 const errs = []; p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(1000);
+
+// (0) #159 — the confirmation arrives. First, because the page is freshly
+// loaded and the panel is shut; it ends with Escape so the phases below start
+// from the same place they always did.
+{
+  await openPanel(p);
+  const seen = await p.evaluate(ARRIVE(700));
+  const lit = seen.filter(s => s.text);
+  const ops = lit.map(s => s.op), tfs = lit.map(s => s.tf);
+  notes.push(`arrival: ${lit.length} lit frames, ` +
+             `opacity ${[...new Set(ops)].slice(0, 12).join(',')}` +
+             `${new Set(ops).size > 12 ? ',…' : ''} ` +
+             `| ${new Set(tfs).size} distinct transforms`);
+  ok('the confirmation reaches the page at all (else the rest is vacuous)',
+     lit.length > 0 && /sent to the dream/.test(lit.at(-1).text));
+  ok('#159 it begins at nothing rather than fully lit',
+     lit.length > 0 && Math.min(...ops) <= 5);
+  // the trap the task named: a two-frame fade looks instant and passes
+  // every "did it fade in" check there is
+  ok('#159 ...and eases up through many intermediate values',
+     new Set(ops).size >= 6);
+  ok('#159 ...drifting into place as it comes, not only fading',
+     new Set(tfs).size >= 4);
+  ok('#159 ...and it ends fully lit', lit.length > 0 && ops.at(-1) >= 95);
+  await p.keyboard.press('Escape');
+  await p.waitForFunction(
+    () => !document.getElementById('cmdpalette').classList.contains('open'));
+}
 
 // (1) submit and walk away: the courtesy still happens, on the new timing
 await openPanel(p);
@@ -134,6 +194,28 @@ if (rev) {
        .includes(url));
 } else {
   ok('fixture has a review artifact to send a command from', false);
+}
+
+/* #159 under reduced motion — timing changes, function never does. The line
+   must still say the steer landed; it simply says it at once. */
+{
+  const ctx = await br.newContext({ viewport: { width: 1200, height: 900 },
+                                    reducedMotion: 'reduce' });
+  const rp = await ctx.newPage();
+  rp.on('pageerror', e => errs.push(String(e)));
+  await rp.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+  await sleep(900);
+  await openPanel(rp);
+  const seen = await rp.evaluate(ARRIVE(500));
+  const lit = seen.filter(s => s.text);
+  const ops = lit.map(s => s.op);
+  notes.push(`reduced arrival: ${lit.length} lit frames, ` +
+             `opacity ${[...new Set(ops)].join(',')}`);
+  ok('reduced motion: the confirmation still says the steer landed',
+     lit.length > 0 && /sent to the dream/.test(lit.at(-1).text));
+  ok('reduced motion: ...and it is simply there, never ramping',
+     lit.length > 0 && ops.every(o => o >= 95));
+  await ctx.close();
 }
 
 ok('no page errors', errs.length === 0);

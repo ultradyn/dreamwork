@@ -1165,6 +1165,45 @@ arithmetic non-obvious, and both are load-bearing:
 Nothing under the buttons is reserved: `.cmdmsg:empty` collapses, so the
 panel grows downward only when there is something to say.
 
+**And what it says ARRIVES** (#159). The status line was four bare
+`textContent` assignments: the text landed, `:empty` stopped applying, and the
+line was simply *there* on the next paint — the one surface on this page that
+turns up without easing in, and the composer's only feedback that a steer
+reached the loop at all. `setCmdMsg` is now the single implementation for all
+four messages (`sent to the dream`, `rejected (…)`, `no connection`, `a
+thought is needed`), because with four assignment sites a fifth message would
+have arrived differently from the other four. It is the standing `.dreamin`
+snap, whose first new user this is since #154 made it work at all — and the
+forced reflow between adding the class and removing it is not decoration:
+without a style recalc in between the element never commits opacity 0 and the
+transition has nothing to run *from*, which **is** #154.
+
+**Its enter is .35s rather than the page's .85s, and that is a property of the
+surface.** The panel auto-dismisses 1425ms after a send, so a card-speed
+arrival would still be arriving as the panel began to leave.
+
+**Clearing is not a departure and deliberately does not animate.** Both
+callers are the page *withdrawing a claim that has become false* — he has
+resumed typing, so `sent to the dream` now sits above an unsent thought
+(#131), or the panel is closing and taking the line with it. A false
+confirmation that faded out slowly would be a false confirmation that is
+merely quieter, which is the failure #131 exists to prevent rather than a
+gentler form of it. The confirmation's real departure is the **panel's**: it
+drifts away on the same soft blur it arrived on and takes this line with it.
+There was no missing exit animation here to write.
+
+`dismiss.mjs` traces it per frame, and the design of that check is the point:
+"did the text turn up" passes on the bug, and so does a **two-frame fade** —
+it looks instant and satisfies every end-state assertion there is. What
+separates arriving from appearing is the *number* of intermediate values on
+the way, so the assertion is on that, for opacity and for the drift. Shown red
+by returning early from `setCmdMsg`: one distinct opacity (100) and one
+distinct transform (none), from the first lit frame.
+
+The popped-out composer still carries its own `.pmsg` and is untouched here —
+that divergence is #99's, and fixing it in two places would have made the copy
+harder to delete rather than easier.
+
 **A steer carries the page it was sent from, and that page is a HINT** (#126).
 The client sends `location.pathname + location.search` with every write
 (`/command`, `/answer`, `/comment`) and the server brackets it into the events
