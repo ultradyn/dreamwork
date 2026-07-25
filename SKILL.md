@@ -235,7 +235,11 @@ results, no ceremony.
 - `DREAMWORK.md` (repo root) — what the human wants; see Initialization.
 - `.dreamwork/dreams/` — dream journals from dreamer subagents. Once a
   dream's ideas are tasks and its lessons are in `lessons.md`, move it to
-  `dreams/archive/` — the journal stays lean, the memory survives.
+  `dreams/archive/` — the journal stays lean, the memory survives. One
+  exception worth keeping: **a dream stays active while the work it hands
+  off to is unstarted**, so whoever picks that work up meets it without
+  going looking. Archive it when its successor exists or the handoff is
+  spent.
 - `.dreamwork/lessons.md` — important lessons, each outliving the dream
   it came from. **A bolded claim you could read on its own, then the
   concrete case that earned it.** The claim is what makes the file
