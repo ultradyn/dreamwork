@@ -397,7 +397,12 @@ Next id: **194**
   build #164's conveyor as a component both mounts use, and it cannot
   drift again · his extra-width idea then falls out FREE — more width,
   more buttons visible before they tunnel, no special case · depends on
-  #161 and #164; doing it first means building the row twice
+  #161 and #164; doing it first means building the row twice ·
+  **it drifted AGAIN at 16:54**: the popout has its own `.pmsg`, so
+  #159's arriving confirmation arrives inline and still POPS in the
+  popout · dreamer-gesture left it deliberately (fixing it in two places
+  makes the copy harder to delete, not easier) — the right call, and the
+  fourth divergence this task has collected
 - **#100** — Shader lens world-space so blur matches at a window seam ·
   P3 · task · 30m · the last break in "same position, same dream"
 - **#73** — Split-view support for watch pages · P3 · experiment · 30m ·

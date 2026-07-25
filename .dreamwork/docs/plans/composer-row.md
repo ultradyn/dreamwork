@@ -113,9 +113,13 @@ it on a menu costs the page its loudest signal.
 - **Doing #162(b) inside the conveyor work.** It is a focus/dismiss bug
   that happens to share a trigger. Separate it or it will be "fixed" by
   a rewrite that hides it.
-- **Guards that never drive the path.** Twice today a guard was green
-  because it visited the wrong page or answered by POST instead of the
-  gesture. Every check here drives the real interaction.
+- **Guards that pass without looking.** Three distinct ways happened on
+  one page in one day: one visited the route where the elements are
+  top-level rather than the one he uses; one traced a window long enough
+  that a later tick supplied the movement it was asserting; one compared
+  nothing at all and said so confidently. Every check here drives the
+  real gesture, bounds its window to the interaction, and is shown RED
+  first.
 
 ## Taste is the deliverable
 
