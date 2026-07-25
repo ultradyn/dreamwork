@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **141**
+Next id: **142**
 
 ## Open
 
@@ -22,6 +22,11 @@ Next id: **141**
   fires AT compaction, so it guarantees the write-down and cannot buy
   landing time; stdout becomes summariser instructions, so it must be
   silent by construction
+- **#141** — Dashboard questions section folds, counts, disables at
+  zero · P2 · idea · 30m · **needs #136 first**: a grey disabled zero IS
+  the all-clear signal, and an unreadable file currently produces the
+  same zero — shipping this first makes the silent failure more
+  convincing, not less
 - **#140** — Close the commit-to-deploy window · P2 · task · 25m · a
   fix can be committed and undeployed while he is looking at the page,
   which is indistinguishable from broken — it cost a tracing cycle on
@@ -44,9 +49,12 @@ Next id: **141**
   identically to all-clear. Producer half: state the format in SKILL.md,
   seed the skeleton on first use, migration
 - **#136** — A questions.md that parses to nothing must say so · **P1** ·
-  bug · 45m · reader half of #135 · the same trap sits in
-  `parse_answered`, `open_question_count` and the `append_subbullet`
-  write path — a file the reader cannot see is one /answer cannot write
+  bug · 45m · reader half of #135 · THREE zero-states, not one: missing
+  is a quiet warning (human, 11:28 — the loop writes it almost at once);
+  present-but-unparseable is a fault and must look like one; genuinely
+  empty is #141's calm grey. The same trap sits in `parse_answered`,
+  `open_question_count` and the `append_subbullet` write path — a file
+  the reader cannot see is one /answer cannot write
 - **#134** — Wire the dreamhub guards into `just test` · P2 · chore ·
   15m · until the line lands, green `just test` does not cover the hub —
   bounded #117 gap, unbounded the moment it is forgotten
