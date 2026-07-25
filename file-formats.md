@@ -319,6 +319,78 @@ The file is **gitignored ephemera** and stays that way. It describes a
 running process, so a committed one would be a lie the moment it landed;
 that is also why there is no history to compute stats from (#142).
 
+## Browser-side storage — not files, still contracts
+
+Two of his things live in the browser rather than under `.dreamwork/`: a
+half-typed draft (#163) and the client's record of every submission (#175).
+They are in this file for the same reason everything else is — **recovery is a
+reader**. The whole point of #175 is that someone (him, or an agent walked
+through it) can open devtools and get his words back, and that is impossible
+without the key names and the value shape written down. A store nobody can find
+is the silent shape, one storage layer over.
+
+**Why the browser and not a file**, since #143's tint made the opposite call
+and the two look identical from a distance: a tint is a setting *about* the
+project and should follow it to another machine, so it is committable. A draft
+and a submission log are **his words, unsent or possibly unlanded** — writing
+them into the repo would publish them. So they stay on this machine, in this
+browser, and never travel.
+
+**Both partition on `data.target`** — the absolute project path the server
+reports, never the project *name*. Two checkouts can share a basename, and his
+draft surfacing under the wrong loop is worse than a lost one.
+
+**`localStorage['dw:draft:<target>']`** — the composer's unsent draft.
+
+```json
+{"t": "the text in the box, verbatim", "k": "add-idea"}
+```
+
+`k` is a command kind from the live vocabulary; it is validated on the way back
+in, because a plugin's command can disappear between sessions and sending his
+words as the wrong kind is worse than defaulting. Written on every `input` with
+no debounce, removed when the box is emptied by hand, and cleared on a
+successful send **and on nothing else** — not on close, not on blur, not on a
+rejected POST, which are the moments he most needs it back. One key per project
+holds the *most recent* unsent thought: he runs several windows, and a restore
+never overwrites a box that already has text in it, so only the stored copy is
+last-write-wins.
+
+**IndexedDB `dw-submissions:<target>`, store `subs`** — every submission this
+browser made, with how it ended.
+
+```json
+{"id": 7, "at": 1784969517618, "path": "/answer", "kind": "answer",
+ "title": "the question title, or null for a command",
+ "text": "what he typed", "from": "/questions",
+ "outcome": "ok", "status": 200}
+```
+
+- `id` — autoincrement, the store's own order and the reading order.
+- `at` — epoch ms at the moment of **send**, not of outcome.
+- `path` — the POST route; any future route is recorded the day it is added.
+- `kind` — the act in his terms: `answer`, `note`, or a command kind.
+- `outcome` — `pending` → `ok` | `rejected` | `unreachable`. Written as
+  `pending` **before** the request, so a tab that dies mid-POST leaves a record
+  saying exactly that. An entry is never deleted, and never rewritten except to
+  attach the outcome it was waiting for; one that stays `pending` is a true
+  statement rather than a gap to tidy.
+- `status` — the HTTP status, `0` when nothing answered.
+
+**One database per project, not one database with a `project` column.** A
+column needs every reader to remember to filter by it, and a reader that forgets
+returns another loop's submissions while looking perfectly correct.
+
+Read it with `window.__dwSubmissions()`, which resolves to every record for the
+current project; the composer's history panel (#165) is the same data rendered.
+
+**Checked by the browser guards, not by `lint.py`** — `dev/capture/draft.mjs`,
+`subslog.mjs` and `history.mjs`. That is a real difference in kind and not a
+gap being excused: the linter reads files on disk and cannot reach a browser
+profile, so these contracts are verified by driving the page rather than by
+parsing. If you change a key name or a field here, the guard that fails is one
+of those three.
+
 ## Why this file exists rather than a paragraph in SKILL.md
 
 SKILL.md says what each file *means* and when to write it. That is the
