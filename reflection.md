@@ -6,7 +6,11 @@ point is noticing, not box-ticking.
 1. Did the change do only what the task said? Anything smuggled in?
 2. Re-read the diff cold. Does it match the intent you would state aloud?
 3. Run the project's verification (tests/lint, or its stated routine —
-   see DREAMWORK.md). Green?
+   see DREAMWORK.md). Green? And if the increment touched `.dreamwork/`,
+   also run `python3 <skill-dir>/lint.py --target .` — the project's own
+   tests never check the loop's files, so on every target but the skill's
+   own repo this is the only thing standing between a malformed
+   `questions.md` and a silently empty dashboard.
 4. Did this break a promise made elsewhere — docs, cross-references,
    numbering, callers? In particular: if you taught something a new way
    to *read* a thing, go and check whatever *writes* it still matches.

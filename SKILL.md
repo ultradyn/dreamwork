@@ -24,9 +24,9 @@ open-ended improvement of a project.
   are still on the path that made them. Split anything bigger into multiple
   tasks; each increment must end in a verifiable, committable state.
 - **Ideas always go in the task list.** No idea is lost, and no work happens
-  that isn't a task. The list is the loop's brain; the ledger
-  (`.dreamwork/tasks.md`) is what makes it durable — a backend that
-  forgets on restart is a cache, not a memory.
+  that isn't a task. The list is the loop's brain, and it must be durable —
+  a record that forgets on restart is a cache, not a memory. (Which record
+  that is depends on the backend; see Durable state.)
 - **Know what the human wants.** `DREAMWORK.md` (repo root) records the
   human's high-level goals, philosophy, preferences, and routines. We should
   always know what the human wants so we can make what the human needs —
@@ -80,14 +80,25 @@ dashboard reads it; failing to write it never blocks the loop. And if
 human-authored blocks (`Note (human, via …)`) —
 fold them first: act on the answer, then move the entry to Answered.
 
+Check `.dreamwork/watch-events.log`'s mtime too. A command he types into
+the dashboard composer exists **only** as a line in that file — nothing
+is written anywhere else, and the write is best-effort — so if the tail
+monitor is not armed (a resumed session, a compacted one, a `watch.py`
+started after init), his `do now:` is lost with no error anywhere. The
+answer channel is durable because answers land in `questions.md`; the
+command channel is not.
+
 ## Selecting the next task
 
 0. **Sync.** Check the task list first. Resume unblocked in-progress work
    before starting anything new; then take any task marked next-up
    (marked next-up in the ledger, newest first, clearing the mark on start) —
-   an explicit human steer outranks the agent's own ideas. Then: any known
-   goal/philosophy misalignment (DREAMWORK.md stale or contradicted)
-   outranks everything below — restore alignment before other work.
+   an explicit human steer outranks the agent's own ideas. Then: any
+   goal/philosophy misalignment **you already know about** (DREAMWORK.md
+   stale or contradicted) outranks everything below — restore alignment
+   before other work. This is not a licence to audit DREAMWORK.md before
+   every selection; the periodic check that *produces* such findings is
+   step 4.
 1. **Out-of-scope leftovers.** In recent work, did anything occur to you that
    was out of scope at the time? If complex: do a quick feasibility check,
    then add it to the task list. Otherwise: do it now (add it as in_progress
@@ -265,8 +276,9 @@ results, no ceremony.
   armed, and how to deploy. That state dies with the session, so this
   ephemeral file is its right home — but it must survive *within* one,
   because a compacted coordinator that forgets a dreamer owns `foo.py`
-  will edit `foo.py`. The one `.dreamwork/` file that is **gitignored**:
-  it's ephemera, not history. The dashboard itself is `watch.py` in this
+  will edit `foo.py`. Gitignored, like `watch-events.log` — both describe
+  a running process, so committing either would be a lie the moment it
+  landed. The dashboard itself is `watch.py` in this
   skill's directory (read-only, localhost-only):
   `python3 <skill-dir>/watch.py --target . --open`; its port persists in
   `.dreamwork/watch-port`.
@@ -306,7 +318,8 @@ results, no ceremony.
   re-derives the item, never the loop's progress on it, so as work
   begins it takes a loop id and from then on holds its own state —
   owner, branch, blocked-on.
-- Dependencies via `addBlockedBy` / `addBlocks`.
+- Dependencies recorded however the backend expresses them (Claude Code:
+  `addBlockedBy` / `addBlocks`), and on the ledger line either way.
 - Big features get a planning doc on disk (`.dreamwork/docs/plans/<slug>.md`
   or the repo's convention); the task itself is a thin pointer. Bulk stays
   out of the task list until it's actually time to implement.
