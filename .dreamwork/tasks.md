@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **169**
+Next id: **170**
 
 ## Open
 
@@ -88,6 +88,14 @@ Next id: **169**
   or not purely by the route it was reached through. Reflow `.md`, keep
   `.py`/`.json`/logs verbatim, and update watch-design.md in the same
   commit because this REPLACES a rule
+- **#169** — An expanded element becomes PROMINENT, not just taller ·
+  P2 · idea · 35m · expanding is a change in IMPORTANCE, not a reveal —
+  the thing he opened is now the subject of the page · extends the
+  fold-motion contract and belongs to the IDIOM (#111, #141, and
+  #165/#166 inherit it) · **two traps**: `font-weight` steps rather than
+  transitions unless the face is variable, and growing padding moves
+  everything below, so the growth and #104's neighbour travel must be
+  ONE gesture — the #141 lesson again
 - **#168** — Keyboard shortcut opens AND focuses the composer · P3 ·
   idea · 20m · **check #92 first** — a Ctrl+K palette is already filed
   and two answers to one question is worse than either · the hotkey trap
