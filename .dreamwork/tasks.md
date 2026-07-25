@@ -137,11 +137,13 @@ Next id: **216**
   exonerates it and teaches everyone to re-run; if the runner ever
   retries, it must SAY it retried (qsec 18:17, prominence at 7ac4f02:
   the trace armed on the click, so it measured its own input latency) ·
-  **~21:05**: panels found 39899 held by a live run it could not
-  identify (no dreamer was running guards) and correctly moved to 39893
-  — when a held port is found, capture `ss -tlnp` and NAME the pid and
-  command in the report; an unidentified holder is this bug's evidence,
-  and "someone was there" identifies nobody
+  **~21:05**: panels found 39899 held, moved to 39893, and later NAMED
+  the holder (pid 2331175, `watch.py --target /tmp/... --port 39899`,
+  minutes old — legitimate, not an orphan) · the discrimination rule
+  that fell out: TARGET PATH + ELAPSED together are the evidence — a
+  /tmp target minutes old is somebody working; the same command on a
+  repo target hours old is the orphan class · when a held port is
+  found, capture `ss -tlnp` and name pid+command in the report
 - **#202** — "T3 connect": searched, the name does not resolve · P2 ·
   task · **human 17:27** · no product/protocol by that name found ·
   three candidates: **T3 Code** (Theo's open-source coding-agent control
