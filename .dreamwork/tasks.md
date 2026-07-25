@@ -71,15 +71,6 @@ Next id: **156**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
-- **#155** — The styleguide audit checks ADJACENCY, not coverage · P2 ·
-  bug · 30m · both misses are FALSE POSITIVES (verified): the status
-  panel was documented at 11:59, two minutes BEFORE its code at 12:01,
-  and #149 changed the writer not the page · the real finding is the
-  false NEGATIVE nobody would notice — touching both files passes
-  whether or not the doc says anything, so a whitespace edit satisfies
-  it, and it has been green for 29 commits on that basis · rec: widen
-  the window, say in the comment what it does not prove, and do NOT
-  gate a check that measures adjacency
 - **#153** — Title that says whether you're needed, and a real favicon ·
   P2 · idea · 50m · the tab title is the only part of the dashboard
   visible in a background tab, so it carries the count front-loaded
@@ -146,7 +137,13 @@ Next id: **156**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#141 #149** (2bf61da,
+Pruned in grooming; git is the real ledger. **#155** the styleguide audit
+now measures adjacency HONESTLY (487d1a6) — a 3-commit window, so writing
+the doc before the code is no longer punished, and a comment saying what
+it does not prove: touching both files passes whether or not the doc says
+anything, so 29 green commits proved only that the files moved together.
+Deliberately NOT gated — making adjacency mandatory would be worse than
+the status quo. **#141 #149** (2bf61da,
 6099998) — the questions section folds, counts and greys, keyed on
 `questions_health` rather than the count so a calm grey can never sit
 under #136's warning; and it would have SNAPPED SHUT under him every 2s,
