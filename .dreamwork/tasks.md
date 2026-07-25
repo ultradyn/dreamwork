@@ -86,12 +86,6 @@ Next id: **144**
   "what is it doing, does it need me"; fold the rest, don't delete it —
   the bulk is load-bearing for agents. Colour by significance, not by
   JSON type. `awaiting_human` must be impossible to miss
-- **#128** — A follow-up thread reads as him replying to himself · P2 ·
-  bug · 40m · **next-up** · a note written before the answer renders
-  below it; the note is tagged `YOU` and the answer is tagged nothing.
-  Thread collapses via the standing `expand` idiom, and the expand
-  MOTION gets stated in watch-design.md if it isn't already — which
-  overlaps #113's matrix, so state it once
 - **#126** — Composer commands carry the page they came from · P2 ·
   task · 25m · the route is a hint, never an instruction
 - **#127** — One deliberate way to compact a dreamwork agent · P2 ·
@@ -140,7 +134,12 @@ Next id: **144**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#131** the composer no
+Pruned in grooming; git is the real ledger. **#128** the thread no
+longer reads as him replying to himself (d6f0ca6) — the parse was
+byte-identical whichever order the sub-bullets were written in, so
+there was no order to respect; the parser now keeps `when` per note,
+cuts the thread at the answer, and only the SETTLED segment collapses,
+because folding away a live steer would be worse than the bug. **#131** the composer no
 longer fades while he types into it again (896ee74). **#129** needed no
 code — e8aeec9 had already animated the fold 24 seconds before he
 reported it, and he was right about the deployed page; what it did
