@@ -116,7 +116,19 @@ read, initialization has already happened; return to the loop.
    whether push/deploy is authorized). Create `.dreamwork/{dreams,docs}/`
    if missing — and on first creation, seed `.dreamwork/docs/doc-map.md`:
    a cross-reference of the repo's existing docs (what lives where, what
-   it covers, what the loop must keep current). Build on top of existing
+   it covers, what the loop must keep current).
+
+   **Seed `.dreamwork/questions.md` too, if absent**, with exactly its
+   skeleton — `# Questions for the human`, then `## Open`, then
+   `## Answered`. Do not leave the first entry to invent the file's
+   shape: `watch.py` matches those section headings literally, and a
+   questions.md without them parses to zero entries and renders as
+   "nothing to answer" with no error anywhere. A whole project's
+   escalations were invisible this way (2026-07-25). Formats for every
+   loop-written, tool-parsed file: `file-formats.md` in this skill's
+   directory — read it before writing one of them for the first time.
+
+   Build on top of existing
    docs and link outward — never fork or replace them; dreamwork docs
    hold the internal, not-necessarily-public knowledge. Notice the
    repo's existing work-management and improvement systems — task

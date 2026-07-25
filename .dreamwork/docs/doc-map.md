@@ -13,6 +13,7 @@ cover it too.
 | `SKILL.md` | The product: philosophy, loop, selection, subagents, durable state, commands, guardrails | Yes — every behavior change lands here or in a reference file |
 | `initialization.md` | The 11-step init procedure | Yes |
 | `reflection.md` | Post-change checklist | Yes |
+| `file-formats.md` | Required shapes for loop-written, tool-parsed files; questions.md in full | Yes — a reader change lands here in the same commit |
 | `compaction.md` | Pre-compaction checklist, the notice protocol, per-client sending safeguards | Yes — client dialects change |
 | `writing-plugins.md` | Plugin-authoring contract, extension seams, state split | Yes — validate against each new plugin |
 | `watch-design.md` | watch.py standing design: routes, confinement, write exceptions, contract | Yes — shipped beside the tool it documents |

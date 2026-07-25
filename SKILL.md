@@ -236,7 +236,16 @@ results, no ceremony.
   of them. Older entries may read `(via <channel>, …)`, which was a
   human, or `(in-session, …)`, which was the loop. A follow-up landing on an Answered entry
   is a potential amendment — re-evaluate the fold: it may reopen the
-  question or redirect in-flight work.
+  question or redirect in-flight work. **Its shape is a contract, not a
+  style** — `watch.py` matches `## Open` and `## Answered` literally, and
+  a file that misses them parses to nothing and renders as "nothing to
+  answer", silently. See `file-formats.md`.
+- **Formats.** Files the loop writes and a tool parses have required
+  shapes, and getting one wrong fails silently rather than loudly — the
+  reader cannot tell an unreadable file from an empty one.
+  `file-formats.md` in this skill's directory states them; read it before
+  writing one of those files for the first time, and follow the existing
+  file's shape rather than inventing one when a format is not yet stated.
 - `.dreamwork/review/` — rich review artifacts: when something sizeable
   or important needs the human's eyes (a plan, a design, an analysis),
   generate a self-contained HTML artifact (inline everything — charts,
