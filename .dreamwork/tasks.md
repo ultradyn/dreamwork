@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **144**
+Next id: **145**
 
 ## Open
 
@@ -22,6 +22,11 @@ Next id: **144**
   fires AT compaction, so it guarantees the write-down and cannot buy
   landing time; stdout becomes summariser instructions, so it must be
   silent by construction
+- **#144** — A subagent's final message is a channel nobody reads back ·
+  P2 · bug · 25m · three utility agents finished and their deliverable
+  never arrived; dreamers have lost nothing all day because they append
+  to a file. SKILL.md's own guardrail, failing on the coordinator's own
+  machinery. Rec: every subagent writes to a file and pings the inbox
 - **#143** — Per-project colour tint, persisted and cross-window · P3 ·
   idea · 45m · the value lands with dreamhub: a tint is decoration for
   one project and navigation for several, so the hub shows it too ·

@@ -289,3 +289,11 @@ this shape and convert opportunistically.)
   and the result would have looked like him asking for something he did
   not. Collapse newlines where human text enters any record an agent
   reads. (dreamer-thread, 2026-07-25, #126)
+- **The loop applied its own no-unread-channel rule to targets and not to
+  itself.** Dreamers append reports to a file the coordinator tails and
+  have lost nothing in a day of heavy use; utility subagents report by
+  final message, and that channel silently swallowed two of three
+  deliverables — the coordinator only noticed because it was tracking
+  what it had dispatched. A guardrail written for one direction is not
+  automatically applied in the other, and the machinery you built is
+  exactly where you will forget to look. (coordinator, 2026-07-25, #144)
