@@ -3383,7 +3383,13 @@ function popoutDoc(url, label) {
       ? rows.map(histRow).join('') +
         '<div class="cmdhnote">what this browser has sent, on this project. ' +
         'other windows and other machines keep their own.</div>'
-      : '<div class="cmdhnote">nothing sent from this browser yet.</div>';
+      // THE EMPTY STATE SAYS "NOT HERE", NEVER "NOT AT ALL". This browser is
+      // one witness of several: a fresh profile, a second machine, or a
+      // cleared store all land here, and "you have sent nothing" would be a
+      // confident false statement about his own history. Same sentence shape
+      // as the populated footer, so the scope reads identically either way.
+      : '<div class="cmdhnote">nothing sent from this browser yet. other ' +
+        'windows and other machines keep their own.</div>';
     ages();                       // the ages tick with everything else (#132)
     // it ARRIVES, on the page's one enter idiom — the rows are fetched async,
     // so without this they appear a frame after the panel finished opening,

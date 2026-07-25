@@ -94,6 +94,12 @@ if (HAVE) {
   notes.push(`empty: ${r.length} row(s); note ${JSON.stringify(note)}`);
   ok('with nothing sent, the history exists and says so rather than ' +
      'rendering an empty box', r.length === 0 && /nothing sent/.test(note));
+  // ...and says NOT HERE rather than NOT AT ALL. A fresh profile or a second
+  // machine lands here too, so "you have sent nothing" would be a confident
+  // false statement about his own history — the empty state is where a
+  // scoped panel is most tempted to overclaim.
+  ok('...scoped to this browser even when empty, never claiming he sent ' +
+     'nothing at all', /this browser/.test(note) && /other/.test(note));
   await p.click('#cmdhistsum');            // shut it again
   await sleep(300);
 }
