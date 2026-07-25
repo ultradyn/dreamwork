@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **171**
+Next id: **174**
 
 ## Open
 
@@ -88,6 +88,29 @@ Next id: **171**
   or not purely by the route it was reached through. Reflow `.md`, keep
   `.py`/`.json`/logs verbatim, and update watch-design.md in the same
   commit because this REPLACES a rule
+- **#173** — Live git status, without EVER taking `index.lock` · P2 ·
+  idea · 60m · **the lock constraint is a known injury, not a
+  preference**: his CLAUDE.md carries an active mitigation from
+  2026-07-10 for background `git status` taking the real lock and
+  racing his interactive git. So: `--no-optional-locks` everywhere,
+  `GIT_OPTIONAL_LOCKS=0` in the server's env, read-only commands only,
+  and a guard asserting the lock never appears during a poll · three
+  cadences by design (status 5-15s, PR much slower, CI slower still and
+  only when a PR exists and is not draft) · PR/CI go through
+  `ud-dreamwork-github`, which already owns `gh`
+- **#172** — Heading row carries the project dir and git branch · P3 ·
+  idea · 25m · **read his references first** — `grok-build`, and
+  `codename-thin` at `ssh://x-game:src/codename-thin` (its TUI and
+  design docs). He is pointing at something he likes rather than
+  describing it, and they are on another machine · the row travels
+  (#110), so anything added inherits the FLIP
+- **#171** — Ascii vignette at the screen edge, from the loop's own
+  words · P3 · idea · 90m · "we will play with some parameters" is an
+  instruction about METHOD — ship the axes adjustable, expect to steer ·
+  the content idea is what makes it belong here: DREAMWORK.md's own
+  phrases murmuring at the edge · **never render questions.md there** —
+  his words are his · two ambient systems now share a frame budget with
+  the shader
 - **#170** — Composer opens LEFTWARD so it stops covering text · P2 ·
   idea · 25m · hang its top-RIGHT corner under the `+` instead of its
   top-left · "when there is enough room" is the requirement: prefer
