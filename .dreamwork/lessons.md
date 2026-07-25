@@ -534,3 +534,13 @@ this shape and convert opportunistically.)
   Before reporting that something is missing, re-read the inbox — a batch
   written while you were busy is indistinguishable from no batch at all.
   (dreamer-rows, coordinator-corrected, 2026-07-25)
+- **A proxy check eventually gets believed as the thing it proxies.**
+  `audit-styleguide` asks "did this commit touch both files?" as a stand-in
+  for "is the page's behaviour written down?", and after 29 green commits
+  the loop — including the coordinator, in a task description — was
+  calling its misses real gaps without looking. Both were false
+  positives, one because the doc landed two minutes BEFORE the code,
+  which is the better practice. And the failure nobody would ever
+  notice runs the other way: touching both files passes whether or not
+  the doc says anything at all. State in the check itself what it does
+  not prove. (coordinator, 2026-07-25, #155)

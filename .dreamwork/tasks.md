@@ -71,15 +71,15 @@ Next id: **156**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
-- **#155** — The styleguide audit is red twice, and nothing gates it ·
-  P2 · bug · 30m · **scoping decided, now buildable**: keep the coarse
-  "touched watch.py" rule and add an explicit `[no-styleguide]` opt-out,
-  because an opt-out makes a false positive cheap and VISIBLE where a
-  heuristic makes it silent — and "changed the page" is not detectable
-  until #124 splits the seam · fix c065a51's real miss (the status panel
-  is undocumented), then gate it scoped to the branch range · the deeper
-  half: a stated routine with a working checker that nothing invokes,
-  which is #117's shape
+- **#155** — The styleguide audit checks ADJACENCY, not coverage · P2 ·
+  bug · 30m · both misses are FALSE POSITIVES (verified): the status
+  panel was documented at 11:59, two minutes BEFORE its code at 12:01,
+  and #149 changed the writer not the page · the real finding is the
+  false NEGATIVE nobody would notice — touching both files passes
+  whether or not the doc says anything, so a whitespace edit satisfies
+  it, and it has been green for 29 commits on that basis · rec: widen
+  the window, say in the comment what it does not prove, and do NOT
+  gate a check that measures adjacency
 - **#153** — Title that says whether you're needed, and a real favicon ·
   P2 · idea · 50m · the tab title is the only part of the dashboard
   visible in a background tab, so it carries the count front-loaded
