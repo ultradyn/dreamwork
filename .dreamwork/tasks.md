@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **207**
+Next id: **210**
 
 ## Open
 
@@ -155,7 +155,8 @@ Next id: **207**
   · **#199 gives this its input** — a raw log of everything received IS
   the "what was sent to me" half
 - **#197** — Questions ordered by priority, then oldest · P2 · idea ·
-  30m · **human 17:15** · questions.md carries NO priority today, so the
+  30m · **human 17:15** · **in flight** (dreamer-plugcmd, increment 2;
+  holdings extended to file-formats.md + lint.py for the contract row) · questions.md carries NO priority today, so the
   field must exist first — `file-formats.md` row + `lint.py` check in the
   same commit · unprioritised sorts as the MIDDLE band so an explicit low
   is genuinely below an unmarked one · "oldest on a tie" is FREE: the
@@ -489,20 +490,27 @@ Next id: **207**
   batches demand them, starting with #112's components
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
-- **#86** — Plugin-contributed command kinds in the composer · **P1** ·
-  task · 45m · **re-raised by him 2026-07-25 14:26** ("the command menu
-  in the composer should be expandable by dreamwork plugins"), which is
-  the second ask for the same thing and the reason it is now P1 · the
-  composer renders from one `COMMANDS` table, so this is an append not
-  a redesign · `writing-plugins.md:60` already grants plugins their own
-  command namespace in PROSE, so today a plugin may define a command the
-  composer cannot show — the contract and the UI disagree, and the
-  contract is the one that has been promising · **seam decided**:
-  watch.py reads the TARGET and plugin skill dirs live outside it and
-  vary by machine, so a plugin declares in its SKILL.md and the LOOP
-  writes the declaration into the target at load — same pattern as
-  `github-processes.md`. Rewrite the whole declaration at load, never
-  append, so unloading is the absence of a write
+- **#207** — Deletion must be observable, as a CLASS · P2 · idea · 30m ·
+  from #86's first find: `watched_mtime` statted only files, so a
+  deletion could never change it and an unloaded plugin haunted the menu
+  until an unrelated write · the instance is fixed (a5a889d walks the
+  directories) but the class is unguarded — several contracts here are
+  "unloading is the absence of a write" (fold-by-complement,
+  human_block, plugin-commands.json) and all assumed absence was
+  observable, unchecked · a guard that DELETES (a dream, a review) and
+  asserts the open page loses it would cover the class, not the instance
+- **#208** — `data` has one seam; nothing may assign around it · P3 ·
+  chore · 15m · #86's second find: hooking off `tick` looked live and
+  was not (`ensureData` consumes the mtime as it fetches — fine on every
+  later change, dead on a fresh page) · fixed via one `setData` both
+  fetchers assign through, but only convention holds it — a check that
+  no bare `data =` exists outside the seam, or the trap re-arms with the
+  third fetcher · touches lint.py or test_watch.py
+- **#209** — The `...` menu has no keyboard path, and plugin commands
+  live ONLY there · P2 · bug · 25m · it opens on hover and focus-within;
+  a keyboard user cannot reach what #86 just shipped · relates #92
+  (palette) and #168 (focus shortcut) — whichever lands first should
+  carry this, and the ledger line on the other should say so
 - **#98** — Show the open queue on the watch dashboard · P2 · idea · 40m ·
   new page surface, fit-check at selection
 - **#114** — Dashboard renders the active goal chain · P3 · task · 25m ·
@@ -538,7 +546,7 @@ Next id: **207**
 
 ## Recently landed
 
-**#165** the history panel (91737bd) — sole source is #175's client log because only it knows the OUTCOME, and a panel that apologises per row is worse than a narrow one that states its limit once; failures leave via --warn because the accent marks what NEEDS him, and a failed send from an hour ago is a fact, not an errand (2026-07-25). **#175** every send is witnessed client-side (794d620) — IndexedDB, a DATABASE per project because a column can leak by omission and a database cannot; and the increment's find was a private fetch('/command') that left a third of his submissions unwitnessed, now unified through postJSON with a guard asserting the bare fetch stays absent (2026-07-25). **#163** the draft survives (8d0e6a7) — localStorage keyed by absolute target path (a draft is an unpublished thought, never a repo file; the #143 contrast is stated in watch-design.md), restore never overwrites live text, and the guard caught itself testing the restore while claiming to test the mode-switch (2026-07-25). **#198** the indicator was measured beneath a mid-transform ancestor (a86108e) — every rect read 3% small, error multiplying with distance from the origin; and the 'autocorrect' was unrelated re-renders laundering a permanent bug, not a transient (2026-07-25). **#199** P1 his words are on disk before anything may refuse them (fd3ae3b handler + 0bc0517 contract + migration 2026-07-25-15) — and the guard, by failing, proved questions.md is a RENDERING of his words, not a record of them (2026-07-25). **#191** the answer-morph carries its neighbours (38854bd) — and found that a guard's WINDOW can be the bug (2026-07-25). **#184** CLOSED not-reproduced: neither half; explained by #174, numbers in its dream (2026-07-25). **#179** P1 the focus steal (9e8469c) — focus() into a closed <details> is a silent no-op (2026-07-25). **#174** the cycle travels down (7d3c322) — a departure leaves in the direction its list travels (2026-07-25). **#150** coordination layer audited: relay.py, write-then-wake, agent visibility (2026-07-25). **#147** deployed.py measures by bytes; the hub row says it (59e7728, f3649f4) (2026-07-25). **#145** routing rule adopted (4 buckets) (2026-07-25). **#144** subagent plain text is not a channel; silent agents are shown (2026-07-25).
+**#86** P1 the composer renders what a plugin declares (a5a889d) — server filters the file (no core-kind shadowing, `common` never honoured), POST /command reads it per request so the menu never offers what the server refuses, menu items only because the row's width is load-bearing; found and fixed two wider bugs: `watched_mtime` was blind to deletions (→#207) and `tick` looked like the live path and was not (→#208); menu keyboard gap filed as #209 (2026-07-25). **#165** the history panel (91737bd) — sole source is #175's client log because only it knows the OUTCOME, and a panel that apologises per row is worse than a narrow one that states its limit once; failures leave via --warn because the accent marks what NEEDS him, and a failed send from an hour ago is a fact, not an errand (2026-07-25). **#175** every send is witnessed client-side (794d620) — IndexedDB, a DATABASE per project because a column can leak by omission and a database cannot; and the increment's find was a private fetch('/command') that left a third of his submissions unwitnessed, now unified through postJSON with a guard asserting the bare fetch stays absent (2026-07-25). **#163** the draft survives (8d0e6a7) — localStorage keyed by absolute target path (a draft is an unpublished thought, never a repo file; the #143 contrast is stated in watch-design.md), restore never overwrites live text, and the guard caught itself testing the restore while claiming to test the mode-switch (2026-07-25). **#198** the indicator was measured beneath a mid-transform ancestor (a86108e) — every rect read 3% small, error multiplying with distance from the origin; and the 'autocorrect' was unrelated re-renders laundering a permanent bug, not a transient (2026-07-25). **#199** P1 his words are on disk before anything may refuse them (fd3ae3b handler + 0bc0517 contract + migration 2026-07-25-15) — and the guard, by failing, proved questions.md is a RENDERING of his words, not a record of them (2026-07-25). **#191** the answer-morph carries its neighbours (38854bd) — and found that a guard's WINDOW can be the bug (2026-07-25). **#184** CLOSED not-reproduced: neither half; explained by #174, numbers in its dream (2026-07-25). **#179** P1 the focus steal (9e8469c) — focus() into a closed <details> is a silent no-op (2026-07-25). **#174** the cycle travels down (7d3c322) — a departure leaves in the direction its list travels (2026-07-25). **#150** coordination layer audited: relay.py, write-then-wake, agent visibility (2026-07-25). **#147** deployed.py measures by bytes; the hub row says it (59e7728, f3649f4) (2026-07-25). **#145** routing rule adopted (4 buckets) (2026-07-25). **#144** subagent plain text is not a channel; silent agents are shown (2026-07-25).
 Pruned in grooming; git is the real ledger. **#143** a per-project tint
 (6c49874) — a closed set, a Rodrigues hue rotation preserving the
 achromatic component by construction, the existing `/mtime` poll doing the
