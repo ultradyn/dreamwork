@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **201**
+Next id: **203**
 
 ## Open
 
@@ -62,6 +62,29 @@ Next id: **201**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#202** — "T3 connect": searched, the name does not resolve · P2 ·
+  task · **human 17:27** · no product/protocol by that name found ·
+  three candidates: **T3 Code** (Theo's open-source coding-agent control
+  plane, `pingdotgg/t3code` — has the LAN thin-client mode he described),
+  Claude Code's own `/remote`, or **ACP** (JSON-RPC over stdio, the open
+  standard) · **the finding worth more than the answer: T3 Code ALREADY
+  IS #201**, so those two ideas hide a build-vs-integrate decision ·
+  parked in questions.md · not blocking — #201's herdr control path is
+  useful under every answer
+- **#201** — Stream and control an agent's TUI in the browser via herdr ·
+  P2 · idea · several increments · **human 17:27** · substrate EXISTS and
+  is documented: `~/.llm-general/ai-coding/herdr/` verified against 0.7.4
+  protocol 16, PTY panes over a Unix-socket NDJSON API + status
+  classification; two reference consumers · **read those docs, do not
+  re-derive** · **the hard constraint**: watch/dreamhub are stdlib-only,
+  single-file, no build step, offline — a browser terminal normally means
+  xterm.js · three options (vendor a single-file build · render the ANSI
+  subset ourselves · render STATE not the TUI) and it needs deciding
+  before code · **it turns dreamhub from read-only into a control plane**
+  — the localhost bind and per-target isolation must survive explicitly ·
+  **`/compact` button FIRST**: `compaction.md` already has the protocol
+  and #127 parks the sender in stage 2, and it needs NO rendering, so it
+  tests the herdr path before committing to an emulator
 - **#200** — Monitor context usage; threshold triggers a self-audit ·
   P2 · idea · 2 parts · **human 17:23** · his example ("3 questions
   answered ages ago, forgotten?") turned out to be guard pollution, NOT

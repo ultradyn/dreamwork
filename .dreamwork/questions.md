@@ -239,6 +239,41 @@
   with the trailers since every commit written before they exist is one
   the future upgrade pass has to read blind.
 
+- **2026-07-25 — which "t3 connect" do you mean, and does it change #201?
+  (#202)** I searched and could not find a product or protocol by that
+  name, so I am asking rather than building against the nearest match.
+
+  Three candidates, and they are very different jobs:
+
+  **(a) T3 Code** — most likely. Theo's open-source **control plane for
+  coding agents** (`github.com/pingdotgg/t3code`, `t3.codes`), a GUI over
+  Codex/Claude/Cursor/OpenCode. It already has the remote mode you
+  described one paragraph earlier: agents on a machine on the LAN, laptop
+  as a thin client through its web interface. "T3 connect" is plausibly
+  that feature.
+  **(b) Claude Code's `/remote`** — exposes the running session to
+  claude.ai and the phone app. Already in the harness this loop runs in.
+  **(c) Agent Client Protocol (ACP)** — JSON-RPC 2.0 over stdin/stdout,
+  the open standard Microsoft's terminal adopted. Much the smallest job
+  if what you want is "speak the standard".
+
+  **The part worth your attention regardless of which it is.** You asked
+  for #201 — dreamhub streams and drives agent TUIs in the browser — in
+  the same message. **T3 Code already is that.** So the two ideas are not
+  independent: there is a build-versus-integrate decision under them, and
+  it is much cheaper to take deliberately now than to discover halfway
+  through #201.
+
+  I do not think full replacement is right — this dashboard is tied to
+  *this loop's* state (questions, ledger, dreams, tint, the shader) in a
+  way a general agent GUI will not be. But "dreamhub streams TUIs itself"
+  and "T3 Code streams them and dreamwork links out" are both coherent,
+  and the second is far less code.
+
+  **Not blocking**: #201's first increment is the herdr control path and
+  the `/compact` button, which needs no terminal rendering and is useful
+  under every answer.
+
 ## Answered
 
 - **May the dashboard read the session transcript? (#180)** → "Yes the
