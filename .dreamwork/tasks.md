@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **161**
+Next id: **162**
 
 ## Open
 
@@ -88,6 +88,13 @@ Next id: **161**
   or not purely by the route it was reached through. Reflow `.md`, keep
   `.py`/`.json`/logs verbatim, and update watch-design.md in the same
   commit because this REPLACES a rule
+- **#161** — The composer's `...` menu is misaligned and reads as a
+  button · P2 · bug · 20m · centre the dots (MEASURE first — #123 was
+  the same shape and took two wrong diagnoses) · and give it fill, no
+  stroke: a menu REVEALS where a button ACTS, so **outline means "this
+  acts", fill means "this reveals"** is worth stating in
+  watch-design.md as vocabulary rather than styling one control. The
+  fill is a surface colour, never the accent
 - **#160** — Frame-time graph should hug the RHS wall · P3 · bug · 10m ·
   check `position:fixed` is not containing-block-trapped by an ancestor
   with transform/filter (already a lesson, and this page has several) ·
