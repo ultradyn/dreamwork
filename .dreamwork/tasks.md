@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **152**
+Next id: **153**
 
 ## Open
 
@@ -68,6 +68,13 @@ Next id: **152**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
+- **#152** — Two maintenance rules that could be checks · P3 · chore ·
+  25m · recovered by grooming a 3-hour-old dream that predicted
+  `lint.py`'s thesis · (a) dangling-parent check is BLOCKED on a real
+  decision: the chain notation appears **once** in the whole ledger, so
+  either it is load-bearing and the coordinator should be writing it, or
+  it is ceremony that did not survive contact · (b) prose-wrap check on
+  SKILL.md is a cheap ride-along
 - **#151** — Commits panel shows five, and a new one arrives dreamlike ·
   P2 · idea · 40m · **the panel already exists** (verified on the
   deployed page) — this is fix at five, move to the top, and add the
