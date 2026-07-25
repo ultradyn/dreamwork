@@ -165,3 +165,8 @@ source dream. Not a log — only things that should change future behavior.
   mutable state without a named owner failed three times in six hours —
   an id counter, a working tree, a port — each invisible until a second
   actor existed. (coordinator, 2026-07-25 reflection)
+- Delegation parallelism is bounded by the largest single file: watch.py
+  is 3055 lines and took 39 commits today, so every UI steer serialises
+  through one dreamer no matter how many are free. The disjointness
+  invariant is correct and the file is the constraint. (coordinator,
+  2026-07-25)

@@ -70,6 +70,21 @@ opener, breadcrumbs, and their travel between routes — for free, and the
 fragment really can be only the important bits. That was not the goal of
 that change; it is a gift from it.
 
+## A second reason to want this
+
+Extraction would relieve a bottleneck nobody designed. `watch.py` is one
+3055-line file that took 39 commits on 2026-07-25, and the disjointness
+invariant means exactly one dreamer may hold it — so every UI steer from
+the human serialises through that one agent however many are idle. On a
+day when he sent six bug reports in an hour, the queue was the file, not
+the work.
+
+This does not justify splitting the file for its own sake: stdlib-only
+and no build step are load-bearing, and a component vocabulary is a
+smaller, better-motivated seam than a package layout. But it does mean
+the payoff is larger than tidiness, and it argues for pulling components
+into their own module rather than a section of the same file.
+
 ## Stages
 
 1. Wrapper: `.part.html` detection, shell injection, shader on by
