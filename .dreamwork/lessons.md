@@ -384,3 +384,14 @@ this shape and convert opportunistically.)
   a record without escaping, where the record's reader treats part of
   that text as syntax. Use a quoted heredoc and add the timestamp on its
   own line. (coordinator, 2026-07-25)
+- **Indenting human text is not enough to make a record safe; the reader
+  has two tests and they read different things.** #146's brief said to
+  indent continuation lines, which defeats the reader's `- **` and `## `
+  tests — both of which it applies to the RAW line. But it applies "does
+  this start a bullet" to the STRIPPED line, and a bullet ENDS a
+  sub-bullet's capture, so an indented `- foo` still dropped the rest of
+  his words into the entry's body, where they render as prose the loop is
+  assumed to have written. That is #109 failing through a different door,
+  and an entry-count assertion passes on it. Before sanitising for a
+  parser, enumerate every test it makes and what each one is applied to.
+  (2026-07-25, #146)
