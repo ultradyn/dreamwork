@@ -134,6 +134,17 @@ const seen = await p.evaluate(() => {
       // presence is not visibility: a component can be correct in source,
       // present in the DOM, and still not on screen
       h: r.getBoundingClientRect().height,
+      waitingAccent: (() => {
+        const w = r.querySelector('.waiting');
+        if (!w) return null;
+        // computed, not authored: a class that never wins its cascade is
+        // the sharper version of #117 (.sgbtn asked for background:none
+        // from #103 and never once rendered that way)
+        return getComputedStyle(w).color ===
+          getComputedStyle(document.documentElement)
+            .getPropertyValue('--accent').trim()
+          || getComputedStyle(w).color === 'rgb(165, 180, 252)';
+      })(),
       right: r.getBoundingClientRect().right,
     })),
     docWidth: document.documentElement.scrollWidth,
@@ -177,6 +188,16 @@ ok('the deleted target is still listed, as missing',
   row('gone') && row('gone').state === 'missing');
 ok('the mid-write row is still live, not blank',
   row('torn').state === 'dreaming');
+
+// the field a reader must never bury: this loop stopped for HIM
+ok('a loop waiting on him says so, above its task',
+  /waiting on you/.test(row('quiet').text)
+  && row('quiet').text.indexOf('waiting on you')
+     < row('quiet').text.indexOf('#50'));
+ok('...and it is the accent, not body text',
+  row('quiet').waitingAccent === true);
+ok('a loop waiting on nothing stays quiet about it',
+  !/waiting on you/.test(row('fresh').text));
 
 // down rows: no link to a dead port, and the command to fix it
 ok('the down row does not link to its dead port', row('fresh').href === null);

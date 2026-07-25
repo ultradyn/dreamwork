@@ -663,6 +663,34 @@ class TestRender:
         assert "127.0.0.1:39801" not in html
         assert "--target" in html and "watch.py" in html
 
+    def test_a_loop_waiting_on_him_says_so_above_its_task(self, hubfix):
+        """A row reading `quiet` over a loop that has stopped for HIM is the
+        most expensive wrong impression this page can give: he walks away.
+        It sits above the task because what it is doing matters less than
+        the fact that it stopped."""
+        quiet = next(r for r in rows_for(hubfix) if r["slug"] == "quiet")
+        assert len(quiet["awaiting_human"]) == 2
+        html = dreamhub.render_row(quiet)
+        assert "waiting on you" in html
+        assert "+1 more" in html
+        assert html.index("waiting on you") < html.index('class="task"')
+
+    def test_a_loop_waiting_on_nothing_says_nothing(self, hubfix):
+        fresh = next(r for r in rows_for(hubfix) if r["slug"] == "fresh")
+        assert fresh["awaiting_human"] == []
+        assert "waiting on you" not in dreamhub.render_row(fresh)
+
+    def test_awaiting_human_survives_a_junk_value(self, tmp_path):
+        d = tmp_path / "j" / ".dreamwork"
+        d.mkdir(parents=True)
+        for body in ['{"awaiting_human": "a string"}',
+                     '{"awaiting_human": 3}',
+                     '{"awaiting_human": [1, {"a": 2}]}']:
+            (d / "status.json").write_text(body)
+            row = probe_disk({"slug": "j", "path": str(tmp_path / "j")})
+            assert isinstance(row["awaiting_human"], list)
+            dreamhub.render_row(row)          # must not raise
+
     def test_the_missing_row_offers_no_command_it_cannot_honour(self,
                                                                 hubfix):
         """Found by looking at the render, not by an assertion: a directory

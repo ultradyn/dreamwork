@@ -282,7 +282,7 @@ def probe_disk(entry, now=None):
         "state": MISSING, "note": None, "port": None,
         "age": None, "age_str": "", "age_from": None,
         "task": None, "goal": None, "agents": [], "queue": None,
-        "last_commit": None,
+        "last_commit": None, "awaiting_human": [],
     }
     if not os.path.isdir(path):
         row["note"] = "directory is gone — remove it or fix the path"
@@ -325,6 +325,12 @@ def probe_disk(entry, now=None):
     row["queue"] = status.get("queue") if isinstance(
         status.get("queue"), dict) else None
     row["last_commit"] = status.get("last_commit")
+    # The one field a reader must never bury: a non-empty awaiting_human
+    # means the loop has stopped for HIM, not for a bug. A row that reads
+    # "dreaming" over a loop that is actually waiting on an answer is the
+    # most expensive wrong impression this page can give — he walks away.
+    row["awaiting_human"] = [str(a) for a in _as_list(
+        status.get("awaiting_human"))]
     # Every shape below is checked rather than trusted. status.json is
     # hand-written prose-ish JSON that a dozen loops on a dozen versions of
     # the skill will produce, and one of them WILL put a number where this
@@ -497,6 +503,11 @@ STYLE = """<style>
   .r { text-align:right; white-space:nowrap; flex:none; }
   .slug { color:var(--lit); }
   a.slug { color:var(--accent); }
+  /* Above the task, and the only other thing on this page that gets the
+     accent: what the loop is doing matters less than the fact that it has
+     stopped for him. */
+  .waiting { color:var(--accent); margin-top:.3rem; overflow-wrap:anywhere; }
+  .waiting .dimmer { color:var(--dim); }
   .task { color:var(--muted); margin-top:.3rem;
           overflow-wrap:anywhere; }
   .facts { color:var(--dim); margin-top:.3rem; overflow-wrap:anywhere; }
@@ -625,6 +636,12 @@ def render_row(row, now=None):
             if row.get("watch") == UP and row.get("watch_url")
             else f'<span class="slug">{label}</span>')
     parts = [f'<div class="l">{left}']
+    waiting = row.get("awaiting_human") or []
+    if waiting:
+        more = (f' <span class="dimmer">+{len(waiting) - 1} more</span>'
+                if len(waiting) > 1 else "")
+        parts.append(f'<div class="waiting">waiting on you · '
+                     f'{esc(waiting[0])}{more}</div>')
     if row.get("task"):
         parts.append(f'<div class="task">{esc(row["task"])}</div>')
     parts.append(f'<div class="facts">{_facts(row)}</div>')
