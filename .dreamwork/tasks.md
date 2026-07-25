@@ -11,13 +11,15 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **121**
+Next id: **122**
 
 ## Open
 
 - **#113** — Every state transition covered · P2 · task · 45m ·
   *in progress (dreamer-states)* · the wisp landed (86607dd); part 2 is
   the transition matrix
+- **#121** — `answer | add note` should be ghost buttons · P2 · bug ·
+  20m · **next-up** (via composer) · opaque fills hide the animation
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
