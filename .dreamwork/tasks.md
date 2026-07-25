@@ -11,13 +11,15 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **122**
+Next id: **123**
 
 ## Open
 
 - **#113** — Every state transition covered · P2 · task · 45m ·
   *in progress (dreamer-states)* · the wisp landed (86607dd); part 2 is
-  the transition matrix
+  the matrix, and the fold-out must not blank the body (human, 10:37)
+- **#122** — A smokey text effect while a question awaits folding · P2 ·
+  idea · 40m · ask first whether it is the dissolve's mist, held low
 - **#121** — `answer | add note` should be ghost buttons · P2 · bug ·
   20m · **next-up** (via composer) · opaque fills hide the animation
 - **#112** — Design proposals become fragments + shared template · P2 ·
