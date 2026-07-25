@@ -517,7 +517,17 @@ this shape and convert opportunistically.)
   that writes the file" is in this file, and a dreamer estimated three
   report timestamps anyway — 13:12/14:05/14:47/15:40 for events that
   happened between 13:04 and 13:50, on a channel the coordinator uses to
-  order work. `relay.py` designs that out for coordinator→dreamer messages;
-  nothing does for dreamer→coordinator inbox appends. The asymmetry is the
-  finding: when a fix exists in one direction, the other direction is where
-  the same mistake is still available. (dreamer-rows, 2026-07-25)
+  order work. Five different agents drifted the same way that day, always
+  mid-batch: elapsed time feels longer from inside the work, so the warning
+  was evidence about the warning. `relay.py coord --as <name>` now takes the
+  dreamer→coordinator direction too. (dreamer-rows, 2026-07-25)
+- **A report can be right about the gap and stale about the fix, and the
+  reason will be the gap itself.** The dreamer above reported that no writer
+  existed for its direction — twenty minutes after the coordinator had built
+  one and written it to the dreamer's inbox. It never read it: the inbox is
+  durable but not delivered, and the dreamer was mid-guard-run, which is
+  exactly the failure it was reporting. The general form: **a finding about
+  a broken channel cannot be trusted to have arrived through that channel.**
+  Before reporting that something is missing, re-read the inbox — a batch
+  written while you were busy is indistinguishable from no batch at all.
+  (dreamer-rows, coordinator-corrected, 2026-07-25)

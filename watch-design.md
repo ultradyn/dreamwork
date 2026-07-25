@@ -209,6 +209,42 @@ which were wrong first:
   the DOM but gives them no geometry, so the rect is measured *before* the
   toggle and `ghostNode` dreams them away on the same departure idiom.
 
+### Anything the human has changed on the page must survive the tick
+
+Promoted to a rule at its third instance, which is where this page promotes
+things:
+
+- **#118** — text he was typing, destroyed by the tick's `innerHTML` swap;
+- **#111** — an entry he had expanded, re-collapsed by the same swap;
+- **#141** — a section he had folded, same again, two seconds later.
+
+Each was found by hitting it, and each was fixed locally. A fourth feature
+carrying human-controllable state will hit it a fourth time unless the rule
+sits where the next builder meets it.
+
+**The list re-renders through `innerHTML`, so any state HE owns — text he is
+typing, a card he expanded, a section he folded — is destroyed unless it is
+snapshotted before the swap and restored after, keyed by something stable.**
+Liveness is not negotiable and never waits on this: the new DOM is committed
+immediately, exactly as it always was. What is carried across is only the
+state that exists **nowhere else** — nothing on disk can reconstruct it.
+
+**Restore must only ever RE-OPEN or RE-FILL, never close or clear.** That
+half is what makes a stale or wrong snapshot harmless *by construction*: the
+fresh render is the default and what he did to it is the addition, so the
+worst a bad snapshot can do is fail to give something back — never take
+something away. It is the same move as `human_block()` (make the bad input
+unrepresentable) and the status panel's fold-by-complement (demote what you
+do not recognise, never drop it). **When his state is involved, prefer the
+failure that loses nothing.**
+
+Two seams exist; extend one rather than adding a third.
+`snapshotCardState`/`restoreCardState` carries a card's text, caret, focus,
+scroll, box height, destination mode and every `<details>` inside it (#118,
+#111), keyed by `data-qid`. `snapshotFolds`/`restoreFolds` carries a section's
+`open`, keyed by `data-keep` (#141) — a new section opts in by carrying the
+attribute. Both run **before** the regroups, which measure.
+
 ### The persistent chrome
 
 The heading is not content. It is the page's frame — the same `+` opener, a
