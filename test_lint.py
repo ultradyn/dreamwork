@@ -595,3 +595,76 @@ class TestSubmissionsLog:
     def test_empty_file_is_fine(self, tmp_path):
         rep = self.run_s(tmp_path, "")
         assert not rep.failed and "no submissions" in rep.rows[0][2]
+
+
+class TestDreamworkFrontmatter:
+    """#194 — the version stamp the upgrade check compares against.
+
+    DREAMWORK.md may open with YAML frontmatter carrying `dreamwork-version`:
+    the first token of `bin/ud-dw-githash` output as last reconciled. The file
+    is the human's, so absence and extra keys stay survivable (WARN); what
+    goes red is a stamp that would lie to the comparison — a dirty
+    annotation stored as identity, a truncated sha, an unclosed block.
+    """
+
+    def check(self, tmp_path, dreamwork_md):
+        t = target(fresh(tmp_path))
+        if dreamwork_md is not None:
+            (t / "DREAMWORK.md").write_text(dreamwork_md)
+        rep = lint.Report()
+        lint.check_dreamwork_frontmatter(t / ".dreamwork", rep)
+        return rep
+
+    GOOD = "---\ndreamwork-version: 5853e1789929\n---\n# DREAMWORK.md\n\nGoals.\n"
+
+    def test_a_stamped_file_is_ok(self, tmp_path):
+        rep = self.check(tmp_path, self.GOOD)
+        assert not rep.failed
+        assert all(lvl == lint.OK for lvl, _, _ in rep.rows)
+
+    def test_unknown_is_a_legal_version_not_an_error(self, tmp_path):
+        # Fresh zip install, no git: "unknown" is a normal quiet state.
+        rep = self.check(tmp_path, "---\ndreamwork-version: unknown\n---\n# x\n")
+        assert not rep.failed
+
+    def test_no_frontmatter_is_a_warn_because_old_targets_are_legal(self, tmp_path):
+        rep = self.check(tmp_path, "# DREAMWORK.md\n\nGoals.\n")
+        assert not rep.failed
+        assert any(lvl == lint.WARN for lvl, _, _ in rep.rows)
+
+    def test_absent_file_is_a_warn(self, tmp_path):
+        rep = self.check(tmp_path, None)
+        assert not rep.failed
+        assert any(lvl == lint.WARN for lvl, _, _ in rep.rows)
+
+    def test_a_dirty_annotation_stored_as_identity_is_an_error(self, tmp_path):
+        # The githash tool prints "sha +3" live; only the first token is
+        # identity. Storing the annotation makes every comparison miss.
+        rep = self.check(tmp_path, "---\ndreamwork-version: 5853e1789929 +3\n---\n# x\n")
+        assert rep.failed
+
+    def test_a_truncated_sha_is_an_error(self, tmp_path):
+        rep = self.check(tmp_path, "---\ndreamwork-version: 5853e17\n---\n# x\n")
+        assert rep.failed
+
+    def test_frontmatter_without_the_key_is_an_error(self, tmp_path):
+        # A block that exists but says nothing reads as stamped at a glance.
+        rep = self.check(tmp_path, "---\nother-key: value\n---\n# x\n")
+        assert rep.failed
+
+    def test_an_unclosed_block_is_an_error(self, tmp_path):
+        rep = self.check(tmp_path, "---\ndreamwork-version: 5853e1789929\n# x\n")
+        assert rep.failed
+
+    def test_extra_keys_warn_so_growth_is_deliberate(self, tmp_path):
+        rep = self.check(
+            tmp_path,
+            "---\ndreamwork-version: 5853e1789929\nflavour: grape\n---\n# x\n")
+        assert not rep.failed
+        assert any(lvl == lint.WARN for lvl, _, _ in rep.rows)
+
+    def test_a_typoed_key_cannot_read_as_merely_unstamped(self, tmp_path):
+        # dreamwork-verison: the required-key ERROR is what catches this;
+        # if it ever demotes to the absent-frontmatter WARN, typos vanish.
+        rep = self.check(tmp_path, "---\ndreamwork-verison: 5853e1789929\n---\n# x\n")
+        assert rep.failed

@@ -118,6 +118,38 @@ first.
 and sorts as unmarked, so the entry he most wants seen sits mid-list
 looking urgent. A title with no marker is normal and says nothing.
 
+## `DREAMWORK.md` frontmatter — the version stamp (#194)
+
+The file may open with a YAML frontmatter block; when present, it carries
+the skill version this target last reconciled with:
+
+```
+---
+dreamwork-version: 5853e1789929
+---
+# DREAMWORK.md — <project>
+```
+
+- **`dreamwork-version`** (required once the block exists): exactly
+  twelve hex chars, or the word `unknown`. It is the **first token** of
+  `bin/ud-dw-githash` output — the `+N` dirty annotation is live state,
+  never stored, because identity that changes with an uncommitted edit
+  would make every comparison miss.
+- The upgrade check at init compares this against what `ud-dw-githash`
+  prints now; a difference means commits landed in between, and the
+  discovery pass reads them (plan: `docs/plans/version-and-upgrade.md`).
+  The stamp therefore *lags by nature* — it records the last
+  reconciliation, not the newest commit.
+- **No frontmatter is legal** (every pre-#194 target) and lints as a
+  WARN, not an error. The rest of the file below the closing `---` stays
+  entirely the human's prose — the block is the only machine-read part.
+- Other keys are tolerated with a WARN so the contract grows
+  deliberately; lines that are not `key: value`, an unclosed block, a
+  truncated sha, or a block missing `dreamwork-version` are errors.
+
+Checked by `lint.py` (`check_dreamwork_frontmatter`), which is the only
+code reader today; the init step reads through the same grammar.
+
 ## The rest
 
 These are written by the loop and read by something. Where a row says

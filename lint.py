@@ -499,6 +499,63 @@ def check_submissions(dw: Path, rep: Report) -> None:
         rep.add(OK, "submissions.log", f"{n} submission(s) recorded")
 
 
+VERSION_TOKEN = re.compile(r"^(?:[0-9a-f]{12}|unknown)$")
+FRONTMATTER_LINE = re.compile(r"^([a-z][a-z0-9-]*):\s*(.*)$")
+
+
+def check_dreamwork_frontmatter(dw: Path, rep: Report) -> None:
+    """#194 — DREAMWORK.md's version stamp, the thing the upgrade check
+    compares `bin/ud-dw-githash` against.
+
+    The file is the human's, so the survivable states stay WARN: no file,
+    no frontmatter (a pre-#194 target), keys this check doesn't know. What
+    goes red is a stamp that would lie to the comparison — identity must be
+    exactly twelve hex or the word `unknown`, never the live dirty
+    annotation, and a block that opens must close. A typoed key is caught
+    by the required-key ERROR, not demoted to the absent-frontmatter WARN.
+    """
+    path = dw.parent / "DREAMWORK.md"
+    if not path.exists():
+        rep.add(WARN, "DREAMWORK.md", "absent — the loop has no recorded goals here")
+        return
+    lines = path.read_text().splitlines()
+    if not lines or lines[0].strip() != "---":
+        rep.add(
+            WARN,
+            "DREAMWORK.md",
+            "no version frontmatter — the upgrade check reads blind until this target is stamped "
+            "(migrations/2026-07-25-14-version-frontmatter.md)",
+        )
+        return
+    try:
+        close = next(i for i, ln in enumerate(lines[1:], start=1) if ln.strip() == "---")
+    except StopIteration:
+        rep.add(ERROR, "DREAMWORK.md", "frontmatter opens with --- and never closes — the whole file reads as metadata")
+        return
+    keys: dict[str, str] = {}
+    for ln in lines[1:close]:
+        m = FRONTMATTER_LINE.match(ln)
+        if not m:
+            rep.add(ERROR, "DREAMWORK.md", f"frontmatter line is not `key: value`: {ln!r}")
+            return
+        keys[m.group(1)] = m.group(2).strip()
+    version = keys.pop("dreamwork-version", None)
+    if version is None:
+        rep.add(ERROR, "DREAMWORK.md", "frontmatter carries no dreamwork-version — it reads as stamped and says nothing")
+        return
+    if not VERSION_TOKEN.match(version):
+        rep.add(
+            ERROR,
+            "DREAMWORK.md",
+            f"dreamwork-version is {version!r} — must be exactly 12 hex chars or `unknown` "
+            "(the FIRST TOKEN of ud-dw-githash output; a dirty `+N` is live state, not identity)",
+        )
+        return
+    if keys:
+        rep.add(WARN, "DREAMWORK.md", f"frontmatter keys this check does not know: {sorted(keys)} — fine, but grow the contract deliberately")
+    rep.add(OK, "DREAMWORK.md", f"stamped {version}")
+
+
 def check_skill_version(dw: Path, rep: Report) -> None:
     path = dw / "skill-version"
     if not path.exists():
@@ -579,6 +636,7 @@ def main(argv: list[str] | None = None) -> int:
     check_plugin_commands(dw, watch, rep)
     check_submissions(dw, rep)
     check_skill_version(dw, rep)
+    check_dreamwork_frontmatter(dw, rep)
     check_dreams(dw, rep)
 
     print(f"lint {dw}")

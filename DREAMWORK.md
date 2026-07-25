@@ -1,3 +1,6 @@
+---
+dreamwork-version: 5853e1789929
+---
 # DREAMWORK.md — ud-dreamwork
 
 ## Goals
