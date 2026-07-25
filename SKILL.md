@@ -174,14 +174,13 @@ half-finished work and buries it in your increment.
 When disjointness can't be arranged — the work overlaps owned files, or
 the change is large or risky — dispatch the dreamer in a worktree (the
 harness's worktree isolation, or a git worktree under `.worktrees/`,
-gitignored): the invariant then holds by construction. Worktree
-lifecycle is automatic: merge back to the parent branch on acceptance
-and clean up the worktree — checking first for valuable untracked files
-(scratch, reports), which move out before removal, never get
-force-deleted. Worktrees duplicate build state: when the toolchain
-supports a shared cache (compiler cache, shared target/store dirs), set
-it up; if the project lacks one, suggest it to the human (questions.md)
-— storage ballooning is a real cost.
+gitignored): the invariant then holds by construction. Lifecycle follows
+the human's standing worktree convention (CLAUDE.md) — merge back on
+acceptance, and never force-remove without checking for untracked
+scratch first. One cost that convention does not mention: worktrees
+duplicate build state, so where the toolchain has a shared cache
+(compiler cache, shared target/store dirs), set it up; if the project
+lacks one, suggest it (questions.md). Storage ballooning is real.
 
 Dreamers are batches, not careers. A long-lived dreamer's context grows
 until fresh eyes are cheaper — bound its scope to the current batch,
@@ -237,14 +236,10 @@ results, no ceremony.
   going looking. Archive it when its successor exists or the handoff is
   spent.
 - `.dreamwork/lessons.md` — important lessons, each outliving the dream
-  it came from. **A bolded claim you could read on its own, then the
-  concrete case that earned it.** The claim is what makes the file
-  skimmable at fifty entries; the evidence is what stops it reading as
-  platitudes — "test your tests" persuades nobody, while "the serial-poll
-  test built its own thread pool and passed on a serial implementation"
-  cannot be argued with. Prune when a lesson has been absorbed into a
-  guardrail or a check; a lesson that is now enforced by `lint.py` or a
-  guard has graduated and can go.
+  it came from. **Prune when a lesson has graduated into a guardrail or
+  a check** — one now enforced by `lint.py` or a guard no longer has to
+  persuade anyone. What a good entry looks like, and why its evidence
+  half is load-bearing: `file-formats.md`.
 - `.dreamwork/docs/` — living docs collaboratively added to and maintained
   by us, the dreamers: design notes, discovered conventions, gotchas,
   architecture understanding. Maintained means pruned and updated when
