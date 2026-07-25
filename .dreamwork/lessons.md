@@ -486,13 +486,16 @@ this shape and convert opportunistically.)
   Drive the check with a real pointer when the thing being tested is
   whether HE can operate it — a synthetic event tests the handler, not
   the affordance. (dreamer-rows, 2026-07-25, #141)
-- **A guard that prints its checks at the TAIL reports a crash as a
-  clean run.** Three injections read as "this check proves nothing" when
-  the check had never been reached at all — the script died first and
-  printed nothing, which looks identical to printing no failures. Same
-  family as `node guard.mjs | tail` reporting tail's exit code: the
-  REPORTING path, not the checking path, is what lied. Print as you go,
-  or exit non-zero on an unreached end. (dreamer-rows, 2026-07-25)
+- **A guard that prints its checks at the TAIL misleads whoever DIAGNOSES
+  it, even when the runner catches it.** A crashed guard prints nothing,
+  which reads identically to printing no failures — three injections
+  looked like "this check proves nothing" when the check had never been
+  reached. Narrowed after its finder surveyed the actual exposure:
+  `just guards` branches on each guard's EXIT CODE, so a crash does read
+  as FAIL and the gate holds. What breaks is the human-facing half — the
+  log says nothing was wrong while the run says it failed, and you debug
+  the wrong thing. Print as you go. (dreamer-rows, 2026-07-25, corrected
+  by its own survey)
 - **A shared fixture that cannot express a feature makes its guard vacuous,
   and vacuous reads exactly like green.** `dev/capture/fixture` is not a git
   repository, so `git_tail` returns `[]` and the commits panel is EMPTY on

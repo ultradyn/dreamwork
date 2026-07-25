@@ -71,12 +71,15 @@ Next id: **156**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
-- **#155** — The styleguide audit found a real miss, and nothing gates
-  it · P2 · bug · 30m · `c065a51` (#130) added the whole status panel
-  without touching `watch-design.md`, so the page gained behaviour its
-  styleguide does not describe — including "fold by complement" · the
-  deeper half: DREAMWORK.md makes this a routine, `audit-styleguide`
-  checks it, and no gate runs it. #117's shape exactly
+- **#155** — The styleguide audit is red twice, and nothing gates it ·
+  P2 · bug · 30m · `c065a51` is a REAL miss (the status panel, including
+  fold-by-complement, undocumented) · `6099998` is arguably a FALSE
+  POSITIVE and that is the useful half: the audit greps commits touching
+  `watch.py` and cannot tell a page change from a server change, because
+  watch.py is both. Decide what the rule MEANS before gating it — and
+  note it becomes mechanically detectable only after #124 splits the
+  seam · the deeper half unchanged: a stated routine with a working
+  checker that no gate invokes, #117's shape
 - **#153** — Title that says whether you're needed, and a real favicon ·
   P2 · idea · 50m · the tab title is the only part of the dashboard
   visible in a background tab, so it carries the count front-loaded
