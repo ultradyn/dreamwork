@@ -110,7 +110,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
 | `.dreamwork/dreams/<date>-<time>-<slug>.md` | the coordinator; grooming | The **filename** is the contract: `2026-07-25-1130-slug.md`. It carries the ordering | `lint.py` (naming) |
-| `.dreamwork/lessons.md` | humans; the loop at init; grooming | A bolded claim readable on its own, then the concrete case that earned it, then its source. Prune once a lesson has graduated into a guardrail or a check | prose only |
+| `.dreamwork/lessons.md` | humans; the loop at init; grooming | **Stated in the file's own header** — a claim you could read alone, then the case that earned it. Craft belongs where the writer already is | prose only |
 | `.dreamwork/watch-events.log` | the coordinator's monitor — **it wakes on a line and acts on it** | One event per line. Human text written into it must not be able to forge a record: collapse newlines before they reach the file | prose only |
 | `DREAMWORK.md` | the loop, the wizard, the scope gate | Section headings are load-bearing — the scope gate and the goal chain both address them by name | prose only |
 | `~/.cache/agent-comms/<target>/coord-inbox.md` | the coordinator's tail monitor | Append-only, one report per line, prefixed `[agent-name]`. Machine-local, never committed | prose only |

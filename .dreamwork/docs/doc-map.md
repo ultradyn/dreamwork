@@ -42,7 +42,11 @@ cover it too.
 **Routing rule — a finding lands where its trigger lives.** Behaviour
 that must fire unprompted goes in SKILL.md; the shape of a file goes in
 `file-formats.md`; a procedure with a nameable trigger (init,
-compaction, plugins) goes in that trigger's reference file. SKILL.md is
+compaction, plugins) goes in that trigger's reference file; and **craft
+— how to write a good ENTRY in something — goes in that file's own
+header**, which is the best trigger available because the writer is
+already looking at it (#145). `lessons.md` and `tasks.md` both work this
+way already. SKILL.md is
 re-read on every reload and fires on nothing in particular, so it is the
 default destination only for things with no better trigger — it grew 246
 to 433 lines in one day by being everyone's default (#120, #145).
