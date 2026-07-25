@@ -2,6 +2,51 @@
 
 ## Open
 
+- **2026-07-25 — should `/file` reflow markdown? It replaces a recorded
+  decision (#158).** You asked for `/file?p=initialization.md` to have
+  its hard wraps reflowed. That contradicts a rule `watch.py` states in
+  its own words, from #102:
+
+  > "MARKDOWN PROSE REFLOWS, RAW TEXT DOES NOT. Question bodies,
+  > answers, follow-ups, dreams and the dashboard's .md peeks are prose
+  > the page composes, and they reflow. `/file`, status JSON and the git
+  > tail are shown as they are on disk, and stay verbatim in a `<pre>`."
+
+  The rule drew its line at **who composed the text** — a file viewer
+  that silently reformats is lying about what is on disk. Your request
+  exposes that the useful line is **what the text IS**:
+  `initialization.md` is the same prose that reflows in the dashboard's
+  own `.md` peek, and reflows or not purely by the route you reached it
+  through.
+
+  **Rec: reflow `.md` at `/file`, keep `.py`/`.json`/logs verbatim, and
+  rewrite the rule in the same commit** so the next reader sees it was
+  reconsidered rather than forgotten. Say if you would rather `/file`
+  stay honest-to-disk — that is a defensible position and the reason the
+  rule exists.
+
+- **2026-07-25 — what should the dashboard be called, and does the app
+  name appear anywhere? (#172, #153).** Two decisions that arrived from
+  opposite directions and should be made together.
+
+  You said "dreamwork watch" is "not very inspiring", and floated
+  "dreamwork" plus the project name, or "dreamwork dashboard" — marked
+  as thinking aloud rather than deciding.
+
+  Separately and independently, #153 **dropped the app name from the
+  browser tab title**, arguing that a tab strip never has room for it
+  and the favicon carries app identity. That shipped; the tab now reads
+  `(2) ud-dreamwork · dreaming · questions`.
+
+  So if the name also leaves the page heading, **nothing on screen says
+  "dreamwork" except the favicon**. That may be exactly right — it is
+  your product and you know what it is — but it is a bigger decision
+  than either half looked like alone, which is why it is one question.
+
+  Your layout principle is taken either way and is not in question:
+  anchor the invariant thing (repo name, branch) hard right so a
+  changing page title cannot shove it about.
+
 - **2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
   Stages 1-5 shipped: the skill exists, is installed and indexed, walks
   its own procedure, and `newerrand.py` creates a dreamstate so an
