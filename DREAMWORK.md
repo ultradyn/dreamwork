@@ -8,6 +8,16 @@
     compaction, a fresh agent. What it knew, it still knows.
   - The dashboard is how you check on it and steer it without a chat
     turn, and it is worth looking at.
+  - **Nothing fails quietly** (folded 2026-07-25 from what the loop
+    learned, not from a stated ask — say if you disagree). "Safe" turns
+    out to mean legible: on one day this loop found a questions.md that
+    parsed to nothing and rendered as "nothing to answer", a command
+    channel nothing read, a refused write that reported success, an
+    enter animation that had never once run under a matrix documenting
+    it, and several checks that passed on their own bug. Every one of
+    them looked fine. So the loop prefers a loud wrong state to a quiet
+    one, and prefers removing the opportunity for a mistake over
+    restating the rule against it.
   - **One human, several dreaming agents** (approved 2026-07-25, #96):
     the workflow scales past one session — a hub aggregates them, and
     managing an agent's lifecycle (spawning, steering, compacting,
