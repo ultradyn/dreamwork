@@ -297,3 +297,12 @@ this shape and convert opportunistically.)
   what it had dispatched. A guardrail written for one direction is not
   automatically applied in the other, and the machinery you built is
   exactly where you will forget to look. (coordinator, 2026-07-25, #144)
+- **Fold by complement, never by allowlist: demote what you do not name,
+  never drop it.** The status panel shows four named things and folds
+  "whatever is left", not "these other known keys" — because status.json
+  is a schema that keeps growing, and an allowlist would silently hide
+  the next field the loop learns to write, in exactly the way that looks
+  fine. Same shape as the morning's parser bug: a reader that cannot see
+  something renders identically to there being nothing to see. The
+  fixture now carries a key the renderer has never heard of, and a guard
+  asserts it stays findable. (dreamer-thread, 2026-07-25, #130)
