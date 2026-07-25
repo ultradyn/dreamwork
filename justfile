@@ -131,23 +131,53 @@ deploy rev="HEAD":
       && echo "deployed {{rev}} ($(git rev-parse --short {{rev}})) on :$port" \
       || { echo "deploy failed — see $dir/serve.log"; exit 1; }
 
-# every commit that changes the page must also update the styleguide
-# (DREAMWORK.md routine). Prints violations; silence is compliance.
+# Does a change to watch.py have a styleguide entry NEAR it? Prints
+# violations; silence means the check found nothing to complain about.
+#
+# READ THIS BEFORE TRUSTING IT — what it proves is narrower than its name.
+# It measures ADJACENCY (did watch-design.md change around here), not
+# COVERAGE (is the behaviour actually written down). Three consequences,
+# all observed on 2026-07-25:
+#   - Touching both files passes whether or not the doc says anything about
+#     the change. A whitespace edit to watch-design.md satisfies it. This is
+#     the failure nobody notices, and it means 29 green commits proved only
+#     that the files moved together.
+#   - Documenting BEFORE the code — better practice than co-committing — was
+#     flagged as a miss when the two landed 2 minutes apart in adjacent
+#     commits. Hence the window below.
+#   - watch.py is both the page and the server, so a writer-only fix looks
+#     like an undocumented page change. That one is only solvable by #124
+#     splitting the seam.
+# Deliberately NOT gated in `just test`: making adjacency mandatory would be
+# worse than the status quo. It is a prompt to look, not a proof (#155).
+#
 # Range defaults to the styleguide era — d1df255 is where watch-design.md
 # became authoritative, so earlier commits could not have obeyed the rule.
-audit-styleguide range="d1df255..HEAD":
+audit-styleguide range="d1df255..HEAD" window="3":
     #!/usr/bin/env bash
     set -euo pipefail
+    mapfile -t all < <(git log --format=%h {{range}})
     miss=0; ok=0
-    for c in $(git log --format=%h {{range}}); do
-      files=$(git show --stat --format= --name-only "$c")
-      grep -qx "watch.py" <<<"$files" || continue
-      if grep -qx "watch-design.md" <<<"$files"; then
+    for i in "${!all[@]}"; do
+      c="${all[$i]}"
+      git show --stat --format= --name-only "$c" | grep -qx "watch.py" || continue
+      # Look at this commit and {{window}} either side: a styleguide entry
+      # written just before or just after its code still documents it.
+      lo=$(( i - {{window}} )); [ "$lo" -lt 0 ] && lo=0
+      hi=$(( i + {{window}} )); [ "$hi" -ge "${#all[@]}" ] && hi=$(( ${#all[@]} - 1 ))
+      found=""
+      for j in $(seq "$lo" "$hi"); do
+        if git show --stat --format= --name-only "${all[$j]}" | grep -qx "watch-design.md"; then
+          found="${all[$j]}"; break
+        fi
+      done
+      if [ -n "$found" ]; then
         ok=$((ok+1))
       else
         miss=$((miss+1))
         echo "MISS $c $(git log -1 --format=%s "$c" | cut -c1-64)"
       fi
     done
-    echo "page-changing commits: $ok compliant, $miss missing a styleguide update"
+    echo "watch.py commits: $ok with a styleguide entry within {{window}}, $miss without"
+    echo "(adjacency, not coverage — see the comment above this recipe)"
     [ "$miss" -eq 0 ]
