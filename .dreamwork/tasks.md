@@ -11,18 +11,19 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **118**
+Next id: **119**
 
 ## Open
 
 - **#111** — Answered questions distinct and collapsed by default · P2 ·
-  task · 30m · human-asked; awaiting-fold probably stays open
+  task · 30m · *assigned (dreamer-states)* · one design with #113
 - **#113** — Awaiting-fold looks alive; every state transition covered ·
   P2 · task · 45m · do with #111; states encode who it waits on
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
-- **#117** — `just test` green while the real structural guards fail ·
-  P1 · bug · 45m · found by #115; a page change can be green and broken
+- **#118** — A live tick can eat what the human is typing · P1 · bug ·
+  40m · *in progress (dreamer-states)* · goal: never lose what he typed
+  ← "the dashboard is how you steer it"
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
   45m · the composer now renders from one `COMMANDS` table, so this is
   an append rather than a redesign
@@ -47,7 +48,9 @@ Next id: **118**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#103** one input per card
+Pruned in grooming; git is the real ledger. **#117** the verification
+gap — `just test` runs the browser guards against a frozen fixture
+(bb20eb1, daa9472). **#103** one input per card
 routed by a mode group (5b2fde9); **#104 #77** the regroup — answered
 questions travel, neighbours close the gap (fc8185d). **#109 #116** author-tagged
 notes and one reader for questions.md (2026-07-25, 34f272f) — #116 also
