@@ -29,9 +29,9 @@ carries a `+` command opener (steer the loop without a chat turn).
   note onto any entry (Open or Answered — a chronological mini-thread; a note
   on an Answered entry is flagged as a potential amendment in the events
   log); POST `/command` appends a source-tagged steering line
-  (`command via watch: <kind>: <text>`, kinds add-idea / do-next / do-now /
-  maintenance) to `.dreamwork/watch-events.log`. All three also append an
-  events-log line so the loop's tail monitor wakes. Every other route reads.
+  (`command via watch [<page>]: <kind>: <text>`, kinds add-idea / do-next /
+  do-now / maintenance) to `.dreamwork/watch-events.log`. All three also append
+  an events-log line so the loop's tail monitor wakes. Every other route reads.
   All file access goes through `resolve_confined()` (rejects absolute, `~`,
   traversal); `/filedata` and `/reviewraw` are both behind it.
 - **Port** persisted to `.dreamwork/watch-port` (random 3000–63000 once)
@@ -55,7 +55,10 @@ carries a `+` command opener (steer the loop without a chat turn).
   for style isolation; a question linking to it travels along, docked.
 - **Events log**: user actions (answers, commands) append one line to
   `.dreamwork/watch-events.log` so agents can wake on a tail Monitor
-  instead of waiting for a tick.
+  instead of waiting for a tick. **One event per line, and the line is
+  something an agent then acts on**, so nothing a human can type into a box
+  reaches it unfolded: a submission's newlines collapse to spaces (`one_line`)
+  or a typed newline forges a second event.
 - **`--dev`**: fps, measured per-frame draw time (CPU stopwatch around
   `draw()`; true GPU time via `EXT_disjoint_timer_query_webgl2` when the
   context exposes it), inter-frame avg/worst, and a 120-frame sparkline
@@ -555,6 +558,33 @@ arithmetic non-obvious, and both are load-bearing:
 
 Nothing under the buttons is reserved: `.cmdmsg:empty` collapses, so the
 panel grows downward only when there is something to say.
+
+**A steer carries the page it was sent from, and that page is a HINT** (#126).
+The client sends `location.pathname + location.search` with every write
+(`/command`, `/answer`, `/comment`) and the server brackets it into the events
+line: `command via watch [/review?p=goal-hierarchies.html]: do-next: …`. The
+query string is kept because *which* artifact he was reading is usually the
+whole point.
+
+The bracket is doing semantic work, not decoration. It puts the page **beside**
+the command rather than inside it, because this is **evidence about what he
+probably meant and never an instruction**: a command sent from `/questions` is
+not thereby about `/questions`, and an agent that treats the hint as scope will
+reliably narrow work he did not ask to narrow. The guard asserts the separation
+as well as the presence.
+
+Two consequences of the line being read by something that then acts:
+
+- **The path is sanitised down to a shape, not trusted**: leading `/`, no
+  control characters, no `]` — which would let it close its own bracket and
+  impersonate the rest of the line. Anything else yields **no hint at all**,
+  because a wrong hint is worse than none. Over-length is rejected rather than
+  truncated: a cut path is a different path, and it points at the wrong file.
+- **The popped-out composer captures its path at SPAWN**, not at submit. That
+  window floats free while the main tab navigates on and its own location is
+  `about:blank`, so where it was popped out *from* is both the only answer
+  available and the honest one — it is the thing he popped it out to keep
+  beside him.
 
 **The panel never closes under him** (#131). The auto-dismiss after a send is
 a *courtesy* — it gets the panel out of the way once the thought has landed —

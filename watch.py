@@ -866,15 +866,22 @@ const qaEntry = key => {
   const list = key[0] === 'a' ? data.answered_entries : data.questions_open;
   return (list || [])[+key.slice(1)] || null;
 };
+/* the page he was on when he sent it (#126). The query string is kept because
+   WHICH artifact he was reading is usually the point. Every write path sends
+   it; the server puts it in brackets in the events log, where it reads as a
+   hint and not as an instruction. */
+const fromPath = () => location.pathname + location.search;
 async function postAnswer(title, text) {
   await fetch('/answer', { method:'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ question: title, answer: text }) });
+    body: JSON.stringify({ question: title, answer: text,
+                           from: fromPath() }) });
 }
 async function postComment(title, note, section) {
   await fetch('/comment', { method:'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ question: title, comment: note, section }) });
+    body: JSON.stringify({ question: title, comment: note, section,
+                           from: fromPath() }) });
 }
 """
 
@@ -1896,6 +1903,11 @@ async function requestPopout() {
       const doc = popoutShell(w, base, path, tint, '+ command');
       doc.body.innerHTML = POPOUT_BODY(base, path);
       const endpoint = location.origin + '/command';
+      // captured at SPAWN, not read at submit: this window floats free while
+      // the main tab navigates on, and its own location is about:blank. Where
+      // it was popped out FROM is the honest hint, and it is also the thing he
+      // popped it out to keep beside him.
+      const from = fromPath();
       const msg = doc.getElementById('pmsg');
       doc.addEventListener('keydown', ev => {        // Ctrl/Cmd+Enter submits
         if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
@@ -1912,7 +1924,7 @@ async function requestPopout() {
         try {
           const r = await fetch(endpoint, { method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ kind, text }) });
+            body: JSON.stringify({ kind, text, from }) });
           if (r.ok) { msg.textContent = 'sent to the dream';
             msg.className = 'pmsg ok'; doc.getElementById('ptext').value = ''; }
           else { msg.textContent = 'rejected (' + r.status + ')';
@@ -2124,7 +2136,7 @@ function popoutDoc(url, label) {
     try {
       const r = await fetch('/command', { method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, text }) });
+        body: JSON.stringify({ kind, text, from: fromPath() }) });
       if (r.ok) {
         if (m) { m.textContent = 'sent to the dream'; m.className = 'cmdmsg ok'; }
         const plus = document.getElementById('cmdplus');
@@ -3088,12 +3100,46 @@ def log_event(target, line):
 COMMAND_KINDS = tuple(c["kind"] for c in COMMANDS)
 
 
-def command_line(kind, text):
+# WHERE he was when he sent it (#126). A command sent while reading
+# `/review?p=goal-hierarchies.html` is usually about that artifact, and the
+# query string is the part that says which one — so it is kept.
+#
+# It is a HINT and the log line says so by putting it in brackets, off to the
+# side of the command: evidence about what he probably meant, never an
+# instruction. A command sent from /questions is not thereby about /questions.
+#
+# The line is read by an agent that then acts, so the path is sanitised down to
+# a conservative shape rather than trusted: it must start with `/`, carry no
+# control characters, and carry no `]` — which would let it close its own
+# bracket and impersonate the rest of the line. Anything else yields no hint at
+# all, because a wrong hint is worse than none (the same rule as `note_author`).
+FROM_MAX = 200
+FROM_OK = re.compile(r"\A/[^\x00-\x1f\]]*\Z")
+
+
+def from_hint(source):
+    """` [<path>]` for a page path the client reported, or ''.
+
+    Over-length is REJECTED, not truncated: a cut path is a different path,
+    and it would point whoever reads the line at the wrong file."""
+    path = (source or "").strip()
+    if len(path) > FROM_MAX or not FROM_OK.match(path):
+        return ""
+    return f" [{path}]"
+
+
+def one_line(text):
+    """Fold a submission onto one line — the log is one event per line, and a
+    newline typed into the box would otherwise forge a second event."""
+    return " ".join((text or "").split())
+
+
+def command_line(kind, text, source=""):
     """Source-tagged watch-events.log line for a human-submitted command.
 
     Pure; testable. do-next may carry no text (it just nudges selection)."""
-    body = f": {text}" if text else ""
-    return f"command via watch: {kind}{body}"
+    body = f": {one_line(text)}" if text else ""
+    return f"command via watch{from_hint(source)}: {kind}{body}"
 
 
 def make_handler(target, dev=False):
@@ -3198,7 +3244,8 @@ def make_handler(target, dev=False):
                 with open(qpath, "w", encoding="utf-8") as f:
                     f.write(new_text)
             log_event(target,
-                      f'answer: "{title}" -> .dreamwork/questions.md '
+                      f'answer{from_hint(req.get("from"))}: "{one_line(title)}"'
+                      f' -> .dreamwork/questions.md '
                       f'(fold the answer, act, move to Answered)')
             self._send(json.dumps({"ok": True}), "application/json")
 
@@ -3233,7 +3280,8 @@ def make_handler(target, dev=False):
             hint = ("(re-evaluate — a note on an answered entry may amend it)"
                     if section == "Answered" else "(fold with the entry)")
             log_event(target,
-                      f'follow-up: "{title}" -> .dreamwork/questions.md {hint}')
+                      f'follow-up{from_hint(req.get("from"))}: '
+                      f'"{one_line(title)}" -> .dreamwork/questions.md {hint}')
             self._send(json.dumps({"ok": True}), "application/json")
 
         def _handle_command(self):
@@ -3249,7 +3297,7 @@ def make_handler(target, dev=False):
             if kind not in COMMAND_KINDS or (kind != "do-next" and not text):
                 self.send_error(400)
                 return
-            log_event(target, command_line(kind, text))
+            log_event(target, command_line(kind, text, req.get("from")))
             self._send(json.dumps({"ok": True}), "application/json")
 
         def log_message(self, *_args):

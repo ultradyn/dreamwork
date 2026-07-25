@@ -83,12 +83,38 @@ than restructuring it, and prefer appending to an existing skeleton.
 | File | Read by | Contract | Checked |
 |---|---|---|---|
 | `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | One `- **#N**` entry per task; `Next id: **N**` in the header. Ids are **permanent**, so a duplicate is unrecoverable and `Next id` must exceed every id present | `lint.py` |
-| `.dreamwork/status.json` | `watch.py`'s status reader; the dashboard's status section | Valid JSON. A schema rather than a shape — match the existing keys; `agents` carries live subagents | `lint.py` (validity) |
+| `.dreamwork/status.json` | `watch.py`'s status reader; **`dreamhub.py`** | Valid JSON, and now an interface — see below | `lint.py` |
+| `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
 | `.dreamwork/dreams/<date>-<time>-<slug>.md` | the coordinator; grooming | The **filename** is the contract: `2026-07-25-1130-slug.md`. It carries the ordering | `lint.py` (naming) |
 | `.dreamwork/lessons.md` | humans; the loop at init; grooming | A bolded claim readable on its own, then the concrete case that earned it, then its source. Prune once a lesson has graduated into a guardrail or a check | prose only |
 | `.dreamwork/watch-events.log` | the coordinator's monitor — **it wakes on a line and acts on it** | One event per line. Human text written into it must not be able to forge a record: collapse newlines before they reach the file | prose only |
 | `DREAMWORK.md` | the loop, the wizard, the scope gate | Section headings are load-bearing — the scope gate and the goal chain both address them by name | prose only |
+
+## `.dreamwork/status.json` — now an interface
+
+It had one reader and a loose contract, which was fine: a single reader
+and its writer co-evolve, and nothing breaks in between. On 2026-07-25
+`dreamhub.py` became a second reader, and **a file with two readers is
+an interface whether or not anyone wrote one down.**
+
+Every field is **optional**, and readers must degrade rather than throw —
+a fresh loop writes a nearly empty file, and a target whose loop is not
+running still has to appear in the hub. Writers should provide the core:
+
+| Field | Type | Means |
+|---|---|---|
+| `task` | string | one line: what the loop is doing right now |
+| `goal` | string | the session goal this serves |
+| `agents` | array of objects, each with at least `name` | live subagents; a reader shows the count and the names |
+| `queue` | object, integer `in_progress` and `pending` | queue depth |
+| `awaiting_human` | array of strings | **non-empty means the human is the bottleneck.** The one field a reader must never bury (#130, #141) |
+| `last_tick`, `last_commit` | string | freshness; a stale `last_tick` is how a stalled loop is spotted |
+| `deploy`, `monitors`, `coordinator_next` | strings / arrays | recovery notes for whoever picks the loop up after a compaction |
+
+The file is **gitignored ephemera** and stays that way. It describes a
+running process, so a committed one would be a lie the moment it landed;
+that is also why there is no history to compute stats from (#142).
 
 ## Why this file exists rather than a paragraph in SKILL.md
 

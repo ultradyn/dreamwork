@@ -1,4 +1,7 @@
-/* #131 — the composer must not close under him.
+/* The composer's behaviour guard: #131 (it must not close under him) and #126
+   (a command carries the page it was sent from).
+
+   #131 — the composer must not close under him.
 
    His words: "if on the composer, someone enters something, ctrl+enter
    submits, then starts typing again, the composer should not fade away. also
@@ -94,6 +97,45 @@ ok('...and it stays cancelled, not merely postponed',
 ok('the stale confirmation clears when he resumes', !msgAfter);
 
 await p.screenshot({ path: `${OUT}/composer.png` });
+
+/* #126 — a command carries the page it was sent from, all the way to the line
+   the loop wakes on. The client half is what could silently stop working: the
+   server's formatting is a pure function with its own unit tests, but nothing
+   else proves the page ever puts `from` in the body.
+
+   Read back from the real events log rather than from the POST, because the
+   log line is the artifact — it is what an agent tails and acts on. */
+const rev = await p.evaluate(async () =>
+  (await (await fetch('/data.json')).json()).reviews[0]);
+if (rev) {
+  const url = `/review?p=${encodeURIComponent(rev.name)}`;
+  await p.goto(BASE + url, { waitUntil: 'networkidle' }); await sleep(900);
+  await openPanel(p);
+  await p.evaluate(() => {
+    const ta = document.getElementById('cmdtext');
+    ta.value = 'a steer sent while reading the artifact';
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('cmdform').requestSubmit();
+  });
+  await sleep(600);
+  const log = await p.evaluate(async () => {
+    const r = await fetch('/filedata?p=' +
+      encodeURIComponent('.dreamwork/watch-events.log'));
+    return r.ok ? (await r.json()).content : '';
+  });
+  const line = log.trim().split('\n').filter(Boolean).at(-1) || '';
+  notes.push(`events line: ${line}`);
+  ok('the command line names the page it was sent from, query string and all',
+     line.includes(`[${url}]`));
+  // it is a hint, so it sits OUTSIDE the command rather than inside it — an
+  // agent reading the line must not be able to mistake it for what was typed
+  ok('...beside the command, not inside it',
+     line.includes(`[${url}]: `) && !line.split(': ').slice(1).join(': ')
+       .includes(url));
+} else {
+  ok('fixture has a review artifact to send a command from', false);
+}
+
 ok('no page errors', errs.length === 0);
 await br.close();
 
