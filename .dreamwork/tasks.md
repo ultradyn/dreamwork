@@ -60,11 +60,6 @@ Next id: **156**
   not just the net (the gap cannot tell "he steers fast" from "work is
   slow"); human- vs loop-initiated is the most telling number here. No
   velocity score. Cost: bucket + cache on HEAD, never replay per tick
-- **#141** — Dashboard questions section folds, counts, disables at
-  zero · P2 · idea · 30m · **needs #136 first**: a grey disabled zero IS
-  the all-clear signal, and an unreadable file currently produces the
-  same zero — shipping this first makes the silent failure more
-  convincing, not less
 - **#140** — Close the commit-to-deploy window · P2 · task · 25m · a
   fix can be committed and undeployed while he is looking at the page,
   which is indistinguishable from broken — it cost a tracing cycle on
@@ -106,10 +101,6 @@ Next id: **156**
   One finding left open by design: **a shutdown approval carries no
   payload**, so anything an agent knows at termination must be written
   BEFORE it agrees to stop — procedural, not checkable
-- **#149** — `append_subbullet` eats the blank line before
-  `## Answered` · P3 · chore · 10m · cosmetic and pre-existing; the file
-  drifts from the example `file-formats.md` shows. Fix the writer, not
-  the doc
 - **#133** — Teach watch.py a URL prefix · P3 · task · 45m · do it
   inside #124's server-core seam; unblocks the single-URL hub layout
 - **#122** — Smokey awaiting-fold text: the words warp, a ghost copy
@@ -152,7 +143,13 @@ Next id: **156**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#132 #151 #154** (2c42da1)
+Pruned in grooming; git is the real ledger. **#141 #149** (2bf61da,
+6099998) — the questions section folds, counts and greys, keyed on
+`questions_health` rather than the count so a calm grey can never sit
+under #136's warning; and it would have SNAPPED SHUT under him every 2s,
+the innerHTML-swap state loss for the third time after #118 and #111.
+Restore only ever re-opens, so a stale snapshot cannot take anything
+from him. **#132 #151 #154** (2c42da1)
 — relative commit ages riding the page's existing per-second sweep, five
 rows arriving as one gesture on a new SHA rather than on a tick, and the
 enter-snap class fixed: `.dreamin` had NEVER worked for question cards,
