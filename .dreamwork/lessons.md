@@ -228,3 +228,13 @@ source dream. Not a log — only things that should change future behavior.
   argument for executable contracts stated in the doc itself — not
   because people are careless, but because the gap opens even when they
   are not. (coordinator, 2026-07-25, #137)
+- Three checks were caught proving nothing on 2026-07-25, by three
+  different agents, and none was visible by reading it: the wisp guard
+  passed on a one-way sweep because it counted direction reversals; the
+  oneinput guard passed on the textarea leak because it asserted the
+  BUTTON spans the field; a dreamhub test passed on a serial probe
+  because it built its own thread pool. Each was found only by
+  reintroducing the bug. Writing a check and running it green is half
+  the work — the other half is making it red on purpose, and it is the
+  half that finds out whether you tested the thing or its neighbour.
+  (coordinator, 2026-07-25)
