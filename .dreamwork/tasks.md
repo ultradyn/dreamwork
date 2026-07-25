@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **176**
+Next id: **178**
 
 ## Open
 
@@ -91,6 +91,24 @@ Next id: **176**
   or not purely by the route it was reached through. Reflow `.md`, keep
   `.py`/`.json`/logs verbatim, and update watch-design.md in the same
   commit because this REPLACES a rule
+- **#177** — Text boxes grow with what he types, then scroll · P2 ·
+  idea · 30m · his numbers: composer 2-3 → 10-15, answer/note 2 → 6 ·
+  the different ceilings are right — a 15-line box inside a question
+  card would shove the list for a ten-second sentence · **third time
+  today** that growing something moves what is below it (#141, #169,
+  now) — the growth and #104's travel are ONE gesture · the box's HEIGHT
+  is now state, so #118's tick-survival applies to it · fires on every
+  newline, so it is the most frequent animation on the page
+- **#176** — Paste images into the composer and answer boxes · P3 ·
+  idea · 90m · **the biggest new surface the page would gain**: a fifth
+  write exception that takes ARBITRARY BINARY, where the other four take
+  a short validated string. `resolve_confined` gates serving; an upload
+  needs its inverse and there isn't one · **where they live is a real
+  decision**: outside the repo means a pasted screenshot never travels,
+  so a question read on another machine has text and a broken link ·
+  it changes `questions.md`'s shape, so file-formats row + lint check,
+  and `human_block()` must handle an embed without a crafted path doing
+  what a crafted bullet used to · split it: storage first, render second
 - **#175** — Append-only client-side log of every submission · P2 ·
   idea · 35m · **completes the trio**: #163 the draft (before send),
   this the submission (at send, client-side), #165 the history (after
