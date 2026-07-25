@@ -2,6 +2,27 @@
 
 ## Open
 
+- **2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
+  Stages 1-5 shipped: the skill exists, is installed and indexed, walks
+  its own procedure, and `newerrand.py` creates a dreamstate so an
+  opening never hand-writes `questions.md`/`status.json` by hand.
+
+  **Stage 6 is the only thing left and it is deliberately gated**,
+  because it is the one part that reaches back into ud-dreamwork:
+  dreamwork's init would read PAST dreamstates, so lessons an errand
+  learned surface in the garden that spawned it. That means editing
+  `initialization.md`, a migration, and probably `file-formats.md` and
+  `lint.py` — new surface in the core loop, not in the sibling.
+
+  Rec: **yes, but later.** The value is real (an errand's lessons
+  currently die with its archive) and nothing else is blocked on it.
+  But it widens the core loop's init, and today already added a linter
+  step there. A week of using dreamtask will say more about what is
+  worth harvesting than a design conversation will now.
+
+  Answer "go" to plan it, or leave it and it stays parked.
+
+
 - **2026-07-25 — how should an answer reach a loop on another machine?**
   You said "defer publishing repo for a bit", which answers an open
   question belonging to the dreamwork instance on **x-game**
