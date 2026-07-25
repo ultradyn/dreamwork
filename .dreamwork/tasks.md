@@ -94,7 +94,11 @@ Next id: **206**
   had cleaned up**, so do NOT fix by asking for more care · rec: bind
   port 0 and let the OS assign (removes the class), probe for something
   only THIS server serves, reap in a trap/finally, log what was started
-  and killed · belongs with #148 + #192 in the shared runner
+  and killed · belongs with #148 + #192 in the shared runner · **a guard
+  red only under LOAD is worse than plainly wrong** — the first re-run
+  exonerates it and teaches everyone to re-run; if the runner ever
+  retries, it must SAY it retried (qsec 18:17, prominence at 7ac4f02:
+  the trace armed on the click, so it measured its own input latency)
 - **#202** — "T3 connect": searched, the name does not resolve · P2 ·
   task · **human 17:27** · no product/protocol by that name found ·
   three candidates: **T3 Code** (Theo's open-source coding-agent control
@@ -158,7 +162,9 @@ Next id: **206**
   it and a date comparison would be a second mechanism that can disagree
   · both surfaces render through `qaCard` (#105) but sort separately —
   make ordering a property of the parse, not of each renderer · use the
-  ledger's P1-P3 vocabulary, not a second one
+  ledger's P1-P3 vocabulary, not a second one · the frozen fixture has ZERO
+  P-prefixes (predates #197), so a sort guard sees nothing until the
+  same commit gives fixture questions.md prioritised entries
 - **#196** — Dashboard questions section snaps instead of arriving ·
   P2 · bug · 25m · **human 17:12** · `.qsec` from #141 · the page learned
   this lesson all day one surface at a time (#129, #113, #169) and the
