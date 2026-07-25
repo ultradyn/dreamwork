@@ -4,3 +4,7 @@ __pycache__/
 
 # worktrees for isolated dreamer spikes
 .worktrees/
+
+# playwright MCP scratch — noise in git status is how a stray `git add -A`
+# sweeps someone else's work
+.playwright-mcp/
