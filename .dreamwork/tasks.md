@@ -199,8 +199,10 @@ Next id: **206**
   **one open question** (zip has no repo, repo is private — rec: ship a
   generated changelog in the release) · trailers LANDED pre-compaction ·
   **githash LANDED 472b9e8** (output is the contract; 8 tests red-first)
-  — remaining: frontmatter+migration+lint row, init step, discovery
-  subagent (last two after the open question)
+  · **frontmatter LANDED 5c19a68** (file-formats row + lint check +
+  migration `2026-07-25-14` + this target stamped, one commit) —
+  remaining: init step, discovery subagent (both after the open
+  question)
 - **#193** — A blocked errand is invisible · P2 · task · 25m · an
   errand's `awaiting_human` in `~/.config/dreamwork/tasks/` is read by
   NOTHING; hub listing is opt-in (right call) but the consequence was not
