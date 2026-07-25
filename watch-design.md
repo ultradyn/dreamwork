@@ -209,22 +209,57 @@ which were wrong first:
   the DOM but gives them no geometry, so the rect is measured *before* the
   toggle and `ghostNode` dreams them away on the same departure idiom.
 
-### Anything the human has changed on the page must survive the tick
+### Anything the human has changed on the page must survive ANY re-render
 
 Promoted to a rule at its third instance, which is where this page promotes
-things:
+things — and then broken a fourth time anyway, which is why it now says *any
+re-render* rather than *the tick*:
 
 - **#118** — text he was typing, destroyed by the tick's `innerHTML` swap;
 - **#111** — an entry he had expanded, re-collapsed by the same swap;
-- **#141** — a section he had folded, same again, two seconds later.
+- **#141** — a section he had folded, same again, two seconds later;
+- **#179** — the **focus** taken out of the box he was typing in, on every
+  re-render of the dashboard.
 
-Each was found by hitting it, and each was fixed locally. A fourth feature
-carrying human-controllable state will hit it a fourth time unless the rule
+Each was found by hitting it, and each was fixed locally. A fifth feature
+carrying human-controllable state will hit it a fifth time unless the rule
 sits where the next builder meets it.
 
 **The list re-renders through `innerHTML`, so any state HE owns — text he is
-typing, a card he expanded, a section he folded — is destroyed unless it is
-snapshotted before the swap and restored after, keyed by something stable.**
+typing, where his caret is, a card he expanded, a section he folded — is
+destroyed unless it is snapshotted before the swap and restored after, keyed
+by something stable.** *Any* re-render: **a new render path states how it
+satisfies this rule**, and "the tick already handles it" is not that
+statement — a path that re-renders on a different trigger runs the same
+`innerHTML` swap and owes the same answer.
+
+**#179 is what that scoping costs, and it is worth reading before adding a
+path.** The rule above was written for the tick and the guard for it
+(`typing.mjs`) only ever visited `/questions`. On the **dashboard** every
+card lives inside `.qsec`, the fold #141 added — so the fresh render arrives
+with the section shut, and `focus()` on an element inside a closed
+`<details>` **does nothing and reports nothing**. The box came back filled,
+with his caret in the right place, and dead. Two things follow:
+
+- **The two snapshot seams are ordered by what NESTS, not only by what
+  measures.** `restoreFolds` must run before `restoreCardState`, because a
+  card's restore puts the caret back and the container has to be open for
+  that to mean anything; both still run before the regroups, which measure.
+- **An ordering constraint fixes the instance; the class needs the restore to
+  check that it landed.** `refocus()` focuses, asks whether
+  `document.activeElement` actually changed, and if it did not, re-opens
+  every `<details>` above the box and tries once more. That is safe by
+  construction — he could only have been typing in a box whose ancestors
+  were open — and it is the same "only ever re-open, never close" rule the
+  restores already obey. The next container someone wraps this list in gets
+  the focus back without knowing about any of this.
+
+The reported trigger is worth naming too, because it is a red herring that
+would have sent the fix to the wrong layer: he saw it *"when the git log at
+the top cycled"*, and #151 had landed that day. The commits panel is
+innocent — it is simply the one thing on the dashboard whose re-render he
+can SEE, so it is what he noticed. The check therefore fires on a **plain
+tick** as well as on a new commit, and both are in `motion.mjs`.
 Liveness is not negotiable and never waits on this: the new DOM is committed
 immediately, exactly as it always was. What is carried across is only the
 state that exists **nowhere else** — nothing on disk can reconstruct it.
@@ -243,7 +278,8 @@ Two seams exist; extend one rather than adding a third.
 scroll, box height, destination mode and every `<details>` inside it (#118,
 #111), keyed by `data-qid`. `snapshotFolds`/`restoreFolds` carries a section's
 `open`, keyed by `data-keep` (#141) — a new section opts in by carrying the
-attribute. Both run **before** the regroups, which measure.
+attribute. Both run **before** the regroups, which measure, and **folds run
+before cards** (#179, above).
 
 ### The persistent chrome
 

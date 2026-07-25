@@ -49,13 +49,17 @@ lint:
 #                above. It inits a repo with commits at known ages (the only
 #                way to reach the 100-day boundary at all) and takes an
 #                EPHEMERAL port rather than the one it is handed.
+#   motion       same shape as dashboard and for the same reason — it drives
+#                the commits panel, so it needs a git target of its own. It
+#                also TYPES into a card between renders, which is why it
+#                cannot share a page with anything that navigates.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"

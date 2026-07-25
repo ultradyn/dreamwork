@@ -1934,8 +1934,28 @@ function restoreCardState(saved) {
     setCardMode(comp, s.mode, true);
     ta.scrollTop = s.scroll;
     try { ta.setSelectionRange(s.start, s.end, s.dir || 'none'); } catch (e) {}
-    if (s.focus) ta.focus({ preventScroll: true });
+    if (s.focus) refocus(ta);
   });
+}
+/* Put the caret back in the box he was typing in — and CHECK that it landed,
+   because the way this fails is silence (#179).
+   `focus()` on an element inside a CLOSED <details> does nothing at all and
+   throws nothing, so a card restored while its section was still shut came
+   back filled but dead, and only on the dashboard, where cards live inside
+   `.qsec`. Ordering the two restores fixes that instance; this kills the
+   class, which is what "his state survives ANY re-render" needs — the next
+   container someone wraps the list in has no snapshot of its own and would
+   silently eat the focus again.
+   Re-opening is always safe here BY CONSTRUCTION: he could only have been
+   typing in a box whose ancestors were open, so every one of them re-opening
+   is restoring what he had. It obeys the standing rule that a restore only
+   ever RE-OPENS or RE-FILLS — the worst it can do is give something back. */
+function refocus(ta) {
+  ta.focus({ preventScroll: true });
+  if (document.activeElement === ta) return;
+  for (let n = ta.parentElement; n; n = n.parentElement)
+    if (n.tagName === 'DETAILS') n.open = true;
+  ta.focus({ preventScroll: true });
 }
 /* ── the regroup (#104, #77) ──────────────────────────────────────────────
    Answering a question moves it out of the open list and under a different
@@ -2536,10 +2556,16 @@ async function tick() {
         ? snapshotCards(GIT_LIST) : null;
       if (view.name === 'dashboard') setContent(buildDashboard(data));
       else if (view.name === 'questions') setContent(buildQuestions(data));
-      restoreCardState(kept);
-      // before the regroups: they MEASURE, and a section restored afterwards
-      // would be measured shut and then opened underneath the animation
+      // FOLDS FIRST, then the cards inside them (#179). Both must land before
+      // the regroups, which MEASURE — a section restored afterwards would be
+      // measured shut and then opened underneath the animation — but the
+      // order BETWEEN them is not free: a card's box is restored by putting
+      // his text back and putting the CARET back in it, and focus() inside a
+      // closed <details> does nothing and reports nothing. On the dashboard
+      // every card lives inside `.qsec`, which renders closed, so restoring
+      // the card first re-filled the box and silently dropped the focus.
       restoreFolds(folds);
+      restoreCardState(kept);
       regroupCards(before);
       regroupCards(gitBefore, null, GIT_LIST);
       // the crumbs carry live numbers too (open count, version) — and the
