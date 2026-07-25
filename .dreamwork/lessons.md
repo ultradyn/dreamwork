@@ -427,3 +427,20 @@ this shape and convert opportunistically.)
   decision. Default fresh; reuse only inside ~4 minutes of its last stop,
   where the cache is still warm and a respawn would throw it away.
   (coordinator, human-corrected, 2026-07-25)
+- **An exemption is where a check quietly dies, so define it as narrowly as
+  the failure allows and prove it did not swallow the real one.** #136's
+  calm state could have been "no prose in the file", which blesses the exact
+  morning failure — a questions.md whose only lines were `##` headings the
+  loop had written AS its questions. Calm therefore requires no prose AND the
+  literal `## Open` the reader matches, and the guard's last read-side
+  assertion takes the file the exemption blesses, adds one line of prose, and
+  requires the fault to surface anyway. The linter made the looser version of
+  this mistake an hour earlier and red-lit every freshly seeded target.
+  (2026-07-25, #136)
+- **A confirmation shown for a write that did not happen is worse than the
+  failure it hides.** `/answer`'s response was discarded, so a refused write
+  still ran the submit morph: the card restated itself as answered, his text
+  was cleared, and the live tick put the question back two seconds later with
+  no explanation anywhere. Check what came back before showing the thing that
+  means "it landed", and keep his text — at that moment it is the only copy.
+  (2026-07-25, #136)
