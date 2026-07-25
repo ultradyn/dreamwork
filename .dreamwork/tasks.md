@@ -106,12 +106,17 @@ Next id: **175**
   cadences by design (status 5-15s, PR much slower, CI slower still and
   only when a PR exists and is not draft) · PR/CI go through
   `ud-dreamwork-github`, which already owns `gh`
-- **#172** — Heading row carries the project dir and git branch · P3 ·
-  idea · 25m · **read his references first** — `grok-build`, and
-  `codename-thin` at `ssh://x-game:src/codename-thin` (its TUI and
-  design docs). He is pointing at something he likes rather than
-  describing it, and they are on another machine · the row travels
-  (#110), so anything added inherits the FLIP
+- **#172** — Heading row: repo identity, and where invariants sit ·
+  P3 · idea · 25m · his layout principle is the firm half and it
+  generalises — **anchor what is INVARIANT to an edge, not to a
+  variable-width neighbour**: the page title varies per route, the repo
+  name never does, so hard-right it and it stops being shoved about by a
+  change unrelated to it. Worth a `watch-design.md` rule, since #110
+  animates travel and anything that need not move should not · the name
+  ("dreamwork watch") is OPEN and his — and #153 independently dropped
+  the app name from the tab title, so put the two to him together ·
+  **read his references first**: `grok-build`, `codename-thin` at
+  `ssh://x-game:src/codename-thin`, on another machine
 - **#171** — Ascii vignette at the screen edge, from the loop's own
   words · P3 · idea · 90m · "we will play with some parameters" is an
   instruction about METHOD — ship the axes adjustable, expect to steer ·
