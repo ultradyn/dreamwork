@@ -1,0 +1,91 @@
+# Break up watch.py, and the norms that make parallel work cheap (#124)
+
+Human-proposed 2026-07-25 (~10:45), after I measured the bottleneck:
+"break up watch.py and adopt norms that help work in parallel for faster
+dreaming (note: we don't want to overuse subagents by default, might get
+expensive, but if the user asks for parallelization, then we have the
+option provided we first have the right architecture)".
+
+The framing matters: **parallelism stays opt-in, the architecture stops
+making it impossible.** Today a `parallelize` request against the webui
+can only be honoured by one agent, because one file is the whole surface.
+
+## The measurement
+
+`watch.py` is 3055 lines and took 39 commits on 2026-07-25 alone. The
+disjointness invariant permits exactly one holder, so every UI steer
+serialised through one dreamer while others sat idle. On an hour with
+six human bug reports, the queue was the file.
+
+## What must not break
+
+- **Stdlib only, no build step.** A package of plain modules keeps this;
+  a bundler does not.
+- **`python3 watch.py --target . --dev` still works** from a checkout.
+- **Deployment.** `just deploy` snapshots `git show HEAD:watch.py` to a
+  single file outside the repo, so the running server cannot be changed
+  by an agent editing the tree. A multi-file layout breaks that in a way
+  worth noticing *before* the split, not after: the snapshot becomes
+  `git archive HEAD <dir> | tar -x` into a versioned directory, and the
+  server runs from there. Same property, one more line.
+- **The generation reload.** Open tabs reload when the server restarts;
+  whatever the layout, `/mtime` must still bump.
+
+## Candidate seams, in the order they pay
+
+1. **Components** (`#112`) — the artifact vocabulary in its own module.
+   Already planned, already measured as cheap, and it is the seam that
+   gives a second dreamer somewhere to stand.
+2. **The shader** — `SHADER_JS`, `mountDreambg`, the world-space
+   anchoring. Self-contained, rarely co-edited with anything else, and
+   the single largest block.
+3. **Question surface** — `qaCard`, the parsers, the three write
+   endpoints. Cohesive, heavily edited, and the spike showed its
+   coupling to the rest is one CSS address.
+4. **Server core** — routing, `resolve_confined`, `/data.json`, the
+   status reader. The part nobody wants to touch by accident.
+5. **Chrome/router/motion** — the shell, `renderChrome`, the dissolve.
+
+Each slice is only worth taking when a real batch would have used it;
+splitting ahead of demand is the same mistake as building the wrong
+abstraction.
+
+## Norms that make it work (the actual deliverable)
+
+The split alone buys little. What buys parallelism is a set of rules
+that make "who may touch this" answerable without asking:
+
+- **Ownership is per module, declared at dispatch**, and recorded in
+  `status.json`'s `agents` block as it already is. Finer modules mean
+  finer ownership, which is the whole point.
+- **Shared vocabularies get one owner.** `COMMANDS`, the token block,
+  the motion constants: one module, one holder, everyone else reads.
+  Today's failures were all shared mutable state without a named owner —
+  an id counter, a working tree, a port, a fixture.
+- **A CSS class is a style hook or an element address, never both**
+  (spike #115). Cross-module addressing is how a split file silently
+  re-couples.
+- **Guards are per module too.** `dev/capture/` scripts already take
+  `(OUT, PORT)` and run against a frozen fixture; a module's guard is
+  what lets its owner verify without the whole page.
+- **The styleguide stays single-source.** `watch-design.md` documents
+  the system, not each file, or the split multiplies the doc burden.
+
+## Cost discipline (his constraint, not an afterthought)
+
+Parallelism is a capability, not a default. The loop already says the
+coordinator works one inline increment at a time and `parallelize` is an
+explicit fan-out; nothing here changes that. Two dreamers on disjoint
+modules cost roughly two dreamers — worth it when the human is streaming
+steers faster than one can absorb, wasteful when he is away and the
+queue is deep but quiet.
+
+## Open question for the human
+
+Sequencing. Rec: do NOT do this as one big split. Take seam 1 with #112
+because it is already justified, seam 2 (shader) next only if a batch
+actually wants it, and let the rest wait for demand. A 3000-line file
+rewritten in one increment is exactly the kind of change this loop's
+philosophy exists to prevent — and the day's evidence is that the
+expensive bugs came from structure nobody had exercised, not from
+structure nobody had tidied.

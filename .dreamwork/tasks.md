@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **124**
+Next id: **125**
 
 ## Open
 
@@ -27,6 +27,9 @@ Next id: **124**
   20m · **next-up** (via composer) · opaque fills hide the animation
 - **#123** — `+` button off the heading text's centreline · P2 · bug ·
   20m · **next-up** · likely every view since #110 shared the chrome
+- **#124** — Break up watch.py; norms for cheap parallel work · P2 ·
+  task · 120m · plan: `docs/plans/parallel-architecture.md` · seams as
+  batches demand them, starting with #112's components
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
