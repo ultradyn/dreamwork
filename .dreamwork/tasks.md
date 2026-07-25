@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **146**
+Next id: **147**
 
 ## Open
 
@@ -63,6 +63,14 @@ Next id: **146**
   reasonable file the dashboard cannot read, and zero-parsed renders
   identically to all-clear. Producer half: state the format in SKILL.md,
   seed the skeleton on first use, migration
+- **#146** — A newline in a note forges a whole QUESTION · **P1** · bug ·
+  35m · reproduced against the real writer and parser: a note containing
+  `\n- **Title**` makes `parse_open_questions` return a question the
+  human never asked. Worse than #126's log case — it is the primary
+  human channel, and parser invariant 1 (a top-level `- **` always
+  starts an entry) is what makes the forgery reliable. That invariant
+  stays; fix the WRITER. Assert entry COUNT round-trips through a
+  hostile note. `file-formats.md` changes in the same commit
 - **#136** — A questions.md that parses to nothing must say so · **P1** ·
   bug · 45m · reader half of #135 · THREE zero-states, not one: missing
   is a quiet warning (human, 11:28 — the loop writes it almost at once);
