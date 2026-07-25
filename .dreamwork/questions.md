@@ -94,6 +94,37 @@
     because a later reader would otherwise find an entry that looks
     resolved and is not.
 
+- **2026-07-25 — should the PreCompact hook ship, and as a plugin? (#138)**
+  This one is here because it was missing. It has been listed as
+  awaiting you in `status.json` for hours and was never written down —
+  the third time today an ask lived only in a task description
+  (also #158, #172). Recording it is the fix; see #181 for the
+  mechanism fix.
+
+  **The thing itself**: compaction can drop what the loop knows. The
+  loop's answer is to write down before compacting, which currently
+  depends on an agent remembering to. Claude Code fires a **PreCompact**
+  hook for both manual and automatic compaction, so the write-down could
+  be automatic. Verified against the binary (2.1.219) while writing
+  `compaction.md`: a hook's stdout is appended to the summariser's focus
+  instructions — undocumented, and genuinely useful, because the loop
+  could tell the summariser what must survive.
+
+  **Why it needs you and not a rec**: a hook is a line in *your* machine
+  config, not project content. It fires on every compaction in that
+  project, including sessions that have nothing to do with dreamwork. And
+  blocking a compact is a hard skip, not a postponement — a hook that
+  fails at the wrong moment removes the compaction rather than delaying
+  it.
+
+  Rec: **yes, as an optional plugin, off by default** — same shape as
+  `ud-dreamwork-github`, so loading it is a recorded decision in
+  DREAMWORK.md rather than something the loop does to your config. Bundle
+  it with #156 (the PostToolUse lint hook), since both are the same
+  question — may the loop install hooks — and answering once beats twice.
+
+  Answer "ship it", "not yet", or name a different shape.
+
 ## Answered
 
 - **May the dashboard read the session transcript? (#180)** → "Yes the
