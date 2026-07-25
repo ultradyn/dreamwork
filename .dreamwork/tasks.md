@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **174**
+Next id: **175**
 
 ## Open
 
@@ -88,6 +88,14 @@ Next id: **174**
   or not purely by the route it was reached through. Reflow `.md`, keep
   `.py`/`.json`/logs verbatim, and update watch-design.md in the same
   commit because this REPLACES a rule
+- **#174** — The commit cycle moves the WRONG WAY · P2 · bug · 20m ·
+  refines #151, which he likes · the departing row travels UP toward
+  where the new one arrives, so it reads as pulled back into the list
+  rather than leaving · both rows should move DOWN and scale UP, the
+  page-transition idiom he names — and that makes the departure
+  CONTINUOUS with the four middle rows #104 is already moving down,
+  instead of fighting the current · assert the SIGN of the travel, or
+  the check passes on the version he is complaining about
 - **#173** — Live git status, without EVER taking `index.lock` · P2 ·
   idea · 60m · **the lock constraint is a known injury, not a
   preference**: his CLAUDE.md carries an active mitigation from
