@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **147**
+Next id: **149**
 
 ## Open
 
@@ -62,6 +62,12 @@ Next id: **147**
   reasonable file the dashboard cannot read, and zero-parsed renders
   identically to all-clear. Producer half: state the format in SKILL.md,
   seed the skeleton on first use, migration
+- **#147** — Hub shows which targets run behind their own HEAD · P3 ·
+  idea · 30m · #140 CLOSES the deploy window, this makes it LEGIBLE —
+  decide which is the answer before building both
+- **#148** — Two sibling guard dirs, one contract, no shared runner ·
+  P3 · chore · 30m · fine while they have different owners, wrong the
+  moment they do not; extract when a batch would have used it (#124)
 - **#146** — A newline in a note forges a whole QUESTION · **P1** · bug ·
   35m · reproduced against the real writer and parser: a note containing
   `\n- **Title**` makes `parse_open_questions` return a question the
@@ -122,16 +128,15 @@ Next id: **147**
   **blocked**: human pick
 - **#119** — Revisit a `selection.md` reference once selection stops
   moving · P3 · idea · 30m · carried out of a pruned questions entry
-- **#96** — Daemon mode stage 1, dreamhub · P2 · task · 150-180m ·
-  **GO** 2026-07-25 10:48 · plan delivered:
-  `docs/plans/dreamhub-stage1.md`, nine increments each with its gate ·
-  ships origin-per-project, not the sketched `/{project}/` prefix (that
-  needs watch.py, filed as #133) · stage 1 only — check back before
-  scope widens
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#130** 3.1KB of status JSON
+Pruned in grooming; git is the real ledger. **#96 stage 1** dreamhub —
+a read-only aggregate over several targets, nine increments
+(ab32541..dc69c8c), 102 pytest + 32 structural + 8 contract checks. Ships
+origin-per-project, not the sketched `/{project}/` prefix, because
+`routeOf()` compares literals no shim can reach and a prefixed deep link
+would render the wrong view SILENTLY (#133). Stage 2+ still needs a go. **#130** 3.1KB of status JSON
 became a 244px panel (c065a51) — folds by COMPLEMENT so the next field the
 loop learns to write can never be hidden by an allowlist, and the accent is
 spent only on `awaiting_human`, proven scarce by a guard shown red. **#120** the fresh-eyes read
