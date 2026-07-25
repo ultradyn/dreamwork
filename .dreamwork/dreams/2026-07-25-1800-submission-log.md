@@ -1,6 +1,6 @@
 # A rendering is not a record
 
-dreamer-qsec, 2026-07-25 18:15. Task: #199, `fd3ae3b` (handler half; the
+dreamer-qsec, 2026-07-25 18:00. Task: #199, `fd3ae3b` (handler half; the
 contract half is the coordinator's, written in parallel against a shape agreed
 before either was built).
 

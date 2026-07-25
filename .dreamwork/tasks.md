@@ -62,8 +62,10 @@ Next id: **206**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
-- **#205** — Roll the heartbeat INTO the monitor · P2 · idea · **human
-  17:45** · **answer to his question: no, not integrated here** — this
+- **#205** — [plan: `docs/plans/heartbeat-into-monitor.md` — ezfb's
+  `run_watch()` READ and mapped; timeout-on-receive, quiet limit 7,
+  `on_quiet` = #200's audit seam] Roll the heartbeat INTO the monitor ·
+  P2 · idea · **human 17:45** · **answer to his question: no, not integrated here** — this
   target runs three independent monitors (heartbeat 4.75m, events tail,
   inbox tail) and the timer fires regardless of whether anything
   happened; `ez-feedback-pipeline` has the combined shape, READ IT ·
