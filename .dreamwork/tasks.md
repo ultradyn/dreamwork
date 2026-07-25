@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **195**
+Next id: **199**
 
 ## Open
 
@@ -62,6 +62,38 @@ Next id: **195**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#198** — Selection indicator misplaced when the composer reopens ·
+  P2 · bug · 25m · **human 17:18 + screenshot** · "autocorrects itself
+  after a bit, or when some rerender condition is triggered" — and that
+  IS the diagnosis: a wrong position that fixes itself on the next render
+  is a measurement taken before layout settled, not a positioning bug ·
+  two candidates, distinguishable, MEASURE first (#123 was this shape and
+  took two wrong diagnoses): measured before the reveal committed layout,
+  or measured while the composer's drift/blur transform is in flight so
+  the rect is real but in the wrong space (`position:fixed` is not
+  viewport-relative under a transformed ancestor — same trap as #170,
+  #160) · **do NOT defer into #164** — the rebuild changes the row's
+  structure, not how the indicator measures, so it would inherit this
+  verbatim · guard: the END STATE IS CORRECT, so assert the offset at the
+  moment opening finishes and bound the window, or it self-corrects
+  inside the trace and passes
+- **#197** — Questions ordered by priority, then oldest · P2 · idea ·
+  30m · **human 17:15** · questions.md carries NO priority today, so the
+  field must exist first — `file-formats.md` row + `lint.py` check in the
+  same commit · unprioritised sorts as the MIDDLE band so an explicit low
+  is genuinely below an unmarked one · "oldest on a tie" is FREE: the
+  file is already chronological, so a STABLE sort by priority alone gives
+  it and a date comparison would be a second mechanism that can disagree
+  · both surfaces render through `qaCard` (#105) but sort separately —
+  make ordering a property of the parse, not of each renderer · use the
+  ledger's P1-P3 vocabulary, not a second one
+- **#196** — Dashboard questions section snaps instead of arriving ·
+  P2 · bug · 25m · **human 17:12** · `.qsec` from #141 · the page learned
+  this lesson all day one surface at a time (#129, #113, #169) and the
+  one disclosure he clicks most never got it · build AGAINST
+  `transitions.md` — it is the first thing built against that guide ·
+  opening is an arrival, closing is a departure and per #174 leaves in
+  the direction its list travels · **dreamer-qsec holds it**
 - **#194** — [plan: `docs/plans/version-and-upgrade.md`] Version and
   upgrade: `ud-dw-githash`, DREAMWORK.md frontmatter, commit-range pass ·
   P2 · task · 4-5 increments · **human 17:07** · executable reports the
