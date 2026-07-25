@@ -200,10 +200,15 @@ results, no ceremony.
 - `.dreamwork/dreams/` — dream journals from dreamer subagents. Once a
   dream's ideas are tasks and its lessons are in `lessons.md`, move it to
   `dreams/archive/` — the journal stays lean, the memory survives.
-- `.dreamwork/lessons.md` — one concise line per important lesson learned,
-  each pointing at its source dream. No arbitrary length limit, but
-  genuinely one line — distilled, not stuffed. Lessons outlive pruned
-  dreams.
+- `.dreamwork/lessons.md` — important lessons, each outliving the dream
+  it came from. **A bolded claim you could read on its own, then the
+  concrete case that earned it.** The claim is what makes the file
+  skimmable at fifty entries; the evidence is what stops it reading as
+  platitudes — "test your tests" persuades nobody, while "the serial-poll
+  test built its own thread pool and passed on a serial implementation"
+  cannot be argued with. Prune when a lesson has been absorbed into a
+  guardrail or a check; a lesson that is now enforced by `lint.py` or a
+  guard has graduated and can go.
 - `.dreamwork/docs/` — living docs collaboratively added to and maintained
   by us, the dreamers: design notes, discovered conventions, gotchas,
   architecture understanding. Maintained means pruned and updated when

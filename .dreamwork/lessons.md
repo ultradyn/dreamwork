@@ -170,8 +170,8 @@ source dream. Not a log — only things that should change future behavior.
   through one dreamer no matter how many are free. The disjointness
   invariant is correct and the file is the constraint. (coordinator,
   2026-07-25)
-- A coordinator's diagnosis is a hypothesis and should be labelled one in
-  the dispatch. Five times on 2026-07-25 the coordinator named a
+- **A coordinator's diagnosis is a hypothesis and should be labelled one
+  in the dispatch.** Five times on 2026-07-25 the coordinator named a
   plausible layer and the dreamer measured a different one — #106, #107,
   #121, #123 — and each time the cost of being wrong was zero *because
   the dispatch said measure it first*. The practice, not the accuracy, is
@@ -215,44 +215,43 @@ source dream. Not a log — only things that should change future behavior.
   by any sign the human is still using the thing — and the cancel needs to
   cover the in-flight window before the timer exists.
   (2026-07-25-1130-question-states)
-- A fix that is committed but not deployed is indistinguishable from a
-  bug, and the human is looking at the deployed page. #129 was reported
+- **A fix that is committed but not deployed is indistinguishable from a
+  bug, and the human is looking at the deployed page.** #129 was reported
   24 seconds after the commit that fixed it and ~4 minutes before the
   deploy; the report was accurate, the code was correct, and a tracing
   cycle was spent on the gap between them. Deployment latency
   manufactures phantom bugs. (coordinator, 2026-07-25, #140)
-- Prose about a tool drifts from the tool faster than anyone expects.
+- **Prose about a tool drifts from the tool faster than anyone expects.**
   file-formats.md said tasks.md and status.json had no stated contract;
   within the hour lint.py was checking both. Same author, same day, and
   the doc was explicitly about the dangers of drift. Which is the
   argument for executable contracts stated in the doc itself — not
   because people are careless, but because the gap opens even when they
   are not. (coordinator, 2026-07-25, #137)
-- Three checks were caught proving nothing on 2026-07-25, by three
-  different agents, and none was visible by reading it: the wisp guard
+- **Writing a check and running it green is half the work; making it red
+  on purpose is the half that finds out whether you tested the thing or
+  its neighbour.** Three checks were caught proving nothing on 2026-07-25,
+  by three different agents, none visible by reading it: the wisp guard
   passed on a one-way sweep because it counted direction reversals; the
   oneinput guard passed on the textarea leak because it asserted the
   BUTTON spans the field; a dreamhub test passed on a serial probe
   because it built its own thread pool. Each was found only by
-  reintroducing the bug. Writing a check and running it green is half
-  the work — the other half is making it red on purpose, and it is the
-  half that finds out whether you tested the thing or its neighbour.
-  (coordinator, 2026-07-25)
-- A closed `<details>` does NOT display:none its children in current
-  Chromium — content-visibility keeps their rects from the last layout,
+  reintroducing the bug. (coordinator, 2026-07-25)
+- **A closed `<details>` does NOT display:none its children in current
+  Chromium.** — content-visibility keeps their rects from the last layout,
   so a height-or-rect test for "is it hidden" passes on collapsed
   content. Use `checkVisibility()`. Found writing #128's thread guard;
   it is the fourth check today that would have proved nothing, and the
   only one whose cause was the browser rather than the author.
   (dreamer-thread, 2026-07-25)
-- Never let the page fold away what the human just wrote. #128's first
+- **Never let the page fold away what the human just wrote.** #128's first
   version collapsed the note segment at the END of the list when a
   question had no answer yet — which swept every live steer on every
   open question into the folding half. Only the SETTLED segment, above
   the resolution, may collapse; a note added now lands below the answer
   and stays visible. The guard caught it, not the author.
   (dreamer-thread, 2026-07-25, #128)
-- A flaky test is a hypothesis, not a nuisance. A 1-in-8 failure in the
+- **A flaky test is a hypothesis, not a nuisance.** A 1-in-8 failure in the
   hub's server tests was `port or hub_port()` treating port 0 as ABSENT,
   so `serve(0)` — bind-any-free-port — silently bound a persisted port
   instead and sometimes collided. Dismissing it as flake would have
