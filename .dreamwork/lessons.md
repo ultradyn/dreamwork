@@ -252,3 +252,11 @@ source dream. Not a log — only things that should change future behavior.
   the resolution, may collapse; a note added now lands below the answer
   and stays visible. The guard caught it, not the author.
   (dreamer-thread, 2026-07-25, #128)
+- A flaky test is a hypothesis, not a nuisance. A 1-in-8 failure in the
+  hub's server tests was `port or hub_port()` treating port 0 as ABSENT,
+  so `serve(0)` — bind-any-free-port — silently bound a persisted port
+  instead and sometimes collided. Dismissing it as flake would have
+  shipped it, and the intermittency WAS the symptom: falsy-zero bugs
+  only surface when the collision happens to land. Reach for "what is
+  actually different between the runs" before "rerun it".
+  (dreamer-hubbuild, 2026-07-25, #96)
