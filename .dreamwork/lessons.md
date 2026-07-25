@@ -402,3 +402,19 @@ this shape and convert opportunistically.)
   and delivery are different problems and the loop solved only the first.
   Write the instruction to the file AND send a message; the file is what
   survives, the message is what arrives. (coordinator, 2026-07-25, #144)
+- **When a format fails silently, the fix is a WRITER, not a second
+  description of it.** ud-dreamtask's opening had agents hand-writing
+  `questions.md` and `status.json` — the two files here that fail by
+  being invisible. `newerrand.py` emits them and states no format of its
+  own; its test shells out to `lint.py`, so the linter stays the single
+  interpreter and the creator is merely something it checks. The
+  injection that proves the arrangement works is the one where
+  `awaiting_human: "nobody"` reds ONLY the lint check.
+  (2026-07-25-1221-ud-dreamtask-build, #50)
+- **Inheriting by reference puts the obligation on the file being
+  pointed AT.** ud-dreamtask names SKILL.md's Guardrails, Subagents and
+  Durable-state sections instead of copying them, which is right — but a
+  rename now orphans a live pointer in another repo, and nothing in this
+  repo would notice. That obligation belongs in the doc-map, where a
+  docs-freshness pass reads it, not in a comment in the skill that
+  depends on it. (2026-07-25-1221-ud-dreamtask-build, #50)
