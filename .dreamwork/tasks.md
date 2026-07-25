@@ -21,9 +21,6 @@ Next id: **119**
   P2 · task · 45m · do with #111; states encode who it waits on
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
-- **#118** — A live tick can eat what the human is typing · P1 · bug ·
-  40m · *in progress (dreamer-states)* · goal: never lose what he typed
-  ← "the dashboard is how you steer it"
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
   45m · the composer now renders from one `COMMANDS` table, so this is
   an append rather than a redesign
@@ -48,7 +45,9 @@ Next id: **119**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#117** the verification
+Pruned in grooming; git is the real ledger. **#118** typing survives a
+live tick — text, caret, focus and compose mode carried across the
+re-render (c321c6c). **#117** the verification
 gap — `just test` runs the browser guards against a frozen fixture
 (bb20eb1, daa9472). **#103** one input per card
 routed by a mode group (5b2fde9); **#104 #77** the regroup — answered
