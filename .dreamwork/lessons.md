@@ -471,3 +471,12 @@ this shape and convert opportunistically.)
   answer". In every case the writer believed it had communicated. Ask
   what READS this, not whether it was written. (reviewer-skillmd,
   2026-07-25, #144)
+- **A documented behaviour that never happened is worse than an
+  undocumented one, because the document stops anyone checking.** #113's
+  motion matrix carried a row saying an arriving card snaps then eases
+  in. It never did: `.dreamin` set `transition:none`, `.qa` declared the
+  same three transitions at the same specificity and later in the sheet,
+  and the cascade gave it to `.qa` — so every arrival since #104 was a
+  pop-in, under a matrix that said otherwise. Found only because reusing
+  the mechanism somewhere new made it measurable. When you write a state
+  down, measure that state once. (dreamer-rows, 2026-07-25, #154)
