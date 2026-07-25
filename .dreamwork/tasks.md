@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **153**
+Next id: **154**
 
 ## Open
 
@@ -75,6 +75,15 @@ Next id: **153**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
+- **#153** — Title that says whether you're needed, and a real favicon ·
+  P2 · idea · 50m · the tab title is the only part of the dashboard
+  visible in a background tab, so it carries the count front-loaded
+  (tabs truncate from the right) · favicon must be inline (single-file
+  deploy) · **rec against always-animating**: motion is opt-in here, and
+  browsers throttle background timers — animate when the loop is
+  dreaming, rest when idle, mark `awaiting_human`. Then the motion IS
+  the status · taste is the deliverable, like #122 · pairs with #143
+  (a tinted favicon is how two dashboards differ in a tab strip)
 - **#152** — Two maintenance rules that could be checks · P3 · chore ·
   25m · recovered by grooming a 3-hour-old dream that predicted
   `lint.py`'s thesis · (a) dangling-parent check is BLOCKED on a real
