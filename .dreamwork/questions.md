@@ -2,18 +2,6 @@
 
 ## Open
 
-- **2026-07-25 — the shader's ambient density changed unasked.**
-  Fixing the world-space anchoring (#91 item 2, your
-  "deterministic across split tabs" ask) required dropping the
-  per-viewport normalisation: a pattern that rescales to window height
-  cannot be the same dream at the same screen position. So the main
-  page's ambient density is now slightly different from what you had
-  been looking at. Whisper-level — the dreamer checked 820px and 1300px
-  — and one constant reverts it (`WORLD_SCALE`, was `2.3/innerHeight`,
-  now `2.3/900`). Raised in chat 2026-07-25 ~08:50 and recorded here
-  late, which was my lapse: a judgement call that only lives in chat is
-  not recorded. Rec: keep it — it is entailed by what you asked for, and
-  the alternative is giving up the shared field.
 - **2026-07-25 — daemon-mode: stage-1 build go? (#96).** Brainstorm
   round complete — all five needs-Max decisions answered in-session
   (~09:45) and folded into `.dreamwork/docs/plans/daemon-mode.md`:
@@ -34,6 +22,12 @@
   inherited by reference, not restated. Build waits on your read.
   - **Follow-up (via watch, 2026-07-25 08:51):** the scroll bar for the .html needs styling too. the way this whole page is laid out is great though.
 ## Answered
+
+- **The shader's ambient density changed unasked** → "rec" via watch
+  (2026-07-25 10:33): keep it. The world-space anchoring he asked for
+  (deterministic across split tabs) is incompatible with a pattern that
+  rescales to window height, so `WORLD_SCALE` stays at the constant
+  `2.3/900`. No code change — the answer confirms what shipped.
 
 - **Goal hierarchies (#95)** → "rec" via watch (2026-07-25 09:13): all
   three recommendations taken. Session goals do not persist beyond
