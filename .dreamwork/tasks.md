@@ -92,10 +92,12 @@ Next id: **191**
   and come back" is the whole promise · the channel for reporting a
   broken channel was the broken channel (cf #144, #136) · fix is
   probably his (re-auth); the loop should not touch a live auth token ·
-  **open**: does the loop want one cheap fallback, tried only on
-  non-zero exit, never a silent substitution? · and a rule somewhere:
-  **check attn's exit code** — an unnoticed failed push is worse than
-  none, because the loop then believes it escalated
+  **FALLBACK FOUND AND IT WORKS**: the harness's `PushNotification`
+  delivered to the terminal at 16:18 (mobile needs Remote Control, which
+  is off) · rule now in SKILL.md's Communication guardrail: check the
+  push left, fall back, name the channel that carried it — an unnoticed
+  failed push is worse than none, because the loop then believes it
+  escalated · **still his**: the xAI credential needs a re-auth
 - **#189** — World-space anchoring silently collapses on native
   Wayland · P2 · bug · 35m · `screenX`/`screenY` return **0** on native
   Wayland by protocol, so #74's world space becomes "both windows at the

@@ -433,7 +433,14 @@ if Max is away).
   alignment is priority work, not deferred maintenance: small drift folds
   in immediately; bigger drift becomes a top-of-queue task.
 - Communication: brief updates as you go; `attn` only for genuine blockers,
-  questions, or notable milestones. Subagents never use `attn`.
+  questions, or notable milestones. Subagents never use `attn`. **Check
+  that the push actually left** — `attn` exits non-zero when its backend
+  refuses, and a failed push nobody noticed is worse than none, because
+  the loop then believes it escalated. On failure use whatever the harness
+  offers (Claude Code: `PushNotification`) and name the channel that
+  carried it. Whatever happens, the ask is already in `questions.md`, so
+  the dashboard remains the durable path and a dead pusher costs the pull,
+  not the message.
 
 ## Wake mechanisms (variants)
 
