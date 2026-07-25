@@ -58,24 +58,13 @@
   session wrap + on ask, in DREAMWORK.md's Autonomy line. (c) A minimal
   `README.md` exists; doc-map records SKILL.md as the harness entry
   point and README.md as the forge one.
-- **ud-dreamwork-github design review** → LGTM via watch (2026-07-25
-  06:54), all four recs accepted; "check if anything recently changed is
-  relevant" done — writing-plugins contract, bridge pattern, and doc
-  single-source rule all post-date the plan and all reinforce it. v1
-  built the same morning: `skills/ud-dreamwork-github/SKILL.md`,
-  installed + indexed. Dogfood on a real repo is the follow-up task.
-  - **Follow-up (in-session, 2026-07-25 07:18):** 90s poll too fast —
-    ~5 min, carried by the heartbeat tick flow by default. Applied to
-    the plugin SKILL.md same minute.
-- **#36 alignment review shape** → Confirmed (2026-07-25): fresh-eyes
-  dreamer, not-done-until-clean, rare cadence (marker + commits-since
-  trigger). First pass dispatched the same night.
-- **#37 roll.py timing** → Default applied (2026-07-25). The idea and its
-  prioritization were explicit human steers — *whether* was authorized;
-  the silence-default resolved only *when* (built on the next idle tick).
-  Shipped with tests, wiring, and a migration entry.
-- **Dogfood reflection: standing or one-off?** → Standing (2026-07-25):
-  wired into `wrap up` and the maintenance rotation.
-- **Task D (flow diagram): do or veto?** → Skipped (2026-07-25): second
-  copy of the selection ladder would drift while it's evolving fast.
-  Revisit as a `selection.md` reference file once selection stabilizes.
+- **ud-dreamwork-github design review** → LGTM (2026-07-25 06:54), v1
+  built the same morning; the 90s poll became ~5min on his follow-up.
+  Detail lives in `docs/plans/ud-dreamwork-github.md` and the plugin's
+  own SKILL.md.
+- **#36 alignment review shape · #37 roll.py timing · dogfood reflection
+  · Task D flow diagram** → all answered and applied 2026-07-25; each
+  now lives where it acts (the review routine in SKILL.md, roll.py and
+  its migration, `wrap up` and the maintenance rotation). Task D stays
+  vetoed — a second copy of the selection ladder would drift, and it
+  drifted four times today; revisiting it is task #119.
