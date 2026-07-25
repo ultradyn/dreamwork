@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **187**
+Next id: **188**
 
 ## Open
 
@@ -89,6 +89,18 @@ Next id: **187**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#187** — A gravity-wave ripple that crosses windows · P3 · idea ·
+  60m · **T1** the ripple itself: do it in the SHADER, which is already
+  world-space anchored (#74/#100) so one wavefront crosses a window seam
+  by construction, arriving later in the further window — "same
+  position, same dream" finally used for something · **T2** cross-tab
+  sync: the event is tiny, so `BroadcastChannel` plus the existing poll;
+  rec against WebRTC for the same result on one machine · **T3
+  multiplayer is a THRESHOLD** — everything here is local and has never
+  left the machine; decide it separately, and make his "no project data
+  ever" rule STRUCTURAL: a fixed-shape payload with no free text, so
+  the rule cannot be broken by a later change rather than merely not
+  being broken now
 - **#186** — A light theme, cycled by seven background clicks · P3 ·
   idea · 90m · **his last sentence is the design**: three states cycle
   and `system` RESOLVES to one of the others, so a cycle can change
