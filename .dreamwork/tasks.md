@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **123**
+Next id: **124**
 
 ## Open
 
@@ -22,6 +22,8 @@ Next id: **123**
   idea · 40m · ask first whether it is the dissolve's mist, held low
 - **#121** — `answer | add note` should be ghost buttons · P2 · bug ·
   20m · **next-up** (via composer) · opaque fills hide the animation
+- **#123** — `+` button off the heading text's centreline · P2 · bug ·
+  20m · **next-up** · likely every view since #110 shared the chrome
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
