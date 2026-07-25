@@ -278,12 +278,16 @@ results, no ceremony.
   `file-formats.md` in this skill's directory states them; read it before
   writing one of those files for the first time, and follow the existing
   file's shape rather than inventing one when a format is not yet stated.
-- `.dreamwork/review/` — rich review artifacts: when something sizeable
-  or important needs the human's eyes (a plan, a design, an analysis),
-  generate a self-contained HTML artifact (inline everything — charts,
-  math, styles; offline-clean) as `<slug>.html`, paired with a
-  questions.md entry for the response. watch.py lists and serves them.
-  Archive alongside the answered question.
+- `.dreamwork/review/` — rich review artifacts. **Every request for a
+  review ships one** (human-set 2026-07-25): if you are asking him to
+  read a plan, a design or an analysis and rule on it, it gets a
+  self-contained HTML artifact (inline everything — charts, math,
+  styles; offline-clean) as `<slug>.html`, paired with the questions.md
+  entry that asks. Not "when it seems sizeable" — that judgement was
+  the loop's and it got it wrong: dreamhub's stage-1 plan went to him
+  as prose in a questions entry, and it was the largest design decision
+  of the day. watch.py lists and serves them; archive alongside the
+  answered question.
 - `.dreamwork/status.json` — live loop status for the watch.py dashboard,
   rewritten each tick. Its timestamps come from the system clock, never
   from memory — a dashboard whose whole thesis is liveness must not

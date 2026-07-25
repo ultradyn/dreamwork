@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **168**
+Next id: **169**
 
 ## Open
 
@@ -88,6 +88,13 @@ Next id: **168**
   or not purely by the route it was reached through. Reflow `.md`, keep
   `.py`/`.json`/logs verbatim, and update watch-design.md in the same
   commit because this REPLACES a rule
+- **#168** — Keyboard shortcut opens AND focuses the composer · P3 ·
+  idea · 20m · **check #92 first** — a Ctrl+K palette is already filed
+  and two answers to one question is worse than either · the hotkey trap
+  is already a lesson: a bare key must ignore keystrokes while a text
+  field has focus, and this page now has many · rec open-or-focus,
+  NEVER toggle-closed: a keystroke that discards what he typed is the
+  #118/#131/#162 family. Escape closes
 - **#167** — Composer text box translucent, blur on Chrome only · P3 ·
   idea · 25m · reading "a little blue" as "a little BLUR" (the Firefox
   parenthetical settles it) — flagged, since a blue TINT would collide
