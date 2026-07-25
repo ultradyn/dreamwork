@@ -82,12 +82,6 @@ Next id: **156**
   styleguide does not describe — including "fold by complement" · the
   deeper half: DREAMWORK.md makes this a routine, `audit-styleguide`
   checks it, and no gate runs it. #117's shape exactly
-- **#154** — `.dreamin` has never worked for question cards · P2 · bug ·
-  25m · MEASURED: `.qa` declares the same transitions at the same
-  specificity and later in the sheet, so the snap class loses the
-  cascade — computed duration `0.85s` with `.dreamin` applied. Fourth
-  instance of source-right-screen-wrong, and the first that is NOT a
-  catch-all, so the class rule in watch-design.md needs widening
 - **#153** — Title that says whether you're needed, and a real favicon ·
   P2 · idea · 50m · the tab title is the only part of the dashboard
   visible in a background tab, so it carries the count front-loaded
@@ -104,11 +98,6 @@ Next id: **156**
   gate (see this file's header), so the check is now worth having over
   the few chains that should exist · (b) prose-wrap check on SKILL.md is
   a cheap ride-along
-- **#151** — Commits panel shows five, and a new one arrives dreamlike ·
-  P2 · idea · 40m · **the panel already exists** (verified on the
-  deployed page) — this is fix at five, move to the top, and add the
-  motion. Reuse #104's regroup, not a new one. Animate on a new SHA, not
-  on a tick. Same rows as #132, so land them together
 - **#150** — Audit the coordinator's own machinery · P2 · chore ·
   *all four slices landed* · `relay.py` (stdin body, clock stamp);
   write-then-wake in SKILL.md; `kind`/`awaiting_result` in status.json;
@@ -143,10 +132,6 @@ Next id: **156**
   an append rather than a redesign
 - **#98** — Show the open queue on the watch dashboard · P2 · idea · 40m ·
   new page surface, fit-check at selection
-- **#132** — Commits on the webui carry a relative timestamp · P3 ·
-  idea · 30m · `05m 23s ago`, two units, two digits each until days
-  reach 100 · the ticking clock must NOT ride the tick's innerHTML
-  re-render, or it fights #118 and #113 once a second forever
 - **#114** — Dashboard renders the active goal chain · P3 · task · 25m ·
   stage 3 of #95; status.json already carries `goal`
 - **#92** — Hand-rolled Ctrl+K command palette · P3 · task · 40m
@@ -167,7 +152,12 @@ Next id: **156**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#119** DECIDED, not built:
+Pruned in grooming; git is the real ledger. **#132 #151 #154** (2c42da1)
+— relative commit ages riding the page's existing per-second sweep, five
+rows arriving as one gesture on a new SHA rather than on a tick, and the
+enter-snap class fixed: `.dreamin` had NEVER worked for question cards,
+so every arrival since #104 was a pop-in and the motion matrix's
+"arrived: snap, then ease in" row had been false the whole time. **#119** DECIDED, not built:
 selection stays in SKILL.md. The idle branch is by definition where no
 other trigger fires, so a pointer would be followed only by a loop that
 already knew what it was looking for; and step 2's dot line only works in
