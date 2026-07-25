@@ -165,6 +165,15 @@ STYLE = """<style>
      not jitter the column every second as they change */
   .git .cage { flex:0 0 auto; margin-left:auto;
                font-variant-numeric:tabular-nums; }
+  /* the dashboard's questions fold (#141). `> summary` and not `summary`:
+     the child combinator is what keeps this from being one of the catch-alls
+     above — a question card inside carries its OWN <details><summary>, and a
+     descendant rule here would restyle every one of them.
+     At a genuine zero the whole line drops to the dim end and keeps no
+     accent, because the accent is for things that are live and actionable. */
+  .qsec > summary { color:var(--lit); }
+  .qsec > summary.none, .qsec > summary.none::before { color:var(--dimmer); }
+  .qsec .qsecn { color:var(--accent); }
   .dim { color:var(--dimmer); }
   a { color:var(--accent); text-decoration:none; }
   a:hover { text-decoration:underline; }
@@ -1163,6 +1172,59 @@ function statusBlock(s) {
       rest.map(k => stField(k, s[k])).join(''), 'dim');
   return h + `</div>`;
 }
+/* ── the dashboard's questions section folds (#141) ───────────────────────
+   His words: "on the dashboard, the questions section should be collapsed by
+   default and show how many questions there are left to answer. it should be
+   grayed out and disabeld when that number is zero."
+
+   THE COUNT IS `open_questions`, the server's, and there is deliberately no
+   second way to arrive at it — the crumb badge he glances at from every route
+   reads that same field, and two counts that can disagree is how a page
+   starts lying about the one number he checks.
+
+   DISABLED MEANS "NOTHING HERE NEEDS YOU", NOT "YOU MAY NOT LOOK". At zero
+   the summary drops to the dim end of the ramp and loses the accent — and the
+   disclosure still opens. Refusing to open would be a claim about permission,
+   where zero is a claim about need.
+
+   AND IT IS KEYED ON HEALTH, NOT ON THE COUNT (#136). An unreadable
+   questions.md produces a zero too, and a calm grey "nothing to answer" two
+   lines under that file's amber warning would be the page contradicting
+   itself. The grey is for a genuine zero; every other zero keeps the live
+   treatment and lets the warning above it speak.
+
+   THE WHOLE SECTION FOLDS, awaiting-fold cards included. That is what makes
+   this a standalone `expand` — instant, like the `.md` peeks — rather than a
+   case for the regroup: nothing that MOVES sits below the toggle, so opening
+   it teleports no card (see "expand is structure" in watch-design.md). The
+   summary names what is inside, so a collapsed panel never hides the fact
+   that something is in flight. */
+const qSummary = d => {
+  const n = d.open_questions || 0;
+  const fold = d.questions_open.filter(q => q.answer).length;
+  const calm = !n && (d.questions_health === 'empty' ||
+                      d.questions_health === 'ok');
+  return `<summary class="qseclabel${calm ? ' none' : ''}">questions` +
+    (n ? ` · <span class="qsecn">${n} to answer</span>`
+       : ` · nothing to answer`) +
+    (fold ? ` · ${fold} awaiting fold` : '') + `</summary>`;
+};
+function qSection(d) {
+  const qo = d.questions_open.map((q, i) => [q, i]);
+  const openQ = qo.filter(([q]) => !q.answer);
+  const foldQ = qo.filter(([q]) => q.answer);
+  let inner = '';
+  if (openQ.length)
+    inner += label('answer questions') +
+             openQ.map(([q, i]) => qaCard(q, 'o' + i)).join('');
+  if (foldQ.length)
+    inner += label('answered · awaiting fold') +
+             foldQ.map(([q, i]) => qaCard(q, 'o' + i)).join('');
+  if (!inner)
+    inner = `<div class="dim">${QNONE[d.questions_health] || QNONE.ok}</div>`;
+  return `<details class="qsec" data-keep="qsec">` + qSummary(d) + inner +
+         `</details>`;
+}
 /* what "a commit happened" means, as one comparable value (#151). The whole
    sequence, not just the head: a rebase or an amend can change the panel
    without changing its top row. */
@@ -1192,17 +1254,7 @@ function buildDashboard(d) {
        (d.dreams_archive.length
          ? expand(`archive (${d.dreams_archive.length})`,
                   d.dreams_archive.map(dreamBlock).join(''), 'dim') : '');
-  {
-    const qo = d.questions_open.map((q, i) => [q, i]);
-    const openQ = qo.filter(([q]) => !q.answer);
-    const foldQ = qo.filter(([q]) => q.answer);
-    if (openQ.length)
-      h += label('answer questions') +
-           openQ.map(([q, i]) => qaCard(q, 'o' + i)).join('');
-    if (foldQ.length)
-      h += label('answered · awaiting fold') +
-           foldQ.map(([q, i]) => qaCard(q, 'o' + i)).join('');
-  }
+  h += qSection(d);
   if (d.reviews.length) {
     h += label('reviews') + d.reviews.map(r =>
       `<div><a href="/review?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` +
@@ -1529,6 +1581,25 @@ function restoreCardState(saved) {
    about. Not the card's own state class: the submit morph already changed
    that locally when the answer was sent, so by regroup time it would report
    no change even though the card is about to cross the page. */
+/* #118's rule one level up (#141). A SECTION he has opened is his, it exists
+   nowhere on disk, and the tick rebuilds the dashboard through `innerHTML` —
+   so without this the questions fold would snap shut under him every two
+   seconds, which is the bug #118 fixed for a card's own disclosure. Keyed by
+   `data-keep` rather than by position, and only ever RE-OPENED: the fresh
+   render is the default and what he did to it is the addition. Any future
+   section that wants the same gets it by carrying the attribute. */
+function snapshotFolds() {
+  const m = new Map();
+  document.querySelectorAll('details[data-keep]').forEach(el =>
+    m.set(el.dataset.keep, el.open));
+  return m;
+}
+function restoreFolds(saved) {
+  if (!saved) return;
+  document.querySelectorAll('details[data-keep]').forEach(el => {
+    if (saved.get(el.dataset.keep)) el.open = true;
+  });
+}
 function cardGroup(el) {
   for (let n = el.previousElementSibling; n; n = n.previousElementSibling)
     if (n.classList.contains('label')) return n.textContent;
@@ -2082,6 +2153,7 @@ async function tick() {
       // they were to where the new grouping put them (#104/#77). What the
       // human is mid-way through typing rides across the swap (#118).
       const kept = snapshotCardState();
+      const folds = snapshotFolds();
       const before = snapshotCards();
       // #151: the commits panel animates on a NEW COMMIT, never on a tick.
       // The dashboard re-renders whenever ANY watched file changes — the loop
@@ -2094,6 +2166,9 @@ async function tick() {
       if (view.name === 'dashboard') setContent(buildDashboard(data));
       else if (view.name === 'questions') setContent(buildQuestions(data));
       restoreCardState(kept);
+      // before the regroups: they MEASURE, and a section restored afterwards
+      // would be measured shut and then opened underneath the animation
+      restoreFolds(folds);
       regroupCards(before);
       regroupCards(gitBefore, null, GIT_LIST);
       // the crumbs carry live numbers too (open count, version) — and the

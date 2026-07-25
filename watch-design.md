@@ -174,8 +174,11 @@ view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
 
 **`expand` is structure; whether it MOVES is a separate question, and the
 answer follows from where it sits.** A plain `<details>` — dreams, the
-archive, the dashboard's `.md` peeks — toggles instantly, like every other
-opt-in-motion surface on this page. **A `<details>` inside a question card
+archive, the dashboard's `.md` peeks, the dashboard's questions section
+(#141) — toggles instantly, like every other opt-in-motion surface on this
+page. The questions section is worth naming because it *contains* cards that
+move and still belongs here: it holds **all** of them, so nothing that moves
+is left below the toggle to be teleported. **A `<details>` inside a question card
 animates**: the card's own `.qfold` (#111) and its settled follow-up thread
 (#128) both route their toggle through `snapshotCards` → `regroupCards`, so
 the card travels its height and its neighbours close the gap, exactly as when
@@ -681,6 +684,51 @@ computed `color` comes back as `rgb(…)`, so comparing the two matches nothing
 and "the accent is used nowhere else" passes on a page painted entirely in it.
 Resolve the token through a throwaway element. It was shown red by deliberately
 accenting the agent names.
+
+### The dashboard's questions section
+
+Collapsed by default, counting what is left to answer, and grey at zero
+(#141). His words: *"on the dashboard, the questions section should be
+collapsed by default and show how many questions there are left to answer. it
+should be grayed out and disabeld when that number is zero."*
+
+**The count is `open_questions`, the server's, and there is deliberately no
+second way to reach it.** The crumb badge he glances at from every route reads
+that same field; two counts that can disagree is how a page starts lying about
+the one number he checks.
+
+**Disabled means "nothing here needs you", not "you may not look."** At zero
+the summary drops to the dim end of the ramp and loses the accent — and the
+disclosure still opens. Refusing to open would be a claim about permission,
+where zero is a claim about need. (The guard drives that with a real pointer,
+not `element.click()`: a synthetic click sails straight through
+`pointer-events:none`, so the obvious version of the check passes on a summary
+the human cannot click at all.)
+
+**And it is keyed on `questions_health`, not on the count** (#136). An
+unreadable `questions.md` produces a zero too, and a calm grey "nothing to
+answer" two lines under that file's amber warning would be the page
+contradicting itself. The grey is for a genuine zero; every other zero keeps
+the live treatment and lets the warning above it speak.
+
+**The whole section folds, awaiting-fold cards included**, and that is what
+makes it a *standalone* `expand` — instant, like the `.md` peeks — rather than
+a case for the regroup: nothing that moves sits below the toggle, so opening
+it teleports no card. The summary still names what is inside
+(`questions · 2 to answer · 1 awaiting fold`), so a collapsed panel never
+hides the fact that something is in flight.
+
+**What he opened survives the tick**, which is #118's rule one level up. A
+section he expanded exists nowhere on disk and the tick rebuilds the dashboard
+through `innerHTML`, so without this it would snap shut under him every two
+seconds. `snapshotFolds`/`restoreFolds` key on `data-keep` rather than
+position and only ever *re-open*, exactly as the card snapshot does; any
+future section gets the same behaviour by carrying the attribute. They run
+**before** the regroups, which measure.
+
+`.qsec > summary` uses the child combinator on purpose: a question card inside
+carries its own `<details><summary>`, and a descendant rule here would be one
+more of the catch-alls that bit #121 and #139.
 
 ### The commits panel
 

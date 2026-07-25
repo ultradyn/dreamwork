@@ -366,6 +366,112 @@ const series = (frames, sha, k) =>
   await p.screenshot({ path: `${OUT}/dashboard.png`, fullPage: true });
 }
 
+/* ── #141: the questions section folds, counts, and greys at a real zero ───
+   Three states, and the point of holding them in one place is that the third
+   is the one an implementation swallows: "nothing to answer" and "this page
+   cannot read your questions file" are the same count. */
+const QSEC = `(() => {
+  const s = document.querySelector('.qsec > summary');
+  if (!s) return null;
+  const n = s.querySelector('.qsecn');
+  const probe = document.createElement('span');
+  probe.style.color = 'var(--accent)';
+  document.body.appendChild(probe);
+  const accent = getComputedStyle(probe).color;
+  probe.remove();
+  return { text: s.textContent, open: s.parentElement.open,
+           calm: s.classList.contains('none'),
+           accented: !!n && getComputedStyle(n).color === accent,
+           summaryColor: getComputedStyle(s).color,
+           cards: [...document.querySelectorAll('.qsec .qa')]
+                    .filter(c => c.checkVisibility()).length };
+})()`;
+// the page's `data` is a module-scope let, not window.data — ask the server
+// for the number the summary is supposed to be showing
+const servedCount = async () =>
+  (await p.evaluate(`(async () => (await (await fetch('/data.json')).json()).open_questions)()`));
+{
+  const qpath = join(DIR, '.dreamwork', '.questions-backup.md');
+  const live = join(DIR, '.dreamwork', 'questions.md');
+  const original = await p.evaluate(`(async () => (await (await fetch('/data.json')).json()).files['questions.md'])()`);
+  writeFileSync(qpath, original);
+
+  const busy = await p.evaluate(QSEC);
+  busy.served = await servedCount();
+  notes.push(`qsec busy: ${JSON.stringify(busy)}`);
+  ok('the questions section is collapsed by default', busy.open === false);
+  // a closed <details> keeps its children's rects in current Chromium, so
+  // "is it hidden" has to be asked with checkVisibility() — the fourth check
+  // in this repo to be caught by that
+  ok('...so no question card is visible until he opens it', busy.cards === 0);
+  ok('...and the summary says how many are left to answer, the SERVERs number',
+     busy.served > 0 && busy.text.includes(`${busy.served} to answer`));
+  ok('...with the count on the accent, since it is live and actionable',
+     busy.accented && !busy.calm);
+
+  // what he opened is his, and the tick rebuilds the dashboard under him
+  const survived = await p.evaluate(async () => {
+    document.querySelector('.qsec > summary').click();
+    const was = document.querySelector('.qsec').open;
+    const el0 = document.querySelector('.qsec');
+    await fetch('/command', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'add-idea', text: 'qsec guard tick' }) });
+    await new Promise(r => setTimeout(r, 4200));
+    const el1 = document.querySelector('.qsec');
+    return { was, replaced: el1 !== el0, still: el1.open,
+             cards: [...document.querySelectorAll('.qsec .qa')]
+                      .filter(c => c.checkVisibility()).length };
+  });
+  notes.push(`qsec across a tick: ${JSON.stringify(survived)}`);
+  ok('it opens when he clicks it', survived.was === true);
+  ok('...the tick genuinely replaced the section node', survived.replaced);
+  ok('...and it is still open afterwards, not shut under him',
+     survived.still === true && survived.cards > 0);
+
+  // a GENUINE zero: the seeded skeleton. Grey, no accent, and still openable
+  writeFileSync(live, '# Questions for the human\n\n## Open\n\n## Answered\n');
+  await sleep(3000);
+  const calm = await p.evaluate(QSEC);
+  notes.push(`qsec calm: ${JSON.stringify(calm)}`);
+  ok('at a real zero it greys out', calm.calm === true &&
+     /nothing to answer/.test(calm.text));
+  ok('...and carries no accent', !calm.accented);
+  /* Force it SHUT first: it is open at this point because he opened it above
+     and restoreFolds correctly kept it that way across three ticks, so a bare
+     click would close it and this would read as a refusal to open.
+
+     And drive it with a REAL pointer, not `element.click()`. A synthetic
+     click dispatches straight at the node and sails through
+     `pointer-events:none`, so the obvious version of this check passes on a
+     summary the human cannot click at all — which is exactly the bug it
+     exists to catch. Shown by injecting that rule. */
+  await p.evaluate(`document.querySelector('.qsec').open = false`);
+  let opened = false;
+  try {
+    await p.click('.qsec > summary', { timeout: 4000 });
+    opened = await p.evaluate(`document.querySelector('.qsec').open`);
+  } catch (e) { notes.push(`calm summary was not clickable: ${e.message.split('\n')[0]}`); }
+  ok('...but still opens — disabled means "nothing here needs you", not ' +
+     '"you may not look"', opened === true);
+
+  // the OTHER zero (#136): content the reader cannot see. Same number, and
+  // it must not wear the calm treatment — the amber warning is right above it
+  writeFileSync(live, '# Q\n\n## A question written as a heading?\n\nprose.\n');
+  await sleep(3000);
+  const broken = await p.evaluate(QSEC);
+  const warned = await p.evaluate(
+    `!!document.querySelector('.qhealth.unreadable')`);
+  notes.push(`qsec unreadable: ${JSON.stringify(broken)} warned=${warned}`);
+  ok('an unreadable questions.md still raises #136s warning', warned);
+  ok('...and the section does NOT read as a calm zero underneath it',
+     broken.calm === false &&
+     broken.summaryColor !== calm.summaryColor);
+
+  writeFileSync(live, original);
+  await sleep(3000);
+}
+
 ok('no page errors', errs.length === 0);
 await ctx.close();
 

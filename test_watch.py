@@ -875,6 +875,30 @@ class TestAppShell(unittest.TestCase):
         # a corpse holds no address, and the new list has a new one (#113)
         self.assertIn("'data-qid', 'data-qkey', 'data-sha'", watch.PAGE)
 
+    def test_dashboard_questions_section_folds_counts_and_greys(self):
+        # #141. Collapsed by default via the standing expand idiom, counting
+        # the server's number and nobody else's.
+        for token in ('function qSection', 'const qSummary =',
+                      '<details class="qsec" data-keep="qsec">',
+                      'd.open_questions || 0'):
+            self.assertIn(token, watch.PAGE)
+        # the grey is keyed on HEALTH, not on the count: an unreadable file
+        # produces a zero too, and a calm "nothing to answer" under #136's
+        # amber warning would be the page contradicting itself
+        self.assertIn("d.questions_health === 'empty'", watch.PAGE)
+        self.assertIn("d.questions_health === 'ok'", watch.PAGE)
+        # and it must not simply be `!n`
+        self.assertNotIn('const calm = !n;', watch.PAGE)
+        # what he opened survives the tick, or it snaps shut every 2s (#118)
+        for token in ('function snapshotFolds', 'function restoreFolds',
+                      "querySelectorAll('details[data-keep]')",
+                      'restoreFolds(folds)'):
+            self.assertIn(token, watch.PAGE)
+        # the child combinator is what keeps `> summary` from restyling every
+        # question card's own disclosure (the catch-all rule, #121/#139)
+        self.assertIn('.qsec > summary', watch.PAGE)
+        self.assertNotIn('.qsec summary {', watch.PAGE)
+
     def test_page_heading_is_persistent_chrome(self):
         # #110: the heading is the page's frame, not view content — it lives
         # in the shell as a sibling of #view, survives navigation, and its
