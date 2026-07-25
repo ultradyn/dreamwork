@@ -14,6 +14,8 @@ import socket
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 
 import pytest
 
@@ -623,6 +625,172 @@ class TestProbeAll:
         assert out[0]["watch"] == dreamhub.UNREADABLE
         assert "kaboom" in out[0]["live_note"]
         assert out[1]["watch"] == dreamhub.UP
+
+
+# ------------------------------------------------- the render and server
+
+def rows_for(hubfix, cache=None):
+    return dreamhub.probe_all(hubfix, {} if cache is None else cache,
+                              timeout=0.3)
+
+
+class TestRender:
+    """These assert on GENERATED SOURCE, which is exactly what they can do
+    and exactly what they cannot: nothing here proves the page renders. That
+    is dev/hub/hub.mjs's job, and this class must never be mistaken for it
+    (#117)."""
+
+    def test_a_row_per_registry_entry(self, hubfix):
+        rows = rows_for(hubfix)
+        html = dreamhub.render_page(rows)
+        assert html.count('class="row"') == len(hubfix["projects"])
+        for p in hubfix["projects"]:
+            assert f'data-slug="{p["slug"]}"' in html
+
+    def test_every_state_reaches_the_page(self, hubfix):
+        html = dreamhub.render_page(rows_for(hubfix))
+        for state in [DREAMING, QUIET, STALLED, NO_STATUS, MISSING]:
+            assert f">{state}<" in html
+
+    def test_the_down_row_shows_a_command_and_does_not_link_a_dead_port(
+            self, hubfix):
+        """The stage-1 lifecycle boundary, in one assertion: the hub says
+        what to run and the human runs it."""
+        rows = rows_for(hubfix)
+        fresh = next(r for r in rows if r["slug"] == "fresh")
+        assert fresh["watch"] != dreamhub.UP        # nothing on :39801
+        html = dreamhub.render_row(fresh)
+        assert "127.0.0.1:39801" not in html
+        assert "--target" in html and "watch.py" in html
+
+    def test_an_up_row_links_out_to_its_own_origin(self):
+        """Origin-per-project, the one deviation from daemon-mode.md: the
+        hub links out rather than proxying, so every absolute URL on the
+        target's page is already correct."""
+        with stub_watch(open_questions=3) as s:
+            row = dreamhub.probe_disk({"slug": "x", "path": "/nope"})
+            row["port"] = s.port
+            dreamhub.probe_live(row, {})
+        html = dreamhub.render_row(row)
+        assert f'href="http://127.0.0.1:{s.port}/"' in html
+        assert "3 open questions" in html
+
+    def test_an_unknown_count_says_unknown_not_zero(self, hubfix):
+        html = dreamhub.render_page(rows_for(hubfix))
+        assert "questions unknown" in html
+        assert "0 open questions" not in html
+
+    def test_target_text_is_escaped(self, tmp_path):
+        """Every string on this page came out of somebody else's repo."""
+        d = tmp_path / "evil" / ".dreamwork"
+        d.mkdir(parents=True)
+        (d / "status.json").write_text(json.dumps({
+            "task": '<script>alert("xss")</script>',
+            "last_tick": "2026-07-25T12:00:00+10:00",
+            "agents": [{"name": "<img src=x onerror=1>",
+                        "owns": ["</div><b>oops"]}]}))
+        row = probe_disk({"slug": "<b>evil</b>", "path": str(tmp_path/"evil")})
+        dreamhub.probe_live(row, {})
+        html = dreamhub.render_row(row)
+        assert "<script>" not in html
+        assert "<img src=x" not in html
+        assert "</div><b>oops" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_an_empty_registry_says_so(self):
+        html = dreamhub.render_page([])
+        assert "No projects registered" in html
+        assert "dreamhub add" in html
+
+    def test_the_columns_are_labelled_not_the_gaps(self, hubfix):
+        html = dreamhub.render_page(rows_for(hubfix))
+        head = html.split('id=\'rows\'')[1]
+        assert head.index("project") < head.index('class="row"')
+        assert head.index("last tick") < head.index('class="row"')
+
+    def test_the_fragment_and_the_page_use_one_renderer(self, hubfix):
+        """A second renderer is a second set of rules about what a stalled
+        project looks like, and they only agree on the day they are
+        written."""
+        rows = rows_for(hubfix)
+        now = time.time()
+        assert dreamhub.render_rows(rows, now) in dreamhub.render_page(
+            rows, now)
+
+
+class TestServer:
+    @pytest.fixture
+    def hub(self, hubfix, hub_home):
+        hub_home.mkdir(parents=True, exist_ok=True)
+        dreamhub.save_registry(hubfix)
+        httpd = dreamhub.serve(0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        yield f"http://127.0.0.1:{httpd.server_address[1]}"
+        httpd.shutdown()
+        httpd.server_close()
+
+    def get(self, url):
+        with urllib.request.urlopen(url, timeout=5) as r:
+            return r.status, r.read().decode()
+
+    def test_binds_localhost_only(self, hub):
+        assert hub.startswith("http://127.0.0.1:")
+
+    def test_index_renders_every_row(self, hub, hubfix):
+        code, body = self.get(hub + "/")
+        assert code == 200
+        assert body.count('class="row"') == len(hubfix["projects"])
+
+    def test_hub_json_shape(self, hub, hubfix):
+        _, body = self.get(hub + "/hub.json")
+        data = json.loads(body)
+        assert data["generated"]
+        assert [p["slug"] for p in data["projects"]] == [
+            p["slug"] for p in hubfix["projects"]]
+        for p in data["projects"]:
+            for k in ("slug", "path", "state", "watch", "open_questions",
+                      "agents", "age_str"):
+                assert k in p, k
+
+    def test_rows_fragment_is_the_page_body(self, hub):
+        _, page = self.get(hub + "/")
+        _, frag = self.get(hub + "/rows")
+        assert frag.count('class="row"') == page.count('class="row"')
+        assert "<!doctype" not in frag.lower()
+
+    def test_unknown_path_404s(self, hub):
+        with pytest.raises(urllib.error.HTTPError) as e:
+            self.get(hub + "/nope")
+        assert e.value.code == 404
+
+    def test_the_hub_writes_nothing_outside_its_own_home(self, hub, hubfix,
+                                                         tmp_path):
+        """The checkable form of 'no writes to any target'."""
+        targets = tmp_path / "targets"
+        before = {str(p): p.stat().st_mtime
+                  for p in targets.rglob("*") if p.is_file()}
+        self.get(hub + "/")
+        self.get(hub + "/hub.json")
+        after = {str(p): p.stat().st_mtime
+                 for p in targets.rglob("*") if p.is_file()}
+        assert before == after
+
+    def test_port_persists_across_calls(self, hub_home):
+        hub_home.mkdir(parents=True, exist_ok=True)
+        first = dreamhub.hub_port()
+        assert 3000 <= first < 63000
+        assert dreamhub.hub_port() == first
+        assert (hub_home / "port").read_text().strip() == str(first)
+
+    def test_port_in_use_names_the_port(self, hub_home, capsys):
+        hub_home.mkdir(parents=True, exist_ok=True)
+        httpd = dreamhub.serve(0)
+        port = httpd.server_address[1]
+        try:
+            assert dreamhub.main(["serve", "--port", str(port)]) == 1
+            assert str(port) in capsys.readouterr().err
+        finally:
+            httpd.server_close()
 
 
 class TestPrep:

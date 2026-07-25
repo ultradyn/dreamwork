@@ -457,6 +457,252 @@ def _probe_live_safe(row, cache, timeout):
         return row
 
 
+# ------------------------------------------------------------ the page
+
+# Tokens are watch-design.md's, value for value, because this is the same
+# surface seen from one level up: the human moves between the hub and a
+# project's dashboard constantly and a second palette would read as a second
+# product. Mono stack, two sizes, dim uppercase labels, hairlines not boxes,
+# and ONE accent spent only on live or actionable things.
+STYLE = """<style>
+  :root { --bg:#0b0f19; --panel:#111827; --panel2:#1e293b;
+    --line:#1f2937; --border:#334155; --text:#d1d5db; --bright:#f3f4f6;
+    --lit:#e5e7eb; --muted:#9ca3af; --dim:#6b7280; --dimmer:#4b5563;
+    --accent:#a5b4fc; --space:1.6rem; --radius:4px; }
+  * { scrollbar-width:thin; scrollbar-color:var(--dimmer) transparent;
+      box-sizing:border-box; }
+  ::-webkit-scrollbar { width:7px; height:7px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--dimmer);
+                              border-radius:var(--radius); }
+  body { background:var(--bg); color:var(--text); margin:0;
+         padding:2.5rem 1rem;
+         font-family:ui-monospace,'JetBrains Mono',monospace; font-size:.8rem; }
+  .wrap { max-width:72ch; margin:0 auto; }
+  header { color:var(--bright); font-size:1rem; margin-bottom:.25rem; }
+  #meta { color:var(--dim); margin-bottom:2rem; }
+  .label { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
+           font-size:.7rem; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  /* Label the columns, not the gaps: every row states its two facts side by
+     side under a header pair, because a label floating between two rows
+     attaches itself to the wrong one and the reader never notices they have
+     learned it backwards. */
+  .cols { display:flex; justify-content:space-between; gap:1ch;
+          padding-bottom:.4rem; border-bottom:1px solid var(--line); }
+  .row { display:flex; justify-content:space-between; gap:2ch;
+         padding:.9rem 0; border-bottom:1px solid var(--line); }
+  .l { min-width:0; }
+  .r { text-align:right; white-space:nowrap; flex:none; }
+  .slug { color:var(--lit); }
+  a.slug { color:var(--accent); }
+  .task { color:var(--muted); margin-top:.3rem;
+          overflow-wrap:anywhere; }
+  .facts { color:var(--dim); margin-top:.3rem; overflow-wrap:anywhere; }
+  .facts .q { color:var(--accent); }
+  .owns { color:var(--dimmer); }
+  .state { color:var(--muted); }
+  /* The accent is scarce on purpose. A dreaming loop is the live thing on
+     this page, so it gets it; quiet is neutral; stalled and broken are
+     stated plainly rather than alarmed about, because the page is read at a
+     glance and a wall of red says nothing. */
+  .state.dreaming { color:var(--accent); }
+  .state.stalled, .state.missing { color:var(--muted); }
+  .age { color:var(--dim); margin-left:1ch; }
+  .note { color:var(--dim); margin-top:.3rem; overflow-wrap:anywhere; }
+  code { color:var(--muted); background:var(--panel); padding:0 .4ch;
+         border-radius:var(--radius); overflow-wrap:anywhere; }
+  .empty { color:var(--dim); margin-top:2rem; }
+</style>"""
+
+SCRIPT = """<script>
+/* One renderer, and it is the Python one. The client swaps in a freshly
+   rendered fragment rather than building rows of its own — a second
+   renderer is a second set of rules about what a stalled project looks
+   like, and the two only ever agree on the day they are written.
+   Between polls the ages tick locally off data-since, which is trivia
+   (a formatter), not an interpreter. */
+const AGE = s => s < 60 ? Math.floor(s) + 's'
+  : s < 3600 ? Math.floor(s / 60) + 'm'
+  : s < 86400 ? Math.floor(s / 3600) + 'h' : Math.floor(s / 86400) + 'd';
+function tickAges() {
+  const now = Date.now() / 1000;
+  document.querySelectorAll('.age[data-since]').forEach(el => {
+    const t = parseFloat(el.dataset.since);
+    if (!isNaN(t)) el.textContent = AGE(Math.max(0, now - t));
+  });
+}
+async function poll() {
+  try {
+    const html = await (await fetch('/rows')).text();
+    const rows = document.getElementById('rows');
+    if (rows && html) { rows.innerHTML = html; tickAges(); }
+    document.getElementById('meta').classList.remove('lost');
+  } catch (e) { document.getElementById('meta').classList.add('lost'); }
+}
+setInterval(tickAges, 1000);
+setInterval(poll, 2000);
+tickAges();
+</script>"""
+
+
+def esc(s):
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def watch_command(path):
+    """The command that starts this project's dashboard.
+
+    Stage 1 has no lifecycle: the hub SHOWS the command and the human runs
+    it. Naming the real command is the whole value — the alternative is a
+    row that says 'down' and leaves him to remember which tool it was.
+    """
+    sibling = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "watch.py")
+    tool = sibling if os.path.isfile(sibling) else "watch.py"
+    return f"python3 {tool} --target {path}"
+
+
+def _facts(row):
+    """The third line of a row: what is waiting on him, and who is out."""
+    bits = []
+    q = row.get("open_questions")
+    if q:
+        bits.append(f'<span class="q">{q} open question'
+                    f'{"s" if q > 1 else ""}</span>')
+    elif q == 0:
+        bits.append("no open questions")
+    else:
+        bits.append("questions unknown")
+    agents = row.get("agents") or []
+    if agents:
+        names = ", ".join(
+            f'{esc(a["name"])}<span class="owns"> ({esc(", ".join(a["owns"]))})'
+            f'</span>' if a["owns"] else esc(a["name"]) for a in agents)
+        bits.append(f'{len(agents)} out: {names}')
+    queue = row.get("queue") or {}
+    if isinstance(queue.get("pending"), int):
+        bits.append(f'{queue["pending"]} pending')
+    return " · ".join(bits)
+
+
+def render_row(row, now=None):
+    now = time.time() if now is None else now
+    since = (now - row["age"]) if row.get("age") is not None else None
+    label = esc(row["slug"])
+    left = (f'<a class="slug" href="{esc(row["watch_url"])}">{label}</a>'
+            if row.get("watch") == UP and row.get("watch_url")
+            else f'<span class="slug">{label}</span>')
+    parts = [f'<div class="l">{left}']
+    if row.get("task"):
+        parts.append(f'<div class="task">{esc(row["task"])}</div>')
+    parts.append(f'<div class="facts">{_facts(row)}</div>')
+    # A down row must not link to a dead port. It shows what to run instead —
+    # the one thing the human actually needs from a row in this state.
+    if row.get("watch") in (DOWN, TIMEOUT, UNREADABLE, NEVER_WATCHED):
+        parts.append(f'<div class="note">no dashboard · '
+                     f'<code>{esc(watch_command(row["path"]))}</code></div>')
+    elif row.get("note"):
+        parts.append(f'<div class="note">{esc(row["note"])}</div>')
+    parts.append("</div>")
+    state = esc(row["state"])
+    cls = state.replace(" ", "")
+    age = (f'<span class="age" data-since="{since:.1f}">'
+           f'{esc(row["age_str"])}</span>' if since is not None else "")
+    parts.append(f'<div class="r"><span class="state {cls}">{state}</span>'
+                 f'{age}</div>')
+    return f'<div class="row" data-slug="{label}">{"".join(parts)}</div>'
+
+
+def render_rows(rows, now=None):
+    if not rows:
+        return ('<div class="empty">No projects registered yet — '
+                '<code>dreamhub add &lt;path&gt;</code></div>')
+    head = ('<div class="cols"><span class="label">project</span>'
+            '<span class="label">last tick</span></div>')
+    return head + "".join(render_row(r, now) for r in rows)
+
+
+def render_page(rows, now=None):
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>dreamhub</title>" + STYLE + "</head><body><div class='wrap'>"
+        "<header>dreamhub</header>"
+        f"<div id='meta'>{len(rows)} project{'' if len(rows) == 1 else 's'} "
+        "on this machine</div>"
+        f"<div id='rows'>{render_rows(rows, now)}</div>"
+        + SCRIPT + "</div></body></html>")
+
+
+# ---------------------------------------------------------- the server
+
+def hub_port():
+    """This hub's port, persisted — the same idiom as a target's
+    `.dreamwork/watch-port`, one level up, so a bookmark keeps working."""
+    marker = os.path.join(hub_home(), "port")
+    try:
+        with open(marker, encoding="utf-8") as f:
+            saved = f.read().strip()
+        if saved.isdigit():
+            return int(saved)
+    except OSError:
+        pass
+    import random
+    port = random.randrange(3000, 63000)
+    try:
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write(f"{port}\n")
+    except OSError:
+        pass
+    return port
+
+
+def make_handler(cache, timeout=PROBE_TIMEOUT_S):
+    import http.server
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *a):
+            pass
+
+        def _send(self, body, ctype="text/html; charset=utf-8", code=200):
+            raw = body.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self):
+            rows = probe_all(load_registry(), cache, timeout=timeout)
+            if self.path == "/hub.json":
+                self._send(json.dumps({
+                    "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "projects": rows}, indent=2),
+                    "application/json; charset=utf-8")
+            elif self.path == "/rows":
+                self._send(render_rows(rows))
+            elif self.path == "/":
+                self._send(render_page(rows))
+            else:
+                self._send("not found", "text/plain; charset=utf-8", 404)
+
+    return Handler
+
+
+def serve(port=None):
+    import http.server
+    port = port or hub_port()
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port),
+                                            make_handler({}))
+    return httpd
+
+
 # ---------------------------------------------------------------- CLI
 
 def cmd_add(args):
@@ -494,6 +740,27 @@ def cmd_list(args):
     return 0
 
 
+def cmd_serve(args):
+    port = args.port or hub_port()
+    try:
+        httpd = serve(port)
+    except OSError as e:
+        print(f"dreamhub: cannot bind 127.0.0.1:{port} ({e.strerror}). "
+              f"Another dreamhub is probably already serving it "
+              f"(the port persists in {os.path.join(hub_home(), 'port')}); "
+              f"stop it or pass --port.", file=sys.stderr)
+        return 1
+    url = f"http://127.0.0.1:{port}/"
+    print(f"dreamhub on {url}")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
+    return 0
+
+
 def build_parser():
     p = argparse.ArgumentParser(
         prog="dreamhub",
@@ -512,6 +779,10 @@ def build_parser():
 
     ls = sub.add_parser("list", help="show the registry")
     ls.set_defaults(fn=cmd_list)
+
+    sv = sub.add_parser("serve", help="serve the hub page on 127.0.0.1")
+    sv.add_argument("--port", type=int, default=None)
+    sv.set_defaults(fn=cmd_serve)
     return p
 
 
