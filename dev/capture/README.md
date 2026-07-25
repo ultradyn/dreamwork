@@ -70,6 +70,10 @@ for live content is how this got broken the first time.
   Forces a real 409 the way #116 caused them — the page holding a title the
   file will not match — and then looks for his text in `submissions.log`.
   The successful case is the control, not the check.
+- `draft` — the composer's half-typed thought survives a real reload, a
+  rejected send and the mode-switch defocus path (#163, #162b), and is
+  forgotten on a successful send and nowhere else. Both directions, because
+  either one alone passes on a page that does the opposite of the feature.
 - `indicator` — the composer's selection indicator lands on the button it
   marks even though it is painted mid-reveal (#198). Bounded window, because
   the bug is laundered by the next re-render rather than self-healing — and

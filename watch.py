@@ -3013,6 +3013,77 @@ function popoutDoc(url, label) {
   const CMD_DISMISS_MS = 1425;               // was 950; his 1.5x
   let dismissT = 0, composing = false;
   const cancelDismiss = () => { clearTimeout(dismissT); dismissT = 0; };
+  /* ── the half-typed thought survives a reload (#163) ─────────────────────
+     The panel already keeps its text across a close and across a route
+     change — it lives outside `#view`, so nothing rebuilds it. What loses his
+     words is a RELOAD: the tab crashing, him refreshing, the server restarting
+     and `tick` calling `location.reload()` on a new generation. That last one
+     is the page doing it TO him.
+
+     BROWSER STORAGE IS RIGHT HERE AND WAS WRONG FOR #143, and the difference
+     is worth stating because the two look identical from a distance. A tint is
+     a setting ABOUT the project: it should follow the project to another
+     machine, so it lives in `.dreamwork/watch-tint` and is committable. An
+     unsent draft is a thought in progress that he has not chosen to send to
+     anyone — writing it to the repo would publish it, and #199 already gives
+     the server a verbatim record of everything he DID send. So this one stays
+     in the browser, on this machine, and never travels.
+
+     PARTITIONED BY `data.target`, the absolute project path — not by the
+     project NAME, because two checkouts can share a basename and a draft
+     surfacing under the wrong loop is worse than a lost one. With no target
+     yet (the first fetch has not landed) nothing is read or written at all,
+     rather than everything sharing an empty key.
+
+     THE TWO-WINDOW SEMANTIC, stated rather than discovered: he runs several
+     windows per project — that is what #143 syncs a tint for — and they share
+     one key, so the store holds THE MOST RECENT unsent thought on this
+     project. A restore never overwrites a box that already has text in it
+     (#118's rule: what he is in the middle of outranks anything stored), so
+     two live composers never fight; only the stored copy is last-write-wins.
+
+     IT RESTORES SILENTLY, and that is a decision about a different channel.
+     `setCmdMsg` is the composer's one line for whether his command LANDED
+     (#159), and putting "draft restored" on it would spend the one place he
+     looks for a send confirmation on something that is not one. The text
+     being in the box is the statement. */
+  const draftKey = () => {
+    const tgt = (typeof data !== 'undefined' && data && data.target) || '';
+    return tgt ? 'dw:draft:' + tgt : '';
+  };
+  function saveDraft() {
+    const key = draftKey(), t = document.getElementById('cmdtext');
+    if (!key || !t) return;
+    // never let a storage failure break the composer: private mode, a full
+    // quota and a disabled origin all throw here, and none of them is a
+    // reason he cannot send a command (`log_submission`'s rule, client-side)
+    try {
+      if (t.value) localStorage.setItem(key,
+        JSON.stringify({ t: t.value, k: activeKind }));
+      else localStorage.removeItem(key);
+    } catch (e) { /* storage unavailable; the live box is unaffected */ }
+  }
+  /* ONLY on a successful send, which is the whole contract. A draft that is
+     cleared on close, on blur, or on a rejected POST is a draft that
+     disappears at exactly the moments he most needs it back. */
+  function clearDraft() {
+    const key = draftKey();
+    if (!key) return;
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
+  function restoreDraft() {
+    const key = draftKey(), t = document.getElementById('cmdtext');
+    if (!key || !t || t.value) return;   // a live box outranks storage (#118)
+    let d = null;
+    try { d = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) {}
+    if (!d || typeof d.t !== 'string' || !d.t) return;
+    t.value = d.t;
+    // the kind travels with the text, because the kind is WHERE THE TEXT GOES
+    // (#103's rule for a card's mode, one surface over). Validated against the
+    // live vocabulary: a plugin's command can disappear between sessions, and
+    // silently sending his words as the wrong kind is worse than defaulting.
+    if (d.k && COMMANDS.some(c => c.kind === d.k)) setKind(d.k);
+  }
   // The composer is position:fixed, but `.wrap` carries `perspective`, which
   // makes IT the containing block — so `top`/`left` are measured from .wrap,
   // not the viewport. Rects are viewport coords, so subtract that origin or
@@ -3095,13 +3166,17 @@ function popoutDoc(url, label) {
       b.classList.toggle('on', b.dataset.kind === kind));
     moveIndicator(rebuilt);
   }
+  /* The saves hang off HIS choice, never off `setKind` itself. `setKind` also
+     runs at init and from `restoreDraft`, and saving there would write the
+     empty box over a stored draft before it was ever read — deleting the
+     feature at the moment it was supposed to work. */
   if (kindsEl) kindsEl.addEventListener('click', e => {
     const b = e.target.closest('.cmdkind');
-    if (b) { e.preventDefault(); setKind(b.dataset.kind); }
+    if (b) { e.preventDefault(); setKind(b.dataset.kind); saveDraft(); }
   });
   if (menuEl) menuEl.addEventListener('click', e => {
     const b = e.target.closest('.cmdmenuitem');
-    if (b) { e.preventDefault(); setKind(b.dataset.kind); }
+    if (b) { e.preventDefault(); setKind(b.dataset.kind); saveDraft(); }
   });
   // the menu opens on hover/focus in CSS; mirror that into aria-expanded,
   // which CSS cannot set.
@@ -3120,6 +3195,10 @@ function popoutDoc(url, label) {
   for (const ev of ['input', 'keydown', 'pointerdown'])
     pal.addEventListener(ev, () => {
       composing = true;
+      // NO DEBOUNCE, deliberately: a debounce is a window in which his words
+      // are lost, which is the one thing this exists to prevent. The value is
+      // a single command, so the write is far too small to be worth batching.
+      if (ev === 'input') saveDraft();
       if (!dismissT) return;
       cancelDismiss();
       // A stale "sent to the dream" sitting above a fresh, unsent thought is
@@ -3130,6 +3209,9 @@ function popoutDoc(url, label) {
   function openCmd() {
     cancelDismiss(); composing = false;
     place(); pal.classList.add('open'); open = true;
+    // before the indicator moves: a restored draft may carry a KIND, and
+    // `setKind` is what the indicator is being landed under (#163)
+    restoreDraft();
     moveIndicator(true);          // land under the active kind, never slide in
     const plus = document.getElementById('cmdplus');
     if (plus) plus.classList.add('on');
@@ -3190,6 +3272,7 @@ function popoutDoc(url, label) {
         if (plus) { const b = plus.getBoundingClientRect();
           ripple(b.left + b.width / 2, b.top + b.height / 2); }
         document.getElementById('cmdtext').value = '';
+        clearDraft();             // the one moment it is safe to forget (#163)
         // he may already have started typing again while the POST was in
         // flight, before there was any timer to cancel
         cancelDismiss();

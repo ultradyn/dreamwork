@@ -76,13 +76,17 @@ lint:
 #                laundered by the next view re-render, so a relaxed window
 #                would pass over a bug he can see. It proves that laundering
 #                path exists rather than assuming it.
+#   draft        ordinary (OUT, PORT), and it RELOADS the page repeatedly on
+#                purpose — closing and reopening the composer passed before
+#                #163 existed, so only a real reload tests anything. Writes
+#                one command event per run via a successful send.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"

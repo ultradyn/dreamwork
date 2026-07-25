@@ -1045,6 +1045,38 @@ class TestAppShell(unittest.TestCase):
             watch.PAGE.count('qaFail(card, res ? res.status : 0)'), 2,
             "both sendAnswer and sendComment surface a refusal")
 
+    def test_draft_is_cleared_on_exactly_one_path(self):
+        """#163 — the draft is forgotten on a successful send and nowhere else.
+
+        This is structural on purpose. The browser guard (`draft.mjs`) proves
+        the behaviour; what it cannot notice is someone LATER adding a second
+        `clearDraft()` to `closeCmd` or to the rejection branch, because that
+        reads as tidy and the guard would then fail somewhere far away. The
+        whole contract is the count.
+        """
+        # `clearDraft();` with the semicolon counts CALLS only — the
+        # definition reads `function clearDraft() {` and would otherwise be
+        # counted as one, which is how this test first failed at 2 != 1
+        self.assertEqual(watch.PAGE.count('clearDraft();'), 1,
+                         "clearDraft is called from the success branch only")
+        # ...and it really is inside the success branch: the line that empties
+        # the box is the one the confirmation is written next to
+        i = watch.PAGE.index('clearDraft();')
+        self.assertIn("getElementById('cmdtext').value = ''",
+                      watch.PAGE[i - 200:i])
+        # saving hangs off HIS acts, never off setKind — which also runs at
+        # init and from restoreDraft, where it would erase the stored draft
+        # before it was ever read
+        self.assertNotIn('setKind(kind); saveDraft', watch.PAGE)
+        self.assertEqual(watch.PAGE.count('saveDraft();'), 3,
+                         "one input save, two explicit kind choices")
+
+    def test_draft_is_partitioned_by_target_path_not_name(self):
+        # two checkouts can share a basename, and a draft surfacing under the
+        # wrong loop is worse than a lost one
+        self.assertIn("'dw:draft:' + tgt", watch.PAGE)
+        self.assertIn('data.target', watch.PAGE)
+
     def test_page_has_pip_popout_buttons(self):
         # #83: discoverable PiP-glyph buttons float a doc/review in an
         # identity-headed window, reusing the popout machinery.

@@ -1270,6 +1270,40 @@ Two consequences of the line being read by something that then acts:
   available and the honest one — it is the thing he popped it out to keep
   beside him.
 
+**The half-typed thought survives a reload** (#163). The panel already keeps
+its text across a close and a route change — it lives outside `#view`, so
+nothing rebuilds it. What loses his words is a *reload*, including the one the
+page performs on him when `tick` sees a new server generation. So the box
+autosaves to `localStorage` on every `input` — **no debounce**, because a
+debounce is a window in which his words are lost, which is the thing this
+exists to prevent — and restores on open, only into a box that is empty (#118:
+what he is in the middle of outranks anything stored).
+
+**Browser storage is right here and was wrong for #143**, and the pair is worth
+holding together because they look identical from a distance. A tint is a
+setting *about* the project: it should follow the project to another machine,
+so it is a committable file. An unsent draft is a thought he has not chosen to
+send to anyone — writing it into the repo would publish it, and #199 already
+gives the server a verbatim record of everything he *did* send. It is keyed by
+`data.target`, the absolute path, never the project *name*: two checkouts can
+share a basename, and a draft surfacing under the wrong loop is worse than a
+lost one. He runs several windows per project, so the store holds *the most
+recent* unsent thought on that project; two live boxes never fight, because a
+restore never overwrites text.
+
+**It is cleared on a successful send and on nothing else.** Not on close, not
+on blur, not on a rejected POST — those are exactly the moments he most needs
+it back. Emptying the box himself does clear it, because deleting text is a
+deliberate act on the content rather than an accident of the panel. The kind
+travels with the text (#103's rule that the mode is *where the text goes*),
+validated against the live vocabulary on the way back in, since a plugin's
+command can vanish between sessions. It restores **silently**: `setCmdMsg` is
+the one line that says whether a command *landed*, and spending it on "draft
+restored" would dilute the only place he looks for a send confirmation.
+`dev/capture/draft.mjs` guards both directions — a check for "it survives"
+alone passes on a page that never forgets, and "it is cleared" alone passes on
+a page that never saves.
+
 **The panel never closes under him** (#131). The auto-dismiss after a send is
 a *courtesy* — it gets the panel out of the way once the thought has landed —
 and a courtesy must never take a channel away from someone still using it.
