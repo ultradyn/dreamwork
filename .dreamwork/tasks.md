@@ -368,7 +368,9 @@ Next id: **194**
   #143 — a half-typed draft is his, local, and must not travel · this is
   the backstop under #118, #131 and #162, the first fix that does not
   depend on having anticipated the path · clear ONLY on successful send
-- **#162** — A menu command wraps the row, and the composer vanished ·
+- **#162** — [plan: `docs/plans/composer-row.md` — it SPLITS this: (a) is
+  subsumed, (b) is a separate #131-family bug] A menu command wraps the row,
+  and the composer vanished ·
   P2 · bug · 25m · (a) wrapping — do not fix separately if #164 is
   being built · (b) **the composer defocused and disappeared** when he
   clicked back to a default: the #131 family, and #131's "nothing
