@@ -43,7 +43,17 @@ Next id: **212**
   crossed back and orphaned the work uncommitted — recovered from the
   agent transcript and adopted at 3073055; the demand was wrong AND the
   work it provoked was a real find, which is its own lesson about what a
-  wrong premise can still buy
+  wrong premise can still buy · **sixth crossing 20:40-20:41, a NEW
+  direction**: the coordinator's absence-check raced the report's write
+  and concluded "no report" one minute after the report existed — the
+  named-what-I-did-not-do mitigation cannot help when the reader is the
+  one who is stale; rec: never conclude a report is ABSENT from a read
+  taken inside the window the report was due — wait a beat and read
+  again · **and a shared-tree rule for parallel-architecture.md**
+  (plugcmd): `git add <path>` is safe only for changes YOU made — a held
+  path carrying changes you did not make is a question, not a commit;
+  the coordinator committed a live agent's working tree mid-red-proof at
+  3073055 and it happened to be complete, which is luck, not process
 - **#138** — Ship a PreCompact hook so the write-down is automatic ·
   P2 · task · 60m · **scope gate applies**: Claude Code-specific
   machinery in a harness-portable skill, and it touches his own config

@@ -868,3 +868,7 @@ this shape and convert opportunistically.)
   lines here. Verify the copy EXISTS before destroying the original; the
   work was recovered only because agent transcripts record every edit.
   (coordinator, 2026-07-25)
+- Changes you did not make, in a path you hold, are a question and not a
+  commit: the coordinator landed a live agent's working tree mid-red-proof
+  and it happened to be complete. The tree is shared; only your own edits
+  are yours to stage. (dreamer-plugcmd, 2026-07-25, #206 sixth crossing)
