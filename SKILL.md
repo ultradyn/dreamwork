@@ -213,6 +213,15 @@ silently swallowed deliverables here. Dreamers append to the coordinator
 inbox and have never lost one; the fix is to dispatch utilities the same
 way, not to watch harder.
 
+**Steering an agent takes two acts: write, then wake.** The inbox is
+durable but not delivered — a dreamer reads it *between increments*, so
+one that has gone idle never sees it, and a batch written two minutes
+after it went quiet sits unread indefinitely. Write with `relay.py`
+(body from stdin, stamp from the clock, both for reasons in its
+docstring), then send a message through the harness. A silent agent and
+a silent channel look identical, so verify what READS a thing, never
+just that it was written.
+
 Subagents never stop or pause loop machinery — the heartbeat monitor, the
 watch server, the loop itself; if one believes the loop should stop, it
 says so in its report and the human (or the coordinator on the human's
