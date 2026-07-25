@@ -70,6 +70,22 @@ guards port="39899":
       echo "guards: server never came up on {{port}} — see $OUT/server.log"
       exit 1
     fi
+    # ...and it must be OUR server. A readiness probe that accepts any answer
+    # grades whatever already holds the port: a `just watch` left running on
+    # this port serves the REAL repo, our python exits "address in use", and
+    # ten guards then assert fixture facts about the live target and come back
+    # red with messages about a fixture that was never being read. That is
+    # exactly what happened on 2026-07-25 and it cost a 20-minute run. Only
+    # the guards that start their OWN server were immune, so the check belongs
+    # here rather than in each of the ten.
+    served=$(curl -sf "http://127.0.0.1:{{port}}/data.json" \
+             | python3 -c 'import json,sys; print(json.load(sys.stdin).get("target",""))' \
+             2>/dev/null)
+    if [ "$served" != "$OUT/target" ]; then
+      echo "guards: :{{port}} is serving ${served:-<no answer>}, not $OUT/target"
+      echo "        something else already holds the port — see $OUT/server.log"
+      exit 1
+    fi
     fail=0
     for g in $GUARDS; do
       # Reset the target before EVERY guard — see the header. The server
