@@ -514,6 +514,11 @@ STYLE = """<style>
   code { color:var(--muted); background:var(--panel); padding:0 .4ch;
          border-radius:var(--radius); overflow-wrap:anywhere; }
   .empty { color:var(--dim); margin-top:2rem; }
+  /* The hub itself can go away while this page is open — a laptop lid, a
+     restarted daemon. Saying so is the same honesty the rows owe about
+     their projects: the ages keep advancing off the last known tick,
+     which stays true, but the STATES are now as old as this marker. */
+  #meta.lost::after { content:" · not reaching the hub"; color:var(--dim); }
 </style>"""
 
 SCRIPT = """<script>
@@ -534,12 +539,15 @@ function tickAges() {
   });
 }
 async function poll() {
+  const meta = document.getElementById('meta');
   try {
-    const html = await (await fetch('/rows')).text();
+    const r = await fetch('/rows');
+    if (!r.ok) throw new Error(r.status);
+    const html = await r.text();
     const rows = document.getElementById('rows');
     if (rows && html) { rows.innerHTML = html; tickAges(); }
-    document.getElementById('meta').classList.remove('lost');
-  } catch (e) { document.getElementById('meta').classList.add('lost'); }
+    meta.classList.remove('lost');
+  } catch (e) { meta.classList.add('lost'); }
 }
 setInterval(tickAges, 1000);
 setInterval(poll, 2000);

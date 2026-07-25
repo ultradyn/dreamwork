@@ -198,6 +198,72 @@ ok('the mid-write row keeps BOTH its notes',
 ok('no horizontal overflow at 1200px', seen.docWidth <= seen.winWidth);
 await p.screenshot({ path: `${OUT}/hub.png`, fullPage: true });
 
+/* ---- liveness -------------------------------------------------------
+   The one sin watch-design.md names as disqualifying for a page like this
+   is lying about being live. A dashboard that renders a state and then
+   holds it is worse than a static page, because a static page does not
+   claim otherwise — and "which of my dreamers has stopped moving" is a
+   question you only ask of something you believe is current.
+
+   Three separate things, and the third is the one a reload would fake:
+   the age advances, a state change on DISK reaches the page, and the
+   document never navigated while either happened. */
+await p.evaluate(() => { window.__guardMark = 'alive'; });
+const ageBefore = await p.evaluate(() =>
+  document.querySelector('[data-slug="fresh"] .age').textContent);
+
+// flip a stalled loop into a dreaming one, mid-run, on disk
+const sfile = join(targets, 'stalled', '.dreamwork', 'status.json');
+const now = new Date();
+writeFileSync(sfile, JSON.stringify({
+  task: '#80 — picked up again while the guard was watching',
+  goal: 'prove the loop is not overfitted to its own repo',
+  agents: [], queue: { in_progress: 1, pending: 9 },
+  last_tick: now.toISOString(),
+  last_commit: '767bbf6 queue: #138 the PreCompact hook',
+}, null, 2));
+
+await sleep(3200);
+const live = await p.evaluate(() => ({
+  mark: window.__guardMark,
+  age: document.querySelector('[data-slug="fresh"] .age').textContent,
+  stalled: document.querySelector('[data-slug="stalled"] .state').textContent,
+  task: document.querySelector('[data-slug="stalled"] .task').textContent,
+}));
+notes.push(`liveness: age ${ageBefore} -> ${live.age}, stalled -> ` +
+  `${live.stalled}, mark ${live.mark}`);
+ok('the age advances with no navigation', live.age !== ageBefore);
+ok('a state change on disk reaches the page', live.stalled === 'dreaming');
+ok('...and its task follows too, not just the state',
+  /while the guard was watching/.test(live.task));
+// without this the two above are satisfied by a page that simply reloaded,
+// which is not liveness — it is a meta refresh
+ok('the document never navigated', live.mark === 'alive');
+await p.screenshot({ path: `${OUT}/hub-live.png`, fullPage: true });
+
+/* The per-second age tick is invisible while polling works — the 2s poll
+   re-renders server-computed ages and hides it. Its real job shows up when
+   the hub cannot be reached: the last known tick is still a fact and its age
+   genuinely keeps growing, so a page that freezes instead is telling you a
+   project ticked more recently than it did. Cut the poll and watch. */
+await p.route('**/rows', r => r.abort());
+const beforeCut = await p.evaluate(() => ({
+  age: document.querySelector('[data-slug="fresh"] .age').textContent,
+  lost: document.getElementById('meta').classList.contains('lost'),
+}));
+await sleep(4200);
+const afterCut = await p.evaluate(() => ({
+  age: document.querySelector('[data-slug="fresh"] .age').textContent,
+  lost: document.getElementById('meta').classList.contains('lost'),
+}));
+notes.push(`poll cut: age ${beforeCut.age} -> ${afterCut.age}, ` +
+  `lost ${beforeCut.lost} -> ${afterCut.lost}`);
+ok('the age keeps advancing when the hub cannot be reached',
+  afterCut.age !== beforeCut.age);
+ok('...and the page says it has lost the hub rather than pretending',
+  afterCut.lost === true && beforeCut.lost === false);
+await p.unroute('**/rows');
+
 // narrow: long absolute paths and owns-lists are the things that blow out
 await p.setViewportSize({ width: 380, height: 900 });
 await sleep(300);
