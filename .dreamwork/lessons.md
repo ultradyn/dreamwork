@@ -768,3 +768,22 @@ this shape and convert opportunistically.)
   done when the harness says the agent terminated.** Same class as the
   batch that produced it: the thing that reports success and the thing
   that succeeded are different events. (coordinator, 2026-07-25)
+- **A shared helper's invariants may hold only because of the shape of its
+  callers, and its comment cannot tell you which.** #196 sent the first
+  `<details>` through `travelCard` and the first multi-node clone through
+  `dreamAway`, and both broke: `travelCard` interpolated a border-box
+  measurement into a content-box `height` (harmless while every caller had no
+  vertical padding), and `dreamAway` stripped the ghost's identity from the
+  node but not its subtree (complete while every ghost WAS one node). Neither
+  was wrong when written. **When a helper acquires its first caller of a new
+  shape, re-derive its invariants rather than reading its comment.**
+  (dreamer-qsec, 2026-07-25)
+- **A reasoned exemption gets believed; a bare TODO gets checked.** The
+  dashboard's questions fold snapped for the whole life of #141 behind a
+  justification written down twice and confidently — "nothing that MOVES sits
+  below the toggle" — which four panels falsify in one glance. #169's guard
+  then visited that exact element, asserted its padding and colour, and never
+  noticed it was not animating. **When a rule exempts something, check the
+  exemption's premise, not just its conclusion** — and when it turns out
+  false, leave the correction visible, because the false-and-checkable shape
+  is the reusable part. (dreamer-qsec, 2026-07-25)
