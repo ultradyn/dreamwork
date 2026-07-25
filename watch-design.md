@@ -1378,11 +1378,69 @@ the old timing.
 
 **One vocabulary.** `COMMANDS` (top of `watch.py`) is the single source of
 steering kinds — `{kind, label, desc, common}`. The server derives
-`COMMAND_KINDS` from it to validate `POST /command`, the page embeds it as a
-JS `const`, the composer renders its buttons from it, and the popped-out form
-fills its `<option>`s from it. A new kind is one entry and nothing else;
-plugin-contributed kinds (#86) append to the list, so nothing downstream may
-assume a fixed set or a fixed length.
+`COMMAND_KINDS` from it to validate `POST /command`, the page embeds it as
+`CORE_COMMANDS`, the composer renders its buttons from it, and the popped-out
+form fills its `<option>`s from it. A new kind is one entry and nothing else.
+
+**Plugin-contributed kinds append to that table** (#86), which is why the page
+holds `COMMANDS` as a `let` and nothing downstream may assume a fixed set or a
+fixed length. `writing-plugins.md` has granted plugins their own command
+namespace in prose since there were plugins, and until this landed the
+contract promised what the UI could not show — the human raised it twice.
+
+- **They ride `/data.json`, not the shell.** Which plugins resolved is a
+  property of the *machine*, so it can change under a page that is already
+  open; the core half is a property of `watch.py` and cannot. `watched_mtime`
+  walks `.dreamwork/`, so the existing poll carries it — no new channel, no
+  reload, same move as the tint (#143).
+- **Absence costs nothing**, and that is the common case rather than the edge
+  one: most targets load no plugin that declares a command, and the composer
+  with no file renders exactly as it did before any of this existed.
+- **They live in the `...` menu and never the row.** `common` from the file is
+  ignored, not refused — there is deliberately no way to ask. Core commands
+  own the composer's most valuable real estate, so loading a plugin may add to
+  the composer and may never degrade it.
+- **The item names the plugin that answers it**, right-aligned at `--dimmer` —
+  the quietest step of the ramp, the same as the history's ages. A plugin
+  command can vanish between sessions and a core one cannot, so the two are
+  not interchangeable and the menu says which is which. It is *provenance, not
+  an errand*: the accent means "this needs you", and this is read only when a
+  command is unfamiliar or has stopped working. The **row** carries no visible
+  mark, only the title — the row is a mode switch whose one job is saying
+  where the text goes, its width is load-bearing (#162 is that row wrapping
+  and taking the panel with it), and by the time a kind is in the row he has
+  already read the attribution at the moment he chose it.
+- **The menu is reconciled by kind, not rebuilt.** An `innerHTML` rebuild ends
+  in the identical DOM and costs two things: any hover or focus he was holding
+  is dropped, and every item becomes an arrival, so there is no way to animate
+  the ones that actually arrived. See *The menu's arrival* below.
+- **The server reads the file per request.** A kind the composer offers has to
+  be one `POST /command` accepts, and a set cached at startup would refuse the
+  button it had just drawn.
+
+### The menu's arrival
+
+A command that lands while the menu is **open in front of him** eases in on
+the page's one enter idiom (`.qreveal` + `.dreamin`). One that lands while the
+menu is **shut** does not, and that is not an exemption of the #204 kind: the
+menu was showing him nothing, so nothing appeared, and the menu's own reveal
+is what brings it in when he next hovers. The guard checks that half too, by
+looking for an item left stuck part-faded.
+
+Two things about it were bugs first:
+
+- **`.qreveal` needed a rule of its own here to work at all.**
+  `.cmdmenuitem` declares a transition at the same specificity and *later* in
+  the sheet, so it won, `.qreveal` supplied no transition, and the class was
+  added to an element already at opacity 1 — #154 exactly, one component over.
+  `.cmdmenuitem.qreveal` restates both sets and does not depend on source
+  order, which is the invariant `.dreamin`'s own comment states.
+- **Deleting a file used to be invisible to the poll.** `watched_mtime`
+  statted only files, and removing one cannot raise the maximum mtime of the
+  files that remain — so unloading a plugin left its commands in the menu
+  until something unrelated was written. It walks the directories now. That
+  matters beyond this feature: "unloading is the absence of a write" is only
+  a contract if absence is observable.
 
 **Choosing a kind** uses the shared sliding group (below): `.sgroup` /
 `.sgind` / `.sgbtn`, plus its own `cmdkinds` / `cmdkind` styling. The row

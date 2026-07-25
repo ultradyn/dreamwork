@@ -15,6 +15,13 @@ verification that depends on mutable state is not one. Prose here is
 deliberately long enough to wrap several times in a question card, because
 the reflow guard measures line boxes and needs paragraphs to measure.
 
+## Plugins
+
+- Load `ud-dreamwork-github`. It is here so the fixture holds a target
+  that has one, which is what `plugin-commands.json` describes and what
+  the composer's plugin commands are rendered from. Nothing runs it: the
+  guards read the declaration, never the plugin.
+
 ## Preferences & Routines
 
 - Fixture content changes are a deliberate act: a guard that starts

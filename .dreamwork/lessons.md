@@ -824,3 +824,21 @@ this shape and convert opportunistically.)
   "the guard threw" — which says nothing about the page and points the reader
   at the guard. Assert the subject EXISTS before driving it: the red run then
   costs 3.4s and names the missing thing. (dreamer-qsec, 2026-07-25)
+- **Deletion is invisible to a max-mtime poll.** `watched_mtime` statted only
+  files, and removing one cannot raise the maximum mtime of the files that
+  remain — so an open page went on showing an unloaded plugin's commands until
+  something unrelated was written. Every "unloading is the absence of a write"
+  contract (and there are several here — fold-by-complement, `human_block`,
+  plugin-commands.json itself) depends on absence being OBSERVABLE, which is a
+  separate property nobody had checked. Walk the directories: a directory's
+  mtime moves when an entry is added or removed, and it adds no re-renders,
+  because a created file already carries a fresh mtime. (dreamer-plugcmd,
+  2026-07-25, #86)
+- **Hang a reactive hook off where the value is ASSIGNED, never off one of its
+  fetchers.** `data` had two: `ensureData` for the first paint and `tick` for
+  the live one. Hooking the tick looks like hooking the live path and is not —
+  `ensureData` sets `lastMtime` as it fetches, so the first tick finds nothing
+  changed, and the feature never worked on a freshly opened page while working
+  perfectly on every later change. The fix is one `setData` seam, not a second
+  call site; a second call site fixes the symptom and re-arms the trap.
+  (dreamer-plugcmd, 2026-07-25, #86)

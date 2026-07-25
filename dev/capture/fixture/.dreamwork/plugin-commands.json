@@ -1,0 +1,16 @@
+{
+  "commands": [
+    {
+      "kind": "gh-sync",
+      "label": "gh sync",
+      "desc": "poll the forge now instead of waiting for the next tick",
+      "plugin": "ud-dreamwork-github"
+    },
+    {
+      "kind": "gh-triage",
+      "label": "gh triage",
+      "desc": "read the open issues and turn the new ones into tasks",
+      "plugin": "ud-dreamwork-github"
+    }
+  ]
+}

@@ -793,9 +793,13 @@ class TestAppShell(unittest.TestCase):
             self.assertLessEqual({"kind", "label", "desc", "common"},
                                  set(c), "every kind needs a menu description")
         # the whole vocabulary — descriptions included — reaches the client,
-        # which renders the row, the menu and the popout options from it
-        self.assertIn("const COMMANDS = " + json.dumps(list(watch.COMMANDS)),
-                      watch.PAGE)
+        # which renders the row, the menu and the popout options from it.
+        # It arrives as CORE_COMMANDS because `COMMANDS` is the table the
+        # plugin half appends to (#86), and it is `let` for that reason.
+        self.assertIn(
+            "const CORE_COMMANDS = " + json.dumps(list(watch.COMMANDS)),
+            watch.PAGE)
+        self.assertIn("let COMMANDS = CORE_COMMANDS.slice();", watch.PAGE)
         self.assertIn("COMMANDS.map(c =>", watch.PAGE)      # popout options
         self.assertIn("function renderKinds()", watch.PAGE)  # the button row
         self.assertIn("function renderMenu()", watch.PAGE)   # the hover menu
@@ -808,7 +812,7 @@ class TestAppShell(unittest.TestCase):
         self.assertTrue(any(not c["common"] for c in watch.COMMANDS),
                         "menu is pointless if every kind is already a button")
         for token in ('id="cmdmore"', 'id="cmdmenu"', 'role="menu"',
-                      'class="cmdmenuitem"', 'aria-haspopup="menu"',
+                      "b.className = 'cmdmenuitem'", 'aria-haspopup="menu"',
                       # the row must admit a selected uncommon kind, or the
                       # indicator would have nothing to sit on
                       'c.common || c.kind === activeKind'):
@@ -1474,3 +1478,124 @@ class TestProjectTint(unittest.TestCase):
             head = line.strip()
             if head.startswith(("/*", "*", "//")) and "`" in line:
                 self.fail(f"backtick in a shader comment, line {i}: {head!r}")
+
+
+class TestPluginCommands(unittest.TestCase):
+    """#86 — a plugin's commands, read where the composer can render them.
+
+    The declaration is the plugin's, the file is the loop's, and this is the
+    READ. `lint.py` reports on the same file for a human to fix later; these
+    are the refusals that have to hold while a request is being answered.
+    """
+
+    def write(self, d, doc):
+        os.makedirs(os.path.join(d, ".dreamwork"), exist_ok=True)
+        with open(os.path.join(d, ".dreamwork", "plugin-commands.json"),
+                  "w") as f:
+            f.write(doc if isinstance(doc, str) else json.dumps(doc))
+        return d
+
+    def test_absence_costs_nothing(self):
+        # The common case by a wide margin: most targets load no plugin that
+        # declares a command, and the composer must render exactly as it did
+        # before there was a plugin system.
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            self.assertEqual(watch.plugin_commands(d), [])
+            self.assertEqual(watch.collect(d)["plugin_commands"], [])
+
+    def test_a_broken_file_costs_the_commands_and_nothing_else(self):
+        # Every shape here reaches a running page. A raise would take the
+        # whole dashboard down over a file that exists to add two menu items.
+        for doc in ('{"commands": [', '[]', '{}', '{"commands": {}}',
+                    'null', '{"commands": [1, "two", null]}'):
+            with tempfile.TemporaryDirectory() as d:
+                self.write(d, doc)
+                self.assertEqual(watch.plugin_commands(d), [], doc)
+
+    def test_a_declared_command_is_carried_whole(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.write(d, {"commands": [
+                {"kind": "gh-sync", "label": " gh sync ",
+                 "desc": "poll the forge", "plugin": "ud-dreamwork-github"}]})
+            self.assertEqual(watch.plugin_commands(d), [
+                {"kind": "gh-sync", "label": "gh sync", "desc": "poll the forge",
+                 "plugin": "ud-dreamwork-github", "common": False}])
+
+    def test_a_plugin_cannot_promote_itself_into_the_main_row(self):
+        # `common` is not honoured whatever the file says: core commands own
+        # the composer's most valuable real estate, so loading a plugin can
+        # add to the composer and can never degrade it. There is deliberately
+        # no way to ask otherwise, which is why asking is ignored rather than
+        # refused.
+        with tempfile.TemporaryDirectory() as d:
+            self.write(d, {"commands": [
+                {"kind": "gh-sync", "label": "gh sync", "desc": "poll",
+                 "plugin": "ud-dreamwork-github", "common": True}]})
+            self.assertEqual(watch.plugin_commands(d)[0]["common"], False)
+
+    def test_a_kind_that_shadows_a_core_command_is_dropped(self):
+        # The failure this refuses: a plugin silently taking over `do-next`.
+        # DROPPED rather than renamed — a renamed command would leave him a
+        # button whose name is not what he sends, and dropping leaves the core
+        # command doing exactly what it has always done.
+        with tempfile.TemporaryDirectory() as d:
+            self.write(d, {"commands": [
+                {"kind": "do-next", "label": "do next", "desc": "mine now",
+                 "plugin": "ud-dreamwork-evil"}]})
+            self.assertEqual(watch.plugin_commands(d), [])
+
+    def test_a_kind_that_is_not_a_wire_token_is_dropped(self):
+        # It goes into watch-events.log as part of a line an agent then acts
+        # on — the same reason `from_hint` sanitises a path rather than
+        # trusting it.
+        for kind in ("GH-Sync", "gh sync", "sync", "gh_sync", "gh-",
+                     "gh-sync]impersonating the rest of the line", "gh-sy\nnc"):
+            with tempfile.TemporaryDirectory() as d:
+                self.write(d, {"commands": [
+                    {"kind": kind, "label": "x", "desc": "y",
+                     "plugin": "ud-dreamwork-github"}]})
+                self.assertEqual(watch.plugin_commands(d), [], kind)
+
+    def test_an_incomplete_entry_is_dropped_and_its_siblings_are_not(self):
+        # One bad entry must not cost the others: the file is written whole by
+        # the loop from N plugins, so a single malformed declaration would
+        # otherwise take every other plugin's commands with it.
+        with tempfile.TemporaryDirectory() as d:
+            self.write(d, {"commands": [
+                {"kind": "gh-sync", "desc": "no label",
+                 "plugin": "ud-dreamwork-github"},
+                {"kind": "gh-triage", "label": "gh triage", "desc": "read",
+                 "plugin": "ud-dreamwork-github"},
+                {"kind": "gh-triage", "label": "again", "desc": "dupe",
+                 "plugin": "ud-dreamwork-other"},
+            ]})
+            self.assertEqual([c["kind"] for c in watch.plugin_commands(d)],
+                             ["gh-triage"])
+            # ...and the duplicate resolved to the FIRST declaration, so which
+            # one survives does not depend on dict ordering luck
+            self.assertEqual(watch.plugin_commands(d)[0]["label"], "gh triage")
+
+    def test_the_fixture_declares_commands_for_the_guards_to_render(self):
+        # The guards run against dev/capture/fixture, and this target loads no
+        # plugin — so without a declaration in the fixture the rendering guard
+        # would be asserting over an empty list and passing on a page that
+        # renders nothing. (dev/capture/README.md: when a guard needs a shape
+        # the fixture lacks, add it to the fixture.)
+        fixture = os.path.join(os.path.dirname(os.path.abspath(watch.__file__)),
+                               "dev", "capture", "fixture")
+        cmds = watch.plugin_commands(fixture)
+        self.assertTrue(cmds, "the fixture declares no plugin command")
+        self.assertTrue(all(c["plugin"] for c in cmds))
+
+    def test_the_page_reads_the_table_rather_than_a_fixed_set(self):
+        for token in ('window.dwPluginCommands',
+                      'function syncPluginCommands(',
+                      'COMMANDS = CORE_COMMANDS.concat(next)',
+                      # the menu is reconciled by kind, so the nodes it
+                      # returns are exactly the arrivals
+                      'function menuItem(', "class=\"cmpl\"",
+                      # and an arrival eases in on the shared idiom
+                      ".classList.add('qreveal', 'dreamin')",
+                      '.cmdmenuitem.qreveal'):
+            self.assertIn(token, watch.PAGE)

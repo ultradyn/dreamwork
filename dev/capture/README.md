@@ -107,6 +107,12 @@ than once:
   marks even though it is painted mid-reveal (#198). Bounded window, because
   the bug is laundered by the next re-render rather than self-healing — and
   the guard proves that laundering path rather than trusting it.
+- `plugcmd` — a plugin's declared commands, in the composer that has to offer
+  them (#86). Drives the FILE — unloaded first, so the common case (no plugin
+  declares anything) is checked before the populated one — and asserts the
+  arrival's intermediate opacities, that the surviving items were reconciled
+  rather than re-created, that a plugin cannot reach the main row, and that
+  `POST /command` accepts what the menu offers.
 - `qsec` — the dashboard's questions fold arrives and departs (#196): the
   panels below it travel rather than teleporting, never overshoot, the body
   eases in and dreams away, reduced motion does neither, and the ghost holds

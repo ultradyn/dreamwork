@@ -708,6 +708,24 @@ STYLE = """<style>
   .cmdmenuitem.on .cmk { color:var(--accent); }
   .cmdmenuitem .cmd { display:block; color:var(--dim); font-size:.7rem;
     margin-top:.1rem; }
+  /* which plugin answers a command (#86), on the item that offers it. The
+     QUIETEST step of the ramp — the same --dimmer as the history's ages and
+     its footer — because this is provenance, not an errand: he needs it when
+     a command is unfamiliar or has stopped working, and never otherwise. It
+     floats right so it costs the label no room and no wrapping, which is the
+     failure #162 is about one row over. */
+  .cmdmenuitem .cmpl { float:right; color:var(--dimmer); font-size:.65rem;
+    margin-left:.75rem; }
+  /* An arriving item eases in on `.qreveal`, and it needs this rule to do it.
+     `.cmdmenuitem` declares a transition of its own at the SAME specificity
+     and LATER in this sheet, so it wins and `.qreveal` silently supplies no
+     transition at all — which is #154 exactly, one component over: the class
+     is added, the element is already at opacity 1, and nothing ever fades.
+     Restating both here is the fix that does not depend on source order (the
+     invariant `.dreamin` states in its own comment), and it keeps the hover
+     colours transitioning while the item is still on its way in. */
+  .cmdmenuitem.qreveal { transition:opacity .55s ease, filter .55s ease,
+    transform .55s ease, background .25s ease, color .25s ease; }
   .cmdrow { display:flex; gap:.5rem; align-items:center; margin-top:.2rem; }
   .cmdrow button { background:var(--panel2); color:var(--accent);
     border:1px solid var(--border); border-radius:var(--radius); font:inherit;
@@ -738,7 +756,8 @@ STYLE = """<style>
     border:1px solid var(--accent); }
   @media (prefers-reduced-motion: reduce) {
     #cmdplus, #cmdpalette, #layerhint, .sgind, .sgbtn, .cmdmenu,
-    .cmdmenuitem, .cmdmorebtn, .cmdmsg { transition:none; }
+    .cmdmenuitem, .cmdmenuitem.qreveal, .cmdmorebtn,
+    .cmdmsg { transition:none; }
   }
 </style>"""
 
@@ -2106,6 +2125,27 @@ function routeOf(loc) {
   }
   return { name: 'dashboard', param: null };
 }
+/* THE ONE PLACE `data` IS REPLACED, and it is a function rather than an
+   assignment because there are TWO fetchers — the first paint (`ensureData`)
+   and the live tick — so anything that must react to new data has to be hung
+   off both or it silently works on one path only.
+
+   #86 is how that was found. The composer's plugin vocabulary was notified
+   from the tick alone, which looks like the live path and is not the first
+   one: `ensureData` sets `lastMtime` as it fetches, so the first tick sees
+   nothing changed and does nothing, and the commands never arrived at all on
+   a freshly opened page. Adding a second call site would have fixed the
+   symptom and left the next reader the same trap, which is #191's lesson
+   about one gesture spelled two ways, aimed at data instead of at motion. */
+function setData(next) {
+  data = next;
+  // WHICH PLUGINS RESOLVED IS A PROPERTY OF THE MACHINE, not of watch.py, so
+  // the composer's vocabulary can change under a page that is already open
+  // (#86). It compares whole and returns immediately on the ticks — nearly
+  // all of them — where the declared set has not moved.
+  if (window.dwPluginCommands) window.dwPluginCommands(data.plugin_commands);
+  return data;
+}
 async function ensureData() {
   if (data) return data;
   try {
@@ -2113,7 +2153,7 @@ async function ensureData() {
     if (serverGen === null) serverGen = gen;
     lastMtime = mtime;
     fetchedAt = Date.now();
-    data = await (await fetch('/data.json')).json();
+    setData(await (await fetch('/data.json')).json());
   } catch (e) {}
   return data;
 }
@@ -2884,7 +2924,7 @@ async function tick() {
     if (mtime !== lastMtime && Date.now() >= holdRerenderUntil) {
       lastMtime = mtime; fetchedAt = Date.now();
       const wasGit = gitKey(data);
-      data = await (await fetch('/data.json')).json();
+      setData(await (await fetch('/data.json')).json());
       // the data lands instantly; surviving cards then travel from where
       // they were to where the new grouping put them (#104/#77). What the
       // human is mid-way through typing rides across the swap (#118).
@@ -3284,19 +3324,99 @@ function popoutDoc(url, label) {
       '<span class="sgind cmdind" id="cmdind" aria-hidden="true"></span>' +
       COMMANDS.filter(c => want.indexOf(c.kind) >= 0).map(c =>
         '<button type="button" class="sgbtn cmdkind" data-kind="' + esc(c.kind) +
-        '" role="radio" aria-checked="false" title="' + esc(c.desc) + '">' +
+        // the row carries no visible plugin mark, on purpose: it is a MODE
+        // switch whose one job is saying where the text goes, its width is
+        // load-bearing (#162 is the row wrapping and taking the panel with
+        // it), and by the time a kind is in the row he has already read the
+        // attribution in the menu, which is the only place one is offered.
+        // The title still names it, because the row is also where he comes
+        // back to a choice he made an hour ago.
+        '" role="radio" aria-checked="false" title="' + esc(c.desc) +
+        (c.plugin ? esc(' · from ' + c.plugin) : '') + '">' +
         esc(c.label) + '</button>').join('');
     return true;
   }
   // The menu lists EVERY kind with its description — the discoverability
-  // surface. Built once from COMMANDS, whatever its length.
-  function renderMenu() {
-    if (!menuEl) return;
-    menuEl.innerHTML = COMMANDS.map(c =>
-      '<button type="button" role="menuitem" class="cmdmenuitem" data-kind="' +
-      esc(c.kind) + '"><span class="cmk">' + esc(c.label) +
-      '</span><span class="cmd">' + esc(c.desc) + '</span></button>').join('');
+  // surface, and the only place a plugin's command is ever offered (#86).
+  function menuItem(c) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'cmdmenuitem';
+    b.setAttribute('role', 'menuitem');
+    b.dataset.kind = c.kind;
+    // WHO ANSWERS THIS, named on the item itself, at the quietest step of the
+    // ramp. A plugin command can vanish between sessions and a core one
+    // cannot, so the two are not interchangeable and the menu says which is
+    // which — quietly, because on the overwhelmingly common day no plugin
+    // declares anything and this is one more word in a small menu.
+    b.innerHTML = '<span class="cmk">' + esc(c.label) + '</span>' +
+      (c.plugin ? '<span class="cmpl">' + esc(c.plugin) + '</span>' : '') +
+      '<span class="cmd">' + esc(c.desc) + '</span>';
+    return b;
   }
+  /* Reconciled by KIND, not rebuilt, and that is what makes the arrival
+     legible: the nodes it returns are exactly the ones that were not here
+     before, so only they carry the enter idiom. An innerHTML rebuild would
+     re-create the core items too — identical pixels, but any hover or focus
+     he was holding would be dropped, and there would be no way to tell an
+     arriving item from a surviving one. */
+  function renderMenu() {
+    if (!menuEl) return [];
+    const have = new Map(
+      [...menuEl.children].map(n => [n.dataset.kind, n]));
+    const arrived = [], frag = document.createDocumentFragment();
+    for (const c of COMMANDS) {
+      let n = have.get(c.kind);
+      if (n) have.delete(c.kind);
+      else { n = menuItem(c); arrived.push(n); }
+      frag.appendChild(n);              // appending a live node MOVES it
+    }
+    // written whole, so a plugin unloading is the ABSENCE of an entry rather
+    // than a remembered deletion — the same move the file itself makes
+    have.forEach(n => n.remove());
+    menuEl.appendChild(frag);
+    return arrived;
+  }
+  /* ── the plugin half of the vocabulary (#86) ─────────────────────────────
+     `writing-plugins.md` has granted plugins their own command namespace in
+     prose for as long as there have been plugins, and the composer could not
+     render one: the contract promised what the UI could not show. It rides
+     /data.json, so this runs on every tick and must be cheap and idempotent.
+
+     COMPARED WHOLE, because the file is WRITTEN whole. Anything finer would
+     be a second model of a file whose entire shape is "this is the current
+     set", and the two could disagree. */
+  let pluginKey = '[]';
+  function syncPluginCommands(list) {
+    const next = Array.isArray(list) ? list : [];
+    const key = JSON.stringify(next);
+    if (key === pluginKey) return [];      // every tick but the ones that matter
+    pluginKey = key;
+    COMMANDS = CORE_COMMANDS.concat(next);
+    const arrived = renderMenu();
+    /* His selection can be a command that no longer exists — he chose it, the
+       plugin unloaded, and the row would still offer a kind the server now
+       refuses with a bare 400. Fall back to the first core kind, which cannot
+       go away. */
+    if (!COMMANDS.some(c => c.kind === activeKind))
+      setKind((CORE_COMMANDS[0] || {}).kind);
+    else
+      setKind(activeKind);                 // re-mark `.on` on the new nodes
+    /* THE ARRIVAL, and the condition on it is not an exemption.
+       A menu that is shut is not showing him anything, so nothing has
+       appeared: when he next hovers it open, the menu's own reveal is what
+       brings these in, and that gesture already obeys the page. What needs a
+       gesture of its own is the case where the set changes UNDER HIS EYE —
+       the menu open in front of him — and that is the one animated here. */
+    if (!rmr && menuEl && getComputedStyle(menuEl).visibility === 'visible')
+      arrived.forEach(n => {
+        n.classList.add('qreveal', 'dreamin');
+        requestAnimationFrame(() => n.classList.remove('dreamin'));
+        setTimeout(() => n.classList.remove('qreveal'), CARD_MS + 150);
+      });
+    return arrived;
+  }
+  // the tick is the only caller; exposed because the composer is its own IIFE
+  window.dwPluginCommands = syncPluginCommands;
   // the same slideIndicator every question card uses (#103) — one
   // implementation, so the composer and the cards can never drift apart
   const moveIndicator = snap => slideIndicator(kindsEl, snap);
@@ -3415,6 +3535,10 @@ function popoutDoc(url, label) {
   }
   renderMenu();
   setKind(activeKind);              // paint the initial row + selection
+  // the shell is served before /data.json returns, so the plugin half is
+  // normally still in flight here and arrives via the tick below; this covers
+  // the case where it landed first and nothing would otherwise ask for it
+  if (data) syncPluginCommands(data.plugin_commands);
   /* he is composing again, so the panel is not finished with */
   for (const ev of ['input', 'keydown', 'pointerdown'])
     pal.addEventListener(ev, () => {
@@ -4051,8 +4175,13 @@ def page_shell(title, body, js):
 # view from the URL; SHADER_JS mounts the persistent background.
 # The one vocabulary reaches the client here, so the composer's buttons, its
 # menu, and the popped-out form never drift from what POST /command accepts.
+# The core half is baked in because it is a property of THIS FILE; the plugin
+# half (#86) rides /data.json because it is a property of the machine, and so
+# can change under a page that is already open. `COMMANDS` is the one table
+# everything downstream reads, and it is a `let` for exactly that reason.
 PAGE = page_shell('dreamwork watch', APP_BODY,
-                  "const COMMANDS = " + json.dumps(list(COMMANDS)) + ";\n"
+                  "const CORE_COMMANDS = " + json.dumps(list(COMMANDS)) + ";\n"
+                  + "let COMMANDS = CORE_COMMANDS.slice();\n"
                   + "const TINTS = " + json.dumps(TINTS) + ";\n"
                   + "const TINT_DEFAULT = " + json.dumps(TINT_DEFAULT) + ";\n"
                   + COMPONENTS_JS + VIEWS_JS + FAVICON_JS + SHADER_JS
@@ -4556,6 +4685,67 @@ def _safe_json(text):
         return None
 
 
+# Commands a plugin declares (#86), as the composer's table sees them. Shape
+# and reasoning: `file-formats.md`; the plugin author's half:
+# `writing-plugins.md`.
+#
+# WHY THE LOOP COPIES THEM INTO THE TARGET AT ALL: this file reads the TARGET.
+# It is invoked `--target <project>` and its whole model is that what it shows
+# lives under that root. Plugin skills do not — they sit in
+# `~/.claude-p/skills/`, `~/.agents/skills/` and elsewhere, varying by harness
+# and by machine, so a composer that read the plugin's own files would work
+# here and silently show nothing on the next machine.
+#
+# `lint.py` reports on this file; THIS is the gate. The difference is timing:
+# lint is advice a human reads at some later point, and a request is being
+# answered now. So every rule below is a refusal rather than a correction, and
+# a file that breaks one costs the composer that command and nothing else.
+PLUGIN_KIND_OK = re.compile(r"\A[a-z0-9]+-[a-z0-9-]*[a-z0-9]\Z")
+
+
+def plugin_commands(target):
+    """The declared plugin commands, filtered to what may be shown and sent.
+
+    Absent, unparseable or wrong-shaped all yield `[]`. **Absence is the
+    common case** — most targets load no plugin that declares a command — so
+    it costs nothing and says nothing; the composer renders exactly as it did
+    before there was a plugin system.
+
+    Three refusals, each of which is the failure it prevents:
+
+    - **`common` is never honoured**, whatever the file says. Core commands
+      own the composer's main row, so loading a plugin can add to the
+      composer and can never degrade the most valuable real estate on the
+      page. There is deliberately no way to ask otherwise.
+    - **A kind that shadows a core one is dropped**, not renamed. Renaming
+      would leave the human a button whose name is not what he sends;
+      dropping leaves the core command doing exactly what it always did,
+      and `lint.py` names the collision for whoever has to fix it.
+    - **A kind that is not a `namespace-name` wire token is dropped.** It
+      goes into `watch-events.log` as part of a line an agent then acts on,
+      which is the same reason `from_hint` sanitises rather than trusts.
+    """
+    doc = _safe_json(read_text(
+        os.path.join(target, ".dreamwork", "plugin-commands.json")))
+    if not isinstance(doc, dict) or not isinstance(doc.get("commands"), list):
+        return []
+    core = {c["kind"] for c in COMMANDS}
+    out, seen = [], set()
+    for entry in doc["commands"]:
+        if not isinstance(entry, dict):
+            continue
+        fields = [entry.get(f) for f in ("kind", "label", "desc", "plugin")]
+        if not all(isinstance(v, str) and v.strip() for v in fields):
+            continue
+        kind, label, desc, plugin = (v.strip() for v in fields)
+        if kind in core or kind in seen or not PLUGIN_KIND_OK.match(kind):
+            continue
+        seen.add(kind)
+        out.append({"kind": kind, "label": label, "desc": desc,
+                    "plugin": plugin, "common": False})
+    return out
+
+
 def collect(target):
     now = time.time()
     dw = os.path.join(target, ".dreamwork")
@@ -4597,15 +4787,39 @@ def collect(target):
         # one window and every other window on this project follows within a
         # tick, with no new channel and no reload.
         "tint": read_tint(target),
+        # plugin-contributed command kinds (#86), for the same reason and by
+        # the same route. The core vocabulary is baked into the page shell
+        # because it is a property of watch.py; this half is a property of the
+        # MACHINE — which plugins resolved here — so it has to be able to
+        # change under a page that is already open. `watched_mtime` walks all
+        # of `.dreamwork/`, so a plugin loading mid-session reaches the
+        # composer on the next tick with no reload and no new channel.
+        "plugin_commands": plugin_commands(target),
     }
 
 
 def watched_mtime(target):
+    """The newest thing under the target, as one number the client polls.
+
+    THE DIRECTORIES ARE IN HERE, and they are the half that took #86 to find.
+    Statting only files makes a DELETION invisible: removing a file cannot
+    raise the maximum mtime of the files that remain, so an open page goes on
+    showing what is no longer there until something unrelated is written. A
+    directory's mtime moves when an entry is added or removed, which is
+    exactly the event that was missing — and adds no re-renders of its own,
+    because a created file already carries a fresh mtime.
+
+    The case that named it: unloading a plugin is deliberately the ABSENCE of
+    a write rather than a remembered deletion, and the composer went on
+    offering commands nothing would answer. That contract needs absence to be
+    observable to hold at all.
+    """
     latest = 0.0
     paths = [os.path.join(target, "DREAMWORK.md"),
              os.path.join(target, ".git", "logs", "HEAD")]
     dw = os.path.join(target, ".dreamwork")
     for root, _dirs, files in os.walk(dw):
+        paths.append(root)
         paths.extend(os.path.join(root, f) for f in files)
     for p in paths:
         try:
@@ -4995,7 +5209,16 @@ def make_handler(target, dev=False):
             except (KeyError, TypeError):
                 self.send_error(400)
                 return
-            if kind not in COMMAND_KINDS or (kind != "do-next" and not text):
+            # The plugin half is read PER REQUEST rather than cached at start
+            # (#86): a plugin that resolved a minute ago is sendable a minute
+            # ago, and the composer already offers it on the next tick — a
+            # cached set would refuse the very button it just drew. The read
+            # is one small file and this is a human keypress, not a hot path.
+            if kind not in COMMAND_KINDS and kind not in {
+                    c["kind"] for c in plugin_commands(target)}:
+                self.send_error(400)
+                return
+            if kind != "do-next" and not text:
                 self.send_error(400)
                 return
             log_event(target, command_line(kind, text, req.get("from")))
