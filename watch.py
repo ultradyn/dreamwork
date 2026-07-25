@@ -13,6 +13,7 @@ import http.server
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import threading
@@ -149,7 +150,16 @@ STYLE = """<style>
   .qa.awaiting { border-left:2px solid var(--accent); padding-left:.9rem;
     margin-left:-1.1rem; opacity:.82; }
   .qa.awaiting .qt::before { content:"✓ "; color:var(--accent); }
-  .qa.folded .qt { color:var(--muted); }
+  /* folded (#111): waiting on nobody, so it collapses and sits at the dim end
+     of the ramp. NO accent — the accent is for live and actionable things and
+     a settled entry is neither. The disclosure marker is the page's standing
+     summary idiom, inherited rather than restated. */
+  .qa.folded { margin:.15rem 0 .35rem; }
+  .qa.folded .qt { color:var(--muted); font-weight:inherit; }
+  .qa.folded .qt:hover { color:var(--lit); }
+  .qa.folded .qfold > * { color:var(--dim); }
+  .qa.folded .qfold > summary { color:var(--muted); }
+  .qwhen { color:var(--dimmer); margin-left:1ch; font-size:.7rem; }
   .anstag { color:var(--dim); text-transform:uppercase; letter-spacing:.07em;
     font-size:.65rem; margin:.35rem 0 .15rem; }
   /* an answer is the human's, in a card whose body the loop wrote — so it
@@ -671,14 +681,25 @@ const qaFoot = (follows, key, st) => followThread(follows) + qaCompose(key, st);
    new state in place instead of assembling look-alike markup. */
 const qaState = (q, key) =>
   key[0] === 'a' ? 'folded' : (q.answer ? 'awaiting' : 'open');
+/* The one structural difference between the states (#111). A folded entry is
+   waiting on NOBODY, so it collapses — through the page's existing `expand`
+   idiom, `<details>`/`<summary>`, marker and all. Its title line BECOMES the
+   summary rather than sitting beside one, so `.qt` still names the question
+   line in every state and every rule written against it keeps applying.
+   Collapsed it still says which question and when it was answered, because a
+   settled entry that cannot be found again has simply been hidden. */
 const qaInner = (q, key) => {
   const st = qaState(q, key);
   const body = q.body && q.body.trim() ? mdBReview(q.body.trim(), q.title) : '';
+  const foot = qaFoot(q.follows, key, st);
+  if (st === 'folded')
+    return `<details class="qfold"><summary class="qt">${esc(q.title)}` +
+      (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : '') +
+      `</summary>${body}${foot}</details>`;
   const answer = st === 'awaiting'
     ? `<div class="anstag">answered · awaiting fold</div>` +
       `<div class="anstext">${mdInline(q.answer)}</div>` : '';
-  return `<div class="qt">${esc(q.title)}</div>${body}${answer}` +
-    qaFoot(q.follows, key, st);
+  return `<div class="qt">${esc(q.title)}</div>${body}${answer}${foot}`;
 };
 /* Two identities, deliberately. `data-qkey` ADDRESSES the entry in live data
    and is positional, so it is what writes use. `data-qid` is the question
@@ -968,40 +989,49 @@ function setContent(html) {
   paintIndicators(true);
   ages();
 }
-/* ── typing survives a tick (#118) ────────────────────────────────────────
+/* ── what the human did to a card survives a tick (#118, #111) ────────────
    The tick re-renders the question list through `innerHTML`, so every card
    node is genuinely replaced — and with it whatever the human was part-way
-   through typing. Liveness is not negotiable (the tick has always committed
-   its new DOM immediately), so the fix is not to suppress the render; it is
-   to carry across the render the state that exists NOWHERE ELSE. What he
-   typed, where his caret is, and which endpoint it is destined for are not
-   on disk, so nothing downstream can reconstruct them.
+   through typing, and whichever folded entry he had just opened up to read.
+   Liveness is not negotiable (the tick has always committed its new DOM
+   immediately), so the fix is not to suppress the render; it is to carry
+   across the render the state that exists NOWHERE ELSE. What he typed, where
+   his caret is, which endpoint it is destined for, and what he has expanded
+   are not on disk, so nothing downstream can reconstruct them.
 
    Keyed by `data-qid` — the question itself — for exactly the reason the
    regroup is: answering re-indexes an entry out of `questions_open`, so a
    positional key would drop the text at the very moment the card moves. */
-function snapshotCompose() {
+function snapshotCardState() {
   const act = document.activeElement;
   const m = new Map();
   document.querySelectorAll('.qa[data-qid]').forEach(card => {
     const comp = card.querySelector('.qcompose');
     const ta = comp && comp.querySelector('textarea');
-    if (!ta) return;
-    if (!ta.value && ta !== act) return;   // untouched and unfocused: nothing
+    const det = card.querySelector(':scope > .qfold');
+    const typed = ta && (ta.value || ta === act);
+    const opened = det && det.open;        // folded entries render closed
+    if (!typed && !opened) return;         // he has done nothing to this card
     m.set(card.dataset.qid, {
-      value: ta.value, mode: comp.dataset.mode, focus: ta === act,
-      start: ta.selectionStart, end: ta.selectionEnd,
-      dir: ta.selectionDirection, scroll: ta.scrollTop,
-      height: ta.style.height,             // the box is resize:vertical
+      open: !!opened,
+      value: typed ? ta.value : null, mode: comp && comp.dataset.mode,
+      focus: ta === act,
+      start: typed ? ta.selectionStart : 0, end: typed ? ta.selectionEnd : 0,
+      dir: typed ? ta.selectionDirection : 'none',
+      scroll: typed ? ta.scrollTop : 0,
+      height: typed ? ta.style.height : '', // the box is resize:vertical
     });
   });
   return m;
 }
-function restoreCompose(saved) {
+function restoreCardState(saved) {
   if (!saved || !saved.size) return;
   document.querySelectorAll('.qa[data-qid]').forEach(card => {
     const s = saved.get(card.dataset.qid);
     if (!s) return;
+    const det = card.querySelector(':scope > .qfold');
+    if (det && s.open) det.open = true;    // he had opened it up to read
+    if (s.value === null) return;
     const comp = card.querySelector('.qcompose');
     const ta = comp && comp.querySelector('textarea');
     if (!ta) return;                       // the state stopped offering a box
@@ -1412,11 +1442,11 @@ async function tick() {
       // the data lands instantly; surviving cards then travel from where
       // they were to where the new grouping put them (#104/#77). What the
       // human is mid-way through typing rides across the swap (#118).
-      const kept = snapshotCompose();
+      const kept = snapshotCardState();
       const before = snapshotCards();
       if (view.name === 'dashboard') setContent(buildDashboard(data));
       else if (view.name === 'questions') setContent(buildQuestions(data));
-      restoreCompose(kept);
+      restoreCardState(kept);
       regroupCards(before);
       // the crumbs carry live numbers too (open count, version) — and the
       // tick re-renders in place, instantly, so they never animate
@@ -2449,10 +2479,35 @@ def parse_open_questions(text):
     return _parse_entries(text, "Open", lift_answer=True)
 
 
+# A folded entry's body opens with the resolution the loop wrote:
+# `→ <verdict> (<timestamp>): …`. Anchored at the body's start so it can only
+# ever read the RESOLUTION head — a date further down the body is somebody
+# else's date. The timestamp may be hard-wrapped (the file is written at ~72
+# columns), so whitespace inside it is tolerated.
+RESOLVED_AT = re.compile(
+    r"\A\s*→[^:]*?\((\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*\)")
+
+
+def answered_at(body):
+    """When a folded entry was resolved, or None.
+
+    A collapsed row (#111) has to stay findable by *when*, and a wrong date is
+    worse than no date — so this never guesses, exactly as `note_author`
+    never guesses an author."""
+    m = RESOLVED_AT.match(body or "")
+    if not m:
+        return None
+    return m.group(1) + (" " + m.group(2) if m.group(2) else "")
+
+
 def parse_answered(text):
-    """[{title, body, follows}] for each entry in `## Answered`, so the view
-    can render each with its follow-up thread and an add-a-note box."""
-    return _parse_entries(text, "Answered", lift_answer=False)
+    """[{title, body, follows, when}] for each entry in `## Answered`, so the
+    view can render each with its follow-up thread and an add-a-note box —
+    and, collapsed, still say when it was answered."""
+    items = _parse_entries(text, "Answered", lift_answer=False)
+    for it in items:
+        it["when"] = answered_at(it["body"])
+    return items
 
 
 def append_subbullet(text, title, block, section="Open"):

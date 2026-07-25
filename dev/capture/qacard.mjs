@@ -15,18 +15,29 @@ const p = await b.newPage({ viewport: { width: 1100, height: 950 } });
 const errs = []; p.on('pageerror', e => errs.push(String(e)));
 
 // the shape of a card, independent of its content — what a second
-// implementation would drift on
-const SHAPE = `(card) => ({
+// implementation would drift on.
+//
+// `root` is the card, except for a FOLDED entry, whose contents sit one level
+// down inside the `.qfold` disclosure (#111): collapsing IS that state's
+// treatment, so it is the one structural difference between the three. Every
+// assertion below still reads through the same probe at the same depth, and
+// `.qt` is still the question line in all three states — the folded one just
+// happens to be a <summary>.
+const SHAPE = `(card) => { const root = card.querySelector(':scope > .qfold') || card;
+ return {
   cls: card.className,
   key: card.dataset.qkey || null,
-  hasTitle: !!card.querySelector(':scope > .qt'),
-  hasInput: !!card.querySelector(':scope > .qcompose .qfield textarea'),
-  inputId: (card.querySelector(':scope > .qcompose textarea') || {}).id || null,
-  modes: [...card.querySelectorAll(':scope > .qcompose .qmode')]
+  folded: root !== card,
+  hasTitle: !!root.querySelector(':scope > .qt'),
+  titleTag: (root.querySelector(':scope > .qt') || {}).tagName || null,
+  hasInput: !!root.querySelector(':scope > .qcompose .qfield textarea'),
+  inputId: (root.querySelector(':scope > .qcompose textarea') || {}).id || null,
+  modes: [...root.querySelectorAll(':scope > .qcompose .qmode')]
            .map(b => b.dataset.mode),
-  hasAnsTag: !!card.querySelector(':scope > .anstag'),
-  order: [...card.children].map(c => c.className || c.tagName.toLowerCase())
-})`;
+  hasAnsTag: !!root.querySelector(':scope > .anstag'),
+  when: (root.querySelector('.qwhen') || {}).textContent || null,
+  order: [...root.children].map(c => c.className || c.tagName.toLowerCase())
+}; }`;
 
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(900);
 const qs = await p.evaluate(`[...document.querySelectorAll('.qa')].map(${SHAPE})`);
@@ -74,6 +85,15 @@ ok('awaiting cards (and only awaiting) show the answered tag',
 ok('folded entries are keyed a<n>, open/awaiting o<n>',
    folded.every(c => /^a\d+$/.test(c.key)) &&
    [...open, ...awaiting].every(c => /^o\d+$/.test(c.key)));
+// #111: the collapse is the folded state's treatment, and ONLY the folded
+// state's — an entry still waiting on the loop stays visible
+ok('folded entries collapse, open and awaiting do not',
+   folded.every(c => c.folded) && [...open, ...awaiting].every(c => !c.folded));
+ok('the question line is the summary when folded, so .qt still names it',
+   folded.every(c => c.hasTitle && c.titleTag === 'SUMMARY') &&
+   [...open, ...awaiting].every(c => c.hasTitle && c.titleTag === 'DIV'));
+ok('a collapsed entry still says when it was answered',
+   folded.every(c => /^answered \d{4}-\d{2}-\d{2}/.test(c.when || '')));
 ok('dashboard renders the identical card as /questions',
    dash.length > 0 && dash.every(d => qs.some(q => sameShape(d, q))));
 ok('the review dock renders the identical card as /questions',

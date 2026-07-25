@@ -122,6 +122,37 @@ for (const reduced of [false, true]) {
               section: 'Open' } }));
   survived(b, `${tag}, content changed`, reduced);
 
+  // (3) #111 — a folded entry he has opened up to READ is the same class of
+  //     state as half-typed text: it exists only in the node the tick
+  //     replaces, so it rides the same seam under the same key
+  const fqid = await p.evaluate(() => {
+    const c = document.querySelector('.qa.folded[data-qid]');
+    return c ? c.dataset.qid : null;
+  });
+  if (!fqid) { console.log('FAIL fixture has no folded entry'); process.exit(1); }
+  await p.click(`.qa[data-qid="${fqid}"] .qfold > summary`);
+  await sleep(250);
+  const f = await p.evaluate(`(async (qid) => {
+    const sel = '.qa[data-qid="' + qid + '"] > .qfold';
+    const d0 = document.querySelector(sel);
+    const wasOpen = !!(d0 && d0.open);
+    let replaced = false;
+    await fetch('/command', { method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ kind: 'add-idea', text: 'fold guard tick' }) });
+    const t0 = performance.now();
+    await new Promise(res => (function step() {
+      const d = document.querySelector(sel);
+      if (d && d !== d0) replaced = true;
+      if (performance.now() - t0 < 5200) requestAnimationFrame(step); else res();
+    })());
+    const d = document.querySelector(sel);
+    return { wasOpen, replaced, stillOpen: !!(d && d.open) };
+  })(${JSON.stringify(fqid)})`);
+  ok(`${tag}: a folded entry can be expanded`, f.wasOpen);
+  ok(`${tag}: the tick really replaced the folded card node`, f.replaced);
+  ok(`${tag}: one he opened up to read stays open across a tick`, f.stillOpen);
+
   ok(`${tag}: no page errors`, errs.length === 0);
   await br.close();
 }

@@ -329,17 +329,37 @@ change to how a question looks is one edit rather than a hunt.
   the single place a key becomes an entry, for reads and writes alike. A
   title round-tripped through the DOM is never the address — a stale render
   must not be able to write to the wrong entry.
+- **The three states are one axis: who is the entry waiting on?** `open` is
+  waiting on the **human**, `awaiting` on the **loop**, `folded` on
+  **nobody** — and everything about their treatment follows from that one
+  question rather than being three separate skins. Liveness descends along
+  it: open is fully lit and carries the answer box; awaiting is a step down
+  the ramp but wears the accent rail, a `✓`, and the breathing wisp, because
+  it is the one thing on the page still in flight; folded is the dim end,
+  collapsed, and carries **no accent at all** — the accent is for live and
+  actionable things and a settled entry is neither.
 - **The state is derived, never passed.** `qaState(q, key)` returns
-  `open` (needs the human — shows an answer box), `awaiting`
-  (answered from the page, the loop hasn't folded it — the answer on a quiet
-  accent rail with a `✓` and no box, so it never reads as still-open), or
-  `folded` (key is `a…`; the loop has filed it into `## Answered`, so it
-  recedes). Deriving it means no caller can render an entry in a state its
-  own data contradicts.
+  `open` (shows an answer box), `awaiting` (answered from the page, the loop
+  hasn't folded it — the answer on a quiet accent rail with a `✓` and no box,
+  so it never reads as still-open), or `folded` (key is `a…`; the loop has
+  filed it into `## Answered`). Deriving it means no caller can render an
+  entry in a state its own data contradicts.
 - **The states are class modifiers on one card** (`.qa.open` / `.qa.awaiting`
   / `.qa.folded`, plus `data-qkey`), so shared styling is written once and
   only the differences are stated. A state that needs its own element tree is
-  a signal the state is really a different component.
+  a signal the state is really a different component — **with one deliberate
+  exception**: `folded` wraps the card's contents in the page's standing
+  `expand` idiom (`<details class="qfold">`), because for that state
+  collapsing *is* the treatment (#111). Its title line **becomes** the
+  `<summary>` rather than sitting beside one, so `.qt` still names the
+  question line in every state and every rule written against it keeps
+  applying. **Awaiting does not collapse** — it still needs the loop, so it
+  stays visible.
+- **A collapsed entry stays findable**: the summary carries the question line
+  and `answered <when>`, read server-side by `answered_at()` from the
+  `→ <verdict> (<ts>):` head the loop writes. Anchored at the body's start so
+  it can only ever read the resolution, and it returns `None` rather than
+  guessing — the same rule as `note_author`, for the same reason.
 - **`qaInner` is split out from the card** purely so the answer-submit morph
   can restate a *live* card in its new state without assembling look-alike
   markup. Any future in-place state change uses the same seam.
@@ -366,15 +386,18 @@ field so they appear to be one thing."*
 - The placeholder follows the mode; the typed text does not, because the
   text is the point and the mode is only where it goes.
 
-**Typing survives a tick.** The list is re-rendered through `innerHTML`, so
-every card node is replaced roughly every 2s — and with it whatever is
-half-typed. Liveness is not negotiable (the tick has always committed its new
+**What the human did to a card survives a tick.** The list is re-rendered
+through `innerHTML`, so every card node is replaced roughly every 2s — and
+with it whatever is half-typed, and whichever folded entry he had just opened
+up to read. Liveness is not negotiable (the tick has always committed its new
 DOM immediately), so the fix is not to suppress the render but to carry
 across it the state that exists **nowhere else**: the text, the caret, the
-focus, the scroll and resize of the box, and the **mode**. Keyed by
-`data-qid` for the same reason the regroup is — answering re-indexes the
-entry, so a positional key would drop the text at the exact moment the card
-moves.
+focus, the scroll and resize of the box, the **mode**, and the disclosure's
+`open`. Keyed by `data-qid` for the same reason the regroup is — answering
+re-indexes the entry, so a positional key would drop the text at the exact
+moment the card moves. `snapshotCardState` / `restoreCardState` is the one
+seam for this; anything else the human can do to a card in place joins it
+rather than growing a second mechanism.
 
 The mode is the one that is a correctness rule rather than a comfort: it
 decides *which endpoint the text is sent to*, so silently reverting it to the

@@ -163,6 +163,40 @@ class TestCollector(unittest.TestCase):
                          [{"text": "reopen?", "author": "human"}])
         self.assertNotIn("Follow-up", ans[0]["body"])
 
+    def test_answered_at_reads_the_resolution_head_only(self):
+        # #111: collapsed, a folded entry states WHEN it was answered, so the
+        # date has to come from the resolution the loop wrote — and only from
+        # there. A wrong date is worse than no date, so this never guesses.
+        cases = [
+            ('→ resolved (2026-07-25): body text.', '2026-07-25'),
+            ('→ "rec" via watch (2026-07-25 09:13): all of it.',
+             '2026-07-25 09:13'),
+            ('→ Default applied (2026-07-25). Prose after a full stop.',
+             '2026-07-25'),
+            # the file is written at ~72 columns, so the timestamp itself
+            # routinely wraps mid-parenthesis
+            ('→ "rec" via watch (2026-07-25\n09:14): wrapped.',
+             '2026-07-25 09:14'),
+        ]
+        for body, want in cases:
+            self.assertEqual(watch.answered_at(body), want, body)
+        # a date that is not the resolution head is somebody else's date
+        self.assertIsNone(watch.answered_at(
+            'no arrow here, but a date (2026-07-25) further in.'))
+        self.assertIsNone(watch.answered_at(
+            '→ resolved: no timestamp at all, then (2026-07-25) later.'))
+        self.assertIsNone(watch.answered_at(''))
+        self.assertIsNone(watch.answered_at(None))
+
+    def test_parse_answered_carries_when(self):
+        text = ("# Q\n\n## Answered\n\n"
+                "- **Dated** → Confirmed (2026-07-25 06:54): why.\n"
+                "- **Undated** → resolved, no timestamp: why.\n")
+        ans = watch.parse_answered(text)
+        self.assertEqual([e["title"] for e in ans], ["Dated", "Undated"])
+        self.assertEqual(ans[0]["when"], "2026-07-25 06:54")
+        self.assertIsNone(ans[1]["when"])
+
     def test_parse_keeps_wrapped_subbullet_continuations(self):
         # #102: the loop hard-wraps at ~72 columns, so a sub-bullet routinely
         # spans several lines. Capturing only the first line truncated the
