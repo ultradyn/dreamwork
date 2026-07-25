@@ -66,19 +66,19 @@ inventing anything.
 
 ## The rest
 
-These are written by the loop and read by something. Their contracts are
-**not yet stated here**, which is a known gap tracked as #137 — until
-they are, follow the shape of what is already in the file rather than
-restructuring it, and prefer appending to an existing skeleton.
+These are written by the loop and read by something. Where a row says
+`lint.py`, the check is executable and you can stop reading — run it.
+Where it says prose only, follow the shape already in the file rather
+than restructuring it, and prefer appending to an existing skeleton.
 
-| File | Read by | Contract stated? |
-|---|---|---|
-| `.dreamwork/status.json` | `watch.py`'s status reader; the dashboard's status section | No — a schema, not a shape. Match the existing keys |
-| `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | No — one `- **#N**` entry per task, `Next id:` in the header |
-| `.dreamwork/lessons.md` | humans; grooming | No — genuinely one line per lesson |
-| `.dreamwork/dreams/<date>-<time>-<slug>.md` | the coordinator; grooming | The **filename** is the contract: `2026-07-25-1130-slug.md` |
-| `.dreamwork/skill-version` | init's update check | One line: the latest applied `migrations/` filename |
-| `DREAMWORK.md` | the loop, the wizard, the scope gate | No — section headings are load-bearing |
+| File | Read by | Contract | Checked |
+|---|---|---|---|
+| `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | One `- **#N**` entry per task; `Next id: **N**` in the header. Ids are **permanent**, so a duplicate is unrecoverable and `Next id` must exceed every id present | `lint.py` |
+| `.dreamwork/status.json` | `watch.py`'s status reader; the dashboard's status section | Valid JSON. A schema rather than a shape — match the existing keys; `agents` carries live subagents | `lint.py` (validity) |
+| `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
+| `.dreamwork/dreams/<date>-<time>-<slug>.md` | the coordinator; grooming | The **filename** is the contract: `2026-07-25-1130-slug.md`. It carries the ordering | `lint.py` (naming) |
+| `.dreamwork/lessons.md` | humans; grooming | Genuinely one line per lesson, pointing at its dream | prose only |
+| `DREAMWORK.md` | the loop, the wizard, the scope gate | Section headings are load-bearing — the scope gate and the goal chain both address them by name | prose only |
 
 ## Why this file exists rather than a paragraph in SKILL.md
 

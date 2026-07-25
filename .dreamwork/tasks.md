@@ -45,10 +45,11 @@ Next id: **143**
   spans the field, not the textarea. Delete the siblings, don't
   out-specify them
 - **#137** — Tell the loop how to write every file it writes, and give
-  it a linter · **P1** · task · 90m · his generalisation of #135 · a
-  third prose description of a format is a third thing that can drift;
-  a linter cannot drift from itself. Must CALL the existing readers,
-  not re-implement them, or #135 recurs one layer up
+  it a linter · **P1** · task · 90m · *stage 1 landed* (b7151ec):
+  `lint.py` calls the real readers, is proven red on the field failure,
+  and runs at init step 9. Remaining: the `just test` line (handed to
+  the justfile's owner), and contracts for `lessons.md` / DREAMWORK.md,
+  which are prose-only and may stay that way
 - **#135** — questions.md's format lives only in its parser · **P1** ·
   bug · 40m · **first slice of #137** · from the ez-feedback-pipeline
   instance · the loop writes a
