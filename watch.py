@@ -147,9 +147,45 @@ STYLE = """<style>
      awaiting: a quiet accent rail marks it apart from open questions; no
      input box, the answer shown plainly. folded: the loop has filed it, so
      it recedes. */
-  .qa.awaiting { border-left:2px solid var(--accent); padding-left:.9rem;
-    margin-left:-1.1rem; opacity:.82; }
+  /* awaiting-fold is waiting on the LOOP — the one genuinely in-progress
+     thing on this page, and so the ONE deliberate exception to the opt-in
+     motion rule (#113). It breathes: a wisp of accent drifting along the
+     rail and across the label, slow and ambient like the shader, intensity
+     fading in and OUT rather than sweeping on a loop. Never a spinner.
+     The cost is bounded by construction rather than by measurement after
+     the fact — an opacity breath on a 2px rail (compositor only) and a
+     background drift across ~25 characters of .65rem label. */
+  .qa.awaiting { position:relative; border-left:2px solid transparent;
+    padding-left:.9rem; margin-left:-1.1rem; opacity:.82; }
+  .qa.awaiting::before { content:""; position:absolute; left:-2px;
+    top:0; bottom:0; width:2px; pointer-events:none;
+    background:linear-gradient(180deg, transparent, var(--accent) 16%,
+      var(--accent) 84%, transparent);
+    animation:qbreathe 5.5s ease-in-out infinite; }
   .qa.awaiting .qt::before { content:"✓ "; color:var(--accent); }
+  /* one envelope, two places, same duration and easing, so the rail and the
+     label read as one organism rather than two effects */
+  @keyframes qbreathe { 0%,100% { opacity:.38; } 50% { opacity:1; } }
+  @keyframes qwisp { 0%,100% { background-position:118% 50%; }
+                     50% { background-position:-18% 50%; } }
+  /* progressive enhancement: without background-clip the label is simply
+     the dim label it has always been, never invisible text */
+  @supports (background-clip:text) or (-webkit-background-clip:text) {
+    .qa.awaiting .anstag {
+      background-image:linear-gradient(100deg, var(--dim) 0%, var(--dim) 38%,
+        var(--accent) 50%, var(--dim) 62%, var(--dim) 100%);
+      background-size:260% 100%;
+      -webkit-background-clip:text; background-clip:text;
+      color:transparent;
+      animation:qwisp 5.5s ease-in-out infinite; }
+  }
+  /* reduced motion holds the wisp STILL at its brightest instead of removing
+     it: the state must still read as in-progress. Timing changes; function
+     and legibility do not. */
+  @media (prefers-reduced-motion: reduce) {
+    .qa.awaiting::before { animation:none; opacity:1; }
+    .qa.awaiting .anstag { animation:none; background-position:50% 50%; }
+  }
   /* folded (#111): waiting on nobody, so it collapses and sits at the dim end
      of the ramp. NO accent — the accent is for live and actionable things and
      a settled entry is neither. The disclosure marker is the page's standing
@@ -160,8 +196,11 @@ STYLE = """<style>
   .qa.folded .qfold > * { color:var(--dim); }
   .qa.folded .qfold > summary { color:var(--muted); }
   .qwhen { color:var(--dimmer); margin-left:1ch; font-size:.7rem; }
+  /* inline-block so the box hugs the words: the wisp is clipped to this
+     text, so a full-column box would spread the drift across empty space
+     and invalidate a full-width strip to say nothing */
   .anstag { color:var(--dim); text-transform:uppercase; letter-spacing:.07em;
-    font-size:.65rem; margin:.35rem 0 .15rem; }
+    font-size:.65rem; margin:.35rem 0 .15rem; display:inline-block; }
   /* an answer is the human's, in a card whose body the loop wrote — so it
      reads at the same brightness as his notes do (#109) */
   .anstext { color:var(--lit); white-space:pre-wrap; }

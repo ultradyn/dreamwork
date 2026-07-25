@@ -576,6 +576,38 @@ exception; an element leaving fades rather than vanishing.
   is the tracked element), a ripple accenting it. The live re-render is held
   ~1.6s so the morph settles before the loop's fresh data regroups the card.
   reduced-motion swaps straight to the answered state.
+- **The awaiting-fold wisp — the one standing exception to "opt-in".**
+  Everything else on this page moves only in response to something; the
+  awaiting-fold state breathes continuously, on purpose, because it is the
+  only genuinely **in-progress** thing here: the human has answered and the
+  loop has not yet folded it. Say that out loud whenever this rule is
+  re-read, or it looks like the opt-in rule rotted. A wisp of accent drifts
+  along a 2px rail and across the `answered · awaiting fold` label, ~5.5s,
+  **fading in and out** rather than sweeping — a breath, not a spinner, and
+  ambient in the way the shader is. One envelope duration and easing for both
+  halves, so they read as one organism rather than two effects.
+
+  **The cost is bounded by construction, not by a measurement that can
+  drift**: the keyframes touch only `opacity` and `background-position`, and
+  the animated boxes are a 2px rail and one short inline-block label (the
+  label is inline-block precisely so its box hugs the words instead of
+  invalidating a full-column strip to say nothing). Measured anyway:
+  p95 frame time 16.8ms with the wisp, 16.9ms with every animation killed —
+  indistinguishable at vsync.
+
+  Under reduced motion the wisp **holds still at its brightest** rather than
+  disappearing: the state must still read as in-progress with no motion at
+  all. Legibility is safe by construction too — the gradient's darkest stop
+  is `--dim`, the colour the label had before it moved.
+
+  `dev/capture/wisp.mjs` guards all three claims, and one of its checks is
+  worth knowing about: counting direction reversals does **not** tell a
+  breath from a sawtooth, because a sweep that snaps back to its start also
+  turns around twice per cycle. A deliberately introduced one-way sweep
+  passed the first version of that check. What separates them is how *long*
+  the fall takes — a breath spends about as long fading out as fading in, a
+  sawtooth spends one frame — so the assertion is on the fraction of moving
+  samples that are falling.
 - **Reduced-motion is a hard contract.** `prefers-reduced-motion` changes
   *timing, never function or legibility*: route swaps are instant (no ghost,
   no mist, tint/seed snap, no `warp`), the composer shows/hides at once, its
