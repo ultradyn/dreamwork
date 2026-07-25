@@ -62,6 +62,7 @@ def run(t: Path):
     lint.check_questions(dw, watch, rep)
     lint.check_tasks(dw, rep)
     lint.check_status(dw, rep)
+    lint.check_watch_port(dw, rep)
     lint.check_skill_version(dw, rep)
     lint.check_dreams(dw, rep)
     return rep
@@ -144,15 +145,66 @@ class TestLedger:
         assert levels(rep, "tasks.md") == [lint.OK]
 
 
-class TestOtherFiles:
-    def test_invalid_status_json_is_an_error(self, tmp_path):
+class TestStatusIsAnInterface:
+    """Two readers as of #96 (watch.py and dreamhub.py), so a wrong TYPE is
+    the failure worth catching — an absent field reads as unknown, but a
+    string where a list belongs makes a reader render nonsense or throw."""
+
+    def test_invalid_json_is_an_error(self, tmp_path):
         rep = run(target(tmp_path, **{"status.json": '{"task": "x",}'}))
         assert ERRORS(rep, "status.json")
 
-    def test_valid_status_json_counts_agents(self, tmp_path):
-        blob = json.dumps({"task": "x", "agents": [{"name": "a"}, {"name": "b"}]})
+    def test_counts_agents_and_flags_the_human_waiting(self, tmp_path):
+        blob = json.dumps({
+            "task": "x",
+            "agents": [{"name": "a"}, {"name": "b"}],
+            "awaiting_human": ["a decision"],
+        })
         rep = run(target(tmp_path, **{"status.json": blob}))
-        assert "2 agent" in next(d for _, w, d in rep.rows if w == "status.json")
+        detail = next(d for _, w, d in rep.rows if w == "status.json")
+        assert "2 agent" in detail and "1 awaiting" in detail
+
+    def test_every_field_is_optional(self, tmp_path):
+        # A fresh loop writes almost nothing, and a target whose loop is not
+        # running still has to appear in the hub. Readers degrade.
+        rep = run(target(tmp_path, **{"status.json": "{}"}))
+        assert levels(rep, "status.json") == [lint.OK]
+
+    def test_a_wrong_type_is_an_error(self, tmp_path):
+        blob = json.dumps({"task": "x", "awaiting_human": "a decision"})
+        rep = run(target(tmp_path, **{"status.json": blob}))
+        assert ERRORS(rep, "status.json")
+        assert "awaiting_human is str" in next(d for _, w, d in rep.rows if w == "status.json")
+
+    def test_a_nameless_agent_is_an_error(self, tmp_path):
+        blob = json.dumps({"agents": [{"name": "a"}, {"owns": ["x.py"]}]})
+        rep = run(target(tmp_path, **{"status.json": blob}))
+        assert ERRORS(rep, "status.json")
+
+    def test_top_level_must_be_an_object(self, tmp_path):
+        rep = run(target(tmp_path, **{"status.json": "[1, 2]"}))
+        assert ERRORS(rep, "status.json")
+
+
+class TestWatchPort:
+    def test_a_sane_port_is_ok(self, tmp_path):
+        rep = run(target(tmp_path, **{"watch-port": "35110\n"}))
+        assert levels(rep, "watch-port") == [lint.OK]
+
+    def test_junk_is_an_error(self, tmp_path):
+        rep = run(target(tmp_path, **{"watch-port": "not-a-port"}))
+        assert ERRORS(rep, "watch-port")
+
+    def test_out_of_range_is_an_error(self, tmp_path):
+        rep = run(target(tmp_path, **{"watch-port": "99999"}))
+        assert ERRORS(rep, "watch-port")
+
+    def test_absent_is_a_warning(self, tmp_path):
+        rep = run(target(tmp_path))
+        assert levels(rep, "watch-port") == [lint.WARN]
+
+
+class TestOtherFiles:
 
     def test_skill_version_naming_a_nonexistent_migration_is_an_error(self, tmp_path):
         rep = run(target(tmp_path, **{"skill-version": "2099-01-01-99-nope.md\n"}))

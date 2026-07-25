@@ -157,6 +157,22 @@ def check_tasks(dw: Path, rep: Report) -> None:
             rep.add(OK, "tasks.md", f"{len(ids)} entries, next id {nxt}")
 
 
+# status.json has two readers now (watch.py and dreamhub.py), which makes it
+# an interface. Every field is optional — readers degrade, a fresh loop writes
+# almost nothing — so a wrong TYPE is the failure worth catching: an absent
+# field reads as "unknown", while a string where a list belongs makes a reader
+# render nonsense or throw.
+STATUS_TYPES = {
+    "task": str,
+    "goal": str,
+    "agents": list,
+    "queue": dict,
+    "awaiting_human": list,
+    "last_tick": str,
+    "last_commit": str,
+}
+
+
 def check_status(dw: Path, rep: Report) -> None:
     path = dw / "status.json"
     if not path.exists():
@@ -165,10 +181,46 @@ def check_status(dw: Path, rep: Report) -> None:
     try:
         data = json.loads(path.read_text())
     except json.JSONDecodeError as exc:
-        rep.add(ERROR, "status.json", f"invalid JSON at line {exc.lineno} — the dashboard shows nothing")
+        rep.add(ERROR, "status.json", f"invalid JSON at line {exc.lineno} — every reader sees nothing")
         return
+    if not isinstance(data, dict):
+        rep.add(ERROR, "status.json", f"top level is {type(data).__name__}, not an object")
+        return
+
+    wrong = [
+        f"{k} is {type(data[k]).__name__}, want {t.__name__}"
+        for k, t in STATUS_TYPES.items()
+        if k in data and not isinstance(data[k], t)
+    ]
+    if wrong:
+        rep.add(ERROR, "status.json", "; ".join(wrong))
+        return
+
+    # An agent without a name cannot be reported on by any reader.
+    nameless = sum(1 for a in data.get("agents", []) if not (isinstance(a, dict) and a.get("name")))
+    if nameless:
+        rep.add(ERROR, "status.json", f"{nameless} agent(s) with no `name` — unreportable by any reader")
+        return
+
     agents = data.get("agents") or []
-    rep.add(OK, "status.json", f"valid; {len(agents)} agent(s) recorded")
+    waiting = data.get("awaiting_human") or []
+    detail = f"valid; {len(agents)} agent(s)"
+    if waiting:
+        detail += f", {len(waiting)} awaiting the human"
+    rep.add(OK, "status.json", detail)
+
+
+def check_watch_port(dw: Path, rep: Report) -> None:
+    """The address the human's bookmark points at. Two readers as of #96."""
+    path = dw / "watch-port"
+    if not path.exists():
+        rep.add(WARN, "watch-port", "absent — written when the dashboard is first deployed")
+        return
+    raw = path.read_text().strip()
+    if not raw.isdigit() or not (1024 <= int(raw) <= 65535):
+        rep.add(ERROR, "watch-port", f"{raw!r} is not a usable port — deploy and the hub both read this")
+    else:
+        rep.add(OK, "watch-port", raw)
 
 
 def check_skill_version(dw: Path, rep: Report) -> None:
@@ -219,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:
     check_questions(dw, watch, rep)
     check_tasks(dw, rep)
     check_status(dw, rep)
+    check_watch_port(dw, rep)
     check_skill_version(dw, rep)
     check_dreams(dw, rep)
 
