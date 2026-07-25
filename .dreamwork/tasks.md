@@ -162,7 +162,12 @@ Next id: **162**
   a redesign · `writing-plugins.md:60` already grants plugins their own
   command namespace in PROSE, so today a plugin may define a command the
   composer cannot show — the contract and the UI disagree, and the
-  contract is the one that has been promising
+  contract is the one that has been promising · **seam decided**:
+  watch.py reads the TARGET and plugin skill dirs live outside it and
+  vary by machine, so a plugin declares in its SKILL.md and the LOOP
+  writes the declaration into the target at load — same pattern as
+  `github-processes.md`. Rewrite the whole declaration at load, never
+  append, so unloading is the absence of a write
 - **#98** — Show the open queue on the watch dashboard · P2 · idea · 40m ·
   new page surface, fit-check at selection
 - **#114** — Dashboard renders the active goal chain · P3 · task · 25m ·
