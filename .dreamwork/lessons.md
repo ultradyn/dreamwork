@@ -375,3 +375,12 @@ this shape and convert opportunistically.)
   what the hub depends on is what made the drift guard writable at all —
   you cannot guard a contract you have not written down.
   (2026-07-25-1310-dreamhub-build, #96)
+- **Needing one variable interpolated opts the whole document into shell
+  expansion.** The coordinator wrote a dreamer relay through an unquoted
+  heredoc to get a timestamp in, and every backticked term in it —
+  `_parse_entries`, `- **`, `## ` — was executed as a command
+  substitution and replaced with nothing. The message stayed plausible
+  and lost its nouns. Same class as #146, aimed inward: text written into
+  a record without escaping, where the record's reader treats part of
+  that text as syntax. Use a quoted heredoc and add the timestamp on its
+  own line. (coordinator, 2026-07-25)
