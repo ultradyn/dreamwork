@@ -15,10 +15,9 @@ Next id: **119**
 
 ## Open
 
-- **#111** — Answered questions distinct and collapsed by default · P2 ·
-  task · 30m · *assigned (dreamer-states)* · one design with #113
 - **#113** — Awaiting-fold looks alive; every state transition covered ·
-  P2 · task · 45m · do with #111; states encode who it waits on
+  P2 · task · 45m · *in progress (dreamer-states)* · #111 landed; this
+  is the rest of the same axis
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
@@ -45,7 +44,8 @@ Next id: **119**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#118** typing survives a
+Pruned in grooming; git is the real ledger. **#111** answered questions
+collapse and stay findable (a8f6b7f). **#118** typing survives a
 live tick — text, caret, focus and compose mode carried across the
 re-render (c321c6c). **#117** the verification
 gap — `just test` runs the browser guards against a frozen fixture
