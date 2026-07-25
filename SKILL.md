@@ -191,10 +191,20 @@ Dreamers are batches, not careers. A long-lived dreamer's context grows
 until fresh eyes are cheaper — bound its scope to the current batch,
 retire it when the batch lands, and spawn fresh for new work (it
 inherits the styleguide, docs, and lessons; that's the shared memory).
-Exception: a tight follow-up to its in-flight work (a bug in what it
-just built, a refinement of its own motion language) goes to the
-incumbent, prioritized, before it wraps — context that hot is worth
-spending.
+
+**Default to fresh. Reuse an incumbent only within ~4 minutes of its
+last stop** (human-set 2026-07-25) — inside that window its context is
+still cache-warm and respawning throws the cache away; outside it, a
+fresh dreamer costs about the same and arrives with clean eyes. The
+tight-follow-up exception (a bug in what it just built, a refinement of
+its own motion language) lives inside that window, not beyond it.
+
+**This is the coordinator's call, not the incumbent's.** A dreamer
+saying "I have room" is evidence, not a decision — it is the party least
+able to see its own context cost, and it will almost always say yes.
+Ask instead: is this the same work, and did it stop moments ago? A
+dreamer reached ~600k tokens here because its own assessment was
+accepted three times running.
 
 All subagents report to the coordinator **through a file**, and never use
 `attn`. Give every one of them a path to write to and an inbox to ping —

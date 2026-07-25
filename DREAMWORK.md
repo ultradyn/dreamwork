@@ -44,6 +44,12 @@
 - Autonomy: commit each increment (the skill folder is its own git repo).
   Push at session wrap and whenever asked — not per increment
   (2026-07-25). Deploy is not authorized.
+- Subagent lifecycle (2026-07-25): **prefer fresh subagents; reuse an
+  existing one only if it stopped less than ~4 minutes ago.** Retire
+  idle dreamers rather than leaving them parked. A dreamer here reached
+  ~600k tokens because the coordinator accepted its own "I have room"
+  three times — the incumbent is the party least able to judge its own
+  context cost, so the call is the coordinator's.
 - Routines: after structural edits, do a full coherence re-read of
   SKILL.md + initialization.md (this is the project's test suite).
   Periodically re-check this file against SKILL.md and recent decisions —

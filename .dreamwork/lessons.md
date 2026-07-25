@@ -418,3 +418,12 @@ this shape and convert opportunistically.)
   repo would notice. That obligation belongs in the doc-map, where a
   docs-freshness pass reads it, not in a comment in the skill that
   depends on it. (2026-07-25-1221-ud-dreamtask-build, #50)
+- **A subagent is the party least able to judge its own context cost, so
+  the retire decision is the coordinator's.** dreamer-thread offered a
+  context call after its first batch; the coordinator gave it a second
+  and a third because it said it had room, and it reached ~600k tokens.
+  "Dreamers are batches, not careers" was already written down — what was
+  missing was that the incumbent's own assessment is evidence, not a
+  decision. Default fresh; reuse only inside ~4 minutes of its last stop,
+  where the cache is still warm and a respawn would throw it away.
+  (coordinator, human-corrected, 2026-07-25)
