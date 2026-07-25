@@ -113,6 +113,30 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/lessons.md` | humans; the loop at init; grooming | A bolded claim readable on its own, then the concrete case that earned it, then its source. Prune once a lesson has graduated into a guardrail or a check | prose only |
 | `.dreamwork/watch-events.log` | the coordinator's monitor — **it wakes on a line and acts on it** | One event per line. Human text written into it must not be able to forge a record: collapse newlines before they reach the file | prose only |
 | `DREAMWORK.md` | the loop, the wizard, the scope gate | Section headings are load-bearing — the scope gate and the goal chain both address them by name | prose only |
+| `~/.cache/agent-comms/<target>/coord-inbox.md` | the coordinator's tail monitor | Append-only, one report per line, prefixed `[agent-name]`. Machine-local, never committed | prose only |
+| `~/.cache/agent-comms/<target>/<agent>-inbox.md` | that subagent, **between increments** | Append-only. Write it with `relay.py` — body from stdin so it cannot be shell-expanded, stamp from the clock so it cannot be invented | prose only |
+
+## What stays unguarded, and why
+
+An honest inventory, because a list of what IS checked implies coverage
+it does not have (#150).
+
+- **The inbox files have no check at all.** They are append-only prose
+  read by a language model, so there is no shape to violate — but that
+  also means a malformed or misdirected relay fails silently. `relay.py`
+  removes the two failures that actually happened (shell expansion,
+  invented timestamps) by construction rather than by checking.
+- **Delivery is unguarded and probably unguardable.** The inbox is
+  durable but not delivered: an idle agent never reads it, and nothing
+  can tell a silent agent from a silent channel. The mitigation is
+  procedural — write, then wake — not a check.
+- **`lessons.md` and `DREAMWORK.md` are prose by intention.** Their value
+  is in being written well, and a linter would only ever check the parts
+  that do not matter.
+- **Nothing verifies that a relay was UNDERSTOOD**, only that it was
+  written. Every coordination failure this loop has had was of that
+  shape, and it is the reason reports say what durable state changed
+  rather than "done".
 
 ## `.dreamwork/status.json` — now an interface
 
