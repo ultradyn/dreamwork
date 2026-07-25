@@ -18,14 +18,18 @@ cover it too.
 | `stop-hook-variant.md` | Unimplemented wake fallback design | Only if implemented or invalidated |
 | `DREAMWORK.template.md` | Wizard seed for new targets | Yes — must track wizard section changes |
 | `migrations/` | Versioned target-affecting changes; latest filename = version | Append-only; README holds the protocol |
-| `.dreamwork/docs/plans/` | Active feature plans (ud-dreamtask, ud-dreamwork-github) | Prune when features fully land |
+| `.dreamwork/docs/plans/` | Active feature plans (ud-dreamtask, ud-dreamwork-github, artifact-templates, daemon-mode, goal-hierarchies) | Prune when features fully land |
+| `.dreamwork/docs/spikes/` | Timeboxed experiments that answered a question with a number; the branch holds the diff | Keep — a measured answer outlives the code that produced it |
+| `.dreamwork/review/` | Rich decision artifacts paired with a questions.md entry | Banner them decided; archive with the answered question |
 | `.dreamwork/{lessons,questions}.md` | Distilled lessons; asks for the human | Yes — groomed in rotation |
 | `.dreamwork/tasks.md` | The queue's durable half: open tasks, permanent ids, next id | Yes — same commit as any queue change |
 | `.dreamwork/docs/github-processes.md` | The repo's GitHub shape and conventions (ud-dreamwork-github plugin) | Yes — re-survey when CI, labels, or PR flow appear |
 | `README.md` | Public face of the repo: what dreamwork is, install, where to start | Yes — must not drift from SKILL.md |
 | `roll.py` / `watch.py` docstrings | Tool contracts (advisory dice; dashboard) | Yes — contracts live in the docstrings |
-| `test_watch.py` / `test_roll.py` | The verification every increment runs; no CI exists, so this is the only safety net | Yes — a behaviour change ships with its test |
-| `justfile` | Common tasks: test, watch, audit-styleguide | Yes — a new routine worth repeating becomes a recipe |
+| `test_watch.py` / `test_roll.py` | The Python half of verification — asserts on generated source, cannot see what renders | Yes — a behaviour change ships with its test |
+| `dev/capture/` | The structural half: browser guards (exit non-zero, gated by `just test`) plus print-only capture scripts | Yes — a guard joins `GUARDS` when its feature lands |
+| `dev/capture/fixture/` | Frozen miniature target the guards run against, so a red light means the code broke | Yes — extend it when the parser learns a new input shape |
+| `justfile` | Common tasks: test (both halves), pytest, guards, watch, audit-styleguide | Yes — a new routine worth repeating becomes a recipe |
 | `DREAMWORK.md` (repo root) | This target's own goals, philosophy, preferences, plugin decisions | Yes — folded whenever the human reveals a durable preference |
 
 SKILL.md is the entry point for the harness; README.md is the entry
