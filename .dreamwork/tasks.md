@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **143**
+Next id: **144**
 
 ## Open
 
@@ -22,6 +22,14 @@ Next id: **143**
   fires AT compaction, so it guarantees the write-down and cannot buy
   landing time; stdout becomes summariser instructions, so it must be
   silent by construction
+- **#143** — Per-project colour tint, persisted and cross-window · P3 ·
+  idea · 45m · the value lands with dreamhub: a tint is decoration for
+  one project and navigation for several, so the hub shows it too ·
+  persist in `.dreamwork/` and let the existing `/mtime` poll sync the
+  windows (localStorage loses it on another machine) · **the new file
+  lands WITH its file-formats row and lint check** — #135 happened
+  because one didn't · hue over the designed ramp, not free RGB, or the
+  accent stops meaning anything
 - **#142** — Burndown + stats panel on the dashboard · P2 · task · 75m ·
   no new instrumentation needed — the ledger is versioned, so
   `git log -p .dreamwork/tasks.md` IS the time series and permanent ids
