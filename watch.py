@@ -1808,6 +1808,21 @@ function popoutDoc(url, label) {
   const cmsg = () => document.getElementById('cmdmsg');
   let open = false;
   const CMD_GAP = 18;            // breathing room under the +/× opener
+  /* ── the panel does not close under him (#131) ───────────────────────────
+     His words: "if on the composer, someone enters something, ctrl+enter
+     submits, then starts typing again, the composer should not fade away.
+     also the timeout before fading away should be increased by 1.5x."
+
+     The auto-dismiss is a courtesy — it gets the panel out of the way once
+     the thought has landed — and a courtesy must never take a channel away
+     from someone who is still using it. That is the same rule as #118: what
+     the human is in the middle of doing outranks anything the page decided
+     on a timer. Any sign of him still being in here cancels the dismiss, and
+     `composing` covers the race where he resumes DURING the POST, before
+     there is a timer to cancel. */
+  const CMD_DISMISS_MS = 1425;               // was 950; his 1.5x
+  let dismissT = 0, composing = false;
+  const cancelDismiss = () => { clearTimeout(dismissT); dismissT = 0; };
   // The composer is position:fixed, but `.wrap` carries `perspective`, which
   // makes IT the containing block — so `top`/`left` are measured from .wrap,
   // not the viewport. Rects are viewport coords, so subtract that origin or
@@ -1911,7 +1926,19 @@ function popoutDoc(url, label) {
   }
   renderMenu();
   setKind(activeKind);              // paint the initial row + selection
+  /* he is composing again, so the panel is not finished with */
+  for (const ev of ['input', 'keydown', 'pointerdown'])
+    pal.addEventListener(ev, () => {
+      composing = true;
+      if (!dismissT) return;
+      cancelDismiss();
+      // A stale "sent to the dream" sitting above a fresh, unsent thought is
+      // a false confirmation on his steering channel — he could read it as
+      // the new command having landed. It goes the moment he resumes.
+      const m = cmsg(); if (m) { m.textContent = ''; m.className = 'cmdmsg'; }
+    });
   function openCmd() {
+    cancelDismiss(); composing = false;
     place(); pal.classList.add('open'); open = true;
     moveIndicator(true);          // land under the active kind, never slide in
     const plus = document.getElementById('cmdplus');
@@ -1920,6 +1947,7 @@ function popoutDoc(url, label) {
     if (t) setTimeout(() => t.focus(), rmr ? 0 : 140);
   }
   function closeCmd() {
+    cancelDismiss();
     pal.classList.remove('open'); open = false;
     document.querySelectorAll('#cmdplus.on').forEach(p =>
       p.classList.remove('on'));
@@ -1962,6 +1990,7 @@ function popoutDoc(url, label) {
       if (m) { m.textContent = 'a thought is needed'; m.className = 'cmdmsg'; }
       return;
     }
+    composing = false;          // from here, anything he does means "still here"
     try {
       const r = await fetch('/command', { method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1972,7 +2001,10 @@ function popoutDoc(url, label) {
         if (plus) { const b = plus.getBoundingClientRect();
           ripple(b.left + b.width / 2, b.top + b.height / 2); }
         document.getElementById('cmdtext').value = '';
-        setTimeout(closeCmd, 950);
+        // he may already have started typing again while the POST was in
+        // flight, before there was any timer to cancel
+        cancelDismiss();
+        if (!composing) dismissT = setTimeout(closeCmd, CMD_DISMISS_MS);
       } else if (m) { m.textContent = 'rejected (' + r.status + ')';
         m.className = 'cmdmsg'; }
     } catch (e) { if (m) { m.textContent = 'no connection';

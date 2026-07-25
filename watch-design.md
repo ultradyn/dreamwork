@@ -457,6 +457,21 @@ arithmetic non-obvious, and both are load-bearing:
 Nothing under the buttons is reserved: `.cmdmsg:empty` collapses, so the
 panel grows downward only when there is something to say.
 
+**The panel never closes under him** (#131). The auto-dismiss after a send is
+a *courtesy* — it gets the panel out of the way once the thought has landed —
+and a courtesy must never take a channel away from someone still using it.
+That is the same rule as #118, one surface over: what the human is in the
+middle of doing outranks anything the page decided on a timer. Any `input`,
+`keydown` or `pointerdown` inside the panel cancels the dismiss, and a
+`composing` flag covers the race where he resumes *during* the POST, before
+there is a timer to cancel. Resuming also clears the `sent to the dream`
+confirmation, because a stale one sitting above a fresh unsent thought is a
+false confirmation on his steering channel — he could read it as the new
+command having landed. The wait is `CMD_DISMISS_MS` (1425ms, his 1.5×).
+`dev/capture/dismiss.mjs` guards it, and asserts the panel is **still open at
+1.0s** as well as that it eventually closes: an end-state-only check passes on
+the old timing.
+
 **One vocabulary.** `COMMANDS` (top of `watch.py`) is the single source of
 steering kinds — `{kind, label, desc, common}`. The server derives
 `COMMAND_KINDS` from it to validate `POST /command`, the page embeds it as a
