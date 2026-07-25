@@ -34,6 +34,33 @@ that never renders a link at all.
 Nothing here writes into the repo. `prep.py` copies out; the guard's server
 runs with `DREAMHUB_HOME` pointed at `OUT`.
 
+## `contract.mjs` — the cross-file dependency
+
+`node dev/hub/contract.mjs <OUT> <PORT> [<watch.py>]`
+
+Stage 1 has exactly one cross-file dependency and it is a protocol, not an
+import: the hub polls `/mtime` and re-reads `/data.json` on change. That is
+what keeps the open-question count to one implementation. The cost is that
+`watch.py` belongs to another dreamer, and if `/mtime` stops being
+`"<gen> <mtime>"`, or `open_questions` is renamed, or `/data.json` moves, the
+hub does not crash — it reports stale or unknown counts and looks fine doing
+it. Nothing else in stage 1 would notice.
+
+So this starts a real `watch.py` over a copy of `dev/capture/fixture`, points
+a hub at it, and asserts the two agree — then edits the copy's `questions.md`
+and asserts the hub *follows*, because agreeing once is also what a hub with
+a frozen cache does.
+
+The optional third argument runs a different `watch.py`. `watch.py` is not
+edited here, so that is how the guard is shown to discriminate: point it at a
+deliberately drifted copy. All three of these were verified red —
+
+| Drift | What the guard says |
+|---|---|
+| `/mtime` loses its generation half | `/mtime is "<generation> <mtime>"` fails |
+| `open_questions` renamed | the count mismatches, and the page check fails with it |
+| `/data.json` moves | names the moved endpoint, not a startup timeout |
+
 ## Two things this guard learned the hard way
 
 - **A readiness probe must prove the server is yours.** The first version
