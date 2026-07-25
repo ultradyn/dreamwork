@@ -197,7 +197,10 @@ Next id: **206**
   frontmatter changes a file every target has, so it needs its own
   migration + a file-formats row + a lint check in the same commit ·
   **one open question** (zip has no repo, repo is private — rec: ship a
-  generated changelog in the release)
+  generated changelog in the release) · trailers LANDED pre-compaction ·
+  **githash LANDED 472b9e8** (output is the contract; 8 tests red-first)
+  — remaining: frontmatter+migration+lint row, init step, discovery
+  subagent (last two after the open question)
 - **#193** — A blocked errand is invisible · P2 · task · 25m · an
   errand's `awaiting_human` in `~/.config/dreamwork/tasks/` is read by
   NOTHING; hub listing is opt-in (right call) but the consequence was not
