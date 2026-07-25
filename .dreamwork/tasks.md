@@ -100,7 +100,11 @@ Next id: **194**
   as "proves nothing" · 11 in the gating list, 5 outside; `popbg` NOT
   surveyed · rec: fix the PATTERN via a shared reporter, not fourteen
   files — **pairs with #148**, since the shared runner is where the
-  shared reporter lives · waits for dev/capture/ to be free
+  shared reporter lives · waits for dev/capture/ to be free · **the
+  runner should also carry the coverage question**: every guard declares
+  which of his routes and gestures it drives, because both of today's
+  green-over-a-bug guards were written against the path easiest to
+  automate rather than the one he takes (dreamer-motion's parting note)
 - **#191** — The answer-submit morph moves its neighbours instantly ·
   P2 · bug · 25m · found by dreamer-motion while measuring #184, and it
   is NOT what he reported · `sendAnswer` restates the card with
