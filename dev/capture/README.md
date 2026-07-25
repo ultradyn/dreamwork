@@ -32,6 +32,28 @@ guard. Two things follow:
 When a guard needs a shape the fixture lacks, add it to the fixture. Reaching
 for live content is how this got broken the first time.
 
+**House rules for a new check** — each earned on 2026-07-25, most more
+than once:
+
+- **Red first, for its stated cause.** "It went red when I broke the
+  feature" is not enough when one break reddens twelve checks: break only
+  the thing THIS check names and watch THIS check fail. A check that
+  cannot fail for the reason its message names sends the next person to
+  the wrong file (three of one batch's own guards had this).
+- **Run it against nothing.** A per-line loop over an empty file, an
+  `every` over an empty array, and a rebuilt-in-the-guard expectation all
+  pass over an absent subject. Ask what your check says when its subject
+  does not exist — it takes ten seconds and it is the only reliable form.
+- **Absence costs one line, not a timeout.** Assert the subject exists
+  before driving it: 3.4s and a named FAIL beats thirty seconds of
+  Playwright timeout reported as "the guard threw".
+- **Report from full output, never a count.** A `grep -c` in a compound
+  command reported 6 FAILs where the full output held 14. A count is not
+  evidence.
+- **Prove a green was caused by your change**: revert only the change on
+  the same range and watch it go red again. A green that appears after an
+  unrelated edit is luck until shown otherwise.
+
 ## Guards (gated)
 
 - `headertravel` — the heading survives a route change and travels; the

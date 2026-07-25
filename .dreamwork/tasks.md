@@ -35,7 +35,9 @@ Next id: **207**
   which #203 says is not a fix · rec: state a tiny protocol in
   parallel-architecture.md — claims and holdings move ONLY through files
   (writes win, messages advise), and any instruction that must precede a
-  commit names the sha it must precede · relates #144, #150
+  commit names the sha it must precede · relates #144, #150 · **mitigation
+  adopted now** (qsec): every landed-report names what it did NOT do
+  from the brief — the gap is where a crossed message does damage
 - **#138** — Ship a PreCompact hook so the write-down is automatic ·
   P2 · task · 60m · **scope gate applies**: Claude Code-specific
   machinery in a harness-portable skill, and it touches his own config
