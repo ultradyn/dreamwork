@@ -395,3 +395,10 @@ this shape and convert opportunistically.)
   and an entry-count assertion passes on it. Before sanitising for a
   parser, enumerate every test it makes and what each one is applied to.
   (2026-07-25, #146)
+- **A file inbox is durable but it is not a wake signal.** Coordinator
+  relays land in a file the dreamer reads "between increments", so an
+  agent that has gone idle never sees them — a batch written two minutes
+  after a dreamer went quiet sat unread until it was pinged. Durability
+  and delivery are different problems and the loop solved only the first.
+  Write the instruction to the file AND send a message; the file is what
+  survives, the message is what arrives. (coordinator, 2026-07-25, #144)
