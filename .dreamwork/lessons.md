@@ -221,3 +221,10 @@ source dream. Not a log — only things that should change future behavior.
   deploy; the report was accurate, the code was correct, and a tracing
   cycle was spent on the gap between them. Deployment latency
   manufactures phantom bugs. (coordinator, 2026-07-25, #140)
+- Prose about a tool drifts from the tool faster than anyone expects.
+  file-formats.md said tasks.md and status.json had no stated contract;
+  within the hour lint.py was checking both. Same author, same day, and
+  the doc was explicitly about the dangers of drift. Which is the
+  argument for executable contracts stated in the doc itself — not
+  because people are careless, but because the gap opens even when they
+  are not. (coordinator, 2026-07-25, #137)
