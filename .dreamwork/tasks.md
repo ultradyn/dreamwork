@@ -38,10 +38,13 @@ Next id: **154**
   routing rule has no bucket for CRAFT guidance; a second craft rule is
   the signal to split it out of `file-formats.md` · also argues against
   #119's `selection.md`
-- **#144** — Utility agents visible in `status.json` when dispatched ·
-  P3 · chore · 15m · the reporting rule landed; what remains is making a
-  dispatched-but-undelivered agent legible at a glance rather than by
-  memory — same move as #136
+- **#144** — *landed as a convention* · the reporting rule is in
+  SKILL.md (write then wake), and `status.json`'s `agents` entries now
+  carry optional `kind` and `awaiting_result` so a dispatched-but-silent
+  agent is legible without the coordinator remembering. Root cause,
+  better than the symptom I filed: subagent PLAIN TEXT is not a channel
+  at all — only files and harness messages arrive, so three "idle, no
+  findings" were three complete reports with nowhere to go
 - **#143** — Per-project colour tint, persisted and cross-window · P3 ·
   idea · 45m · the value lands with dreamhub: a tint is decoration for
   one project and navigation for several, so the hub shows it too ·

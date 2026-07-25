@@ -129,7 +129,7 @@ running still has to appear in the hub. Writers should provide the core:
 |---|---|---|
 | `task` | string | one line: what the loop is doing right now |
 | `goal` | string | the session goal this serves |
-| `agents` | array of objects, each with at least `name` | live subagents; a reader shows the count and the names |
+| `agents` | array of objects, each with at least `name` | live subagents; a reader shows the count and the names. Optional per agent: `kind` (`utility` when it is not a dreamer), and `awaiting_result` when it was dispatched and has not reported — a dispatched-but-silent agent is otherwise legible only from the coordinator's memory, which is exactly how two deliverables were lost (#144) |
 | `queue` | object, integer `in_progress` and `pending` | queue depth |
 | `awaiting_human` | array of strings | **non-empty means the human is the bottleneck.** The one field a reader must never bury (#130, #141) |
 | `last_tick`, `last_commit` | string | freshness; a stale `last_tick` is how a stalled loop is spotted |
