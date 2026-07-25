@@ -842,3 +842,13 @@ this shape and convert opportunistically.)
   perfectly on every later change. The fix is one `setData` seam, not a second
   call site; a second call site fixes the symptom and re-arms the trap.
   (dreamer-plugcmd, 2026-07-25, #86)
+- **Seeding a fixture can make a NEIGHBOURING guard vacuous without making it
+  red**, and that is the worse of the two failures. #197 added a third open
+  question so the sort had something to sort; `identity.mjs` had a literal 3
+  awaiting-human items beside a fixture holding 2, and that GAP was its whole
+  check — "the title uses awaiting_human, not the open-question count" is
+  byte-identical to a wrong title once the two numbers match. It went on
+  passing. When a guard's assertion depends on two fixture numbers DIFFERING,
+  derive both at runtime and assert the gap; a literal tuned to today's
+  fixture is a check with an expiry date nobody can see. (dreamer-plugcmd,
+  2026-07-25, #197)

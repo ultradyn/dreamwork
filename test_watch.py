@@ -1480,6 +1480,103 @@ class TestProjectTint(unittest.TestCase):
                 self.fail(f"backtick in a shader comment, line {i}: {head!r}")
 
 
+class TestQuestionPriority(unittest.TestCase):
+    """#197 — priority, then oldest, decided once in the parse."""
+
+    def entries(self, *titles):
+        return "## Open\n\n" + "".join(
+            f"- **{t}** a body.\n\n" for t in titles)
+
+    def test_the_band_is_read_off_the_title(self):
+        for title, want in (("P1 · a", 1), ("P2 · a", 2), ("P3 · a", 3),
+                            ("a", 2), ("", 2)):
+            self.assertEqual(watch.title_priority(title), want, title)
+
+    def test_absent_means_the_MIDDLE_band(self):
+        # Not a detail: it is what makes an explicit P3 sort genuinely BELOW
+        # an unmarked entry rather than level with it, which is the only
+        # reason a writer would type P3 at all.
+        self.assertEqual(watch.title_priority("no marker here"),
+                         watch.PRIORITY_DEFAULT)
+        self.assertEqual(watch.PRIORITY_DEFAULT, 2)
+
+    def test_a_marker_outside_the_band_reads_as_unmarked(self):
+        # THE QUIET FAILURE, and the one thing lint.py errors on: it reads to
+        # a human as prioritised and sorts as unmarked, so the entry he most
+        # wants seen sits mid-list looking urgent. The parser must not invent
+        # a band for it — a wrong priority is worse than none.
+        for title in ("P0 · a", "P4 · a", "P9 · a", "p1 · a", "P1· a",
+                      "P1 - a", "P1a · b", "see P1 · later"):
+            self.assertEqual(watch.title_priority(title), 2, title)
+
+    def test_open_questions_sort_by_priority(self):
+        text = self.entries("P3 · third", "unmarked", "P1 · first")
+        self.assertEqual(
+            [q["title"] for q in watch.parse_open_questions(text)],
+            ["P1 · first", "unmarked", "P3 · third"])
+
+    def test_a_tie_keeps_FILE_order_and_needs_no_date(self):
+        # "Oldest first on a tie" is FREE: the file is chronological, so a
+        # stable sort by priority alone produces it. A date comparison would
+        # be a second mechanism able to disagree with the first — and it
+        # would disagree exactly where stamps are missing or hand-edited.
+        text = self.entries("P1 · early", "second", "third",
+                            "P1 · later", "fourth")
+        self.assertEqual(
+            [q["title"] for q in watch.parse_open_questions(text)],
+            ["P1 · early", "P1 · later", "second", "third", "fourth"])
+
+    def test_answered_entries_are_left_in_file_order(self):
+        # A priority says how urgently something needs him; a settled entry
+        # needs him for nothing. Sorting these would order a record by an
+        # urgency that has expired, and scramble the one property the section
+        # is read for.
+        text = ("## Answered\n\n"
+                "- **P3 · older** → resolved (2026-07-24): a.\n\n"
+                "- **P1 · newer** → resolved (2026-07-25): b.\n")
+        got = watch.parse_answered(text)
+        self.assertEqual([e["title"] for e in got], ["P3 · older", "P1 · newer"])
+        # and no priority key: a field nobody sorts by is a claim that
+        # something does
+        self.assertNotIn("priority", got[0])
+
+    def test_ordering_is_in_the_PARSE_so_neither_surface_can_sort(self):
+        # Three surfaces render these entries and all of them go through
+        # qaCard. A sort in each is three chances to disagree about which
+        # question is most urgent. Both list builders derive their pairs with
+        # the SAME expression, so neither can quietly grow a sort of its own.
+        derive = "d.questions_open.map((q, i) => [q, i]);"
+        self.assertEqual(watch.PAGE.count(derive), 2,
+                         "qSection and buildQuestions must derive the list "
+                         "identically, and nothing else may derive it at all")
+        self.assertNotIn("questions_open.slice().sort", watch.PAGE)
+        self.assertNotIn("questions_open.sort", watch.PAGE)
+
+    def test_the_fixture_carries_a_discriminating_arrangement(self):
+        # THE KNOWN TRAP: the frozen fixture had zero P-prefixed entries, so
+        # every ordering guard would have passed over a sort that did
+        # nothing. Two properties are needed and neither is obvious:
+        #   · the sorted order must be a real PERMUTATION of the file order,
+        #     or a renderer that ignores priority is accidentally right;
+        #   · an unmarked entry must appear AFTER the P3 one in the file, or
+        #     a build defaulting to P3 renders the identical order.
+        path = os.path.join(os.path.dirname(os.path.abspath(watch.__file__)),
+                            "dev", "capture", "fixture", ".dreamwork",
+                            "questions.md")
+        with open(path) as f:
+            text = f.read()
+        filed = watch._parse_entries(text, "Open", lift_answer=True)
+        sorted_ = watch.parse_open_questions(text)
+        self.assertNotEqual([e["title"] for e in filed],
+                            [q["title"] for q in sorted_],
+                            "the fixture's sorted order equals its file order")
+        bands = [watch.title_priority(e["title"]) for e in filed]
+        p3 = bands.index(3)
+        self.assertIn(2, bands[p3 + 1:],
+                      "no unmarked entry follows the P3 one, so a build "
+                      "defaulting to P3 would render the identical order")
+
+
 class TestPluginCommands(unittest.TestCase):
     """#86 — a plugin's commands, read where the composer can render them.
 

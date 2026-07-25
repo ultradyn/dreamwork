@@ -512,6 +512,38 @@ that. Four invariants, each of which was a bug:
    note's own text is somebody else's date, and it returns `None` rather than
    guessing — the same rule as `note_author` and `answered_at`.
 
+**Order is decided here too, once** (#197). An entry's title may open with
+`P1 · `, `P2 · ` or `P3 · `; `parse_open_questions` sorts by that, and
+**absent means P2** — the middle band, which is what makes an explicit `P3`
+sort genuinely below an unmarked entry rather than level with it. The marker
+stays part of the title, so it renders: he reads the priority on the card
+rather than only inferring it from the order.
+
+- **It is a property of the parse, not of a renderer.** Three surfaces show
+  these entries — the dashboard's questions section, `/questions`, and the
+  review dock — and all three go through `qaCard`. A sort in each is three
+  chances to disagree about which question is most urgent, on the one channel
+  whose whole job is telling him what to look at first. It also keeps
+  `data-qkey` honest: the key is an *index into this list*, so the list the
+  client is handed has to be the list it renders.
+- **"Oldest first on a tie" is free, and must stay free.** The file is
+  chronological and Python's sort is stable, so priority alone produces it.
+  Adding a date comparison would be a second mechanism able to disagree with
+  the first — and it would disagree exactly on the entries whose stamps are
+  missing or hand-edited.
+- **A marker outside the band reads as unmarked**, and `lint.py` errors on
+  it. That is the quiet failure: it reads to a human as prioritised and sorts
+  as unmarked, so the entry he most wants seen sits mid-list looking urgent.
+- **`## Answered` is deliberately not sorted.** A priority says how urgently
+  something needs him and a settled entry needs him for nothing, so sorting
+  those would order a record by an urgency that has expired — and scramble
+  the one property that section is read for. It carries no `priority` field
+  either: a key nobody sorts by is a claim that something does.
+- **A live reorder travels.** A new `P1` arriving pushes every card below it
+  down, and that rides the tick's existing regroup for free because
+  `data-qid` is the question's own title, which reordering does not change.
+  The guard is `dev/capture/qorder.mjs`.
+
 **The writer walks titles the same way, through the same `_join_title`.**
 Before that, `append_subbullet` compared against the first source line only,
 so a wrapped-title entry could not be matched at all and `/answer` and

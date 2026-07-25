@@ -2,6 +2,14 @@
 
 ## Open
 
+- **P3 · 2026-07-25 — a fourth open question, marked P3 so the band below
+  unmarked is exercised too.** It sits FIRST in this file on purpose. An
+  unmarked entry is P2, the middle band, so this one has to sort below
+  entries written after it — and if it were already last in the file, a
+  build that read `P3` as unmarked would render the identical order and
+  nothing here could tell the two apart. Its body wraps like the rest so
+  it is a normal card.
+
 - **2026-07-25 — a question whose bold title is hard-wrapped across two
   source lines, which is normal input.** The loop writes this file at about
   seventy-two columns, so a title that runs long simply continues onto the
@@ -17,12 +25,14 @@
     the body.
   - **Follow-up (loop, 2026-07-25 09:01):** and one from the loop, so the
     page has both authors side by side to distinguish.
-- **2026-07-25 — a second open question, so answering the first leaves a
-  neighbour to close the gap.** The regroup guard needs at least one card
+- **P1 · 2026-07-25 — a second open question, so answering the first leaves
+  a neighbour to close the gap.** The regroup guard needs at least one card
   below the one it answers, or there is nothing to watch slide up. Some
   more prose so this body also wraps: **bold**, *emphasis* and a
   `backticked/path.md` all appear here so the inline renderer has one of
-  each to render.
+  each to render. It is marked `P1`, and it is SECOND in this file on
+  purpose: the sort must be visible as a real permutation, so a renderer
+  that ignores priority is not accidentally right (#197).
 
 - **2026-07-25 — a third question, already answered from the page and
   awaiting the loop's fold.** This is the state that vanishes from live

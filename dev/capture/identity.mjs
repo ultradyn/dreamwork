@@ -89,13 +89,15 @@ const status = (extra) => JSON.stringify({
 }, null, 2);
 const writeStatus = extra => writeFileSync(SPATH, status(extra));
 
-/* THREE, and the fixture holds TWO open questions. That gap is the whole
-   check: with two of each, a title reading the derived count instead of the
-   loop's own statement is byte-identical to a correct one, and the first
-   deliberate bug injected here passed against it. A fixture that cannot tell
-   two sources apart makes every assertion about the source vacuous. */
-writeStatus({ awaiting_human: ['the first thing', 'the second thing',
-                               'and a third'] });
+/* THE TWO NUMBERS MUST DIFFER, and neither of them is written down here any
+   more. That gap is the whole check: with the same count of each, a title
+   reading the derived number instead of the loop's own statement is
+   byte-identical to a correct one, and the first deliberate bug injected
+   here passed against it. It was a literal 3 beside a fixture that held 2,
+   and #197 seeded a third open question — so the guard went vacuous without
+   going red, which is the worse of the two failures. The count is derived
+   from the server below and the gap is asserted rather than assumed. */
+writeStatus({ awaiting_human: ['placeholder until the open count is known'] });
 
 const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
                   { stdio: 'ignore' });
@@ -105,13 +107,18 @@ await sleep(2500);
 /* our server, not a neighbour's — a readiness probe that accepts any answer
    eventually grades a stranger's process */
 const BASE = `http://127.0.0.1:${PORT}`;
+let OPENQ = 0;
 {
   const d = await (await fetch(`${BASE}/data.json`)).json();
   if (d.target !== DIR) {
     console.log(`FAIL :${PORT} is serving ${d.target}, not ${DIR}`);
     process.exit(1);
   }
+  OPENQ = d.open_questions;
 }
+const AWAIT_N = OPENQ + 2;      // deliberately not the open count
+writeStatus({ awaiting_human:
+  Array.from({ length: AWAIT_N }, (_, i) => `the thing numbered ${i + 1}`) });
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const ctx = await br.newContext({ viewport: { width: 1100, height: 900 } });
@@ -135,11 +142,15 @@ async function titleWhen(pred, ms = 9000) {
 const title = () => p.title();
 
 // ── the count, front-loaded ───────────────────────────────────────────────
-let t = await titleWhen(x => x.startsWith('(3)'));
-notes.push(`awaiting 3, 2 open q:  ${t}`);
+notes.push(`awaiting ${AWAIT_N}, ${OPENQ} open q`);
+ok('the two counts differ, so a title reading the wrong one is visible ' +
+   '(else every check about WHICH source is vacuous)',
+   OPENQ > 0 && AWAIT_N !== OPENQ);
+let t = await titleWhen(x => x.startsWith(`(${AWAIT_N})`));
+notes.push(`awaiting ${AWAIT_N}:            ${t}`);
 ok('the count is FIRST — tabs truncate from the right', /^\(\d+\) /.test(t));
 ok('...and it is awaiting_human\'s length, not the open-question count',
-   t.startsWith('(3) '));
+   t.startsWith(`(${AWAIT_N}) `));
 ok('the project is the target\'s own name', t.includes('alpha-loop'));
 /* ...and the app's name is beside it (his ruling, 15:30). Asserted as the
    compound field rather than as a substring, so a title that dropped the
@@ -147,7 +158,7 @@ ok('the project is the target\'s own name', t.includes('alpha-loop'));
 ok('...beside the app\'s, in one field', t.includes('dreamwork/alpha-loop'));
 ok('...and the loop reads as alive', /·\s*dreaming/.test(t));
 ok('the dashboard route adds nothing after the state',
-   /^\(3\) dreamwork\/alpha-loop · dreaming$/.test(t));
+   new RegExp(`^\\(${AWAIT_N}\\) dreamwork/alpha-loop · dreaming$`).test(t));
 
 // ── it changes with no navigation at all ──────────────────────────────────
 /* The whole feature. A title assembled once in navigate() passes every check
@@ -164,13 +175,14 @@ notes.push(`awaiting none:         ${t}`);
 ok('zero renders as (0), not as an empty bracket', t.startsWith('(0) '));
 
 // ── the fallback: no status.json at all ───────────────────────────────────
-/* A target whose loop has never written one still has questions.md, and the
-   fixture holds two unanswered entries. */
+/* A target whose loop has never written one still has questions.md, so the
+   count falls back to the entries in it — the number the server reported
+   above, not a literal, which is what #197 broke by adding one. */
 rmSync(SPATH, { force: true });
-t = await titleWhen(x => x.startsWith('(2)'));
+t = await titleWhen(x => x.startsWith(`(${OPENQ})`));
 notes.push(`no status.json:        ${t}`);
 ok('with no status.json the count falls back to open questions',
-   t.startsWith('(2) '));
+   t.startsWith(`(${OPENQ}) `));
 ok('...and no liveness word is invented', !/dreaming|stalled/.test(t));
 ok('...the project is still named', t.includes('alpha-loop'));
 

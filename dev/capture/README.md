@@ -107,6 +107,11 @@ than once:
   marks even though it is painted mid-reveal (#198). Bounded window, because
   the bug is laundered by the next re-render rather than self-healing — and
   the guard proves that laundering path rather than trusting it.
+- `qorder` — questions in priority order, then oldest, on BOTH surfaces (#197).
+  Its load-bearing assertion compares the dashboard against `/questions`
+  rather than against a list written twice here, because the failure it exists
+  for is the two surfaces sorting separately. Also drives a live reorder and
+  asserts the cards below it travel rather than jumping.
 - `plugcmd` — a plugin's declared commands, in the composer that has to offer
   them (#86). Drives the FILE — unloaded first, so the common case (no plugin
   declares anything) is checked before the populated one — and asserts the

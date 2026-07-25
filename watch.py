@@ -4440,9 +4440,55 @@ def _parse_entries(text, section, lift_answer):
     return items
 
 
+# How urgent an entry is, read off the front of its own title (#197):
+# `P1 · `, `P2 · `, `P3 · `. Same vocabulary as the task ledger, because he
+# already reads P1-P3 there and a second scale would be one to learn. Spec:
+# `file-formats.md`, "Priority on a question".
+#
+# ABSENT MEANS P2 — the middle band, deliberately. It is what makes an
+# explicit `P3` sort genuinely BELOW an unmarked entry rather than level with
+# it, which is the whole reason a writer would type `P3` at all.
+#
+# A marker outside the band (`P0 · `, `P4 · `) is left where it is and read as
+# unmarked, i.e. P2. That is the quiet failure `lint.py` exists to name: it
+# reads to a human as prioritised and sorts as unmarked, so the entry he most
+# wants seen sits mid-list looking urgent.
+PRIORITY_MARK = re.compile(r"\AP([123])\s+·\s+")
+PRIORITY_DEFAULT = 2
+
+
+def title_priority(title):
+    """1, 2 or 3 for an entry title — the sort key, and only that."""
+    m = PRIORITY_MARK.match(title or "")
+    return int(m.group(1)) if m else PRIORITY_DEFAULT
+
+
 def parse_open_questions(text):
-    """[{title, body, answer, follows}] for each entry in `## Open`."""
-    return _parse_entries(text, "Open", lift_answer=True)
+    """[{title, body, answer, follows, priority}] for `## Open`, IN THE ORDER
+    THE PAGE SHOWS THEM.
+
+    ORDERING IS A PROPERTY OF THE PARSE, not of a renderer (#197). Three
+    surfaces render these entries — the dashboard's questions section,
+    `/questions`, and the review dock — and every one of them goes through
+    `qaCard`. A sort in each is three chances to disagree about which
+    question is most urgent, on the one channel whose whole job is telling
+    him what to look at first. It is also what keeps `data-qkey` honest: the
+    key is an INDEX into this list, so the list the client is handed must
+    already be the list it renders.
+
+    **"Oldest first on a tie" is free and must stay free.** The file is
+    chronological, so a STABLE sort by priority alone produces it — and
+    Python's is stable. Do not add a date comparison: that would be a second
+    mechanism able to disagree with the first, and it would disagree exactly
+    on the entries whose stamps are missing or hand-edited.
+
+    `## Answered` is deliberately NOT sorted (see `parse_answered`).
+    """
+    items = _parse_entries(text, "Open", lift_answer=True)
+    for it in items:
+        it["priority"] = title_priority(it["title"])
+    items.sort(key=lambda it: it["priority"])
+    return items
 
 
 # A folded entry's body opens with the resolution the loop wrote:
@@ -4469,7 +4515,16 @@ def answered_at(body):
 def parse_answered(text):
     """[{title, body, follows, when}] for each entry in `## Answered`, so the
     view can render each with its follow-up thread and an add-a-note box —
-    and, collapsed, still say when it was answered."""
+    and, collapsed, still say when it was answered.
+
+    IN FILE ORDER, which is chronological, and NOT by priority (#197). A
+    priority says how urgently something needs him; a settled entry needs him
+    for nothing, so sorting these would order a record by an urgency that has
+    already expired — and it would scramble the one property this section is
+    read for, which is when things happened. The `priority` field is not set
+    here either, because nothing sorts by it: a key nobody uses is a claim
+    that something does.
+    """
     items = _parse_entries(text, "Answered", lift_answer=False)
     for it in items:
         it["when"] = answered_at(it["body"])
