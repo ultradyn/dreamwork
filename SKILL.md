@@ -201,6 +201,11 @@ Ask instead: is this the same work, and did it stop moments ago? A
 dreamer reached ~600k tokens here because its own assessment was
 accepted three times running.
 
+**Retiring one is not done when it says so — it is done when the harness
+says it terminated.** An agent that acknowledges shutdown in prose and
+stays alive looks identical to one that left, until it starts reporting
+itself idle. Twice in one day here.
+
 All subagents report to the coordinator **through a file**, and never use
 `attn`. Give every one of them a path to write to and an inbox to ping —
 a subagent's final message is a channel nobody reads back, and it has
