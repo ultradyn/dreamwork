@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **175**
+Next id: **176**
 
 ## Open
 
@@ -91,6 +91,16 @@ Next id: **175**
   or not purely by the route it was reached through. Reflow `.md`, keep
   `.py`/`.json`/logs verbatim, and update watch-design.md in the same
   commit because this REPLACES a rule
+- **#175** — Append-only client-side log of every submission · P2 ·
+  idea · 35m · **completes the trio**: #163 the draft (before send),
+  this the submission (at send, client-side), #165 the history (after
+  send, server-side) — together nothing he types is lost at any stage ·
+  this covers the hole nobody had: **the client is the only witness to a
+  submission the server never accepted**, which is exactly #136 and
+  #162 · the recovery-critical field is the OUTCOME, not the text ·
+  IndexedDB, partitioned by project · **must be readable or it is
+  theatre** — a log nobody can get at is the silent shape this loop
+  keeps closing
 - **#174** — The commit cycle moves the WRONG WAY · P2 · bug · 20m ·
   refines #151, which he likes · the departing row travels UP toward
   where the new one arrives, so it reads as pulled back into the list
