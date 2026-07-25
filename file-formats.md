@@ -113,10 +113,28 @@ first on a tie" is free**: the file is already chronological, so a
 comparison; that would be a second mechanism able to disagree with the
 first.
 
-`lint.py` errors on exactly one thing: a marker outside the band (`P4 · `,
-`P0 · `). That is the quiet failure — it reads to a human as prioritised
-and sorts as unmarked, so the entry he most wants seen sits mid-list
-looking urgent. A title with no marker is normal and says nothing.
+`lint.py` errors on one thing, stated as an outcome rather than a pattern:
+**a title that reads as prioritised and does not sort that way.** That is
+the quiet failure — the entry he most wants seen sits mid-list looking
+urgent. A title with no marker is normal and says nothing.
+
+It reaches that outcome in two shapes, and they are one mistake to whoever
+typed the title (the marker did not take):
+
+- a band **outside** the three (`P4 · `, `P0 · `);
+- a legal band with a **separator the parser does not accept** (`P1: `,
+  `P1·`, `P1 - `). The message names the fix, because "P1 is wrong" reads
+  as nonsense to someone who just typed a perfectly good P1.
+
+**The band is asked of `watch.py`'s `title_priority`, never re-derived in
+the linter** — the same move as the plugin-command check reading core kinds
+from `COMMANDS`. That is not tidiness. This check shipped holding its own
+copy of the marker rule, and the copy was the more permissive of the two:
+`P1: `, `P1·` and `P1 - ` were each blessed by the linter and read as
+unmarked by the page, so the checker was blind to its own stated failure in
+three of the four ways a human would most plausibly write it. A check and
+the thing it checks cannot hold separate copies of one rule and stay
+honest.
 
 ## `DREAMWORK.md` frontmatter — the version stamp (#194)
 

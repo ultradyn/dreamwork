@@ -668,3 +668,59 @@ class TestDreamworkFrontmatter:
         # if it ever demotes to the absent-frontmatter WARN, typos vanish.
         rep = self.check(tmp_path, "---\ndreamwork-verison: 5853e1789929\n---\n# x\n")
         assert rep.failed
+
+
+class TestPriorityMarkers:
+    """#197 — a title that reads as prioritised and does not sort that way.
+
+    The check's whole job is the QUIET failure, so every test here is about
+    a file the linter used to pass.
+    """
+
+    def one(self, tmp_path, title):
+        return run(target(fresh(tmp_path), **{"questions.md":
+            "# Questions for the human\n\n## Open\n\n"
+            f"- **{title}** a body.\n\n## Answered\n"}))
+
+    def test_the_three_legal_markers_say_nothing(self, tmp_path):
+        for title in ("P1 · blocks work", "P2 · soon",
+                      "P3 · whenever", "no marker at all"):
+            rep = self.one(tmp_path, title)
+            assert not ERRORS(rep, "questions.md"), title
+
+    def test_a_band_outside_the_three_is_an_error(self, tmp_path):
+        for title in ("P4 · x", "P0 · x", "P9 · x"):
+            rep = self.one(tmp_path, title)
+            assert ERRORS(rep, "questions.md"), title
+
+    def test_a_legal_BAND_with_an_illegal_SEPARATOR_is_an_error(self, tmp_path):
+        # THE HOLE THIS CLOSED, and it is the whole reason the linter asks
+        # watch.py for the band instead of re-deriving it. The check shipped
+        # with its own copy of the marker rule, and the copy was the more
+        # permissive of the two: each of these read to a human as a perfectly
+        # good P1, sorted as unmarked, and the linter said nothing.
+        for title in ("P1: blocks work", "P1·blocks work",
+                      "P1 - blocks work", "P3:whenever"):
+            rep = self.one(tmp_path, title)
+            assert ERRORS(rep, "questions.md"), title
+            detail = next(d for _, w, d in rep.rows if w == "questions.md")
+            # ...and it names the FIX. "P1 is wrong" reads as nonsense to
+            # someone who just typed a perfectly good P1.
+            assert "·" in detail and "wants" in detail, detail
+
+    def test_P2_with_an_odd_separator_is_NOT_an_error(self, tmp_path):
+        # `P2: soon` is not honoured by the parser either — but unmarked
+        # already means P2, so it sorts exactly where its author wanted. The
+        # check reports an OUTCOME (it does not sort as it reads), not a
+        # pattern, so this correctly says nothing.
+        rep = self.one(tmp_path, "P2: soon")
+        assert not ERRORS(rep, "questions.md")
+
+    def test_the_linter_never_re_derives_the_band(self, tmp_path):
+        # The structural half of the same claim: if lint.py grows a second
+        # copy of the mapping, these two disagree again the next time
+        # watch.py's rule moves.
+        import inspect
+        src = inspect.getsource(lint.check_priorities)
+        assert "watch.title_priority" in src, \
+            "the band must come from watch.py, never from a copy in here"

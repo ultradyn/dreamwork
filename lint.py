@@ -157,27 +157,52 @@ def check_questions(dw: Path, watch, rep: Report) -> None:
         )
 
 
+# DELIBERATELY WIDER THAN THE PARSER’S, and that is the whole design. This
+# regex asks "does this READ to a human as prioritised", so it accepts
+# separators `watch.py` does not; whether the parser HONOURED it is asked of
+# the parser itself, below. Making these two the same rule is precisely the
+# bug this check exists to find, one file over.
 PRIORITY = re.compile(r"^(P\d+)\s*[\u00b7:\-]\s*")
 
 
 def check_priorities(watch, text: str) -> list[str]:
-    """Titles that LOOK prioritised but are not (#197).
+    """Titles that LOOK prioritised and do not SORT that way (#197).
 
-    The marker is an optional `P1 · ` / `P2 · ` / `P3 · ` prefix on the
-    entry title, and absent means P2 — the middle band, so an explicit low
-    genuinely sorts below an unmarked one.
+    The marker is an optional `P1 · ` / `P2 · ` / `P3 · ` prefix, and absent
+    means P2 — the middle band, so an explicit low genuinely sorts below an
+    unmarked one. One failure is worth an error and it is the quiet one: a
+    title that reads to a human as prioritised and sorts as unmarked, so the
+    entry he most wants seen sits mid-list looking urgent. A title with no
+    marker at all is normal and says nothing.
 
-    Only one failure is worth an error, and it is the quiet one: `P4 · ` or
-    `P0 · ` reads to a human as prioritised and sorts as unmarked, so the
-    entry he most wants seen sits in the middle of the list looking urgent.
-    A title with no marker at all is normal and says nothing.
+    THE BAND IS ASKED OF `watch.title_priority` AND NEVER RE-DERIVED HERE —
+    the same move as `check_plugin_commands` reading core kinds from
+    `COMMANDS` rather than a copy. It is not tidiness: this check shipped
+    holding its own copy of the marker rule, and the copy was the more
+    permissive of the two, so `P1: blocks work`, `P1·blocks work` and
+    `P1 - blocks work` were each blessed by the linter and read as UNMARKED
+    by the page. The checker was blind to its own stated failure in three of
+    the four ways a human would most plausibly write it — because a check and
+    the thing it checks cannot hold separate copies of one rule and stay
+    honest.
+
+    Two shapes, reported as one error, because to whoever wrote the title
+    they are one mistake: the marker did not take.
     """
     bad = []
     for q in list(watch.parse_open_questions(text)) + list(watch.parse_answered(text)):
         title = " ".join(str(q.get("title", "")).split())
         m = PRIORITY.match(title)
-        if m and m.group(1) not in ("P1", "P2", "P3"):
-            bad.append(m.group(1))
+        if not m:
+            continue
+        apparent = m.group(1)
+        if apparent not in ("P1", "P2", "P3"):
+            bad.append(f"{apparent} (outside the band)")
+        elif f"P{watch.title_priority(title)}" != apparent:
+            # A legal band with an illegal SEPARATOR: the parser saw no marker
+            # at all. Name the fix, because "P1 is wrong" reads as nonsense to
+            # someone who just typed a perfectly good P1.
+            bad.append(f"{apparent} (wants `{apparent} · `)")
     return bad
 
 
