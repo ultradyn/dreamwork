@@ -83,6 +83,18 @@ Then the **geometry batch** (#170, #183, #177), which shares one hazard:
   it — and #179 says that state must survive re-render *and* that
   restoring it into a closed `<details>` silently does nothing.
 
+**#177 needs no new mechanism — the seam exists and was proven on
+2026-07-25.** `regroupCards` gained a fourth argument (`restated`) while
+fixing #191: it names a card whose *contents* the caller is animating
+itself, so the card's **height still travels** — which carries every card
+below it for free, by layout — while its body is not re-faded. A growing
+textarea is exactly that case: the card resizes, the caller owns the
+contents. So #177 is
+
+    const before = snapshotCards(); …resize…; regroupCards(before, null, null, card)
+
+around the resize, and nothing else. (dreamer-gesture, from #191/#159.)
+
 ## One piece of vocabulary this batch owes watch-design.md
 
 From #161: **outline means "this acts", fill means "this reveals".** A
