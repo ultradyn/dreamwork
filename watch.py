@@ -135,8 +135,45 @@ STYLE = """<style>
   }
   .label { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
            font-size:.7rem; margin:var(--space) 0 .5rem; }
+  /* ── an expanded element becomes PROMINENT, not just taller (#169) ───
+     His words: expanding should grow padding above and below, so the thing he
+     opened reads as foregrounded. Expanding is a change in IMPORTANCE, not a
+     reveal — what he opened is now the subject of the page — so it is an
+     IDIOM here rather than a treatment on one component, and every disclosure
+     on this page inherits it by existing.
+
+     Two channels, both already this page's own vocabulary:
+
+       AIR. It claims space above and below. On a page with no cards, borders
+       or fills, whitespace IS the structural device, so claiming space is
+       what being foregrounded looks like here. It costs the summary an 8px
+       shift under his pointer on the click that opens it; that is what "air
+       above" means and it is the half he asked for by name.
+
+       LUMINANCE. Its summary steps one place UP the text ramp, because
+       emphasis on this page is luminance (the same rule as `**bold**`).
+       NEVER `font-weight`: a mono face steps rather than transitions, and
+       re-metricing the summary would move the very thing being opened.
+
+     The step is stated PER SURFACE, one line each, rather than as a single
+     bright colour for every open summary — each of these sits somewhere
+     different on the ramp when closed, on purpose (a settled thread at
+     `--dim`, a folded card's title at `--muted`), and one flat rule would
+     drag all of them to the same brightness. That is the shape that overruled
+     `.sgbtn` (#121) and leaked into `.qfield textarea` (#139); what is
+     generic here is the RULE (open is one step up), not the value.
+
+     THE PADDING DOES NOT TRANSITION, and that is what keeps this one gesture
+     rather than two. A card-nested disclosure measures its new rect
+     immediately after `det.open` flips (the `.qa details > summary` handler),
+     so the growth has to be in the layout by then — the CARD's height travel
+     is what animates it, carrying every card below for free. A padding
+     transition would hand `regroupCards` a start-of-transition rect and the
+     FLIP would aim at a height the card never reaches, snapping at the end. */
   details { margin:.25rem 0; }
+  details[open] { padding:.5rem 0; }
   summary { cursor:pointer; color:var(--lit); list-style:none; }
+  details[open] > summary { color:var(--bright); }
   summary::before { content:"+ "; color:var(--dim); }
   details[open] > summary::before { content:"- "; }
   .age { color:var(--dim); margin-left:.5rem; }
@@ -191,6 +228,11 @@ STYLE = """<style>
      At a genuine zero the whole line drops to the dim end and keeps no
      accent, because the accent is for things that are live and actionable. */
   .qsec > summary { color:var(--lit); }
+  /* This one takes #169's DEFAULT step (--lit closed, --bright open) and so
+     states nothing — but its zero state deliberately does not: `.none` outranks
+     `details[open] > summary`, so a section with nothing to answer stays at the
+     dim end even while he is looking inside it. Disabled means "nothing here
+     needs you", and opening it does not change that (#141). */
   .qsec > summary.none, .qsec > summary.none::before { color:var(--dimmer); }
   .qsec .qsecn { color:var(--accent); }
   .dim { color:var(--dimmer); }
@@ -303,6 +345,13 @@ STYLE = """<style>
   .qa.folded .qt:hover { color:var(--lit); }
   .qa.folded .qfold > * { color:var(--dim); }
   .qa.folded .qfold > summary { color:var(--muted); }
+  /* ...and when he opens one, the whole card steps up (#169): a settled entry
+     he has just expanded is the thing he is reading, so its contents leave the
+     dim end with it rather than the title brightening over unchanged prose.
+     Still no accent — that is #111's line and expanding does not make an entry
+     actionable, only prominent. */
+  .qa.folded .qfold[open] > * { color:var(--muted); }
+  .qa.folded .qfold[open] > summary { color:var(--lit); }
   .qwhen { color:var(--dimmer); margin-left:1ch; font-size:.7rem; }
   /* inline-block so the box hugs the words: the wisp is clipped to this
      text, so a full-column box would spread the drift across empty space
@@ -383,6 +432,8 @@ STYLE = """<style>
   .qthread > summary { color:var(--dim); font-size:.7rem; cursor:pointer;
     letter-spacing:.03em; }
   .qthread > summary:hover { color:var(--muted); }
+  /* open is one step up from wherever THIS surface sits closed (#169) */
+  .qthread[open] > summary { color:var(--muted); }
   /* ONE input per card (#103, the human's words): the same field sends an
      answer or a note. The field and its send button share a single border
      and a single rounded box — the wrapper carries them and clips the

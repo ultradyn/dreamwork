@@ -193,6 +193,47 @@ anyone remembering this paragraph. A reader who finds only this section will
 assume `<details>` animates everywhere; it does not, and promoting it to the
 generic idiom would animate three surfaces nobody asked for.
 
+**And whatever it does, an expanded element becomes PROMINENT rather than
+merely taller** (#169). His words: expanding should grow padding above and
+below, so the thing he opened reads as foregrounded. Expanding is a change in
+**importance**, not a reveal — what he opened is now the subject of the page —
+so it is an idiom, and every disclosure inherits it by existing. Two channels,
+both the page's own vocabulary:
+
+- **Air.** `details[open]` claims `.5rem` above and below. On a page with no
+  cards, borders or fills, whitespace *is* the structural device, so claiming
+  space is what being foregrounded looks like here. It costs the summary an 8px
+  shift under his pointer on the click that opens it — that is what "air above"
+  means, and it is the half he asked for by name.
+- **Luminance.** The summary steps one place **up** the text ramp, because
+  emphasis on this page is luminance (the same rule as `**bold**`). **Never
+  `font-weight`**: a mono face steps rather than transitions, and re-metricing
+  the summary would move the very thing being opened. A folded card's contents
+  step up with its title, because brightening a title over unchanged prose says
+  the title got more important rather than the entry did.
+
+**The step is stated per surface, one line each — the generic thing is the
+RULE, not the value.** These sit at four different brightnesses when closed, on
+purpose (a settled thread at `--dim`, a folded card's title at `--muted`), so a
+single bright colour for every open summary would drag all of them to one
+brightness. That is exactly the shape that overruled `.sgbtn` (#121) and leaked
+into `.qfield textarea` (#139). The one deliberate non-step is `.qsec`'s zero
+state: `.none` outranks `details[open] > summary`, so a section with nothing to
+answer stays dim even while he is looking inside it — disabled means "nothing
+here needs you", and opening it does not change that (#141).
+
+**The padding does not transition, and that is what keeps this ONE gesture.** A
+card-nested disclosure measures its new rect immediately after `det.open`
+flips, so the growth has to be in the layout by then; the *card's* height
+travel is what animates it, carrying every card below for free. A padding
+transition hands `regroupCards` a start-of-transition rect, the FLIP plays to a
+height the card never reaches, and the difference **snaps** when the inline
+height is cleared. `dev/capture/prominence.mjs` is built around that: it
+asserts the neighbour has **arrived when its travel ends**, not merely that it
+arrives — which it does either way, which is why every end-state check and
+every "did it travel" check is blind to this. Injected, the padding transition
+leaves it **20px** short at 950ms and trips that one check and nothing else.
+
 Two consequences of routing a nested expand through the shared path, both of
 which were wrong first:
 

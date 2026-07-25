@@ -59,13 +59,16 @@ lint:
 #                changes which card the next phase would pick. Sharing the
 #                server would make it order-dependent, and an order-dependent
 #                guard reports run order as a bug in the page.
+#   prominence   ordinary (OUT, PORT) on the shared server, but it visits BOTH
+#                routes in one page: #169's expand idiom belongs to every
+#                disclosure, and the four that exist live on two views.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"
