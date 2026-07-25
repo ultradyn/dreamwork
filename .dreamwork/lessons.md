@@ -444,3 +444,19 @@ this shape and convert opportunistically.)
   no explanation anywhere. Check what came back before showing the thing that
   means "it landed", and keep his text — at that moment it is the only copy.
   (2026-07-25, #136)
+- **The instrument is wrong more often than the feature.** Five times on
+  2026-07-25 a check disagreed with the code and the CHECK was at fault,
+  each initially looking like a code bug: a closed `<details>` keeps its
+  rects in current Chromium (use `checkVisibility()`); a CSS token read
+  off `:root` never equals a computed colour (resolve it through a
+  throwaway element); `node guard.mjs | tail` reports TAIL's exit code,
+  so a failing guard reads green; a selector naming the state under test
+  passes vacuously the moment that state changes; freezing a
+  module-scope `let` from outside does nothing. When a check and the
+  code disagree, suspect the check first — it is younger, less exercised,
+  and nobody has been using it all day. (dreamer-thread, 2026-07-25)
+- **Guard runs take 15-25 minutes under this repo's current load** (several
+  dreamers, ~40 chromium processes, load average 14). Start the run
+  BEFORE writing the commit message, not after. `just guards <port>`
+  buffers all output to the end, so poll the per-guard logs in the run's
+  temp dir if you want progress. (dreamer-thread, 2026-07-25)
