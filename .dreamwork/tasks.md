@@ -18,8 +18,11 @@ Next id: **124**
 - **#113** — Every state transition covered · P2 · task · 45m ·
   *in progress (dreamer-states)* · the wisp landed (86607dd); part 2 is
   the matrix, and the fold-out must not blank the body (human, 10:37)
-- **#122** — A smokey text effect while a question awaits folding · P2 ·
-  idea · 40m · ask first whether it is the dissolve's mist, held low
+- **#122** — Smokey awaiting-fold text: the words warp, a ghost copy
+  blows backwards into the aether · P2 · idea · 60m · his brief is
+  verbatim in the task; it is the dream dissolve's ghost held low and
+  continuous, not a new effect. Taste is the deliverable — wants a
+  dreamer that iterates on captures until satisfied
 - **#121** — `answer | add note` should be ghost buttons · P2 · bug ·
   20m · **next-up** (via composer) · opaque fills hide the animation
 - **#123** — `+` button off the heading text's centreline · P2 · bug ·
