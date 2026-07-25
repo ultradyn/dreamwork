@@ -15,9 +15,9 @@ Next id: **121**
 
 ## Open
 
-- **#113** — Awaiting-fold looks alive; every state transition covered ·
-  P2 · task · 45m · *in progress (dreamer-states)* · #111 landed; this
-  is the rest of the same axis
+- **#113** — Every state transition covered · P2 · task · 45m ·
+  *in progress (dreamer-states)* · the wisp landed (86607dd); part 2 is
+  the transition matrix
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
 - **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
