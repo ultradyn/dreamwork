@@ -852,3 +852,8 @@ this shape and convert opportunistically.)
   derive both at runtime and assert the gap; a literal tuned to today's
   fixture is a check with an expiry date nobody can see. (dreamer-plugcmd,
   2026-07-25, #197)
+- A ledger line is a snapshot, not the tree: the coordinator demanded a
+  same-commit contract that had already landed three hours earlier, because
+  it enforced what the entry SAID was missing instead of checking whether it
+  still was. Before enforcing "X is absent", look for X. (coordinator,
+  2026-07-25, #197 / 6284402)
