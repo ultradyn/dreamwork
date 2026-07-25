@@ -205,6 +205,21 @@ STYLE = """<style>
   .qaghost { position:absolute; z-index:3; pointer-events:none;
     transition:opacity .7s ease, filter .7s ease, transform .7s ease; }
   .qaghost.gone { opacity:0; filter:blur(6px); transform:translateY(-10px); }
+  /* ...but WHICH WAY it dreams away follows the list it is leaving (#174).
+     A question card's neighbours travel UP to close the gap it left, so a
+     ghost that rises is continuous with them. In the commits panel the
+     gesture runs the other way: a new commit pushes the four survivors DOWN
+     one row, so the departing bottom row has to fall with them and grow out
+     of frame. Rising there reverses against everything around it, which is
+     what he saw ("the bottom commit moves *up* towards where the new one
+     appears"). Growing while fading is the page's standing departure — it is
+     what `.ghost.out` does for a whole view — so this is the same idiom with
+     its sign taken from its surroundings, not a second one. */
+  .qaghost.commit.gone { transform:translateY(14px) scale(1.07); }
+  /* the other end of the same gesture: the new row comes DOWN into the place
+     it now owns, growing into it, rather than rising up into it against the
+     four rows it is displacing. `.dreamin` still supplies the snap. */
+  .git .commit.dreamin { transform:translateY(-10px) scale(.94); }
   /* content revealed by an unfold eases in on the same enter as .dreamin —
      which snaps, so the carrier only has to supply the transition back */
   .qreveal { transition:opacity .55s ease, filter .55s ease,

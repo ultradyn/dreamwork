@@ -1084,6 +1084,31 @@ move for some **other** reason, so the guard makes them (it writes an
 unreadable `questions.md`, which puts #136's warning line above the panel) and
 requires them to arrive with the layout rather than travel to it.
 
+**The whole cycle travels DOWN, and the direction is not taste** (#174).
+*"the bottom commit moves* up *towards where the new one appears. The bottom
+commit should move* down *and scale up to fade out (like page transitions).
+The top one should fade in moving down and scaling up."* (human, 2026-07-25).
+The four survivors are already travelling down one row under the regroup, so
+a departure that also falls is continuous with them and grows out of frame,
+and an arrival that comes down into its row moves with the rows it is
+displacing. Rising does the opposite: it reverses against every other thing
+in the gesture, which is what he was seeing.
+
+**So the rule is that a departure leaves in the direction its list is
+travelling**, and that is one idiom rather than two. A question card's
+neighbours travel *up* to close the gap it left, so `.qaghost.gone` rising is
+right there and is unchanged; the commits panel's neighbours travel *down*,
+so `.qaghost.commit.gone` falls. Growing while fading is the page's standing
+departure either way — it is what `.ghost.out` does for a whole view — so
+what varies is the sign, taken from the surroundings, and nothing else. The
+arrival is the same statement at the other end: `.git .commit.dreamin` starts
+above and smaller (`.dreamin` still supplies the snap) and settles down into
+its row.
+
+**The guard asserts the SIGN**, in `motion.mjs`. Counting that the row moved,
+or that a ghost existed, passes on exactly the version he complained about —
+the same trap as measuring that the wisp changed rather than how.
+
 **No element catch-all in here** — `.git div` used to colour these rows, and
 that is the third instance of the shape that overrode `.sgbtn` (#121) and
 leaked into `.qfield textarea` (#139). Every part of a row is addressed by its

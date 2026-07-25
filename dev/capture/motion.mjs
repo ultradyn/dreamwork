@@ -1,9 +1,10 @@
 /* motion — the commits panel's animation, and what it must not disturb.
-   Two reports, guarded together because he found them in one moment and they
-   turned out to run through the same re-render:
+   Three reports, guarded together because he found them in one moment and two
+   of them turned out to run through the same re-render:
 
      #179  a re-render must not take the focus out of the box he is typing in
      #184  something with no reason to move must not animate
+     #174  the cycle travels DOWN: the departing row falls, the arrival falls
 
    It builds its own git target, for the reason dashboard.mjs states: the
    shared `dev/capture/fixture` is not a repository, so `git_tail` returns []
@@ -220,6 +221,57 @@ let cycle = null;                      // reused by #174 below
      new Set(cycle.map(f => f.panel)).size === 1);
   ok('...so no question card below it moves, on any frame',
      restless.length === 0);
+}
+
+/* ── #174: the cycle travels DOWN ─────────────────────────────────────────
+   The SIGN, not the distance. "It moved" is satisfied by exactly what he is
+   complaining about: the departing row currently rises INTO the gesture that
+   is pushing everything else down.
+
+   Down is not taste. The four survivors are travelling down one position, so
+   a departure that also falls is continuous with them and grows out of frame;
+   one that rises reverses against everything around it. */
+{
+  const ghostFrames = cycle.map(f => f.ghosts).filter(g => g.length);
+  ok('the departing row leaves as a ghost at all (else the rest is vacuous)',
+     ghostFrames.length > 0);
+  if (ghostFrames.length) {
+    const tops = ghostFrames.map(g => g[0].top);
+    const ops = ghostFrames.map(g => g[0].op);
+    const scaleOf = tf => {
+      const m = /matrix\(([^,]+),/.exec(tf);
+      return m ? Number(m[1]) : 1;
+    };
+    const scales = ghostFrames.map(g => scaleOf(g[0].tf));
+    notes.push(`departure: top ${tops[0]}->${tops[tops.length - 1]} ` +
+               `op ${ops[0]}->${ops[ops.length - 1]} ` +
+               `scale ${scales[0]}->${scales[scales.length - 1]}`);
+    ok('the departing row falls rather than rising',
+       tops[tops.length - 1] - tops[0] >= 4);
+    ok('...growing as it goes, the way a view dissolves',
+       scales[scales.length - 1] - scales[0] >= 0.02);
+    ok('...and fading out', ops[ops.length - 1] < 20);
+  }
+  // the arrival is the same gesture at the other end: it comes DOWN into the
+  // row it now owns, growing, rather than rising up into it.
+  // in the last frame and not in the first. "Absent from some frames" also
+  // describes the row on its way OUT, and picking both up made this report
+  // two arrivals and skip its own checks.
+  const first = new Set(Object.keys(cycle[0].at));
+  const arrived = Object.keys(cycle[cycle.length - 1].at)
+    .filter(k => k.startsWith('s:') && !first.has(k));
+  notes.push(`arrival keys: ${JSON.stringify(arrived)}`);
+  if (arrived.length === 1) {
+    const tops = seriesOf(cycle, arrived[0], 'top');
+    const ops = seriesOf(cycle, arrived[0], 'op');
+    notes.push(`arrival: top ${tops[0]}->${tops[tops.length - 1]} ` +
+               `op ${Math.min(...ops)}->${ops[ops.length - 1]}`);
+    ok('the new row eases in from nothing', Math.min(...ops) < 90);
+    ok('...arriving downward, with the rows it is pushing',
+       tops[tops.length - 1] - tops[0] >= 4);
+  } else {
+    ok('exactly one row arrived (else the arrival checks are vacuous)', false);
+  }
 }
 
 ok('no page errors', errs.length === 0);
