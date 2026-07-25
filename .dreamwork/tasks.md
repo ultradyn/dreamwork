@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **199**
+Next id: **200**
 
 ## Open
 
@@ -62,6 +62,24 @@ Next id: **199**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#199** — **P1** His answers and notes are persisted NOWHERE but
+  questions.md, and a failed write discards them · bug · 30m · **human
+  17:20**: persist every webui submission before the loop ever sees it,
+  "because the user's time is the most valuable thing" · **checked
+  watch.py rather than assumed**: `_handle_answer` logs the QUESTION
+  TITLE and destination, never the text he typed; `_handle_comment` the
+  same; both log AFTER the write and only on success, so `not matched` →
+  `send_error(409)` → return happens BEFORE any logging and his words are
+  gone · **not hypothetical — `append_answer` returns unmatched on a
+  wrapped title, which is exactly what #116 was** · commands are the one
+  exception (full text, logged first) but then the log is the only copy ·
+  rec: append raw JSON per line to `.dreamwork/submissions.log` as the
+  FIRST act of every POST handler, unvalidated on purpose, then do the
+  real work · gitignored like watch-events.log; file-formats row + lint
+  check same commit · **complements #175, does not duplicate it** — that
+  one covers "never reached the server", this covers "reached it and
+  processing failed" · guard must drive a DELIBERATE 409 and assert the
+  text survives · queued to dreamer-qsec after #196
 - **#198** — Selection indicator misplaced when the composer reopens ·
   P2 · bug · 25m · **human 17:18 + screenshot** · "autocorrects itself
   after a bit, or when some rerender condition is triggered" — and that
