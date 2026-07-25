@@ -2,9 +2,9 @@
 
 A dreamwork agent runs for a long time, so sooner or later its context is
 compacted. This file covers **deliberate** compaction: someone decides to
-compact the agent. Automatic compaction gets the same checklist, but with
-no warning, which is exactly why the durable state has to be written as
-you go rather than at the end.
+compact the agent. Automatic compaction gets the same checklist and, on
+some harnesses, gets it automatically — see "When the harness has hooks"
+below, which on Claude Code covers the automatic case too.
 
 ## Why a notice comes first
 
@@ -60,6 +60,60 @@ own. On the first tick after the boundary:
   itself; the other monitors do not, and a dead inbox monitor means the
   human's steers land in a file nobody reads.
 - Check on any subagent listed in `agents` before assuming it is alive.
+
+## When the harness has hooks (Claude Code)
+
+Some of the above can stop being a thing anyone remembers. Claude Code
+fires a **PreCompact** hook for both `/compact` and automatic
+context-limit compaction, distinguished by a `trigger` field, and the
+far side gets **SessionStart** with `source: "compact"`. What that buys,
+and — this is the part worth being precise about — what it does not:
+
+- **The hook cannot land in-flight work.** It fires *at* compaction
+  time, so there is no room to finish an increment or commit a diff.
+  Step 1 of the checklist still needs lead time, and lead time is what
+  a notice is.
+- **The hook can write down what only the agent knows**, because that
+  is a boundary-time action. Runtime state to `status.json`, ledger
+  reconciliation, an audit line — all fine from a hook, every time,
+  including the automatic compactions nobody chose.
+
+So hooks and the notice protocol are complementary rather than
+alternatives: **the notice buys landing time, the hook guarantees the
+write-down.** A loop with the hook installed still wants the notice; a
+loop with only the notice loses everything on an auto-compact.
+
+Two more facts shape the design:
+
+- **Blocking is a hard skip, not a postponement.** PreCompact can block
+  (exit 2, or exit 0 with `{"decision":"block"}`), but there is no
+  deferral primitive — a blocked proactive compaction is skipped and the
+  conversation continues uncompacted, and a blocked *recovery*
+  compaction means the context-limit error surfaces and the request
+  fails. So "wait until the agent says it is ready" cannot be
+  implemented by blocking. Do not try.
+- **A PreCompact hook's stdout is appended to the summariser's focus
+  instructions** — the same channel the human's free text after
+  `/compact` uses. That is how a loop steers its own summary ("preserve
+  the active task id, the owned file set, the failing test"). It is
+  also a footgun: *any* stray stdout — a debug print, `set -x`, a
+  chatty shell profile — silently becomes summariser instructions.
+  Keep such a hook silent by default and deliberate when it speaks.
+
+The durable round trip, with no human in it: PreCompact writes state to
+disk and steers the summary; `SessionStart(source=compact)` re-injects
+the hard facts via `additionalContext` so nothing depends on the summary
+having carried them; PostCompact receives `compact_summary` so what
+actually survived can be audited. Hook output is capped at 10,000
+characters.
+
+Provenance, because one link in that chain is load-bearing and
+unofficial: the stdout-steers-the-summary behaviour is **undocumented**
+and was verified by reading the Claude Code binary at version 2.1.219 on
+2026-07-25. Everything else here is documented at
+<https://code.claude.com/docs/en/hooks>. Re-verify the undocumented part
+on upgrade; if it goes away, `SessionStart(source=compact)` is the
+documented and stable way to get text into the far side.
 
 ## Sending a compaction (safeguards)
 
