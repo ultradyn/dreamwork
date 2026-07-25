@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **190**
+Next id: **191**
 
 ## Open
 
@@ -81,6 +81,21 @@ Next id: **190**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#190** — The loop's push channel to him is dead, and only the
+  dashboard can say so · P1 · bug · 20m · `attn` returns **403, OAuth2
+  token could not be validated** (grok/xAI), confirmed twice at 16:20 ·
+  it exits 1 so it fails loudly to the CALLER, it just cannot reach HIM ·
+  found by failing on a message that mattered: #179's P1 fix and the
+  deploy-authority ask · **what still works**: the dashboard reads
+  questions.md and status.json live, so both ARE visible at 35110 — he
+  is no longer PULLED, only able to find it by looking, and "walk away
+  and come back" is the whole promise · the channel for reporting a
+  broken channel was the broken channel (cf #144, #136) · fix is
+  probably his (re-auth); the loop should not touch a live auth token ·
+  **open**: does the loop want one cheap fallback, tried only on
+  non-zero exit, never a silent substitution? · and a rule somewhere:
+  **check attn's exit code** — an unnoticed failed push is worse than
+  none, because the loop then believes it escalated
 - **#189** — World-space anchoring silently collapses on native
   Wayland · P2 · bug · 35m · `screenX`/`screenY` return **0** on native
   Wayland by protocol, so #74's world space becomes "both windows at the
