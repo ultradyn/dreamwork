@@ -3375,9 +3375,21 @@ def append_subbullet(text, title, block, section="Open"):
 
     def close_target():
         nonlocal in_target
-        if in_target:
-            out.append(block)
-            in_target = False
+        if not in_target:
+            return
+        # The block goes at the end of the ENTRY, which is above the blank
+        # line separating it from whatever comes next — not below it (#149).
+        # `out` already holds that blank by the time anything closes the
+        # entry, so appending straight onto it detached the sub-bullet from
+        # the entry it belongs to and left it flush against the following
+        # `## Answered`. Cosmetic, but the file is the record a human opens
+        # and the shape `file-formats.md` documents.
+        tail = []
+        while out and not out[-1].strip():
+            tail.append(out.pop())
+        out.append(block)
+        out.extend(reversed(tail))
+        in_target = False
 
     def claim(parts):
         nonlocal in_target, matched

@@ -174,6 +174,39 @@ class TestCollector(unittest.TestCase):
         _n, m3 = watch.append_comment(text, "Nope", "x", "2026-07-25", "Open")
         self.assertFalse(m3)
 
+    def test_append_lands_inside_the_entry_not_after_the_blank(self):
+        # #149. The block belongs at the end of the ENTRY, which is above the
+        # blank line separating it from what follows. Appending straight onto
+        # `out` put it below that blank — detached from its entry and flush
+        # against the next `## `, which is not the shape file-formats.md
+        # documents.
+        text = ("# Q\n\n## Open\n\n- **Open one?** ctx.\n\n"
+                "## Answered\n\n- **Done one** resolved.\n")
+        new, matched = watch.append_comment(text, "Open one?", "a thought",
+                                            "2026-07-25 08:00", "Open")
+        self.assertTrue(matched)
+        lines = new.splitlines()
+        i = next(j for j, ln in enumerate(lines) if "a thought" in ln)
+        # attached to its entry above...
+        self.assertTrue(lines[i - 1].startswith("- **Open one?**"))
+        # ...and still separated from the next section below
+        self.assertEqual(lines[i + 1].strip(), "")
+        self.assertEqual(lines[i + 2], "## Answered")
+        # the same at end of file, where the trailing newline is the blank
+        tail = "# Q\n\n## Open\n\n- **Last one?** ctx.\n\n"
+        new2, m2 = watch.append_comment(tail, "Last one?", "at the end",
+                                        "2026-07-25 08:01", "Open")
+        self.assertTrue(m2)
+        l2 = new2.splitlines()
+        j = next(k for k, ln in enumerate(l2) if "at the end" in ln)
+        self.assertTrue(l2[j - 1].startswith("- **Last one?**"))
+        # and it round-trips: the reader still sees exactly one entry with
+        # exactly one note (a structural check, not a glance — this is a file
+        # whose structure is data)
+        entries = watch.parse_open_questions(new2)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(len(entries[0]["follows"]), 1)
+
     def test_parse_follows_and_answered(self):
         text = ("# Q\n\n## Open\n\n"
                 "- **First?** ctx.\n"
