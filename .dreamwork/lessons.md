@@ -591,3 +591,46 @@ this shape and convert opportunistically.)
   the page was still on another route with an iframe over the spot. Wait
   for the state, sample where the field is, and know which route you are
   on. (dreamer-identity, 2026-07-25)
+- **An idiom that works at one scale is not a design at another, and
+  rendering it at its real size is the cheap way to find out.** #153's
+  favicon began as a breathing bloom — lovely at ×7, an indistinguishable
+  smudge at the 16px a tab strip actually draws, ten frames apart. At that
+  size a change of POSITION reads where a change of LUMINANCE does not, so it
+  orbits instead. The same look killed an opaque near-black tile that was
+  right on his dark browser theme and a black block on a light one. Both were
+  found by putting the real pixels on real tab-strip greys, not by reasoning
+  about them; #113's wisp reached the opposite conclusion because a card has
+  room for a breath. (dreamer-identity, 2026-07-25, #153)
+- **Design for the frame rate the environment will actually give you — and
+  then check the case you optimised away.** A hidden document gets no
+  rendering opportunities, so rAF does not run in a background tab, which is
+  where a favicon lives; quantising the orbit to one frame per second is
+  right there and under the background timer clamp both. He then watched it
+  in the FOREGROUND and called it too slow (#182). Both halves are true at
+  once, and the answer is two regimes rather than a speed-up. The reasoning
+  was not wrong; it was complete for one case and silent about the other.
+  (dreamer-identity, 2026-07-25, #153/#182)
+- **The fast half of a test suite asserts on a string, and a string is not a
+  program.** A pair of backticks inside a GLSL *comment* ended the JS
+  template literal the shader lives in; the rest parsed as JavaScript and the
+  page went blank. Every pytest substring assertion still matched perfectly,
+  because the source contains the strings — it just will not parse. Only the
+  browser guards caught it, twenty minutes later, as thirty unrelated red
+  lines. `node --check` over the assembled script closes that class in 0.2s.
+  Ask whether your cheap checks can distinguish a broken artefact from a
+  working one, not whether they pass. (dreamer-identity, 2026-07-25, #143)
+- **A guard assertion whose subject may not exist has to degrade to a
+  reading, never throw.** Twice in one file the injection a check existed for
+  destroyed the check: the favicon reader rejected on an icon that never
+  loads, and the tint reader threw on a file the write had silently skipped.
+  Both times the run said "the guard threw" and named nothing, so the
+  diagnosis started in the wrong place. A crash reads like silence — return a
+  zero and let the assertion do the talking. (dreamer-identity, 2026-07-25,
+  #153/#143)
+- **Fixing the instance is what leaves the class alive.** `just guards`
+  accepted any answer on its port, so a stray `just watch` left on 39890 made
+  ten guards assert fixture facts against the live repo — twenty minutes, and
+  red lines about a fixture that was never being read. This exact class had
+  been diagnosed that morning from dreamhub and fixed *where it was
+  reported*; the runner kept the mechanism. When a lesson names a class, ask
+  what else is in it before writing it down. (dreamer-identity, 2026-07-25)
