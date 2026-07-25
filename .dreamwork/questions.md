@@ -62,8 +62,9 @@
   built the same morning; the 90s poll became ~5min on his follow-up.
   Detail lives in `docs/plans/ud-dreamwork-github.md` and the plugin's
   own SKILL.md.
-- **#36 alignment review shape · #37 roll.py timing · dogfood reflection
-  · Task D flow diagram** → all answered and applied 2026-07-25; each
+- **Four early asks, all applied (2026-07-25)** — the alignment-review
+  shape (#36), roll.py timing (#37), the dogfood reflection, and Task D's
+  flow diagram. each
   now lives where it acts (the review routine in SKILL.md, roll.py and
   its migration, `wrap up` and the maintenance rotation). Task D stays
   vetoed — a second copy of the selection ladder would drift, and it
