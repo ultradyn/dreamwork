@@ -8,7 +8,10 @@ point is noticing, not box-ticking.
 3. Run the project's verification (tests/lint, or its stated routine —
    see DREAMWORK.md). Green?
 4. Did this break a promise made elsewhere — docs, cross-references,
-   numbering, callers?
+   numbering, callers? In particular: if you taught something a new way
+   to *read* a thing, go and check whatever *writes* it still matches.
+   A reader and a writer that drift apart fail silently, which is the
+   expensive kind.
 5. Did anything occur to you that was out of scope? Task list, now.
    If the queue changed at all, the ledger changes in the same commit —
    a session-scoped backend forgets, the ledger doesn't.

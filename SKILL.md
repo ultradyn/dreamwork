@@ -355,6 +355,12 @@ if Max is away).
   `TaskGet` returns subject, status, and description — no metadata), so
   anything selection or triage reads lives in the subject, the
   description, or the ledger.
+- A symptom is not a diagnosis. When capturing a bug the human reports,
+  record what they *saw*, in their words; any cause you propose is a
+  hypothesis and gets labelled as one. A dreamer handed "the joiner is
+  swallowing entries" will go and fix the joiner — and a confident wrong
+  layer costs hours, where reproducing the input costs minutes. Reproduce
+  before building.
 - Mismatched signals mean something is wrong. When context disagrees with
   itself — e.g. the cwd doesn't match the work being discussed, the task
   list contradicts git — don't guess and don't proceed on the wrong
