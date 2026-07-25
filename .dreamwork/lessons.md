@@ -758,3 +758,13 @@ this shape and convert opportunistically.)
   never with `git checkout <file>`.** The whole-file revert also destroyed
   51 lines of uncommitted work that shared the file. If a script made the
   injection, a script unmakes it. (dreamer-gesture, 2026-07-25)
+- **A dreamer retiring in prose is not a dreamer retired.** Twice on
+  2026-07-25 an agent replied "shutdown acknowledged, retiring" and then
+  stayed alive and idle, because the handshake needs a structured
+  `shutdown_response` and a sentence is not one (reviewer-skillmd, then
+  dreamer-gesture). From the coordinator's side a completed retirement and
+  a prose one look identical until availability notifications start
+  arriving — so **the retirement is not done when the agent says so, it is
+  done when the harness says the agent terminated.** Same class as the
+  batch that produced it: the thing that reports success and the thing
+  that succeeded are different events. (coordinator, 2026-07-25)
