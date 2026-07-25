@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **145**
+Next id: **146**
 
 ## Open
 
@@ -22,6 +22,11 @@ Next id: **145**
   fires AT compaction, so it guarantees the write-down and cannot buy
   landing time; stdout becomes summariser instructions, so it must be
   silent by construction
+- **#145** — Route findings by trigger; land the review's moves · P3 ·
+  chore · 60m · findings: `docs/reviews-skillmd-2026-07-25.md` · 420 is
+  not the problem, the RATE is (246→433 in nine hours, because every
+  finding lands as prose in SKILL.md). M2 and M3 will attract pushback —
+  concede cheaply. Also argues against #119's `selection.md`
 - **#144** — A subagent's final message is a channel nobody reads back ·
   P2 · bug · 25m · three utility agents finished and their deliverable
   never arrived; dreamers have lost nothing all day because they append
@@ -113,8 +118,6 @@ Next id: **145**
   `docs/plans/ud-dreamtask.md`, standalone before sub-loop
 - **#80** — Pick a second dogfood target (hark or c2c) · P3 · chore · 30m ·
   **blocked**: human pick
-- **#120** — Read SKILL.md for length, with fresh eyes · P3 · chore ·
-  40m · not by whoever wrote today's additions
 - **#119** — Revisit a `selection.md` reference once selection stops
   moving · P3 · idea · 30m · carried out of a pruned questions entry
 - **#96** — Daemon mode stage 1, dreamhub · P2 · task · 150-180m ·
@@ -126,7 +129,12 @@ Next id: **145**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#126** a steer carries the
+Pruned in grooming; git is the real ledger. **#120** the fresh-eyes read
+(6827daa) — it found a LIVE bug rather than bloat: dashboard commands
+exist only in a gitignored best-effort log that SKILL.md never mentioned,
+so a `do now:` was lost silently whenever the tail monitor was not armed.
+Plus four false or self-contradicting statements. Its structural half is
+#145. **#126** a steer carries the
 page it was sent from (56a791c) — and, unbriefed, a newline in the
 composer can no longer forge a second line in the events log the
 coordinator acts on. **#137** `lint.py` checks a

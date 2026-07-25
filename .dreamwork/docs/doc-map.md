@@ -14,6 +14,7 @@ cover it too.
 | `initialization.md` | The 11-step init procedure | Yes |
 | `reflection.md` | Post-change checklist | Yes |
 | `file-formats.md` | Required shapes for loop-written, tool-parsed files; questions.md in full | Yes — a reader change lands here in the same commit |
+| `.dreamwork/docs/reviews-*.md` | Fresh-eyes review findings, kept whole; the fixes land separately | Keep while its proposals are unspent |
 | `compaction.md` | Pre-compaction checklist, the notice protocol, per-client sending safeguards | Yes — client dialects change |
 | `writing-plugins.md` | Plugin-authoring contract, extension seams, state split | Yes — validate against each new plugin |
 | `watch-design.md` | watch.py standing design: routes, confinement, write exceptions, contract | Yes — shipped beside the tool it documents |
@@ -34,6 +35,14 @@ cover it too.
 | `dev/capture/fixture/` | Frozen miniature target the guards run against, so a red light means the code broke | Yes — extend it when the parser learns a new input shape |
 | `justfile` | Common tasks: test (both halves), pytest, guards, watch, audit-styleguide | Yes — a new routine worth repeating becomes a recipe |
 | `DREAMWORK.md` (repo root) | This target's own goals, philosophy, preferences, plugin decisions | Yes — folded whenever the human reveals a durable preference |
+
+**Routing rule — a finding lands where its trigger lives.** Behaviour
+that must fire unprompted goes in SKILL.md; the shape of a file goes in
+`file-formats.md`; a procedure with a nameable trigger (init,
+compaction, plugins) goes in that trigger's reference file. SKILL.md is
+re-read on every reload and fires on nothing in particular, so it is the
+default destination only for things with no better trigger — it grew 246
+to 433 lines in one day by being everyone's default (#120, #145).
 
 SKILL.md is the entry point for the harness; README.md is the entry
 point for a human browsing the forge. The README stays minimal on
