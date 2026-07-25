@@ -138,21 +138,6 @@ Next id: **206**
   self-audit is worth having as a maintenance item regardless of trigger
   · **#199 gives this its input** — a raw log of everything received IS
   the "what was sent to me" half
-- **#198** — Selection indicator misplaced when the composer reopens ·
-  P2 · bug · 25m · **human 17:18 + screenshot** · "autocorrects itself
-  after a bit, or when some rerender condition is triggered" — and that
-  IS the diagnosis: a wrong position that fixes itself on the next render
-  is a measurement taken before layout settled, not a positioning bug ·
-  two candidates, distinguishable, MEASURE first (#123 was this shape and
-  took two wrong diagnoses): measured before the reveal committed layout,
-  or measured while the composer's drift/blur transform is in flight so
-  the rect is real but in the wrong space (`position:fixed` is not
-  viewport-relative under a transformed ancestor — same trap as #170,
-  #160) · **do NOT defer into #164** — the rebuild changes the row's
-  structure, not how the indicator measures, so it would inherit this
-  verbatim · guard: the END STATE IS CORRECT, so assert the offset at the
-  moment opening finishes and bound the window, or it self-corrects
-  inside the trace and passes
 - **#197** — Questions ordered by priority, then oldest · P2 · idea ·
   30m · **human 17:15** · questions.md carries NO priority today, so the
   field must exist first — `file-formats.md` row + `lint.py` check in the
@@ -554,7 +539,7 @@ Next id: **206**
 
 ## Recently landed
 
-**#199** P1 his words are on disk before anything may refuse them (fd3ae3b handler + 0bc0517 contract + migration 2026-07-25-15) — and the guard, by failing, proved questions.md is a RENDERING of his words, not a record of them (2026-07-25). **#191** the answer-morph carries its neighbours (38854bd) — and found that a guard's WINDOW can be the bug (2026-07-25). **#184** CLOSED not-reproduced: neither half; explained by #174, numbers in its dream (2026-07-25). **#179** P1 the focus steal (9e8469c) — focus() into a closed <details> is a silent no-op (2026-07-25). **#174** the cycle travels down (7d3c322) — a departure leaves in the direction its list travels (2026-07-25). **#150** coordination layer audited: relay.py, write-then-wake, agent visibility (2026-07-25). **#147** deployed.py measures by bytes; the hub row says it (59e7728, f3649f4) (2026-07-25). **#145** routing rule adopted (4 buckets) (2026-07-25). **#144** subagent plain text is not a channel; silent agents are shown (2026-07-25).
+**#198** the indicator was measured beneath a mid-transform ancestor (a86108e) — every rect read 3% small, error multiplying with distance from the origin; and the 'autocorrect' was unrelated re-renders laundering a permanent bug, not a transient (2026-07-25). **#199** P1 his words are on disk before anything may refuse them (fd3ae3b handler + 0bc0517 contract + migration 2026-07-25-15) — and the guard, by failing, proved questions.md is a RENDERING of his words, not a record of them (2026-07-25). **#191** the answer-morph carries its neighbours (38854bd) — and found that a guard's WINDOW can be the bug (2026-07-25). **#184** CLOSED not-reproduced: neither half; explained by #174, numbers in its dream (2026-07-25). **#179** P1 the focus steal (9e8469c) — focus() into a closed <details> is a silent no-op (2026-07-25). **#174** the cycle travels down (7d3c322) — a departure leaves in the direction its list travels (2026-07-25). **#150** coordination layer audited: relay.py, write-then-wake, agent visibility (2026-07-25). **#147** deployed.py measures by bytes; the hub row says it (59e7728, f3649f4) (2026-07-25). **#145** routing rule adopted (4 buckets) (2026-07-25). **#144** subagent plain text is not a channel; silent agents are shown (2026-07-25).
 Pruned in grooming; git is the real ledger. **#143** a per-project tint
 (6c49874) — a closed set, a Rodrigues hue rotation preserving the
 achromatic component by construction, the existing `/mtime` poll doing the

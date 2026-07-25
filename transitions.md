@@ -46,6 +46,27 @@ So, for anything in this document:
   failures (overshoot, snap, short-fall) and cannot be defeated by how
   far the thing happens to move. (dreamer-qsec, #196, after
   `prominence.mjs`'s `at(950)` broke on a full-section fold.)
+- **Never measure geometry beneath an ancestor that is mid-transform.**
+  A transformed ancestor redefines what a position *means* for everything
+  under it: during a reveal that scales from 0.97, every
+  `getBoundingClientRect` reads 3% small, and the error **multiplies with
+  distance from the transform origin** — so the element nearest the
+  origin measures clean while the farthest is pixels off, which is why it
+  presents as intermittent and why a check that samples only one element
+  passes over it. Unlike everything above, this one misleads the *code*,
+  not just the check: paint after the travel ends, or divide the current
+  scale back out (`rect.width / offsetWidth`, exactly 1 when nothing is
+  mid-transform). One rule, four sightings: #198's indicator, #170,
+  #160, and `position:fixed` under any transformed ancestor.
+  (dreamer-qsec, #198, measured at `matrix(0.97, …)`.)
+- **A wrong value that something else routinely overwrites is not a
+  transient.** It is a permanent bug with a short, unreliable lifetime —
+  #198 "autocorrected" only because unrelated re-renders repaint
+  indicators every few seconds on a live target. A check may bound its
+  window tightly, but it must *prove* the laundering path rather than
+  trust it (break the value by hand, force one re-render, watch it come
+  back) — especially against the frozen fixture, where nothing
+  re-renders and a sloppy window passes by luck. (dreamer-qsec, #198.)
 - **Show the check RED on the current behaviour before trusting it.**
 - **Verify reduced-motion too** — it is a hard contract below, and it is
   the half nobody looks at.
