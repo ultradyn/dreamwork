@@ -12,10 +12,22 @@ can only be honoured by one agent, because one file is the whole surface.
 
 ## The measurement
 
-`watch.py` is 3055 lines and took 39 commits on 2026-07-25 alone. The
-disjointness invariant permits exactly one holder, so every UI steer
-serialised through one dreamer while others sat idle. On an hour with
-six human bug reports, the queue was the file.
+`watch.py` is 4008 lines and has taken 58 commits on 2026-07-25
+alone.
+
+**Updated 2026-07-25 ~14:53, and the second measurement is the stronger
+one.** The queue reached 43 open tasks and sorted naturally into EIGHT
+coherent batches — composer geometry, composer behaviour, motion polish,
+panels, repo identity, structural, ambient, hooks. **Seven of the eight
+need `watch.py`.** So the coordinator can dispatch exactly one dreamer
+at a time, not because there is one dreamer's worth of work, but because
+there is one file. In thirty minutes the human filed nineteen items; all
+nineteen queued behind the same holder.
+
+The disjointness invariant permits exactly one holder, so every UI steer
+serialises through one dreamer however many are free. That is no longer
+an argument that the file is a bottleneck: it IS the bottleneck,
+measured, with the work sitting in the queue unable to start.
 
 ## What must not break
 
