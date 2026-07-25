@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **157**
+Next id: **160**
 
 ## Open
 
@@ -71,6 +71,27 @@ Next id: **157**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
+- **#157** — A backticked filename links whether or not it resolves ·
+  P2 · bug · 30m · verified: `/file` returns 200 and renders a 404
+  inside it, and `/filedata` returns an HTML error page where JSON is
+  expected · `file-formats.md` works (target root); `questions.md` and
+  `status.json` are real but live at `.dreamwork/`; `newerrand.py` is in
+  the SIBLING repo and should stay plain text — do not invent cross-repo
+  linking · resolve before linkifying: a link that 404s promises
+  something, which is "nothing fails quietly" aimed at the page's own
+  affordances
+- **#158** — `/file` should reflow markdown · P2 · bug · 25m ·
+  **CONTRADICTS a recorded decision** ("markdown prose reflows, raw text
+  does not — `/file` stays verbatim", #102). The rule drew its line at
+  WHO COMPOSED IT; the useful line is CONTENT. `initialization.md` is
+  the same prose that reflows in the dashboard's own peek, and reflows
+  or not purely by the route it was reached through. Reflow `.md`, keep
+  `.py`/`.json`/logs verbatim, and update watch-design.md in the same
+  commit because this REPLACES a rule
+- **#159** — "sent to the dream" appears instead of arriving · P3 · bug
+  · 15m · use `.dreamin`, which only started working today (#154) ·
+  check the departure too · verify by per-frame trace, since a two-frame
+  fade looks instant and passes a "did it appear" check
 - **#156** — Lint questions.md at WRITE time (PostToolUse hook) · P2 ·
   idea · 40m · his idea, and it is the strongest version of the fix:
   every current defence fires LATER than the mistake (lint at init and
