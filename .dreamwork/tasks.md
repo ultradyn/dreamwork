@@ -49,10 +49,6 @@ Next id: **133**
   task · 45m · agent-side checklist written (`compaction.md`); the
   per-client dialect table belongs in `~/.llm-general/`, and the
   managed sender is dreamhub's
-- **#125** — Vendor a stdlib-only `heartbeat.py` · P2 · task · 60m ·
-  the wake mechanism is currently a Rust binary on one machine; port
-  the interval AND the wall-clock `@` alignment, which the shell
-  fallback cannot do
 - **#124** — Break up watch.py; norms for cheap parallel work · P2 ·
   task · 120m · plan: `docs/plans/parallel-architecture.md` · seams as
   batches demand them, starting with #112's components
@@ -92,7 +88,10 @@ Next id: **133**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#113** the awaiting-fold
+Pruned in grooming; git is the real ledger. **#125** `heartbeat.py`,
+a stdlib-only port of the Rust wake tick — byte-identical output, the
+Rust test suite ported case for case, and one documented divergence
+(`--no-time-prefix` works here; upstream documents it and rejects it). **#113** the awaiting-fold
 state breathes and every transition between the three states is covered
 (86607dd, e8aeec9) — the matrix found three real defects, including a
 ghost that kept its `data-qid` and could have swallowed his typing.
