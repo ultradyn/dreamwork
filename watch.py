@@ -143,9 +143,14 @@ STYLE = """<style>
   .qa textarea { width:100%; background:var(--panel); color:var(--text);
     border:1px solid var(--line); border-radius:var(--radius); font:inherit;
     padding:.4rem; margin:.3rem 0; min-height:3rem; box-sizing:border-box; }
-  .qa button { background:var(--panel2); color:var(--accent);
-    border:1px solid var(--border); border-radius:var(--radius);
-    font:inherit; padding:.25rem .8rem; cursor:pointer; }
+  /* No `.qa button` catch-all. There was one, and it was the whole of #121:
+     an element rule left over from before `.qsend` and `.sgbtn` had styling
+     of their own, still winning on specificity (0,1,1 beats 0,1,0) and so
+     silently painting an opaque fill and a border onto buttons that had
+     asked for neither. The mode switch had been transparent in its own rule
+     since #103 and had never once rendered that way. A catch-all that
+     outlives the components it stood in for does not announce itself: it
+     just quietly overrules them. */
   /* the three qaCard states (#105) are class modifiers on one card, so the
      shared parts are styled once and only the differences are stated here.
      awaiting: a quiet accent rail marks it apart from open questions; no
@@ -320,7 +325,17 @@ STYLE = """<style>
   /* the composer: the + opener sits in the heading's left gutter; the
      panel it toggles drifts in through a soft blur (the dream language),
      not a hard pop. reduced-motion just shows/hides. */
-  .htitlebar { display:flex; align-items:baseline; gap:.55rem; }
+  /* CENTRE, not baseline (#123). The opener is the tallest item in this row,
+     so it defines the line's cross-size; under `baseline` the title was then
+     hung from its own baseline near the top of that line and the button, at
+     full line height, sat 3.1px lower through the middle. Centring both puts
+     them on one centreline on every route — measured identically on /, on
+     /questions and on /review — and it holds while the header TRAVELS,
+     because it is a CSS invariant rather than something JS re-derives per
+     frame. About 1px of residual is the font's own asymmetry (the box centre
+     is not the ink centre) and is deliberately not chased: a magic nudge
+     would be wrong the moment the mono stack falls back. */
+  .htitlebar { display:flex; align-items:center; gap:.55rem; }
   .htitle { display:inline; }
   /* The opener hangs in the gutter LEFT of the reading column, so its offset
      is only affordable when the gutter exists. It does not on the review
@@ -372,8 +387,13 @@ STYLE = """<style>
      by every question card's answer/note switch (#103). Geometry and motion
      live here; each user styles only its own buttons. */
   .sgroup { position:relative; display:flex; flex-wrap:wrap; gap:.1rem; }
+  /* The indicator is an OUTLINE that slides, not a filled chip (#121, his
+     words: "have an outline but no bg color; they are currently opaque so
+     you can't see the animation behind it"). It still marks the active
+     option — the outline travels to it and its label glows accent — and the
+     dreaming field now shows through the whole group. */
   .sgind { position:absolute; top:0; left:0; z-index:0; width:0; height:0;
-    background:var(--panel2); border:1px solid var(--border);
+    background:transparent; border:1px solid var(--border);
     border-radius:var(--radius); box-sizing:border-box;
     transition:transform .3s cubic-bezier(.32,.12,.2,1),
                width .3s cubic-bezier(.32,.12,.2,1),

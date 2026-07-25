@@ -79,6 +79,16 @@ for (const reduced of [false, true]) {
                // a folded entry cannot answer, so it is offered no choice
                foldedModes: document.querySelectorAll('.qa.folded .qmode').length,
                foldedMode: document.querySelector('.qa.folded .qcompose').dataset.mode,
+               // #121: ghost buttons. His words — "have an outline but no bg
+               // color; they are currently opaque so you can't see the
+               // animation behind it". The dreaming field is behind this
+               // group, so a fill anywhere in it blocks the page's own
+               // background. The INDICATOR keeps its outline: that is what
+               // marks the active mode, and it slides.
+               fills: [...card.querySelectorAll('.qmode, .qmodes .sgind')]
+                 .map(x => getComputedStyle(x).backgroundColor),
+               indBorder: getComputedStyle(
+                 card.querySelector('.qmodes .sgind')).borderTopColor,
              };
     });
     await p.screenshot({ path: `${OUT}/one-input.png`, fullPage: true });
@@ -93,6 +103,11 @@ for (const reduced of [false, true]) {
     ok('an answered entry defaults to add note', geo.awaitingDefault === 'note');
     ok('a folded entry is note-only, with no choice to get wrong',
        geo.foldedModes === 0 && geo.foldedMode === 'note');
+    ok('the mode switch is GHOST: nothing in it has a fill (#121)',
+       geo.fills.length >= 3 &&
+       geo.fills.every(c => /rgba\(0, 0, 0, 0\)|transparent/.test(c)));
+    ok('...but the indicator keeps its outline, so it still marks the mode',
+       !/rgba\(0, 0, 0, 0\)|transparent/.test(geo.indBorder));
 
     // the indicator: lands on first paint, slides on a switch
     const land = await p.evaluate(TRACE(null));

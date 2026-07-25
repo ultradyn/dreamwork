@@ -92,8 +92,14 @@ for (const w of [1500, 1000, 720, 520]) {
     await p.goto(BASE + url, { waitUntil: 'networkidle' }); await sleep(500);
     const r = await p.evaluate(() => {
       const b = document.getElementById('cmdplus').getBoundingClientRect();
+      // #123: the opener and the heading text sit on ONE centreline. The
+      // opener is the tallest item in the row, so it defines the line — under
+      // baseline alignment the title hung near the top of that line and the
+      // button sat 3.1px lower through the middle, on every route.
+      const t = document.querySelector('#chrome .htitle').getBoundingClientRect();
       return { left: +b.left.toFixed(1), right: +b.right.toFixed(1),
-               w: +b.width.toFixed(1) };
+               w: +b.width.toFixed(1),
+               dc: +((b.top + b.bottom) / 2 - (t.top + t.bottom) / 2).toFixed(2) };
     });
     edges.push({ vw: w, route, ...r });
     if (w === 1000 && route === 'review')
@@ -134,6 +140,13 @@ for (const [dir, tr] of [['onto', r.onto], ['off', r.off]]) {
 }
 ok('the + is fully visible with a gap, every route x every width',
    edges.every(e => e.left >= 4 && e.w > 10));
+// #123. Half a pixel of tolerance, not zero: the two boxes are centred by the
+// same flex rule, so any real drift is a whole pixel or more. The remaining
+// ~1px between the button and the text's INK centre is the font's own
+// ascender/descender asymmetry and is deliberately not chased — a magic nudge
+// would be wrong the moment the mono stack falls back.
+ok('the + shares the heading text\'s centreline, every route x every width',
+   edges.every(e => Math.abs(e.dc) <= 0.5));
 
 console.log('onto : ' + JSON.stringify(n.onto.frames.filter((_, i) => i % 8 === 0)));
 console.log('off  : ' + JSON.stringify(n.off.frames.filter((_, i) => i % 8 === 0)));

@@ -209,6 +209,17 @@ the guarantee hold on **every frame**: the column glides, and JS would always
 paint one frame behind it. At the tightest column the button parks flush,
 still inset by the body padding.
 
+**The opener and the heading text share one centreline** (#123). The opener is
+the tallest item in `.htitlebar`, so it defines the flex line's cross-size —
+which meant that under `align-items:baseline` the title hung from its own
+baseline near the top of that line while the button, at full line height, sat
+**3.1px lower** through the middle, on every route. `align-items:center`
+centres both boxes in the line and the offset measures 0.00px everywhere. The
+remaining ~1px between the button and the text's *ink* centre is the font's
+own ascender/descender asymmetry and is deliberately not chased: a magic nudge
+would be wrong the moment the mono stack falls back. Being a CSS invariant
+rather than a JS measurement is what makes it hold while the header travels.
+
 `dev/capture/headertravel.mjs` traces all of this per frame, in both
 directions, plus reduced motion, plus every route at four window widths. Each
 check was shown to fail on its own deliberately-reintroduced bug — the
@@ -485,6 +496,22 @@ and true for any user of it:
 - **The selected label glows, it does not re-metric.** `text-shadow`, not
   letter-spacing or weight: a text effect that changes layout would resize
   the buttons and so move the very target the indicator is chasing.
+- **The group is a ghost: an outline that slides, never a filled chip**
+  (#121; his words: *"have an outline but no bg color; they are currently
+  opaque so you can't see the animation behind it"*). The dreaming field is
+  the background of every one of these buttons, so a fill anywhere in the
+  group puts a lid on the page. The indicator keeps its **border** — that is
+  what marks the active option, and it is the thing that travels — and the
+  active label keeps its accent glow.
+
+  This one is worth remembering for its cause rather than its fix. `.sgbtn`
+  had asked for `background:none` since #103 and had never once rendered that
+  way, because a `.qa button` element rule left over from before these
+  components had styling of their own still won on specificity (0,1,1 beats
+  0,1,0). **A catch-all that outlives the components it stood in for does not
+  announce itself; it quietly overrules them**, and the component's own
+  source reads correctly the whole time. The fix was to delete it, not to add
+  a stronger selector.
 
 **Discoverability is the ⋯ menu.** Hovering (or focusing) `.cmdmorebtn`
 reveals `.cmdmenu` — *every* kind, common or not, each with its one-line
