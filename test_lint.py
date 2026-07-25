@@ -121,6 +121,29 @@ class TestQuestionsEdges:
         rep = run(target(tmp_path, **{"questions.md": text}))
         assert ERRORS(rep, "questions.md")
 
+    def test_the_seeded_skeleton_is_not_an_error(self, tmp_path):
+        # Exactly what initialization.md step 7 mandates writing. Step 9 then
+        # runs this linter, so an ERROR here means every fresh target opens
+        # with a false alarm from the tool built to catch false alarms.
+        text = "# Questions for the human\n\n## Open\n\n## Answered\n"
+        rep = run(target(tmp_path, **{"questions.md": text}))
+        assert levels(rep, "questions.md") == [lint.OK]
+        assert not rep.failed
+
+    def test_the_exemption_does_not_disable_the_real_check(self, tmp_path):
+        # The discrimination test: the field failure must STILL go red now
+        # that legitimately-empty files are exempt. An exemption that
+        # silently swallows the original bug is worse than no exemption.
+        rep = run(target(tmp_path, **{"questions.md": BROKEN}))
+        assert ERRORS(rep, "questions.md")
+
+    def test_skeleton_plus_a_stray_line_is_still_an_error(self, tmp_path):
+        # The boundary: one line of real content and zero parsed entries is
+        # the failure, however short the file.
+        text = "# Questions\n\n## Open\n\nsomething he typed\n\n## Answered\n"
+        rep = run(target(tmp_path, **{"questions.md": text}))
+        assert ERRORS(rep, "questions.md")
+
 
 class TestLedger:
     def test_duplicate_id_is_an_error(self, tmp_path):

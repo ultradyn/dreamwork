@@ -118,15 +118,33 @@ def check_questions(dw: Path, watch, rep: Report) -> None:
 
     o = len(watch.parse_open_questions(text))
     a = len(watch.parse_answered(text))
-    if o == 0 and a == 0:
+    if o or a:
+        rep.add(OK, "questions.md", f"{o} open, {a} answered")
+        return
+
+    # Zero entries has two causes that must not be confused, and getting this
+    # wrong once already made the linter cry wolf on the skeleton that
+    # initialization.md step 7 MANDATES — a checker that fails the correct
+    # initial state is a checker nobody reads by week two.
+    #
+    # A SEEDED SKELETON is headings and nothing else: legitimately empty, and
+    # the ordinary state of a fresh target between init and the first ask.
+    # CONTENT THAT PARSES TO NOTHING is the real failure — a file with prose
+    # in it that the reader cannot see, which renders as "nothing to answer"
+    # while real questions sit in it.
+    body = [
+        ln for ln in text.splitlines()
+        if ln.strip() and not ln.lstrip().startswith("#")
+    ]
+    if not body:
+        rep.add(OK, "questions.md", "seeded, no entries yet")
+    else:
         rep.add(
             ERROR,
             "questions.md",
-            f"{len(text.splitlines())} lines and the reader sees NOTHING — "
+            f"{len(body)} lines of content and the reader sees NO entries — "
             f"renders as 'nothing to answer'. Entries need `- **Title**` at top level",
         )
-    else:
-        rep.add(OK, "questions.md", f"{o} open, {a} answered")
 
 
 def check_tasks(dw: Path, rep: Report) -> None:
