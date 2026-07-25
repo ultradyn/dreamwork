@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **203**
+Next id: **206**
 
 ## Open
 
@@ -62,6 +62,37 @@ Next id: **203**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#205** — Roll the heartbeat INTO the monitor · P2 · idea · **human
+  17:45** · **answer to his question: no, not integrated here** — this
+  target runs three independent monitors (heartbeat 4.75m, events tail,
+  inbox tail) and the timer fires regardless of whether anything
+  happened; `ez-feedback-pipeline` has the combined shape, READ IT ·
+  today the heartbeat fired ~40 times and most arrived mid-increment or
+  mid-stream, where the right action was nothing — the timer is the
+  loudest input and the least informative · buys quiet-time, backoff,
+  event-driven wake (removes SKILL.md's own warning that an unarmed tail
+  loses his `do now:` silently), and his "patterns and schedules" ·
+  **CEILING**: 4.75m sits under the prompt-cache TTL, which is why the
+  loop is cheap — state that in the design, do not discover it on a bill
+  · relates #180, #200, #203
+- **#204** — The four plain `expand()` peeks still snap · P3 · task ·
+  25m · dreams, archive, `.md` list, status overflow · **excused by the
+  reason #196 just disproved** — "nothing that MOVES sits below the
+  toggle", and all four have panels below · now marked UNEXAMINED rather
+  than decided in both docs, so the trap is disarmed · his rule says
+  "no size below which this stops applying"; rec: apply #196's
+  section-fold shape to ONE and see if it falls out cheaply before
+  deciding all four · after #199
+- **#203** — Guard servers are not reaped · P2 · bug · 25m · found 17:40
+  when a dreamer went quiet: FOUR orphaned watch.py servers in the guard
+  ranges, one up **4.5 hours** serving `dev/capture/fixture` — the most
+  confusing possible answer for a readiness probe · exactly what
+  `parallel-architecture.md` predicted in writing and what cost
+  dreamer-identity 20 minutes · **three consecutive agents believed they
+  had cleaned up**, so do NOT fix by asking for more care · rec: bind
+  port 0 and let the OS assign (removes the class), probe for something
+  only THIS server serves, reap in a trap/finally, log what was started
+  and killed · belongs with #148 + #192 in the shared runner
 - **#202** — "T3 connect": searched, the name does not resolve · P2 ·
   task · **human 17:27** · no product/protocol by that name found ·
   three candidates: **T3 Code** (Theo's open-source coding-agent control
