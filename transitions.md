@@ -1,0 +1,256 @@
+# Transitions — the page arrives and departs, it never appears
+
+**The rule, and every other line here is a consequence of it** (human,
+2026-07-25): *transitions must be atmospherically suitable, like the
+transitions between pages.* The route change is the reference
+implementation. Every smaller change — something appearing, disappearing,
+expanding, collapsing, changing state, moving — is a smaller instance of
+that same gesture, not a different kind of event.
+
+**This applies to all of them.** If a thing on this page becomes visible,
+stops being visible, changes size, changes state, or changes place, it is
+a transition and it obeys this document. "It is only a small toggle" is
+how a page ends up with one gesture that snaps among a hundred that
+drift, and the snap is the one the eye catches.
+
+Extracted from `watch-design.md` on 2026-07-25 so it can be pointed at
+directly; that file remains the styleguide and holds tokens, type,
+components and copy. This is the single source for motion — there is no
+second description of it anywhere.
+
+## Checking a transition
+
+Three consecutive batches on 2026-07-25 each found a real motion bug that
+every existing check had passed over, and the reason was the same each
+time: **all three ended in exactly the right place and were wrong in the
+middle.** A teleport, a confirmation lit on frame 0, a snap at the end of
+a travel.
+
+So, for anything in this document:
+
+- **An end-state check cannot fail on a motion bug, and neither can "did
+  it move".** Assert the count of *distinct intermediate positions* — a
+  teleport has two, a travel has dozens.
+- **Bound the trace window to the interaction.** A guard that watches
+  long enough will see a later tick supply the movement it was asserting;
+  one traced 5.2s across a 1.6s hold and was green over a real teleport
+  for a day.
+- **Drive the real gesture on the real route**, not the one that is
+  easiest to automate.
+- **Show the check RED on the current behaviour before trusting it.**
+- **Verify reduced-motion too** — it is a hard contract below, and it is
+  the half nobody looks at.
+
+## Motion language (authored across the transition work)
+
+The page *dreams*: motion is soft, slow, and never crisp-mechanical. It is
+also strictly opt-in — most state changes do **not** animate.
+
+**Things that move, slide** (human, 2026-07-25): "in general when things
+need to move they should slide gently, ethereally, not jump around." Read
+this as the tie-breaker it is — it does not overturn the opt-in rule (a
+live tick still re-renders instantly), but wherever the page *has* decided
+to change layout, the elements that survive travel to their new positions
+instead of teleporting. FLIP is the mechanism; reduced-motion is the
+exception; an element leaving fades rather than vanishing.
+
+- **When transitions apply.** Route changes (client nav) dissolve. The live
+  mtime tick commits its new DOM **immediately** — liveness never waits on an
+  animation — but where that re-render *moves* something that survived, the
+  survivor travels to its new place rather than appearing there (the
+  regroup, below). The composer reveals on a soft blur drift. Nothing else
+  animates.
+- **The regroup** (a question is answered). One moment seen two ways: the
+  questions below close the gap it left (#104), and the question itself
+  travels to its new heading rather than being re-set there (#77). One
+  mechanism — a FLIP over the list keyed by **`data-qid`**, the question's
+  own identity, which survives the move its positional `data-qkey` cannot.
+  A card whose **heading changed** gets the lifted-hero morph so the eye
+  follows it across the page; a card that merely shifted slides. Use the
+  heading, not the card's state class: the submit morph already changed that
+  class locally when the answer was sent, so by regroup time it reports no
+  change even as the card is about to cross the page. A card gone entirely
+  dreams away at the rect it occupied, which is why the snapshot clones every
+  card up front — after the re-render there is no node left to animate, and
+  you cannot know in advance which will go.
+- **The state matrix, and the one mechanism under it.** The three question
+  states are one axis, so their transitions are one matrix, and every cell
+  goes through `regroupCards` → `travelCard`. A card **travels** from the
+  rect it had to the rect it has — in position *and* in height — and if it
+  crossed to a different **heading** it is lifted while it goes (raised,
+  blurred, dimmed, resolving) so the eye follows that one card.
+
+  | cell | who acts | what happens |
+  |---|---|---|
+  | open → awaiting | he answers | the submit morph restates the card in place (the typed text lifts from the box into the answer, a ripple) **and regroups the list around it**, then the tick's regroup travels it to its new heading, lifted. The wisp starts at its dim keyframe and breathes up, so it arrives rather than snapping on. |
+  | same card, a note lands | **he** adds a follow-up | the note lifts from the box into the thread and the card grows; same seam, same regroup |
+  | awaiting → folded | the loop folds it | travels, lifted; the height collapses; the departing body dreams away |
+  | open → folded | the loop answers it itself | the same, with no wisp ever |
+  | folded → open/awaiting | a follow-up reopens it | travels, lifted; the height grows; the arriving body eases in |
+  | awaiting → open | the loop drops the answer | travels, lifted; rail and wisp leave with the old node |
+  | same state, moved | a neighbour left, a note landed | slides; if it also resized, the height travels |
+  | folded ↔ expanded | **he** clicks the summary | the same snapshot and the same regroup — his own expand is not a special case, and routing it through the shared path is what gives it the neighbours' motion for free |
+| thread ↔ expanded | **he** opens a settled thread | the same cell one level down: the card resizes, so the cards below it are carried. The reveal and the ghost are the disclosure's own contents, not the card's (see *`expand` is structure*) |
+  | gone | the entry was deleted | dreams away at the rect it occupied |
+  | arrived | a new question | `.dreamin`: snap, then ease in |
+
+  Five things in there are not obvious and all five were bugs first:
+
+  - **Height, never scale.** `flipDock` morphs by `scale()`, which is right
+    for the review dock, where the card really does change column. In the
+    list the column never changes but the height now can, by a factor of
+    fifteen, because folding collapses the card. A scale morph would squash
+    the text by that ratio at frame 0 and read as a stretch, not a fold.
+  - **A body that leaves fades; a body that arrives eases in.** *"When it
+    folds in, the body shouldn't disappear all at once"* (human,
+    2026-07-25). The new node is already the folded one, so there is no live
+    body left to animate — which is what the up-front clone in
+    `snapshotCards` is for. `dreamAway` ghosts it at the rect it occupied,
+    **clipped to below the line the survivor still fills**, on the page's one
+    departure idiom. Unfolding is that moment run backwards, so the revealed
+    children get `.qreveal` + `.dreamin`.
+  - **Cards are processed in DOM order, and that is load-bearing.** A
+    resizing card's own height animation carries everything below it —
+    continuously, for free, and welded to the card it is following. So the
+    FLIP only handles the **residual**: whatever moved for some other reason.
+    Restoring a card's old height before the next is measured is exactly what
+    makes the next card's `now` mean "where it would be if only that resize
+    had happened". FLIPping the full difference instead moves a neighbour
+    twice, once by transform and once by layout, and snaps it back at the end.
+  - **A ghost is a corpse and must not keep the card's address.** It is a
+    clone appended to `.wrap`, so it arrives carrying `data-qid` — and every
+    `.qa[data-qid]` walk on the page would then find it: `snapshotCards`
+    would capture its absolute rect as the question's, `restoreCardState`
+    would restore his typing into it, and a per-frame trace measures it
+    instead of the card animating underneath (which is how this was found).
+    `dreamAway` strips the identity at the door rather than teaching six
+    lookups to skip it.
+  - **The morph is INSIDE this matrix, not beside it** (#191). `sendAnswer`
+    restated its card with `card.innerHTML = qaInner(…)` and called neither
+    `snapshotCards` nor `regroupCards`, so the one gesture this page has most
+    carefully taught to travel was the only one that teleported: the cards
+    below went **744 → 791 in two distinct positions, with no transform**,
+    across 354 frames. `sendComment` had the identical shape — a note lands
+    inside the card, so the card grows — and was fixed in the same breath,
+    because finding one done and one not is how a reader concludes the rule is
+    optional. Both now snapshot → mutate → regroup, on the seam the
+    `.qa details > summary` handler was already using three functions away.
+
+    **What the morph keeps for itself is its own card's CONTENTS.**
+    `regroupCards`'s `restated` argument names the card the caller is
+    animating, and skips the body ghost/reveal for it: the answer (or the
+    note) already has its own lifted-hero arrival, and the body, the thread
+    and the compose box were on screen before and after — re-fading them says
+    a change happened where none did, which is #128's rule one level up. Its
+    **height** still travels, and the height is what carries every card below
+    it, for free, welded to the card they are following.
+
+  The guard is `dev/capture/states.mjs`, and its assertion is deliberately
+  about **outcome, not mechanism**: every card that ended somewhere else
+  visited many intermediate positions. The first version demanded an inline
+  transform on everything that moved and was wrong — a card riding an
+  animated height above it travels perfectly with no transform of its own,
+  and the mechanism check would have forbidden the better motion.
+- **The dream dissolve** (route change). The outgoing view becomes a
+  `.ghost` (z-index above `#view`) that liquifies into a swirling mist and
+  lifts up and toward the viewer as it fades — dissolving *in front*. The
+  incoming view surfaces from *behind and below*, in depth: `.wrap` carries
+  a `perspective`, and `#view.enter` starts pushed back (`translateZ`),
+  lower and scaled down, at true opacity 0, then drifts forward into focus.
+  ~1.15s with a hazy dwell (`DREAM_MS`); opacity + 3D transform ride CSS,
+  the mist is JS-enveloped. The `#dreambg` shader stirs in sympathy (a
+  `warp` pulse deepening the curl advection + a centred twist). Each
+  destination has its own turbulence `SEED` and `TINT`.
+- **True-zero start — the enter-snap rule.** Because `#view` carries an
+  always-on opacity/transform transition, the enter (start) state **must**
+  set `transition:none` so it *snaps* to opacity 0 / pushed-back; otherwise
+  adding the class animates *toward* 0 and the class is removed a frame
+  later, so opacity never leaves ~1 (the incoming "pops in" instead of
+  fading up from nothing). Snap the start, force a reflow, then remove the
+  class on the next frame to animate in. A brief opacity delay keeps it
+  genuinely absent for the first ~150ms so it emerges rather than blends.
+- **The mist filter — the load-bearing rule.** Put *all* softening (blur
+  **and** displacement) inside **one** SVG filter
+  (`feTurbulence`→`feDisplacementMap`→`feGaussianBlur`) driven per-frame
+  from rAF; keep only `opacity`/`transform` on CSS. You cannot CSS-tween a
+  `filter` that holds a non-interpolable `url(#…)`, and its cost scales with
+  filtered-layer *area*, not turbulence octaves. Clear the inline filter at
+  rest so the settled element is pixel-crisp and zero-cost.
+- **Lifted-hero FLIP** (shared-element morph, e.g. question → review dock).
+  Measure the source rect, render the destination, invert to the source,
+  play to identity — but the dream twist is a blurred, low-opacity drift,
+  not a reveal.js slide. When the morph crosses a full view-swap, **lift the
+  hero above the dissolve** (z-index, higher opacity floor, less own-blur)
+  and make its glide **outlast** the dissolve, or it drowns in the page mist
+  and reads as "page changed + thing appeared" rather than "thing
+  travelled".
+- **The ripple.** A soft expanding ring marks a received command; a felt
+  pulse, not a modal.
+- **The composer's sliding indicator.** Choosing a command kind slides the
+  selection background to it (~.3s, the dream easing) — the composer's one
+  piece of crisp motion. It lands without sliding on open and on reflow; see
+  The composer.
+- **Answer-submit morph.** Submitting an answer (button or **Ctrl/Cmd+Enter**,
+  which works from any answer box) *is* the confirmation: the card reshapes
+  in place into its answered-awaiting-fold state and the typed text lifts
+  from the box into the rendered answer (the lifted-hero FLIP — the answer
+  is the tracked element), a ripple accenting it, **and the list regroups
+  around it** so the cards below travel rather than jumping the height delta
+  (#191, above). The live re-render is held ~1.6s so the morph settles before
+  the loop's fresh data regroups the card. reduced-motion swaps straight to
+  the answered state.
+
+  **The hold is why this hid for so long, and the lesson is about the guard's
+  WINDOW rather than about its assertions.** `regroup.mjs` submits through the
+  real UI too, but it traces 5.2s — past the hold — so the tick's own regroup
+  travels the neighbour, and every "it slid" check passes over a teleport that
+  happened a second and a half earlier. `dev/capture/morph.mjs` traces
+  **1400ms**, inside the hold, and its load-bearing assertion is that the card
+  node was **never replaced** across the window: `card.innerHTML = …` keeps the
+  node and a tick's list swap does not, so whatever moved, the *morph* moved.
+  It runs four phases (answer/note × normal/reduced) on its own server and a
+  pristine target each time, because answering the first open question changes
+  which card the next phase would pick.
+- **The awaiting-fold wisp — the one standing exception to "opt-in".**
+  Everything else on this page moves only in response to something; the
+  awaiting-fold state breathes continuously, on purpose, because it is the
+  only genuinely **in-progress** thing here: the human has answered and the
+  loop has not yet folded it. Say that out loud whenever this rule is
+  re-read, or it looks like the opt-in rule rotted. A wisp of accent drifts
+  along a 2px rail and across the `answered · awaiting fold` label, ~5.5s,
+  **fading in and out** rather than sweeping — a breath, not a spinner, and
+  ambient in the way the shader is. One envelope duration and easing for both
+  halves, so they read as one organism rather than two effects.
+
+  **The cost is bounded by construction, not by a measurement that can
+  drift**: the keyframes touch only `opacity` and `background-position`, and
+  the animated boxes are a 2px rail and one short inline-block label (the
+  label is inline-block precisely so its box hugs the words instead of
+  invalidating a full-column strip to say nothing). Measured anyway:
+  p95 frame time 16.8ms with the wisp, 16.9ms with every animation killed —
+  indistinguishable at vsync.
+
+  Under reduced motion the wisp **holds still at its brightest** rather than
+  disappearing: the state must still read as in-progress with no motion at
+  all. Legibility is safe by construction too — the gradient's darkest stop
+  is `--dim`, the colour the label had before it moved.
+
+  `dev/capture/wisp.mjs` guards all three claims, and one of its checks is
+  worth knowing about: counting direction reversals does **not** tell a
+  breath from a sawtooth, because a sweep that snaps back to its start also
+  turns around twice per cycle. A deliberately introduced one-way sweep
+  passed the first version of that check. What separates them is how *long*
+  the fall takes — a breath spends about as long fading out as fading in, a
+  sawtooth spends one frame — so the assertion is on the fraction of moving
+  samples that are falling.
+- **Reduced-motion is a hard contract.** `prefers-reduced-motion` changes
+  *timing, never function or legibility*: route swaps are instant (no ghost,
+  no mist, tint/seed snap, no `warp`), the composer shows/hides at once, its
+  selection indicator jumps rather than slides, the dock appears without a
+  FLIP. Verify it on anything that moves.
+- **Two invariants that always hold.** (1) *Settled crispness* — at rest,
+  no filter, text wins the luminance contract, nothing blurred. Transient
+  mid-transition haze is fine. (2) *Frame continuity* — the `#dreambg`
+  canvas never unmounts, pauses, or resets across navigation; its frame
+  tally stays monotonic. Both are guarded by tests; keep them green.
+

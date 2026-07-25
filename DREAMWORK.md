@@ -81,10 +81,14 @@
   without updating the styleguide. The rule was already recorded; now it
   is checkable rather than remembered.
 - watch.py webui: `watch-design.md` (skill root) is the authoritative
-  styleguide — tokens, component idioms, the motion language (dream
-  dissolve, mist filter, lifted-hero FLIP, reduced-motion + frame-continuity
-  invariants), and copy voice. Read it before changing the page; keep it
-  current in the same commit as the change.
+  styleguide — tokens, component idioms, and copy voice — and
+  **`transitions.md` is the single source for how the page moves**
+  (2026-07-25, his ask): every transition obeys it, appear/disappear/
+  expand/collapse/state/movement alike, and the gist is that they are
+  atmospherically suitable, like the transitions between pages. Read both
+  before changing the page; keep them current in the same commit as the
+  change. `CLAUDE.md` at the skill root carries the rule for anyone
+  working on this repo.
 
 ## Plugins
 

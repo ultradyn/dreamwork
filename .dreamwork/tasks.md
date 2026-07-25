@@ -301,7 +301,12 @@ Next id: **195**
   a comment, because the measure-and-back-off alternative FLICKERS ·
   measure p95 with it on and off; blur over a live shader is the most
   expensive pairing on the page
-- **#166** — Commit rows expand; the more-detail principle recorded ·
+- **#166** — [#169's prominence rule already covers its disclosure for
+  free; the ONE thing it must respect is the FLIP-window contract —
+  commit rows are `travelCard`'d through `GIT_LIST`, so anything an
+  expanding row adds to its box must land in layout INSTANTLY, not
+  transition, or the row is 20px short when its travel ends.
+  `prominence.mjs` does not cover that list (dreamer-gesture, 17:11)] Commit rows expand; the more-detail principle recorded ·
   P2 · idea · 30m · the body is where this repo's reasoning lives and it
   is the most useful text in a commit · his principle is now in
   DREAMWORK.md: **detail is ranked, never withheld** — the same
