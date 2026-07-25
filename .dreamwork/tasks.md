@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **170**
+Next id: **171**
 
 ## Open
 
@@ -88,6 +88,13 @@ Next id: **170**
   or not purely by the route it was reached through. Reflow `.md`, keep
   `.py`/`.json`/logs verbatim, and update watch-design.md in the same
   commit because this REPLACES a rule
+- **#170** — Composer opens LEFTWARD so it stops covering text · P2 ·
+  idea · 25m · hang its top-RIGHT corner under the `+` instead of its
+  top-left · "when there is enough room" is the requirement: prefer
+  left, fall back to right, never clip · the anchor MOVES (#110 travels
+  it, #108 clamps it), so the fit test runs at OPEN time, not at load ·
+  `position:fixed` is not viewport-relative under a transformed or
+  filtered ancestor — measure the rect, as with #160
 - **#169** — An expanded element becomes PROMINENT, not just taller ·
   P2 · idea · 35m · expanding is a change in IMPORTANCE, not a reveal —
   the thing he opened is now the subject of the page · extends the
