@@ -181,3 +181,37 @@ source dream. Not a log — only things that should change future behavior.
   string literals is unreachable from outside. Split the surface into
   calls and reads before promising adaptation; the reads are the part
   that fails silently. (2026-07-25-1104-dreamhub-stage1)
+- A component can be CORRECT IN SOURCE and wrong on screen: `.sgbtn` asked
+  for `background:none` from #103 and never once rendered that way, because a
+  leftover `.qa button` element rule outspecified it (0,1,1 over 0,1,0). A
+  pytest asserting on generated source passes on this for as many commits as
+  you like — the sharper version of #117's lesson. A catch-all element rule
+  inside a component's scope is a latent override of every component that
+  ever renders inside it. (2026-07-25-1130-question-states)
+- Anything a re-render destroys that exists NOWHERE ELSE must be carried
+  across it, not protected by suppressing the render: typed text, the caret,
+  focus, the destination mode, what he expanded. Liveness and his input are
+  not in tension — one seam (`snapshotCardState`) serves both.
+  (2026-07-25-1130-question-states)
+- A clone used as a departure ghost must have its IDENTITY stripped, not just
+  its position set: it keeps `data-qid`, so every keyed lookup on the page can
+  find a corpse — including the one that restores his typing.
+  (2026-07-25-1130-question-states)
+- Counting direction reversals does NOT tell a breath from a sawtooth: the
+  snap-back is itself a reversal, so a one-way sweep passes. Measure how LONG
+  the fall takes (the fraction of moving samples that are falling).
+  (2026-07-25-1130-question-states)
+- FLIP a list by POSITION and HEIGHT, never by scale: once a state collapses
+  its card, the height ratio can be 15x and a scale morph squashes the text.
+  And a resizing card's height animation already carries everything below it,
+  so the FLIP must only handle the RESIDUAL or neighbours move twice.
+  (2026-07-25-1130-question-states)
+- Assert the OUTCOME, not the mechanism: "every card that moved carried an
+  inline transform" forbade the better motion (a neighbour riding an animated
+  height needs no transform of its own). "Got there continuously" is the
+  property that survives a change of implementation.
+  (2026-07-25-1130-question-states)
+- A timed courtesy (auto-dismiss, auto-close, auto-advance) must be cancelled
+  by any sign the human is still using the thing — and the cancel needs to
+  cover the in-flight window before the timer exists.
+  (2026-07-25-1130-question-states)

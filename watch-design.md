@@ -153,6 +153,18 @@ navigates and carries the same dreaming field (see Shader). Views are pure build
 `buildQuestions`, `buildFile`, `buildReview`); the router swaps them. Add a
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
 
+**`expand` is structure; whether it MOVES is a separate question, and the
+answer differs by user.** A plain `<details>` — dreams, the archive, the
+dashboard's `.md` peeks — toggles instantly, like every other opt-in-motion
+surface on this page. The **folded question card** is the exception: its
+`.qfold` toggle is routed through `snapshotCards` → `regroupCards`, so it
+travels its height and its neighbours close the gap, exactly as when the loop
+folds one (see *The state matrix*). The difference is not decoration — a
+question card is in a list whose other members move, and the generic
+`<details>` are not. A reader who finds only this section will assume
+`<details>` animates everywhere; it does not, and adding it to the generic
+idiom would animate three surfaces nobody asked for.
+
 ### The persistent chrome
 
 The heading is not content. It is the page's frame — the same `+` opener, a
