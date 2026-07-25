@@ -736,6 +736,87 @@ questions, because with two of each a title reading the derived count is
 byte-identical to a correct one — and the first deliberate bug injected here
 passed against it.
 
+### The favicon
+
+The title's companion, and the half of a tab that survives truncation
+completely (#153). His words: *"favicon required (we should make a great
+favicon, maybe animated? could render offline and load dynamically via round
+robin or whatever to loop)"*.
+
+**The mark is a ring with one traveller on it** — the loop, and the thing
+going round it — carrying three facts in three channels that do not compete
+at 16px, which is the size it is really drawn at:
+
+| channel | says | how |
+|---|---|---|
+| hue | **which** loop | #143's per-project tint arrives here by one edit (`favHue`) |
+| motion | the loop is **alive** | it orbits while ticking; parks, dimmed and trailless, when stalled |
+| the pip | **he** is the bottleneck | a crisp badge, knocked out of the ring; amber when the channel is broken |
+
+**Motion is the status, which is the only reason it is here.** An
+always-animating favicon is decoration, and this page's motion is opt-in and
+meaningful. The two channels are the title's two fields exactly — the pip is
+its count, the orbit is its liveness word — because both derive from
+`titleNeed`/`titleLive`. A tab that contradicted itself would be worse than
+either half alone.
+
+**The amber pip is #136's use on a new surface, not a third use of `--warn`.**
+It is the same fact — the reader cannot see `questions.md` — reaching the one
+place he looks when the page is not on screen.
+
+**Motion is designed for the frame rate the tab will actually get.** A hidden
+document is given no rendering opportunities, so `requestAnimationFrame` does
+not run in a background tab at all — and a background tab is where this
+surface spends its life. Timers survive there, clamped (≥1s; ≥1min once
+Chrome throttles a long-hidden tab intensively). So the orbit is quantised to
+**one frame per second**, twenty to a revolution, on the standing `ages()`
+sweep: right at 60fps, right at the 1s clamp, and degrading to nearly-still
+rather than to a stutter if the clamp becomes a minute. Frames are cached on
+first use — his round robin — so after one revolution a tick is a string
+assignment.
+
+**Honest note: the clamp figures are documented behaviour, not measured
+here.** Two attempts to put a page into the hidden state under Playwright
+failed (a second `newPage()` is a separate window, and `window.open` opened
+one too, so `visibilityState` stayed `visible` both times). The design does
+not rest on those numbers; it rests on rAF being unavailable, which is what
+"hidden" *means*.
+
+**The phase is the wall clock, not a counter**, so every window watching the
+same loop shows the same frame — the shader's "one world, many viewports"
+rule one surface over — and a reload does not restart the orbit.
+
+**It is inline, always**: `just deploy` snapshots `watch.py` alone, so a file
+beside the server does not exist in production. Canvas → PNG data URI rather
+than an SVG data URI, because Chrome renders an SVG favicon as **one static
+frame** and this one has twenty.
+
+**The ground is transparent.** The first version painted the page's own
+near-black tile, which is right on his dark browser theme and a black block
+on a light one — seen at 16px against real tab-strip greys, not reasoned
+about. The same look at that size is what rejected the version before it: a
+soft bloom, which is a formless smudge below 32px, and which taught the
+thing the shape rests on — **at 16px a change of POSITION is legible where a
+change of luminance is not.** That is why the traveller orbits rather than
+breathing, and it is the same conclusion #113's wisp reached from the other
+direction.
+
+**Reduced motion pins the frame and keeps everything else.** The trail and
+the full brightness still say "in flight" with no motion at all — the wisp's
+rule, that reduced motion changes timing and never function or legibility. A
+guard asserts specifically that a reduced-motion tab is not demoted to the
+*stalled* treatment, since that is the tempting one-line version.
+
+`dev/capture/identity.mjs` guards it by decoding the icon back into a canvas
+and sampling **pixels**: two icons differ as strings the moment anything at
+all changes, so a string comparison can prove "it moved" and nothing else —
+not which state it is in, not that the badge is the right colour. Its own
+reader was wrong first in the way this file keeps recording: it *rejected* on
+an icon that never loads, so the injection where nothing is ever drawn made
+the whole guard throw, and the run said "the guard threw" where it should
+have said "the favicon is not a PNG and nothing is drawn". It returns a zero
+reading instead. A crash reads like silence.
+
 ### The status panel
 
 `status.json` is the loop's live state, and it used to be rendered by dumping

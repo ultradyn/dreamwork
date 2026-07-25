@@ -243,6 +243,114 @@ ok('...the review route names the artifact',
 ok('...and every route still leads with the count and the project',
    Object.values(routed).every(v => /^\(1\) alpha-loop · /.test(v)));
 
+// ── the favicon (#153) ────────────────────────────────────────────────────
+/* Read PIXELS, not the href. Two icons differ as strings the moment anything
+   at all changed, so a string comparison can prove "it moved" and nothing
+   else — not which state it is in, not that the pip is the right colour, not
+   that a stalled loop looks stalled. The icon is decoded back into a canvas
+   inside the page and sampled at three known points.
+
+   Sample geometry, from favPaint: the ring is at r=0.315·S about the centre,
+   the badge at (0.79·S, 0.21·S). Three o'clock is the one ring point that is
+   under neither the frame-0 trail (which sweeps backwards from the top) nor
+   the badge's knockout. */
+const FAV_READ = `(async () => {
+  const href = document.getElementById('favicon').href;
+  const img = new Image();
+  /* An icon that never loads — the shell's placeholder, because nothing ever
+     set it — must come back as a READING, not as a rejection. Rejecting made
+     the whole guard throw on that injection, so the run said only "the guard
+     threw" where it should have said "the favicon is not a PNG and nothing
+     is drawn". A crash reads like silence; a zero reading names the fault. */
+  const loaded = await new Promise(res => {
+    img.onload = () => res(true); img.onerror = () => res(false);
+    img.src = href;
+  });
+  if (!loaded) return { href, pip: [0, 0, 0, 0], ring: [0, 0, 0, 0], lum: 0 };
+  const S = 32, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0, S, S);
+  const d = g.getImageData(0, 0, S, S).data;
+  const at = (x, y) => { const i = (y * S + x) * 4;
+                         return [d[i], d[i+1], d[i+2], d[i+3]]; };
+  let lum = 0;
+  for (let i = 0; i < d.length; i += 4)
+    lum += (d[i] + d[i+1] + d[i+2]) / 3 * (d[i+3] / 255);
+  return { href, pip: at(25, 7), ring: at(26, 16), lum: Math.round(lum) };
+})()`;
+const favRead = () => p.evaluate(FAV_READ);
+
+writeStatus({ awaiting_human: [] });
+await titleWhen(x => /^\(0\).*dreaming/.test(x));
+const favA = await favRead();
+notes.push(`favicon: ${favA.href.slice(0, 24)}… ${favA.href.length}b ` +
+           `ring=${favA.ring} pip=${favA.pip} lum=${favA.lum}`);
+ok('the favicon is inline — a data URI, not a file beside the server',
+   /^data:image\/png;base64,/.test(favA.href));
+ok('...and it is drawn, not blank', favA.lum > 0);
+ok('the ring carries the page\'s hue, not grey',
+   favA.ring[3] > 40 && favA.ring[2] > favA.ring[0] + 20);
+ok('nothing waiting: no badge', favA.pip[3] < 20);
+
+// it advances once a second while the loop is dreaming
+await sleep(1400);
+const favB = await favRead();
+ok('while dreaming, the orbit advances', favB.href !== favA.href);
+
+// ...and it rests when the loop is not
+writeStatus({ awaiting_human: [],
+              last_tick: iso(Date.now() - 11 * 60 * 1000) });
+await titleWhen(x => /stalled/.test(x));
+const stall1 = await favRead();
+await sleep(3000);
+const stall2 = await favRead();
+notes.push(`stalled: lum=${stall1.lum} vs dreaming lum=${favA.lum}`);
+ok('a stalled loop\'s icon holds still', stall1.href === stall2.href);
+ok('...and reads faded in a single frame, not only across two',
+   stall1.lum < favA.lum * 0.8);
+
+// the badge
+writeStatus({ awaiting_human: ['you are the bottleneck'] });
+await titleWhen(x => x.startsWith('(1)'));
+const favPip = await favRead();
+notes.push(`pip accent: ${favPip.pip}`);
+ok('something waiting: a badge appears', favPip.pip[3] > 200);
+ok('...in the accent, which is blue against this page\'s ramp',
+   favPip.pip[2] > favPip.pip[0] + 20);
+
+writeFileSync(QPATH, QBROKEN);
+await titleWhen(x => x.startsWith('(!)'));
+const favWarn = await favRead();
+notes.push(`pip warn:   ${favWarn.pip}`);
+ok('an unreadable channel: the badge is amber, not the accent',
+   favWarn.pip[3] > 200 && favWarn.pip[0] > favWarn.pip[2] + 60);
+writeFileSync(QPATH, QGOOD);
+
+// reduced motion: the frame is pinned, everything else survives
+{
+  const ctx2 = await br.newContext({ reducedMotion: 'reduce',
+                                     viewport: { width: 900, height: 700 } });
+  const p2 = await ctx2.newPage();
+  p2.on('pageerror', e => errs.push('rm: ' + e));
+  writeStatus({ awaiting_human: [] });
+  await p2.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await sleep(1600);
+  const read2 = () => p2.evaluate(FAV_READ);
+  const rm1 = await read2();
+  await sleep(3000);
+  const rm2 = await read2();
+  notes.push(`reduced motion: lum=${rm1.lum} (dreaming ${favA.lum}, ` +
+             `stalled ${stall1.lum})`);
+  ok('reduced motion pins the frame', rm1.href === rm2.href);
+  /* ...but it must not turn a live loop into a stalled-looking one: timing
+     changes, never function or legibility (the wisp's rule). The trail and
+     the full brightness still say "in flight" with no motion at all. */
+  ok('...without demoting a live loop to the stalled treatment',
+     rm1.lum > stall1.lum * 1.25);
+  await ctx2.close();
+}
+
 ok('no page errors', errs.length === 0);
 finished = true;
 await br.close();

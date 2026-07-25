@@ -716,6 +716,22 @@ class TestAppShell(unittest.TestCase):
         self.assertIn('applyTitle();     // the liveness word drifts',
                       watch.PAGE)          # ...inside ages()
 
+    def test_page_has_favicon_wiring(self):
+        # Static guard: the icon is drawn INLINE and refreshed off the same 1s
+        # sweep as the title (#153). A file beside the server would not exist
+        # in production — `just deploy` snapshots watch.py alone.
+        self.assertIn('<link rel="icon" id="favicon"', watch.PAGE)
+        for token in ('function favPaint(', 'function applyFavicon(',
+                      'const favHue', "toDataURL('image/png')"):
+            self.assertIn(token, watch.PAGE)
+        self.assertIn('applyFavicon();   // ...and the orbit advances',
+                      watch.PAGE)        # ...inside ages()
+        # The orbit rides a 1s timer, never rAF: a hidden document is given no
+        # rendering opportunities, and a hidden tab is where a favicon lives.
+        # (the CALL, not the word — the comment above it explains why there
+        # isn't one, and matching prose is how a check tests its own doc)
+        self.assertNotIn('requestAnimationFrame(', watch.FAVICON_JS)
+
     def test_status_panel_gates_last_tick_on_the_field(self):
         # The verbatim fallback for an unparseable `last_tick` was documented
         # and unreachable: `if (t)` is falsy for NaN, so the fact vanished off
