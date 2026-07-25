@@ -31,28 +31,6 @@
   confinement question with one decision. But it is your data and your
   machine, and the first is materially less work.
 
-- **2026-07-25 — what should the dashboard be called, and does the app
-  name appear anywhere? (#172, #153).** Two decisions that arrived from
-  opposite directions and should be made together.
-
-  You said "dreamwork watch" is "not very inspiring", and floated
-  "dreamwork" plus the project name, or "dreamwork dashboard" — marked
-  as thinking aloud rather than deciding.
-
-  Separately and independently, #153 **dropped the app name from the
-  browser tab title**, arguing that a tab strip never has room for it
-  and the favicon carries app identity. That shipped; the tab now reads
-  `(2) ud-dreamwork · dreaming · questions`.
-
-  So if the name also leaves the page heading, **nothing on screen says
-  "dreamwork" except the favicon**. That may be exactly right — it is
-  your product and you know what it is — but it is a bigger decision
-  than either half looked like alone, which is why it is one question.
-
-  Your layout principle is taken either way and is not in question:
-  anchor the invariant thing (repo name, branch) hard right so a
-  changing page title cannot shove it about.
-
 - **2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
   Stages 1-5 shipped: the skill exists, is installed and indexed, walks
   its own procedure, and `newerrand.py` creates a dreamstate so an
@@ -146,6 +124,22 @@
     resolved and is not.
 
 ## Answered
+
+- **What should the dashboard be called? (#172, #153)** → `(4) dreamwork
+  · <status> · <extra>` via watch (2026-07-25 15:30). **The app name
+  comes back**: #153 had dropped it on the argument that the favicon
+  carries identity, and the answer settles it the other way. The layout
+  principle stands separately — invariants (repo, branch) anchor hard
+  right so a changing page title cannot shove them.
+
+  Two things arrived with the answer and are now tasks. He asked what
+  the `(4)` meant, and it was WRONG (#181): the count came from
+  `status.json`'s `awaiting_human`, a list the coordinator maintains by
+  hand, which had drifted from `questions.md`'s actual open count. A
+  hand-maintained count is a claim; it now derives from the file he can
+  look at. And the favicon is "too slow and does not look smooth" —
+  which is #153's one-frame-per-second choice, correct for a hidden tab
+  and wrong for the one he is watching (#182).
 
 - **Should `/file` reflow markdown? (#158)** → "I think rec still
   though. i agree with only reflowing .md or similar. not source code"

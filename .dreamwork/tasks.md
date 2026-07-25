@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **181**
+Next id: **184**
 
 ## Open
 
@@ -89,6 +89,31 @@ Next id: **181**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#183** — The composer's `+` sticks to the top when scrolling · P2 ·
+  idea · 25m · on a long page the way to send a steer scrolls off
+  exactly when he has read something and has a reply · **he named the
+  hard part**: it collides with #108's clamp, so vertical and
+  horizontal constraints are computed by different rules and must work
+  together, not in sequence · the `+` is also #170's ANCHOR, so a
+  moving anchor breaks a fit test computed once at open · build with the
+  composer-geometry batch
+- **#182** — Favicon smooth and graceful, with a rolling notification ·
+  P2 · idea · 75m · "too slow, does not look smooth" is the direct
+  consequence of #153's one-frame-per-second choice — right for a hidden
+  tab, wrong for the one he is watching · **two regimes**: rAF while
+  visible, the pre-rendered fallback when hidden, switched on
+  `visibilitychange` — which also unblocks on-the-fly generation · the
+  cylinder rolls a count up, PAUSES to be read, rolls away · "get super
+  creative, multiple visual review-and-fix loops" is a method
+  instruction; taste is the deliverable
+- **#181** — The title's count is a CLAIM, not a fact · P2 · bug · 20m ·
+  he asked what `(4)` meant and it was wrong: the count came from
+  `status.json`'s `awaiting_human`, which the coordinator maintains BY
+  HAND and which had drifted from `questions.md` · derive it from
+  `open_question_count()`, what he counts by eye; keep `awaiting_human`
+  as prose naming WHAT awaits · **a number on screen must derive from
+  something he can look at** · second instance today of a proxy being
+  believed as the thing it proxies (#155 was the first)
 - **#180** — Stream the dreamer's own events onto the dashboard · P3 ·
   idea · 120m · "do like 4-6 review-and-improve loops" is a METHOD
   instruction — build, look, improve, and say how many passes it got ·
