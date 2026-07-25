@@ -119,7 +119,17 @@ def check_questions(dw: Path, watch, rep: Report) -> None:
     o = len(watch.parse_open_questions(text))
     a = len(watch.parse_answered(text))
     if o or a:
-        rep.add(OK, "questions.md", f"{o} open, {a} answered")
+        bad = check_priorities(watch, text)
+        if bad:
+            rep.add(
+                ERROR,
+                "questions.md",
+                f"{len(bad)} entry title(s) start with something that looks like a "
+                f"priority but is not one of P1/P2/P3 — it will sort as unmarked "
+                f"and read as marked: {', '.join(bad[:3])}",
+            )
+        else:
+            rep.add(OK, "questions.md", f"{o} open, {a} answered")
         return
 
     # Zero entries has two causes that must not be confused, and getting this
@@ -145,6 +155,30 @@ def check_questions(dw: Path, watch, rep: Report) -> None:
             f"{len(body)} lines of content and the reader sees NO entries — "
             f"renders as 'nothing to answer'. Entries need `- **Title**` at top level",
         )
+
+
+PRIORITY = re.compile(r"^(P\d+)\s*[\u00b7:\-]\s*")
+
+
+def check_priorities(watch, text: str) -> list[str]:
+    """Titles that LOOK prioritised but are not (#197).
+
+    The marker is an optional `P1 · ` / `P2 · ` / `P3 · ` prefix on the
+    entry title, and absent means P2 — the middle band, so an explicit low
+    genuinely sorts below an unmarked one.
+
+    Only one failure is worth an error, and it is the quiet one: `P4 · ` or
+    `P0 · ` reads to a human as prioritised and sorts as unmarked, so the
+    entry he most wants seen sits in the middle of the list looking urgent.
+    A title with no marker at all is normal and says nothing.
+    """
+    bad = []
+    for q in list(watch.parse_open_questions(text)) + list(watch.parse_answered(text)):
+        title = " ".join(str(q.get("title", "")).split())
+        m = PRIORITY.match(title)
+        if m and m.group(1) not in ("P1", "P2", "P3"):
+            bad.append(m.group(1))
+    return bad
 
 
 def check_tasks(dw: Path, rep: Report) -> None:

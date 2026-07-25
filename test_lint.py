@@ -454,3 +454,55 @@ class TestExitCodes:
         rep = run(target(tmp_path, **{"questions.md": GOOD}))
         assert levels(rep, "questions.md") == [lint.WARN]
         assert not rep.failed
+
+
+class TestQuestionPriorities:
+    """#197 — an optional `P1 · ` prefix on the entry title, absent = P2.
+
+    Only one failure is worth an error and it is the quiet one: `P4 · `
+    reads to a human as prioritised and sorts as unmarked, so the entry he
+    most wants seen sits mid-list looking urgent.
+    """
+
+    def q(self, *titles):
+        body = "\n\n".join(f"- **{t}**\n  Body prose." for t in titles)
+        return f"# Questions\n\n## Open\n\n{body}\n\n## Answered\n"
+
+    _n = 0
+
+    def run_q(self, tmp_path, text):
+        # Its own directory per call: target() mkdirs unconditionally, so
+        # two checks in one test would collide on the shared tmp_path.
+        TestQuestionPriorities._n += 1
+        sub = tmp_path / f"t{TestQuestionPriorities._n}"
+        sub.mkdir()
+        rep = lint.Report()
+        lint.check_questions(target(sub, **{"questions.md": text}) / ".dreamwork",
+                             lint.load_watch(), rep)
+        return rep
+
+    def test_valid_markers_pass(self, tmp_path):
+        rep = self.run_q(tmp_path, self.q("P1 \u00b7 urgent", "P3 \u00b7 whenever"))
+        assert not rep.failed
+
+    def test_no_marker_is_normal(self, tmp_path):
+        # Most entries will never carry one; unmarked must say nothing.
+        assert not self.run_q(tmp_path, self.q("2026-07-25 \u2014 an ordinary ask")).failed
+
+    def test_a_marker_outside_the_band_is_an_error(self, tmp_path):
+        rep = self.run_q(tmp_path, self.q("P4 \u00b7 looks urgent, sorts as unmarked"))
+        assert rep.failed
+        assert "P4" in rep.rows[0][2]
+
+    def test_p0_too(self, tmp_path):
+        assert self.run_q(tmp_path, self.q("P0 \u00b7 even more so")).failed
+
+    def test_a_colon_or_dash_separator_is_recognised(self, tmp_path):
+        # So a near-miss cannot slip past the check by punctuation alone.
+        assert self.run_q(tmp_path, self.q("P9: wrong")).failed
+        assert self.run_q(tmp_path, self.q("P9 - wrong")).failed
+
+    def test_a_title_merely_starting_with_P_is_not_a_marker(self, tmp_path):
+        # Discrimination: "PROPOSAL" must not be read as a priority.
+        assert not self.run_q(tmp_path, self.q("PROPOSAL \u00b7 rename the thing")).failed
+        assert not self.run_q(tmp_path, self.q("P versus NP, briefly")).failed

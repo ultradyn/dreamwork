@@ -96,6 +96,28 @@ one warning colour and names this path. `lint.py` says the same thing
 from the command line. So a file in the wrong shape now costs a red
 light rather than a morning.
 
+## Priority on a question (#197)
+
+An entry title may begin with `P1 · `, `P2 · ` or `P3 · `. **Absent means
+P2** — the middle band, deliberately, so an explicit `P3` sorts genuinely
+below an unmarked entry rather than level with it.
+
+`P1` blocks work · `P2` wants an answer soon · `P3` whenever. Same
+vocabulary as the task ledger, because he already reads P1-P3 there and a
+second scale would be one to learn.
+
+It is part of the title, so it needs no parser change and it renders — he
+sees the priority on the card rather than only in the sort. **"Oldest
+first on a tie" is free**: the file is already chronological, so a
+*stable* sort by priority alone produces it. Do not add a date
+comparison; that would be a second mechanism able to disagree with the
+first.
+
+`lint.py` errors on exactly one thing: a marker outside the band (`P4 · `,
+`P0 · `). That is the quiet failure — it reads to a human as prioritised
+and sorts as unmarked, so the entry he most wants seen sits mid-list
+looking urgent. A title with no marker is normal and says nothing.
+
 ## The rest
 
 These are written by the loop and read by something. Where a row says

@@ -2,7 +2,7 @@
 
 ## Open
 
-- **2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
+- **P3 · 2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
   Stages 1-5 shipped: the skill exists, is installed and indexed, walks
   its own procedure, and `newerrand.py` creates a dreamstate so an
   opening never hand-writes `questions.md`/`status.json` by hand.
@@ -33,7 +33,7 @@
     **This question is genuinely open and has never been answered.**
 
 
-- **2026-07-25 — how should an answer reach a loop on another machine?**
+- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
   You said "defer publishing repo for a bit", which answers an open
   question belonging to the dreamwork instance on **x-game**
   (`~/src/ez-feedback-pipeline`), not to this one: *"Publish the repo, so
@@ -66,7 +66,7 @@
     they were indistinguishable from his.
     **This question is genuinely open and has never been answered.**
 
-- **2026-07-25 — dreamhub URL space: one hub URL, or one per project?
+- **P3 · 2026-07-25 — dreamhub URL space: one hub URL, or one per project?
   (#96).** Your `daemon-mode.md` sketch was `/` lists projects and
   `/{project}/…` reverse-proxies to that project's watch. The stage-1
   plan ships **origin-per-project** instead — the hub lists and links
@@ -98,7 +98,7 @@
     they were indistinguishable from his.
     **This question is genuinely open and has never been answered.**
 
-- **2026-07-25 — should the PreCompact hook ship, and as a plugin? (#138)**
+- **P2 · 2026-07-25 — should the PreCompact hook ship, and as a plugin? (#138)**
   This one is here because it was missing. It has been listed as
   awaiting you in `status.json` for hours and was never written down —
   the third time today an ask lived only in a task description
@@ -129,7 +129,7 @@
 
   Answer "ship it", "not yet", or name a different shape.
 
-- **2026-07-25 — may I deploy the dashboard? DREAMWORK.md says no, and a
+- **P1 · 2026-07-25 — may I deploy the dashboard? DREAMWORK.md says no, and a
   deploy plainly happened.** Line 56 reads "Deploy is not authorized."
   Meanwhile `just deploy` exists as a recipe, `status.json` tracks a
   deployed revision, and there is a server answering on 35110 from a
@@ -186,7 +186,7 @@
     the reason #147 is now in progress: a staleness check done by hand
     gets it wrong, which is precisely the argument for the hub doing it.
 
-- **2026-07-25 — whose is `ud-dw-generate`? It is untracked in this repo
+- **P2 · 2026-07-25 — whose is `ud-dw-generate`? It is untracked in this repo
   and I am not touching it.** An 8KB executable appeared at 16:17: a
   preview-URL minter that reads repo+branch from the cwd, mints a nonce,
   and creates a directory on a server (config outside version control,
@@ -202,7 +202,7 @@
   something that belongs in another repo, or scratch to delete. Until you
   do it stays exactly where it is.
 
-- **2026-07-25 — #194: where does an upgrade check get its commit range,
+- **P2 · 2026-07-25 — #194: where does an upgrade check get its commit range,
   when the release has no repo?** Your version idea is captured and
   planned (`docs/plans/version-and-upgrade.md`); this is the one fork
   that decides step 4 onward, so I would rather ask than build both.
@@ -239,7 +239,7 @@
   with the trailers since every commit written before they exist is one
   the future upgrade pass has to read blind.
 
-- **2026-07-25 — which "t3 connect" do you mean, and does it change #201?
+- **P1 · 2026-07-25 — which "t3 connect" do you mean, and does it change #201?
   (#202)** I searched and could not find a product or protocol by that
   name, so I am asking rather than building against the nearest match.
 
