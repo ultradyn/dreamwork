@@ -57,8 +57,35 @@ The loop offers five seams; use the ones you need:
   the gate applies, the issue's stated purpose serves as the task goal,
   and the parent still has to be nameable — an issue nobody here asked
   for is exactly the case the gate exists for.
-- **Commands.** Add `<plugin-thing>: ...`-style commands if genuinely
-  needed; never repurpose or shadow core commands.
+- **Commands.** Add commands if genuinely needed; never repurpose or
+  shadow core ones. Declare them in the plugin's SKILL.md so humans and
+  agents can read them, and the loop copies them into the target at
+  plugin resolution as `.dreamwork/plugin-commands.json` — whole, never
+  appended — where the composer can see them. Shape and reasoning:
+  `file-formats.md`; `lint.py` enforces it.
+
+  The copy exists because **`watch.py` reads the target** and plugin
+  skills do not live there — they sit in `~/.claude-p/skills/`,
+  `~/.agents/skills/`, and elsewhere, varying by harness and machine. A
+  composer reading the plugin's own files would work on one machine and
+  silently show nothing on the next. Consequences worth knowing before
+  you design around them:
+
+  - **`kind` is a wire token**: lowercase `namespace-name`, the
+    namespace being the plugin's own (`gh-sync`, not `sync`, and never
+    the core namespaces). The human sends `kind: text` exactly as with a
+    core command. Collisions are refused by the linter rather than
+    forbidden in prose — this paragraph used to be the only thing
+    standing between a plugin and a hijacked `do-next`.
+  - **Plugin commands live in the `...` menu, not the main row.** There
+    is no way to ask otherwise. Loading a plugin can add to the composer
+    and can never degrade it.
+  - **Unloading is the absence of a write.** Because the file is rewritten
+    whole, a removed plugin's commands vanish at the next resolution with
+    nobody deleting anything. The linter cross-reads DREAMWORK.md and
+    errors on a command whose plugin is not loaded, so a stale menu entry
+    — one the human can send and nothing answers — cannot sit there
+    quietly.
 - **Maintenance.** Contribute rotation items; custom roll.py weights
   persist as a Routines line in DREAMWORK.md. Mark passes with the
   standard `dreamwork(maintain:<item>):` commit marker.

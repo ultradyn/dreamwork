@@ -109,6 +109,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/status.json` | `watch.py`'s status reader; **`dreamhub.py`** | Valid JSON, and now an interface — see below | `lint.py` |
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
+| `.dreamwork/plugin-commands.json` | `watch.py`'s composer (#86) | `{"commands": [{kind, label, desc, plugin}]}`. Written **whole** by the loop at plugin resolution, never appended — see below. Machine-local, **gitignored** | `lint.py` |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
 | `.dreamwork/dreams/<date>-<time>-<slug>.md` | the coordinator; grooming | The **filename** is the contract: `2026-07-25-1130-slug.md`. It carries the ordering | `lint.py` (naming) |
 | `.dreamwork/lessons.md` | humans; the loop at init; grooming | **Stated in the file's own header** — a claim you could read alone, then the case that earned it. Craft belongs where the writer already is | prose only |
@@ -148,6 +149,39 @@ events-log event: the log's contract is one line per thing an agent then
 acts on, and a colour is not one. Logging it would wake the loop to do
 nothing. The loop learns his choice by the file being in the repo, the
 same way `DREAMWORK.md` works.
+
+## `.dreamwork/plugin-commands.json` — why the loop writes it at all
+
+A plugin declares its commands in its own SKILL.md, for humans and agents
+to read. This file is the loop copying them where the composer can see
+them, and it exists because of one asymmetry: **`watch.py` reads the
+target.** It is invoked `--target <project>` and its whole model is that
+what it shows lives under that root. Plugin skills do not — they sit in
+`~/.claude-p/skills/`, `~/.agents/skills/`, and elsewhere, varying by
+harness and by machine. A composer that read the plugin's own files would
+work here and silently show nothing on the next machine.
+
+Three properties, each of which is a failure mode turned into a rule:
+
+- **Written whole, never appended.** Unloading a plugin is then the
+  *absence* of a write rather than a remembered deletion. Same move as
+  fold-by-complement and `human_block()`: make the mistake unavailable
+  instead of forbidding it.
+- **Machine-local, so gitignored.** Which plugins resolve, and which
+  version of each, is a property of the machine — the same reason the
+  composer cannot read them directly. A committed copy would be another
+  target's truth.
+- **No `common` field.** Core commands own the composer's main row; a
+  plugin's land in the `...` menu. A plugin cannot promote itself into
+  the most valuable real estate on the page, so loading one can never
+  degrade the composer for the human.
+
+`lint.py` refuses a kind that shadows a core command, a kind in the core
+namespace, a duplicate, and — cross-read against DREAMWORK.md's Plugins
+section — a command whose plugin is not loaded. That last one is the
+stale-menu case: an entry the human can send that nothing answers. When
+DREAMWORK.md has no Plugins section the check WARNs rather than errors,
+because silence there is not a claim that nothing is loaded.
 
 ## `.dreamwork/status.json` — now an interface
 

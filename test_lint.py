@@ -254,6 +254,115 @@ class TestWatchPort:
         assert levels(rep, "watch-port") == [lint.WARN]
 
 
+class TestPluginCommands:
+    """Commands a plugin declares into the target (#86).
+
+    The file exists because watch.py reads the TARGET and plugin skills do
+    not live there. Both failure modes it guards are silent: a menu entry
+    whose plugin is gone, and a plugin quietly taking over a core command.
+    """
+
+    class FakeWatch:
+        COMMANDS = ({"kind": "add-idea"}, {"kind": "do-next"}, {"kind": "maintenance"})
+
+    PLUGINS = """\
+# DREAMWORK.md
+
+## Plugins
+
+- Load: `ud-dreamwork-github` (2026-07-25) — the forge presence.
+- Don't load: `ud-dreamwork-nope`
+"""
+
+    def run_pc(self, t, watch=None):
+        rep = lint.Report()
+        lint.check_plugin_commands(t / ".dreamwork", watch or self.FakeWatch, rep)
+        return rep
+
+    def decl(self, tmp_path, commands, dreamwork=None):
+        t = target(tmp_path, **{"plugin-commands.json": json.dumps({"commands": commands})})
+        if dreamwork is not None:
+            (t / "DREAMWORK.md").write_text(dreamwork)
+        return t
+
+    GH = {"kind": "gh-sync", "label": "gh sync", "desc": "re-poll the forge now",
+          "plugin": "ud-dreamwork-github"}
+
+    def test_absent_is_silent(self, tmp_path):
+        # Most targets load nothing that declares commands. A note on each
+        # of them is what hides the one that matters.
+        assert self.run_pc(target(tmp_path)).rows == []
+
+    def test_a_loaded_plugins_command_is_ok(self, tmp_path):
+        rep = self.run_pc(self.decl(tmp_path, [self.GH], self.PLUGINS))
+        assert [lvl for lvl, _, _ in rep.rows] == [lint.OK]
+
+    def test_an_empty_list_is_ok_not_an_error(self, tmp_path):
+        # A plugin that declares nothing is the common case, and the menu
+        # shows no empty section for it.
+        rep = self.run_pc(self.decl(tmp_path, [], self.PLUGINS))
+        assert not rep.failed and "none" in rep.rows[0][2]
+
+    def test_a_command_from_an_unloaded_plugin_is_stale(self, tmp_path):
+        stale = dict(self.GH, plugin="ud-dreamwork-gone")
+        rep = self.run_pc(self.decl(tmp_path, [stale], self.PLUGINS))
+        assert rep.failed
+        assert "not loaded" in rep.rows[0][2] and "ud-dreamwork-gone" in rep.rows[0][2]
+
+    def test_no_plugins_section_is_unverified_not_stale(self, tmp_path):
+        # THE CRY-WOLF CASE. Silence in DREAMWORK.md is not a claim that
+        # nothing is loaded, and treating it as one marks every declared
+        # command stale on a target that simply never wrote the section.
+        rep = self.run_pc(self.decl(tmp_path, [self.GH], "# DREAMWORK.md\n\n## Goals\n\n- one\n"))
+        assert not rep.failed
+        assert [lvl for lvl, _, _ in rep.rows] == [lint.WARN]
+
+    def test_shadowing_a_core_command_is_an_error(self, tmp_path):
+        # writing-plugins.md forbids this in prose. Prose cannot refuse.
+        bad = dict(self.GH, kind="do-next")
+        rep = self.run_pc(self.decl(tmp_path, [bad], self.PLUGINS))
+        assert rep.failed and "shadows" in rep.rows[0][2]
+
+    def test_the_core_namespace_is_reserved(self, tmp_path):
+        # `do-anything` reads as core to the human even though no core
+        # command owns that exact kind.
+        bad = dict(self.GH, kind="do-something")
+        rep = self.run_pc(self.decl(tmp_path, [bad], self.PLUGINS))
+        assert rep.failed and "namespace" in rep.rows[0][2]
+
+    def test_core_kinds_come_from_watch_not_a_copy(self, tmp_path):
+        # Discrimination: with a watch whose COMMANDS lack `do-next`, the
+        # same file must PASS — proving the ban tracks the real table.
+        class Other:
+            COMMANDS = ({"kind": "add-idea"},)
+        rep = self.run_pc(self.decl(tmp_path, [dict(self.GH, kind="do-next")], self.PLUGINS), Other)
+        assert not rep.failed
+
+    def test_an_unnamespaced_kind_is_an_error(self, tmp_path):
+        rep = self.run_pc(self.decl(tmp_path, [dict(self.GH, kind="sync")], self.PLUGINS))
+        assert rep.failed
+
+    def test_two_plugins_claiming_one_kind_is_an_error(self, tmp_path):
+        other = dict(self.GH, plugin="ud-dreamwork-github", label="other")
+        rep = self.run_pc(self.decl(tmp_path, [self.GH, other], self.PLUGINS))
+        assert rep.failed
+        assert any("never runs" in d for _, _, d in rep.rows)
+
+    def test_a_missing_field_names_it(self, tmp_path):
+        rep = self.run_pc(self.decl(tmp_path, [{"kind": "gh-sync"}], self.PLUGINS))
+        assert rep.failed
+        assert "label" in rep.rows[0][2] and "desc" in rep.rows[0][2]
+
+    def test_unparseable_json_says_the_menu_is_empty(self, tmp_path):
+        t = target(tmp_path, **{"plugin-commands.json": "{not json"})
+        rep = self.run_pc(t)
+        assert rep.failed and "no plugin commands" in rep.rows[0][2]
+
+    def test_wrong_toplevel_shape_is_an_error(self, tmp_path):
+        t = target(tmp_path, **{"plugin-commands.json": json.dumps([{"kind": "gh-sync"}])})
+        assert self.run_pc(t).failed
+
+
 class TestWatchTint:
     """His colour. The check exists because an unknown name does not break
     the page — it silently ignores what he chose."""

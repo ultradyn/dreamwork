@@ -306,6 +306,96 @@ def check_watch_tint(dw: Path, watch, rep: Report) -> None:
         rep.add(OK, "watch-tint", raw)
 
 
+PLUGIN_KIND = re.compile(r"^[a-z0-9]+-[a-z0-9-]*[a-z0-9]$")
+
+
+def loaded_plugins(root: Path):
+    """Plugin names under DREAMWORK.md's Plugins/Load bullets.
+
+    Returns None for "cannot tell", which is deliberately not the same value
+    as the empty set. A target with no Plugins section has not declared that
+    nothing is loaded — it has said nothing — and treating silence as "none
+    loaded" would mark every declared command stale on a target that simply
+    never wrote the section.
+    """
+    path = root / "DREAMWORK.md"
+    if not path.exists():
+        return None
+    section = re.search(r"^## Plugins\s*$(.*?)(?=^## |\Z)", path.read_text(), re.M | re.S)
+    if not section:
+        return None
+    body = section.group(1)
+    stop = re.search(r"^- \*{0,2}Don't load", body, re.M)
+    if stop:
+        body = body[: stop.start()]
+    return set(re.findall(r"`(ud-dreamwork-[a-z0-9-]+)`", body))
+
+
+def check_plugin_commands(dw: Path, watch, rep: Report) -> None:
+    """Commands a plugin declares, written into the target so watch.py can see them (#86).
+
+    Two failure modes, and neither announces itself.
+
+    STALE: a plugin is unloaded and its commands stay in the menu, so the
+    human sends something nothing answers. The file is rewritten WHOLE at
+    load, which makes unloading the absence of a write rather than a
+    remembered deletion — but only while something notices a file that
+    outlived its plugin. That is this check, cross-read against DREAMWORK.md.
+
+    SHADOWED: `writing-plugins.md` forbids repurposing a core command in
+    prose. Prose cannot refuse. Core kinds come from watch.py's COMMANDS, so
+    the ban tracks the real table instead of a copy of it.
+
+    Absent returns silently: most targets load no plugin that declares
+    anything, and a note on each of them is the noise that hides the one
+    that matters.
+    """
+    path = dw / "plugin-commands.json"
+    if not path.exists():
+        return
+    try:
+        doc = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        rep.add(ERROR, "plugin-commands", f"unparseable JSON ({exc}) — the composer shows no plugin commands at all")
+        return
+    if not isinstance(doc, dict) or not isinstance(doc.get("commands"), list):
+        rep.add(ERROR, "plugin-commands", "expected an object with a `commands` array")
+        return
+
+    cmds = doc["commands"]
+    core = {c["kind"] for c in getattr(watch, "COMMANDS", ())} if watch else set()
+    core_prefixes = {k.split("-")[0] for k in core}
+    declared = loaded_plugins(dw.parent)
+    seen: dict[str, str] = {}
+
+    for i, c in enumerate(cmds):
+        where = f"commands[{i}]"
+        if not isinstance(c, dict):
+            rep.add(ERROR, "plugin-commands", f"{where} is not an object")
+            continue
+        missing = [f for f in ("kind", "label", "desc", "plugin") if not isinstance(c.get(f), str) or not c[f]]
+        if missing:
+            rep.add(ERROR, "plugin-commands", f"{where} missing {', '.join(missing)}")
+            continue
+        kind, plugin = c["kind"], c["plugin"]
+        if kind in core:
+            rep.add(ERROR, "plugin-commands", f"{kind!r} shadows a core command — {plugin} would silently take it over")
+        elif not PLUGIN_KIND.match(kind):
+            rep.add(ERROR, "plugin-commands", f"{kind!r} is not `namespace-name` in lowercase — the composer sends it on the wire")
+        elif kind.split("-")[0] in core_prefixes:
+            rep.add(ERROR, "plugin-commands", f"{kind!r} uses the core namespace {kind.split('-')[0]!r} — pick the plugin's own")
+        if kind in seen:
+            rep.add(ERROR, "plugin-commands", f"{kind!r} declared by both {seen[kind]} and {plugin} — one of them never runs")
+        seen[kind] = plugin
+        if declared is None:
+            rep.add(WARN, "plugin-commands", f"{kind!r} — unverified (no Plugins section in DREAMWORK.md)")
+        elif plugin not in declared:
+            rep.add(ERROR, "plugin-commands", f"{kind!r} is declared by {plugin}, which is not loaded — a stale menu entry nothing answers")
+
+    if all(w != "plugin-commands" for _, w, _ in rep.rows):
+        rep.add(OK, "plugin-commands", f"{len(cmds)} declared" if cmds else "none declared")
+
+
 def check_skill_version(dw: Path, rep: Report) -> None:
     path = dw / "skill-version"
     if not path.exists():
@@ -383,6 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     check_status(dw, rep)
     check_watch_port(dw, rep)
     check_watch_tint(dw, watch, rep)
+    check_plugin_commands(dw, watch, rep)
     check_skill_version(dw, rep)
     check_dreams(dw, rep)
 

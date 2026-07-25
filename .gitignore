@@ -1,5 +1,8 @@
 __pycache__/
 .dreamwork/status.json
+# derived at plugin resolution; which plugins resolve is a property
+# of the machine, so a committed copy would be another target's truth
+.dreamwork/plugin-commands.json
 .dreamwork/watch-events.log
 
 # worktrees for isolated dreamer spikes
