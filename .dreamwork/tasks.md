@@ -11,10 +11,30 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **133**
+Next id: **138**
 
 ## Open
 
+- **#137** — Tell the loop how to write every file it writes, and give
+  it a linter · **P1** · task · 90m · his generalisation of #135 · a
+  third prose description of a format is a third thing that can drift;
+  a linter cannot drift from itself. Must CALL the existing readers,
+  not re-implement them, or #135 recurs one layer up
+- **#135** — questions.md's format lives only in its parser · **P1** ·
+  bug · 40m · **first slice of #137** · from the ez-feedback-pipeline
+  instance · the loop writes a
+  reasonable file the dashboard cannot read, and zero-parsed renders
+  identically to all-clear. Producer half: state the format in SKILL.md,
+  seed the skeleton on first use, migration
+- **#136** — A questions.md that parses to nothing must say so · **P1** ·
+  bug · 45m · reader half of #135 · the same trap sits in
+  `parse_answered`, `open_question_count` and the `append_subbullet`
+  write path — a file the reader cannot see is one /answer cannot write
+- **#134** — Wire the dreamhub guards into `just test` · P2 · chore ·
+  15m · until the line lands, green `just test` does not cover the hub —
+  bounded #117 gap, unbounded the moment it is forgotten
+- **#133** — Teach watch.py a URL prefix · P3 · task · 45m · do it
+  inside #124's server-core seam; unblocks the single-URL hub layout
 - **#122** — Smokey awaiting-fold text: the words warp, a ghost copy
   blows backwards into the aether · P2 · idea · 60m · his brief is
   verbatim in the task; it is the dream dissolve's ghost held low and
@@ -81,10 +101,12 @@ Next id: **133**
   40m · not by whoever wrote today's additions
 - **#119** — Revisit a `selection.md` reference once selection stops
   moving · P3 · idea · 30m · carried out of a pruned questions entry
-- **#96** — Daemon mode stage 1, dreamhub · P2 · task · 120m ·
-  **GO** 2026-07-25 10:48, hold lifted · `docs/plans/daemon-mode.md` ·
-  next step is a detailed stage-1 plan, then a fresh dreamer — the
-  earlier retraction means check back before scope widens past stage 1
+- **#96** — Daemon mode stage 1, dreamhub · P2 · task · 150-180m ·
+  **GO** 2026-07-25 10:48 · plan delivered:
+  `docs/plans/dreamhub-stage1.md`, nine increments each with its gate ·
+  ships origin-per-project, not the sketched `/{project}/` prefix (that
+  needs watch.py, filed as #133) · stage 1 only — check back before
+  scope widens
 
 ## Recently landed
 

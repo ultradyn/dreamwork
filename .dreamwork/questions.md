@@ -2,6 +2,28 @@
 
 ## Open
 
+- **2026-07-25 — dreamhub URL space: one hub URL, or one per project?
+  (#96).** Your `daemon-mode.md` sketch was `/` lists projects and
+  `/{project}/…` reverse-proxies to that project's watch. The stage-1
+  plan ships **origin-per-project** instead — the hub lists and links
+  out, each project keeps its own port and its own URLs.
+
+  Why, measured rather than argued: the watch page is root-absolute in
+  three places, and only two of them can be patched from outside. The
+  fetches and `pushState` can be shimmed; `routeOf()`/`isInternal()`
+  compare `location.pathname` against string literals inside a
+  generated JS string and cannot be reached. So under a path prefix a
+  deep link renders the **wrong view, silently** — the worst available
+  failure. `ssh -L` also gives a local port per remote project, so
+  origin-per-project survives all the way into the swarm stage, and the
+  prefix work belongs to #124's server-core seam where those three
+  sites are being touched anyway.
+
+  **Not blocking** — the build proceeds on the rec. Answer only if you
+  want the single-URL bookmark badly enough to serialise stage 1 behind
+  a `watch.py` change. Full reasoning:
+  `.dreamwork/docs/plans/dreamhub-stage1.md`.
+
 ## Answered
 
 - **Daemon mode: stage-1 build go? (#96)** → "go" via watch (2026-07-25
