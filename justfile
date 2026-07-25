@@ -90,13 +90,18 @@ lint:
 #                history panel. Checks its subject EXISTS before driving it —
 #                without that, a build without the feature costs a 30s
 #                Playwright timeout and reports "the guard threw".
+#   serving      OWN TARGET + OWN EPHEMERAL PORT (#140). The state under test
+#                is a relationship between the RUNNING BYTES and a repo's
+#                history of watch.py, so it evolves one repo through all four
+#                answers in order. The shared fixture is not a repository, so
+#                against it this could only ever reach "cannot tell".
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history plugcmd qorder"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history plugcmd qorder serving"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"

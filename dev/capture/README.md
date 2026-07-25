@@ -118,6 +118,12 @@ than once:
   arrival's intermediate opacities, that the surviving items were reconciled
   rather than re-created, that a plugin cannot reach the main row, and that
   `POST /command` accepts what the menu offers.
+- `serving` — which revision the page is RUNNING (#140), across all four
+  answers: no repo, untracked, current, behind. Evolves ONE repo forwards
+  because the answer is a function of history; the load-bearing part is that
+  only ONE of the four means "I compared and they differ", and two of its
+  checks assert the fixture still DISCRIMINATES (watch.py has history at all;
+  HEAD really moved past the served revision) before comparing against it.
 - `qsec` — the dashboard's questions fold arrives and departs (#196): the
   panels below it travel rather than teleporting, never overshoot, the body
   eases in and dreams away, reduced motion does neither, and the ghost holds

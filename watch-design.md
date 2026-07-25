@@ -1191,6 +1191,81 @@ target**: `dev/capture/fixture` is not a repository, so `git_tail` returns
 the shared server. Planting commits at known ages is also the only way to
 reach the 100-day boundary.
 
+#### What this page is serving
+
+One line, directly under the `commits` label and above the rows (#140).
+`just deploy` snapshots `watch.py` outside the repo and runs *that*, which is
+the right property — a dreamer editing the tree cannot change what is already
+serving him — and its cost is that **a fix that is committed and not deployed
+is indistinguishable from a bug, and he is looking at the deployed page**.
+#129 was reported 24 seconds after the commit that fixed it and about four
+minutes before the deploy; the report was accurate, the code was correct, and
+a tracing cycle went into the gap. The decided answer is not a deploy hook —
+`.git/hooks` is untracked, so it would be invisible, machine-local, and would
+quietly move deploy authority to whoever commits — it is to make a stale view
+**announce itself**.
+
+**Its home is the commits panel because the answer is only meaningful beside
+the list it is behind**, and the line sits between the label and the rows so
+it is read before them rather than as a footnote to them.
+
+**Three brightnesses for three kinds of answer, and the ranking is the whole
+design.** A healthy answer is a fact (`--dim`, `serving c552338`). An answer
+this page could not compute is a fact about the page (`--dimmer`,
+`serving — unknown · …`). A page running code older than HEAD is a **fault**
+— it invalidates everything else on screen — so it takes `--warn` and the
+rail: `this page is 2 watch.py commits behind · serving 8513719`. **That is
+the second and last use of the rail idiom**, and the comment on `.qhealth`
+used to claim it was the only one; what the two share is exactly what earns
+it — both are the page saying it cannot be trusted right now, one about the
+file it reads and one about the code it runs. Nothing merely important gets
+it.
+
+**It is never silent, and that is the one place it differs from the hub's
+version of the same line.** dreamhub says nothing on a healthy row because it
+has N rows and a line on every healthy one hides the unhealthy one. Here
+there is one page, and a silent healthy state is indistinguishable from no
+check at all — which is the failure this whole page is organised against. So
+`no repo` (the ordinary answer for a target that is somebody else's project,
+carrying no `watch.py` history) still renders, dim, saying it cannot tell.
+
+**"watch.py commits", not "commits", and the extra word is load-bearing
+here** in a way it is not on the hub: this line sits directly above a list of
+*all* the project's commits, where "3 commits behind" would read as a claim
+about those rows. HEAD can move thirty times without `watch.py` moving once,
+and `missing` is pathspec-filtered.
+
+**Measured by bytes, and by this process's OWN bytes.** The states, the
+vocabulary and the missing-commit list are `deployed.py`'s value for value
+(#147), so the hub row and this line say the same words — but the question is
+not identical, and the difference is the point. `deployed.py` asks what the
+snapshot at the conventional path holds; this asks what **this process is
+running**, read from its own `__file__` at import. They agree whenever the
+deploy recipe started the server and disagree exactly when something else did
+— a `just watch` from the tree, or one of the orphaned servers #203 is about,
+which is the case where the answer matters most. It is not `import deployed`
+because a deployed `watch.py` is routinely the only file of this project on
+disk, and reaching into the *target* for a module would mean a read-only
+dashboard executing code out of the directory it is watching.
+
+Detail is ranked, never withheld: the summary is the line, and the individual
+missing commits are in its `title`, so hovering gives the whole list without
+the panel growing to hold it — the hub's arrangement, one surface over.
+
+**No new motion, deliberately.** The line's presence can only change when
+HEAD moves, and that is already the commits panel's own gesture (#151): the
+sha sequence changed, so `regroupCards` runs and the rows travel from where
+they were — which is below where the line now is. The other direction
+(`behind` → `current`) happens only on a redeploy, and a redeploy is a new
+process, so `GENERATION` changes and the page reloads.
+
+The Python half is cached on HEAD (`serving_cached`) because the `behind`
+walk costs one `git show` per revision of `watch.py` — 75 today and growing
+forever — and every git call carries `--no-optional-locks`, asserted by a
+test rather than remembered, because his `CLAUDE.md` has a live mitigation
+about that lock. `dev/capture/serving.mjs` guards the render across all four
+states by evolving one repo forwards.
+
 ### The enter-snap rule beats the component
 
 `.dreamin` carries `transition:none !important`, and the `!important` is the

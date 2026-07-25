@@ -101,6 +101,153 @@ class TestCollector(unittest.TestCase):
             with tempfile.TemporaryDirectory() as e:
                 self.assertEqual(watch.git_tail(e), [])
 
+    def test_serving_report_names_every_state(self):
+        # #140. Each of these is a DIFFERENT answer to "what is this page
+        # running", and only one of them means "I compared and they differ".
+        # deployed.py exists because a shell version collapsed "I could not
+        # compare" into "no match" and reported it with total confidence.
+        import subprocess
+        src = b"# the running source\n"
+        with tempfile.TemporaryDirectory() as d:
+            # not a checkout at all — the ordinary state for most targets
+            r = watch.serving_report(d, src=src)
+            self.assertEqual(r["state"], watch.SERVE_NOREPO)
+            self.assertIsNotNone(r["note"])
+
+            env = dict(os.environ,
+                       GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+            run = lambda *a: subprocess.run(  # noqa: E731
+                ["git", "-C", d, *a], env=env, capture_output=True, check=True)
+            run("init", "-q")
+            with open(os.path.join(d, "other"), "w") as f:
+                f.write("x")
+            run("add", "other")
+            run("commit", "-q", "-m", "nothing to do with the dashboard")
+            # a repo that tracks no watch.py is still "no repo", not an error
+            self.assertEqual(watch.serving_report(d, src=src)["state"],
+                             watch.SERVE_NOREPO)
+
+            def commit(body, msg):
+                with open(os.path.join(d, "watch.py"), "wb") as f:
+                    f.write(body)
+                run("add", "watch.py")
+                run("commit", "-q", "-m", msg)
+
+            commit(b"# an older source\n", "older watch.py")
+            # running something that is in NO commit
+            r = watch.serving_report(d, src=src)
+            self.assertEqual(r["state"], watch.SERVE_UNTRACKED)
+
+            commit(src, "the running one")
+            r = watch.serving_report(d, src=src)
+            self.assertEqual(r["state"], watch.SERVE_CURRENT)
+            self.assertTrue(r["rev"])
+            self.assertEqual(r["missing"], [])
+
+            served = watch.serving_report(d, src=src)["rev"]
+            commit(b"# newer\n", "feat: a change to the dashboard")
+            run("commit", "-q", "--allow-empty",
+                "-m", "docs: untouched by the dashboard")
+            commit(b"# newer still\n", "fix: another change")
+            r = watch.serving_report(d, src=src)
+            self.assertEqual(r["state"], watch.SERVE_BEHIND)
+            self.assertEqual(r["rev"], served)
+            # the empty commit is NOT in here: `missing` is pathspec-filtered,
+            # which is why the line says "N watch.py commits behind" and not
+            # "N commits behind" — HEAD moved three times, watch.py twice.
+            self.assertEqual([s for _, s in r["missing"]],
+                             ["fix: another change",
+                              "feat: a change to the dashboard"])
+            self.assertTrue(all(h for h, _ in r["missing"]))
+
+    def test_serving_report_survives_a_process_that_cannot_read_itself(self):
+        # the check exists for the state where its own subject is absent, so
+        # it has to RETURN a reading rather than raise — a crash reads as
+        # silence, and this one would take /data.json down with it.
+        # SELF_SRC is populated in any normal run — assert that first, or this
+        # whole check is measuring a module that never loaded
+        self.assertTrue(watch.SELF_SRC, "watch.py never read its own source")
+        saved, watch.SELF_SRC = watch.SELF_SRC, None
+        try:
+            r = watch.serving_report(".")
+        finally:
+            watch.SELF_SRC = saved
+        self.assertEqual(r["state"], watch.SERVE_ERROR)
+        self.assertIn("own source", r["note"])
+
+    def test_serving_cached_keys_on_head(self):
+        # the walk is O(revisions of watch.py) git calls — 75 today, growing
+        # forever — so it must not run per tick. It may only re-run when HEAD
+        # moves, because that is the only thing that can change the answer for
+        # a process whose own bytes are fixed.
+        import subprocess
+        calls = []
+        real = subprocess.run
+
+        def counting(cmd, *a, **kw):
+            calls.append(cmd)
+            return real(cmd, *a, **kw)
+
+        with tempfile.TemporaryDirectory() as d:
+            env = dict(os.environ,
+                       GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+            subprocess.run(["git", "-C", d, "init", "-q"], env=env, check=True,
+                           capture_output=True)
+            with open(os.path.join(d, "watch.py"), "wb") as f:
+                f.write(b"# not what is running\n")
+            subprocess.run(["git", "-C", d, "add", "watch.py"], env=env,
+                           check=True, capture_output=True)
+            subprocess.run(["git", "-C", d, "commit", "-q", "-m", "one"],
+                           env=env, check=True, capture_output=True)
+            watch._SERVE_CACHE.clear()
+            subprocess.run = counting
+            try:
+                first = watch.serving_cached(d)
+                n_cold = len(calls)
+                for _ in range(5):
+                    watch.serving_cached(d)
+                n_warm = len(calls) - n_cold
+            finally:
+                subprocess.run = real
+            self.assertEqual(first["state"], watch.SERVE_UNTRACKED)
+            # five more ticks cost exactly one rev-parse each and nothing else
+            self.assertEqual(n_warm, 5)
+            self.assertTrue(all("rev-parse" in c for c in calls[n_cold:]))
+            watch._SERVE_CACHE.clear()
+
+    def test_every_git_call_refuses_the_index_lock(self):
+        # his CLAUDE.md carries a live mitigation about `.git/index.lock`: a
+        # background reader taking the real lock races his interactive git and
+        # orphans it when killed. A dashboard that polls git forever is
+        # precisely the shape that reintroduces it, so the flag is asserted
+        # rather than remembered.
+        import subprocess
+        seen = []
+        real = subprocess.run
+
+        def spy(cmd, *a, **kw):
+            if isinstance(cmd, (list, tuple)) and cmd and cmd[0] == "git":
+                seen.append(list(cmd))
+            return real(cmd, *a, **kw)
+
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run = spy
+            try:
+                watch._SERVE_CACHE.clear()
+                watch.serving_cached(d)
+                watch.serving_report(d, src=b"x")
+            finally:
+                subprocess.run = real
+                watch._SERVE_CACHE.clear()
+        # a comparison that could not run must not look like one that ran: if
+        # no git call was made at all this assertion is vacuous, so require
+        # the calls to exist first
+        self.assertTrue(seen, "no git call was made — this check proved nothing")
+        for cmd in seen:
+            self.assertIn("--no-optional-locks", cmd, " ".join(cmd))
+
     def test_watched_mtime_moves(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)

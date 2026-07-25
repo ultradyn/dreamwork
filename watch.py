@@ -221,6 +221,22 @@ STYLE = """<style>
      not jitter the column every second as they change */
   .git .cage { flex:0 0 auto; margin-left:auto;
                font-variant-numeric:tabular-nums; }
+  /* which revision this page is RUNNING (#140), directly under the label.
+     Three brightnesses for three kinds of answer, and the ranking is the
+     whole design: a healthy answer is a fact (dim), an answer this page
+     could not compute is a fact about the page (dimmest), and a page
+     serving code older than HEAD is a FAULT — it invalidates everything
+     else on screen, so it takes `--warn` and the rail.
+     THE SECOND USE OF THE RAIL, and the comment on .qhealth used to say it
+     was the only one. What the two share is exactly what earns it: both are
+     the page saying it cannot be trusted right now — one about the file it
+     reads, one about the code it runs. Nothing that is merely important
+     gets it. */
+  .gserve { color:var(--dim); font-size:.7rem; margin:-.15rem 0 .55rem;
+            max-width:60ch; }
+  .gserve.unknown { color:var(--dimmer); }
+  .gserve.stale { color:var(--warn);
+                  border-left:2px solid var(--warn); padding-left:.8rem; }
   /* the dashboard's questions fold (#141). `> summary` and not `summary`:
      the child combinator is what keeps this from being one of the catch-alls
      above — a question card inside carries its OWN <details><summary>, and a
@@ -364,9 +380,11 @@ STYLE = """<style>
   /* the questions channel's health (#136). Zero entries is the same NUMBER
      whether everything is answered or the reader cannot see the file, so the
      page has to say which — and the broken one has to look broken. It wears
-     `--warn` and the rail idiom, and it is the only thing on the page that
-     ever does. The quiet state (no file yet) is one dim line and no rail: a
-     fresh target has not failed at anything. */
+     `--warn` and the rail idiom, which on this page marks one thing only:
+     the page saying it cannot be trusted right now. Two things qualify —
+     this, about the file it reads, and `.gserve.stale` (#140), about the
+     code it runs. The quiet state (no file yet) is one dim line and no
+     rail: a fresh target has not failed at anything. */
   .qhealth { margin:.3rem 0 .9rem; }
   .qhealth.unreadable { border-left:2px solid var(--warn); padding-left:.8rem; }
   .qhealth.unreadable .qhlabel { color:var(--warn); text-transform:uppercase;
@@ -1544,6 +1562,51 @@ const gitKey = d => ((d && d.git) || []).map(c => c.sha).join(' ');
      · the age is an EMPTY node carrying `data-ct`. Nothing server-rendered
        ever states the age, because it is stale the second after it is
        written; `ages()` fills it and keeps filling it (see below). */
+/* what this page is RUNNING, said out loud (#140). One line, directly under
+   the `commits` label, because the answer is only meaningful beside the list
+   of commits it is behind.
+
+   IT IS NEVER SILENT, and that is the one place this deliberately differs
+   from the hub's version of the same line. dreamhub says nothing on a healthy
+   row because it has N rows and a line on every healthy one hides the
+   unhealthy one; here there is one page, and a silent healthy state is
+   indistinguishable from no check at all — which is the failure this whole
+   page is organised against. So the quiet states are quiet (dim, one short
+   line) and only a genuinely wrong state is loud.
+
+   The states, the vocabulary and the missing-commit list are `deployed.py`'s,
+   value for value (#147), so hovering this line and reading the hub row give
+   the same answer in the same words. Detail is ranked, never withheld: the
+   summary is the line and the individual missing commits are its title. */
+const SERVE_TEXT = {
+  current: s => `serving ${esc(s.rev || '?')}`,
+  // "watch.py commits", not "commits", and the extra word is load-bearing
+  // HERE in a way it is not on the hub: this line sits directly above a list
+  // of ALL of the project's commits, where "3 commits behind" would read as a
+  // claim about those rows. HEAD can move thirty times without watch.py
+  // moving once.
+  behind: s => `this page is ${s.missing.length} watch.py commit` +
+    `${s.missing.length === 1 ? '' : 's'} behind · serving ${esc(s.rev || '?')}`,
+  untracked: () => 'this page is serving code that is in no commit — ' +
+    'started from an uncommitted tree',
+};
+function servingLine(d) {
+  const s = (d && d.deployed) || null;
+  if (!s || !s.state) return '';
+  const missing = s.missing || [];
+  const say = SERVE_TEXT[s.state];
+  // a state this page has never heard of is still a reading: say the state
+  // rather than rendering nothing, which is what "no match" looked like
+  if (!say)
+    return `<div class="gserve unknown" title="${esc(s.note || '')}">` +
+           `serving — unknown · ${esc(s.note || s.state)}</div>`;
+  const loud = s.state !== 'current';
+  const title = missing.length
+    ? ` title="${esc(missing.map(([h, sub]) => `${h}  ${sub}`).join('\\n'))}"`
+    : '';
+  return `<div class="gserve${loud ? ' stale' : ''}"${title}>` +
+         `${say({ ...s, missing })}</div>`;
+}
 const gitRow = c => `<div class="commit${
     c.subject.includes('dreamwork(maintain:') ? ' maint' : ''}"` +
   ` data-sha="${esc(c.sha)}"><span class="gsha">${esc(c.sha)}</span>` +
@@ -1555,7 +1618,7 @@ function buildDashboard(d) {
   // just DONE — "near the top of dreamworker dashboard should be the most
   // recent 5 commits" (human, 2026-07-25, #151). Nothing else changed order.
   h += qHealth(d);
-  h += label('commits') + `<div class="git">` +
+  h += label('commits') + servingLine(d) + `<div class="git">` +
        d.git.map(gitRow).join('') + `</div>`;
   h += label(`dreams (${d.dreams.length})`) +
        (d.dreams.map(dreamBlock).join('') || '<div class="dim">none active</div>') +
@@ -4259,6 +4322,159 @@ def git_tail(target, n=GIT_ROWS):
     return out
 
 
+# ── what this page is RUNNING (#140) ──────────────────────────────────────
+#
+# A fix that is committed but not deployed is indistinguishable from a bug,
+# and he is looking at the deployed page — #129 was reported 24 seconds after
+# the commit that fixed it and a tracing cycle went into the gap. The decided
+# answer is NOT a deploy hook (`.git/hooks` is untracked, so it would be
+# invisible and machine-local, and it would move deploy authority to whoever
+# commits). It is to make a stale view announce itself.
+#
+# MEASURED BY BYTES, on #147's rule. `deployed.py`'s docstring is the long
+# form: a sidecar naming the deployed sha says what someone BELIEVED they
+# deployed, and this repo learned on #155 that a proxy eventually gets
+# believed as the thing it proxies. The states below are that module's,
+# value for value, so the hub row and this line say the same words.
+#
+# WHY IT IS NOT `import deployed`. `just deploy` snapshots watch.py to a
+# single file outside the repo and runs THAT, so this process is routinely
+# the only file of this project on disk — there is no sibling to import, and
+# reaching into the *target* for one would mean a read-only dashboard
+# executing code out of the directory it is watching.
+#
+# WHICH MAKES IT A DIFFERENT QUESTION, AND A STRICTER ONE. `deployed.py`
+# asks what the snapshot at the conventional path holds; this asks what THIS
+# PROCESS IS RUNNING, read from its own `__file__`. They agree whenever the
+# deploy recipe started the server and disagree exactly when something else
+# did — a `just watch` from the tree, or one of the orphaned servers #203 is
+# about, which is the case where the answer matters most.
+SERVE_CURRENT = "current"       # running HEAD's watch.py
+SERVE_BEHIND = "behind"         # running an older revision, and we know which
+SERVE_UNTRACKED = "untracked"   # matches no revision — started from a dirty tree
+SERVE_NOREPO = "no repo"        # this project does not carry watch.py's history
+SERVE_ERROR = "error"           # git failed; explicitly NOT "no match"
+
+# Read at IMPORT, not at first request: what is executing is the file as it
+# was when python read it. Reading later would answer with an edit made since
+# — the reverse of the question — and `--autoreload` re-execs on source
+# mtime, so a real change comes back through a fresh process anyway.
+try:
+    with open(os.path.abspath(__file__), "rb") as _f:
+        SELF_SRC = _f.read()
+except OSError:
+    SELF_SRC = None
+
+
+def serving_report(target, src=None, path="watch.py"):
+    """Which revision of `path` this process is running, against `target`'s
+    history of it.
+
+    Every failure is its own named state and none of them is "no match" —
+    deployed.py's rule, and the bug it was written for: **a comparison that
+    could not run must never look like a comparison that ran and found
+    nothing.** `no repo` is the ordinary answer for a project that is not
+    this dashboard's own checkout, and it is a reading, not a fault.
+
+    Never takes `.git/index.lock`: `--no-optional-locks` on every call. His
+    CLAUDE.md carries a live mitigation about that lock.
+    """
+    src = SELF_SRC if src is None else src
+    out = {"state": None, "rev": None, "missing": [], "note": None}
+    if src is None:
+        out["state"] = SERVE_ERROR
+        out["note"] = "this process cannot read its own source"
+        return out
+
+    def g(*args):
+        res = subprocess.run(
+            ["git", "--no-optional-locks", "-C", str(target), *args],
+            capture_output=True, timeout=10)
+        if res.returncode != 0:
+            raise OSError(res.stderr.decode("utf-8", "replace").strip() or
+                          "git exited %d" % res.returncode)
+        return res.stdout
+
+    # History FIRST, and its emptiness checked before anything else is read:
+    # a project that simply does not track watch.py is an ordinary target,
+    # and `git show HEAD:watch.py` raises there — which would report it as
+    # broken rather than as different.
+    try:
+        revs = g("log", "--format=%H", "--", path).decode().split()
+    except (OSError, subprocess.SubprocessError) as exc:
+        # not a checkout at all is an ORDINARY state, not a failure — most
+        # targets are somebody's project rather than this dashboard's own
+        # repo. deployed.py splits these the same way and for the same
+        # reason: only one of these states means "I compared".
+        if os.path.exists(os.path.join(target, ".git")):
+            out["state"] = SERVE_ERROR
+            out["note"] = "could not read the history of %s: %s" % (path, exc)
+        else:
+            out["state"] = SERVE_NOREPO
+            out["note"] = "this project is not a git checkout"
+        return out
+    if not revs:
+        out["state"] = SERVE_NOREPO
+        out["note"] = "this project does not carry %s's history" % path
+        return out
+
+    try:
+        if g("show", "HEAD:%s" % path) == src:
+            out["state"] = SERVE_CURRENT
+            out["rev"] = g("rev-parse", "--short", "HEAD").decode().strip()
+            return out
+    except (OSError, subprocess.SubprocessError) as exc:
+        out["state"] = SERVE_ERROR
+        out["note"] = "could not read %s at HEAD: %s" % (path, exc)
+        return out
+
+    for rev in revs:
+        try:
+            if g("show", "%s:%s" % (rev, path)) == src:
+                break
+        except (OSError, subprocess.SubprocessError):
+            continue
+    else:
+        # Every revision was read and none matched. The ONLY path that may
+        # say "no match", and it is reached only after the loop truly ran.
+        out["state"] = SERVE_UNTRACKED
+        out["note"] = ("the running %s matches none of %d revisions"
+                       % (path, len(revs)))
+        return out
+
+    out["state"] = SERVE_BEHIND
+    try:
+        out["rev"] = g("rev-parse", "--short", rev).decode().strip()
+        out["missing"] = [
+            (line.split(" ", 1) + [""])[:2] for line in
+            g("log", "--format=%h %s", "%s..HEAD" % rev, "--",
+              path).decode().splitlines()]
+    except (OSError, subprocess.SubprocessError) as exc:
+        out["note"] = "serving an older revision; could not name it: %s" % exc
+    return out
+
+
+# Cached on HEAD, because the answer can only change when HEAD moves or when
+# the process is replaced — and a redeploy IS a new process, so the cache
+# cannot outlive its subject. Without this, `behind` walks every revision of
+# watch.py on every collect: ~40 git calls today and growing forever.
+_SERVE_CACHE = {}
+
+
+def serving_cached(target):
+    try:
+        head = subprocess.run(
+            ["git", "--no-optional-locks", "-C", str(target), "rev-parse", "HEAD"],
+            capture_output=True, timeout=10).stdout.decode().strip()
+    except (OSError, subprocess.SubprocessError):
+        head = ""
+    key = (os.path.abspath(target), head)
+    if key not in _SERVE_CACHE:
+        _SERVE_CACHE.clear()          # only one target, only one live HEAD
+        _SERVE_CACHE[key] = serving_report(target)
+    return _SERVE_CACHE[key]
+
+
 """Who wrote a note (#109).
 
 A page that mixes what the human said with what the loop wrote will
@@ -4837,6 +5053,9 @@ def collect(target):
             questions, len(q_open) + len(q_answered)),
         "status": _safe_json(read_text(os.path.join(dw, "status.json"))),
         "git": git_tail(target),
+        # which revision this process is running (#140), so a stale page
+        # announces itself instead of being mistaken for a bug
+        "deployed": serving_cached(target),
         # his colour for this project (#143). It rides /data.json rather than
         # the shell so the EXISTING mtime poll carries it: he picks a tint in
         # one window and every other window on this project follows within a
