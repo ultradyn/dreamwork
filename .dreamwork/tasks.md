@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **192**
+Next id: **194**
 
 ## Open
 
@@ -81,6 +81,26 @@ Next id: **192**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#193** — A blocked errand is invisible · P2 · task · 25m · an
+  errand's `awaiting_human` in `~/.config/dreamwork/tasks/` is read by
+  NOTHING; hub listing is opt-in (right call) but the consequence was not
+  followed through · same shape as #130/#141 (awaiting_human means HE is
+  the bottleneck) and #144 (a silent channel looks like a quiet one) ·
+  becomes urgent the first time an errand blocks, which is exactly when
+  nobody is watching · rec **(a)**: the errand writes a marker into its
+  PARENT target's `.dreamwork/`, reusing a surface that already has his
+  attention · inherited by dreamhub stage 2 or dreamtask stage 6,
+  whichever is planned first — say so in that plan or it parks twice
+- **#192** — Fourteen guards print from a tail handler, so a crash reads
+  as a clean sheet · P2 · chore · 30m · surveyed by dreamer-rows at my
+  request and then NOT FILED by me; found in dream grooming, one archive
+  from being lost · **the gate holds** — `just guards` branches on exit
+  code — what lies is the EYEBALL: run one directly, scan for FAIL, and a
+  crash looks clean · that is how three of its own fault injections read
+  as "proves nothing" · 11 in the gating list, 5 outside; `popbg` NOT
+  surveyed · rec: fix the PATTERN via a shared reporter, not fourteen
+  files — **pairs with #148**, since the shared runner is where the
+  shared reporter lives · waits for dev/capture/ to be free
 - **#191** — The answer-submit morph moves its neighbours instantly ·
   P2 · bug · 25m · found by dreamer-motion while measuring #184, and it
   is NOT what he reported · `sendAnswer` restates the card with
