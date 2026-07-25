@@ -306,3 +306,22 @@ this shape and convert opportunistically.)
   something renders identically to there being nothing to see. The
   fixture now carries a key the renderer has never heard of, and a guard
   asserts it stays findable. (dreamer-thread, 2026-07-25, #130)
+- **Before asking whether a layer handles X correctly, ask whether X
+  survives to that layer at all** — feed it two inputs differing only in X
+  and compare the outputs. #128's hypothesis was "the render leaves notes
+  in source order", which assumes the order reaches the render. Parsing
+  the same entry with its sub-bullets in either order gave BYTE-IDENTICAL
+  structures, so the chronology was never there and every hypothesis about
+  the renderer died at once — without reading it. This is the step after
+  "reproduce the input": a differential on the property in question, and
+  it is how you find out the property was never there.
+  (2026-07-25-1220-thread-and-status, #128)
+- **When a fix is stated as a class, spend four minutes finding the second
+  instance immediately.** The events-log newline fix was generalised to
+  "human text must not be able to forge a record"; looking for another
+  instance took four minutes and found a worse one — /comment writes into
+  questions.md, so a typed newline forges a whole ENTRY on the loop's
+  primary human channel (#146, filed not fixed). The second instance is
+  usually on the more important channel, because the more important
+  channel is the one with more writers.
+  (2026-07-25-1220-thread-and-status, #126)
