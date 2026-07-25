@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **125**
+Next id: **126**
 
 ## Open
 
@@ -27,6 +27,10 @@ Next id: **125**
   20m · **next-up** (via composer) · opaque fills hide the animation
 - **#123** — `+` button off the heading text's centreline · P2 · bug ·
   20m · **next-up** · likely every view since #110 shared the chrome
+- **#125** — Vendor a stdlib-only `heartbeat.py` · P2 · task · 60m ·
+  the wake mechanism is currently a Rust binary on one machine; port
+  the interval AND the wall-clock `@` alignment, which the shell
+  fallback cannot do
 - **#124** — Break up watch.py; norms for cheap parallel work · P2 ·
   task · 120m · plan: `docs/plans/parallel-architecture.md` · seams as
   batches demand them, starting with #112's components
