@@ -728,3 +728,23 @@ this shape and convert opportunistically.)
   where the check is fine and the thing downstream of it is not: **ask of
   every check not only "is it right?" but "what does it stop?"**
   (coordinator, 2026-07-25)
+- **If a report is about how something MOVES, an end-state check cannot
+  fail on it — and neither can "did it move".** Three bugs in one batch
+  (#191 a two-position teleport, #159 a confirmation lit on frame 0, #169
+  a 20px snap at the end of a travel) all ended in exactly the right
+  place; the frames between were the defect. All three guards assert the
+  same quantity, **the number of distinct intermediate values**, and none
+  assert a mechanism. Write the check against the middle or do not write
+  it. (dreamer-gesture, #191/#159/#169, 2026-07-25)
+- **Inside a FLIP's measurement, layout must land INSTANTLY; only the FLIP
+  animates.** `regroupCards` measures the new rect in the same tick as the
+  mutation, so a CSS transition on `padding` (or height, or a child's box)
+  hands it a start-of-transition rect: it then plays perfectly to a height
+  the element never reaches and snaps the difference when the inline height
+  clears. Injected, that tripped one check out of sixteen — "it travelled
+  continuously over 45 positions" passed on it.
+  (dreamer-gesture, #169, 2026-07-25)
+- **Revert a deliberate RED injection with the inverse of the injection,
+  never with `git checkout <file>`.** The whole-file revert also destroyed
+  51 lines of uncommitted work that shared the file. If a script made the
+  injection, a script unmakes it. (dreamer-gesture, 2026-07-25)
