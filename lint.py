@@ -296,11 +296,38 @@ def check_dreams(dw: Path, rep: Report) -> None:
     d = dw / "dreams"
     if not d.is_dir():
         return
-    bad = [p.name for p in sorted(d.glob("*.md")) if not DREAM_NAME.match(p.name)]
+    names = sorted(d.glob("*.md"))
+    bad = [p.name for p in names if not DREAM_NAME.match(p.name)]
     if bad:
         rep.add(WARN, "dreams/", f"{len(bad)} misnamed (want YYYY-MM-DD-HHMM-slug.md): {bad[:3]}")
+        return
+
+    # A dream stamped in the FUTURE sorts wrong forever, and the filename IS
+    # the ordering. Three different dreamers did this on 2026-07-25 — one by
+    # 65 minutes — each estimating elapsed time instead of running `date`.
+    # Same bias as the status.json check above, in the one place where the
+    # damage is permanent rather than momentary.
+    from datetime import datetime
+
+    now = datetime.now()
+    ahead = []
+    for p in names:
+        stamp = p.name[:15]  # YYYY-MM-DD-HHMM — 15 chars, not 16
+        try:
+            when = datetime.strptime(stamp, "%Y-%m-%d-%H%M")
+        except ValueError:
+            continue
+        if (when - now).total_seconds() > 300:
+            ahead.append(p.name)
+    if ahead:
+        rep.add(
+            ERROR,
+            "dreams/",
+            f"{len(ahead)} stamped in the FUTURE, so they sort wrong forever: "
+            f"{ahead[:3]} — get <hhmm> from `date`, never from memory",
+        )
     else:
-        rep.add(OK, "dreams/", f"{len(list(d.glob('*.md')))} named correctly")
+        rep.add(OK, "dreams/", f"{len(names)} named correctly")
 
 
 def main(argv: list[str] | None = None) -> int:

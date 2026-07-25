@@ -194,34 +194,34 @@ this shape and convert opportunistically.)
   pytest asserting on generated source passes on this for as many commits as
   you like — the sharper version of #117's lesson. A catch-all element rule
   inside a component's scope is a latent override of every component that
-  ever renders inside it. (2026-07-25-1130-question-states)
+  ever renders inside it. (2026-07-25-1111-question-states)
 - Anything a re-render destroys that exists NOWHERE ELSE must be carried
   across it, not protected by suppressing the render: typed text, the caret,
   focus, the destination mode, what he expanded. Liveness and his input are
   not in tension — one seam (`snapshotCardState`) serves both.
-  (2026-07-25-1130-question-states)
+  (2026-07-25-1111-question-states)
 - A clone used as a departure ghost must have its IDENTITY stripped, not just
   its position set: it keeps `data-qid`, so every keyed lookup on the page can
   find a corpse — including the one that restores his typing.
-  (2026-07-25-1130-question-states)
+  (2026-07-25-1111-question-states)
 - Counting direction reversals does NOT tell a breath from a sawtooth: the
   snap-back is itself a reversal, so a one-way sweep passes. Measure how LONG
   the fall takes (the fraction of moving samples that are falling).
-  (2026-07-25-1130-question-states)
+  (2026-07-25-1111-question-states)
 - FLIP a list by POSITION and HEIGHT, never by scale: once a state collapses
   its card, the height ratio can be 15x and a scale morph squashes the text.
   And a resizing card's height animation already carries everything below it,
   so the FLIP must only handle the RESIDUAL or neighbours move twice.
-  (2026-07-25-1130-question-states)
+  (2026-07-25-1111-question-states)
 - Assert the OUTCOME, not the mechanism: "every card that moved carried an
   inline transform" forbade the better motion (a neighbour riding an animated
   height needs no transform of its own). "Got there continuously" is the
   property that survives a change of implementation.
-  (2026-07-25-1130-question-states)
+  (2026-07-25-1111-question-states)
 - A timed courtesy (auto-dismiss, auto-close, auto-advance) must be cancelled
   by any sign the human is still using the thing — and the cancel needs to
   cover the in-flight window before the timer exists.
-  (2026-07-25-1130-question-states)
+  (2026-07-25-1111-question-states)
 - **A fix that is committed but not deployed is indistinguishable from a
   bug, and the human is looking at the deployed page.** #129 was reported
   24 seconds after the commit that fixed it and ~4 minutes before the
@@ -315,7 +315,7 @@ this shape and convert opportunistically.)
   the renderer died at once — without reading it. This is the step after
   "reproduce the input": a differential on the property in question, and
   it is how you find out the property was never there.
-  (2026-07-25-1220-thread-and-status, #128)
+  (2026-07-25-1201-thread-and-status, #128)
 - **When a fix is stated as a class, spend four minutes finding the second
   instance immediately.** The events-log newline fix was generalised to
   "human text must not be able to forge a record"; looking for another
@@ -324,7 +324,7 @@ this shape and convert opportunistically.)
   primary human channel (#146, filed not fixed). The second instance is
   usually on the more important channel, because the more important
   channel is the one with more writers.
-  (2026-07-25-1220-thread-and-status, #126)
+  (2026-07-25-1201-thread-and-status, #126)
 - **Write the timestamp from the clock in the same command that writes
   the file.** SKILL.md already says timestamps come from the system clock
   and never from memory; the coordinator broke its own rule anyway,
@@ -345,7 +345,7 @@ this shape and convert opportunistically.)
   all three; reading found none — and the third was fixed by finding the
   case where only one cause operates, which turned a redundant-looking
   mechanism into a stated behaviour.
-  (2026-07-25-1310-dreamhub-build, #96)
+  (2026-07-25-1205-dreamhub-build, #96)
 - **To guard a wire contract with a component you do not own: run the
   REAL one over a COPY of its fixture, assert agreement, then mutate the
   input and assert the reader FOLLOWS — and show it red against DRIFTED
@@ -354,7 +354,7 @@ this shape and convert opportunistically.)
   generation half, `open_questions` renamed, and `/data.json` moved; none
   of the three crashes anything, which is exactly why a guard is needed —
   the reader goes on serving stale or unknown values and looks fine.
-  (2026-07-25-1310-dreamhub-build, #96)
+  (2026-07-25-1205-dreamhub-build, #96)
 - **Where you can remove shared mutable state instead of naming an owner,
   remove it.** Naming an owner is the fallback. A fixed guard port made
   dreamhub's guard attach to a neighbouring dreamer's watch instance and
@@ -362,19 +362,19 @@ this shape and convert opportunistically.)
   is worth keeping, but defaulting to an ephemeral port makes the
   collision impossible rather than loud. Fourth unowned-state incident in
   a day (id counter, working tree, port, port).
-  (2026-07-25-1310-dreamhub-build, #96)
+  (2026-07-25-1205-dreamhub-build, #96)
 - **`or` as a default is wrong for every value whose zero is meaningful,
   and it fails intermittently rather than loudly.** `port or hub_port()`
   read `serve(0)` — "any free port" — as "no port given" and bound a
   random persisted one instead, succeeding almost every time and
   colliding about one run in eight. The intermittency was the symptom;
-  the falsy zero was the bug. (2026-07-25-1310-dreamhub-build, #96)
+  the falsy zero was the bug. (2026-07-25-1205-dreamhub-build, #96)
 - **A dependency you cannot import is one you are forced to describe, and
   the description is worth more than the coupling you avoided.** Being
   locked out of `watch.py` produced protocol-level reuse; enumerating
   what the hub depends on is what made the drift guard writable at all —
   you cannot guard a contract you have not written down.
-  (2026-07-25-1310-dreamhub-build, #96)
+  (2026-07-25-1205-dreamhub-build, #96)
 - **Needing one variable interpolated opts the whole document into shell
   expansion.** The coordinator wrote a dreamer relay through an unquoted
   heredoc to get a timestamp in, and every backticked term in it —
