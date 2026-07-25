@@ -673,6 +673,69 @@ it from outside silently does nothing) — inject the refusal with
 than `.qa.open`, since the bug under test is the card *leaving* that state, so
 a selector naming it stops matching exactly when the failure happens.
 
+### The tab title
+
+The title is the only part of this dashboard that exists while the tab is
+backgrounded, which is most of its life — so it answers the page's whole
+question rather than naming the app (#153). His words: *"dreamwork watch
+browser title should be improved"*.
+
+```
+(2) ud-dreamwork · dreaming · questions
+```
+
+**Four fields, each saying exactly one thing**, ordered so that truncation
+takes the least useful first: how many things wait on **him**, which **loop**
+this is, whether the loop is **alive**, and where he is. Tabs truncate from
+the right, so the count is front-loaded and everything after the second field
+is a bonus. `(0)` renders as `(0)`: a title that says nothing about the count
+is indistinguishable from one that has not loaded.
+
+**The count and the word are orthogonal, and that is what makes both worth
+reading.** The count is about him; the word is about the loop. `(2) x ·
+stalled` — he is the bottleneck *and* nothing is moving — is a state neither
+field could report alone, and a loop that stops is otherwise perfectly quiet:
+it writes nothing, so no tick, no mtime change, no re-render. Which is why
+the word rides the standing `ages()` sweep rather than the tick (#132's seam,
+load-bearing for a second reason now), and why `identity.mjs` proves the flip
+happens with the target's mtime provably unchanged.
+
+**The count is `awaiting_human`, with `open_questions` as the fallback** for
+a target whose loop has not written a `status.json` yet. This is the one place
+on the page where a second count is right rather than a lie: #141's rule is
+that the dashboard section and the crumb badge must not disagree about
+*unanswered questions*, and they still don't. The title asks a different
+question — *is the loop blocked on him* — which the loop answers itself, and
+which can be true with no question in the file at all.
+
+**`!` replaces the count when `questions_health` is `unreadable`**, and no
+digit appears beside it: in that state every count derived from the file is
+wrong, including this one. It does not say what broke — a tab title cannot —
+it says *look*, which is what a tab title is for; the amber line says the
+rest. (The guard's first version anchored on `\(!\)\s*\d` and so read the
+alternative shape `(!1)` as a pass. It now rejects a digit anywhere in the
+bracket.)
+
+**Nothing is claimed that is not known.** Before data arrives the shell's own
+`<title>` stands; no `status.json` means no liveness word; an unparseable
+`last_tick` means none either — `note_author`'s rule, three surfaces over.
+The staleness threshold is two missed heartbeats (`STALE_TICK_MS`, 10m):
+one late beat is a busy machine, two is a loop that stopped.
+
+The app's own name is deliberately **not** in the title. It was the only
+thing there before, and it is the thing a tab strip never has room for; the
+favicon carries app identity, which is the part of a tab that survives
+truncation completely.
+
+`dev/capture/identity.mjs` guards it by driving a *sequence* of loop states
+through one live page — a guard that reloaded between states would pass on a
+title assembled once in `navigate()`, which is precisely the version that is
+wrong. Its fixture lesson is worth repeating: the first state wrote **three**
+`awaiting_human` items against a `questions.md` holding **two** open
+questions, because with two of each a title reading the derived count is
+byte-identical to a correct one — and the first deliberate bug injected here
+passed against it.
+
 ### The status panel
 
 `status.json` is the loop's live state, and it used to be rendered by dumping

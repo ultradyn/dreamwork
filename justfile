@@ -39,6 +39,10 @@ lint:
 #                targets in states one shared fixture cannot hold at once (no
 #                file / unparseable / seeded), so it builds them under OUT and
 #                runs its own servers from the given port upward.
+#   identity     same shape again, and (OUT) only: it drives a SEQUENCE of
+#                loop states through one live page — the title has to keep
+#                changing while nobody navigates, so a guard that reloaded
+#                between states would prove the wrong thing.
 #   dashboard    same shape as health and for the same reason, plus one worth
 #                knowing: THE SHARED FIXTURE IS NOT A GIT REPO, so `git_tail`
 #                returns [] and the commits panel is empty on the server
@@ -51,7 +55,7 @@ lint:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"

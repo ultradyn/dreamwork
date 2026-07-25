@@ -1151,9 +1151,14 @@ function statusBlock(s) {
                               `${s.queue.pending || 0} pending`));
   const t = s.last_tick ? Date.parse(s.last_tick) : NaN;
   // no space before the span: `.age` carries its own left margin, and a
-  // literal one on top of it reads as a typo
-  if (t) facts.push(isNaN(t) ? esc(String(s.last_tick))
-                             : `tick<span class="age" data-mt="${t / 1000}"></span>`);
+  // literal one on top of it reads as a typo.
+  // The gate is on the FIELD, not on the parse: `if (t)` is falsy for NaN, so
+  // the verbatim fallback this line documents had never once run and an
+  // unparseable last_tick rendered nothing at all — #154's shape exactly (a
+  // documented behaviour nobody measured). Guarded now in identity.mjs.
+  if (s.last_tick)
+    facts.push(isNaN(t) ? esc(String(s.last_tick))
+                        : `tick<span class="age" data-mt="${t / 1000}"></span>`);
   if (s.last_commit) facts.push(esc(String(s.last_commit)));
   if (facts.length)
     h += `<div class="stfacts">` +
@@ -1327,6 +1332,7 @@ function ages() {
   const upd = document.getElementById('upd');
   if (upd && fetchedAt) upd.textContent =
     `updated ${ageStr(fetchedAt/1000)} ago`;
+  applyTitle();     // the liveness word drifts with the clock, not with disk
 }
 /* one field, two destinations: the mode group under the box picks which
    (#103). Everything downstream — the morph, the ripple, the re-render hold
@@ -1453,10 +1459,78 @@ const TINT = { dashboard: 0.0, questions: 0.14, file: -0.14, review: 0.22 };
    turbulence seed, so arriving somewhere has a consistent feel (pairs with
    the per-route tint). Distinct small integers give distinct fields. */
 const SEED = { dashboard: 7, questions: 23, file: 41, review: 61 };
-const TITLE = { dashboard: () => 'dreamwork watch',
-                questions: () => 'questions — dreamwork watch',
-                file: p => (p || 'file') + ' — dreamwork watch',
-                review: p => 'review ' + (p || '') + ' — dreamwork watch' };
+/* ── the tab title (#153) ─────────────────────────────────────────────────
+   The title is the ONLY part of this dashboard that exists while the tab is
+   backgrounded, which is most of its life — so it answers the page's whole
+   question rather than naming the app: DOES IT NEED ME, and WHICH loop is
+   this. Both, because the workflow is now several dreaming agents at once.
+
+       (2) ud-dreamwork · dreaming · questions
+        ^   ^              ^          ^
+        |   |              |          where you are (dropped first)
+        |   |              is the loop still ticking
+        |   which loop
+        how many things are waiting on YOU
+
+   THE COUNT IS FRONT-LOADED because tabs truncate from the RIGHT, so
+   everything past the first field is a bonus. Zero renders as `(0)`, not as
+   an empty bracket: a title that says nothing about the count is
+   indistinguishable from a page that has not loaded.
+
+   THE TWO LOUD FIELDS ARE ORTHOGONAL, which is what keeps them worth
+   reading. The count says whether HE is the bottleneck; the word says
+   whether the LOOP is alive. `(2) x · stalled` — he is blocked and it is not
+   moving — is a state neither field could report alone, and it is exactly
+   the quiet failure this project exists to make loud.
+
+   `!` REPLACES THE COUNT when the reader cannot see questions.md (#136),
+   because in that state the count is the thing that lies. It does not say
+   what broke — a tab title cannot — it says look, which is all a tab title
+   is for. The dashboard's amber line says the rest.
+
+   NOTHING IS CLAIMED THAT IS NOT KNOWN. Before data arrives the shell's own
+   `<title>` stands; a target with no status.json gets no liveness word; an
+   unparseable `last_tick` gets none either, on `note_author`'s rule. */
+const TITLE_ROUTE = { dashboard: () => '', questions: () => 'questions',
+                      file: p => p || 'file',
+                      review: p => 'review ' + (p || '') };
+/* two missed heartbeats (4.75m each) — one late beat is a busy machine, two
+   is a loop that stopped. */
+const STALE_TICK_MS = 10 * 60 * 1000;
+const statusOf = d => (d && d.status && typeof d.status === 'object')
+  ? d.status : null;
+/* the honest count of what is waiting on HIM. `awaiting_human` is the loop's
+   own statement and outranks anything derived (#130); open questions are the
+   fallback for a target whose loop has not written one. */
+function titleNeed(d) {
+  if (!d) return null;
+  if (d.questions_health === 'unreadable') return '!';
+  const s = statusOf(d), a = s && s.awaiting_human;
+  return String(Array.isArray(a) ? a.length : (d.open_questions || 0));
+}
+function titleLive(d) {
+  const s = statusOf(d);
+  const t = s && s.last_tick ? Date.parse(s.last_tick) : NaN;
+  if (isNaN(t)) return '';
+  return Date.now() - t > STALE_TICK_MS ? 'stalled' : 'dreaming';
+}
+const projectName = d => ((d && d.target) || '').replace(/[\\/]+$/, '')
+                          .split(/[\\/]/).pop();
+function pageTitle(v, d) {
+  const need = titleNeed(d);
+  if (need === null) return null;             // no data: claim nothing
+  const route = (TITLE_ROUTE[v.name] || TITLE_ROUTE.dashboard)(v.param);
+  return `(${need}) ` +
+    [projectName(d), titleLive(d), route].filter(Boolean).join(' · ');
+}
+/* Set from the route change, from the tick, AND from the 1s age sweep — the
+   liveness word drifts with the wall clock and nothing on disk changes when
+   a loop stops, so it needs the same seam the commit ages use (#132).
+   Assigning only on a real change keeps that free. */
+function applyTitle() {
+  const t = pageTitle(view, data);
+  if (t && document.title !== t) document.title = t;
+}
 
 function routeOf(loc) {
   if (loc.pathname === '/questions') return { name: 'questions', param: null };
@@ -2093,7 +2167,7 @@ async function navigate(name, param, opts) {
   opts = opts || {};
   if (window.__closeCmd) window.__closeCmd();   // context is changing
   view = { name, param, q: opts.q || null };
-  document.title = (TITLE[name] || TITLE.dashboard)(param);
+  applyTitle();
   if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
   const url = name === 'questions' ? '/questions'
     : name === 'file' ? '/file?p=' + encodeURIComponent(param || '')

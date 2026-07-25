@@ -703,6 +703,26 @@ class TestAppShell(unittest.TestCase):
                       'window.dreambg', 'pageTint', 'setTint'):
             self.assertIn(token, watch.PAGE)
 
+    def test_page_has_tab_title_wiring(self):
+        # Static guard: the tab title (#153) is assembled from live data and
+        # refreshed off the 1s age sweep, not set once per navigation — the
+        # liveness word drifts with the wall clock and a stopped loop writes
+        # nothing for a tick to hang off. identity.mjs proves the behaviour;
+        # this only stops a refactor unhooking it silently.
+        for token in ('function pageTitle(', 'function applyTitle(',
+                      'function titleNeed(', 'function titleLive(',
+                      'const STALE_TICK_MS'):
+            self.assertIn(token, watch.PAGE)
+        self.assertIn('applyTitle();     // the liveness word drifts',
+                      watch.PAGE)          # ...inside ages()
+
+    def test_status_panel_gates_last_tick_on_the_field(self):
+        # The verbatim fallback for an unparseable `last_tick` was documented
+        # and unreachable: `if (t)` is falsy for NaN, so the fact vanished off
+        # the page instead of rendering as written (#154's shape). The gate
+        # belongs on the field, and the parse only picks the branch.
+        self.assertIn('if (s.last_tick)\n    facts.push(isNaN(t)', watch.PAGE)
+
     def test_page_has_dream_transition_wiring(self):
         # Static guard: the dissolve mist (SVG turbulence/displacement) and
         # the shader stir (warp uniform + pulseWarp handle) must stay wired
