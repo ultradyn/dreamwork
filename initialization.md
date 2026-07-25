@@ -172,6 +172,15 @@ read, initialization has already happened; return to the loop.
    documenting) the breakage is your first task — never dream on top of
    an unexplained red baseline.
 
+   Also run the loop's own check on this target's state:
+   `python3 <skill-dir>/lint.py --target .` — it calls the real readers,
+   so a clean pass means the dashboard can genuinely see what the loop
+   has written. An ERROR here is not cosmetic and outranks other first
+   tasks: it means a file the loop writes is invisible to the tool that
+   reads it, and the failure mode is silence — an unreadable
+   `questions.md` renders as "nothing to answer" while real questions sit
+   in it. Warnings about absent files are normal on a fresh target.
+
 10. **Seed (first run).** If the task list is empty, capture obvious
     candidates surfaced while orienting — TODO/FIXME markers, planning
     docs, README roadmap items — as pending tasks with priority/size

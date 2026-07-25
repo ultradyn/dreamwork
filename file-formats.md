@@ -88,7 +88,18 @@ loop can follow every semantic instruction perfectly and still produce
 something the reader cannot see. The shape lives here so there is one
 place to correct when a reader changes.
 
-The intended end state is that this file stops being the enforcement and
-becomes the explanation — a linter that calls the actual readers is the
-enforcement, because a checker cannot drift from itself the way a third
-description can (#137).
+This file is the explanation; **`lint.py` is the enforcement**, because a
+checker cannot drift from itself the way a third description can (#137).
+
+```
+python3 <skill-dir>/lint.py --target .
+```
+
+It imports `watch.py` and runs the *real* parsers rather than
+reimplementing them, so a clean pass means the dashboard can genuinely
+see the file — not that it matches a second opinion about the format.
+Init runs it at step 9. ERROR means a reader cannot see what is there;
+WARN means worth knowing but not broken (an absent file on a fresh
+target is the usual case). It degrades rather than crashing when
+`watch.py` is mid-edit by another agent, reporting entries as unverified
+instead of claiming they are fine.

@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""lint — check a target's `.dreamwork/` files against the shapes their readers require.
+
+    python3 lint.py [--target DIR]
+
+Some files the loop writes are parsed by a tool, and a file in the wrong
+shape fails SILENTLY: zero parsed entries renders identically to nothing to
+report. On 2026-07-25 a dreamwork instance opened its dashboard to zero
+questions over a file holding six, four of them genuinely open. Nothing
+errored. Nothing was logged. The loop believed it had escalated.
+
+`file-formats.md` states the shapes in prose. This checks them, and the
+difference matters: prose is a second description that can drift from the
+parser, which is the bug one layer up. **So this calls the real readers
+rather than reimplementing them** — `watch.py`'s parsers are imported and
+run, so a lint pass means the dashboard can genuinely see the file. If the
+parser changes, this changes with it for free.
+
+Exit codes: 0 clean or warnings only, 1 if any ERROR, 2 if the target is
+not a dreamwork target at all.
+
+Levels:
+  ERROR  a reader cannot see what is there. Data loss, silent by nature.
+  WARN   worth knowing, not broken. A missing questions.md is the common
+         case — the loop writes it almost immediately, and init seeds it.
+  OK     parsed, with the counts it parsed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import re
+import sys
+from pathlib import Path
+
+SKILL_DIR = Path(__file__).resolve().parent
+
+ERROR, WARN, OK = "ERROR", "WARN", "OK"
+
+DREAM_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}-[a-z0-9-]+\.md$")
+LEDGER_ID = re.compile(r"^- \*\*#(\d+)\*\*", re.M)
+NEXT_ID = re.compile(r"^Next id: \*\*(\d+)\*\*", re.M)
+
+
+def load_watch():
+    """Import watch.py for its parsers.
+
+    By path, not as a package: watch.py is a single file by design (the
+    deploy snapshot depends on it) and this must not become a second reason
+    it cannot move. Returns None if it is unimportable — mid-edit by another
+    agent, say — so the rest of the checks still run.
+    """
+    path = SKILL_DIR / "watch.py"
+    if not path.exists():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("_watch_for_lint", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        return None
+
+
+class Report:
+    def __init__(self) -> None:
+        self.rows: list[tuple[str, str, str]] = []
+
+    def add(self, level: str, what: str, detail: str) -> None:
+        self.rows.append((level, what, detail))
+
+    @property
+    def failed(self) -> bool:
+        return any(level == ERROR for level, _, _ in self.rows)
+
+    def render(self) -> str:
+        width = max((len(w) for _, w, _ in self.rows), default=0)
+        lines = [f"  {lvl:<5} {what:<{width}}  {detail}" for lvl, what, detail in self.rows]
+        errors = sum(1 for lvl, _, _ in self.rows if lvl == ERROR)
+        warns = sum(1 for lvl, _, _ in self.rows if lvl == WARN)
+        if errors:
+            lines.append(f"\n{errors} error(s), {warns} warning(s) — see file-formats.md")
+        else:
+            lines.append(f"\nclean ({warns} warning(s))")
+        return "\n".join(lines)
+
+
+def check_questions(dw: Path, watch, rep: Report) -> None:
+    """The channel to the human. The one that failed."""
+    path = dw / "questions.md"
+    if not path.exists():
+        rep.add(WARN, "questions.md", "absent — init seeds it; the loop writes it early")
+        return
+
+    text = path.read_text()
+    if not text.strip():
+        rep.add(OK, "questions.md", "empty")
+        return
+
+    # Check the section headings first, because their absence is both the
+    # actual failure that happened and the one with a nameable cause. A
+    # generic "parsed nothing" would be true but far less useful.
+    heads = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("## ")]
+    if "## Open" not in heads:
+        rep.add(
+            ERROR,
+            "questions.md",
+            f"no literal `## Open` heading — every entry is invisible to the "
+            f"dashboard AND unwritable by /answer. Found: {heads[:4] or 'none'}",
+        )
+        return
+
+    if watch is None:
+        rep.add(WARN, "questions.md", "`## Open` present; watch.py unimportable, so entries unverified")
+        return
+
+    o = len(watch.parse_open_questions(text))
+    a = len(watch.parse_answered(text))
+    if o == 0 and a == 0:
+        rep.add(
+            ERROR,
+            "questions.md",
+            f"{len(text.splitlines())} lines and the reader sees NOTHING — "
+            f"renders as 'nothing to answer'. Entries need `- **Title**` at top level",
+        )
+    else:
+        rep.add(OK, "questions.md", f"{o} open, {a} answered")
+
+
+def check_tasks(dw: Path, rep: Report) -> None:
+    """The ledger. Its ids are permanent, so a collision is unrecoverable."""
+    path = dw / "tasks.md"
+    if not path.exists():
+        rep.add(WARN, "tasks.md", "absent — required only when the backend is session-scoped")
+        return
+
+    text = path.read_text()
+    ids = [int(m) for m in LEDGER_ID.findall(text)]
+    dupes = sorted({i for i in ids if ids.count(i) > 1})
+    if dupes:
+        rep.add(ERROR, "tasks.md", f"duplicate id(s) {dupes} — two entries claim one permanent id")
+
+    m = NEXT_ID.search(text)
+    if not m:
+        rep.add(ERROR, "tasks.md", "no `Next id: **N**` header — the next task cannot be numbered safely")
+    else:
+        nxt = int(m.group(1))
+        if ids and nxt <= max(ids):
+            rep.add(
+                ERROR,
+                "tasks.md",
+                f"Next id is {nxt} but #{max(ids)} exists — the next task would collide",
+            )
+        elif not dupes:
+            rep.add(OK, "tasks.md", f"{len(ids)} entries, next id {nxt}")
+
+
+def check_status(dw: Path, rep: Report) -> None:
+    path = dw / "status.json"
+    if not path.exists():
+        rep.add(WARN, "status.json", "absent — written on the first tick; gitignored ephemera")
+        return
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        rep.add(ERROR, "status.json", f"invalid JSON at line {exc.lineno} — the dashboard shows nothing")
+        return
+    agents = data.get("agents") or []
+    rep.add(OK, "status.json", f"valid; {len(agents)} agent(s) recorded")
+
+
+def check_skill_version(dw: Path, rep: Report) -> None:
+    path = dw / "skill-version"
+    if not path.exists():
+        rep.add(WARN, "skill-version", "absent — init's update check cannot tell which migrations ran")
+        return
+    name = path.read_text().strip()
+    if not (SKILL_DIR / "migrations" / name).exists():
+        rep.add(
+            ERROR,
+            "skill-version",
+            f"names `{name}`, which is not a file in migrations/ — every migration reads as pending",
+        )
+    else:
+        rep.add(OK, "skill-version", name)
+
+
+def check_dreams(dw: Path, rep: Report) -> None:
+    """Filenames only. The contract here IS the filename — it carries the
+    date and time that ordering depends on."""
+    d = dw / "dreams"
+    if not d.is_dir():
+        return
+    bad = [p.name for p in sorted(d.glob("*.md")) if not DREAM_NAME.match(p.name)]
+    if bad:
+        rep.add(WARN, "dreams/", f"{len(bad)} misnamed (want YYYY-MM-DD-HHMM-slug.md): {bad[:3]}")
+    else:
+        rep.add(OK, "dreams/", f"{len(list(d.glob('*.md')))} named correctly")
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="lint",
+        description="Check a dreamwork target's .dreamwork/ files against the shapes their readers require.",
+    )
+    ap.add_argument("--target", default=".", help="target project directory (default: cwd)")
+    args = ap.parse_args(argv)
+
+    target = Path(args.target).resolve()
+    dw = target / ".dreamwork"
+    if not dw.is_dir():
+        print(f"lint: {target} has no .dreamwork/ — not a dreamwork target", file=sys.stderr)
+        return 2
+
+    watch = load_watch()
+    rep = Report()
+    check_questions(dw, watch, rep)
+    check_tasks(dw, rep)
+    check_status(dw, rep)
+    check_skill_version(dw, rep)
+    check_dreams(dw, rep)
+
+    print(f"lint {dw}")
+    print(rep.render())
+    return 1 if rep.failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
