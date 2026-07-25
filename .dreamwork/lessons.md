@@ -688,3 +688,15 @@ this shape and convert opportunistically.)
   in the same square inch of screen before doubting him. A quiet drop loses
   both halves of that. (dreamer-motion, 2026-07-25, #184 /
   2026-07-25-1620-motion-batch)
+- **A comparison that could not run must never look like one that ran and
+  found nothing.** Four instances in one day, three of them in a single
+  half-hour: a guard whose readiness probe accepted any answer and graded
+  a stranger's server; a dream-filename slice off by one so every parse
+  failed and the check reported "6 named correctly"; a shell loop where
+  `$r:watch.py` was mangled and `2>/dev/null` hid the fatal, so it
+  compared nothing and reported "no match" three times with total
+  confidence; and a lock-assertion spy that caught its own fixture's git
+  calls. The general form: **absence of a positive result is not evidence
+  of a negative one**, and error suppression is what erases the
+  difference. Give every "could not compare" its own named state, and
+  assert the comparison actually happened. (coordinator, #147, 2026-07-25)
