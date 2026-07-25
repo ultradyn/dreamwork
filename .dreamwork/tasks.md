@@ -132,24 +132,6 @@ Next id: **206**
   self-audit is worth having as a maintenance item regardless of trigger
   · **#199 gives this its input** — a raw log of everything received IS
   the "what was sent to me" half
-- **#199** — **P1** His answers and notes are persisted NOWHERE but
-  questions.md, and a failed write discards them · bug · 30m · **human
-  17:20**: persist every webui submission before the loop ever sees it,
-  "because the user's time is the most valuable thing" · **checked
-  watch.py rather than assumed**: `_handle_answer` logs the QUESTION
-  TITLE and destination, never the text he typed; `_handle_comment` the
-  same; both log AFTER the write and only on success, so `not matched` →
-  `send_error(409)` → return happens BEFORE any logging and his words are
-  gone · **not hypothetical — `append_answer` returns unmatched on a
-  wrapped title, which is exactly what #116 was** · commands are the one
-  exception (full text, logged first) but then the log is the only copy ·
-  rec: append raw JSON per line to `.dreamwork/submissions.log` as the
-  FIRST act of every POST handler, unvalidated on purpose, then do the
-  real work · gitignored like watch-events.log; file-formats row + lint
-  check same commit · **complements #175, does not duplicate it** — that
-  one covers "never reached the server", this covers "reached it and
-  processing failed" · guard must drive a DELIBERATE 409 and assert the
-  text survives · queued to dreamer-qsec after #196
 - **#198** — Selection indicator misplaced when the composer reopens ·
   P2 · bug · 25m · **human 17:18 + screenshot** · "autocorrects itself
   after a bit, or when some rerender condition is triggered" — and that
@@ -564,7 +546,7 @@ Next id: **206**
 
 ## Recently landed
 
-**#191** the answer-morph carries its neighbours (38854bd) — and found that a guard's WINDOW can be the bug (2026-07-25). **#184** CLOSED not-reproduced: neither half; explained by #174, numbers in its dream (2026-07-25). **#179** P1 the focus steal (9e8469c) — focus() into a closed <details> is a silent no-op (2026-07-25). **#174** the cycle travels down (7d3c322) — a departure leaves in the direction its list travels (2026-07-25). **#150** coordination layer audited: relay.py, write-then-wake, agent visibility (2026-07-25). **#147** deployed.py measures by bytes; the hub row says it (59e7728, f3649f4) (2026-07-25). **#145** routing rule adopted (4 buckets) (2026-07-25). **#144** subagent plain text is not a channel; silent agents are shown (2026-07-25).
+**#199** P1 his words are on disk before anything may refuse them (fd3ae3b handler + 0bc0517 contract + migration 2026-07-25-15) — and the guard, by failing, proved questions.md is a RENDERING of his words, not a record of them (2026-07-25). **#191** the answer-morph carries its neighbours (38854bd) — and found that a guard's WINDOW can be the bug (2026-07-25). **#184** CLOSED not-reproduced: neither half; explained by #174, numbers in its dream (2026-07-25). **#179** P1 the focus steal (9e8469c) — focus() into a closed <details> is a silent no-op (2026-07-25). **#174** the cycle travels down (7d3c322) — a departure leaves in the direction its list travels (2026-07-25). **#150** coordination layer audited: relay.py, write-then-wake, agent visibility (2026-07-25). **#147** deployed.py measures by bytes; the hub row says it (59e7728, f3649f4) (2026-07-25). **#145** routing rule adopted (4 buckets) (2026-07-25). **#144** subagent plain text is not a channel; silent agents are shown (2026-07-25).
 Pruned in grooming; git is the real ledger. **#143** a per-project tint
 (6c49874) — a closed set, a Rodrigues hue rotation preserving the
 achromatic component by construction, the existing `/mtime` poll doing the
