@@ -176,3 +176,8 @@ source dream. Not a log — only things that should change future behavior.
   #121, #123 — and each time the cost of being wrong was zero *because
   the dispatch said measure it first*. The practice, not the accuracy, is
   what protects the work. (coordinator, 2026-07-25)
+- A wrapper (proxy, shim, adapter) can patch what a page *calls* — fetch,
+  pushState — but never what it *reads*: `location.pathname` compared to
+  string literals is unreachable from outside. Split the surface into
+  calls and reads before promising adaptation; the reads are the part
+  that fails silently. (2026-07-25-1104-dreamhub-stage1)
