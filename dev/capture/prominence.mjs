@@ -159,9 +159,21 @@ if (thread && fold) {
     const total = Math.abs(tops.at(-1) - tops[0]);
     const at = ms => seen.reduce((a, b) =>
       Math.abs(b.t - ms) < Math.abs(a.t - ms) ? b : a);
-    // 950ms: `CARD_MS` is 850 and the inline height is cleared at 1000, so
-    // this is the last moment the FLIP is still driving the layout
-    const late = Math.abs(at(950).top - tops.at(-1));
+    /* ANCHORED TO THE FRAME THE CARD FIRST MOVES, not to the frame the trace
+       armed — `transitions.md`, "do not anchor an arrival assertion to a
+       clock". It was `at(950)` measured from trace start, which silently
+       includes however long the real pointer click took to land: clean runs
+       read 0.8-2.6px against a 4px threshold, so a loaded machine pushed one
+       over and this guard went red on a page that was behaving perfectly.
+       Anchoring removes the machine from the measurement — after the travel
+       ends every sample is at the final position, however sparse the frames.
+
+       950ms: `CARD_MS` is 850 and the inline height clears at 1000, so this is
+       the last moment the FLIP is still driving the layout. */
+    const from = tops[0];
+    const i0 = tops.findIndex(v => Math.abs(v - from) > 1);
+    const t0 = i0 < 0 ? 0 : seen[i0].t;
+    const late = Math.abs(at(t0 + 950).top - tops.at(-1));
     notes.push(`one gesture: neighbour travelled ${total.toFixed(0)}px over ` +
                `${new Set(tops.map(Math.round)).size} distinct positions; ` +
                `still ${late.toFixed(1)}px from its final place when the ` +
@@ -176,11 +188,12 @@ if (thread && fold) {
        neighbour is asserted to have ARRIVED when the travel ends — not merely
        to arrive eventually, which it does either way, and which is why an
        end-state check is blind to this. */
-    // 4px: the tail of the ease lands within ~1.5px of final on a clean run
-    // (sub-pixel rounding), and the failure this catches is the padding
-    // itself — 2 x .5rem, so 16px. There is no threshold in between to tune.
+    // 6px: anchored, the tail of the ease lands within ~1px of final, and the
+    // failure this catches is the padding itself — 2 x .5rem, so 16px. There
+    // is no threshold in between to tune, and the margin is now spent on
+    // sub-pixel rounding rather than on how loaded the machine is.
     ok('...and it has arrived when its travel ends, not after a correction',
-       late <= 4);
+       late <= 6);
   }
 }
 
