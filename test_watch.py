@@ -71,6 +71,36 @@ class TestCollector(unittest.TestCase):
             self.assertIsNone(data["status"])       # no status.json
             self.assertEqual(data["git"], [])       # not a git repo
 
+    def test_git_tail_carries_a_machine_readable_time(self):
+        # #132: the row's age ticks every second, so the TIME has to arrive as
+        # a number. A page deriving it from what it displayed would be reading
+        # its own output back.
+        import subprocess
+        with tempfile.TemporaryDirectory() as d:
+            env = dict(os.environ,
+                       GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x",
+                       GIT_AUTHOR_DATE="@1700000000 +0000",
+                       GIT_COMMITTER_DATE="@1700000000 +0000")
+            run = lambda *a: subprocess.run(  # noqa: E731
+                ["git", "-C", d, *a], env=env, capture_output=True, check=True)
+            run("init", "-q")
+            # a subject carrying the separator the format uses, and spaces:
+            # `%h %s` could not be taken apart again without guessing
+            with open(os.path.join(d, "f"), "w") as f:
+                f.write("x")
+            run("add", "f")
+            run("commit", "-q", "-m", "feat: a subject with spaces in it")
+            rows = watch.git_tail(d)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["t"], 1700000000)
+            self.assertEqual(rows[0]["subject"],
+                             "feat: a subject with spaces in it")
+            self.assertTrue(rows[0]["sha"])
+            # and a non-repo is still the empty list, never a crash
+            with tempfile.TemporaryDirectory() as e:
+                self.assertEqual(watch.git_tail(e), [])
+
     def test_watched_mtime_moves(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
@@ -799,6 +829,51 @@ class TestAppShell(unittest.TestCase):
         # the half that matters: the old rendering is the reported bug.
         self.assertNotIn('preB(JSON.stringify(d.status', watch.PAGE)
         self.assertIn('function statusBlock', watch.PAGE)
+
+    def test_commit_age_ticks_off_the_render_path(self):
+        # #132. The interesting half is not the format, it is WHERE the update
+        # happens: a seconds-resolution clock must not ride the tick's
+        # innerHTML swap, or it re-runs the regroup (#113) and re-carries his
+        # typing (#118) once a second forever.
+        for token in ('const agePair =', 'const AGE_PAIRS =', 'const gitRow =',
+                      # written as text into nodes that already exist...
+                      "querySelectorAll('.age[data-ct]')",
+                      "el.textContent = agePair(",
+                      # ...on the standing per-second sweep, and re-run after
+                      # every render so a fresh row is filled before it paints
+                      'setInterval(ages, 1000)', 'ages();'):
+            self.assertIn(token, watch.PAGE)
+        # the row emits the time as data, never as prose: nothing on the page
+        # can parse an age back off the screen
+        self.assertIn('data-ct="${c.t}"', watch.PAGE)
+        self.assertIn('data-sha="${esc(c.sha)}"', watch.PAGE)
+        # the old whole-line render is gone — it is the thing being replaced,
+        # and leaving it would mean two ways to draw a commit
+        self.assertNotIn("d.git.map(l =>", watch.PAGE)
+        # no element catch-all inside the component (the standing rule, #121
+        # and #139): every part of the row is addressed by its own class
+        self.assertNotIn('.git div {', watch.PAGE)
+
+    def test_commits_panel_is_five_near_the_top_and_regroups_on_a_new_sha(self):
+        # #151. Three claims, and the third is the one worth guarding.
+        self.assertEqual(watch.GIT_ROWS, 5)
+        # near the top: before the dreams heading, which used to be first
+        sections = watch.PAGE[watch.PAGE.index('function buildDashboard'):]
+        self.assertLess(sections.index("label('commits')"),
+                        sections.index('label(`dreams'))
+        # ONE regroup, not a second implementation of "one leaves, its
+        # neighbours travel" — both lists go through the same pair
+        for token in ('const QA_LIST =', 'const GIT_LIST =',
+                      'snapshotCards(GIT_LIST)',
+                      'regroupCards(gitBefore, null, GIT_LIST)'):
+            self.assertIn(token, watch.PAGE)
+        # ...and it fires on a NEW SHA, never on a tick: the dashboard
+        # re-renders whenever any watched file changes, and rows sliding for
+        # that is motion with nothing behind it.
+        self.assertIn('const gitKey =', watch.PAGE)
+        self.assertIn('gitKey(data) !== wasGit', watch.PAGE)
+        # a corpse holds no address, and the new list has a new one (#113)
+        self.assertIn("'data-qid', 'data-qkey', 'data-sha'", watch.PAGE)
 
     def test_page_heading_is_persistent_chrome(self):
         # #110: the heading is the page's frame, not view content — it lives

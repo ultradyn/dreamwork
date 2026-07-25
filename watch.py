@@ -90,8 +90,21 @@ STYLE = """<style>
      whitespace of generated content, so " · " would render flush */
   .crumb + .crumb::before { content:"\\00a0\\00b7\\00a0"; color:var(--dim); }
   /* the snapped start state for anything arriving: transition:none so it
-     BEGINS here instead of animating toward here (the enter-snap rule) */
-  .dreamin { transition:none; opacity:0; filter:blur(4px);
+     BEGINS here instead of animating toward here (the enter-snap rule).
+
+     `!important` on the transition, and only on the transition. This class
+     has to beat whatever the arriving element's own component says, or the
+     rule is a lie exactly where a component has motion of its own — which is
+     everywhere it matters. It WAS a lie: `.qa` declares the same three
+     transitions at the same specificity and later in this sheet, so a
+     question card carrying `.dreamin` kept a 0.85s transition and an opacity
+     of 1, animated one frame TOWARD 0, and had the class removed. Arrivals
+     have never faded in since #104; crumbs, which declare no transition of
+     their own, always have. Source order is not a contract — a component
+     added below here would silently take it back — so the invariant is
+     stated as one. The other three properties stay overridable: they are the
+     start POSE, and a component may reasonably want its own. */
+  .dreamin { transition:none !important; opacity:0; filter:blur(4px);
              transform:translateY(5px); }
   /* a departing crumb is lifted out of flow at its own rect, so survivors
      close the gap underneath it while it dreams away in place */
@@ -130,8 +143,28 @@ STYLE = """<style>
   .md em, .anstext em, .follow em { font-style:italic; color:var(--muted); }
   code { color:var(--lit); background:var(--panel);
          border-radius:3px; padding:0 .3ch; }
-  .git div { color:var(--dim); }
-  .git .maint { color:var(--accent); }
+  /* a commit row (#132). No element catch-all in here: `.git div` used to
+     colour these, and that is the shape that overrode `.sgbtn` (#121) and
+     leaked into `.qfield textarea` (#139) — a rule that outlives the thing it
+     stood in for silently beats the components that render inside it later.
+     Every row part is addressed by its own class.
+     FIXED HEIGHT is #151's, not decoration: the subject ellipsises rather
+     than wrapping, so a long message cannot change the panel's height and a
+     row arriving or leaving moves the rows by exactly one row. */
+  .git .commit { display:flex; align-items:baseline; gap:1ch;
+                 height:1.4rem; line-height:1.4rem; color:var(--dim);
+                 /* the same travel a question card gets (#151 reuses #104's
+                    regroup); travelCard overrides this inline while it runs */
+                 transition:transform .85s cubic-bezier(.32,.1,.2,1),
+                            opacity .55s ease, filter .55s ease; }
+  .git .gsha { flex:0 0 auto; color:var(--dimmer); }
+  .git .gsub { flex:1 1 auto; min-width:0; overflow:hidden;
+               white-space:nowrap; text-overflow:ellipsis; }
+  .git .maint .gsub { color:var(--accent); }
+  /* the ticking half of the row: pinned right, and tabular so the digits do
+     not jitter the column every second as they change */
+  .git .cage { flex:0 0 auto; margin-left:auto;
+               font-variant-numeric:tabular-nums; }
   .dim { color:var(--dimmer); }
   a { color:var(--accent); text-decoration:none; }
   a:hover { text-decoration:underline; }
@@ -619,6 +652,24 @@ const ageStr = mt => {
   for (const [u, div] of [["d",86400],["h",3600],["m",60]])
     if (s >= div) return `${Math.floor(s/div)}${u}`;
   return `${Math.floor(s)}s`;
+};
+/* the same age at commit resolution (#132): TWO units, each zero-padded to
+   two digits — `05m 23s`, `02h 14m`, `03d 07h`.
+
+   Two edges, both decided rather than fallen into:
+     · under a minute it still reads as two units (`00m 12s`), so the column
+       never changes width — and seconds-old is exactly when he is watching.
+     · past 100 days the DAY count widens and the second unit stays at two.
+       The shape is "two units", not "four characters"; a truncated day count
+       would be a wrong number rather than a narrow one. */
+const p2 = n => String(n).padStart(2, '0');
+const AGE_PAIRS = [["d",86400,"h",3600], ["h",3600,"m",60], ["m",60,"s",1]];
+const agePair = ct => {
+  const s = Math.max(0, Math.floor(Date.now()/1000 - ct));
+  for (const [bu, bd, su, sd] of AGE_PAIRS)
+    if (s >= bd)
+      return `${p2(Math.floor(s/bd))}${bu} ${p2(Math.floor((s % bd)/sd))}${su}`;
+  return `00m ${p2(s)}s`;
 };
 /* components: every section on every watch page renders through these */
 const label = t => `<div class="label">${t}</div>`;
@@ -1112,14 +1163,35 @@ function statusBlock(s) {
       rest.map(k => stField(k, s[k])).join(''), 'dim');
   return h + `</div>`;
 }
+/* what "a commit happened" means, as one comparable value (#151). The whole
+   sequence, not just the head: a rebase or an amend can change the panel
+   without changing its top row. */
+const gitKey = d => ((d && d.git) || []).map(c => c.sha).join(' ');
+/* one commit row (#132). Two things about it are load-bearing rather than
+   presentational:
+     · `data-sha` is the row's IDENTITY, so a re-render can tell which rows
+       survived it — the same job `data-qid` does for a question card.
+     · the age is an EMPTY node carrying `data-ct`. Nothing server-rendered
+       ever states the age, because it is stale the second after it is
+       written; `ages()` fills it and keeps filling it (see below). */
+const gitRow = c => `<div class="commit${
+    c.subject.includes('dreamwork(maintain:') ? ' maint' : ''}"` +
+  ` data-sha="${esc(c.sha)}"><span class="gsha">${esc(c.sha)}</span>` +
+  `<span class="gsub">${esc(c.subject)}</span>` +
+  `<span class="age cage" data-ct="${c.t}"></span></div>`;
 function buildDashboard(d) {
   let h = `<div id="sections">`;
+  // a fault first (it is one line, and usually absent), then what the loop has
+  // just DONE — "near the top of dreamworker dashboard should be the most
+  // recent 5 commits" (human, 2026-07-25, #151). Nothing else changed order.
+  h += qHealth(d);
+  h += label('commits') + `<div class="git">` +
+       d.git.map(gitRow).join('') + `</div>`;
   h += label(`dreams (${d.dreams.length})`) +
        (d.dreams.map(dreamBlock).join('') || '<div class="dim">none active</div>') +
        (d.dreams_archive.length
          ? expand(`archive (${d.dreams_archive.length})`,
                   d.dreams_archive.map(dreamBlock).join(''), 'dim') : '');
-  h += qHealth(d);
   {
     const qo = d.questions_open.map((q, i) => [q, i]);
     const openQ = qo.filter(([q]) => !q.answer);
@@ -1141,10 +1213,7 @@ function buildDashboard(d) {
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
          expand(n, mdB(d.files[n]))).join('');
   h += statusBlock(d.status);
-  h += label('commits') + `<div class="git">` +
-       d.git.map(l => `<div class="${l.includes('dreamwork(maintain:') ? 'maint' : ''}">${esc(l)}</div>`).join('') +
-       `</div></div>`;
-  return h;
+  return h + `</div>`;
 }
 function buildQuestions(d) {
   // three explicit states: open (needs the human), answered-awaiting-fold
@@ -1190,9 +1259,19 @@ function buildReview(name, q, d) {
       dock +
     `</div>`;
 }
+/* every number on this page that can drift without a disk change is written
+   HERE, once a second, as TEXT into nodes that already exist — never through
+   a re-render. That was already the shape; #132 is what makes it load-bearing
+   rather than convenient. A commit age at seconds resolution has to change
+   every second, and routing that through the tick's `innerHTML` swap would
+   re-run the regroup (#113) and re-carry his half-typed text (#118) sixty
+   times a minute, forever, to move one digit. `setContent` re-runs this after
+   every swap, so a fresh render is filled in before it paints. */
 function ages() {
   document.querySelectorAll('.age[data-mt]').forEach(el =>
     el.textContent = ageStr(parseFloat(el.dataset.mt)) + ' old');
+  document.querySelectorAll('.age[data-ct]').forEach(el =>
+    el.textContent = agePair(parseFloat(el.dataset.ct)) + ' ago');
   const upd = document.getElementById('upd');
   if (upd && fetchedAt) upd.textContent =
     `updated ${ageStr(fetchedAt/1000)} ago`;
@@ -1455,15 +1534,25 @@ function cardGroup(el) {
     if (n.classList.contains('label')) return n.textContent;
   return '';
 }
-function snapshotCards() {
+/* the keyed lists that move. A "list" is a selector plus the attribute that
+   IS a row's identity — never its position, because the whole job here is
+   telling a row that MOVED from a row that LEFT, and a positional key cannot.
+   Both lists go through the same snapshot and the same regroup: #151 is
+   #104's motion over a different set of rows, and a second implementation of
+   "one leaves, its neighbours travel" would be two things to keep true. */
+const QA_LIST = { sel: '.qa[data-qid]', key: 'qid' };
+const GIT_LIST = { sel: '.git .commit[data-sha]', key: 'sha' };
+function snapshotCards(list) {
+  list = list || QA_LIST;
   const m = new Map();
-  document.querySelectorAll('.qa[data-qid]').forEach(el => m.set(el.dataset.qid, {
-    rect: el.getBoundingClientRect(),
-    group: cardGroup(el),
-    // cloned up front because a departure has no node left to animate once
-    // the re-render has happened, and we cannot know which will depart
-    node: el.cloneNode(true),
-  }));
+  document.querySelectorAll(list.sel).forEach(el =>
+    m.set(el.dataset[list.key], {
+      rect: el.getBoundingClientRect(),
+      group: cardGroup(el),
+      // cloned up front because a departure has no node left to animate once
+      // the re-render has happened, and we cannot know which will depart
+      node: el.cloneNode(true),
+    }));
   return m;
 }
 /* ONE way a card moves inside the list (#104, #77, #113). It travels from the
@@ -1529,8 +1618,10 @@ function dreamAway(wrap, node, rect, clipTop) {
   // trace would measure it instead of the card animating underneath. That
   // last one is how this was found. Strip the identity at the door rather
   // than teaching six lookups to skip it.
-  node.removeAttribute('data-qid');
-  node.removeAttribute('data-qkey');
+  // Every identity attribute on the page, not just this list's: a corpse
+  // holds no address at all, and enumerating them here is one line where
+  // teaching each lookup to skip a ghost would be six.
+  for (const a of ['data-qid', 'data-qkey', 'data-sha']) node.removeAttribute(a);
   node.classList.add('qaghost');
   node.style.left = (rect.left - org.left) + 'px';
   node.style.top = (rect.top - org.top) + 'px';
@@ -1582,13 +1673,22 @@ const BODY_STEP = 24;             // about a line: below this nothing "left"
    what makes the next card's `now` mean "where it would be if only that
    resize had happened", so the residual it FLIPs is the right one. FLIPping
    the full difference instead would move a neighbour twice — once by
-   transform and once by layout — and it would snap back at the end. */
-function regroupCards(before, toggled) {
+   transform and once by layout — and it would snap back at the end.
+
+   The commits panel (#151) runs through this unchanged, and the two branches
+   that are about a CARD are inert there BY CONSTRUCTION rather than by a
+   guard clause: a commit row is fixed-height, so `dh` is always 0 and neither
+   body branch is reachable, and no `.label` precedes a row inside `.git`, so
+   `cardGroup` returns '' on both sides and nothing is ever lifted. Both of
+   those are properties of the markup, which is why they are stated in the CSS
+   and in gitRow rather than tested for here. */
+function regroupCards(before, toggled, list) {
   if (rmr || !before || !before.size) return;
+  list = list || QA_LIST;
   const wrap = document.querySelector('.wrap');
   const seen = new Set();
-  document.querySelectorAll('.qa[data-qid]').forEach(el => {
-    const id = el.dataset.qid, was = before.get(id);
+  document.querySelectorAll(list.sel).forEach(el => {
+    const id = el.dataset[list.key], was = before.get(id);
     seen.add(id);
     if (!was) {                       // newly arrived: snap, then ease in
       el.classList.add('dreamin');
@@ -1976,16 +2076,26 @@ async function tick() {
     else if (gen && gen !== serverGen) { location.reload(); return; }
     if (mtime !== lastMtime && Date.now() >= holdRerenderUntil) {
       lastMtime = mtime; fetchedAt = Date.now();
+      const wasGit = gitKey(data);
       data = await (await fetch('/data.json')).json();
       // the data lands instantly; surviving cards then travel from where
       // they were to where the new grouping put them (#104/#77). What the
       // human is mid-way through typing rides across the swap (#118).
       const kept = snapshotCardState();
       const before = snapshotCards();
+      // #151: the commits panel animates on a NEW COMMIT, never on a tick.
+      // The dashboard re-renders whenever ANY watched file changes — the loop
+      // rewrites status.json every few seconds — so rows travelling on a tick
+      // would be motion with nothing behind it, which is the opt-in rule. The
+      // sha sequence is the thing that means "a commit happened", and it is
+      // compared before the swap because after it there is nothing to compare.
+      const gitBefore = (view.name === 'dashboard' && gitKey(data) !== wasGit)
+        ? snapshotCards(GIT_LIST) : null;
       if (view.name === 'dashboard') setContent(buildDashboard(data));
       else if (view.name === 'questions') setContent(buildQuestions(data));
       restoreCardState(kept);
       regroupCards(before);
+      regroupCards(gitBefore, null, GIT_LIST);
       // the crumbs carry live numbers too (open count, version) — and the
       // tick re-renders in place, instantly, so they never animate
       renderChrome(view, data, null);
@@ -2910,14 +3020,46 @@ def list_dreams(dirpath, now):
     return out
 
 
-def git_tail(target, n=15):
+# Five, fixed (#151, his number). The panel's height is then a constant —
+# five fixed-height rows — so a commit arriving moves the page by exactly
+# nothing, and the motion underneath it is one row leaving at the bottom while
+# the rest travel down one.
+GIT_ROWS = 5
+
+
+def git_tail(target, n=GIT_ROWS):
+    """Recent commits as `[{sha, t, subject}]`, newest first.
+
+    The time is `%ct` — a unix timestamp, a NUMBER — because the page renders
+    an age that ticks every second (#132) and a page computing that from what
+    it displayed would be reading its own output back. Whatever the row shows
+    is derived here; nothing downstream parses it.
+
+    Split on the unit separator, not on a space: a subject may contain
+    anything at all, and `%h %s` cannot be taken apart again without guessing
+    where one ends. A row that does not split into three is dropped rather
+    than half-read.
+    """
     try:
         res = subprocess.run(
-            ["git", "-C", target, "log", "-n", str(n), "--pretty=%h %s"],
+            ["git", "-C", target, "log", "-n", str(n),
+             "--pretty=%h\x1f%ct\x1f%s"],
             capture_output=True, text=True, timeout=5)
-        return res.stdout.splitlines() if res.returncode == 0 else []
     except (OSError, subprocess.TimeoutExpired):
         return []
+    if res.returncode != 0:
+        return []
+    out = []
+    for line in res.stdout.splitlines():
+        parts = line.split("\x1f", 2)
+        if len(parts) != 3:
+            continue
+        try:
+            when = int(parts[1])
+        except ValueError:
+            continue
+        out.append({"sha": parts[0], "t": when, "subject": parts[2]})
+    return out
 
 
 """Who wrote a note (#109).

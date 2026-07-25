@@ -14,7 +14,8 @@ file current as the page evolves.
 One stdlib-only file serving a single app shell with four client-routed
 views — dashboard, questions, file viewer, review — plus the raw review
 artifacts the review view embeds. The dashboard shows dreams (with live
-ages), main files, git tail (maintenance markers highlighted), migrations
+ages), main files, the commits panel (five rows, live ages, maintenance
+markers highlighted), migrations
 vs target version, roll weights, and `.dreamwork/status.json` (loop writes
 it per tick; page degrades gracefully without it). Every view's heading
 carries a `+` command opener (steer the loop without a chat turn).
@@ -289,12 +290,12 @@ wrapped lines are joined and the reading column does the wrapping.
 
 **The line: markdown prose reflows, raw text does not.** Question bodies,
 answers, follow-up notes, dreams, and the dashboard's `.md` peeks are prose
-the page composes, and they go through `mdB` / `mdBReview`. `/file` and the
-git tail are shown *as they are on disk*, and stay verbatim in a `<pre>` —
-the file viewer's whole job is to be literal, and it serves code as well as
-prose. `status.json` was in that list until #130 and is not: it is not prose
-and not something he reads literally, it is a set of facts, and it now has
-its own component (below).
+the page composes, and they go through `mdB` / `mdBReview`. `/file` is shown
+*as it is on disk* and stays verbatim in a `<pre>` — the file viewer's whole
+job is to be literal, and it serves code as well as prose. Two things have
+left that list, both for the same reason and neither of them prose:
+`status.json` (#130) and the git tail (#132) are sets of *facts*, not text he
+reads literally, and each now has a component of its own (below).
 
 Four things survive the join, because each carries meaning a joined line
 would destroy: a **blank line** is a paragraph break; a leading **`- `** is a
@@ -680,6 +681,98 @@ computed `color` comes back as `rgb(…)`, so comparing the two matches nothing
 and "the accent is used nowhere else" passes on a page painted entirely in it.
 Resolve the token through a throwaway element. It was shown red by deliberately
 accenting the agent names.
+
+### The commits panel
+
+Five commits, near the top, each row carrying how long ago it landed
+(#132, #151). His words: *"commits on webui should have a timestamp next to
+them like 'XXm YYs' ago"*, and *"near the top of dreamworker dashboard should
+be the most recent 5 commits. whne a new commit is made, the bottom one should
+dreamlike fade away, the new top one should dreamlike fade in, and the other 4
+should gently slide down one. should come together nice and smoothly."*
+
+**The age is two units, two digits each** — `05m 23s ago`, `02h 14m ago`,
+`03d 07h ago`. Two edges are decided rather than fallen into: under a minute
+it still reads as two units (`00m 12s ago`), so the column never changes width
+and a seconds-old commit is exactly the case he is watching; and past 100 days
+the DAY count widens while the second unit stays at two, because the shape is
+"two units" and not "four characters" — a truncated day count is a wrong
+number rather than a narrow one.
+
+**The time arrives as a number and the row renders none of it.** `git_tail`
+emits `%ct`; the row is a `<span class="age" data-ct=…>` that is *empty* in
+the HTML. A page computing an age from what it displayed would be reading its
+own output back, and the server's copy is stale the second after it is
+written.
+
+**Which makes WHERE the clock ticks the whole design.** A seconds-resolution
+age has to change every second, and this page re-renders through `innerHTML`
+— so routing it through the tick would re-run the regroup (#113) and re-carry
+his half-typed text (#118) sixty times a minute, forever, to move one digit.
+It goes through the page's standing `ages()` sweep instead: a targeted
+`textContent` write into nodes that already exist, on `setInterval(…, 1000)`,
+with `setContent` re-running it after every swap so a fresh row is filled
+before it paints. That seam already existed for `.age[data-mt]`; #132 is what
+makes it load-bearing rather than convenient.
+
+**Rows are fixed-height and the subject ellipsises**, so the panel's height is
+a constant and nothing below it moves when a commit lands. `nowrap` is the
+mechanism; the explicit `height` is a floor over it.
+
+**A new commit is ONE gesture, and it is #104's regroup over different rows.**
+`snapshotCards`/`regroupCards` take a *list* — a selector plus the attribute
+that IS a row's identity (`data-qid` for cards, `data-sha` for commits) — and
+both lists go through the same pair. A second implementation of "one leaves,
+its neighbours travel" would be two things to keep true. The two branches in
+there that are about a card are inert here **by construction rather than by a
+guard clause**: a row is fixed-height, so `dh` is always 0 and neither body
+branch is reachable, and no `.label` precedes a row inside `.git`, so
+`cardGroup` returns `''` on both sides and nothing is ever lifted.
+
+**It animates on a new SHA, never on a tick**, comparing the whole sha
+sequence (a rebase or an amend changes the panel without changing its top
+row). The dashboard re-renders whenever any watched file changes — the loop
+rewrites `status.json` every few seconds — and rows travelling for that is
+motion with nothing behind it. Note *why* that gate needs a real check: with
+it deleted, a quiet tick still looks identical, because `regroupCards` returns
+early for a row that did not move. The gate is only observable when the rows
+move for some **other** reason, so the guard makes them (it writes an
+unreadable `questions.md`, which puts #136's warning line above the panel) and
+requires them to arrive with the layout rather than travel to it.
+
+**No element catch-all in here** — `.git div` used to colour these rows, and
+that is the third instance of the shape that overrode `.sgbtn` (#121) and
+leaked into `.qfield textarea` (#139). Every part of a row is addressed by its
+own class.
+
+`dev/capture/dashboard.mjs` guards all of it, and it **builds its own git
+target**: `dev/capture/fixture` is not a repository, so `git_tail` returns
+`[]` there and every one of these checks would have passed vacuously against
+the shared server. Planting commits at known ages is also the only way to
+reach the 100-day boundary.
+
+### The enter-snap rule beats the component
+
+`.dreamin` carries `transition:none !important`, and the `!important` is the
+rule rather than an escape from it. The class exists to make an arriving
+element *begin* at opacity 0 instead of animating toward it, so it has to beat
+whatever that element's own component declares — which is everywhere it
+matters.
+
+It did not. `.qa` states the same three transitions at the same specificity
+and **later in the sheet**, so a question card carrying `.dreamin` kept a
+0.85s transition and an opacity of 1: it animated one frame toward 0 and had
+the class removed. Arrivals in the question list have been pop-ins since #104,
+and crumbs — which declare no transition of their own — have always been
+right. Nobody noticed because no guard traced an *arrival*; #151 found it by
+reusing the mechanism on a second list, which is the duplication-as-audit
+lesson landing for the third time.
+
+Source order is not a contract: a component added below `.dreamin` would take
+it back silently. Only the transition is `!important` — the other three
+properties are the start *pose*, and a component may reasonably want its own.
+`dashboard.mjs` asserts the snap for a commit row, a question card and a
+crumb, so the next component to declare a transition cannot quietly undo it.
 
 ### The composer
 

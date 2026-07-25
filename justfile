@@ -39,13 +39,19 @@ lint:
 #                targets in states one shared fixture cannot hold at once (no
 #                file / unparseable / seeded), so it builds them under OUT and
 #                runs its own servers from the given port upward.
+#   dashboard    same shape as health and for the same reason, plus one worth
+#                knowing: THE SHARED FIXTURE IS NOT A GIT REPO, so `git_tail`
+#                returns [] and the commits panel is empty on the server
+#                above. It inits a repo with commits at known ages (the only
+#                way to reach the 100-day boundary at all) and takes an
+#                EPHEMERAL port rather than the one it is handed.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"
