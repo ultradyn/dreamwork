@@ -796,3 +796,9 @@ this shape and convert opportunistically.)
   saved in X", check that X holds the bytes and not a presentation of them** —
   a file written *for* a reader has almost always transformed what it stored.
   (dreamer-qsec, 2026-07-25)
+- A pipeline's exit status is its LAST command's: `python lint.py | tail` inside
+  a `&&` chain let a commit land while the linter was red. **A pipe eats the
+  failure before `&&` can see it** — the same lesson as "an assertion is only a
+  guard if failing it stops the next step", in a form that passed a morning of
+  vigilance. Run the gate bare; filter its output only after it has gated.
+  (coordinator, 2026-07-25)
