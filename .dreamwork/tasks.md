@@ -63,12 +63,6 @@ Next id: **154**
   which is indistinguishable from broken — it cost a tracing cycle on
   #129. Rec: post-commit hook running `just deploy` when watch.py
   changed; say in DREAMWORK.md that this moves deploy authority
-- **#135** — questions.md's format lives only in its parser · **P1** ·
-  bug · 40m · **first slice of #137** · from the ez-feedback-pipeline
-  instance · the loop writes a
-  reasonable file the dashboard cannot read, and zero-parsed renders
-  identically to all-clear. Producer half: state the format in SKILL.md,
-  seed the skeleton on first use, migration
 - **#147** — Hub shows which targets run behind their own HEAD · P3 ·
   idea · 30m · #140 CLOSES the deploy window, this makes it LEGIBLE —
   decide which is the answer before building both
@@ -86,11 +80,11 @@ Next id: **154**
   (a tinted favicon is how two dashboards differ in a tab strip)
 - **#152** — Two maintenance rules that could be checks · P3 · chore ·
   25m · recovered by grooming a 3-hour-old dream that predicted
-  `lint.py`'s thesis · (a) dangling-parent check is BLOCKED on a real
-  decision: the chain notation appears **once** in the whole ledger, so
-  either it is load-bearing and the coordinator should be writing it, or
-  it is ceremony that did not survive contact · (b) prose-wrap check on
-  SKILL.md is a cheap ride-along
+  `lint.py`'s thesis · (a) dangling-parent check **unblocked**: the
+  header overstated the rule, not the practice — narrowed to the scope
+  gate (see this file's header), so the check is now worth having over
+  the few chains that should exist · (b) prose-wrap check on SKILL.md is
+  a cheap ride-along
 - **#151** — Commits panel shows five, and a new one arrives dreamlike ·
   P2 · idea · 40m · **the panel already exists** (verified on the
   deployed page) — this is fix at five, move to the top, and add the
@@ -163,7 +157,9 @@ Next id: **154**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#146** a pasted bullet can
+Pruned in grooming; git is the real ledger. **#135** the producer half of
+the format bug (d9ce212) — `file-formats.md` states the shapes, init seeds
+the skeleton, migration -13. **#146** a pasted bullet can
 no longer forge a question (26037e7) — `human_block()` is now the only
 way human text enters questions.md. Indenting alone was NOT enough: the
 reader tests `- **` on the RAW line but 'starts a bullet' on the STRIPPED
