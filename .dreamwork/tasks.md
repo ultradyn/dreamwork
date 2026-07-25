@@ -72,14 +72,14 @@ Next id: **156**
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
 - **#155** — The styleguide audit is red twice, and nothing gates it ·
-  P2 · bug · 30m · `c065a51` is a REAL miss (the status panel, including
-  fold-by-complement, undocumented) · `6099998` is arguably a FALSE
-  POSITIVE and that is the useful half: the audit greps commits touching
-  `watch.py` and cannot tell a page change from a server change, because
-  watch.py is both. Decide what the rule MEANS before gating it — and
-  note it becomes mechanically detectable only after #124 splits the
-  seam · the deeper half unchanged: a stated routine with a working
-  checker that no gate invokes, #117's shape
+  P2 · bug · 30m · **scoping decided, now buildable**: keep the coarse
+  "touched watch.py" rule and add an explicit `[no-styleguide]` opt-out,
+  because an opt-out makes a false positive cheap and VISIBLE where a
+  heuristic makes it silent — and "changed the page" is not detectable
+  until #124 splits the seam · fix c065a51's real miss (the status panel
+  is undocumented), then gate it scoped to the branch range · the deeper
+  half: a stated routine with a working checker that nothing invokes,
+  which is #117's shape
 - **#153** — Title that says whether you're needed, and a real favicon ·
   P2 · idea · 50m · the tab title is the only part of the dashboard
   visible in a background tab, so it carries the count front-loaded
@@ -89,13 +89,13 @@ Next id: **156**
   dreaming, rest when idle, mark `awaiting_human`. Then the motion IS
   the status · taste is the deliverable, like #122 · pairs with #143
   (a tinted favicon is how two dashboards differ in a tab strip)
-- **#152** — Two maintenance rules that could be checks · P3 · chore ·
-  25m · recovered by grooming a 3-hour-old dream that predicted
-  `lint.py`'s thesis · (a) dangling-parent check **unblocked**: the
-  header overstated the rule, not the practice — narrowed to the scope
-  gate (see this file's header), so the check is now worth having over
-  the few chains that should exist · (b) prose-wrap check on SKILL.md is
-  a cheap ride-along
+- **#152** — A dangling-parent check, deferred WITH A TRIGGER · P3 ·
+  chore · 15m · (b) prose-wrap: measured, do not build — eleven long
+  lines, three of them unwrappable frontmatter · (a) the ledger carries
+  ONE chain line and that is correct, so a checker today checks nothing.
+  **Build it when #114 lands** (chains become something he sees) **or
+  when there are >5 chain lines**. The check is right; the timing is
+  wrong
 - **#150** — Audit the coordinator's own machinery · P2 · chore ·
   *all four slices landed* · `relay.py` (stdin body, clock stamp);
   write-then-wake in SKILL.md; `kind`/`awaiting_result` in status.json;
