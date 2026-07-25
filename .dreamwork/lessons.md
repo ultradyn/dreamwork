@@ -717,8 +717,18 @@ this shape and convert opportunistically.)
   long it looked. **A guard that watches long enough will see some later
   mechanism produce the result it wants.** `morph.mjs` traces 1400ms and
   additionally asserts the card node was never replaced, so whatever
-  moved, the morph moved. (dreamer-gesture, #191, 2026-07-25 — measured
-  against, and disproving, the cause its predecessor reported)
+  moved, the morph moved. (dreamer-gesture, #191, 2026-07-25)
+- **And the coordinator wrote that lesson twice before reading the file.**
+  Worth keeping attached to it. dreamer-motion said `regroup.mjs` "answers
+  by POST and lets the tick do the whole move"; I recorded that. Its
+  successor found the trace-window cause; I recorded that as a
+  *correction*, saying the first account was wrong. Then it told me the
+  first account had been accurate, and I finally opened the file: it
+  **clicks** `.qmode` and `.qsend`, and its own header says it traces "a
+  real POST /answer and the live tick" over 5200ms. Both dreamers were
+  right; the second was more complete. Three versions of one lesson from
+  two reports and zero readings, when the file was three commands away —
+  and the lesson being revised was *measure, do not inherit*.
 - **An assertion is only a guard if failing it stops the next step.** A
   script asserted its edit anchor existed, refused to write when it did
   not — and the `git commit` on the following line ran anyway, publishing
