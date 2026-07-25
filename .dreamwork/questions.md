@@ -2,29 +2,6 @@
 
 ## Open
 
-- **2026-07-25 — should `/file` reflow markdown? It replaces a recorded
-  decision (#158).** You asked for `/file?p=initialization.md` to have
-  its hard wraps reflowed. That contradicts a rule `watch.py` states in
-  its own words, from #102:
-
-  > "MARKDOWN PROSE REFLOWS, RAW TEXT DOES NOT. Question bodies,
-  > answers, follow-ups, dreams and the dashboard's .md peeks are prose
-  > the page composes, and they reflow. `/file`, status JSON and the git
-  > tail are shown as they are on disk, and stay verbatim in a `<pre>`."
-
-  The rule drew its line at **who composed the text** — a file viewer
-  that silently reformats is lying about what is on disk. Your request
-  exposes that the useful line is **what the text IS**:
-  `initialization.md` is the same prose that reflows in the dashboard's
-  own `.md` peek, and reflows or not purely by the route you reached it
-  through.
-
-  **Rec: reflow `.md` at `/file`, keep `.py`/`.json`/logs verbatim, and
-  rewrite the rule in the same commit** so the next reader sees it was
-  reconsidered rather than forgotten. Say if you would rather `/file`
-  stay honest-to-disk — that is a defensible position and the reason the
-  rule exists.
-
 - **2026-07-25 — what should the dashboard be called, and does the app
   name appear anywhere? (#172, #153).** Two decisions that arrived from
   opposite directions and should be made together.
@@ -140,6 +117,18 @@
     resolved and is not.
 
 ## Answered
+
+- **Should `/file` reflow markdown? (#158)** → "I think rec still
+  though. i agree with only reflowing .md or similar. not source code"
+  via watch (2026-07-25 15:23). Rec taken: `.md` and similar prose
+  formats reflow at `/file`, source code stays verbatim, and the #102
+  rule is rewritten in the same commit so the next reader sees it was
+  reconsidered rather than forgotten. He noted `file-formats.md` needs
+  it too — same case, same fix. He also added an idea with it, now
+  #178: a pretty-print toggle for JSON, with syntax highlighting as a
+  bonus. That is the right shape for a format that is neither prose nor
+  code — reformatting it is a VIEW, so it gets a control rather than a
+  default.
 
 - **A goal the loop folded in on its own: "nothing fails quietly"** →
   "yes that sounds right" via watch (2026-07-25 14:20). Confirmed and

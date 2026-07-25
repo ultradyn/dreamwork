@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **178**
+Next id: **180**
 
 ## Open
 
@@ -83,14 +83,28 @@ Next id: **178**
   linking · resolve before linkifying: a link that 404s promises
   something, which is "nothing fails quietly" aimed at the page's own
   affordances
-- **#158** — `/file` should reflow markdown · P2 · bug · 25m ·
-  **CONTRADICTS a recorded decision** ("markdown prose reflows, raw text
-  does not — `/file` stays verbatim", #102). The rule drew its line at
-  WHO COMPOSED IT; the useful line is CONTENT. `initialization.md` is
-  the same prose that reflows in the dashboard's own peek, and reflows
-  or not purely by the route it was reached through. Reflow `.md`, keep
-  `.py`/`.json`/logs verbatim, and update watch-design.md in the same
-  commit because this REPLACES a rule
+- **#158** — `/file` reflows markdown · P2 · bug · 25m · **APPROVED**
+  2026-07-25 15:23 ("rec still... only reflowing .md or similar. not
+  source code") · replaces the #102 rule, which drew its line at WHO
+  COMPOSED the text where the useful line is WHAT IT IS · rewrite the
+  rule in the same commit so it reads as reconsidered, not forgotten ·
+  pairs with #178, same route
+- **#179** — **P1** The commit cycle steals focus from the box he is
+  typing in · bug · 25m · a REGRESSION from #151, ~90 minutes old,
+  reported as it happened to him · fourth instance of the class (#118,
+  #111, #141) and the first regression · **why the rule did not stop
+  it**: the cycle fires on a new SHA, not on the tick, so it never met
+  a rule written for "the tick" · fix both layers — use the existing
+  snapshot seam, AND widen the rule to "survives ANY re-render, whatever
+  triggered it", because it was scoped to a mechanism and a new
+  mechanism walked past it · do it with #174, same code
+- **#178** — Pretty-print toggle for JSON at `/file` · P3 · idea · 25m ·
+  resolves the tension #158 exposed: prose reflows by default, source
+  stays verbatim, and JSON is NEITHER — its formatting carries no
+  meaning but it is not prose, so reformatting is a VIEW and gets a
+  control · general rule worth stating: reformat by default when the
+  original formatting carries no meaning AND he never wants it back;
+  offer a toggle when he might
 - **#177** — Text boxes grow with what he types, then scroll · P2 ·
   idea · 30m · his numbers: composer 2-3 → 10-15, answer/note 2 → 6 ·
   the different ceilings are right — a 15-line box inside a question
