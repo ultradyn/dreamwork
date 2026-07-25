@@ -242,6 +242,21 @@ mean the linter shouts loudest at the moment the log did its job. A
 malformed line anywhere else IS an error — that is a broken writer, not a
 dead process.
 
+**This log is the only VERBATIM copy of what he typed.** Every accepted
+write elsewhere is a *rendering*: `append_answer` hard-wraps his text to
+the file's line width, so even a success stores his words reflowed. The
+guard for this file learned it by failing — it searched questions.md for
+a sentence that had landed, and the file held it broken across lines.
+Anything that needs his exact bytes (recovery, re-scanning, an audit of
+sent-vs-recorded) reads this file, never the rendered ones. That is the
+difference between a backup and a duplicate.
+
+**Never committed.** It holds his raw typed text; `.gitignore` carries it
+(and the fixture copy) alongside `watch-events.log`. An upgrading target
+gains that line via `migrations/2026-07-25-15-submissions-log.md` —
+without it the file sits untracked, one `git add -A` away from pushing
+his words somewhere.
+
 Shape credit: dreamer-qsec, #199, who read the handlers first and sent the
 contract before either half was built — which is why this row describes
 the file rather than a guess at it.
