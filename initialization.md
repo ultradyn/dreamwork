@@ -77,9 +77,16 @@ read, initialization has already happened; return to the loop.
 
    `Monitor command="heartbeat 4.75m 'dream tick (ud-dreamwork): run the tick flow; keep the task list truthful; reflect — reload the ud-dreamwork skill if this means nothing to you'" triggerTurn=true persistent=true`
 
-   No regex filter. If the `heartbeat` CLI is absent, fall back to
-   `while true; do echo '<same message>'; sleep 285; done`. (Same
-   mechanism as the heartbeat-monitor skill.)
+   No regex filter. (Same mechanism as the heartbeat-monitor skill.)
+
+   If the `heartbeat` CLI is absent, use the vendored port —
+   `python3 <skill-dir>/heartbeat.py 4.75m '<same message>'` — which
+   takes the same arguments and needs nothing but Python. Only if that
+   is somehow unavailable, fall back to
+   `while true; do echo '<same message>'; sleep 285; done`, and know
+   what you are giving up: the shell loop cannot align to the wall
+   clock, so an `@`-style interval silently becomes "every N from
+   whenever this started". That degradation is why the port exists.
 
    Arm exactly one. Already armed = tick notifications are arriving in
    this session (or you armed one and haven't stopped it) — never arm a
