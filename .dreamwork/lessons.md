@@ -700,13 +700,22 @@ this shape and convert opportunistically.)
   of a negative one**, and error suppression is what erases the
   difference. Give every "could not compare" its own named state, and
   assert the comparison actually happened. (coordinator, #147, 2026-07-25)
-- **Guard coverage tracks ease of driving, not what the human does.** Both
-  of today's green-over-a-real-bug guards had one cause: each was written
-  against the path that was convenient to automate — `/questions` because
-  cards are top-level there, `POST /answer` because it is one fetch —
-  while the path he actually takes (the dashboard, where cards nest inside
-  a fold; the morph, where the card restates in place) went undriven. So
-  the suite drifts toward the easy routes and the bugs collect on the
-  human's. The cheap counter, asked of every new guard: **which of his
-  routes and which of his gestures does this NOT reach?** Both holes would
-  have answered out loud. (dreamer-motion, #179/#191, 2026-07-25)
+- **A guard reaches only the routes and gestures someone found easy to
+  drive.** #179's typing guard was green for hours because it only ever
+  visited `/questions`, where the cards are top-level — the dashboard,
+  where they nest inside a fold, was the harder page to automate and the
+  one he actually uses. The counter is one question per new guard: which
+  of his routes and which of his gestures does this NOT reach?
+  (dreamer-motion, #179, 2026-07-25)
+- **When a path holds the tick, the guard's WINDOW is the measurement.**
+  The sharpest of the three, and it corrects the other two. `regroup.mjs`
+  HAS submitted through the real UI since #104 and was still green over
+  #191 for a day: it traces 5.2s, past the 1.6s `holdRerenderUntil`, so
+  the tick's own regroup travelled the neighbour and every "it slid"
+  assertion passed over a teleport that had happened a second and a half
+  earlier. Nothing was wrong with its route or its driver — only with how
+  long it looked. **A guard that watches long enough will see some later
+  mechanism produce the result it wants.** `morph.mjs` traces 1400ms and
+  additionally asserts the card node was never replaced, so whatever
+  moved, the morph moved. (dreamer-gesture, #191, 2026-07-25 — measured
+  against, and disproving, the cause its predecessor reported)
