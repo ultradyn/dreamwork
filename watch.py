@@ -811,6 +811,26 @@ const cardMode = key => {
   const c = el && el.closest('.qcompose');
   return (c && c.dataset.mode) || 'note';
 };
+/* ONE implementation of "this card's text is destined for X" — used by the
+   mode buttons and by the tick's restore (#118), so the two cannot drift.
+   The mode is honoured only if this card actually offers it: a folded entry
+   is note-only, so a carried-over 'answer' falls back to what the card
+   rendered rather than arming a send that would fail. */
+function setCardMode(comp, mode, snap) {
+  if (!comp || !mode) return;
+  const group = comp.querySelector('.sgroup.qmodes');
+  const btn = group && group.querySelector('.qmode[data-mode="' + mode + '"]');
+  if (!btn && comp.dataset.mode !== mode) return;   // not on offer here
+  comp.dataset.mode = mode;
+  if (group) group.querySelectorAll('.sgbtn').forEach(b => {
+    const on = b === btn;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  const ta = comp.querySelector('textarea');
+  if (ta) ta.placeholder = QPLACE[mode] || '';
+  if (group) slideIndicator(group, !!snap);
+}
 function submitCard(key) {
   return cardMode(key) === 'answer' ? sendAnswer(key) : sendComment(key);
 }
@@ -948,6 +968,53 @@ function setContent(html) {
   paintIndicators(true);
   ages();
 }
+/* ── typing survives a tick (#118) ────────────────────────────────────────
+   The tick re-renders the question list through `innerHTML`, so every card
+   node is genuinely replaced — and with it whatever the human was part-way
+   through typing. Liveness is not negotiable (the tick has always committed
+   its new DOM immediately), so the fix is not to suppress the render; it is
+   to carry across the render the state that exists NOWHERE ELSE. What he
+   typed, where his caret is, and which endpoint it is destined for are not
+   on disk, so nothing downstream can reconstruct them.
+
+   Keyed by `data-qid` — the question itself — for exactly the reason the
+   regroup is: answering re-indexes an entry out of `questions_open`, so a
+   positional key would drop the text at the very moment the card moves. */
+function snapshotCompose() {
+  const act = document.activeElement;
+  const m = new Map();
+  document.querySelectorAll('.qa[data-qid]').forEach(card => {
+    const comp = card.querySelector('.qcompose');
+    const ta = comp && comp.querySelector('textarea');
+    if (!ta) return;
+    if (!ta.value && ta !== act) return;   // untouched and unfocused: nothing
+    m.set(card.dataset.qid, {
+      value: ta.value, mode: comp.dataset.mode, focus: ta === act,
+      start: ta.selectionStart, end: ta.selectionEnd,
+      dir: ta.selectionDirection, scroll: ta.scrollTop,
+      height: ta.style.height,             // the box is resize:vertical
+    });
+  });
+  return m;
+}
+function restoreCompose(saved) {
+  if (!saved || !saved.size) return;
+  document.querySelectorAll('.qa[data-qid]').forEach(card => {
+    const s = saved.get(card.dataset.qid);
+    if (!s) return;
+    const comp = card.querySelector('.qcompose');
+    const ta = comp && comp.querySelector('textarea');
+    if (!ta) return;                       // the state stopped offering a box
+    ta.value = s.value;
+    if (s.height) ta.style.height = s.height;
+    // the mode is WHERE THE TEXT GOES: a re-render must never silently
+    // redirect it. setCardMode declines a mode the new state cannot accept.
+    setCardMode(comp, s.mode, true);
+    ta.scrollTop = s.scroll;
+    try { ta.setSelectionRange(s.start, s.end, s.dir || 'none'); } catch (e) {}
+    if (s.focus) ta.focus({ preventScroll: true });
+  });
+}
 /* ── the regroup (#104, #77) ──────────────────────────────────────────────
    Answering a question moves it out of the open list and under a different
    heading. That is one moment seen two ways: the questions below close the
@@ -1032,18 +1099,8 @@ addEventListener('click', e => {
   const btn = e.target.closest && e.target.closest('.qmode');
   if (!btn) return;
   e.preventDefault();
-  const group = btn.closest('.sgroup'), wrap = btn.closest('.qcompose');
-  if (!group || !wrap) return;
-  const mode = btn.dataset.mode;
-  wrap.dataset.mode = mode;
-  group.querySelectorAll('.sgbtn').forEach(b => {
-    const on = b === btn;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-checked', on ? 'true' : 'false');
-  });
-  const ta = wrap.querySelector('textarea');
-  if (ta) ta.placeholder = QPLACE[mode] || '';
-  slideIndicator(group, false);           // membership is fixed: it slides
+  // membership is fixed here, so the indicator slides rather than lands
+  setCardMode(btn.closest('.qcompose'), btn.dataset.mode, false);
 });
 addEventListener('resize', () => paintIndicators(true));
 /* ── the persistent chrome (#110) ─────────────────────────────────────────
@@ -1353,10 +1410,13 @@ async function tick() {
       lastMtime = mtime; fetchedAt = Date.now();
       data = await (await fetch('/data.json')).json();
       // the data lands instantly; surviving cards then travel from where
-      // they were to where the new grouping put them (#104/#77)
+      // they were to where the new grouping put them (#104/#77). What the
+      // human is mid-way through typing rides across the swap (#118).
+      const kept = snapshotCompose();
       const before = snapshotCards();
       if (view.name === 'dashboard') setContent(buildDashboard(data));
       else if (view.name === 'questions') setContent(buildQuestions(data));
+      restoreCompose(kept);
       regroupCards(before);
       // the crumbs carry live numbers too (open count, version) — and the
       // tick re-renders in place, instantly, so they never animate

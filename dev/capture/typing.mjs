@@ -1,0 +1,130 @@
+/* #118 — a live tick must not eat what the human is typing.
+
+   The tick re-renders the question list through `innerHTML`, so every card
+   node is genuinely replaced roughly every 2s. Anything half-typed lives
+   only in that node, so the render destroys it unless it is carried across.
+
+   The hazard is invisible to a screenshot and to any check that does not
+   force a real tick, so this script does both halves:
+     - it makes the tick actually happen (a real write under `.dreamwork/`,
+       which is what `watched_mtime` watches) and PROVES it happened by
+       showing the textarea node was replaced. Without that assertion a
+       do-nothing tick would pass every check below.
+     - it then asserts the text, the caret, the focus and the destination
+       mode survived — the mode because it decides which endpoint the text
+       is sent to, so losing it would silently redirect his words.
+   Two ticks are exercised: one where nothing about the questions changed
+   (POST /command — the common case, the loop writing its own files) and one
+   where the list content genuinely changed underneath him (POST /comment on
+   a DIFFERENT entry, which also moves cards and so runs the regroup FLIP).
+
+   Writes to the target it is pointed at, so point it at a scratch copy.
+   usage: node typing.mjs <outdir> <port> */
+import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+const OUT = process.argv[2], PORT = process.argv[3] || '39887';
+const BASE = `http://127.0.0.1:${PORT}`;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
+
+const TEXT = 'half a thought, still being written';
+const BACK = 5;                       // caret parked this far from the end
+const uniq = a => [...new Set(a)];
+const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
+
+/* Run one tick while watching a single card, and report what survived it.
+   `poke` is the write that makes the tick real; the rAF trace spans the
+   whole thing so the mode indicator can be judged per frame rather than by
+   its final resting place (it must LAND on restore, not slide). */
+const TICK = (qid, poke) => `(async (qid, poke) => {
+  const sel = '.qa[data-qid="' + qid + '"]';
+  const box = () => document.querySelector(sel + ' textarea');
+  const ta0 = box();
+  const lefts = []; let replaced = false;
+  await fetch(poke.url, { method: 'POST',
+    headers: {'Content-Type':'application/json'}, body: JSON.stringify(poke.body) });
+  const t0 = performance.now();
+  await new Promise(res => (function step() {
+    const ind = document.querySelector(sel + ' .qmodes .sgind');
+    if (ind) lefts.push(Math.round(ind.getBoundingClientRect().left));
+    const now = box();
+    if (now && now !== ta0) replaced = true;
+    if (performance.now() - t0 < 5200) requestAnimationFrame(step); else res();
+  })());
+  const ta = box(), comp = ta && ta.closest('.qcompose');
+  const lit = comp && comp.querySelector('.sgbtn.on');
+  return {
+    replaced, lefts,
+    value: ta ? ta.value : null,
+    start: ta ? ta.selectionStart : -1, end: ta ? ta.selectionEnd : -1,
+    focused: !!ta && document.activeElement === ta,
+    mode: comp ? comp.dataset.mode : null,
+    lit: lit ? lit.dataset.mode : null,
+    // nothing was restored into a card he never touched
+    othersEmpty: [...document.querySelectorAll('.qa textarea')]
+                   .filter(x => x !== ta).every(x => !x.value),
+  };
+})(${JSON.stringify(qid)}, ${JSON.stringify(poke)})`;
+
+async function typeInto(p, qid) {
+  const sel = `.qa[data-qid="${qid}"]`;
+  // mode first: clicking a mode button takes focus, so switching after
+  // typing would leave the caret measurement describing the button
+  await p.click(`${sel} .qmode[data-mode="note"]`);
+  await sleep(350);
+  await p.click(`${sel} textarea`);
+  await p.keyboard.type(TEXT);
+  for (let i = 0; i < BACK; i++) await p.keyboard.press('ArrowLeft');
+}
+
+const survived = (r, label, reduced) => {
+  ok(`${label}: the tick really replaced the card node`, r.replaced);
+  ok(`${label}: the typed text survived`, r.value === TEXT);
+  ok(`${label}: the caret survived`,
+     r.start === TEXT.length - BACK && r.end === r.start);
+  ok(`${label}: focus stayed in the box he was typing in`, r.focused);
+  ok(`${label}: the destination mode survived`, r.mode === 'note' && r.lit === 'note');
+  ok(`${label}: nothing leaked into a card he never touched`, r.othersEmpty);
+  if (!reduced)
+    ok(`${label}: the mode indicator LANDS across the tick (it does not slide)`,
+       uniq(r.lefts).length === 1);
+};
+
+for (const reduced of [false, true]) {
+  const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
+  const ctx = await br.newContext({ viewport: { width: 1100, height: 950 },
+    reducedMotion: reduced ? 'reduce' : 'no-preference' });
+  const p = await ctx.newPage();
+  const errs = []; p.on('pageerror', e => errs.push(String(e)));
+  await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(1200);
+
+  const qids = await p.evaluate(() =>
+    [...document.querySelectorAll('.qa.open[data-qid]')].map(e => e.dataset.qid));
+  if (qids.length < 2) {
+    console.log('FAIL fixture needs two open questions — reset the scratch target');
+    process.exit(1);
+  }
+  const [mine, other] = qids;
+  const otherTitle = decodeURIComponent(other);
+  const tag = reduced ? 'reduced-motion' : 'normal';
+
+  // (1) the loop writes its own files; the questions themselves did not change
+  await typeInto(p, mine);
+  const a = await p.evaluate(TICK(mine,
+    { url: '/command', body: { kind: 'add-idea', text: 'typing guard tick' } }));
+  survived(a, `${tag}, quiet tick`, reduced);
+  if (!reduced) await p.screenshot({ path: `${OUT}/mid-typing.png`, fullPage: true });
+
+  // (2) the list content genuinely changed underneath him: a note lands on
+  //     ANOTHER entry, so cards move and the regroup FLIP runs too
+  const b = await p.evaluate(TICK(mine,
+    { url: '/comment',
+      body: { question: otherTitle, comment: 'a note arriving while he types',
+              section: 'Open' } }));
+  survived(b, `${tag}, content changed`, reduced);
+
+  ok(`${tag}: no page errors`, errs.length === 0);
+  await br.close();
+}
+
+console.log(checks.join('\n'));
+process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);

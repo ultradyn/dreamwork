@@ -366,6 +366,33 @@ field so they appear to be one thing."*
 - The placeholder follows the mode; the typed text does not, because the
   text is the point and the mode is only where it goes.
 
+**Typing survives a tick.** The list is re-rendered through `innerHTML`, so
+every card node is replaced roughly every 2s — and with it whatever is
+half-typed. Liveness is not negotiable (the tick has always committed its new
+DOM immediately), so the fix is not to suppress the render but to carry
+across it the state that exists **nowhere else**: the text, the caret, the
+focus, the scroll and resize of the box, and the **mode**. Keyed by
+`data-qid` for the same reason the regroup is — answering re-indexes the
+entry, so a positional key would drop the text at the exact moment the card
+moves.
+
+The mode is the one that is a correctness rule rather than a comfort: it
+decides *which endpoint the text is sent to*, so silently reverting it to the
+card's default would redirect his words. `setCardMode` is the single
+implementation shared by the mode buttons and the restore, and it **declines
+a mode the new state cannot accept** — a folded entry is note-only, so a
+carried-over `answer` falls back to what the card rendered rather than arming
+a send that would fail. The restore lands the indicator (`snap`) rather than
+sliding it: the DOM is fresh, so this is the enter-snap rule again.
+
+`dev/capture/typing.mjs` guards it, and its load-bearing assertion is that
+**the card node was actually replaced** — without that, a tick that did not
+happen would satisfy every other check in the file. It forces two real ticks:
+a quiet one (`POST /command`, the common case — the loop writing its own
+files, questions unchanged) and one where the list content genuinely changed
+underneath him (`POST /comment` on another entry, which also runs the
+regroup).
+
 The Answered section is rendered structured from `answered_entries`, not raw
 text. The questions/dashboard views group cards by state with their own
 counts — grouping is the view's job, rendering is the card's.
