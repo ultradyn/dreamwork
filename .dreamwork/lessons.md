@@ -157,3 +157,11 @@ source dream. Not a log — only things that should change future behavior.
 - Give a list row two identities when writes and animation need different
   ones: a positional key addresses the entry, a stable id IS the entry and
   survives it moving between sections. (2026-07-25-1010-question-surface)
+- Distance from the artifact converts into confidence rather than doubt,
+  which is backwards: the coordinator misdiagnosed three reports today
+  and the dreamer holding the file was right every time. Dispatch the
+  hypothesis, never the conclusion. (coordinator, 2026-07-25 reflection)
+- Ask of every durable thing the loop invents: who owns it? Shared
+  mutable state without a named owner failed three times in six hours —
+  an id counter, a working tree, a port — each invisible until a second
+  actor existed. (coordinator, 2026-07-25 reflection)

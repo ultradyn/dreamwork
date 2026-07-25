@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **119**
+Next id: **121**
 
 ## Open
 
@@ -38,6 +38,10 @@ Next id: **119**
   review of `docs/plans/ud-dreamtask.md` (questions.md)
 - **#80** — Pick a second dogfood target (hark or c2c) · P3 · chore · 30m ·
   **blocked**: human pick
+- **#120** — Read SKILL.md for length, with fresh eyes · P3 · chore ·
+  40m · not by whoever wrote today's additions
+- **#119** — Revisit a `selection.md` reference once selection stops
+  moving · P3 · idea · 30m · carried out of a pruned questions entry
 - **#96** — Daemon mode stage 1, dreamhub · P3 · task · 120m ·
   **ON HOLD**: a go was given then explicitly retracted; do not plan or
   build until Max re-opens it · `docs/plans/daemon-mode.md`
