@@ -139,14 +139,20 @@
   been getting violated and should stop today.
 
   **Why it is not academic right now**: the deployed snapshot is
-  `10ca98a` (15:48) and is **two `watch.py` commits behind** — #179, the
-  P1 you reported (the dashboard taking focus out of the box while you
-  type), and #174 (the commit cycle travelling the wrong way). Both are
-  fixed and committed. You cannot feel either until a redeploy, so the
-  dashboard in front of you still has the focus bug.
+  `10ca98a` (15:48) and every `watch.py` fix since is invisible to you —
+  including **#179, the P1 you reported**: the dashboard taking focus out
+  of the box while you type. It is fixed and committed. You cannot feel
+  it until a redeploy, so the dashboard in front of you still has the bug
+  you reported.
 
-  The title, the favicon and the tint ARE deployed — you should be
-  seeing those already.
+  The title, the favicon and the tint ARE deployed — you should be seeing
+  those already.
+
+  **For the current count, ask rather than trust this sentence**:
+  `python3 deployed.py --target .` names the revision and lists every
+  commit it is missing. I wrote "five" here first and then "two", and
+  both were out of date within the hour — which is #181's point exactly,
+  and the reason #147 now computes this instead of anyone stating it.
 
   Worth knowing about that fix, because the report was a red herring: the
   commits panel was innocent. `focus()` on an element inside a **closed**
