@@ -1,7 +1,14 @@
 # Lessons
 
-One concise line per important lesson, newest last, each pointing at its
-source dream. Not a log — only things that should change future behavior.
+Newest last, each pointing at its source dream. Not a log — only things
+that should change future behavior.
+
+**Shape: a bolded claim you could read on its own, then the concrete case
+that earned it.** The claim keeps the file skimmable; the evidence stops
+it reading as platitudes. Prune a lesson once it has graduated into a
+guardrail or a check — if `lint.py` or a guard now enforces it, it does
+not need to persuade anyone. (Entries above the 2026-07-25 batch predate
+this shape and convert opportunistically.)
 
 - Verify before dismissing a subagent's contradiction — its fresh look may
   beat your cached fact. (2026-07-25-0210-dogfood-reflection)
