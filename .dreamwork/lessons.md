@@ -666,3 +666,25 @@ this shape and convert opportunistically.)
   This repo's writing names files and identifiers constantly, so the
   exposure is permanent: use `-F -` with a QUOTED heredoc, or stdin.
   (coordinator, 2026-07-25, twice in one day)
+- **When direction is the report, the check must assert the SIGN.** #174
+  was a departing commit row travelling *up* into a gesture pushing four
+  other rows *down* — a gesture fighting itself — and every existing check
+  passed on it: `dashboard.mjs` counted that a ghost existed and that the
+  survivors moved, and both are true of the version he complained about.
+  "It moved" and "there was a ghost" are satisfied by exactly backwards.
+  Same trap as counting that the wisp changed rather than how. The general
+  form: when the human's words are about a DIRECTION, a magnitude check is
+  not a weak version of the right check, it is a check that cannot fail.
+  (dreamer-motion, 2026-07-25, #174 / 2026-07-25-1620-motion-batch)
+- **A report that will not reproduce is usually pointing at its neighbour,
+  not at nothing.** Neither half of #184 reproduced: the card above an
+  answered one shows zero travel and zero transform across 354 frames, and a
+  whole commit cycle moves no question card at all with the panel height
+  constant. But #174 — a departing row running backwards against everything
+  around it, in the panel directly above that list — was confirmed red in the
+  same batch, and a gesture that fights itself is exactly what "things that
+  did not move are animating" describes from across the room. So measure the
+  claim, write the non-reproduction down, and then look for a CONFIRMED bug
+  in the same square inch of screen before doubting him. A quiet drop loses
+  both halves of that. (dreamer-motion, 2026-07-25, #184 /
+  2026-07-25-1620-motion-batch)

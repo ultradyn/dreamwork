@@ -46,6 +46,30 @@ for live content is how this got broken the first time.
   close the gap, and reduced motion does neither.
 - `popbg` — a popped-out window carries the world-space shader field, and it
   matches the main window across the document boundary.
+- `typing` — what he is part-way through typing survives a live tick: the
+  text, the caret, the focus and the destination mode. `/questions` only.
+- `wisp` — the awaiting-fold breath: one envelope, both halves, and it holds
+  still at its brightest under reduced motion rather than disappearing.
+- `states` — every cell of the question state matrix, asserted on OUTCOME
+  (did the card end up somewhere else, continuously) and not on mechanism.
+- `dismiss` — a review dismissed from the dock.
+- `thread` — a settled follow-up thread folds, and opening it moves the
+  cards below it on the shared regroup.
+- `status` — the status panel's facts, and its fold-by-complement.
+- `motion` — the commits panel's gesture: a re-render never takes the focus
+  out of the box he is typing in (#179, both triggers), nothing below the
+  panel moves while it cycles (#184), and the cycle travels DOWN (#174).
+  Builds its own git target.
+- `health` — several targets in states one fixture cannot hold at once
+  (missing / unparseable / seeded). Builds its own targets and servers.
+- `dashboard` — the commits panel's static half and #151's motion. Builds
+  its own git repo with commits planted at known ages.
+- `identity` — the title and favicon across a SEQUENCE of loop states on one
+  live page, so nothing reloads between them.
+
+Four of those build their own target and take an ephemeral port, ignoring
+the one they are handed: `health`, `dashboard`, `identity`, `motion`. The
+justfile's `guards` recipe says which shape each is and why.
 
 ## Captures (not gated)
 
@@ -70,3 +94,16 @@ for live content is how this got broken the first time.
   the question is "did this re-lay-out".
 - **Scope to one component.** Counting `.qa textarea` across the page
   measures the page; a component assertion wants one card.
+- **Assert the SIGN, not the magnitude, whenever direction is the report.**
+  "It moved" and "a ghost existed" are both satisfied by a gesture running
+  exactly backwards — #174 was a departing row travelling *up* into the
+  gesture pushing everything else down, and every existing check passed on
+  it. The same trap as counting that the wisp changed rather than how.
+- **A key must be the whole identity.** Truncating `data-qid` for a readable
+  trace label merged three cards whose titles share a date prefix into one
+  series, and the run reported that nothing moved. Key by index or by the
+  full attribute; shorten only what you PRINT.
+- **Ask what your own check does when the subject is absent.** A "the row
+  arrived" filter written as "missing from some frames" also describes the
+  row on its way *out*, so it found two arrivals and skipped its own
+  assertions — passing as silence.
