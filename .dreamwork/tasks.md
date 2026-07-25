@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **162**
+Next id: **165**
 
 ## Open
 
@@ -88,13 +88,32 @@ Next id: **162**
   or not purely by the route it was reached through. Reflow `.md`, keep
   `.py`/`.json`/logs verbatim, and update watch-design.md in the same
   commit because this REPLACES a rule
-- **#161** — The composer's `...` menu is misaligned and reads as a
-  button · P2 · bug · 20m · centre the dots (MEASURE first — #123 was
-  the same shape and took two wrong diagnoses) · and give it fill, no
-  stroke: a menu REVEALS where a button ACTS, so **outline means "this
-  acts", fill means "this reveals"** is worth stating in
-  watch-design.md as vocabulary rather than styling one control. The
-  fill is a surface colour, never the accent
+- **#164** — The button row becomes an information scent · P2 · idea ·
+  75m · his verbatim design: the row is a CONVEYOR — non-default
+  commands apparate at the left, push the rest right, and are consumed
+  by the `...` menu at the right, sliding UNDER it and fading by
+  PROXIMITY (not time) as they approach. Selecting a default slides
+  everything back left. Reuse #104's regroup on a horizontal axis ·
+  subsumes #162(a): a row that cannot wrap · depends on #161
+- **#163** — Composer autosaves its draft, partitioned by project · P2 ·
+  idea · 30m · **browser storage is RIGHT here** where it was wrong for
+  #143 — a half-typed draft is his, local, and must not travel · this is
+  the backstop under #118, #131 and #162, the first fix that does not
+  depend on having anticipated the path · clear ONLY on successful send
+- **#162** — A menu command wraps the row, and the composer vanished ·
+  P2 · bug · 25m · (a) wrapping — do not fix separately if #164 is
+  being built · (b) **the composer defocused and disappeared** when he
+  clicked back to a default: the #131 family, and #131's "nothing
+  auto-dismisses while it holds focus or unsent text" evidently does not
+  cover the mode-switch path. Check whether a draft survives it
+- **#161** — The composer's `...` menu: position, shape, vocabulary ·
+  P2 · bug · 20m · centre the dots (MEASURE first — #123 was the same
+  shape and took two wrong diagnoses) · **on the RHS, in the button row
+  but hard right with a gap** (his 14:31 refinement) · fill, no stroke:
+  a menu REVEALS where a button ACTS, so **outline means "this acts",
+  fill means "this reveals"** belongs in watch-design.md as vocabulary,
+  not as styling for one control. The fill is a surface colour, never
+  the accent · #164 depends on this
 - **#160** — Frame-time graph should hug the RHS wall · P3 · bug · 10m ·
   check `position:fixed` is not containing-block-trapped by an ancestor
   with transform/filter (already a lesson, and this page has several) ·
