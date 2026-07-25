@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **151**
+Next id: **152**
 
 ## Open
 
@@ -68,6 +68,11 @@ Next id: **151**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
+- **#151** — Commits panel shows five, and a new one arrives dreamlike ·
+  P2 · idea · 40m · **the panel already exists** (verified on the
+  deployed page) — this is fix at five, move to the top, and add the
+  motion. Reuse #104's regroup, not a new one. Animate on a new SHA, not
+  on a tick. Same rows as #132, so land them together
 - **#150** — Audit the coordinator's own machinery · P2 · chore · 60m ·
   four failures today were all in the coordination layer, none in the
   code: lost subagent deliverables, an inbox that cannot wake an idle
