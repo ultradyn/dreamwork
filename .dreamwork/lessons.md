@@ -493,3 +493,31 @@ this shape and convert opportunistically.)
   family as `node guard.mjs | tail` reporting tail's exit code: the
   REPORTING path, not the checking path, is what lied. Print as you go,
   or exit non-zero on an unreached end. (dreamer-rows, 2026-07-25)
+- **A shared fixture that cannot express a feature makes its guard vacuous,
+  and vacuous reads exactly like green.** `dev/capture/fixture` is not a git
+  repository, so `git_tail` returns `[]` and the commits panel is EMPTY on
+  the server every guard shares — every check about a commit row would have
+  passed against nothing at all. The guard builds its own git target
+  instead, which is also the only way to reach the 100-day boundary. Before
+  writing a check against a shared fixture, ask whether that fixture can
+  hold the state under test; an empty section satisfies every assertion
+  about its contents. (dreamer-rows, 2026-07-25, #132/#151)
+- **A guard clause that is an optimisation in the common case has no check
+  until you construct the uncommon one.** #151's "animate on a new sha, not
+  on a tick" gate looks unfalsifiable: delete it and a quiet tick still
+  moves nothing, because the regroup early-returns for a row that did not
+  move. The gate is only observable when the rows move for some OTHER
+  reason — which is precisely the case it exists for. So the guard makes
+  them move (an unreadable questions.md puts #136's warning above the
+  panel) and requires them to arrive with the layout rather than travel to
+  it. If deleting the thing changes no outcome you can name, you are not
+  testing it. (dreamer-rows, 2026-07-25, #151)
+- **A rule the loop already wrote down and already broke wants a WRITER, not
+  a re-reading.** "Write the timestamp from the clock in the same command
+  that writes the file" is in this file, and a dreamer estimated three
+  report timestamps anyway — 13:12/14:05/14:47/15:40 for events that
+  happened between 13:04 and 13:50, on a channel the coordinator uses to
+  order work. `relay.py` designs that out for coordinator→dreamer messages;
+  nothing does for dreamer→coordinator inbox appends. The asymmetry is the
+  finding: when a fix exists in one direction, the other direction is where
+  the same mistake is still available. (dreamer-rows, 2026-07-25)
