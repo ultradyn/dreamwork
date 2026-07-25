@@ -20,14 +20,28 @@ lint:
 # that exit non-zero belong here; the rest of dev/capture/ prints for a
 # human and gates nothing. A guard joins this list when its feature lands.
 #
-# Every guard runs against a COPY of dev/capture/fixture, never against this
-# repo. Two things follow, and both were #117:
+# NO GUARD EVER RUNS AGAINST THIS REPO — every one works on a copy or on a
+# fixture of its own. Two things follow, and both were #117:
 #   - content is frozen, so a red light means the code broke rather than
 #     that the loop folded the last awaiting-fold question overnight
 #   - guards may WRITE (POST /answer, /comment) without touching the real
 #     questions.md, which is what kept the most valuable ones ungated
-# Every script takes (OUT, PORT). One contract; adding a second doubles the
-# confusion and already cost one falsely-reported regression.
+#
+# There are now THREE shapes, and this comment lists all three because a
+# comment that is 90% true is worse than none — it gets believed. #148 is
+# filed for collapsing them onto one runner; until then, read this:
+#   $GUARDS      dev/capture/*.mjs (OUT, PORT). One shared watch.py on
+#                {{port}}, its target reset from dev/capture/fixture before
+#                EACH one — several of them answer questions and leave notes,
+#                so without the reset the first writer eats what the next
+#                needs and the red light is really a run-order bug.
+#   health       also dev/capture/ and also (OUT, PORT), but it needs several
+#                targets in states one shared fixture cannot hold at once (no
+#                file / unparseable / seeded), so it builds them under OUT and
+#                runs its own servers from the given port upward.
+#   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
+#                targets plus a registry, and they pick ephemeral ports, so
+#                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
@@ -48,10 +62,8 @@ guards port="39899":
     fi
     fail=0
     for g in $GUARDS; do
-      # Reset the target before EVERY guard. Several of them answer questions
-      # and leave notes, so without this the first writer eats the fixture the
-      # next one needs and you get a red light that is really a run-order bug.
-      # The server re-reads from disk per request, so no restart is needed.
+      # Reset the target before EVERY guard — see the header. The server
+      # re-reads from disk per request, so no restart is needed.
       rm -rf "$OUT/target" && cp -r dev/capture/fixture "$OUT/target"
       if node "dev/capture/$g.mjs" "$OUT/$g" {{port}} >"$OUT/$g.log" 2>&1; then
         echo "  PASS $g"
@@ -59,6 +71,20 @@ guards port="39899":
         fail=1
         echo "  FAIL $g"
         grep -E "^(FAIL|Error)" "$OUT/$g.log" | head -5 | sed 's/^/        /'
+      fi
+    done
+    # the hub's own guards (#96, #134). They start their own servers — their
+    # input is N targets plus a registry, not one target dir — and pick
+    # ephemeral ports, so they need no plumbing here and cannot fight the
+    # watch server above for a port. Until these ran, a green `just test` did
+    # not cover the hub at all, which is #117 verbatim one directory over.
+    for h in hub contract; do
+      if node "dev/hub/$h.mjs" "$OUT/$h" >"$OUT/$h.log" 2>&1; then
+        echo "  PASS $h"
+      else
+        fail=1
+        echo "  FAIL $h"
+        grep -E "^(FAIL|Error)" "$OUT/$h.log" | head -5 | sed 's/^/        /'
       fi
     done
     # A missing browser is a missing verifier, not a pass. Say so loudly.
