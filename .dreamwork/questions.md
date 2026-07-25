@@ -125,6 +125,45 @@
 
   Answer "ship it", "not yet", or name a different shape.
 
+- **2026-07-25 — may I deploy the dashboard? DREAMWORK.md says no, and a
+  deploy plainly happened.** Line 56 reads "Deploy is not authorized."
+  Meanwhile `just deploy` exists as a recipe, `status.json` tracks a
+  deployed revision, and there is a server answering on 35110 from a
+  snapshot written at 15:54. Both cannot be true, and I would rather ask
+  than pick the reading that suits me.
+
+  Two readings. Either it means **the project under test** — a generic
+  guardrail carried in from the skill, with the watch dashboard exempt
+  because it is the loop's own instrument rather than a product — or it
+  means **literally do not run `just deploy`**, in which case that has
+  been getting violated and should stop today.
+
+  **Why it is not academic right now**: the deployed snapshot is behind
+  by five `watch.py` commits. It is missing #153 (the title and favicon),
+  #143 (the tint), and — the one that matters — **#179, the P1 you
+  reported: the dashboard taking focus out of the box while you type.**
+  It is fixed and committed at `9e8469c`. You cannot feel it until the
+  dashboard is redeployed, so the dashboard you are looking at still has
+  the bug.
+
+  Worth knowing about that fix, because the report was a red herring: the
+  commits panel was innocent. `focus()` on an element inside a **closed**
+  `<details>` does nothing and reports nothing, so restoring your caret
+  into a folded section returned the box filled, caret placed, and dead.
+  It fired on every re-render, not just a commit — the panel was simply
+  the one thing whose re-render you could see.
+
+  **Rec: yes, deploy now.** `just deploy` snapshots `git show HEAD:watch.py`,
+  not the working tree, so it takes the committed fix and none of the
+  half-done #174/#184 work still in flight. That revision has passed 281
+  pytest, lint, the new motion guard, and five other relevant guards; the
+  full guard suite runs when the batch closes. If you would rather deploy
+  only fully-gated revisions, say so and it waits — it is your dashboard
+  and your interruption cost either way.
+
+  Either answer folds into DREAMWORK.md, because that line needs to stop
+  being ambiguous.
+
 ## Answered
 
 - **May the dashboard read the session transcript? (#180)** → "Yes the
