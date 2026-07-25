@@ -198,7 +198,7 @@ Next id: **194**
   smarter · principle to state once fixed: motion belongs to the thing
   that changed and stops at what actually moved, because on this page
   movement MEANS something
-- **#183** — The composer's `+` sticks to the top when scrolling · P2 ·
+- **#183** — [plan: `docs/plans/composer-row.md`] The composer's `+` sticks to the top when scrolling · P2 ·
   idea · 25m · on a long page the way to send a steer scrolls off
   exactly when he has read something and has a reply · **he named the
   hard part**: it collides with #108's clamp, so vertical and
@@ -248,7 +248,7 @@ Next id: **194**
   control · general rule worth stating: reformat by default when the
   original formatting carries no meaning AND he never wants it back;
   offer a toggle when he might
-- **#177** — Text boxes grow with what he types, then scroll · P2 ·
+- **#177** — [plan: `docs/plans/composer-row.md`] Text boxes grow with what he types, then scroll · P2 ·
   idea · 30m · his numbers: composer 2-3 → 10-15, answer/note 2 → 6 ·
   the different ceilings are right — a 15-line box inside a question
   card would shove the list for a ten-second sentence · **third time
@@ -312,7 +312,7 @@ Next id: **194**
   phrases murmuring at the edge · **never render questions.md there** —
   his words are his · two ambient systems now share a frame budget with
   the shader
-- **#170** — Composer opens LEFTWARD so it stops covering text · P2 ·
+- **#170** — [plan: `docs/plans/composer-row.md`] Composer opens LEFTWARD so it stops covering text · P2 ·
   idea · 25m · hang its top-RIGHT corner under the `+` instead of its
   top-left · "when there is enough room" is the requirement: prefer
   left, fall back to right, never clip · the anchor MOVES (#110 travels
@@ -356,7 +356,7 @@ Next id: **194**
   that in the UI rather than implying a completeness it lacks · it also
   holds answers and notes — rec ONE list with the kind marked, since he
   does not think of an answer as a different act
-- **#164** — The button row becomes an information scent · P2 · idea ·
+- **#164** — [plan: `docs/plans/composer-row.md`] The button row becomes an information scent · P2 · idea ·
   75m · his verbatim design: the row is a CONVEYOR — non-default
   commands apparate at the left, push the rest right, and are consumed
   by the `...` menu at the right, sliding UNDER it and fading by
@@ -374,7 +374,7 @@ Next id: **194**
   clicked back to a default: the #131 family, and #131's "nothing
   auto-dismisses while it holds focus or unsent text" evidently does not
   cover the mode-switch path. Check whether a draft survives it
-- **#161** — The composer's `...` menu: position, shape, vocabulary ·
+- **#161** — [plan: `docs/plans/composer-row.md`] The composer's `...` menu: position, shape, vocabulary ·
   P2 · bug · 20m · centre the dots (MEASURE first — #123 was the same
   shape and took two wrong diagnoses) · **on the RHS, in the button row
   but hard right with a gap** (his 14:31 refinement) · fill, no stroke:
@@ -451,7 +451,7 @@ Next id: **194**
 - **#114** — Dashboard renders the active goal chain · P3 · task · 25m ·
   stage 3 of #95; status.json already carries `goal`
 - **#92** — Hand-rolled Ctrl+K command palette · P3 · task · 40m
-- **#99** — **P2** The popout composer has DIVERGED · task · 25m ·
+- **#99** — [plan: `docs/plans/composer-row.md`] **P2** The popout composer has DIVERGED · task · 25m ·
   re-raised 15:48 with detail · it still carries the dropdown #103
   replaced, and has missed #121, #161 and #164 since — `lessons.md`
   says a second mount is the cheapest audit of the first, and nobody
