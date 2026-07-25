@@ -99,16 +99,6 @@ Next id: **154**
   `## Answered` · P3 · chore · 10m · cosmetic and pre-existing; the file
   drifts from the example `file-formats.md` shows. Fix the writer, not
   the doc
-- **#136** — A questions.md that parses to nothing must say so · **P1** ·
-  bug · 45m · reader half of #135 · THREE zero-states, not one: missing
-  is a quiet warning (human, 11:28 — the loop writes it almost at once);
-  present-but-unparseable is a fault and must look like one; genuinely
-  empty is #141's calm grey. The same trap sits in `parse_answered`,
-  `open_question_count` and the `append_subbullet` write path — a file
-  the reader cannot see is one /answer cannot write
-- **#134** — Wire the dreamhub guards into `just test` · P2 · chore ·
-  15m · until the line lands, green `just test` does not cover the hub —
-  bounded #117 gap, unbounded the moment it is forgotten
 - **#133** — Teach watch.py a URL prefix · P3 · task · 45m · do it
   inside #124's server-core seam; unblocks the single-URL hub layout
 - **#122** — Smokey awaiting-fold text: the words warp, a ghost copy
@@ -157,7 +147,14 @@ Next id: **154**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#135** the producer half of
+Pruned in grooming; git is the real ledger. **#136** an unreadable
+questions.md now says so, in a second `--warn` colour because a fault in
+the live accent reads as activity (606ceaf) — and the sharper half was
+unbriefed: `postAnswer` discarded its response, so a REFUSED write told
+him it had succeeded, cleared his text, and the tick restored the
+question two seconds later. **#134** the hub guards are in `just test`;
+the recipe comment now names all THREE guard shapes, since `health`
+already broke the one-contract claim before dreamhub arrived. **#135** the producer half of
 the format bug (d9ce212) — `file-formats.md` states the shapes, init seeds
 the skeleton, migration -13. **#146** a pasted bullet can
 no longer forge a question (26037e7) — `human_block()` is now the only
