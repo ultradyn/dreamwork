@@ -1,0 +1,44 @@
+#!/bin/sh
+# ud-dw-githash — which dreamwork is this?
+#
+# Prints the skill's own version and exits 0, always. The OUTPUT is the
+# contract — the release pipeline replaces this whole file with one that
+# prints a constant sha, so a consumer may rely on the shape and nothing
+# else:
+#
+#   <sha12>          clean checkout (git rev-parse --short=12 HEAD)
+#   <sha12> +<N>     dirty checkout; N = tracked changes + untracked files
+#   <sha12> ?        repo found, but dirtiness could not be determined
+#   unknown          no repo, no git, or no commit yet
+#
+# First whitespace-separated token is the version identifier; anything after
+# it is a dirtiness annotation. "unknown" is a normal, quiet state (fresh
+# zip install, missing git) — never an error, because a skill that cannot
+# load when it cannot tell its own version is worse than one that says so.
+#
+# Reports the repo THIS FILE lives in, not the caller's cwd: the caller is
+# a dreamwork target somewhere else, and the skill is installed by symlink,
+# so the symlink must be resolved before asking where home is.
+#
+# --no-optional-locks everywhere: a version probe must never take
+# .git/index.lock in anyone's tree.
+
+self=$(realpath "$0" 2>/dev/null) || { echo unknown; exit 0; }
+here=$(dirname "$self")
+
+sha=$(git --no-optional-locks -C "$here" rev-parse --short=12 HEAD 2>/dev/null) \
+    || { echo unknown; exit 0; }
+
+if porcelain=$(git --no-optional-locks -C "$here" status --porcelain 2>/dev/null); then
+    n=$(printf '%s' "$porcelain" | grep -c '^' 2>/dev/null || true)
+    if [ "${n:-0}" -gt 0 ] 2>/dev/null; then
+        echo "$sha +$n"
+    else
+        echo "$sha"
+    fi
+else
+    # A dirtiness check that could not run must never look like one that
+    # ran and found the tree clean.
+    echo "$sha ?"
+fi
+exit 0
