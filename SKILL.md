@@ -354,7 +354,9 @@ if Max is away).
 - Experiments are feature-gated.
 - Compaction-safe: durable state lives in files — DREAMWORK.md,
   `.dreamwork/` (dreams, docs, plans), and commits — never only in
-  conversation, and never only in a session-scoped task backend.
+  conversation, and never only in a session-scoped task backend. When a
+  compaction is announced, run the checklist in `compaction.md` before
+  it happens; a notice is the only window for what only you know.
 - Never let the loop depend on a channel you have not read back. Task
   backends accept metadata they may never surface (Claude Code's
   `TaskGet` returns subject, status, and description — no metadata), so
