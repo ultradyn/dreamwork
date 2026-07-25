@@ -45,6 +45,22 @@ GOOD = """\
 """
 
 
+_FRESH = [0]
+
+
+def fresh(tmp_path: Path) -> Path:
+    """A never-before-used dir under tmp_path.
+
+    `target()` mkdirs unconditionally, so a test that checks TWO files dies
+    on FileExistsError rather than on its assertion — which has now cost two
+    debugging detours. Call this whenever a test builds more than one.
+    """
+    _FRESH[0] += 1
+    sub = tmp_path / f"t{_FRESH[0]}"
+    sub.mkdir()
+    return sub
+
+
 def target(tmp_path: Path, **files) -> Path:
     dw = tmp_path / ".dreamwork"
     dw.mkdir()
@@ -468,14 +484,8 @@ class TestQuestionPriorities:
         body = "\n\n".join(f"- **{t}**\n  Body prose." for t in titles)
         return f"# Questions\n\n## Open\n\n{body}\n\n## Answered\n"
 
-    _n = 0
-
     def run_q(self, tmp_path, text):
-        # Its own directory per call: target() mkdirs unconditionally, so
-        # two checks in one test would collide on the shared tmp_path.
-        TestQuestionPriorities._n += 1
-        sub = tmp_path / f"t{TestQuestionPriorities._n}"
-        sub.mkdir()
+        sub = fresh(tmp_path)
         rep = lint.Report()
         lint.check_questions(target(sub, **{"questions.md": text}) / ".dreamwork",
                              lint.load_watch(), rep)
@@ -506,3 +516,82 @@ class TestQuestionPriorities:
         # Discrimination: "PROPOSAL" must not be read as a priority.
         assert not self.run_q(tmp_path, self.q("PROPOSAL \u00b7 rename the thing")).failed
         assert not self.run_q(tmp_path, self.q("P versus NP, briefly")).failed
+
+
+class TestSubmissionsLog:
+    """#199 — his words, written before anything can lose them.
+
+    The file exists because an answer that failed to match its entry was
+    discarded with a 409 and recorded nowhere. So the check must not punish
+    the file for the situation it was built for.
+    """
+
+    def run_s(self, tmp_path, text):
+        rep = lint.Report()
+        lint.check_submissions(
+            target(fresh(tmp_path), **{"submissions.log": text}) / ".dreamwork", rep)
+        return rep
+
+    def rec(self, **kw):
+        base = {"t": "2026-07-25T17:43:00", "path": "/answer", "bytes": 42,
+                "req": {"title": "a question", "answer": "his words"}}
+        base.update(kw)
+        return json.dumps(base)
+
+    def test_absent_is_silent(self, tmp_path):
+        rep = lint.Report()
+        lint.check_submissions(target(tmp_path) / ".dreamwork", rep)
+        assert rep.rows == []
+
+    def test_good_records_count(self, tmp_path):
+        rep = self.run_s(tmp_path, self.rec() + "\n" + self.rec(path="/command") + "\n")
+        assert not rep.failed and "2 submission" in rep.rows[0][2]
+
+    def test_a_torn_last_line_is_a_WARN_not_an_error(self, tmp_path):
+        # THE ONE THAT MATTERS. A crash mid-append is exactly what this file
+        # is for; going red would mean shouting loudest when the log worked.
+        text = self.rec() + "\n" + '{"t": "2026-07-25T17:44:00", "path": "/ans'
+        rep = self.run_s(tmp_path, text)
+        assert not rep.failed, "a torn tail must not fail the gate"
+        assert any(lvl == lint.WARN for lvl, _, _ in rep.rows)
+        assert any("1 submission" in d for _, _, d in rep.rows), "intact lines still counted"
+
+    def test_a_malformed_line_in_the_MIDDLE_is_an_error(self, tmp_path):
+        # The complement: not a dead process, a broken writer.
+        text = self.rec() + "\n" + "{not json\n" + self.rec() + "\n"
+        assert self.run_s(tmp_path, text).failed
+
+    def test_raw_requires_why(self, tmp_path):
+        text = json.dumps({"t": "x", "path": "/answer", "bytes": 3, "raw": "..."}) + "\n"
+        assert self.run_s(tmp_path, text).failed
+
+    def test_why_without_raw_is_an_error(self, tmp_path):
+        text = json.dumps({"t": "x", "path": "/answer", "bytes": 3,
+                           "req": {}, "why": "json"}) + "\n"
+        assert self.run_s(tmp_path, text).failed
+
+    def test_both_req_and_raw_is_an_error(self, tmp_path):
+        text = json.dumps({"t": "x", "path": "/a", "bytes": 3, "req": {},
+                           "raw": "x", "why": "json"}) + "\n"
+        assert self.run_s(tmp_path, text).failed
+
+    def test_a_valid_unparseable_body_record_passes(self, tmp_path):
+        text = json.dumps({"t": "x", "path": "/answer", "bytes": 9,
+                           "raw": "\udcff not utf8", "why": "decode"}) + "\n"
+        assert not self.run_s(tmp_path, text).failed
+
+    def test_missing_required_keys_is_an_error(self, tmp_path):
+        assert self.run_s(tmp_path, json.dumps({"req": {}}) + "\n").failed
+
+    def test_bytes_must_be_an_int(self, tmp_path):
+        assert self.run_s(tmp_path, self.rec(bytes="42") + "\n").failed
+
+    def test_truncated_false_is_an_error(self, tmp_path):
+        # The contract says absent, never false — so `false` means a writer
+        # that does not know the contract.
+        assert self.run_s(tmp_path, self.rec(truncated=False) + "\n").failed
+        assert not self.run_s(tmp_path, self.rec(truncated=True) + "\n").failed
+
+    def test_empty_file_is_fine(self, tmp_path):
+        rep = self.run_s(tmp_path, "")
+        assert not rep.failed and "no submissions" in rep.rows[0][2]

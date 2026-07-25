@@ -131,6 +131,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/status.json` | `watch.py`'s status reader; **`dreamhub.py`** | Valid JSON, and now an interface — see below | `lint.py` |
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
+| `.dreamwork/submissions.log` | recovery — the loop, and him, after something failed | One JSON object per line, written as the FIRST act of `do_POST` before any parsing or validation. Append-only, never rewritten. Machine-local, **gitignored** — see below | `lint.py` |
 | `.dreamwork/plugin-commands.json` | `watch.py`'s composer (#86) | `{"commands": [{kind, label, desc, plugin}]}`. Written **whole** by the loop at plugin resolution, never appended — see below. Machine-local, **gitignored** | `lint.py` |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
 | `.dreamwork/dreams/<date>-<time>-<slug>.md` | the coordinator; grooming | The **filename** is the contract: `2026-07-25-1130-slug.md`. It carries the ordering | `lint.py` (naming) |
@@ -171,6 +172,47 @@ events-log event: the log's contract is one line per thing an agent then
 acts on, and a colour is not one. Logging it would wake the loop to do
 nothing. The loop learns his choice by the file being in the repo, the
 same way `DREAMWORK.md` works.
+
+## `.dreamwork/submissions.log` — his words, before anything can lose them
+
+Written because they were being lost. `_handle_answer` logged the question
+*title* and the destination, never the text he typed, and it logged
+**after** the write and only on success — so an entry that failed to match
+returned 409 and recorded nothing anywhere. `append_answer` returns
+unmatched on a hard-wrapped title, which is exactly what #116 was. He
+typed an answer, got an error, and the words were gone.
+
+So: **one line per request received, written as the first act of
+`do_POST`** — before dispatch, before parse, before validation. One call
+site rather than four, so a handler added later cannot forget, and every
+400/404/409/413/500 still leaves his text on disk.
+
+| key | | |
+|---|---|---|
+| `t` | required, string | `%Y-%m-%dT%H:%M:%S` local — deliberately the same stamp `watch-events.log` uses |
+| `path` | required, string | the POST path as received (`/answer`, `/comment`, `/command`, `/tint`, …). **Not a "kind"** — deriving one means parsing, and parsing is the step this file exists to survive |
+| `bytes` | required, int | the declared `Content-Length` |
+| `req` | any JSON value | the body, when it parsed |
+| `raw` + `why` | strings | instead of `req` when it did not. `raw` is the body decoded with `errors="replace"`; `why` is `"json"` (valid UTF-8, not JSON) or `"decode"` (not valid UTF-8) |
+| `truncated` | optional, `true` | only when the body exceeded the 20,000-byte cap (then rejected 413, first 20,000 bytes kept). **Absent otherwise, never `false`** |
+
+**Exactly one of `req` / `raw`; `why` is present iff `raw` is.**
+
+**Why `req` rather than the raw body always**: `json.loads` then
+`json.dumps` round-trips every value faithfully, so nothing of his is
+lost, and the line stays greppable and readable instead of holding a
+doubly-escaped string where every newline in his answer is a literal
+`\n`. The verbatim form is kept for the case that actually needed it.
+
+**A torn LAST line is a WARN, not an error.** A crash mid-append is
+precisely the situation this file exists for, and going red on it would
+mean the linter shouts loudest at the moment the log did its job. A
+malformed line anywhere else IS an error — that is a broken writer, not a
+dead process.
+
+Shape credit: dreamer-qsec, #199, who read the handlers first and sent the
+contract before either half was built — which is why this row describes
+the file rather than a guess at it.
 
 ## `.dreamwork/plugin-commands.json` — why the loop writes it at all
 

@@ -430,6 +430,75 @@ def check_plugin_commands(dw: Path, watch, rep: Report) -> None:
         rep.add(OK, "plugin-commands", f"{len(cmds)} declared" if cmds else "none declared")
 
 
+def check_submissions(dw: Path, rep: Report) -> None:
+    """Everything he submitted, written before the loop could lose it (#199).
+
+    The file exists because an answer that failed to match its entry was
+    discarded with a 409 and recorded nowhere — his words, gone, on a path
+    #116 proves is reachable. So this is the backup, and the check has to be
+    careful not to punish it for doing its job.
+
+    **A torn LAST line is a WARN, not an error.** A crash mid-append is
+    precisely the situation the file is for; going red on it would mean the
+    linter shouts loudest at the moment the log worked. A malformed line
+    anywhere ELSE is a real error — it means a writer is emitting bad JSON
+    rather than that a process died.
+
+    Absent returns silently: a target where he has submitted nothing has no
+    file, and that is the ordinary early state rather than a fault.
+    """
+    path = dw / "submissions.log"
+    if not path.exists():
+        return
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    if not raw.strip():
+        rep.add(OK, "submissions.log", "no submissions yet")
+        return
+
+    lines = raw.split("\n")
+    torn = bool(lines[-1].strip())          # no trailing newline => partial
+    if torn:
+        rep.add(WARN, "submissions.log",
+                "last line is incomplete — a crash mid-append, which is the case "
+                "this file exists for; the lines before it are intact")
+    body = lines[:-1] if torn else lines
+
+    bad, n = [], 0
+    for i, ln in enumerate(body, 1):
+        if not ln.strip():
+            continue
+        try:
+            rec = json.loads(ln)
+        except ValueError:
+            bad.append(f"line {i}: not JSON")
+            continue
+        if not isinstance(rec, dict):
+            bad.append(f"line {i}: not an object")
+            continue
+        n += 1
+        missing = [k for k in ("t", "path", "bytes") if k not in rec]
+        if missing:
+            bad.append(f"line {i}: missing {'/'.join(missing)}")
+        if "bytes" in rec and not isinstance(rec["bytes"], int):
+            bad.append(f"line {i}: bytes is not an int")
+        has_req, has_raw = "req" in rec, "raw" in rec
+        if has_req == has_raw:
+            bad.append(f"line {i}: needs exactly one of req/raw")
+        if has_raw != ("why" in rec):
+            bad.append(f"line {i}: why must be present iff raw is")
+        if rec.get("why") not in (None, "json", "decode"):
+            bad.append(f"line {i}: why={rec['why']!r} not json/decode")
+        if "truncated" in rec and rec["truncated"] is not True:
+            bad.append(f"line {i}: truncated must be true when present")
+
+    if bad:
+        rep.add(ERROR, "submissions.log",
+                f"{len(bad)} malformed record(s) — a reader recovering his words "
+                f"cannot trust the file: {'; '.join(bad[:3])}")
+    else:
+        rep.add(OK, "submissions.log", f"{n} submission(s) recorded")
+
+
 def check_skill_version(dw: Path, rep: Report) -> None:
     path = dw / "skill-version"
     if not path.exists():
@@ -508,6 +577,7 @@ def main(argv: list[str] | None = None) -> int:
     check_watch_port(dw, rep)
     check_watch_tint(dw, watch, rep)
     check_plugin_commands(dw, watch, rep)
+    check_submissions(dw, rep)
     check_skill_version(dw, rep)
     check_dreams(dw, rep)
 
