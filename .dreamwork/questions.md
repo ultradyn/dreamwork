@@ -2,6 +2,29 @@
 
 ## Open
 
+- **2026-07-25 — how should an answer reach a loop on another machine?**
+  You said "defer publishing repo for a bit", which answers an open
+  question belonging to the dreamwork instance on **x-game**
+  (`~/src/ez-feedback-pipeline`), not to this one: *"Publish the repo, so
+  `npx skills add` works?"* — the single open entry in its
+  `questions.md`.
+
+  I asked in chat whether to append it there over ssh or leave it to you,
+  and then failed to record the ask — so this entry exists partly as the
+  fix for that. I have not touched that file: writing into another
+  agent's live state uninvited is the thing this loop keeps telling
+  dreamers not to do.
+
+  **The narrow question**: shall I append your answer to x-game's
+  `questions.md` over ssh, or will you drop it into that dashboard?
+
+  **The general one, which is worth more**: there is currently no way for
+  an answer you give in one place to reach a loop somewhere else. Today
+  that is a one-line ssh append; with dreamhub and the ssh swarm it
+  becomes routine, and it is exactly the surface where a wrong write
+  corrupts another loop's record of what you want. Worth deciding as a
+  rule rather than per-incident. Related: #96 stage 2+, #144, #150.
+
 - **2026-07-25 — dreamhub URL space: one hub URL, or one per project?
   (#96).** Your `daemon-mode.md` sketch was `/` lists projects and
   `/{project}/…` reverse-proxies to that project's watch. The stage-1
