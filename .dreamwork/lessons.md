@@ -555,3 +555,13 @@ this shape and convert opportunistically.)
   guardrail already covers it — mismatched signals mean something is
   wrong, so do not guess, ask. Read the answer against the question
   before acting on it. (coordinator, 2026-07-25)
+- **At 16px a change of POSITION is legible where a change of LUMINANCE
+  is not.** The favicon orbits rather than breathes, and that was decided
+  by rendering both at 16px on real tab-strip greys instead of reasoning
+  about them — a breathing dot at favicon size reads as a static dot.
+  Same conclusion #113's wisp reached from the opposite direction, where
+  a breath had room to be seen. The general form: an idiom that works at
+  one scale is not a design at another, and the cheap way to know is to
+  render it at the size it will actually be. The same look also killed an
+  opaque near-black tile that was correct on his dark browser theme and a
+  black block on a light one. (dreamer-identity, 2026-07-25, #153)
