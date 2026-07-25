@@ -206,9 +206,18 @@ deploy rev="HEAD":
 #   - Documenting BEFORE the code — better practice than co-committing — was
 #     flagged as a miss when the two landed 2 minutes apart in adjacent
 #     commits. Hence the window below.
-#   - watch.py is both the page and the server, so a writer-only fix looks
-#     like an undocumented page change. That one is only solvable by #124
-#     splitting the seam.
+#   - watch.py is both the page and the server, so a writer-only fix looked
+#     like an undocumented page change. FIXED by widening rather than by
+#     waiting for #124: EITHER watch-design.md OR file-formats.md counts,
+#     because watch.py changes are page changes OR server-contract changes
+#     and each documents itself in its own styleguide. #199 was the case —
+#     `log_submission` documented correctly in file-formats.md and reported
+#     as a MISS — and a standing MISS trains everyone to ignore the audit,
+#     which is the same failure family as a guard that only reddens under
+#     load (#203).
+#     RESIDUAL RISK, stated rather than discovered: a PAGE change documented
+#     only in file-formats.md now passes wrongly. Accepted — the reviewer
+#     reads the commit, and this only ever read adjacency.
 # Deliberately NOT gated in `just test`: making adjacency mandatory would be
 # worse than the status quo. It is a prompt to look, not a proof (#155).
 #
@@ -228,7 +237,9 @@ audit-styleguide range="d1df255..HEAD" window="3":
       hi=$(( i + {{window}} )); [ "$hi" -ge "${#all[@]}" ] && hi=$(( ${#all[@]} - 1 ))
       found=""
       for j in $(seq "$lo" "$hi"); do
-        if git show --stat --format= --name-only "${all[$j]}" | grep -qx "watch-design.md"; then
+        # either styleguide: the page's or the server contracts' (see header)
+        if git show --stat --format= --name-only "${all[$j]}" \
+             | grep -qxE "watch-design.md|file-formats.md"; then
           found="${all[$j]}"; break
         fi
       done
@@ -239,6 +250,6 @@ audit-styleguide range="d1df255..HEAD" window="3":
         echo "MISS $c $(git log -1 --format=%s "$c" | cut -c1-64)"
       fi
     done
-    echo "watch.py commits: $ok with a styleguide entry within {{window}}, $miss without"
+    echo "watch.py commits: $ok with a styleguide entry (watch-design.md or file-formats.md) within {{window}}, $miss without"
     echo "(adjacency, not coverage — see the comment above this recipe)"
     [ "$miss" -eq 0 ]
