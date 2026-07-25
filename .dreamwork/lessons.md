@@ -719,3 +719,12 @@ this shape and convert opportunistically.)
   additionally asserts the card node was never replaced, so whatever
   moved, the morph moved. (dreamer-gesture, #191, 2026-07-25 — measured
   against, and disproving, the cause its predecessor reported)
+- **An assertion is only a guard if failing it stops the next step.** A
+  script asserted its edit anchor existed, refused to write when it did
+  not — and the `git commit` on the following line ran anyway, publishing
+  a message claiming an edit that never happened. The assertion worked
+  perfectly and guarded nothing, because it was a separate command rather
+  than a chained one. Same family as the tail-printing guards (#192),
+  where the check is fine and the thing downstream of it is not: **ask of
+  every check not only "is it right?" but "what does it stop?"**
+  (coordinator, 2026-07-25)
