@@ -12,10 +12,6 @@ description: >
 
 # Dreamwork — the productive dreaming loop
 
-Long-running, free-flowing development. Not the most direct or fastest path,
-but efficient, sustained, and never stuck or bored — built for ongoing
-open-ended improvement of a project.
-
 ## Philosophy (load-bearing)
 
 - **Small increments are the error-catching mechanism.** Cap each task at
@@ -269,22 +265,18 @@ results, no ceremony.
   fan-out races it (two dreamers mint the same id, and the ledger loses
   exactly what it exists to keep).
 - `.dreamwork/questions.md` — open questions for the human: proposals
-  awaiting a response, unclear-goals items, parked scope calls. Chat is
-  not durable — every user-facing ask gets an entry here when made, with
-  enough context to answer cold. Answers fold into DREAMWORK.md or tasks
-  and the entry moves to a short Answered section (pruned in grooming).
-  Entries thread: timestamped follow-ups accumulate inside an entry and
-  folds move the whole thread. **Whose words they are is never in
-  doubt**: a human's note is tagged `- **Note (human, via <channel>,
-  <ts>):**`, the loop's own is `- **Follow-up (loop, <ts>):**`. Mixing
-  what the human said with what the loop wrote eventually misleads one
-  of them. Older entries may read `(via <channel>, …)`, which was a
-  human, or `(in-session, …)`, which was the loop. A follow-up landing on an Answered entry
-  is a potential amendment — re-evaluate the fold: it may reopen the
-  question or redirect in-flight work. **Its shape is a contract, not a
-  style** — `watch.py` matches `## Open` and `## Answered` literally, and
-  a file that misses them parses to nothing and renders as "nothing to
-  answer", silently. See `file-formats.md`.
+  awaiting a response, unclear-goals items, parked scope calls. Answers
+  fold into DREAMWORK.md or tasks and the entry moves to a short Answered
+  section (pruned in grooming). Entries thread: timestamped follow-ups
+  accumulate inside an entry and folds move the whole thread, and a
+  follow-up landing on an *Answered* entry is a potential amendment —
+  re-evaluate the fold, it may reopen the question or redirect in-flight
+  work. **Whose words they are is never in doubt**, which is why the
+  author tags exist; their exact forms are in `file-formats.md`, because
+  a parser reads them. **Its shape is a contract, not a style** —
+  `watch.py` matches `## Open` and `## Answered` literally, and a file
+  that misses them parses to nothing and renders as "nothing to answer",
+  silently.
 - **Formats.** Files the loop writes and a tool parses have required
   shapes, and getting one wrong fails silently rather than loudly — the
   reader cannot tell an unreadable file from an empty one.
@@ -311,10 +303,8 @@ results, no ceremony.
   skill's directory (read-only, localhost-only):
   `python3 <skill-dir>/watch.py --target . --open`; its port persists in
   `.dreamwork/watch-port`.
-- `.dreamwork/skill-version` — the skill version (latest `migrations/`
-  filename) this target last ran under; init's update check compares it
-  and applies intervening migrations (see `migrations/README.md` in the
-  skill directory).
+- `.dreamwork/skill-version` — which skill version this target last ran
+  under; init's update check reads it (`initialization.md`).
 - All of it is committable project content, like CLAUDE.md.
 
 ## Task-list conventions
