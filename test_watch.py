@@ -555,6 +555,69 @@ class TestCollector(unittest.TestCase):
         note = watch.parse_open_questions(new)[0]["follows"][-1]
         self.assertEqual(note["text"], long_note.strip())
 
+    # ── #136: zero entries has three causes and they must not look alike ───
+    SKELETON = "# Questions for the human\n\n## Open\n\n## Answered\n"
+
+    def test_questions_health_tells_all_clear_from_broken(self):
+        # the fault: content is there and the reader sees none of it. This is
+        # the shape that opened a dashboard to zero over a file holding six.
+        broken = ("# Questions for the human\n\n"
+                  "## Should we ship the thing?\n"
+                  "It matters because of X.\n\n"
+                  "## What about privacy defaults?\n"
+                  "Two options here.\n")
+        self.assertEqual(watch.questions_health(broken), "unreadable")
+        # ...and its purest form: headings ONLY, but not the reader's heading.
+        # A naive "no prose ⇒ calm" exemption calls this all clear, which is
+        # exactly the bug — so it is the case the exemption must not swallow.
+        heads_only = "# Questions\n\n## Should we ship the thing?\n"
+        self.assertEqual(watch.questions_health(heads_only), "unreadable")
+
+    def test_questions_health_is_calm_about_the_seeded_skeleton(self):
+        # init step 7 MANDATES this file, so a checker that reds it is a
+        # checker nobody reads by week two.
+        self.assertEqual(watch.questions_health(self.SKELETON), "empty")
+        self.assertEqual(watch.questions_health(self.SKELETON + "\n\n"), "empty")
+
+    def test_questions_health_is_quiet_about_a_missing_file(self):
+        # his call: the loop writes one almost at once, so absence is not a
+        # fault on a fresh target
+        self.assertEqual(watch.questions_health(None), "missing")
+
+    def test_questions_health_says_ok_when_it_can_see_entries(self):
+        self.assertEqual(watch.questions_health(QUESTIONS), "ok")
+        # answered-only still counts: the reader can see the file
+        answered_only = "# Q\n\n## Open\n\n## Answered\n\n- **Old** done.\n"
+        self.assertEqual(watch.questions_health(answered_only), "ok")
+
+    def test_the_calm_exemption_did_not_swallow_the_fault(self):
+        # An exemption is exactly where a check quietly dies, so prove the
+        # real one still fires AFTER the exemptions exist: take the file the
+        # exemption blesses and add one line of content to it.
+        self.assertEqual(watch.questions_health(self.SKELETON), "empty")
+        with_prose = self.SKELETON + "\nWe should decide about the thing.\n"
+        self.assertEqual(watch.questions_health(with_prose), "unreadable")
+        # and the heading the exemption keys on is not a magic word that
+        # blesses everything else in the file
+        self.assertEqual(
+            watch.questions_health(self.SKELETON + "\n- not a bold title\n"),
+            "unreadable")
+
+    def test_collect_reports_questions_health(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertEqual(watch.collect(d)["questions_health"], "ok")
+            q = os.path.join(d, ".dreamwork", "questions.md")
+            with open(q, "w") as f:
+                f.write("# Q\n\n## Should we?\nprose that never parses.\n")
+            data = watch.collect(d)
+            self.assertEqual(data["questions_health"], "unreadable")
+            # the count still reads zero — which is the whole point: the
+            # number cannot tell them apart, so the health must
+            self.assertEqual(data["open_questions"], 0)
+            os.remove(q)
+            self.assertEqual(watch.collect(d)["questions_health"], "missing")
+
     def test_persistent_port_stable(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
@@ -802,9 +865,17 @@ class TestAppShell(unittest.TestCase):
         # /comment; answered entries are rendered structured
         # (answered_entries). Since #103 that box is the card's ONE input,
         # shared with the answer path and routed by its mode group.
-        for token in ('sendComment', 'postComment', "fetch('/comment'",
+        for token in ('sendComment', 'postComment', "postJSON('/comment'",
                       'followThread', 'qaCompose', 'answered_entries'):
             self.assertIn(token, watch.PAGE)
+        # #136: BOTH write paths check what came back. They did not, and a
+        # refused write still ran the confirming morph — so the page said the
+        # answer had landed, cleared his text, and the next tick put the
+        # question back with no explanation anywhere.
+        self.assertIn('function qaFail', watch.PAGE)
+        self.assertEqual(
+            watch.PAGE.count('qaFail(card, res ? res.status : 0)'), 2,
+            "both sendAnswer and sendComment surface a refusal")
 
     def test_page_has_pip_popout_buttons(self):
         # #83: discoverable PiP-glyph buttons float a doc/review in an

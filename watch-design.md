@@ -100,10 +100,21 @@ All colour/space lives in the `:root` block in `STYLE` — edit tokens, never
 hardcode. `--bg` near-black; `--panel`/`--panel2` raised fills; `--line`
 hairlines, `--border` stronger edges; a text ramp `--text` → `--lit` →
 `--bright` (up, brighter) and `--muted` → `--dim` → `--dimmer` (down,
-quieter); **one** accent, `--accent` indigo. `--space` (section rhythm),
+quieter); `--accent` indigo. `--space` (section rhythm),
 `--radius`. The accent is scarce on purpose — spent only on live/actionable
 things (maintenance markers, a nonzero open-questions count, links, the
 active command opener). If everything is accented, nothing is.
+
+**There is a second colour, `--warn` amber, and it means BROKEN rather than
+live** (#136). It was one accent until then, and the rule is broken on
+purpose: the page's only loud colour said "this is happening", so a failure
+rendered in it read as activity — and the one thing that must never read as
+activity is the human's channel to the loop having stopped working. Its uses
+are enumerable and must stay that way: a `questions.md` the reader cannot see,
+and a send the server refused. Both are the same fact — the channel failed and
+no number on the page would have said so. Nothing that is merely *important*
+gets it; if a third use appears, the question to ask is whether it is really
+this one.
 
 ### Type & geometry
 
@@ -568,6 +579,59 @@ counts — grouping is the view's job, rendering is the card's.
 `dev/capture/qacard.mjs` guards this by *structural* comparison: it asserts
 the dashboard's and the review dock's cards have the same tag path and class
 vocabulary as `/questions`'s, which is exactly what a quiet fork would lose.
+
+### The questions channel's health
+
+"Nothing needs you" and "the loop's channel to you is broken" produce the same
+number — and for one morning they produced the same page: a dashboard reading
+zero open questions over a `questions.md` holding six, four of them genuinely
+open, because the loop had written its questions as `##` headings and the
+reader saw none of them (#135, #136). The count cannot tell those apart, so the
+count is no longer the only thing that speaks. `questions_health` says *which*
+zero this is, and the page treats the three differently:
+
+| state | when | treatment |
+|---|---|---|
+| `missing` | no file | one dim line. A fresh target has not failed at anything — the loop writes the file the first time it needs him, and init seeds it. His call. |
+| `unreadable` | content, and the reader sees no entries | **the fault.** `--warn` on a rail, the line count, and the path — which is a `/file` link, so the next click is the file itself. |
+| `empty` | the seeded skeleton, or all answered | **nothing at all.** |
+
+- **`empty` renders silence, and that is what keeps the loud state credible.**
+  A page that greeted every freshly-seeded target with a warning would train
+  him to ignore the one that matters. Absence of a message is still the
+  all-clear, exactly as it was before this existed.
+- **The exemption is where this check dies**, so `empty` is defined as
+  narrowly as it can be: not merely "no prose", but no prose **and** the
+  literal `## Open` the reader matches. A file whose only lines are headings
+  and which has no `## Open` is precisely the failure that started this, so it
+  is `unreadable`. The linter made the looser version of this mistake an hour
+  earlier and red-lit every seeded target; the guard's last assertion takes the
+  file the exemption blesses, adds one line of prose, and requires the fault to
+  surface anyway.
+- **What the empty list SAYS is a claim about the file**, so it is keyed on
+  health too (`QNONE`). "none — all answered" was stated unconditionally, and
+  it is the sentence that did the lying.
+- **The crumb badge is keyed on it as well.** It is what he glances at from
+  every route, and a zero there reads as all-clear from three views away.
+
+**A write the server refused is the same failure from the other end**, and it
+wears the same colour. A file the reader cannot see is a file `/answer` cannot
+write to — but the page did not check: `postAnswer` discarded its response and
+the submit morph ran regardless, so the card restated itself as answered, his
+text was cleared, and the live tick put the question back two seconds later
+with no explanation anywhere. Now a refused write shows why in his terms (the
+status names the protocol, not the problem), does not run the morph, and
+**keeps his text**, which at that moment is the only copy of it.
+
+`dev/capture/health.mjs` holds all three states plus the write path, because
+each is easy to get right alone and the failure is always that one swallowed
+another. Two things it learned the hard way: driving the write failure by
+rewriting `questions.md` under a live page measures the 2s tick race rather
+than the feature (and `holdRerenderUntil` is a module-scope `let`, so freezing
+it from outside silently does nothing) — inject the refusal with
+`route.fulfill` instead; and the card must be addressed by `[data-qid]` rather
+than `.qa.open`, since the bug under test is the card *leaving* that state, so
+a selector naming it stops matching exactly when the failure happens.
 
 ### The status panel
 

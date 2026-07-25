@@ -51,7 +51,16 @@ STYLE = """<style>
   :root { --bg:#0b0f19; --panel:#111827; --panel2:#1e293b;
     --line:#1f2937; --border:#334155; --text:#d1d5db; --bright:#f3f4f6;
     --lit:#e5e7eb; --muted:#9ca3af; --dim:#6b7280; --dimmer:#4b5563;
-    --accent:#a5b4fc; --space:1.6rem; --radius:4px; }
+    --accent:#a5b4fc; --space:1.6rem; --radius:4px;
+    /* The page's SECOND colour, and the only rule it has is that it means
+       BROKEN rather than live (#136). The accent says "this is happening";
+       amber says "the channel to you has failed and you cannot see it from
+       the numbers". One user, ever: a questions.md the reader cannot see.
+       Adding it breaks the one-accent rule on purpose — a fault rendered in
+       indigo reads as activity, and this is the one thing on the page that
+       must not. Same lightness family as the accent, warm against a cool
+       page, so it is unmistakably not it. */
+    --warn:#fcd34d; }
   /* Scrollbars are chrome, and chrome should recede: hairline track,
      dim thumb, no arrows. Firefox first, then the WebKit pseudos. */
   * { scrollbar-width:thin; scrollbar-color:var(--dimmer) transparent; }
@@ -227,6 +236,24 @@ STYLE = """<style>
   /* an answer is the human's, in a card whose body the loop wrote — so it
      reads at the same brightness as his notes do (#109) */
   .anstext { color:var(--lit); white-space:pre-wrap; }
+  /* the questions channel's health (#136). Zero entries is the same NUMBER
+     whether everything is answered or the reader cannot see the file, so the
+     page has to say which — and the broken one has to look broken. It wears
+     `--warn` and the rail idiom, and it is the only thing on the page that
+     ever does. The quiet state (no file yet) is one dim line and no rail: a
+     fresh target has not failed at anything. */
+  .qhealth { margin:.3rem 0 .9rem; }
+  .qhealth.unreadable { border-left:2px solid var(--warn); padding-left:.8rem; }
+  .qhealth.unreadable .qhlabel { color:var(--warn); text-transform:uppercase;
+    letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
+  .qhealth.unreadable .qhbody { color:var(--lit); }
+  .qhealth.missing .qhbody { color:var(--dim); }
+  .qh { color:var(--warn); }
+  /* a send that did not land wears the same colour, because it is the same
+     failure seen from the writing end: the channel to him did not work and
+     nothing else on the page would have said so */
+  .qerr { color:var(--warn); font-size:.7rem; margin-top:.35rem;
+    max-width:56ch; }
   /* the status panel (#130): three facts and a fold, never a JSON dump.
      Colour is by SIGNIFICANCE, not by JSON type — the accent is spent on the
      one thing here that is waiting on HIM, and everything else rides the text
@@ -904,17 +931,41 @@ const qaEntry = key => {
    it; the server puts it in brackets in the events log, where it reads as a
    hint and not as an instruction. */
 const fromPath = () => location.pathname + location.search;
-async function postAnswer(title, text) {
-  await fetch('/answer', { method:'POST',
+/* Both POSTs RETURN their response, and both callers check it (#136). They
+   did not, and the consequence was the worst shape available: a write that
+   failed still ran the submit morph, so the card restated itself as answered,
+   his text was cleared, and two seconds later the live tick quietly put the
+   question back with no explanation anywhere. A file the reader cannot see is
+   a file `/answer` cannot write to, so the read-side fault and the write-side
+   "no match" are the same failure and want the same surfacing. */
+const postJSON = async (url, body) => {
+  try { return await fetch(url, { method:'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ question: title, answer: text,
-                           from: fromPath() }) });
-}
-async function postComment(title, note, section) {
-  await fetch('/comment', { method:'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ question: title, comment: note, section,
-                           from: fromPath() }) });
+    body: JSON.stringify(body) }); } catch (e) { return null; }
+};
+const postAnswer = (title, text) =>
+  postJSON('/answer', { question: title, answer: text, from: fromPath() });
+const postComment = (title, note, section) =>
+  postJSON('/comment',
+           { question: title, comment: note, section, from: fromPath() });
+/* Why a send did not land, in his terms. The status alone ("rejected (409)")
+   names the protocol and not the problem. */
+const QSEND_WHY = {
+  404: 'there is no .dreamwork/questions.md to write to',
+  409: 'this entry is not in .dreamwork/questions.md any more — it may have ' +
+       'been folded, renamed, or the file may have stopped being readable',
+  0:   'the page could not reach the server',
+};
+function qaFail(card, status) {
+  const comp = card && card.querySelector('.qcompose');
+  if (!comp) return;
+  let m = comp.querySelector('.qerr');
+  if (!m) { m = document.createElement('div'); m.className = 'qerr';
+            comp.appendChild(m); }
+  // his words stay in the box: the send failed, so the text is the only copy
+  m.textContent = `not written (${status}) — ` +
+    (QSEND_WHY[status] || 'the server refused it') +
+    '. what you typed is still here.';
 }
 """
 
@@ -926,6 +977,47 @@ function dreamBlock(d) {
   return expand(
     `${esc(d.name)}<span class="age" data-mt="${d.mtime}"></span>`,
     mdB(d.content));
+}
+/* ── the questions channel's health (#136) ────────────────────────────────
+   "Nothing needs you" and "the loop's channel to you is broken" produce the
+   same number, and for one morning they produced the same page: a dashboard
+   reading zero open questions over a file holding six. So the count is not
+   allowed to be the only thing that speaks — `questions_health` says WHICH
+   zero this is, and only the broken one is loud.
+
+   The calm states render nothing at all. That is deliberate and it is the
+   half that keeps this check alive: a fresh target seeds an empty
+   questions.md by design, and a page that greeted every new target with a
+   warning would train him to ignore the one that matters. Absence of a
+   message IS the all-clear, exactly as it was before. */
+/* what the empty list SAYS is a claim about the file, so it is keyed on
+   whether the file could be read at all. "none — all answered" was made
+   unconditionally, which is the sentence that lied for a whole morning. */
+const QNONE = { ok: 'none — all answered', empty: 'none — all answered',
+                missing: 'none yet',
+                unreadable: 'none that this page can read' };
+const QHEALTH = {
+  // the path is NOT backticked here: linkify would turn it into a /file link
+  // to a file that does not exist, and an affordance that leads nowhere is a
+  // small lie of its own on the one panel about lying.
+  missing: { label: '',
+    body: 'no .dreamwork/questions.md yet — the loop writes one the first ' +
+          'time it needs you.' },
+  unreadable: { label: 'questions unreadable',
+    body: '`.dreamwork/questions.md` has content and this page can see no ' +
+          'entries in it. anything the loop has asked you is sitting in that ' +
+          'file, invisible here, while this page says none. an entry is a ' +
+          'top-level bullet with a bold title, under a literal `## Open`.' },
+};
+function qHealth(d) {
+  const c = QHEALTH[d && d.questions_health];
+  if (!c) return '';
+  const src = (d.files || {})['questions.md'];
+  const n = src ? src.split('\\n').length : 0;
+  return `<div class="qhealth ${d.questions_health}">` +
+    (c.label ? `<div class="qhlabel">${esc(c.label)}` +
+       (n ? ` · ${n} lines, 0 entries` : '') + `</div>` : '') +
+    `<div class="qhbody">${mdInline(c.body)}</div></div>`;
 }
 /* ── the status section (#130) ────────────────────────────────────────────
    His words: "on main dashboard page for a dreamworker, the status section
@@ -1027,6 +1119,7 @@ function buildDashboard(d) {
        (d.dreams_archive.length
          ? expand(`archive (${d.dreams_archive.length})`,
                   d.dreams_archive.map(dreamBlock).join(''), 'dim') : '');
+  h += qHealth(d);
   {
     const qo = d.questions_open.map((q, i) => [q, i]);
     const openQ = qo.filter(([q]) => !q.answer);
@@ -1060,10 +1153,10 @@ function buildQuestions(d) {
   const qo = d.questions_open.map((q, i) => [q, i]);
   const openQ = qo.filter(([q]) => !q.answer);
   const foldQ = qo.filter(([q]) => q.answer);
-  let h = `<div id="qsections">`;
+  let h = `<div id="qsections">` + qHealth(d);
   h += label(`open (${openQ.length})`) +
        (openQ.map(([q, i]) => qaCard(q, 'o' + i)).join('') ||
-        '<div class="dim">none — all answered</div>');
+        `<div class="dim">${QNONE[d.questions_health] || QNONE.ok}</div>`);
   if (foldQ.length)
     h += label(`answered · awaiting fold (${foldQ.length})`) +
          foldQ.map(([q, i]) => qaCard(q, 'o' + i)).join('');
@@ -1142,7 +1235,11 @@ async function sendAnswer(key) {
   const val = el.value.trim();
   const card = el.closest('.qa');
   const fromRect = el.getBoundingClientRect();   // the box the text lived in
-  await postAnswer(q.title, val);
+  const res = await postAnswer(q.title, val);
+  // a failed write must NOT run the morph: the morph IS the confirmation, and
+  // confirming a write that did not happen is the one thing worse than the
+  // 409 itself (#136)
+  if (!res || !res.ok) { qaFail(card, res ? res.status : 0); return; }
   if (!card) return;
   holdRerenderUntil = Date.now() + 1600;   // let the morph settle before regroup
   // the morph IS the confirmation: the box reshapes into the answered state,
@@ -1169,7 +1266,9 @@ async function sendComment(key) {
   const val = el.value.trim();
   const card = el.closest('.qa');
   const fromRect = el.getBoundingClientRect();
-  await postComment(entry.title, val, key[0] === 'o' ? 'Open' : 'Answered');
+  const res = await postComment(entry.title, val,
+                                key[0] === 'o' ? 'Open' : 'Answered');
+  if (!res || !res.ok) { qaFail(card, res ? res.status : 0); return; }
   el.value = '';
   holdRerenderUntil = Date.now() + 1600;
   if (!card) return;
@@ -1601,7 +1700,12 @@ function crumbsFor(v, d) {
     { k:'target', html: esc(d.target) },
     { k:'version', html: esc(d.files['skill-version']) },
     { k:'updated', html:'<span id="upd"></span>' },
-    { k:'openq', html: d.open_questions > 0
+    // the count is zero whether everything is answered or the file cannot be
+    // read, so the crumb must not quietly render the broken case as the calm
+    // one (#136) — it is the badge he glances at from every route.
+    { k:'openq', html: d.questions_health === 'unreadable'
+        ? `<a class="q qh" href="/questions">questions unreadable</a>`
+        : d.open_questions > 0
         ? `<a class="q" href="/questions">${d.open_questions} open ` +
           `question${d.open_questions > 1 ? 's' : ''}</a>`
         : `<a class="q" href="/questions" style="color:var(--dimmer)">` +
@@ -3177,6 +3281,44 @@ def append_comment(text, title, note, stamp, section="Open"):
         section)
 
 
+# A questions.md the reader cannot see renders IDENTICALLY to one with nothing
+# to report — which is how a dreamwork instance opened its dashboard to zero
+# questions over a file holding six, four of them genuinely open (#135, #136).
+# "All clear" and "your channel to him is broken" must never look the same, so
+# zero entries is split into three states that the page treats differently:
+#
+#   missing    — no file. QUIET: the loop writes one the first time it needs
+#                him and init seeds it, so a fresh target is not a fault.
+#   unreadable — content is there and the reader sees NO entries. THE fault:
+#                real questions are sitting in that file, invisible, while the
+#                page says "none".
+#   empty      — the seeded skeleton init mandates (a literal `## Open` and
+#                nothing else), or every entry answered. Calm — the real
+#                all-clear.
+#
+# The exemption is where a check like this quietly dies, so `empty` is defined
+# as narrowly as it can be: not merely "no prose", but no prose AND the literal
+# `## Open` the reader matches. A file whose only lines are headings and which
+# has no `## Open` is not calm — it is precisely the failure that started this,
+# where the loop wrote its questions AS `##` headings and every one of them was
+# invisible to the page.
+def questions_health(text, entries=None):
+    """'ok' | 'missing' | 'unreadable' | 'empty' for a questions.md."""
+    if text is None:
+        return "missing"
+    if entries is None:
+        entries = len(parse_open_questions(text)) + len(parse_answered(text))
+    if entries:
+        return "ok"
+    lines = text.splitlines()
+    heads = [ln.strip() for ln in lines if ln.strip().startswith("## ")]
+    prose = [ln for ln in lines
+             if ln.strip() and not ln.lstrip().startswith("#")]
+    if not prose and "## Open" in heads:
+        return "empty"
+    return "unreadable"
+
+
 def open_question_count(questions_text):
     """Count of Open entries still awaiting an answer — the badge should
     reflect what needs the human, so answered-awaiting-fold entries don't
@@ -3196,6 +3338,8 @@ def collect(target):
     now = time.time()
     dw = os.path.join(target, ".dreamwork")
     questions = read_text(os.path.join(dw, "questions.md"))
+    q_open = parse_open_questions(questions)
+    q_answered = parse_answered(questions)
     return {
         "target": os.path.abspath(target),
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -3217,8 +3361,13 @@ def collect(target):
             if n.endswith(".html")
         ] if os.path.isdir(os.path.join(dw, "review")) else [],
         "open_questions": open_question_count(questions),
-        "questions_open": parse_open_questions(questions),
-        "answered_entries": parse_answered(questions),
+        "questions_open": q_open,
+        "answered_entries": q_answered,
+        # zero entries is not one fact (#136): the page has to say WHICH zero
+        # this is, because "all clear" and "the channel to him is broken" are
+        # the same number.
+        "questions_health": questions_health(
+            questions, len(q_open) + len(q_answered)),
         "status": _safe_json(read_text(os.path.join(dw, "status.json"))),
         "git": git_tail(target),
     }

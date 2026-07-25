@@ -88,6 +88,14 @@ Canonical, exercised example — every shape above appears in it:
 `dev/capture/fixture/.dreamwork/questions.md`. Read that before
 inventing anything.
 
+**Getting the shape wrong is no longer silent** (#136). The dashboard
+distinguishes three kinds of zero: no file (a quiet line), the seeded
+skeleton or everything answered (nothing at all — the real all-clear),
+and *content the reader cannot see*, which is announced in the page's
+one warning colour and names this path. `lint.py` says the same thing
+from the command line. So a file in the wrong shape now costs a red
+light rather than a morning.
+
 ## The rest
 
 These are written by the loop and read by something. Where a row says
