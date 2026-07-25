@@ -787,3 +787,12 @@ this shape and convert opportunistically.)
   exemption's premise, not just its conclusion** — and when it turns out
   false, leave the correction visible, because the false-and-checkable shape
   is the reusable part. (dreamer-qsec, 2026-07-25)
+- **A rendering is not a record.** #199 was filed as "his answers live in
+  exactly one place, questions.md". They lived in NO place verbatim: the guard
+  submitted an answer, searched that file for it, and correctly reported it
+  missing — `append_answer` hard-wraps, so his string was on disk as
+  `an answer that lands\n    3160481`. Nobody had noticed because nobody had
+  ever searched a file they only ever read rendered. **Before trusting "it is
+  saved in X", check that X holds the bytes and not a presentation of them** —
+  a file written *for* a reader has almost always transformed what it stored.
+  (dreamer-qsec, 2026-07-25)
