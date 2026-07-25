@@ -215,15 +215,6 @@ Next id: **175**
   error-message spec is the deliverable**: where, what, expected, and a
   pointer to the format · **bundle with #138** — both are Claude Code
   hooks, ship the plugin or ship neither
-- **#153** — Title that says whether you're needed, and a real favicon ·
-  P2 · idea · 50m · the tab title is the only part of the dashboard
-  visible in a background tab, so it carries the count front-loaded
-  (tabs truncate from the right) · favicon must be inline (single-file
-  deploy) · **rec against always-animating**: motion is opt-in here, and
-  browsers throttle background timers — animate when the loop is
-  dreaming, rest when idle, mark `awaiting_human`. Then the motion IS
-  the status · taste is the deliverable, like #122 · pairs with #143
-  (a tinted favicon is how two dashboards differ in a tab strip)
 - **#152** — A dangling-parent check, deferred WITH A TRIGGER · P3 ·
   chore · 15m · (b) prose-wrap: measured, do not build — eleven long
   lines, three of them unwrappable frontmatter · (a) the ledger carries
@@ -292,7 +283,14 @@ Next id: **175**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#155** the styleguide audit
+Pruned in grooming; git is the real ledger. **#153** the tab now says
+whether he is needed and the favicon is a ring with one traveller
+(266db84, 0cefd06) — hue is which loop, motion is that the loop lives, a
+pip is that he is the bottleneck. It ORBITS rather than breathes because
+at 16px position reads and luminance does not, found by rendering both at
+size. Also 7be4a22: `just guards` now proves the server is its own, after
+a stray instance of mine stole the port and ten guards asserted fixture
+facts against the live repo. **#155** the styleguide audit
 now measures adjacency HONESTLY (487d1a6) — a 3-commit window, so writing
 the doc before the code is no longer punished, and a comment saying what
 it does not prove: touching both files passes whether or not the doc says
