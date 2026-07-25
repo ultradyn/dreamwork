@@ -51,6 +51,13 @@ const TRACE = `((ms) => new Promise(res => {
       // FLIP's signature: an inline transform on a card. reduced motion
       // must never produce one.
       flipping: [...cards()].filter(c => c.style.transform).length,
+      // a card crossing headings must travel by POSITION and HEIGHT, never
+      // by scale: since #111 a card can be fifteen times taller before the
+      // move than after, and a scale morph would squash the text by that
+      // ratio at frame 0 instead of folding it
+      // NB the double backslash: this whole block is a template literal, so
+      // a single one is eaten before the page ever sees the regex
+      scaled: [...cards()].filter(c => /scale\\(/.test(c.style.transform)).length,
       ghosts: document.querySelectorAll('.qaghost').length });
     if (performance.now() - t0 < ms) requestAnimationFrame(step);
     else res({ target, neighbour, frames });
@@ -107,6 +114,12 @@ ok('#77 the question is continuously present under one identity',
    n.frames.every(x => x.target));
 ok('#77 the travel is a FLIP, not a re-layout',
    n.frames.some(x => x.flipping > 0));
+// #113: a card crossing headings travels by position and HEIGHT. Since #111
+// it can be fifteen times taller before the move than after (answering, then
+// folding), and flipDock's scale morph would squash the text by that ratio
+// at frame 0 instead of folding it.
+ok('#113 the crossing card never morphs by scale',
+   n.frames.every(x => x.scaled === 0));
 ok('#104 a question below it also moves',
    n.neighbour && uniq(nTops(n.frames)).length > 1);
 ok('#104 that neighbour SLIDES rather than jumping',

@@ -134,6 +134,10 @@ STYLE = """<style>
   .qaghost { position:absolute; z-index:3; pointer-events:none;
     transition:opacity .7s ease, filter .7s ease, transform .7s ease; }
   .qaghost.gone { opacity:0; filter:blur(6px); transform:translateY(-10px); }
+  /* content revealed by an unfold eases in on the same enter as .dreamin —
+     which snaps, so the carrier only has to supply the transition back */
+  .qreveal { transition:opacity .55s ease, filter .55s ease,
+                        transform .55s ease; }
   @media (prefers-reduced-motion: reduce) { .qa { transition:none; } }
   .qa .qt { color:var(--lit); }
   .qa textarea { width:100%; background:var(--panel); color:var(--text);
@@ -155,9 +159,12 @@ STYLE = """<style>
      The cost is bounded by construction rather than by measurement after
      the fact — an opacity breath on a 2px rail (compositor only) and a
      background drift across ~25 characters of .65rem label. */
-  .qa.awaiting { position:relative; border-left:2px solid transparent;
-    padding-left:.9rem; margin-left:-1.1rem; opacity:.82; }
-  .qa.awaiting::before { content:""; position:absolute; left:-2px;
+  /* the rail sits INSIDE the padding box, not on a border hanging outside
+     it, so that clipping the card while its height travels (travelCard)
+     cannot shave the rail off */
+  .qa.awaiting { position:relative;
+    padding-left:.9rem; margin-left:-.9rem; opacity:.82; }
+  .qa.awaiting::before { content:""; position:absolute; left:0;
     top:0; bottom:0; width:2px; pointer-events:none;
     background:linear-gradient(180deg, transparent, var(--accent) 16%,
       var(--accent) 84%, transparent);
@@ -1115,6 +1122,102 @@ function snapshotCards() {
   }));
   return m;
 }
+/* ONE way a card moves inside the list (#104, #77, #113). It travels from the
+   rect it had to the rect it has — in position AND in height — and when it
+   crossed to a different HEADING it is lifted while it goes, so the eye
+   follows that one card across the page instead of reading the whole list as
+   re-laid-out.
+
+   Height, not scale, and that distinction is load-bearing. `flipDock` morphs
+   by `scale()`, which is right for the review dock, where the card genuinely
+   changes column. Inside the list the column never changes — but the HEIGHT
+   now can, by a factor of fifteen, because folding collapses the card (#111).
+   A scale morph would stretch the text by that ratio at frame 0 and read as a
+   squash, not a fold. So the size travels as height, with the box clipped
+   while it does.
+
+   Every state change on this list also changes the heading the card sits
+   under, so `lifted` is the same signal as "the state changed" — read from
+   the heading rather than the class, because the submit morph has already
+   changed the class locally by the time we get here. */
+const CARD_MS = 850;
+const CARD_TRAVEL =
+  'transform .85s cubic-bezier(.32,.1,.2,1),' +
+  ' height .85s cubic-bezier(.32,.1,.2,1), filter .7s ease, opacity .7s ease';
+function travelCard(el, was, now, lifted) {
+  const resized = Math.abs(was.height - now.height) >= 1;
+  el.style.transition = 'none';            // the enter-snap rule, again
+  el.style.transform = `translate(${was.left - now.left}px,` +
+                       `${was.top - now.top}px)`;
+  if (resized) {
+    el.style.height = was.height + 'px';
+    el.style.overflow = 'hidden';          // content must not spill as it folds
+  }
+  if (lifted) {
+    el.style.zIndex = '4'; el.style.filter = 'blur(5px)'; el.style.opacity = '.4';
+  }
+  void el.offsetWidth;                     // commit the inverted start
+  el.style.transition = CARD_TRAVEL;
+  // an explicit identity, not a removal: the inline transform IS the signal
+  // that a card travelled rather than being re-laid-out, and removing it
+  // synchronously leaves nothing for a per-frame trace to see. Cleared below.
+  el.style.transform = 'translate(0px, 0px)';
+  if (resized) el.style.height = now.height + 'px';
+  if (lifted) { el.style.filter = ''; el.style.opacity = ''; }
+  setTimeout(() => {
+    for (const p of ['transition', 'transform', 'height', 'overflow',
+                     'zIndex', 'filter', 'opacity']) el.style[p] = '';
+  }, CARD_MS + 150);
+}
+/* an element leaving fades rather than vanishing — the page's one departure
+   idiom, lifted out of flow at the rect it occupied so survivors can close
+   the gap underneath it, then dissolved on the mist. `clipTop` hides the part
+   of the ghost the survivor still occupies, which is what makes it usable for
+   a BODY leaving as well as for a whole card leaving. */
+function dreamAway(wrap, node, rect, clipTop) {
+  if (!wrap) return;
+  const org = wrap.getBoundingClientRect();
+  // A ghost is a CORPSE, not the card, so it must not keep the card's
+  // address. It is a clone, so it arrives carrying data-qid and data-qkey —
+  // and it is appended to .wrap, which means every `.qa[data-qid]` walk on
+  // the page would find it: snapshotCards would capture its absolute rect as
+  // the question's, restoreCardState would type into it, and a per-frame
+  // trace would measure it instead of the card animating underneath. That
+  // last one is how this was found. Strip the identity at the door rather
+  // than teaching six lookups to skip it.
+  node.removeAttribute('data-qid');
+  node.removeAttribute('data-qkey');
+  node.classList.add('qaghost');
+  node.style.left = (rect.left - org.left) + 'px';
+  node.style.top = (rect.top - org.top) + 'px';
+  node.style.width = rect.width + 'px';
+  if (clipTop > 0) node.style.clipPath = `inset(${Math.round(clipTop)}px 0 0 0)`;
+  wrap.appendChild(node);
+  void node.offsetWidth;
+  node.classList.add('gone');
+  setTimeout(() => node.remove(), 1000);
+}
+/* everything under a card's title line — the part that is really arriving or
+   leaving when a card folds or unfolds. The title itself survives as the
+   summary, so it is not part of the move. */
+function cardBody(el) {
+  const root = el.querySelector(':scope > .qfold') || el;
+  return [...root.children].filter(c =>
+    c.tagName !== 'SUMMARY' && !c.classList.contains('qt'));
+}
+const BODY_STEP = 24;             // about a line: below this nothing "left"
+/* Cards are processed in DOM order, and that is load-bearing rather than
+   incidental.
+
+   A resizing card's own height animation carries everything below it — the
+   layout does that continuously, for free, and it is the better motion
+   because the neighbours stay welded to the card they are following. So the
+   FLIP only has to handle the RESIDUAL: whatever moved for some other reason.
+   Restoring a card's old height before the next card is measured is exactly
+   what makes the next card's `now` mean "where it would be if only that
+   resize had happened", so the residual it FLIPs is the right one. FLIPping
+   the full difference instead would move a neighbour twice — once by
+   transform and once by layout — and it would snap back at the end. */
 function regroupCards(before) {
   if (rmr || !before || !before.size) return;
   const wrap = document.querySelector('.wrap');
@@ -1128,37 +1231,32 @@ function regroupCards(before) {
       return;
     }
     const now = el.getBoundingClientRect();
-    if (Math.abs(was.rect.left - now.left) < 1 &&
-        Math.abs(was.rect.top - now.top) < 1) return;
-    if (was.group !== cardGroup(el) && typeof flipDock === 'function') {
-      // it moved to a different HEADING: the lifted-hero morph, so the eye
-      // follows this one card across the page rather than reading the whole
-      // list as having been re-laid out (#77)
-      flipDock(el, was.rect, now);
-    } else {
-      // a neighbour closing the gap: it just slides
-      el.style.transition = 'none';
-      el.style.transform = `translate(${was.rect.left - now.left}px,` +
-                           `${was.rect.top - now.top}px)`;
-      void el.offsetWidth;
-      el.style.transition = '';
-      el.style.transform = '';
-    }
+    const moved = Math.abs(was.rect.left - now.left) >= 1 ||
+                  Math.abs(was.rect.top - now.top) >= 1;
+    // a card can change SIZE without moving — it is the first in its list and
+    // it just folded — and that is as much a travel as a move
+    const dh = now.height - was.rect.height;
+    if (!moved && Math.abs(dh) < 1) return;
+    travelCard(el, was.rect, now, was.group !== cardGroup(el));
+    // The box travelling is only half of a fold. The BODY is leaving, and an
+    // element leaving fades rather than vanishing (human, 2026-07-25:
+    // "when it folds in, the body shouldn't disappear all at once"). The new
+    // card is already the folded one, so there is no live body left to
+    // animate — which is exactly what the up-front clone is for. Ghost it at
+    // the rect it occupied, clipped to below the line the survivor still
+    // fills, and let it dream away on the departure idiom.
+    if (dh <= -BODY_STEP) dreamAway(wrap, was.node, was.rect, now.height);
+    // ...and unfolding is the same moment run backwards: the body ARRIVES,
+    // so it eases in rather than being wiped up by the growing box.
+    else if (dh >= BODY_STEP) cardBody(el).forEach(c => {
+      c.classList.add('qreveal', 'dreamin');
+      requestAnimationFrame(() => c.classList.remove('dreamin'));
+      setTimeout(() => c.classList.remove('qreveal'), CARD_MS + 150);
+    });
   });
   // gone entirely: dream away where it stood, so it fades rather than blinks
-  if (!wrap) return;
-  const org = wrap.getBoundingClientRect();
   before.forEach((was, id) => {
-    if (seen.has(id)) return;
-    const g = was.node;
-    g.classList.add('qaghost');
-    g.style.left = (was.rect.left - org.left) + 'px';
-    g.style.top = (was.rect.top - org.top) + 'px';
-    g.style.width = was.rect.width + 'px';
-    wrap.appendChild(g);
-    void g.offsetWidth;
-    g.classList.add('gone');
-    setTimeout(() => g.remove(), 1000);
+    if (!seen.has(id)) dreamAway(wrap, was.node, was.rect, 0);
   });
 }
 /* switching a card's mode: the indicator slides, the placeholder follows,
@@ -1170,6 +1268,21 @@ addEventListener('click', e => {
   e.preventDefault();
   // membership is fixed here, so the indicator slides rather than lands
   setCardMode(btn.closest('.qcompose'), btn.dataset.mode, false);
+});
+/* opening or closing a folded entry HIMSELF is the same moment as the loop
+   folding one: a card changes height and its neighbours close or open the gap
+   underneath it. So it goes through the same snapshot and the same regroup,
+   rather than growing a second way to move a card. The native toggle is
+   prevented because <details> flips before any event we could measure from,
+   and a FLIP with nothing to measure is a jump. */
+addEventListener('click', e => {
+  const sum = e.target.closest && e.target.closest('.qa > .qfold > summary');
+  if (!sum) return;
+  e.preventDefault();
+  const det = sum.parentElement;
+  const before = snapshotCards();
+  det.open = !det.open;
+  regroupCards(before);
 });
 addEventListener('resize', () => paintIndicators(true));
 /* ── the persistent chrome (#110) ─────────────────────────────────────────

@@ -530,6 +530,63 @@ exception; an element leaving fades rather than vanishing.
   dreams away at the rect it occupied, which is why the snapshot clones every
   card up front — after the re-render there is no node left to animate, and
   you cannot know in advance which will go.
+- **The state matrix, and the one mechanism under it.** The three question
+  states are one axis, so their transitions are one matrix, and every cell
+  goes through `regroupCards` → `travelCard`. A card **travels** from the
+  rect it had to the rect it has — in position *and* in height — and if it
+  crossed to a different **heading** it is lifted while it goes (raised,
+  blurred, dimmed, resolving) so the eye follows that one card.
+
+  | cell | who acts | what happens |
+  |---|---|---|
+  | open → awaiting | he answers | the submit morph restates the card in place (the typed text lifts from the box into the answer, a ripple), then the regroup travels it to its new heading, lifted. The wisp starts at its dim keyframe and breathes up, so it arrives rather than snapping on. |
+  | awaiting → folded | the loop folds it | travels, lifted; the height collapses; the departing body dreams away |
+  | open → folded | the loop answers it itself | the same, with no wisp ever |
+  | folded → open/awaiting | a follow-up reopens it | travels, lifted; the height grows; the arriving body eases in |
+  | awaiting → open | the loop drops the answer | travels, lifted; rail and wisp leave with the old node |
+  | same state, moved | a neighbour left, a note landed | slides; if it also resized, the height travels |
+  | folded ↔ expanded | **he** clicks the summary | the same snapshot and the same regroup — his own expand is not a special case, and routing it through the shared path is what gives it the neighbours' motion for free |
+  | gone | the entry was deleted | dreams away at the rect it occupied |
+  | arrived | a new question | `.dreamin`: snap, then ease in |
+
+  Four things in there are not obvious and all four were bugs first:
+
+  - **Height, never scale.** `flipDock` morphs by `scale()`, which is right
+    for the review dock, where the card really does change column. In the
+    list the column never changes but the height now can, by a factor of
+    fifteen, because folding collapses the card. A scale morph would squash
+    the text by that ratio at frame 0 and read as a stretch, not a fold.
+  - **A body that leaves fades; a body that arrives eases in.** *"When it
+    folds in, the body shouldn't disappear all at once"* (human,
+    2026-07-25). The new node is already the folded one, so there is no live
+    body left to animate — which is what the up-front clone in
+    `snapshotCards` is for. `dreamAway` ghosts it at the rect it occupied,
+    **clipped to below the line the survivor still fills**, on the page's one
+    departure idiom. Unfolding is that moment run backwards, so the revealed
+    children get `.qreveal` + `.dreamin`.
+  - **Cards are processed in DOM order, and that is load-bearing.** A
+    resizing card's own height animation carries everything below it —
+    continuously, for free, and welded to the card it is following. So the
+    FLIP only handles the **residual**: whatever moved for some other reason.
+    Restoring a card's old height before the next is measured is exactly what
+    makes the next card's `now` mean "where it would be if only that resize
+    had happened". FLIPping the full difference instead moves a neighbour
+    twice, once by transform and once by layout, and snaps it back at the end.
+  - **A ghost is a corpse and must not keep the card's address.** It is a
+    clone appended to `.wrap`, so it arrives carrying `data-qid` — and every
+    `.qa[data-qid]` walk on the page would then find it: `snapshotCards`
+    would capture its absolute rect as the question's, `restoreCardState`
+    would restore his typing into it, and a per-frame trace measures it
+    instead of the card animating underneath (which is how this was found).
+    `dreamAway` strips the identity at the door rather than teaching six
+    lookups to skip it.
+
+  The guard is `dev/capture/states.mjs`, and its assertion is deliberately
+  about **outcome, not mechanism**: every card that ended somewhere else
+  visited many intermediate positions. The first version demanded an inline
+  transform on everything that moved and was wrong — a card riding an
+  animated height above it travels perfectly with no transform of its own,
+  and the mechanism check would have forbidden the better motion.
 - **The dream dissolve** (route change). The outgoing view becomes a
   `.ghost` (z-index above `#view`) that liquifies into a swirling mist and
   lifts up and toward the viewer as it fades — dissolving *in front*. The
