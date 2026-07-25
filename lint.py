@@ -220,12 +220,45 @@ def check_status(dw: Path, rep: Report) -> None:
         rep.add(ERROR, "status.json", f"{nameless} agent(s) with no `name` — unreportable by any reader")
         return
 
+    # A timestamp in the FUTURE is always wrong and always detectable, and
+    # two different agents produced one on 2026-07-25 by estimating elapsed
+    # time instead of reading the clock — both felt that far more time had
+    # passed than had. `last_tick` is a claim about freshness, so a wrong one
+    # makes a stalled loop and a lying one indistinguishable from outside.
+    tick = data.get("last_tick")
+    if isinstance(tick, str):
+        skew = _future_skew(tick)
+        if skew is not None and skew > 60:
+            rep.add(
+                ERROR,
+                "status.json",
+                f"last_tick is {int(skew // 60)}min in the FUTURE — read the clock, "
+                f"do not estimate elapsed time",
+            )
+            return
+
     agents = data.get("agents") or []
     waiting = data.get("awaiting_human") or []
     detail = f"valid; {len(agents)} agent(s)"
     if waiting:
         detail += f", {len(waiting)} awaiting the human"
     rep.add(OK, "status.json", detail)
+
+
+def _future_skew(stamp: str):
+    """Seconds by which `stamp` is ahead of now, or None if unparseable.
+
+    Unparseable is not an error: the field is optional and a target may write
+    a shape this does not know. Only a confidently-future time is reported.
+    """
+    from datetime import datetime
+
+    try:
+        when = datetime.fromisoformat(stamp)
+    except ValueError:
+        return None
+    now = datetime.now(tz=when.tzinfo) if when.tzinfo else datetime.now()
+    return (when - now).total_seconds()
 
 
 def check_watch_port(dw: Path, rep: Report) -> None:

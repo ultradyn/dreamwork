@@ -204,6 +204,32 @@ class TestStatusIsAnInterface:
         rep = run(target(tmp_path, **{"status.json": blob}))
         assert ERRORS(rep, "status.json")
 
+    def test_a_future_last_tick_is_an_error(self, tmp_path):
+        # Two different agents wrote a future timestamp on 2026-07-25 by
+        # estimating elapsed time rather than reading the clock. A future
+        # time is always wrong and always detectable, so it is checked
+        # rather than remembered.
+        from datetime import datetime, timedelta
+        ahead = (datetime.now() + timedelta(minutes=20)).isoformat(timespec="minutes")
+        blob = json.dumps({"task": "x", "last_tick": ahead})
+        rep = run(target(tmp_path, **{"status.json": blob}))
+        assert ERRORS(rep, "status.json")
+        assert "FUTURE" in next(d for _, w, d in rep.rows if w == "status.json")
+
+    def test_a_present_or_past_last_tick_is_fine(self, tmp_path):
+        from datetime import datetime, timedelta
+        past = (datetime.now() - timedelta(hours=3)).isoformat(timespec="minutes")
+        blob = json.dumps({"task": "x", "last_tick": past})
+        rep = run(target(tmp_path, **{"status.json": blob}))
+        assert levels(rep, "status.json") == [lint.OK]
+
+    def test_an_unparseable_last_tick_is_not_an_error(self, tmp_path):
+        # The field is optional and a target may write a shape this does not
+        # know. Only a CONFIDENTLY future time is reported.
+        blob = json.dumps({"task": "x", "last_tick": "just now"})
+        rep = run(target(tmp_path, **{"status.json": blob}))
+        assert levels(rep, "status.json") == [lint.OK]
+
     def test_top_level_must_be_an_object(self, tmp_path):
         rep = run(target(tmp_path, **{"status.json": "[1, 2]"}))
         assert ERRORS(rep, "status.json")
