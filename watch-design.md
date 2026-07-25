@@ -681,7 +681,7 @@ question rather than naming the app (#153). His words: *"dreamwork watch
 browser title should be improved"*.
 
 ```
-(2) ud-dreamwork · dreaming · questions
+(2) dreamwork/ud-dreamwork · dreaming · questions
 ```
 
 **Four fields, each saying exactly one thing**, ordered so that truncation
@@ -722,10 +722,17 @@ bracket.)
 The staleness threshold is two missed heartbeats (`STALE_TICK_MS`, 10m):
 one late beat is a busy machine, two is a loop that stopped.
 
-The app's own name is deliberately **not** in the title. It was the only
-thing there before, and it is the thing a tab strip never has room for; the
-favicon carries app identity, which is the part of a tab that survives
-truncation completely.
+**The first field after the count is `dreamwork/<project>`, one compound
+field.** The app's name was dropped at first — it was the only thing in the
+title before, and a tab strip never has room for it — and he ruled it back in
+on 2026-07-25 at 15:30 (`(4) dreamwork · <status> · <extra>`). His example put
+`dreamwork` in the slot the *project* name occupied, while he was reading the
+ud-dreamwork dashboard, so it reads equally as "the app name returns" and as
+"this is what my tab already says". The compound is right under both, occupies
+the one field he wrote, and for another target reads `dreamwork/hark`, which
+is what it is. The state stays third, so truncation still takes the route
+first. The guard asserts the compound rather than a substring: a title that
+kept the app word and dropped the project would otherwise pass.
 
 `dev/capture/identity.mjs` guards it by driving a *sequence* of loop states
 through one live page — a guard that reloaded between states would pass on a

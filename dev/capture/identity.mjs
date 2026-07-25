@@ -4,7 +4,7 @@
    backgrounded, which is most of its life, so what it has to answer is not
    "what app is this" but DOES IT NEED ME and WHICH loop is this:
 
-       (2) alpha-loop · dreaming · questions
+       (2) dreamwork/alpha-loop · dreaming · questions
 
    Four claims, and each of them was reachable only from a browser: the count
    comes from `status.awaiting_human` with `open_questions` as the fallback,
@@ -141,9 +141,13 @@ ok('the count is FIRST — tabs truncate from the right', /^\(\d+\) /.test(t));
 ok('...and it is awaiting_human\'s length, not the open-question count',
    t.startsWith('(3) '));
 ok('the project is the target\'s own name', t.includes('alpha-loop'));
+/* ...and the app's name is beside it (his ruling, 15:30). Asserted as the
+   compound field rather than as a substring, so a title that dropped the
+   project and kept only the app word cannot pass this. */
+ok('...beside the app\'s, in one field', t.includes('dreamwork/alpha-loop'));
 ok('...and the loop reads as alive', /·\s*dreaming/.test(t));
 ok('the dashboard route adds nothing after the state',
-   /^\(3\) alpha-loop · dreaming$/.test(t));
+   /^\(3\) dreamwork\/alpha-loop · dreaming$/.test(t));
 
 // ── it changes with no navigation at all ──────────────────────────────────
 /* The whole feature. A title assembled once in navigate() passes every check
@@ -205,7 +209,7 @@ t = await titleWhen(x => /stalled/.test(x));
 notes.push(`tick 11m old:          ${t}`);
 ok('a tick older than two heartbeats reads as stalled', /stalled/.test(t));
 ok('...and the count is still there beside it — both facts, not one',
-   /^\(1\) alpha-loop · stalled/.test(t));
+   /^\(1\) dreamwork\/alpha-loop · stalled/.test(t));
 
 // ── the flip rides the CLOCK, not a disk change ───────────────────────────
 /* A loop that stops writing generates no event: no mtime change, no tick,
@@ -241,7 +245,7 @@ ok('...the file route names the file', /· watch\.py$/.test(routed.file));
 ok('...the review route names the artifact',
    /· review goal-hierarchies\.html$/.test(routed.review));
 ok('...and every route still leads with the count and the project',
-   Object.values(routed).every(v => /^\(1\) alpha-loop · /.test(v)));
+   Object.values(routed).every(v => /^\(1\) dreamwork\/alpha-loop · /.test(v)));
 
 // ── the favicon (#153) ────────────────────────────────────────────────────
 /* Read PIXELS, not the href. Two icons differ as strings the moment anything

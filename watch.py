@@ -1660,11 +1660,11 @@ const SEED = { dashboard: 7, questions: 23, file: 41, review: 61 };
    question rather than naming the app: DOES IT NEED ME, and WHICH loop is
    this. Both, because the workflow is now several dreaming agents at once.
 
-       (2) ud-dreamwork · dreaming · questions
-        ^   ^              ^          ^
-        |   |              |          where you are (dropped first)
-        |   |              is the loop still ticking
-        |   which loop
+       (2) dreamwork/ud-dreamwork · dreaming · questions
+        ^   ^                        ^          ^
+        |   |                        |          where you are (dropped first)
+        |   |                        is the loop still ticking
+        |   which app, and which loop of it
         how many things are waiting on YOU
 
    THE COUNT IS FRONT-LOADED because tabs truncate from the RIGHT, so
@@ -1711,12 +1711,28 @@ function titleLive(d) {
 }
 const projectName = d => ((d && d.target) || '').replace(/[\\/]+$/, '')
                           .split(/[\\/]/).pop();
+/* WHICH loop, in one field. It was the project alone until he ruled at 15:30
+   on 2026-07-25 (`(4) dreamwork · <status> · <extra>`) that the app's name
+   comes back — the argument for dropping it was that a tab strip never has
+   room, and his answer is that he wants to know what he is looking at.
+
+   His example put `dreamwork` in the slot the PROJECT name occupied, and he
+   was reading the ud-dreamwork dashboard when he wrote it, so it reads
+   equally as "the app name returns" and as "this is what my tab already
+   says". This is the one shape that is right under both: one compound field
+   where he put one field, and for another target it reads `dreamwork/hark`,
+   which is what it is. The state stays third, so truncation still takes the
+   route first. */
+const titleWho = d => {
+  const proj = projectName(d);
+  return proj ? 'dreamwork/' + proj : 'dreamwork';
+};
 function pageTitle(v, d) {
   const need = titleNeed(d);
   if (need === null) return null;             // no data: claim nothing
   const route = (TITLE_ROUTE[v.name] || TITLE_ROUTE.dashboard)(v.param);
   return `(${need}) ` +
-    [projectName(d), titleLive(d), route].filter(Boolean).join(' · ');
+    [titleWho(d), titleLive(d), route].filter(Boolean).join(' · ');
 }
 /* ── his colour for this project (#143) ───────────────────────────────────
    His words: "user can customize color tint for watch on dashboard for
