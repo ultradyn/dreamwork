@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **149**
+Next id: **150**
 
 ## Open
 
@@ -68,14 +68,10 @@ Next id: **149**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
-- **#146** — A newline in a note forges a whole QUESTION · **P1** · bug ·
-  35m · reproduced against the real writer and parser: a note containing
-  `\n- **Title**` makes `parse_open_questions` return a question the
-  human never asked. Worse than #126's log case — it is the primary
-  human channel, and parser invariant 1 (a top-level `- **` always
-  starts an entry) is what makes the forgery reliable. That invariant
-  stays; fix the WRITER. Assert entry COUNT round-trips through a
-  hostile note. `file-formats.md` changes in the same commit
+- **#149** — `append_subbullet` eats the blank line before
+  `## Answered` · P3 · chore · 10m · cosmetic and pre-existing; the file
+  drifts from the example `file-formats.md` shows. Fix the writer, not
+  the doc
 - **#136** — A questions.md that parses to nothing must say so · **P1** ·
   bug · 45m · reader half of #135 · THREE zero-states, not one: missing
   is a quiet warning (human, 11:28 — the loop writes it almost at once);
@@ -136,7 +132,15 @@ Next id: **149**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#96 stage 1** dreamhub —
+Pruned in grooming; git is the real ledger. **#146** a pasted bullet can
+no longer forge a question (26037e7) — `human_block()` is now the only
+way human text enters questions.md. Indenting alone was NOT enough: the
+reader tests `- **` on the RAW line but 'starts a bullet' on the STRIPPED
+one, and a bullet ends the note capture, so an indented `- foo` would have
+spilled his words into the entry BODY as prose the loop appears to have
+written — an attribution failure through a door #109 never considered.
+Verified independently: entry, indented bullet and fake section all
+blocked. **#96 stage 1** dreamhub —
 a read-only aggregate over several targets, nine increments
 (ab32541..dc69c8c), 102 pytest + 32 structural + 8 contract checks. Ships
 origin-per-project, not the sketched `/{project}/` prefix, because
