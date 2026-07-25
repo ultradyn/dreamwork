@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **200**
+Next id: **201**
 
 ## Open
 
@@ -62,6 +62,22 @@ Next id: **200**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#200** — Monitor context usage; threshold triggers a self-audit ·
+  P2 · idea · 2 parts · **human 17:23** · his example ("3 questions
+  answered ages ago, forgotten?") turned out to be guard pollution, NOT
+  his answers — but he could not tell, and that proves the point better
+  than the example would have: **nothing in the loop notices that
+  something was answered and never acted on** · **(1) do the cheap half
+  first**: an entry carrying an Answer/Note sub-bullet while still under
+  `## Open` IS by definition unprocessed, and the timestamp is right
+  there — dashboard shows "answered 3h ago, not folded", lint WARNs past
+  an age; no context monitoring needed and it would have caught today's
+  case instantly · **(2) the general one**: MEASURE FIRST whether an
+  agent can read its own context usage programmatically — if not, the
+  fallback is a proxy and a proxy must say what it is not (#155) · the
+  self-audit is worth having as a maintenance item regardless of trigger
+  · **#199 gives this its input** — a raw log of everything received IS
+  the "what was sent to me" half
 - **#199** — **P1** His answers and notes are persisted NOWHERE but
   questions.md, and a failed write discards them · bug · 30m · **human
   17:20**: persist every webui submission before the loop ever sees it,

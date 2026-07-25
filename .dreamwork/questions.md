@@ -21,16 +21,16 @@
   worth harvesting than a design conversation will now.
 
   Answer "go" to plan it, or leave it and it stays parked.
-  - **Note (human, via watch, 2026-07-25 14:34):** a note routed by the
-    mode group
-  - **Answer (via watch, 2026-07-25 14:34):** an answer routed by the
-    mode group
-  - **Follow-up (loop, 2026-07-25 14:35):** the 14:34-14:35 submissions on this entry
-    read as UI tests, not answers — "traced answer for the regroup", "a
-    note routed by the mode group". NOT folded, and this question stays
-    OPEN. Recorded rather than deleted because they are his words and
-    because a later reader would otherwise find an entry that looks
-    resolved and is not.
+  - **Follow-up (loop, 2026-07-25 17:24):** submissions attached to this
+    entry at 14:34-14:35 have been REMOVED. They were never his: they are
+    verbatim guard strings — `dev/capture/regroup.mjs:67` and
+    `dev/capture/oneinput.mjs:139,153` — that reached the real
+    `questions.md` because a guard ran against the live target instead of
+    the fixture (the runner gap, fixed in 7be4a22). They were previously
+    kept on the reasoning that they were his words; they are not. He asked
+    at 17:23 whether three answers had been forgotten, and on the page
+    they were indistinguishable from his.
+    **This question is genuinely open and has never been answered.**
 
 
 - **2026-07-25 — how should an answer reach a loop on another machine?**
@@ -55,14 +55,16 @@
   becomes routine, and it is exactly the surface where a wrong write
   corrupts another loop's record of what you want. Worth deciding as a
   rule rather than per-incident. Related: #96 stage 2+, #144, #150.
-  - **Answer (via watch, 2026-07-25 14:34):** traced answer for the
-    regroup
-  - **Follow-up (loop, 2026-07-25 14:35):** the 14:34-14:35 submissions on this entry
-    read as UI tests, not answers — "traced answer for the regroup", "a
-    note routed by the mode group". NOT folded, and this question stays
-    OPEN. Recorded rather than deleted because they are his words and
-    because a later reader would otherwise find an entry that looks
-    resolved and is not.
+  - **Follow-up (loop, 2026-07-25 17:24):** submissions attached to this
+    entry at 14:34-14:35 have been REMOVED. They were never his: they are
+    verbatim guard strings — `dev/capture/regroup.mjs:67` and
+    `dev/capture/oneinput.mjs:139,153` — that reached the real
+    `questions.md` because a guard ran against the live target instead of
+    the fixture (the runner gap, fixed in 7be4a22). They were previously
+    kept on the reasoning that they were his words; they are not. He asked
+    at 17:23 whether three answers had been forgotten, and on the page
+    they were indistinguishable from his.
+    **This question is genuinely open and has never been answered.**
 
 - **2026-07-25 — dreamhub URL space: one hub URL, or one per project?
   (#96).** Your `daemon-mode.md` sketch was `/` lists projects and
@@ -85,14 +87,16 @@
   want the single-URL bookmark badly enough to serialise stage 1 behind
   a `watch.py` change. Full reasoning:
   `.dreamwork/docs/plans/dreamhub-stage1.md`.
-  - **Answer (via watch, 2026-07-25 14:35):** traced answer for the
-    regroup
-  - **Follow-up (loop, 2026-07-25 14:35):** the 14:34-14:35 submissions on this entry
-    read as UI tests, not answers — "traced answer for the regroup", "a
-    note routed by the mode group". NOT folded, and this question stays
-    OPEN. Recorded rather than deleted because they are his words and
-    because a later reader would otherwise find an entry that looks
-    resolved and is not.
+  - **Follow-up (loop, 2026-07-25 17:24):** submissions attached to this
+    entry at 14:34-14:35 have been REMOVED. They were never his: they are
+    verbatim guard strings — `dev/capture/regroup.mjs:67` and
+    `dev/capture/oneinput.mjs:139,153` — that reached the real
+    `questions.md` because a guard ran against the live target instead of
+    the fixture (the runner gap, fixed in 7be4a22). They were previously
+    kept on the reasoning that they were his words; they are not. He asked
+    at 17:23 whether three answers had been forgotten, and on the page
+    they were indistinguishable from his.
+    **This question is genuinely open and has never been answered.**
 
 - **2026-07-25 — should the PreCompact hook ship, and as a plugin? (#138)**
   This one is here because it was missing. It has been listed as
