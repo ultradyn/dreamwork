@@ -4,6 +4,12 @@ __pycache__/
 # of the machine, so a committed copy would be another target's truth
 .dreamwork/plugin-commands.json
 .dreamwork/watch-events.log
+# Same file one directory down: a guard that drives the composer for real
+# makes the server write command events into the FROZEN fixture. The write
+# is correct behaviour being exercised; the pattern above is anchored to the
+# repo root and does not reach it, so it would sit untracked in every
+# `git status` waiting for a careless `git add -A`.
+dev/capture/fixture/.dreamwork/watch-events.log
 
 # worktrees for isolated dreamer spikes
 .worktrees/
