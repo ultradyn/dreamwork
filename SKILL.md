@@ -432,6 +432,11 @@ if Max is away).
   fault-finding. Fold the resolution back into DREAMWORK.md. Restoring
   alignment is priority work, not deferred maintenance: small drift folds
   in immediately; bigger drift becomes a top-of-queue task.
+- Deploying a dashboard hides what it is running: the snapshot lives
+  outside the repo on purpose, so a fix can sit committed and undeployed
+  while the human stares at the bug it fixed. `deployed.py --target .`
+  answers it by comparing bytes, and the hub shows it per project. Check
+  it before concluding a reported bug is real — twice now it was not.
 - Communication: brief updates as you go; `attn` only for genuine blockers,
   questions, or notable milestones. Subagents never use `attn`. **Check
   that the push actually left** — `attn` exits non-zero when its backend

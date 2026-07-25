@@ -31,9 +31,10 @@ cover it too.
 | `README.md` | Public face of the repo: what dreamwork is, install, where to start | Yes — must not drift from SKILL.md |
 | `relay.py` | Appends a coordinator message to a subagent inbox — body from stdin, stamp from the clock | Yes — it encodes two failures, not a convenience |
 | `lint.py` | Checks a target's `.dreamwork/` against the shapes its readers require, by calling the real readers | Yes — a reader change lands here in the same commit |
+| `deployed.py` | Which revision a target's dashboard is ACTUALLY serving, by byte-comparing the deploy snapshot against history. `python3 deployed.py --target .` | Yes — the deploy snapshot's identity is recorded nowhere else |
 | `dreamhub-design.md` | dreamhub standing design: the stage-1 boundary and its checks, the origin-per-project deviation, and the exact status.json / watch-port / `/mtime` / `/data.json` fields the hub depends on (guards: `dev/hub/README.md`) | Yes — shipped beside the tool it documents |
 | `roll.py` / `watch.py` / `heartbeat.py` / `dreamhub.py` docstrings | Tool contracts (advisory dice; dashboard; the wake tick; the multi-project hub) | Yes — contracts live in the docstrings |
-| `test_watch.py` / `test_roll.py` / `test_heartbeat.py` / `test_lint.py` / `test_relay.py` | The Python half of verification — asserts on generated source, cannot see what renders | Yes — a behaviour change ships with its test |
+| `test_watch.py` / `test_roll.py` / `test_heartbeat.py` / `test_lint.py` / `test_relay.py` / `test_deployed.py` | The Python half of verification — asserts on generated source, cannot see what renders | Yes — a behaviour change ships with its test |
 | `dev/capture/` | The structural half: browser guards (exit non-zero, gated by `just test`) plus print-only capture scripts | Yes — a guard joins `GUARDS` when its feature lands |
 | `dev/capture/fixture/` | Frozen miniature target the guards run against, so a red light means the code broke | Yes — extend it when the parser learns a new input shape |
 | `justfile` | Common tasks: test (both halves), pytest, guards, watch, audit-styleguide | Yes — a new routine worth repeating becomes a recipe |
