@@ -11,10 +11,17 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **138**
+Next id: **139**
 
 ## Open
 
+- **#138** — Ship a PreCompact hook so the write-down is automatic ·
+  P2 · task · 60m · **scope gate applies**: Claude Code-specific
+  machinery in a harness-portable skill, and it touches his own config
+  — rec is an optional plugin, but confirm before building. A hook
+  fires AT compaction, so it guarantees the write-down and cannot buy
+  landing time; stdout becomes summariser instructions, so it must be
+  silent by construction
 - **#137** — Tell the loop how to write every file it writes, and give
   it a linter · **P1** · task · 90m · his generalisation of #135 · a
   third prose description of a format is a third thing that can drift;
@@ -66,9 +73,10 @@ Next id: **138**
 - **#126** — Composer commands carry the page they came from · P2 ·
   task · 25m · the route is a hint, never an instruction
 - **#127** — One deliberate way to compact a dreamwork agent · P2 ·
-  task · 45m · agent-side checklist written (`compaction.md`); the
-  per-client dialect table belongs in `~/.llm-general/`, and the
-  managed sender is dreamhub's
+  task · 45m · *mostly landed* · `compaction.md` + the harness dialect
+  table in `~/.llm-general/ai-coding/agent-compaction.md`; hooks
+  researched and folded in. Remaining: the managed sender, which the
+  dreamhub plan places in stage 2 (needs a session handle). See #138
 - **#124** — Break up watch.py; norms for cheap parallel work · P2 ·
   task · 120m · plan: `docs/plans/parallel-architecture.md` · seams as
   batches demand them, starting with #112's components
