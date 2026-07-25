@@ -18,10 +18,24 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **206**
+Next id: **207**
 
 ## Open
 
+- **#206** — Coordinator and dreamer messages race, four crossings in
+  one afternoon · P2 · idea · 30m · the two directions have different
+  latencies: dreamer inbox-file writes arrive at the coordinator on the
+  tail monitor within seconds, while coordinator SendMessages queue at
+  the dreamer until its next delivery point — so every instruction sent
+  while a dreamer is reporting is answered by a message that predates it
+  · today that produced: a dispatch answered with "retire me or send the
+  next one", a contract answer that arrived after the commit it governed,
+  and a claim/retirement race needing a third message to resolve · the
+  claim-wins rule worked, but it worked because both sides were careful,
+  which #203 says is not a fix · rec: state a tiny protocol in
+  parallel-architecture.md — claims and holdings move ONLY through files
+  (writes win, messages advise), and any instruction that must precede a
+  commit names the sha it must precede · relates #144, #150
 - **#138** — Ship a PreCompact hook so the write-down is automatic ·
   P2 · task · 60m · **scope gate applies**: Claude Code-specific
   machinery in a harness-portable skill, and it touches his own config
