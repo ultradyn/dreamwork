@@ -16,6 +16,7 @@ import random
 import re
 import subprocess
 import sys
+import textwrap
 import threading
 import time
 import urllib.parse
@@ -3090,10 +3091,74 @@ def append_subbullet(text, title, block, section="Open"):
     return "\n".join(out) + "\n", matched
 
 
+NOTE_INDENT = "    "
+NOTE_WIDTH = 72
+
+
+def ends_capture(stripped):
+    """The reader's own test for 'this line stops belonging to the sub-bullet
+    above it' — a blank line or a new bullet. Stated once, here, so the writer
+    cannot drift from the reader about where a note ends. (Blank is
+    unreachable for text the writer folds to one paragraph, and is included
+    anyway: the rule is the reader's, not the caller's.)"""
+    return (not stripped or stripped.startswith("- ")
+            or stripped.startswith("* "))
+
+
+def human_block(head, text):
+    """A sub-bullet carrying the human's own words (#146).
+
+    He types into a box and pastes into it, so his text arrives with newlines
+    and sometimes with bullets. Written naively it lands at column 0, where a
+    pasted `- **…**` becomes a TOP-LEVEL ENTRY by the reader's first and best
+    invariant — and the loop then reads a question he never asked, with a body
+    the paste invented, in the file it treats as the record of what he wants.
+    That invariant is correct and stays (it is what stops entries vanishing
+    into each other, #116); this is the writer's job. No malice needed: a
+    pasted bullet list does it by accident.
+
+    Two guarantees, and the second is the one that is easy to miss:
+
+    1. Every line after the first is INDENTED, so it can never open an entry
+       (`- **`) or a section (`## `) — the reader tests both on the RAW line.
+    2. No continuation line begins a BULLET, which the reader tests on the
+       STRIPPED line. A bullet ends the note's capture, so his remaining words
+       would land in the entry's BODY — which loses his attribution into prose
+       the loop is assumed to have written, the exact failure #109 exists to
+       prevent. A line that would begin one is joined onto the line above
+       instead; that terminates, because every join removes a line. Text that
+       is *all* bullets therefore comes out as one long line — correct over
+       pretty, deliberately: the width is a courtesy to whoever opens the
+       file, and the guarantee is what lets the loop trust it.
+
+    The text is first folded to one paragraph, which costs nothing a reader
+    could see: `_parse_entries` joins a sub-bullet's continuation lines back
+    into one string, so a note has always been one string by the time anything
+    renders it. Wrapping is for the human reading the file in an editor.
+    """
+    body = " ".join((text or "").split())
+    lead = f"  {head} "
+    pad = " " * len(lead)
+    lines = textwrap.wrap(body, max(NOTE_WIDTH, len(lead) + 24),
+                          initial_indent=pad, subsequent_indent=NOTE_INDENT,
+                          break_long_words=False, break_on_hyphens=False)
+    if not lines:
+        return lead.rstrip()
+    out = [lines[0][len(pad):]]
+    for line in lines[1:]:
+        stripped = line.strip()
+        if ends_capture(stripped):
+            out[-1] = (out[-1] + " " + stripped).rstrip()
+        else:
+            out.append(stripped)
+    return "\n".join([lead + out[0]] + [NOTE_INDENT + s for s in out[1:]])
+
+
 def append_answer(text, title, answer, stamp):
     """Insert an answer bullet at the end of the titled Open entry."""
     return append_subbullet(
-        text, title, f"  - **Answer (via watch, {stamp}):** {answer}", "Open")
+        text, title, human_block(f"- **Answer (via watch, {stamp}):**", answer),
+        "Open")
 
 
 def append_comment(text, title, note, stamp, section="Open"):
@@ -3102,9 +3167,13 @@ def append_comment(text, title, note, stamp, section="Open"):
 
     The tag names the AUTHOR as well as the channel (#109): a note left here
     is the human's, and it must be impossible to mistake for something a
-    dreamer wrote. `note_author` reads it back."""
+    dreamer wrote. `note_author` reads it back.
+
+    Goes through `human_block` for the same reason `/answer` does: what he
+    typed must not be able to forge a record (#146)."""
     return append_subbullet(
-        text, title, f"  - **Note (human, via watch, {stamp}):** {note}",
+        text, title,
+        human_block(f"- **Note (human, via watch, {stamp}):**", note),
         section)
 
 

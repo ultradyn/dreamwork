@@ -68,6 +68,21 @@ Load-bearing details, each of which was a bug at some point:
   the author label, so a wrong one is a wrong claim on screen; an absent
   or unparseable one renders nothing, which is fine. A date in the
   *note's own text* is never mistaken for it.
+- **A note or answer is ONE paragraph, wrapped at ~72 columns with a
+  4-space continuation indent** — and every continuation line is indented
+  and never begins a bullet. This is not tidiness, it is the reason the
+  file can be trusted (#146). Human text arrives from a textarea he
+  pastes into; written at column 0, a pasted `- **…**` becomes a
+  top-level entry by the rule above, and the loop reads a question he
+  never asked. A continuation line that merely *starts a bullet* is
+  nearly as bad: it ends the note's capture, so the rest of his words
+  fall into the entry's **body** and read as the loop's own prose.
+  `human_block()` in `watch.py` is the only correct way to write one; do
+  not hand-format human text into this file.
+
+  The reader joins a sub-bullet's continuation lines back into one string
+  before anything renders it, so folding the newlines costs nothing
+  visible — the wrapping is for whoever opens the file in an editor.
 
 Canonical, exercised example — every shape above appears in it:
 `dev/capture/fixture/.dreamwork/questions.md`. Read that before

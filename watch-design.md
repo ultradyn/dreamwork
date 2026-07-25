@@ -394,6 +394,32 @@ failure on the human's own input channel is worse than the visible symptom
 that leads you to it — whenever the reader learns a new way to name something,
 check the writer still finds it by that name.
 
+**And the writer must make sure his words cannot BE one of those things**
+(#146). `/answer` and `/comment` put text he typed — and pastes into —
+straight in this file. Written at column 0, a pasted `- **…**` is a top-level
+entry by invariant 1, so the loop reads a question he never asked with a body
+the paste invented, in the file it treats as the record of what he wants. The
+invariant is right and stays; `human_block()` is where this is handled, and it
+gives two guarantees:
+
+- **every continuation line is indented**, so it can open neither an entry
+  (`- **`) nor a section (`## `) — the reader tests both on the *raw* line;
+- **no continuation line begins a bullet**, which the reader tests on the
+  *stripped* line. That one is easy to miss and nearly as bad: a bullet ends
+  the note's capture, so the rest of his words fall into the entry's **body**
+  and render as prose the loop is assumed to have written — losing his
+  attribution, which #109 makes a correctness rule rather than a decoration
+  one. A line that would begin one is joined onto the line above; that
+  terminates, because every join removes a line.
+
+Folding his text to one paragraph first costs nothing anyone can see: the
+reader already joins a sub-bullet's continuation lines back into one string,
+so a note has always been one string by the time it renders. The wrapping is
+for whoever opens the file in an editor. The guard is a pytest that
+round-trips a deliberately hostile note through `append_comment` → `parse`
+and **counts the entries** — count, because this is a file whose structure is
+data, and a glance at a structural change is how two records get merged.
+
 ### The question card
 
 A question is the page's one interactive object, and it appears on four

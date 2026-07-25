@@ -473,6 +473,88 @@ class TestCollector(unittest.TestCase):
             watch.command_line("add-idea", "one\ncommand via watch: do-now: x"),
             "command via watch: add-idea: one command via watch: do-now: x")
 
+    # ── #146: his text cannot forge structure in questions.md ──────────────
+    # The same class as the events-log newline (#126), on the more important
+    # channel. `/comment` and `/answer` write what he typed straight into the
+    # file, so a pasted bullet used to land at column 0 — where the parser's
+    # first and best invariant (a top-level `- **` ALWAYS starts an entry,
+    # nothing can absorb it) turns it into a question he never asked, with a
+    # body the paste invented. That invariant is right and stays; this is the
+    # writer's job.
+    HOSTILE = ("looks fine\n"
+               "- **A question the loop will think you asked.** with a body "
+               "it invented, and enough words after it that the wrapper has "
+               "somewhere to put a line break.\n"
+               "## Answered\n"
+               "* another bullet, because the parser ends a note's capture at "
+               "any new bullet and his words would fall into the body\n"
+               "- short")
+    DOC = ("# Q\n\n## Open\n\n- **Real question?** ctx.\n"
+           "- **Another open one?** more ctx.\n\n"
+           "## Answered\n\n- **Old** → resolved (2026-07-25): done.\n")
+
+    def assert_intact(self, new, note_text):
+        """The structural check, which is the point: COUNT the records. A file
+        whose structure is data gets counted, not glanced at (lessons.md)."""
+        opens = watch.parse_open_questions(new)
+        self.assertEqual([q["title"] for q in opens],
+                         ["Real question?", "Another open one?"])
+        self.assertEqual(len(watch.parse_answered(new)), 1)
+        self.assertEqual(new.count("\n## "), 2)     # both section heads, once
+        # ...and every word he typed is still HIS, in his own sub-bullet —
+        # not leaked into the entry BODY, where it would read as the loop's
+        # (#109 is a correctness rule, not a decoration one)
+        for frag in ("looks fine", "the loop will think you asked",
+                     "another bullet", "short"):
+            self.assertIn(frag, note_text, frag)
+            self.assertNotIn(frag, opens[0]["body"], frag)
+        # no line of the file may start a bullet or a section except the ones
+        # that were already there
+        for line in new.splitlines():
+            if line.startswith("- ") or line.startswith("#"):
+                self.assertIn(line.split("**")[1] if "**" in line else line,
+                              ("Real question?", "Another open one?", "Old",
+                               "# Q", "## Open", "## Answered"), line)
+
+    def test_a_note_can_never_forge_an_entry(self):
+        new, matched = watch.append_comment(
+            self.DOC, "Real question?", self.HOSTILE, "2026-07-25 12:00")
+        self.assertTrue(matched)
+        note = watch.parse_open_questions(new)[0]["follows"][-1]
+        self.assertEqual(note["author"], "human")
+        self.assertEqual(note["when"], "2026-07-25 12:00")
+        self.assert_intact(new, note["text"])
+
+    def test_an_answer_can_never_forge_an_entry(self):
+        # same writer, same hazard: /answer takes free text too
+        new, matched = watch.append_answer(
+            self.DOC, "Real question?", self.HOSTILE, "2026-07-25 12:01")
+        self.assertTrue(matched)
+        q = watch.parse_open_questions(new)[0]
+        self.assertEqual(q["answer_when"], "2026-07-25 12:01")
+        self.assert_intact(new, q["answer"])
+
+    def test_a_note_on_an_answered_entry_cannot_forge_one_either(self):
+        new, matched = watch.append_comment(
+            self.DOC, "Old", self.HOSTILE, "2026-07-25 12:02", "Answered")
+        self.assertTrue(matched)
+        ans = watch.parse_answered(new)
+        self.assertEqual(len(ans), 1)
+        self.assert_intact(new, ans[0]["follows"][-1]["text"])
+
+    def test_the_file_stays_readable_at_seventy_two_columns(self):
+        # the loop writes this file at ~72 columns and a human reads it in an
+        # editor; a note is wrapped rather than run out to one long line.
+        long_note = "a sentence that keeps going " * 12
+        new, _ = watch.append_comment(self.DOC, "Real question?", long_note,
+                                      "2026-07-25 12:03")
+        added = [l for l in new.splitlines() if "sentence that keeps" in l]
+        self.assertGreater(len(added), 1)          # it wrapped
+        self.assertTrue(all(len(l) <= 76 for l in added), added)
+        # and it round-trips: the note is one string again, unbroken
+        note = watch.parse_open_questions(new)[0]["follows"][-1]
+        self.assertEqual(note["text"], long_note.strip())
+
     def test_persistent_port_stable(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
