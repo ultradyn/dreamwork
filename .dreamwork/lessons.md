@@ -807,3 +807,20 @@ this shape and convert opportunistically.)
   file. #163's mode-switch assertion ran after a reload, so it was really
   re-testing the restore; it types fresh now. Run the check against a build
   missing ONLY the thing it names. (dreamer-qsec, 2026-07-25)
+- **A check earns its message only if you have seen it fail for THAT message's
+  reason.** "It went red when I broke the feature" is not enough when one break
+  reddens twelve checks. Three guards in the #198/#163/#175/#165 batch held a
+  check that could not fail for its stated cause: a phase that inherited a
+  post-reload box and so re-tested the restore while claiming to test the mode
+  switch; a partition check that rebuilt the expected name inside the GUARD and
+  passed against a build with no store; and an `every` over an empty array. All
+  three were invisible while green AND while counted — they showed up only
+  reading the red output line by line. Corollary, learned the same hour: **a
+  count is not evidence.** A `grep -c` said 6 FAILs where the truth was 14,
+  because the server had been swapped under the compound command.
+  (dreamer-qsec, 2026-07-25)
+- **Absence should cost one line, not thirty seconds.** A guard driven at a
+  page that lacks its subject waits out the full Playwright timeout and reports
+  "the guard threw" — which says nothing about the page and points the reader
+  at the guard. Assert the subject EXISTS before driving it: the red run then
+  costs 3.4s and names the missing thing. (dreamer-qsec, 2026-07-25)
