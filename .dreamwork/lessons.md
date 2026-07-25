@@ -872,3 +872,31 @@ this shape and convert opportunistically.)
   commit: the coordinator landed a live agent's working tree mid-red-proof
   and it happened to be complete. The tree is shared; only your own edits
   are yours to stage. (dreamer-plugcmd, 2026-07-25, #206 sixth crossing)
+- **Copying a mechanism copies its code, not its status.** #151's
+  animate-on-new-data gate is a BEHAVIOUR on the commits panel (a row can
+  move for some other reason, and its guard constructs that case) and an
+  OPTIMISATION on the burndown, where a bar's height is a pure function of
+  the series — delete it and nothing changes, because `regroupBars`
+  early-returns on an equal height. The check written to guard it would not
+  go red. Kept for the forced layouts it saves, and written down as
+  unguarded on purpose, because a check that cannot fail sends the next
+  person to the wrong file. Ask of every inherited guard clause whether it
+  is still load-bearing where you put it. (dreamer-panels, 2026-07-25, #142)
+- **When you reuse a travel idiom, re-derive where the property it RESTORES
+  comes from — not what the code does.** `travelCard` clears its inline
+  height at the end because its elements get their size from layout; a
+  burndown bar gets its size from an inline `height:N%` the renderer wrote,
+  so the identical line collapsed every bar to its 2px rule after every
+  animation and left it there until an unrelated re-render replaced the
+  nodes. #198's shape — a permanent bug with a short unreliable lifetime —
+  and nothing in reading the code says it, because `travelCard`'s invariant
+  was true of every caller it had. A check aimed elsewhere found it.
+  (dreamer-panels, 2026-07-25, #142)
+- **A panel whose height "is fixed" is a premise, and the prose under the
+  chart is where it stops being true.** The burndown's note carried the
+  counts; `0 of 4` becoming `0 of 14` rewrapped it onto a fourth line and
+  grew the panel 14px, so bars eased over 850ms above four panels that had
+  already jumped. The varying numbers moved into a one-line ellipsised head
+  (#151's mechanism for #151's reason) and the note became constant. Measure
+  the premise; #204 is what it costs not to.
+  (dreamer-panels, 2026-07-25, #142)

@@ -261,6 +261,53 @@ STYLE = """<style>
      the page saying it cannot be trusted right now — one about the file it
      reads, one about the code it runs. Nothing that is merely important
      gets it. */
+  /* the burndown (#142). TWO TRACKS OVER ONE SET OF COLUMNS: the level (how
+     many were open) above, the flow (arrivals up, completions down about a
+     hairline) below. Direction is what tells the two flow series apart —
+     colour is not spent on it, and the accent is not spent here at all,
+     because nothing in this panel is waiting on him.
+     EVERY HEIGHT IN HERE IS FIXED. The panel is a constant, exactly as the
+     commits panel is (#151), so fresh data changes bars and never moves the
+     page — which is what lets the bars animate on a data change without
+     dragging four panels with them. */
+  .bd { margin:.1rem 0 .9rem; }
+  /* ONE LINE, ELLIPSISED — #151's mechanism for #151's reason, one panel
+     down: the numbers in here change, and a head that wraps to two lines
+     changes the panel's height, which is the premise that lets the bars
+     animate without dragging everything below them. */
+  .bdhead { color:var(--dim); font-size:.7rem; margin-bottom:.4rem;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bdhead .bdnum { color:var(--lit); }
+  .bdtrack { display:flex; align-items:stretch; gap:2px; }
+  .bdnet { height:30px; }
+  .bdflow { height:34px; margin-top:9px; }
+  .bdcol { flex:1 1 0; min-width:0; display:flex; flex-direction:column;
+           justify-content:flex-end; }
+  .bdflow .bdcol { justify-content:stretch; }
+  .bdhalf { flex:1 1 0; display:flex; }
+  .bdtop { align-items:flex-end; }
+  /* the standing opacity transition is what `.dreamin` needs to ease BACK
+     from: that class snaps the element to 0 with `transition:none
+     !important` and is removed a frame later, so the element's own
+     transition is the whole arrival. Without one here a new bucket would
+     pop in — which is precisely what #154 found `.qa` doing for the whole
+     life of #104. */
+  .bdbar { width:100%; transition:opacity .55s ease; }
+  /* THE LEVEL IS A STEP LINE, NOT A FILLED BAR, and that was decided by
+     rendering it: on a ledger whose open count runs 12 to 67 the filled
+     version is a near-uniform block, because every column is between 40 and
+     100 percent of the tallest. A 2px cap on a transparent box of the same
+     height is the same number and reads as the staircase it is. Dimmest on
+     the ramp besides, because it is the DERIVED series — the two it comes
+     from sit above it. */
+  .bdlevel { border-top:2px solid var(--dimmer); }
+  .bdup { background:var(--dim); align-self:flex-end; }
+  .bddown { background:var(--muted); }
+  .bdrule { height:1px; background:var(--line); flex:0 0 1px; }
+  .bdaxis { display:flex; justify-content:space-between; color:var(--dimmer);
+            font-size:.65rem; margin-top:.3rem; }
+  .bdnote, .bdnone { color:var(--dimmer); font-size:.7rem; max-width:66ch;
+                     margin:.45rem 0 0; }
   .gserve { color:var(--dim); font-size:.7rem; margin:-.15rem 0 .55rem;
             max-width:60ch; }
   .gserve.unknown { color:var(--dimmer); }
@@ -1682,6 +1729,96 @@ const gitRow = c => `<details class="commit${
   `<span class="gsub">${esc(c.subject)}</span>` +
   `<span class="age cage" data-ct="${c.t}"></span></summary>` +
   gitDetail(c) + `</details>`;
+/* ── the burndown (#142) ──────────────────────────────────────────────────
+   Two tracks over one set of columns, because the open count alone cannot
+   tell "he steers fast" from "the work is slow" — those are the same curve.
+
+     the LEVEL   how many tasks were open in that bucket. This is the
+                 burndown, and on this project it has gone up all day.
+     the FLOW    arrivals above a hairline, completions below it. Direction
+                 is the primary distinction and it needs no colour; the two
+                 sit one step apart on the text ramp only so the eye can
+                 tell them apart when a column is one pixel tall.
+
+   NO VELOCITY SCORE, deliberately. A rate computed over a day of a loop
+   that has been alive for a day is a claim about the future dressed as a
+   measurement, and the page would then be believed about it.
+
+   THE ACCENT IS NOT SPENT HERE. Nothing in this panel is waiting on him —
+   it is context, not an errand — and the accent's one job on this page is
+   marking what needs him. Same rule the status panel follows (#130). */
+const BURN_SERIES = [['open', 'bdlevel'], ['arrived', 'bdup'],
+                     ['landed', 'bddown']];
+const burnKey = d => ((d && d.burndown && d.burndown.buckets) || [])
+  .map(b => `${b.t0}:${b.arrived}:${b.landed}:${b.open}`).join(' ');
+const BURN_STEP_NAME = { 3600: 'hourly', 14400: 'every four hours',
+                         86400: 'daily', 604800: 'weekly',
+                         2419200: 'every four weeks' };
+/* a bucket's label. Hourly buckets want a clock; daily and wider want a
+   date, because "00:00" five times in a row is not a time axis. */
+const bstamp = (t, step) => {
+  const d = new Date(t * 1000);
+  return step >= 86400
+    ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+};
+const bdbar = (b, k, cls, max) =>
+  `<div class="bdbar ${cls}" data-bk="${b.t0}" data-series="${k}"` +
+  ` style="height:${max ? Math.round((b[k] / max) * 100) : 0}%"></div>`;
+function burnPanel(d) {
+  const s = (d && d.burndown) || null;
+  if (!s || !s.state) return '';
+  // the "cannot chart it" states live INSIDE `.bd` too, so the panel has one
+  // address in every state. A reader that has to ask "is it missing or is it
+  // empty" is the failure this whole page is organised against, and it
+  // applies to the page's own checks as much as to him.
+  if (s.state !== 'ok')
+    return label('burndown') + `<div class="bd">` +
+      `<div class="bdnone">${esc(s.note || s.state)}</div></div>`;
+  const bs = s.buckets || [];
+  const flowMax = Math.max(1, ...bs.map(b => Math.max(b.arrived, b.landed)));
+  const levelMax = Math.max(1, ...bs.map(b => b.open));
+  const col = b =>
+    `<div class="bdcol" title="${esc(bstamp(b.t0, s.step))} · ${b.arrived} arrived · ` +
+    `${b.landed} landed · ${b.open} open">`;
+  // The head states the three totals it is a picture of, so a chart too
+  // small to read is still a fact. `open` is the CURRENT count and it comes
+  // from the same walk the columns do, not from a second reading.
+  let h = label('burndown') + `<div class="bd">` +
+    `<div class="bdhead"><span class="bdnum">${s.open}</span> open · ` +
+    `${s.arrived} arrived · ${s.landed} landed · ` +
+    `${BURN_STEP_NAME[s.step] || 'bucketed'} · sourced ${s.marked}/${s.entries}` +
+    `</div>` +
+    `<div class="bdtrack bdnet">` +
+      bs.map(b => col(b) + bdbar(b, 'open', 'bdlevel', levelMax) + `</div>`)
+        .join('') + `</div>` +
+    `<div class="bdtrack bdflow">` +
+      bs.map(b => col(b) +
+        `<div class="bdhalf bdtop">${bdbar(b, 'arrived', 'bdup', flowMax)}</div>` +
+        `<div class="bdrule"></div>` +
+        `<div class="bdhalf bdbot">${bdbar(b, 'landed', 'bddown', flowMax)}</div>` +
+        `</div>`).join('') + `</div>` +
+    `<div class="bdaxis"><span>${esc(bstamp(s.from, s.step))}</span>` +
+      `<span>arrivals above · landed below</span>` +
+      `<span>${esc(bstamp(s.to, s.step))}</span></div>`;
+  /* WHAT IT CANNOT SAY, said out loud. The most telling split would be
+     human- against loop-initiated, and the ledger cannot support it: the
+     `**human` stamp is on a MINORITY of entries, so a chart drawn from it
+     would be mostly one bar wide and would be read as fact. Reporting the
+     coverage is the honest version, and it is also the thing that would
+     make someone add the field.
+
+     THE COUNTS LIVE IN THE HEAD AND THE PROSE HERE IS CONSTANT, which is
+     not a phrasing preference: this text wraps, and "0 of 4" becoming
+     "0 of 14" pushed it onto a fourth line and grew the panel by 14px — so
+     a bar easing over 850ms sat above four panels that had already jumped.
+     Measured, by the guard, on the first version of this panel. The head is
+     one ellipsised line for the same reason a commit row is (#151). */
+  h += `<div class="bdnote">most entries do not record where they came from` +
+       ` — see the count above — so this cannot split his steers from the` +
+       ` loop's own ideas, only count them together</div>`;
+  return h + `</div>`;
+}
 function buildDashboard(d) {
   let h = `<div id="sections">`;
   // a fault first (it is one line, and usually absent), then what the loop has
@@ -1705,6 +1842,12 @@ function buildDashboard(d) {
   h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
          expand(n, mdB(d.files[n]))).join('');
+  // ...then how the work itself is going (#142). Below the questions and the
+  // reviews on purpose: the top of this page is what NEEDS him — a fault,
+  // what just happened, what he must answer — and the burndown is context
+  // rather than an errand. Above `status` because both are about the loop
+  // and this one is the longer view of it.
+  h += burnPanel(d);
   h += statusBlock(d.status);
   h += tintPicker(d);      // last, and dim: a preference, not status
   return h + `</div>`;
@@ -2670,6 +2813,79 @@ function regroupCards(before, toggled, list, restated) {
     if (!seen.has(id)) dreamAway(wrap, was.node, was.rect, 0);
   });
 }
+/* the burndown's bars (#142), on #151's gate and for #151's reason.
+
+   A bar is a VALUE re-rendered, not an element that moved, so the opt-in
+   rule's default is that it does not animate — and if the panel re-rendered
+   its bars on every tick, a bar creeping by one pixel every two seconds
+   would be motion with nothing behind it, which is exactly what #151's gate
+   exists to prevent. But when the numbers really change, a bar jumping to a
+   new height is the same snap the section fold was, one panel down.
+
+   So: gated on the SERIES, never on the tick, and animated by height alone,
+   because the panel's own height is fixed and nothing below it can move.
+
+   AND THE GATE HERE IS AN OPTIMISATION, NOT A BEHAVIOUR — which #151's is
+   not, and the difference is worth stating rather than leaving for someone
+   to assume. A commit row can move because something ELSE re-laid the page
+   out, so #151's gate has an observable effect and a guard that constructs
+   it. A bar's height is a pure function of the series, so "the data changed"
+   and "a bar moved" are the same event: delete this gate and `regroupBars`
+   early-returns on every equal height, and no outcome changes. It is kept
+   for the forced layouts it saves twice a second, forever. It is NOT
+   guarded, and that is deliberate — a check that cannot fail is worse than
+   no check, because its message sends the next person to the wrong file.
+   That last part is why this needs no FLIP over neighbours — and it is a
+   PREMISE, not an aside, so `burndown.mjs` asserts the panel height is
+   invariant across a data change rather than taking my word for it. #204 is
+   what a reasoned exemption costs when nobody checks its premise.
+
+   Keyed by bucket AND series: two bars share a column and three share a
+   bucket, so the bucket alone is not an identity — the shortening that
+   merged three cards into one series in a trace was this same mistake. */
+function snapshotBars() {
+  const m = new Map();
+  document.querySelectorAll('.bd .bdbar[data-bk]').forEach(el =>
+    m.set(el.dataset.bk + '/' + el.dataset.series,
+          el.getBoundingClientRect().height));
+  return m;
+}
+function regroupBars(before) {
+  if (rmr || !before || !before.size) return;
+  document.querySelectorAll('.bd .bdbar[data-bk]').forEach(el => {
+    const was = before.get(el.dataset.bk + '/' + el.dataset.series);
+    const now = el.getBoundingClientRect().height;
+    if (was === undefined) {          // a new bucket: snap, then ease in
+      el.classList.add('dreamin');
+      requestAnimationFrame(() => el.classList.remove('dreamin'));
+      return;
+    }
+    if (Math.abs(was - now) < 1) return;
+    /* RESTORE THE PERCENTAGE, NEVER CLEAR THE HEIGHT. Every other travel on
+       this page clears its inline height at the end because those elements
+       get their size from layout — a bar gets its size from an inline
+       `height:N%` written by the renderer, so clearing it leaves the bar at
+       ZERO. The whole chart collapsed to its 2px rules after every animation
+       and stayed there until the next re-render put fresh nodes in: #198's
+       shape exactly, a permanent bug with a short, unreliable lifetime,
+       laundered by something unrelated. Found by the guard's quiet-tick
+       check, which measured the bars at 2px before the tick it was about. */
+    const pct = el.style.height;
+    el.style.transition = 'none';     // the enter-snap rule, again
+    // border-box for `travelCard`'s reason: `now` came from
+    // getBoundingClientRect, which is a BORDER box, and `.bdlevel` is a 2px
+    // rule with no fill — left content-box the travel aims 2px past where it
+    // ends and snaps when the percentage comes back.
+    el.style.boxSizing = 'border-box';
+    el.style.height = was + 'px';
+    void el.offsetWidth;
+    el.style.transition = 'height .85s cubic-bezier(.32,.1,.2,1)';
+    el.style.height = now + 'px';
+    setTimeout(() => {
+      el.style.transition = ''; el.style.boxSizing = ''; el.style.height = pct;
+    }, CARD_MS + 150);
+  });
+}
 /* switching a card's mode: the indicator slides, the placeholder follows,
    and the field keeps whatever is typed in it — the text is the point, the
    mode is only where it goes. */
@@ -3076,7 +3292,7 @@ async function tick() {
     else if (gen && gen !== serverGen) { location.reload(); return; }
     if (mtime !== lastMtime && Date.now() >= holdRerenderUntil) {
       lastMtime = mtime; fetchedAt = Date.now();
-      const wasGit = gitKey(data);
+      const wasGit = gitKey(data), wasBurn = burnKey(data);
       setData(await (await fetch('/data.json')).json());
       // the data lands instantly; surviving cards then travel from where
       // they were to where the new grouping put them (#104/#77). What the
@@ -3092,6 +3308,9 @@ async function tick() {
       // compared before the swap because after it there is nothing to compare.
       const gitBefore = (view.name === 'dashboard' && gitKey(data) !== wasGit)
         ? snapshotCards(GIT_LIST) : null;
+      // the same gate for the same reason, one panel down (#142)
+      const burnBefore = (view.name === 'dashboard' && burnKey(data) !== wasBurn)
+        ? snapshotBars() : null;
       if (view.name === 'dashboard') setContent(buildDashboard(data));
       else if (view.name === 'questions') setContent(buildQuestions(data));
       // FOLDS FIRST, then the cards inside them (#179). Both must land before
@@ -3106,6 +3325,7 @@ async function tick() {
       restoreCardState(kept);
       regroupCards(before);
       regroupCards(gitBefore, null, GIT_LIST);
+      regroupBars(burnBefore);
       // the crumbs carry live numbers too (open count, version) — and the
       // tick re-renders in place, instantly, so they never animate
       renderChrome(view, data, null);
@@ -4589,6 +4809,227 @@ def serving_cached(target):
     return _SERVE_CACHE[key]
 
 
+# ── the ledger as a time series (#142) ────────────────────────────────────
+#
+# NO NEW INSTRUMENTATION. `.dreamwork/tasks.md` is versioned and its ids are
+# permanent, so `git log` over that one path IS the time series and a task is
+# followable across every snapshot by its id. Anything the loop had to start
+# recording on purpose would be a second source that can disagree with the
+# ledger, and the ledger is the one the human reads.
+#
+# WHY BOTH SERIES AND NOT THE NET. The open count alone cannot tell "he
+# steers fast" from "the work is slow" — they are the same curve. Arrivals
+# and completions separate them, so both are drawn and neither is summed into
+# a score. There is deliberately NO velocity number: a rate computed over a
+# day of a loop that has been alive for a day would be a claim about the
+# future dressed as a measurement.
+LEDGER_PATH = ".dreamwork/tasks.md"
+# `lint.py`'s LEDGER_ID, VERBATIM, and a test asserts the two stay identical.
+# What counts as an entry is one rule and it must have one copy: the linter
+# already learned this the hard way today (3073055), holding a wider copy of
+# the priority-marker rule than the parser and blessing three typos.
+LEDGER_ENTRY = re.compile(r"^- \*\*#(\d+)\*\*", re.M)
+# ...and in `## Recently landed` an id is named inline, in prose, so the
+# entry-head shape does not apply there.
+LEDGER_MENTION = re.compile(r"\*\*#(\d+)\*\*")
+# A human steer is stamped `· **human 17:45**` by the coordinator. It is the
+# only provenance mark the ledger has, and it is on a MINORITY of entries —
+# which is why the panel reports its own coverage instead of drawing a split
+# (see `burndown` in watch-design.md).
+LEDGER_HUMAN = re.compile(r"\*\*human\b")
+# The bucket ladder: the smallest step that keeps the chart under this many
+# columns. A fixed step would give one column on a young ledger and four
+# hundred on an old one.
+BURN_COLUMNS = 24
+BURN_STEPS = (3600, 4 * 3600, 86400, 7 * 86400, 28 * 86400)
+
+BURN_OK = "ok"
+BURN_NONE = "no ledger"    # this project keeps no versioned task ledger
+BURN_ERROR = "error"       # git failed; explicitly NOT "no history"
+
+_LEDGER_SNAPS = {}         # rev -> (open ids, landed ids); history is immutable
+_LEDGER_CACHE = {}         # (target, head) -> the whole answer
+
+
+def parse_ledger(text):
+    """One ledger snapshot as `(open ids, landed ids)`.
+
+    An id under `## Open` is an entry HEAD; an id under `## Recently landed`
+    is named inline in prose. Two shapes because the file has two, and
+    reading the landed section with the entry-head rule finds nothing at all
+    — which would render as "the loop has completed nothing", the exact shape
+    of failure #136 is about.
+    """
+    if not text or "## Open" not in text:
+        return set(), set()
+    after = text.split("## Open", 1)[1].split("## Recently landed", 1)
+    landed = set(LEDGER_MENTION.findall(after[1])) if len(after) > 1 else set()
+    return set(LEDGER_ENTRY.findall(after[0])), landed
+
+
+def _burn_step(span):
+    for s in BURN_STEPS:
+        if span <= 0 or span / s <= BURN_COLUMNS:
+            return s
+    return BURN_STEPS[-1]
+
+
+def ledger_series(target, path=LEDGER_PATH, now=None):
+    """Arrivals, completions and the open count over the ledger's own history.
+
+    An id ARRIVES at the first commit that mentions it anywhere, and is
+    COMPLETE at the first commit that names it under `## Recently landed`.
+    Both are first-seen events, which is what makes them survive grooming:
+    that section is pruned, so anything derived from its current contents
+    would lose a completion every time the coordinator tidies.
+    """
+    out = {"state": None, "note": None, "buckets": [], "step": 0,
+           "open": 0, "arrived": 0, "landed": 0, "from": 0, "to": 0,
+           "marked": 0, "entries": 0}
+
+    def g(*args):
+        res = subprocess.run(
+            ["git", "--no-optional-locks", "-C", str(target), *args],
+            capture_output=True, timeout=15)
+        if res.returncode != 0:
+            raise OSError(res.stderr.decode("utf-8", "replace").strip() or
+                          "git exited %d" % res.returncode)
+        return res.stdout.decode("utf-8", "replace")
+
+    try:
+        log = g("log", "--format=%H %ct", "--reverse", "--", path).split("\n")
+    except (OSError, subprocess.SubprocessError) as exc:
+        # not a checkout is ordinary; a checkout whose git failed is not
+        if os.path.exists(os.path.join(target, ".git")):
+            out["state"] = BURN_ERROR
+            out["note"] = "could not read the history of %s: %s" % (path, exc)
+        else:
+            out["state"] = BURN_NONE
+            out["note"] = "this project is not a git checkout, so its task " \
+                          "list has no history to read"
+        return out
+
+    revs = []
+    for line in log:
+        parts = line.split(" ", 1)
+        if len(parts) == 2 and parts[0]:
+            try:
+                revs.append((parts[0], int(parts[1])))
+            except ValueError:
+                continue
+    if not revs:
+        out["state"] = BURN_NONE
+        out["note"] = "no %s in this project's history — nothing to chart " \
+                      "yet, which is not the same as nothing happening" % path
+        return out
+
+    arrived, landed, opencount = {}, {}, {}
+    latest = set()
+    for rev, ct in revs:
+        if rev not in _LEDGER_SNAPS:
+            try:
+                _LEDGER_SNAPS[rev] = parse_ledger(g("show", "%s:%s" % (rev, path)))
+            except (OSError, subprocess.SubprocessError):
+                # one unreadable revision is a hole, not a failure of the
+                # series — skip it and keep the rest rather than reporting
+                # the whole history as absent
+                continue
+        o, done = _LEDGER_SNAPS[rev]
+        for i in o | done:
+            arrived.setdefault(i, ct)
+        for i in done:
+            landed.setdefault(i, ct)
+        opencount[ct] = len(o)
+        latest = o
+
+    if not arrived:
+        out["state"] = BURN_NONE
+        out["note"] = "%s is versioned but this page can see no entries in " \
+                      "any revision of it" % path
+        return out
+
+    first = revs[0][1]
+    last = max(revs[-1][1], int(now if now is not None else time.time()))
+    step = _burn_step(last - first)
+    n = int((last - first) // step) + 1
+    buckets = [{"t0": first + i * step, "arrived": 0, "landed": 0, "open": 0}
+               for i in range(n)]
+    idx = lambda t: min(n - 1, max(0, int((t - first) // step)))  # noqa: E731
+    for t in arrived.values():
+        buckets[idx(t)]["arrived"] += 1
+    for t in landed.values():
+        buckets[idx(t)]["landed"] += 1
+    # the open count is a LEVEL, not a count of events: each bucket carries
+    # the last reading inside it, and a bucket with no commits inherits the
+    # one before rather than reading as a drop to zero
+    carry = 0
+    for b in buckets:
+        inside = [v for t, v in opencount.items()
+                  if b["t0"] <= t < b["t0"] + step]
+        carry = inside[-1] if inside else carry
+        b["open"] = carry
+
+    out.update(state=BURN_OK, buckets=buckets, step=step, from_=first,
+               open=len(latest), arrived=len(arrived), landed=len(landed))
+    out["from"] = first
+    out["to"] = last
+    out.pop("from_", None)
+    return out
+
+
+def ledger_stats(target):
+    """`ledger_series`, cached on HEAD, plus the provenance coverage read
+    from the working tree.
+
+    Cached because the walk is one `git show` per ledger commit — 139 today,
+    and it only ever grows. Per-revision parses are memoised globally on the
+    commit sha as well, because history is immutable, so a NEW head costs
+    only the commits that are new.
+    """
+    try:
+        head = subprocess.run(
+            ["git", "--no-optional-locks", "-C", str(target), "rev-parse", "HEAD"],
+            capture_output=True, timeout=10).stdout.decode().strip()
+    except (OSError, subprocess.SubprocessError):
+        head = ""
+    key = (os.path.abspath(target), head)
+    if key not in _LEDGER_CACHE:
+        _LEDGER_CACHE.clear()
+        r = ledger_series(target)
+        text = read_text(os.path.join(target, LEDGER_PATH)) or ""
+        # Coverage, not a split. `**human` marks a minority of entries, so a
+        # human-vs-loop chart drawn from it would be mostly one bar wide and
+        # would read as fact. The panel says how much of the ledger can
+        # answer the question instead — a reader that cannot see something
+        # must not render identically to there being nothing to see (#136).
+        lines = [ln for ln in text.split("\n") if LEDGER_ENTRY.match(ln)]
+        r["entries"] = len(lines)
+        r["marked"] = sum(1 for ln in _entry_blocks(text)
+                          if LEDGER_HUMAN.search(ln))
+        _LEDGER_CACHE[key] = r
+    return _LEDGER_CACHE[key]
+
+
+def _entry_blocks(text):
+    """Each ledger entry as one string — its head line plus its continuation
+    lines. The marker sits anywhere inside an entry, and matching it per LINE
+    would count an entry whose head happens to be short as unmarked."""
+    if not text or "## Open" not in text:
+        return []
+    body = text.split("## Open", 1)[1].split("## Recently landed", 1)[0]
+    blocks, cur = [], None
+    for line in body.split("\n"):
+        if LEDGER_ENTRY.match(line):
+            if cur is not None:
+                blocks.append(cur)
+            cur = line
+        elif cur is not None:
+            cur += "\n" + line
+    if cur is not None:
+        blocks.append(cur)
+    return blocks
+
+
 """Who wrote a note (#109).
 
 A page that mixes what the human said with what the loop wrote will
@@ -5170,6 +5611,10 @@ def collect(target):
         # which revision this process is running (#140), so a stale page
         # announces itself instead of being mistaken for a bug
         "deployed": serving_cached(target),
+        # the ledger's own history as a time series (#142) — no new
+        # instrumentation, because tasks.md is versioned and its ids are
+        # permanent
+        "burndown": ledger_stats(target),
         # his colour for this project (#143). It rides /data.json rather than
         # the shell so the EXISTING mtime poll carries it: he picks a tint in
         # one window and every other window on this project follows within a

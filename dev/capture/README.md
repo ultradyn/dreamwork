@@ -118,6 +118,14 @@ than once:
   arrival's intermediate opacities, that the surviving items were reconciled
   rather than re-created, that a plugin cannot reach the main row, and that
   `POST /command` accepts what the menu offers.
+- `burndown` — the ledger's own history, drawn (#142). Plants a ledger
+  history, then COMMITS INTO IT while the page is open so a real data change
+  arrives on the tick. Its sharpest checks are not about the motion: that the
+  panel's height never changes (the premise that lets bars animate without a
+  FLIP), and that the bars still HAVE a height when the travel ends — which
+  is how it found the chart collapsing to its 2px rules after every
+  animation. It also states, in its own header, the one thing it does NOT
+  check and why. Builds its own git target.
 - `gitrow` — a commit row expands (#166), and does it on the page's own
   gesture. Three of its checks are for contracts the row INHERITED by
   becoming a `<details>` and that no end-state check can fail on: the FLIP

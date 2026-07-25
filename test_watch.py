@@ -101,6 +101,223 @@ class TestCollector(unittest.TestCase):
             with tempfile.TemporaryDirectory() as e:
                 self.assertEqual(watch.git_tail(e), [])
 
+    def test_ledger_entry_rule_has_exactly_one_copy(self):
+        # #142 reads the same file lint.py does, so "what counts as an entry"
+        # must be ONE rule. The linter learned this today (3073055): it held a
+        # wider copy of the priority-marker rule than the parser and blessed
+        # three typos. Compared as a PATTERN, not by both finding the same
+        # count on today's file — two different rules agree on most inputs.
+        import lint
+        self.assertEqual(watch.LEDGER_ENTRY.pattern, lint.LEDGER_ID.pattern)
+        self.assertEqual(watch.LEDGER_ENTRY.flags, lint.LEDGER_ID.flags)
+
+    def test_parse_ledger_reads_both_of_the_files_two_shapes(self):
+        # An id under `## Open` is an entry HEAD; under `## Recently landed`
+        # it is named inline, in prose. Reading the landed section with the
+        # entry-head rule finds NOTHING — which renders as "the loop has
+        # completed nothing", the exact shape of failure #136 is about.
+        text = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
+                "- **#7** — a live one · P2 · task\n"
+                "  - a continuation line mentioning **#99** in passing\n"
+                "- **#8** — another · P3 · idea\n\n"
+                "## Recently landed\n\n"
+                "**#5** did a thing (abc1234) (2026-07-25). **#6** did "
+                "another (def5678).\n")
+        openids, landed = watch.parse_ledger(text)
+        self.assertEqual(openids, {"7", "8"})
+        self.assertEqual(landed, {"5", "6"})
+        # a sub-bullet is not an entry, or a mention inside one would mint a
+        # task that never existed
+        self.assertNotIn("99", openids)
+        self.assertEqual(watch.parse_ledger(""), (set(), set()))
+        self.assertEqual(watch.parse_ledger("no sections here"), (set(), set()))
+
+    def _ledger_repo(self, d, snapshots):
+        """Commit each `(text, when)` as .dreamwork/tasks.md. Returns the run
+        helper so a caller can keep going."""
+        import subprocess
+        dw = os.path.join(d, ".dreamwork")
+        os.makedirs(dw, exist_ok=True)
+        base = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x",
+                    GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+        subprocess.run(["git", "-C", d, "init", "-q"], env=base, check=True,
+                       capture_output=True)
+        for i, (text, when) in enumerate(snapshots):
+            env = dict(base, GIT_AUTHOR_DATE="@%d +0000" % when,
+                       GIT_COMMITTER_DATE="@%d +0000" % when)
+            with open(os.path.join(dw, "tasks.md"), "w") as f:
+                f.write(text)
+            subprocess.run(["git", "-C", d, "add", ".dreamwork/tasks.md"],
+                           env=env, check=True, capture_output=True)
+            subprocess.run(["git", "-C", d, "commit", "-q", "-m", "ledger %d" % i],
+                           env=env, check=True, capture_output=True)
+
+    def test_ledger_series_counts_arrivals_and_completions(self):
+        # #142. The open count alone cannot tell "he steers fast" from "the
+        # work is slow" — they are the same curve — so both series are
+        # derived and neither is summed into a score.
+        LED = "## Open\n\n{open}\n## Recently landed\n\n{done}\n"
+        entry = "- **#{i}** — task {i} · P2 · task\n"
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [
+                # t=0h: #1 #2 arrive
+                (LED.format(open=entry.format(i=1) + entry.format(i=2),
+                            done=""), T),
+                # t=1h: #3 arrives, #1 lands
+                (LED.format(open=entry.format(i=2) + entry.format(i=3),
+                            done="**#1** did it (aaa1111) (2026-07-25)."),
+                 T + 3600),
+                # t=2h: #2 lands, and #1 is GROOMED OUT of the landed section
+                (LED.format(open=entry.format(i=3),
+                            done="**#2** did it (bbb2222) (2026-07-25)."),
+                 T + 7200),
+            ])
+            r = watch.ledger_series(d, now=T + 7200)
+            self.assertEqual(r["state"], watch.BURN_OK)
+            self.assertEqual(r["arrived"], 3)
+            # THE LOAD-BEARING ONE: #1 was pruned from the landed section by
+            # grooming, and a completion read from the CURRENT contents would
+            # have lost it. Arrival and completion are first-seen events.
+            self.assertEqual(r["landed"], 2)
+            self.assertEqual(r["open"], 1)
+            self.assertEqual(r["step"], 3600)
+            self.assertEqual([b["arrived"] for b in r["buckets"]], [2, 1, 0])
+            self.assertEqual([b["landed"] for b in r["buckets"]], [0, 1, 1])
+            # the open count is a LEVEL, not a count of events
+            self.assertEqual([b["open"] for b in r["buckets"]], [2, 2, 1])
+
+    def test_ledger_series_carries_a_level_across_an_empty_bucket(self):
+        # a bucket with no ledger commit in it inherits the last reading. The
+        # alternative renders a quiet hour as a drop to zero open tasks,
+        # which is a lie the shape of the chart makes convincing.
+        LED = "## Open\n\n- **#1** — one · P2 · task\n\n## Recently landed\n\n"
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [(LED, T), (LED + "\n", T + 4 * 3600)])
+            r = watch.ledger_series(d, now=T + 4 * 3600)
+            self.assertEqual(len(r["buckets"]), 5)
+            self.assertEqual([b["open"] for b in r["buckets"]], [1, 1, 1, 1, 1])
+            self.assertEqual(sum(b["arrived"] for b in r["buckets"]), 1)
+
+    def test_ledger_series_widens_its_bucket_rather_than_its_chart(self):
+        # a fixed step gives one column on a young ledger and four hundred on
+        # an old one. The step is the smallest on the ladder that keeps the
+        # chart under BURN_COLUMNS.
+        LED = "## Open\n\n- **#1** — one · P2 · task\n\n## Recently landed\n\n"
+        T = 1784900000
+        for span, step in ((6 * 3600, 3600), (40 * 3600, 4 * 3600),
+                           (20 * 86400, 86400), (100 * 86400, 7 * 86400)):
+            watch._LEDGER_SNAPS.clear()
+            with tempfile.TemporaryDirectory() as d:
+                self._ledger_repo(d, [(LED, T), (LED + "\n", T + span)])
+                r = watch.ledger_series(d, now=T + span)
+                self.assertEqual(r["step"], step, "span %ds" % span)
+                self.assertLessEqual(len(r["buckets"]), watch.BURN_COLUMNS)
+
+    def test_ledger_series_says_which_kind_of_nothing(self):
+        # "no ledger" and "git broke" are different things to tell a human,
+        # and only one of them means the loop has nothing to show.
+        with tempfile.TemporaryDirectory() as d:
+            r = watch.ledger_series(d)
+            self.assertEqual(r["state"], watch.BURN_NONE)
+            self.assertIn("not a git checkout", r["note"])
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [])
+            import subprocess
+            with open(os.path.join(d, "other"), "w") as f:
+                f.write("x")
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+            subprocess.run(["git", "-C", d, "add", "other"], env=env,
+                           check=True, capture_output=True)
+            subprocess.run(["git", "-C", d, "commit", "-q", "-m", "no ledger"],
+                           env=env, check=True, capture_output=True)
+            r = watch.ledger_series(d)
+            self.assertEqual(r["state"], watch.BURN_NONE)
+            self.assertIn("nothing to chart", r["note"])
+            self.assertEqual(r["buckets"], [])
+
+    def test_ledger_stats_replays_only_what_is_new(self):
+        # the walk is one `git show` per ledger commit and it only ever grows,
+        # so it must never replay per tick. History is immutable, so the
+        # per-revision parse is memoised on the commit sha: a NEW head costs
+        # only the commits that are new.
+        import subprocess
+        LED = "## Open\n\n- **#{i}** — one · P2 · task\n\n## Recently landed\n\n"
+        T = 1784900000
+        real = subprocess.run
+        with tempfile.TemporaryDirectory() as d:
+            watch._LEDGER_SNAPS.clear()
+            watch._LEDGER_CACHE.clear()
+            self._ledger_repo(d, [(LED.format(i=i), T + i * 600)
+                                  for i in range(1, 6)])
+            calls = []
+
+            def counting(cmd, *a, **kw):
+                calls.append(cmd)
+                return real(cmd, *a, **kw)
+
+            subprocess.run = counting
+            try:
+                watch.ledger_stats(d)
+                cold = len([c for c in calls if "show" in c])
+                n = len(calls)
+                for _ in range(4):
+                    watch.ledger_stats(d)
+                warm = len(calls) - n
+                # a sixth ledger commit: only IT should be shown
+                subprocess.run = real
+                self._ledger_repo(d, [(LED.format(i=6), T + 3600)])
+                n = len(calls)
+                subprocess.run = counting
+                watch.ledger_stats(d)
+                incr = [c for c in calls[n:] if "show" in c]
+            finally:
+                subprocess.run = real
+            self.assertEqual(cold, 5, "the cold walk should read every revision")
+            self.assertEqual(warm, 4, "a warm tick is one rev-parse and nothing else")
+            self.assertEqual(len(incr), 1,
+                             "a new head should replay only the new commit")
+            watch._LEDGER_SNAPS.clear()
+            watch._LEDGER_CACHE.clear()
+
+    def test_ledger_provenance_is_reported_as_coverage_not_drawn(self):
+        # The most telling split would be human- against loop-initiated, and
+        # the ledger cannot support it: `**human` is on a MINORITY of
+        # entries. Reporting coverage is the honest version; drawing a chart
+        # from it would be read as fact. The marker sits anywhere INSIDE an
+        # entry, so it is matched per BLOCK — matched per line, an entry
+        # whose head is short reads as unmarked.
+        text = ("## Open\n\n"
+                "- **#1** — one · P2 · idea · **human 17:45** · his words\n"
+                "- **#2** — two · P2 · task\n"
+                "  more of two, and this line carries the **human 09:00**\n"
+                "  stamp on a continuation rather than the head\n"
+                "- **#3** — three · P3 · chore\n\n"
+                "## Recently landed\n\n**#0** and this **human** must not "
+                "count, it is not open\n")
+        # Driven through `ledger_stats`, not through `_entry_blocks`: the
+        # first version of this test called the helper directly, so the whole
+        # per-line/per-block distinction it names was unreachable from it and
+        # it stayed green when `ledger_stats` was switched to matching per
+        # line. A check has to exercise the path it is about.
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [(text, 1784900000)])
+            r = watch.ledger_stats(d)
+            self.assertEqual(r["entries"], 3)
+            self.assertEqual(r["marked"], 2)
+            # and the coverage is a MINORITY, which is the whole reason the
+            # panel reports it instead of drawing it — assert the gap, or
+            # this stops meaning anything the day the ledger fills in
+            self.assertLess(r["marked"], r["entries"])
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+
     def test_git_tail_carries_what_an_expanded_row_shows(self):
         # #166: the row expands onto the full sha, the author, the message
         # BODY (where this repo's reasoning lives) and the files touched.
@@ -305,11 +522,18 @@ class TestCollector(unittest.TestCase):
             subprocess.run = spy
             try:
                 watch._SERVE_CACHE.clear()
+                watch._LEDGER_CACHE.clear()
                 watch.serving_cached(d)
                 watch.serving_report(d, src=b"x")
+                # ...and the burndown's walk, which is the busiest git caller
+                # on the page: one `git show` per ledger commit (#142)
+                watch.ledger_stats(d)
+                watch.ledger_series(d)
+                watch.git_tail(d)
             finally:
                 subprocess.run = real
                 watch._SERVE_CACHE.clear()
+                watch._LEDGER_CACHE.clear()
         # a comparison that could not run must not look like one that ran: if
         # no git call was made at all this assertion is vacuous, so require
         # the calls to exist first

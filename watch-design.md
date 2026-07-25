@@ -1085,6 +1085,102 @@ and "the accent is used nowhere else" passes on a page painted entirely in it.
 Resolve the token through a throwaway element. It was shown red by deliberately
 accenting the agent names.
 
+### The burndown
+
+The ledger's own history, drawn (#142). It sits **below** the questions and
+the reviews and **above** `status`: the top of this page is what *needs* him
+— a fault, what just happened, what he must answer — and the burndown is
+context rather than an errand.
+
+**No new instrumentation, and that is the design.** `.dreamwork/tasks.md` is
+versioned and its ids are permanent, so `git log` over that one path *is* the
+time series and a task is followable across every snapshot by its id.
+Anything the loop had to start recording on purpose would be a second source
+that can disagree with the ledger, and the ledger is the one he reads.
+
+**Two tracks over one set of columns, because the open count alone cannot
+tell "he steers fast" from "the work is slow" — those are the same curve.**
+The *level* (how many were open) sits above; the *flow* (arrivals up,
+completions down about a hairline) below. Direction is what separates the two
+flow series, so no colour is spent on it, and **the accent is not spent here
+at all** — nothing in this panel is waiting on him, which is the status
+panel's rule (#130) one surface down.
+
+**The level is a step line, not a filled bar**, and that was decided by
+rendering it: on a ledger whose open count runs 12 to 67 the filled version
+is a near-uniform block, because every column is between 40 and 100 percent
+of the tallest. A 2px cap on a transparent box of the same height is the same
+number and reads as the staircase it is.
+
+**No velocity score, deliberately.** A rate computed over a day of a loop
+that has been alive for a day is a claim about the future dressed as a
+measurement, and the page would then be believed about it.
+
+**An arrival and a completion are FIRST-SEEN events** — the first commit that
+mentions an id anywhere, and the first that names it under
+`## Recently landed`. That is what makes them survive grooming: the landed
+section is pruned, so anything derived from its current contents loses a
+completion every time the coordinator tidies. The two sections are read with
+*two different rules* because the file has two shapes (an entry head under
+`## Open`, a name in prose under `## Recently landed`), and reading the
+second with the first finds nothing at all — which renders as "the loop has
+completed nothing".
+
+**What counts as an entry is `lint.py`'s rule, verbatim, and a test asserts
+the two patterns stay identical.** One rule, one copy: the linter learned
+that today (3073055) by holding a wider copy of the priority-marker rule than
+the parser and blessing three typos.
+
+**It reports its own provenance COVERAGE rather than drawing a split.** The
+most telling number would be human- against loop-initiated, and the ledger
+cannot support it — the `**human` stamp is on a minority of entries, so a
+chart drawn from it would be mostly one bar wide and would be read as fact.
+The head says `sourced 0/4` and the note says what that makes impossible.
+It is also the thing most likely to make someone add the field.
+
+**The head is one ellipsised line and the note is CONSTANT prose**, and that
+is not a phrasing preference. The note used to carry the counts, and
+`0 of 4` becoming `0 of 14` pushed it onto a fourth line and grew the panel
+by 14px — so a bar easing over 850ms sat above four panels that had already
+jumped. The head ellipsises for the reason a commit row does (#151).
+
+**Every height in the chart is fixed**, which is the premise the motion rests
+on: fresh data changes bars and never moves the page, so the bars may animate
+without any FLIP over the panels below. `burndown.mjs` **measures** that
+premise rather than trusting it — #204 is what a reasoned exemption costs
+when nobody checks it.
+
+**A bar travels on a data change and is not disturbed by a tick.** The gate
+is #151's, but **here it is an optimisation rather than a behaviour**, and
+that difference is stated in the code: a commit row can move because
+something else re-laid the page out, while a bar's height is a pure function
+of the series — so deleting this gate changes no outcome (`regroupBars`
+early-returns on an equal height) and it therefore has **no check**, on
+purpose.
+
+**Restoring the percentage is the whole cleanup.** Every other travel on this
+page clears its inline height at the end because those elements get their
+size from layout; a bar gets its size from an inline `height:N%` the renderer
+wrote, so clearing it leaves the bar at zero. The first version collapsed the
+entire chart to its 2px rules after every animation and stayed collapsed
+until the next re-render replaced the nodes — #198's shape, a permanent bug
+with a short unreliable lifetime, laundered by something unrelated. The guard
+found it; reading did not.
+
+**Cost.** The walk is one `git show` per ledger commit — 139 today and only
+ever growing — so it is cached on HEAD, and the per-revision parse is
+memoised on the commit sha because history is immutable: a new HEAD costs
+only the commits that are new (measured: 0.26s cold, 0.007s for a new head,
+0.0014s warm). Every git call carries `--no-optional-locks`, asserted by a
+test rather than remembered. One consequence of caching on HEAD alone: the
+chart's right-hand edge is the moment the answer was computed, so it goes
+stale until HEAD moves — which is right for a chart about ledger history.
+
+**Both kinds of nothing say so, inside the same `.bd` box.** A project that
+is not a git checkout, and one that keeps no versioned ledger, are ordinary
+states rather than failures; a panel that drew nothing would be
+indistinguishable from a loop that had done nothing.
+
 ### The dashboard's questions section
 
 Collapsed by default, counting what is left to answer, and grey at zero

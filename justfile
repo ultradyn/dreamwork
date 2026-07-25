@@ -99,13 +99,18 @@ lint:
 #                dashboard: the shared fixture is not a repository, so the
 #                commits panel is empty there and every check would pass
 #                against nothing. Plants bodies and file lists it can name.
+#   burndown     OWN TARGET + OWN EPHEMERAL PORT (#142), and it plants a
+#                LEDGER history, then commits into it while the page is open
+#                so the tick brings a real data change. Two of its checks are
+#                about the premise the panel's motion rests on (the panel
+#                height never changes) rather than about the motion itself.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history plugcmd qorder serving gitrow"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history plugcmd qorder serving gitrow burndown"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"
