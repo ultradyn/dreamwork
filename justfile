@@ -60,9 +60,12 @@ guards port="39899":
     fi
     exit $fail
 
-# serve the dashboard on the persisted port, edit-and-see
-watch:
-    python3 watch.py --target . --dev
+# edit-and-see, for whoever is CHANGING the page. Deliberately not the
+# persisted port: that one belongs to the deployed instance the human is
+# reading, and two servers wanting it is a fight nobody wins. Pass a port
+# if you are sharing the machine with another dreamer.
+watch port="39890":
+    python3 watch.py --target . --port {{port}} --autoreload --dev
 
 # deploy the dashboard the HUMAN watches. Committed state only, never the
 # working tree — a dreamer's half-finished edit must not reach him. Runs
