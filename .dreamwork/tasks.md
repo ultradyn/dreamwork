@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **189**
+Next id: **190**
 
 ## Open
 
@@ -81,6 +81,16 @@ Next id: **189**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#189** — World-space anchoring silently collapses on native
+  Wayland · P2 · bug · 35m · `screenX`/`screenY` return **0** on native
+  Wayland by protocol, so #74's world space becomes "both windows at the
+  origin" — no error, and indistinguishable from the feature being off ·
+  **you cannot detect the mode from JS**, so detect the SYMPTOM and
+  degrade honestly · it works for him today only because his Brave runs
+  `--ozone-platform=x11` for an unrelated KWin bug, which could be
+  reverted any time · **blocks #187's T1**: the ripple would ride a
+  coordinate system that does not exist · research:
+  `docs/research-window-coords.md`
 - **#188** — Review rows show who they are waiting on · P2 · idea ·
   25m · **not a new state system — the QUESTION axis one surface over**:
   a review is paired with a questions.md entry, so its state IS that

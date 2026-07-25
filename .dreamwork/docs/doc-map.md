@@ -22,6 +22,7 @@ cover it too.
 | `DREAMWORK.template.md` | Wizard seed for new targets | Yes — must track wizard section changes |
 | `migrations/` | Versioned target-affecting changes; latest filename = version | Append-only; README holds the protocol |
 | `.dreamwork/docs/plans/` | Active feature plans (ud-dreamtask, ud-dreamwork-github, artifact-templates, daemon-mode, dreamhub-stage1, parallel-architecture, goal-hierarchies) | Prune when features fully land |
+| `.dreamwork/docs/research-*.md` | Answers bought once from the web, with sources and a verified/unverified split | Keep while the claim still matters; re-check dated browser facts |
 | `.dreamwork/docs/spikes/` | Timeboxed experiments that answered a question with a number; the branch holds the diff | Keep — a measured answer outlives the code that produced it |
 | `.dreamwork/review/` | Rich decision artifacts paired with a questions.md entry | Banner them decided; archive with the answered question |
 | `.dreamwork/{lessons,questions}.md` | Distilled lessons; asks for the human | Yes — groomed in rotation |
