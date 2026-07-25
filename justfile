@@ -71,13 +71,18 @@ lint:
 #                so it changes questions.md AND appends to submissions.log.
 #                Reads both back over /filedata rather than off disk — it is
 #                handed a port, not a target.
+#   indicator    ordinary (OUT, PORT). Its window is deliberately SHORT and
+#                that is load-bearing: #198's wrongness does not heal, it is
+#                laundered by the next view re-render, so a relaxed window
+#                would pass over a bug he can see. It proves that laundering
+#                path exists rather than assuming it.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"

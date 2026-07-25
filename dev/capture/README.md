@@ -70,6 +70,10 @@ for live content is how this got broken the first time.
   Forces a real 409 the way #116 caused them — the page holding a title the
   file will not match — and then looks for his text in `submissions.log`.
   The successful case is the control, not the check.
+- `indicator` — the composer's selection indicator lands on the button it
+  marks even though it is painted mid-reveal (#198). Bounded window, because
+  the bug is laundered by the next re-render rather than self-healing — and
+  the guard proves that laundering path rather than trusting it.
 - `qsec` — the dashboard's questions fold arrives and departs (#196): the
   panels below it travel rather than teleporting, never overshoot, the body
   eases in and dreams away, reduced motion does neither, and the ghost holds

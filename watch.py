@@ -959,7 +959,20 @@ const followThread = (follows, fold) => {
      vocabulary outgrows one line, and a height:100% indicator would span
      every line at once.
    - **The selected label glows, it does not re-metric** (CSS): a text effect
-     that changed layout would resize the very target being chased. */
+     that changed layout would resize the very target being chased.
+   - **Measure in LAYOUT space, never in visual space** (#198). The indicator
+     is a sibling of the buttons, so what it needs is where they sit in the
+     group — and `getBoundingClientRect` answers a different question: where
+     they appear on screen, ancestor transforms included. `openCmd` paints the
+     indicator on the same frame it reveals the panel, and the panel reveals
+     THROUGH a transform (`translateY(-8px) scale(.97)` -> none over .5s), so
+     every rect read there came back 3% small. Measured: the indicator landed
+     4.5px left of the button it marks and 1.9px narrow, and stayed there —
+     it looked self-correcting only because the next live tick re-renders the
+     view, and `setContent` re-paints every group at rest.
+
+     Same family as #170 and #160: a transformed ancestor silently redefines
+     what a "position" means for everything measured beneath it. */
 function slideIndicator(group, snap) {
   if (!group) return;
   const ind = group.querySelector(':scope > .sgind');
@@ -967,11 +980,18 @@ function slideIndicator(group, snap) {
   if (!ind || !btn) return;
   const g = group.getBoundingClientRect(), b = btn.getBoundingClientRect();
   if (!b.width) return;                  // not laid out yet; nothing to chase
+  // The scale the group is being drawn at RIGHT NOW, read from the one
+  // element whose layout width we can also ask for directly. Dividing it out
+  // turns the rects back into layout values, and it is exactly 1 — a no-op
+  // to the sub-pixel — everywhere no ancestor is mid-transform, which is
+  // every question card and the composer once it has settled.
+  const s = group.offsetWidth ? g.width / group.offsetWidth : 1;
+  if (!s) return;
   if (snap || rmr) ind.classList.add('snap');
-  ind.style.width = b.width + 'px';
-  ind.style.height = b.height + 'px';
-  ind.style.transform = 'translate(' + (b.left - g.left) + 'px,' +
-                        (b.top - g.top) + 'px)';
+  ind.style.width = (b.width / s) + 'px';
+  ind.style.height = (b.height / s) + 'px';
+  ind.style.transform = 'translate(' + ((b.left - g.left) / s) + 'px,' +
+                        ((b.top - g.top) / s) + 'px)';
   if (snap && !rmr) {
     void ind.offsetWidth;                // reflow so the landing is not a slide
     ind.classList.remove('snap');

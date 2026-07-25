@@ -1321,6 +1321,30 @@ and true for any user of it:
 - **Size to the active BUTTON, never to the group.** The row wraps once a
   vocabulary outgrows one line, and a `height:100%` indicator would span
   every line at once.
+- **Measure in LAYOUT space, never in visual space** (#198). The indicator is
+  a sibling of the buttons, so what it needs is where they sit *in the group*
+  — and `getBoundingClientRect` answers a different question: where they
+  appear on screen, every ancestor transform included. `openCmd` paints the
+  indicator on the same frame it reveals the panel, and the panel reveals
+  *through* a transform (`translateY(-8px) scale(.97)` → `none` over `.5s`),
+  so every rect read there came back 3% small: measured, the indicator landed
+  **4.53px left of its button and 1.88px narrow** on the far option, and
+  stayed there. `slideIndicator` divides the scale back out
+  (`group.getBoundingClientRect().width / group.offsetWidth`), which is
+  exactly `1` wherever nothing is mid-transform — every question card, and
+  the composer once settled.
+
+  **It looked self-correcting, and that is the part worth remembering.** His
+  report was that it *"autocorrects itself after a bit, or when some rerender
+  condition is triggered"*, and the second clause is the whole mechanism:
+  nothing heals, `setContent` re-paints every group at rest on the next view
+  re-render, and his live dashboard re-renders every couple of seconds. A
+  wrong value that something else routinely overwrites is not a transient —
+  it is a permanent bug with a short and unreliable lifetime, and any check
+  of it must be bounded to before the overwrite.
+
+  Same family as #170 and #160: a transformed ancestor silently redefines
+  what a position *means* for everything measured beneath it.
 - **The selected label glows, it does not re-metric.** `text-shadow`, not
   letter-spacing or weight: a text effect that changes layout would resize
   the buttons and so move the very target the indicator is chasing.
