@@ -45,14 +45,6 @@ Next id: **189**
   better than the symptom I filed: subagent PLAIN TEXT is not a channel
   at all — only files and harness messages arrive, so three "idle, no
   findings" were three complete reports with nowhere to go
-- **#143** — Per-project colour tint, persisted and cross-window · P3 ·
-  idea · 45m · the value lands with dreamhub: a tint is decoration for
-  one project and navigation for several, so the hub shows it too ·
-  persist in `.dreamwork/` and let the existing `/mtime` poll sync the
-  windows (localStorage loses it on another machine) · **the new file
-  lands WITH its file-formats row and lint check** — #135 happened
-  because one didn't · hue over the designed ramp, not free RGB, or the
-  accent stops meaning anything
 - **#142** — Burndown + stats panel on the dashboard · P2 · task · 75m ·
   no new instrumentation needed — the ledger is versioned, so
   `git log -p .dreamwork/tasks.md` IS the time series and permanent ids
@@ -421,7 +413,15 @@ Next id: **189**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#153** the tab now says
+Pruned in grooming; git is the real ledger. **#143** a per-project tint
+(6c49874) — a closed set, a Rodrigues hue rotation preserving the
+achromatic component by construction, the existing `/mtime` poll doing the
+cross-window sync, and six hues chosen to be distinguishable at 16px AND
+to avoid the amber band, since a project tinted amber would paint the
+field the colour that means broken. Its contract landed with it (338d17d).
+**#153** the tab title and the favicon, and the app name's return as
+`dreamwork/<project>` (10ca98a) — shipped in the one shape correct under
+both readings of his ruling, rather than guessing. **#153** the tab now says
 whether he is needed and the favicon is a ring with one traveller
 (266db84, 0cefd06) — hue is which loop, motion is that the loop lives, a
 pip is that he is the bottleneck. It ORBITS rather than breathes because

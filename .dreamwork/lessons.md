@@ -634,3 +634,13 @@ this shape and convert opportunistically.)
   been diagnosed that morning from dreamhub and fixed *where it was
   reported*; the runner kept the mechanism. When a lesson names a class, ask
   what else is in it before writing it down. (dreamer-identity, 2026-07-25)
+- **Re-reading the inbox is not the same as re-verifying the claim.** A
+  dreamer closed its batch reporting a handover as outstanding; it had
+  landed fifty minutes earlier. It HAD followed its own rule — a finding
+  about a channel cannot be trusted to have arrived through that channel,
+  so re-read the inbox first — but the answer was in the WORKING TREE,
+  not the inbox, and it asserted a present-tense fact about a file it had
+  not re-read. The general form: a close is written over minutes, and
+  anything it claims about current state was read at the start of
+  writing. Re-check the claim itself, in the place the claim lives.
+  (dreamer-identity, 2026-07-25, corrected by its own check)
