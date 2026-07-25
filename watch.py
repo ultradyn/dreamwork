@@ -226,6 +226,38 @@ STYLE = """<style>
   /* an answer is the human's, in a card whose body the loop wrote — so it
      reads at the same brightness as his notes do (#109) */
   .anstext { color:var(--lit); white-space:pre-wrap; }
+  /* the status panel (#130): three facts and a fold, never a JSON dump.
+     Colour is by SIGNIFICANCE, not by JSON type — the accent is spent on the
+     one thing here that is waiting on HIM, and everything else rides the text
+     ramp: what is happening brightest, what it serves under it, the liveness
+     facts dim, the fold dimmer. */
+  #status .stneed { border-left:2px solid var(--accent); padding-left:.8rem;
+    margin:.2rem 0 .7rem; }
+  #status .stneedhead { color:var(--accent); text-transform:uppercase;
+    letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
+  #status .stneedrow { color:var(--lit); margin:.15rem 0; }
+  #status .sttask { color:var(--bright); }
+  #status .stgoal { color:var(--muted); margin:.1rem 0 .55rem; }
+  #status .stagent { display:flex; gap:1.5ch; flex-wrap:wrap;
+    margin:.2rem 0; }
+  #status .stname { color:var(--lit); flex:none; }
+  #status .stdoing { color:var(--muted); flex:1; min-width:24ch; }
+  #status .stfacts { color:var(--dim); font-size:.7rem; margin:.6rem 0 .2rem; }
+  /* non-breaking spaces: generated content renders flush against its
+     neighbour otherwise, exactly as the crumb separator found */
+  #status .stfacts span + span::before { content:"\\00a0·\\00a0";
+    color:var(--dimmer); }
+  #status .stfield { display:flex; gap:1ch; margin:.15rem 0;
+    align-items:baseline; }
+  /* a FIXED key column, not a minimum: the styleguide's "label the columns,
+     not the gaps" applies to a key/value list too, and a long key on a
+     min-width would shove that row's value out of line with every other
+     row's. It wraps inside its own column instead. */
+  #status .stfield > .stk { color:var(--dim); font-size:.7rem;
+    flex:none; width:14ch; overflow-wrap:anywhere; }
+  #status .stval { color:var(--muted); font-size:.75rem; }
+  #status .stagentmore { margin:.35rem 0; }
+  #status .stagentmore > .stk { color:var(--lit); font-size:.75rem; }
   /* follow-up thread + a quiet add-a-note box on every question entry */
   .thread { border-left:1px solid var(--line); padding-left:1ch;
     margin:.3rem 0 .2rem; }
@@ -894,6 +926,99 @@ function dreamBlock(d) {
     `${esc(d.name)}<span class="age" data-mt="${d.mtime}"></span>`,
     mdB(d.content));
 }
+/* ── the status section (#130) ────────────────────────────────────────────
+   His words: "on main dashboard page for a dreamworker, the status section
+   shows json. It should render that json nicely, using colors effectively,
+   and making good use of space, and cutting out or hiding bulk or boring
+   stuff."
+
+   This panel is how he checks the loop at a glance, and a glance is three
+   questions: what is happening, who is doing it, and does anything need him.
+   Everything else in status.json is there so an AGENT can resume — which
+   makes it load-bearing rather than junk, so it is folded and never dropped.
+
+   **Nothing is dropped, only demoted.** status.json is a schema rather than a
+   fixed shape and the loop keeps adding keys to it (it grew by half at 10:44
+   the day this was written, which is what made the dump unreadable). A
+   renderer that showed a known list would silently hide the next thing the
+   loop learned to say, so the fold takes whatever is LEFT rather than a
+   second list — a new key costs a click, not a disappearance.
+
+   **Colour by significance, never by JSON type.** Tinting strings, numbers
+   and booleans is the obvious move and the wrong one: it makes the panel
+   louder without making any of it easier to read, and it spends the page's
+   one accent on `true`. The accent goes to `awaiting_human` and nowhere else
+   here, because it is the only thing on this panel waiting on HIM — the same
+   axis the question card's three states run on. Everything else is the text
+   ramp: what is happening is brightest, what it is for sits under it, the
+   liveness facts are dim, the fold is dimmer. */
+function stLines(v) {
+  if (v == null) return [];
+  if (Array.isArray(v)) return v.flatMap(stLines);
+  if (typeof v === 'object')
+    return Object.entries(v).map(([k, x]) =>
+      `${k.replace(/_/g, ' ')}: ${stLines(x).join(', ')}`);
+  return [String(v)];
+}
+const stField = (k, v) =>
+  `<div class="stfield"><span class="stk">${esc(k.replace(/_/g, ' '))}</span>` +
+  `<span class="stvals">` +
+  stLines(v).map(l => `<div class="stval">${mdInline(l)}</div>`).join('') +
+  `</span></div>`;
+const ST_GLANCE = ['awaiting_human', 'task', 'goal', 'agents', 'queue',
+                   'last_tick', 'last_commit'];
+const ST_AGENT_GLANCE = ['name', 'in_flight'];
+function statusBlock(s) {
+  if (!s || typeof s !== 'object') return '';
+  const arr = v => Array.isArray(v) ? v : (v == null ? [] : [v]);
+  const agents = arr(s.agents).filter(a => a && typeof a === 'object');
+  let h = `<div id="status">` + label('status');
+  // 1. does anything need HIM. First, and the one accented thing here.
+  const need = arr(s.awaiting_human);
+  if (need.length)
+    h += `<div class="stneed">` +
+      `<div class="stneedhead">${need.length} awaiting you</div>` +
+      need.map(x => `<div class="stneedrow">${mdInline(String(x))}</div>`)
+          .join('') + `</div>`;
+  // 2. what is happening, and what it is for
+  if (s.task) h += `<div class="sttask">${mdInline(String(s.task))}</div>`;
+  if (s.goal) h += `<div class="stgoal">${mdInline(String(s.goal))}</div>`;
+  // 3. who is doing it — a name and the one line that says what they are on
+  if (agents.length)
+    h += agents.map(a =>
+      `<div class="stagent"><span class="stname">${esc(String(a.name || '?'))}` +
+      `</span><span class="stdoing">${mdInline(String(a.in_flight || '—'))}` +
+      `</span></div>`).join('');
+  // 4. liveness: the small facts that say the loop is still running. The tick
+  //    is rendered through the page's live-age idiom rather than as a
+  //    timestamp — a dashboard whose thesis is liveness should say "2m old",
+  //    and it should keep counting while he watches it.
+  const facts = [];
+  if (s.queue) facts.push(esc(`${s.queue.in_progress || 0} in flight · ` +
+                              `${s.queue.pending || 0} pending`));
+  const t = s.last_tick ? Date.parse(s.last_tick) : NaN;
+  // no space before the span: `.age` carries its own left margin, and a
+  // literal one on top of it reads as a typo
+  if (t) facts.push(isNaN(t) ? esc(String(s.last_tick))
+                             : `tick<span class="age" data-mt="${t / 1000}"></span>`);
+  if (s.last_commit) facts.push(esc(String(s.last_commit)));
+  if (facts.length)
+    h += `<div class="stfacts">` +
+         facts.map(f => `<span>${f}</span>`).join('') + `</div>`;
+  // 5. the rest — folded, because an agent resumes from it and he does not
+  //    read it. Whatever is LEFT, not a second known list.
+  const rest = Object.keys(s).filter(k => !ST_GLANCE.includes(k));
+  const deep = agents.filter(a =>
+    Object.keys(a).some(k => !ST_AGENT_GLANCE.includes(k)));
+  if (rest.length || deep.length)
+    h += expand(`the rest (${rest.length + deep.length})`,
+      deep.map(a => `<div class="stagentmore">` +
+        `<div class="stk">${esc(String(a.name || '?'))}</div>` +
+        Object.keys(a).filter(k => !ST_AGENT_GLANCE.includes(k))
+          .map(k => stField(k, a[k])).join('') + `</div>`).join('') +
+      rest.map(k => stField(k, s[k])).join(''), 'dim');
+  return h + `</div>`;
+}
 function buildDashboard(d) {
   let h = `<div id="sections">`;
   h += label(`dreams (${d.dreams.length})`) +
@@ -921,8 +1046,7 @@ function buildDashboard(d) {
   h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
          expand(n, mdB(d.files[n]))).join('');
-  if (d.status)
-    h += label('status') + preB(JSON.stringify(d.status, null, 2));
+  h += statusBlock(d.status);
   h += label('commits') + `<div class="git">` +
        d.git.map(l => `<div class="${l.includes('dreamwork(maintain:') ? 'maint' : ''}">${esc(l)}</div>`).join('') +
        `</div></div>`;

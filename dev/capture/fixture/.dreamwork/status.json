@@ -1,0 +1,39 @@
+{
+  "task": "dreamer-fixture: the status section, rendered rather than dumped",
+  "goal": "the dashboard is how he checks the loop at a glance and it is worth looking at",
+  "agents": [
+    {
+      "name": "dreamer-fixture",
+      "inbox": "~/.cache/agent-comms/fixture/dreamer-fixture-inbox.md",
+      "owns": ["watch.py", "watch-design.md", "dev/capture/"],
+      "in_flight": "#130 — the status section renders raw JSON",
+      "queued": ["#132 relative commit timestamps"],
+      "started": "11:14"
+    },
+    {
+      "name": "dreamer-second",
+      "inbox": "~/.cache/agent-comms/fixture/dreamer-second-inbox.md",
+      "owns": ["dreamhub.py"],
+      "in_flight": "#96 — stage 1, nine increments",
+      "boundary": "stage 1 only",
+      "started": "11:21"
+    }
+  ],
+  "monitors": [
+    "heartbeat 4.75m",
+    "tail .dreamwork/watch-events.log"
+  ],
+  "deploy": "just deploy (committed state, persisted port 39899)",
+  "queue": { "in_progress": 2, "pending": 23 },
+  "last_tick": "2026-07-25T09:00+10:00",
+  "last_commit": "abc1234 watch: the status section reads at a glance",
+  "coordinator_next": [
+    "relay steers to the dreamer inboxes",
+    "deploy after each dreamer commit"
+  ],
+  "awaiting_human": [
+    "the URL space question — origin-per-project vs a path prefix",
+    "whether the PreCompact hook ships as a plugin"
+  ],
+  "a_key_invented_after_this_renderer_shipped": "status.json is a schema, not a fixed shape: the loop adds keys to it. Nothing here may be DROPPED, only demoted — a renderer that showed a known list would silently hide the next thing the loop learned to say."
+}

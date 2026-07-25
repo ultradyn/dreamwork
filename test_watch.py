@@ -645,9 +645,15 @@ class TestAppShell(unittest.TestCase):
                       'mdBReview(q.body.trim(), q.title)', 'mdB(d.content)',
                       'expand(n, mdB(d.files[n]))', 'mdInline(txt)'):
             self.assertIn(token, watch.PAGE)
-        # raw surfaces keep <pre>: the file viewer and the status blob
+        # the raw surface keeps <pre>: the file viewer's whole job is to be
+        # literal, and it serves code as well as prose.
         self.assertIn('`<pre>${esc(text)}</pre>`', watch.PAGE)
-        self.assertIn('preB(JSON.stringify(d.status, null, 2))', watch.PAGE)
+        # status.json was in that list until #130 and is not any more. It is
+        # neither prose to reflow nor a file to show verbatim — it is a set of
+        # facts, and it has its own component. Asserting the dump is GONE is
+        # the half that matters: the old rendering is the reported bug.
+        self.assertNotIn('preB(JSON.stringify(d.status', watch.PAGE)
+        self.assertIn('function statusBlock', watch.PAGE)
 
     def test_page_heading_is_persistent_chrome(self):
         # #110: the heading is the page's frame, not view content — it lives
