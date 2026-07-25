@@ -427,11 +427,6 @@ Next id: **206**
   PROXIMITY (not time) as they approach. Selecting a default slides
   everything back left. Reuse #104's regroup on a horizontal axis ·
   subsumes #162(a): a row that cannot wrap · depends on #161
-- **#163** — Composer autosaves its draft, partitioned by project · P2 ·
-  idea · 30m · **browser storage is RIGHT here** where it was wrong for
-  #143 — a half-typed draft is his, local, and must not travel · this is
-  the backstop under #118, #131 and #162, the first fix that does not
-  depend on having anticipated the path · clear ONLY on successful send
 - **#162** — [plan: `docs/plans/composer-row.md` — it SPLITS this: (a) is
   subsumed, (b) is a separate #131-family bug] A menu command wraps the row,
   and the composer vanished ·
@@ -439,7 +434,9 @@ Next id: **206**
   being built · (b) **the composer defocused and disappeared** when he
   clicked back to a default: the #131 family, and #131's "nothing
   auto-dismisses while it holds focus or unsent text" evidently does not
-  cover the mode-switch path. Check whether a draft survives it
+  cover the mode-switch path. Check whether a draft survives it —
+  ANSWERED by #163's guard (8d0e6a7): the draft survives, live and
+  stored, so the vanish is now cosmetic rather than destructive
 - **#161** — [plan: `docs/plans/composer-row.md`] The composer's `...` menu: position, shape, vocabulary ·
   P2 · bug · 20m · centre the dots (MEASURE first — #123 was the same
   shape and took two wrong diagnoses) · **on the RHS, in the button row
@@ -539,7 +536,7 @@ Next id: **206**
 
 ## Recently landed
 
-**#198** the indicator was measured beneath a mid-transform ancestor (a86108e) — every rect read 3% small, error multiplying with distance from the origin; and the 'autocorrect' was unrelated re-renders laundering a permanent bug, not a transient (2026-07-25). **#199** P1 his words are on disk before anything may refuse them (fd3ae3b handler + 0bc0517 contract + migration 2026-07-25-15) — and the guard, by failing, proved questions.md is a RENDERING of his words, not a record of them (2026-07-25). **#191** the answer-morph carries its neighbours (38854bd) — and found that a guard's WINDOW can be the bug (2026-07-25). **#184** CLOSED not-reproduced: neither half; explained by #174, numbers in its dream (2026-07-25). **#179** P1 the focus steal (9e8469c) — focus() into a closed <details> is a silent no-op (2026-07-25). **#174** the cycle travels down (7d3c322) — a departure leaves in the direction its list travels (2026-07-25). **#150** coordination layer audited: relay.py, write-then-wake, agent visibility (2026-07-25). **#147** deployed.py measures by bytes; the hub row says it (59e7728, f3649f4) (2026-07-25). **#145** routing rule adopted (4 buckets) (2026-07-25). **#144** subagent plain text is not a channel; silent agents are shown (2026-07-25).
+**#163** the draft survives (8d0e6a7) — localStorage keyed by absolute target path (a draft is an unpublished thought, never a repo file; the #143 contrast is stated in watch-design.md), restore never overwrites live text, and the guard caught itself testing the restore while claiming to test the mode-switch (2026-07-25). **#198** the indicator was measured beneath a mid-transform ancestor (a86108e) — every rect read 3% small, error multiplying with distance from the origin; and the 'autocorrect' was unrelated re-renders laundering a permanent bug, not a transient (2026-07-25). **#199** P1 his words are on disk before anything may refuse them (fd3ae3b handler + 0bc0517 contract + migration 2026-07-25-15) — and the guard, by failing, proved questions.md is a RENDERING of his words, not a record of them (2026-07-25). **#191** the answer-morph carries its neighbours (38854bd) — and found that a guard's WINDOW can be the bug (2026-07-25). **#184** CLOSED not-reproduced: neither half; explained by #174, numbers in its dream (2026-07-25). **#179** P1 the focus steal (9e8469c) — focus() into a closed <details> is a silent no-op (2026-07-25). **#174** the cycle travels down (7d3c322) — a departure leaves in the direction its list travels (2026-07-25). **#150** coordination layer audited: relay.py, write-then-wake, agent visibility (2026-07-25). **#147** deployed.py measures by bytes; the hub row says it (59e7728, f3649f4) (2026-07-25). **#145** routing rule adopted (4 buckets) (2026-07-25). **#144** subagent plain text is not a channel; silent agents are shown (2026-07-25).
 Pruned in grooming; git is the real ledger. **#143** a per-project tint
 (6c49874) — a closed set, a Rodrigues hue rotation preserving the
 achromatic component by construction, the existing `/mtime` poll doing the

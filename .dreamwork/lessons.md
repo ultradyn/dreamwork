@@ -802,3 +802,8 @@ this shape and convert opportunistically.)
   guard if failing it stops the next step", in a form that passed a morning of
   vigilance. Run the gate bare; filter its output only after it has gated.
   (coordinator, 2026-07-25)
+- A check that cannot fail for its own stated reason is worse than no check:
+  its message names the wrong thing and sends the next person to the wrong
+  file. #163's mode-switch assertion ran after a reload, so it was really
+  re-testing the restore; it types fresh now. Run the check against a build
+  missing ONLY the thing it names. (dreamer-qsec, 2026-07-25)
