@@ -60,11 +60,14 @@ Next id: **175**
   not just the net (the gap cannot tell "he steers fast" from "work is
   slow"); human- vs loop-initiated is the most telling number here. No
   velocity score. Cost: bucket + cache on HEAD, never replay per tick
-- **#140** — Close the commit-to-deploy window · P2 · task · 25m · a
-  fix can be committed and undeployed while he is looking at the page,
-  which is indistinguishable from broken — it cost a tracing cycle on
-  #129. Rec: post-commit hook running `just deploy` when watch.py
-  changed; say in DREAMWORK.md that this moves deploy authority
+- **#140** — **DECIDED**: show the deployed revision, no deploy hook ·
+  P2 · task · 20m · the hook is REJECTED — `.git/hooks` is untracked, so
+  it would be invisible, machine-local, and would silently move deploy
+  authority to whoever commits; a day spent closing invisible mechanisms
+  argues against adding one · instead show the SHA being served and
+  whether HEAD has moved past it, so a stale view ANNOUNCES itself ·
+  prefers a loud wrong state to a quiet one, and makes #147 a rollup
+  rather than a separate design · belongs with the panels batch
 - **#147** — Hub shows which targets run behind their own HEAD · P3 ·
   idea · 30m · #140 CLOSES the deploy window, this makes it LEGIBLE —
   decide which is the answer before building both
