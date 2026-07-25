@@ -155,6 +155,22 @@ nonzero open-question count, and `waiting on you`. Everything else, including
 `stalled` and `missing`, is stated plainly — the page is read at a glance, and
 a wall of red says nothing.
 
+**One second colour, and it means BROKEN rather than live** (`--warn`,
+`#fcd34d`, watch.py's value). It has exactly one user: `.stale`, the line
+saying a project's dashboard is serving code older than its HEAD (#147).
+That is worth amber because it is the failure where the page he is reading
+looks correct and is not — a past presented as the present. It is
+deliberately not the accent: the accent marks what is live and actionable,
+and spending it here would cost the page its loudest signal.
+
+**The staleness line is silent when there is nothing wrong.** `current`
+and `never deployed` render nothing at all; only `behind` and `untracked`
+appear. A line on every healthy row is the noise that hides the one
+unhealthy row — the same reason `watch-tint` warns on a bad value and says
+nothing when unset. The summary is the line and the individual missing
+commits are in its `title`, so hovering gives the whole list without the
+row growing to hold it (detail is ranked, never withheld).
+
 **Label the columns, not the gaps.** Every row states its facts under a header
 pair (`PROJECT` / `LAST TICK`).
 
