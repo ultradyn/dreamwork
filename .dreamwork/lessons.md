@@ -644,3 +644,25 @@ this shape and convert opportunistically.)
   anything it claims about current state was read at the start of
   writing. Re-check the claim itself, in the place the claim lives.
   (dreamer-identity, 2026-07-25, corrected by its own check)
+- **`focus()` into a closed `<details>` does nothing and reports nothing.**
+  The dashboard restored his caret into a box inside a folded section, so
+  the field came back filled, caret placed, and dead — no error, no
+  return value, no way to tell from the calling code. Two consequences
+  beyond the fix: seams must be ordered by what NESTS, not only by what
+  measures (restore folds before restoring state); and a refocus should
+  check the focus actually landed rather than assume the call worked.
+  (dreamer-motion, #179, 2026-07-25)
+- **The visible thing gets blamed for the invisible thing's bug.** #179
+  was reported as the commit panel stealing focus; the panel was innocent
+  and the steal happened on EVERY re-render. It was simply the one element
+  on that page whose re-render he could see. A guard had been green over it
+  for hours because it only ever visited the page where the boxes are
+  top-level. When a report names a trigger, reproduce it on a DIFFERENT
+  trigger before believing the name. (dreamer-motion, #179, 2026-07-25)
+- **Prose full of backticks must never reach a shell through double
+  quotes.** `git commit -m "... the `common` field ..."` executed the
+  backticks and silently deleted the word from its own sentence — the same
+  class as the heredoc that ate `_parse_entries` and produced `relay.py`.
+  This repo's writing names files and identifiers constantly, so the
+  exposure is permanent: use `-F -` with a QUOTED heredoc, or stdin.
+  (coordinator, 2026-07-25, twice in one day)
