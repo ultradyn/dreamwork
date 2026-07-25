@@ -386,8 +386,16 @@ Next id: **188**
 - **#114** — Dashboard renders the active goal chain · P3 · task · 25m ·
   stage 3 of #95; status.json already carries `goal`
 - **#92** — Hand-rolled Ctrl+K command palette · P3 · task · 40m
-- **#99** — Popped-out composer should use the button group too · P3 ·
-  task · 25m
+- **#99** — **P2** The popout composer has DIVERGED · task · 25m ·
+  re-raised 15:48 with detail · it still carries the dropdown #103
+  replaced, and has missed #121, #161 and #164 since — `lessons.md`
+  says a second mount is the cheapest audit of the first, and nobody
+  ran it, so the popout became a museum of the composer's previous
+  state · **the fix is "there is ONE row", not "restyle the popout"**:
+  build #164's conveyor as a component both mounts use, and it cannot
+  drift again · his extra-width idea then falls out FREE — more width,
+  more buttons visible before they tunnel, no special case · depends on
+  #161 and #164; doing it first means building the row twice
 - **#100** — Shader lens world-space so blur matches at a window seam ·
   P3 · task · 30m · the last break in "same position, same dream"
 - **#73** — Split-view support for watch pages · P3 · experiment · 30m ·
