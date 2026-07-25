@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **194**
+Next id: **195**
 
 ## Open
 
@@ -62,6 +62,22 @@ Next id: **194**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#194** — [plan: `docs/plans/version-and-upgrade.md`] Version and
+  upgrade: `ud-dw-githash`, DREAMWORK.md frontmatter, commit-range pass ·
+  P2 · task · 4-5 increments · **human 17:07** · executable reports the
+  skill's own version (hash+dirty in a checkout, hardcoded in a CI-built
+  zip), read on EVERY load, compared against a hash in DREAMWORK.md's
+  YAML frontmatter; on a difference a cheap subagent reads the
+  intervening commits for migrations and features worth surfacing ·
+  **plan keeps `migrations/` deterministic and makes this the DISCOVERY
+  layer** — it reports, it never migrates, because a file existing beats
+  a model reading prose · **do the commit trailers FIRST**
+  (`Migration:`/`Config:`/`Consent:`) — greppable beats readable, and
+  every commit written before they exist is one the pass reads blind ·
+  frontmatter changes a file every target has, so it needs its own
+  migration + a file-formats row + a lint check in the same commit ·
+  **one open question** (zip has no repo, repo is private — rec: ship a
+  generated changelog in the release)
 - **#193** — A blocked errand is invisible · P2 · task · 25m · an
   errand's `awaiting_human` in `~/.config/dreamwork/tasks/` is read by
   NOTHING; hub listing is opt-in (right call) but the consequence was not

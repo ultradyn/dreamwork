@@ -198,6 +198,43 @@
   something that belongs in another repo, or scratch to delete. Until you
   do it stays exactly where it is.
 
+- **2026-07-25 — #194: where does an upgrade check get its commit range,
+  when the release has no repo?** Your version idea is captured and
+  planned (`docs/plans/version-and-upgrade.md`); this is the one fork
+  that decides step 4 onward, so I would rather ask than build both.
+
+  The tension is inside the design and it is a real one: the CI
+  replacement exists precisely so a **zip carries a hash without carrying
+  the repo**. But the upgrade pass then wants every commit between two
+  hashes, and `git@github.com:ultradyn/dreamwork.git` is private. So a
+  zip-installed target has nothing to diff and no credentials to fetch
+  with.
+
+  Two ways out. **(a) Network + auth**: the pass fetches the range from
+  GitHub. Real upgrade fidelity, but it puts a credential requirement in
+  the startup path of a loop whose whole promise is running unattended,
+  and it fails on a plane. **(b) Ship a generated changelog in the
+  release**: CI writes the commits between tags into the zip, and the
+  subagent reads a local file.
+
+  **Rec: (b).** It removes the auth question rather than answering it,
+  works offline, is a few lines of CI, gives the subagent better-shaped
+  input than raw commits, and produces a changelog humans want anyway.
+  The git path stays available wherever history is actually present —
+  a checkout like this one — so (b) costs nothing there.
+
+  Same decision also settles the no-prior-hash fallback: estimating the
+  install date from asset mtimes is sound (for both an unzip and a clone,
+  mtime really is install time), but turning that date into "the oldest
+  plausible hash" needs history or a changelog — the same dependency.
+
+  Answer "changelog", "network", or name a third shape.
+
+  **Not blocking the whole idea** — `bin/ud-dw-githash`, the commit
+  trailers and the frontmatter all proceed regardless, and I would start
+  with the trailers since every commit written before they exist is one
+  the future upgrade pass has to read blind.
+
 ## Answered
 
 - **May the dashboard read the session transcript? (#180)** → "Yes the
