@@ -8,6 +8,11 @@
     compaction, a fresh agent. What it knew, it still knows.
   - The dashboard is how you check on it and steer it without a chat
     turn, and it is worth looking at.
+  - **One human, several dreaming agents** (approved 2026-07-25, #96):
+    the workflow scales past one session — a hub aggregates them, and
+    managing an agent's lifecycle (spawning, steering, compacting,
+    retiring) becomes something the system does deliberately rather
+    than something the human improvises per client.
 - The loop stays cheap (cache-warm heartbeat), never gets stuck or bored,
   and is always steerable in a few words (`do now` / `do next` /
   `add idea`).

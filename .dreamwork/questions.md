@@ -2,26 +2,25 @@
 
 ## Open
 
-- **2026-07-25 — daemon-mode: stage-1 build go? (#96).** Brainstorm
-  round complete — all five needs-Max decisions answered in-session
-  (~09:45) and folded into `.dreamwork/docs/plans/daemon-mode.md`:
-  herdr-preferred adapter runtime, web lifecycle rec, ssh swarm,
-  channel plugins (+Discord/Teams, clawq as reference), PWA yes /
-  Tauri deferred, metadreamer integrated. Remaining: a go on stage 1
-  (dreamhub aggregator) — say the word and it gets a detailed plan +
-  fresh dreamer.
-  - **Follow-up (in-session, 2026-07-25 ~10:10):** a go was started
-    then explicitly retracted ("please hold") — dreamhub is ON HOLD;
-    do not plan or build until Max re-opens it.
-- **2026-07-25 — ud-dreamtask design review (#50).** Rich artifact:
-  `.dreamwork/review/ud-dreamtask.html` (garden vs errand side by side,
-  the harvest story, the four decisions each beside their alternative).
-  Plan behind it: `.dreamwork/docs/plans/ud-dreamtask.md`. Recs:
-  standalone before sub-loop; same 4.75m heartbeat regardless of task
-  size; `~/.config/dreamwork/tasks/<slug>/` confirmed; guardrails
-  inherited by reference, not restated. Build waits on your read.
-  - **Follow-up (via watch, 2026-07-25 08:51):** the scroll bar for the .html needs styling too. the way this whole page is laid out is great though.
 ## Answered
+
+- **Daemon mode: stage-1 build go? (#96)** → "go" via watch (2026-07-25
+  10:48): the hold is lifted. Stage 1 is the dreamhub aggregator, per
+  `docs/plans/daemon-mode.md` with its five in-session decisions
+  (herdr-preferred adapter runtime, web lifecycle, ssh swarm, channel
+  plugins, PWA yes / Tauri deferred, metadreamer integrated). Next: a
+  detailed stage-1 plan, then a fresh dreamer. Note the earlier
+  retraction is now spent — this is a second, deliberate go, so treat
+  the plan as the thing being approved and check back before the build
+  widens beyond stage 1.
+
+- **ud-dreamtask design review (#50)** → "rec lgtm" via watch
+  (2026-07-25 10:47): all four recommendations taken — standalone
+  before sub-loop, the same 4.75m heartbeat regardless of task size,
+  `~/.config/dreamwork/tasks/<slug>/`, and guardrails inherited by
+  reference rather than restated. Unblocked; build per
+  `docs/plans/ud-dreamtask.md`. The 08:51 follow-up (artifact
+  scrollbars) landed with the artifacts' own scrollbar rules.
 
 - **The shader's ambient density changed unasked** → "rec" via watch
   (2026-07-25 10:33): keep it. The world-space anchoring he asked for
