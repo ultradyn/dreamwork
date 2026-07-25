@@ -204,7 +204,10 @@ Next id: **206**
   correctly and was still green over #191 for a day, because it traced
   5.2s past a 1.6s `holdRerenderUntil` and the tick's own regroup supplied
   the motion it was asserting. A guard that watches long enough will see
-  SOMETHING produce the result it wants
+  SOMETHING produce the result it wants · **a count is not
+  evidence** — a `grep -c` in a compound command reported 6 FAILs where
+  the full output held 14, the server having been swapped beneath it; the
+  runner reports from full output, never from a count (qsec 19:03)
 - **#190** — The loop's push channel to him is dead, and only the
   dashboard can say so · P1 · bug · 20m · `attn` returns **403, OAuth2
   token could not be validated** (grok/xAI), confirmed twice at 16:20 ·
@@ -333,16 +336,6 @@ Next id: **206**
   it changes `questions.md`'s shape, so file-formats row + lint check,
   and `human_block()` must handle an embed without a crafted path doing
   what a crafted bullet used to · split it: storage first, render second
-- **#175** — Append-only client-side log of every submission · P2 ·
-  idea · 35m · **completes the trio**: #163 the draft (before send),
-  this the submission (at send, client-side), #165 the history (after
-  send, server-side) — together nothing he types is lost at any stage ·
-  this covers the hole nobody had: **the client is the only witness to a
-  submission the server never accepted**, which is exactly #136 and
-  #162 · the recovery-critical field is the OUTCOME, not the text ·
-  IndexedDB, partitioned by project · **must be readable or it is
-  theatre** — a log nobody can get at is the silent shape this loop
-  keeps closing
 - **#173** — Live git status, without EVER taking `index.lock` · P2 ·
   idea · 60m · **the lock constraint is a known injury, not a
   preference**: his CLAUDE.md carries an active mitigation from
@@ -536,7 +529,7 @@ Next id: **206**
 
 ## Recently landed
 
-**#163** the draft survives (8d0e6a7) — localStorage keyed by absolute target path (a draft is an unpublished thought, never a repo file; the #143 contrast is stated in watch-design.md), restore never overwrites live text, and the guard caught itself testing the restore while claiming to test the mode-switch (2026-07-25). **#198** the indicator was measured beneath a mid-transform ancestor (a86108e) — every rect read 3% small, error multiplying with distance from the origin; and the 'autocorrect' was unrelated re-renders laundering a permanent bug, not a transient (2026-07-25). **#199** P1 his words are on disk before anything may refuse them (fd3ae3b handler + 0bc0517 contract + migration 2026-07-25-15) — and the guard, by failing, proved questions.md is a RENDERING of his words, not a record of them (2026-07-25). **#191** the answer-morph carries its neighbours (38854bd) — and found that a guard's WINDOW can be the bug (2026-07-25). **#184** CLOSED not-reproduced: neither half; explained by #174, numbers in its dream (2026-07-25). **#179** P1 the focus steal (9e8469c) — focus() into a closed <details> is a silent no-op (2026-07-25). **#174** the cycle travels down (7d3c322) — a departure leaves in the direction its list travels (2026-07-25). **#150** coordination layer audited: relay.py, write-then-wake, agent visibility (2026-07-25). **#147** deployed.py measures by bytes; the hub row says it (59e7728, f3649f4) (2026-07-25). **#145** routing rule adopted (4 buckets) (2026-07-25). **#144** subagent plain text is not a channel; silent agents are shown (2026-07-25).
+**#175** every send is witnessed client-side (794d620) — IndexedDB, a DATABASE per project because a column can leak by omission and a database cannot; and the increment's find was a private fetch('/command') that left a third of his submissions unwitnessed, now unified through postJSON with a guard asserting the bare fetch stays absent (2026-07-25). **#163** the draft survives (8d0e6a7) — localStorage keyed by absolute target path (a draft is an unpublished thought, never a repo file; the #143 contrast is stated in watch-design.md), restore never overwrites live text, and the guard caught itself testing the restore while claiming to test the mode-switch (2026-07-25). **#198** the indicator was measured beneath a mid-transform ancestor (a86108e) — every rect read 3% small, error multiplying with distance from the origin; and the 'autocorrect' was unrelated re-renders laundering a permanent bug, not a transient (2026-07-25). **#199** P1 his words are on disk before anything may refuse them (fd3ae3b handler + 0bc0517 contract + migration 2026-07-25-15) — and the guard, by failing, proved questions.md is a RENDERING of his words, not a record of them (2026-07-25). **#191** the answer-morph carries its neighbours (38854bd) — and found that a guard's WINDOW can be the bug (2026-07-25). **#184** CLOSED not-reproduced: neither half; explained by #174, numbers in its dream (2026-07-25). **#179** P1 the focus steal (9e8469c) — focus() into a closed <details> is a silent no-op (2026-07-25). **#174** the cycle travels down (7d3c322) — a departure leaves in the direction its list travels (2026-07-25). **#150** coordination layer audited: relay.py, write-then-wake, agent visibility (2026-07-25). **#147** deployed.py measures by bytes; the hub row says it (59e7728, f3649f4) (2026-07-25). **#145** routing rule adopted (4 buckets) (2026-07-25). **#144** subagent plain text is not a channel; silent agents are shown (2026-07-25).
 Pruned in grooming; git is the real ledger. **#143** a per-project tint
 (6c49874) — a closed set, a Rodrigues hue rotation preserving the
 achromatic component by construction, the existing `/mtime` poll doing the
