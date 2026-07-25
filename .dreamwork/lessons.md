@@ -460,3 +460,14 @@ this shape and convert opportunistically.)
   BEFORE writing the commit message, not after. `just guards <port>`
   buffers all output to the end, so poll the per-guard logs in the run's
   temp dir if you want progress. (dreamer-thread, 2026-07-25)
+- **Verify the transport, not the sender: a silent agent and a silent
+  channel look identical.** A review subagent answered three times into
+  plain text output, which is not a channel at all — only files and
+  harness messages reach the coordinator — so each "idle, no findings"
+  was a full report with nowhere to go. It recovered only when told to
+  write to a file. That is the third instance in one day of a write
+  nobody could read: dashboard commands landing in a log the tick flow
+  never checked, and a project's questions.md rendering as "nothing to
+  answer". In every case the writer believed it had communicated. Ask
+  what READS this, not whether it was written. (reviewer-skillmd,
+  2026-07-25, #144)

@@ -418,3 +418,37 @@ the ledger you own — call it when you fold this in.
 Unrelated, noticed in passing: `bug-report-ezfb-01.tmp.md` (167 lines) is
 sitting in the skill root. It is gitignored by the `*.tmp.*` rule, so it is
 invisible to `git status` and will outlive whatever needed it.
+
+
+---
+
+## Coordinator's disposition, 2026-07-25 (added after the review)
+
+**Landed:** F1 (the live one), F2, F4, F5, F6 in `6827daa`; F3 into
+`reflection.md` in the same commit. The routing rule is in the doc-map.
+
+**M2 and M3 are KEPT, deliberately** — recorded because the reviewer
+correctly pointed out that silence makes them unmarked exceptions to a
+rule this repo has now adopted, and the next fresh reader would
+otherwise re-derive the whole argument.
+
+The reason is the one its own risk-sort predicted: both were written in
+direct response to failures the same day, and both describe behaviour
+the loop must get right *unprompted*. `status.json`'s runtime state
+(M2) is what a compacted coordinator reads before it knows a compaction
+happened; `questions.md`'s threading semantics (M3) bind at the moment
+the loop decides whether an answer reopens a question. Neither has a
+trigger that would make the loop go and look. That is the routing rule
+applied, not waived — SKILL.md is where a thing goes when its trigger is
+"nothing in particular".
+
+The author-tag SYNTAX inside M3 did move, to `file-formats.md`, which is
+the half that had a trigger.
+
+**The rule's fourth bucket, unresolved:** the reviewer noted that
+routing has three destinations (unprompted behaviour, file shapes,
+trigger-named procedures) and no home for CRAFT. M1's lessons.md
+claim-plus-evidence guidance went to `file-formats.md`, which is a
+forced fit since nothing parses `lessons.md`. Acceptable for one rule.
+**A second craft rule is the signal to split it out** rather than keep
+widening that file's remit. Tracked in #145.
