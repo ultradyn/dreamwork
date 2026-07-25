@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **191**
+Next id: **192**
 
 ## Open
 
@@ -81,6 +81,22 @@ Next id: **191**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#191** — The answer-submit morph moves its neighbours instantly ·
+  P2 · bug · 25m · found by dreamer-motion while measuring #184, and it
+  is NOT what he reported · `sendAnswer` restates the card with
+  `card.innerHTML = qaInner(...)` and calls neither `snapshotCards` nor
+  `regroupCards`, so every card below jumps the height delta in ONE frame
+  — measured 744->791 in two distinct positions across 354 frames, no
+  transform · **`regroup.mjs` is green over it because it answers by POST
+  and lets the tick do the move; only the morph path skips the regroup**
+  (same shape as #179's guard, green because it only visited /questions)
+  · the fix already exists three functions away: the `.qa details >
+  summary` handler does snapshot -> mutate -> regroup · **`sendComment`
+  has the identical shape — same increment or the next person re-derives
+  which is which** · P2 not P3 because of the irony: this is the one
+  gesture the page most deliberately taught to travel (#104) and the one
+  place movement is instant · labelled HYPOTHESIS: may be a third reading
+  of #184; if it lands and he still reports it, #184 comes back
 - **#190** — The loop's push channel to him is dead, and only the
   dashboard can say so · P1 · bug · 20m · `attn` returns **403, OAuth2
   token could not be validated** (grok/xAI), confirmed twice at 16:20 ·

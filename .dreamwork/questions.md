@@ -176,6 +176,22 @@
     the reason #147 is now in progress: a staleness check done by hand
     gets it wrong, which is precisely the argument for the hub doing it.
 
+- **2026-07-25 — whose is `ud-dw-generate`? It is untracked in this repo
+  and I am not touching it.** An 8KB executable appeared at 16:17: a
+  preview-URL minter that reads repo+branch from the cwd, mints a nonce,
+  and creates a directory on a server (config outside version control,
+  keyed by repo slug; the example names `dd2-data-download-page`).
+
+  Not mine and not the dreamer's — it flagged the same file and left it
+  alone, which was right. Two agents have been committing in this tree
+  all afternoon; both stage by explicit path, so it has survived, but it
+  is not gitignored and one `git add -A` from anywhere would sweep it in.
+
+  **Nothing needs deciding urgently** — it is safe as long as nobody gets
+  careless. Say what it is when you get a moment: yours to keep here,
+  something that belongs in another repo, or scratch to delete. Until you
+  do it stays exactly where it is.
+
 ## Answered
 
 - **May the dashboard read the session transcript? (#180)** → "Yes the
