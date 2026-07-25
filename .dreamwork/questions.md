@@ -138,13 +138,15 @@
   means **literally do not run `just deploy`**, in which case that has
   been getting violated and should stop today.
 
-  **Why it is not academic right now**: the deployed snapshot is behind
-  by five `watch.py` commits. It is missing #153 (the title and favicon),
-  #143 (the tint), and — the one that matters — **#179, the P1 you
-  reported: the dashboard taking focus out of the box while you type.**
-  It is fixed and committed at `9e8469c`. You cannot feel it until the
-  dashboard is redeployed, so the dashboard you are looking at still has
-  the bug.
+  **Why it is not academic right now**: the deployed snapshot is
+  `10ca98a` (15:48) and is **two `watch.py` commits behind** — #179, the
+  P1 you reported (the dashboard taking focus out of the box while you
+  type), and #174 (the commit cycle travelling the wrong way). Both are
+  fixed and committed. You cannot feel either until a redeploy, so the
+  dashboard in front of you still has the focus bug.
+
+  The title, the favicon and the tint ARE deployed — you should be
+  seeing those already.
 
   Worth knowing about that fix, because the report was a red herring: the
   commits panel was innocent. `focus()` on an element inside a **closed**
@@ -163,6 +165,16 @@
 
   Either answer folds into DREAMWORK.md, because that line needs to stop
   being ambiguous.
+  - **Follow-up (loop, 2026-07-25 16:24):** correcting my own numbers
+    above — I first wrote "five commits behind, missing the title,
+    favicon and tint", then "matches no commit at all". Both were wrong.
+    A shell loop was mangling `$r:watch.py` into `$r` + `tch.py`, and I
+    had `2>/dev/null` on it, so `git show` failed on **every** iteration
+    and the comparison silently compared nothing — three wrong answers in
+    a row from a check that was never running. Redone in Python with
+    errors visible. This is the fourth silent-comparison bug today and
+    the reason #147 is now in progress: a staleness check done by hand
+    gets it wrong, which is precisely the argument for the hub doing it.
 
 ## Answered
 
