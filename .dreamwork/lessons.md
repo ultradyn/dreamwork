@@ -280,3 +280,12 @@ this shape and convert opportunistically.)
   `elif` that dropped the note explaining why a mid-write row had no
   task. Look at the render after the assertions pass — they only cover
   the questions someone thought to ask. (dreamer-hubbuild, 2026-07-25)
+- **A line-oriented log that an agent acts on is an injection surface, and
+  the human's own input box is the vector.** `watch-events.log` is one
+  event per line and the coordinator's monitor wakes on a line and reads
+  it as an instruction — so a newline typed into the composer could forge
+  a second event, and the loop would act on a command the human never
+  sent. No malice required: a pasted multi-line note would have done it,
+  and the result would have looked like him asking for something he did
+  not. Collapse newlines where human text enters any record an agent
+  reads. (dreamer-thread, 2026-07-25, #126)

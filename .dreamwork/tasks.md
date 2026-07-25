@@ -47,17 +47,6 @@ Next id: **144**
   which is indistinguishable from broken — it cost a tracing cycle on
   #129. Rec: post-commit hook running `just deploy` when watch.py
   changed; say in DREAMWORK.md that this moves deploy authority
-- **#139** — `.qa textarea` leaks margin into the composer field · P2 ·
-  bug · 20m · third instance of the `.qa <element>` catch-all pattern
-  (#121 was the first); `oneinput` missed it by asserting the button
-  spans the field, not the textarea. Delete the siblings, don't
-  out-specify them
-- **#137** — Tell the loop how to write every file it writes, and give
-  it a linter · **P1** · task · 90m · *stage 1 landed* (b7151ec):
-  `lint.py` calls the real readers, is proven red on the field failure,
-  and runs at init step 9. Remaining: the `just test` line (handed to
-  the justfile's owner), and contracts for `lessons.md` / DREAMWORK.md,
-  which are prose-only and may stay that way
 - **#135** — questions.md's format lives only in its parser · **P1** ·
   bug · 40m · **first slice of #137** · from the ez-feedback-pipeline
   instance · the loop writes a
@@ -134,7 +123,11 @@ Next id: **144**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#128** the thread no
+Pruned in grooming; git is the real ledger. **#137** `lint.py` checks a
+target's files by running the REAL readers, and `just test` now runs it
+(b7151ec, 596116a). **#139** the `.qa` catch-alls are gone entirely, not
+out-specified, and `oneinput` measures both halves of the field
+(166c04b). **#128** the thread no
 longer reads as him replying to himself (d6f0ca6) — the parse was
 byte-identical whichever order the sub-bullets were written in, so
 there was no order to respect; the parser now keeps `when` per note,

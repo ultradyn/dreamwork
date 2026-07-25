@@ -59,6 +59,15 @@ Load-bearing details, each of which was a bug at some point:
   differently: `(human, via <channel>, <ts>)` and `(loop, <ts>)` are the
   current forms; `(via watch…)` reads as human and `(in-session…)` as
   loop, kept for entries written before the tags existed.
+- **Sub-bullet ORDER is chronological, and the page relies on it** (#128).
+  A note written before the answer renders above it; one written after
+  renders below. Append — never insert a note above an answer that
+  predates it, or the card will say he replied to himself.
+- **The `<ts>` in a tag is read, not decoration.** `YYYY-MM-DD` with an
+  optional ` HH:MM`, inside the tag's parentheses. It is rendered beside
+  the author label, so a wrong one is a wrong claim on screen; an absent
+  or unparseable one renders nothing, which is fine. A date in the
+  *note's own text* is never mistaken for it.
 
 Canonical, exercised example — every shape above appears in it:
 `dev/capture/fixture/.dreamwork/questions.md`. Read that before
@@ -77,7 +86,8 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/status.json` | `watch.py`'s status reader; the dashboard's status section | Valid JSON. A schema rather than a shape — match the existing keys; `agents` carries live subagents | `lint.py` (validity) |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
 | `.dreamwork/dreams/<date>-<time>-<slug>.md` | the coordinator; grooming | The **filename** is the contract: `2026-07-25-1130-slug.md`. It carries the ordering | `lint.py` (naming) |
-| `.dreamwork/lessons.md` | humans; grooming | Genuinely one line per lesson, pointing at its dream | prose only |
+| `.dreamwork/lessons.md` | humans; the loop at init; grooming | A bolded claim readable on its own, then the concrete case that earned it, then its source. Prune once a lesson has graduated into a guardrail or a check | prose only |
+| `.dreamwork/watch-events.log` | the coordinator's monitor — **it wakes on a line and acts on it** | One event per line. Human text written into it must not be able to forge a record: collapse newlines before they reach the file | prose only |
 | `DREAMWORK.md` | the loop, the wizard, the scope gate | Section headings are load-bearing — the scope gate and the goal chain both address them by name | prose only |
 
 ## Why this file exists rather than a paragraph in SKILL.md
