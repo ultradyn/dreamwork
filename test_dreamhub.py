@@ -1064,3 +1064,80 @@ class TestEveryTokenResolves:
         used = set(re.findall(r"var\((--[a-z0-9-]+)\)", src))
         assert used, "no var() found — this assertion would be vacuous"
         assert not (used - defined), f"undefined tokens: {sorted(used - defined)}"
+
+
+class TestDeployedCacheInvalidates:
+    """The dreamhub-build dream left a warning for exactly this change:
+
+        "The hub re-probes on every request, so 'follows a change' is
+        currently immediate. If a cache is ever added between requests,
+        contract.mjs's mutation check is what stops it becoming a lie."
+
+    A cache WAS added (the byte-walk is expensive). contract.mjs passes, but
+    it exercises status.json's freshness, not this cache — so the warning
+    gets its own check rather than borrowing confidence from a guard that
+    was not looking at it.
+    """
+
+    def setup_repo(self, tmp_path, mod):
+        import subprocess
+        r = tmp_path / "proj"
+        r.mkdir()
+        for cmd in (["init", "-q"], ["config", "user.email", "t@t"],
+                    ["config", "user.name", "t"]):
+            subprocess.run(["git", "-C", str(r), *cmd], check=True, capture_output=True)
+        (r / "watch.py").write_text("print('v1')\n")
+        subprocess.run(["git", "-C", str(r), "add", "watch.py"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(r), "commit", "-qm", "v1"], check=True, capture_output=True)
+        d = tmp_path / "deployed"
+        d.mkdir()
+        mod.DEPLOY_DIR = d
+        (d / f"{r.name}-watch.py").write_text("print('v1')\n")
+        return r, d
+
+    def commit(self, r, text, msg):
+        import subprocess
+        (r / "watch.py").write_text(text)
+        subprocess.run(["git", "-C", str(r), "add", "watch.py"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(r), "commit", "-qm", msg], check=True, capture_output=True)
+
+    def test_a_new_commit_is_seen_despite_the_cache(self, tmp_path):
+        mod = dreamhub._load_deployed()
+        r, _ = self.setup_repo(tmp_path, mod)
+        cache, row = {}, {"path": str(r)}
+        dreamhub.probe_deployed(row, cache, mod, repo=str(r))
+        assert row["deployed"]["state"] == "current"
+        self.commit(r, "print('v2')\n", "a fix he is waiting for")
+        dreamhub.probe_deployed(row, cache, mod, repo=str(r))
+        assert row["deployed"]["state"] == "behind", "the cache outlived the commit"
+
+    def test_a_redeploy_is_seen_despite_the_cache(self, tmp_path):
+        mod = dreamhub._load_deployed()
+        r, d = self.setup_repo(tmp_path, mod)
+        self.commit(r, "print('v2')\n", "later")
+        cache, row = {}, {"path": str(r)}
+        dreamhub.probe_deployed(row, cache, mod, repo=str(r))
+        assert row["deployed"]["state"] == "behind"
+        # Deploying is exactly what should clear it.
+        snap = d / f"{r.name}-watch.py"
+        snap.write_text("print('v2')\n")
+        os.utime(snap, (snap.stat().st_atime + 10, snap.stat().st_mtime + 10))
+        dreamhub.probe_deployed(row, cache, mod, repo=str(r))
+        assert row["deployed"]["state"] == "current", "the cache outlived the deploy"
+
+    def test_the_cache_is_actually_used(self, tmp_path):
+        # Else both tests above would pass on a cache that never caches,
+        # and would prove nothing about the thing the dream warned of.
+        mod = dreamhub._load_deployed()
+        r, _ = self.setup_repo(tmp_path, mod)
+        cache, row = {}, {"path": str(r)}
+        dreamhub.probe_deployed(row, cache, mod, repo=str(r))
+        assert len(cache) == 1
+        calls = []
+        real = mod.report
+        mod.report = lambda *a, **kw: (calls.append(1), real(*a, **kw))[1]
+        try:
+            dreamhub.probe_deployed(row, cache, mod, repo=str(r))
+        finally:
+            mod.report = real
+        assert calls == [], "second probe recomputed — the cache is not working"
