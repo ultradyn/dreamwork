@@ -325,3 +325,11 @@ this shape and convert opportunistically.)
   usually on the more important channel, because the more important
   channel is the one with more writers.
   (2026-07-25-1220-thread-and-status, #126)
+- **Write the timestamp from the clock in the same command that writes
+  the file.** SKILL.md already says timestamps come from the system clock
+  and never from memory; the coordinator broke its own rule anyway,
+  recording `last_tick: 12:14` at 12:04 by copying the heartbeat
+  message's text and estimating. It was invisible until the status panel
+  rendered it where a human would read it — a wrong timestamp is a claim
+  about freshness, and a stale-looking loop and a lying one are
+  indistinguishable from outside. (coordinator, 2026-07-25)
