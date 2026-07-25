@@ -63,6 +63,7 @@ def run(t: Path):
     lint.check_tasks(dw, rep)
     lint.check_status(dw, rep)
     lint.check_watch_port(dw, rep)
+    lint.check_watch_tint(dw, watch, rep)
     lint.check_skill_version(dw, rep)
     lint.check_dreams(dw, rep)
     return rep
@@ -251,6 +252,43 @@ class TestWatchPort:
     def test_absent_is_a_warning(self, tmp_path):
         rep = run(target(tmp_path))
         assert levels(rep, "watch-port") == [lint.WARN]
+
+
+class TestWatchTint:
+    """His colour. The check exists because an unknown name does not break
+    the page — it silently ignores what he chose."""
+
+    class FakeWatch:
+        TINTS = {"indigo": 229, "teal": 188, "rose": 348}
+
+    def run_tint(self, t, watch):
+        rep = lint.Report()
+        lint.check_watch_tint(t / ".dreamwork", watch, rep)
+        return rep
+
+    def test_absent_is_silent_not_a_warning(self, tmp_path):
+        # Deliberately unlike watch-port: most targets never set a colour,
+        # and a WARN on every one of them hides the real one.
+        rep = self.run_tint(target(tmp_path), self.FakeWatch)
+        assert rep.rows == []
+
+    def test_a_known_name_is_ok(self, tmp_path):
+        t = target(tmp_path, **{"watch-tint": "teal\n"})
+        rep = self.run_tint(t, self.FakeWatch)
+        assert [lvl for lvl, _, _ in rep.rows] == [lint.OK]
+
+    def test_an_unknown_name_is_an_error_naming_the_alternatives(self, tmp_path):
+        t = target(tmp_path, **{"watch-tint": "chartreuse"})
+        rep = self.run_tint(t, self.FakeWatch)
+        assert rep.failed
+        detail = rep.rows[0][2]
+        assert "chartreuse" in detail and "indigo" in detail
+
+    def test_unverifiable_when_watch_is_unreadable(self, tmp_path):
+        # Another agent mid-edit in watch.py must not turn into a false ERROR.
+        rep = self.run_tint(target(tmp_path, **{"watch-tint": "teal"}), None)
+        assert [lvl for lvl, _, _ in rep.rows] == [lint.WARN]
+        assert not rep.failed
 
 
 class TestOtherFiles:

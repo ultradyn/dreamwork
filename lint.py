@@ -274,6 +274,38 @@ def check_watch_port(dw: Path, rep: Report) -> None:
         rep.add(OK, "watch-port", raw)
 
 
+def check_watch_tint(dw: Path, watch, rep: Report) -> None:
+    """His colour for this project.
+
+    Worth a check for one reason: an unknown name does not break the page, it
+    silently ignores what he chose. The file is only ever written through a
+    validated POST, so a bad value means a hand-edit or a rename in watch.py —
+    and in both cases the page falls back to the default with nothing on
+    screen to say so.
+
+    Reads the closed set from watch.py rather than restating it, so the check
+    cannot drift from what the page accepts. Absent returns SILENTLY, unlike
+    watch-port's WARN: most targets will never set a colour, and a warning on
+    every one of them is the noise that hides the real one.
+    """
+    path = dw / "watch-tint"
+    if not path.exists():
+        return
+    raw = path.read_text().strip()
+    names = sorted(getattr(watch, "TINTS", {})) if watch else []
+    if not names:
+        rep.add(WARN, "watch-tint", f"{raw!r} — unverified (watch.py unreadable)")
+    elif raw not in names:
+        rep.add(
+            ERROR,
+            "watch-tint",
+            f"{raw!r} is not one of {', '.join(names)} — the page falls back to "
+            f"the default and nothing says his choice was dropped",
+        )
+    else:
+        rep.add(OK, "watch-tint", raw)
+
+
 def check_skill_version(dw: Path, rep: Report) -> None:
     path = dw / "skill-version"
     if not path.exists():
@@ -350,6 +382,7 @@ def main(argv: list[str] | None = None) -> int:
     check_tasks(dw, rep)
     check_status(dw, rep)
     check_watch_port(dw, rep)
+    check_watch_tint(dw, watch, rep)
     check_skill_version(dw, rep)
     check_dreams(dw, rep)
 

@@ -108,6 +108,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | One `- **#N**` entry per task; `Next id: **N**` in the header. Ids are **permanent**, so a duplicate is unrecoverable and `Next id` must exceed every id present | `lint.py` |
 | `.dreamwork/status.json` | `watch.py`'s status reader; **`dreamhub.py`** | Valid JSON, and now an interface — see below | `lint.py` |
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
+| `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
 | `.dreamwork/dreams/<date>-<time>-<slug>.md` | the coordinator; grooming | The **filename** is the contract: `2026-07-25-1130-slug.md`. It carries the ordering | `lint.py` (naming) |
 | `.dreamwork/lessons.md` | humans; the loop at init; grooming | **Stated in the file's own header** — a claim you could read alone, then the case that earned it. Craft belongs where the writer already is | prose only |
@@ -137,6 +138,16 @@ it does not have (#150).
   written. Every coordination failure this loop has had was of that
   shape, and it is the reason reports say what durable state changed
   rather than "done".
+
+
+## `.dreamwork/watch-tint` is HIS, not the loop's
+
+It is the first file under `.dreamwork/` recording a PREFERENCE rather
+than a state, and that is why it is committable and why it is *not* an
+events-log event: the log's contract is one line per thing an agent then
+acts on, and a colour is not one. Logging it would wake the loop to do
+nothing. The loop learns his choice by the file being in the repo, the
+same way `DREAMWORK.md` works.
 
 ## `.dreamwork/status.json` — now an interface
 
