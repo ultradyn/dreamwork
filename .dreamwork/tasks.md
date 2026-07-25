@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **188**
+Next id: **189**
 
 ## Open
 
@@ -89,6 +89,16 @@ Next id: **188**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#188** — Review rows show who they are waiting on · P2 · idea ·
+  25m · **not a new state system — the QUESTION axis one surface over**:
+  a review is paired with a questions.md entry, so its state IS that
+  entry's, and #113 already settled the axis (open = waiting on him,
+  awaiting = waiting on the loop, folded = done) · derive from
+  `qaState`, so the two surfaces cannot disagree and a review with no
+  question becomes visibly unanswerable · the idioms exist: the wisp for
+  in-flight (measured free), the accent for him, the dim end for done ·
+  **avoid a literal spinner** — this page has a breath, not spinners, and
+  a rotating glyph would read as borrowed from another application
 - **#187** — A gravity-wave ripple that crosses windows · P3 · idea ·
   60m · **T1** the ripple itself: do it in the SHADER, which is already
   world-space anchored (#74/#100) so one wavefront crosses a window seam
