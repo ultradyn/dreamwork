@@ -33,13 +33,28 @@ read, initialization has already happened; return to the loop.
    silently. (Authoring guide: `writing-plugins.md` in this skill's
    directory.)
 
+   **Then write the loaded plugins' commands into the target**, because
+   `watch.py` reads the target and cannot see a plugin's own files —
+   they live in harness-specific skill directories that vary by machine.
+   With at least one plugin loaded, write
+   `.dreamwork/plugin-commands.json` **whole** from the declarations in
+   every loaded plugin's SKILL.md; with none loaded, **remove the file
+   if it is there**. Never append. That is what makes unloading a plugin
+   the *absence of a write* rather than a deletion someone has to
+   remember, so a command the human can send but nothing answers cannot
+   survive an init. Shape and the rules `lint.py` enforces (namespacing,
+   no shadowing a core command): `file-formats.md`. A plugin that
+   declares no commands is normal — write `{"commands": []}`.
+
    Plugins can also appear mid-session (the harness surfaces
    skills-list changes). Treat that like the unrecorded case above, but
    live: offer the install to the human — on a yes, record it in
    DREAMWORK.md and run the plugin's init extension immediately
    (discovery, wizard questions, monitors), no session restart needed;
    on a no, record that too. Unanswered offers follow the questions.md
-   discipline.
+   discipline. **A yes also rewrites `plugin-commands.json` whole**, by
+   the rule above — a mid-session load that skipped it would leave the
+   composer unable to send the very commands the plugin just promised.
 
 4. **Setup wizard (only when DREAMWORK.md is absent).** Runs after plugins
    so loaded plugins can extend or reshape the interview. A short
