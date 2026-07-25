@@ -246,7 +246,12 @@ results, no ceremony.
 - `.dreamwork/status.json` — live loop status for the watch.py dashboard,
   rewritten each tick. Its timestamps come from the system clock, never
   from memory — a dashboard whose whole thesis is liveness must not
-  render an invented time. The one `.dreamwork/` file that is **gitignored**:
+  render an invented time. It also carries the loop's **runtime state**:
+  which dreamers are out, what files each owns, which monitors are
+  armed, and how to deploy. That state dies with the session, so this
+  ephemeral file is its right home — but it must survive *within* one,
+  because a compacted coordinator that forgets a dreamer owns `foo.py`
+  will edit `foo.py`. The one `.dreamwork/` file that is **gitignored**:
   it's ephemera, not history. The dashboard itself is `watch.py` in this
   skill's directory (read-only, localhost-only):
   `python3 <skill-dir>/watch.py --target . --open`; its port persists in

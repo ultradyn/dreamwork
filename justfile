@@ -64,6 +64,31 @@ guards port="39899":
 watch:
     python3 watch.py --target . --dev
 
+# deploy the dashboard the HUMAN watches. Committed state only, never the
+# working tree — a dreamer's half-finished edit must not reach him. Runs
+# from a snapshot outside the repo so an agent editing watch.py cannot
+# change what is already serving, and detached so it outlives the session
+# that started it. Open tabs reload themselves on the generation bump.
+deploy rev="HEAD":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    port=$(cat .dreamwork/watch-port)
+    dir=~/.cache/dreamwork/deployed
+    mkdir -p "$dir"
+    snap="$dir/$(basename "$PWD")-watch.py"
+    git show {{rev}}:watch.py > "$snap"
+    python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$snap"
+    pkill -f "$(basename "$snap")" 2>/dev/null || true
+    sleep 1
+    nohup python3 "$snap" --target "$PWD" --dev >"$dir/serve.log" 2>&1 &
+    for _ in $(seq 1 20); do
+      curl -sf "http://127.0.0.1:$port/" >/dev/null && break
+      sleep 0.25
+    done
+    curl -sf -o /dev/null "http://127.0.0.1:$port/" \
+      && echo "deployed {{rev}} ($(git rev-parse --short {{rev}})) on :$port" \
+      || { echo "deploy failed — see $dir/serve.log"; exit 1; }
+
 # every commit that changes the page must also update the styleguide
 # (DREAMWORK.md routine). Prints violations; silence is compliance.
 # Range defaults to the styleguide era — d1df255 is where watch-design.md
