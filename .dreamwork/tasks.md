@@ -154,9 +154,15 @@ Next id: **162**
   batches demand them, starting with #112's components
 - **#112** — Design proposals become fragments + shared template · P2 ·
   task · 90m · plan: `docs/plans/artifact-templates.md`
-- **#86** — Plugin-contributed command kinds in the composer · P2 · task ·
-  45m · the composer now renders from one `COMMANDS` table, so this is
-  an append rather than a redesign
+- **#86** — Plugin-contributed command kinds in the composer · **P1** ·
+  task · 45m · **re-raised by him 2026-07-25 14:26** ("the command menu
+  in the composer should be expandable by dreamwork plugins"), which is
+  the second ask for the same thing and the reason it is now P1 · the
+  composer renders from one `COMMANDS` table, so this is an append not
+  a redesign · `writing-plugins.md:60` already grants plugins their own
+  command namespace in PROSE, so today a plugin may define a command the
+  composer cannot show — the contract and the UI disagree, and the
+  contract is the one that has been promising
 - **#98** — Show the open queue on the watch dashboard · P2 · idea · 40m ·
   new page surface, fit-check at selection
 - **#114** — Dashboard renders the active goal chain · P3 · task · 25m ·
