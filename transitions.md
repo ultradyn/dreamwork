@@ -37,6 +37,15 @@ So, for anything in this document:
   for a day.
 - **Drive the real gesture on the real route**, not the one that is
   easiest to automate.
+- **Do not anchor an arrival assertion to a clock.** "It has arrived by
+  `at(950)`" is a trap that scales with distance: it works at ~20px of
+  travel and fails at 1246px, where a perfectly clean ease measured 32px
+  short — the guard was reporting its own pointer-click latency, not the
+  animation. Assert the timing-free form instead: **no frame goes PAST
+  the final position**, and the last frame is at it. Catches the same
+  failures (overshoot, snap, short-fall) and cannot be defeated by how
+  far the thing happens to move. (dreamer-qsec, #196, after
+  `prominence.mjs`'s `at(950)` broke on a full-section fold.)
 - **Show the check RED on the current behaviour before trusting it.**
 - **Verify reduced-motion too** — it is a hard contract below, and it is
   the half nobody looks at.
