@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **142**
+Next id: **143**
 
 ## Open
 
@@ -22,6 +22,13 @@ Next id: **142**
   fires AT compaction, so it guarantees the write-down and cannot buy
   landing time; stdout becomes summariser instructions, so it must be
   silent by construction
+- **#142** — Burndown + stats panel on the dashboard · P2 · task · 75m ·
+  no new instrumentation needed — the ledger is versioned, so
+  `git log -p .dreamwork/tasks.md` IS the time series and permanent ids
+  make tasks followable across snapshots. Show arrivals AND completions,
+  not just the net (the gap cannot tell "he steers fast" from "work is
+  slow"); human- vs loop-initiated is the most telling number here. No
+  velocity score. Cost: bucket + cache on HEAD, never replay per tick
 - **#141** — Dashboard questions section folds, counts, disables at
   zero · P2 · idea · 30m · **needs #136 first**: a grey disabled zero IS
   the all-clear signal, and an unreadable file currently produces the
