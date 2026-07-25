@@ -386,6 +386,20 @@ if Max is away).
 - Mark maintenance commits `dreamwork(maintain:<item>): ...` — git is the
   maintenance ledger (roll.py reads it for staleness). A maintenance pass
   that changes nothing may record an `--allow-empty` marker commit.
+- **A commit that changes what an existing install must do says so in a
+  git trailer** (#194) — a final `Key: value` block, which
+  `git log --format='%(trailers:key=Feature,valueonly=true)'` extracts
+  with no parser:
+  - `Migration: <migrations/ filename>` — this commit added a migration.
+  - `Feature: <one line>` — a target gains something worth surfacing when
+    it upgrades.
+  - `Needs: config` or `Needs: consent` — that feature is not automatic.
+
+  Only when true. A trailer on every commit is a trailer on none, and the
+  upgrade pass would be back to reading everything. This is what lets it
+  start from a candidate list instead — so it is worth writing on the day
+  the commit is made, by whoever knows, rather than reconstructed later
+  by someone who does not.
 - Verification before completion: the project's verification passes
   (tests/lint, or its stated routine) before a task is marked completed.
 - **A new check is not verification until it has been red.** Reintroduce
