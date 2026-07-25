@@ -121,9 +121,14 @@ Next id: **149**
   P3 · task · 30m · the last break in "same position, same dream"
 - **#73** — Split-view support for watch pages · P3 · experiment · 30m ·
   the shader half landed as #74; the open part is the affordance
-- **#50** — ud-dreamtask plugin · P2 · task · 90m · **unblocked**
-  2026-07-25 ("rec lgtm") — all four recs taken; build per
-  `docs/plans/ud-dreamtask.md`, standalone before sub-loop
+- **#50** — ud-dreamtask, a SIBLING SKILL not a plugin · P2 · task ·
+  90m · *in progress (dreamer-dreamtask)* · retitled 2026-07-25: it
+  takes no `ud-dreamwork-` prefix so plugin discovery never sees it, and
+  "standalone first" settles it — the old title would have sent someone
+  to build against `writing-plugins.md` · lives at
+  `~/.llm-general/skills/ud-dreamtask/`, own repo · dreamstate is
+  TARGET-SHAPED, so lint, hub and watch read an errand with zero new
+  code · stage 6 (harvest) is GATED, needs Max
 - **#80** — Pick a second dogfood target (hark or c2c) · P3 · chore · 30m ·
   **blocked**: human pick
 - **#119** — Revisit a `selection.md` reference once selection stops
