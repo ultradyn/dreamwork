@@ -565,3 +565,29 @@ this shape and convert opportunistically.)
   render it at the size it will actually be. The same look also killed an
   opaque near-black tile that was correct on his dark browser theme and a
   black block on a light one. (dreamer-identity, 2026-07-25, #153)
+- **A syntax error is invisible to every test that asserts on source
+  text.** A pair of backticks inside a GLSL COMMENT closed the JS
+  template literal the shader lives in, so the rest of the shader parsed
+  as JavaScript and the page rendered blank. Every pytest substring
+  assertion still passed — the source genuinely CONTAINS those strings;
+  it simply will not parse. Only the browser guards caught it, twenty
+  minutes later, as thirty unrelated red lines pointing nowhere near the
+  cause. `just test` now runs `node --check` over the assembled script,
+  which is a two-second check that turns a twenty-minute mystery into a
+  line number. Any language embedded in a template literal has this
+  hazard, and comments are where it hides, because nobody proofreads a
+  comment for delimiters. (dreamer-identity, 2026-07-25, #143)
+- **A guard assertion whose subject may not exist must RETURN a value,
+  never throw.** Three times in one file a check written for the
+  "the write silently did nothing" case died on `readFileSync` instead
+  of reporting it — so the injection the check existed for produced a
+  stack trace rather than a red line, and read as the check being
+  broken. The failure it was built to catch is precisely the state where
+  its subject is absent. (dreamer-identity, 2026-07-25)
+- **Measure where the thing actually is, after waiting for the state it
+  is in.** A hue measurement was wrong three times while the feature was
+  right the whole time: it sampled a region overlapping the text column,
+  then slept less than the 2s poll it was waiting on, then sampled while
+  the page was still on another route with an iframe over the spot. Wait
+  for the state, sample where the field is, and know which route you are
+  on. (dreamer-identity, 2026-07-25)
