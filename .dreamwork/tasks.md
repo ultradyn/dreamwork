@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **139**
+Next id: **141**
 
 ## Open
 
@@ -22,6 +22,16 @@ Next id: **139**
   fires AT compaction, so it guarantees the write-down and cannot buy
   landing time; stdout becomes summariser instructions, so it must be
   silent by construction
+- **#140** — Close the commit-to-deploy window · P2 · task · 25m · a
+  fix can be committed and undeployed while he is looking at the page,
+  which is indistinguishable from broken — it cost a tracing cycle on
+  #129. Rec: post-commit hook running `just deploy` when watch.py
+  changed; say in DREAMWORK.md that this moves deploy authority
+- **#139** — `.qa textarea` leaks margin into the composer field · P2 ·
+  bug · 20m · third instance of the `.qa <element>` catch-all pattern
+  (#121 was the first); `oneinput` missed it by asserting the button
+  spans the field, not the textarea. Delete the siblings, don't
+  out-specify them
 - **#137** — Tell the loop how to write every file it writes, and give
   it a linter · **P1** · task · 90m · his generalisation of #135 · a
   third prose description of a format is a third thing that can drift;
@@ -47,29 +57,17 @@ Next id: **139**
   verbatim in the task; it is the dream dissolve's ghost held low and
   continuous, not a new effect. Taste is the deliverable — wants a
   dreamer that iterates on captures until satisfied
-- **#131** — Composer fades away while he types into it again · P2 ·
-  bug · 25m · **next-up** (via composer) · the dismiss timer starts at
-  submit and input never cancels it — same family as #118. Nothing
-  auto-dismisses while it holds focus or unsent text; timeout ×1.5
 - **#130** — Status section renders raw JSON · P2 · task · 45m ·
   **next-up** (via composer) · show the three or four facts that answer
   "what is it doing, does it need me"; fold the rest, don't delete it —
   the bulk is load-bearing for agents. Colour by significance, not by
   JSON type. `awaiting_human` must be impossible to miss
-- **#129** — Expand/collapse under Answered isn't animated · P2 · bug ·
-  30m · **next-up** (via composer) · the contract task: state the fold
-  motion in watch-design.md once, then every fold obeys it. #128's
-  thread consumes it, so do this one first
 - **#128** — A follow-up thread reads as him replying to himself · P2 ·
   bug · 40m · **next-up** · a note written before the answer renders
   below it; the note is tagged `YOU` and the answer is tagged nothing.
   Thread collapses via the standing `expand` idiom, and the expand
   MOTION gets stated in watch-design.md if it isn't already — which
   overlaps #113's matrix, so state it once
-- **#121** — `answer | add note` should be ghost buttons · P2 · bug ·
-  20m · **next-up** (via composer) · opaque fills hide the animation
-- **#123** — `+` button off the heading text's centreline · P2 · bug ·
-  20m · **next-up** · likely every view since #110 shared the chrome
 - **#126** — Composer commands carry the page they came from · P2 ·
   task · 25m · the route is a hint, never an instruction
 - **#127** — One deliberate way to compact a dreamwork agent · P2 ·
@@ -118,7 +116,16 @@ Next id: **139**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#125** `heartbeat.py`,
+Pruned in grooming; git is the real ledger. **#131** the composer no
+longer fades while he types into it again (896ee74). **#129** needed no
+code — e8aeec9 had already animated the fold 24 seconds before he
+reported it, and he was right about the deployed page; what it did
+surface is now a stated contract, that `expand` is structure and
+whether it MOVES is a separate question (f9d08bb), plus #140.
+**#121 #123** ghost buttons and the `+` centreline (4fd393b) — #121 was
+never a design change: `.sgbtn` asked for `background:none` since #103
+and a `.qa button` catch-all outspecified it, so the source read right
+while the screen was wrong. **#125** `heartbeat.py`,
 a stdlib-only port of the Rust wake tick — byte-identical output, the
 Rust test suite ported case for case, and one documented divergence
 (`--no-time-prefix` works here; upstream documents it and rejects it). **#113** the awaiting-fold

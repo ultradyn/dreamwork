@@ -215,3 +215,9 @@ source dream. Not a log — only things that should change future behavior.
   by any sign the human is still using the thing — and the cancel needs to
   cover the in-flight window before the timer exists.
   (2026-07-25-1130-question-states)
+- A fix that is committed but not deployed is indistinguishable from a
+  bug, and the human is looking at the deployed page. #129 was reported
+  24 seconds after the commit that fixed it and ~4 minutes before the
+  deploy; the report was accurate, the code was correct, and a tracing
+  cycle was spent on the gap between them. Deployment latency
+  manufactures phantom bugs. (coordinator, 2026-07-25, #140)
