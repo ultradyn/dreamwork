@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **180**
+Next id: **181**
 
 ## Open
 
@@ -89,6 +89,16 @@ Next id: **180**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#180** — Stream the dreamer's own events onto the dashboard · P3 ·
+  idea · 120m · "do like 4-6 review-and-improve loops" is a METHOD
+  instruction — build, look, improve, and say how many passes it got ·
+  **blocked on a question to him**: the transcript holds prompts,
+  reasoning and full tool IO, and a display filter is a promise about
+  what SHOWS, not what is exposed · it also lives outside `--target`,
+  so the naive shape needs `resolve_confined` widened, and that gate is
+  load-bearing · rec: the loop writes derived lines INTO the target and
+  the server never sees the raw file — one decision answers both ·
+  stdlib means no inotify: poll, reusing the existing change detection
 - **#179** — **P1** The commit cycle steals focus from the box he is
   typing in · bug · 25m · a REGRESSION from #151, ~90 minutes old,
   reported as it happened to him · fourth instance of the class (#118,
