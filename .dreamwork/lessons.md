@@ -544,3 +544,14 @@ this shape and convert opportunistically.)
   notice runs the other way: touching both files passes whether or not
   the doc says anything at all. State in the check itself what it does
   not prove. (coordinator, 2026-07-25, #155)
+- **An answer that does not engage with its question is a signal, not a
+  decision.** On 2026-07-25 four submissions arrived through the
+  dashboard reading "traced answer for the regroup" and "a note routed
+  by the mode group" — he was exercising the regroup and the mode group,
+  not answering. Folding them would have closed the dreamhub URL-space
+  question and ud-dreamtask's stage-6 gate on test content, and both
+  would have looked decided. The loop has no way to tell a test
+  submission from a real one and should not try to build one: the
+  guardrail already covers it — mismatched signals mean something is
+  wrong, so do not guess, ask. Read the answer against the question
+  before acting on it. (coordinator, 2026-07-25)
