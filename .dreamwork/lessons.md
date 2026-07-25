@@ -857,3 +857,14 @@ this shape and convert opportunistically.)
   it enforced what the entry SAID was missing instead of checking whether it
   still was. Before enforcing "X is absent", look for X. (coordinator,
   2026-07-25, #197 / 6284402)
+- A check and the thing it checks cannot hold separate copies of one rule:
+  the priority linter shipped with a WIDER copy of the marker regex than the
+  parser, so the three most plausible human typos were blessed by the check
+  and ignored by the page. Ask the subject, never re-derive. (dreamer-
+  plugcmd, 2026-07-25, #197 / 3073055)
+- A backup that failed to write is not a backup: the coordinator ran the
+  destructive step (git checkout --) in the same breath as saving the patch,
+  and the save had silently failed — shell locals do not survive across
+  lines here. Verify the copy EXISTS before destroying the original; the
+  work was recovered only because agent transcripts record every edit.
+  (coordinator, 2026-07-25)
