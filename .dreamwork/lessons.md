@@ -333,3 +333,45 @@ this shape and convert opportunistically.)
   rendered it where a human would read it — a wrong timestamp is a claim
   about freshness, and a stale-looking loop and a lying one are
   indistinguishable from outside. (coordinator, 2026-07-25)
+- **A check is only as good as the distance between what it asserts and
+  what it exercises.** Three of dreamhub's passed on their own bug, each
+  for a different reason: one asserted an end state that the WRONG
+  implementation also reaches (slug recomputed on read renames the
+  survivor, not the incumbent); one exercised a different code path than
+  the one shipped (it built its own thread pool instead of calling
+  `probe_all`, so a fully serial `probe_all` passed); one asserted an
+  outcome with TWO sufficient causes (the per-second age tick was
+  invisible because the 2s poll re-renders ages anyway). Injection found
+  all three; reading found none — and the third was fixed by finding the
+  case where only one cause operates, which turned a redundant-looking
+  mechanism into a stated behaviour.
+  (2026-07-25-1310-dreamhub-build, #96)
+- **To guard a wire contract with a component you do not own: run the
+  REAL one over a COPY of its fixture, assert agreement, then mutate the
+  input and assert the reader FOLLOWS — and show it red against DRIFTED
+  COPIES so the owned file is never touched.** Agreeing once is also what
+  a permanently frozen cache does. dreamhub caught `/mtime` losing its
+  generation half, `open_questions` renamed, and `/data.json` moved; none
+  of the three crashes anything, which is exactly why a guard is needed —
+  the reader goes on serving stale or unknown values and looks fine.
+  (2026-07-25-1310-dreamhub-build, #96)
+- **Where you can remove shared mutable state instead of naming an owner,
+  remove it.** Naming an owner is the fallback. A fixed guard port made
+  dreamhub's guard attach to a neighbouring dreamer's watch instance and
+  assert against a stranger's page; the readiness check that catches that
+  is worth keeping, but defaulting to an ephemeral port makes the
+  collision impossible rather than loud. Fourth unowned-state incident in
+  a day (id counter, working tree, port, port).
+  (2026-07-25-1310-dreamhub-build, #96)
+- **`or` as a default is wrong for every value whose zero is meaningful,
+  and it fails intermittently rather than loudly.** `port or hub_port()`
+  read `serve(0)` — "any free port" — as "no port given" and bound a
+  random persisted one instead, succeeding almost every time and
+  colliding about one run in eight. The intermittency was the symptom;
+  the falsy zero was the bug. (2026-07-25-1310-dreamhub-build, #96)
+- **A dependency you cannot import is one you are forced to describe, and
+  the description is worth more than the coupling you avoided.** Being
+  locked out of `watch.py` produced protocol-level reuse; enumerating
+  what the hub depends on is what made the drift guard writable at all —
+  you cannot guard a contract you have not written down.
+  (2026-07-25-1310-dreamhub-build, #96)
