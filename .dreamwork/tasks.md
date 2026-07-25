@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **154**
+Next id: **156**
 
 ## Open
 
@@ -76,6 +76,18 @@ Next id: **154**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
+- **#155** — The styleguide audit found a real miss, and nothing gates
+  it · P2 · bug · 30m · `c065a51` (#130) added the whole status panel
+  without touching `watch-design.md`, so the page gained behaviour its
+  styleguide does not describe — including "fold by complement" · the
+  deeper half: DREAMWORK.md makes this a routine, `audit-styleguide`
+  checks it, and no gate runs it. #117's shape exactly
+- **#154** — `.dreamin` has never worked for question cards · P2 · bug ·
+  25m · MEASURED: `.qa` declares the same transitions at the same
+  specificity and later in the sheet, so the snap class loses the
+  cascade — computed duration `0.85s` with `.dreamin` applied. Fourth
+  instance of source-right-screen-wrong, and the first that is NOT a
+  catch-all, so the class rule in watch-design.md needs widening
 - **#153** — Title that says whether you're needed, and a real favicon ·
   P2 · idea · 50m · the tab title is the only part of the dashboard
   visible in a background tab, so it carries the count front-loaded
