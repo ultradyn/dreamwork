@@ -1313,12 +1313,19 @@ function statusBlock(s) {
    itself. The grey is for a genuine zero; every other zero keeps the live
    treatment and lets the warning above it speak.
 
-   THE WHOLE SECTION FOLDS, awaiting-fold cards included. That is what makes
-   this a standalone `expand` — instant, like the `.md` peeks — rather than a
-   case for the regroup: nothing that MOVES sits below the toggle, so opening
-   it teleports no card (see "expand is structure" in watch-design.md). The
-   summary names what is inside, so a collapsed panel never hides the fact
-   that something is in flight. */
+   THE WHOLE SECTION FOLDS, awaiting-fold cards included. The summary names
+   what is inside, so a collapsed panel never hides the fact that something is
+   in flight.
+
+   AND IT TRAVELS (#196). This comment used to argue the opposite — that the
+   fold was a standalone `expand`, instant like the `.md` peeks, because
+   "nothing that MOVES sits below the toggle". That was simply false about
+   this page: reviews, files, status and the tint picker all sit below it, and
+   the section swings by ~1250px, so the one gesture licensed to snap was the
+   largest displacement on the dashboard. His report, verbatim: the questions
+   "just appear and disappear". The fold now goes through `travelCard` and the
+   page's departure/arrival idioms like every other disclosure — see the
+   `.qsec > summary` handler. */
 const qSummary = d => {
   const n = d.open_questions || 0;
   const fold = d.questions_open.filter(q => q.answer).length;
@@ -2136,6 +2143,16 @@ function travelCard(el, was, now, lifted) {
   el.style.transform = `translate(${was.left - now.left}px,` +
                        `${was.top - now.top}px)`;
   if (resized) {
+    // border-box, because the two numbers being interpolated came from
+    // getBoundingClientRect and that is a BORDER box, while `height` is a
+    // content box by default. It was a distinction without a difference while
+    // the only travellers were `.qa` and `.git .commit`, neither of which has
+    // vertical padding — and then #196 sent a <details> through here, which
+    // gains #169's `.5rem` of air on the frame it opens. Left as content-box
+    // the travel aims 16px past its real height and SNAPS back the moment the
+    // inline height is cleared: invisible to an end-state check, and to "did
+    // it move", which is the shape of every motion bug this page has had.
+    el.style.boxSizing = 'border-box';
     el.style.height = was.height + 'px';
     el.style.overflow = 'hidden';          // content must not spill as it folds
   }
@@ -2152,7 +2169,7 @@ function travelCard(el, was, now, lifted) {
   if (lifted) { el.style.filter = ''; el.style.opacity = ''; }
   setTimeout(() => {
     for (const p of ['transition', 'transform', 'height', 'overflow',
-                     'zIndex', 'filter', 'opacity']) el.style[p] = '';
+                     'boxSizing', 'zIndex', 'filter', 'opacity']) el.style[p] = '';
   }, CARD_MS + 150);
 }
 /* an element leaving fades rather than vanishing — the page's one departure
@@ -2174,7 +2191,18 @@ function dreamAway(wrap, node, rect, clipTop) {
   // Every identity attribute on the page, not just this list's: a corpse
   // holds no address at all, and enumerating them here is one line where
   // teaching each lookup to skip a ghost would be six.
-  for (const a of ['data-qid', 'data-qkey', 'data-sha']) node.removeAttribute(a);
+  //
+  // AND THROUGHOUT THE SUBTREE, not only on the node itself (#196). While the
+  // only things that dreamed away were one card and one commit row, the node
+  // WAS the whole identity; the questions fold ghosts a clone of the entire
+  // open section, which carries `data-keep="qsec"` and every card inside it.
+  // `snapshotFolds` walks `details[data-keep]` and the last match wins — and a
+  // ghost is appended to `.wrap`, i.e. last — so that one attribute surviving
+  // means the next tick reads the section as still open and re-opens it under
+  // him, a second after he shut it.
+  const IDS = ['data-qid', 'data-qkey', 'data-sha', 'data-keep'];
+  for (const n of [node, ...node.querySelectorAll(IDS.map(a => `[${a}]`).join(','))])
+    for (const a of IDS) n.removeAttribute(a);
   node.classList.add('qaghost');
   node.style.left = (rect.left - org.left) + 'px';
   node.style.top = (rect.top - org.top) + 'px';
@@ -2214,6 +2242,18 @@ function cardBody(el, toggled) {
 const nestedToggle = (el, toggled) =>
   !!toggled && el.contains(toggled) &&
   toggled !== el.querySelector(':scope > .qfold');
+/* the arriving half of a fold, and the page has exactly one of them (#196).
+   A body that arrives EASES IN rather than being wiped up by the growing box —
+   the same moment `dreamAway` runs backwards. Shared by the card fold and the
+   dashboard's questions section, because two spellings of one gesture is how
+   a reader concludes the softer one was optional. */
+function revealBody(el, toggled) {
+  cardBody(el, toggled).forEach(c => {
+    c.classList.add('qreveal', 'dreamin');
+    requestAnimationFrame(() => c.classList.remove('dreamin'));
+    setTimeout(() => c.classList.remove('qreveal'), CARD_MS + 150);
+  });
+}
 const BODY_STEP = 24;             // about a line: below this nothing "left"
 /* Cards are processed in DOM order, and that is load-bearing rather than
    incidental.
@@ -2282,11 +2322,7 @@ function regroupCards(before, toggled, list, restated) {
     }
     // ...and unfolding is the same moment run backwards: the body ARRIVES,
     // so it eases in rather than being wiped up by the growing box.
-    else if (dh >= BODY_STEP) cardBody(el, toggled).forEach(c => {
-      c.classList.add('qreveal', 'dreamin');
-      requestAnimationFrame(() => c.classList.remove('dreamin'));
-      setTimeout(() => c.classList.remove('qreveal'), CARD_MS + 150);
-    });
+    else if (dh >= BODY_STEP) revealBody(el, toggled);
   });
   // gone entirely: dream away where it stood, so it fades rather than blinks
   before.forEach((was, id) => {
@@ -2325,6 +2361,48 @@ addEventListener('click', e => {
   det.open = !det.open;
   regroupCards(before, det);
   leaving.forEach((c, i) => ghostNode(c, rects[i]));
+});
+/* the dashboard's questions section (#141) opening and closing — the SAME
+   moment one level up (#196), and his report of it was that the questions
+   "just appear and disappear".
+
+   It is not a card, so it does not go through `regroupCards`: the cards inside
+   it have no geometry at all while the section is shut, and a FLIP from a zero
+   rect is a slide in from the page's top-left corner. It is instead the card
+   fold with the roles enlarged — a summary that survives, a body that arrives
+   or departs, and a HEIGHT that carries everything below it. So it reuses the
+   three pieces that already say that: `travelCard` for the height (which is
+   what moves reviews, files, status and the tint picker, continuously and for
+   free, welded to the section they are following), `revealBody` for the
+   arrival, `dreamAway` for the departure.
+
+   THE DEPARTURE'S DIRECTION IS ALREADY RIGHT and that is worth saying out loud
+   (#174): the panels below travel UP to close the gap, and the standing ghost
+   rises, so this needed no sign of its own. The commits panel is the exception
+   here, not the rule.
+
+   The corpse is cloned BEFORE the toggle: a closed <details> keeps its
+   children in the DOM and gives them no geometry, so a clone taken afterwards
+   is a picture of nothing. Same reason the native toggle is prevented — it
+   flips before any event we could measure from.
+
+   Under reduced motion this handler declines the click entirely and the native
+   toggle does the work at once, which is the hard contract: timing changes,
+   function does not. */
+addEventListener('click', e => {
+  const sum = e.target.closest && e.target.closest('.qsec > summary');
+  if (!sum || rmr) return;
+  e.preventDefault();
+  const det = sum.parentElement;
+  const was = det.getBoundingClientRect();
+  const corpse = det.open ? det.cloneNode(true) : null;
+  det.open = !det.open;
+  const now = det.getBoundingClientRect();
+  travelCard(det, was, now, false);
+  if (det.open) revealBody(det);
+  // clipped to the line the summary still fills, exactly as a folding card
+  // clips to the title it keeps
+  else dreamAway(document.querySelector('.wrap'), corpse, was, now.height);
 });
 addEventListener('resize', () => paintIndicators(true));
 /* ── the persistent chrome (#110) ─────────────────────────────────────────

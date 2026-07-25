@@ -172,26 +172,24 @@ navigates and carries the same dreaming field (see Shader). Views are pure build
 `buildQuestions`, `buildFile`, `buildReview`); the router swaps them. Add a
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
 
-**`expand` is structure; whether it MOVES is a separate question, and the
-answer follows from where it sits.** A plain `<details>` — dreams, the
-archive, the dashboard's `.md` peeks, the dashboard's questions section
-(#141) — toggles instantly, like every other opt-in-motion surface on this
-page. The questions section is worth naming because it *contains* cards that
-move and still belongs here: it holds **all** of them, so nothing that moves
-is left below the toggle to be teleported. **A `<details>` inside a question card
-animates**: the card's own `.qfold` (#111) and its settled follow-up thread
-(#128) both route their toggle through `snapshotCards` → `regroupCards`, so
-the card travels its height and its neighbours close the gap, exactly as when
-the loop folds one (see *The state matrix*).
+**`expand` is structure; HOW it moves is `transitions.md`'s, not this
+file's.** A `<details>` that changes the page's layout travels: the card's own
+`.qfold` (#111), its settled follow-up thread (#128), and the dashboard's
+questions section (#141, since #196). The structural half — the part that
+belongs here — is that the card handler is written against
+`.qa details > summary` rather than against `.qfold`, so the next disclosure
+someone adds to a card is covered without anyone remembering this paragraph.
 
-The line is not decoration and it is not per-component: an expand inside a
-**list whose other members move** must animate, or opening it teleports every
-card below it; a standalone expand has nothing to disturb. That is why the
-handler is written against `.qa details > summary` rather than against
-`.qfold` — the next disclosure someone adds to a card is covered without
-anyone remembering this paragraph. A reader who finds only this section will
-assume `<details>` animates everywhere; it does not, and promoting it to the
-generic idiom would animate three surfaces nobody asked for.
+**This paragraph used to argue the opposite about the questions section, and
+the correction stays visible because the reasoning is the reusable part.** It
+called that section a standalone expand with "nothing to disturb", because it
+contains *all* the cards, so "nothing that moves is left below the toggle".
+Reviews, files, status and the tint picker are all below that toggle, the
+section swings by ~1250px, and his report was that the questions "just appear
+and disappear". A justification that is checkable and false gets believed —
+this one was, for the whole life of #141. The plain `expand()` peeks are still
+instant and the same test would now say they should not be; `transitions.md`
+records that as unexamined rather than decided.
 
 **And whatever it does, an expanded element becomes PROMINENT rather than
 merely taller** (#169). His words: expanding should grow padding above and

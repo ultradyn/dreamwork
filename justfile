@@ -62,13 +62,17 @@ lint:
 #   prominence   ordinary (OUT, PORT) on the shared server, but it visits BOTH
 #                routes in one page: #169's expand idiom belongs to every
 #                disclosure, and the four that exist live on two views.
+#   qsec         ordinary (OUT, PORT), and it WRITES — it POSTs /command to
+#                make the mtime change so it can drive a live tick over a
+#                ghost. That only touches watch-events.log, so it changes
+#                nothing rendered, but it is why the per-guard reset matters.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"

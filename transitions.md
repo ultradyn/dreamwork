@@ -58,8 +58,10 @@ exception; an element leaving fades rather than vanishing.
   mtime tick commits its new DOM **immediately** — liveness never waits on an
   animation — but where that re-render *moves* something that survived, the
   survivor travels to its new place rather than appearing there (the
-  regroup, below). The composer reveals on a soft blur drift. Nothing else
-  animates.
+  regroup, below). A disclosure that changes the page's layout folds and
+  unfolds on that same travel — a card's, a thread's, and the dashboard's
+  questions section (*The section fold*, below). The composer reveals on a
+  soft blur drift. Nothing else animates.
 - **The regroup** (a question is answered). One moment seen two ways: the
   questions below close the gap it left (#104), and the question itself
   travels to its new heading rather than being re-set there (#77). One
@@ -151,6 +153,51 @@ exception; an element leaving fades rather than vanishing.
   transform on everything that moved and was wrong — a card riding an
   animated height above it travels perfectly with no transform of its own,
   and the mechanism check would have forbidden the better motion.
+- **The section fold** (#196) — the same moment one level up, and the last
+  gesture on this page that was still snapping. His report: clicking
+  "questions · 8 to answer" makes the questions *"just appear and
+  disappear"*. It does not go through `regroupCards` — the cards inside have
+  no geometry while the section is shut, and a FLIP from a zero rect is a
+  slide in from the page's corner — but it is the card fold with the roles
+  enlarged, so it reuses the same three pieces: `travelCard` for the height
+  (which carries reviews, files, status and the tint picker for free, welded
+  to the section they follow), `revealBody` for the arrival, `dreamAway` for
+  the departure. Its direction needed no sign of its own: the panels below
+  travel **up** to close the gap and the standing ghost rises, so #174 was
+  already satisfied — the commits panel is the exception, not the rule.
+
+  Two shared helpers had to grow for it, and both were latent bugs rather
+  than new features:
+
+  - **`travelCard` sets `box-sizing:border-box` while it animates height.**
+    The two numbers being interpolated come from `getBoundingClientRect`,
+    which is a *border* box; `height` is a *content* box by default. That was
+    a distinction without a difference while only `.qa` and `.git .commit`
+    travelled — neither has vertical padding — and then a `<details>` came
+    through, which gains #169's `.5rem` of air on the frame it opens. Left
+    alone the travel plays 16px **past** where it ends and snaps back when the
+    inline height is cleared. Nothing about the end state can see that.
+  - **A corpse holds no address THROUGHOUT ITS SUBTREE, not just at the
+    root.** `dreamAway` stripped `data-qid`/`data-qkey`/`data-sha` from the
+    node, which was the whole identity while the only ghosts were one card and
+    one row. The section ghost is a clone of the entire open `<details>`: it
+    carries `data-keep="qsec"` and every card inside it. `snapshotFolds` walks
+    `details[data-keep]` and the last match wins — a ghost is appended to
+    `.wrap`, i.e. last — so one surviving attribute means the next tick reads
+    the section as open and re-opens it under him, a second after he shut it.
+
+  The guard is `dev/capture/qsec.mjs`. Two of its assertions are worth
+  copying: the count of distinct positions the panel *below* the section
+  visits (a snap visits two, and every other check passes on it), and that no
+  frame goes **past** the final position — the border-box failure stated as
+  the thing it does, with no dependence on when the traced click landed.
+
+  **The remaining instant disclosures are unexamined, not decided.** The
+  plain `expand()` peeks — dreams, the archive, the `.md` files, the status
+  overflow — still toggle natively. The rule that used to excuse them was
+  "nothing that moves sits below the toggle", and that rule was checkably
+  false about the questions section for the whole life of #141; it is no
+  truer about these. Do not read their silence as a decision.
 - **The dream dissolve** (route change). The outgoing view becomes a
   `.ghost` (z-index above `#view`) that liquifies into a swirling mist and
   lifts up and toward the viewer as it fades — dissolving *in front*. The

@@ -66,6 +66,11 @@ for live content is how this got broken the first time.
   its own git repo with commits planted at known ages.
 - `identity` — the title and favicon across a SEQUENCE of loop states on one
   live page, so nothing reloads between them.
+- `qsec` — the dashboard's questions fold arrives and departs (#196): the
+  panels below it travel rather than teleporting, never overshoot, the body
+  eases in and dreams away, reduced motion does neither, and the ghost holds
+  no address — driven over a real tick, because that is what the address
+  would have cost.
 
 Four of those build their own target and take an ephemeral port, ignoring
 the one they are handed: `health`, `dashboard`, `identity`, `motion`. The
