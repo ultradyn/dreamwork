@@ -775,6 +775,21 @@ class TestServer:
                  for p in targets.rglob("*") if p.is_file()}
         assert before == after
 
+    def test_port_zero_binds_an_ephemeral_port(self, hub_home):
+        """`port or hub_port()` reads 0 as absent and binds a random
+        persisted port instead. It succeeds almost every time and collides
+        just often enough to look like flakiness — this suite spent one
+        run of it before the cause was found."""
+        hub_home.mkdir(parents=True, exist_ok=True)
+        httpd = dreamhub.serve(0)
+        try:
+            bound = httpd.server_address[1]
+            assert bound != 0
+            assert not (hub_home / "port").exists(), (
+                "binding an ephemeral port must not mint a persisted one")
+        finally:
+            httpd.server_close()
+
     def test_port_persists_across_calls(self, hub_home):
         hub_home.mkdir(parents=True, exist_ok=True)
         first = dreamhub.hub_port()

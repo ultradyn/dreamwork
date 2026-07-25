@@ -697,7 +697,12 @@ def make_handler(cache, timeout=PROBE_TIMEOUT_S):
 
 def serve(port=None):
     import http.server
-    port = port or hub_port()
+    # `is None`, not `or`: port 0 means "any free port" to the OS and is
+    # exactly what a test or a guard asks for. `port or hub_port()` reads
+    # 0 as absent and quietly binds a random persisted port instead —
+    # which succeeds almost every time and collides just often enough to
+    # look like flakiness.
+    port = hub_port() if port is None else port
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port),
                                             make_handler({}))
     return httpd
@@ -741,7 +746,7 @@ def cmd_list(args):
 
 
 def cmd_serve(args):
-    port = args.port or hub_port()
+    port = hub_port() if args.port is None else args.port
     try:
         httpd = serve(port)
     except OSError as e:
