@@ -191,6 +191,39 @@ this one was, for the whole life of #141. The plain `expand()` peeks are still
 instant and the same test would now say they should not be; `transitions.md`
 records that as unexamined rather than decided.
 
+### More detail: what expands, what navigates, what hovers
+
+DREAMWORK.md commits the loop to *detail is ranked, never withheld* — "in
+general we always want to present the user with more details if there are
+more details and users might want them" (human, 2026-07-25). That says a
+thing that exists must be reachable. It does not say **how**, and this page
+has three answers, which #166 made worth writing down because a commit row
+could plausibly have taken any of them.
+
+- **Expand** when the detail is *about the thing he is looking at* and wants
+  to stay in its place in the list. He keeps the row's neighbours, its
+  position, and everything around it; the page's subject does not change.
+  A folded question (#111), its settled thread (#128), the questions section
+  (#141), a commit's body (#166).
+- **Navigate** when the detail *is its own subject* — a review artifact, a
+  file, the questions page. It earns the page's heading, the persistent
+  chrome, and above all a **URL**, which is the only form of detail he can
+  reload, bookmark or paste to somebody. Choosing expand for one of these
+  would trap it inside a page it cannot be linked to.
+- **Hover (a `title`)** when the detail is a complete list that would change
+  the layout to hold it and is wanted for one second: the commits missing
+  from a stale dashboard (#140), a truncated preview. This is the weakest of
+  the three — it is invisible on a touch screen and to a keyboard — so it is
+  for detail that is *already summarised accurately* by what is on screen,
+  never for the only copy of something.
+
+Two corollaries the page already obeys. **A fold is a promise**: the summary
+says what is inside (`questions · 2 to answer · 1 awaiting fold`), so a
+collapsed panel never hides the fact that something is in flight. And
+**nothing is dropped, only demoted** (#130) — the status panel folds
+*whatever is left* rather than a second known list, because a reader that
+cannot see something renders identically to there being nothing to see.
+
 **And whatever it does, an expanded element becomes PROMINENT rather than
 merely taller** (#169). His words: expanding should grow padding above and
 below, so the thing he opened reads as foregrounded. Expanding is a change in
@@ -1190,6 +1223,67 @@ target**: `dev/capture/fixture` is not a repository, so `git_tail` returns
 `[]` there and every one of these checks would have passed vacuously against
 the shared server. Planting commits at known ages is also the only way to
 reach the 100-day boundary.
+
+#### A row expands (#166)
+
+The subject line is a *label* for the reasoning; the **body is the
+reasoning**, and in this repo it is the most useful text in the log — the row
+shows sixty ellipsised characters of it. So the row opens onto the full sha,
+the author, the message body and the files it touched. Per the principle
+above this is an **expand**: it is detail about the row he is looking at, and
+he keeps the four rows around it.
+
+**The row IS the `<details>`**, not a div wrapping one. That is what makes it
+inherit the page's whole disclosure vocabulary at once — `summary::before`'s
+`+`/`-`, #169's air and luminance step, `data-keep`'s survival across the
+tick, and the shared expand handler's motion — instead of re-stating four
+things. It is also the first element on the page to need **two keys at once**:
+`data-sha` addresses the row inside `GIT_LIST`, and `data-keep="commit:<sha>"`
+addresses what he opened across a re-render. They answer different questions
+and a single key would have to lose one of them.
+
+**Three inherited contracts, and all three are invisible to an end-state
+check**:
+
+- **The FLIP window.** `regroupCards` measures the row's new rect in the same
+  tick the toggle flips, so #169's `.5rem` of air has to be in the layout by
+  then. Put a transition on it and the travel plays to a height the row never
+  reaches and snaps when the inline height clears — measured at **17.6px to
+  go at the end of the opening travel and 36.6px on the close**, with every
+  "it moved" and "it ended in the right place" check still green. This is the
+  list `prominence.mjs` does not reach, which is why `gitrow.mjs` asserts it
+  here.
+- **The panel's height is a constant.** #151 rests on five fixed-height rows,
+  so `details { margin:.25rem 0 }` — which every *other* disclosure wants —
+  is zeroed at `.git .commit`, not weakened at `details`. Left in, the row
+  pitch goes 22 → 26 and a landing commit moves the page.
+- **What he opened survives the tick** (#118 / #141 one level down), for free,
+  by carrying `data-keep`.
+
+**The step is `--dim` → `--muted`**, stated here because #169's rule is
+per-surface: a closed commit row is the dimmest summary on the page, so the
+shared `--bright` would drag a five-row peek to the loudest thing on the
+dashboard.
+
+**The body is reflowed** (`mdB`, #102) — a commit message is hard-wrapped at
+~72 columns by every tool that writes one, and rendered verbatim in a wider
+column it reads as a poem. **The files are plain text, not links**, and that
+is a decision rather than an omission: a path from an old commit may not
+exist now, and #157 is open precisely because a link that 404s promises
+something. They become links when #157 lands, by resolving first.
+
+**Both empty cases say so** — `(no message body — the subject is all of it)`
+and `(no files — an empty or merge commit)`. One line each, and they are the
+difference between "this commit had nothing more to tell you" and "this page
+could not read it", which is #136's rule one panel over.
+
+`git_tail` carries the extra fields on the existing single `git log` call:
+`%x1e` at the head of the format makes each commit one record, so
+`--name-only`'s file list — which prints *after* the format, on its own lines
+— lands in the last field instead of being indistinguishable from the next
+commit. The file list is capped at 40 in Python, because five commits
+touching a thousand files each would be a megabyte of `/data.json` on every
+tick to fill a disclosure nobody opened.
 
 #### What this page is serving
 

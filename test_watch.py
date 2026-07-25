@@ -101,6 +101,75 @@ class TestCollector(unittest.TestCase):
             with tempfile.TemporaryDirectory() as e:
                 self.assertEqual(watch.git_tail(e), [])
 
+    def test_git_tail_carries_what_an_expanded_row_shows(self):
+        # #166: the row expands onto the full sha, the author, the message
+        # BODY (where this repo's reasoning lives) and the files touched.
+        # One `git log` call, so `--name-only`'s file list — which prints
+        # after the format, on its own lines — has to be told apart from the
+        # next commit. `%x1e` per record is what does that.
+        import subprocess
+        with tempfile.TemporaryDirectory() as d:
+            env = dict(os.environ,
+                       GIT_AUTHOR_NAME="a commit author",
+                       GIT_AUTHOR_EMAIL="t@x",
+                       GIT_COMMITTER_NAME="a commit author",
+                       GIT_COMMITTER_EMAIL="t@x")
+            run = lambda *a: subprocess.run(  # noqa: E731
+                ["git", "-C", d, *a], env=env, capture_output=True, check=True)
+            run("init", "-q")
+
+            def commit(msg, body, *names):
+                for n in names:
+                    os.makedirs(os.path.dirname(os.path.join(d, n)) or d,
+                                exist_ok=True)
+                    with open(os.path.join(d, n), "w") as f:
+                        f.write(n)
+                    run("add", n)
+                run("commit", "-q", "-m", msg, *(["-m", body] if body else []))
+
+            # a body carrying the field separator: it is his prose, so the
+            # parse rejoins the middle rather than indexing a fixed position
+            commit("feat: with a body", "line one\nline two\x1fand a separator",
+                   "a.txt", "sub/b.txt")
+            commit("fix: no body at all", None, "c.txt")
+            rows = watch.git_tail(d)
+            self.assertEqual(len(rows), 2)
+            newest, older = rows
+            self.assertEqual(newest["subject"], "fix: no body at all")
+            self.assertEqual(newest["body"], "")
+            self.assertEqual(newest["files"], ["c.txt"])
+            self.assertEqual(older["who"], "a commit author")
+            self.assertEqual(len(older["full"]), 40)
+            self.assertTrue(older["full"].startswith(older["sha"]))
+            self.assertIn("and a separator", older["body"])
+            self.assertEqual(sorted(older["files"]), ["a.txt", "sub/b.txt"])
+            self.assertEqual(older["more"], 0)
+            # a commit that touches nothing is an ordinary state, not a
+            # missing file list — the page says which
+            run("commit", "-q", "--allow-empty", "-m", "chore: empty")
+            self.assertEqual(watch.git_tail(d)[0]["files"], [])
+
+    def test_git_tail_caps_the_file_list_and_says_it_did(self):
+        # five commits touching a thousand files each would be a megabyte of
+        # /data.json on every tick, to fill a disclosure nobody opened. The
+        # cap has to be VISIBLE, or the page silently claims a short commit.
+        import subprocess
+        with tempfile.TemporaryDirectory() as d:
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+            run = lambda *a: subprocess.run(  # noqa: E731
+                ["git", "-C", d, *a], env=env, capture_output=True, check=True)
+            run("init", "-q")
+            n = watch.GIT_FILES + 7
+            for i in range(n):
+                with open(os.path.join(d, "f%03d" % i), "w") as f:
+                    f.write("x")
+            run("add", "-A")
+            run("commit", "-q", "-m", "feat: a wide commit")
+            row = watch.git_tail(d)[0]
+            self.assertEqual(len(row["files"]), watch.GIT_FILES)
+            self.assertEqual(row["more"], 7)
+
     def test_serving_report_names_every_state(self):
         # #140. Each of these is a DIFFERENT answer to "what is this page
         # running", and only one of them means "I compared and they differ".

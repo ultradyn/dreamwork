@@ -95,13 +95,17 @@ lint:
 #                history of watch.py, so it evolves one repo through all four
 #                answers in order. The shared fixture is not a repository, so
 #                against it this could only ever reach "cannot tell".
+#   gitrow       OWN TARGET + OWN EPHEMERAL PORT (#166), same reason as
+#                dashboard: the shared fixture is not a repository, so the
+#                commits panel is empty there and every check would pass
+#                against nothing. Plants bodies and file lists it can name.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history plugcmd qorder serving"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history plugcmd qorder serving gitrow"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"

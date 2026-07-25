@@ -207,12 +207,41 @@ STYLE = """<style>
      FIXED HEIGHT is #151's, not decoration: the subject ellipsises rather
      than wrapping, so a long message cannot change the panel's height and a
      row arriving or leaving moves the rows by exactly one row. */
-  .git .commit { display:flex; align-items:baseline; gap:1ch;
-                 height:1.4rem; line-height:1.4rem; color:var(--dim);
+  /* THE ROW IS A <details> (#166), so the flex row moved onto its summary and
+     the margin every other disclosure wants is taken back here. `details`
+     carries `margin:.25rem 0` a hundred lines up, and 4px above and below
+     five rows is 40px of panel that grows and shrinks — #151 rests on this
+     panel's height being a CONSTANT so a landing commit moves the page by
+     exactly nothing. Zeroed at the row, not weakened at `details`, because
+     every other disclosure on the page still wants that margin. */
+  .git .commit { margin:0; color:var(--dim);
                  /* the same travel a question card gets (#151 reuses #104's
                     regroup); travelCard overrides this inline while it runs */
                  transition:transform .85s cubic-bezier(.32,.1,.2,1),
                             opacity .55s ease, filter .55s ease; }
+  .git .commit > summary { display:flex; align-items:baseline; gap:1ch;
+                 height:1.4rem; line-height:1.4rem; color:var(--dim); }
+  /* #169's step, stated for THIS surface as that rule requires: a closed row
+     sits at --dim, the dimmest summary on the page, so open is one place up
+     the ramp and not the shared --bright, which would drag the five-row panel
+     to the loudest thing on the dashboard for a peek. */
+  .git .commit[open] > summary { color:var(--muted); }
+  /* the air is #169's and it must NOT transition: `regroupCards` measures the
+     row's new rect in the same tick the toggle flips, so a growing padding
+     hands the FLIP a start-of-transition height and the travel snaps at the
+     end. Stated here because this list is the one `prominence.mjs` does not
+     reach. */
+  .git .commit[open] { padding:.5rem 0; }
+  .git .gdetail { margin:.15rem 0 .1rem 2ch; }
+  .git .gmeta { color:var(--dimmer); font-size:.7rem;
+                font-variant-numeric:tabular-nums; }
+  .git .gnone { color:var(--dimmer); font-size:.7rem; margin:.35rem 0; }
+  /* the file list wraps as chips rather than a column: it is a glance at what
+     the commit touched, and a fifty-line list would bury the body above it */
+  .git .gfiles { display:flex; flex-wrap:wrap; gap:.2rem 1.5ch;
+                 margin:.35rem 0 .1rem; }
+  .git .gfile { color:var(--dim); font-size:.7rem; }
+  .git .gmore { color:var(--dimmer); }
   .git .gsha { flex:0 0 auto; color:var(--dimmer); }
   .git .gsub { flex:1 1 auto; min-width:0; overflow:hidden;
                white-space:nowrap; text-overflow:ellipsis; }
@@ -1607,11 +1636,52 @@ function servingLine(d) {
   return `<div class="gserve${loud ? ' stale' : ''}"${title}>` +
          `${say({ ...s, missing })}</div>`;
 }
-const gitRow = c => `<div class="commit${
+/* what a row holds when he opens it (#166). The subject is a LABEL for the
+   reasoning; the body is the reasoning, and in this repo it is the most
+   useful text in the log — the row shows sixty ellipsised characters of it.
+
+   Through `mdB`, which reflows (#102): a commit body is hard-wrapped at ~72
+   columns by every tool that writes one, and rendered verbatim in a wider
+   column it reads as a poem. It is prose the loop wrote, so it takes the
+   prose renderer, exactly as `.md` files do.
+
+   THE FILES ARE PLAIN TEXT, NOT LINKS, and that is a decision rather than an
+   omission: a path from an old commit may not exist now, and #157 is open
+   precisely because a link that 404s promises something. When #157 lands
+   these become links by resolving first, not by being linkified now.
+
+   Both empty cases say so. "(no message body)" and "(no files)" are one line
+   each and they are the difference between "this commit had nothing more to
+   tell you" and "this page could not read it" — which is #136's rule, one
+   panel over. */
+const gitDetail = c => `<div class="gdetail">` +
+  `<div class="gmeta">${esc(c.full || c.sha)} · ${esc(c.who || 'unknown')}` +
+  `</div>` +
+  ((c.body || '').trim() ? mdB(c.body)
+    : `<div class="gnone">(no message body — the subject is all of it)</div>`) +
+  ((c.files || []).length
+    ? `<div class="gfiles">` +
+      c.files.map(f => `<span class="gfile">${esc(f)}</span>`).join('') +
+      (c.more ? `<span class="gfile gmore">+${c.more} more</span>` : '') +
+      `</div>`
+    : `<div class="gnone">(no files — an empty or merge commit)</div>`) +
+  `</div>`;
+/* ...and the row IS the disclosure (#166). `<details>` rather than a div
+   with a class, so it inherits the page's whole disclosure vocabulary at
+   once: `summary::before`'s +/- affordance, #169's air and luminance step,
+   `data-keep`'s survival across the tick, and the shared expand handler's
+   motion. `data-sha` stays the row's identity for `GIT_LIST`; `data-keep`
+   is a SECOND key because they answer different questions — one addresses
+   the row inside its list, the other addresses what he opened across a
+   re-render, and a commit row is the first element on this page to need
+   both at once. */
+const gitRow = c => `<details class="commit${
     c.subject.includes('dreamwork(maintain:') ? ' maint' : ''}"` +
-  ` data-sha="${esc(c.sha)}"><span class="gsha">${esc(c.sha)}</span>` +
+  ` data-sha="${esc(c.sha)}" data-keep="commit:${esc(c.sha)}">` +
+  `<summary class="grow"><span class="gsha">${esc(c.sha)}</span>` +
   `<span class="gsub">${esc(c.subject)}</span>` +
-  `<span class="age cage" data-ct="${c.t}"></span></div>`;
+  `<span class="age cage" data-ct="${c.t}"></span></summary>` +
+  gitDetail(c) + `</details>`;
 function buildDashboard(d) {
   let h = `<div id="sections">`;
   // a fault first (it is one line, and usually absent), then what the loop has
@@ -2619,18 +2689,38 @@ addEventListener('click', e => {
    one that animates; a standalone `<details>` still toggles instantly. The
    native toggle is prevented because <details> flips before any event we could
    measure from, and a FLIP with nothing to measure is a jump. */
+/* ...AND A COMMIT ROW IS THE SAME MOMENT (#166), which is why this handler
+   takes a list of surfaces rather than gaining a sibling. A commit row IS
+   its own `<details>` where a card CONTAINS one, so the element that resizes
+   differs — and that is the only thing that differs. Everything else (the
+   snapshot, the regroup, the body ghost, the reveal, reduced motion) is
+   shared, and a second handler is how one gesture becomes two that drift.
+
+   The `host` is the member of the keyed list whose box changes: for a card
+   that is the `.qa` around the toggle, for a commit row it is the toggle
+   itself. `nestedToggle` reads true in both cases (neither `det` is the
+   card's own `.qfold`), so the departing body is ghosted by this handler at
+   the rect it had rather than clipped from the card-level clone. */
+const EXPAND_SURFACES = [
+  { sum: '.qa details > summary', host: '.qa[data-qid]', list: QA_LIST },
+  { sum: '.git .commit > summary', host: '.git .commit[data-sha]',
+    list: GIT_LIST },
+];
 addEventListener('click', e => {
-  const sum = e.target.closest && e.target.closest('.qa details > summary');
-  if (!sum) return;
+  if (!e.target.closest) return;
+  const m = EXPAND_SURFACES.find(s => e.target.closest(s.sum));
+  if (!m) return;
   e.preventDefault();
-  const det = sum.parentElement, card = det.closest('.qa');
+  const det = e.target.closest(m.sum).parentElement;
+  const host = det.closest(m.host);
+  if (!host) return;
   // measured while it still HAS a box: a closed <details> keeps its children
   // in the DOM and gives them no geometry, so the rect has to be taken first
-  const leaving = (det.open && nestedToggle(card, det)) ? cardBody(card, det) : [];
+  const leaving = (det.open && nestedToggle(host, det)) ? cardBody(host, det) : [];
   const rects = leaving.map(c => c.getBoundingClientRect());
-  const before = snapshotCards();
+  const before = snapshotCards(m.list);
   det.open = !det.open;
-  regroupCards(before, det);
+  regroupCards(before, det, m.list);
   leaving.forEach((c, i) => ghostNode(c, rects[i]));
 });
 /* the dashboard's questions section (#141) opening and closing — the SAME
@@ -4287,8 +4377,15 @@ def list_dreams(dirpath, now):
 GIT_ROWS = 5
 
 
+# A row expands (#166), so it carries more than it shows. Capped here rather
+# than in the page: five commits touching a thousand files each would be a
+# megabyte of /data.json on every tick to fill a disclosure nobody opened.
+GIT_FILES = 40
+
+
 def git_tail(target, n=GIT_ROWS):
-    """Recent commits as `[{sha, t, subject}]`, newest first.
+    """Recent commits, newest first, as
+    `[{sha, t, subject, full, who, body, files, more}]`.
 
     The time is `%ct` — a unix timestamp, a NUMBER — because the page renders
     an age that ticks every second (#132) and a page computing that from what
@@ -4297,28 +4394,45 @@ def git_tail(target, n=GIT_ROWS):
 
     Split on the unit separator, not on a space: a subject may contain
     anything at all, and `%h %s` cannot be taken apart again without guessing
-    where one ends. A row that does not split into three is dropped rather
-    than half-read.
+    where one ends. A record that does not split into enough fields is dropped
+    rather than half-read.
+
+    THE RECORD SEPARATOR IS WHY THIS IS ONE CALL. `--name-only` prints the
+    file list *after* the format, on its own lines, so a line-oriented parse
+    cannot tell a filename from the next commit — but `%x1e` at the head of
+    the format makes each commit one record, and the trailing `%x1f` puts the
+    file list in the last field. A body may itself contain a separator (it is
+    his prose), so the body is rejoined from the middle rather than indexed.
     """
     try:
         res = subprocess.run(
-            ["git", "-C", target, "log", "-n", str(n),
-             "--pretty=%h\x1f%ct\x1f%s"],
+            ["git", "--no-optional-locks", "-C", target, "log", "-n", str(n),
+             "--name-only",
+             "--pretty=format:%x1e%h\x1f%ct\x1f%s\x1f%an\x1f%H\x1f%b\x1f"],
             capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         return []
     if res.returncode != 0:
         return []
     out = []
-    for line in res.stdout.splitlines():
-        parts = line.split("\x1f", 2)
-        if len(parts) != 3:
+    for rec in res.stdout.split("\x1e"):
+        if not rec.strip():
+            continue
+        parts = rec.split("\x1f")
+        if len(parts) < 7:
             continue
         try:
             when = int(parts[1])
         except ValueError:
             continue
-        out.append({"sha": parts[0], "t": when, "subject": parts[2]})
+        files = [f for f in parts[-1].splitlines() if f.strip()]
+        out.append({
+            "sha": parts[0], "t": when, "subject": parts[2],
+            "who": parts[3], "full": parts[4],
+            "body": "\x1f".join(parts[5:-1]).strip("\n"),
+            "files": files[:GIT_FILES],
+            "more": max(0, len(files) - GIT_FILES),
+        })
     return out
 
 

@@ -118,6 +118,12 @@ than once:
   arrival's intermediate opacities, that the surviving items were reconciled
   rather than re-created, that a plugin cannot reach the main row, and that
   `POST /command` accepts what the menu offers.
+- `gitrow` — a commit row expands (#166), and does it on the page's own
+  gesture. Three of its checks are for contracts the row INHERITED by
+  becoming a `<details>` and that no end-state check can fail on: the FLIP
+  window (#169's air must land in layout, not transition — this is the list
+  `prominence` does not reach), the panel's constant height (#151), and
+  surviving the tick (#118). Builds its own git target.
 - `serving` — which revision the page is RUNNING (#140), across all four
   answers: no repo, untracked, current, behind. Evolves ONE repo forwards
   because the answer is a function of history; the load-bearing part is that
