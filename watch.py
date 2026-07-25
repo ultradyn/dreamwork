@@ -1445,14 +1445,25 @@ async function sendAnswer(key) {
   // ripple accents it. reduced-motion just swaps to the answered state.
   // Restated through the SAME component, so it cannot drift from a fresh
   // render of the same entry.
+  //
+  // ...and the card is not alone on the page (#191). Restating it changes its
+  // HEIGHT, so every card below it moves — and this path went through neither
+  // snapshot nor regroup, so they moved in one frame, in the one gesture this
+  // page has most carefully taught to travel. Same seam as the disclosure
+  // handler below: snapshot, mutate, regroup.
+  const before = snapshotCards();
   const next = Object.assign({}, q, { answer: val });
   card.className = 'qa ' + qaState(next, key);
   card.innerHTML = qaInner(next, key);
   const anstext = card.querySelector('.anstext');
+  // the settled destination, measured before the regroup clamps the card's
+  // height for its travel — the flip's `to` is where the answer ENDS UP
+  const toRect = anstext && anstext.getBoundingClientRect();
+  regroupCards(before, null, null, card);
   if (typeof ripple === 'function')
     ripple(fromRect.left + fromRect.width / 2, fromRect.top + 22);
   if (!rmr && anstext && typeof flipDock === 'function')
-    flipDock(anstext, fromRect, anstext.getBoundingClientRect());
+    flipDock(anstext, fromRect, toRect);
 }
 /* thread a follow-up note onto any entry — same lifted-hero morph as an
    answer: the note lifts from the box into the thread, ripple accenting. */
@@ -1466,9 +1477,15 @@ async function sendComment(key) {
   const res = await postComment(entry.title, val,
                                 key[0] === 'o' ? 'Open' : 'Answered');
   if (!res || !res.ok) { qaFail(card, res ? res.status : 0); return; }
-  el.value = '';
   holdRerenderUntil = Date.now() + 1600;
-  if (!card) return;
+  if (!card) { el.value = ''; return; }
+  // #191, the same as an answer: the note lands INSIDE the card, so the card
+  // grows and every card below it moves. Snapshot before the first thing that
+  // changes a height — the box being cleared is one of those the moment a box
+  // grows with what he types (#177), so it is inside the window rather than
+  // trusted to stay inert.
+  const before = snapshotCards();
+  el.value = '';
   // the LAST segment, because what he just wrote is the newest thing in the
   // thread — appending to the first would drop it above an answer written
   // hours earlier, which is the bug this whole split exists to prevent (#128).
@@ -1484,9 +1501,10 @@ async function sendComment(key) {
   f.className = 'follow human';        // it is his; say so, same as a reload
   f.innerHTML = `<span class="who">${WHO.human}</span>` + mdInline(val);
   host.appendChild(f);
+  const toRect = f.getBoundingClientRect();
+  regroupCards(before, null, null, card);
   if (typeof ripple === 'function') ripple(fromRect.left + 24, fromRect.top + 14);
-  if (!rmr && typeof flipDock === 'function')
-    flipDock(f, fromRect, f.getBoundingClientRect());
+  if (!rmr && typeof flipDock === 'function') flipDock(f, fromRect, toRect);
 }
 """
 
@@ -2159,7 +2177,7 @@ const BODY_STEP = 24;             // about a line: below this nothing "left"
    `cardGroup` returns '' on both sides and nothing is ever lifted. Both of
    those are properties of the markup, which is why they are stated in the CSS
    and in gitRow rather than tested for here. */
-function regroupCards(before, toggled, list) {
+function regroupCards(before, toggled, list, restated) {
   if (rmr || !before || !before.size) return;
   list = list || QA_LIST;
   const wrap = document.querySelector('.wrap');
@@ -2180,6 +2198,14 @@ function regroupCards(before, toggled, list) {
     const dh = now.height - was.rect.height;
     if (!moved && Math.abs(dh) < 1) return;
     travelCard(el, was.rect, now, was.group !== cardGroup(el));
+    // A card the CALLER restated is not one whose body arrived or left (#191).
+    // The submit morph replaces the card's contents itself and gives the one
+    // thing that is genuinely new — the answer, the note — its own lifted-hero
+    // arrival; the body, the thread and the compose box were on screen before
+    // and after. Re-fading them would say a change happened where none did,
+    // which is #128's rule one surface over. Its HEIGHT still travels, and
+    // that is the thing carrying every card below it.
+    if (el === restated) return;
     // The box travelling is only half of a fold. The BODY is leaving, and an
     // element leaving fades rather than vanishing (human, 2026-07-25:
     // "when it folds in, the body shouldn't disappear all at once"). The new

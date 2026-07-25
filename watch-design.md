@@ -1337,7 +1337,8 @@ exception; an element leaving fades rather than vanishing.
 
   | cell | who acts | what happens |
   |---|---|---|
-  | open → awaiting | he answers | the submit morph restates the card in place (the typed text lifts from the box into the answer, a ripple), then the regroup travels it to its new heading, lifted. The wisp starts at its dim keyframe and breathes up, so it arrives rather than snapping on. |
+  | open → awaiting | he answers | the submit morph restates the card in place (the typed text lifts from the box into the answer, a ripple) **and regroups the list around it**, then the tick's regroup travels it to its new heading, lifted. The wisp starts at its dim keyframe and breathes up, so it arrives rather than snapping on. |
+  | same card, a note lands | **he** adds a follow-up | the note lifts from the box into the thread and the card grows; same seam, same regroup |
   | awaiting → folded | the loop folds it | travels, lifted; the height collapses; the departing body dreams away |
   | open → folded | the loop answers it itself | the same, with no wisp ever |
   | folded → open/awaiting | a follow-up reopens it | travels, lifted; the height grows; the arriving body eases in |
@@ -1348,7 +1349,7 @@ exception; an element leaving fades rather than vanishing.
   | gone | the entry was deleted | dreams away at the rect it occupied |
   | arrived | a new question | `.dreamin`: snap, then ease in |
 
-  Four things in there are not obvious and all four were bugs first:
+  Five things in there are not obvious and all five were bugs first:
 
   - **Height, never scale.** `flipDock` morphs by `scale()`, which is right
     for the review dock, where the card really does change column. In the
@@ -1379,6 +1380,25 @@ exception; an element leaving fades rather than vanishing.
     instead of the card animating underneath (which is how this was found).
     `dreamAway` strips the identity at the door rather than teaching six
     lookups to skip it.
+  - **The morph is INSIDE this matrix, not beside it** (#191). `sendAnswer`
+    restated its card with `card.innerHTML = qaInner(…)` and called neither
+    `snapshotCards` nor `regroupCards`, so the one gesture this page has most
+    carefully taught to travel was the only one that teleported: the cards
+    below went **744 → 791 in two distinct positions, with no transform**,
+    across 354 frames. `sendComment` had the identical shape — a note lands
+    inside the card, so the card grows — and was fixed in the same breath,
+    because finding one done and one not is how a reader concludes the rule is
+    optional. Both now snapshot → mutate → regroup, on the seam the
+    `.qa details > summary` handler was already using three functions away.
+
+    **What the morph keeps for itself is its own card's CONTENTS.**
+    `regroupCards`'s `restated` argument names the card the caller is
+    animating, and skips the body ghost/reveal for it: the answer (or the
+    note) already has its own lifted-hero arrival, and the body, the thread
+    and the compose box were on screen before and after — re-fading them says
+    a change happened where none did, which is #128's rule one level up. Its
+    **height** still travels, and the height is what carries every card below
+    it, for free, welded to the card they are following.
 
   The guard is `dev/capture/states.mjs`, and its assertion is deliberately
   about **outcome, not mechanism**: every card that ended somewhere else
@@ -1429,9 +1449,23 @@ exception; an element leaving fades rather than vanishing.
   which works from any answer box) *is* the confirmation: the card reshapes
   in place into its answered-awaiting-fold state and the typed text lifts
   from the box into the rendered answer (the lifted-hero FLIP — the answer
-  is the tracked element), a ripple accenting it. The live re-render is held
-  ~1.6s so the morph settles before the loop's fresh data regroups the card.
-  reduced-motion swaps straight to the answered state.
+  is the tracked element), a ripple accenting it, **and the list regroups
+  around it** so the cards below travel rather than jumping the height delta
+  (#191, above). The live re-render is held ~1.6s so the morph settles before
+  the loop's fresh data regroups the card. reduced-motion swaps straight to
+  the answered state.
+
+  **The hold is why this hid for so long, and the lesson is about the guard's
+  WINDOW rather than about its assertions.** `regroup.mjs` submits through the
+  real UI too, but it traces 5.2s — past the hold — so the tick's own regroup
+  travels the neighbour, and every "it slid" check passes over a teleport that
+  happened a second and a half earlier. `dev/capture/morph.mjs` traces
+  **1400ms**, inside the hold, and its load-bearing assertion is that the card
+  node was **never replaced** across the window: `card.innerHTML = …` keeps the
+  node and a tick's list swap does not, so whatever moved, the *morph* moved.
+  It runs four phases (answer/note × normal/reduced) on its own server and a
+  pristine target each time, because answering the first open question changes
+  which card the next phase would pick.
 - **The awaiting-fold wisp — the one standing exception to "opt-in".**
   Everything else on this page moves only in response to something; the
   awaiting-fold state breathes continuously, on purpose, because it is the

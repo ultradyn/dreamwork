@@ -53,13 +53,19 @@ lint:
 #                the commits panel, so it needs a git target of its own. It
 #                also TYPES into a card between renders, which is why it
 #                cannot share a page with anything that navigates.
+#   morph        same shape again, for a third reason: it runs four phases
+#                (answer/note x normal/reduced) and each needs a PRISTINE
+#                questions.md, because answering the first open question
+#                changes which card the next phase would pick. Sharing the
+#                server would make it order-dependent, and an order-dependent
+#                guard reports run order as a bug in the page.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"
