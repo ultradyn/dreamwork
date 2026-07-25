@@ -36,6 +36,7 @@ cover it too.
 | `dev/capture/fixture/` | Frozen miniature target the guards run against, so a red light means the code broke | Yes — extend it when the parser learns a new input shape |
 | `justfile` | Common tasks: test (both halves), pytest, guards, watch, audit-styleguide | Yes — a new routine worth repeating becomes a recipe |
 | `DREAMWORK.md` (repo root) | This target's own goals, philosophy, preferences, plugin decisions | Yes — folded whenever the human reveals a durable preference |
+| `../ud-dreamtask/SKILL.md` (sibling repo) | The bounded one-errand loop; inherits this skill's Guardrails, Subagents and Durable-state sections **by reference** | Yes — a change to those sections changes dreamtask's behaviour too, and a rename orphans a live pointer |
 
 **Routing rule — a finding lands where its trigger lives.** Behaviour
 that must fire unprompted goes in SKILL.md; the shape of a file goes in

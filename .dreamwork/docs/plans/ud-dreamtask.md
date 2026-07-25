@@ -1,12 +1,19 @@
 # ud-dreamtask — bounded dreamloop for one task (build plan)
 
-> **Status (2026-07-25 12:20):** design confirmed by Max — "rec lgtm"
+> **Status (2026-07-25 12:40):** design confirmed by Max — "rec lgtm"
 > (10:47), taking all four recommendations. The Open-questions section is
 > gone; its answers are folded into the shape below and restated once in
 > **Settled**. Build stages revised accordingly. Two things the folding
 > surfaced are recorded in **Findings from the fold** — one bullet the
 > answers dissolve, one seam the answers do not settle. Prune this plan
 > when dreamtask has completed a real errand end to end.
+>
+> **Built (2026-07-25 12:40):** stages 1-3 and 5 —
+> `/home/xertrov/.llm-general/skills/ud-dreamtask/` (own git repo,
+> symlinked into `~/.claude/skills/`), index pointer, doc-map row,
+> README line. Coordinator rulings 12:12 folded below (location, hub
+> opt-in, stage-6 handoff). Remaining: stage 4 (dogfood) and stage 6
+> (gated).
 
 Human-proposed 2026-07-25 (~04:00). Sister skill to ud-dreamwork: the
 same philosophy — small verified increments, reflection over momentum,
@@ -183,10 +190,33 @@ starts by asking the coordinator.
   is a sibling skill rather than an extension seam. Worth correcting in
   the ledger so nobody builds to `writing-plugins.md`'s contract by
   mistake. (Coordinator's call — the ledger has one writer.)
-- **Not settled by the recs, and not blocking:** whether a dreamtask
-  should appear in a hub by default (it can, by construction, but
-  `dreamhub add` is a human action today), and whether the harvest in
-  stage 6 may edit core files. Both are asks, not guesses.
+## Coordinator rulings (2026-07-25 12:12)
+
+- **Location: a sibling directory with its own git repo** —
+  `/home/xertrov/.llm-general/skills/ud-dreamtask/`, following the
+  ud-dreamwork-github precedent. The deciding reason is that
+  `../ud-dreamwork/SKILL.md` resolves from **both** trees, which was
+  checked rather than assumed: from `~/.claude/skills/ud-dreamtask/` it
+  resolves lexically (both skills are symlinked into that dir) and
+  physically (the symlink lands beside its sibling in the source tree).
+- **A dreamtask does not appear in a hub by default.** Errands are
+  transient and gardens are not; auto-listing would fill the hub with
+  dead rows inside a week, and the hub's job is "what needs me" at a
+  glance. `dreamhub add <dreamstate>` works by construction, as a human
+  action.
+  - **Parked consequence, deliberately not solved here:** an errand
+    *blocked on the human* is exactly what should surface somewhere, and
+    today it sits in `~/.config/dreamwork/tasks/<slug>/` with a
+    non-empty `awaiting_human` that nothing reads. Whoever takes dreamhub
+    stage 2 or stage 6 inherits this question rather than rediscovering
+    it. Do not build for it before then.
+- **Stage 6 is a handoff, not an edit.** `initialization.md`,
+  `migrations/`, `file-formats.md` and `lint.py` belong to the
+  coordinator: write the exact change wanted and hand it over (the
+  pattern dreamhub used for its justfile block), which is why nothing
+  has been clobbered in a tree three agents share.
+- **The ledger title was corrected**: #50 now reads "ud-dreamtask, a
+  sibling skill (NOT a plugin; takes no ud-dreamwork- prefix)".
 
 ## Build stages
 
