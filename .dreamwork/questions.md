@@ -2,28 +2,6 @@
 
 ## Open
 
-- **2026-07-25 — a goal the loop folded in on its own: "nothing fails
-  quietly".** The maintenance rotation says DREAMWORK.md should reflect
-  what the loop has LEARNED as well as what you have said, so I added a
-  sub-goal under "walk away and come back to safe progress" without
-  being asked. Flagging it rather than letting it pass silently, because
-  a goal you did not state is exactly the kind of thing that should not
-  arrive quietly.
-
-  The evidence, all from today: a `questions.md` that parsed to nothing
-  and rendered as "nothing to answer" while four real decisions sat in
-  it; a command channel nothing read; a refused write that reported
-  success and cleared your text; an enter animation that had never once
-  run, under a matrix that documented it; and five checks that passed on
-  their own bug. Every one of them looked fine.
-
-  The stated form is that the loop prefers a loud wrong state to a quiet
-  one, and prefers removing the opportunity for a mistake over restating
-  the rule against it. **Say if you disagree and I will take it out** —
-  it is a real addition to what the loop optimises for, not a
-  restatement.
-
-
 - **2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
   Stages 1-5 shipped: the skill exists, is installed and indexed, walks
   its own procedure, and `newerrand.py` creates a dreamstate so an
@@ -91,6 +69,16 @@
   `.dreamwork/docs/plans/dreamhub-stage1.md`.
 
 ## Answered
+
+- **A goal the loop folded in on its own: "nothing fails quietly"** →
+  "yes that sounds right" via watch (2026-07-25 14:20). Confirmed and
+  kept in DREAMWORK.md's Goals. He added an idea with it, now #156: a
+  PostToolUse hook that lints `questions.md` on edit, with error
+  messages that say where the problem is, what it is, what was expected,
+  and a brief description of the spec. That fires EARLIER than anything
+  the loop has — at the moment of the malformed write, while the agent
+  that made it can still fix it — and it bundles with #138, since both
+  are Claude Code hooks and neither should ship alone.
 
 - **Daemon mode: stage-1 build go? (#96)** → "go" via watch (2026-07-25
   10:48): the hold is lifted. Stage 1 is the dreamhub aggregator, per

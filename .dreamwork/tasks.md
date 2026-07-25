@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **156**
+Next id: **157**
 
 ## Open
 
@@ -71,6 +71,15 @@ Next id: **156**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
+- **#156** — Lint questions.md at WRITE time (PostToolUse hook) · P2 ·
+  idea · 40m · his idea, and it is the strongest version of the fix:
+  every current defence fires LATER than the mistake (lint at init and
+  in `just test`, the dashboard at read time). A hook fires in the same
+  turn, while the agent that mangled it still holds the context ·
+  `lint.py` already does the checking, so the hook is thin · **his
+  error-message spec is the deliverable**: where, what, expected, and a
+  pointer to the format · **bundle with #138** — both are Claude Code
+  hooks, ship the plugin or ship neither
 - **#153** — Title that says whether you're needed, and a real favicon ·
   P2 · idea · 50m · the tab title is the only part of the dashboard
   visible in a background tab, so it carries the count front-loaded
