@@ -58,7 +58,11 @@ carries a `+` command opener (steer the loop without a chat turn).
   instead of waiting for a tick. **One event per line, and the line is
   something an agent then acts on**, so nothing a human can type into a box
   reaches it unfolded: a submission's newlines collapse to spaces (`one_line`)
-  or a typed newline forges a second event.
+  or a typed newline forges a second event — and the agent would act on a
+  command he never sent. The general rule, because this is a class and not one
+  bug: **anywhere the loop writes human text into a line-oriented file that an
+  agent reads back, the text must not be able to forge a record.** Nobody has
+  to be malicious for it to bite; a pasted multi-line note does it by accident.
 - **`--dev`**: fps, measured per-frame draw time (CPU stopwatch around
   `draw()`; true GPU time via `EXT_disjoint_timer_query_webgl2` when the
   context exposes it), inter-frame avg/worst, and a 120-frame sparkline
@@ -274,10 +278,12 @@ wrapped lines are joined and the reading column does the wrapping.
 
 **The line: markdown prose reflows, raw text does not.** Question bodies,
 answers, follow-up notes, dreams, and the dashboard's `.md` peeks are prose
-the page composes, and they go through `mdB` / `mdBReview`. `/file`, the
-status blob, and the git tail are shown *as they are on disk*, and stay
-verbatim in a `<pre>` — the file viewer's whole job is to be literal, and it
-serves code as well as prose.
+the page composes, and they go through `mdB` / `mdBReview`. `/file` and the
+git tail are shown *as they are on disk*, and stay verbatim in a `<pre>` —
+the file viewer's whole job is to be literal, and it serves code as well as
+prose. `status.json` was in that list until #130 and is not: it is not prose
+and not something he reads literally, it is a set of facts, and it now has
+its own component (below).
 
 Four things survive the join, because each carries meaning a joined line
 would destroy: a **blank line** is a paragraph break; a leading **`- `** is a
@@ -536,6 +542,54 @@ counts — grouping is the view's job, rendering is the card's.
 `dev/capture/qacard.mjs` guards this by *structural* comparison: it asserts
 the dashboard's and the review dock's cards have the same tag path and class
 vocabulary as `/questions`'s, which is exactly what a quiet fork would lose.
+
+### The status panel
+
+`status.json` is the loop's live state, and it used to be rendered by dumping
+it into a `<pre>`. That was fine while it was four keys; it stopped being fine
+at ~10:44 on 2026-07-25, when the coordinator started writing runtime state
+into it and it grew by half (human, with a screenshot: *"the status section
+shows json. It should render that json nicely, using colors effectively, and
+making good use of space, and cutting out or hiding bulk or boring stuff."*).
+
+**A glance is three questions**: what is happening, who is doing it, and does
+anything need him. `statusBlock` answers those in that order — `awaiting_human`
+first, then the task and the goal it serves, then one line per agent (name +
+`in_flight`), then a dim row of liveness facts. Everything else in the file is
+there so an **agent** can resume, which makes it load-bearing rather than junk.
+
+- **Nothing is dropped, only demoted.** The fold takes whatever is LEFT after
+  the named keys, never a second known list — `status.json` is a schema rather
+  than a fixed shape and the loop keeps adding to it, so a list would silently
+  hide the next thing it learned to say. The fixture carries a key the renderer
+  has never heard of, and the guard asserts it is still findable. Unrecognised
+  *shapes* fall back to a flattened key/value read rather than to a blank, for
+  the same reason.
+- **Colour by significance, never by JSON type.** Tinting strings, numbers and
+  booleans is the obvious move and the wrong one: it makes the panel louder
+  without making any of it easier to read, and it spends the page's one accent
+  on `true`. The accent goes to `awaiting_human` — on a rail, and on its count
+  — and nowhere else in this panel, because it is the only thing here waiting
+  on **him**. That is the question card's axis one surface over. It does not
+  breathe: the awaiting-fold wisp is still the page's one moving exception, and
+  the thing that separates these two accents is that one of them is in flight.
+  Everything else rides the text ramp — the task brightest, the goal under it,
+  the liveness facts dim, the fold dimmer.
+- **The tick is an age, not a timestamp.** It goes through the page's standing
+  `.age` idiom and keeps counting while he watches it — liveness is the design.
+  An unparseable `last_tick` renders verbatim rather than as `NaN`.
+- **The fold's key column is fixed width, not a minimum.** "Label the columns,
+  not the gaps" applies to a key/value list: a long key on a `min-width` shoves
+  that row's value out of line with every other row's, and the reader has to
+  re-find the column. It wraps inside its own column instead.
+
+`dev/capture/status.mjs` guards it against a frozen `status.json` in the
+fixture, and the check worth knowing about is the accent one — reading
+`--accent` off `:root` gives the token as authored (`#a5b4fc`) while every
+computed `color` comes back as `rgb(…)`, so comparing the two matches nothing
+and "the accent is used nowhere else" passes on a page painted entirely in it.
+Resolve the token through a throwaway element. It was shown red by deliberately
+accenting the agent names.
 
 ### The composer
 
