@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **160**
+Next id: **161**
 
 ## Open
 
@@ -88,6 +88,11 @@ Next id: **160**
   or not purely by the route it was reached through. Reflow `.md`, keep
   `.py`/`.json`/logs verbatim, and update watch-design.md in the same
   commit because this REPLACES a rule
+- **#160** — Frame-time graph should hug the RHS wall · P3 · bug · 10m ·
+  check `position:fixed` is not containing-block-trapped by an ancestor
+  with transform/filter (already a lesson, and this page has several) ·
+  and confirm the overlay is dev-only — a diagnostic that reaches him by
+  accident is the more interesting bug
 - **#159** — "sent to the dream" appears instead of arriving · P3 · bug
   · 15m · use `.dreamin`, which only started working today (#154) ·
   check the departure too · verify by per-frame trace, since a two-frame
