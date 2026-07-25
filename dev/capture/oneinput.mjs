@@ -67,6 +67,19 @@ for (const reduced of [false, true]) {
                spansField: Math.abs(B.top - F.top) < 2 &&
                            Math.abs(B.bottom - F.bottom) < 2,
                flushRight: Math.abs(B.right - F.right) < 2,
+               // ...and so does the TEXTAREA. This half went unmeasured until
+               // #139, which is exactly how a `.qa textarea` catch-all could
+               // leak `margin:.3rem 0` into the field and inset the box 5.8px
+               // inside the border it shares with a button sitting flush at
+               // 1px, while every check in this file stayed green. Proving the
+               // half that was already right proves nothing about the object.
+               taSpansField: Math.abs(T.top - F.top) < 2 &&
+                             Math.abs(T.bottom - F.bottom) < 2,
+               taFlushLeft: Math.abs(T.left - F.left) < 2,
+               taInset: [+(T.top - F.top).toFixed(2),
+                         +(F.bottom - T.bottom).toFixed(2),
+                         +(T.left - F.left).toFixed(2)],
+               taMargin: cs.margin,
                fieldHasBorder: getComputedStyle(f).borderTopWidth !== '0px',
                textareaBorder: cs.borderTopWidth,
                // one input, not two
@@ -95,6 +108,11 @@ for (const reduced of [false, true]) {
     ok('exactly one text input per card', geo.inputs === 1);
     ok('send sits flush: no gap, full field height, at the field edge',
        geo.gap === 0 && geo.spansField && geo.flushRight);
+    console.log(`field insets: textarea top/bottom/left = ` +
+                `${geo.taInset.join('/')}px, button gap ${geo.gap}px, ` +
+                `textarea margin ${geo.taMargin}`);
+    ok('and the TEXTAREA fills it too — one object, not two different insets',
+       geo.taSpansField && geo.taFlushLeft);
     ok('the border belongs to the wrapper, not the textarea',
        geo.fieldHasBorder && geo.textareaBorder === '0px');
     ok('the mode group reads [answer | add note]',

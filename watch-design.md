@@ -477,9 +477,11 @@ of the text field, integrate a 'send' button that sits flush with the text
 field so they appear to be one thing."*
 
 - **Field and send are one object.** The `.qfield` wrapper carries the
-  border, the radius, and `overflow:hidden`; the textarea has no border of
-  its own and the button spans the wrapper's full height and sits at its
-  edge. Two controls side by side would read as two controls.
+  border, the radius, and `overflow:hidden`; the textarea has no border and no
+  **margin** of its own, and both it and the button fill the wrapper edge to
+  edge. Two controls side by side would read as two controls — and so does one
+  object whose halves are inset differently, which is what a leftover
+  `.qa textarea` catch-all quietly made of it (#139).
 - **The mode picks the endpoint** (`/answer` vs `/comment`) and nothing else
   — the typed text, the submit morph, Ctrl/Cmd+Enter and the ~1.6s
   `holdRerenderUntil` guard are identical either way. The mode group is the
@@ -624,6 +626,27 @@ and true for any user of it:
   announce itself; it quietly overrules them**, and the component's own
   source reads correctly the whole time. The fix was to delete it, not to add
   a stronger selector.
+
+  **It has now happened twice, so it is a standing rule: no element catch-all
+  scoped inside a component.** `.qa textarea` was the same shape one component
+  over (#139) — it leaked `margin:.3rem 0` into `.qfield textarea`, insetting
+  the box 5.8px inside the border it shares with a send button sitting flush
+  at 1px, so the one object the field is meant to be had two different insets.
+  Everything else the catch-all declared was either already stated by
+  `.qfield textarea` or made moot by the flex row, which is the usual state of
+  one of these: deleting it *was* the fix. Delete rather than out-specify — an
+  out-specified catch-all is still armed for the next component that renders
+  inside it. `.qa` now carries none, and a comment in `STYLE` says why, so the
+  next one is not re-added innocently.
+
+  Both were invisible to pytest for as long as they existed, because the
+  generated source contains the component's own correct rule; it is just the
+  rule that loses. And both were invisible to the *browser* guard too, which is
+  the sharper lesson: `oneinput` had asserted since #103 that the send button
+  spans the field, and never that the textarea does — so it proved the half
+  that was already right. **When a rule says two things form one object,
+  measure both of them against the object**, or the check passes on a
+  component with a seam down the middle.
 
 **Discoverability is the ⋯ menu.** Hovering (or focusing) `.cmdmorebtn`
 reveals `.cmdmenu` — *every* kind, common or not, each with its one-line

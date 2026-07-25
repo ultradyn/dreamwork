@@ -140,17 +140,27 @@ STYLE = """<style>
                         transform .55s ease; }
   @media (prefers-reduced-motion: reduce) { .qa { transition:none; } }
   .qa .qt { color:var(--lit); }
-  .qa textarea { width:100%; background:var(--panel); color:var(--text);
-    border:1px solid var(--line); border-radius:var(--radius); font:inherit;
-    padding:.4rem; margin:.3rem 0; min-height:3rem; box-sizing:border-box; }
-  /* No `.qa button` catch-all. There was one, and it was the whole of #121:
-     an element rule left over from before `.qsend` and `.sgbtn` had styling
-     of their own, still winning on specificity (0,1,1 beats 0,1,0) and so
-     silently painting an opaque fill and a border onto buttons that had
-     asked for neither. The mode switch had been transparent in its own rule
-     since #103 and had never once rendered that way. A catch-all that
-     outlives the components it stood in for does not announce itself: it
-     just quietly overrules them. */
+  /* No element catch-alls scoped inside `.qa`. There were two, and each one
+     was a bug that took a human report to find:
+
+     `.qa button` was #121 — left over from before `.qsend` and `.sgbtn` had
+     styling of their own, still winning on specificity (0,1,1 beats 0,1,0)
+     and so painting an opaque fill and a border onto buttons that had asked
+     for neither. The mode switch had said `background:none` in its own rule
+     since #103 and had never once rendered that way.
+
+     `.qa textarea` was #139, the same shape one component over: it leaked
+     `margin:.3rem 0` into `.qfield textarea`, insetting the box 5.8px inside
+     the border it shares with a send button sitting flush at 1px — so the
+     one object the field is meant to be had two different insets. Everything
+     else it declared was already stated by `.qfield textarea` or made moot by
+     the flex row, so deleting it was the whole fix.
+
+     The rule, now that it has happened twice: a catch-all that outlives the
+     components it stood in for does not announce itself, it quietly overrules
+     them, and the component's own source reads correctly the whole time. DELETE
+     it — out-specifying leaves the trap armed for the next component to render
+     in here. */
   /* the three qaCard states (#105) are class modifiers on one card, so the
      shared parts are styled once and only the differences are stated here.
      awaiting: a quiet accent rail marks it apart from open questions; no
@@ -248,9 +258,12 @@ STYLE = """<style>
     border-radius:var(--radius); overflow:hidden;
     transition:border-color .3s ease; }
   .qfield:focus-within { border-color:var(--border); }
-  .qfield textarea { flex:1; min-width:0; background:none; border:0;
-    color:var(--text); font:inherit; font-size:.75rem; padding:.4rem .55rem;
-    min-height:2.4rem; resize:vertical; outline:none; }
+  /* the box states everything about itself, because nothing above it does
+     any more (#139). No margin: it fills the wrapper it shares a border with,
+     exactly as the send button does. */
+  .qfield textarea { flex:1; min-width:0; background:none; border:0; margin:0;
+    box-sizing:border-box; color:var(--text); font:inherit; font-size:.75rem;
+    padding:.4rem .55rem; min-height:2.4rem; resize:vertical; outline:none; }
   .qsend { flex:none; background:var(--panel2); color:var(--accent);
     border:0; border-left:1px solid var(--line); font:inherit;
     font-size:.7rem; padding:0 1rem; cursor:pointer;
