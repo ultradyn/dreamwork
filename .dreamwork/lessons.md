@@ -259,3 +259,17 @@ source dream. Not a log — only things that should change future behavior.
   only surface when the collision happens to land. Reach for "what is
   actually different between the runs" before "rerun it".
   (dreamer-hubbuild, 2026-07-25, #96)
+- **A readiness probe that accepts any answer will eventually grade a
+  stranger's server.** dreamhub's guard failed to bind its port, its
+  probe found a watch.py instance answering nearby, and it asserted 23
+  checks against it — green, and measuring somebody else's process.
+  Ports now have named owners (parallel-architecture.md), but ranges are
+  not sufficient because a stale process can hold a port you own: fetch
+  something only YOUR server serves and check it, rather than treating
+  any 200 as ready. (dreamer-hubbuild, 2026-07-25, #96)
+- **Assertions passing is not the same as the page being right.** The
+  hub's 23 checks were green when a screenshot showed two real bugs: a
+  row for a missing directory offering a command to start it, and an
+  `elif` that dropped the note explaining why a mid-write row had no
+  task. Look at the render after the assertions pass — they only cover
+  the questions someone thought to ask. (dreamer-hubbuild, 2026-07-25)

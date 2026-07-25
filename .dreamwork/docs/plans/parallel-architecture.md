@@ -70,6 +70,28 @@ that make "who may touch this" answerable without asking:
   what lets its owner verify without the whole page.
 - **The styleguide stays single-source.** `watch-design.md` documents
   the system, not each file, or the split multiplies the doc burden.
+- **Ports have owners, and a test proves the server is its own.** This
+  section was written predicting that shared mutable state without a
+  named owner would bite — "an id counter, a working tree, a port, a
+  fixture" — and on 2026-07-25 the port did, in the worst available
+  way: dreamhub's guard failed to bind 39897/39895/39894, its readiness
+  probe found a *watch* instance answering nearby, and it asserted 23
+  checks against a stranger's server. Green, and measuring somebody
+  else's process.
+
+  | Range | Owner | Use |
+  |---|---|---|
+  | `35110` | coordinator (`just deploy`) | the deployed dashboard the human reads; persisted in `.dreamwork/watch-port` |
+  | `39890-39899` | whoever holds `watch.py` | `just watch` dev server, `just guards` fixture server |
+  | `39880-39889` | whoever holds `dreamhub.py` | hub server and `dev/hub/` guards |
+  | `39870-39879` | unallocated | claim it here before using it |
+
+  Ranges are necessary and **not sufficient** — a stale process from a
+  previous batch can still hold a port you own. So every guard
+  **verifies the server is its own before asserting**: fetch something
+  only that server serves and check it, rather than treating any 200 as
+  readiness. A readiness probe that accepts any answer is how a test
+  ends up grading a stranger.
 
 ## Cost discipline (his constraint, not an afterthought)
 
