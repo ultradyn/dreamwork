@@ -155,12 +155,14 @@ class TestCollector(unittest.TestCase):
         qs = watch.parse_open_questions(text)
         self.assertEqual([q["title"] for q in qs], ["First?", "Second?"])
         self.assertEqual(qs[0]["follows"],
-                         [{"text": "note one.", "author": "human"}])
+                         [{"text": "note one.", "author": "human",
+                           "when": "2026-07-25 08:00"}])
         self.assertNotIn("Follow-up", qs[0]["body"])
         ans = watch.parse_answered(text)
         self.assertEqual([e["title"] for e in ans], ["Old"])
         self.assertEqual(ans[0]["follows"],
-                         [{"text": "reopen?", "author": "human"}])
+                         [{"text": "reopen?", "author": "human",
+                           "when": "2026-07-25 08:10"}])
         self.assertNotIn("Follow-up", ans[0]["body"])
 
     def test_answered_at_reads_the_resolution_head_only(self):
@@ -187,6 +189,59 @@ class TestCollector(unittest.TestCase):
             '→ resolved: no timestamp at all, then (2026-07-25) later.'))
         self.assertIsNone(watch.answered_at(''))
         self.assertIsNone(watch.answered_at(None))
+
+    def test_sub_when_reads_the_tag_head_only(self):
+        # #128: a note's stamp decides whether it reads as a reply to an
+        # answer or as the thing the answer replied to, so it is parsed — and
+        # like note_author it never guesses.
+        cases = [
+            ("- **Note (human, via watch, 2026-07-25 09:00):** x",
+             "2026-07-25 09:00"),
+            ("- **Follow-up (via watch, 2026-07-25):** x", "2026-07-25"),
+            ("- **Answer (via watch, 2026-07-25 10:47):** rec lgtm",
+             "2026-07-25 10:47"),
+        ]
+        for line, want in cases:
+            self.assertEqual(watch.sub_when(line), want, line)
+        # a date in the note's own TEXT is somebody else's date
+        self.assertIsNone(watch.sub_when(
+            "- **Follow-up (loop, t):** we agreed on (2026-07-25) for this."))
+        self.assertIsNone(watch.sub_when("- **Note (human, via watch, t):** x"))
+
+    def test_parse_keeps_the_answers_place_among_the_notes(self):
+        # #128 — the bug: lifting the answer out of the sub-bullets discarded
+        # WHERE it sat, so the same entry parsed identically whichever order
+        # its sub-bullets were written in, and the card hoisted the answer
+        # above a note from two hours earlier. That reads as him replying to
+        # himself, and no rendering fix could have reached it.
+        head = "# Q\n\n## Open\n\n- **T.** body.\n"
+        note = "  - **Note (human, via watch, 2026-07-25 08:51):** earlier.\n"
+        ans = "  - **Answer (via watch, 2026-07-25 10:47):** rec lgtm\n"
+        after = watch.parse_open_questions(head + note + ans)[0]
+        before = watch.parse_open_questions(head + ans + note)[0]
+        self.assertNotEqual(after, before)
+        # one note preceded the answer; in the other order, none did
+        self.assertEqual(after["answer_at"], 1)
+        self.assertEqual(before["answer_at"], 0)
+        for q in (after, before):
+            self.assertEqual(q["answer"], "rec lgtm")
+            self.assertEqual(q["answer_when"], "2026-07-25 10:47")
+            # an answer typed on the page is HIS, and the page says so in the
+            # same vocabulary his notes do (#109 symmetry)
+            self.assertEqual(q["answer_by"], "human")
+        # an entry with no answer carries the fields, unset — the card reads
+        # them, and a missing key would make "no resolution" indistinguishable
+        # from an older parse
+        plain = watch.parse_open_questions(head + note)[0]
+        self.assertEqual(
+            [plain["answer"], plain["answer_at"], plain["answer_when"],
+             plain["answer_by"]], [None, None, None, None])
+
+    def test_answer_authorship_never_guesses(self):
+        self.assertEqual(
+            watch.answer_author("- **Answer (via watch, t):** x"), "human")
+        self.assertIsNone(watch.answer_author("- **Answer (somehow, t):** x"))
+        self.assertIsNone(watch.answer_author("- **Note (human, via watch):** x"))
 
     def test_parse_answered_carries_when(self):
         text = ("# Q\n\n## Answered\n\n"
@@ -219,14 +274,14 @@ class TestCollector(unittest.TestCase):
         self.assertEqual(qs[0]["answer"], "an answer that runs onto a second line.")
         self.assertEqual(qs[0]["follows"],
                          [{"text": "a note that also wraps, twice over.",
-                           "author": "human"}])
+                           "author": "human", "when": "2026-07-25 08:05"}])
         # the tails belong to their bullet, never to the body
         for stray in ("runs onto", "also wraps", "over."):
             self.assertNotIn(stray, qs[0]["body"])
         self.assertIn("body line two", qs[0]["body"])
         self.assertEqual(watch.parse_answered(text)[0]["follows"],
                          [{"text": "reopened for a reason.",
-                           "author": "human"}])
+                           "author": "human", "when": "2026-07-25 08:10"}])
 
     def test_parse_unrecognised_subbullet_never_joins_the_previous(self):
         # An in-session follow-up (written by the loop, not via watch) is not
@@ -297,8 +352,12 @@ class TestCollector(unittest.TestCase):
         # it lands inside the first entry, before the second
         self.assertLess(new.index("Note (human"), new.index("Second entry"))
         q = watch.parse_open_questions(new)[0]
+        # and the reader reads back everything the writer put in the tag,
+        # stamp included — when the reader learns a new way to name something,
+        # the writer has to still be saying it (#116's lesson, #128's stamp)
         self.assertEqual(q["follows"],
-                         [{"text": "a note", "author": "human"}])
+                         [{"text": "a note", "author": "human",
+                           "when": "2026-07-25 09:40"}])
 
     def test_note_authorship(self):
         # #109: four tag forms map to an author; two are legacy and must keep
@@ -316,9 +375,12 @@ class TestCollector(unittest.TestCase):
         text = ("# Q\n\n## Open\n\n- **T.** body.\n"
                 "  - **Note (human, via watch, t1):** his words.\n"
                 "  - **Follow-up (loop, t2):** the loop's words.\n")
+        # `t1`/`t2` are not timestamps, so `when` is None rather than guessed
         self.assertEqual(watch.parse_open_questions(text)[0]["follows"],
-                         [{"text": "his words.", "author": "human"},
-                          {"text": "the loop's words.", "author": "loop"}])
+                         [{"text": "his words.", "author": "human",
+                           "when": None},
+                          {"text": "the loop's words.", "author": "loop",
+                           "when": None}])
 
     def test_page_shows_note_authorship(self):
         # the human's words sit a step up the text ramp from the loop's, each

@@ -154,16 +154,38 @@ navigates and carries the same dreaming field (see Shader). Views are pure build
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
 
 **`expand` is structure; whether it MOVES is a separate question, and the
-answer differs by user.** A plain `<details>` — dreams, the archive, the
-dashboard's `.md` peeks — toggles instantly, like every other opt-in-motion
-surface on this page. The **folded question card** is the exception: its
-`.qfold` toggle is routed through `snapshotCards` → `regroupCards`, so it
-travels its height and its neighbours close the gap, exactly as when the loop
-folds one (see *The state matrix*). The difference is not decoration — a
-question card is in a list whose other members move, and the generic
-`<details>` are not. A reader who finds only this section will assume
-`<details>` animates everywhere; it does not, and adding it to the generic
-idiom would animate three surfaces nobody asked for.
+answer follows from where it sits.** A plain `<details>` — dreams, the
+archive, the dashboard's `.md` peeks — toggles instantly, like every other
+opt-in-motion surface on this page. **A `<details>` inside a question card
+animates**: the card's own `.qfold` (#111) and its settled follow-up thread
+(#128) both route their toggle through `snapshotCards` → `regroupCards`, so
+the card travels its height and its neighbours close the gap, exactly as when
+the loop folds one (see *The state matrix*).
+
+The line is not decoration and it is not per-component: an expand inside a
+**list whose other members move** must animate, or opening it teleports every
+card below it; a standalone expand has nothing to disturb. That is why the
+handler is written against `.qa details > summary` rather than against
+`.qfold` — the next disclosure someone adds to a card is covered without
+anyone remembering this paragraph. A reader who finds only this section will
+assume `<details>` animates everywhere; it does not, and promoting it to the
+generic idiom would animate three surfaces nobody asked for.
+
+Two consequences of routing a nested expand through the shared path, both of
+which were wrong first:
+
+- **What arrives is the disclosure's contents, not the card's.** The body, the
+  answer and the compose box were on screen before and after, so re-fading
+  them says a change happened where none did. `cardBody(el, toggled)` takes
+  the toggle that caused the resize and reveals *its* children; handed the
+  card's own `.qfold` it is exactly what it always was.
+- **What leaves is ghosted at its own rect.** The card-level clone is clipped
+  to below the survivor's new height, which is right for a card folding (the
+  body leaves from the bottom) and wrong for a thread (it sits above the
+  compose box, so what disappears is a middle band and the clip would ghost
+  the box that never left). A closed `<details>` still holds its children in
+  the DOM but gives them no geometry, so the rect is measured *before* the
+  toggle and `ghostNode` dreams them away on the same departure idiom.
 
 ### The persistent chrome
 
@@ -311,6 +333,21 @@ page is luminance. An answer reads at that same brightness — it is his, in a
 card whose body the loop wrote. **No accent**: the accent is for live and
 actionable things, and a settled note is neither.
 
+**And it says it about the answer too** (#128). An answer read at his
+brightness but carried no label, so on a card holding a note and an answer —
+both his — only the note said whose it was, and the answer read as somebody
+else's remark he was replying to. Attribution that is *sometimes* present is
+worse than none: the reader learns to treat its absence as meaningful. So the
+answer carries the same `you` label from the same table, derived from its tag
+(`ANSWER_TAGS`) rather than assumed, and an answer tag nobody recognises gets
+no label — `answer_author` returns `None` for the same reason `note_author`
+does.
+
+**Each contribution states when it was written** (`.qts`, a step below the
+author label). Order is what carries chronology; the stamp is what settles it
+when the order is the thing in doubt. Rendered verbatim from the tag, and
+absent when the tag carried none.
+
 ### Reading questions.md
 
 `_parse_entries` is the single reader for both sections — they were
@@ -329,6 +366,16 @@ that. Four invariants, each of which was a bug:
    belong to it. Keeping only the first line truncated the note *and*
    spilled its tail into the body (#106).
 4. **An Answer or Note sub-bullet is never an entry**, even un-indented.
+5. **Chronology survives the read** (#128). A sub-bullet's tag head carries
+   when it was written, and lifting the answer out of the sequence discards
+   where it sat — so both are kept: `when` on every note, `answer_when` and
+   `answer_at` on the entry. Without them the parse of an entry was
+   **byte-identical whichever order its sub-bullets were written in**, which
+   is the sharp form of the diagnosis: the render was not mis-ordering the
+   notes, it had no order to respect, and no rendering fix could have reached
+   it. `sub_when` is anchored to the tag's closing `)`, so a date inside the
+   note's own text is somebody else's date, and it returns `None` rather than
+   guessing — the same rule as `note_author` and `answered_at`.
 
 **The writer walks titles the same way, through the same `_join_title`.**
 Before that, `append_subbullet` compared against the first source line only,
@@ -387,6 +434,42 @@ change to how a question looks is one edit rather than a hunt.
   can restate a *live* card in its new state without assembling look-alike
   markup. Any future in-place state change uses the same seam.
 
+**The thread is cut at its resolution** (#128). His words, on an
+awaiting-fold entry: *"the first thing that showed up was like me replying to
+me? ... if we have a thread of notes like that, they should be collapsed but
+also expandable."* The answer is lifted out of the sub-bullets so the card can
+show it as the resolution, and the lift used to throw away its place in the
+sequence — so a note he wrote at 08:51 rendered underneath an answer he wrote
+at 10:47, tagged `you` while the answer was tagged nothing. `qaThread` cuts
+`follows` at `answer_at`: the discussion that led to the resolution sits above
+it, an amendment sits below.
+
+- **Only the part above collapses**, and that is the card's own axis applied
+  one level down. Discussion a resolution has already answered is settled;
+  everything else on a question card is still live. So an **unanswered**
+  question never hides its notes — they are his own steers — and a note he
+  adds now lands in the segment *below* the answer, which is never folded away
+  under him. Defaulting the cut to the end of the list when there is no answer
+  is the obvious-looking arithmetic and it sweeps every open question's notes
+  into the folding half; the guard caught it.
+- **The threshold is two** (`QTHREAD_FOLD_AT`). One note is not a thread:
+  hiding a single line behind a click costs more than it saves, and his own
+  reported entry had exactly one — for it, the ordering fix *is* the whole
+  fix. Do not simplify this to always-collapse.
+- **The notes sit in a `.threadin` wrapper** inside the disclosure, so what
+  arrives or leaves on a toggle is one node with one rect. That is what
+  `cardBody` reveals and what the collapse ghosts.
+- A live-appended note goes to the **last** `.threadin`, because what he just
+  wrote is the newest thing in the thread — appending to the first would drop
+  it above an answer written hours earlier, which is the bug the split exists
+  to prevent.
+
+`dev/capture/thread.mjs` guards it, and one of its checks is worth knowing
+about: **a closed `<details>` does not give its children `display:none` in
+current Chromium** — it skips them with `content-visibility`, so their rects
+survive from the last layout and a geometry test for "is it hidden" passes on
+collapsed content. Ask `checkVisibility()` instead.
+
 Every state carries the follow-up thread and **one input** (`qaCompose`).
 The human's words: *"use same text input for answer and note. below text
 input, have a button group choose between [ Answer | Add Note ]. on the RHS
@@ -411,8 +494,10 @@ field so they appear to be one thing."*
 
 **What the human did to a card survives a tick.** The list is re-rendered
 through `innerHTML`, so every card node is replaced roughly every 2s — and
-with it whatever is half-typed, and whichever folded entry he had just opened
-up to read. Liveness is not negotiable (the tick has always committed its new
+with it whatever is half-typed, and whichever disclosure he had just opened up
+to read (the folded entry, or a settled thread — the snapshot records *every*
+`<details>` in the card, positionally, and only ever re-opens: the fresh render
+is the default and what he did to it is the addition). Liveness is not negotiable (the tick has always committed its new
 DOM immediately), so the fix is not to suppress the render but to carry
 across it the state that exists **nowhere else**: the text, the caret, the
 focus, the scroll and resize of the box, the **mode**, and the disclosure's
@@ -600,6 +685,7 @@ exception; an element leaving fades rather than vanishing.
   | awaiting → open | the loop drops the answer | travels, lifted; rail and wisp leave with the old node |
   | same state, moved | a neighbour left, a note landed | slides; if it also resized, the height travels |
   | folded ↔ expanded | **he** clicks the summary | the same snapshot and the same regroup — his own expand is not a special case, and routing it through the shared path is what gives it the neighbours' motion for free |
+| thread ↔ expanded | **he** opens a settled thread | the same cell one level down: the card resizes, so the cards below it are carried. The reveal and the ghost are the disclosure's own contents, not the card's (see *`expand` is structure*) |
   | gone | the entry was deleted | dreams away at the rect it occupied |
   | arrived | a new question | `.dreamin`: snap, then ease in |
 

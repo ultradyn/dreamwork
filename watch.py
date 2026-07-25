@@ -227,6 +227,16 @@ STYLE = """<style>
   .follow.human { color:var(--lit); }
   .who { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
     font-size:.62rem; margin-right:.7ch; }
+  /* when it was written (#128). Quieter than the author label — the order is
+     what carries the chronology, and the stamp is there to settle it. */
+  .qts { color:var(--dimmer); font-size:.62rem; margin-right:.8ch; }
+  /* the settled part of a thread collapses (#128): the resolution is the
+     point of the card, and the discussion a resolution already answered is
+     detail. Only that segment folds — see watch-design.md for why an
+     unanswered question never hides its notes. */
+  .qthread > summary { color:var(--dim); font-size:.7rem; cursor:pointer;
+    letter-spacing:.03em; }
+  .qthread > summary:hover { color:var(--muted); }
   /* ONE input per card (#103, the human's words): the same field sends an
      answer or a note. The field and its send button share a single border
      and a single rounded box — the wrapper carries them and clips the
@@ -651,14 +661,43 @@ const mdBReview = (t, title) =>
    things, and a note is neither. An unattributed note (an unknown tag) gets
    no label at all — a wrong attribution is worse than an absent one. */
 const WHO = { human: 'you', loop: 'loop' };
-const followThread = follows => (follows && follows.length)
-  ? `<div class="thread">` + follows.map(f => {
-      const a = f && f.author, txt = f && f.text != null ? f.text : f;
-      return `<div class="follow${a ? ' ' + a : ''}">` +
-        (WHO[a] ? `<span class="who">${WHO[a]}</span>` : '') +
-        `${mdInline(txt)}</div>`;
-    }).join('') + `</div>`
-  : '';
+/* WHEN a contribution was written. On a thread that is not decoration: a note
+   written before an answer must not read as a reply to it (#128), and position
+   says which came first only to a reader who already trusts the order. Absent
+   when the tag carried no stamp — never invented, the same rule as the author
+   label above. */
+const stamp = w => w ? `<span class="qts">${esc(w)}</span>` : '';
+const followRow = f => {
+  const a = f && f.author, txt = f && f.text != null ? f.text : f;
+  return `<div class="follow${a ? ' ' + a : ''}">` +
+    (WHO[a] ? `<span class="who">${WHO[a]}</span>` : '') +
+    stamp(f && f.when) + `${mdInline(txt)}</div>`;
+};
+/* A settled thread COLLAPSES (#128; his words: "if we have a thread of notes
+   like that, they should be collapsed but also expandable"). `fold` is passed
+   only for the segment that precedes a resolution — see `qaThread` — and the
+   threshold is two because one note is not a thread: hiding a single line
+   behind a click costs more than it saves, and his own reported entry had
+   exactly one.
+
+   The notes live in a `.threadin` wrapper rather than directly in the
+   disclosure, so the thing that arrives or leaves when it toggles is ONE node
+   with its own rect — which is what `cardBody` reveals and what the collapse
+   ghosts. */
+const QTHREAD_FOLD_AT = 2;
+const followThread = (follows, fold) => {
+  if (!follows || !follows.length) return '';
+  const inner = `<div class="threadin">` + follows.map(followRow).join('') +
+                `</div>`;
+  if (!fold || follows.length < QTHREAD_FOLD_AT)
+    return `<div class="thread">${inner}</div>`;
+  const last = follows[follows.length - 1];
+  return `<div class="thread"><details class="qthread">` +
+    `<summary>${follows.length} earlier notes` +
+    (last && last.when
+      ? `<span class="qwhen">up to ${esc(last.when)}</span>` : '') +
+    `</summary>${inner}</details></div>`;
+};
 /* ── the sliding selection group ──────────────────────────────────────────
    One indicator that slides to the active option, shared by the composer's
    command kinds and by every question card's answer/note switch (#103).
@@ -726,7 +765,29 @@ const qaCompose = (key, st) => {
     ` onclick="submitCard('${key}')">send</button></div>` +
     group + `</div>`;
 };
-const qaFoot = (follows, key, st) => followThread(follows) + qaCompose(key, st);
+/* THE THREAD, SPLIT AROUND ITS RESOLUTION (#128).
+   The answer is lifted out of the sub-bullets so the card can show it as the
+   resolution — and the lift used to discard where it sat among the notes, so a
+   note written two hours EARLIER rendered underneath it and read as a reply to
+   it ("the first thing that showed up was like me replying to me?"). The
+   parser now records `answer_at`, and the thread is cut there: the discussion
+   that led to the resolution sits above it, an amendment sits below.
+
+   Only the part above collapses. That is the card's own axis — who is the
+   entry waiting on — applied one level down: discussion that a resolution has
+   already answered is settled, and everything else on a question card is
+   still live. So an unanswered question never hides its notes (they are the
+   human's own steers), and a note he adds now lands in the segment below the
+   answer, which is never folded away under him. */
+const qaThread = q => {
+  const f = (q && q.follows) || [];
+  // No resolution ⇒ NOTHING is settled. Defaulting the cut to the end of the
+  // list instead was the obvious-looking arithmetic and it swept every note of
+  // every open question into the folding half — the guard caught it, which is
+  // what a rule written as a rule is for.
+  const at = (q && q.answer && q.answer_at != null) ? q.answer_at : 0;
+  return [f.slice(0, at), f.slice(at)];
+};
 /* THE question component (#105). Every question on every surface —
    dashboard, /questions, the review dock, and the answer-submit morph —
    renders through this one card, so a change to how a question looks is one
@@ -757,15 +818,23 @@ const qaState = (q, key) =>
 const qaInner = (q, key) => {
   const st = qaState(q, key);
   const body = q.body && q.body.trim() ? mdBReview(q.body.trim(), q.title) : '';
-  const foot = qaFoot(q.follows, key, st);
+  const [settled, since] = qaThread(q);
+  /* An answer is his words as much as a note is, so it says so in the same
+     vocabulary (#109, #128 part b): of two things he wrote, it must not be
+     that only one is attributed. The author comes from the tag, so an answer
+     tag nobody recognises gets no label rather than a guessed one. */
+  const answer = st === 'awaiting'
+    ? `<div class="anstag">answered · awaiting fold</div>` +
+      `<div class="anstext">` +
+      (WHO[q.answer_by] ? `<span class="who">${WHO[q.answer_by]}</span>` : '') +
+      stamp(q.answer_when) + `${mdInline(q.answer)}</div>` : '';
+  const foot = followThread(settled, true) + answer +
+               followThread(since, false) + qaCompose(key, st);
   if (st === 'folded')
     return `<details class="qfold"><summary class="qt">${esc(q.title)}` +
       (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : '') +
       `</summary>${body}${foot}</details>`;
-  const answer = st === 'awaiting'
-    ? `<div class="anstag">answered · awaiting fold</div>` +
-      `<div class="anstext">${mdInline(q.answer)}</div>` : '';
-  return `<div class="qt">${esc(q.title)}</div>${body}${answer}${foot}`;
+  return `<div class="qt">${esc(q.title)}</div>${body}${foot}`;
 };
 /* Two identities, deliberately. `data-qkey` ADDRESSES the entry in live data
    and is positional, so it is what writes use. `data-qid` is the question
@@ -959,15 +1028,21 @@ async function sendComment(key) {
   el.value = '';
   holdRerenderUntil = Date.now() + 1600;
   if (!card) return;
-  let thread = card.querySelector('.thread');
-  if (!thread) {
-    thread = document.createElement('div'); thread.className = 'thread';
+  // the LAST segment, because what he just wrote is the newest thing in the
+  // thread — appending to the first would drop it above an answer written
+  // hours earlier, which is the bug this whole split exists to prevent (#128).
+  // That segment is also never the collapsed one, so it cannot land hidden.
+  let host = [...card.querySelectorAll('.threadin')].pop();
+  if (!host) {
+    const thread = document.createElement('div'); thread.className = 'thread';
+    host = document.createElement('div'); host.className = 'threadin';
+    thread.appendChild(host);
     card.insertBefore(thread, card.querySelector('.qcompose'));
   }
   const f = document.createElement('div');
   f.className = 'follow human';        // it is his; say so, same as a reload
   f.innerHTML = `<span class="who">${WHO.human}</span>` + mdInline(val);
-  thread.appendChild(f);
+  host.appendChild(f);
   if (typeof ripple === 'function') ripple(fromRect.left + 24, fromRect.top + 14);
   if (!rmr && typeof flipDock === 'function')
     flipDock(f, fromRect, f.getBoundingClientRect());
@@ -1074,12 +1149,15 @@ function snapshotCardState() {
   document.querySelectorAll('.qa[data-qid]').forEach(card => {
     const comp = card.querySelector('.qcompose');
     const ta = comp && comp.querySelector('textarea');
-    const det = card.querySelector(':scope > .qfold');
+    // EVERY disclosure in the card, in document order: the folded entry itself
+    // (#111) and its settled thread (#128) both render closed, so either being
+    // open is something he did and nothing on disk records.
+    const dets = [...card.querySelectorAll('details')].map(d => d.open);
     const typed = ta && (ta.value || ta === act);
-    const opened = det && det.open;        // folded entries render closed
+    const opened = dets.some(Boolean);
     if (!typed && !opened) return;         // he has done nothing to this card
     m.set(card.dataset.qid, {
-      open: !!opened,
+      open: dets,
       value: typed ? ta.value : null, mode: comp && comp.dataset.mode,
       focus: ta === act,
       start: typed ? ta.selectionStart : 0, end: typed ? ta.selectionEnd : 0,
@@ -1095,8 +1173,10 @@ function restoreCardState(saved) {
   document.querySelectorAll('.qa[data-qid]').forEach(card => {
     const s = saved.get(card.dataset.qid);
     if (!s) return;
-    const det = card.querySelector(':scope > .qfold');
-    if (det && s.open) det.open = true;    // he had opened it up to read
+    // only ever re-opened, never closed: the fresh render is the default and
+    // what he did to it is the addition
+    const dets = [...card.querySelectorAll('details')];
+    (s.open || []).forEach((o, i) => { if (o && dets[i]) dets[i].open = true; });
     if (s.value === null) return;
     const comp = card.querySelector('.qcompose');
     const ta = comp && comp.querySelector('textarea');
@@ -1217,14 +1297,35 @@ function dreamAway(wrap, node, rect, clipTop) {
   node.classList.add('gone');
   setTimeout(() => node.remove(), 1000);
 }
-/* everything under a card's title line — the part that is really arriving or
-   leaving when a card folds or unfolds. The title itself survives as the
-   summary, so it is not part of the move. */
-function cardBody(el) {
-  const root = el.querySelector(':scope > .qfold') || el;
+/* the same departure idiom for a subtree that has just left the layout but is
+   still in the DOM — a `<details>` that closed. It has no box any more, so the
+   rect is the one measured while it did. */
+function ghostNode(el, rect) {
+  if (rmr || !rect || !rect.height) return;
+  dreamAway(document.querySelector('.wrap'), el.cloneNode(true), rect, 0);
+}
+/* what is really arriving or leaving when a card changes height. Normally that
+   is everything under its title line — the card folded or unfolded — and the
+   title itself survives as the summary, so it is not part of the move.
+
+   A disclosure INSIDE the card resizes the card too (its settled follow-up
+   thread, #128), and there only that disclosure's own contents move: the body,
+   the answer and the compose box were on screen before and after and must not
+   be re-faded. So the toggle that caused the change is passed in when it is
+   known, and when it is the card's own `.qfold` this is exactly what it always
+   was. */
+function cardBody(el, toggled) {
+  const root = (toggled && el.contains(toggled)) ? toggled
+             : (el.querySelector(':scope > .qfold') || el);
   return [...root.children].filter(c =>
     c.tagName !== 'SUMMARY' && !c.classList.contains('qt'));
 }
+/* was the height change caused by a disclosure NESTED inside the card, rather
+   than by the card's own fold? The two need different departure ghosts, so
+   they are told apart once, here. */
+const nestedToggle = (el, toggled) =>
+  !!toggled && el.contains(toggled) &&
+  toggled !== el.querySelector(':scope > .qfold');
 const BODY_STEP = 24;             // about a line: below this nothing "left"
 /* Cards are processed in DOM order, and that is load-bearing rather than
    incidental.
@@ -1238,7 +1339,7 @@ const BODY_STEP = 24;             // about a line: below this nothing "left"
    resize had happened", so the residual it FLIPs is the right one. FLIPping
    the full difference instead would move a neighbour twice — once by
    transform and once by layout — and it would snap back at the end. */
-function regroupCards(before) {
+function regroupCards(before, toggled) {
   if (rmr || !before || !before.size) return;
   const wrap = document.querySelector('.wrap');
   const seen = new Set();
@@ -1265,10 +1366,18 @@ function regroupCards(before) {
     // animate — which is exactly what the up-front clone is for. Ghost it at
     // the rect it occupied, clipped to below the line the survivor still
     // fills, and let it dream away on the departure idiom.
-    if (dh <= -BODY_STEP) dreamAway(wrap, was.node, was.rect, now.height);
+    //
+    // A NESTED disclosure closing is ghosted by its own handler instead: the
+    // settled thread sits above the compose box, so what disappears is a
+    // MIDDLE band, and clipping the card-level clone to below the new height
+    // would ghost the bottom slice — the compose box, which never left.
+    if (dh <= -BODY_STEP) {
+      if (!nestedToggle(el, toggled))
+        dreamAway(wrap, was.node, was.rect, now.height);
+    }
     // ...and unfolding is the same moment run backwards: the body ARRIVES,
     // so it eases in rather than being wiped up by the growing box.
-    else if (dh >= BODY_STEP) cardBody(el).forEach(c => {
+    else if (dh >= BODY_STEP) cardBody(el, toggled).forEach(c => {
       c.classList.add('qreveal', 'dreamin');
       requestAnimationFrame(() => c.classList.remove('dreamin'));
       setTimeout(() => c.classList.remove('qreveal'), CARD_MS + 150);
@@ -1289,20 +1398,28 @@ addEventListener('click', e => {
   // membership is fixed here, so the indicator slides rather than lands
   setCardMode(btn.closest('.qcompose'), btn.dataset.mode, false);
 });
-/* opening or closing a folded entry HIMSELF is the same moment as the loop
-   folding one: a card changes height and its neighbours close or open the gap
-   underneath it. So it goes through the same snapshot and the same regroup,
-   rather than growing a second way to move a card. The native toggle is
-   prevented because <details> flips before any event we could measure from,
-   and a FLIP with nothing to measure is a jump. */
+/* opening or closing a disclosure INSIDE a card HIMSELF — the folded entry
+   (#111) or its settled follow-up thread (#128) — is the same moment as the
+   loop folding one: a card changes height and its neighbours close or open the
+   gap underneath it. So both go through the same snapshot and the same
+   regroup, rather than growing a second way to move a card. That is the
+   styleguide's line: an expand inside a list whose OTHER members move is the
+   one that animates; a standalone `<details>` still toggles instantly. The
+   native toggle is prevented because <details> flips before any event we could
+   measure from, and a FLIP with nothing to measure is a jump. */
 addEventListener('click', e => {
-  const sum = e.target.closest && e.target.closest('.qa > .qfold > summary');
+  const sum = e.target.closest && e.target.closest('.qa details > summary');
   if (!sum) return;
   e.preventDefault();
-  const det = sum.parentElement;
+  const det = sum.parentElement, card = det.closest('.qa');
+  // measured while it still HAS a box: a closed <details> keeps its children
+  // in the DOM and gives them no geometry, so the rect has to be taken first
+  const leaving = (det.open && nestedToggle(card, det)) ? cardBody(card, det) : [];
+  const rects = leaving.map(c => c.getBoundingClientRect());
   const before = snapshotCards();
   det.open = !det.open;
-  regroupCards(before);
+  regroupCards(before, det);
+  leaving.forEach((c, i) => ghostNode(c, rects[i]));
 });
 addEventListener('resize', () => paintIndicators(true));
 /* ── the persistent chrome (#110) ─────────────────────────────────────────
@@ -2577,8 +2694,45 @@ def note_author(stripped):
     return None
 
 
+# A sub-bullet's tag head also carries WHEN it was written:
+# `- **Note (human, via watch, 2026-07-25 09:00):**`. On a thread the stamp is
+# not decoration — a note that predates an answer must not read as a reply to
+# it (#128) — so it is parsed rather than thrown away. Anchored to the tag's
+# closing `)` so a date inside the note's own text is somebody else's date, and
+# it never guesses: an unstamped tag yields None, exactly as `note_author`
+# yields None for an author it does not recognise.
+SUB_STAMP = re.compile(r"(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*\)")
+
+
+def sub_when(stripped):
+    """When a sub-bullet was written, read from its tag head, or None."""
+    m = SUB_STAMP.search(stripped.split(":**", 1)[0])
+    if not m:
+        return None
+    return m.group(1) + (" " + m.group(2) if m.group(2) else "")
+
+
+# An answer bullet is written by POST /answer and by nothing else, so it is
+# always his — but that is a fact about this tag rather than about answers, so
+# it is read back from a table for the same reason `note_author` is. The table
+# is also what DEFINES an answer bullet for the parser, so the two can never
+# disagree about which bullets are answers and whose they are.
+ANSWER_TAGS = (
+    ("- **Answer (via watch", "human"),
+)
+
+
+def answer_author(stripped):
+    """'human', or None for a line that is not an answer bullet."""
+    for prefix, author in ANSWER_TAGS:
+        if stripped.startswith(prefix):
+            return author
+    return None
+
+
 def _note_entry(stripped, author):
-    return {"text": stripped.split(":**", 1)[-1].strip(), "author": author}
+    return {"text": stripped.split(":**", 1)[-1].strip(), "author": author,
+            "when": sub_when(stripped)}
 
 
 ENTRY_MARK = "- **"
@@ -2618,7 +2772,14 @@ def _parse_entries(text, section, lift_answer):
 
     `lift_answer` pulls a `- **Answer (via watch…):**` bullet out into
     `answer` (Open only), so the view can show answered-awaiting-fold
-    distinctly rather than as an ambiguous open question.
+    distinctly rather than as an ambiguous open question. Lifting it out of
+    the sequence is what makes `answer_at` necessary: it records how many
+    notes preceded the answer, so the card can put the discussion that led to
+    a resolution ABOVE it and any amendment below. Without that the answer was
+    hoisted over every note whenever it was written, and a note from two hours
+    earlier read as a reply to it (#128) — the entry parsed identically with
+    its sub-bullets in either source order, which is the proof that no
+    rendering fix could have reached it.
     """
     items = []
     if not text:
@@ -2635,14 +2796,16 @@ def _parse_entries(text, section, lift_answer):
         if not in_sec:
             continue
         s = line.strip()
-        is_answer = lift_answer and s.startswith("- **Answer (via watch")
+        answer_by = answer_author(s)
+        is_answer = lift_answer and answer_by is not None
         author = note_author(s)
         # invariant 1: this test comes FIRST and is unconditional
         if line.startswith(ENTRY_MARK) and not is_answer and author is None:
             seg, closed, rest = _entry_title_parts(line[len(ENTRY_MARK):])
             cur = {"title": _join_title([seg]), "body": "", "follows": []}
             if lift_answer:
-                cur["answer"] = None
+                cur.update(answer=None, answer_when=None, answer_by=None,
+                           answer_at=None)
             items.append(cur)
             sub = None
             title_parts = None if closed else [seg]
@@ -2662,6 +2825,12 @@ def _parse_entries(text, section, lift_answer):
             continue
         if is_answer:
             cur["answer"] = s.split(":**", 1)[-1].strip()
+            cur["answer_when"] = sub_when(s)
+            cur["answer_by"] = answer_by
+            # how many notes preceded it — the position the lift would
+            # otherwise discard, and the only thing that says which notes are
+            # a reply to this answer and which it is a reply to (#128)
+            cur["answer_at"] = len(cur["follows"])
             sub = "answer"
         elif author is not None:
             cur["follows"].append(_note_entry(s, author))

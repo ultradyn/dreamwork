@@ -44,10 +44,20 @@
   wrapped at. At a very narrow column both renderers wrap constantly; at a
   wide one the source almost fits. The interesting widths are in between,
   and they are the widths a real card gets.
+  - **Note (human, via watch, 2026-07-25 08:44):** a note written BEFORE
+    the answer that sits below it. This is the shape that read as him
+    replying to himself (#128): the parse discarded the timestamps and the
+    answer's position among the notes, so the render hoisted the answer
+    above every note no matter when it was written.
+  - **Follow-up (loop, 2026-07-25 08:59):** and the loop's reply to that
+    note, still before the answer — so the segment that precedes the
+    resolution holds two notes and two authors, and is long enough to be a
+    thread that collapses.
   - **Answer (via watch, 2026-07-25 09:02):** an answer that was typed on
     the dashboard and runs onto a second source line.
   - **Follow-up (in-session, 2026-07-25 09:03):** a legacy loop tag, kept
-    so the four-form author mapping stays exercised.
+    so the four-form author mapping stays exercised — and, being the only
+    note written AFTER the answer, the one segment that stays inline.
 
 ## Answered
 
