@@ -663,6 +663,34 @@ class TestRender:
         assert "127.0.0.1:39801" not in html
         assert "--target" in html and "watch.py" in html
 
+    def test_the_missing_row_offers_no_command_it_cannot_honour(self,
+                                                                hubfix):
+        """Found by looking at the render, not by an assertion: a directory
+        that is gone was being offered a command to start a dashboard in it.
+        He will run it before he re-reads the state beside it."""
+        gone = next(r for r in rows_for(hubfix) if r["slug"] == "gone")
+        html = dreamhub.render_row(gone)
+        assert "--target" not in html
+        assert "directory is gone" in html
+
+    def test_notes_are_additive_not_a_priority_list(self, hubfix):
+        """The mid-write row has something to say from the disk AND from the
+        network; an elif drops one of them silently."""
+        torn = next(r for r in rows_for(hubfix) if r["slug"] == "torn")
+        html = dreamhub.render_row(torn)
+        assert "unreadable" in html          # why it has no task
+        assert "--target" in html            # and how to get its dashboard
+
+    def test_a_port_that_answers_badly_does_not_say_no_dashboard(self):
+        with stub_watch(mtime_status=404) as s:
+            row = probe_disk({"slug": "x", "path": "/nope"})
+            row["port"] = s.port
+            dreamhub.probe_live(row, {})
+            row["state"] = QUIET          # not missing, so notes are rendered
+        html = dreamhub.render_row(row)
+        assert "no dashboard" not in html
+        assert "404" in html
+
     def test_an_up_row_links_out_to_its_own_origin(self):
         """Origin-per-project, the one deviation from daemon-mode.md: the
         hub links out rather than proxying, so every absolute URL on the

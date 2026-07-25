@@ -588,6 +588,27 @@ def _facts(row):
     return " · ".join(bits)
 
 
+def _notes(row):
+    """What this row has to say beyond its state, disk first then network."""
+    out = []
+    if row.get("note"):
+        out.append(esc(row["note"]))
+    watch = row.get("watch")
+    if row["state"] == MISSING:
+        # There is nothing to start: the directory is gone. Offering a
+        # command that cannot work is worse than saying nothing, because the
+        # human will run it before he re-reads the state beside it.
+        return out
+    if watch in (TIMEOUT, UNREADABLE):
+        # Something IS answering on that port, so "no dashboard" would be a
+        # lie. Say what actually happened.
+        out.append(esc(row.get("live_note") or "the dashboard is not well"))
+    elif watch in (DOWN, NEVER_WATCHED):
+        out.append("no dashboard · "
+                   f"<code>{esc(watch_command(row['path']))}</code>")
+    return out
+
+
 def render_row(row, now=None):
     now = time.time() if now is None else now
     since = (now - row["age"]) if row.get("age") is not None else None
@@ -599,13 +620,13 @@ def render_row(row, now=None):
     if row.get("task"):
         parts.append(f'<div class="task">{esc(row["task"])}</div>')
     parts.append(f'<div class="facts">{_facts(row)}</div>')
-    # A down row must not link to a dead port. It shows what to run instead —
-    # the one thing the human actually needs from a row in this state.
-    if row.get("watch") in (DOWN, TIMEOUT, UNREADABLE, NEVER_WATCHED):
-        parts.append(f'<div class="note">no dashboard · '
-                     f'<code>{esc(watch_command(row["path"]))}</code></div>')
-    elif row.get("note"):
-        parts.append(f'<div class="note">{esc(row["note"])}</div>')
+    # Notes are ADDITIVE, not a priority list. The disk has something to say
+    # (mid-write, never ticked, gone) and the network has something else, and
+    # an elif silently drops one of them — which is how the mid-write row lost
+    # the note explaining why it has no task. Found by looking at the render;
+    # every assertion passed.
+    for note in _notes(row):
+        parts.append(f'<div class="note">{note}</div>')
     parts.append("</div>")
     state = esc(row["state"])
     cls = state.replace(" ", "")

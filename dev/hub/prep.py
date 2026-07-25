@@ -84,12 +84,21 @@ def registry_for(dst, extra_missing=True):
 
 
 def main(argv=None):
+    """CLI half, for hub.mjs: prepare the targets and (optionally) write the
+    registry that points at them, so the guard and the pytest suite cannot
+    disagree about which rows exist."""
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
-        print(__doc__.strip().splitlines()[-1], file=sys.stderr)
+        print("usage: prep.py <dst> [--home <hubhome>]", file=sys.stderr)
         return 2
-    dst = argv[0]
-    print(prepare(dst, argv[1] if len(argv) > 1 else FIXTURE))
+    dst = prepare(argv[0])
+    if "--home" in argv:
+        home = argv[argv.index("--home") + 1]
+        os.makedirs(home, exist_ok=True)
+        with open(os.path.join(home, "projects.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump(registry_for(dst), f, indent=2)
+    print(dst)
     return 0
 
 
