@@ -11,7 +11,7 @@ where the parent is a session goal or a DREAMWORK.md heading. Pending
 tasks don't need one — the chain is named when work begins, which is
 when the scope gate asks for it.
 
-Next id: **150**
+Next id: **151**
 
 ## Open
 
@@ -68,6 +68,11 @@ Next id: **150**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
+- **#150** — Audit the coordinator's own machinery · P2 · chore · 60m ·
+  four failures today were all in the coordination layer, none in the
+  code: lost subagent deliverables, an inbox that cannot wake an idle
+  agent, a relay corrupted by its own heredoc, invented timestamps. Every
+  rule broken was already written in SKILL.md — for targets
 - **#149** — `append_subbullet` eats the blank line before
   `## Answered` · P3 · chore · 10m · cosmetic and pre-existing; the file
   drifts from the example `file-formats.md` shows. Fix the writer, not
