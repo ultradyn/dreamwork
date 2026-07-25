@@ -10,6 +10,7 @@ import contextlib
 import http.server
 import json
 import os
+import pathlib
 import socket
 import sys
 import threading
@@ -964,3 +965,102 @@ class TestPrep:
                    encoding="utf-8").read()
         with pytest.raises(ValueError):
             json.loads(raw)
+
+
+class TestDeployedStaleness:
+    """#147 — which projects are serving something older than HEAD.
+
+    The deploy snapshot lives outside the repo so a dreamer editing watch.py
+    cannot change what is already serving him. The cost is that the running
+    code's identity is recorded nowhere, and a committed-but-undeployed fix
+    is indistinguishable from a broken one — which cost a tracing cycle on
+    #129 and again on #179.
+    """
+
+    def row(self, **kw):
+        r = {"slug": "p", "path": "/tmp/p", "state": "dreaming", "age": 1.0,
+             "age_str": "1s", "task": None, "awaiting_human": [], "note": None,
+             "agents": [], "queue": None, "last_commit": None, "port": None}
+        r.update(kw)
+        return r
+
+    def test_current_says_nothing(self):
+        # A line on every healthy row is the noise that hides the one
+        # unhealthy row. Same reason watch-tint is silent when unset.
+        assert dreamhub._deployed_line(
+            self.row(deployed={"state": "current", "rev": "abc1234", "missing": []})) == []
+
+    def test_never_deployed_says_nothing(self):
+        assert dreamhub._deployed_line(
+            self.row(deployed={"state": "never deployed", "missing": []})) == []
+
+    def test_absent_field_says_nothing(self):
+        # An older hub, or a probe that could not run, must not render a
+        # broken line — it renders none.
+        assert dreamhub._deployed_line(self.row()) == []
+
+    def test_behind_names_the_count_and_the_revision(self):
+        out = dreamhub._deployed_line(self.row(deployed={
+            "state": "behind", "rev": "10ca98a",
+            "missing": [["7d3c322", "the cycle direction"],
+                        ["9e8469c", "the focus fix"]]}))
+        assert len(out) == 1
+        assert "2 commits behind" in out[0] and "10ca98a" in out[0]
+
+    def test_one_behind_is_not_pluralised(self):
+        out = dreamhub._deployed_line(self.row(deployed={
+            "state": "behind", "rev": "abc", "missing": [["d", "one"]]}))
+        assert "1 commit behind" in out[0]
+
+    def test_the_missing_commits_are_reachable_in_the_title(self):
+        # "Detail is ranked, never withheld" — the summary is the line, the
+        # list is a hover away, and the row does not grow to hold it.
+        out = dreamhub._deployed_line(self.row(deployed={
+            "state": "behind", "rev": "abc",
+            "missing": [["7d3c322", "the cycle direction"]]}))
+        assert 'title="' in out[0] and "the cycle direction" in out[0]
+
+    def test_the_title_is_escaped_exactly_once(self):
+        # `&#10;`-then-esc() double-escaped the ampersand and the tooltip
+        # showed the literal entity. Only visible by reading the rendered
+        # attribute — every assertion about the line still passed.
+        out = dreamhub._deployed_line(self.row(deployed={
+            "state": "behind", "rev": "abc",
+            "missing": [["a", "one"], ["b", "two"]]}))
+        assert "&amp;#" not in out[0]
+        assert "\n" in out[0], "the two subjects must be separated by a real newline"
+
+    def test_a_subject_with_quotes_cannot_break_the_title_attribute(self):
+        out = dreamhub._deployed_line(self.row(deployed={
+            "state": "behind", "rev": "abc",
+            "missing": [["d", 'fix "the" <thing>']]}))
+        assert '<thing>' not in out[0] and 'fix "the"' not in out[0]
+
+    def test_untracked_says_it_is_in_no_commit(self):
+        out = dreamhub._deployed_line(self.row(deployed={
+            "state": "untracked", "rev": None, "missing": []}))
+        assert "no commit" in out[0]
+
+    def test_the_line_reaches_the_rendered_row(self):
+        # Discrimination: the helper being right is worth nothing if
+        # render_row never calls it.
+        html = dreamhub.render_row(self.row(deployed={
+            "state": "behind", "rev": "10ca98a", "missing": [["d", "s"]]}), now=2.0)
+        assert "commit behind" in html
+        clean = dreamhub.render_row(self.row(deployed={
+            "state": "current", "rev": "x", "missing": []}), now=2.0)
+        assert "behind" not in clean
+
+
+class TestEveryTokenResolves:
+    def test_no_var_reference_is_undefined(self):
+        # Caught a real one: `.stale` used var(--warn), which dreamhub did
+        # not define, so the colour would have silently inherited. An
+        # undefined custom property is the quietest styling failure there
+        # is — it looks like a design choice.
+        import re
+        src = pathlib.Path(dreamhub.__file__).read_text()
+        defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", src))
+        used = set(re.findall(r"var\((--[a-z0-9-]+)\)", src))
+        assert used, "no var() found — this assertion would be vacuous"
+        assert not (used - defined), f"undefined tokens: {sorted(used - defined)}"

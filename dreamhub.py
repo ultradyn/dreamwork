@@ -31,6 +31,7 @@ import urllib.error
 import urllib.request
 from concurrent import futures
 from datetime import datetime
+from pathlib import Path
 
 # Where the machine-local state lives. Which projects exist is a fact about
 # THIS MACHINE, not about any repo — committing it would be wrong on the next
@@ -437,6 +438,59 @@ def probe_live(row, cache, timeout=PROBE_TIMEOUT_S):
     return row
 
 
+# ------------------------------------------------- what each one is serving
+
+# The deploy snapshot is intentionally outside the repo, so a dreamer editing
+# watch.py cannot change what is already serving him. The cost is that the
+# running code's identity is recorded nowhere, and a fix can sit committed and
+# undeployed while he stares at the bug it fixes (#129, then #179). The hub is
+# the one place that can say so about every project at once (#147).
+#
+# By path, not by name: the hub may be launched from anywhere, and `import
+# deployed` would then depend on the cwd — a dependency that works on the
+# machine you test it on.
+def _load_deployed():
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deployed.py")
+    spec = importlib.util.spec_from_file_location("_dreamhub_deployed", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def probe_deployed(row, cache, mod=None, repo=None):
+    """Fill row['deployed'] — which revision this project's dashboard serves.
+
+    Cached on (snapshot mtime, repo HEAD): the byte-compare walks history
+    only when the snapshot is not HEAD, and neither input changes between
+    renders, so a page refresh costs two git calls rather than sixty.
+
+    Never raises. A project whose deploy state cannot be read is a project
+    with one unknown field, not a page that fails to load.
+    """
+    mod = _load_deployed() if mod is None else mod
+    repo = os.path.dirname(os.path.abspath(__file__)) if repo is None else repo
+    row["deployed"] = None
+    try:
+        snap = mod.snapshot_for(Path(row["path"]))
+        stamp = _mtime(str(snap))
+        head = mod.git(Path(repo), "rev-parse", "HEAD").strip()
+    except Exception as e:                                  # noqa: BLE001
+        row["deployed"] = {"state": mod.ERROR, "note": f"{e.__class__.__name__}: {e}",
+                           "rev": None, "missing": []}
+        return row
+
+    key = ("deployed", row["path"], stamp, head)
+    if key not in cache:
+        try:
+            cache[key] = mod.report(Path(row["path"]), Path(repo))
+        except Exception as e:                              # noqa: BLE001
+            cache[key] = {"state": mod.ERROR, "rev": None, "missing": [],
+                          "note": f"{e.__class__.__name__}: {e}"}
+    row["deployed"] = cache[key]
+    return row
+
+
 def probe_all(reg, cache, now=None, timeout=PROBE_TIMEOUT_S):
     """Every registry entry → a row. One thread per project.
 
@@ -447,6 +501,15 @@ def probe_all(reg, cache, now=None, timeout=PROBE_TIMEOUT_S):
     rows = [probe_disk(e, now=now) for e in reg["projects"]]
     if not rows:
         return rows
+    # Loaded once for the whole sweep rather than per row: it is the same
+    # module and the same repo for every project.
+    try:
+        mod = _load_deployed()
+    except Exception:                                   # noqa: BLE001
+        mod = None
+    if mod is not None:
+        for r in rows:
+            probe_deployed(r, cache, mod)
     with futures.ThreadPoolExecutor(max_workers=min(16, len(rows))) as pool:
         list(pool.map(lambda r: _probe_live_safe(r, cache, timeout), rows))
     return rows
@@ -474,7 +537,10 @@ STYLE = """<style>
   :root { --bg:#0b0f19; --panel:#111827; --panel2:#1e293b;
     --line:#1f2937; --border:#334155; --text:#d1d5db; --bright:#f3f4f6;
     --lit:#e5e7eb; --muted:#9ca3af; --dim:#6b7280; --dimmer:#4b5563;
-    --accent:#a5b4fc; --space:1.6rem; --radius:4px; }
+    --accent:#a5b4fc; --space:1.6rem; --radius:4px;
+    /* watch.py's value, not a near-match: the human moves between the two
+       surfaces constantly and BROKEN must be the same colour in both. */
+    --warn:#fcd34d; }
   * { scrollbar-width:thin; scrollbar-color:var(--dimmer) transparent;
       box-sizing:border-box; }
   ::-webkit-scrollbar { width:7px; height:7px; }
@@ -522,6 +588,12 @@ STYLE = """<style>
   .state.stalled, .state.missing { color:var(--muted); }
   .age { color:var(--dim); margin-left:1ch; }
   .note { color:var(--dim); margin-top:.3rem; overflow-wrap:anywhere; }
+  /* Amber, because --warn's one job on this surface is BROKEN rather than
+     live: a dashboard serving code older than HEAD is showing him a past
+     that looks like the present, which is the failure this whole line
+     exists to make visible. Never the accent — that marks the actionable. */
+  .stale { color:var(--warn); margin-top:.3rem; overflow-wrap:anywhere;
+    cursor:help; }
   code { color:var(--muted); background:var(--panel); padding:0 .4ch;
          border-radius:var(--radius); overflow-wrap:anywhere; }
   .empty { color:var(--dim); margin-top:2rem; }
@@ -628,6 +700,37 @@ def _notes(row):
     return out
 
 
+def _deployed_line(row):
+    """The dashboard-staleness line, and it is SILENT when there is nothing wrong.
+
+    Only two states are worth his eye: serving something older than HEAD, and
+    serving something that is in no commit at all. "current" and "never
+    deployed" say nothing, because a line on every healthy row is the noise
+    that hides the one unhealthy one — the same reason watch-tint warns on a
+    bad value and stays quiet when unset.
+
+    Detail is ranked, never withheld (DREAMWORK.md): the summary is the line,
+    the individual missing commits are in its title, so hovering gives him the
+    whole list without the row growing to hold it.
+    """
+    d = row.get("deployed") or {}
+    state, missing = d.get("state"), d.get("missing") or []
+    if state == "behind":
+        n = len(missing)
+        # Real newlines, escaped once. Pre-escaping them as `&#10;` and then
+        # passing the result through esc() double-escapes the ampersand, and
+        # the tooltip shows the entity instead of a line break — visible only
+        # by looking at the rendered attribute, which is how this was caught.
+        detail = esc("\n".join(f"{h}  {s}" for h, s in missing))
+        return [f'<div class="stale" title="{detail}">dashboard is '
+                f'{n} commit{"s" if n != 1 else ""} behind · '
+                f'serving {esc(d.get("rev") or "?")}</div>']
+    if state == "untracked":
+        return ['<div class="stale">dashboard is serving code that is in no '
+                'commit — deployed from an uncommitted tree</div>']
+    return []
+
+
 def render_row(row, now=None):
     now = time.time() if now is None else now
     since = (now - row["age"]) if row.get("age") is not None else None
@@ -644,6 +747,7 @@ def render_row(row, now=None):
                      f'{esc(waiting[0])}{more}</div>')
     if row.get("task"):
         parts.append(f'<div class="task">{esc(row["task"])}</div>')
+    parts.extend(_deployed_line(row))
     parts.append(f'<div class="facts">{_facts(row)}</div>')
     # Notes are ADDITIVE, not a priority list. The disk has something to say
     # (mid-write, never ticked, gone) and the network has something else, and
