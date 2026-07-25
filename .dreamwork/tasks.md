@@ -75,8 +75,6 @@ Next id: **144**
   "what is it doing, does it need me"; fold the rest, don't delete it —
   the bulk is load-bearing for agents. Colour by significance, not by
   JSON type. `awaiting_human` must be impossible to miss
-- **#126** — Composer commands carry the page they came from · P2 ·
-  task · 25m · the route is a hint, never an instruction
 - **#127** — One deliberate way to compact a dreamwork agent · P2 ·
   task · 45m · *mostly landed* · `compaction.md` + the harness dialect
   table in `~/.llm-general/ai-coding/agent-compaction.md`; hooks
@@ -123,7 +121,10 @@ Next id: **144**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#137** `lint.py` checks a
+Pruned in grooming; git is the real ledger. **#126** a steer carries the
+page it was sent from (56a791c) — and, unbriefed, a newline in the
+composer can no longer forge a second line in the events log the
+coordinator acts on. **#137** `lint.py` checks a
 target's files by running the REAL readers, and `just test` now runs it
 (b7151ec, 596116a). **#139** the `.qa` catch-alls are gone entirely, not
 out-specified, and `oneinput` measures both halves of the field
