@@ -318,20 +318,14 @@ results, no ceremony.
   `type` (idea | task | bug | experiment | chore), `size` (estimated
   minutes), `feasibility` (note from triage), the next-up mark (set by
   `do next`, cleared on start), owner or blocked-on, and — once a task
-  is started — its `goal` and `parent`, because the scope gate asks
-  every actor to name a chain and a link no one can read is a link no
-  one can name. Where the ledger is a separate file, mirror them into
-  the backend's `metadata` if it surfaces them — but never depend on
-  that unread.
+  is scope-gated — its `goal` and `parent`. Mirror them into the
+  backend's `metadata` where it surfaces them (Guardrails: never depend
+  on a channel you have not read back).
 - Work that arrives with a durable id upstream (a forge issue a plugin
-  ingested) keeps that id instead of being given one of the loop's own.
-  While it is only a candidate it sits in the backend and competes in
-  normal selection like anything else, but it takes no loop id and no
-  ledger line — the next poll re-derives it, so a busy forge never
-  floods the loop's numbering. Starting it changes that: a poll
-  re-derives the item, never the loop's progress on it, so as work
-  begins it takes a loop id and from then on holds its own state —
-  owner, branch, blocked-on.
+  ingested) keeps that id and takes no loop id or ledger line until the
+  loop actually starts on it — a poll re-derives the item, never the
+  loop's progress on it. The rule and its edge cases live with the
+  plugins that produce such work: `writing-plugins.md`.
 - Dependencies recorded however the backend expresses them (Claude Code:
   `addBlockedBy` / `addBlocks`), and on the ledger line either way.
 - Big features get a planning doc on disk (`.dreamwork/docs/plans/<slug>.md`
@@ -366,11 +360,9 @@ if Max is away).
 - `maintenance` / `do maintenance` / `maintenance: <item>` — run the
   maintenance rotation now, regardless of backlog state; without an item
   named, `roll.py --no-backlog` can pick one.
-- `parallelize` (or "parallel" and similar) — dispatch subagents across
-  disjoint pending tasks where possible. Disjoint means no shared file
-  ownership (the delegation rule is the conflict test). Report what was
-  parallelized and what couldn't be, with why (ownership overlap,
-  human-gated).
+- `parallelize` (or "parallel" and similar) — fan out dreamers across
+  pending tasks with disjoint file ownership (Subagents has the test).
+  Report what could not be, and why.
 - `status` — current task, queue summary, recent completions, open
   questions from `.dreamwork/questions.md`.
 - `pause` / `resume` — TaskStop the heartbeat monitor / re-arm it.
