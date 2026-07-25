@@ -27,11 +27,10 @@ Next id: **147**
   not the problem, the RATE is (246→433 in nine hours, because every
   finding lands as prose in SKILL.md). M2 and M3 will attract pushback —
   concede cheaply. Also argues against #119's `selection.md`
-- **#144** — A subagent's final message is a channel nobody reads back ·
-  P2 · bug · 25m · three utility agents finished and their deliverable
-  never arrived; dreamers have lost nothing all day because they append
-  to a file. SKILL.md's own guardrail, failing on the coordinator's own
-  machinery. Rec: every subagent writes to a file and pings the inbox
+- **#144** — Utility agents visible in `status.json` when dispatched ·
+  P3 · chore · 15m · the reporting rule landed; what remains is making a
+  dispatched-but-undelivered agent legible at a glance rather than by
+  memory — same move as #136
 - **#143** — Per-project colour tint, persisted and cross-window · P3 ·
   idea · 45m · the value lands with dreamhub: a tint is decoration for
   one project and navigation for several, so the hub shows it too ·

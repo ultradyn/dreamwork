@@ -196,10 +196,16 @@ just built, a refinement of its own motion language) goes to the
 incumbent, prioritized, before it wraps — context that hot is worth
 spending.
 
-All subagents report to the coordinator and never use `attn`. Subagents
-never stop or pause loop machinery — the heartbeat monitor, the watch
-server, the loop itself; if one believes the loop should stop, it says so
-in its report and the human (or the coordinator on the human's
+All subagents report to the coordinator **through a file**, and never use
+`attn`. Give every one of them a path to write to and an inbox to ping —
+a subagent's final message is a channel nobody reads back, and it has
+silently swallowed deliverables here. Dreamers append to the coordinator
+inbox and have never lost one; the fix is to dispatch utilities the same
+way, not to watch harder.
+
+Subagents never stop or pause loop machinery — the heartbeat monitor, the
+watch server, the loop itself; if one believes the loop should stop, it
+says so in its report and the human (or the coordinator on the human's
 instruction) decides. A report must always say what durable state
 changed — dream file written, docs added or updated, with paths — change
 notification is key and cheap. Everything else stays minimal: raw
