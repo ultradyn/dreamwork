@@ -178,10 +178,10 @@ Two halves, because neither can see what the other sees.
 
 - `pytest test_dreamhub.py` — the registry, the probes, the render's
   *generated source*, and the server's routes. It cannot see what renders.
-- `node dev/hub/hub.mjs <OUT> <PORT>` — a real browser over a real server:
+- `node dev/hub/hub.mjs <OUT> [<PORT>]` — a real browser over a real server:
   rows present *and visible*, states distinct, liveness, no overflow, and
   screenshots for a human to look at.
-- `node dev/hub/contract.mjs <OUT> <PORT>` — a real `watch.py` over a copied
+- `node dev/hub/contract.mjs <OUT> [<PORT>]` — a real `watch.py` over a copied
   fixture, asserting the hub agrees with it and follows a change.
 
 See `dev/hub/README.md`. **Not yet wired into `just test`** — that line

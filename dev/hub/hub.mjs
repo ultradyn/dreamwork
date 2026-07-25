@@ -28,7 +28,20 @@ import { writeFileSync } from 'node:fs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
 const OUT = process.argv[2] || '/tmp/hubguard';
-const PORT = process.argv[3] || '39897';
+/* PORT is part of the (OUT, PORT) contract and is honoured when given.
+   Omitted, it is an EPHEMERAL free port rather than a fixed one — these
+   guards start their own servers, so a fixed default is shared mutable
+   state with no owner, and this repo has now paid for that three times (an
+   id counter, a working tree, a port). It cost a confusing run here too:
+   dreamhub failed to bind, the readiness probe found a neighbouring watch
+   instance answering, and the guard asserted against a stranger's page.
+   Not sharing is cheaper than agreeing. */
+const freePort = () => new Promise(res => {
+  const s = createServer();
+  s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
+});
+const PORT = String(process.argv[3] && process.argv[3] !== '0'
+  ? process.argv[3] : await freePort());
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });

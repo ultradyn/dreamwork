@@ -7,17 +7,28 @@ source and wrong on screen, which is #117 and its sharper repeat.
 
 ## The contract
 
-`node dev/hub/hub.mjs <OUT> <PORT>` — the same `(OUT, PORT)` argv contract
+`node dev/hub/hub.mjs <OUT> [<PORT>]` — the same `(OUT, PORT)` argv contract
 `dev/capture/` uses. One contract; a second doubles the confusion.
 
-One difference, stated rather than left to be discovered: **this guard starts
-its own server.** The hub's input is N targets plus a registry, not one target
-directory, so gluing it into a shared serve-then-run recipe would be the
-second contract worth avoiding. The justfile line that wires it in (#134) is
-therefore one line with no plumbing:
+Two differences, stated rather than left to be discovered.
+
+**These guards start their own servers.** The hub's input is N targets plus a
+registry, not one target directory, so gluing it into a shared serve-then-run
+recipe would be the second contract worth avoiding.
+
+**`PORT` is optional, and omitting it is the recommended way to run them.**
+It is honoured when given, but the default is an *ephemeral free port*, not a
+fixed one. A fixed default is shared mutable state with no owner, and it cost
+a confusing hour here: dreamhub failed to bind a port a neighbouring watch
+instance already held, the readiness probe found that stranger answering, and
+the guard asserted against a page that was never the hub. Not sharing is
+cheaper than agreeing.
+
+So the justfile lines that wire these in (#134) carry no port and no plumbing:
 
 ```
-node dev/hub/hub.mjs "$OUT/hub" 39897 || fail=1
+node dev/hub/hub.mjs "$OUT/hub" || fail=1
+node dev/hub/contract.mjs "$OUT/hubcontract" || fail=1
 ```
 
 ## The fixture
