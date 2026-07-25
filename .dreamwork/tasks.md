@@ -30,10 +30,14 @@ Next id: **154**
   landing time; stdout becomes summariser instructions, so it must be
   silent by construction
 - **#145** — Route findings by trigger; land the review's moves · P3 ·
-  chore · 60m · findings: `docs/reviews-skillmd-2026-07-25.md` · 420 is
-  not the problem, the RATE is (246→433 in nine hours, because every
-  finding lands as prose in SKILL.md). M2 and M3 will attract pushback —
-  concede cheaply. Also argues against #119's `selection.md`
+  chore · 60m · findings + coordinator disposition:
+  `docs/reviews-skillmd-2026-07-25.md` · 420 is not the problem, the RATE
+  is · M2/M3 KEPT with the reason recorded · **blocked precondition**:
+  ud-dreamtask points at named SKILL.md sections, so a rename orphans a
+  live pointer in another repo — grep the sibling first · **open**: the
+  routing rule has no bucket for CRAFT guidance; a second craft rule is
+  the signal to split it out of `file-formats.md` · also argues against
+  #119's `selection.md`
 - **#144** — Utility agents visible in `status.json` when dispatched ·
   P3 · chore · 15m · the reporting rule landed; what remains is making a
   dispatched-but-undelivered agent legible at a glance rather than by
