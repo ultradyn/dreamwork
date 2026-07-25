@@ -90,11 +90,15 @@ Next id: **154**
   deployed page) — this is fix at five, move to the top, and add the
   motion. Reuse #104's regroup, not a new one. Animate on a new SHA, not
   on a tick. Same rows as #132, so land them together
-- **#150** — Audit the coordinator's own machinery · P2 · chore · 60m ·
-  four failures today were all in the coordination layer, none in the
-  code: lost subagent deliverables, an inbox that cannot wake an idle
-  agent, a relay corrupted by its own heredoc, invented timestamps. Every
-  rule broken was already written in SKILL.md — for targets
+- **#150** — Audit the coordinator's own machinery · P2 · chore · 40m ·
+  *transport slice landed* (14a8fd1): `relay.py` takes the body from
+  stdin and the stamp from the clock, so the heredoc corruption and the
+  invented timestamps are designed out rather than remembered.
+  Remaining: write-then-wake as one action (the inbox is durable, not
+  delivered), dispatched-but-undelivered utilities visible in
+  `status.json` (#144), and an honest list of what stays unguarded ·
+  also: a shutdown approval carries no payload, so anything an agent
+  knows at termination must be written BEFORE it agrees to stop
 - **#149** — `append_subbullet` eats the blank line before
   `## Answered` · P3 · chore · 10m · cosmetic and pre-existing; the file
   drifts from the example `file-formats.md` shows. Fix the writer, not
