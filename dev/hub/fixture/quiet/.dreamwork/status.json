@@ -1,0 +1,8 @@
+{
+  "task": "#50 — ud-dreamtask plugin",
+  "goal": "an errand-shaped loop that ends when its acceptance criteria verify",
+  "agents": [],
+  "queue": {"in_progress": 1, "pending": 4},
+  "last_tick": "2026-07-25T11:35:00+10:00",
+  "last_commit": "12d27fc queue: land the question-states batch"
+}

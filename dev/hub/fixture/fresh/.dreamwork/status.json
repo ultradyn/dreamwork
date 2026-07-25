@@ -1,0 +1,15 @@
+{
+  "task": "#96 — dreamhub stage 1, increment 3",
+  "goal": "one glance tells him which dreamer has stopped moving",
+  "agents": [
+    {"name": "dreamer-hubbuild",
+     "owns": ["dreamhub.py", "dev/hub/"],
+     "in_flight": "the live probe"},
+    {"name": "dreamer-thread",
+     "owns": ["watch.py", "test_watch.py"],
+     "in_flight": "#128 the follow-up thread"}
+  ],
+  "queue": {"in_progress": 2, "pending": 23},
+  "last_tick": "2026-07-25T12:00:00+10:00",
+  "last_commit": "ab32541 dreamhub: registry and CLI"
+}

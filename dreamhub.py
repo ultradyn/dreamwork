@@ -26,6 +26,7 @@ import os
 import re
 import sys
 import time
+from datetime import datetime
 
 # Where the machine-local state lives. Which projects exist is a fact about
 # THIS MACHINE, not about any repo — committing it would be wrong on the next
@@ -186,6 +187,151 @@ def add_project(reg, path, force=False):
     }
     reg["projects"].append(entry)
     return entry, True
+
+
+# ------------------------------------------------------- the disk probe
+
+# How long since the last tick before a loop stops counting as dreaming.
+# Generous on purpose: the heartbeat is 4.75m, so a target that has missed
+# one tick is not yet news, and a hub that cries stalled is a hub nobody
+# looks at.
+DREAMING_S = 10 * 60
+QUIET_S = 60 * 60
+
+DREAMING = "dreaming"
+QUIET = "quiet"
+STALLED = "stalled"
+NO_STATUS = "no status"
+MISSING = "missing"
+
+
+def age_str(seconds):
+    """Compact age, watch.py's vocabulary — the human reads both pages."""
+    if seconds is None:
+        return ""
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m"
+    if s < 86400:
+        return f"{s // 3600}h"
+    return f"{s // 86400}d"
+
+
+def state_for(age):
+    if age is None:
+        return NO_STATUS
+    if age < DREAMING_S:
+        return DREAMING
+    if age < QUIET_S:
+        return QUIET
+    return STALLED
+
+
+def _parse_tick(value):
+    """`last_tick` → epoch seconds, or None if it is not a timestamp.
+
+    Returning None rather than guessing is the whole point: an unparseable
+    tick must fall through to the file mtime, not become a fabricated age.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.strip()).timestamp()
+    except ValueError:
+        return None
+
+
+def _as_list(value):
+    return value if isinstance(value, list) else []
+
+
+def _mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def read_port(path):
+    """The target's persisted watch port, or None if it was never watched."""
+    try:
+        with open(os.path.join(path, ".dreamwork", "watch-port"),
+                  encoding="utf-8") as f:
+            raw = f.read().strip()
+    except OSError:
+        return None
+    return int(raw) if raw.isdigit() else None
+
+
+def probe_disk(entry, now=None):
+    """One registry entry → one row, from disk alone. Pure, no network.
+
+    Never raises: every target is isolated, because a hub that 500s on one
+    broken project has failed at the one job it has.
+    """
+    now = time.time() if now is None else now
+    path = entry["path"]
+    row = {
+        "slug": entry["slug"], "path": path,
+        "state": MISSING, "note": None, "port": None,
+        "age": None, "age_str": "", "age_from": None,
+        "task": None, "goal": None, "agents": [], "queue": None,
+        "last_commit": None,
+    }
+    if not os.path.isdir(path):
+        row["note"] = "directory is gone — remove it or fix the path"
+        return row
+    row["port"] = read_port(path)
+    sfile = os.path.join(path, ".dreamwork", "status.json")
+    mtime = _mtime(sfile)
+    if mtime is None:
+        row["state"] = NO_STATUS
+        row["note"] = ("no .dreamwork/status.json — the loop has not ticked "
+                       "here")
+        return row
+
+    status, torn = None, False
+    try:
+        with open(sfile, encoding="utf-8") as f:
+            status = json.loads(f.read())
+    except (OSError, ValueError):
+        torn = True             # rewritten every tick; we WILL catch one
+    if not isinstance(status, dict):
+        status, torn = None, True
+
+    tick = _parse_tick((status or {}).get("last_tick"))
+    row["age_from"] = "last_tick" if tick is not None else "file"
+    stamp = tick if tick is not None else mtime
+    row["age"] = max(0.0, now - stamp)
+    row["age_str"] = age_str(row["age"])
+    row["state"] = state_for(row["age"])
+
+    if torn:
+        # A target caught mid-write is dreaming HARDER than the others, so
+        # the age still stands (from the mtime) — only the contents are lost.
+        row["note"] = "status.json unreadable — caught mid-write, or corrupt"
+        return row
+    if tick is None:
+        row["note"] = "status.json has no readable last_tick; age is its mtime"
+
+    row["task"] = status.get("task")
+    row["goal"] = status.get("goal")
+    row["queue"] = status.get("queue") if isinstance(
+        status.get("queue"), dict) else None
+    row["last_commit"] = status.get("last_commit")
+    # Every shape below is checked rather than trusted. status.json is
+    # hand-written prose-ish JSON that a dozen loops on a dozen versions of
+    # the skill will produce, and one of them WILL put a number where this
+    # expects a list. The hub's job is to keep showing the other rows.
+    row["agents"] = [
+        {"name": str(a.get("name") or "?"),
+         "owns": [str(o) for o in _as_list(a.get("owns"))],
+         "in_flight": a.get("in_flight")}
+        for a in _as_list(status.get("agents")) if isinstance(a, dict)
+    ]
+    return row
 
 
 # ---------------------------------------------------------------- CLI

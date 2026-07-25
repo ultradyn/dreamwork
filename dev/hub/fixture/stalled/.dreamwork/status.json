@@ -1,0 +1,8 @@
+{
+  "task": "#80 — pick a second dogfood target",
+  "goal": "prove the loop is not overfitted to its own repo",
+  "agents": [],
+  "queue": {"in_progress": 0, "pending": 9},
+  "last_tick": "2026-07-25T09:00:00+10:00",
+  "last_commit": "767bbf6 queue: #138 the PreCompact hook"
+}

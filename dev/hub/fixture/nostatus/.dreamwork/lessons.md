@@ -1,0 +1,1 @@
+- A lesson, so the target is not empty.

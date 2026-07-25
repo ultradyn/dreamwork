@@ -1,0 +1,7 @@
+{
+  "_": "Age in SECONDS below real now, applied by prep.py to each target's status.json (its last_tick AND its file mtime). The fixture is frozen in SHAPE; only these offsets are relative, because a state whose whole meaning is 'how long since' cannot be frozen to a wall-clock timestamp without going stalled overnight and training everyone to ignore a red light.",
+  "fresh": 120,
+  "quiet": 1500,
+  "stalled": 10800,
+  "torn": 90
+}
