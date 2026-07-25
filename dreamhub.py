@@ -802,7 +802,10 @@ def cmd_serve(args):
               f"stop it or pass --port.", file=sys.stderr)
         return 1
     url = f"http://127.0.0.1:{port}/"
-    print(f"dreamhub on {url}")
+    print(f"dreamhub on {url}  ({len(load_registry()['projects'])} projects)")
+    if args.open:
+        import webbrowser
+        webbrowser.open(url)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -815,11 +818,24 @@ def cmd_serve(args):
 def build_parser():
     p = argparse.ArgumentParser(
         prog="dreamhub",
-        description="one page over several dreaming projects on this machine")
-    sub = p.add_subparsers(dest="cmd")
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="One page over several dreaming projects on this "
+                    "machine.\n\n"
+                    "Register the targets you want to watch, then serve. "
+                    "Each row says whether that\nloop is dreaming or has "
+                    "gone quiet, what it is working on, whether it is "
+                    "waiting\non you, and links through to that project's "
+                    "own watch dashboard.",
+        epilog="  dreamhub add ~/src/hark\n"
+               "  dreamhub serve --open\n\n"
+               "Read-only. It writes nothing outside "
+               "~/.config/dreamwork/hub/ and never\ntouches a target: "
+               "steering stays on each project's own watch page.")
+    sub = p.add_subparsers(dest="cmd", metavar="add | remove | list | serve")
 
     a = sub.add_parser("add", help="register a dreamwork target")
-    a.add_argument("path")
+    a.add_argument("path", help="a directory with a .dreamwork/ "
+                                "or a DREAMWORK.md")
     a.add_argument("--force", action="store_true",
                    help="register even if it does not look like a target")
     a.set_defaults(fn=cmd_add)
@@ -831,8 +847,16 @@ def build_parser():
     ls = sub.add_parser("list", help="show the registry")
     ls.set_defaults(fn=cmd_list)
 
-    sv = sub.add_parser("serve", help="serve the hub page on 127.0.0.1")
-    sv.add_argument("--port", type=int, default=None)
+    sv = sub.add_parser(
+        "serve", help="serve the hub page on 127.0.0.1",
+        description="Serve the aggregate page. Read-only: the hub writes "
+                    "nothing outside ~/.config/dreamwork/hub/, and steering "
+                    "stays on each project's own watch dashboard.")
+    sv.add_argument("--port", type=int, default=None,
+                    help="default: the port persisted in "
+                         "~/.config/dreamwork/hub/port")
+    sv.add_argument("--open", action="store_true",
+                    help="open the page in a browser")
     sv.set_defaults(fn=cmd_serve)
     return p
 

@@ -864,6 +864,75 @@ class TestServer:
             httpd.server_close()
 
 
+class TestHelp:
+    """`--help` is the tool's first sentence to a reader who has not read
+    anything else. It is also the one place stage 1's boundary can be stated
+    where he will actually see it."""
+
+    def out(self, capsys, argv):
+        with pytest.raises(SystemExit):
+            main(argv)
+        return capsys.readouterr().out
+
+    def test_top_level_help_names_every_command(self, capsys):
+        text = self.out(capsys, ["--help"])
+        for cmd in ("add", "remove", "list", "serve"):
+            assert cmd in text
+
+    def test_top_level_help_says_what_it_is_for(self, capsys):
+        text = self.out(capsys, ["--help"])
+        assert "dreaming projects" in text
+        assert "waiting" in text
+
+    def test_help_states_the_read_only_boundary(self, capsys):
+        """The scope the human approved, in the place he will read it."""
+        text = self.out(capsys, ["--help"])
+        assert "Read-only" in text
+        assert "~/.config/dreamwork/hub/" in text
+
+    def test_help_shows_an_example(self, capsys):
+        assert "dreamhub add" in self.out(capsys, ["--help"])
+
+    def test_serve_help_names_where_the_port_comes_from(self, capsys):
+        text = self.out(capsys, ["serve", "--help"])
+        assert "--open" in text
+        assert "dreamwork/hub/port" in text
+
+    def test_add_help_says_what_a_target_is(self, capsys):
+        text = self.out(capsys, ["add", "--help"])
+        assert ".dreamwork" in text and "DREAMWORK.md" in text
+        assert "--force" in text
+
+
+class TestDesignDoc:
+    """The doc-map's promise, made checkable: a second tool in this repo with
+    no documented contract is the thing the doc-map exists to prevent."""
+
+    def read(self, name):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_the_design_record_exists_and_names_its_dependencies(self):
+        doc = self.read("dreamhub-design.md")
+        for field in ("last_tick", "awaiting_human", "open_questions",
+                      "watch-port", "/mtime", "/data.json"):
+            assert field in doc, field
+
+    def test_the_design_record_states_what_stage_1_is_not(self):
+        doc = self.read("dreamhub-design.md")
+        assert "No lifecycle" in doc
+        assert "No writes to any target" in doc
+
+    def test_the_doc_map_has_rows_for_both(self):
+        rows = self.read(os.path.join(".dreamwork", "docs", "doc-map.md"))
+        assert "dreamhub.py" in rows
+        assert "dreamhub-design.md" in rows
+
+    def test_the_readme_mentions_the_hub(self):
+        assert "dreamhub" in self.read("README.md")
+
+
 class TestPrep:
     def test_ages_are_relative_to_now_not_to_the_fixture(self, tmp_path):
         """The fixture must read the same in ten years as it does today.

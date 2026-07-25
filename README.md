@@ -27,6 +27,10 @@ keeps current.
 - **It watches itself dream.** `watch.py` is a dependency-free local
   dashboard showing live status, questions, review artifacts, and a
   composer for steering the loop — no build step, no npm.
+- **It scales past one project.** `dreamhub.py` is a read-only page over
+  every dreaming project on the machine: which loops are moving, which
+  have gone quiet, which are waiting on you, and a link through to each
+  project's own dashboard (`dreamhub add <path>`, then `dreamhub serve`).
 
 ## Install
 
