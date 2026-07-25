@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **184**
+Next id: **185**
 
 ## Open
 
@@ -89,6 +89,18 @@ Next id: **184**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#184** — Things that did not move are animating · P2 · bug · 35m ·
+  an element ABOVE a departing question moves, and a git-panel update
+  shifts and rescrolls the list below it · **third observation confirms
+  #179** — the defocus fires on this trigger too, so take them together
+  · hypothesis (MEASURE IT): the regroup claims every delta in a
+  re-laid-out document rather than only the deltas its own change
+  caused — the mirror of #141, where layout already carried the
+  neighbours · **fixed-height commit rows (#151's own spec) may remove
+  half of it by construction** — check that before making the regroup
+  smarter · principle to state once fixed: motion belongs to the thing
+  that changed and stops at what actually moved, because on this page
+  movement MEANS something
 - **#183** — The composer's `+` sticks to the top when scrolling · P2 ·
   idea · 25m · on a long page the way to send a steer scrolls off
   exactly when he has read something and has a reply · **he named the
