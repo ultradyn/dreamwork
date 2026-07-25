@@ -4,12 +4,18 @@ __pycache__/
 # of the machine, so a committed copy would be another target's truth
 .dreamwork/plugin-commands.json
 .dreamwork/watch-events.log
-# Same file one directory down: a guard that drives the composer for real
-# makes the server write command events into the FROZEN fixture. The write
-# is correct behaviour being exercised; the pattern above is anchored to the
-# repo root and does not reach it, so it would sit untracked in every
-# `git status` waiting for a careless `git add -A`.
+# every submission as it arrived, raw and unvalidated (#199). Ephemeral in the
+# same sense as the events log — a recovery record for HIM, not project
+# history — and it holds whatever he typed, so it is the last file that should
+# ever be pushed anywhere.
+.dreamwork/submissions.log
+# The same two files one directory down: a guard that drives the composer or
+# answers a question for real makes the server write into the FROZEN fixture.
+# The write is correct behaviour being exercised; the patterns above are
+# anchored to the repo root and do not reach it, so they would sit untracked
+# in every `git status` waiting for a careless `git add -A`.
 dev/capture/fixture/.dreamwork/watch-events.log
+dev/capture/fixture/.dreamwork/submissions.log
 
 # worktrees for isolated dreamer spikes
 .worktrees/

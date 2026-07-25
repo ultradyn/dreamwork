@@ -66,13 +66,18 @@ lint:
 #                make the mtime change so it can drive a live tick over a
 #                ghost. That only touches watch-events.log, so it changes
 #                nothing rendered, but it is why the per-guard reset matters.
+#   submitlog    ordinary (OUT, PORT), and the heaviest writer here: it
+#                answers a question for real and forces two rejected writes,
+#                so it changes questions.md AND appends to submissions.log.
+#                Reads both back over /filedata rather than off disk — it is
+#                handed a port, not a target.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"

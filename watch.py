@@ -4358,6 +4358,79 @@ def log_event(target, line):
         pass
 
 
+# The largest request body that is read at all. Everything a human types
+# through this page fits far inside it; the cap is here so an unbounded read
+# cannot be aimed at the server.
+MAX_BODY = 20_000
+SUBMIT_LOCK = threading.Lock()
+
+
+def log_submission(target, path, body, nbytes, truncated=False):
+    """His words on disk before anything is allowed to refuse them (#199).
+
+    His framing: "because the user's time is the most valuable thing". Before
+    this, an answer he typed lived in exactly ONE place — questions.md — and
+    every write path could refuse it and return having recorded nothing.
+    `append_answer` returns unmatched when it cannot find the entry, which is
+    exactly what #116 was (a title wrapped across lines), so this was a live
+    loss path on his input rather than a theoretical one.
+
+    THREE PROPERTIES, AND EACH IS THE WHOLE POINT OF THE ONE BEFORE IT.
+
+    · It runs FIRST — from `do_POST`, before dispatch, before the body is
+      parsed, before anything is validated. One call site rather than four, so
+      a handler added later cannot forget, and no failure downstream of it can
+      happen first.
+    · It is UNVALIDATED. The payload that fails validation is precisely the one
+      worth keeping, so a body that is not JSON, or not even UTF-8, is written
+      verbatim as `raw` with `why` saying which. A design that logged only the
+      parsed request would drop exactly the cases this file exists for.
+    · It CANNOT RAISE. A logging failure must never be why his answer was
+      refused, so every error is swallowed — including the ones that are the
+      caller's fault. `log_event`'s rule, on a file where it matters more.
+
+    Well-formed bodies are stored parsed (`req`) rather than as an escaped
+    string, because `json.loads` → `json.dumps` round-trips every value
+    faithfully and keeps the line readable and greppable; a raw string would
+    turn every newline in his answer into a literal backslash-n. The shape is
+    stated in `file-formats.md` and checked by `lint.py`.
+    """
+    # `bytes` is what he SENT, not what was read: on a truncated body the two
+    # differ, and the number that says how much was lost is the declared one.
+    rec = {"t": time.strftime("%Y-%m-%dT%H:%M:%S"), "path": path,
+           "bytes": nbytes}
+    try:
+        rec["req"] = json.loads(body)
+    except (ValueError, TypeError):
+        rec["raw"] = body.decode("utf-8", "replace")
+        # WHICH kind of unusable, because they need different reading: a
+        # `json` line is text a human can still act on, a `decode` line is
+        # bytes that were never text and whose `raw` has replacement chars in
+        # it. Naming that is the difference between recovering his answer and
+        # trusting a mangled one.
+        rec["why"] = "json"
+        try:
+            body.decode("utf-8")
+        except UnicodeDecodeError:
+            rec["why"] = "decode"
+    if truncated:
+        rec["truncated"] = True
+    try:
+        line = json.dumps(rec, ensure_ascii=False)
+    except (TypeError, ValueError):        # a value json cannot render
+        return
+    try:
+        # One append of one line, under a lock, because this server is
+        # threaded and two interleaved writes lose both submissions rather
+        # than one.
+        with SUBMIT_LOCK:
+            with open(os.path.join(target, ".dreamwork", "submissions.log"),
+                      "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+    except OSError:
+        pass
+
+
 # Accepted POST /command kinds, derived from the one vocabulary (COMMANDS,
 # top of file). Each becomes a source-tagged watch-events.log line the loop's
 # tail monitor wakes on (same transport as answers); no file is written.
@@ -4457,12 +4530,13 @@ def make_handler(target, dev=False):
                 self.send_error(404)
 
         def _read_json(self):
-            length = int(self.headers.get("Content-Length", 0))
-            if not 0 < length <= 20_000:
-                self.send_error(413)
-                return None
+            """The body this request already had read off the wire, parsed.
+
+            It does NOT read the socket: `do_POST` did that, because his words
+            have to be on disk before anything here can refuse them (#199).
+            """
             try:
-                return json.loads(self.rfile.read(length))
+                return json.loads(self._body)
             except ValueError:
                 self.send_error(400)
                 return None
@@ -4473,6 +4547,31 @@ def make_handler(target, dev=False):
             # onto any entry; /command drops a steering line into the events
             # log; /tint saves his colour for this project. Everything else is
             # read-only.
+            #
+            # THE BODY IS READ AND PERSISTED HERE, BEFORE ANY OF THAT (#199).
+            # One call site rather than four: a handler added later gets the
+            # guarantee by existing, and no dispatch, parse or validation can
+            # run before his words are on disk. That ordering is the whole
+            # feature — every one of the paths below can refuse a request, and
+            # before this they refused it having recorded nothing.
+            try:
+                nbytes = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                nbytes = -1
+            if nbytes < 0:
+                self.send_error(400)
+                return
+            body = self.rfile.read(min(nbytes, MAX_BODY))
+            truncated = nbytes > MAX_BODY
+            log_submission(target, self.path, body, nbytes, truncated)
+            # ...and only now may a request be turned away. An over-long body
+            # is still refused — the cap is what makes the read bounded — but
+            # it is refused with its first MAX_BODY bytes already kept, so a
+            # too-long answer loses its tail rather than all of it.
+            if truncated:
+                self.send_error(413)
+                return
+            self._body = body
             if self.path == "/answer":
                 self._handle_answer()
             elif self.path == "/comment":

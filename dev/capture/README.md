@@ -66,6 +66,10 @@ for live content is how this got broken the first time.
   its own git repo with commits planted at known ages.
 - `identity` — the title and favicon across a SEQUENCE of loop states on one
   live page, so nothing reloads between them.
+- `submitlog` — a REFUSED submission still leaves his words on disk (#199).
+  Forces a real 409 the way #116 caused them — the page holding a title the
+  file will not match — and then looks for his text in `submissions.log`.
+  The successful case is the control, not the check.
 - `qsec` — the dashboard's questions fold arrives and departs (#196): the
   panels below it travel rather than teleporting, never overshoot, the body
   eases in and dreams away, reduced motion does neither, and the ghost holds

@@ -1172,6 +1172,172 @@ class TestAppShell(unittest.TestCase):
                 self.assertEqual(cm.exception.code, 400)
 
 
+class TestSubmissionLog(unittest.TestCase):
+    """#199 — his words are on disk before anything can refuse them.
+
+    His framing: "because the user's time is the most valuable thing". Before
+    this, an answer lived in exactly one place — questions.md — and every write
+    path could refuse it and return with nothing recorded. `append_answer`
+    returns unmatched when it cannot find the entry, which is precisely what
+    #116 was (a title wrapped across lines), so this was a live loss path on
+    his input rather than a theoretical one.
+
+    THE TESTS THAT MATTER ARE THE FAILING SUBMISSIONS. That a good POST is
+    logged proves almost nothing: it is logged after a successful write, which
+    is what the old events log already did. The whole claim is about the
+    request that is about to be REJECTED.
+    """
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)   # LIFO: shutdown runs first
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _post_raw(self, url, data):
+        """POST arbitrary bytes and return the status, error code and all.
+
+        Not `_post`: half of what this class is about is bodies that are not
+        JSON at all, and a helper that serialises for you cannot send one.
+        """
+        req = urllib.request.Request(url, data=data, method="POST",
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    def _post(self, url, obj):
+        return self._post_raw(url, json.dumps(obj).encode("utf-8"))
+
+    def _lines(self, d):
+        path = os.path.join(d, ".dreamwork", "submissions.log")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return [json.loads(ln) for ln in f if ln.strip()]
+
+    def test_a_rejected_answer_still_leaves_his_text_on_disk(self):
+        # THE POINT OF THE WHOLE FILE. 409 is `append_answer` failing to match
+        # the entry — #116's shape — and before #199 the handler returned right
+        # there, having written nothing anywhere.
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(
+                self._post(base + "/answer",
+                           {"question": "No such question at all",
+                            "answer": "an hour of his thinking"}), 409)
+            lines = self._lines(d)
+            self.assertEqual(len(lines), 1)
+            self.assertEqual(lines[0]["path"], "/answer")
+            self.assertEqual(lines[0]["req"]["answer"],
+                             "an hour of his thinking")
+
+    def test_a_rejected_comment_does_too(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(
+                self._post(base + "/comment",
+                           {"question": "No such", "comment": "his note",
+                            "section": "Open"}), 409)
+            self.assertEqual(self._lines(d)[0]["req"]["comment"], "his note")
+
+    def test_a_body_that_is_not_json_is_kept_verbatim(self):
+        # The payload that fails to PARSE is the one most worth keeping, and it
+        # is the one a "log the parsed request" design would drop. `raw`
+        # carries it; `why` says which way it was unusable.
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(
+                self._post_raw(base + "/answer", b"{not json, his words"), 400)
+            ln = self._lines(d)[0]
+            self.assertEqual(ln["raw"], "{not json, his words")
+            self.assertEqual(ln["why"], "json")
+            self.assertNotIn("req", ln)
+
+    def test_a_body_that_is_not_utf8_is_kept_too(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(
+                self._post_raw(base + "/answer", b'{"a": "\xff\xfe"}'), 400)
+            ln = self._lines(d)[0]
+            self.assertEqual(ln["why"], "decode")
+            self.assertIn("raw", ln)
+
+    def test_an_oversize_body_is_truncated_rather_than_discarded(self):
+        # 413 used to mean "nothing was read and nothing was kept". Reading the
+        # cap and keeping it means a too-long answer loses its tail instead of
+        # all of it.
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            huge = b'{"question": "q", "answer": "' + b'x' * 40_000 + b'"}'
+            self.assertEqual(self._post_raw(base + "/answer", huge), 413)
+            ln = self._lines(d)[0]
+            self.assertTrue(ln["truncated"])
+            self.assertEqual(ln["bytes"], len(huge))
+            self.assertEqual(ln["why"], "json")     # a cut body cannot parse
+            self.assertEqual(len(ln["raw"]), watch.MAX_BODY)
+            self.assertIn("xxxx", ln["raw"])        # ...and it is HIS bytes
+
+    def test_it_is_written_before_the_work_not_after_it(self):
+        # The ordering claim, tested by removing the thing the handler needs:
+        # with no questions.md there is nothing to write to and the handler
+        # 404s before it reaches any log line it could have written itself.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            os.remove(os.path.join(d, ".dreamwork", "questions.md"))
+            base = self._serve(d)
+            self.assertEqual(
+                self._post(base + "/answer",
+                           {"question": "q", "answer": "still his"}), 404)
+            self.assertEqual(self._lines(d)[0]["req"]["answer"], "still his")
+
+    def test_every_post_path_is_logged_including_the_ones_that_succeed(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(
+                self._post(base + "/answer",
+                           {"question": "A real open question?",
+                            "answer": "yes"}), 200)
+            self.assertEqual(
+                self._post(base + "/command",
+                           {"kind": "add-idea", "text": "try X"}), 200)
+            self.assertEqual(self._post(base + "/tint", {"tint": "nope"}), 400)
+            self.assertEqual([ln["path"] for ln in self._lines(d)],
+                             ["/answer", "/command", "/tint"])
+
+    def test_every_line_has_the_shape_file_formats_states(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self._post(base + "/answer", {"question": "A real open question?",
+                                          "answer": "yes"})
+            self._post_raw(base + "/comment", b"garbage")
+            lines = self._lines(d)
+            # a per-line loop over an empty file passes every assertion in it,
+            # which is how this test read GREEN against a watch.py that wrote
+            # no log at all
+            self.assertEqual(len(lines), 2)
+            for ln in lines:
+                self.assertEqual(set(ln) & {"t", "path", "bytes"},
+                                 {"t", "path", "bytes"})
+                self.assertIsInstance(ln["bytes"], int)
+                # exactly one of req / raw, and `why` iff `raw`
+                self.assertEqual(("req" in ln), ("raw" not in ln))
+                self.assertEqual(("why" in ln), ("raw" in ln))
+                time.strptime(ln["t"], "%Y-%m-%dT%H:%M:%S")
+
+    def test_an_unroutable_post_is_still_his_words(self):
+        # 404 on the PATH, not on the content. Someone typing at a stale
+        # endpoint still typed something, and this file is not a router.
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(self._post(base + "/nope", {"a": "his text"}), 404)
+            self.assertEqual(self._lines(d)[0]["req"]["a"], "his text")
+
+
 if __name__ == "__main__":
     unittest.main()
 
