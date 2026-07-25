@@ -2,35 +2,6 @@
 
 ## Open
 
-- **2026-07-25 — may the dashboard read the session transcript? (#180).**
-  You asked for a live stream of the dreamer's own events, scanned from
-  the most recent session jsonl. Filed and specified — but one thing in
-  it is yours to decide before anyone builds it.
-
-  **The transcript contains everything**: your prompts, the agent's
-  reasoning, and full tool inputs and outputs — file contents, command
-  lines, whatever happened to be in the environment. Showing only
-  "description lines" is a filter applied *after* the server has read
-  and parsed the lot, so it is a promise about what is displayed, not
-  about what is exposed. `watch.py` is localhost-only, which narrows
-  this considerably; it does not settle it.
-
-  Two shapes, and they differ in what exists rather than in what shows:
-
-  - **Server reads the raw transcript, filters on the way out.**
-    Simplest, and the whole file passes through a process that serves a
-    browser.
-  - **The loop writes derived event lines into the target, and the
-    server only ever sees those.** More moving parts, and the raw
-    transcript never enters the server at all. Also fixes the other
-    problem — the transcript lives outside `--target`, and
-    `resolve_confined` is load-bearing, so the first shape needs that
-    gate widened.
-
-  Rec: the second, because it answers the exposure question and the
-  confinement question with one decision. But it is your data and your
-  machine, and the first is materially less work.
-
 - **2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
   Stages 1-5 shipped: the skill exists, is installed and indexed, walks
   its own procedure, and `newerrand.py` creates a dreamstate so an
@@ -124,6 +95,20 @@
     resolved and is not.
 
 ## Answered
+
+- **May the dashboard read the session transcript? (#180)** → "Yes the
+  dashboard may" via watch (2026-07-25 15:36), with three mitigations
+  that are his and are better than the shapes offered:
+  **only the last 10-20 lines** (so the bulk of the transcript is never
+  read at all, which shrinks the exposure far more than any filter);
+  **prefilter into small digestible objects** before ingesting; and a
+  **consent gate** — the section blurred with skeleton text beneath,
+  and hovering brings previously-invisible copy into focus with
+  dreamlike effects, explaining what would be read and offering yes/no.
+  Filed as #185, because it is a reusable pattern rather than one
+  panel's chrome. His `jq` suggestion is noted in #180 with a
+  counter-rec: Python's stdlib json does the same job without adding a
+  binary this loop cannot assume exists.
 
 - **What should the dashboard be called? (#172, #153)** → `(4) dreamwork
   · <status> · <extra>` via watch (2026-07-25 15:30). **The app name

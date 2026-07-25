@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **185**
+Next id: **186**
 
 ## Open
 
@@ -89,6 +89,15 @@ Next id: **185**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#185** — A consent gate: blurred, explanation on hover · P2 · idea ·
+  45m · a PATTERN, not one panel's chrome — any surface reading
+  something sensitive can use it · the design is good because the
+  skeleton shows the SHAPE of what is offered without the content, so
+  he consents to something he can see the outline of · **the blur must
+  be real**: if the bytes are in the DOM the gate is theatre, so the
+  server withholds until consent — a server-side gate with a
+  client-side face · consent is a PERMISSION (machine-local,
+  revocable), unlike `watch-tint` which is a preference and committable
 - **#184** — Things that did not move are animating · P2 · bug · 35m ·
   an element ABOVE a departing question moves, and a git-panel update
   shifts and rescrolls the list below it · **third observation confirms
@@ -127,15 +136,14 @@ Next id: **185**
   something he can look at** · second instance today of a proxy being
   believed as the thing it proxies (#155 was the first)
 - **#180** — Stream the dreamer's own events onto the dashboard · P3 ·
-  idea · 120m · "do like 4-6 review-and-improve loops" is a METHOD
-  instruction — build, look, improve, and say how many passes it got ·
-  **blocked on a question to him**: the transcript holds prompts,
-  reasoning and full tool IO, and a display filter is a promise about
-  what SHOWS, not what is exposed · it also lives outside `--target`,
-  so the naive shape needs `resolve_confined` widened, and that gate is
-  load-bearing · rec: the loop writes derived lines INTO the target and
-  the server never sees the raw file — one decision answers both ·
-  stdlib means no inotify: poll, reusing the existing change detection
+  idea · 120m · **APPROVED** 15:36 with his own mitigations, which beat
+  the shapes offered: read only the **last 10-20 lines** (the bulk is
+  never touched), prefilter to small objects, and gate it behind #185 ·
+  counter-rec on `jq`: stdlib `json` does the same job without adding a
+  binary the loop cannot assume exists · still needs an answer for
+  `resolve_confined`, since the transcript sits outside `--target` and
+  that gate is load-bearing · no inotify in stdlib: poll · "4-6
+  review-and-improve loops" is a METHOD instruction — report the count
 - **#179** — **P1** The commit cycle steals focus from the box he is
   typing in · bug · 25m · a REGRESSION from #151, ~90 minutes old,
   reported as it happened to him · fourth instance of the class (#118,
