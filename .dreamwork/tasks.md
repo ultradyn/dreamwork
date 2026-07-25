@@ -88,11 +88,6 @@ Next id: **147**
   verbatim in the task; it is the dream dissolve's ghost held low and
   continuous, not a new effect. Taste is the deliverable — wants a
   dreamer that iterates on captures until satisfied
-- **#130** — Status section renders raw JSON · P2 · task · 45m ·
-  **next-up** (via composer) · show the three or four facts that answer
-  "what is it doing, does it need me"; fold the rest, don't delete it —
-  the bulk is load-bearing for agents. Colour by significance, not by
-  JSON type. `awaiting_human` must be impossible to miss
 - **#127** — One deliberate way to compact a dreamwork agent · P2 ·
   task · 45m · *mostly landed* · `compaction.md` + the harness dialect
   table in `~/.llm-general/ai-coding/agent-compaction.md`; hooks
@@ -137,7 +132,10 @@ Next id: **147**
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#120** the fresh-eyes read
+Pruned in grooming; git is the real ledger. **#130** 3.1KB of status JSON
+became a 244px panel (c065a51) — folds by COMPLEMENT so the next field the
+loop learns to write can never be hidden by an allowlist, and the accent is
+spent only on `awaiting_human`, proven scarce by a guard shown red. **#120** the fresh-eyes read
 (6827daa) — it found a LIVE bug rather than bloat: dashboard commands
 exist only in a gitignored best-effort log that SKILL.md never mentioned,
 so a `do now:` was lost silently whenever the tail monitor was not armed.
