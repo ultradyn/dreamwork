@@ -480,3 +480,16 @@ this shape and convert opportunistically.)
   pop-in, under a matrix that said otherwise. Found only because reusing
   the mechanism somewhere new made it measurable. When you write a state
   down, measure that state once. (dreamer-rows, 2026-07-25, #154)
+- **A synthetic `element.click()` sails straight through
+  `pointer-events:none`.** So a guard asserting "the collapsed section
+  still opens" passes on a summary the human physically cannot click.
+  Drive the check with a real pointer when the thing being tested is
+  whether HE can operate it — a synthetic event tests the handler, not
+  the affordance. (dreamer-rows, 2026-07-25, #141)
+- **A guard that prints its checks at the TAIL reports a crash as a
+  clean run.** Three injections read as "this check proves nothing" when
+  the check had never been reached at all — the script died first and
+  printed nothing, which looks identical to printing no failures. Same
+  family as `node guard.mjs | tail` reporting tail's exit code: the
+  REPORTING path, not the checking path, is what lied. Print as you go,
+  or exit non-zero on an unreached end. (dreamer-rows, 2026-07-25)
