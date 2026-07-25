@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **186**
+Next id: **187**
 
 ## Open
 
@@ -89,6 +89,17 @@ Next id: **186**
   COMPOSED the text where the useful line is WHAT IT IS · rewrite the
   rule in the same commit so it reads as reconsidered, not forgotten ·
   pairs with #178, same route
+- **#186** — A light theme, cycled by seven background clicks · P3 ·
+  idea · 90m · **his last sentence is the design**: three states cycle
+  and `system` RESOLVES to one of the others, so a cycle can change
+  state without changing a pixel — show the state by NAME
+  ("system (light)"), because a flourish acknowledges the click where a
+  name answers it · **the cost is not the cycling, it is the
+  calibration**: the page is dark by construction, and the ramp, accent,
+  `--warn`, shader, `.dreamin` blur and favicon were each tuned against
+  a dark field, several BY LOOKING · tokens must become the only source
+  of colour first, which is an audit pass of its own · #143's six hues
+  become twelve, and the amber exclusion band probably moves
 - **#185** — A consent gate: blurred, explanation on hover · P2 · idea ·
   45m · a PATTERN, not one panel's chrome — any surface reading
   something sensitive can use it · the design is good because the
