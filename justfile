@@ -1,13 +1,20 @@
 # ud-dreamwork — common tasks
 
 # the verification every increment runs (there is no CI; this is the net).
-# Both halves: pytest cannot see rendered structure, the guards cannot see
-# Python. A change that passes one and fails the other is still broken.
-test: pytest guards
+# Three parts: pytest cannot see rendered structure, the guards cannot see
+# Python, and neither reads the loop's OWN files. A change that passes one and
+# fails another is still broken.
+test: pytest lint guards
 
 # the Python half — asserts on generated source, not on what renders
 pytest:
     python3 -m pytest -q
+
+# this target's own `.dreamwork/` files, read through the REAL parsers — so a
+# clean pass means the dashboard can actually see what the loop wrote, rather
+# than that the files look plausible.
+lint:
+    python3 lint.py
 
 # the structural half — real browser, real server, real DOM. Only scripts
 # that exit non-zero belong here; the rest of dev/capture/ prints for a
