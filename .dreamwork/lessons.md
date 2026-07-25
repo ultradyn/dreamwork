@@ -238,3 +238,17 @@ source dream. Not a log — only things that should change future behavior.
   the work — the other half is making it red on purpose, and it is the
   half that finds out whether you tested the thing or its neighbour.
   (coordinator, 2026-07-25)
+- A closed `<details>` does NOT display:none its children in current
+  Chromium — content-visibility keeps their rects from the last layout,
+  so a height-or-rect test for "is it hidden" passes on collapsed
+  content. Use `checkVisibility()`. Found writing #128's thread guard;
+  it is the fourth check today that would have proved nothing, and the
+  only one whose cause was the browser rather than the author.
+  (dreamer-thread, 2026-07-25)
+- Never let the page fold away what the human just wrote. #128's first
+  version collapsed the note segment at the END of the list when a
+  question had no answer yet — which swept every live steer on every
+  open question into the folding half. Only the SETTLED segment, above
+  the resolution, may collapse; a note added now lands below the answer
+  and stays visible. The guard caught it, not the author.
+  (dreamer-thread, 2026-07-25, #128)
