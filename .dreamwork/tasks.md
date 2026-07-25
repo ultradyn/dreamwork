@@ -18,7 +18,7 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **165**
+Next id: **168**
 
 ## Open
 
@@ -88,6 +88,28 @@ Next id: **165**
   or not purely by the route it was reached through. Reflow `.md`, keep
   `.py`/`.json`/logs verbatim, and update watch-design.md in the same
   commit because this REPLACES a rule
+- **#167** — Composer text box translucent, blur on Chrome only · P3 ·
+  idea · 25m · reading "a little blue" as "a little BLUR" (the Firefox
+  parenthetical settles it) — flagged, since a blue TINT would collide
+  with #143 · `@supports` cannot gate this: Firefox supports
+  backdrop-filter, it is just expensive · rec UA-gate with the reason in
+  a comment, because the measure-and-back-off alternative FLICKERS ·
+  measure p95 with it on and off; blur over a live shader is the most
+  expensive pairing on the page
+- **#166** — Commit rows expand; the more-detail principle recorded ·
+  P2 · idea · 30m · the body is where this repo's reasoning lives and it
+  is the most useful text in a commit · his principle is now in
+  DREAMWORK.md: **detail is ranked, never withheld** — the same
+  commitment the loop reached from the code's side as "nothing is
+  dropped, only demoted" (#130) · so a fold is a PROMISE that what is
+  inside is still there
+- **#165** — History of prompts sent through the composer · P2 · idea ·
+  40m · **the record already exists**: `watch-events.log` has every
+  command with its timestamp and (since #126) its route, so this is
+  read-and-render like #142 · it is gitignored and machine-local, so say
+  that in the UI rather than implying a completeness it lacks · it also
+  holds answers and notes — rec ONE list with the kind marked, since he
+  does not think of an answer as a different act
 - **#164** — The button row becomes an information scent · P2 · idea ·
   75m · his verbatim design: the row is a CONVEYOR — non-default
   commands apparate at the left, push the rest right, and are consumed

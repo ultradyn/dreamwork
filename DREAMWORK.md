@@ -54,6 +54,13 @@
 - Autonomy: commit each increment (the skill folder is its own git repo).
   Push at session wrap and whenever asked — not per increment
   (2026-07-25). Deploy is not authorized.
+- Detail is ranked, never withheld (2026-07-25, his words): "in general
+  we always want to present the user with more details if there are more
+  details and users might want them." A thing that exists must be
+  reachable — the page's job is to order it, not to decide he cannot
+  have it. This is the same commitment the loop reached from the code's
+  side as "nothing is dropped, only demoted" (#130), and it makes a fold
+  a promise: what is inside is still there, and the summary says what.
 - Subagent lifecycle (2026-07-25): **prefer fresh subagents; reuse an
   existing one only if it stopped less than ~4 minutes ago.** Retire
   idle dreamers rather than leaving them parked. A dreamer here reached
