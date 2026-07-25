@@ -640,6 +640,35 @@ STYLE = """<style>
     text-shadow:0 0 12px color-mix(in oklab, var(--tintswatch) 45%,
                                    transparent); }
   .tintmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
+  /* ── what he has sent, from this browser (#165) ───────────────────────
+     The row is the page's standing shape for a list of small facts — the
+     commits panel's, one surface over: a fixed-height flex row, the identity
+     on the left, the ticking age pinned right and tabular so the column does
+     not jitter. Nothing here is a new component; only the middle column is.
+     THE OUTCOME IS THE ONLY THING THAT TAKES COLOUR, because it is the only
+     thing he cannot recover by looking somewhere else (#175). */
+  .cmdhist { margin:.4rem 0 0; }
+  .cmdhist > summary { color:var(--dim); font-size:.7rem; }
+  .cmdhist[open] > summary { color:var(--muted); }   /* #169's per-surface step */
+  /* capped and scrolled: the panel is fixed, so an uncapped list would grow
+     off the bottom of the screen and take the send button with it */
+  .cmdhistbody { max-height:11rem; overflow-y:auto; margin-top:.3rem; }
+  .cmdhrow { display:flex; align-items:baseline; gap:.6ch;
+             font-size:.7rem; line-height:1.5; color:var(--dim); }
+  .cmdhkind { flex:0 0 auto; color:var(--dimmer); text-transform:uppercase;
+              letter-spacing:.06em; }
+  .cmdhtext { flex:1 1 auto; min-width:0; overflow:hidden;
+              white-space:nowrap; text-overflow:ellipsis; color:var(--muted); }
+  .cmdhage { flex:0 0 auto; margin-left:auto; color:var(--dimmer);
+             font-variant-numeric:tabular-nums; }
+  /* a send that did not land is the reason this list exists, so it is the one
+     thing that leaves the dim end. --warn, not the accent: the accent marks
+     what NEEDS him, and a failure from an hour ago is a fact, not an errand */
+  .cmdhrow.bad .cmdhtext { color:var(--warn); }
+  .cmdhwhy { flex:0 0 auto; color:var(--warn); }
+  .cmdhrow.pending .cmdhtext { font-style:italic; }
+  /* the honest footer: this is one browser's memory, not the project's */
+  .cmdhnote { color:var(--dimmer); font-size:.65rem; margin-top:.4rem; }
   .tintmsg:empty { display:none; }
   .cmdkinds { margin:.3rem 0 .1rem; }
   .cmdkind { padding:.28rem .45rem; }
@@ -765,6 +794,13 @@ APP_BODY = """<canvas id="dreambg"></canvas>
   </div>
   <div class="cmdmsg" id="cmdmsg" aria-live="polite"></div>
  </form>
+ <!-- what he has sent, from this browser (#165). A disclosure rather than a
+      standing list: the composer is for the next thought, and the last one is
+      only sometimes the question. -->
+ <details class="cmdhist" id="cmdhist">
+  <summary id="cmdhistsum">history</summary>
+  <div class="cmdhistbody" id="cmdhistbody"></div>
+ </details>
 </div>"""
 
 COMPONENTS_JS = """
@@ -1578,6 +1614,12 @@ function ages() {
     el.textContent = ageStr(parseFloat(el.dataset.mt)) + ' old');
   document.querySelectorAll('.age[data-ct]').forEach(el =>
     el.textContent = agePair(parseFloat(el.dataset.ct)) + ' ago');
+  /* a third flavour, and the difference is grammar rather than format (#165):
+     a FILE is `5m old`, a thing he DID is `5m ago`. Commit resolution
+     (`data-ct`) is two padded units and far too wide for a 38ch panel, so the
+     history takes the short one. */
+  document.querySelectorAll('.age[data-at]').forEach(el =>
+    el.textContent = ageStr(parseFloat(el.dataset.at)) + ' ago');
   const upd = document.getElementById('upd');
   if (upd && fetchedAt) upd.textContent =
     `updated ${ageStr(fetchedAt/1000)} ago`;
@@ -3286,6 +3328,76 @@ function popoutDoc(url, label) {
   });
   // the menu opens on hover/focus in CSS; mirror that into aria-expanded,
   // which CSS cannot set.
+  /* ── the history (#165) ──────────────────────────────────────────────────
+     THE SOURCE IS #175's CLIENT LOG, and that is a decision the task's own
+     ledger line did not make — it said `watch-events.log`, written before #199
+     and #175 existed. Three sources exist now and they are not
+     interchangeable:
+
+       · `watch-events.log` — has the route (#126), covers every window and
+         every machine that reached this server, but it is a RENDERING: one
+         line per act, summarised for an agent to read. It cannot say whether
+         a submission landed, because a line is only written once one did.
+       · `.dreamwork/submissions.log` (#199) — verbatim and complete, but
+         written BEFORE the work, so it is pre-outcome by construction.
+       · #175's client log — has the OUTCOME, which is the field he cannot
+         recover any other way, and is the only witness to a submission the
+         server refused or never heard.
+
+     A history is for recall and recovery, so the outcome decides it. Mixing
+     the three would mean explaining, on every row, which of them that row
+     came from and what it therefore cannot tell him — a panel that has to
+     apologise per row is worse than a narrow one that says its limit once.
+
+     SO IT SAYS ITS LIMIT ONCE, at the foot: this browser only. The ledger
+     asked for exactly that honesty about `watch-events.log` being machine-
+     local, and it applies more sharply here, not less.
+
+     ONE LIST WITH THE KIND MARKED, per the ledger — he does not think of an
+     answer as a different act from a command, and two lists would ask him to
+     remember which one he used. */
+  const HIST_MAX = 40;
+  const histRow = r => {
+    const bad = r.outcome === 'rejected' || r.outcome === 'unreachable';
+    const why = r.outcome === 'rejected' ? '(' + r.status + ')'
+              : r.outcome === 'unreachable' ? '(never sent)' : '';
+    return '<div class="cmdhrow' + (bad ? ' bad' : '') +
+      (r.outcome === 'pending' ? ' pending' : '') + '">' +
+      '<span class="cmdhkind">' + esc(r.kind || r.path || '?') + '</span>' +
+      '<span class="cmdhtext" title="' + esc(r.text || '') + '">' +
+      esc(r.text || '') + '</span>' +
+      (why ? '<span class="cmdhwhy">' + esc(why) + '</span>' : '') +
+      '<span class="cmdhage age" data-at="' + (r.at / 1000) + '"></span></div>';
+  };
+  async function renderHist() {
+    const body = document.getElementById('cmdhistbody');
+    const sum = document.getElementById('cmdhistsum');
+    if (!body) return;
+    const recs = (await subsAll()) || [];
+    // newest first: the thing he is looking for is nearly always the last
+    // thing he did, and `id` is the store's own order (#175)
+    const rows = recs.slice().sort((a, b) => b.id - a.id).slice(0, HIST_MAX);
+    if (sum) sum.textContent = rows.length ? 'history · ' + recs.length
+                                           : 'history';
+    body.innerHTML = rows.length
+      ? rows.map(histRow).join('') +
+        '<div class="cmdhnote">what this browser has sent, on this project. ' +
+        'other windows and other machines keep their own.</div>'
+      : '<div class="cmdhnote">nothing sent from this browser yet.</div>';
+    ages();                       // the ages tick with everything else (#132)
+    // it ARRIVES, on the page's one enter idiom — the rows are fetched async,
+    // so without this they appear a frame after the panel finished opening,
+    // which is the snap #196 was about at a smaller size
+    if (!rmr) {
+      body.classList.add('qreveal', 'dreamin');
+      requestAnimationFrame(() => body.classList.remove('dreamin'));
+      setTimeout(() => body.classList.remove('qreveal'), CARD_MS + 150);
+    }
+  }
+  const histEl = document.getElementById('cmdhist');
+  if (histEl) histEl.addEventListener('toggle', () => {
+    if (histEl.open) renderHist();
+  });
   const moreEl = document.getElementById('cmdmore');
   if (moreEl) {
     const btn = moreEl.querySelector('.cmdmorebtn');
@@ -3389,6 +3501,9 @@ function popoutDoc(url, label) {
         if (!composing) dismissT = setTimeout(closeCmd, CMD_DISMISS_MS);
       } else if (r) setCmdMsg('rejected (' + r.status + ')', false);
       else setCmdMsg('no connection', false);   // postJSON returns null on throw
+      // if he is watching the history, it must include what he just did —
+      // including, and especially, when it failed
+      if (histEl && histEl.open) renderHist();
     }
   });
   document.getElementById('cmdpop').addEventListener('click', requestPopout);

@@ -1333,6 +1333,34 @@ a send**: every failure resolves to null and the write is raced against a
 because of the logger is worse. `window.__dwSubmissions()` reads it back —
 "it must be readable or it is theatre" is the task's own line.
 
+**The history is read where it was written** (#165) — a `<details>` at the
+foot of the composer, because the composer is where he sends from and so where
+he looks for what he sent. One list with the **kind marked**, not a list per
+endpoint: he does not think of an answer as a different act from a command, and
+two lists would ask him to remember which one he used. Newest first, capped and
+scrolled — the panel is `position:fixed`, so an uncapped list would grow off
+the bottom of the screen and take the send button with it.
+
+**Its source is #175's client log, and the ledger line that proposed
+`watch-events.log` predates the two features that changed the question.** Three
+records exist now and they are not interchangeable: `watch-events.log` covers
+every window and machine but is a *rendering* and cannot say whether a
+submission landed; `.dreamwork/submissions.log` (#199) is verbatim but written
+*before* the work, so it is pre-outcome by construction; only #175 knows the
+outcome. A history is for recall and recovery, so the outcome decides it.
+Merging them would mean explaining, on every row, which record it came from and
+what that record therefore cannot tell him — a panel that apologises per row is
+worse than a narrow one that states its limit once.
+
+**So it states its limit once, at the foot: this browser only.** The failures
+are the reason it exists, so they are the one thing that leaves the dim end of
+the ramp — `--warn`, never the accent, because the accent marks what *needs*
+him and a failed send from an hour ago is a fact rather than an errand. The
+rows are fetched asynchronously, so they carry the page's enter idiom: without
+it they blink in a frame after the disclosure has finished opening, which is
+#196 at a smaller size, and "it is only a small panel" is exactly how a page
+ends up with one gesture that snaps.
+
 **The panel never closes under him** (#131). The auto-dismiss after a send is
 a *courtesy* — it gets the panel out of the way once the thought has landed —
 and a courtesy must never take a channel away from someone still using it.

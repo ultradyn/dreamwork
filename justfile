@@ -85,13 +85,18 @@ lint:
 #                make one submission unreachable. Reads the client's log back
 #                through the page's own accessor, never out of IndexedDB
 #                behind the feature.
+#   history      ordinary (OUT, PORT). WRITES one real command and forces one
+#                unreachable send, then reads them back out of the composer's
+#                history panel. Checks its subject EXISTS before driving it —
+#                without that, a build without the feature costs a 30s
+#                Playwright timeout and reports "the guard threw".
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"

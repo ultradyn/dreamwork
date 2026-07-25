@@ -70,6 +70,9 @@ for live content is how this got broken the first time.
   Forces a real 409 the way #116 caused them — the page holding a title the
   file will not match — and then looks for his text in `submissions.log`.
   The successful case is the control, not the check.
+- `history` — the composer's history panel (#165): the FAILED sends are in it
+  and marked, newest first, and it states what it does not cover. The failures
+  are the point — a history showing only successes reads as complete.
 - `subslog` — the client's own record of every submission (#175), asserted on
   all three outcomes (`ok`, `rejected`, `unreachable`) and on `pending` caught
   in flight, which is the only moment that proves the record is written
