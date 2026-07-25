@@ -45,6 +45,25 @@ COMMANDS = (
      "desc": "housekeeping: grooming, re-reads, alignment passes"},
 )
 
+# His colour for this project (#143) — the closed set, and the whole reason
+# it is a closed set. Absolute hues in degrees.
+#
+# A HUE, NOT A COLOUR. The tint rotates the ambient field's hue about the grey
+# axis and moves nothing else, so every contrast on the page is what it was:
+# the text ramp, and above all `--accent`, whose one job is marking the live
+# and actionable thing. Free RGB would have let one choice put the field where
+# the accent lives and quietly cost the page its loudest signal.
+#
+# Two constraints picked these six. They must be distinguishable AT 16PX in
+# the favicon, which is where the tint is actually used to navigate — a strip
+# of dreaming projects, told apart by colour. And none of them may sit in the
+# amber band (~35-70), because `--warn` lives there: a project tinted amber
+# would paint its whole ambient field the one colour on this page that means
+# BROKEN.
+TINTS = {"indigo": 229, "violet": 268, "teal": 188,
+         "green": 150, "magenta": 312, "rose": 348}
+TINT_DEFAULT = "indigo"
+
 # Design tokens + shared shell: every watch page renders through these,
 # so a redesign is a token/component edit, not a page-by-page hunt.
 STYLE = """<style>
@@ -533,6 +552,29 @@ STYLE = """<style>
      changed layout would resize the button the indicator is chasing */
   .sgbtn.on { color:var(--accent);
     text-shadow:0 0 12px rgba(165,180,252,.45); }
+  /* The tint picker (#143). It is the standing sliding group, so geometry
+     and motion come for free and the ghost rule holds — an outline that
+     travels, no fill anywhere, the dreaming field visible through every
+     button. Two things are its own:
+
+     Each label wears ITS OWN hue, because `teal` is a word until you can see
+     it, and a row of identical dim words would make him click through six to
+     find one. The swatch is on the TEXT, not a chip, which is the same
+     restraint the group already asks for.
+
+     And the selected one does NOT take `--accent` the way .sgbtn.on does —
+     it takes its own colour, brightened. The accent means "live and
+     actionable"; a settled preference is neither, and spending the accent
+     here would be the fourth thing on the page wearing it. */
+  .tintpick { margin:.2rem 0 .1rem; }
+  .tintbtn { padding:.24rem .5rem; font-size:.7rem;
+             color:color-mix(in oklab, var(--tintswatch) 55%, var(--dim)); }
+  .tintbtn:hover { color:var(--tintswatch); }
+  .tintbtn.on { color:var(--tintswatch);
+    text-shadow:0 0 12px color-mix(in oklab, var(--tintswatch) 45%,
+                                   transparent); }
+  .tintmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
+  .tintmsg:empty { display:none; }
   .cmdkinds { margin:.3rem 0 .1rem; }
   .cmdkind { padding:.28rem .45rem; }
   /* Hover discoverability: the row carries the common kinds, and the ⋯ icon
@@ -1270,6 +1312,7 @@ function buildDashboard(d) {
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
          expand(n, mdB(d.files[n]))).join('');
   h += statusBlock(d.status);
+  h += tintPicker(d);      // last, and dim: a preference, not status
   return h + `</div>`;
 }
 function buildQuestions(d) {
@@ -1334,6 +1377,7 @@ function ages() {
     `updated ${ageStr(fetchedAt/1000)} ago`;
   applyTitle();     // the liveness word drifts with the clock, not with disk
   applyFavicon();   // ...and the orbit advances one frame per second on it
+  applyTint();      // ...and his colour arrives from whichever window set it
 }
 /* one field, two destinations: the mode group under the box picks which
    (#103). Everything downstream — the morph, the ripple, the re-render hold
@@ -1494,14 +1538,12 @@ FAVICON_JS = """
    rule one surface over — and a reload does not restart the orbit. */
 const FAV_N = 20;                  // frames per revolution, one per second
 const FAV_PX = 32;
-const FAV_HUE = 229;               // --accent #a5b4fc ≈ hsl(229 92% 82%)
 const FAV_WARN_HUE = 45;           // --warn  #fcd34d
 const favCache = new Map();
 let favCv = null;
 const favHsl = (h, s, l, a) => `hsla(${h}, ${s}%, ${l}%, ${a})`;
-/* #143 replaces this with the project's own hue; everything else here
-   already takes a hue, so the tint reaches the tab strip by one edit. */
-const favHue = () => FAV_HUE;
+/* the hue comes from the project's tint (#143, `favHue` lives with it), so
+   a strip of dreaming projects is legible by colour alone. */
 
 function favPaint(hue, moving, pip, frame) {
   const S = FAV_PX;
@@ -1675,6 +1717,92 @@ function pageTitle(v, d) {
   const route = (TITLE_ROUTE[v.name] || TITLE_ROUTE.dashboard)(v.param);
   return `(${need}) ` +
     [projectName(d), titleLive(d), route].filter(Boolean).join(' · ');
+}
+/* ── his colour for this project (#143) ───────────────────────────────────
+   His words: "user can customize color tint for watch on dashboard for
+   dreamworker. shoudl persist for that project and update any other windows
+   for that project too."
+
+   PERSIST *AND* SHARE IS WHAT RULES OUT localStorage: it syncs the tabs on
+   one machine and loses the setting on the next, and the setting is meant to
+   be how he tells this project apart from the others. It lives in
+   `.dreamwork/watch-tint`, committable beside everything else the loop keeps
+   about a project — so a checkout of the repo arrives already wearing it.
+
+   AND SHARING NEEDS NO NEW MECHANISM. The write lands under `.dreamwork/`,
+   which `watched_mtime` already walks, so the existing 2s `/mtime` poll
+   carries it: he picks a colour in one window and every other window on this
+   project follows within a tick, with nothing added and no reload.
+
+   A HUE, NEVER A COLOUR — see `TINTS`. It rotates the ambient field about
+   the grey axis and moves the FAVICON with it. It does not touch the text
+   ramp and it deliberately does not touch `--accent`: the accent has one
+   job, marking the live and actionable thing, and an indigo accent over a
+   green field is more legible than one that moved with it, not less. So the
+   thing the tint identifies is the project, and the thing the accent marks
+   is still the only thing that needs him. */
+let projTint = null;
+const tintHue = name => TINTS[name] != null ? TINTS[name] : TINTS[TINT_DEFAULT];
+const favHue = () => tintHue(projTint || TINT_DEFAULT);
+function applyTint() {
+  if (!data) return;
+  const name = TINTS[data.tint] != null ? data.tint : TINT_DEFAULT;
+  if (name === projTint) return;              // idempotent: the 1s sweep runs it
+  projTint = name;
+  if (window.dreambg)
+    window.dreambg.setProjHue(
+      (tintHue(name) - TINTS[TINT_DEFAULT]) * Math.PI / 180);
+  // every cached frame was drawn in the old hue, and the icon is the one
+  // place the tint has to be right immediately — it is what he is looking at
+  // in the OTHER windows when this arrives.
+  favCache.clear();
+  applyFavicon();
+}
+/* The picker is the page's standing sliding group (#103/#121), not new
+   chrome: an outline that travels, no fill anywhere, so the dreaming field
+   stays the background of every button. Each label wears its own hue, which
+   is the only way a name like `teal` means anything before you click it. */
+function tintPicker(d) {
+  const cur = TINTS[d.tint] != null ? d.tint : TINT_DEFAULT;
+  return label('tint') +
+    `<div class="sgroup tintpick" role="radiogroup" aria-label="project tint">` +
+    `<div class="sgind"></div>` +
+    Object.keys(TINTS).map(n =>
+      `<button type="button" role="radio" class="sgbtn tintbtn` +
+      `${n === cur ? ' on' : ''}" data-tint="${esc(n)}"` +
+      ` style="--tintswatch:hsl(${TINTS[n]}, 62%, 66%)"` +
+      ` aria-checked="${n === cur ? 'true' : 'false'}"` +
+      ` onclick="pickTint('${esc(n)}')">${esc(n)}</button>`).join('') +
+    `</div><div class="tintmsg" id="tintmsg" aria-live="polite"></div>`;
+}
+/* A refused write must not leave a swatch selected that will not survive the
+   next tick — the same rule as /answer (#136): check what came back before
+   showing the thing that means "it landed". */
+async function pickTint(name) {
+  const msg = document.getElementById('tintmsg');
+  let ok = false;
+  try {
+    const res = await fetch('/tint', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tint: name }),
+    });
+    ok = res.ok;
+  } catch (e) { ok = false; }
+  if (ok) {
+    if (msg) msg.textContent = '';
+    // do not wait for the poll in the window he is actually looking at
+    if (data) { data.tint = name; applyTint(); }
+    document.querySelectorAll('.sgroup.tintpick').forEach(g => {
+      g.querySelectorAll('.sgbtn').forEach(b => {
+        const on = b.dataset.tint === name;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+      slideIndicator(g, false);
+    });
+  } else if (msg) {
+    msg.textContent = 'could not save the tint — the file was refused';
+  }
 }
 /* Set from the route change, from the tick, AND from the 1s age sweep — the
    liveness word drifts with the wall clock and nothing on disk changes when
@@ -2899,8 +3027,20 @@ function mountDreambg(win, cv, opts) {
     uniform sampler2D texRaw; uniform sampler2D texBlur;
     uniform vec2 r; uniform float t; uniform int mode;
     uniform float pageTint;   /* per-page atmosphere: hue bias only */
+    uniform float projHue;    /* HIS colour for this project (#143), radians */
     float hash(vec2 p){ p=fract(p*vec2(123.34,345.45));
-      p+=dot(p,p+34.345); return fract(p.x*p.y); }` + FOCUS_GLSL + `
+      p+=dot(p,p+34.345); return fract(p.x*p.y); }
+    /* Rodrigues rotation about the grey axis (1,1,1)/sqrt(3). A HUE rotation
+       and nothing else: the component along that axis — the achromatic part,
+       which is what luminance contrast is made of — is its own eigenvector
+       and comes back untouched. So "contrast survives" is a property of the
+       operation rather than a claim about the six values we happened to
+       pick, and #143 cannot cost the page a text ramp or an accent. */
+    vec3 hueRot(vec3 c, float a){
+      const vec3 k=vec3(0.5773502691896258);
+      float ca=cos(a);
+      return c*ca + cross(k,c)*sin(a) + k*dot(k,c)*(1.0-ca);
+    }` + FOCUS_GLSL + `
     void main(){
       vec2 uv=gl_FragCoord.xy/r;
       vec4 raw=texture2D(texRaw,uv);
@@ -2927,6 +3067,24 @@ function mountDreambg(win, cv, opts) {
                clamp(abs(pageTint),0.0,1.0)*0.5);
       vec3 base=vec3(0.043,0.059,0.098);
       vec3 col=base+tint*(glow*0.105);
+      /* ...and THEN his project's hue, over the COMPOSED colour rather than
+         over the tint alone. (No backticks anywhere in this shader source:
+         it lives in a JS template literal, and a pair of them in a COMMENT
+         ends the literal and turns the rest of the GLSL into JavaScript.
+         That is what "SyntaxError: Unexpected identifier 'tint'" means here,
+         and it takes the whole page down.)
+
+         Rotating only the tint moved almost nothing: the tint is multiplied
+         by glow*0.105 and the near-black base — which is most of what is on
+         screen — carried its own fixed blue through unchanged. Measured, not guessed: the mean field hue moved 2 degrees
+         between indigo and green, and the guard that says so is the reason
+         this line is here. Rotating the whole composite is also the version
+         whose luminance guarantee is exact, since the achromatic component
+         of the WHOLE colour is the rotation's eigenvector.
+
+         Before the vignette and the dither on purpose: the dither is a
+         neutral ±1/255 and rotating it would tint the noise. */
+      col=hueRot(col, projHue);
       col*=1.0-0.22*smoothstep(0.35,1.25,length(uv-0.5));
       col+=(hash(gl_FragCoord.xy+t)-0.5)/255.0;
       gl_FragColor=vec4(col,1.0);
@@ -3007,7 +3165,8 @@ function mountDreambg(win, cv, opts) {
            r: gl.getUniformLocation(progC, 'r'),
            t: gl.getUniformLocation(progC, 't'),
            mode: gl.getUniformLocation(progC, 'mode'),
-           pageTint: gl.getUniformLocation(progC, 'pageTint') };
+           pageTint: gl.getUniformLocation(progC, 'pageTint'),
+           projHue: gl.getUniformLocation(progC, 'projHue') };
     buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER,
@@ -3021,6 +3180,11 @@ function mountDreambg(win, cv, opts) {
   // frameCount is a monotonic draw tally (never resets) so a view swap's
   // continuity can be checked from outside.
   let tintCur = 0, tintTarget = 0, lastDrawMs = 0, frameCount = 0;
+  /* his project hue, in radians off the default. Lerped like the
+     route tint so picking a colour drifts rather than snaps — it is
+     a change to the page's atmosphere, and the atmosphere moves the
+     way everything ambient here moves. */
+  let hueCur = 0, hueTarget = 0;
   // transition stir: a 0->1->0 envelope the router pulses per navigation;
   // deepens the fractal's curl advection + twist, then relaxes back.
   let warpStart = -1e9, lastWarp = 0;
@@ -3062,6 +3226,7 @@ function mountDreambg(win, cv, opts) {
     const dt = lastDrawMs ? Math.min(0.1, (ms - lastDrawMs) / 1000) : 0;
     lastDrawMs = ms;
     tintCur += (tintTarget - tintCur) * (1.0 - Math.exp(-dt / 0.6));
+    hueCur += (hueTarget - hueCur) * (1.0 - Math.exp(-dt / 0.6));
     // warp envelope: fast attack, slow relax to 0 by ~1.6s after a pulse.
     const wage = (ms - warpStart) / 1000;
     let w = 0;
@@ -3097,6 +3262,7 @@ function mountDreambg(win, cv, opts) {
     gl.uniform1f(uC.t, secs);
     gl.uniform1i(uC.mode, mode);
     gl.uniform1f(uC.pageTint, tintCur);
+    gl.uniform1f(uC.projHue, hueCur);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -3259,6 +3425,8 @@ function mountDreambg(win, cv, opts) {
   // swap's continuity is observable. reduced-motion never stirs.
   const handle = {
     setTint(v) { tintTarget = v; if (rm) { tintCur = v; draw(lastMs); } },
+    setProjHue(rad) { hueTarget = rad;
+                      if (rm) { hueCur = rad; draw(lastMs); } },
     pulseWarp() { if (!rm) warpStart = lastMs; },
     get frames() { return frameCount; },
     get tint() { return tintCur; },
@@ -3294,6 +3462,8 @@ def page_shell(title, body, js):
 # menu, and the popped-out form never drift from what POST /command accepts.
 PAGE = page_shell('dreamwork watch', APP_BODY,
                   "const COMMANDS = " + json.dumps(list(COMMANDS)) + ";\n"
+                  + "const TINTS = " + json.dumps(TINTS) + ";\n"
+                  + "const TINT_DEFAULT = " + json.dumps(TINT_DEFAULT) + ";\n"
                   + COMPONENTS_JS + VIEWS_JS + FAVICON_JS + SHADER_JS
                   + ROUTER_JS + COMMAND_JS)
 
@@ -3831,6 +4001,11 @@ def collect(target):
             questions, len(q_open) + len(q_answered)),
         "status": _safe_json(read_text(os.path.join(dw, "status.json"))),
         "git": git_tail(target),
+        # his colour for this project (#143). It rides /data.json rather than
+        # the shell so the EXISTING mtime poll carries it: he picks a tint in
+        # one window and every other window on this project follows within a
+        # tick, with no new channel and no reload.
+        "tint": read_tint(target),
     }
 
 
@@ -3847,6 +4022,36 @@ def watched_mtime(target):
         except OSError:
             pass
     return latest
+
+
+def read_tint(target):
+    """The project's tint name, or the default.
+
+    An unknown name falls back rather than blanking the page: the file is a
+    preference, and the failure that loses nothing is to show him the
+    default. That is also exactly why `lint.py` checks it — the fallback is
+    silent, and a silent fallback on his own setting is the shape this
+    project keeps finding.
+    """
+    raw = (read_text(os.path.join(target, ".dreamwork", "watch-tint")) or "")
+    name = raw.strip()
+    return name if name in TINTS else TINT_DEFAULT
+
+
+def write_tint(target, name):
+    """Persist his choice. Returns False if it could not be written — the
+    page then says so rather than showing a swatch that will not survive a
+    reload (the /answer rule: never confirm a write that did not happen)."""
+    if name not in TINTS:
+        return False
+    path = os.path.join(target, ".dreamwork", "watch-tint")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(name + "\n")
+        return True
+    except OSError:
+        return False
 
 
 def persistent_port(target):
@@ -4010,13 +4215,16 @@ def make_handler(target, dev=False):
             # Human-authorized write paths, all localhost-only: /answer folds
             # an answer into questions.md; /comment threads a follow-up note
             # onto any entry; /command drops a steering line into the events
-            # log. Everything else is read-only.
+            # log; /tint saves his colour for this project. Everything else is
+            # read-only.
             if self.path == "/answer":
                 self._handle_answer()
             elif self.path == "/comment":
                 self._handle_comment()
             elif self.path == "/command":
                 self._handle_command()
+            elif self.path == "/tint":
+                self._handle_tint()
             else:
                 self.send_error(404)
 
@@ -4102,6 +4310,32 @@ def make_handler(target, dev=False):
                 return
             log_event(target, command_line(kind, text, req.get("from")))
             self._send(json.dumps({"ok": True}), "application/json")
+
+        def _handle_tint(self):
+            """His colour for this project (#143).
+
+            DELIBERATELY NOT AN EVENTS-LOG LINE, and it is the only write
+            here that is not. That log's contract is one line per thing an
+            agent then acts on — it is what the tail monitor wakes the loop
+            for — and a colour is not one. The loop learns his choice the way
+            it learns anything durable about him: the file is in the repo.
+
+            Nothing else is needed to reach his other windows, either. The
+            write lands under `.dreamwork/`, which `watched_mtime` already
+            walks, so the existing 2s poll carries it.
+            """
+            req = self._read_json()
+            if req is None:
+                return
+            name = str((req or {}).get("tint", "")).strip()
+            if name not in TINTS:
+                self.send_error(400)
+                return
+            if not write_tint(target, name):
+                self.send_error(500)
+                return
+            self._send(json.dumps({"ok": True, "tint": name}),
+                       "application/json")
 
         def log_message(self, *_args):
             pass

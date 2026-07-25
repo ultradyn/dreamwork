@@ -281,8 +281,19 @@ const FAV_READ = `(async () => {
 })()`;
 const favRead = () => p.evaluate(FAV_READ);
 
-writeStatus({ awaiting_human: [] });
-await titleWhen(x => /^\(0\).*dreaming/.test(x));
+/* PIXELS ARE READ WITH THE FRAME PINNED, which means with the loop stalled.
+   The head's glow has a radius of 2.1 ring-widths and its orbit carries it
+   within reach of the badge's corner on some frames, so a badge assertion
+   taken at an arbitrary moment is really an assertion about WHEN it ran —
+   the first version read alpha 115 at that point with no badge present and
+   would have failed roughly one run in four. Stalled pins the frame at 0,
+   where the head sits at the top and nothing else is near either sample
+   point. The badge is orthogonal to liveness, so this costs the checks
+   nothing. */
+const stalled = extra => writeStatus({ awaiting_human: [],
+  last_tick: iso(Date.now() - 11 * 60 * 1000), ...extra });
+stalled();
+await titleWhen(x => /^\(0\).*stalled/.test(x));
 const favA = await favRead();
 notes.push(`favicon: ${favA.href.slice(0, 24)}… ${favA.href.length}b ` +
            `ring=${favA.ring} pip=${favA.pip} lum=${favA.lum}`);
@@ -293,25 +304,31 @@ ok('the ring carries the page\'s hue, not grey',
    favA.ring[3] > 40 && favA.ring[2] > favA.ring[0] + 20);
 ok('nothing waiting: no badge', favA.pip[3] < 20);
 
-// it advances once a second while the loop is dreaming
-await sleep(1400);
-const favB = await favRead();
-ok('while dreaming, the orbit advances', favB.href !== favA.href);
-
-// ...and it rests when the loop is not
-writeStatus({ awaiting_human: [],
-              last_tick: iso(Date.now() - 11 * 60 * 1000) });
-await titleWhen(x => /stalled/.test(x));
-const stall1 = await favRead();
+// it rests while the loop is not ticking
 await sleep(3000);
 const stall2 = await favRead();
-notes.push(`stalled: lum=${stall1.lum} vs dreaming lum=${favA.lum}`);
-ok('a stalled loop\'s icon holds still', stall1.href === stall2.href);
-ok('...and reads faded in a single frame, not only across two',
-   stall1.lum < favA.lum * 0.8);
+ok('a stalled loop\'s icon holds still', stall2.href === favA.href);
 
-// the badge
-writeStatus({ awaiting_human: ['you are the bottleneck'] });
+// ...and it advances once a second while the loop is dreaming. Polled
+// rather than sampled after a fixed sleep: on a loaded machine a 1s
+// interval can drift, and a one-shot comparison would then be reporting the
+// machine rather than the feature.
+writeStatus({ awaiting_human: [] });
+await titleWhen(x => /dreaming/.test(x));
+let moved = false, favDream = null;
+for (let i = 0; i < 24 && !moved; i++) {
+  const r = await favRead();
+  if (favDream && r.href !== favDream.href) moved = true;
+  favDream = favDream || r;
+  if (!moved) await sleep(300);
+}
+notes.push(`dreaming lum=${favDream.lum} vs stalled lum=${favA.lum}`);
+ok('while dreaming, the orbit advances', moved);
+ok('...and a stalled icon reads faded in a single frame, not only across two',
+   favA.lum < favDream.lum * 0.8);
+
+// the badge, frame pinned again
+stalled({ awaiting_human: ['you are the bottleneck'] });
 await titleWhen(x => x.startsWith('(1)'));
 const favPip = await favRead();
 notes.push(`pip accent: ${favPip.pip}`);
@@ -340,15 +357,179 @@ writeFileSync(QPATH, QGOOD);
   const rm1 = await read2();
   await sleep(3000);
   const rm2 = await read2();
-  notes.push(`reduced motion: lum=${rm1.lum} (dreaming ${favA.lum}, ` +
-             `stalled ${stall1.lum})`);
+  notes.push(`reduced motion: lum=${rm1.lum} (dreaming ${favDream.lum}, ` +
+             `stalled ${favA.lum})`);
   ok('reduced motion pins the frame', rm1.href === rm2.href);
   /* ...but it must not turn a live loop into a stalled-looking one: timing
      changes, never function or legibility (the wisp's rule). The trail and
      the full brightness still say "in flight" with no motion at all. */
   ok('...without demoting a live loop to the stalled treatment',
-     rm1.lum > stall1.lum * 1.25);
+     rm1.lum > favA.lum * 1.25);
   await ctx2.close();
+}
+
+// ── his colour for this project (#143) ────────────────────────────────────
+/* The requirement has two halves and only one of them is easy. "Persist for
+   that project" is a file. "Update any other windows for that project too"
+   is the half a single page cannot test at all, so there is a SECOND page
+   open throughout, never told anything, which has to arrive at the new
+   colour on its own. */
+{
+  const TPATH = join(DIR, '.dreamwork', 'watch-tint');
+  /* BACK TO THE DASHBOARD FIRST. The route checks above leave the page on
+     /review, whose iframe covers the right margin this block samples — so
+     the field measurement was reading an artifact and reporting a 6 degree
+     shift for a 79 degree rotation. The third time this measurement was
+     wrong and the feature was right. */
+  await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  stalled();                       // frame 0, for the same reason as above
+  await titleWhen(x => /^\(0\).*stalled/.test(x));
+
+  /* Read it as a VALUE, never as a throw. The injection where the write
+     silently does nothing left no file at all, and `readFileSync` turned the
+     check written for exactly that case into a stack trace — the run said
+     "the guard threw" and named nothing. Third time in this file: a guard
+     assertion whose subject may not exist has to degrade to a reading. */
+  const readTint = () => { try { return readFileSync(TPATH, 'utf8'); }
+                           catch (e) { return ''; } };
+  const post = async (tint) => (await p.evaluate(async t => {
+    const r = await fetch('/tint', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tint: t }),
+    });
+    return r.status;
+  }, tint));
+
+  /* the accent, resolved THROUGH AN ELEMENT: `--accent` off :root comes back
+     as authored (`#a5b4fc`) while every computed colour is `rgb(…)`, so
+     comparing the two matches nothing and any assertion about it passes on a
+     page painted entirely in it (status.mjs learned this). */
+  const ACCENT = `(() => {
+    const e = document.createElement('span');
+    e.style.color = 'var(--accent)';
+    document.body.appendChild(e);
+    const c = getComputedStyle(e).color; e.remove(); return c;
+  })()`;
+  /* the shader's own pixels, which is the outcome rather than the uniform:
+     a clip of the page is screenshotted by the driver, handed BACK into the
+     page as a data URI, and decoded there — the WebGL canvas has no
+     preserveDrawingBuffer, so it cannot be read any other way. */
+  /* SAMPLE THE MARGIN, NOT THE COLUMN. The first version clipped a region
+     overlapping the 72ch reading column and measured a 7 degree shift for a
+     79 degree rotation — the field was moving exactly as asked and the
+     instrument was standing in the one place full of grey text. The right
+     margin is canvas and nothing else. */
+  const meanHue = async (page) => {
+    const shot = (await page.screenshot({
+      clip: { x: 950, y: 120, width: 140, height: 700 } })).toString('base64');
+    return page.evaluate(async b64 => {
+      const img = new Image();
+      await new Promise(r => { img.onload = r; img.src = 'data:image/png;base64,' + b64; });
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      // circular mean of hue, weighted by chroma: a near-black field has a
+      // real hue but a tiny one, and averaging the angles unweighted would
+      // let the darkest pixels shout
+      let x = 0, y = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i] / 255, gg = d[i+1] / 255, b = d[i+2] / 255;
+        const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), ch = mx - mn;
+        if (ch < 0.004) continue;
+        let h;
+        if (mx === r) h = ((gg - b) / ch + 6) % 6;
+        else if (mx === gg) h = (b - r) / ch + 2;
+        else h = (r - gg) / ch + 4;
+        h *= Math.PI / 3;
+        x += Math.cos(h) * ch; y += Math.sin(h) * ch;
+      }
+      return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }, shot);
+  };
+  const hueGap = (a, b) => { const d = Math.abs(a - b) % 360;
+                             return d > 180 ? 360 - d : d; };
+
+  // a SECOND window on the same project, opened before anything changes and
+  // never told anything afterwards
+  const w2 = await ctx.newPage();
+  w2.on('pageerror', e => errs.push('w2: ' + e));
+  await w2.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await sleep(1500);
+
+  const accentBefore = await p.evaluate(ACCENT);
+  const hueIndigo = await meanHue(p);
+  const favIndigo = await favRead();
+
+  ok('POST /tint is accepted for a name in the set', await post('green') === 200);
+  await sleep(400);
+  ok('...and persists to .dreamwork/watch-tint',
+     readTint().trim() === 'green');
+
+  const before = readTint();
+  ok('a name outside the set is refused', await post('chartreuse') === 400);
+  ok('...and nothing was written', readTint() === before);
+
+  /* Wait for the PAGE to have the tint, then for the shader to have finished
+     lerping to it (0.6s time constant). A fixed sleep here measured a
+     half-applied rotation, and then — once it was shorter than the 2s poll —
+     an entirely unapplied one, reporting a gap of 0 for a feature that
+     works. Wait for the state, never for a duration. */
+  await p.evaluate(() => new Promise(res => {
+    const until = Date.now() + 9000;
+    (function poll() {
+      if (projTint === 'green' || Date.now() > until) return res();
+      setTimeout(poll, 200);
+    })();
+  }));
+  await sleep(2200);
+  const hueGreen = await meanHue(p);
+  const favGreen = await favRead();
+  notes.push(`tint: field hue ${hueIndigo.toFixed(0)}° -> ` +
+             `${hueGreen.toFixed(0)}°  (gap ${hueGap(hueIndigo, hueGreen).toFixed(0)}°)`);
+  notes.push(`tint: favicon ring ${favIndigo.ring} -> ${favGreen.ring}`);
+  // indigo 229 to green 150 is a 79 degree rotation; anything under half
+  // of that means the rotation is being diluted somewhere.
+  ok('the ambient field actually changes hue', hueGap(hueIndigo, hueGreen) > 40);
+  ok('...and the favicon travels with it — the tab strip is where the tint navigates',
+     favGreen.ring[1] > favIndigo.ring[1] && favGreen.ring[2] < favIndigo.ring[2]);
+
+  /* THE ACCENT IS THE ONE THING A TINT MAY NOT MOVE. It marks the live and
+     actionable thing, and a tint that dragged it along would cost the page
+     its only loud signal to make its background prettier. */
+  ok('the accent is untouched by a tint',
+     (await p.evaluate(ACCENT)) === accentBefore);
+
+  // the half a single window cannot test
+  const w2tint = await w2.evaluate(() => new Promise(res => {
+    const until = Date.now() + 9000;
+    (function poll() {
+      if (projTint === 'green' || Date.now() > until) return res(projTint);
+      setTimeout(poll, 250);
+    })();
+  }));
+  notes.push(`second window arrived at: ${w2tint}`);
+  ok('a window nobody told follows within a tick', w2tint === 'green');
+  ok('...and its favicon followed too',
+     (await w2.evaluate(FAV_READ)).ring[1] > favIndigo.ring[1]);
+  await w2.close();
+
+  // it survives a reload, which is what "persist" has to mean
+  await p.reload({ waitUntil: 'networkidle' });
+  await sleep(1500);
+  ok('the tint survives a reload',
+     (await p.evaluate(() => projTint)) === 'green');
+
+  /* A name the page does not know falls back to the default rather than
+     leaving the field colourless — the failure that loses nothing. It is
+     also silent, which is exactly why lint.py checks this file. */
+  writeFileSync(TPATH, 'chartreuse\n');
+  await p.reload({ waitUntil: 'networkidle' });
+  await sleep(1500);
+  ok('an unknown name in the file falls back to the default, not to nothing',
+     (await p.evaluate(() => projTint)) === 'indigo');
+  writeFileSync(TPATH, 'indigo\n');
 }
 
 ok('no page errors', errs.length === 0);

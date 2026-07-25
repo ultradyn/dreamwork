@@ -736,6 +736,79 @@ questions, because with two of each a title reading the derived count is
 byte-identical to a correct one — and the first deliberate bug injected here
 passed against it.
 
+### The project tint
+
+His colour for this project (#143). His words: *"user can customize color
+tint for watch on dashboard for dreamworker. shoudl persist for that project
+and update any other windows for that project too."*
+
+**"Persist" and "share" together are what rule out `localStorage`**: it syncs
+the tabs on one machine and loses the setting on the next — and the setting
+exists so he can tell this project apart from the others. It lives in
+`.dreamwork/watch-tint`, one line, committable beside everything else the
+loop keeps about a project, so a checkout arrives already wearing it. Its
+contract is a row in `file-formats.md` and a check in `lint.py`, because the
+fallback below is silent.
+
+**Sharing needs no new mechanism.** The write lands under `.dreamwork/`,
+which `watched_mtime` already walks, so the existing 2s `/mtime` poll carries
+it: he picks a colour in one window and every other window on this project
+follows within a tick, with nothing added and no reload. The guard keeps a
+second page open throughout, never tells it anything, and requires it to
+arrive on its own — the half a single-page test cannot reach at all.
+
+**A hue, never a colour.** `TINTS` is a closed set of six, and the tint is a
+Rodrigues rotation about the grey axis (1,1,1)/√3. That axis is the
+rotation's own eigenvector, so the achromatic component — which is what
+luminance contrast is made of — comes back untouched: *contrast survives by
+construction*, a property of the operation rather than a claim about the six
+values. Free RGB would have let one choice put the field where the accent
+lives.
+
+**It rotates the COMPOSED colour, not the tint vector.** Rotating only
+`tint` moved the field by 2°, because the tint is multiplied by `glow*0.105`
+and the near-black base — most of what is on screen — carried its own fixed
+blue through unchanged. Measured, and the measurement is why the line moved.
+It is applied before the vignette and the dither, so the neutral ±1/255 noise
+stays neutral.
+
+**No backticks in the shader source, including in its comments.** The GLSL
+lives in a JS template literal, so a pair of them in a *comment* ends the
+literal and the rest of the shader is parsed as JavaScript — the whole page
+goes blank. `just test` now catches that in 0.2s (`TestBundleParses` runs
+`node --check` over the assembled `<script>`); before that it cost a
+twenty-minute guard run and read as thirty unrelated failures.
+
+**Two things the tint deliberately does not touch.** `--accent`, whose one
+job is marking the live and actionable thing — an indigo accent over a green
+field is *more* legible, not less, and the guard asserts the computed accent
+is byte-identical across tints. And the text ramp, which the hue rotation
+cannot reach because it only ever runs in the shader.
+
+**None of the six sits in the amber band (~35-70°)**, because `--warn` lives
+there: a project tinted amber would paint its whole ambient field the one
+colour on this page that means BROKEN. The other constraint that picked them
+is that they must be distinguishable **at 16px in the favicon**, which is
+where the tint is actually used to navigate.
+
+**The picker is the standing sliding group** (`.sgroup`), so geometry, motion
+and the ghost-outline rule come for free. Two things are its own: each label
+wears its own hue, because `teal` is a word until you can see it; and the
+selected one takes *its own* colour brightened rather than `--accent`, since
+a settled preference is neither live nor actionable. A refused write keeps
+the old selection and says so, which is `/answer`'s rule (#136).
+
+Cost, measured the way the wisp was: p95 frame time 16.8ms at rotation 0 and
+16.8ms at −79° (green) and +83° (magenta), p50 16.7ms throughout —
+indistinguishable at vsync.
+
+The guard's three false alarms are worth knowing, because all three were the
+instrument: it sampled a region overlapping the 72ch text column (7° for a
+79° rotation); it then sampled after a fixed sleep shorter than the 2s poll
+(0°); and it ran while the page was still on `/review`, whose iframe covers
+the margin it samples (6°). Wait for the *state*, sample where the field
+actually is, and know which route the page is on.
+
 ### The favicon
 
 The title's companion, and the half of a tab that survives truncation

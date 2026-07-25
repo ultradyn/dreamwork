@@ -1174,3 +1174,96 @@ class TestAppShell(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBundleParses(unittest.TestCase):
+    """The page is one `<script>` assembled from several Python strings, and
+    a syntax error anywhere in it takes the WHOLE page down — no router, no
+    tick, nothing. Nothing else in `just test` sees that: the pytest half
+    asserts substrings, which still match perfectly in a file that will not
+    parse, and `lint.py` never looks at the page. The browser guards do catch
+    it, twenty minutes later and as thirty unrelated red lines.
+
+    It is not hypothetical. A pair of backticks inside a GLSL *comment* ended
+    the JS template literal the shader source lives in, and the rest of the
+    shader was parsed as JavaScript — `SyntaxError: Unexpected identifier
+    'tint'`, and a blank dashboard.
+    """
+
+    def test_page_script_is_valid_javascript(self):
+        import shutil
+        import subprocess
+        import tempfile
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — the syntax gate did NOT run")
+        body = watch.PAGE.split("<script>", 1)[1].rsplit("</script>", 1)[0]
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as f:
+            f.write(body)
+            path = f.name
+        try:
+            r = subprocess.run([node, "--check", path],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0,
+                             "the page's script does not parse:\n" + r.stderr)
+        finally:
+            os.unlink(path)
+
+
+class TestProjectTint(unittest.TestCase):
+    """#143 — his colour for this project, on disk and in the page."""
+
+    def test_read_tint_falls_back_rather_than_blanking(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            self.assertEqual(watch.read_tint(d), watch.TINT_DEFAULT)  # absent
+            p = os.path.join(d, ".dreamwork", "watch-tint")
+            with open(p, "w") as f:
+                f.write("green\n")
+            self.assertEqual(watch.read_tint(d), "green")
+            # An unknown name shows him the default rather than nothing: the
+            # failure that loses nothing. It is also SILENT, which is exactly
+            # why lint.py checks this file.
+            with open(p, "w") as f:
+                f.write("chartreuse\n")
+            self.assertEqual(watch.read_tint(d), watch.TINT_DEFAULT)
+
+    def test_write_tint_refuses_a_name_outside_the_set(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            self.assertTrue(watch.write_tint(d, "teal"))
+            self.assertFalse(watch.write_tint(d, "chartreuse"))
+            # ...and refusing means not writing, not writing something else
+            self.assertEqual(watch.read_tint(d), "teal")
+
+    def test_tints_avoid_the_warn_band(self):
+        # --warn amber is ~45deg and means BROKEN. A project tinted into that
+        # band would paint its whole ambient field the one colour on this page
+        # that must never read as anything but a fault.
+        for name, hue in watch.TINTS.items():
+            self.assertFalse(35 <= hue <= 70,
+                             f"{name} ({hue}deg) sits in the --warn band")
+        self.assertIn(watch.TINT_DEFAULT, watch.TINTS)
+
+    def test_page_carries_the_tint_vocabulary_and_wiring(self):
+        # ONE source, like COMMANDS: the server validates POST /tint against
+        # TINTS and the page renders its picker from the same dict, so a name
+        # the picker offers is always one the server will accept.
+        self.assertIn("const TINTS = " + json.dumps(watch.TINTS), watch.PAGE)
+        for token in ('function applyTint(', 'function tintPicker(',
+                      'async function pickTint(', "fetch('/tint'",
+                      'setProjHue', 'uniform float projHue'):
+            self.assertIn(token, watch.PAGE)
+
+    def test_no_backtick_in_a_shader_comment(self):
+        # The GLSL lives in JS template literals, so a pair of backticks in a
+        # COMMENT ends the literal and the rest of the shader is parsed as
+        # JavaScript — the whole page goes blank. TestBundleParses catches the
+        # consequence exactly; this one names the cause, because "the page
+        # does not parse" is a long way from "take the quotes out of that
+        # sentence".
+        for i, line in enumerate(watch.SHADER_JS.splitlines(), 1):
+            head = line.strip()
+            if head.startswith(("/*", "*", "//")) and "`" in line:
+                self.fail(f"backtick in a shader comment, line {i}: {head!r}")
