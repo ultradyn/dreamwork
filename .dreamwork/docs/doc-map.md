@@ -19,7 +19,7 @@ cover it too.
 | `stop-hook-variant.md` | Unimplemented wake fallback design | Only if implemented or invalidated |
 | `DREAMWORK.template.md` | Wizard seed for new targets | Yes — must track wizard section changes |
 | `migrations/` | Versioned target-affecting changes; latest filename = version | Append-only; README holds the protocol |
-| `.dreamwork/docs/plans/` | Active feature plans (ud-dreamtask, ud-dreamwork-github, artifact-templates, daemon-mode, goal-hierarchies) | Prune when features fully land |
+| `.dreamwork/docs/plans/` | Active feature plans (ud-dreamtask, ud-dreamwork-github, artifact-templates, daemon-mode, dreamhub-stage1, parallel-architecture, goal-hierarchies) | Prune when features fully land |
 | `.dreamwork/docs/spikes/` | Timeboxed experiments that answered a question with a number; the branch holds the diff | Keep — a measured answer outlives the code that produced it |
 | `.dreamwork/review/` | Rich decision artifacts paired with a questions.md entry | Banner them decided; archive with the answered question |
 | `.dreamwork/{lessons,questions}.md` | Distilled lessons; asks for the human | Yes — groomed in rotation |

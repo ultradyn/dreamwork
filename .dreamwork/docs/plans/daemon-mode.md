@@ -39,6 +39,15 @@ slug = target dir basename (collision → short hash suffix). The
 world-space shader + per-route seeds make each project's pages visually
 distinct for free (per-project tint/seed offsets — nice identity cue).
 
+**Revised in planning (2026-07-25, `dreamhub-stage1.md`):** the prefix
+is not buildable without changing `watch.py` — the page's fetches,
+pushState URLs, and (unfixable from outside) `routeOf`/`isInternal`
+pathname comparisons are all root-absolute, so a prefixed deep link
+silently renders the wrong view. Stage 1 ships **origin-per-project**
+instead (hub lists and links; each project keeps its own port and URLs);
+`ssh -L` preserves that shape into stage 3. The prefix is filed against
+#124's server-core seam, where those sites are being touched anyway.
+
 ## Web-only steering: what's missing today
 
 Already there: composer commands, question answering, threaded
@@ -79,8 +88,10 @@ push when the human is away from the page. (c) is "channels" below.
 
 ## Staging (revised per decisions)
 
-1. **dreamhub aggregator** — `/` list + `/{project}/` proxy over
-   existing watch instances; stdlib.
+1. **dreamhub aggregator** — `/` list over existing watch instances,
+   linking out to each project's own port; stdlib, read-only. Planned in
+   detail in `dreamhub-stage1.md` (go 2026-07-25 10:48). The proxy this
+   line originally called for moved to #124 — see URL space above.
 2. **Runtime adapter** (herdr | tmux) + hub-driven wake/steer
    (send-keys + stop hooks); lifecycle controls in the hub.
 3. **Swarm**: ssh spawn/attach of remote dreamers; host-qualified
