@@ -1304,6 +1304,35 @@ restored" would dilute the only place he looks for a send confirmation.
 alone passes on a page that never forgets, and "it is cleared" alone passes on
 a page that never saves.
 
+**Every submission is witnessed by the client too** (#175). #199 gave the
+*server* a verbatim record of everything it received; this is the witness for
+what that cannot cover — a submission the server never accepted, or never
+heard. A 409 from `append_answer` (#136), a rejection he clicked past (#162), a
+POST that never left because the server was restarting: in each of those the
+client is the only party that knows what he tried to do.
+
+**The recovery-critical field is the OUTCOME, not the text.** The text he can
+usually still see; what is unrecoverable an hour later is whether the thing he
+typed actually landed. So a record is written *before* the request, as
+`pending`, and its outcome (`ok` / `rejected` / `unreachable`, with the status)
+is attached when the response returns — a tab that dies mid-POST leaves a
+record saying exactly that, which is the true state rather than a guess. An
+entry is never deleted and never rewritten except to attach the outcome it was
+waiting for.
+
+It goes in **IndexedDB, one database per project** (`dw-submissions:<target>`),
+not one database with a `project` column: a column needs every reader to
+remember to filter, and a reader that forgets returns another loop's
+submissions while looking perfectly correct. A separate database cannot leak by
+omission. `postJSON` is the single seam it hangs off — the same reason #199
+persists from `do_POST` rather than from four handlers — which is why the
+composer's own `fetch` was replaced by a call to it; a second fetch would have
+left a third of his submissions unwitnessed. **Nothing here may delay or break
+a send**: every failure resolves to null and the write is raced against a
+250ms timeout, because a missing record is bad and a command he could not send
+because of the logger is worse. `window.__dwSubmissions()` reads it back —
+"it must be readable or it is theatre" is the task's own line.
+
 **The panel never closes under him** (#131). The auto-dismiss after a send is
 a *courtesy* — it gets the panel out of the way once the thought has landed —
 and a courtesy must never take a channel away from someone still using it.

@@ -1133,10 +1133,116 @@ const fromPath = () => location.pathname + location.search;
    question back with no explanation anywhere. A file the reader cannot see is
    a file `/answer` cannot write to, so the read-side fault and the write-side
    "no match" are the same failure and want the same surfacing. */
+/* ── every submission, as the CLIENT saw it (#175) ────────────────────────
+   #199 gave the SERVER a verbatim record of everything it received. This is
+   the other witness, and it exists for the case that one cannot cover: a
+   submission the server never accepted, or never even heard. A 409 from
+   `append_answer` (#136), a rejection he clicked past (#162), a POST that
+   never left because the server was restarting — in every one of those, the
+   client is the only party that knows what he tried to do.
+
+   SO THE RECOVERY-CRITICAL FIELD IS THE OUTCOME, NOT THE TEXT. The text he
+   can usually still see; what is unrecoverable an hour later is whether the
+   thing he typed actually landed. A record is written BEFORE the request, as
+   `pending`, and the outcome is attached when the response comes back — so a
+   tab that dies mid-POST leaves a record saying exactly that, which is the
+   true state and not a guess.
+
+   PARTITIONED BY A DATABASE PER PROJECT, not by a field inside one database.
+   A `project` column needs every reader to remember to filter by it, and a
+   reader that forgets returns another loop's submissions while looking
+   perfectly correct — the silent shape this page keeps closing. A separate
+   database cannot leak by omission.
+
+   NOTHING HERE MAY DELAY OR BREAK A SEND. Every failure resolves to null, and
+   the write is raced against a short timeout: a wedged IndexedDB (a blocked
+   upgrade, a storage-disabled origin) must cost him a few milliseconds, never
+   a command. A missing record is a bad outcome; a command he could not send
+   because of the logger is a worse one.
+
+   IT MUST BE READABLE OR IT IS THEATRE. `#165` is the surface; until then, and
+   for anyone debugging afterwards, `window.__dwSubmissions()` resolves to
+   every record for the current project. */
+const SUBS_STORE = 'subs';
+const subsDbName = () => {
+  const t = (typeof data !== 'undefined' && data && data.target) || '';
+  return t ? 'dw-submissions:' + t : '';
+};
+function subsOpen() {
+  return new Promise(res => {
+    const name = subsDbName();
+    if (!name || typeof indexedDB === 'undefined' || !indexedDB) return res(null);
+    let rq;
+    try { rq = indexedDB.open(name, 1); } catch (e) { return res(null); }
+    rq.onupgradeneeded = () => {
+      const db = rq.result;
+      if (!db.objectStoreNames.contains(SUBS_STORE))
+        db.createObjectStore(SUBS_STORE, { keyPath:'id', autoIncrement:true });
+    };
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = rq.onblocked = () => res(null);
+  });
+}
+/* one transaction, always closed, never throwing at the caller */
+function subsTx(mode, fn) {
+  return subsOpen().then(db => new Promise(res => {
+    if (!db) return res(null);
+    let out = null;
+    const done = v => { try { db.close(); } catch (e) {} res(v); };
+    try {
+      const tx = db.transaction(SUBS_STORE, mode);
+      const rq = fn(tx.objectStore(SUBS_STORE));
+      if (rq) rq.onsuccess = () => { out = rq.result; };
+      tx.oncomplete = () => done(out);
+      tx.onerror = tx.onabort = () => done(null);
+    } catch (e) { done(null); }
+  })).catch(() => null);
+}
+/* what KIND of act each endpoint is, in his terms rather than the protocol's.
+   An unknown path still records, with the body kept whole — a new POST route
+   is logged the day it is added, without anyone remembering this table. */
+const SUB_ACT = {
+  '/answer':  b => ({ kind:'answer', title:b.question, text:b.answer }),
+  '/comment': b => ({ kind:'note',   title:b.question, text:b.comment }),
+  '/command': b => ({ kind:b.kind,   title:null,       text:b.text }),
+};
+const subFields = (url, b) => (SUB_ACT[url] ||
+  (x => ({ kind:url, title:null, text:JSON.stringify(x) })))(b || {});
+const SUBS_WAIT_MS = 250;
+const subsRecord = (url, body) => Promise.race([
+  subsTx('readwrite', st => st.add(Object.assign(
+    { at: Date.now(), path: url, from: (body || {}).from || null,
+      outcome: 'pending', status: 0 }, subFields(url, body)))),
+  new Promise(r => setTimeout(() => r(null), SUBS_WAIT_MS)),
+]);
+function subsOutcome(id, outcome, status) {
+  if (id == null) return;
+  subsTx('readwrite', st => {
+    const g = st.get(id);
+    g.onsuccess = () => {
+      const r = g.result;
+      // never rewritten except to attach the outcome it was waiting for, and
+      // never deleted: an entry that stays `pending` is a true statement about
+      // a tab that died mid-send, not a gap to be tidied away
+      if (r) { r.outcome = outcome; r.status = status; st.put(r); }
+    };
+    return null;
+  });
+}
+const subsAll = () => subsTx('readonly', st => st.getAll());
+window.__dwSubmissions = subsAll;
+/* THE ONE SEAM every submission goes through, which is what makes the record
+   complete rather than well-intentioned — the same reason #199 persists from
+   `do_POST` rather than from four handlers. */
 const postJSON = async (url, body) => {
-  try { return await fetch(url, { method:'POST',
+  const id = await subsRecord(url, body);
+  let res = null;
+  try { res = await fetch(url, { method:'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(body) }); } catch (e) { return null; }
+    body: JSON.stringify(body) }); } catch (e) { res = null; }
+  subsOutcome(id, res ? (res.ok ? 'ok' : 'rejected') : 'unreachable',
+              res ? res.status : 0);
+  return res;
 };
 const postAnswer = (title, text) =>
   postJSON('/answer', { question: title, answer: text, from: fromPath() });
@@ -3262,11 +3368,15 @@ function popoutDoc(url, label) {
       return;
     }
     composing = false;          // from here, anything he does means "still here"
-    try {
-      const r = await fetch('/command', { method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, text, from: fromPath() }) });
-      if (r.ok) {
+    {
+      // THROUGH `postJSON`, not a fetch of its own (#175). It is the one seam
+      // every submission passes, so routing the composer through it is what
+      // makes the client-side record complete rather than well-intentioned —
+      // a second fetch here would be a third of his submissions unwitnessed,
+      // which is #191's lesson about one gesture spelled two ways, aimed at
+      // data instead of at motion.
+      const r = await postJSON('/command', { kind, text, from: fromPath() });
+      if (r && r.ok) {
         setCmdMsg('sent to the dream', true);
         const plus = document.getElementById('cmdplus');
         if (plus) { const b = plus.getBoundingClientRect();
@@ -3277,8 +3387,9 @@ function popoutDoc(url, label) {
         // flight, before there was any timer to cancel
         cancelDismiss();
         if (!composing) dismissT = setTimeout(closeCmd, CMD_DISMISS_MS);
-      } else setCmdMsg('rejected (' + r.status + ')', false);
-    } catch (e) { setCmdMsg('no connection', false); }
+      } else if (r) setCmdMsg('rejected (' + r.status + ')', false);
+      else setCmdMsg('no connection', false);   // postJSON returns null on throw
+    }
   });
   document.getElementById('cmdpop').addEventListener('click', requestPopout);
 })();

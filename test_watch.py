@@ -769,10 +769,19 @@ class TestAppShell(unittest.TestCase):
         # Static guard: the + opener, the palette, POST /command, the dream
         # ripple, and the pop-out (Document Picture-in-Picture + window.open
         # fallback) must stay wired so a refactor can't drop the steer path.
+        #
+        # The POST token moved from `fetch('/command'` to `postJSON('/command'`
+        # in #175 and this test fired, correctly — it pins the steer path and
+        # the steer path changed shape. It is re-pointed rather than relaxed to
+        # `/command`, because a bare path would also match the composer growing
+        # a private fetch again, which is the exact thing #175 removed: every
+        # submission goes through the one seam that witnesses it.
         for token in ('id="cmdplus"', 'id="cmdpalette"', 'id="chrome"',
-                      "fetch('/command'", 'documentPictureInPicture',
+                      "postJSON('/command'", 'documentPictureInPicture',
                       'window.open', 'ripple('):
             self.assertIn(token, watch.PAGE)
+        self.assertNotIn("fetch('/command'", watch.PAGE,
+                         "the composer must not carry a fetch of its own")
 
     def test_command_vocabulary_has_one_source(self):
         # COMMANDS is the single source: the server's accepted set derives

@@ -80,13 +80,18 @@ lint:
 #                purpose — closing and reopening the composer passed before
 #                #163 existed, so only a real reload tests anything. Writes
 #                one command event per run via a successful send.
+#   subslog      ordinary (OUT, PORT). WRITES: it answers a question for real
+#                and forces a rejected note, and it stubs `window.fetch` to
+#                make one submission unreachable. Reads the client's log back
+#                through the page's own accessor, never out of IndexedDB
+#                behind the feature.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft"
+    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog"
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"
