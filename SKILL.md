@@ -388,6 +388,14 @@ if Max is away).
   that changes nothing may record an `--allow-empty` marker commit.
 - Verification before completion: the project's verification passes
   (tests/lint, or its stated routine) before a task is marked completed.
+- **A new check is not verification until it has been red.** Reintroduce
+  the bug, watch the check fail, then fix it. A check that has never
+  failed proves only that it ran — and checks fail quietly in ways that
+  read as passing: watching a window long enough that something else
+  produces the expected result, driving the route that was easy to
+  automate rather than the one the human uses, or comparing nothing at
+  all because the comparison errored and the error was swallowed. When a
+  check and the code disagree, suspect the check.
 - Experiments are feature-gated.
 - Compaction-safe: durable state lives in files — DREAMWORK.md,
   `.dreamwork/` (dreams, docs, plans), and commits — never only in
