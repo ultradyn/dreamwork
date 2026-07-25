@@ -152,12 +152,17 @@ Next id: **154**
   errand with zero new code
 - **#80** — Pick a second dogfood target (hark or c2c) · P3 · chore · 30m ·
   **blocked**: human pick
-- **#119** — Revisit a `selection.md` reference once selection stops
-  moving · P3 · idea · 30m · carried out of a pruned questions entry
 
 ## Recently landed
 
-Pruned in grooming; git is the real ledger. **#136** an unreadable
+Pruned in grooming; git is the real ledger. **#119** DECIDED, not built:
+selection stays in SKILL.md. The idle branch is by definition where no
+other trigger fires, so a pointer would be followed only by a loop that
+already knew what it was looking for; and step 2's dot line only works in
+front of the reader — "explicit thinking time" behind a link gets read
+past rather than performed. Only the 13-line maintenance rotation is
+movable, which does not justify a fourth reference file. (Argued by the
+#120 reviewer, taken 2026-07-25.) **#136** an unreadable
 questions.md now says so, in a second `--warn` colour because a fault in
 the live accent reads as activity (606ceaf) — and the sharper half was
 unbriefed: `postAnswer` discarded its response, so a REFUSED write told
