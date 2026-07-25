@@ -29,22 +29,6 @@ Next id: **194**
   fires AT compaction, so it guarantees the write-down and cannot buy
   landing time; stdout becomes summariser instructions, so it must be
   silent by construction
-- **#145** — Route findings by trigger; land the review's moves · P3 ·
-  chore · 60m · findings + coordinator disposition:
-  `docs/reviews-skillmd-2026-07-25.md` · 420 is not the problem, the RATE
-  is · M2/M3 KEPT with the reason recorded · **blocked precondition**:
-  ud-dreamtask points at named SKILL.md sections, so a rename orphans a
-  live pointer in another repo — grep the sibling first · **open**: the
-  routing rule has no bucket for CRAFT guidance; a second craft rule is
-  the signal to split it out of `file-formats.md` · also argues against
-  #119's `selection.md`
-- **#144** — *landed as a convention* · the reporting rule is in
-  SKILL.md (write then wake), and `status.json`'s `agents` entries now
-  carry optional `kind` and `awaiting_result` so a dispatched-but-silent
-  agent is legible without the coordinator remembering. Root cause,
-  better than the symptom I filed: subagent PLAIN TEXT is not a channel
-  at all — only files and harness messages arrive, so three "idle, no
-  findings" were three complete reports with nowhere to go
 - **#142** — Burndown + stats panel on the dashboard · P2 · task · 75m ·
   no new instrumentation needed — the ledger is versioned, so
   `git log -p .dreamwork/tasks.md` IS the time series and permanent ids
@@ -60,9 +44,6 @@ Next id: **194**
   whether HEAD has moved past it, so a stale view ANNOUNCES itself ·
   prefers a loud wrong state to a quiet one, and makes #147 a rollup
   rather than a separate design · belongs with the panels batch
-- **#147** — Hub shows which targets run behind their own HEAD · P3 ·
-  idea · 30m · #140 CLOSES the deploy window, this makes it LEGIBLE —
-  decide which is the answer before building both
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
@@ -108,22 +89,6 @@ Next id: **194**
   5.2s past a 1.6s `holdRerenderUntil` and the tick's own regroup supplied
   the motion it was asserting. A guard that watches long enough will see
   SOMETHING produce the result it wants
-- **#191** — The answer-submit morph moves its neighbours instantly ·
-  P2 · bug · 25m · found by dreamer-motion while measuring #184, and it
-  is NOT what he reported · `sendAnswer` restates the card with
-  `card.innerHTML = qaInner(...)` and calls neither `snapshotCards` nor
-  `regroupCards`, so every card below jumps the height delta in ONE frame
-  — measured 744->791 in two distinct positions across 354 frames, no
-  transform · **`regroup.mjs` is green over it because it answers by POST
-  and lets the tick do the move; only the morph path skips the regroup**
-  (same shape as #179's guard, green because it only visited /questions)
-  · the fix already exists three functions away: the `.qa details >
-  summary` handler does snapshot -> mutate -> regroup · **`sendComment`
-  has the identical shape — same increment or the next person re-derives
-  which is which** · P2 not P3 because of the irony: this is the one
-  gesture the page most deliberately taught to travel (#104) and the one
-  place movement is instant · labelled HYPOTHESIS: may be a third reading
-  of #184; if it lands and he still reports it, #184 comes back
 - **#190** — The loop's push channel to him is dead, and only the
   dashboard can say so · P1 · bug · 20m · `attn` returns **403, OAuth2
   token could not be validated** (grok/xAI), confirmed twice at 16:20 ·
@@ -193,18 +158,6 @@ Next id: **194**
   server withholds until consent — a server-side gate with a
   client-side face · consent is a PERMISSION (machine-local,
   revocable), unlike `watch-tint` which is a preference and committable
-- **#184** — Things that did not move are animating · P2 · bug · 35m ·
-  an element ABOVE a departing question moves, and a git-panel update
-  shifts and rescrolls the list below it · **third observation confirms
-  #179** — the defocus fires on this trigger too, so take them together
-  · hypothesis (MEASURE IT): the regroup claims every delta in a
-  re-laid-out document rather than only the deltas its own change
-  caused — the mirror of #141, where layout already carried the
-  neighbours · **fixed-height commit rows (#151's own spec) may remove
-  half of it by construction** — check that before making the regroup
-  smarter · principle to state once fixed: motion belongs to the thing
-  that changed and stops at what actually moved, because on this page
-  movement MEANS something
 - **#183** — [plan: `docs/plans/composer-row.md`] The composer's `+` sticks to the top when scrolling · P2 ·
   idea · 25m · on a long page the way to send a steer scrolls off
   exactly when he has read something and has a reply · **he named the
@@ -239,15 +192,6 @@ Next id: **194**
   `resolve_confined`, since the transcript sits outside `--target` and
   that gate is load-bearing · no inotify in stdlib: poll · "4-6
   review-and-improve loops" is a METHOD instruction — report the count
-- **#179** — **P1** The commit cycle steals focus from the box he is
-  typing in · bug · 25m · a REGRESSION from #151, ~90 minutes old,
-  reported as it happened to him · fourth instance of the class (#118,
-  #111, #141) and the first regression · **why the rule did not stop
-  it**: the cycle fires on a new SHA, not on the tick, so it never met
-  a rule written for "the tick" · fix both layers — use the existing
-  snapshot seam, AND widen the rule to "survives ANY re-render, whatever
-  triggered it", because it was scoped to a mechanism and a new
-  mechanism walked past it · do it with #174, same code
 - **#178** — Pretty-print toggle for JSON at `/file` · P3 · idea · 25m ·
   resolves the tension #158 exposed: prose reflows by default, source
   stays verbatim, and JSON is NEITHER — its formatting carries no
@@ -283,14 +227,6 @@ Next id: **194**
   IndexedDB, partitioned by project · **must be readable or it is
   theatre** — a log nobody can get at is the silent shape this loop
   keeps closing
-- **#174** — The commit cycle moves the WRONG WAY · P2 · bug · 20m ·
-  refines #151, which he likes · the departing row travels UP toward
-  where the new one arrives, so it reads as pulled back into the list
-  rather than leaving · both rows should move DOWN and scale UP, the
-  page-transition idiom he names — and that makes the departure
-  CONTINUOUS with the four middle rows #104 is already moving down,
-  instead of fighting the current · assert the SIGN of the travel, or
-  the check passes on the version he is complaining about
 - **#173** — Live git status, without EVER taking `index.lock` · P2 ·
   idea · 60m · **the lock constraint is a known injury, not a
   preference**: his CLAUDE.md carries an active mitigation from
@@ -416,14 +352,6 @@ Next id: **194**
   **Build it when #114 lands** (chains become something he sees) **or
   when there are >5 chain lines**. The check is right; the timing is
   wrong
-- **#150** — Audit the coordinator's own machinery · P2 · chore ·
-  *all four slices landed* · `relay.py` (stdin body, clock stamp);
-  write-then-wake in SKILL.md; `kind`/`awaiting_result` in status.json;
-  and an honest "what stays unguarded" section in `file-formats.md`,
-  because a list of what IS checked implies coverage it does not have.
-  One finding left open by design: **a shutdown approval carries no
-  payload**, so anything an agent knows at termination must be written
-  BEFORE it agrees to stop — procedural, not checkable
 - **#133** — Teach watch.py a URL prefix · P3 · task · 45m · do it
   inside #124's server-core seam; unblocks the single-URL hub layout
 - **#122** — Smokey awaiting-fold text: the words warp, a ghost copy
@@ -485,6 +413,7 @@ Next id: **194**
 
 ## Recently landed
 
+**#191** the answer-morph carries its neighbours (38854bd) — and found that a guard's WINDOW can be the bug (2026-07-25). **#184** CLOSED not-reproduced: neither half; explained by #174, numbers in its dream (2026-07-25). **#179** P1 the focus steal (9e8469c) — focus() into a closed <details> is a silent no-op (2026-07-25). **#174** the cycle travels down (7d3c322) — a departure leaves in the direction its list travels (2026-07-25). **#150** coordination layer audited: relay.py, write-then-wake, agent visibility (2026-07-25). **#147** deployed.py measures by bytes; the hub row says it (59e7728, f3649f4) (2026-07-25). **#145** routing rule adopted (4 buckets) (2026-07-25). **#144** subagent plain text is not a channel; silent agents are shown (2026-07-25).
 Pruned in grooming; git is the real ledger. **#143** a per-project tint
 (6c49874) — a closed set, a Rodrigues hue rotation preserving the
 achromatic component by construction, the existing `/mtime` poll doing the
