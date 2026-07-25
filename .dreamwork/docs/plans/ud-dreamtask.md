@@ -1,6 +1,6 @@
 # ud-dreamtask — bounded dreamloop for one task (build plan)
 
-> **Status (2026-07-25 12:40):** design confirmed by Max — "rec lgtm"
+> **Status (2026-07-25 12:11):** design confirmed by Max — "rec lgtm"
 > (10:47), taking all four recommendations. The Open-questions section is
 > gone; its answers are folded into the shape below and restated once in
 > **Settled**. Build stages revised accordingly. Two things the folding
@@ -8,7 +8,7 @@
 > answers dissolve, one seam the answers do not settle. Prune this plan
 > when dreamtask has completed a real errand end to end.
 >
-> **Built (2026-07-25 12:40):** stages 1-3 and 5 —
+> **Built (2026-07-25 12:16):** stages 1-3 and 5 —
 > `/home/xertrov/.llm-general/skills/ud-dreamtask/` (own git repo,
 > symlinked into `~/.claude/skills/`), index pointer, doc-map row,
 > README line. Coordinator rulings 12:12 folded below (location, hub
