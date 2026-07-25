@@ -3,6 +3,7 @@
 
     python3 relay.py <agent-name> < message.txt
     printf '%s' "$body" | python3 relay.py dreamer-thread
+    printf '%s' "$body" | python3 relay.py coord --as dreamer-rows
 
 Reads the body from STDIN and never from an argument, which is the whole
 point: on 2026-07-25 the coordinator wrote relays through an unquoted shell
@@ -20,6 +21,13 @@ heartbeat interval instead of reading the clock, and dreamers reason about
 whether an instruction predates one of their commits. Two different agents
 made that mistake within ten minutes of each other, which is what turned it
 from carelessness into something worth removing the opportunity for.
+
+It works in BOTH directions, and the reverse is the one that keeps
+failing: a dreamer reporting to `coord` passes `--as <its own name>` and
+never types a time. Five different agents invented a timestamp on
+2026-07-25, the fifth after being warned about the other four in its own
+dispatch — so the rule has now lost to the bias five times and the
+opportunity is what gets removed.
 
 WHAT THIS DOES NOT DO: wake the agent. The inbox is durable, not delivered
 — a dreamer reads it between increments, so an agent that has gone idle
@@ -52,11 +60,16 @@ def inbox_for(agent: str, inbox_dir: Path | None = None) -> Path:
 
 
 def relay(
-    agent: str, body: str, *, stamp: str | None = None, inbox_dir: Path | None = None
+    agent: str,
+    body: str,
+    *,
+    stamp: str | None = None,
+    inbox_dir: Path | None = None,
+    sender: str = "coordinator",
 ) -> Path:
     path = inbox_for(agent, inbox_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    header = f"[coordinator {stamp or now_stamp()}]"
+    header = f"[{sender} {stamp or now_stamp()}]"
     # Leading blank line so entries never run together, and exactly one
     # trailing newline so the next append starts clean.
     path.open("a", encoding="utf-8").write(f"\n{header} {body.strip()}\n")
@@ -68,7 +81,16 @@ def main(argv: list[str] | None = None) -> int:
         prog="relay",
         description="Append a timestamped coordinator message to a subagent's inbox. Body comes from stdin.",
     )
-    ap.add_argument("agent", help="subagent name, e.g. dreamer-thread")
+    ap.add_argument(
+        "agent",
+        help="whose inbox to write: a subagent name, or `coord` to report to the coordinator",
+    )
+    ap.add_argument(
+        "--as",
+        dest="sender",
+        default="coordinator",
+        help="who is speaking (default: coordinator). A dreamer passes its own name.",
+    )
     ap.add_argument(
         "--dir",
         default=None,
@@ -82,7 +104,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     path = relay(
-        args.agent, body, inbox_dir=Path(args.dir).expanduser() if args.dir else None
+        args.agent,
+        body,
+        sender=args.sender,
+        inbox_dir=Path(args.dir).expanduser() if args.dir else None,
     )
     print(f"relayed to {path}")
     return 0

@@ -44,6 +44,29 @@ class TestTheBugItExistsFor:
         assert drift < 120, f"stamp is {drift}s from now"
 
 
+class TestBothDirections:
+    """The reverse direction is why the module grew a flag: a dreamer
+    reporting to the coordinator must not type a time either."""
+
+    def test_a_dreamer_reports_under_its_own_name(self, inbox):
+        relay_mod.relay("coord", "increment 3 done", sender="dreamer-rows")
+        written = (inbox / "coord-inbox.md").read_text()
+        assert written.lstrip().startswith("[dreamer-rows ")
+        assert "increment 3 done" in written
+
+    def test_the_dreamers_stamp_also_comes_from_the_clock(self, inbox):
+        relay_mod.relay("coord", "body", sender="dreamer-rows")
+        written = (inbox / "coord-inbox.md").read_text()
+        m = re.search(r"\[dreamer-rows (\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]", written)
+        assert m, written
+        drift = abs((datetime.now() - datetime.strptime(m.group(1), "%Y-%m-%d %H:%M")).total_seconds())
+        assert drift < 120
+
+    def test_the_default_sender_is_still_the_coordinator(self, inbox):
+        relay_mod.relay("dreamer-rows", "body")
+        assert "[coordinator " in (inbox / "dreamer-rows-inbox.md").read_text()
+
+
 class TestShape:
     def test_appends_rather_than_overwrites(self, inbox):
         relay_mod.relay("d", "first")
