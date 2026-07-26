@@ -30,11 +30,12 @@ Next id: **289**
   `:35110` process, then reported “PASS no live 35110” · coordinator detected
   outage, restored `just deploy HEAD` at `010ab7a`, verified live 200 + foreign
   Host 421, and proved the kill from the agent transcript · quarantine all
-  post-kill isolation evidence; independently verify #221 from clean worktree ·
-  strengthen subagent prompts/guard protocol: protected services must be
-  positively snapshotted and remain same PID/healthy throughout, never killed;
-  add a pre/post protected-listener invariant or harness check before trusting
-  isolated-agent verification · next-up
+  post-kill isolation evidence; #221 independently verified/landed · research
+  proves worktrees/prompts/supervision cannot prevent same-UID signalling;
+  positive PID/health preservation is now the immediate detection rule ·
+  reviewed P1–P4 artifact/question live; Rec P1 designs explicit subagent tool
+  containment plus supervised recovery · blocked on dashboard direction; no
+  host, service, sandbox, privilege or deployment change authorized
 
 - **#287** — Design a Matt Pocock skills bridge plugin for Dreamwork · P1 ·
   plugin/research/design · origin: **human** · **human via coordinator
