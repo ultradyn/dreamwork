@@ -2,15 +2,44 @@
 
 ## Open
 
+
 ## Answered
 
+- **2026-07-27 — Do we have a task for SQLite/tool-based task access?**
+  → answered (2026-07-27 01:19): **Yes, partly: #264 was already the broad
+  design task.** It covers concurrent-safe task ownership, SQLite, CAS/leases,
+  multi-process same-target access, and migration; it is blocked on the #263
+  user-event model. But it did not state the concrete tool seam or safe
+  `tasks.md` retirement strongly enough.
+
+  I have now extended #264 to require a public tool/CLI seam such as `dreamwork
+  tasks list|get|grab|cycle`, and added dependent implementation task **#294**.
+  #294 explicitly requires a readable, user-modifiable migration script with
+  dry-run, exact import reporting, atomic backup/import, verification, rollback,
+  mixed-writer cutover, and provenance/history handling. After successful
+  verification it keeps the old ledger as `tasks.md.deprecated`—never deletes
+  it—and adds YAML frontmatter saying it is deprecated and pointing to canonical
+  task access plus recovery instructions. Dashboard/lint/docs/compaction
+  consumers are in scope too.
+
+  **Human:** “do we have a task yet for migrating tasks stuff to sqlite? Maybe
+  that was in something I reviewed? Anyway it was to do with working towards
+  allowing simultaneous access to tasks for multiple agents. Part of that I
+  would think would be migrating to a tool based way to access tasks. like
+  dreamwork tasks list etc. is that right, do we have that as a task yet? If so,
+  I would like to extend it to make sure we include a script (which can be
+  modified by the user's agent if need be) that is intended to migrate the
+  tasks.md file to the sqlite DB (it should also add some yaml frontmatter about
+  it being deprecated and point to instructions for how to get tasks, and should
+  rename to like tasks.md.deprecated or something (keep it around in case
+  something goes wrong)).”
+
 - **2026-07-27 — #283 safe Dolphin-window falsification observation**
-  → in progress from the dashboard answer at 00:16. Max's exact words were:
-  “closed. but not sure that it's dolphin is it? if it is that's good to
-  know.” The coordinator does not assume the closed window was Dolphin. It is
-  observing this repository's existing `index.lock` events for 60 seconds,
-  read-only, then will report whether the former cadence stopped or persisted.
-  No privileged tracing or process/KIO/Git mutation was authorized.
+  → answered: the authorised 60-second observation saw zero events, but two
+  later holderless recurrences at 00:46 and 00:57 falsified the strong
+  closed-window interpretation. The exact creator remains unknown; a new
+  dashboard question gates bounded audit preparation, user-tracer research, or
+  stopping with unknown. No privileged tracing or host mitigation is authorised.
 
 - **2026-07-26 — What causes the pause between answer and question movement?**
   → answered (2026-07-26 14:00): it is mostly an intentional **1.6-second

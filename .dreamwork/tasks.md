@@ -18,9 +18,26 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **294**
+Next id: **295**
 
 ## Open
+
+- **#294** — Migrate the durable task ledger to SQLite and a tool/CLI API · P1 ·
+  storage/tooling migration · origin: **human** · **human via `/answers`
+  2026-07-27 01:17** · build after #264's reviewed concurrency design and the
+  relevant #263 journal boundary: canonical task IDs/status/origin/priority/
+  ownership/dependencies/history live behind commands such as `dreamwork tasks
+  list|get|grab|cycle` rather than direct Markdown mutation; same-target agents
+  use transactional claims/CAS/leases · ship a deliberately readable and
+  user-modifiable migration script that dry-runs, parses every open/landed task,
+  reports exact counts/IDs/digests/conflicts, backs up and imports atomically,
+  verifies the database before cutover, and has explicit rollback · on successful
+  verified cutover, preserve the old ledger as `tasks.md.deprecated` with YAML
+  frontmatter declaring deprecation and pointing to canonical task-access and
+  recovery instructions; never delete it automatically · mixed-version/writer
+  freeze, replay/idempotency, Git history/provenance import, dashboard consumers,
+  lint/file-formats/doc-map/compaction and failure recovery are acceptance scope ·
+  blocked on #264 design and relevant #263 cutover decisions
 
 - **#293** — Render submitted `/answers` question text visibly · P1 · UI bug ·
   origin: **human** · **human via watch 2026-07-27 01:17** · exact ask: “bug:
@@ -247,9 +264,13 @@ Next id: **294**
   second dreamer/coordinator work in parallel without corrupting assignments,
   questions, user events or task state? compare single-writer+workers,
   append-only events/materialised views, locks/atomic replace/CAS, leases,
-  SQLite and per-record spools · cover stale recovery, multi-process same-target
-  servers, worktrees/c2c, compaction, cross-machine/git boundaries and migration
-  · blocked on user-event model #263
+  SQLite and per-record spools · make tool/CLI-based task access (`dreamwork tasks
+  list|get|grab|cycle`) the candidate public seam instead of direct `tasks.md`
+  mutation; design the #294 migration script/import verification, mixed-writer
+  cutover, rollback, preserved `tasks.md.deprecated` YAML notice and recovery
+  instructions · cover stale recovery, multi-process same-target servers,
+  worktrees/c2c, compaction, cross-machine/git boundaries and migration · blocked
+  on user-event model #263
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
