@@ -322,8 +322,10 @@ results, no ceremony.
   unauthenticated:
   `--bind 0.0.0.0 --allow-host xsm --allow-host 192.168.1.20 --url-host xsm`.
   Every request uses an exact Host allowlist and browser POSTs require matching
-  HTTP Origin; these stop rebinding/CSRF, not another LAN client. Public/WAN
-  exposure is unsupported. IPv6 wildcard example:
+  HTTP Origin; these stop rebinding/CSRF, not another LAN client. A concrete
+  bind address may be the default advertised URL only when that address is also
+  allowlisted; otherwise pass an allowed `--url-host`. Public/WAN exposure is
+  unsupported. IPv6 wildcard example:
   `--bind :: --allow-host xsm --allow-host ::1 --url-host xsm`.
 - `.dreamwork/skill-version` — which skill version this target last ran
   under; init's update check reads it (`initialization.md`).

@@ -173,6 +173,9 @@ def display_host(bind, allowed_hosts, url_host=None):
         raise ValueError("wildcard bind requires --url-host")
     else:
         chosen = bind_ip.compressed.lower()
+        if chosen not in allowed:
+            raise ValueError("bind address must be in --allow-host or an allowed "
+                             "--url-host is required")
     try:
         return "[{}]".format(ipaddress.IPv6Address(chosen).compressed)
     except ValueError:
@@ -6509,11 +6512,13 @@ def make_handler(target, dev=False, authority=None):
             # write primitive.
             if not self._preflight(write=True):
                 return
-            # Human-authorized write paths, all localhost-only: /answer folds
-            # an answer into questions.md; /comment threads a follow-up note
-            # onto any entry; /command drops a steering line into the events
-            # log; /tint saves his colour for this project. Everything else is
-            # read-only.
+            # Human-authorized write paths under loopback or explicitly
+            # configured trusted-LAN authority: /answer folds his answer;
+            # /ask records his question for the dreamer; /comment threads his
+            # note; /command records steering; /tint saves project colour.
+            # The first four wake the loop through watch-events.log; tint does
+            # not, because it is presentation state rather than agent work.
+            # Every other POST path is rejected.
             #
             # THE BODY IS READ AND PERSISTED HERE, BEFORE ANY OF THAT (#199).
             # One call site rather than four: a handler added later gets the

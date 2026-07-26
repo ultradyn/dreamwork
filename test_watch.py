@@ -126,8 +126,11 @@ class TestRequestAuthority(unittest.TestCase):
         with self.assertRaises(ValueError):
             watch.bind_family("localhost")
 
-        self.assertEqual(watch.display_host("127.0.0.1", ["localhost"], None),
+        self.assertEqual(watch.display_host("127.0.0.1",
+                                            ["localhost", "127.0.0.1"], None),
                          "127.0.0.1")
+        with self.assertRaises(ValueError):
+            watch.display_host("127.0.0.1", ["localhost"], None)
         self.assertEqual(watch.display_host("::1", ["::1"], None), "[::1]")
         self.assertEqual(watch.display_host("0.0.0.0", ["xsm"], "xsm"), "xsm")
         self.assertEqual(watch.display_host("::", ["2001:db8::1"],
@@ -238,6 +241,21 @@ class TestLANCLI(unittest.TestCase):
                                         None, 35110)
         self.assertEqual(options.url_host, "192.168.1.20")
         self.assertTrue(options.trusted_lan)
+
+    def test_concrete_lan_bind_requires_allowed_advertised_host(self):
+        # The printed/opened URL is part of the authority contract: it must not
+        # point at a Host that this same server answers with 421. A concrete
+        # bind may default to itself only when that token was explicitly
+        # allowlisted; otherwise the operator must choose an allowed url-host.
+        with self.assertRaisesRegex(ValueError, "url-host"):
+            watch.network_options("192.168.1.20", ["xsm"], None, 35110)
+        with self.assertRaisesRegex(SystemExit, "url-host"):
+            watch.main(["--target", "/tmp/project", "--port", "35110",
+                        "--bind", "192.168.1.20", "--allow-host", "xsm"])
+        options = watch.network_options("192.168.1.20", ["xsm"],
+                                        "xsm", 35110)
+        self.assertEqual(options.url_host, "xsm")
+        self.assertIn("xsm", options.allowed_hosts)
 
     def test_ipv6_family_and_url_brackets(self):
         args = watch.parse_args(["--bind", "::", "--allow-host", "xsm",

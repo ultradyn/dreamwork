@@ -29,8 +29,10 @@ unauthenticated. Public/WAN exposure remains unsupported.
 No target state or file format changes. Existing deployments need no action and
 remain loopback-only.
 
-To opt into a trusted LAN, choose one explicit bind address, list every exact
-Host token users will enter, and choose one allowed navigable `--url-host` when
-binding a wildcard address. Do not expose the port to an untrusted or public
-network. Later bearer-token and public Dreamhub authentication are separate
-features, not implied by this migration.
+To opt into a trusted LAN, choose one explicit bind address and list every
+exact Host token users will enter. Wildcard binds require an allowed navigable
+`--url-host`. A concrete bind may default its advertised URL to that address
+only when the address is itself allowlisted; otherwise pass an allowed
+`--url-host`. Do not expose the port to an untrusted or public network. Later
+bearer-token and public Dreamhub authentication are separate features, not
+implied by this migration.

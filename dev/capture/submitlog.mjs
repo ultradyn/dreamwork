@@ -118,12 +118,13 @@ p.on('pageerror', e => errs.push(String(e)));
 const ANS = `an hour of his thinking, refused at the door ${TOKEN('ANS')}`;
 {
   await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+  await p.waitForSelector('.qa.open textarea', { state: 'visible', timeout: 10000 });
   await sleep(1200);
   const r = await p.evaluate(SEND('answer', ANS, true));
   const log = await submissions();
   const md = await questionsMd();
   notes.push(`refused answer: client saw ${r.status}; ` +
-             `${log ? log.length : 'NO'} log line(s)`);
+             `${log ? log.length : 'NO'} log line(s); setup ${JSON.stringify(r)}`);
   ok('the refused answer really was refused (else this proves nothing)',
      r.status === 409);
   ok('...and questions.md really did not take it (else it was never at risk)',
@@ -138,6 +139,7 @@ const ANS = `an hour of his thinking, refused at the door ${TOKEN('ANS')}`;
 const NOTE = `his follow-up, refused at the door ${TOKEN('NOTE')}`;
 {
   await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+  await p.waitForSelector('.qa.open textarea', { state: 'visible', timeout: 10000 });
   await sleep(1200);
   const r = await p.evaluate(SEND('note', NOTE, true));
   const log = await submissions();
@@ -152,6 +154,7 @@ const NOTE = `his follow-up, refused at the door ${TOKEN('NOTE')}`;
 const GOOD = `an answer that lands ${TOKEN('GOOD')}`;
 {
   await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+  await p.waitForSelector('.qa.open textarea', { state: 'visible', timeout: 10000 });
   await sleep(1200);
   const r = await p.evaluate(SEND('answer', GOOD, false));
   await sleep(400);

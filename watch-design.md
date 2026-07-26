@@ -30,19 +30,23 @@ carries a `+` command opener (steer the loop without a chat turn).
   reading target data; browser POSTs validate matching HTTP Origin before body
   read/witnessing. This prevents DNS rebinding and cross-site browser writes,
   not another reachable LAN client. Non-loopback startup says so loudly;
-  public/WAN exposure is unsupported. IPv6 uses an AF_INET6 server and bracketed
+  public/WAN exposure is unsupported. The printed/opened URL Host is always a
+  member of the exact allowlist: wildcard binds require `--url-host`; a concrete
+  bind defaults to itself only when explicitly allowlisted, otherwise it also
+  requires an allowed `--url-host`. IPv6 uses an AF_INET6 server and bracketed
   advertised URL.
-- **Read-only, explicit write exceptions** (all human-authorized, loopback or
-  trusted-LAN trust): POST `/answer` appends an answer into questions.md's matching Open
-  entry; POST `/comment` threads a `- **Follow-up (via watch, <ts>):** …`
-  note onto any entry (Open or Answered — a chronological mini-thread; a note
-  on an Answered entry is flagged as a potential amendment in the events
-  log); POST `/command` appends a source-tagged steering line
-  (`command via watch [<page>]: <kind>: <text>`, kinds add-idea / do-next /
-  do-now / maintenance) to `.dreamwork/watch-events.log`. All three also append
-  an events-log line so the loop's tail monitor wakes. Every other route reads.
-  All file access goes through `resolve_confined()` (rejects absolute, `~`,
-  traversal); `/filedata` and `/reviewraw` are both behind it.
+- **Read-only, five explicit write exceptions** (all human-authorized under
+  loopback or explicit trusted-LAN authority): POST `/answer` appends an answer
+  to the matching Open entry in `questions.md`; `/ask` appends a human question
+  to `answers.md`; `/comment` appends a human note to an Open or Answered
+  question; `/command` appends source-tagged steering to
+  `.dreamwork/watch-events.log`; `/tint` persists the project colour in
+  `.dreamwork/watch-tint`. Answer, ask, comment and command also append one
+  line to `watch-events.log`, waking the loop. Tint deliberately does not: it
+  is presentation state that cross-window mtime polling propagates, not work
+  for an agent. Every other POST is rejected; every other route reads. All file
+  access goes through `resolve_confined()` (rejects absolute, `~`, traversal);
+  `/filedata` and `/reviewraw` are both behind it.
 - **Port** persisted to `.dreamwork/watch-port` (random 3000–63000 once)
   so bookmarks survive restarts; port-in-use error names the port.
 - **Live reload**: poll `/mtime` ~2s → re-fetch `/data.json` → re-render
@@ -64,7 +68,8 @@ carries a `+` command opener (steer the loop without a chat turn).
   turbulence mist (see Motion language); reduced-motion swaps instantly.
   `/review` embeds the raw artifact (served at `/reviewraw`) in an iframe
   for style isolation; a question linking to it travels along, docked.
-- **Events log**: user actions (answers, commands) append one line to
+- **Events log**: actionable user submissions (answers, questions for the
+  dreamer, notes, and commands) append one line to
   `.dreamwork/watch-events.log` so agents can wake on a tail Monitor
   instead of waiting for a tick. **One event per line, and the line is
   something an agent then acts on**, so nothing a human can type into a box
