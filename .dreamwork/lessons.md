@@ -900,3 +900,32 @@ this shape and convert opportunistically.)
   (#151's mechanism for #151's reason) and the note became constant. Measure
   the premise; #204 is what it costs not to.
   (dreamer-panels, 2026-07-25, #142)
+- **Cross-tab countdowns are distributed systems; "the tab that armed it"
+  is not an ownership protocol.** #290's first cross-tab version let every
+  tab arm a timer for the same shared deadline — both owner and follower
+  POSTed at `until` (found by a reviewer, then reproduced ~1/3 of runs).
+  Then the ownership fix made the initiator's *leaving the dashboard* drop
+  the commit (re-arm gated on picker DOM), and the orphan-reclaim for
+  tab-close was dead code because `readRunPending` purged expired pendings
+  before the deferred reclaim could read them. Three real production bugs,
+  each invisible to the previous guard. What held: ownership is
+  timer+flag+sessionStorage-id state (never DOM), exactly one tab claims via
+  a synchronous read→remove CAS, and every lifecycle transition (navigate,
+  reload, close, cancel) needs its own RED scenario — not a variant of the
+  happy path. (watch, 2026-07-27, #290)
+- **A guard that arms the already-committed state is testing a cancel by
+  definition.** #290's flaky "cross-tab adopt" check called `pickRunMode`
+  with the committed mode — which the UI treats as cancel — so there was no
+  arm to adopt, and the failure rate depended on timing making that obvious.
+  Flake hunts should first ask "is the premise the state I think it is";
+  predicate waits (`waitPage`) then replace fixed sleeps, because
+  storage-event latency varies under load. A guard that flakes 2/3 is a
+  defect even when the code is right. (watch, 2026-07-27, #290)
+- **The watcher you already run beats the tracer you were about to
+  authorise.** #283 was one dashboard answer away from a privileged audit
+  rule when the existing git-lock-watch journal simply recorded the creator:
+  `pi-powerline-footer`'s `git status --porcelain` with a 500ms `proc.kill`
+  and no `--no-optional-locks`, orphaned under load. Before escalating
+  observability (sudo, auditd, new packages), re-read the evidence the
+  current instruments already captured — the argv+parent line was there the
+  whole time. (systems, 2026-07-27, #283)
