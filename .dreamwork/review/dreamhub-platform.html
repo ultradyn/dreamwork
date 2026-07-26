@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en-au">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="dreamwork-artifact-style" content="offline-fallback-v1">
+<title>dreamhub as a platform · architecture pre-plan</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#090d16;--bg2:#0c1220;--panel:#111827;--panel2:#162033;
+  --line:#1f2937;--border:#334155;--text:#cbd5e1;--bright:#f4f7fb;
+  --lit:#e5e7eb;--muted:#98a3b5;--dim:#697589;--dimmer:#4b5568;
+  --accent:#a5b4fc;--accent2:#7dd3fc;--ok:#86efac;--warn:#fcd34d;
+  --bad:#fda4af;--ink:#050810;--radius:5px;
+  --ease:cubic-bezier(.32,.1,.2,1);--measure:78ch
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--dimmer) transparent}
+*::selection{background:rgba(165,180,252,.24);color:var(--bright)}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--dimmer);border-radius:4px}
+html{background:var(--bg);scroll-padding-top:5.5rem}
+body{margin:0;background:
+  radial-gradient(ellipse 68rem 34rem at 48% -14rem,rgba(99,102,241,.13),transparent 68%),
+  radial-gradient(ellipse 34rem 24rem at 90% 13%,rgba(14,165,233,.045),transparent 70%),
+  linear-gradient(180deg,var(--bg),#0a0f19 55%,var(--bg));
+  color:var(--text);font-family:ui-monospace,"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  font-size:.82rem;line-height:1.7;overflow-wrap:anywhere}
+a{color:var(--accent);text-underline-offset:.22em;text-decoration-thickness:1px}
+a:hover{color:var(--bright)}
+code{color:var(--lit);background:rgba(22,32,51,.72);padding:.03rem .32ch;border-radius:3px}
+pre{margin:.75rem 0;padding:.9rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.52);color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+strong{font-weight:inherit;color:var(--bright)}em{color:var(--lit)}
+p{margin:.62rem 0}ul,ol{margin:.55rem 0;padding-left:2.4ch}li{margin:.34rem 0}
+h1,h2,h3{margin:0;font:inherit;font-weight:normal;color:var(--bright)}
+h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit)}
+.wrap{width:min(calc(100% - 2rem),1120px);margin:0 auto}.read{max-width:var(--measure)}
+.skip{position:fixed;z-index:99;top:.6rem;left:.6rem;transform:translateY(-160%);display:inline-flex;align-items:center;min-height:44px;padding:.6rem 1ch;background:var(--bright);color:var(--ink);border-radius:var(--radius)}
+.skip:focus{transform:none;transition:transform .35s var(--ease)}
+.toprail{position:sticky;top:0;z-index:20;background:rgba(9,13,22,.91);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
+.toprail-in{width:min(calc(100% - 2rem),1120px);min-height:58px;margin:auto;display:flex;align-items:center;gap:1rem;justify-content:space-between}
+.identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius)}
+.status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
+main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
+.kicker{display:flex;gap:1ch;align-items:baseline;flex-wrap:wrap}.proposal{color:var(--warn)}
+.sub{color:var(--dim);margin:.25rem 0 1.8rem}
+.lead{font-size:.9rem;line-height:1.78;color:var(--lit);max-width:75ch}
+.label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
+.quiet{color:var(--muted)}.dim{color:var(--dim)}
+.hero{padding-top:1rem}.hero-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(250px,.5fr);gap:2.5rem;align-items:end}
+.version-mark{border-left:1px solid var(--accent);padding:.2rem 0 .2rem 1.25rem}.version-mark .big{display:block;color:var(--bright);font-size:2.4rem;line-height:1;letter-spacing:-.07em}.version-mark small{color:var(--dim)}
+.call{margin:1.2rem 0;padding:1rem 1.2ch;background:linear-gradient(90deg,rgba(165,180,252,.09),transparent);border-left:2px solid var(--accent)}
+.notice{margin:1rem 0;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--warn);color:var(--muted)}
+.deltas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line)}
+.delta{display:grid;grid-template-columns:3.2ch minmax(0,1fr);gap:1ch;padding:.8rem 1rem .8rem 0;border-bottom:1px solid var(--line)}.delta b{color:var(--accent);font-weight:normal}.delta span{color:var(--muted)}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:1rem 0}
+.fact{background:var(--bg2);padding:1rem}.fact .number{display:block;color:var(--bright);font-size:1.3rem;line-height:1.1}.fact .caption{display:block;color:var(--dim);margin-top:.35rem}
+table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem}
+th,td{text-align:left;vertical-align:top;padding:.66rem .72ch;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-size:.66rem;text-transform:uppercase;letter-spacing:.065em;font-weight:normal}
+td:first-child{color:var(--lit)}.pass{color:var(--ok)}.unknown{color:var(--warn)}.fail{color:var(--bad)}
+.row-accent td{background:rgba(165,180,252,.045)}
+.grid2{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.5rem}
+.option{border-top:1px solid var(--line);padding:.85rem 0}.option strong{font-weight:inherit;color:var(--bright)}
+.option.rec{border-top-color:var(--accent)}.option p{color:var(--muted)}
+figure{margin:1rem 0 1.6rem;overflow:auto}svg{display:block;width:100%;min-width:780px;height:auto}
+svg text{font-family:ui-monospace,"JetBrains Mono",monospace}
+.mobile-flow{display:none}
+.spine{margin:1.5rem 0}.spine-row{display:grid;grid-template-columns:14ch 2.5rem minmax(0,1fr);align-items:stretch;min-height:84px}
+.spine-key{padding:.9rem 1rem .9rem 0;color:var(--lit);text-align:right;overflow-wrap:normal}
+.spine-rail{position:relative}.spine-rail::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border)}
+.spine-row:first-child .spine-rail::before{top:50%}.spine-row:last-child .spine-rail::before{bottom:50%}
+.spine-dot{position:absolute;z-index:1;left:50%;top:1.2rem;width:9px;height:9px;transform:translateX(-50%);border-radius:50%;background:var(--bg);border:1px solid var(--accent);box-shadow:0 0 0 5px var(--bg)}
+.spine-body{padding:.75rem 0 .9rem 1rem;border-top:1px solid var(--line)}.spine-body p{color:var(--muted)}
+.stages{counter-reset:stage -1}
+.stage{counter-increment:stage;display:grid;grid-template-columns:4.5ch minmax(0,1fr);gap:1ch;padding:.85rem 0;border-top:1px solid var(--line)}
+.stage::before{content:"S" counter(stage);color:var(--accent)}
+.stage b{font-weight:inherit;color:var(--bright)}.stage .gate{color:var(--ok)}.stage .catch{color:var(--muted)}
+.summary-line{display:grid;grid-template-columns:16ch minmax(0,1fr);gap:1.5ch;padding:.52rem 0;border-top:1px solid var(--line)}
+.summary-line:last-child{border-bottom:1px solid var(--line)}
+.key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.68rem}
+details{border-top:1px solid var(--line);margin:.65rem 0}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;min-height:44px;padding:.65rem 0;color:var(--muted);outline:none}
+summary::-webkit-details-marker{display:none}summary::before{content:"+ ";color:var(--dim);white-space:pre}
+details[open]>summary{color:var(--lit);padding-top:1rem}details[open]>summary::before{content:"\2212 "}
+.details-in{padding:0 0 1rem 1.5ch;color:var(--muted)}
+details::details-content{block-size:0;opacity:0;filter:blur(3px);overflow:hidden;transition:block-size .72s var(--ease),opacity .45s ease,filter .45s ease;transition-behavior:allow-discrete}
+details[open]::details-content{block-size:auto;opacity:1;filter:none}
+@starting-style{details[open]::details-content{block-size:0;opacity:0;filter:blur(3px)}}
+#decision{scroll-margin-top:4.75rem}
+.decision-block{border-left:2px solid var(--accent);padding:0 0 0 1.2rem}
+.choice{padding:.95rem 0;border-top:1px solid var(--line)}.choice:last-child{border-bottom:1px solid var(--line)}
+.choice-grid{display:grid;grid-template-columns:5ch minmax(0,1fr);gap:1ch}
+.choice-tag{color:var(--accent);font-size:1rem}.answer{margin-top:.4rem;color:var(--lit)}
+.approval{padding:1rem;background:linear-gradient(90deg,rgba(165,180,252,.1),transparent);color:var(--lit);margin-top:1.2rem}
+footer{margin-top:3.5rem;padding:1.2rem 0 2rem;border-top:1px solid var(--line);color:var(--dimmer)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+@media(max-width:820px){
+  .wrap,.toprail-in{width:min(calc(100% - 1.4rem),1120px)}main{padding-top:2rem}
+  .identity span{display:none}.topactions .full{display:none}
+  .hero-grid,.deltas,.facts,.grid2{grid-template-columns:1fr}
+  .version-mark{margin:.25rem 0 0;border-left:0;border-top:1px solid var(--line);padding:.7rem 0 0;display:flex;align-items:baseline;gap:1rem}
+  .version-mark .big{flex:none;font-size:1.4rem;letter-spacing:-.04em}
+  .summary-line{grid-template-columns:1fr;gap:.1rem}
+  .desktop-flow{display:none}.mobile-flow{display:block}
+  .spine-row{grid-template-columns:9ch 1.8rem minmax(0,1fr)}.spine-key{padding-right:.4rem;font-size:.72rem}
+}
+@media(max-width:480px){body{font-size:.79rem}.topactions .status{display:none}.choice-grid{grid-template-columns:3.5ch minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important;transition-delay:0s!important;filter:none!important}}
+@media print{
+  :root{color-scheme:light;--bg:#fff;--bg2:#fff;--panel:#f4f4f5;--line:#bbb;--border:#777;--text:#111;--bright:#000;--lit:#111;--muted:#333;--dim:#444;--dimmer:#555;--accent:#273fa2;--accent2:#075985;--ok:#166534;--warn:#7c4a03;--bad:#991b1b}
+  body{background:#fff}.toprail{position:static;background:#fff;backdrop-filter:none}.topactions{display:none}
+  details::details-content{block-size:auto;opacity:1;filter:none}
+  .mobile-flow{display:none!important}.desktop-flow{display:block!important}
+  .call,.notice,.decision-block,.approval{break-inside:avoid}a{color:#111;text-decoration:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#decision">Skip to the decisions</a>
+<nav class="toprail" aria-label="Artifact navigation">
+  <div class="toprail-in">
+    <div class="identity"><b>dreamhub · platform</b><span>architecture pre-plan · local, LAN/mesh, tunnel, hosted</span></div>
+    <div class="topactions"><span class="status">awaiting decisions</span><a class="full" href="#broken">what is already broken</a><a href="#decision">jump to decisions</a></div>
+  </div>
+</nav>
+<main class="wrap" id="top">
+
+<header class="hero">
+  <div class="hero-grid">
+    <div>
+      <div class="kicker"><h1>One node, three products</h1><span class="proposal">pre-plan · no build authority</span></div>
+      <div class="sub">architecture review · 26 July 2026 · plans: <code>dreamhub-platform.md</code>, <code>dreamnode-api.md</code></div>
+      <p class="lead">You asked for an architecture that is great to run locally or over a LAN/mesh VPN, <em>and</em> can become a website selling persistent tunnel access to your own machine, <em>and</em> can sell the hosted agentic experience. Those look like three products. They collapse into one stack if the architecture accepts a single claim: <strong>the paid tunnel and the hosted dreamer differ only in who owns the machine the node runs on, and the free local product is the same node with the relay switched off.</strong></p>
+      <div class="call"><strong>Recommendation.</strong> Put the seam at a small versioned <strong>node API</strong> — resources with ETags, an event stream of change notices, intents that return durable receipts — and make every surface a client of it: the local page, the hub, the website, the phone, the sandbox. Then take the first four stages regardless of whether the business happens, because every one of them fixes something that is wrong on your own LAN today.</div>
+    </div>
+    <div class="version-mark" aria-label="Scope of this artifact">
+      <span class="big">13</span>
+      <small>decisions needing you<br>12 unknowns, each with a way to close it<br>6 measured present defects</small>
+    </div>
+  </div>
+</header>
+
+<section aria-labelledby="delta-title">
+  <div class="label" id="delta-title">What this proposes, in six lines</div>
+  <div class="deltas">
+    <div class="delta"><b>01</b><span><strong>One process per machine, not per project.</strong> <code>dreamnode</code> grows out of <code>dreamhub.py</code>: registry, the <code>.dreamwork/</code> readers <em>and</em> writers, the runtime adapter, one API. Still stdlib, still no build step, still snapshot-deployable.</span></div>
+    <div class="delta"><b>02</b><span><strong>Only the node knows what a <code>.dreamwork/</code> is.</strong> The relay, the website and the hosted runner move opaque JSON. That is the existing hub rule promoted one level, and it is what makes a second repo safe.</span></div>
+    <div class="delta"><b>03</b><span><strong>Resources and change notices replace the god snapshot.</strong> <code>/data.json</code> is 320,840 bytes on this repo, re-fetched on every change. A fleet row is hundreds.</span></div>
+    <div class="delta"><b>04</b><span><strong>Writes become intents with idempotency keys and durable receipts</strong> — which is #274 and #263 landing once and serving both local duplicates and at-least-once relay delivery.</span></div>
+    <div class="delta"><b>05</b><span><strong>Three auth planes, not one:</strong> node → relay (signed keypair, local unlink), browser → relay (own the account record), browser → node (bearer by QR, keeping #233's Host/Origin gates).</span></div>
+    <div class="delta"><b>06</b><span><strong>The free local product must never require us.</strong> No account, no relay, no network — with a gate that proves it rather than a promise that says it.</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="label">Measured, on this repo, today</div>
+  <div class="facts">
+    <div class="fact"><span class="number">320,840</span><span class="caption">bytes of <code>/data.json</code>, re-fetched on every change under the target. <code>files</code> 122 KB · <code>dreams_archive</code> 101 KB · <code>answered_entries</code> 42 KB · the whole file tree 9 KB</span></div>
+    <div class="fact"><span class="number">0.375 s</span><span class="caption">wall time for one <code>collect()</code>. A node serving twenty projects cannot sweep whole projects per poll</span></div>
+    <div class="fact"><span class="number">6</span><span class="caption">present defects that are invisible only because writer and reader are the same machine</span></div>
+    <div class="fact"><span class="number">$15–60</span><span class="caption">per month, what the comparable hosted-agent market charges — while the customer's model bill runs $50–200+ and usually exceeds it</span></div>
+  </div>
+</section>
+
+<section class="read">
+  <div class="label">The decision that is not technical</div>
+  <h2>D0 · selling this makes people who are not you into users</h2>
+  <p>Every goal in <code>DREAMWORK.md</code> is written about one human, deliberately, and <code>dreamhub-design.md</code> says so in as many words: <em>one glance tells <strong>him</strong> which of his dreamers has stopped moving.</em> A tunnel subscription and a hosted dreamer bring support, uptime, hostile peers, other people's source code, refunds, and a compatibility promise where today there is a migration note.</p>
+  <div class="notice"><strong>This is a goal change, not a surface change.</strong> The loop's own philosophy says scope expansion defers to you, so it needs ratifying in <code>DREAMWORK.md</code> rather than inferring from a request for an architecture. Rec: ratify it when the relay stage is authorized — and not before, so the early stages stay honest local improvements.</div>
+</section>
+
+<section>
+  <div class="label">The three products, and the one boundary between them</div>
+  <table>
+    <thead><tr><th>&nbsp;</th><th>P1 · local / LAN / mesh</th><th>P2 · tunnel + identity</th><th>P3 · hosted dreamers</th></tr></thead>
+    <tbody>
+      <tr><td>Runs the loop</td><td>their machine</td><td>their machine</td><td class="unknown">ours</td></tr>
+      <tr><td>Holds the code</td><td>theirs</td><td>theirs</td><td class="unknown">ours (their repo, checked out)</td></tr>
+      <tr><td>Holds the model key</td><td>theirs</td><td>theirs</td><td class="unknown">ours at runtime, supplied by them</td></tr>
+      <tr><td>We operate</td><td>nothing</td><td>a relay and a website</td><td>a sandbox fleet</td></tr>
+      <tr><td>They pay for</td><td class="pass">nothing</td><td>reachability, identity, push, fleet</td><td>P2 plus compute and orchestration</td></tr>
+      <tr><td>Our marginal cost</td><td>zero</td><td class="pass">bytes</td><td class="fail">a warm VM plus their token spend</td></tr>
+      <tr><td>Trust they extend</td><td class="pass">none</td><td>a courier that can read what it forwards</td><td class="fail">a host that can read their code and their key</td></tr>
+    </tbody>
+  </table>
+  <div class="call"><strong>P2 is the good business</strong> — marginal cost in bytes, a small trust ask, and no abuse team. <strong>P3's margin is thin and volatile</strong>, because the dominant cost is somebody else's token bill. So: P2 first, P3 only after two numbers exist.</div>
+</section>
+
+<section>
+  <div class="label">The architecture</div>
+  <figure class="desktop-flow" aria-label="Topology: node on their machine, relay and hosted runner on ours, clients in the browser">
+  <svg viewBox="0 0 880 412" role="img">
+    <title>dreamnode dials out to a relay; browsers reach it through the relay or directly over a LAN or mesh VPN; a hosted runner is a node that happens to be ours</title>
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#a5b4fc"/>
+      </marker>
+      <marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#697589"/>
+      </marker>
+    </defs>
+    <g fill="#697589" font-size="10.5" letter-spacing="1.2">
+      <text x="16" y="16">THEIR MACHINE</text>
+      <text x="326" y="16">OUR INFRASTRUCTURE</text>
+      <text x="656" y="16">ANY BROWSER</text>
+    </g>
+    <g fill="none" stroke="#334155">
+      <rect x="16" y="30" width="252" height="164" rx="4"/>
+      <rect x="326" y="30" width="252" height="164" rx="4"/>
+      <rect x="656" y="30" width="208" height="132" rx="4"/>
+      <rect x="326" y="246" width="252" height="106" rx="4"/>
+    </g>
+    <g font-size="12" fill="#f4f7fb">
+      <text x="32" y="54">dreamnode</text>
+      <text x="342" y="54">relay</text>
+      <text x="672" y="54">web app</text>
+      <text x="342" y="270">hosted runner</text>
+    </g>
+    <g font-size="10.5" fill="#98a3b5">
+      <text x="32" y="76">registry · the only interpreter</text>
+      <text x="32" y="94">readers and writers for .dreamwork/</text>
+      <text x="32" y="112">runtime adapter (herdr | tmux)</text>
+      <text x="32" y="130">/v1 · resources · events · intents</text>
+      <text x="32" y="152" fill="#697589">stdlib · no build step · snapshot-deployable</text>
+      <text x="32" y="176" fill="#a5b4fc">works with the relay unreachable</text>
+      <text x="342" y="76">node link and auth</text>
+      <text x="342" y="94">session multiplexer</text>
+      <text x="342" y="112">sealed intent queue (offline)</text>
+      <text x="342" y="130">push fan-out</text>
+      <text x="342" y="152">summary cache — opt-in, per project</text>
+      <text x="342" y="176" fill="#697589">stores no project content · parses nothing</text>
+      <text x="672" y="76">fleet · project · account</text>
+      <text x="672" y="94">the new shell, wrapped around</text>
+      <text x="672" y="112">the extracted watch client</text>
+      <text x="672" y="134" fill="#697589">one project view, not two</text>
+      <text x="672" y="152" fill="#697589">artifacts on their own origin</text>
+      <text x="342" y="292">a node that happens to be ours</text>
+      <text x="342" y="310">sandbox = dreamnode + coding CLI</text>
+      <text x="342" y="328">+ checkout + heartbeat + spend cap</text>
+    </g>
+    <g stroke="#a5b4fc" fill="none" marker-end="url(#a)" marker-start="url(#a)">
+      <path d="M268,104 H326"/>
+      <path d="M578,86 H656"/>
+    </g>
+    <g stroke="#a5b4fc" fill="none" marker-end="url(#a)">
+      <path d="M452,246 V198"/>
+    </g>
+    <g stroke="#697589" fill="none" stroke-dasharray="4 4" marker-end="url(#d)">
+      <path d="M142,194 V386 H760 V166"/>
+    </g>
+    <g font-size="9.5" fill="#697589" text-anchor="middle">
+      <text x="297" y="94">wss</text>
+      <text x="297" y="122">outbound</text>
+      <text x="617" y="76">https</text>
+    </g>
+    <g font-size="10" fill="#697589">
+      <text x="466" y="226">same protocol</text>
+      <text x="160" y="376" fill="#98a3b5">LAN / mesh VPN · bearer token</text>
+    </g>
+  </svg>
+  </figure>
+  <p class="read dim">The node dials <em>out</em>, and the relay never dials in — so there is no port forwarding, no DNS and no certificate for the user, and CGNAT works. The dashed path is a browser on the same LAN or mesh VPN talking to the node directly: the relay is not in it and never has to be. Review artifacts are served from their own sandboxed origin, because they are raw repository HTML.</p>
+
+  <div class="mobile-flow spine" aria-label="Topology as a list">
+    <div class="spine-row"><div class="spine-key">dreamnode</div><div class="spine-rail"><span class="spine-dot"></span></div><div class="spine-body"><p>Their machine. Registry, the only interpreter of <code>.dreamwork/</code>, the runtime adapter, and the <code>/v1</code> API. Stdlib, no build step. Works with the relay unreachable.</p></div></div>
+    <div class="spine-row"><div class="spine-key">relay</div><div class="spine-rail"><span class="spine-dot"></span></div><div class="spine-body"><p>Ours. The node dials <em>out</em> over WSS, so no port forwarding, no DNS, no certificates, and CGNAT works. Authenticates, multiplexes, queues sealed intents, fans out push, optionally caches a summary. Stores no project content and parses nothing.</p></div></div>
+    <div class="spine-row"><div class="spine-key">web app</div><div class="spine-rail"><span class="spine-dot"></span></div><div class="spine-body"><p>A new shell — login, fleet, absent-node states, billing — around the <em>extracted</em> watch client. One project view, not two.</p></div></div>
+    <div class="spine-row"><div class="spine-key">artifacts</div><div class="spine-rail"><span class="spine-dot"></span></div><div class="spine-body"><p>Separate, sandboxed origin, because <code>/reviewraw</code> serves raw repo HTML and today it is same-origin with the dashboard.</p></div></div>
+    <div class="spine-row"><div class="spine-key">hosted runner</div><div class="spine-rail"><span class="spine-dot"></span></div><div class="spine-body"><p>A node that happens to be ours: sandbox, coding CLI, checkout, heartbeat, spend cap — speaking the same protocol a laptop speaks.</p></div></div>
+    <div class="spine-row"><div class="spine-key">direct path</div><div class="spine-rail"><span class="spine-dot"></span></div><div class="spine-body"><p>LAN or mesh VPN straight to the node with a bearer token. The relay is not in this path and never has to be.</p></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="label">The load-bearing choice · where the seam goes</div>
+  <div class="grid2">
+    <article class="option">
+      <strong>1 · reverse-proxy the watch instances</strong>
+      <p>Cheapest, and what <code>daemon-mode.md</code> originally sketched. Needs the URL prefix (#133) anyway.</p>
+      <p class="fail">Caps the product's UI at whatever a single-file Python renderer can express — no seam for a login shell, a fleet, billing, or an offline state. Keeps the 320 KB payload. N processes per user, N auth surfaces.</p>
+    </article>
+    <article class="option rec">
+      <strong class="pass">2 · a node API · recommended</strong>
+      <p>One process per machine owning the registry, the readers and writers, the runtime adapter, and a versioned API. Every surface is a client.</p>
+      <p>Makes the central claim true: the website and the sandbox consume the API a laptop serves, so P2 and P3 stop being separate products to build.</p>
+      <p class="dim">Cost, stated: it needs #124's server-core seam and the client extraction. Taken in slices that each pay off locally first.</p>
+    </article>
+    <article class="option">
+      <strong>3 · rebuild watch and the loop as a service</strong>
+      <p>Rejected for the reason <code>daemon-mode.md</code> already rejected it: it discards the session model and the harness tooling.</p>
+      <p class="fail">And it moves the file-format interpreters into a server we host — inverting the property that makes the free local product possible at all.</p>
+    </article>
+  </div>
+</section>
+
+<section id="broken">
+  <div class="label">What is already broken for remote use — measured, not guessed</div>
+  <p class="read quiet">Every row is a present defect that is invisible locally because the writer and the reader are the same machine. They are listed before any platform work because they are cheap, they improve your LAN mode today, and each one is a way the page could <em>lie about liveness</em> — which the styleguide calls disqualifying for this kind of page.</p>
+  <table>
+    <thead><tr><th>Defect</th><th>Where</th><th>What it does remotely</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr class="row-accent"><td>Ages use the browser's clock against the server's timestamps</td><td><code>ageStr</code>, <code>agePair</code>, <code>titleLive</code></td><td class="fail">A node ten minutes fast reads as <em>dreaming</em> over a stopped loop</td><td>node reports its own <code>now</code>; client carries one offset</td></tr>
+      <tr class="row-accent"><td><code>last_tick</code> has no stated timezone</td><td><code>file-formats.md</code>; both readers</td><td class="fail">A phone in another timezone is wrong by hours — <code>Date.parse</code> and <code>fromisoformat</code> both assume <em>their own</em> local time</td><td>require an offset; accept naive as node-local and say so</td></tr>
+      <tr><td>Whole-project snapshot per change</td><td><code>collect()</code> → <code>/data.json</code></td><td>320,840 bytes per file save, including a full inventory of the repository</td><td>resources with ETags; <code>linkables</code> on request</td></tr>
+      <tr><td><code>ANSWER_LOCK</code> is in-process only</td><td><code>threading.Lock()</code></td><td class="fail">A node, a <code>watch.py</code> and the agent are three writers to one prose file</td><td>single writer, or an advisory file lock; test two concurrent appends</td></tr>
+      <tr><td><code>/reviewraw</code> is same-origin raw HTML</td><td>2 MB, in an iframe</td><td class="fail">Stored XSS with a session to steal</td><td>separate sandboxed artifact origin + CSP</td></tr>
+      <tr><td>0.375 s per whole-project read</td><td><code>collect()</code></td><td>a per-machine node cannot sweep N projects per poll</td><td>per-resource reads, incremental change detection</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <div class="label">What each component is allowed to know</div>
+  <table>
+    <thead><tr><th>&nbsp;</th><th>live traffic</th><th>queued intents</th><th>summaries</th><th>content at rest</th></tr></thead>
+    <tbody>
+      <tr><td>node</td><td>everything</td><td>—</td><td>authors them</td><td>holds it</td></tr>
+      <tr><td>relay</td><td class="unknown">can read what it forwards</td><td class="pass">sealed — cannot read</td><td>opt-in only</td><td class="pass">never stores</td></tr>
+      <tr><td>website JS</td><td>whatever the session opens</td><td>its own composed text</td><td>reads</td><td class="pass">never stores</td></tr>
+      <tr><td>us, operationally</td><td>policy: no body logging</td><td class="pass">cannot decrypt</td><td>can</td><td class="pass">no</td></tr>
+    </tbody>
+  </table>
+  <div class="notice"><strong>TLS terminates at the relay, so the relay can read live traffic — and end-to-end encryption against ourselves is theatre while we also serve the client JavaScript.</strong> What sealing genuinely buys is protection <em>at rest</em>: an answer typed on a phone while the laptop is asleep is a small write-only payload the relay never needs to read, so it should be sealed to the node's key and we should be unable to decrypt our own queue. The sending device can still show your words, because the browser already records every submission before the request leaves (#175). Another device says <em>queued from your phone</em> without the text. That is a real limit, stated rather than papered over.</div>
+</section>
+
+<section>
+  <div class="label">Authority · what a remote session may do</div>
+  <div class="call"><strong>An authenticated web session on a linked node is remote code execution on that machine.</strong> The loop steers an agent that runs commands, edits files and pushes to git. "Answer a question from the pub" and "run arbitrary code on my laptop from the pub" are the same feature from two angles, and the design and the marketing copy both have to say so.</div>
+  <table>
+    <thead><tr><th>Class</th><th>Examples</th><th>Over the relay</th><th>Over a LAN token</th></tr></thead>
+    <tbody>
+      <tr><td>read</td><td>resources, artifacts</td><td class="pass">allow</td><td class="pass">allow, scoped</td></tr>
+      <tr><td>respond</td><td>answer, note, ask</td><td class="pass">allow</td><td class="pass">allow</td></tr>
+      <tr><td>steer</td><td><code>do now</code>, <code>do next</code>, <code>add idea</code>, tint</td><td class="pass">allow</td><td class="pass">allow</td></tr>
+      <tr><td>lifecycle</td><td>pause, resume, wrap, restart</td><td class="fail">deny — opt-in per project</td><td class="unknown">opt-in</td></tr>
+      <tr><td>runtime</td><td>attach a PTY, send keys, run a command</td><td class="fail">deny — opt-in, expiring</td><td class="unknown">opt-in</td></tr>
+      <tr><td>configure</td><td>the node's own allowlists, grants, links</td><td class="fail">never</td><td class="fail">never remote</td></tr>
+    </tbody>
+  </table>
+  <p class="read quiet">Enforced at the <em>node</em>, never at the relay, so a relay compromise costs a short window rather than the fleet. The node keeps a local audit log of every intent it accepted and every one it refused — a file you can read without us — and revocation (<code>tokens revoke</code>, <code>unlink</code>) works while we are down or unpaid. The grant vocabulary is the one the <code>ud-dreamwork-github</code> plugin already uses: nothing is granted until it is named.</p>
+</section>
+
+<section>
+  <div class="label">Auth, in three planes</div>
+  <table>
+    <thead><tr><th>Plane</th><th>Mechanism</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>node ↔ relay</td><td>Ed25519 keypair on first run; <code>dreamnode link</code> shows a short code or QR; challenge–response after that</td><td>the relay never holds a secret that could impersonate a node; <code>unlink</code> is a local kill switch</td></tr>
+      <tr><td>browser ↔ relay</td><td>ordinary sessions; <code>shoo.dev</code> is a usable front door (Google OAuth + PKCE, pairwise subject, ES256 verified by JWKS, no server SDK)</td><td class="unknown">its own docs say <em>SUPER EARLY WIP — USE AT YOUR OWN RISK</em>, so own the account record and keep a verified email; then its disappearance costs a re-bind, not the customer list</td></tr>
+      <tr><td>browser ↔ node</td><td>#276: bearer token by one-time URL or QR, <code>httpOnly</code> origin-scoped cookie, enumerated scopes, local revocation</td><td class="fail">never a token in a query string — it lands in logs, history and referrers. #233's Host allowlist and POST Origin check stay; they stop rebinding and CSRF, and they are still not login</td></tr>
+    </tbody>
+  </table>
+  <details>
+    <summary>TLS on the LAN is the unsolved part — four honest answers</summary>
+    <div class="details-in">
+      <p><strong>a · plaintext on a trusted LAN</strong>, exactly as #233 ships today, documented as such. Correct default, wrong for a coffee shop.</p>
+      <p><strong>b · let the mesh VPN be the encryption</strong> — Tailscale or WireGuard, which is what you already have and the reason "meshvpn" is in the ask. The bearer token becomes defence in depth rather than the only wall. <em>Rec: this is the documented path.</em></p>
+      <p><strong>c · self-signed certificate pinned through the QR.</strong> Works, and every browser will still find a way to be unpleasant about it.</p>
+      <p><strong>d · the service issues a real certificate for a name that resolves to a LAN address</strong> (the trick Plex uses): <code>https://</code> with a valid certificate on a home network, zero configuration. <em>This is plausibly the strongest reason a purely local user would ever pay us</em> — a benefit that sends nothing anywhere.</p>
+    </div>
+  </details>
+</section>
+
+<section>
+  <div class="label">Staging · the first four pay off with no business at all</div>
+  <div class="stages">
+    <div class="stage"><div><b>Decide, and measure three numbers. No build.</b> D0–D12 answered, then three spikes that each end in a number rather than an argument: what a fleet view and one project view really cost per hour on the new protocol; what one real dreamer costs in tokens and dollars over 24 hours; and whether a coding CLI can be driven headless in a container for a day — plus what its vendor's terms say about doing that for someone else. <span class="catch">Catches a pricing page derived from a model, and a hosted tier that is legally impossible.</span></div></div>
+    <div class="stage"><div><b>Resources, summary and ETags on <code>watch.py</code></b>, inside #124's server-core seam. Delivers the <code>/summary.json</code> already filed as a stage-3 note, so the hub gets cheaper and the LAN page gets faster before anything remote exists. Fixes the clock, the timezone and the whole-project read. <span class="gate">Gate: payload measured down from 320 KB; concurrent-writer test red then green; ages correct against a deliberately skewed clock.</span></div></div>
+    <div class="stage"><div><b><code>dreamnode</code></b> — registry, N-project reads, <code>/v1</code>, SSE notices, intents with receipts, per-project confinement, the bearer plane (#276). The hub page becomes its client; <code>watch.py</code> keeps working standalone. <span class="gate">Gate: a request scoped to project A cannot read project B; the node runs with the relay unreachable and every local surface is unaffected.</span> <span class="catch">Catches the platform quietly becoming a requirement for the local product.</span></div></div>
+    <div class="stage"><div><b>Client extraction and prefix-safe routing</b> — #133 solved at the source rather than shimmed, all three root-absolute sites fixed. <span class="gate">Gate: every existing browser guard passes against the extracted client, <em>and</em> a prefix-mounted deep link renders the right view</span> — the exact silent failure origin-per-project was chosen to avoid. <span class="catch">Catches the website and the local page becoming two project views.</span></div></div>
+    <div class="stage"><div><b>The local product, finished.</b> Bearer link by QR, PWA, local notifications, the mesh-VPN document, artifact origin isolation. <span class="gate">Gate: a phone on a mesh VPN answers a question and the loop folds it.</span> <span class="catch">Catches a paid tier justified by withholding something that should be free.</span></div></div>
+    <div class="stage"><div><b>Relay and website</b> (new repo). Node link protocol, accounts, fleet across machines, live proxying, sealed offline queue, push, billing. <span class="gate">Gate: a laptop lid closed mid-answer; the answer arrives when it opens; one receipt, not two; the relay cannot decrypt its own queue.</span> <span class="catch">Catches the duplicate-write class (#274) reappearing as a distributed bug, which is where it is hardest to see.</span></div></div>
+    <div class="stage"><div><b>Hosted dreamers.</b> Requires <code>daemon-mode.md</code> <strong>stage 2</strong> — the runtime adapter, which has never been given a go. Sandbox fleet, egress allowlist, spend caps, GitHub App, BYOK secrets, an honest security page. <span class="gate">Gate: a tenant cannot reach another tenant or the control plane; a spend cap stops a loop cleanly at a committed boundary.</span> <span class="catch">Catches an isolation story asserted rather than attacked.</span></div></div>
+  </div>
+</section>
+
+<section class="read">
+  <div class="label">The economics of a hosted dreamer have an unusual shape</div>
+  <div class="notice"><strong>The 4.75-minute heartbeat exists to keep the model's prompt cache warm, and provider caches expire in minutes.</strong> So a paused-and-resumed dreamer does not merely lose time — it loses the cache and pays full input on the next tick. Hibernation is a false economy for an <em>active</em> dreamer and only makes sense for a <em>paused</em> project. The cost floor per active hosted dreamer is therefore a small always-on machine plus continuous token spend, and the token half dominates by an order of magnitude.</div>
+  <p>Which is why the recommendation is BYOK at launch, bundled credits only once the per-dreamer distribution has been measured on three project shapes rather than modelled once. It is also why hosted is the second paid tier and not the first.</p>
+</section>
+
+<section>
+  <div class="label">Unknowns, and the cheapest way to close each</div>
+  <table>
+    <thead><tr><th>#</th><th>Unknown</th><th>What it changes</th><th>How to close it</th></tr></thead>
+    <tbody>
+      <tr class="row-accent"><td>U1</td><td>Harness terms for running a vendor's coding CLI on a customer's behalf, in our datacentre</td><td>whether hosted is legal as designed; which harnesses we may offer</td><td>read the terms; ask; keep the adapter vendor-agnostic so none is load-bearing</td></tr>
+      <tr class="row-accent"><td>U2</td><td>Real per-dreamer token spend, and its spread</td><td>hosted pricing, credit tiers, whether spend caps are a feature or a necessity</td><td>the 24-hour spike, on three project shapes</td></tr>
+      <tr class="row-accent"><td>U3</td><td>Whether a suspended sandbox can resume a live CLI session at all</td><td>the paused-project cost story; whether "pause" is cheap or just "stop"</td><td>spike on the chosen substrate; measure a resume</td></tr>
+      <tr><td>U4</td><td>Change rate under active dreaming (payload × events per hour)</td><td>relay cost, mobile data, whether notices alone suffice</td><td>instrument a real day locally — it is a counter, not a design</td></tr>
+      <tr><td>U5</td><td>One node reading N projects, or one supervising per-project workers</td><td>the node's whole structure; the confinement test; CPU at N=20</td><td>measure reads at N=1, 5, 20</td></tr>
+      <tr><td>U6</td><td>Portable change detection without a dependency (stdlib has no inotify)</td><td>whether the stream is event-driven or a fast poll wearing a stream's clothes</td><td>measure the stat walk; decide if an optional accelerator is worth breaking stdlib-only</td></tr>
+      <tr><td>U7</td><td>Whether the relay caches summaries in v1 at all</td><td>the fleet's offline usefulness against the smallest honest privacy posture</td><td>a product call — D5, not a measurement</td></tr>
+      <tr><td>U8</td><td>Multi-device view of a sealed queued intent</td><td>whether another device can show pending text</td><td>design spike on key pinning; fallback is "queued, text on the sending device"</td></tr>
+      <tr><td>U9</td><td>Identity provider longevity</td><td>login, account recovery, billing linkage</td><td>own the account record; swappable broker — D6</td></tr>
+      <tr><td>U10</td><td>Slug and identity stability across machines</td><td>every link, bookmark and notification that names a project</td><td>node-scoped slugs, assigned once, never recomputed — the rule the hub already learned</td></tr>
+      <tr><td>U11</td><td>Support and compatibility obligations once users are not you</td><td>error copy, migration policy, whether "unsupported" is ever an answer</td><td>D0</td></tr>
+      <tr><td>U12</td><td>Brand, domain, and whether the public name stays dreamwork/dreamhub</td><td>nothing technical; everything about the website</td><td>your call</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="decision">
+  <div class="label">The decisions</div>
+  <div class="decision-block">
+    <h2>Thirteen answers unblock the rest. D0 and D1 unblock everything.</h2>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D0</span><div><strong>Is "users who are not Max" a stated goal?</strong><div class="answer">Rec: yes, ratified in <code>DREAMWORK.md</code> when the relay stage is authorized — not now, so the first four stages stay honest local improvements.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D1</span><div><strong>The seam: node API, proxy-over-watch, or rewrite?</strong><div class="answer">Rec: the node API.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D2</span><div><strong>May the platform repo be non-Python with a build step, while the node stays stdlib and build-free?</strong><div class="answer">Rec: yes. The constraint exists to keep the thing that runs on your machine simple, not to bind a website.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D3</span><div><strong>One project view, or two?</strong><div class="answer">Rec: one — extract the watch client and mount it in the website shell. Two views diverge on the first fix applied to only one of them, and 120 KB of decided design does not want a second opinion.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D4</span><div><strong>Authority defaults over the relay.</strong><div class="answer">Rec: read, respond and steer allowed; lifecycle and runtime denied until granted per project; node configuration never remote.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D5</span><div><strong>Does the relay cache summaries so the fleet works while a machine is asleep?</strong><div class="answer">Rec: not in v1. Opt-in per project afterwards, with the page always saying how old a cached row is — a stale row that reads as live is the most expensive wrong impression this surface can give.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D6</span><div><strong>Identity: own the account record behind a swappable broker, or adopt a full auth vendor?</strong><div class="answer">Rec: own the record, keep a verified email, treat <code>shoo.dev</code> as an acceptable front door for the free tier.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D7</span><div><strong>LAN encryption story.</strong><div class="answer">Rec: mesh VPN as the documented path; plaintext trusted-LAN as the explicit fallback; service-issued LAN certificates filed as a paid-tier benefit.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D8</span><div><strong>Tunnel: own the link protocol, or embed an existing reverse tunnel?</strong><div class="answer">Rec: own it, kept small. A generic tunnel forwards bytes and knows nothing about accounts, intents or capabilities — and authorization is the product here, not transport.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D9</span><div><strong>Hosted launch model: BYOK only, or bundled credits?</strong><div class="answer">Rec: BYOK only until U2 is measured.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D10</span><div><strong>Pricing shape.</strong><div class="answer">Rec: tunnel tier per account with a node allowance; hosted tier per running dreamer plus their own model bill. No metered relay billing at launch — it punishes exactly the engaged users.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D11</span><div><strong>Sequencing.</strong><div class="answer">Rec: the first four stages regardless, because they fix present defects; then relay and website; then hosted only after U1 and U2 are closed.</div></div></div></div>
+    <div class="choice"><div class="choice-grid"><span class="choice-tag">D12</span><div><strong>Does any of this touch <code>watch.py</code> outside #124's planned seam order?</strong><div class="answer">Rec: no. Two of these stages <em>are</em> those seams, and should be dispatched as #124 work with this plan as their motivation — not as a parallel track that re-splits the same file.</div></div></div></div>
+    <div class="approval"><strong>What approving this artifact would mean:</strong> the architecture direction is accepted and the numbered decisions are settled. It would <em>not</em> authorize a build — not even the measurement spikes. Those are separate asks, one stage at a time, in the plan's order.</div>
+  </div>
+</section>
+
+<footer class="read">
+  <p>Pre-plan artifact. Full detail: <code>.dreamwork/docs/plans/dreamhub-platform.md</code> (architecture, products, staging, risks) and <code>.dreamwork/docs/plans/dreamnode-api.md</code> (the proposed contract, field by field). Prior decisions this plan depends on and does not re-open: <code>daemon-mode.md</code> (staging, runtime adapter, channels), <code>dreamhub-stage1.md</code> (origin-per-project, the reuse rule), <code>lan-bind-threat-model.html</code> (#233, trusted LAN is not login), <code>parallel-architecture.md</code> (#124's seam order and the port table).</p>
+  <p>Payload and timing figures were measured on this repository at the commit this artifact was written against, by calling the real collector. Market figures are from the comparable hosted-agent market, 2026.</p>
+</footer>
+</main>
+</body>
+</html>
