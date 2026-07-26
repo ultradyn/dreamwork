@@ -18,9 +18,27 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **292**
+Next id: **294**
 
 ## Open
+
+- **#293** — Render submitted `/answers` question text visibly · P1 · UI bug ·
+  origin: **human** · **human via watch 2026-07-27 01:17** · exact ask: “bug:
+  when a question is submitted it's meant to go in the list and kind of does but
+  the text stays invisible (though i can still see my cursor change to an I beam
+  when hovering it) also, the question text on /answers stays invisible even
+  after page refresh” · same isolated Grok worktree as #292 but requires its own
+  RED: successful real submit creates durable record, live regroup and hard
+  refresh both expose readable text with computed opacity/color/layout and no
+  invisible hitbox; follow transitions/RM and exceptional UI contract
+
+- **#292** — Make Ctrl/Cmd+Enter submit `/answers` questions · P1 · UI bug ·
+  origin: **human** · **human via watch 2026-07-27 01:17** · exact ask: “bug
+  (give it to grok): on the /answers page, ctrl+enter does not work to submit a
+  question to the dreamer, even though it should.” · Grok owns an isolated
+  red-first diagnosis/fix for the real `/answers` ask form, with unit + browser
+  causal proof, keyboard parity, no duplicate submit, and relevant design/
+  transition contract updates only if behavior changes require them
 
 - **#290** — Add a dashboard-settable main-dreamer run mode · P1 ·
   orchestration/control-plane design · origin: **human** · **human via watch
