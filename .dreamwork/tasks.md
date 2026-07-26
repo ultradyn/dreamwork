@@ -87,14 +87,6 @@ Next id: **222**
   not just the net (the gap cannot tell "he steers fast" from "work is
   slow"); human- vs loop-initiated is the most telling number here. No
   velocity score. Cost: bucket + cache on HEAD, never replay per tick
-- **#140** — **DECIDED**: show the deployed revision, no deploy hook ·
-  P2 · task · 20m · the hook is REJECTED — `.git/hooks` is untracked, so
-  it would be invisible, machine-local, and would silently move deploy
-  authority to whoever commits; a day spent closing invisible mechanisms
-  argues against adding one · instead show the SHA being served and
-  whether HEAD has moved past it, so a stale view ANNOUNCES itself ·
-  prefers a loud wrong state to a quiet one, and makes #147 a rollup
-  rather than a separate design · belongs with the panels batch
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
@@ -470,18 +462,6 @@ Next id: **222**
   a comment, because the measure-and-back-off alternative FLICKERS ·
   measure p95 with it on and off; blur over a live shader is the most
   expensive pairing on the page
-- **#166** — [#169's prominence rule already covers its disclosure for
-  free; the ONE thing it must respect is the FLIP-window contract —
-  commit rows are `travelCard`'d through `GIT_LIST`, so anything an
-  expanding row adds to its box must land in layout INSTANTLY, not
-  transition, or the row is 20px short when its travel ends.
-  `prominence.mjs` does not cover that list (dreamer-gesture, 17:11)] Commit rows expand; the more-detail principle recorded ·
-  P2 · idea · 30m · the body is where this repo's reasoning lives and it
-  is the most useful text in a commit · his principle is now in
-  DREAMWORK.md: **detail is ranked, never withheld** — the same
-  commitment the loop reached from the code's side as "nothing is
-  dropped, only demoted" (#130) · so a fold is a PROMISE that what is
-  inside is still there
 - **#164** — [plan: `docs/plans/composer-row.md`] The button row becomes an information scent · P2 · idea ·
   75m · his verbatim design: the row is a CONVEYOR — non-default
   commands apparate at the left, push the rest right, and are consumed
@@ -604,6 +584,11 @@ Next id: **222**
   **blocked**: human pick
 
 ## Recently landed
+
+**#166** and **#140** were stale duplicate open lines, reconciled against
+git and the handoff: commit-row expansion landed at 9ed526f; deployed
+revision visibility landed at a621f31. Their detailed outcomes were already
+in Recently landed and the 2026-07-25 handoff (reconciled 2026-07-26).
 
 **#214** git history now uses collision-proof NUL framing (db1a1bc): red
 proof showed `\x1f` in a subject shifted the old fields; Git `-z` preserves
