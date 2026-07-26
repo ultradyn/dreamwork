@@ -2,6 +2,35 @@
 
 ## Open
 
+- **P1 · 2026-07-27 — #289 review status/association: keep the decision
+  record inside its owning question?** Read-only IGC compared a sidecar index,
+  embedded question metadata, and a hybrid.
+
+  Rec **V1**: extend the managed `questions.md` entry with one explicit record
+  per artifact, e.g. `Review (pending|accepted|rejected, stamp): path`. The
+  record is the sole authority for both association and decision. It moves with
+  Open→Answered, survives title edits without duplicating the title elsewhere,
+  supports several artifacts, disappears with its question, and never rewrites
+  generated HTML. `collect()` derives the reverse artifact index in memory; list
+  clicks use the current question title and can dock open or answered context.
+
+  No record means **unlinked**, never pending. `pending` plus an answer awaiting
+  loop fold may display an awaiting-fold waiting variant. Accepted/rejected are
+  only the explicit enum—not answer prose, filename, HTML recommendation, or
+  whether the question is folded. Two questions claiming the same artifact with
+  conflicting decisions is a lint error. Existing artifacts remain unlinked
+  unless deliberately migrated; no “Approved…” text scraping.
+
+  **V2** uses committed `.dreamwork/review-index.json` (refuted: duplicates
+  question title/status, needs lifecycle/GC writes, and can drift). **V3** puts
+  metadata in each HTML artifact (refuted: generated artifacts need rewriting
+  and question decisions live outside their channel).
+
+  Approval authorizes a written design and migration proposal only—no grammar,
+  parser, lint, UI, icon, transition, artifact, or deployment change. Answer
+  `Accept V1 for design`, `Accept V1 with amendments: …`, `Choose V2`, or
+  `Pause #289`.
+
 - **P1 · 2026-07-27 — #290 main-dreamer run modes: accept the local
   three-mode v1 and reserve hierarchy?** Read-only architecture map from Grok
   confirms `status.json` is an ephemeral loop claim, `/command` is wake-only,
