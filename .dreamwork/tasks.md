@@ -18,9 +18,28 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **242**
+Next id: **245**
 
 ## Open
+
+- **#244** — Define repository-browser visibility policy · P2 · design ·
+  25m · origin: **human** · **human via watch 14:29** · decide tracked,
+  untracked, dotfile, ignored, generated/vendor/cache, symlink and binary
+  visibility + persistence · rec: tracked text default; untracked + dotfiles
+  opt-in; ignored/generated/vendor/cache advanced-off; binary listed with
+  type/size but not rendered; symlinks never escape target · review artifact
+  required; prerequisite to #243; blocked behind #238
+- **#243** — Add a sticky animated repository file tree · P2 · feature ·
+  several increments · origin: **human** · **human via watch 14:29** · thin
+  left sticky tree on `/file`, expandable folders, active-file auto reveal /
+  focus, keyboard navigation, responsive/mobile, client routing and aesthetic
+  transitions · one confined server-side inventory; preserve expansion,
+  scroll and selection through rerenders/routes · blocked on #244
+- **#242** — Link changed files from expanded commits · P2 · feature · 15m ·
+  origin: **human** · **human via watch 14:29** · changed paths become
+  confined `/file` links; deleted paths must not promise a readable current
+  file (plain deleted status or historical-intent affordance) · reuse existing
+  route/link idioms and transitions · blocked behind #238
 
 - **#241** — Extract one composer mount contract · P2 · task · 30m ·
   origin: **human** · implication of **human via watch 14:25** · make the
