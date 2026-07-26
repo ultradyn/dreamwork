@@ -59,7 +59,11 @@ dreamwork-version: 5853e1789929
   `thinking: xhigh` (the executable registry form of `pooler/gpt-5.6-xhigh`).
 - Autonomy: commit each increment (the skill folder is its own git repo).
   Push and deploy as needed (authorized 2026-07-26); neither needs a
-  separate confirmation.
+  separate confirmation. **Commit messages are descriptive** (human-set
+  2026-07-26): the subject names the concrete outcome and task id; the body
+  explains why, load-bearing design/security decisions, and verification;
+  add migration/config/consent trailers where applicable. Do not compress a
+  substantial increment into an opaque one-line subject.
 - Detail is ranked, never withheld (2026-07-25, his words): "in general
   we always want to present the user with more details if there are more
   details and users might want them." A thing that exists must be
