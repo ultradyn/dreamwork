@@ -2,6 +2,31 @@
 
 ## Open
 
+- **P1 · 2026-07-27 — #283 index-lock attribution: authorise one bounded
+  privileged audit capture, or stop at recurrence evidence?** Updated report:
+  `.dreamwork/docs/research/git-index-lock-attribution-283.md`.
+
+  L1's zero-event minute did not hold: with the window still closed, the ~2s
+  dreamwork churn returned and left holderless zero-byte inodes `253401791` and
+  `253453575`, both independently blocking commits/cherry-picks. Current
+  inotify+`/proc` sampling still sees only long-lived KIO `rev-parse` PID
+  1246815, already falsified as creator. This host has no strace/perf/BPF/sysdig
+  tracer installed; unprivileged BPF is disabled and perf/ptrace restricted.
+
+  Rec **L3**: authorise a separately reviewed, time-bounded root audit rule over
+  this repository's `.git` directory for create/open syscalls by login user 1000,
+  collect until one `index.lock` recurrence (maximum 10 minutes), export only the
+  matching PID/exe/syscall/path records, then remove the rule and prove removal.
+  The exact command/rule and rollback will be presented before execution; this
+  answer does not itself authorise sudo, rule changes, package installation,
+  process attachment, KIO/service changes, lock deletion, or mitigation.
+
+  **L4** stops diagnosis here: preserve recurrence evidence and accept that the
+  creator remains unknown. **L2** would install a user tracer, but that still
+  needs package/security review and is less direct than the already-installed
+  audit path. Answer `Prepare L3 audit rule for review`, `Choose L2; research a
+  user tracer`, or `Choose L4; stop attribution`.
+
 - **P1 · 2026-07-27 — #289 review status/association: keep the decision
   record inside its owning question?** Read-only IGC compared a sidecar index,
   embedded question metadata, and a hybrid.
