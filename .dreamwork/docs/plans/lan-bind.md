@@ -58,7 +58,7 @@
 - [x] State trusted-LAN threat model and public/WAN prohibition plainly (`154bc0f`).
 - [x] Prove default `just deploy` remains loopback and `deployed.py` still identifies snapshot.
 - [x] Run full pytest/lint, every browser/hub guard in bounded batches, targeted real IPv4/IPv6 network probes, diff-check, and styleguide audit. Evidence before first review: 454 project tests + 46 subtests; all default guards green; #233 adds no styleguide miss.
-- [ ] Two-axis review/fix/rereview, rebase, verify, merge, push, deploy. First independent review on `fe55cd3..154bc0f` **FAILed**: advertised concrete bind could be absent from allowlist; stale localhost-only source comment; incomplete write-route/event-log design record; stale plan checklist/migration name. All findings are being red-first fixed; rereview remains required before integration.
+- [ ] Two-axis review/fix/rereview, rebase, verify, merge, push, deploy. First independent review on `fe55cd3..154bc0f` **FAILed**: advertised concrete bind could be absent from allowlist; stale localhost-only source comment; incomplete write-route/event-log design record; stale plan checklist/migration name. Commit `71654c3` red-first fixed the advertised-Host invariant and corrected every documentation/plan finding; 157 watch tests + 46 subtests, 455 project tests + 46 subtests, focused submission guards and concrete-bind startup probes passed. Independent rereview remains required before integration.
 
 ## Rejected alternatives
 
