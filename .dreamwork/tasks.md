@@ -462,16 +462,11 @@ Next id: **222**
   PROXIMITY (not time) as they approach. Selecting a default slides
   everything back left. Reuse #104's regroup on a horizontal axis ·
   subsumes #162(a): a row that cannot wrap · depends on #161
-- **#162** — [plan: `docs/plans/composer-row.md` — it SPLITS this: (a) is
-  subsumed, (b) is a separate #131-family bug] A menu command wraps the row,
-  and the composer vanished ·
-  P2 · bug · 25m · (a) wrapping — do not fix separately if #164 is
-  being built · (b) **the composer defocused and disappeared** when he
-  clicked back to a default: the #131 family, and #131's "nothing
-  auto-dismisses while it holds focus or unsent text" evidently does not
-  cover the mode-switch path. Check whether a draft survives it —
-  ANSWERED by #163's guard (8d0e6a7): the draft survives, live and
-  stored, so the vanish is now cosmetic rather than destructive
+- **#162** — Composer cosmetically vanishes on a mode switch · P3 · bug ·
+  15m · the original wrapping half was subsumed by the composer-row plan;
+  #163's guard proves the draft survives live and stored (8d0e6a7), so the
+  remaining mode-switch disappearance is cosmetic, not destructive ·
+  reproduce before changing the #131 dismissal path
 - **#161** — [plan: `docs/plans/composer-row.md`] The composer's `...` menu: position, shape, vocabulary ·
   P2 · bug · 20m · centre the dots (MEASURE first — #123 was the same
   shape and took two wrong diagnoses) · **on the RHS, in the button row
@@ -550,12 +545,10 @@ Next id: **222**
   P3 · task · 30m · the last break in "same position, same dream"
 - **#73** — Split-view support for watch pages · P3 · experiment · 30m ·
   the shader half landed as #74; the open part is the affordance
-- **#50** — ud-dreamtask · P2 · task · stages 1-5 DONE; only **stage 6
-  (harvest) remains and it is GATED** on Max · shipped at
-  `~/.llm-general/skills/ud-dreamtask/` (own repo, installed, indexed),
-  with `newerrand.py` so an opening never hand-writes the two silent
-  formats · dreamstate is target-shaped, so lint, hub and watch read an
-  errand with zero new code
+- **#50** — ud-dreamtask stage 6: harvest past dreamstates · P2 · task ·
+  gated on Max · stages 1-5 are complete in the installed sibling repo;
+  only the core-init widening remains, and its open question recommends
+  waiting for real dreamtask use before deciding what is worth harvesting
 - **#80** — Pick a second dogfood target (hark or c2c) · P3 · chore · 30m ·
   **blocked**: human pick
 
