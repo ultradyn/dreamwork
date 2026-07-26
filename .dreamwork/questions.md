@@ -2,6 +2,16 @@
 
 ## Open
 
+- **P2 · 2026-07-26 — #213 task-origin contract: adopt the forward-only
+  cutoff?** The review is at `.dreamwork/review/task-origin-contract.html`.
+  Rec: record `origin: **human|loop**` on every new ledger task and begin
+  enforcement at the current next id, #216; leave all older tasks unknown
+  rather than backfilling guesses. This increment adds the contract and
+  linter only. First-seen history parsing and the honest three-way
+  human/loop/unmarked visualisation remain later increments.
+
+  Answer `rec`, or leave a note naming what should change.
+
 - **P3 · 2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
   Stages 1-5 shipped: the skill exists, is installed and indexed, walks
   its own procedure, and `newerrand.py` creates a dreamstate so an

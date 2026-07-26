@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#213 · Task-origin contract</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0f19;--card:#111827;--card2:#151d2e;--text:#f3f4f6;--muted:#9ca3af;--line:#273247;--indigo:#818cf8;--violet:#c084fc;--green:#6ee7b7;--amber:#fbbf24;--red:#fb7185}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 18% 0%,#26204a55,transparent 32rem),var(--bg);color:var(--text);font:15px/1.62 Inter,ui-sans-serif,system-ui,sans-serif}.wrap{max-width:900px;margin:auto;padding:52px 24px 80px}.hero,.card{background:linear-gradient(145deg,#151d2edd,#0f1625ee);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 70px #0007}.hero{padding:34px}.card{padding:26px;margin-top:18px}h1{font-size:clamp(30px,5vw,48px);line-height:1.05;margin:12px 0 14px;letter-spacing:-.04em}h2{font-size:21px;margin:0 0 14px}h3{font-size:16px;margin:22px 0 7px;color:#ddd6fe}.eyebrow{font:700 12px/1.2 ui-monospace,SFMono-Regular,monospace;text-transform:uppercase;letter-spacing:.14em;color:var(--violet)}.lead{font-size:18px;color:#d1d5db;max-width:70ch}.pill{display:inline-block;border:1px solid #554aa2;background:#312e8155;border-radius:999px;padding:4px 10px;color:#ddd6fe;font-size:12px;margin:3px 5px 3px 0}.callout{border-left:4px solid var(--indigo);padding:14px 16px;background:#1e1b4b55;border-radius:0 10px 10px 0}.decision{border-left-color:var(--green);background:#064e3b33}.warn{border-left-color:var(--amber);background:#78350f33}code,pre{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,monospace}code{color:#ddd6fe}pre{overflow:auto;padding:18px;background:#080c14;border:1px solid #293247;border-radius:12px;color:#e5e7eb}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px}th,td{text-align:left;padding:11px;border-bottom:1px solid var(--line);vertical-align:top}th{color:#c4b5fd}.pass{color:var(--green);font-weight:700}.fail{color:var(--red);font-weight:700}.muted{color:var(--muted)}ul,ol{padding-left:22px}.flow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.step{border:1px solid var(--line);border-radius:12px;padding:14px;background:#0b1220}.n{color:var(--violet);font:700 12px ui-monospace,monospace}@media(max-width:700px){.flow{grid-template-columns:1fr}.wrap{padding:24px 14px 60px}.hero,.card{padding:21px}table{display:block;overflow:auto}}
+</style>
+</head>
+<body><main class="wrap">
+<section class="hero">
+<div class="eyebrow">Decision review · task #213</div>
+<h1>Make task origin explicit<br>without inventing history.</h1>
+<p class="lead">The ledger can only classify a small fraction of past tasks. The proposed contract starts recording origin at the next permanent id, preserves unknown history as unknown, and makes omission fail loudly from that point onward.</p>
+<span class="pill">forward-only</span><span class="pill">human / loop</span><span class="pill">lint-enforced</span><span class="pill">no backfill</span>
+</section>
+<section class="card">
+<h2>The decision</h2>
+<div class="callout decision"><strong>Recommendation:</strong> add an inline <code>origin: **human|loop**</code> field to every newly minted file-ledger task, plus an <code>Origin required from</code> cutoff in the ledger header. For this repository the cutoff is permanent id <strong>#216</strong>.</div>
+<pre>Next id: **216**
+Origin required from: **216**
+
+- **#216** — Example human steer · P2 · task · 20m · origin: **human**
+- **#217** — Example loop discovery · P3 · idea · 15m · origin: **loop**</pre>
+<p><strong>Meaning:</strong> origin records who initiated the task. It is not the owner, approver, executor, or current decision-maker. A human approving a loop idea does not turn it into a human-originated task.</p>
+</section>
+<section class="card">
+<h2>Why this shape survives</h2>
+<p class="muted">Context: a prose ledger is already durable, permanent ids already order the history, and older tasks cannot be classified reliably. The contract must improve future truth without laundering guesses into facts.</p>
+<table>
+<thead><tr><th>Idea</th><th>All</th><th>Future omission fails</th><th>History stays honest</th><th>Small compatible increment</th></tr></thead>
+<tbody>
+<tr><td><strong>Inline origin + cutoff</strong></td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td></tr>
+<tr><td>Infer from existing prose markers</td><td class="fail">✘</td><td class="fail">✘</td><td class="fail">✘</td><td class="pass">✔</td></tr>
+<tr><td>New structured sidecar/schema</td><td class="fail">✘</td><td class="pass">✔</td><td class="pass">✔</td><td class="fail">✘</td></tr>
+</tbody>
+</table>
+<p><strong>Decisive errors:</strong> inference mislabels the unmarked majority as loop-originated and still cannot enforce future writes. A sidecar creates a second durable record and a synchronisation failure for information that naturally belongs on the task entry itself.</p>
+</section>
+<section class="card">
+<h2>Contract increment</h2>
+<div class="flow">
+<div class="step"><div class="n">01 · RED</div><strong>Prove enforcement is absent.</strong><br><span class="muted">Focused linter tests for cutoff, missing origin, legal values, duplicates, and unknown values.</span></div>
+<div class="step"><div class="n">02 · GREEN</div><strong>Add one parser rule.</strong><br><span class="muted">Whole-entry parsing, because ledger metadata wraps across physical lines.</span></div>
+<div class="step"><div class="n">03 · ADOPT</div><strong>Start at #216.</strong><br><span class="muted">Update the writer instructions, format contract, self-host ledger, and migration.</span></div>
+</div>
+<h3>Exact semantics</h3>
+<ul>
+<li>Allowed values are exactly <code>human</code> and <code>loop</code>.</li>
+<li>Every id at or above the cutoff has exactly one origin.</li>
+<li>Tasks below the cutoff remain legal without origin; no historical entry is rewritten.</li>
+<li>A legacy ledger without a cutoff warns rather than errors, preserving compatibility while announcing incomplete enforcement.</li>
+<li>The cutoff cannot exceed <code>Next id</code>, which would create an unenforced gap.</li>
+</ul>
+<h3>Files</h3>
+<p><code>test_lint.py</code> · <code>lint.py</code> · <code>SKILL.md</code> · <code>file-formats.md</code> · <code>.dreamwork/tasks.md</code> · <code>initialization.md</code> · one migration note.</p>
+</section>
+<section class="card">
+<h2>What deliberately does not land yet</h2>
+<div class="callout warn"><strong>No dashboard split in this increment.</strong> The current history code tracks ids, not first-seen origin. Rendering one “human” series would visually imply that every remainder is loop-originated, which is false.</div>
+<ol>
+<li><strong>Later:</strong> history parser records <code>human / loop / unknown</code> at first sight and never retroactively reclassifies an arrival.</li>
+<li><strong>Later:</strong> dashboard renders all three categories or suppresses the split until coverage is complete.</li>
+<li><strong>Later:</strong> filed-to-landed median remains a separate stat.</li>
+</ol>
+</section>
+<section class="card">
+<h2>Approval requested</h2>
+<p>Approve the recommended forward-only contract, or leave a note naming what should change. On approval, the first increment remains contract-only and should fit one verified commit.</p>
+<div class="callout decision"><strong>Recommended answer:</strong> <code>rec</code></div>
+</section>
+<section class="card">
+<h2>--- SUMMARY ---</h2>
+<ul>
+<li>Record explicit <code>origin: **human|loop**</code> on all new tasks.</li>
+<li>Begin enforcement at this ledger’s next id, <strong>#216</strong>.</li>
+<li>Never backfill uncertain history.</li>
+<li>Make malformed or omitted future origin fail in <code>lint.py</code>.</li>
+<li>Defer historical parsing and the honest three-way visualisation to later increments.</li>
+</ul>
+</section>
+</main></body></html>
