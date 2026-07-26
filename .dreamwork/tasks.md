@@ -18,9 +18,14 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **221**
+Next id: **222**
 
 ## Open
+
+- **#221** — Sort dashboard reviews by datetime · P2 · idea · 15m ·
+  origin: **human** · **human via watch 12:10** · establish which datetime
+  is authoritative (filename, mtime, or embedded metadata), then sort the
+  dashboard list by it with stable tie behaviour
 
 
 - **#218** — Add filed-to-landed median · P2 · task · 20m ·
