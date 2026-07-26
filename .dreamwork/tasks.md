@@ -27,11 +27,7 @@ Next id: **234**
   loopback remains default; opt-in listen interfaces and explicit Host allowlist
   with ports/IPv6 handled; preserve intentional localhost aliases and protect
   writes from DNS rebinding/cross-origin abuse · docs/migration/TDD first ·
-  next up after #232
-- **#232** — Explain the answer-morph middle pause · P1 · question · 10m ·
-  origin: **human** · **human via chat 13:55** · diagnose actual transition,
-  hold and mtime timing with requested GPT-5.6 Luna low-thinking subagent;
-  fold answer into `.dreamwork/answers.md`, then notify via `attn` · in progress
+  in progress
 
 - **#230** — Add a `use subagent` composer checkbox · P2 · task · later ·
   origin: **human** · **human via watch 12:57** · request fresh-context,
@@ -550,6 +546,11 @@ Next id: **234**
   **blocked**: human pick
 
 ## Recently landed
+
+**#232** the answer-morph pause is the intentional 1.6s rerender hold around
+an 850ms local morph, followed by a phase-dependent 2s live poll; later loop
+folding is separate. Diagnosed by requested GPT-5.6 Luna low-thinking agent,
+folded into `.dreamwork/answers.md`, and delivered via `attn` (2026-07-26).
 
 **#231** `/answers` is live: the human can ask the dreamer through a distinct,
 durable `.dreamwork/answers.md` channel; the seeded governance question is its
