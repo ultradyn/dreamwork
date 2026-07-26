@@ -18,9 +18,38 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **225**
+Next id: **229**
 
 ## Open
+
+- **#228** — Unify project dashboard settings · P2 · idea · 30m ·
+  origin: **human** · implication of **human via watch 12:49**: all
+  settings persist and stay identical across tabs and separate browsers ·
+  inventory tint + future settings; define one server-side project-settings
+  contract carried by `/data.json` + `/mtime`, while typed drafts/submission
+  history stay browser-local because they are private words · do not migrate
+  only for abstraction unless #227 demonstrates the need
+- **#227** — Open the composer with Space · P2 · idea · 30m ·
+  origin: **human** · **human via watch 12:49** · when focus is outside
+  every interactive/editable control, Space opens composer and autofocuses
+  input · subtle enable checkbox; preference persists server-side and syncs
+  across tabs + separate browsers, never localStorage · needs settings format,
+  migration, keyboard red proof, and transition-conformant UI
+- **#226** — Sync tint changes across browsers · P2 · idea · 20m ·
+  origin: **human** · **human via watch 12:47** · `.dreamwork/watch-tint`
+  + `/mtime` should already be browser-independent; add a two-browser-context
+  guard proving browser B updates after browser A writes tint, then fix only
+  if proof fails
+
+- **#225** — Add an `explore` proposal command · P2 · idea · 30m design,
+  then implementation increments · origin: **human** · **human via watch
+  12:44** · request a concise feasibility/design sketch: is the idea sound,
+  how could it work, what alternatives survive, and what is the smallest
+  next experiment? Deliver a polished self-contained HTML artifact with
+  diagrams/comparisons where useful and expandable reasoning · rec name is
+  `explore` (`proposal` presupposes one solution; `feasibility check` is too
+  narrow) · hidden/non-default command, no implementation authority; accepted
+  outcomes become normal tasks · design/output contract review before code
 
 - **#221** — Sort dashboard reviews by datetime · P2 · idea · 15m ·
   origin: **human** · **human via watch 12:10** · establish which datetime
@@ -314,14 +343,6 @@ Next id: **225**
   cylinder rolls a count up, PAUSES to be read, rolls away · "get super
   creative, multiple visual review-and-fix loops" is a method
   instruction; taste is the deliverable
-- **#181** — The title's count is a CLAIM, not a fact · P2 · bug · 20m ·
-  he asked what `(4)` meant and it was wrong: the count came from
-  `status.json`'s `awaiting_human`, which the coordinator maintains BY
-  HAND and which had drifted from `questions.md` · derive it from
-  `open_question_count()`, what he counts by eye; keep `awaiting_human`
-  as prose naming WHAT awaits · **a number on screen must derive from
-  something he can look at** · second instance today of a proxy being
-  believed as the thing it proxies (#155 was the first)
 - **#180** — Stream the dreamer's own events onto the dashboard · P3 ·
   idea · 120m · **APPROVED** 15:36 with his own mitigations, which beat
   the shapes offered: read only the **last 10-20 lines** (the bulk is
@@ -512,6 +533,12 @@ Next id: **225**
   **blocked**: human pick
 
 ## Recently landed
+
+**#181** title/favicon counts now derive from visible open questions, not
+hand-maintained `status.awaiting_human` (bfa561f, deployed). Status keeps the
+prose naming WHAT waits. Identity guard red-proved the old drift and now
+checks status prose cannot alter the count; unreadable `!`, routes, and
+favicons remain coherent (2026-07-26).
 
 **#224** successful `do now` returns the composer to `add idea` through the
 existing animated indicator path (a6a7ad2, deployed). Red proof held the old
