@@ -145,14 +145,17 @@ Next id: **287**
   #263/#269 · replay/concurrent same-ID fixture asserts one receipt/application;
   new ID with same text remains a distinct intentional action
 
-- **#271** — Make notes appear promptly across open dashboard browsers · P1 · bug ·
-  25m · origin: **human** · **human via watch 16:58** · observed symptom only:
-  with two browsers open to the same Dreamwork dashboard page, a note posted in
-  one does not appear in the other immediately, but does appear after a later
-  refresh · reproduce across separate browser processes, measure `/mtime` and
-  data fetch/rerender behavior, distinguish stale server generation/port from
-  polling or cache behavior, then red-first fix · align live propagation with
-  #269 cross-tab drafts without conflating received notes with unsent text
+- **#271** — Rerender review docks on cross-browser data ticks · P1 · bug ·
+  25m · origin: **human** · diagnosis complete at
+  `.dreamwork/docs/research/cross-browser-note-propagation-271.md` · two separate
+  Chromium launches: peer `/questions` showed note +0.821s; `/review` fetched
+  changed `/mtime` and fresh `/data.json` but dock stayed stale >10s until hard
+  reload · root: `tick()` rerenders dashboard/questions/answers only, omitting
+  review (and file) after `setData`; cache, fs mtime, server write/generation,
+  hold timer and pure poll lag refuted · red-first two-process guard: questions
+  control green + review dock red within 3s; fix through current-view render seam
+  while preserving iframe, selected target, focus/draft and transition/RM state ·
+  keep unsent #269 draft semantics separate from received-note propagation
 
 - **#270** — Harden and re-review the #229 topic-chat proposal · P1 ·
   architecture/review · origin: **human** · **human revision directive via watch
