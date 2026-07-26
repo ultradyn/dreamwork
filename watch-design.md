@@ -1585,11 +1585,18 @@ load-bearing: without a committed opacity-zero frame there is no arrival.
 
 A successful `sent to the dream` is true about the command that just landed,
 not about whatever draft is typed next. It therefore stays readable for about
-five seconds independently of typing and of the panel's courtesy-close state,
-then departs through the same soft opacity/blur/upward drift and clears. Typing
+five seconds independently of typing **while the panel remains open**, then
+departs through the same soft opacity/blur/upward drift and clears. Typing
 cancels only the courtesy close, so the steering channel stays open; it cannot
-strand or truncate the valid confirmation. Left alone, the panel closes after
-the confirmation lifecycle instead of taking the line away early.
+strand or truncate the valid confirmation. Left alone, the panel's courtesy
+closes after ~1.5s (`CMD_DISMISS_MS` = 1425 — #131's 1.5× of 950, restored
+by #291 after #255 had accidentally tied it to the confirm hold). Closing the
+panel is destruction: the line is hard-cleared with the surface rather than
+left invisible for the rest of the hold. This courtesy belongs only to the
+transient main panel. A command popout is an intentionally persistent separate
+window the human explicitly created to keep beside him; successful sends never
+auto-close it. Its confirmation completes the shared ~5s lifecycle, and only
+explicit window close/`pagehide` destroys it.
 
 **Destruction and falsehood do not depart slowly.** Manual close, route change,
 popout `pagehide`, or unmount hard-cleans the controller and invalidates every
@@ -1607,10 +1614,12 @@ departure visual states.
 typing during a delayed real POST left main success forever, popout success was
 permanent, and neither had a departure trace. It now uses fresh contexts for
 main race, close/in-flight-response invalidation, forced transition fallback,
-popout and reduced phases; normal arrival/departure must traverse many opacity
-and transform values, while reduced motion traverses none.
-`dismiss.mjs` retains the panel courtesy and #159 arrival checks, updated so
-typing preserves success and left-alone close follows the lifecycle.
+popout and reduced phases; the popout phase also proves the window persists
+past the main panel's courtesy threshold. Normal arrival/departure must traverse
+many opacity and transform values, while reduced motion traverses none.
+`dismiss.mjs` retains the panel courtesy and #159 arrival checks: left-alone
+closes on the ~1.5s courtesy (#291), typing cancels that close and lets the
+confirmation finish its own ~5s lifecycle (#255).
 
 **A steer carries the page it was sent from, and that page is a HINT** (#126).
 The client sends `location.pathname + location.search` with every write
@@ -1730,15 +1739,16 @@ it they blink in a frame after the disclosure has finished opening, which is
 #196 at a smaller size, and "it is only a small panel" is exactly how a page
 ends up with one gesture that snaps.
 
-**The panel never closes under him** (#131/#255). Auto-dismiss is a courtesy,
-not the confirmation lifecycle. Any `input`, `keydown` or `pointerdown` inside
+**The panel never closes under him** (#131/#255/#291). Auto-dismiss is a
+courtesy (`CMD_DISMISS_MS` ≈ 1.5s), not the confirmation lifecycle
+(`CMD_CONFIRM_HOLD_MS` ≈ 5s). Any `input`, `keydown` or `pointerdown` inside
 the panel cancels that courtesy, and `composing` covers the race where he
 resumes during the POST before a dismiss timer exists. The valid success still
-belongs to the command that landed: it remains readable and clears on its own
-controller while the panel stays open. Left alone, the courtesy waits until
-the lifecycle has completed, then closes the panel; it cannot remove the
-confirmation early. `dev/capture/dismiss.mjs` guards both branches and
-`confirmation.mjs` owns the per-frame lifecycle proof.
+belongs to the command that landed: while the panel stays open it remains
+readable and clears on its own controller. Left alone, the courtesy closes the
+panel at ~1.5s and hard-clears the line with it (panel close is destruction).
+`dev/capture/dismiss.mjs` guards both branches and `confirmation.mjs` owns the
+per-frame lifecycle proof.
 
 **One vocabulary.** `COMMANDS` (top of `watch.py`) is the single source of
 steering kinds — `{kind, label, desc, common}`. The server derives

@@ -267,17 +267,24 @@ exception; an element leaving fades rather than vanishing.
   selection background to it (~.3s, the dream easing) — the composer's one
   piece of crisp motion. It lands without sliding on open and on reflow; see
   The composer.
-- **Composer success confirmation** (#255). Main and popped-out composers use
-  one `confirmationFor` lifecycle. Success arrives through `.dreamin`, remains
-  readable for about five seconds even if a new draft begins, then departs by
-  fading, blurring and drifting upward before it clears. Typing cancels only
-  the panel's courtesy-close; manual close, route change and popout `pagehide`
-  hard-clean immediately and invalidate timers, listeners and in-flight
+- **Composer success confirmation** (#255) and **panel courtesy-close**
+  (#131/#291). Main and popped-out composers use one `confirmationFor`
+  lifecycle. Success arrives through `.dreamin`, remains readable for about
+  five seconds even if a new draft begins (while the panel is still open),
+  then departs by fading, blurring and drifting upward before it clears. The
+  panel's auto-dismiss is a separate ~1.5s courtesy (`CMD_DISMISS_MS`); #255
+  briefly tied it to the confirm hold and #291 restored the split. Typing
+  cancels only the courtesy; left alone, courtesy close is destruction and
+  hard-clears with the panel. The courtesy applies only to the transient main
+  panel: an explicitly opened command popout is persistent and never auto-closes;
+  it keeps the shared confirmation lifecycle until explicit close/`pagehide`.
+  Manual close, route change and popout `pagehide` hard-clean immediately and invalidate timers, listeners and in-flight
   attempt callbacks. Rejection/connection/validation claims replace success
   immediately because falsehood must not
   linger through a gentle exit. Reduced motion keeps the hold and clear but
   snaps visual states. `confirmation.mjs` traces the real main delayed-POST
-  race, close, popout and reduced phases; normal departure must show many
+  race, close, persistent-popout and reduced phases; `dismiss.mjs` proves the ~1.5s
+  courtesy vs the typing-cancels path; normal departure must show many
   intermediate opacity/transform values, reduced departure none.
 - **Answer-submit morph.** Submitting an answer (button or **Ctrl/Cmd+Enter**,
   which works from any answer box) *is* the confirmation: the card reshapes

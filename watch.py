@@ -1090,9 +1090,10 @@ STYLE = """<style>
     transition:color .3s ease; }
   .pipbtn:hover, .pipbtn:focus-visible { color:var(--accent); }
   .pipbtn svg { display:inline-block; vertical-align:-2px; }
-  /* the composer's status arrives and departs on one atmospheric envelope.
-     Success remains readable for #255's hold; reduced motion keeps timing but
-     snaps both visual states. */
+  /* the composer's status arrives and departs on one atmospheric envelope
+     (#255). Success remains readable for the hold while the panel stays open;
+     the panel's own courtesy-close is separate (~1.5s, #291). Reduced motion
+     keeps timing but snaps both visual states. */
   .cmdmsg { color:var(--dim); font-size:.7rem; min-height:1em; margin-top:.5rem;
     transition:color .4s ease, opacity .35s ease, filter .35s ease,
                transform .35s cubic-bezier(.32,.1,.2,1); }
@@ -4027,10 +4028,13 @@ function popoutDoc(url, label) {
   const clearCmdMsg=confirmation.clear;
   let open = false;
   const CMD_GAP = 18;            // breathing room under the +/× opener
-  /* ── the panel does not close under him (#131) ───────────────────────────
+  /* ── the panel does not close under him (#131 / #291) ────────────────────
      His words: "if on the composer, someone enters something, ctrl+enter
      submits, then starts typing again, the composer should not fade away.
      also the timeout before fading away should be increased by 1.5x."
+     And later (#291): it should auto-disappear ~1.5s after a successful
+     command, not after the confirmation's ~5s hold (#255 accidentally
+     tied the two together).
 
      The auto-dismiss is a courtesy — it gets the panel out of the way once
      the thought has landed — and a courtesy must never take a channel away
@@ -4038,7 +4042,10 @@ function popoutDoc(url, label) {
      the human is in the middle of doing outranks anything the page decided
      on a timer. Any sign of him still being in here cancels the dismiss, and
      `composing` covers the race where he resumes DURING the POST, before
-     there is a timer to cancel. */
+     there is a timer to cancel. The confirmation lifecycle is independent:
+     typing cancels only this timer; left alone, panel close is destruction
+     and hard-clears the line with the panel. */
+  const CMD_DISMISS_MS = 1425;               // was 950; his 1.5x (#131/#291)
   let dismissT = 0, composing = false;
   const cancelDismiss = () => { clearTimeout(dismissT); dismissT = 0; };
   /* ── the half-typed thought survives a reload (#163) ─────────────────────
@@ -4468,9 +4475,11 @@ function popoutDoc(url, label) {
         if (kind === 'do-now') setKind('add-idea');
         clearDraft();             // the one moment it is safe to forget (#163)
         // he may already have started typing again while the POST was in
-        // flight, before there was any timer to cancel
+        // flight, before there was any timer to cancel. Courtesy is NOT
+        // the confirmation hold (#291): that is CMD_CONFIRM_HOLD_MS on the
+        // controller, independent of whether the panel stays open.
         cancelDismiss();
-        if (!composing) dismissT=setTimeout(closeCmd,CMD_CONFIRM_HOLD_MS+650);
+        if (!composing) dismissT = setTimeout(closeCmd, CMD_DISMISS_MS);
       } else if (r) attempt.claim('rejected (' + r.status + ')');
       else attempt.claim('no connection');   // postJSON returns null on throw
       // if he is watching the history, it must include what he just did —

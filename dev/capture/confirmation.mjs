@@ -90,6 +90,8 @@ const trace=ms=>`((ms)=>new Promise(res=>{const m=cmdmsg,p=cmdpalette,seen=[],t0
   const arrival=success.filter(s=>first!==null&&s.t-first<500),departure=success.filter(s=>first!==null&&s.t-first>4500);
   notes.push(`popout arrival opacity=${[...new Set(arrival.map(s=>s.op))].join(',')} transform=${[...new Set(arrival.map(s=>s.tf))].join(',')} first=${first}`);
   ok('popout success arrives through intermediate opacity and drift',new Set(arrival.map(s=>s.op)).size>=4&&new Set(arrival.map(s=>s.tf)).size>=3);
+  ok('#291 popout is intentionally persistent beyond main courtesy close',
+     !pp.isClosed() && seen.some(s=>s.t>=2200&&s.text==='sent to the dream'));
   ok('popout success remains readable for about 5s',success.length&&success.at(-1).t-success[0].t>=4500);
   ok('popout success departs through intermediate opacity and drift',new Set(departure.map(s=>s.op)).size>=4&&new Set(departure.map(s=>s.tf)).size>=3);
   ok('popout success self-dismisses',seen.at(-1).text==='');

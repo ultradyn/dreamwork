@@ -26,8 +26,10 @@
 
      - typing again CANCELS the dismiss, and it stays cancelled (the panel is
        still open well past the point it would have closed)
-     - with no further typing it still closes, after the ~5s confirmation
-       lifecycle rather than taking the confirmation away early
+     - with no further typing it closes after ~1.5s (#291 / original #131
+       1425ms courtesy). Panel close is destruction: the confirmation is
+       hard-cleared with the panel. #255's ~5s lifecycle applies when the
+       panel STAYS open (typing cancelled the courtesy)
      - typing does not truncate a valid success; that success departs/clears
        independently while the panel remains open
 
@@ -135,16 +137,21 @@ await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(100
     () => !document.getElementById('cmdpalette').classList.contains('open'));
 }
 
-// (1) submit and walk away: the courtesy still happens, on the new timing
+// (1) submit and walk away: ~1.5s courtesy (#291), not the ~5s confirm hold
 await openPanel(p);
-const alone = await p.evaluate(RUN(-1, 6800));
+const alone = await p.evaluate(RUN(-1, 2800));
 const tc = closedAt(alone);
+const msgAt1s = (alone.find(s => s[0] >= 1000) || [])[2];
 notes.push(`left alone: closed at ${tc}ms` +
-           ` | msg at 1000ms "${(alone.find(s => s[0] >= 1000) || [])[2]}"`);
+           ` | msg at 1000ms "${msgAt1s}"`);
 ok('left alone, the panel still closes itself', tc !== null);
-ok('#255 ...after the confirmation lifecycle, not while it is readable',
-   tc !== null && tc > 5300);
-ok('...and it does not linger after that lifecycle', tc !== null && tc < 6400);
+// was 950ms; his 1.5x → 1425ms. Bound so a 5s confirm-tied close fails red.
+ok('#291 ...after the ~1.5s courtesy window', tc !== null && tc > 1200);
+ok('#291 ...without waiting out the confirmation lifecycle',
+   tc !== null && tc < 2200);
+// panel close is destruction: by the time it is shut the line is gone
+ok('#291 ...and closing the panel hard-clears the confirmation with it',
+   tc !== null && !(alone.find(s => s[0] >= tc + 50) || [])[2]);
 
 // (2) he starts typing again inside the dismiss window
 await openPanel(p);
