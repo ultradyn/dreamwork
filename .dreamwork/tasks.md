@@ -18,9 +18,27 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **271**
+Next id: **273**
 
 ## Open
+
+- **#272** — Visually review the live #229 review-and-discussion route · P1 ·
+  UX review · 20m · origin: **human** · **human do-next via watch 16:59** ·
+  Grok reviews exact live route `http://localhost:35111/review?p=threaded-topic-
+  chats.html&q=P1%20%C2%B7%202026-07-26%20%E2%80%94%20%23229%20threaded%20topic%
+  20chats%3A%20approve%20the%20proposed%20architecture%20and%20defaults%3F` at
+  desktop and mobile, identifies concrete hierarchy/navigation/comprehension/
+  interaction/accessibility issues and proposes scoped solutions · proposal-only,
+  no submits or source edits · in progress: owner Grok; fold findings into #270
+
+- **#271** — Make notes appear promptly across open dashboard browsers · P1 · bug ·
+  25m · origin: **human** · **human via watch 16:58** · observed symptom only:
+  with two browsers open to the same Dreamwork dashboard page, a note posted in
+  one does not appear in the other immediately, but does appear after a later
+  refresh · reproduce across separate browser processes, measure `/mtime` and
+  data fetch/rerender behavior, distinguish stale server generation/port from
+  polling or cache behavior, then red-first fix · align live propagation with
+  #269 cross-tab drafts without conflating received notes with unsent text
 
 - **#270** — Harden and re-review the #229 topic-chat proposal · P1 ·
   architecture/review · origin: **human** · **human via watch 16:47** · exact
@@ -51,7 +69,8 @@ Next id: **271**
 
 - **#266** — Review-dock note/answer can land on the wrong question · P0/P1 · bug ·
   25m · origin: **human** · first confirmed **2026-07-26 16:12** by helper;
-  reproduced again by the human's **16:47** #229 review landing on #257/#258 · on
+  reproduced again by the human's **16:47** #229 review landing on #257/#258;
+  **human explicitly re-raised 17:06: “this is a bug, please add to backlog”** · on
   `/review?p=threaded-topic-chats.html&q=…#229…` a note was posted with
   `from` still showing that URL but `body.question` = #255 title
   (submissions.log 15:41:31) · root cause candidate: `data-qkey` is a
@@ -83,8 +102,13 @@ Next id: **271**
   ingestion with statuses/receipt ids/errors · CLI like
   `ud-dw-user-events --limit 20` returns exact events and processing status ·
   compare append-only JSONL vs one-file spool; atomicity, concurrency,
-  redaction/retention/migration and dual witnesses · unify #260/#262, never a
-  third inconsistent queue · #261 incident diagnosis complete; next-up
+  redaction/retention/migration and dual witnesses · accepted design decisions:
+  HTTP `202` promises durable receipt (not application); persist across process
+  and machine/power crash with file+directory durability; exact text retained
+  until explicit **scripted** purge, never agent hand-editing · prefer append-only
+  event/status history, but physical purge may remove payload while retaining a
+  non-sensitive tombstone · LLMs read bounded CLI projections, not raw storage ·
+  unify #260/#262, never a third inconsistent queue · next-up
 
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
