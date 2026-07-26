@@ -18,9 +18,18 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **259**
+Next id: **260**
 
 ## Open
+
+- **#259** — Cycle composer modes with Shift+Tab · P1 · keyboard UX · 20m ·
+  origin: **human** · **human via watch 15:40** · inside response textarea,
+  Shift+Tab cycles answer/add-note; inside main composer textarea it cycles
+  available command kinds in visible order including eligible plugin commands ·
+  draft/focus preserved; ordinary Tab and Shift+Tab elsewhere keep browser
+  focus navigation · announce mode accessibly; existing sliding indicator +
+  reduced-motion snap; popout inherits through #241, no duplicate handler ·
+  red-first keyboard-only guards · blocked on #241 shared composer
 
 - **#258** — Research composable shader emotion inputs · P2 · research/design
   · origin: **human** · **human via watch 15:30** · semantic multi-float
@@ -64,14 +73,12 @@ Next id: **259**
   `.dreamwork/review/evidence/review-note-reply-unclear.png` · separate from
   broader #253 research · queued after active #250/#251
 - **#253** — Research contextual review discussions and taskable annotations ·
-  P2 · research/design · origin: **human** · **human via watch 15:20** ·
-  selected/highlighted document text opens a contextual side-thread; typed
-  comment kinds include question/task/update request; investigate dedicated
-  responsive subagent with coordinator participation and whether this is a
-  specialisation of #229 topic chats · cover durable anchors across edits,
-  task authority/ownership, threads/context/provenance, artifact update flow,
-  privacy, accessibility/mobile and recovery · proposal/review artifact before
-  implementation
+  P2 · research/design · origin: **human** · completed research at
+  `.dreamwork/docs/research/contextual-review-annotations.md` (`b9b6a47`) ·
+  sidecar anchors + optional one-time #229 promotion is the IGC survivor;
+  precise or whole-artifact attached chats remain globally visible at `/chat` ·
+  iframe bridge vs in-page decision awaiting human answer in questions.md · no
+  implementation authority
 
 - **#252** — Render Markdown files on `/file` · P2 · feature · 25m · origin:
   **human** · **human via watch 15:17** · `.md` paths default to rendered

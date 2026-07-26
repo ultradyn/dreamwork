@@ -42,6 +42,13 @@
 
   Answer `Approve #253 iframe bridge as recommended`, or choose `in-page`
   annotation rendering instead.
+  - **Note (human, via watch, 2026-07-26 15:41; moved from #255):** chats
+    should attach to any artifact or a precise reference within an artifact,
+    while all chats remain visible from the global `/chat` route.
+  - **Reply (loop, 2026-07-26 15:42):** Folded into #253/#229. Attachment is
+    provenance/navigation, not a private namespace: an artifact-level or
+    selection-level chat still appears in `/chat`. MVP should have one primary
+    attachment plus reciprocal backlinks; multiple references can follow.
 
 - **P1 · 2026-07-26 — #255 composer confirmation lifecycle: approve the
   shared 5-second design?** Root cause is measured: typing during the POST sets
