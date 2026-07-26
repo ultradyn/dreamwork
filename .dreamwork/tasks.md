@@ -36,25 +36,25 @@ Next id: **250**
   evaluate whether real workflows justify migration rather than solving a
   semantically invisible distinction by default
 - **#247** — Harden answer-state IDs and deletion guard · P2 · test/bug ·
-  15m · origin: **loop** · late #238 review · missing server `aid` must not
-  emit colliding empty `data-keep`; deletion phase must prove old node detached
-  / replacement occurred · document exact-content twin ordinal limit honestly
-  · queued behind active #245 Grok ownership
+  15m · origin: **loop** · late #238 review · assigned to
+  `grok-sugar-vesi-x6tv` in `.worktrees/247-answer-state` · missing server
+  `aid` must not emit colliding empty `data-keep`; deletion phase must prove old
+  node detached / replacement occurred · document exact-content twin ordinal
+  limit honestly · research complete; implementation in progress
 - **#246** — Keep Grok usefully occupied when work is available · P2 · routine
   · origin: **human** · **human via watch 14:33** · proactively assign
   `grok-sugar-vesi-x6tv` unblocked small/medium in-repo work with disjoint
   ownership · no manufactured busywork, cross-repo/external authority,
   collisions or model-gate bypass; diagnose first unless ownership explicit;
   coordinator validates every result · active durable routine
-- **#245** — Build `ud-dreamwork-worktrees` plugin · P1 · plugin · several
-  increments · origin: **human** · **do next via watch 14:33** · assigned
-  to `grok-sugar-vesi-x6tv` · teach safe parallel worktrees in two modes:
-  bounded coordinator-launched subagents (usually one task/branch), and
-  longer-running c2c/protocol co-agents that may process multiple tasks with
-  durable ownership/status/comms · cover eligibility, ignore/baseline, claims,
-  naming, commits, validation, rebase/conflicts, cleanup preserving ignored
-  scratch, restart/authority and coordinator integration · follow plugin
-  conventions/TDD/docs/review · in progress
+- **#245** — Build `ud-dreamwork-worktrees` plugin · P1 · plugin · origin:
+  **human** · **do next via watch 14:33** · completed at `8af7dc3` after
+  red-first 11→22 contract tests and two independent Standards/Spec reviews ·
+  publishable source package under `plugins/`; symlinked into Pi, agents and
+  llm-general skill roots; loaded by explicit human request · bounded
+  subagent mode + same-host durable co-agent claims/inbox protocol; machine-local
+  runtime state, status projection, disjoint ownership, receipt/review,
+  scratch-safe cleanup and cross-host boundary all documented · PASS
 
 - **#244** — Define repository-browser visibility policy · P2 · design ·
   25m · origin: **human** · **human via watch 14:29** · decide tracked,

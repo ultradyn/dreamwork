@@ -106,6 +106,11 @@ dreamwork-version: 5853e1789929
 
 ## Plugins
 
+- Load: `ud-dreamwork-worktrees` (2026-07-26) — explicitly requested by
+  Max. Use bounded one-task worktrees for subagents and the same-host durable
+  claim/inbox protocol for longer co-agents. The coordinator remains the main
+  checkout's single writer and independently validates every receipt. Cross-host
+  co-agent mode is not enabled until a durable relay adapter exists.
 - Load: `ud-dreamwork-github` (2026-07-25) — the skill gained a forge
   presence (`git@github.com:ultradyn/dreamwork.git`, private), which was
   the recorded condition for revisiting. Its settings:
