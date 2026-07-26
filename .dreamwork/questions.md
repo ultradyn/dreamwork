@@ -140,6 +140,20 @@
   trailers and the frontmatter all proceed regardless, and I would start
   with the trailers since every commit written before they exist is one
   the future upgrade pass has to read blind.
+  - **Note (human, via watch, 2026-07-26 18:54):** oh well it sees the old
+    commit in DREAMWORK.md, and the new one from the ud-dw-githash command.
+    also i'm making the repo public. not sure this answers your question,
+    so adding it as a note. also in our own dreamwork.md we should note an
+    exclusion because we're obviously going to see new commits all the
+    time.
+  - **Follow-up (loop, 2026-07-26 18:56):** Yes for the interval endpoints;
+    public removes authentication from a network fallback. The remaining
+    choice is where a zip/offline install gets the intervening objects. Rec:
+    local Git history when present, packaged generated changelog for zip/
+    offline use, and public-repo fetch only as explicit fallback. Leaving this
+    open for that source choice. I will also add the requested self-repo
+    exclusion: this development checkout must not treat ordinary new local
+    commits as an installed-release upgrade on every tick.
 
 ## Answered
 

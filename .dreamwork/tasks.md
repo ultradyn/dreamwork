@@ -18,9 +18,19 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **286**
+Next id: **287**
 
 ## Open
+
+- **#286** — Preserve intentional paragraph breaks in rendered question notes
+  and answers · P2 · rendering/data-integrity bug · origin: **human** · **human
+  via watch 18:55** · exact newlines are currently preserved in durable
+  `submissions.log` JSON but question-thread Markdown rendering collapses them ·
+  keep exact receipt bytes unchanged; distinguish soft source wrapping from
+  intentional blank-line paragraph breaks; render the latter visibly in notes/
+  answers without turning every hard-wrap into `<br>` · red-first multiline
+  answer+note through server/file parse/browser render, plus copy/raw recovery
+  assertion; coordinate #252 Markdown rendering and #254 nested replies
 
 - **#285** — Rebuild `ud-dw-generate` as a standalone ASCII-safe random-data
   generator · P2 · utility design · origin: **human** · **human via watch 18:50**
@@ -54,9 +64,12 @@ Next id: **286**
   `251691418`) remained · every snapshot saw PID `1246815`, reparented D-state
   `git rev-parse --is-inside-work-tree`, cwd KIO `filenamesearch`, but watcher
   samples all Git processes so this is correlated/candidate evidence, **not yet
-  creator proof**; a short-lived writer may evade 50ms snapshots · diagnose why
-  watcher exits 0; improve attribution to capture exec/exit or syscall-level
-  creator before changing mitigations; coordinate host fix with system KB entry
+  creator proof**; a short-lived writer may evade 50ms snapshots · third witness
+  18:52:44–18:53:55 churned main index every ~1–2s and intermittently the LAN
+  worktree index, ending with holderless zero-byte inode `251782419`; correlated
+  PID remained the same D-state KIO Git · diagnose why watcher exits 0 and replace
+  sampling with exec/exit or syscall-level attribution before changing mitigations;
+  coordinate host fix with system KB entry
 
 - **#282** — Link task references to rich hover previews · P1 · task-navigation
   feature · origin: **human** · **human via watch 18:22** · whenever `#229`-style
@@ -632,8 +645,12 @@ Next id: **286**
   every commit written before they exist is one the pass reads blind ·
   frontmatter changes a file every target has, so it needs its own
   migration + a file-formats row + a lint check in the same commit ·
-  **one open question** (zip has no repo, repo is private — rec: ship a
-  generated changelog in the release) · trailers LANDED pre-compaction ·
+  **one open question:** endpoints are old DREAMWORK.md hash + new
+  `ud-dw-githash`; repo becoming public removes auth but zip/offline still lacks
+  intervening objects · rec layered resolver: local Git history, packaged
+  generated changelog, explicit public fetch fallback · exclude this development
+  checkout from treating ordinary new local commits as release upgrades ·
+  trailers LANDED pre-compaction ·
   **githash LANDED 472b9e8** (output is the contract; 8 tests red-first)
   · **frontmatter LANDED 5c19a68** (file-formats row + lint check +
   migration `2026-07-25-14` + this target stamped, one commit) —
