@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en-au">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Multi-dreamer architecture — IGC decision review (#96)</title>
+<style>
+  :root { --bg:#0b0f19; --panel:#111827; --panel2:#1e293b;
+    --line:#1f2937; --border:#334155; --text:#d1d5db; --bright:#f3f4f6;
+    --lit:#e5e7eb; --muted:#9ca3af; --dim:#6b7280; --dimmer:#4b5563;
+    --accent:#a5b4fc; --ok:#86efac; --warn:#fcd34d; --bad:#fda4af;
+    --space:1.6rem; --radius:4px; color-scheme:dark; }
+  * { box-sizing:border-box;
+      scrollbar-width:thin; scrollbar-color:var(--dimmer) transparent; }
+  ::-webkit-scrollbar { width:7px; height:7px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--dimmer);
+                              border-radius:var(--radius); }
+  ::-webkit-scrollbar-thumb:hover { background:var(--dim); }
+  body { background:var(--bg); color:var(--text); margin:0;
+    padding:2.5rem 1rem 4rem;
+    font-family:ui-monospace,'JetBrains Mono',monospace; font-size:.8rem;
+    line-height:1.65; }
+  .wrap { max-width:86ch; margin:0 auto; }
+  h1 { color:var(--bright); font-size:1rem; font-weight:normal; margin:0; }
+  h2 { color:var(--lit); font-size:.85rem; font-weight:normal;
+       margin:2.4rem 0 .4rem; }
+  h3 { color:var(--lit); font-size:.8rem; font-weight:normal;
+       margin:0 0 .35rem; }
+  .sub { color:var(--dim); margin:.25rem 0 2rem; }
+  .label { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
+    font-size:.7rem; margin:var(--space) 0 .5rem; }
+  p { margin:.6rem 0; }
+  a { color:var(--accent); }
+  code { color:var(--lit); }
+  strong { color:var(--lit); font-weight:normal; }
+  hr { border:0; border-top:1px solid var(--line); margin:var(--space) 0; }
+  .quiet { color:var(--muted); }
+  .dim { color:var(--dim); }
+  ul { margin:.4rem 0; padding-left:2ch; }
+  li { margin:.3rem 0; }
+  figure { margin:1.2rem 0 1.6rem; overflow-x:auto; }
+  /* Scales to the reading column instead of overflowing it — a diagram
+     clipped at the default width is a diagram he reads three quarters of.
+     Floored so a phone scrolls rather than shrinking the labels away. */
+  svg { display:block; width:100%; height:auto; max-width:720px;
+        min-width:560px; }
+  table { border-collapse:collapse; width:100%; margin:.6rem 0 1rem;
+          font-size:.75rem; }
+  th { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
+       font-size:.65rem; font-weight:normal; text-align:left;
+       border-bottom:1px solid var(--border); padding:.35rem .6rem .35rem 0;
+       vertical-align:bottom; }
+  td { border-top:1px solid var(--line); padding:.4rem .6rem .4rem 0;
+       vertical-align:top; }
+  td.m, th.m { text-align:center; padding:.4rem .2rem; width:3.2ch; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .huh { color:var(--warn); }
+  tr.rec td { background:rgba(165,180,252,.05); }
+  tr.rec td:first-child { color:var(--accent); }
+  .idea { white-space:nowrap; color:var(--lit); }
+  .q { border-left:1px solid var(--border); padding:0 0 0 1.4ch;
+       margin:1.4rem 0; }
+  .cmp { display:grid; grid-template-columns:repeat(auto-fit,minmax(30ch,1fr));
+         gap:0 2ch; margin:.6rem 0; }
+  .cmp div { border-top:1px solid var(--line); padding-top:.4rem; }
+  .cmp .h { color:var(--dim); text-transform:uppercase;
+            letter-spacing:.08em; font-size:.7rem; }
+  .cmp .rec .h { color:var(--accent); }
+  .note { border-left:1px solid var(--warn); padding:0 0 0 1.4ch;
+          margin:1.2rem 0; color:var(--muted); }
+  .key { display:flex; flex-wrap:wrap; gap:0 2.4ch; color:var(--muted);
+         font-size:.75rem; margin:.4rem 0 1.4rem; }
+  footer { color:var(--dimmer); margin-top:3.4rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Multi-dreamer architecture</h1>
+<div class="sub">decision review · #96 lineage · 2026-07-26 · plan at
+<code>.dreamwork/docs/plans/multi-dreamer.md</code></div>
+
+<p>He asked for a plan for a multi-dreamer architecture and named the IGC
+method. This artifact is the decision surface: the goals, the options, and
+where each option is refuted. <strong>Nothing here is authorized to
+build.</strong> The ask at the end requests stage A only.</p>
+
+<p class="quiet">The goal it serves was recorded on 2026-07-25 in
+DREAMWORK.md: <em>one human, several dreaming agents — the workflow scales
+past one session, a hub aggregates them, and managing an agent's lifecycle
+(spawning, steering, compacting, retiring) becomes something the system
+does deliberately rather than something the human improvises per
+client.</em></p>
+
+<div class="label">How to read the matrices</div>
+
+<p>An IGC triple is idea × goal × context: an idea is never good or bad on
+its own, only against a stated goal inside a stated context. Goals run
+across the top, ideas down the left, and the <strong>All</strong> column is
+the whole point.</p>
+
+<div class="key">
+  <span><span class="ok">✔</span> satisfies the goal</span>
+  <span><span class="bad">✘</span> refuted — fix the idea or drop the goal</span>
+  <span><span class="huh">?</span> unknown — an experiment, not a maybe</span>
+</div>
+
+<p>Ideas are <strong>not scored and not weighed</strong>. One <span
+class="bad">✘</span> refutes a row however many <span
+class="ok">✔</span>s sit beside it, and a row holding a <span
+class="huh">?</span> cannot be adopted until the <span
+class="huh">?</span> is resolved. Repairing a refuted idea is a legal
+move, and it gets its own row rather than an edited cell — otherwise the
+record shows a plan that was always right.</p>
+
+<div class="label">Context — every mark below is a claim about this and nothing wider</div>
+
+<ul class="quiet">
+<li>One human. Agents are harness-hosted sessions: nothing in this repo can
+create an agent process, so <em>spawn</em> means the harness's subagent
+tool or a session manager (herdr, tmux) starting a CLI.</li>
+<li><code>watch.py</code> and <code>dreamhub.py</code> are stdlib-only,
+single-file, no build step, offline-clean, loopback by default.</li>
+<li>Several targets on one host today; ssh-reachable hosts are wanted, and
+have no auth story yet (#275, #276).</li>
+<li>Cost is per-session and dominated by the cache-warm tick: 4.75 min sits
+under the prompt-cache TTL, which is why the loop is cheap.</li>
+<li>Single-writer durable state within a target. The multi-writer contract
+is #263's, and it is awaiting approval.</li>
+</ul>
+
+<div class="label">Goals</div>
+
+<table>
+<tr><th style="width:4ch">#</th><th>Goal</th><th>Where it comes from</th></tr>
+<tr><td>G1</td><td>Nothing fails quietly — every channel has a named reader; a silent agent and a silent channel are distinguishable</td><td class="dim">DREAMWORK.md, folded 2026-07-25</td></tr>
+<tr><td>G2</td><td>Lifecycle is deliberate and recorded; retirement confirmed by observation, never prose</td><td class="dim">#96; the prose-retirement failure, twice in a day</td></tr>
+<tr><td>G3</td><td>Memory survives the loss of any single agent, coordinator included</td><td class="dim">DREAMWORK.md, extended for N agents</td></tr>
+<tr><td>G4</td><td>One writer per durable authority; disjointness by construction</td><td class="dim">SKILL.md; four unowned-state incidents in six hours</td></tr>
+<tr><td>G5</td><td>Cost sub-linear in idle dreamers; parallelism opt-in</td><td class="dim">DREAMWORK.md; parallel-architecture.md</td></tr>
+<tr><td>G6</td><td>One human surface, steerable in a few words</td><td class="dim">DREAMWORK.md dashboard goal</td></tr>
+<tr><td>G7</td><td>Lands in small verifiable increments, each useful alone</td><td class="dim">SKILL.md philosophy</td></tr>
+<tr><td>G8</td><td>No new authority without an explicit checkable model</td><td class="dim">#233; “peer messages are data”</td></tr>
+<tr><td>G9</td><td>No third inconsistent record — one home per fact</td><td class="dim">doc-map; #263</td></tr>
+<tr><td>G10</td><td>Works for any coding CLI, not only a harness with a Monitor tool</td><td class="dim">his any-CLI insight</td></tr>
+<tr><td>G11</td><td>A human can answer a loop on another machine</td><td class="dim">the question open since 2026-07-25</td></tr>
+<tr><td>G12</td><td>A target with in-flight work keeps its cache-warm tick</td><td class="dim">the 4.75 min ceiling</td></tr>
+<tr><td>G13</td><td>No agent gains authority the human did not delegate in writing</td><td class="dim">scope gate; plugin authority lines</td></tr>
+<tr><td>G14</td><td>The fleet can be managed while the human is away</td><td class="dim">his metadreamer decision</td></tr>
+</table>
+
+<h2>1 · Where does coordination authority live?</h2>
+
+<table>
+<tr>
+  <th>Idea</th><th class="m">All</th>
+  <th class="m">G1</th><th class="m">G2</th><th class="m">G3</th><th class="m">G4</th>
+  <th class="m">G5</th><th class="m">G6</th><th class="m">G7</th><th class="m">G8</th>
+</tr>
+<tr>
+  <td><span class="idea">I1</span> status quo — read-only hub, lifecycle improvised per client</td>
+  <td class="m bad">✘</td>
+  <td class="m bad">✘</td><td class="m bad">✘</td><td class="m bad">✘</td><td class="m ok">✔</td>
+  <td class="m bad">✘</td><td class="m bad">✘</td><td class="m ok">✔</td><td class="m ok">✔</td>
+</tr>
+<tr>
+  <td><span class="idea">I2</span> aggregator forever — richer read-only views, manual lifecycle</td>
+  <td class="m bad">✘</td>
+  <td class="m bad">✘</td><td class="m bad">✘</td><td class="m bad">✘</td><td class="m ok">✔</td>
+  <td class="m bad">✘</td><td class="m bad">✘</td><td class="m ok">✔</td><td class="m ok">✔</td>
+</tr>
+<tr>
+  <td><span class="idea">I3</span> supervisor daemon owns everything, work assignment included</td>
+  <td class="m bad">✘</td>
+  <td class="m huh">?</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m bad">✘</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m bad">✘</td><td class="m huh">?</td>
+</tr>
+<tr>
+  <td><span class="idea">I4</span> metadreamer only — an agent manages the agents</td>
+  <td class="m bad">✘</td>
+  <td class="m bad">✘</td><td class="m huh">?</td><td class="m bad">✘</td><td class="m ok">✔</td>
+  <td class="m bad">✘</td><td class="m huh">?</td><td class="m ok">✔</td><td class="m bad">✘</td>
+</tr>
+<tr>
+  <td><span class="idea">I5</span> server-product rewrite — loop and dashboard as one service</td>
+  <td class="m bad">✘</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td>
+  <td class="m huh">?</td><td class="m ok">✔</td><td class="m bad">✘</td><td class="m bad">✘</td>
+</tr>
+<tr>
+  <td><span class="idea">I6</span> three tiers — dreamer owns work, supervisor owns processes, hub is the surface</td>
+  <td class="m huh">?</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td>
+  <td class="m huh">?</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td>
+</tr>
+<tr class="rec">
+  <td><span class="idea">I6′</span> I6 <strong>+ retire-when-idle</strong>, with event-driven scheduling as a later measured optimisation</td>
+  <td class="m ok">✔</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td>
+</tr>
+</table>
+
+<p><strong>I1 and I2 fail G1 and G3 on measured history, not on
+prediction.</strong> Four orphaned <code>watch.py</code> servers were found
+in the guard ranges on 2026-07-25, one up 4.5 hours; two dreamers announced
+retirement in prose and stayed alive; three consecutive agents believed
+they had cleaned up. There is nowhere in the current design that would have
+said otherwise — and a richer read-only hub cannot fix it, because it can
+only show what a <em>live</em> coordinator chose to write.</p>
+
+<p><strong>The finding that most changes the shape of the answer:</strong>
+<code>status.json</code>'s <code>agents[]</code> is session-ephemeral by
+design, and SKILL.md defends that correctly — it describes a running
+process, so committing it “would be a lie the moment it landed”. That
+defence holds for one session and breaks for N, because <em>a dreamer
+outlives the coordinator that spawned it</em>. The record of who is out has
+to outlive the coordinator too. See matrix 2.</p>
+
+<p><strong>I3 fails G4</strong> because a daemon that assigns work is a
+second thing deciding what a target does next over one queue whose whole
+value is stable ids and ordering — the “never a third inconsistent queue”
+refutation with a different subject — and it duplicates SKILL.md's
+selection algorithm in code, where it will drift from the prose.
+<strong>I4 fails G1</strong> because an agent watching agents shares their
+failure mode: it can go quiet and nothing notices. That refutes the
+metadreamer <em>as the mechanism</em>, not the metadreamer; matrix 6 keeps
+it.</p>
+
+<div class="q">
+<h3>The repair, and what the method bought</h3>
+<p>I6's single open cell was cost: three tiers do not by themselves make N
+dreamers cheaper than N timers. Matrix 5 finds that
+<strong>retire-when-idle</strong> satisfies G5 with no measurement and no
+new machinery — cost is sub-linear in idle dreamers if idle dreamers do not
+exist. So the recommendation is adoptable now, and the scheduler experiment
+becomes an optimisation with a known-safe fallback rather than a dependency
+the plan is betting on.</p>
+</div>
+
+<h2>The shape being proposed</h2>
+
+<figure>
+<svg viewBox="0 0 720 340" width="720" height="340" role="img"
+     aria-label="Three tiers: hub issues intents to a host supervisor, which moves processes; each dreamer remains the sole writer of its own target files.">
+  <defs>
+    <marker id="a" viewBox="0 0 8 8" refX="7" refY="4"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,1 L7,4 L0,7" fill="none" stroke="#4b5563" stroke-width="1"/>
+    </marker>
+    <marker id="aa" viewBox="0 0 8 8" refX="7" refY="4"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,1 L7,4 L0,7" fill="none" stroke="#a5b4fc" stroke-width="1"/>
+    </marker>
+  </defs>
+  <g font-family="ui-monospace,monospace" font-size="11">
+
+    <text x="0" y="12" fill="#6b7280" letter-spacing="1.2">HUMAN</text>
+    <rect x="0" y="22" width="200" height="42" fill="#111827"
+          stroke="#334155" rx="4"/>
+    <text x="14" y="41" fill="#e5e7eb">hub</text>
+    <text x="14" y="56" fill="#6b7280">one surface · intents only</text>
+
+    <text x="248" y="12" fill="#6b7280" letter-spacing="1.2">HOST</text>
+    <rect x="248" y="22" width="216" height="42" fill="#111827"
+          stroke="#334155" rx="4"/>
+    <text x="262" y="41" fill="#e5e7eb">supervisor</text>
+    <text x="262" y="56" fill="#6b7280">moves processes · never work</text>
+
+    <text x="512" y="12" fill="#6b7280" letter-spacing="1.2">DURABLE</text>
+    <rect x="512" y="22" width="208" height="42" fill="#111827"
+          stroke="#a5b4fc" rx="4"/>
+    <text x="526" y="41" fill="#a5b4fc">roster</text>
+    <text x="526" y="56" fill="#6b7280">who is out · what they own</text>
+
+    <line x1="200" y1="43" x2="240" y2="43" stroke="#4b5563"
+          marker-end="url(#a)"/>
+    <text x="203" y="36" fill="#6b7280" font-size="9">intent</text>
+    <line x1="464" y1="43" x2="504" y2="43" stroke="#a5b4fc"
+          marker-end="url(#aa)"/>
+    <text x="466" y="36" fill="#a5b4fc" font-size="9">CAS</text>
+
+    <line x1="0" y1="88" x2="720" y2="88" stroke="#1f2937"/>
+    <text x="0" y="105" fill="#6b7280" letter-spacing="1.2">TARGETS — ONE WRITER EACH</text>
+
+    <path d="M356,66 L356,118 M120,118 L592,118 M120,118 L120,130
+             M356,118 L356,130" fill="none" stroke="#4b5563"/>
+    <line x1="120" y1="126" x2="120" y2="132" stroke="#4b5563"
+          marker-end="url(#a)"/>
+    <line x1="356" y1="126" x2="356" y2="132" stroke="#4b5563"
+          marker-end="url(#a)"/>
+    <line x1="592" y1="118" x2="592" y2="132" stroke="#4b5563"
+          stroke-dasharray="3 3" marker-end="url(#a)"/>
+
+    <rect x="0" y="140" width="228" height="64" fill="#111827"
+          stroke="#334155" rx="4"/>
+    <text x="14" y="160" fill="#e5e7eb">dreamer · project A</text>
+    <text x="14" y="175" fill="#6b7280">selection · increments</text>
+    <text x="14" y="190" fill="#9ca3af">sole writer of A/.dreamwork/</text>
+
+    <rect x="246" y="140" width="228" height="64" fill="#111827"
+          stroke="#334155" rx="4"/>
+    <text x="260" y="160" fill="#e5e7eb">dreamer · project B</text>
+    <text x="260" y="175" fill="#6b7280">selection · increments</text>
+    <text x="260" y="190" fill="#9ca3af">sole writer of B/.dreamwork/</text>
+
+    <rect x="492" y="140" width="228" height="64" fill="#111827"
+          stroke="#334155" rx="4" stroke-dasharray="3 3"/>
+    <text x="506" y="160" fill="#9ca3af">dreamer · remote host</text>
+    <text x="506" y="175" fill="#6b7280">reached by ssh forward</text>
+    <text x="506" y="190" fill="#6b7280">stage E · blocked on auth</text>
+
+    <rect x="0" y="238" width="228" height="58" fill="#0b0f19"
+          stroke="#1f2937" rx="4"/>
+    <text x="14" y="257" fill="#9ca3af">subagents · co-agents</text>
+    <text x="14" y="272" fill="#6b7280">its delegates, its business</text>
+    <text x="14" y="287" fill="#6b7280">disjoint paths, worktrees</text>
+    <line x1="114" y1="206" x2="114" y2="234" stroke="#4b5563"
+          marker-end="url(#a)"/>
+
+    <text x="262" y="257" fill="#6b7280">Every arrow above is an</text>
+    <text x="262" y="272" fill="#9ca3af">intent, a wake, and an</text>
+    <text x="262" y="287" fill="#9ca3af">observed confirmation.</text>
+    <text x="262" y="308" fill="#6b7280">Never a file written by a</text>
+    <text x="262" y="323" fill="#6b7280">tier that does not own it.</text>
+
+    <text x="512" y="257" fill="#6b7280">status.json stays exactly</text>
+    <text x="512" y="272" fill="#6b7280">as it is — but it is a</text>
+    <text x="512" y="287" fill="#a5b4fc">projection, not the record.</text>
+  </g>
+</svg>
+</figure>
+
+<p class="quiet">One sentence separates the tiers: <strong>the supervisor
+moves processes, the dreamer moves work, the hub is where the human
+stands.</strong></p>
+
+<h2>2 · What is a dreamer's durable record?</h2>
+
+<table>
+<tr>
+  <th>Idea</th><th class="m">All</th>
+  <th class="m">G1</th><th class="m">G3</th><th class="m">G4</th>
+  <th class="m">G7</th><th class="m">G9</th>
+</tr>
+<tr>
+  <td><span class="idea">J1</span> <code>status.json</code> <code>agents[]</code> only (today)</td>
+  <td class="m bad">✘</td>
+  <td class="m bad">✘</td><td class="m bad">✘</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td>
+</tr>
+<tr>
+  <td><span class="idea">J2</span> git-committed records under <code>.dreamwork/agents/</code></td>
+  <td class="m bad">✘</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m bad">✘</td>
+</tr>
+<tr>
+  <td><span class="idea">J3</span> a new machine-local roster <em>beside</em> the plugin's <code>claims.json</code></td>
+  <td class="m bad">✘</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m bad">✘</td>
+</tr>
+<tr class="rec">
+  <td><span class="idea">J4</span> promote the claim ledger to a <strong>core roster</strong>; the plugin extends the same records; <code>status.json</code> becomes its projection</td>
+  <td class="m ok">✔</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td>
+</tr>
+<tr>
+  <td><span class="idea">J5</span> rows in the #263 SQLite journal</td>
+  <td class="m bad">✘</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m huh">?</td><td class="m bad">✘</td><td class="m ok">✔</td>
+</tr>
+</table>
+
+<p><strong>J4 invents nothing</strong>, which is its main argument.
+<code>~/.config/dreamwork/worktrees/&lt;slug&gt;/claims.json</code> already
+has every property a roster needs and they were already reviewed:
+coordinator-only writes, a monotonic <code>revision</code> for CAS, the
+state machine <code>offered → claimed → working ⇄ blocked → ready →
+released</code> plus <code>stale</code>, <code>paths</code> that must be
+disjoint while active, <code>last_seen</code> heartbeats, and a
+deterministic <code>{basename}-{sha256(abs)[:12]}</code> target slug rather
+than a basename that collides. Core owns the base record; the plugin keeps
+<code>worktree</code> and <code>branch</code> as its own fields on it.</p>
+
+<p><strong>J3's G9 entered as a ? and was resolved to ✘ by looking</strong>,
+so the cell says ✘ — two files describing which agents hold which paths is
+exactly how a claim and a roster come to disagree, and the disagreement
+gets discovered by an agent trusting the wrong one.
+<strong>J5 fails G7 today</strong> because #263 is
+unapproved, so nothing can land behind it; it is worth re-asking once the
+journal exists, and it is recorded here so that is a re-evaluation rather
+than a rediscovery.</p>
+
+<div class="cmp">
+  <div class="rec"><div class="h">the rule this settles</div>
+  A lifecycle fact that outlives a session is written to the roster.</div>
+  <div><div class="h">and its corollary</div>
+  A fact describing <em>this</em> session is projected into
+  <code>status.json</code>. If you cannot say which a new field is, it is
+  the first one.</div>
+</div>
+
+<h2>3 · Wake and steer — what carries an instruction?</h2>
+
+<table>
+<tr>
+  <th>Idea</th><th class="m">All</th>
+  <th class="m">G1</th><th class="m">G2</th><th class="m">G6</th>
+  <th class="m">G8</th><th class="m">G10</th>
+</tr>
+<tr>
+  <td><span class="idea">K1</span> harness message only</td>
+  <td class="m bad">✘</td>
+  <td class="m bad">✘</td><td class="m bad">✘</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m bad">✘</td>
+</tr>
+<tr>
+  <td><span class="idea">K2</span> file inbox + harness message — today's <code>relay.py</code>, then wake</td>
+  <td class="m bad">✘</td>
+  <td class="m ok">✔</td><td class="m huh">?</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m bad">✘</td>
+</tr>
+<tr>
+  <td><span class="idea">K3</span> runtime adapter send-keys only</td>
+  <td class="m bad">✘</td>
+  <td class="m bad">✘</td><td class="m bad">✘</td><td class="m ok">✔</td><td class="m huh">?</td><td class="m ok">✔</td>
+</tr>
+<tr class="rec">
+  <td><span class="idea">K4</span> durable <strong>intent</strong> + adapter wake + <strong>observed</strong> confirmation</td>
+  <td class="m ok">✔</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td>
+</tr>
+<tr>
+  <td><span class="idea">K5</span> c2c DM</td>
+  <td class="m bad">✘</td>
+  <td class="m bad">✘</td><td class="m bad">✘</td><td class="m ok">✔</td><td class="m bad">✘</td><td class="m huh">?</td>
+</tr>
+</table>
+
+<p><strong>K2 is what the loop does today</strong> and <code>relay.py</code>
+exists precisely to make it safe, so its ? is the interesting mark. Its gap
+is narrow and its own docstring names it: the inbox is durable but
+<em>not delivered</em> — an idle agent never reads it — so delivery is
+procedural, and nothing records whether the wake landed. A batch written
+two minutes after a dreamer went quiet sat unread indefinitely. K3 is the
+mirror fault: keystrokes into a TUI are delivery with no receipt. Having
+both faults in one system is the reason to stop treating durability and
+delivery as separate practices.</p>
+
+<p><strong>K4</strong> adds the one thing neither has: the intent is a
+record with a state, and its confirmation is an <em>observation</em> — the
+process moved, the roster changed, the commit landed — not an agent's
+claim. It reuses #263's ternary <code>Applied | NotApplied |
+Unknown</code> rather than inventing a second proof vocabulary, and
+<code>Unknown</code> is a real outcome: a wake that may or may not have
+arrived is quarantined and shown, never assumed either way.</p>
+
+<h2>4 · Cross-host — how does an answer reach a loop on another machine?</h2>
+
+<p class="quiet">This matrix answers a question that has been open in
+<code>.dreamwork/questions.md</code> since 2026-07-25.</p>
+
+<table>
+<tr>
+  <th>Idea</th><th class="m">All</th>
+  <th class="m">G1</th><th class="m">G3</th><th class="m">G4</th>
+  <th class="m">G7</th><th class="m">G8</th><th class="m">G11</th>
+</tr>
+<tr>
+  <td><span class="idea">L1</span> don't — same-host only</td>
+  <td class="m bad">✘</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m bad">✘</td>
+</tr>
+<tr>
+  <td><span class="idea">L2</span> ssh in and append the remote <code>questions.md</code></td>
+  <td class="m bad">✘</td>
+  <td class="m bad">✘</td><td class="m ok">✔</td><td class="m bad">✘</td><td class="m ok">✔</td><td class="m bad">✘</td><td class="m ok">✔</td>
+</tr>
+<tr>
+  <td><span class="idea">L3</span> shared filesystem for <code>.dreamwork/</code></td>
+  <td class="m bad">✘</td>
+  <td class="m bad">✘</td><td class="m ok">✔</td><td class="m bad">✘</td><td class="m ok">✔</td><td class="m huh">?</td><td class="m ok">✔</td>
+</tr>
+<tr class="rec">
+  <td><span class="idea">L4</span> remote <strong>intent</strong> to that target's own writer, over an ssh forward</td>
+  <td class="m ok">✔</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td>
+</tr>
+<tr>
+  <td><span class="idea">L5</span> hub-to-hub federation over authenticated HTTP</td>
+  <td class="m bad">✘</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m bad">✘</td><td class="m huh">?</td><td class="m ok">✔</td>
+</tr>
+</table>
+
+<div class="cmp">
+  <div class="rec"><div class="h">rec · L4</div>
+  The target's own coordinator stays the only writer of its files. A remote
+  human, hub, or metadreamer sends an <em>intent</em> to that target's
+  receive endpoint; the local writer applies it and issues the receipt. An
+  ssh forward is not a new bind, so loopback-only survives — and this is
+  the shape <code>daemon-mode.md</code> already recorded for stage 3.</div>
+  <div><div class="h">what it beat · L2</div>
+  Appending the remote <code>questions.md</code> over ssh is two writers to
+  one authority. The loop's own words when it filed the question:
+  <em>a wrong write corrupts another loop's record.</em> L3 is the same
+  fault with more machinery, and sync tools resolve conflicts by
+  last-write-wins — the one resolution a durable record must never
+  accept.</div>
+</div>
+
+<p class="quiet">L5 is not wrong, only premature: it is blocked on auth
+(#275, #276) and it does not conflict with L4 — L4 is the transport L5
+would eventually authenticate.</p>
+
+<h2>5 · Cost — what wakes N dreamers?</h2>
+
+<table>
+<tr>
+  <th>Idea</th><th class="m">All</th>
+  <th class="m">G1</th><th class="m">G5</th><th class="m">G7</th><th class="m">G12</th>
+</tr>
+<tr>
+  <td><span class="idea">M1</span> N per-session heartbeats (today, scaled up)</td>
+  <td class="m bad">✘</td>
+  <td class="m ok">✔</td><td class="m bad">✘</td><td class="m ok">✔</td><td class="m ok">✔</td>
+</tr>
+<tr>
+  <td><span class="idea">M2</span> one host scheduler — event-driven wake, quiet backoff (#205)</td>
+  <td class="m huh">?</td>
+  <td class="m ok">✔</td><td class="m huh">?</td><td class="m ok">✔</td><td class="m huh">?</td>
+</tr>
+<tr class="rec">
+  <td><span class="idea">M3</span> retire-when-idle — no dreamer, therefore no timer</td>
+  <td class="m ok">✔</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td>
+</tr>
+<tr>
+  <td><span class="idea">M4</span> M2 and M3 together</td>
+  <td class="m huh">?</td>
+  <td class="m ok">✔</td><td class="m huh">?</td><td class="m ok">✔</td><td class="m huh">?</td>
+</tr>
+</table>
+
+<p><strong>M1 fails by arithmetic.</strong> The tick interval is chosen to
+sit under the prompt-cache TTL, so an idle target's timer is a standing
+bill for keeping warm a cache nothing is reading. #205 already measured the
+single-target case: ~40 ticks in a day, most arriving mid-increment or
+mid-stream where the right action was nothing.</p>
+
+<p><strong>M2's two ?s point in opposite directions</strong>, which is why
+it needs a measurement rather than an argument: event-driven waking might
+cut total ticks substantially, or merely move them — and the risk to G12 is
+that a scheduler deciding a target is quiet while it is mid-increment makes
+active dreaming <em>slower</em>. The experiment is small: run one host for a
+fixed window with the scheduler behind a flag, count ticks against the same
+window on timers, and assert that a target with in-flight work never waited
+longer than 4.75 min.</p>
+
+<p><strong>M3 is a policy, not machinery</strong>, and the loop already
+believes it — DREAMWORK.md says <em>retire idle dreamers rather than
+leaving them parked</em>, SKILL.md says <em>dreamers are batches, not
+careers</em>. What is missing is that nothing enforces it and no record
+shows it happened, which is matrix 2's roster and matrix 3's observed
+retirement — both of which this plan builds first anyway. Its cost is the
+human's first steer to a retired target paying a cold start: his latency
+once, not a standing bill.</p>
+
+<h2>6 · The metadreamer</h2>
+
+<table>
+<tr>
+  <th>Idea</th><th class="m">All</th>
+  <th class="m">G2</th><th class="m">G4</th><th class="m">G5</th>
+  <th class="m">G8</th><th class="m">G13</th><th class="m">G14</th>
+</tr>
+<tr>
+  <td><span class="idea">N1</span> none — the human is the only fleet manager</td>
+  <td class="m bad">✘</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m bad">✘</td>
+</tr>
+<tr>
+  <td><span class="idea">N2</span> its own lifecycle path — direct spawn and kill</td>
+  <td class="m bad">✘</td>
+  <td class="m ok">✔</td><td class="m bad">✘</td><td class="m bad">✘</td><td class="m bad">✘</td><td class="m bad">✘</td><td class="m ok">✔</td>
+</tr>
+<tr class="rec">
+  <td><span class="idea">N3</span> a <strong>client of the same lifecycle API the human uses</strong>: depth ≤ 1, budget lease, written delegation</td>
+  <td class="m ok">✔</td>
+  <td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td><td class="m ok">✔</td>
+</tr>
+</table>
+
+<p>N3 costs nothing architecturally, which is the interesting part: same
+intents, same roster, same observed confirmations. Its bounds are three
+lines of policy — spawn depth ≤ 1 (a metadreamer may spawn dreamers; those
+may not spawn dreamers), a budget lease it cannot renew for itself, and a
+DREAMWORK.md delegation line in the shape plugin authority lines already
+use.</p>
+
+<div class="note"><strong>The constraint this yields, and it binds every
+stage below.</strong> Build no lifecycle path that only the human can use,
+and none that only an agent can use. The metadreamer must reuse the human's
+path, and the human must be able to do by hand anything the system does for
+him. A private path for either is how N2's failure arrives later wearing
+N3's name — which is why this is worth accepting now, while stage F is
+still far off and it is free to hold.</div>
+
+<h2>The laws, and where each comes from</h2>
+
+<table>
+<tr><th style="width:4ch">#</th><th>Law</th><th style="width:10ch">From</th></tr>
+<tr><td>1</td><td>One writer per target. Everything else sends intents.</td><td class="dim">L4</td></tr>
+<tr><td>2</td><td>A lifecycle fact that outlives a session lives in the roster; <code>status.json</code> is a projection.</td><td class="dim">J4</td></tr>
+<tr><td>3</td><td>Durability and delivery are separate and both are recorded: intent durable, wake delivered, confirmation observed.</td><td class="dim">K4</td></tr>
+<tr><td>4</td><td>Retirement is observed, never claimed — or the state is <code>Unknown</code> and loud.</td><td class="dim">K4 · G2</td></tr>
+<tr><td>5</td><td>Caps are leases in the roster, not counters in a process.</td><td class="dim">#229 review</td></tr>
+<tr><td>6</td><td>Ports are OS-assigned and servers prove their identity; remove shared mutable state rather than owning it.</td><td class="dim">#203</td></tr>
+<tr><td>7</td><td>No private lifecycle path, for the human or for an agent.</td><td class="dim">N3</td></tr>
+</table>
+
+<h2>Staging — and what stage A actually costs</h2>
+
+<table>
+<tr><th style="width:9ch">Stage</th><th>What lands</th><th style="width:16ch">Needs</th></tr>
+<tr><td class="ok">A · legible</td><td>roster as the core record (shape in <code>file-formats.md</code>, check in <code>lint.py</code>, migration) · <code>ud-dw-agents list|show|orphans</code> · orphan reconciliation against observed processes and ports · hub renders the roster, still read-only</td><td class="dim">nothing unapproved</td></tr>
+<tr><td>B · intents</td><td>intent record and <code>intend spawn|wake|compact|retire</code> · observed retirement · compaction as an intent (#127, #138/#156) · retire-when-idle becomes enforceable</td><td class="dim">stage A</td></tr>
+<tr><td>C · runtime</td><td>adapter interface and capability profile (herdr · tmux · harness, all three implementations) · spawn and wake through it · the scheduler experiment behind a flag</td><td class="dim">#201, #205</td></tr>
+<tr><td>D · control plane</td><td>hub POST with watch's exact authority model · pause/resume/wrap/compact/retire from the page · every new state obeys <code>transitions.md</code></td><td class="dim">stage C</td></tr>
+<tr><td>E · cross-host</td><td>L4 as transport, host-qualified identity</td><td class="dim">#275/#276 auth</td></tr>
+<tr><td>F · metadreamer</td><td>N3: the fleet as a target, depth ≤ 1, budget lease</td><td class="dim">stages A–D</td></tr>
+</table>
+
+<p><strong>Stages A and B need none of the unapproved items</strong> — the
+roster is a file and the intents are records, both buildable with what
+exists. That is deliberate: it is what makes “small increments, each useful
+alone” a ✔ for I6′ rather than a ?.</p>
+
+<h2>Verification — each check named with the bug that must make it red</h2>
+
+<table>
+<tr><th>Check</th><th>Made red by</th></tr>
+<tr><td>roster shape and disjointness</td><td class="quiet">two active agents holding the same path must fail <code>lint.py</code></td></tr>
+<tr><td>orphan detection</td><td class="quiet">kill a dreamer's process; the row must become orphan, not stale-but-fine</td></tr>
+<tr><td>observed retirement</td><td class="quiet">an agent that prints “retiring” and stays alive must fail</td></tr>
+<tr><td>cap leases</td><td class="quiet">two watch processes on one target must not each admit half the cap</td></tr>
+<tr><td>intent confirmation</td><td class="quiet">crash between wake and confirmation must yield <code>Unknown</code>, never silent success</td></tr>
+<tr><td>hub writes nothing</td><td class="quiet">an intent POST must not modify any target file</td></tr>
+<tr><td>Host / Origin gate</td><td class="quiet">a wrong Origin must be refused <em>before</em> the body is read</td></tr>
+<tr><td>port identity</td><td class="quiet">a stranger's server on the expected port must be rejected, not graded</td></tr>
+<tr><td>scheduler (C)</td><td class="quiet">a target with in-flight work waiting longer than 4.75 min must fail the gate</td></tr>
+<tr><td>transitions (D)</td><td class="quiet">assert intermediate values, then reintroduce the snap and watch it go red</td></tr>
+</table>
+
+<div class="note">Worth naming while the checks are still being planned
+rather than discovered: guard runs took 15–25 minutes under several
+dreamers and ~40 chromium processes, and a fixture seeded by one guard has
+already made a neighbour's check vacuous <em>without making it red</em>.
+Multi-dreamer work makes the verification suite itself a concurrency
+problem. #148's shared runner and #203's port class are the two items that
+stop it being one.</div>
+
+<h2>Deliberately not decided here</h2>
+
+<ul>
+<li><strong>Multi-writer file safety within a target</strong> —
+<code>DomainFileStore</code>, atomic replace, generation and digest
+lineage, ternary proof: #263, awaiting approval. This plan depends on it
+and reuses its vocabulary; it does not restate the contract. #264's
+research question is largely answered by it plus matrix 2.</li>
+<li><strong>Topic chats and worker promotion</strong> — #229/#270 v2,
+awaiting approval. Its <code>WorkerAdapter</code> and this plan's
+supervisor are the same seam from two surfaces; whichever is approved
+first should name the other.</li>
+<li><strong>Auth for non-loopback exposure</strong> — #275, #276. Nothing
+in stages A–D needs it; stage E is blocked on it.</li>
+<li><strong>Which session manager wins</strong> — herdr preferred, tmux
+fallback, behind an adapter; the choice is a stage-C measurement, and #201
+holds the reading list.</li>
+</ul>
+
+<h2>The ask</h2>
+
+<div class="q">
+<h3>M1 · Adopt I6′ as the direction, authorizing stage A only?</h3>
+<div class="cmp">
+  <div class="rec"><div class="h">rec</div>Three tiers, roster as the
+  durable record, intents with observed confirmation, retire-when-idle.
+  Authorizes stage A: a roster, a bounded CLI, orphan reconciliation, a
+  read-only hub view. Stages B–F each return with their own plan.</div>
+  <div><div class="h">alternative</div>Keep I1 and accept that a dreamer's
+  existence is only ever as legible as its coordinator's memory. Defensible
+  while there is one dreamer per human; the four orphans and the two
+  prose-retirements are what it costs at N.</div>
+</div>
+</div>
+
+<div class="q">
+<h3>M2 · Fold L4's rule as the answer to the cross-host question?</h3>
+<div class="cmp">
+  <div class="rec"><div class="h">rec</div><em>Never write another target's
+  files; send an intent to its writer.</em> Answers the question open since
+  2026-07-25 and lands in SKILL.md's durable-state section, where the
+  trigger lives.</div>
+  <div><div class="h">alternative</div>Leave it open. The cost is that the
+  next agent facing a remote answer improvises, and L2 is the obvious
+  improvisation.</div>
+</div>
+</div>
+
+<div class="q">
+<h3>M3 · Retire-when-idle before the scheduler?</h3>
+<div class="cmp">
+  <div class="rec"><div class="h">rec</div>M3 first: no measurement needed,
+  and stage B builds its prerequisites anyway. M2 becomes a measured
+  optimisation with a known-safe fallback.</div>
+  <div><div class="h">alternative</div>M2 first, on the argument that
+  event-driven waking is the better end state. It is — but it is the one
+  unmeasured claim in the plan, and betting the cost goal on it puts a ? on
+  the whole direction.</div>
+</div>
+</div>
+
+<div class="q">
+<h3>M4 · Accept “no private lifecycle path” as a standing constraint now?</h3>
+<div class="cmp">
+  <div class="rec"><div class="h">rec</div>Yes. Free to hold from the
+  start, expensive to retrofit, and it is what keeps the stage-F
+  metadreamer from needing a second mechanism.</div>
+  <div><div class="h">alternative</div>Decide it when stage F arrives — at
+  which point every stage-A-to-D path already exists in whatever shape was
+  convenient.</div>
+</div>
+</div>
+
+<footer>
+IGC method per the <code>igc</code> skill: idea × goal × context, marks not
+scores, a ✘ refutes and a ? is an experiment. Plan:
+<code>.dreamwork/docs/plans/multi-dreamer.md</code> · ask:
+<code>.dreamwork/questions.md</code> · offline-clean, nothing fetched.
+</footer>
+
+</div>
+</body>
+</html>

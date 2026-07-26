@@ -101,3 +101,12 @@ push when the human is away from the page. (c) is "channels" below.
 5. **Metadreamer** — dreamer-spawns-dreamer + management guardrails.
 
 Build not yet started; stage 1 is ready to plan in detail on Max's go.
+
+**Superseded for architecture by `multi-dreamer.md` (#288, 2026-07-26).**
+This file stays as the brainstorm and the record of his five decisions
+(runtime adapter, web lifecycle, ssh swarm, channel plugins, PWA,
+metadreamer) — those are inputs and are not restated elsewhere. The staging
+above is the coarse version; the option space is evaluated against traced
+goals, and the tier boundaries and durable-state laws are decided, in
+`multi-dreamer.md`. Where the two disagree about *shape*, that file is
+current; where they disagree about what he *decided*, this one is.
