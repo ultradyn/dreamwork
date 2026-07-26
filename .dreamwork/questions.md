@@ -2,6 +2,31 @@
 
 ## Open
 
+- **P1 · 2026-07-27 — #286 note/answer paragraphs: preserve authored blank
+  lines in the managed question record?** Read-only diagnosis traced the loss.
+
+  The browser and `submissions.log` retain exact newlines, but `human_block()`
+  currently collapses **all** whitespace into one paragraph before writing
+  `questions.md`; the parser treats a blank line as ending Note/Answer capture;
+  the renderer uses inline Markdown. Therefore the durable question channel
+  cannot reconstruct paragraphs today.
+
+  Rec **B1**: make the existing safe writer paragraph-aware. Within each
+  authored paragraph, soft newlines and source hard-wraps still join with spaces;
+  authored blank lines become indented paragraph separators that remain inside
+  the Note/Answer sub-record. The parser reconstructs `\n\n`, and the existing
+  block Markdown renderer emits separate paragraphs. Preserve #146's anti-forge
+  guarantees: pasted bullets/sections never become sibling entries, and exact
+  receipt bytes remain unchanged. #254 replies inherit this contract later.
+
+  **B2** stores a visible sentinel such as `¶` (refuted: invents an ugly private
+  dialect). **B3** reconstructs from `submissions.log` (refuted: receipt is not
+  the authoritative questions channel). **B4** keeps single paragraphs.
+
+  Approval authorizes a written design/fixture proposal only—no grammar, writer,
+  parser, renderer, migration, or deployment change. Answer `Accept B1 for
+  design`, `Accept B1 with amendments: …`, or `Choose B4; keep one paragraph`.
+
 - **P1 · 2026-07-27 — #283 index-lock attribution: authorise one bounded
   privileged audit capture, or stop at recurrence evidence?** Updated report:
   `.dreamwork/docs/research/git-index-lock-attribution-283.md`.
