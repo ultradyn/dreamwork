@@ -115,6 +115,19 @@
     it is now an explicit third amendment: topic-chat generated HTML consumes
     the canonical resolver/plugin override and does not embed a private theme.
     The artifact is current; A–E remain awaiting approval.
+  - **Note (human, via watch, 2026-07-26 16:12):** we should be able to
+    attach chat's to any artifact or reference within an artifact. Still
+    want to be able to see all chats via /chat route too.
+  - **Follow-up (loop, 2026-07-26 16:12):** Re-homed onto this #229 card
+    from a misfiled 15:41 note: submissions.log shows
+    from=/review?p=threaded-topic-chats.html&q=#229 but body.question
+    was the #255 title. Same amendment also under #253 (right design
+    home). Attachment is provenance/navigation — chats on any artifact
+    or precise reference still list at /chat. A–E on this proposal
+    remain open; this note is not an approval. Root cause candidate:
+    review-dock submit uses positional data-qkey, so a live re-sort of
+    questions_open can post against the wrong entry while the URL still
+    shows the docked q=.
 
 - **P2 · 2026-07-26 — #221 review datetime ordering: use file mtime?**
   The decision artifact is at `.dreamwork/review/review-datetime-order.html`.

@@ -18,9 +18,45 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **261**
+Next id: **267**
 
 ## Open
+
+- **#266** — Review-dock note/answer can land on the wrong question · P1 · bug ·
+  25m · origin: **human** · confirmed **2026-07-26 16:12** by helper · on
+  `/review?p=threaded-topic-chats.html&q=…#229…` a note was posted with
+  `from` still showing that URL but `body.question` = #255 title
+  (submissions.log 15:41:31) · root cause candidate: `data-qkey` is a
+  positional index into `questions_open`; live re-sort/insert after dock paint
+  makes `sendComment`/`sendAnswer` resolve a different `entry.title` while the
+  URL `q=` is unchanged · fix: bind dock/submit to stable title (or qid), not
+  list index; red browser: open review dock for A, insert higher-priority open
+  entry, submit note, assert it appends under A not B · re-homed human words
+  onto #229 + #253; do not treat as #255 content
+
+- **#265** — Add a research command to the composer · P2 · command design ·
+  origin: **human** · **human via watch 16:05** · hidden/menu command for
+  primary-source feasibility research on features/subprojects · distinguish
+  from #225 explore: research gathers cited durable facts; explore synthesises
+  options/visual proposal · define wire name, main-dreamer vs fresh worker,
+  research-only authority, output/provenance, retries and promotion · blocked on
+  #225 command contract
+- **#264** — Research concurrent-safe Dreamwork state and task ownership · P1 ·
+  broad research/design · origin: **human** · **human via watch 16:05** · can a
+  second dreamer/coordinator work in parallel without corrupting assignments,
+  questions, user events or task state? compare single-writer+workers,
+  append-only events/materialised views, locks/atomic replace/CAS, leases,
+  SQLite and per-record spools · cover stale recovery, multi-process same-target
+  servers, worktrees/c2c, compaction, cross-machine/git boundaries and migration
+  · blocked on user-event model #263
+- **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
+  origin: **human** · **human via watch 16:05** · immutable disk event before
+  acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
+  ingestion with statuses/receipt ids/errors · CLI like
+  `ud-dw-user-events --limit 20` returns exact events and processing status ·
+  compare append-only JSONL vs one-file spool; atomicity, concurrency,
+  redaction/retention/migration and dual witnesses · unify #260/#262, never a
+  third inconsistent queue · blocked on #261 incident diagnosis
 
 - **#260** — Make post-compaction submission reconciliation cursor-based · P1 ·
   reliability · 25m · origin: **loop** · incident confirmed by **human 15:47** ·
@@ -82,8 +118,10 @@ Next id: **261**
   `.dreamwork/docs/research/contextual-review-annotations.md` (`b9b6a47`) ·
   sidecar anchors + optional one-time #229 promotion is the IGC survivor;
   precise or whole-artifact attached chats remain globally visible at `/chat` ·
-  **human amendment 15:43:** ship main-dreamer response mode first with no
-  subagent, then allow explicit promotion to a fresh worker without forking
+  **human amendment 15:41/15:43** (also re-homed onto #229 after #266 misfile):
+  chats attach to any artifact or precise in-artifact reference and still appear
+  at `/chat`; ship main-dreamer response mode first with no subagent, then
+  allow explicit promotion to a fresh worker without forking
   transcript/attachment history; no silent dispatch · iframe bridge vs in-page
   decision awaiting human answer · no implementation authority
 
@@ -245,7 +283,9 @@ Next id: **261**
   recovery, privacy, concurrency, cost, state machine, and smallest staged
   build · proposal only, no implementation authority · artifact complete and
   visually reviewed at `.dreamwork/review/threaded-topic-chats.html` · awaiting
-  A–E approval in questions.md
+  A–E approval in questions.md · **human amendment (re-homed 16:12 onto this
+  card after #266 misfile):** chats attach to any artifact or precise reference
+  within one, and remain listed on the global `/chat` route · also under #253
 
 - **#228** — Unify project dashboard settings · P2 · idea · 30m ·
   origin: **human** · implication of **human via watch 12:49**: all
