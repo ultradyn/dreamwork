@@ -194,13 +194,6 @@ Next id: **290**
   privacy/retention and migration from composer localStorage · expose one deep
   module that future inputs must consume · design alongside #263 receipt boundary
 
-- **#268** — Hide Dreamwork-only plugins from ordinary skill discovery · P1 ·
-  plugin integration · 25m · origin: **human** · **human via watch 16:27** ·
-  apply the #267 survivor across `ud-dreamwork-*`: plugins should not appear as
-  user-invocable/general model skills when Dreamwork is inactive, but the active
-  loop must still resolve and load them predictably · preserve install/update
-  compatibility, explicit file-based fallback and tests · blocked on #267
-
 - **#265** — Add a research command to the composer · P2 · command design ·
   origin: **human** · **human via watch 16:05** · hidden/menu command for
   primary-source feasibility research on features/subprojects · distinguish
@@ -957,6 +950,17 @@ Next id: **290**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#268** — Hide Dreamwork-only plugins from ordinary skill discovery · P1 ·
+  landed/migrated 2026-07-27 · active loops parse only exact bounded
+  `DREAMWORK.md` Load declarations and resolve bundled/sibling/explicit packages
+  deterministically, reading emitted `SKILL.md` files directly · migration first
+  inventories every alias/source across recursive global/project/configured Pi
+  roots, requires an exact fresh schema-v1 manifest, and removes aliases through
+  a reversible drift-checked transaction · Pi `DefaultResourceLoader` proves
+  global/project/configured plugins present before migration and absent after;
+  live host post-check is empty while both active sources still resolve · final
+  Standards + Spec PASS; 67 focused, 504 tests + 46 subtests · `ac4d57a`
 
 - **#255** — Make composer confirmation self-dismiss reliably · P1 · UI bug ·
   landed 2026-07-26 · one document-scoped `confirmationFor` controller serves
