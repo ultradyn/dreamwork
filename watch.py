@@ -1238,16 +1238,17 @@ const linkifyReview = (escaped, title) => escaped.replace(
   (m, name) => '`<a class="rev" href="/review?p=' + encodeURIComponent(name) +
     '&q=' + encodeURIComponent(title) + '">.dreamwork/review/' + name +
     '</a>`');
-/* ── rendered prose (#102) ────────────────────────────────────────────────
+/* ── rendered prose (#102, #158) ──────────────────────────────────────────
    The loop writes its files hard-wrapped at ~72 columns. A <pre> renders
    those breaks literally and the browser re-wraps them again at a narrower
    reading column, so every paragraph breaks twice into a ragged mess. So we
    join the wraps back into paragraphs and let the column do the wrapping.
 
-   The line this draws: MARKDOWN PROSE REFLOWS, RAW TEXT DOES NOT. Question
-   bodies, answers, follow-ups, dreams and the dashboard's .md peeks are
-   prose the page composes, and they reflow. `/file`, status JSON and the git
-   tail are shown as they are on disk, and stay verbatim in a <pre>.
+   The line this draws: MARKDOWN PROSE REFLOWS, RAW TEXT DOES NOT — by WHAT
+   the text is, not who composed it (#158). Question bodies, answers,
+   follow-ups, dreams, dashboard .md peeks, and `/file` for .md-like paths
+   reflow through mdB. Source code and other files at `/file` stay verbatim
+   in a <pre>. JSON is neither (#178). Status and git have their own components.
 
    Four things must survive the join, because each one carries meaning a
    joined line would destroy:
@@ -2200,10 +2201,17 @@ async function sendAsk(form) {
   if (res && res.ok) { box.value = ''; msg.textContent = 'asked'; await tick(); }
   else msg.textContent = res ? 'question was refused — your words are kept' : 'dreamwork is unreachable — your words are kept';
 }
+/* #158: reflow by file kind, never by content sniff. A .py with a `#`
+   comment must stay pre; a research .md must reflow. Path from the query
+   is the only signal — same extensions a human means by ".md or similar". */
+function isMarkdownFile(p) {
+  const s = String(p || '').toLowerCase();
+  return s.endsWith('.md') || s.endsWith('.markdown') || s.endsWith('.mdx');
+}
 function buildFile(param, text) {
-  const body = text == null
-    ? '<div class="dim">not found</div>'
-    : `<pre>${esc(text)}</pre>`;
+  if (text == null)
+    return '<div id="filebody"><div class="dim">not found</div></div>';
+  const body = isMarkdownFile(param) ? mdB(text) : `<pre>${esc(text)}</pre>`;
   return `<div id="filebody">${body}</div>`;
 }
 /* review view: the raw artifact in an iframe (style-isolated) with the

@@ -1859,9 +1859,10 @@ class TestAppShell(unittest.TestCase):
         self.assertNotIn('aentry', watch.PAGE)
 
     def test_page_reflows_prose_but_not_raw_text(self):
-        # #102: markdown prose reflows (hard wraps joined, inline emphasis
-        # rendered); raw text stays verbatim in a <pre>. Both halves matter —
-        # reflowing a source file or a JSON blob would be a regression.
+        # #102 + #158: markdown prose reflows (hard wraps joined, inline
+        # emphasis rendered); raw text stays verbatim in a <pre>. The useful
+        # line is WHAT the file is, not WHO composed it — .md at /file reflows
+        # (same mdB as dashboard peeks); source code at /file does not.
         for token in ('function mdBlocks', 'function mdRender', 'const mdSpans',
                       'const mdB =', 'const mdBReview =',
                       # the four things a join must not destroy
@@ -1871,9 +1872,11 @@ class TestAppShell(unittest.TestCase):
                       'mdBReview(q.body.trim(), q.title)', 'mdB(d.content)',
                       'expand(n, mdB(d.files[n]))', 'mdInline(txt)'):
             self.assertIn(token, watch.PAGE)
-        # the raw surface keeps <pre>: the file viewer's whole job is to be
-        # literal, and it serves code as well as prose.
-        self.assertIn('`<pre>${esc(text)}</pre>`', watch.PAGE)
+        # #158: /file branches on kind — .md (and kin) through mdB; else pre.
+        for token in ('function isMarkdownFile', 'function buildFile',
+                      'isMarkdownFile(param)', 'mdB(text)',
+                      '`<pre>${esc(text)}</pre>`'):
+            self.assertIn(token, watch.PAGE)
         # status.json was in that list until #130 and is not any more. It is
         # neither prose to reflow nor a file to show verbatim — it is a set of
         # facts, and it has its own component. Asserting the dump is GONE is

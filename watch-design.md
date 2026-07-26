@@ -504,14 +504,20 @@ inside a narrower card, so every paragraph breaks twice and reads as a
 ragged mess (human, 2026-07-25, with a screenshot). So prose is **reflowed**:
 wrapped lines are joined and the reading column does the wrapping.
 
-**The line: markdown prose reflows, raw text does not.** Question bodies,
-answers, follow-up notes, dreams, and the dashboard's `.md` peeks are prose
-the page composes, and they go through `mdB` / `mdBReview`. `/file` is shown
-*as it is on disk* and stays verbatim in a `<pre>` — the file viewer's whole
-job is to be literal, and it serves code as well as prose. Two things have
-left that list, both for the same reason and neither of them prose:
-`status.json` (#130) and the git tail (#132) are sets of *facts*, not text he
-reads literally, and each now has a component of its own (below).
+**The line: markdown prose reflows, raw text does not — by what the file
+is, not who wrote it (#158).** Question bodies, answers, follow-up notes,
+dreams, and the dashboard's `.md` peeks go through `mdB` / `mdBReview`.
+`/file` used to treat every path as raw source (#102 drew the line at who
+composed the text); that made research docs and notes unreadable at the
+reading column. The useful line is the extension: **`.md` / `.markdown` /
+`.mdx` at `/file` reflow through the same `mdB`**, and everything else at
+`/file` stays verbatim in a `<pre>` (source code must not reflow — human,
+2026-07-25 15:23). Path-based, never content-sniffed: a `#` in a `.py`
+comment is not a heading. Two things have left the prose list for a different
+reason, neither of them markdown: `status.json` (#130) and the git tail
+(#132) are sets of *facts*, not text he reads literally, and each now has a
+component of its own (below). JSON at `/file` is still neither prose nor a
+toggle yet (#178).
 
 Four things survive the join, because each carries meaning a joined line
 would destroy: a **blank line** is a paragraph break; a leading **`- `** is a
