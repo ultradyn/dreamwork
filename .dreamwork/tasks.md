@@ -18,9 +18,15 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **222**
+Next id: **225**
 
 ## Open
+
+- **#224** — Reset composer kind after a do-now send · P2 · idea · 15m ·
+  origin: **human** · **human via watch 12:36** · after a successful
+  `do now`, return the selected command type to `add idea`; preserve the
+  existing successful-send draft clearing and use the established indicator
+  transition rather than snapping
 
 - **#221** — Sort dashboard reviews by datetime · P2 · idea · 15m ·
   origin: **human** · **human via watch 12:10** · establish which datetime
@@ -51,15 +57,6 @@ Next id: **222**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
-- **#157** — A backticked filename links whether or not it resolves ·
-  P2 · bug · 30m · verified: `/file` returns 200 and renders a 404
-  inside it, and `/filedata` returns an HTML error page where JSON is
-  expected · `file-formats.md` works (target root); `questions.md` and
-  `status.json` are real but live at `.dreamwork/`; `newerrand.py` is in
-  the SIBLING repo and should stay plain text — do not invent cross-repo
-  linking · resolve before linkifying: a link that 404s promises
-  something, which is "nothing fails quietly" aimed at the page's own
-  affordances
 - **#158** — `/file` reflows markdown · P2 · bug · 25m · **APPROVED**
   2026-07-25 15:23 ("rec still... only reflowing .md or similar. not
   source code") · replaces the #102 rule, which drew its line at WHO
@@ -521,6 +518,13 @@ Next id: **222**
   **blocked**: human pick
 
 ## Recently landed
+
+**#157 + #222 + #223** links now promise only reachable destinations
+(0c1f5ad, deployed): the collector ships existing target-relative paths;
+known target/`.dreamwork/` paths link to `/file`, unresolved local-looking
+references stay code, and `github.com/...` becomes external HTTPS. The
+working-tree startup ReferenceError reported via do-now was fixed before
+commit. Reflow guard, 405 pytest, and lint pass (2026-07-26).
 
 **#206** the race-safe coordination protocol is in
 `.dreamwork/docs/plans/parallel-architecture.md` (c59c163): file claims win,
