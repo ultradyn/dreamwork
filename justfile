@@ -3,7 +3,9 @@
 # the verification every increment runs (there is no CI; this is the net).
 # Three parts: pytest cannot see rendered structure, the guards cannot see
 # Python, and neither reads the loop's OWN files. A change that passes one and
-# fails another is still broken.
+# fails another is still broken. The browser half is intentionally
+# serial; run it on a reasonably idle machine. Its motion checks sample rAF
+# geometry and heavy contention can produce honest “not enough frames” reds.
 test: pytest lint guards
 
 # the Python half — asserts on generated source, not on what renders
@@ -110,7 +112,11 @@ lint:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history plugcmd qorder serving gitrow burndown"
+    DEFAULT_GUARDS="headertravel reflow qacard oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history plugcmd qorder serving gitrow burndown"
+    GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
+    # `-` rather than `:-` lets a focused run deliberately set this empty.
+    HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}
+    GUARD_TIMEOUT=${DREAMWORK_GUARD_TIMEOUT:-120}
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"
@@ -146,11 +152,14 @@ guards port="39899":
       # Reset the target before EVERY guard — see the header. The server
       # re-reads from disk per request, so no restart is needed.
       rm -rf "$OUT/target" && cp -r dev/capture/fixture "$OUT/target"
-      if node "dev/capture/$g.mjs" "$OUT/$g" {{port}} >"$OUT/$g.log" 2>&1; then
+      if timeout --kill-after=5s "$GUARD_TIMEOUT" \
+          node "dev/capture/$g.mjs" "$OUT/$g" {{port}} \
+          >"$OUT/$g.log" 2>&1; then
         echo "  PASS $g"
       else
+        code=$?
         fail=1
-        echo "  FAIL $g"
+        echo "  FAIL $g${code:+ (exit $code)}"
         grep -E "^(FAIL|Error)" "$OUT/$g.log" | head -5 | sed 's/^/        /'
       fi
     done
@@ -159,12 +168,14 @@ guards port="39899":
     # ephemeral ports, so they need no plumbing here and cannot fight the
     # watch server above for a port. Until these ran, a green `just test` did
     # not cover the hub at all, which is #117 verbatim one directory over.
-    for h in hub contract; do
-      if node "dev/hub/$h.mjs" "$OUT/$h" >"$OUT/$h.log" 2>&1; then
+    for h in $HUB_GUARDS; do
+      if timeout --kill-after=5s "$GUARD_TIMEOUT" \
+          node "dev/hub/$h.mjs" "$OUT/$h" >"$OUT/$h.log" 2>&1; then
         echo "  PASS $h"
       else
+        code=$?
         fail=1
-        echo "  FAIL $h"
+        echo "  FAIL $h${code:+ (exit $code)}"
         grep -E "^(FAIL|Error)" "$OUT/$h.log" | head -5 | sed 's/^/        /'
       fi
     done
