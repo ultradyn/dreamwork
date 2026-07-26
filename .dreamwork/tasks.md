@@ -18,9 +18,22 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **295**
+Next id: **296**
 
 ## Open
+
+- **#295** — Add subtle dithering to background shaders · P2 · visual/shader
+  quality · origin: **human** · **human via chat 2026-07-27 01:47** · add a
+  restrained, resolution-stable dithering treatment to the current background
+  shader and define how preserved/future shaders opt into it; reduce visible
+  gradient banding without reading as grain, degrading text contrast, shimmering
+  during motion, or causing device-pixel-ratio/resize seams · establish a
+  deterministic fallback and performance budget, then run detailed
+  visual-review-and-fix loops at representative desktop/mobile DPRs with
+  crop-zoom banding evidence, geometry/source reasoning, reduced-motion parity,
+  and settled screenshots until vision and geometry both PASS · coordinate with
+  #278 shader performance and #280 shader registry design; do not couple it to
+  #277 departing-element dreamfade
 
 - **#294** — Migrate the durable task ledger to SQLite and a tool/CLI API · P1 ·
   storage/tooling migration · origin: **human** · **human via `/answers`
