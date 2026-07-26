@@ -24,6 +24,25 @@
   Answer `Approve A–D as recommended`, or name changes to A name,
   B dispatch, C authority, or D output.
 
+- **P2 · 2026-07-26 — #253 contextual review annotations: keep the review
+  iframe and bridge selections to a parent-owned side rail?** Research is at
+  `.dreamwork/docs/research/contextual-review-annotations.md`. Three models
+  were tested: one chat per mark is too noisy/expensive; one document-wide
+  chat loses per-selection resolution; the survivor is lightweight anchored
+  sidecar notes with one-time promotion into #229 topic chat for deep or agent
+  work.
+
+  Rec: preserve the iframe as static, style-isolated evidence and add a narrow,
+  versioned `postMessage` selection bridge. The parent validates quote/context
+  and owns the mutable annotation rail. Anchors combine artifact hash, heading
+  path, paragraph ordinal and normalised quote/context; ambiguous edits become
+  explicit orphans, never silently move. Typed task/update requests mint normal
+  human-origin ledger tasks; workers run only after chat promotion or ordinary
+  coordinator dispatch.
+
+  Answer `Approve #253 iframe bridge as recommended`, or choose `in-page`
+  annotation rendering instead.
+
 - **P1 · 2026-07-26 — #255 composer confirmation lifecycle: approve the
   shared 5-second design?** Root cause is measured: typing during the POST sets
   `composing=true`, so success never creates the panel's 1425ms courtesy-close
