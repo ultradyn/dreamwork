@@ -898,6 +898,24 @@ class TestCollector(unittest.TestCase):
                           {"text": "the loop's words.", "author": "loop",
                            "when": None}])
 
+    def test_collect_lists_only_paths_the_linkifier_may_offer(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            os.makedirs(os.path.join(d, ".dreamwork"), exist_ok=True)
+            with open(os.path.join(d, "DREAMWORK.md"), "w") as f:
+                f.write("goal")
+            with open(os.path.join(d, ".dreamwork", "questions.md"), "w") as f:
+                f.write("# Questions for the human\n\n## Open\n\n"
+                        "- **Paths.** `DREAMWORK.md`, "
+                        "`.dreamwork/questions.md`, `newerrand.py`\n\n"
+                        "## Answered\n")
+
+            paths = watch.collect(d)["linkable_paths"]
+
+            self.assertIn("DREAMWORK.md", paths)
+            self.assertIn(".dreamwork/questions.md", paths)
+            self.assertNotIn("newerrand.py", paths)
+
     def test_page_shows_note_authorship(self):
         # the human's words sit a step up the text ramp from the loop's, each
         # with a dim label; the accent is not spent on either.

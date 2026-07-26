@@ -960,10 +960,19 @@ const pipBtn = (url, label) =>
   ` data-piplabel="${esc(label)}">${PIP_SVG}</button>`;
 const expand = (s, inner, cls='') =>
   `<details><summary class="${cls}">${s}</summary>${inner}</details>`;
-/* backticked repo-relative paths become /file links (zero agent burden) */
+/* Backticked references become links only when the destination is known.
+   `github.com/…` is an external URL; target files come from the collector's
+   closed set. Everything else stays code — a broken link is a false promise. */
 const linkify = h => h.replace(
   /`([\\w.-]+(?:\\/[\\w.-]+)+\\/?|[\\w-]+\\.[\\w]{1,8})`/g,
-  (m, p) => '`<a href="/file?p=' + encodeURIComponent(p) + '">' + p + '</a>`');
+  (m, p) => {
+    if (p.startsWith('github.com/'))
+      return '`<a href="https://' + p + '">' + p + '</a>`';
+    if (data && Array.isArray(data.linkable_paths) &&
+        data.linkable_paths.includes(p))
+      return '`<a href="/file?p=' + encodeURIComponent(p) + '">' + p + '</a>`';
+    return m;
+  });
 const preB = t => `<pre>${linkify(esc(t))}</pre>`;
 /* a backticked path to a review artifact docks THIS question onto the
    review page (carries its title); every other path stays a /file link. */
@@ -4576,6 +4585,26 @@ def read_text(path, limit=200_000):
         return None
 
 
+def linkable_paths(target):
+    """Existing target-relative files a prose renderer may promise as links.
+
+    The browser cannot safely ask `/filedata` for every code span while it
+    renders. Resolve once in the collector, excluding git/runtime bulk, then
+    ship the closed set beside the prose it governs.
+    """
+    out = []
+    for root, dirs, files in os.walk(target):
+        dirs[:] = [d for d in dirs if d not in
+                    {".git", ".worktrees", ".pi", ".playwright-mcp",
+                     "__pycache__", "node_modules"}]
+        for name in files:
+            path = os.path.join(root, name)
+            rel = os.path.relpath(path, target)
+            if not rel.startswith(".."):
+                out.append(rel)
+    return sorted(out)
+
+
 def list_dreams(dirpath, now):
     out = []
     if not os.path.isdir(dirpath):
@@ -5581,6 +5610,7 @@ def collect(target):
     return {
         "target": os.path.abspath(target),
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "linkable_paths": linkable_paths(target),
         "dreams": list_dreams(os.path.join(dw, "dreams"), now),
         "dreams_archive": list_dreams(
             os.path.join(dw, "dreams", "archive"), now),

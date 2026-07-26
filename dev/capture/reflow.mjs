@@ -101,6 +101,7 @@ const nest = await p.evaluate(`(() => {
            strong: (host.querySelector('strong') || {}).textContent || null,
            em: (host.querySelector('em') || {}).textContent || null,
            code: (host.querySelector('code') || {}).textContent || null,
+           links: [...host.querySelectorAll('a')].map(a => a.getAttribute('href')),
            stars: host.textContent.includes('**') };
 })()`);
 
@@ -152,6 +153,24 @@ ok('measured enough lines to be meaningful (>40)', qm.used > 40);
 ok('inline **bold**, *em* and `code` render, no literal markers left',
    nest.strong === 'para' && nest.em === 'em' && nest.code === 'a/path.md' &&
    !nest.stars);
+ok('an unresolved local-looking code span does not promise a broken /file',
+   nest.links.length === 0);
+const refs = await p.evaluate(`(() => {
+  data.linkable_paths = ['DREAMWORK.md', '.dreamwork/questions.md'];
+  const host = document.createElement('div');
+  host.innerHTML = mdB('\`DREAMWORK.md\` \`.dreamwork/questions.md\` ' +
+                       '\`newerrand.py\` \`github.com/pingdotgg/t3code\`');
+  return [...host.querySelectorAll('code')].map(c => ({
+    text: c.textContent,
+    href: (c.querySelector('a') || {}).getAttribute?.('href') || null
+  }));
+})()`);
+ok('known target paths link locally; unknown ones stay plain code',
+   refs[0].href === '/file?p=DREAMWORK.md' &&
+   refs[1].href === '/file?p=.dreamwork%2Fquestions.md' &&
+   refs[2].href === null);
+ok('github.com references link externally, never to /file',
+   refs[3].href === 'https://github.com/pingdotgg/t3code');
 ok('no literal ** leaks onto the live page', inline.literalStars === 0);
 ok('code spans render on live content', inline.codes.length > 0);
 ok('joined paragraphs hold no source newline', inline.newlinesInParas === 0);
