@@ -54,8 +54,9 @@ dreamwork-version: 5853e1789929
 
 - Cadence & comms: brief updates; `attn` (TTS) only for blockers,
   questions, and notable milestones.
-- Subagent models (2026-07-26): use `pooler/gpt-5.6-sol` with low
-  thinking by default; planning subagents use `pooler/gpt-5.6-xhigh`.
+- Subagent models (2026-07-26): use `codex-pooler/gpt-5.6-sol` with
+  `thinking: low` by default; planning subagents use the same model with
+  `thinking: xhigh` (the executable registry form of `pooler/gpt-5.6-xhigh`).
 - Autonomy: commit each increment (the skill folder is its own git repo).
   Push and deploy as needed (authorized 2026-07-26); neither needs a
   separate confirmation.
