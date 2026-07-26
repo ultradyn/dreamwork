@@ -23,9 +23,17 @@ carries a `+` command opener (steer the loop without a chat turn).
 ## Standing design decisions
 
 - **Stdlib only, self-contained**; no dependencies, no build step.
-- **Bind 127.0.0.1 only.** Localhost by construction, never exposed.
-- **Read-only, three write exceptions** (all human-authorized, localhost
-  trust): POST `/answer` appends an answer into questions.md's matching Open
+- **Loopback by default; trusted LAN only by explicit contract.** The default
+  remains `127.0.0.1`. A singular numeric `--bind`, repeatable exact
+  `--allow-host`, and navigable allowed `--url-host` may opt into an explicitly
+  unauthenticated trusted-LAN socket. Every request validates Host before
+  reading target data; browser POSTs validate matching HTTP Origin before body
+  read/witnessing. This prevents DNS rebinding and cross-site browser writes,
+  not another reachable LAN client. Non-loopback startup says so loudly;
+  public/WAN exposure is unsupported. IPv6 uses an AF_INET6 server and bracketed
+  advertised URL.
+- **Read-only, explicit write exceptions** (all human-authorized, loopback or
+  trusted-LAN trust): POST `/answer` appends an answer into questions.md's matching Open
   entry; POST `/comment` threads a `- **Follow-up (via watch, <ts>):** …`
   note onto any entry (Open or Answered — a chronological mini-thread; a note
   on an Answered entry is flagged as a potential amendment in the events
@@ -1953,7 +1961,7 @@ exclamation. When in doubt: what would a calm terminal say at 3am.
 
 ## Non-goals
 
-- Writes are limited to the two human-authorized localhost paths (`/answer`,
-  `/command`); nothing else mutates. Steering stays lightweight.
+- The request-authority policy is not authentication. It does not make a LAN
+  private, add TLS, trust proxy headers, discover DNS/IPs, or support WAN/public
+  exposure. Bearer-token LAN access and public Dreamhub auth are later designs.
 - No historical analytics; a live window, not a metrics store.
-- No public exposure; localhost only, by construction.

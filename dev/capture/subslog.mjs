@@ -108,13 +108,25 @@ const REJTEXT = 'a note the file will not take ' + process.pid;
   await sleep(1200);
   await p.evaluate(`(async () => {
     const card = document.querySelector('.qa.open');
-    const key = card.querySelector('textarea').id.slice(2);
-    // #116's condition: the page holds a title the file will not match
-    data.questions_open[+key.slice(1)].title = 'no such entry ' + Date.now();
+    // #266 correctly fails closed when a card cannot resolve its logical live
+    // record, so inject #116's stale-title condition at the request boundary:
+    // the real UI/client witness still run and the real server produces 409.
+    const realFetch = window.fetch;
+    window.fetch = async (...a) => {
+      if (String(a[0]).startsWith('/comment')) {
+        const opt = Object.assign({}, a[1] || {});
+        const req = JSON.parse(opt.body);
+        req.question = 'no such entry ' + Date.now();
+        opt.body = JSON.stringify(req);
+        a = [a[0], opt];
+      }
+      return realFetch(...a);
+    };
     card.querySelector('.qmode[data-mode=note]').click();
     card.querySelector('textarea').value = ${JSON.stringify(REJTEXT)};
     card.querySelector('.qsend').click();
     await new Promise(r => setTimeout(r, 800));
+    window.fetch = realFetch;
   })()`);
   const r = ((await all()) || []).find(x => x.text === REJTEXT);
   notes.push(`rejected: ${JSON.stringify(r)}`);

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""watch.py — read-only localhost dashboard for a running dreamloop.
+"""watch.py — local dashboard for a running dreamloop.
 
 Plan: .dreamwork/docs/plans/watch-py.md (human-authorized 2026-07-25).
-Stdlib only. Binds 127.0.0.1 exclusively. Read-only with ONE deliberate
-exception (human-authorized 2026-07-25): POST /answer appends a marked
-answer block under an open question in questions.md — the loop folds it
-on its next tick. No other write paths exist.
+Stdlib only. Binds 127.0.0.1 by default. Explicit non-loopback binding is an
+unauthenticated trusted-LAN mode: every request requires an exact allowed Host
+and browser POSTs require matching HTTP Origin. These are rebinding/CSRF
+safeguards, not client authentication; public/WAN exposure is unsupported.
+Human-authorized POST routes append answers, questions, notes, commands and
+settings to their documented files; all other routes read.
 """
 
 import argparse

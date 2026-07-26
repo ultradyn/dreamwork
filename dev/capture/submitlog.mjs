@@ -10,13 +10,13 @@
    questions.md*, which was always true. So the driving phases deliberately
    produce a real 409 and then look for his text.
 
-   THE 409 IS PRODUCED THE WAY #116 PRODUCED IT — the page holds a title the
-   file will not match. #116 was a title that wrapped across lines in
-   questions.md; here the page's own copy of the title is changed before the
-   send, which puts `append_answer` in exactly the state it was in that day.
-   Corrupting the DATA and not the DOM is deliberate: `sendAnswer` reads the
-   title from `data.questions_open[i]`, so this drives the real client path
-   with a real mismatch rather than faking a request.
+   THE 409 IS PRODUCED AT THE REQUEST BOUNDARY. #266 made logical question IDs
+   fail closed when a rendered card cannot resolve to its live record, so the
+   old guard's mutation of `data.questions_open[i].title` correctly stopped the
+   send before fetch and no longer tested #199. The temporary fetch wrapper now
+   changes only the outgoing question title to a guaranteed non-match. The real
+   box, send handler, client witness, HTTP request, authority checks and server
+   `append_*` path still run; only the stale title condition is injected.
 
    Everything else is real: his text goes into the real box, the real `.qsend`
    is clicked with a real pointer, the client's own fetch carries it, and the
@@ -75,9 +75,9 @@ const questionsMd = async () => {
    checked for the complete text and questions.md only for the token. */
 const TOKEN = k => `SUBMITLOG-${process.pid}-${k}`;
 
-/* One submission through the real UI. `breakIt` corrupts the page's copy of
-   the entry's title first, which is #116's condition and produces a genuine
-   409 from `append_answer`. Returns the status the client actually saw. */
+/* One submission through the real UI. `breakIt` rewrites only the outgoing
+   request's title, producing a genuine server-side 409 without defeating
+   #266's fail-closed logical-card resolver. Returns the status the client saw. */
 const SEND = (mode, text, breakIt) => `(async () => {
   const card = document.querySelector('.qa.open');
   if (!card) return { err: 'no open card on /questions' };
@@ -85,14 +85,21 @@ const SEND = (mode, text, breakIt) => `(async () => {
   const key = ta.id.slice(2);
   const entry = data.questions_open[+key.slice(1)];
   if (!entry) return { err: 'no entry behind the card' };
-  if (${breakIt}) entry.title = 'a title no entry in the file has ' + Date.now();
   const titleSent = entry.title;
   let status = 0;
   const realFetch = window.fetch;
   window.fetch = async (...a) => {
+    const write = String(a[0]).startsWith('/answer') ||
+                  String(a[0]).startsWith('/comment');
+    if (write && ${breakIt}) {
+      const opt = Object.assign({}, a[1] || {});
+      const req = JSON.parse(opt.body);
+      req.question = 'a title no entry in the file has ' + Date.now();
+      opt.body = JSON.stringify(req);
+      a = [a[0], opt];
+    }
     const res = await realFetch(...a);
-    if (String(a[0]).startsWith('/answer') || String(a[0]).startsWith('/comment'))
-      status = res.status;
+    if (write) status = res.status;
     return res;
   };
   card.querySelector('.qmode[data-mode=${mode}]').click();

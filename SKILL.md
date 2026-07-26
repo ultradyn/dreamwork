@@ -316,9 +316,15 @@ results, no ceremony.
   will edit `foo.py`. Gitignored, like `watch-events.log` — both describe
   a running process, so committing either would be a lie the moment it
   landed. The dashboard itself is `watch.py` in this
-  skill's directory (read-only, localhost-only):
+  skill's directory (loopback-only by default):
   `python3 <skill-dir>/watch.py --target . --open`; its port persists in
-  `.dreamwork/watch-port`.
+  `.dreamwork/watch-port`. Explicit trusted-LAN mode is opt-in and
+  unauthenticated:
+  `--bind 0.0.0.0 --allow-host xsm --allow-host 192.168.1.20 --url-host xsm`.
+  Every request uses an exact Host allowlist and browser POSTs require matching
+  HTTP Origin; these stop rebinding/CSRF, not another LAN client. Public/WAN
+  exposure is unsupported. IPv6 wildcard example:
+  `--bind :: --allow-host xsm --allow-host ::1 --url-host xsm`.
 - `.dreamwork/skill-version` — which skill version this target last ran
   under; init's update check reads it (`initialization.md`).
 - All of it is committable project content, like CLAUDE.md.
