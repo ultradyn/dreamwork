@@ -438,6 +438,12 @@ Also distinguish a clean failure from a stale lease.</pre>
     <li>Dashboard index plus dedicated route; deep orchestration module rather than logic spread through <code>watch.py</code>.</li>
     <li>MVP does not stream partial output into conversation and does not claim interrupted work completed.</li>
   </ul>
+  <h2 style="margin-top:1rem">Human amendments · 14:09</h2>
+  <ul>
+    <li><strong>/answers promotion (#235):</strong> a follow-up on a settled answer creates a topic chat seeded with the original human question, dreamer answer and new follow-up; the answer links to that chat rather than growing a second live thread.</li>
+    <li><strong>Action provenance (#236):</strong> each fresh run retains a compact index of accessed/referenced file paths and tool invocations—especially shell commands. Future workers receive it to skip repeated discovery. It stores neither hidden reasoning nor full response bodies beyond the conversational transcript; capture trust, bounds, redaction and failed-run semantics remain design work.</li>
+  </ul>
+  <p class="notice">These amendments change the proposal boundary. Approval A now includes the promotion seam and compact action/reference index as required lifecycle capabilities, staged after the single-chat vertical slice.</p>
   <h2 style="margin-top:1rem">Deferred deliberately</h2>
   <ul><li>Cancellation/interrupt control; automatic retention; attachments; search; branching chats; multi-queue; token-cost accounting; chat export; #230’s composer checkbox.</li></ul>
   <h2 style="margin-top:1rem">Requires human approval before implementation</h2>

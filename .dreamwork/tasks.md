@@ -18,9 +18,31 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **234**
+Next id: **237**
 
 ## Open
+
+- **#236** — Record compact topic-chat action provenance · P2 · idea · 20m
+  design · origin: **human** · **human via watch 14:09** · each ephemeral
+  run records referenced/accessed file paths and tool invocations, especially
+  shell commands; no hidden reasoning or full response retention beyond the
+  transcript · future fresh workers receive this compact discovery index ·
+  define trustworthy capture, bounds/redaction, failed-run semantics and file
+  shape · blocked on #229 approval; amend its proposal first
+- **#235** — Promote `/answers` follow-ups into topic chats · P2 · idea ·
+  25m design · origin: **human** · **human via watch 14:09** · answered
+  record offers a follow-up which atomically creates a topic chat seeded with
+  original human question + dreamer answer + follow-up, links the settled
+  answer to it, and dispatches fresh subagent · avoid duplicate live histories
+  and `/answers` bloat · blocked on #229 approval/implementation
+
+- **#234** — Minimise the answer-morph rerender hold · P2 · bug · 20m ·
+  origin: **human** · **human via watch 14:05** · reduce the current
+  `Date.now() + 1600` toward 850ms, choosing the shortest reasonable value
+  that cannot let `/mtime` replacement interrupt answer/note morphs · measure
+  CARD travel, lifted hero/cleanup and relevant guard window; red-prove early
+  release rather than assuming CARD_MS is the whole critical path · queued
+  behind active #233
 
 - **#233** — Allow explicit LAN bind and Host names · P1 · task · 30m
   design + increments · origin: **human** · **do next via chat 13:55** ·
