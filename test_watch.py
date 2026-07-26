@@ -688,6 +688,20 @@ class TestCollector(unittest.TestCase):
         self.assertIn('data-aid="ans:deadbeef"', rendered["present"])
         self.assertIn('data-keep="ans:deadbeef"', rendered["present"])
 
+    def test_missing_aid_answered_has_listless_expand_fallback(self):
+        # #250: EXPAND_SURFACES preventDefault on .aq.answered > summary must
+        # not leave missing-aid details dead when host[data-aid] misses.
+        page = watch.PAGE
+        self.assertIn("listlessFallback: true", page)
+        self.assertIn("function foldDetailsLocal(det)", page)
+        self.assertIn("if (m.listlessFallback) foldDetailsLocal(det)", page)
+        # still fail-closed on attrs — no sentinel keep key for missing aid
+        self.assertNotIn('data-keep="ans:missing"', page)
+        self.assertNotIn("data-keep=\"\"", page)
+        # keyed path remains for real aids
+        self.assertIn(".aq.answered[data-aid]", page)
+        self.assertIn("ANSWER_LIST", page)
+
     def test_answer_record_aid_doc_states_twin_deletion_fail_closed(self):
         # #247: exact-content twin ordinal renumbers on earlier twin deletion
         doc = watch.answer_record_aid.__doc__ or ""

@@ -3003,10 +3003,29 @@ addEventListener('click', e => {
    the rect it had rather than clipped from the card-level clone. */
 const EXPAND_SURFACES = [
   { sum: '.qa details > summary', host: '.qa[data-qid]', list: QA_LIST },
-  { sum: '.aq.answered > summary', host: '.aq.answered[data-aid]', list: ANSWER_LIST },
+  // #250: keyed host requires data-aid. Missing-aid answered details still
+  // match the summary selector, so preventDefault would leave them dead
+  // without a listless fallback (no invented sentinel, no data-keep).
+  { sum: '.aq.answered > summary', host: '.aq.answered[data-aid]',
+    list: ANSWER_LIST, listlessFallback: true },
   { sum: '.git .commit > summary', host: '.git .commit[data-sha]',
     list: GIT_LIST },
 ];
+/* Human-click fold for a <details> that is not a member of a keyed list
+   (#250). Reuses travelCard / revealBody / dreamAway — the qsec shape —
+   and deliberately does NOT snapshot open across ticks (no data-keep, no
+   positional sentinel). reduced-motion still toggles; only timing drops. */
+function foldDetailsLocal(det) {
+  if (!det) return;
+  if (rmr) { det.open = !det.open; return; }
+  const was = det.getBoundingClientRect();
+  const corpse = det.open ? det.cloneNode(true) : null;
+  det.open = !det.open;
+  const now = det.getBoundingClientRect();
+  travelCard(det, was, now, false);
+  if (det.open) revealBody(det);
+  else dreamAway(document.querySelector('.wrap'), corpse, was, now.height);
+}
 addEventListener('click', e => {
   if (!e.target.closest) return;
   const m = EXPAND_SURFACES.find(s => e.target.closest(s.sum));
@@ -3014,7 +3033,11 @@ addEventListener('click', e => {
   e.preventDefault();
   const det = e.target.closest(m.sum).parentElement;
   const host = det.closest(m.host);
-  if (!host) return;
+  if (!host) {
+    // #250: answered summary matched, but no data-aid host — listless fold
+    if (m.listlessFallback) foldDetailsLocal(det);
+    return;
+  }
   // measured while it still HAS a box: a closed <details> keeps its children
   // in the DOM and gives them no geometry, so the rect has to be taken first
   const leaving = (det.open && nestedToggle(host, det)) ? cardBody(host, det) : [];

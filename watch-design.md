@@ -196,7 +196,11 @@ three identity cases.
 `data-aid` nor `data-keep`. Empty attributes collide (every missing record
 shares `""` as a fold/FLIP key and can re-open the wrong disclosure). A
 shared sentinel such as `ans:missing` collides the same way. Prefer closed
-over wrong-record open.
+over wrong-record open. **Human click still folds (#250):** the expand
+handler's keyed host is `.aq.answered[data-aid]`; without an aid, `preventDefault`
+would leave the native toggle dead. Missing-aid details use a listless local
+fold (`foldDetailsLocal` — same travel/reveal/ghost pieces as the section
+fold) for that click only. Open does **not** ride the tick (no `data-keep`).
 
 **Exact-content twins and deletion (#247).** The ordinal is file-order among
 *currently* equal twins. Deleting an earlier twin renumbers later ones, so a

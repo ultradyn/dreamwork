@@ -33,6 +33,87 @@ ok('#247 missing-aid is plain aq answered details',
   ar.ok && ar.missing.startsWith('<details class="aq answered"><summary>T</summary>'));
 ok('#247 present-aid render has both attrs',
   ar.ok && ar.present.includes('data-aid="ans:test"') && ar.present.includes('data-keep="ans:test"'));
+/* #250: missing-aid disclosure must still toggle under EXPAND_SURFACES.
+   preventDefault runs on .aq.answered > summary; without listlessFallback the
+   host[data-aid] miss leaves open stuck. Real answerRecord HTML + a following
+   marker; per-frame tops/heights (not end-state alone). */
+await page.evaluate(()=>{
+  const host=document.querySelector('#answersections')||document.body;
+  host.insertAdjacentHTML('beforeend',
+    answerRecord({title:'Missing aid toggle?', body:'orphan body text long enough to change height when opened.\n\nsecond para.'}, true)+
+    '<div id="miss-aid-marker" class="dim" style="min-height:2rem">following marker</div>');
+});
+const miss=page.locator('.aq.answered').filter({hasText:'Missing aid toggle?'}).first();
+ok('#250 missing-aid node has no data-aid', await miss.getAttribute('data-aid')===null);
+ok('#250 missing-aid node has no data-keep', await miss.getAttribute('data-keep')===null);
+// Normal motion: open with intermediate heights + marker travel
+const openTrace=await page.evaluate(()=>new Promise(res=>{
+  const det=[...document.querySelectorAll('.aq.answered')].find(e=>
+    (e.querySelector('summary')?.textContent||'').includes('Missing aid toggle'));
+  const mark=document.getElementById('miss-aid-marker');
+  if(!det||!mark){res({err:'no fixture'});return;}
+  det.open=false;
+  const frames=[];
+  const t0=performance.now();
+  det.querySelector('summary').click();
+  (function step(){
+    const r=det.getBoundingClientRect(), m=mark.getBoundingClientRect();
+    frames.push({t:Math.round(performance.now()-t0), h:Math.round(r.height),
+      top:Math.round(m.top), open:!!det.open});
+    if(performance.now()-t0<1000) requestAnimationFrame(step);
+    else res({frames, open:!!det.open, h0:frames[0]?.h, hEnd:frames.at(-1)?.h});
+  })();
+}));
+const oH=new Set((openTrace.frames||[]).map(f=>f.h));
+const oTops=new Set((openTrace.frames||[]).map(f=>f.top));
+ok('#250 missing-aid opens (normal)', !!openTrace.open);
+ok('#250 open visits >2 distinct details heights', oH.size>2);
+ok('#250 open visits >2 distinct marker tops', oTops.size>2);
+// Close path
+const closeTrace=await page.evaluate(()=>new Promise(res=>{
+  const det=[...document.querySelectorAll('.aq.answered')].find(e=>
+    (e.querySelector('summary')?.textContent||'').includes('Missing aid toggle'));
+  const mark=document.getElementById('miss-aid-marker');
+  if(!det||!mark){res({err:'no fixture'});return;}
+  const frames=[];
+  const t0=performance.now();
+  det.querySelector('summary').click();
+  (function step(){
+    const r=det.getBoundingClientRect(), m=mark.getBoundingClientRect();
+    frames.push({t:Math.round(performance.now()-t0), h:Math.round(r.height),
+      top:Math.round(m.top), open:!!det.open});
+    if(performance.now()-t0<1000) requestAnimationFrame(step);
+    else res({frames, open:!!det.open});
+  })();
+}));
+const cH=new Set((closeTrace.frames||[]).map(f=>f.h));
+const cTops=new Set((closeTrace.frames||[]).map(f=>f.top));
+ok('#250 missing-aid closes (normal)', !closeTrace.open);
+ok('#250 close visits >2 distinct details heights', cH.size>2);
+ok('#250 close visits >2 distinct marker tops', cTops.size>2);
+// Reduced motion: function only (immediate), no motion requirement
+const rmPage=await br.newPage({reducedMotion:'reduce', viewport:{width:1100,height:800}});
+await rmPage.goto(`http://127.0.0.1:${PORT}/answers`);
+await rmPage.waitForSelector('#answersections');
+await rmPage.evaluate(()=>{
+  const host=document.querySelector('#answersections')||document.body;
+  host.insertAdjacentHTML('beforeend',
+    answerRecord({title:'Missing aid RM?', body:'rm body.'}, true));
+});
+const rmMiss=rmPage.locator('.aq.answered').filter({hasText:'Missing aid RM?'}).first();
+await rmMiss.locator('summary').click();
+ok('#250 reduced-motion missing-aid opens', await rmMiss.evaluate(e=>!!e.open));
+await rmMiss.locator('summary').click();
+ok('#250 reduced-motion missing-aid closes', await rmMiss.evaluate(e=>!e.open));
+await rmPage.close();
+// remove inject so later phases stay clean
+await page.evaluate(()=>{
+  for(const el of [...document.querySelectorAll('.aq.answered')]){
+    if((el.querySelector('summary')?.textContent||'').includes('Missing aid toggle'))
+      el.remove();
+  }
+  document.getElementById('miss-aid-marker')?.remove();
+});
 const asked='Does the live ask persist?\n## not a section\n- **not another entry**';
 await page.locator('#askbox').fill(asked); await page.locator('#askbox').focus();
 const tickResponse=await page.evaluate(()=>fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'do-next',text:'',from:'/answers'})}).then(r=>r.status));
@@ -138,9 +219,8 @@ ok('#238 open is not stuck on index 0 after reorder', !reorder.openOnIndex0);
 ok('#238 closed peer stays closed after reorder', reorder.closedPeer);
 
 // Deletion: open the second body; delete the first body from disk.
-// #247: non-vacuous — capture preAid + marker; require a *new* node with the
-// same aid still open. End-state "one open details" alone can pass without
-// the tick replacing the survivor (no-op / wrong-record restore).
+// #247/#251: non-vacuous — ElementHandle for the *original* open node must
+// detach (isConnected===false). Fresh-node isConnected alone is not proof.
 writeFileSync(ansPath, seedTwoDup('first loop answer.','second loop answer.'));
 await page.waitForFunction(()=>document.querySelectorAll('.aq.answered').length===2,null,{timeout:5000});
 await page.evaluate(()=>[...document.querySelectorAll('.aq.answered')].forEach(d=>{d.open=false;}));
@@ -150,6 +230,11 @@ await page.waitForFunction(()=>{
   const el=[...document.querySelectorAll('.aq.answered')].find(e=>(e.querySelector('.aqbody')?.textContent||'').includes('second loop answer'));
   return el && el.open;
 },{timeout:3000});
+// Playwright handle to the pre-refresh node — survives only if the DOM keeps it
+const oldSecondHandle=await openSecond.elementHandle();
+ok('#251 pre-deletion ElementHandle acquired', !!oldSecondHandle);
+ok('#251 original node starts connected',
+  !!oldSecondHandle && await oldSecondHandle.evaluate(n=>n.isConnected).catch(()=>false));
 const preDel=await openSecond.evaluate(e=>{
   e.__dwMark=1;
   return {
@@ -183,10 +268,18 @@ while(Date.now()-t1<5200){
   if(st.ready){del=st; break;}
   await sleep(50);
 }
+// #251: the *old* handle must be detached — not merely that the new query is connected.
+// evaluate on a detached node should succeed and return true; catch → false
+// (never true: that launders protocol errors into PASS).
+const oldDetached=oldSecondHandle
+  ? await oldSecondHandle.evaluate(n=>!n.isConnected).catch(()=>false)
+  : false;
 ok('#238 deletion leaves the survivor', del.ready && del.count===1);
 ok('#247 deletion survivor keeps same aid', del.sameAid && del.aid===preDel.aid);
 ok('#247 deletion replaced connected survivor node', del.replaced && del.connected);
+ok('#251 original openSecond node is detached (isConnected===false)', oldDetached);
 ok('#238 open survives deletion of the other record', del.open);
+if(oldSecondHandle) await oldSecondHandle.dispose().catch(()=>{});
 
 writeFileSync(ansPath,'# Questions for the dreamer\n\nprose no reader can see\n');
 await page.waitForFunction(()=>document.body.textContent.includes('answers channel unreadable'),null,{timeout:5000});

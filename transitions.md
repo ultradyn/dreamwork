@@ -277,6 +277,16 @@ exception; an element leaving fades rather than vanishing.
   the loop's fresh data regroups the card. reduced-motion swaps straight to
   the answered state.
 
+- **Missing-aid answered disclosure (#250).** `/answers` answered records
+  with a content-stable `aid` expand through the keyed list path
+  (`.aq.answered[data-aid]` + `ANSWER_LIST`). A record that has **no** `aid`
+  still matches `.aq.answered > summary`, so the shared expand handler's
+  `preventDefault` would leave it dead if the host lookup failed closed. It
+  folds instead via `foldDetailsLocal` — height travel + body reveal/ghost,
+  the same pieces as the section fold — with **no** `data-keep` and **no**
+  invented list key. Open does not survive the tick. reduced-motion toggles
+  immediately; function stays.
+
   **The hold is why this hid for so long, and the lesson is about the guard's
   WINDOW rather than about its assertions.** `regroup.mjs` submits through the
   real UI too, but it traces 5.2s — past the hold — so the tick's own regroup
