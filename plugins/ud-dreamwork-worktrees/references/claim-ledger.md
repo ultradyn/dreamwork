@@ -1,9 +1,9 @@
 # Co-agent claim ledger
 
-**Authoritative durable store (v1):** `.dreamwork/co-agent-claims.json`  
-**Writer:** coordinator only (single-writer serialization).  
+**Authoritative durable store (v1):** `.dreamwork/co-agent-claims.json`
+**Writer:** coordinator only (single-writer serialization).
 **Readers:** coordinator on startup/tick; peers read copies the coordinator
-sends in protocol messages (peers never write this file).  
+sends in protocol messages (peers never write this file).
 **Dashboard:** `.dreamwork/status.json` `agents` may **project** active
 claims for the human; it is not the ledger.
 

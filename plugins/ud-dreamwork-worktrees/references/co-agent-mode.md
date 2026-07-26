@@ -31,7 +31,7 @@ coordinator messages + worktree `git status`.
 
 ### States
 
-`offered` → `claimed` → `working` ⇄ `blocked` → `ready` → `released`  
+`offered` → `claimed` → `working` ⇄ `blocked` → `ready` → `released`
 and `stale` from any active state on missed heartbeats.
 
 Transition authority: **coordinator only** mutates the ledger. Peer sends
