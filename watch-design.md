@@ -57,9 +57,10 @@ carries a `+` command opener (steer the loop without a chat turn).
   context stays mounted at its current URL and scroll. Dashboard review
   artifacts are ordered by filesystem mtime newest-first, with ascending
   filename as the deterministic exact-mtime tie-break. The displayed age uses
-  that same mtime value, so ordering and visible recency cannot disagree. This
-  changes initial/static collection order only; ticks retain the existing
-  section-fold/regroup motion rather than introducing a second reorder gesture.
+  age seconds are derived from that same exact nanosecond result, so ordering
+  and visible recency cannot disagree. A live mtime reorder keys each stable
+  review row by filename and runs it through the existing list FLIP: normal
+  motion travels without overshoot, while reduced motion places rows instantly.
   Same-origin artifacts
   additionally permit explicit scroll restoration; cross-origin access is
   caught and treated as opaque, so it never prevents the dock refresh. `dev/capture/noteprop.mjs` proves propagation using

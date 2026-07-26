@@ -112,7 +112,7 @@ lint:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history plugcmd qorder serving gitrow burndown answers"
+    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history plugcmd qorder revieworder serving gitrow burndown answers"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}

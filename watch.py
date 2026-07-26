@@ -2128,7 +2128,7 @@ function buildDashboard(d) {
   h += `<div class="dim"><a href="/answers">questions for the dreamer · ${d.answers_open.length} open</a></div>`;
   if (d.reviews.length) {
     h += label('reviews') + d.reviews.map(r =>
-      `<div><a href="/review?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` +
+      `<div data-review="${esc(r.name)}"><a href="/review?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` +
       pipBtn('/reviewraw?p=' + encodeURIComponent(r.name), r.name) +
       `<span class="age" data-mt="${r.mtime}"></span></div>`).join('');
   }
@@ -2983,6 +2983,7 @@ function cardGroup(el) {
 const QA_LIST = { sel: '.qa[data-qid]', key: 'qid' };
 const ANSWER_LIST = { sel: '.aq.answered[data-aid]', key: 'aid' };
 const GIT_LIST = { sel: '.git .commit[data-sha]', key: 'sha' };
+const REVIEW_LIST = { sel: '[data-review]', key: 'review' };
 function snapshotCards(list) {
   list = list || QA_LIST;
   const m = new Map();
@@ -3725,6 +3726,10 @@ async function tick() {
       const reviewFrame = snapshotReviewFrame();
       const folds = snapshotFolds();
       const before = snapshotCards();
+      // Exact artifact mtimes can reorder these rows on any data tick. Keep
+      // their filename identity and reuse the list FLIP rather than snapping.
+      const reviewBefore = view.name === 'dashboard'
+        ? snapshotCards(REVIEW_LIST) : null;
       // #151: the commits panel animates on a NEW COMMIT, never on a tick.
       // The dashboard re-renders whenever ANY watched file changes — the loop
       // rewrites status.json every few seconds — so rows travelling on a tick
@@ -3757,6 +3762,7 @@ async function tick() {
       restoreCardState(kept);
       restoreAskState(askKept);
       regroupCards(before);
+      regroupCards(reviewBefore, null, REVIEW_LIST);
       regroupCards(gitBefore, null, GIT_LIST);
       regroupBars(burnBefore);
       // the crumbs carry live numbers too (open count, version) — and the
