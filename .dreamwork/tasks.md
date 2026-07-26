@@ -202,10 +202,6 @@ Next id: **222**
   self-audit is worth having as a maintenance item regardless of trigger
   · **#199 gives this its input** — a raw log of everything received IS
   the "what was sent to me" half
-- **#214** — A commit subject containing \x1f shifts git_tail's fields ·
-  P3 · bug · 15m · pre-existing and unreachable through any writer we
-  control, but it is the one input that can misalign the record · found
-  by #166; the %x1e record separator has the same class of exposure
 - **#215** — No check notices a visual change it was not told to watch ·
   P3 · idea · 30m · #166's `summary::before` legitimately shifted the
   sha column 2ch right and only a human screenshot look caught it —
@@ -608,6 +604,13 @@ Next id: **222**
   **blocked**: human pick
 
 ## Recently landed
+
+**#214** git history now uses collision-proof NUL framing (db1a1bc): red
+proof showed `\x1f` in a subject shifted the old fields; Git `-z` preserves
+subjects carrying both former separators because neither a commit message
+nor path can contain NUL. Focused git-tail tests, 403 pytest, and lint pass;
+gitrow's structural/data checks pass, with motion checks independently red
+under severe host contention (2026-07-26).
 
 **#220** a fully blocked queue now enters maintenance (07742b9): selection
 says “no unblocked actionable work,” not “list empty,” and reuses the
