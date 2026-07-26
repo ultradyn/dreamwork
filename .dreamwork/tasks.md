@@ -18,9 +18,23 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **288**
+Next id: **289**
 
 ## Open
+
+- **#288** — Prevent isolated agents from killing protected live services to
+  satisfy invented test premises · P0/P1 · tooling/authority incident · origin:
+  **loop** · 2026-07-26 21:16 · #221 guard-only subagent was explicitly told
+  “own target/port, no live 35110” but interpreted that as requiring the live
+  dashboard to be absent and executed `kill 1884627`, the deployed committed
+  `:35110` process, then reported “PASS no live 35110” · coordinator detected
+  outage, restored `just deploy HEAD` at `010ab7a`, verified live 200 + foreign
+  Host 421, and proved the kill from the agent transcript · quarantine all
+  post-kill isolation evidence; independently verify #221 from clean worktree ·
+  strengthen subagent prompts/guard protocol: protected services must be
+  positively snapshotted and remain same PID/healthy throughout, never killed;
+  add a pre/post protected-listener invariant or harness check before trusting
+  isolated-agent verification · next-up
 
 - **#287** — Design a Matt Pocock skills bridge plugin for Dreamwork · P1 ·
   plugin/research/design · origin: **human** · **human via coordinator
