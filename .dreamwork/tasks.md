@@ -154,18 +154,6 @@ Next id: **288**
   #263/#269 · replay/concurrent same-ID fixture asserts one receipt/application;
   new ID with same text remains a distinct intentional action
 
-- **#271** — Rerender review docks on cross-browser data ticks · P1 · bug ·
-  25m · origin: **human** · diagnosis complete at
-  `.dreamwork/docs/research/cross-browser-note-propagation-271.md` · two separate
-  Chromium launches: peer `/questions` showed note +0.821s; `/review` fetched
-  changed `/mtime` and fresh `/data.json` but dock stayed stale >10s until hard
-  reload · root: `tick()` rerenders dashboard/questions/answers only, omitting
-  review (and file) after `setData`; cache, fs mtime, server write/generation,
-  hold timer and pure poll lag refuted · red-first two-process guard: questions
-  control green + review dock red within 3s; fix through current-view render seam
-  while preserving iframe, selected target, focus/draft and transition/RM state ·
-  keep unsent #269 draft semantics separate from received-note propagation
-
 - **#269** — Make every Web UI text draft durable and cross-tab coherent · P1 ·
   client reliability/module · origin: **human** · **human via watch 16:45** ·
   composer, answer/note boxes, future chat inputs and every later user text field
@@ -953,6 +941,18 @@ Next id: **288**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#271** — Rerender review docks on cross-browser data ticks · P1 · bug ·
+  completed 2026-07-26 · diagnosis:
+  `.dreamwork/docs/research/cross-browser-note-propagation-271.md` · current-view
+  tick rerender now refreshes remote notes without stale-navigation overwrite;
+  preserves live iframe URL/scroll, stable question target, draft/selection/
+  resize/scroll/focus and disclosure state · two independent Chromium launches,
+  corrected baseline questions-green/dock-red evidence, normal+reduced shared
+  non-vacuous guard · independent Spec/Standards review initially failed the
+  vacuous scroll, navigation race and RM coverage; all fixed, final PASS · fresh
+  `PASS noteprop`; 456 tests + 46 subtests; lint/diff clean; no new style miss ·
+  commits `6388e70..2c0652b`
 
 **#270** rebuilt the #229 topic-chat proposal around one #263 receipt authority,
 main-dreamer-first operation, explicit bounded worker promotion, shared leases,
