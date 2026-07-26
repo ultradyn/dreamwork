@@ -2810,6 +2810,43 @@ function restoreAskState(saved) {
   try { box.setSelectionRange(saved.start, saved.end); } catch (e) {}
   if (saved.focus) refocus(box);
 }
+function snapshotReviewFrame() {
+  const frame = document.getElementById('reviewframe');
+  if (!frame) return null;
+  const saved = { frame, src: frame.src, x: 0, y: 0, readable: false }; 
+  try {
+    saved.x = frame.contentWindow.scrollX;
+    saved.y = frame.contentWindow.scrollY;
+    saved.readable = true;
+  } catch (e) { /* cross-origin artifacts keep their URL; scroll is opaque */ }
+  return saved;
+}
+function restoreReviewFrame(saved) {
+  if (!saved) return;
+  const fresh = document.getElementById('reviewframe');
+  if (!fresh) return;
+  // Preserve the live browsing context itself. Recreating an iframe starts a
+  // navigation which necessarily resets its scroll and may also discard state
+  // inside cross-origin artifacts that the parent is forbidden to inspect.
+  if (fresh !== saved.frame) fresh.replaceWith(saved.frame);
+  if (saved.frame.src !== saved.src) saved.frame.src = saved.src;
+  if (saved.readable) {
+    try { saved.frame.contentWindow.scrollTo(saved.x, saved.y); } catch (e) {}
+  }
+}
+function setLiveContent(html) {
+  if (view.name === 'review') {
+    const parsed = document.createElement('template');
+    parsed.innerHTML = html;
+    const currentDock = document.getElementById('qdock');
+    const nextDock = parsed.content.querySelector('#qdock');
+    if (currentDock && nextDock) currentDock.replaceWith(nextDock);
+    else setContent(html);
+    paintIndicators(true); ages();
+    return;
+  }
+  setContent(html);
+}
 function setContent(html) {
   document.getElementById('view').innerHTML = html;
   // fresh groups carry a 0-width indicator, so land it rather than let it
@@ -3682,8 +3719,10 @@ async function tick() {
       // the data lands instantly; surviving cards then travel from where
       // they were to where the new grouping put them (#104/#77). What the
       // human is mid-way through typing rides across the swap (#118).
+      const tickView = view;
       const kept = snapshotCardState();
       const askKept = snapshotAskState();
+      const reviewFrame = snapshotReviewFrame();
       const folds = snapshotFolds();
       const before = snapshotCards();
       // #151: the commits panel animates on a NEW COMMIT, never on a tick.
@@ -3700,7 +3739,12 @@ async function tick() {
       // Reuse the router's current-view seam so every data-backed route,
       // including the review dock, receives the same live snapshot (#271).
       // Card-owned state rides the existing #118/#269 discipline below.
-      setContent(await buildCurrent());
+      const html = await buildCurrent();
+      // buildCurrent may await /filedata. A user navigation made during that
+      // wait owns the screen; stale tick work must never overwrite it.
+      if (view !== tickView) return setTimeout(tick, 2000);
+      setLiveContent(html);
+      restoreReviewFrame(reviewFrame);
       // FOLDS FIRST, then the cards inside them (#179). Both must land before
       // the regroups, which MEASURE — a section restored afterwards would be
       // measured shut and then opened underneath the animation — but the

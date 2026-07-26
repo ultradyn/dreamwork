@@ -1645,7 +1645,9 @@ class TestAppShell(unittest.TestCase):
         # #271: a partial route switch left /review's dock stale even after
         # tick() fetched fresh data. One builder seam keeps live and navigate
         # aligned as routes are added.
-        self.assertIn('setContent(await buildCurrent());', watch.PAGE)
+        self.assertIn('const html = await buildCurrent();', watch.PAGE)
+        self.assertIn('if (view !== tickView) return setTimeout(tick, 2000);', watch.PAGE)
+        self.assertIn('restoreReviewFrame(reviewFrame);', watch.PAGE)
         self.assertNotIn("if (view.name === 'dashboard') setContent(buildDashboard(data));",
                          watch.PAGE)
 

@@ -53,8 +53,10 @@ carries a `+` command opener (steer the loop without a chat turn).
   the active view in place (no transition), including a `/review` question
   dock. The tick uses the router's `buildCurrent` seam rather than a partial
   route list; card drafts, selection, resize, scroll and focus ride the
-  existing stable-`data-qid` snapshot, while the artifact iframe stays at its
-  current URL and scroll. `dev/capture/noteprop.mjs` proves propagation using
+  existing stable-`data-qid` snapshot, while the artifact iframe browsing
+  context stays mounted at its current URL and scroll. Same-origin artifacts
+  additionally permit explicit scroll restoration; cross-origin access is
+  caught and treated as opaque, so it never prevents the dock refresh. `dev/capture/noteprop.mjs` proves propagation using
   two separate Chromium processes and a `/questions` control (#271). No websockets. `/mtime` is
   `"<generation> <mtime>"`: a changed *mtime* re-renders the data; a changed
   *generation* (the server was restarted/redeployed, or rebuilt under
