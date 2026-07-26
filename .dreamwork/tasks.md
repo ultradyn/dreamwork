@@ -18,9 +18,21 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **287**
+Next id: **288**
 
 ## Open
+
+- **#287** — Design a Matt Pocock skills bridge plugin for Dreamwork · P1 ·
+  plugin/research/design · origin: **human** · **human via coordinator
+  2026-07-26 19:56** · research the installed first-party
+  `mattpocock/skills` suite, especially `writing-great-skills`, handoff,
+  `CONTEXT.md`, grilling, and its established workflow norms; propose a
+  `ud-dreamwork-*` bridge that modifies/enhances the normal Dreamwork protocol
+  without copying or bypassing either system · coordinator and Grok iterate on
+  responsibilities, lifecycle hooks, precedence/conflicts, state, authority,
+  tests, and activation · record concrete authoring/runtime friction and split
+  plugin-local adaptation from narrowly justified core Dreamwork improvements ·
+  reviewed proposal and dashboard approval before Grok implementation · next-up
 
 - **#286** — Preserve intentional paragraph breaks in rendered question notes
   and answers · P2 · rendering/data-integrity bug · origin: **human** · **human
@@ -195,7 +207,11 @@ Next id: **287**
   until explicit **scripted** purge, never agent hand-editing · prefer append-only
   event/status history, but physical purge may remove payload while retaining a
   non-sensitive tombstone · LLMs read bounded CLI projections, not raw storage ·
-  unify #260/#262, never a third inconsistent queue · next-up
+  unify #260/#262, never a third inconsistent queue · reviewed design at
+  `.dreamwork/docs/plans/user-event-journal.md` now PASS after resolving
+  validation/status, all-writer DomainFileStore atomicity, hash-chain cursor,
+  PostgreSQL, purge/cutover and external-drift/provisional-successor findings ·
+  dashboard E1–E4 asks for implementation-**plan** authority only · awaiting human
 
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report

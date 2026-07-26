@@ -2,6 +2,34 @@
 
 ## Open
 
+- **P0/P1 · 2026-07-26 — #260/#262/#263/#269/#274: accept the
+  reviewed durable user-event contract for implementation planning?** Design:
+  `.dreamwork/docs/plans/user-event-journal.md`; narrow crash proof:
+  `.dreamwork/docs/research/application-adapter-reconciliation-263.md`.
+
+  Rec **E1**: accept the contract and authorize a separate red-first
+  implementation plan only. One SQLite journal (behind a PostgreSQL-portable
+  adapter) makes journal commit the sole `202` reception authority; browser
+  UUID+digest attempts make retries idempotent; mutable IndexedDB drafts remain
+  distinct from immutable receipts; leased/CAS application uses ternary
+  `Applied | NotApplied | Unknown` proof; a mandatory `DomainFileStore`, embedded
+  generation/digest lineage, and a quiesced cutover prevent legacy/manual writes
+  from manufacturing duplicates; hash-chained cursors replace timestamp guesses;
+  bounded CLI projections and explicitly scoped purge keep recovery inspectable
+  without overclaiming erasure.
+
+  Fresh-eyes architecture review initially found three Critical and four
+  Important gaps (validation/status lifecycle, all-writer Markdown atomicity,
+  undefined cursor integrity, HTTP/PG/purge/cutover detail). They were fixed. A
+  second review found external-editor lineage ambiguity; fixed. A final
+  provisional-successor rereview **PASSed**. Approval does **not** authorize
+  code, migration, deployment, PostgreSQL operation, topic chats, or payload
+  purge; it authorizes writing the implementation plan and its red fixtures.
+
+  Answer `Accept E1 for implementation planning only`, `Accept E2 with
+  amendments: …`, `Choose E3; revise … and rereview`, or `Choose E4; pause the
+  event journal`.
+
 - **P1 · 2026-07-26 — #229/#270 topic chats v2: accept the revised
   proposal direction?** New reviewed artifact:
   `.dreamwork/review/threaded-topic-chats-v2.html`. It supersedes v1 for future
