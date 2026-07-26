@@ -123,7 +123,9 @@ command channel is not.
       — advisory, never binding: a mess, an easier-now-than-later, or a
       human steer always overrides. Custom weights persist as a Routines
       line in DREAMWORK.md.
-4. **Maintenance rotation.** List empty and brainstorm recent? Rotate
+4. **Maintenance rotation.** No unblocked actionable work, and brainstorm
+   recent? A non-empty queue whose remaining tasks are all blocked is idle
+   too — do not spend ticks reconsidering work that cannot start. Rotate
    through: goal alignment first — does DREAMWORK.md still reflect what
    the human wants and what the loop has learned? fold in any drift, and
    check every task `parent` still resolves to a DREAMWORK.md heading;
