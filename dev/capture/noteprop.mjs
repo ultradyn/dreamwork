@@ -51,7 +51,7 @@ const seeded = await review.evaluate(() => {
   ta.focus(); ta.setSelectionRange(6, 10, 'forward');
   frame.contentWindow.scrollTo(0, 40);
   return { src: frame.src, frameY: frame.contentWindow.scrollY, scroll: ta.scrollTop,
-    detailsOpen: details?.open ?? null, cardClass: card.classList.contains('guard-fold-state') }; 
+    detailsOpen: details?.open ?? null, cardClass: card.classList.contains('guard-fold-state') };
 });
 await review.evaluate(() => { document.querySelector('#qdock .qa').dataset.guardOld = 'yes'; });
 const response = await a.evaluate(async ({ title, marker }) => {
@@ -84,7 +84,7 @@ const preserved = await review.evaluate(() => {
     focused: document.activeElement === ta, src: frame?.src,
     detailsOpen: document.querySelector('#qdock details')?.open ?? null,
     cardClass: document.querySelector('#qdock .qa')?.classList.contains('guard-fold-state'),
-    frameY: frame?.contentWindow.scrollY }; 
+    frameY: frame?.contentWindow.scrollY };
 });
 const newDock = await review.$('#qdock .qa');
 const replaced = await review.evaluate(() => !document.querySelector('#qdock .qa')?.dataset.guardOld);

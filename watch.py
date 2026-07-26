@@ -2813,7 +2813,7 @@ function restoreAskState(saved) {
 function snapshotReviewFrame() {
   const frame = document.getElementById('reviewframe');
   if (!frame) return null;
-  const saved = { frame, src: frame.src, x: 0, y: 0, readable: false }; 
+  const saved = { frame, src: frame.src, x: 0, y: 0, readable: false };
   try {
     saved.x = frame.contentWindow.scrollX;
     saved.y = frame.contentWindow.scrollY;
