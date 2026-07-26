@@ -18,9 +18,20 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **232**
+Next id: **234**
 
 ## Open
+
+- **#233** — Allow explicit LAN bind and Host names · P1 · task · 30m
+  design + increments · origin: **human** · **do next via chat 13:55** ·
+  loopback remains default; opt-in listen interfaces and explicit Host allowlist
+  with ports/IPv6 handled; preserve intentional localhost aliases and protect
+  writes from DNS rebinding/cross-origin abuse · docs/migration/TDD first ·
+  next up after #232
+- **#232** — Explain the answer-morph middle pause · P1 · question · 10m ·
+  origin: **human** · **human via chat 13:55** · diagnose actual transition,
+  hold and mtime timing with requested GPT-5.6 Luna low-thinking subagent;
+  fold answer into `.dreamwork/answers.md`, then notify via `attn` · in progress
 
 - **#230** — Add a `use subagent` composer checkbox · P2 · task · later ·
   origin: **human** · **human via watch 12:57** · request fresh-context,
@@ -59,7 +70,8 @@ Next id: **232**
   diagrams/comparisons where useful and expandable reasoning · rec name is
   `explore` (`proposal` presupposes one solution; `feasibility check` is too
   narrow) · hidden/non-default command, no implementation authority; accepted
-  outcomes become normal tasks · design/output contract review before code
+  outcomes become normal tasks · design/output contract review before code ·
+  in progress: contract artifact first, no command code
 
 - **#221** — Sort dashboard reviews by datetime · P2 · idea · 15m ·
   origin: **human** · **human via watch 12:10** · establish which datetime

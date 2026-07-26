@@ -2,6 +2,11 @@
 
 ## Open
 
+- **2026-07-26 — What causes the pause between answer and question movement?**
+  **Human:** When submitting an answer to a question, it animates first the
+  answer, then pauses for about a second, then animates the question as it
+  moves into answered · awaiting fold. What causes the middle pause?
+
 ## Answered
 
 - **2026-07-26 — Can an answer re-block or reopen a question?** → answered

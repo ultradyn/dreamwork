@@ -2,6 +2,17 @@
 
 ## Open
 
+- **P2 · 2026-07-26 — #225 `explore` command: approve the one-shot
+  proposal contract?** The review artifact is at
+  `.dreamwork/review/explore-command-contract.html`. Rec: hidden command
+  named `explore`; fresh research/design subagent by default; one concise,
+  offline-clean HTML decision artifact; explicit alternatives, unknowns and
+  smallest experiment; proposal-only authority; accepted recommendations
+  become ordinary human-approved tasks.
+
+  Answer `Approve A–D as recommended`, or name changes to A name,
+  B dispatch, C authority, or D output.
+
 - **P1 · 2026-07-26 — #229 threaded topic chats: approve the proposed
   architecture and defaults?** The reviewed artifact is at
   `.dreamwork/review/threaded-topic-chats.html`. Rec: a compact dashboard
