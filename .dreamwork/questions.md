@@ -2,6 +2,29 @@
 
 ## Open
 
+- **P1 · 2026-07-26 — #283 Git index-lock attribution: run the safe
+  Dolphin-window falsification test before privileged tracing?** Partial report:
+  `.dreamwork/docs/research/git-index-lock-attribution-283.md`.
+
+  Rec **L1**: yes. When convenient, close the Dolphin window currently open on
+  this `ud-dreamwork` checkout; the loop will observe this repo's existing
+  `index.lock` CREATE/DELETE cadence for 60 seconds without stopping KIO,
+  deleting locks, changing the watcher, or touching Git state. If the ~2-second
+  cadence stops, KIO/Dolphin becomes strongly supported; if it persists, that
+  window is falsified and we continue with broader user-scoped sampling.
+
+  What is already supported: the watcher can cleanly exit when `inotifywait`
+  closes because its pipeline has no `pipefail`; `Restart=on-failure` then leaves
+  it dead. PID 1246815 is a 10-day D-state `rev-parse` process and is **not** the
+  recurring creator. KIO/Dolphin is still only medium-confidence context; exact
+  creator argv and `openat(O_CREAT)` remain unproven. Privileged audit/eBPF or
+  process attach is **not** authorized by L1 and will get a separate ask only if
+  this safe test is inconclusive.
+
+  Answer `Run L1 when I close Dolphin`, `Choose L2; skip window test and propose
+  user-scoped tracing`, `Choose L3; ask me about audit/eBPF now`, or `Choose L4;
+  pause diagnosis`.
+
 - **P1 · 2026-07-26 — #287 Matt Pocock skills bridge: accept the thin
   protocol/profile-adapter direction?** Cited research and coordinator/Grok
   iteration: `.dreamwork/docs/research/matt-pocock-skills-bridge-287.md`.

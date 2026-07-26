@@ -84,7 +84,14 @@ Next id: **288**
   worktree index, ending with holderless zero-byte inode `251782419`; correlated
   PID remained the same D-state KIO Git · diagnose why watcher exits 0 and replace
   sampling with exec/exit or syscall-level attribution before changing mitigations;
-  coordinate host fix with system KB entry
+  partial diagnosis at
+  `.dreamwork/docs/research/git-index-lock-attribution-283.md`: pipeline EOF can
+  exit 0 and evade `Restart=on-failure` (high confidence); 1246815 is falsified
+  as creator; KIO/Dolphin is medium-confidence circumstantial only; exact argv/
+  `openat(O_CREAT)` remains unknown · next safe experiment awaits dashboard:
+  close the repo's Dolphin window for a bounded 60s cadence observation, then
+  request capability/audit instrumentation only if needed · coordinate any host
+  fix with system KB entry
 
 - **#282** — Link task references to rich hover previews · P1 · task-navigation
   feature · origin: **human** · **human via watch 18:22** · whenever `#229`-style
