@@ -36,6 +36,17 @@
 
   Answer `Approve A–E as recommended`, or name changes to A surface,
   B privacy, C concurrency, D cancellation, or E retention.
+  - **Note (human, via watch, 2026-07-26 14:47):** I added a task recently
+    that intereacted with the threaded topic chats; has the html artifact
+    been updated?
+  - **Answer (loop, 2026-07-26 14:48):** Yes for the two feature amendments:
+    the artifact's “Human amendments · 14:09” section explicitly includes
+    #235 (`/answers` follow-up promotion) and #236 (compact accessed-file/tool
+    provenance). The later cross-cutting #239 generated-HTML style-source
+    requirement was only in the ledger/context, not named in the artifact;
+    it is now an explicit third amendment: topic-chat generated HTML consumes
+    the canonical resolver/plugin override and does not embed a private theme.
+    The artifact is current; A–E remain awaiting approval.
 
 - **P2 · 2026-07-26 — #221 review datetime ordering: use file mtime?**
   The decision artifact is at `.dreamwork/review/review-datetime-order.html`.

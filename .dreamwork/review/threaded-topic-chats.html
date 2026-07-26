@@ -442,8 +442,9 @@ Also distinguish a clean failure from a stale lease.</pre>
   <ul>
     <li><strong>/answers promotion (#235):</strong> a follow-up on a settled answer creates a topic chat seeded with the original human question, dreamer answer and new follow-up; the answer links to that chat rather than growing a second live thread.</li>
     <li><strong>Action provenance (#236):</strong> each fresh run retains a compact index of accessed/referenced file paths and tool invocations—especially shell commands. Future workers receive it to skip repeated discovery. It stores neither hidden reasoning nor full response bodies beyond the conversational transcript; capture trust, bounds, redaction and failed-run semantics remain design work.</li>
+    <li><strong>Canonical generated-artifact style (#239):</strong> every topic-chat review, export or proposal resolves the same Dreamwork style source as other generated HTML, including an explicit plugin override and an offline-clean fallback. The chat implementation consumes that resolver; it does not embed a second private theme.</li>
   </ul>
-  <p class="notice">These amendments change the proposal boundary. Approval A now includes the promotion seam and compact action/reference index as required lifecycle capabilities, staged after the single-chat vertical slice.</p>
+  <p class="notice">These amendments change the proposal boundary. Approval A now includes the promotion seam, compact action/reference index and shared generated-artifact style resolver as required lifecycle capabilities, staged after the single-chat vertical slice.</p>
   <h2 style="margin-top:1rem">Deferred deliberately</h2>
   <ul><li>Cancellation/interrupt control; automatic retention; attachments; search; branching chats; multi-queue; token-cost accounting; chat export; #230’s composer checkbox.</li></ul>
   <h2 style="margin-top:1rem">Requires human approval before implementation</h2>
