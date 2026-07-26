@@ -100,18 +100,12 @@ Next id: **287**
   visual experiment/design · origin: **human** · **human via watch 18:12** · use
   `/home/xertrov/Documents/storm{1,2,3,4,5,6,7}.{webp,jpg}` as visual references;
   current presented storm is too simple and geometry needs work · create a copy/
-  separate implementation so the current background remains unchanged; establish
-  intended bands/vortices/depth/scale, deterministic render and perf breakpoint;
-  run visual+geometry review/fix and present a new proposal before product wiring ·
-  blocked on #278 timebase diagnosis so the prototype does not inherit acceleration
+  separate implementation so current background remains unchanged; establish
+  bands/vortices/depth/scale, deterministic render and perf breakpoint; run
+  visual+geometry review/fix and present proposal before product wiring · **#278
+  diagnosis complete:** no runaway timebase/multi-RAF to inherit; phase-dependent
+  agitation and nav warp remain perceptual inputs to control · now unblocked
 
-- **#278** — Diagnose background shader acceleration over time · P1 · visual/perf
-  bug · origin: **human** · **human observed via watch 18:12** · shader appears to
-  get faster the longer the page stays open · reproduce with a long deterministic
-  frame/time trace; distinguish absolute-time growth, accumulated warp/twist,
-  multiple animation loops, timestamp units and re-render/reset behavior; measure
-  displacement/phase velocity at fixed intervals; diagnose before fix and preserve
-  the existing visual baseline
 
 - **#277** — Let departing UI elements blur and liquify before they travel · P2 ·
   visual/motion idea · origin: **human** · **human via watch 17:49** · elements
@@ -435,15 +429,6 @@ Next id: **287**
   1150ms `flipDock` transform + ~1000ms card cleanup make 850ms unsafe; use a
   forced-mtime race to choose a named ~1200–1300ms hold or event completion ·
   stale #233 LAN dependency removed · queued after active #250/#251 correction
-
-- **#233** — Allow explicit LAN bind and Host names · P1 · task · 30m
-  design + increments · origin: **human** · **do next via chat 13:55** ·
-  **approved A via watch 17:48:** explicit unauthenticated trusted-LAN mode;
-  loopback default, exact bind/Host allowlist, same-origin browser writes,
-  advertised URL, IPv6 correctness and loud warning per reviewed threat model ·
-  Host/Origin are safeguards, not auth · later public auth #275 and LAN bearer
-  token #276 are separate and do not expand this increment · docs/migration/TDD
-  first · existing `.worktrees/lan-bind` plan now unblocked
 
 - **#230** — Add a `use subagent` composer checkbox · P2 · task · later ·
   origin: **human** · **human via watch 12:57** · request fresh-context,
@@ -965,6 +950,21 @@ Next id: **287**
   **blocked**: human pick
 
 ## Recently landed
+
+**#233** adds explicit unauthenticated trusted-LAN binding while preserving the
+loopback default. Exact Host gates every request; browser writes additionally
+require matching HTTP Origin before body/witness; advertised Host is always
+allowlisted; IPv4/IPv6, wildcard URLs and warning are explicit. Initial dual-axis
+review FAILed and was red-first fixed; final Spec/Standards PASS. Rebased commits
+`f4ed3fe..a0de8fc`; 157 watch + 455 project tests (46 subtests each), focused
+submission guards, socket probes and lint green; #233 adds no styleguide miss
+(2026-07-26).
+
+**#278** found no true open-duration shader acceleration: constant wall-clock
+phase, one RAF/mount, stable ~60 FPS and non-monotonic optical displacement.
+Phase-dependent agitation and brief navigation warp plausibly explain the human
+perception; report `.dreamwork/docs/research/shader-acceleration-278.md` unblocks
+#279 without changing the current shader (2026-07-26).
 
 **#258** composable shader emotion research produced the first reviewed
 urgency/shader proposal, then the human superseded its simple storm geometry

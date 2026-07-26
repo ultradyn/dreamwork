@@ -58,7 +58,9 @@
 - [x] State trusted-LAN threat model and public/WAN prohibition plainly (`154bc0f`).
 - [x] Prove default `just deploy` remains loopback and `deployed.py` still identifies snapshot.
 - [x] Run full pytest/lint, every browser/hub guard in bounded batches, targeted real IPv4/IPv6 network probes, diff-check, and styleguide audit. Evidence before first review: 454 project tests + 46 subtests; all default guards green; #233 adds no styleguide miss.
-- [x] Two-axis review/fix/rereview. First independent review on `fe55cd3..154bc0f` **FAILed**: advertised concrete bind could be absent from allowlist; stale localhost-only source comment; incomplete write-route/event-log design record; stale plan checklist/migration name. Commit `71654c3` red-first fixed the advertised-Host invariant and corrected every documentation/plan finding; 157 watch tests + 46 subtests, 455 project tests + 46 subtests, focused submission guards and concrete-bind startup probes passed. Spec rereview on `154bc0f..71654c3` **PASSed**. Standards rereview found one stale present-progress phrase; plan-only `8b0780e` corrected it and final Standards confirmation **PASSed**. Rebase, final verification, integration, push and deploy remain.
+- [x] Two-axis review/fix/rereview. First independent review on `fe55cd3..154bc0f` **FAILed**: advertised concrete bind could be absent from allowlist; stale localhost-only source comment; incomplete write-route/event-log design record; stale plan checklist/migration name. Pre-rebase commit `71654c3` red-first fixed the invariant/docs; Spec rereview **PASSed**. Standards rereview found one stale plan phrase; plan-only `8b0780e` corrected it and final Standards confirmation **PASSed**.
+- [x] Rebase and final verification: rebased reviewed commits onto `4f22978` as `f4ed3fe..a0de8fc`; 157 watch tests + 46 subtests, 455 project tests + 46 subtests, focused `submitlog subslog`, lint and diff-check passed. Styleguide audit has inherited misses only; no #233 commit is a miss.
+- [x] Fast-forward integrated into `master` at `a0de8fc`. Push and loopback-default deploy remain.
 
 ## Rejected alternatives
 
