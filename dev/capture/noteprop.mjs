@@ -74,6 +74,15 @@ const [controlSaw, dockSaw, reducedSaw] = await Promise.all([
 ok('browser B /questions control sees the note within 3s', controlSaw);
 ok('browser B /review #qdock sees the same-target note without reload within 3s', dockSaw);
 ok('reduced-motion /review has functional propagation parity', reducedSaw);
+const reducedFrame = await reduced.evaluate(() => {
+  const frame = document.querySelector('iframe');
+  return { src: frame?.src, readable: (() => {
+    try { void frame.contentWindow.scrollY; return true; } catch { return false; }
+  })() };
+});
+ok('reduced-motion keeps the review artifact mounted',
+   reducedFrame.src?.includes('/reviewraw?p=fixture-review.html'));
+ok('reduced-motion retains same-origin iframe access parity', reducedFrame.readable);
 
 await review.waitForTimeout(100);
 const preserved = await review.evaluate(() => {
