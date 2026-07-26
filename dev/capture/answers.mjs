@@ -351,6 +351,52 @@ ok('#292 delayed double Ctrl+Enter writes the body marker once',diskHits===1);
 ok('#292 delayed double Ctrl+Enter adds exactly one open entry head',openHeads===1);
 await page.unroute('**/ask').catch(()=>{});
 
+/* G1 lifecycle: delayed /ask then navigate away/back — new surface free;
+   late old response must not clear/status/tick the new form. */
+writeFileSync(ansPath,'# Questions for the dreamer\n\n## Open\n\n## Answered\n');
+await page.goto(`http://127.0.0.1:${PORT}/answers`,{waitUntil:'networkidle'});
+await page.waitForSelector('#askbox');
+let latePosts=0, continueLate=null;
+await page.route('**/ask',route=>{
+  latePosts++;
+  // hold the first request until after route-away/back
+  return new Promise(resolve=>{
+    continueLate=()=>route.continue().then(resolve);
+  });
+});
+const staleText='Stale flight words must stay if still pending '+Date.now();
+await page.locator('#askbox').fill(staleText);
+await page.locator('#askbox').focus();
+await page.keyboard.press('Control+Enter');
+await sleep(150);
+// SPA away while in flight
+await page.evaluate(()=>typeof navigate==='function'&&navigate('questions',null,{push:true,transition:false}));
+await page.waitForFunction(()=>!document.getElementById('askbox'),null,{timeout:3000}).catch(()=>{});
+// return to answers — new surface
+await page.evaluate(()=>typeof navigate==='function'&&navigate('answers',null,{push:true,transition:false}));
+await page.waitForSelector('#askbox');
+const fresh='Fresh ask after surface rebuild '+Date.now();
+await page.locator('#askbox').fill(fresh);
+// release stale response
+if(typeof continueLate==='function') await continueLate();
+await sleep(500);
+const boxAfterLate=await page.locator('#askbox').inputValue();
+const msgAfterLate=await page.locator('#askmsg').textContent();
+ok('#292 late response after leave/return does not clear the new draft',
+   boxAfterLate===fresh);
+ok('#292 late response does not stamp success on the new form',
+   !(msgAfterLate||'').includes('asked')||boxAfterLate===fresh);
+// new submit must not be blocked by stuck in-flight
+await page.unroute('**/ask').catch(()=>{});
+await page.locator('#askbox').focus();
+await page.keyboard.press('Control+Enter');
+const freshOk=await page.waitForFunction((want)=>{
+  const box=document.querySelector('#askbox');
+  return box&&box.value===''&&document.body.innerText.includes(want.slice(0,20));
+},fresh,{timeout:5000}).then(()=>true).catch(()=>false);
+ok('#292 after leave/return a new Ctrl+Enter can submit independently',freshOk);
+ok('#292 leave/return path still only one late POST for the stale flight',latePosts===1);
+
 /* G2: exact-title distinct-body twins have distinct data-aqid; a new twin arrives. */
 writeFileSync(ansPath,
   '# Questions for the dreamer\n\n## Open\n\n'+

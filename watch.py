@@ -2219,12 +2219,17 @@ function buildAnswers(d) {
 /* /answers ask: one in-flight attempt at a time (#292).
    · While a POST is pending, further submit/Ctrl+Enter is a no-op (does not
      queue a second request with the same bytes).
-   · Generation counters supersession: a response for an older attempt cannot
-     clear a newer draft or status after the form was reset/re-armed.
+   · askFlightGen: a response applies only if it still owns the generation.
    · Failure keeps his words; only a matching successful generation clears.
-   · Navigating away mid-flight is destruction of the surface; the next paint
-     starts generation 0 and does not apply a late success to a new form. */
+   · Leaving /answers (navigate away) is surface destruction: invalidateAskFlight
+     bumps generation and clears the in-flight flag so a rebuilt form is not
+     blocked, and a late old response cannot clear/status/tick the new surface.
+   · Tick re-renders while still on /answers do NOT invalidate — same surface. */
 let askFlightGen = 0, askInFlight = false;
+function invalidateAskFlight() {
+  askFlightGen++;
+  askInFlight = false;
+}
 async function sendAsk(form) {
   if (askInFlight) return;
   const box = form.querySelector('#askbox'), msg = form.querySelector('#askmsg');
@@ -2232,12 +2237,27 @@ async function sendAsk(form) {
   const words = box.value.trim(); if (!words) return;
   askInFlight = true;
   const mine = ++askFlightGen;
-  let res = null; msg.textContent = 'asking…';
+  let res = null;
+  if (msg) msg.textContent = 'asking…';
   try { res = await postAsk(words); } catch (e) {}
-  if (mine !== askFlightGen) { askInFlight = false; return; }
+  // Superseded or surface destroyed — do not touch a newer flight's flag.
+  if (mine !== askFlightGen) return;
   askInFlight = false;
-  if (res && res.ok) { box.value = ''; msg.textContent = 'asked'; await tick(); }
-  else msg.textContent = res ? 'question was refused — your words are kept' : 'dreamwork is unreachable — your words are kept';
+  // Re-query: navigate may have replaced the form; never mutate a new surface
+  // with an old attempt's outcome, and never tick unless still on /answers.
+  if (view.name !== 'answers') return;
+  const liveBox = document.getElementById('askbox');
+  const liveMsg = document.getElementById('askmsg');
+  if (!liveBox) return;
+  if (res && res.ok) {
+    liveBox.value = '';
+    if (liveMsg) liveMsg.textContent = 'asked';
+    await tick();
+  } else if (liveMsg) {
+    liveMsg.textContent = res
+      ? 'question was refused — your words are kept'
+      : 'dreamwork is unreachable — your words are kept';
+  }
 }
 /* #158: reflow by file kind, never by content sniff. A .py with a `#`
    comment must stay pre; a research .md must reflow. Path from the query
@@ -3735,10 +3755,16 @@ function flipDock(dock, fromRect, toRect) {
 async function navigate(name, param, opts) {
   opts = opts || {};
   if (window.__closeCmd) window.__closeCmd();   // context is changing
+  // Leaving /answers destroys the ask surface — drop in-flight ownership so a
+  // late /ask cannot clear or tick a form that no longer exists, and so a
+  // return visit is not blocked by a stuck askInFlight flag (#292 lifecycle).
+  if (view && view.name === 'answers' && name !== 'answers')
+    invalidateAskFlight();
   view = { name, param, q: opts.q || null };
   applyTitle();
   if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
   const url = name === 'questions' ? '/questions'
+    : name === 'answers' ? '/answers'
     : name === 'file' ? '/file?p=' + encodeURIComponent(param || '')
     : name === 'review' ? '/review?p=' + encodeURIComponent(param || '') +
         (opts.q ? '&q=' + encodeURIComponent(opts.q) : '')
@@ -3759,6 +3785,7 @@ function isInternal(a) {
   if (!a || a.target === '_blank' || a.hasAttribute('download')) return false;
   if (a.origin !== location.origin) return false;
   return a.pathname === '/' || a.pathname === '/questions'
+      || a.pathname === '/answers'
       || a.pathname === '/file' || a.pathname === '/review';
 }
 addEventListener('click', e => {

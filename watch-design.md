@@ -209,7 +209,9 @@ and question cards already honour; empty boxes do not POST. **One in-flight
 `/ask` at a time:** while a POST is pending, further submit/Ctrl+Enter is a
 no-op (no second request with the same bytes). A generation counter means a
 late response cannot clear a newer draft; failure keeps his words; only the
-matching successful generation clears the box. **Open records must not bake a
+matching successful generation clears the box. **Leaving `/answers` destroys
+the surface:** `invalidateAskFlight` so a rebuilt form is never stuck blocked,
+and a late success cannot clear/status/`tick` the new form. **Open records must not bake a
 permanent `.dreamin` into the HTML (#293).** That class is only the enter-snap
 start pose. New open rows (keyed by server `aid` on `data-aqid` — title+body+
 ordinal, never title alone) receive a one-shot arrival after `setContent` via

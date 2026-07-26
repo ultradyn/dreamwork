@@ -845,6 +845,10 @@ class TestCollector(unittest.TestCase):
         self.assertIn("askform", watch.PAGE)
         self.assertIn("askInFlight", watch.PAGE)
         self.assertIn("if (askInFlight) return;", watch.PAGE)
+        self.assertIn("function invalidateAskFlight", watch.PAGE)
+        self.assertIn("invalidateAskFlight()", watch.PAGE)
+        self.assertIn("view.name !== 'answers'", watch.PAGE)
+        self.assertIn("'/answers'", watch.PAGE)  # navigate URL + isInternal
         # #293: open answer rows must not permanently carry the enter-snap pose.
         self.assertNotIn('class="aq open dreamin"', watch.PAGE)
         self.assertIn('data-aqid=', watch.PAGE)
