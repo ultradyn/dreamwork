@@ -18,9 +18,17 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **252**
+Next id: **253**
 
 ## Open
+
+- **#252** — Render Markdown files on `/file` · P2 · feature · 25m · origin:
+  **human** · **human via watch 15:17** · `.md` paths default to rendered
+  Markdown matching the dashboard aesthetic rather than plaintext · preserve
+  explicit Source/Raw mode for exact bytes/copy; reuse safe Markdown + confined
+  link classification; never execute embedded HTML/scripts · atmospheric mode
+  transition + reduced-motion parity · one pipeline with #158 reflow, not a
+  competing transform · blocked on #158
 
 - **#251** — Prove old answer node disconnects after deletion refresh · P2 ·
   test · 10m · origin: **loop** · late #247 review · assigned with #250 to
