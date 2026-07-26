@@ -41,38 +41,6 @@ Next id: **222**
   origin: **loop** · blocked on #213 · preserve human/loop/unknown at
   first sight; a later edit must never retroactively classify an arrival
 
-- **#206** — Coordinator and dreamer messages race, four crossings in
-  one afternoon · P2 · idea · 30m · the two directions have different
-  latencies: dreamer inbox-file writes arrive at the coordinator on the
-  tail monitor within seconds, while coordinator SendMessages queue at
-  the dreamer until its next delivery point — so every instruction sent
-  while a dreamer is reporting is answered by a message that predates it
-  · today that produced: a dispatch answered with "retire me or send the
-  next one", a contract answer that arrived after the commit it governed,
-  and a claim/retirement race needing a third message to resolve · the
-  claim-wins rule worked, but it worked because both sides were careful,
-  which #203 says is not a fix · rec: state a tiny protocol in
-  parallel-architecture.md — claims and holdings move ONLY through files
-  (writes win, messages advise), and any instruction that must precede a
-  commit names the sha it must precede · relates #144, #150 · **mitigation
-  adopted now** (qsec): every landed-report names what it did NOT do
-  from the brief — the gap is where a crossed message does damage ·
-  **fifth crossing 20:41-20:48**: a corrective demand crossed the report
-  already answering it, the dreamer obeyed the demand, and the release
-  crossed back and orphaned the work uncommitted — recovered from the
-  agent transcript and adopted at 3073055; the demand was wrong AND the
-  work it provoked was a real find, which is its own lesson about what a
-  wrong premise can still buy · **sixth crossing 20:40-20:41, a NEW
-  direction**: the coordinator's absence-check raced the report's write
-  and concluded "no report" one minute after the report existed — the
-  named-what-I-did-not-do mitigation cannot help when the reader is the
-  one who is stale; rec: never conclude a report is ABSENT from a read
-  taken inside the window the report was due — wait a beat and read
-  again · **and a shared-tree rule for parallel-architecture.md**
-  (plugcmd): `git add <path>` is safe only for changes YOU made — a held
-  path carrying changes you did not make is a question, not a commit;
-  the coordinator committed a live agent's working tree mid-red-proof at
-  3073055 and it happened to be complete, which is luck, not process
 - **#138** — Ship a PreCompact hook so the write-down is automatic ·
   P2 · task · 60m · **scope gate applies**: Claude Code-specific
   machinery in a harness-portable skill, and it touches his own config
@@ -553,6 +521,12 @@ Next id: **222**
   **blocked**: human pick
 
 ## Recently landed
+
+**#206** the race-safe coordination protocol is in
+`.dreamwork/docs/plans/parallel-architecture.md` (c59c163): file claims win,
+messages wake; reports name omissions; absence waits beyond the report
+window; commit-bound instructions name their boundary; explicit staging is
+safe only for edits the stager made (2026-07-26).
 
 **#127** deliberate compaction is documented in `compaction.md` plus the
 shared harness-dialect table. Reconciled complete: a managed sender belongs
