@@ -18,9 +18,15 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **219**
+Next id: **220**
 
 ## Open
+
+- **#219** — Make hung browser guards self-identifying and bounded · P2 ·
+  bug · 25m · origin: **loop** · `just test` hung beyond ten minutes on
+  2026-07-26 with no surviving process or output naming the stalled guard;
+  normal baseline is ~20s · diagnose first, then ensure every guard has a
+  loud bounded timeout
 
 - **#218** — Add filed-to-landed median · P2 · task · 20m ·
   origin: **loop** · blocked on #217 · `ledger_series` already computes
