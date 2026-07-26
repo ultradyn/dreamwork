@@ -7,8 +7,8 @@
        (2) dreamwork/alpha-loop · dreaming · questions
 
    Four claims, and each of them was reachable only from a browser: the count
-   comes from `status.awaiting_human` with `open_questions` as the fallback,
-   the liveness word from `last_tick`'s AGE, the project from the target's
+   comes from the visible `open_questions` (never hand-maintained status
+   prose), the liveness word from `last_tick`'s AGE, the project from the target's
    own path, and the whole thing has to keep changing while nobody navigates.
 
    ONE SERVER, ONE TARGET, REWRITTEN BETWEEN STATES. health.mjs needs several
@@ -477,10 +477,15 @@ writeFileSync(QPATH, QGOOD);
   const hueGap = (a, b) => { const d = Math.abs(a - b) % 360;
                              return d > 180 ? 360 - d : d; };
 
-  // a SECOND window on the same project, opened before anything changes and
-  // never told anything afterwards
-  const w2 = await ctx.newPage();
-  w2.on('pageerror', e => errs.push('w2: ' + e));
+  // A SECOND BROWSER PROCESS on the same project, opened before anything
+  // changes and never told anything afterwards. A second page/context would
+  // share process-global machinery and could not prove #226's actual claim.
+  const br2 = await chromium.launch(
+    { args: ['--use-gl=swiftshader', '--enable-webgl'] });
+  const ctxOtherBrowser = await br2.newContext(
+    { viewport: { width: 1100, height: 900 } });
+  const w2 = await ctxOtherBrowser.newPage();
+  w2.on('pageerror', e => errs.push('other browser: ' + e));
   await w2.goto(`${BASE}/`, { waitUntil: 'networkidle' });
   await sleep(1500);
 
@@ -536,10 +541,11 @@ writeFileSync(QPATH, QGOOD);
     })();
   }));
   notes.push(`second window arrived at: ${w2tint}`);
-  ok('a window nobody told follows within a tick', w2tint === 'green');
+  ok('a separate browser nobody told follows within a tick',
+     w2tint === 'green');
   ok('...and its favicon followed too',
      (await w2.evaluate(FAV_READ)).ring[1] > favIndigo.ring[1]);
-  await w2.close();
+  await br2.close();
 
   // it survives a reload, which is what "persist" has to mean
   await p.reload({ waitUntil: 'networkidle' });

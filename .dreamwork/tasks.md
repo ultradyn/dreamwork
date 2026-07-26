@@ -18,9 +18,18 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **231**
+Next id: **232**
 
 ## Open
+
+- **#231** — Add `/answers` for questions to the dreamer · P1 · task ·
+  origin: **human** · **do next via watch 13:04** · simple opposite of
+  `/questions`: human asks, dreamer answers · distinct durable
+  `.dreamwork/answers.md`; submit + open/answered rendering + navigation +
+  loop folding contract · preserve raw submissions recovery, transitions,
+  channel health, and stdlib-only architecture · seed the human's exact
+  question about reopening/reblocking/linking prior questions · keep MVP
+  separate from #229 threaded-chat design · in progress
 
 - **#230** — Add a `use subagent` composer checkbox · P2 · task · later ·
   origin: **human** · **human via watch 12:57** · request fresh-context,
@@ -48,11 +57,6 @@ Next id: **231**
   input · subtle enable checkbox; preference persists server-side and syncs
   across tabs + separate browsers, never localStorage · needs settings format,
   migration, keyboard red proof, and transition-conformant UI
-- **#226** — Sync tint changes across browsers · P2 · idea · 20m ·
-  origin: **human** · **human via watch 12:47** · `.dreamwork/watch-tint`
-  + `/mtime` should already be browser-independent; add a two-browser-context
-  guard proving browser B updates after browser A writes tint, then fix only
-  if proof fails
 
 - **#225** — Add an `explore` proposal command · P2 · idea · 30m design,
   then implementation increments · origin: **human** · **human via watch
@@ -546,6 +550,11 @@ Next id: **231**
   **blocked**: human pick
 
 ## Recently landed
+
+**#226** cross-browser tint synchronisation was already correct; the identity
+guard now proves it through two separate Chromium processes rather than two
+pages sharing one process. Focused guard passes with no production change
+(human via Web UI, 2026-07-26).
 
 **#181** title/favicon counts now derive from visible open questions, not
 hand-maintained `status.awaiting_human` (bfa561f, deployed). Status keeps the
