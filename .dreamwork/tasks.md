@@ -531,11 +531,6 @@ Next id: **222**
   human_block, plugin-commands.json) and all assumed absence was
   observable, unchecked · a guard that DELETES (a dream, a review) and
   asserts the open page loses it would cover the class, not the instance
-- **#209** — The `...` menu has no keyboard path, and plugin commands
-  live ONLY there · P2 · bug · 25m · it opens on hover and focus-within;
-  a keyboard user cannot reach what #86 just shipped · relates #92
-  (palette) and #168 (focus shortcut) — whichever lands first should
-  carry this, and the ledger line on the other should say so
 - **#98** — Show the open queue on the watch dashboard · P2 · idea · 40m ·
   new page surface, fit-check at selection
 - **#114** — Dashboard renders the active goal chain · P3 · task · 25m ·
@@ -570,6 +565,12 @@ Next id: **222**
   **blocked**: human pick
 
 ## Recently landed
+
+**#209** closed by proving the existing keyboard path (4f9ed58): plugcmd
+focuses the dots opener, Tabs into a visible plugin command, presses Enter,
+and observes the same selected-kind path. The focused browser guard passes;
+the implementation was accessible, but the claim had never been exercised
+without a pointer (2026-07-26).
 
 **#208** the single `setData` seam is now guarded (b91931a): a static test
 permits one assignment inside the seam and requires both fetchers to use it.
