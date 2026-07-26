@@ -56,7 +56,26 @@ Next id: **267**
   `ud-dw-user-events --limit 20` returns exact events and processing status ·
   compare append-only JSONL vs one-file spool; atomicity, concurrency,
   redaction/retention/migration and dual witnesses · unify #260/#262, never a
-  third inconsistent queue · blocked on #261 incident diagnosis
+  third inconsistent queue · #261 incident diagnosis complete; next-up
+
+- **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
+  reliability bug · origin: **loop** · 30m · incident exposed by **human report
+  2026-07-26 15:47** · current `log_submission()` catches and suppresses
+  `OSError`, so a process can dispatch/acknowledge a request whose server witness
+  was never persisted; multiple same-target watch processes also split receipt
+  history · design with #263 rather than adding a competing queue · red-first
+  coverage for write failure, accepted-but-unwitnessed requests, stale/multiple
+  ports and concurrent same-target processes · blocked on #263 event model
+
+- **#261** — Recover reported 14:47–15:17 Web UI submissions · P0 · incident ·
+  origin: **human** · completed **2026-07-26 16:21** · human confirmed use of
+  live `localhost:35111`; exact words were not found in either server
+  `submissions.log` or browser IndexedDB, copied Brave Sessions/Session Storage/
+  localStorage/form state, Pi transcript, Git history/unreachable-object scan,
+  clipboard history, or the still-open tab's final DOM textarea dump · this is
+  **not evidence that no submission occurred**; it means no available witness
+  retained the exact text · live tab/process were preserved through recovery ·
+  prevention continues in #260/#262/#263
 
 - **#260** — Make post-compaction submission reconciliation cursor-based · P1 ·
   reliability · 25m · origin: **loop** · incident confirmed by **human 15:47** ·
