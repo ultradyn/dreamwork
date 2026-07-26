@@ -16,6 +16,7 @@ import random
 import re
 import subprocess
 import sys
+import tempfile
 import textwrap
 import threading
 import time
@@ -546,7 +547,7 @@ STYLE = """<style>
   .askform textarea { display:block; box-sizing:border-box; width:100%; min-height:5rem;
     margin:.35rem 0; padding:.55rem; resize:vertical; color:var(--text);
     background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
-    font:inherit; font-size:.75rem; outline:none; transition:border-color .3s ease; }
+    font:inherit; font-size:.75rem; outline:none; }
   .askform textarea:focus { border-color:var(--border); }
   .askform button { color:var(--lit); background:var(--panel2); border:1px solid var(--line);
     border-radius:var(--radius); padding:.35rem .7rem; font:inherit; cursor:pointer; }
@@ -1373,6 +1374,7 @@ function subsTx(mode, fn) {
    An unknown path still records, with the body kept whole — a new POST route
    is logged the day it is added, without anyone remembering this table. */
 const SUB_ACT = {
+  '/ask':     b => ({ kind:'ask',    title:b.question, text:b.question }),
   '/answer':  b => ({ kind:'answer', title:b.question, text:b.answer }),
   '/comment': b => ({ kind:'note',   title:b.question, text:b.comment }),
   '/command': b => ({ kind:b.kind,   title:null,       text:b.text }),
@@ -1896,21 +1898,23 @@ function buildQuestions(d) {
     : '<div class="dim">(none yet)</div>');
   return h + `</div>`;
 }
-function answerRecord(e, answered=false) {
+function answerRecord(e, answered=false, key='') {
   const body = `<div class="aqbody">${mdB(e.body)}</div>`;
   return answered
-    ? `<details class="aq answered"><summary>${esc(e.title)}</summary>${body}</details>`
+    ? `<details class="aq answered" data-aid="${esc(key)}"><summary>${esc(e.title)}</summary>${body}</details>`
     : `<article class="aq open dreamin"><div class="qt">${esc(e.title)}</div>` +
       `<div class="label">you asked · awaiting dreamer</div>${body}</article>`;
 }
 function buildAnswers(d) {
-  let h = `<form id="askform" class="askform"><label class="label" for="askbox">ask the dreamer</label>` +
+  let h = d.answers_health === 'unreadable'
+    ? `<div class="qhealth"><span>answers channel unreadable</span> · <a href="/file?p=.dreamwork%2Fanswers.md">.dreamwork/answers.md</a></div>` : '';
+  h += `<form id="askform" class="askform"><label class="label" for="askbox">ask the dreamer</label>` +
     `<textarea id="askbox" placeholder="A question for the dreamer"></textarea>` +
     `<div><button type="submit">Ask</button> <span id="askmsg" class="dim" aria-live="polite"></span></div></form>`;
   h += label(`open (${d.answers_open.length})`) +
     (d.answers_open.map(e => answerRecord(e)).join('') || `<div class="dim">none awaiting the dreamer</div>`);
   h += label(`answered (${d.answers_answered.length})`) +
-    (d.answers_answered.map(e => answerRecord(e, true)).join('') || `<div class="dim">none yet</div>`);
+    (d.answers_answered.map((e, i) => answerRecord(e, true, 'a' + i)).join('') || `<div class="dim">none yet</div>`);
   return `<div id="answersections">${h}</div>`;
 }
 async function sendAsk(form) {
@@ -2652,6 +2656,7 @@ function cardGroup(el) {
    #104's motion over a different set of rows, and a second implementation of
    "one leaves, its neighbours travel" would be two things to keep true. */
 const QA_LIST = { sel: '.qa[data-qid]', key: 'qid' };
+const ANSWER_LIST = { sel: '.aq.answered[data-aid]', key: 'aid' };
 const GIT_LIST = { sel: '.git .commit[data-sha]', key: 'sha' };
 function snapshotCards(list) {
   list = list || QA_LIST;
@@ -2986,6 +2991,7 @@ addEventListener('click', e => {
    the rect it had rather than clipped from the card-level clone. */
 const EXPAND_SURFACES = [
   { sum: '.qa details > summary', host: '.qa[data-qid]', list: QA_LIST },
+  { sum: '.aq.answered > summary', host: '.aq.answered[data-aid]', list: ANSWER_LIST },
   { sum: '.git .commit > summary', host: '.git .commit[data-sha]',
     list: GIT_LIST },
 ];
@@ -5344,6 +5350,37 @@ def parse_answered_answers(text):
     return items
 
 
+def atomic_write_text(path, text):
+    """Durably replace a UTF-8 file, cleaning the unique temp on failure."""
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(path) + ".",
+                               suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        # Once replace succeeds the ask is committed. A directory-fsync error
+        # must not return failure and invite a duplicate retry; durability of
+        # the rename is best-effort on filesystems that reject directory sync.
+        try:
+            dfd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+        except OSError:
+            pass
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def append_human_question(text, question, stamp):
     """Append a human question without letting pasted Markdown forge records.
 
@@ -6132,7 +6169,10 @@ def make_handler(target, dev=False):
             if req is None:
                 return
             try:
-                question = str(req["question"]).strip()
+                raw_question = req["question"]
+                if not isinstance(raw_question, str):
+                    raise TypeError
+                question = raw_question.strip()
             except (KeyError, TypeError):
                 self.send_error(400)
                 return
@@ -6144,11 +6184,7 @@ def make_handler(target, dev=False):
             with ANSWER_LOCK:
                 text = read_text(path)
                 new_text = append_human_question(text, question, stamp)
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                tmp = path + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
-                    f.write(new_text)
-                os.replace(tmp, path)
+                atomic_write_text(path, new_text)
             log_event(target, f'question for dreamer{from_hint(req.get("from"))}: '
                       f'"{one_line(question)}" -> .dreamwork/answers.md')
             self._send(json.dumps({"ok": True}), "application/json")

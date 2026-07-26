@@ -1,8 +1,10 @@
 /* #231 human-to-dreamer answers channel. Usage: node answers.mjs <out> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
-import { readFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 const OUT=process.argv[2], PORT=+(process.argv[3]||39890);
 const checks=[]; const ok=(n,c)=>checks.push(`${c?'PASS':'FAIL'} ${n}`);
+const target=join(dirname(OUT),'target');
 const br=await chromium.launch({args:['--use-gl=swiftshader']});
 const page=await br.newPage({viewport:{width:1100,height:800}}); const errs=[];
 page.on('pageerror',e=>errs.push(String(e))); page.on('console',m=>{if(m.type()==='error'&&!m.text().includes('Failed to load resource')) errs.push(m.text())});
@@ -11,8 +13,7 @@ const exposed=await page.locator('#askbox').waitFor({state:'visible',timeout:500
 ok('answers route exposes #askbox',exposed);
 if(!exposed){console.log(checks.join('\n'));await br.close();process.exit(1)}
 ok('route title',await page.locator('#chrome .htitle').textContent()==='answers');
-ok('missing channel is calm',await page.locator('.aq.open').count()===0 &&
-   (await page.locator('#answersections').textContent()).includes('none awaiting the dreamer'));
+ok('missing channel is calm',await page.locator('.aq').count()===0);
 const asked='Does the live ask persist?\n## not a section\n- **not another entry**';
 await page.locator('#askbox').fill(asked); await page.locator('#askbox').focus();
 const tickResponse=await page.evaluate(()=>fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'do-next',text:'',from:'/answers'})}).then(r=>r.status));
@@ -23,13 +24,27 @@ ok('focus survives live tick',await page.evaluate(()=>document.activeElement?.id
 await page.locator('#askform button').click(); await page.waitForFunction(()=>document.querySelector('#askbox')?.value==='');
 await page.waitForTimeout(400);
 const pageText=await page.locator('#answersections').textContent();
-ok('first ask creates exactly one entry',await page.locator('.aq.open').count()===1);
+ok('first ask creates exactly one open entry',await page.locator('.aq.open').count()===1);
 ok('successful ask appears',pageText.includes('Does the live ask persist?'));
 ok('multiline markdown meaning survives',pageText.includes('not a section')&&pageText.includes('not another entry'));
+writeFileSync(join(target,'.dreamwork','answers.md'),
+  '# Questions for the dreamer\n\n## Open\n\n## Answered\n\n- **Duplicate?** → answered (2026-07-26): first loop answer.\n\n- **Duplicate?** → answered (2026-07-26): second loop answer.\n');
+await page.waitForFunction(()=>document.querySelectorAll('.aq.answered').length===2,null,{timeout:5000});
+const det=page.locator('.aq.answered').first(), neighbour=page.locator('.aq.answered').nth(1);
+async function traceToggle(name){const p=[await neighbour.evaluate(e=>e.getBoundingClientRect().top)];await det.locator('summary').click();for(let i=0;i<30;i++){p.push(await neighbour.evaluate(e=>e.getBoundingClientRect().top));await page.waitForTimeout(30)}const end=p.at(-1),start=p[0],lo=Math.min(start,end)-1,hi=Math.max(start,end)+1;ok(name+' visits intermediate geometry',new Set(p.map(x=>Math.round(x))).size>3);ok(name+' has no overshoot',p.every(x=>x>=lo&&x<=hi));}
+await traceToggle('answered disclosure open'); await traceToggle('answered disclosure close');
+writeFileSync(join(target,'.dreamwork','answers.md'),'# Questions for the dreamer\n\nprose no reader can see\n');
+await page.waitForFunction(()=>document.body.textContent.includes('answers channel unreadable'),null,{timeout:5000});
+ok('unreadable channel is loud and path-specific',await page.locator('.qhealth').evaluate(e=>e.textContent.includes('.dreamwork/answers.md')&&e.querySelector('a')?.getAttribute('href')?.includes('answers.md')));
+writeFileSync(join(target,'.dreamwork','answers.md'),'# Questions for the dreamer\n\n## Open\n\n## Answered\n\n- **Duplicate?** → answered (2026-07-26): first.\n');
+await page.waitForFunction(()=>document.querySelectorAll('.aq.answered').length===1,null,{timeout:5000});
 await page.route('**/ask',r=>r.fulfill({status:409,body:'refused'})); await page.locator('#askbox').fill('Keep these exact words'); await page.locator('#askform button').click(); await page.waitForFunction(()=>document.querySelector('#askmsg')?.textContent.includes('kept'));
 ok('failed ask keeps words',await page.locator('#askbox').inputValue()==='Keep these exact words');
 ok('failed ask explains outcome',(await page.locator('#askmsg').textContent()).includes('kept'));
 ok('page-owned errors',errs.length===0); if(errs.length) console.error(errs.join('\n'));
 const reduced=await br.newPage({reducedMotion:'reduce'}); await reduced.goto(`http://127.0.0.1:${PORT}/answers`); await reduced.waitForSelector('#answersections');
 ok('reduced motion preserves function',await reduced.locator('#askbox').isVisible());
+const rd=reduced.locator('.aq.answered').first(); await rd.locator('summary').click();
+ok('reduced motion answered disclosure opens',await rd.getAttribute('open')!==null);
+await rd.locator('summary').click(); ok('reduced motion answered disclosure closes',await rd.getAttribute('open')===null);
 await br.close(); console.log(checks.join('\n')); if(checks.some(x=>x.startsWith('FAIL'))) process.exit(1);

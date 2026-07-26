@@ -564,6 +564,15 @@ class TestCollector(unittest.TestCase):
                 f.write("- new lesson\n")
             self.assertGreater(watch.watched_mtime(d), before)
 
+    def test_answers_health_fault_is_loud_and_path_specific(self):
+        self.assertIn("answers channel unreadable", watch.PAGE)
+        self.assertIn(".dreamwork%2Fanswers.md", watch.PAGE)
+        self.assertIn("d.answers_health === 'unreadable'", watch.PAGE)
+
+    def test_ask_submission_has_structured_client_recovery_mapping(self):
+        self.assertIn("'/ask':     b => ({ kind:'ask'", watch.PAGE)
+        self.assertIn("title:b.question, text:b.question", watch.PAGE)
+
     def test_answers_route_and_ask_are_wired(self):
         self.assertIn("function buildAnswers(d)", watch.PAGE)
         self.assertIn("/answers", watch.PAGE)
@@ -595,6 +604,14 @@ class TestCollector(unittest.TestCase):
             data = watch.collect(d)
             self.assertEqual(len(data["answers_open"]), 1)
             self.assertEqual(len(data["answers_answered"]), 1)
+
+    def test_atomic_write_text_replaces_and_leaves_no_temp(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "answers.md")
+            watch.atomic_write_text(path, "durable\n")
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "durable\n")
+            self.assertEqual(os.listdir(d), ["answers.md"])
 
     def test_parse_open_questions(self):
         qs = watch.parse_open_questions(QUESTIONS)
@@ -1648,6 +1665,18 @@ class TestAppShell(unittest.TestCase):
                              "Can this wake the dreamer?")
             with open(os.path.join(d, ".dreamwork", "watch-events.log"), encoding="utf-8") as f:
                 self.assertIn("question for dreamer", f.read())
+
+    def test_ask_rejects_non_string_after_witness_without_mutation(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            base = self._serve(d)
+            for bad in ({"nested": True}, ["list"]):
+                with self.assertRaises(urllib.error.HTTPError) as cm:
+                    self._post(base + "/ask", {"question": bad, "from": "/answers"})
+                self.assertEqual(cm.exception.code, 400)
+            self.assertFalse(os.path.exists(os.path.join(d, ".dreamwork", "answers.md")))
+            with open(os.path.join(d, ".dreamwork", "submissions.log"), encoding="utf-8") as f:
+                self.assertEqual(len(f.readlines()), 2)
 
     def test_filedata_returns_confined_content(self):
         with tempfile.TemporaryDirectory() as d:
