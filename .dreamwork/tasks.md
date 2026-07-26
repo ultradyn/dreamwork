@@ -18,9 +18,23 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **288**
+Next id: **289**
 
 ## Open
+
+- **#288** — Plan a multi-dreamer architecture · P1 · architecture/design ·
+  origin: **human** · **human via cloud agent 2026-07-26** · plan at
+  `.dreamwork/docs/plans/multi-dreamer.md`, IGC decision artifact at
+  `.dreamwork/review/multi-dreamer-architecture.html` · six IGC matrices over
+  fourteen traced goals recommend **I6′**: three tiers (dreamer owns work,
+  host supervisor owns processes, hub is the human's surface), the worktrees
+  claim ledger promoted to a core durable roster with `status.json` as its
+  projection, intents whose confirmation is observed rather than claimed,
+  retire-when-idle for cost, cross-host answers as intents to the target's own
+  writer, and a metadreamer that is a client of the human's own lifecycle API
+  · stages A/B need nothing unapproved; C–F depend on #201/#205 and #275/#276
+  · dashboard M1–M4 asks for stage-A authority plus two standing rules; no
+  implementation authority · awaiting human
 
 - **#287** — Design a Matt Pocock skills bridge plugin for Dreamwork · P1 ·
   plugin/research/design · origin: **human** · **human via coordinator

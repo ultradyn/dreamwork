@@ -2,6 +2,53 @@
 
 ## Open
 
+- **P1 · 2026-07-26 — #288 multi-dreamer architecture: adopt the
+  three-tier direction, and authorize stage A only?** Plan:
+  `.dreamwork/docs/plans/multi-dreamer.md`; IGC decision artifact:
+  `.dreamwork/review/multi-dreamer-architecture.html`.
+
+  You asked for a plan for a multi-dreamer architecture and named the IGC
+  method, so every option below is evaluated as idea × goal × context with
+  marks rather than scores: one ✘ refutes a row however many ✔s sit beside
+  it, and a ? is an experiment rather than a maybe. Six matrices, fourteen
+  goals traced to DREAMWORK.md or to something that has already failed here.
+
+  Rec **M1**: adopt **I6′** — three tiers (the dreamer owns work, a host
+  supervisor owns processes, the hub is where you stand), the durable roster
+  as the record of who is out, intents whose confirmation is *observed*
+  rather than claimed, and retire-when-idle — and authorize **stage A
+  only**: promote the worktrees plugin's claim ledger to a core roster
+  (shape, lint check, migration), a bounded `ud-dw-agents list|show|orphans`
+  CLI, orphan reconciliation against observed processes and ports, and a
+  read-only hub view of the roster. Stages B–F each come back with their own
+  plan. Stages A and B need nothing unapproved.
+
+  The finding that most shaped it: `status.json`'s `agents[]` is
+  session-ephemeral by design, and SKILL.md defends that correctly — it
+  describes a running process. That defence holds for one session and breaks
+  for N, because a dreamer outlives the coordinator that spawned it. The
+  four orphaned servers and the two prose-retirements are what the current
+  design costs once there is more than one dreamer, and there is nowhere to
+  look today that would have said otherwise.
+
+  Three smaller asks ride with it. **M2**: fold the cross-host rule — *never
+  write another target's files; send an intent to its writer* — as the
+  answer to the question open since 2026-07-25, and record it in SKILL.md.
+  **M3**: retire-when-idle before the #205 scheduler, because it needs no
+  measurement and carries the cost goal on its own, leaving the scheduler an
+  optimisation with a known-safe fallback. **M4**: accept *build no
+  lifecycle path that only the human can use, and none that only an agent
+  can use* as a standing constraint now — free to hold from the start, and
+  it is what stops the stage-F metadreamer needing a second mechanism.
+
+  Approval does **not** authorize stages B–F, any non-loopback bind, a
+  runtime adapter, hub write endpoints, or a metadreamer. It authorizes
+  stage A's increments and the two rules in M2 and M4.
+
+  Answer `Accept M1 for stage A`, `Accept M1 with amendments: …`,
+  `Revise … and rereview`, or `Pause multi-dreamer`; M2/M3/M4 can be
+  answered separately.
+
 - **P1 · 2026-07-26 — #287 Matt Pocock skills bridge: accept the thin
   protocol/profile-adapter direction?** Cited research and coordinator/Grok
   iteration: `.dreamwork/docs/research/matt-pocock-skills-bridge-287.md`.
