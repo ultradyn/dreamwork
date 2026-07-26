@@ -24,6 +24,7 @@ import textwrap
 import threading
 import time
 import urllib.parse
+from dataclasses import dataclass
 import webbrowser
 
 # Server generation: a fresh value every time this process (re)starts, so a
@@ -174,6 +175,94 @@ def display_host(bind, allowed_hosts, url_host=None):
         return "[{}]".format(ipaddress.IPv6Address(chosen).compressed)
     except ValueError:
         return chosen
+
+
+@dataclass(frozen=True)
+class NetworkOptions:
+    bind: str
+    port: int
+    allowed_hosts: tuple
+    url_host: str
+    family: int
+    trusted_lan: bool
+
+    @property
+    def authority(self):
+        return RequestAuthority(self.allowed_hosts, self.port)
+
+
+class _SingleValue(argparse.Action):
+    """A singular flag that rejects accidental last-value-wins repeats."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if getattr(namespace, self.dest, None) is not None:
+            parser.error(f"{option_string} may be specified only once")
+        setattr(namespace, self.dest, values)
+
+
+def parse_args(argv=None):
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--target", default=".", metavar="DIR")
+    p.add_argument("--port", type=int, default=None)
+    p.add_argument("--bind", action=_SingleValue, default=None, metavar="ADDRESS",
+                   help="numeric listen address (default: 127.0.0.1)")
+    p.add_argument("--allow-host", action="append", default=[], metavar="HOST",
+                   help="exact accepted Host name/address (repeatable)")
+    p.add_argument("--url-host", action=_SingleValue, default=None, metavar="HOST",
+                   help="allowed navigable host printed/opened for this bind")
+    p.add_argument("--open", action="store_true",
+                   help="open the dashboard in a browser")
+    p.add_argument("--dev", action="store_true",
+                   help="dev mode: show an fps counter on the page")
+    p.add_argument("--autoreload", action="store_true",
+                   help="re-exec on source change (implied by --dev)")
+    args = p.parse_args(argv)
+    if args.bind is None:
+        args.bind = "127.0.0.1"
+    return args
+
+
+def network_options(bind, allow_hosts, url_host, port):
+    """Validate CLI networking into the closed server configuration."""
+    bind_ip = ipaddress.ip_address(bind)
+    family = bind_family(bind)
+    explicit = {normalise_host_token(host) for host in allow_hosts}
+    trusted_lan = not bind_ip.is_loopback
+    if trusted_lan:
+        non_loopback = set()
+        for host in explicit:
+            try:
+                if not ipaddress.ip_address(host).is_loopback:
+                    non_loopback.add(host)
+            except ValueError:
+                non_loopback.add(host)       # explicit DNS name
+        if not non_loopback:
+            raise ValueError("non-loopback bind requires --allow-host")
+        if url_host is None and not bind_ip.is_unspecified:
+            candidate = bind_ip.compressed.lower()
+            if candidate in explicit:
+                url_host = candidate
+        shown = display_host(bind, explicit, url_host)
+        allowed = tuple(sorted(explicit))
+    else:
+        # Loopback mode preserves intentional aliases and the old zero-config
+        # behavior. Explicit additions remain exact but do not make it LAN mode.
+        allowed = tuple(sorted(explicit | {"localhost", "127.0.0.1", "::1"}))
+        shown = display_host(bind, allowed, url_host)
+    return NetworkOptions(bind_ip.compressed.lower(), int(port), allowed, shown,
+                          family, trusted_lan)
+
+
+def server_class(family):
+    if family == socket.AF_INET:
+        return http.server.ThreadingHTTPServer
+    if family != socket.AF_INET6:
+        raise ValueError("unsupported socket family")
+
+    class IPv6ThreadingHTTPServer(http.server.ThreadingHTTPServer):
+        address_family = socket.AF_INET6
+
+    return IPv6ThreadingHTTPServer
 
 
 # The steering vocabulary — ONE source. The server validates POST /command
@@ -6324,10 +6413,32 @@ def command_line(kind, text, source=""):
     return f"command via watch{from_hint(source)}: {kind}{body}"
 
 
-def make_handler(target, dev=False):
+def make_handler(target, dev=False, authority=None):
     page = PAGE.replace("/*DEV*/false", "true") if dev else PAGE
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        def _authority(self):
+            if authority is not None:
+                return authority
+            # Compatibility for callers/tests that construct the handler before
+            # the ephemeral port is known. The production CLI always supplies
+            # an explicit authority in trusted-LAN mode.
+            port = self.server.server_address[1]
+            return RequestAuthority(("localhost", "127.0.0.1", "::1"), port)
+
+        def _preflight(self, write=False):
+            hosts = self.headers.get_all("Host", [])
+            if len(hosts) != 1 or not self._authority().host_allowed(hosts[0]):
+                self.send_error(421, "misdirected request")
+                return False
+            if write:
+                origins = self.headers.get_all("Origin", [])
+                if len(origins) > 1 or not self._authority().origin_allowed(
+                        origins[0] if origins else None, hosts[0]):
+                    self.send_error(403, "origin not allowed")
+                    return False
+            return True
+
         def _send(self, body, ctype):
             data = body.encode("utf-8")
             self.send_response(200)
@@ -6337,6 +6448,9 @@ def make_handler(target, dev=False):
             self.wfile.write(data)
 
         def do_GET(self):
+            # Authority gates every path before it can disclose target state.
+            if not self._preflight():
+                return
             parsed = urllib.parse.urlparse(self.path)
             # Same-document routes all return the one app shell; the client
             # router renders the matching view (deep links keep working).
@@ -6387,6 +6501,12 @@ def make_handler(target, dev=False):
                 return None
 
         def do_POST(self):
+            # A foreign browser request is not the human submitting to this
+            # dashboard. Reject Host/Origin before body read and before #199's
+            # witness, otherwise the recovery log itself becomes a cross-site
+            # write primitive.
+            if not self._preflight(write=True):
+                return
             # Human-authorized write paths, all localhost-only: /answer folds
             # an answer into questions.md; /comment threads a follow-up note
             # onto any entry; /command drops a steering line into the events
@@ -6600,27 +6720,28 @@ def _watch_source_and_restart(interval=1.0):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--target", default=".", metavar="DIR")
-    p.add_argument("--port", type=int, default=None)
-    p.add_argument("--open", action="store_true",
-                   help="open the dashboard in a browser")
-    p.add_argument("--dev", action="store_true",
-                   help="dev mode: show an fps counter on the page")
-    p.add_argument("--autoreload", action="store_true",
-                   help="re-exec on source change (implied by --dev)")
-    args = p.parse_args(argv)
+    args = parse_args(argv)
     port = args.port or persistent_port(args.target)
     try:
-        server = http.server.ThreadingHTTPServer(
-            ("127.0.0.1", port), make_handler(args.target, dev=args.dev))
+        net = network_options(args.bind, args.allow_host, args.url_host, port)
+    except ValueError as exc:
+        raise SystemExit(f"watch.py: {exc}") from exc
+    try:
+        server = server_class(net.family)(
+            (net.bind, port),
+            make_handler(args.target, dev=args.dev, authority=net.authority))
     except OSError as e:
         raise SystemExit(
-            f"watch.py: cannot bind 127.0.0.1:{port} ({e.strerror}). "
+            f"watch.py: cannot bind {net.bind}:{port} ({e.strerror}). "
             f"Another instance may be running (port persisted in "
             f".dreamwork/watch-port); stop it or pass --port.")
-    url = f"http://127.0.0.1:{port}/"
+    url = f"http://{net.url_host}:{port}/"
     print(f"dreamwork watch: {url} (target {os.path.abspath(args.target)})")
+    print("allowed Hosts: " + ", ".join(net.allowed_hosts))
+    if net.trusted_lan:
+        print("WARNING: trusted-LAN mode is unauthenticated; every reachable "
+              "client using an allowed Host can read and write. Public/WAN "
+              "exposure is unsupported.")
     if args.open:
         webbrowser.open(url)
     if args.autoreload or args.dev:

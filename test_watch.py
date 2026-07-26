@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Unit tests for watch.py's data collector. Run: python3 test_watch.py"""
 
+import contextlib
 import http.server
 import inspect
+import io
 import json
 import os
 import re
@@ -10,6 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 
@@ -135,6 +138,156 @@ class TestRequestAuthority(unittest.TestCase):
             watch.display_host("::", ["xsm"], None)
         with self.assertRaises(ValueError):
             watch.display_host("0.0.0.0", ["xsm"], "other")
+
+
+class TestRequestAuthorityHTTP(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.target = make_target(self.tmp.name)
+        # Reserve a real port first, then bind the tested server to it so the
+        # authority checks the actual port its Host header must carry.
+        probe = http.server.ThreadingHTTPServer(("127.0.0.1", 0),
+                                                http.server.BaseHTTPRequestHandler)
+        port = probe.server_address[1]
+        probe.server_close()
+        self.authority = watch.RequestAuthority(["allowed.test", "127.0.0.1"],
+                                                port)
+        self.server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", port),
+            watch.make_handler(self.target, authority=self.authority))
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{port}"
+        self.host = f"allowed.test:{port}"
+
+    def request(self, path, *, host=None, origin=None, data=None):
+        headers = {}
+        if host is not None:
+            headers["Host"] = host
+        if origin is not None:
+            headers["Origin"] = origin
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+            data = json.dumps(data).encode()
+        req = urllib.request.Request(self.base + path, data=data, headers=headers,
+                                     method="POST" if data is not None else "GET")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read()
+
+    def test_host_gates_every_get_before_target_read(self):
+        self.assertEqual(self.request("/data.json", host="evil.test")[0], 421)
+        self.assertEqual(self.request("/data.json", host=self.host)[0], 200)
+
+    def test_origin_gates_post_before_body_witness(self):
+        payload = {"kind": "add-idea", "text": "must not be witnessed"}
+        status, _ = self.request("/command", host=self.host,
+                                 origin="http://evil.test", data=payload)
+        self.assertEqual(status, 403)
+        self.assertFalse(os.path.exists(os.path.join(
+            self.target, ".dreamwork", "submissions.log")))
+
+    def test_allowed_browser_and_cli_posts_are_witnessed(self):
+        payload = {"kind": "add-idea", "text": "trusted LAN words"}
+        self.assertEqual(self.request(
+            "/command", host=self.host, origin=f"http://{self.host}",
+            data=payload)[0], 200)
+        self.assertEqual(self.request(
+            "/command", host=self.host,
+            data={"kind": "add-idea", "text": "CLI words"})[0], 200)
+        with open(os.path.join(self.target, ".dreamwork", "submissions.log"),
+                  encoding="utf-8") as handle:
+            rows = [json.loads(line) for line in handle]
+        self.assertEqual([row["req"]["text"] for row in rows],
+                         ["trusted LAN words", "CLI words"])
+
+
+class TestLANCLI(unittest.TestCase):
+    def test_cli_surface_and_loopback_defaults(self):
+        args = watch.parse_args(["--target", "/tmp/project", "--port", "35110"])
+        self.assertEqual(args.bind, "127.0.0.1")
+        self.assertEqual(args.allow_host, [])
+        options = watch.network_options(args.bind, args.allow_host,
+                                        args.url_host, args.port)
+        self.assertEqual(options.bind, "127.0.0.1")
+        self.assertEqual(options.url_host, "127.0.0.1")
+        self.assertEqual(options.family, watch.socket.AF_INET)
+        self.assertFalse(options.trusted_lan)
+        self.assertTrue({"localhost", "127.0.0.1", "::1"}.issubset(
+            set(options.allowed_hosts)))
+
+    def test_non_loopback_requires_explicit_allowlist_and_url_host(self):
+        with self.assertRaises(ValueError):
+            watch.network_options("0.0.0.0", [], None, 35110)
+        with self.assertRaises(ValueError):
+            watch.network_options("0.0.0.0", ["xsm"], None, 35110)
+        with self.assertRaises(ValueError):
+            watch.network_options("0.0.0.0", ["xsm"], "other", 35110)
+        options = watch.network_options("0.0.0.0", ["xsm", "192.168.1.20"],
+                                        "xsm", 35110)
+        self.assertTrue(options.trusted_lan)
+        self.assertEqual(options.url_host, "xsm")
+        self.assertEqual(options.allowed_hosts, ("192.168.1.20", "xsm"))
+
+    def test_concrete_lan_bind_may_advertise_itself_when_explicitly_allowed(self):
+        options = watch.network_options("192.168.1.20", ["192.168.1.20"],
+                                        None, 35110)
+        self.assertEqual(options.url_host, "192.168.1.20")
+        self.assertTrue(options.trusted_lan)
+
+    def test_ipv6_family_and_url_brackets(self):
+        args = watch.parse_args(["--bind", "::", "--allow-host", "xsm",
+                                 "--allow-host", "2001:db8::1",
+                                 "--url-host", "2001:db8::1"])
+        options = watch.network_options(args.bind, args.allow_host,
+                                        args.url_host, 35110)
+        self.assertEqual(options.family, watch.socket.AF_INET6)
+        self.assertEqual(options.url_host, "[2001:db8::1]")
+        self.assertEqual(watch.server_class(options.family).address_family,
+                         watch.socket.AF_INET6)
+
+    def test_cli_rejects_repeated_singular_flags(self):
+        with self.assertRaises(SystemExit):
+            watch.parse_args(["--bind", "127.0.0.1", "--bind", "::1"])
+        with self.assertRaises(SystemExit):
+            watch.parse_args(["--url-host", "xsm", "--url-host", "host2"])
+
+    def test_main_prints_warning_and_opens_only_navigable_allowed_url(self):
+        class FakeServer:
+            def __init__(self, address, handler):
+                self.address = address
+                self.handler = handler
+                self.served = False
+
+            def serve_forever(self):
+                self.served = True
+
+        made = []
+        def factory(address, handler):
+            server = FakeServer(address, handler)
+            made.append(server)
+            return server
+
+        out = io.StringIO()
+        with (unittest.mock.patch.object(watch, "server_class",
+                                         return_value=factory),
+              unittest.mock.patch.object(watch.webbrowser, "open") as opened,
+              contextlib.redirect_stdout(out)):
+            watch.main(["--target", "/tmp/project", "--port", "35110",
+                        "--bind", "0.0.0.0", "--allow-host", "xsm",
+                        "--url-host", "xsm", "--open"])
+        text = out.getvalue()
+        self.assertEqual(made[0].address, ("0.0.0.0", 35110))
+        self.assertTrue(made[0].served)
+        self.assertIn("http://xsm:35110/", text)
+        self.assertIn("allowed Hosts: xsm", text)
+        self.assertIn("trusted-LAN mode is unauthenticated", text)
+        self.assertIn("Public/WAN exposure is unsupported", text)
+        opened.assert_called_once_with("http://xsm:35110/")
 
 
 class TestCollector(unittest.TestCase):
