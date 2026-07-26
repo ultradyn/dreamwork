@@ -208,6 +208,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/status.json` | `watch.py`'s status reader; **`dreamhub.py`** | Valid JSON, and now an interface — see below | `lint.py` |
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
+| `.dreamwork/run-mode` | `watch.py` dashboard + the coordinator/main dreamer on tick and via `watch-events.log` | One line: one name from `watch.py`'s `RUN_MODES` (`lackadaisical`, `hot`, `assisted`). Absent/unknown → `lackadaisical`. Machine-local, **gitignored** — operational posture, not a portable project default. `status.json` may mirror it later but never owns it | `lint.py` |
 | `.dreamwork/submissions.log` | recovery — the loop, and him, after something failed | One JSON object per line, written as the FIRST act of `do_POST` before any parsing or validation. Append-only, never rewritten. Machine-local, **gitignored** — see below | `lint.py` |
 | `.dreamwork/plugin-commands.json` | `watch.py`'s composer (#86) | `{"commands": [{kind, label, desc, plugin}]}`. Written **whole** by the loop at plugin resolution, never appended — see below. Machine-local, **gitignored** | `lint.py` |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
@@ -249,6 +250,41 @@ events-log event: the log's contract is one line per thing an agent then
 acts on, and a colour is not one. Logging it would wake the loop to do
 nothing. The loop learns his choice by the file being in the repo, the
 same way `DREAMWORK.md` works.
+
+## `.dreamwork/run-mode` — pace for the main dreamer (#290)
+
+One line, closed vocabulary, trailing newline — the same physical shape as
+`watch-tint` / `watch-port`, with the opposite commit rule:
+
+```
+hot
+```
+
+- **Authoritative** for the main dreamer's run mode. `collect()` exposes it
+  as `run_mode` so every open window converges on the existing `/mtime` poll.
+  `status.json` is an ephemeral loop claim and must not be the sole store.
+- **Selectable v1:** `lackadaisical` (default; idle-friendly, no proactive
+  fan-out), `hot` (continuous bounded work, coordinator-only), `assisted`
+  (hot plus a few disjoint helpers under existing ownership rules).
+  **`hierarchical` is not a legal file value** — the dashboard shows it
+  disabled until #264 concurrency and #288 containment make it honest.
+- **Gitignored / machine-local.** Operational posture on this host, not a
+  surprising project default for the next clone. Targets gain the ignore
+  line via `migrations/2026-07-27-01-run-mode.md`.
+- **Dual-write on change only.** `POST /run-mode` with `{ "mode": "…" }`
+  validates against `RUN_MODES`, atomically writes the file, and appends one
+  `watch-events.log` line shaped `run-mode via watch[ /path]: <mode>` when
+  the mode actually changes. Identical final → 200, no event, no needless
+  wake. The dashboard arms a **shared 10s pending** selection across tabs
+  (localStorage keyed by absolute `data.target`); every change resets the
+  countdown; only the final mode is POSTed.
+- **Consumption honesty.** This file + the events line are how an agent
+  learns the mode. Reading them does not, by itself, change a running
+  session's scheduler unless that session's monitored-event / skill protocol
+  says so — do not claim otherwise.
+
+Checked by `lint.py` (`check_run_mode`), reading the closed set from
+`watch.py` so the checker cannot drift from the page.
 
 ## `.dreamwork/submissions.log` — his words, before anything can lose them
 

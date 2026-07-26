@@ -86,6 +86,17 @@ human responses are durable because they land in `questions.md`, and human
 questions are durable because they land in `answers.md`; the command channel
 is not.
 
+**Run mode (#290).** On tick start (and when an events line matches
+`run-mode via watch`), re-read `.dreamwork/run-mode` — that file is
+authoritative, gitignored, and one of `lackadaisical` (default), `hot`,
+or `assisted`. The dashboard arms a 10s shared cooldown before writing it
+and emits one events line only on a real change. Treat the mode as
+selection/policy posture for this host (idle-friendly vs continuous vs a
+few helpers under existing ownership rules); do **not** claim hierarchical
+fan-out, and do not invent kill/sandbox authority from the mode alone
+(#288). This session only changes scheduling when its own
+monitored-event / skill protocol applies the file.
+
 ## Selecting the next task
 
 0. **Sync.** Check the task list first. Resume unblocked in-progress work
@@ -305,6 +316,11 @@ results, no ceremony.
   as prose in a questions entry, and it was the largest design decision
   of the day. watch.py lists and serves them; archive alongside the
   answered question.
+- `.dreamwork/run-mode` — main-dreamer pace for this host (#290): one line,
+  closed set (`lackadaisical` / `hot` / `assisted`), written by the
+  dashboard after a 10s arm, dual-written with one `watch-events.log` line
+  on change. Authoritative over any status mirror; machine-local /
+  gitignored. See `file-formats.md`.
 - `.dreamwork/status.json` — live loop status for the watch.py dashboard,
   rewritten each tick. Its timestamps come from the system clock, never
   from memory — a dashboard whose whole thesis is liveness must not

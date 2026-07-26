@@ -9,6 +9,10 @@ __pycache__/
 # history — and it holds whatever he typed, so it is the last file that should
 # ever be pushed anywhere.
 .dreamwork/submissions.log
+# main-dreamer pace for this host (#290) — operational posture, not a
+# portable project default (unlike watch-tint). Migration
+# 2026-07-27-01-run-mode.md tells targets the same.
+.dreamwork/run-mode
 # The same two files one directory down: a guard that drives the composer or
 # answers a question for real makes the server write into the FROZEN fixture.
 # The write is correct behaviour being exercised; the patterns above are
@@ -16,6 +20,7 @@ __pycache__/
 # in every `git status` waiting for a careless `git add -A`.
 dev/capture/fixture/.dreamwork/watch-events.log
 dev/capture/fixture/.dreamwork/submissions.log
+dev/capture/fixture/.dreamwork/run-mode
 
 # worktrees for isolated dreamer spikes
 .worktrees/
