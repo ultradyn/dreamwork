@@ -18,9 +18,41 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **274**
+Next id: **278**
 
 ## Open
+
+- **#277** — Let departing UI elements blur and liquify before they travel · P2 ·
+  visual/motion idea · origin: **human** · **human via watch 17:49** · elements
+  about to disappear or move (for example a question moving into Answered) begin
+  a brief dissolve/dreamfade before the actual layout travel · design as a phase
+  inside the existing transition/state matrix, not a second animation system;
+  immediate data commit remains; do not double-ghost route/card departures;
+  normal motion needs bounded intermediate blur/position evidence, no overshoot
+  or snap, settled crispness; reduced motion preserves function with no blur/travel
+
+- **#276** — Add simple bearer-token authentication for LAN clients · P2 ·
+  security design/feature · origin: **human** · **human via answer 17:48** ·
+  later mode for LAN PCs/phones; distinct from initial #233 trusted unauthenticated
+  LAN mode · design token generation/storage/rotation, browser entry/persistence,
+  header/query avoidance, CSRF/Origin interplay, logs/redaction, revocation and
+  migration before implementation · blocked on #233 base LAN mode
+
+- **#275** — Research public Dreamhub authentication informed by shoo.dev · P2 ·
+  security research/design · origin: **human** · **human via answer 17:48** ·
+  evaluate shoo.dev's actual primary-source auth/deployment model and alternatives
+  for public Dreamhub; define identity, TLS, session/cookie, CSRF, authorization,
+  secrets, reverse proxy and threat model · public/WAN support remains forbidden
+  until a reviewed design is approved
+
+- **#274** — Make duplicate Web UI submissions idempotent end to end · P0/P1 · bug ·
+  origin: **loop** · 25m · at 17:48 one human #233 action produced two byte-identical
+  `/answer` receipts and two identical question bullets in the same second ·
+  preserve one exact answer; diagnose double-click/client handler versus retry;
+  stable client action UUID before send, server receipt dedupe and idempotent
+  application belong to #263/#269 · red fixture must replay/concurrently submit
+  same ID and assert one receipt/application while a new ID with same text remains
+  a distinct intentional action
 
 - **#271** — Make notes appear promptly across open dashboard browsers · P1 · bug ·
   25m · origin: **human** · **human via watch 16:58** · observed symptom only:
@@ -62,20 +94,6 @@ Next id: **274**
   user-invocable/general model skills when Dreamwork is inactive, but the active
   loop must still resolve and load them predictably · preserve install/update
   compatibility, explicit file-based fallback and tests · blocked on #267
-
-- **#266** — Review-dock note/answer can land on the wrong question · P0/P1 · bug ·
-  25m · origin: **human** · first confirmed **2026-07-26 16:12** by helper;
-  reproduced again by the human's **16:47** #229 review landing on #257/#258;
-  **human explicitly re-raised 17:06: “this is a bug, please add to backlog”** · on
-  `/review?p=threaded-topic-chats.html&q=…#229…` a note was posted with
-  `from` still showing that URL but `body.question` = #255 title
-  (submissions.log 15:41:31) · root cause candidate: `data-qkey` is a
-  positional index into `questions_open`; live re-sort/insert after dock paint
-  makes `sendComment`/`sendAnswer` resolve a different `entry.title` while the
-  URL `q=` is unchanged · fix: bind dock/submit to stable title (or qid), not
-  list index; red browser: open review dock for A, insert higher-priority open
-  entry, submit note, assert it appends under A not B · re-homed human words
-  onto #229 + #253; neither misroute is content for #255 or #257/#258
 
 - **#265** — Add a research command to the composer · P2 · command design ·
   origin: **human** · **human via watch 16:05** · hidden/menu command for
@@ -331,11 +349,12 @@ Next id: **274**
 
 - **#233** — Allow explicit LAN bind and Host names · P1 · task · 30m
   design + increments · origin: **human** · **do next via chat 13:55** ·
-  loopback remains default; opt-in listen interfaces and explicit Host allowlist
-  with ports/IPv6 handled; preserve intentional localhost aliases and protect
-  writes from DNS rebinding/cross-origin abuse · docs/migration/TDD first ·
-  threat-model review at `.dreamwork/review/lan-bind-threat-model.html` ·
-  awaiting A trusted-LAN vs B auth/TLS decision
+  **approved A via watch 17:48:** explicit unauthenticated trusted-LAN mode;
+  loopback default, exact bind/Host allowlist, same-origin browser writes,
+  advertised URL, IPv6 correctness and loud warning per reviewed threat model ·
+  Host/Origin are safeguards, not auth · later public auth #275 and LAN bearer
+  token #276 are separate and do not expand this increment · docs/migration/TDD
+  first · existing `.worktrees/lan-bind` plan now unblocked
 
 - **#230** — Add a `use subagent` composer checkbox · P2 · task · later ·
   origin: **human** · **human via watch 12:57** · request fresh-context,
@@ -856,6 +875,12 @@ Next id: **274**
   **blocked**: human pick
 
 ## Recently landed
+
+**#266** fixes both observed review-dock wrong-target submissions by resolving
+writes through the visible card's stable `data-qid`, never its stale positional
+`data-qkey`. Independent Standards/Spec PASS; note and answer were both RED on
+baseline and green after; 153 units plus focused `docktarget`/`qacard`, lint and
+diff-check passed; deployed at `fe55cd3` (2026-07-26).
 
 **#273** adds mode-and-target-aware accessible names to shared question/dock
 textareas and send controls, and floors the send target at 44 px without a

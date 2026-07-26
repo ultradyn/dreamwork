@@ -2,16 +2,6 @@
 
 ## Open
 
-- **P1 · 2026-07-26 — #233 LAN binding: trust the LAN, or require
-  authentication first?** The threat-model review is at
-  `.dreamwork/review/lan-bind-threat-model.html`. Host + Origin checks stop
-  DNS rebinding and browser CSRF, but do not authenticate another LAN client.
-  Rec A: explicit unauthenticated trusted-LAN mode with loopback default,
-  exact Host allowlist, same-origin browser writes, explicit advertised URL,
-  IPv6 correctness and a loud startup warning. Alternative B: stop and design
-  auth/TLS before non-local binding.
-
-  Answer `Approve A: trusted-LAN mode`, or `B: require authentication`.
 
 - **P2 · 2026-07-26 — #225 `explore` command: approve the one-shot
   proposal contract?** The review artifact is at
@@ -301,6 +291,25 @@
   the future upgrade pass has to read blind.
 
 ## Answered
+
+- **P1 · 2026-07-26 — #233 LAN binding: trust the LAN, or require
+  authentication first?** The threat-model review is at
+  → answered (2026-07-26 17:49): Approved A: ship explicit unauthenticated
+  trusted-LAN mode with the reviewed Host/Origin safeguards and warnings.
+  Later authentication is separate work: #275 public Dreamhub auth informed
+  by shoo.dev and #276 simple LAN bearer-token access. The duplicate identical
+  answer delivery is #274, not a second approval.
+  `.dreamwork/review/lan-bind-threat-model.html`. Host + Origin checks stop
+  DNS rebinding and browser CSRF, but do not authenticate another LAN client.
+  Rec A: explicit unauthenticated trusted-LAN mode with loopback default,
+  exact Host allowlist, same-origin browser writes, explicit advertised URL,
+  IPv6 correctness and a loud startup warning. Alternative B: stop and design
+  auth/TLS before non-local binding.
+
+  Answer `Approve A: trusted-LAN mode`, or `B: require authentication`.
+  - **Answer (via watch, 2026-07-26 17:48):** A, but later we'll add
+    other auth like shoo.dev for public dreamhub and a simple bearer
+    token like thing for lan PCs or phone or whatever.
 
 - **P1 · 2026-07-26 — #229 threaded topic chats: approve the proposed
   architecture and defaults?** The reviewed artifact is at
