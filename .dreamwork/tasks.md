@@ -18,9 +18,29 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **290**
+Next id: **291**
 
 ## Open
+
+- **#290** — Add a dashboard-settable main-dreamer run mode · P1 ·
+  orchestration/control-plane design · origin: **human** · **human via watch
+  2026-07-27 00:38** · exact ask: “add a 'run mode' for the main dreamer that
+  is settable in the webui. This should have options like lackadaisical,
+  something about it running continuously / hot, one for using a few subagents /
+  helpers, and one for using many in a kind of tiered hierarchy. Probably needs
+  some planning around the higher tiers, but 1-3 should be doable now. All it
+  needs to do is track it in state so that the agent can check it / be told the
+  up-to-date mode when checking status commands or whatever, and emit an event
+  in the log it monitors. There should be a 10s cooldown in the webui when
+  changing with a progress bar that ticks down from 10s to 0s. Any changes to
+  run mode in this time reset the countdown. This avoids spamming the dreamer
+  and keeps instructions on runmode clearer and more spread out.” · design
+  durable state authority vs derived status, exact mode names/semantics,
+  start/reload compatibility, event coalescing/idempotency, multi-tab behavior,
+  10s resettable atmospheric progress/reduced-motion parity, and how the
+  coordinator consumes changes · do not imply the highest tier's recursive
+  hierarchy is authorized or specified; coordinate with #264 concurrency,
+  #229/#270 chats, and #288 containment
 
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch
