@@ -35,16 +35,19 @@ carries a `+` command opener (steer the loop without a chat turn).
   bind defaults to itself only when explicitly allowlisted, otherwise it also
   requires an allowed `--url-host`. IPv6 uses an AF_INET6 server and bracketed
   advertised URL.
-- **Read-only, five explicit write exceptions** (all human-authorized under
+- **Read-only, six explicit write exceptions** (all human-authorized under
   loopback or explicit trusted-LAN authority): POST `/answer` appends an answer
   to the matching Open entry in `questions.md`; `/ask` appends a human question
   to `answers.md`; `/comment` appends a human note to an Open or Answered
   question; `/command` appends source-tagged steering to
   `.dreamwork/watch-events.log`; `/tint` persists the project colour in
-  `.dreamwork/watch-tint`. Answer, ask, comment and command also append one
-  line to `watch-events.log`, waking the loop. Tint deliberately does not: it
-  is presentation state that cross-window mtime polling propagates, not work
-  for an agent. Every other POST is rejected; every other route reads. All file
+  `.dreamwork/watch-tint`; `/run-mode` commits the main-dreamer pace into
+  `.dreamwork/run-mode` (#290). Answer, ask, comment and command always append
+  one line to `watch-events.log`, waking the loop. `/run-mode` dual-writes the
+  file and appends **one** events line only when the mode actually changes
+  (identical final is silent). Tint deliberately does not wake: it is
+  presentation state that cross-window mtime polling propagates, not work for
+  an agent. Every other POST is rejected; every other route reads. All file
   access goes through `resolve_confined()` (rejects absolute, `~`, traversal);
   `/filedata` and `/reviewraw` are both behind it.
 - **Port** persisted to `.dreamwork/watch-port` (random 3000–63000 once)
@@ -957,6 +960,48 @@ wrong. Its fixture lesson is worth repeating: the first state wrote **three**
 questions, because with two of each a title reading the derived count is
 byte-identical to a correct one — and the first deliberate bug injected here
 passed against it.
+
+### The run mode (#290)
+
+Main-dreamer **pace**, settable on the dashboard between `status` and `tint`.
+His words: add a run mode with options like lackadaisical, continuous/hot, a
+few helpers, and (later) hierarchical; track it so the agent can check status;
+emit a monitored event; 10s cooldown with a progress bar that resets on every
+change.
+
+**Authority is the file, not status.json.** `.dreamwork/run-mode` is one line
+from the closed `RUN_MODES` set (`lackadaisical` default, `hot`, `assisted`),
+machine-local and gitignored — operational posture on this host, not a
+portable project default. `collect()` exposes `run_mode` so every open window
+converges on the existing `/mtime` poll. `status.json` may mirror later; it
+never owns the value. `hierarchical` is **visible and disabled** until #264
+and #288 make that tier honest — discoverable, not selectable.
+
+**Shared 10s arm, then one POST.** Selecting a mode writes a pending
+`{mode, until}` into `localStorage` keyed by absolute `data.target` so every
+tab on this project shares one countdown. Each selection resets the deadline.
+Only the final mode is POSTed; the server atomically writes the file and, on
+a real change, appends `run-mode via watch[ /path]: <mode>` to
+`watch-events.log`. Identical final → 200, no event. Re-selecting the already
+committed mode cancels the pending arm.
+
+**The control is the standing sliding group** (`.sgroup` / `.sgind` /
+`.sgbtn`), so geometry and motion are free. Active mode takes `--accent`
+(live loop control, not a settled preference like tint). The arm UI is a
+linear bar draining 100%→0% over the remaining time plus tabular
+`arms in Ns · <mode>` text. **Reduced motion hides the bar and keeps the
+second-by-second text and the same application time** — timing may change,
+function may not. A refused write reverts the selection and says so in
+`--warn`, never confirming a write that did not land.
+
+**Consumption honesty.** The file + the events line are how an agent learns
+the mode. This dashboard does not, by itself, change a running session's
+scheduler; the loop that tails the events log (or re-reads the file on tick)
+must apply policy per its own skill protocol.
+
+`dev/capture/runmode.mjs` is the browser guard: real 10s arm intermediate
+progress, reset, commit, event exactly-once, hierarchical disabled, reduced-
+motion text path, and cross-tab pending via storage.
 
 ### The project tint
 

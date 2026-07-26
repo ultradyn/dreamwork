@@ -2484,6 +2484,146 @@ class TestProjectTint(unittest.TestCase):
                 self.fail(f"backtick in a shader comment, line {i}: {head!r}")
 
 
+class TestRunMode(unittest.TestCase):
+    """#290 — dashboard-settable main-dreamer run mode.
+
+    Authoritative machine-local file + dual-write event on change only.
+    Hierarchical is planned/disabled UI, not a selectable write target.
+    """
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _post(self, url, obj):
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    def _lines(self, d):
+        path = os.path.join(d, ".dreamwork", "submissions.log")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return [json.loads(ln) for ln in f if ln.strip()]
+
+    def test_closed_v1_vocabulary(self):
+        self.assertEqual(tuple(watch.RUN_MODES),
+                         ("lackadaisical", "hot", "assisted"))
+        self.assertEqual(watch.RUN_MODE_DEFAULT, "lackadaisical")
+        self.assertIn(watch.RUN_MODE_DEFAULT, watch.RUN_MODES)
+        self.assertEqual(tuple(watch.RUN_MODES_PLANNED), ("hierarchical",))
+        for m in watch.RUN_MODES_PLANNED:
+            self.assertNotIn(m, watch.RUN_MODES)
+
+    def test_read_falls_back_when_absent_or_unknown(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            self.assertEqual(watch.read_run_mode(d), watch.RUN_MODE_DEFAULT)
+            p = os.path.join(d, ".dreamwork", "run-mode")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("hot\n")
+            self.assertEqual(watch.read_run_mode(d), "hot")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("hierarchical\n")  # planned, not selectable — fallback
+            self.assertEqual(watch.read_run_mode(d), watch.RUN_MODE_DEFAULT)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("warp-speed\n")
+            self.assertEqual(watch.read_run_mode(d), watch.RUN_MODE_DEFAULT)
+
+    def test_write_refuses_outside_set(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            self.assertTrue(watch.write_run_mode(d, "assisted"))
+            self.assertEqual(watch.read_run_mode(d), "assisted")
+            self.assertFalse(watch.write_run_mode(d, "hierarchical"))
+            self.assertFalse(watch.write_run_mode(d, "nope"))
+            self.assertEqual(watch.read_run_mode(d), "assisted")
+
+    def test_run_mode_line_is_one_line_and_from_safe(self):
+        self.assertEqual(watch.run_mode_line("hot"),
+                         "run-mode via watch: hot")
+        self.assertEqual(watch.run_mode_line("hot", "/"),
+                         "run-mode via watch [/]: hot")
+        # free text cannot forge a second events line
+        self.assertEqual(watch.run_mode_line("hot\nforged", "/"),
+                         "run-mode via watch [/]: hot forged")
+        self.assertEqual(watch.run_mode_line("hot", "]\nforged"),
+                         "run-mode via watch: hot")
+
+    def test_collect_exposes_run_mode(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            data = watch.collect(d)
+            self.assertEqual(data["run_mode"], watch.RUN_MODE_DEFAULT)
+            self.assertTrue(watch.write_run_mode(d, "hot"))
+            self.assertEqual(watch.collect(d)["run_mode"], "hot")
+
+    def test_post_writes_file_and_one_event_on_change(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(
+                self._post(base + "/run-mode",
+                           {"mode": "hot", "from": "/"}), 200)
+            self.assertEqual(watch.read_run_mode(d), "hot")
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            with open(log, encoding="utf-8") as f:
+                lines = [ln for ln in f if "run-mode" in ln]
+            self.assertEqual(len(lines), 1)
+            self.assertIn("run-mode via watch [/]: hot", lines[0])
+            # identical final is idempotent: 200, no second event, file holds
+            self.assertEqual(
+                self._post(base + "/run-mode", {"mode": "hot"}), 200)
+            with open(log, encoding="utf-8") as f:
+                lines = [ln for ln in f if "run-mode" in ln]
+            self.assertEqual(len(lines), 1)
+            self.assertEqual(watch.read_run_mode(d), "hot")
+
+    def test_post_rejects_planned_and_unknown(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(
+                self._post(base + "/run-mode", {"mode": "hierarchical"}), 400)
+            self.assertEqual(
+                self._post(base + "/run-mode", {"mode": "turbo"}), 400)
+            self.assertFalse(
+                os.path.exists(os.path.join(d, ".dreamwork", "run-mode")))
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            if os.path.exists(log):
+                with open(log, encoding="utf-8") as f:
+                    self.assertEqual([ln for ln in f if "run-mode" in ln], [])
+
+    def test_page_carries_vocabulary_wiring_and_arm(self):
+        self.assertIn("const RUN_MODES = " + json.dumps(list(watch.RUN_MODES)),
+                      watch.PAGE)
+        self.assertIn("const RUN_MODE_DEFAULT = "
+                      + json.dumps(watch.RUN_MODE_DEFAULT), watch.PAGE)
+        self.assertIn("const RUN_MODES_PLANNED = "
+                      + json.dumps(list(watch.RUN_MODES_PLANNED)), watch.PAGE)
+        for token in ('function runModePicker(', 'function pickRunMode(',
+                      "fetch('/run-mode'", 'RUN_ARM_MS',
+                      'dw:run-mode-pending:', 'hierarchical',
+                      'runbarfill', 'prefers-reduced-motion'):
+            self.assertIn(token, watch.PAGE)
+
+    def test_post_path_is_witnessed_like_other_writes(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(
+                self._post(base + "/run-mode", {"mode": "assisted"}), 200)
+            paths = [ln["path"] for ln in self._lines(d)]
+            self.assertIn("/run-mode", paths)
+
+
 class TestQuestionPriority(unittest.TestCase):
     """#197 — priority, then oldest, decided once in the parse."""
 

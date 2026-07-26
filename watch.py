@@ -306,6 +306,14 @@ TINTS = {"indigo": 229, "violet": 268, "teal": 188,
          "green": 150, "magenta": 312, "rose": 348}
 TINT_DEFAULT = "indigo"
 
+# #290 main-dreamer run modes. Authoritative file is gitignored machine-local
+# `.dreamwork/run-mode` (not status.json, not tint). v1 selectable set only;
+# hierarchical is visible-but-disabled UI until #264/#288 make it honest.
+RUN_MODES = ("lackadaisical", "hot", "assisted")
+RUN_MODE_DEFAULT = "lackadaisical"
+RUN_MODES_PLANNED = ("hierarchical",)
+RUN_ARM_MS = 10_000
+
 # Design tokens + shared shell: every watch page renders through these,
 # so a redesign is a token/component edit, not a page-by-page hunt.
 STYLE = """<style>
@@ -993,6 +1001,34 @@ STYLE = """<style>
     text-shadow:0 0 12px color-mix(in oklab, var(--tintswatch) 45%,
                                    transparent); }
   .tintmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
+  /* #290 run mode — same sliding group as tint/command kinds. Active mode
+     takes the accent (it is live loop control, not a settled preference).
+     Hierarchical is discoverable but disabled until #264/#288. The 10s arm
+     progress is a linear width on the fill; reduced motion hides the bar and
+     keeps the second-by-second text countdown so function is identical. */
+  .runmode { margin:.55rem 0 .35rem; }
+  .runmodes { margin:.2rem 0 .1rem; }
+  .runchip { padding:.24rem .55rem; font-size:.7rem; }
+  .runchip:disabled, .runchip[aria-disabled="true"] {
+    color:var(--dimmer); cursor:default; opacity:.72; text-shadow:none; }
+  .runchip:disabled:hover, .runchip[aria-disabled="true"]:hover {
+    color:var(--dimmer); }
+  .runarm { margin:.35rem 0 0; min-height:1.15rem; }
+  .runbar { height:3px; background:var(--line); border-radius:2px;
+            overflow:hidden; margin:0 0 .28rem; }
+  .runbar[hidden] { display:none; }
+  .runbarfill { height:100%; width:100%; background:var(--muted);
+    border-radius:2px;
+    transition:width 10s linear; transform-origin:left center; }
+  .runbarfill.snap { transition:none; }
+  .runcount { color:var(--dim); font-size:.7rem;
+              font-variant-numeric:tabular-nums; }
+  .runmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
+  .runmsg:empty { display:none; }
+  @media (prefers-reduced-motion: reduce) {
+    .runbar { display:none; }
+    .runbarfill { transition:none; }
+  }
   /* ── what he has sent, from this browser (#165) ───────────────────────
      The row is the page's standing shape for a list of small facts — the
      commits panel's, one surface over: a fixed-height flex row, the identity
@@ -2142,6 +2178,7 @@ function buildDashboard(d) {
   // and this one is the longer view of it.
   h += burnPanel(d);
   h += statusBlock(d.status);
+  h += runModePicker(d);   // loop control, after status, before preference
   h += tintPicker(d);      // last, and dim: a preference, not status
   return h + `</div>`;
 }
@@ -2729,6 +2766,213 @@ async function pickTint(name) {
     msg.textContent = 'could not save the tint — the file was refused';
   }
 }
+/* ── #290 main-dreamer run mode ───────────────────────────────────────────
+   Authoritative file is `.dreamwork/run-mode` (gitignored). The dashboard
+   shares one pending mode/deadline across tabs via localStorage; every
+   selection resets a 10s arm; only the final mode POSTs and emits one
+   monitored event. Identical final is idempotent server-side. Hierarchical
+   is visible and disabled (planned until #264/#288). Reduced motion drops
+   the width animation but keeps second text + the same application time. */
+let runArmGen = 0;
+let runArmTimer = null;
+let runArmTick = null;
+function runPendingKey() {
+  return (data && data.target) ? ('dw:run-mode-pending:' + data.target) : null;
+}
+function readRunPending() {
+  try {
+    const k = runPendingKey();
+    if (!k) return null;
+    const p = JSON.parse(localStorage.getItem(k) || 'null');
+    if (!p || typeof p.mode !== 'string' || typeof p.until !== 'number')
+      return null;
+    if (Date.now() >= p.until) { localStorage.removeItem(k); return null; }
+    if (RUN_MODES.indexOf(p.mode) < 0) return null;
+    return p;
+  } catch (e) { return null; }
+}
+function writeRunPending(mode, until) {
+  try {
+    const k = runPendingKey();
+    if (!k) return;
+    localStorage.setItem(k, JSON.stringify({ mode, until }));
+  } catch (e) { /* private mode / full disk — live UI still arms locally */ }
+}
+function clearRunPending() {
+  try {
+    const k = runPendingKey();
+    if (k) localStorage.removeItem(k);
+  } catch (e) {}
+}
+function committedRunMode(d) {
+  const m = (d && d.run_mode) || RUN_MODE_DEFAULT;
+  return RUN_MODES.indexOf(m) >= 0 ? m : RUN_MODE_DEFAULT;
+}
+function paintRunModeSelection(mode, snap) {
+  document.querySelectorAll('.sgroup.runmodes').forEach(g => {
+    g.querySelectorAll('.sgbtn').forEach(b => {
+      if (b.disabled) return;
+      const on = b.dataset.mode === mode;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    slideIndicator(g, !!snap);
+  });
+}
+function clearRunArmUI() {
+  if (runArmTimer) { clearTimeout(runArmTimer); runArmTimer = null; }
+  if (runArmTick) { clearInterval(runArmTick); runArmTick = null; }
+  const bar = document.getElementById('runbar');
+  const fill = document.getElementById('runbarfill');
+  const count = document.getElementById('runcount');
+  if (bar) bar.hidden = true;
+  if (fill) {
+    fill.classList.add('snap');
+    fill.style.width = '100%';
+  }
+  if (count) count.textContent = '';
+}
+function armRunModeUI(mode, until, gen) {
+  clearRunArmUI();
+  const bar = document.getElementById('runbar');
+  const fill = document.getElementById('runbarfill');
+  const count = document.getElementById('runcount');
+  const rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const remainingMs = () => Math.max(0, until - Date.now());
+  const setCount = () => {
+    if (gen !== runArmGen) return;
+    if (!count) return;
+    const s = Math.ceil(remainingMs() / 1000);
+    count.textContent = s > 0
+      ? `arms in ${s}s · ${mode}`
+      : `applying ${mode}…`;
+  };
+  setCount();
+  if (!rm && bar && fill) {
+    bar.hidden = false;
+    // enter-snap then linear drain 100% → 0% over remaining time
+    fill.classList.add('snap');
+    fill.style.width = '100%';
+    void fill.offsetWidth;
+    const left = remainingMs();
+    fill.style.transitionDuration = Math.max(0, left) + 'ms';
+    fill.classList.remove('snap');
+    fill.style.width = '0%';
+  } else if (bar) {
+    bar.hidden = true;
+  }
+  runArmTick = setInterval(() => {
+    if (gen !== runArmGen) return;
+    setCount();
+    if (remainingMs() <= 0 && runArmTick) {
+      clearInterval(runArmTick); runArmTick = null;
+    }
+  }, 250);
+  runArmTimer = setTimeout(() => {
+    if (gen !== runArmGen) return;
+    commitRunMode(mode, gen);
+  }, remainingMs());
+}
+async function commitRunMode(mode, gen) {
+  if (gen !== runArmGen) return;
+  const msg = document.getElementById('runmsg');
+  let ok = false, body = null;
+  try {
+    const res = await fetch('/run-mode', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, from: location.pathname + location.search }),
+    });
+    ok = res.ok;
+    if (ok) body = await res.json().catch(() => ({ ok: true, mode }));
+  } catch (e) { ok = false; }
+  if (gen !== runArmGen) return;
+  if (ok) {
+    clearRunPending();
+    clearRunArmUI();
+    if (msg) msg.textContent = '';
+    if (data) data.run_mode = mode;
+    paintRunModeSelection(mode, true);
+  } else if (msg) {
+    msg.textContent = 'could not save the run mode — the write was refused';
+    clearRunPending();
+    clearRunArmUI();
+    paintRunModeSelection(committedRunMode(data), true);
+  }
+}
+function pickRunMode(mode) {
+  if (RUN_MODES.indexOf(mode) < 0) return;  // hierarchical etc.
+  const msg = document.getElementById('runmsg');
+  if (msg) msg.textContent = '';
+  const cur = committedRunMode(data);
+  // re-selecting the committed mode cancels any pending arm
+  if (mode === cur) {
+    runArmGen++;
+    clearRunPending();
+    clearRunArmUI();
+    paintRunModeSelection(mode, false);
+    return;
+  }
+  const until = Date.now() + RUN_ARM_MS;
+  runArmGen++;
+  const gen = runArmGen;
+  writeRunPending(mode, until);
+  paintRunModeSelection(mode, false);
+  armRunModeUI(mode, until, gen);
+}
+function runModePicker(d) {
+  const pending = readRunPending();
+  const cur = pending ? pending.mode : committedRunMode(d);
+  const chips = RUN_MODES.map(n =>
+    `<button type="button" role="radio" class="sgbtn runchip` +
+    `${n === cur ? ' on' : ''}" data-mode="${esc(n)}"` +
+    ` aria-checked="${n === cur ? 'true' : 'false'}"` +
+    ` onclick="pickRunMode('${esc(n)}')">${esc(n)}</button>`).join('') +
+    RUN_MODES_PLANNED.map(n =>
+      `<button type="button" role="radio" class="sgbtn runchip" data-mode="${esc(n)}"` +
+      ` aria-checked="false" aria-disabled="true" disabled` +
+      ` title="planned — needs #264 concurrency and #288 containment">` +
+      `${esc(n)}</button>`).join('');
+  return `<section class="runmode" id="runmode" aria-label="run mode">` +
+    label('run mode') +
+    `<div class="sgroup runmodes" role="radiogroup" aria-label="run mode">` +
+    `<div class="sgind"></div>${chips}</div>` +
+    `<div class="runarm" id="runarm">` +
+    `<div class="runbar" id="runbar" hidden aria-hidden="true">` +
+    `<div class="runbarfill" id="runbarfill"></div></div>` +
+    `<span class="runcount" id="runcount" aria-live="polite"></span></div>` +
+    `<div class="runmsg" id="runmsg" aria-live="polite"></div></section>`;
+}
+function syncRunModeFromData() {
+  // After a re-render or remote tick: resume shared pending if live, else
+  // follow the authoritative file. Never invent a pending from server alone.
+  // Always re-arm when pending exists — setContent destroys bar DOM but the
+  // deadline in localStorage is the cross-tab truth.
+  const pending = readRunPending();
+  if (pending) {
+    if (document.querySelector('.sgroup.runmodes'))
+      paintRunModeSelection(pending.mode, true);
+    runArmGen++;
+    armRunModeUI(pending.mode, pending.until, runArmGen);
+    return;
+  }
+  if (document.querySelector('.sgroup.runmodes'))
+    paintRunModeSelection(committedRunMode(data), true);
+  clearRunArmUI();
+}
+window.addEventListener('storage', e => {
+  if (!e.key || e.key.indexOf('dw:run-mode-pending:') !== 0) return;
+  if (!data || e.key !== runPendingKey()) return;
+  // another tab rewrote the shared pending — adopt without writing back
+  const pending = readRunPending();
+  runArmGen++;
+  if (!pending) {
+    clearRunArmUI();
+    paintRunModeSelection(committedRunMode(data), true);
+    return;
+  }
+  paintRunModeSelection(pending.mode, true);
+  armRunModeUI(pending.mode, pending.until, runArmGen);
+});
 /* Set from the route change, from the tick, AND from the 1s age sweep — the
    liveness word drifts with the wall clock and nothing on disk changes when
    a loop stops, so it needs the same seam the commit ages use (#132).
@@ -2860,6 +3104,9 @@ function setContent(html) {
   // slide up out of nothing (the enter-snap rule)
   paintIndicators(true);
   ages();
+  // #290: innerHTML destroys the arm bar nodes; resume shared pending (or
+  // re-sync the committed selection) without inventing a new deadline.
+  syncRunModeFromData();
 }
 /* ── what the human did to a card survives a tick (#118, #111) ────────────
    The tick re-renders the question list through `innerHTML`, so every card
@@ -5035,6 +5282,12 @@ PAGE = page_shell('dreamwork watch', APP_BODY,
                   + "let COMMANDS = CORE_COMMANDS.slice();\n"
                   + "const TINTS = " + json.dumps(TINTS) + ";\n"
                   + "const TINT_DEFAULT = " + json.dumps(TINT_DEFAULT) + ";\n"
+                  + "const RUN_MODES = " + json.dumps(list(RUN_MODES)) + ";\n"
+                  + "const RUN_MODE_DEFAULT = "
+                  + json.dumps(RUN_MODE_DEFAULT) + ";\n"
+                  + "const RUN_MODES_PLANNED = "
+                  + json.dumps(list(RUN_MODES_PLANNED)) + ";\n"
+                  + "const RUN_ARM_MS = " + json.dumps(RUN_ARM_MS) + ";\n"
                   + COMPONENTS_JS + VIEWS_JS + FAVICON_JS + SHADER_JS
                   + ROUTER_JS + COMMAND_JS)
 
@@ -6272,6 +6525,11 @@ def collect(target):
         # one window and every other window on this project follows within a
         # tick, with no new channel and no reload.
         "tint": read_tint(target),
+        # main-dreamer run mode (#290). File is authoritative; this field is
+        # how every open window converges via the existing /mtime poll. The
+        # loop also sees the change through watch-events.log when the mode
+        # actually changes (identical final is silent).
+        "run_mode": read_run_mode(target),
         # plugin-contributed command kinds (#86), for the same reason and by
         # the same route. The core vocabulary is baked into the page shell
         # because it is a property of watch.py; this half is a property of the
@@ -6342,6 +6600,39 @@ def write_tint(target, name):
         return True
     except OSError:
         return False
+
+
+def read_run_mode(target):
+    """The project's main-dreamer run mode, or the default (#290).
+
+    Unknown / planned / absent → default. Silent fallback matches tint: the
+    UI must never blank, and lint.py is what says a hand-edited bad value
+    was dropped.
+    """
+    raw = (read_text(os.path.join(target, ".dreamwork", "run-mode")) or "")
+    name = raw.strip()
+    return name if name in RUN_MODES else RUN_MODE_DEFAULT
+
+
+def write_run_mode(target, mode):
+    """Persist the selectable mode. Returns False if refused or unwritable."""
+    if mode not in RUN_MODES:
+        return False
+    path = os.path.join(target, ".dreamwork", "run-mode")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        atomic_write_text(path, mode + "\n")
+        return True
+    except OSError:
+        return False
+
+
+def run_mode_line(mode, source=""):
+    """Source-tagged watch-events.log line for a committed run-mode change.
+
+    Pure; testable. one_line so free text cannot forge a second event.
+    """
+    return f"run-mode via watch{from_hint(source)}: {one_line(mode)}"
 
 
 def persistent_port(target):
@@ -6610,9 +6901,11 @@ def make_handler(target, dev=False, authority=None):
             # Human-authorized write paths under loopback or explicitly
             # configured trusted-LAN authority: /answer folds his answer;
             # /ask records his question for the dreamer; /comment threads his
-            # note; /command records steering; /tint saves project colour.
-            # The first four wake the loop through watch-events.log; tint does
-            # not, because it is presentation state rather than agent work.
+            # note; /command records steering; /tint saves project colour;
+            # /run-mode commits main-dreamer pace (#290). Answer/ask/comment/
+            # command wake the loop through watch-events.log; /run-mode does
+            # too, but only when the mode actually changes (identical final is
+            # silent). Tint does not wake, because it is presentation state.
             # Every other POST path is rejected.
             #
             # THE BODY IS READ AND PERSISTED HERE, BEFORE ANY OF THAT (#199).
@@ -6649,6 +6942,8 @@ def make_handler(target, dev=False, authority=None):
                 self._handle_command()
             elif self.path == "/tint":
                 self._handle_tint()
+            elif self.path == "/run-mode":
+                self._handle_run_mode()
             else:
                 self.send_error(404)
 
@@ -6793,6 +7088,36 @@ def make_handler(target, dev=False, authority=None):
                 self.send_error(500)
                 return
             self._send(json.dumps({"ok": True, "tint": name}),
+                       "application/json")
+
+        def _handle_run_mode(self):
+            """Main-dreamer run mode (#290).
+
+            Dual-write: authoritative gitignored `.dreamwork/run-mode` plus one
+            watch-events.log line when the mode actually changes. Identical
+            final is 200 + no event (idempotent; no spam on the tail). The
+            client arms a shared 10s pending selection across tabs and only
+            POSTs the final mode; this handler never debounce-timer itself.
+            Hierarchical is not writable here — it is planned UI only.
+            """
+            req = self._read_json()
+            if req is None:
+                return
+            mode = str((req or {}).get("mode", "")).strip()
+            if mode not in RUN_MODES:
+                self.send_error(400)
+                return
+            current = read_run_mode(target)
+            if mode == current:
+                self._send(json.dumps({"ok": True, "mode": mode,
+                                       "changed": False}),
+                           "application/json")
+                return
+            if not write_run_mode(target, mode):
+                self.send_error(500)
+                return
+            log_event(target, run_mode_line(mode, req.get("from")))
+            self._send(json.dumps({"ok": True, "mode": mode, "changed": True}),
                        "application/json")
 
         def log_message(self, *_args):

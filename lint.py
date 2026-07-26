@@ -389,6 +389,32 @@ def check_watch_tint(dw: Path, watch, rep: Report) -> None:
         rep.add(OK, "watch-tint", raw)
 
 
+def check_run_mode(dw: Path, watch, rep: Report) -> None:
+    """Main-dreamer run mode (#290).
+
+    Same silent-fallback hazard as watch-tint: an unknown name is not a hard
+    page failure, so lint is what says the file no longer matches what the
+    server will accept. Reads RUN_MODES from watch.py — never restated.
+    Absent is normal (default lackadaisical) and silent.
+    """
+    path = dw / "run-mode"
+    if not path.exists():
+        return
+    raw = path.read_text().strip()
+    names = list(getattr(watch, "RUN_MODES", ()) or ()) if watch else []
+    if not names:
+        rep.add(WARN, "run-mode", f"{raw!r} — unverified (watch.py unreadable)")
+    elif raw not in names:
+        rep.add(
+            ERROR,
+            "run-mode",
+            f"{raw!r} is not one of {', '.join(names)} — the page falls back to "
+            f"the default and nothing says his choice was dropped",
+        )
+    else:
+        rep.add(OK, "run-mode", raw)
+
+
 PLUGIN_KIND = re.compile(r"^[a-z0-9]+-[a-z0-9-]*[a-z0-9]$")
 
 
@@ -683,6 +709,7 @@ def main(argv: list[str] | None = None) -> int:
     check_status(dw, rep)
     check_watch_port(dw, rep)
     check_watch_tint(dw, watch, rep)
+    check_run_mode(dw, watch, rep)
     check_plugin_commands(dw, watch, rep)
     check_submissions(dw, rep)
     check_skill_version(dw, rep)

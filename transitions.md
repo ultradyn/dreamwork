@@ -349,6 +349,17 @@ exception; an element leaving fades rather than vanishing.
   the fall takes — a breath spends about as long fading out as fading in, a
   sawtooth spends one frame — so the assertion is on the fraction of moving
   samples that are falling.
+- **Run-mode 10s arm (#290).** Selecting a main-dreamer mode does not
+  POST immediately: a shared pending deadline drains for 10s (linear bar
+  100%→0% plus tabular `arms in Ns` text), and every reselection resets
+  that deadline. The commit is one POST + one events line only when the
+  mode actually changes. Reduced motion **hides the bar** and keeps the
+  second-by-second text countdown and the same application time —
+  function identical, continuous width animation gone. Cross-tab pending
+  rides `localStorage` keyed by absolute target; do not invent a second
+  countdown. Guard: `dev/capture/runmode.mjs` (intermediate bar widths
+  under motion, ≤2 under RM, reset, event exactly-once, hierarchical
+  disabled).
 - **Reduced-motion is a hard contract.** `prefers-reduced-motion` changes
   *timing, never function or legibility*: route swaps are instant (no ghost,
   no mist, tint/seed snap, no `warp`), the composer shows/hides at once, its
