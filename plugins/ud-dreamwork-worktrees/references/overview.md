@@ -45,6 +45,7 @@ Branch names: `fix/N-short-slug`, `feat/N-short-slug` — ledger id
 
 ## Packaging
 
-Source package at `plugins/ud-dreamwork-worktrees/` for review; publish by
-symlink into a harness skills root (`SKILL.md` Install). Not an old
-in-repo plugin root convention.
+Source package stays bundled at `plugins/ud-dreamwork-worktrees/` or in a
+canonical sibling package directory. Do not publish it into an ordinary skill
+root. An active target declares the exact ID in `DREAMWORK.md`; core
+`plugin_resolver.py` validates and emits the `SKILL.md` path for direct reading.

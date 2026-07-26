@@ -40,9 +40,11 @@
 
 ## Plugins
 
-<!-- ud-dreamwork-* plugin decisions, both polarities, so the loop never
-     re-asks about a plugin already decided. New plugins appearing later
-     will still prompt one ask each. -->
+<!-- Record explicit plugin IDs, both polarities, so the loop never re-asks
+     about a plugin already decided. Plugins are installed outside ordinary
+     skill-discovery roots and load only from exact entries such as:
+       - Load: `ud-dreamwork-example` — approved YYYY-MM-DD
+     A package merely existing on this machine never activates or prompts. -->
 
 - Load:
 - Don't load:

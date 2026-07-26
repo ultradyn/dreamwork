@@ -15,23 +15,34 @@ read, initialization has already happened; return to the loop.
    work terminates. If it doesn't exist, note that — the wizard (step 4)
    will create it.
 
-3. **Plugins.** Skills named `ud-dreamwork-*` are plugins to this loop;
-   they may extend later initialization steps (including the wizard) and
-   the loop itself. Discover what's available from the skills visible to
-   you (the available-skills list — never by listing directories; if
-   details are hidden or descriptions load lazily, use the harness's
-   list-skills command). Resolve against DREAMWORK.md's Plugins section,
-   which records both positive and negative decisions (load these; don't
-   load those):
-   - Recorded positive → load silently. Recorded negative → skip silently.
-   - Unrecorded or newly-appeared plugins → ask the human which, if any, to
-     load, and persist the answer to DREAMWORK.md either way (a "no" is a
-     decision too — it stops repeat asking).
-   - No DREAMWORK.md yet: if any plugins are visible, ask now; the wizard
-     records the decisions.
-   Invoke the chosen plugins before continuing. None visible: skip
-   silently. (Authoring guide: `writing-plugins.md` in this skill's
-   directory.)
+3. **Plugins.** `ud-dreamwork-*` packages are plugins to this loop; they
+   may extend later initialization steps (including the wizard) and the loop
+   itself. They are deliberately absent from ordinary harness skill discovery:
+   a plugin exists for this target only when `DREAMWORK.md` records its exact ID
+   under `## Plugins` as `- Load: `…``.
+
+   Resolve declarations with the core's bounded loader:
+
+   `python3 <skill-dir>/plugin_resolver.py --target <target>`
+
+   A noncanonical package location must be supplied explicitly with
+   `--path <id>=</path/to/SKILL.md>` (one exact package) or `--root
+   <package-parent>` (a controlled package parent). The resolver checks bundled packages,
+   the canonical sibling package location, then explicit roots; it never scans
+   global skill directories. Read its bounded JSON, then **read each emitted
+   `SKILL.md` directly** and follow that plugin before continuing. Do not invoke
+   `/skill:<plugin>` or depend on an available-skills inventory: those surfaces
+   are intentionally absent while Dreamwork is inactive. Missing, invalid,
+   duplicate or ambiguous declarations fail initialization with the resolver's
+   searched paths; never silently drop a recorded plugin.
+
+   Recorded negatives remain durable reasons not to add a Load declaration.
+   Installing or proposing a new plugin is an explicit human action/ask: on yes,
+   install it outside ordinary discovery roots and record its ID under Load; on
+   no, record it under Don't load. A target with no Load declarations loads
+   none and is not prompted merely because a package exists on the machine.
+   No `DREAMWORK.md` yet means no plugins until the wizard records an explicit
+   decision. (Authoring guide: `writing-plugins.md`.)
 
    **Then write the loaded plugins' commands into the target**, because
    `watch.py` reads the target and cannot see a plugin's own files —
@@ -46,15 +57,13 @@ read, initialization has already happened; return to the loop.
    no shadowing a core command): `file-formats.md`. A plugin that
    declares no commands is normal — write `{"commands": []}`.
 
-   Plugins can also appear mid-session (the harness surfaces
-   skills-list changes). Treat that like the unrecorded case above, but
-   live: offer the install to the human — on a yes, record it in
-   DREAMWORK.md and run the plugin's init extension immediately
-   (discovery, wizard questions, monitors), no session restart needed;
-   on a no, record that too. Unanswered offers follow the questions.md
-   discipline. **A yes also rewrites `plugin-commands.json` whole**, by
-   the rule above — a mid-session load that skipped it would leave the
-   composer unable to send the very commands the plugin just promised.
+   A plugin may still be installed/declared mid-session through an explicit
+   human action or answered proposal. Resolve it with the same CLI, record the
+   decision, read its emitted `SKILL.md`, and run its init extension immediately
+   (discovery, wizard questions, monitors), with no session restart. Unanswered
+   proposals follow the questions.md discipline. **A yes also rewrites
+   `plugin-commands.json` whole**; a mid-session load that skipped it would leave
+   the composer unable to send the commands the plugin just promised.
 
 4. **Setup wizard (only when DREAMWORK.md is absent).** Runs after plugins
    so loaded plugins can extend or reshape the interview. A short

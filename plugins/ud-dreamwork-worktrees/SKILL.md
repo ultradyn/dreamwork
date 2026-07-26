@@ -92,25 +92,30 @@ convention):
 <dreamwork-checkout>/plugins/ud-dreamwork-worktrees/
 ```
 
-**Publish** so harness init discovers `ud-dreamwork-*` (symlink examples for
-this machine’s Pi root and common agents root):
+Keep the source bundled there, or install it as a canonical sibling package
+named `ud-dreamwork-worktrees`. Do **not** publish it into an ordinary harness
+skill-discovery root: inactive Dreamwork must not expose plugin prompt entries
+or `/skill:` commands.
 
-```bash
-# Pi agent skills root (verified pattern on this host)
-ln -sfn /home/xertrov/.llm-general/skills/ud-dreamwork/plugins/ud-dreamwork-worktrees \
-  ~/.pi/agent/skills/ud-dreamwork-worktrees
+Activation is target-owned. Record the exact ID in `DREAMWORK.md`:
 
-# Common agents root
-ln -sfn /home/xertrov/.llm-general/skills/ud-dreamwork/plugins/ud-dreamwork-worktrees \
-  ~/.agents/skills/ud-dreamwork-worktrees
+```markdown
+## Plugins
 
-# Also used elsewhere:
-# ln -sfn … ~/.llm-general/skills/ud-dreamwork-worktrees
+- Load: `ud-dreamwork-worktrees` — approved YYYY-MM-DD
 ```
 
-After symlink, **verification:** next dreamwork init must list the skill in
-available-skills / offer a load-ask for `ud-dreamwork-worktrees`. There is
-no separate install helper script claimed by this plugin.
+Then verify direct resolution before loading:
+
+```bash
+python3 <dreamwork-checkout>/plugin_resolver.py --target <target>
+```
+
+A noncanonical package parent is explicit via `--root`; no global directory is
+scanned. Initialization reads the emitted `SKILL.md` directly. Existing installs
+apply `migrations/2026-07-26-02-contextual-plugin-loading.md` and use
+`hide_plugins.py --check --inventory-out <manifest>` before applying that exact
+preservation manifest.
 
 On load: ensure `.worktrees/` is gitignored; optionally stamp
 `.dreamwork/worktrees-version`. Do **not** create runtime `claims.json` or

@@ -175,13 +175,14 @@ class TestProtocolAndSafety(unittest.TestCase):
         self.assertIn("decision", life)
         self.assertIn("never force", life.replace("-", " ") or "force" in life)
 
-    def test_install_concrete_symlinks(self):
+    def test_install_is_contextual_not_ordinary_discovery(self):
         text = _read(SKILL)
-        self.assertIn("~/.pi/agent/skills/ud-dreamwork-worktrees", text)
-        self.assertIn("~/.agents/skills/ud-dreamwork-worktrees", text)
-        self.assertIn("ln -sfn", text)
-        self.assertIn("available-skills", text.lower())
-        self.assertIn("source package", text.lower())
+        self.assertIn("plugin_resolver.py", text)
+        self.assertIn("- Load: `ud-dreamwork-worktrees`", text)
+        self.assertIn("source", text.lower())
+        self.assertNotIn("~/.pi/agent/skills/ud-dreamwork-worktrees", text)
+        self.assertNotIn("~/.agents/skills/ud-dreamwork-worktrees", text)
+        self.assertNotIn("available-skills", text.lower())
 
     def test_safety_phrases(self):
         blob = "\n".join(

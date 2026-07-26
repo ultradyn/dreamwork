@@ -1,21 +1,24 @@
 # Writing dreamwork plugins
 
-A plugin is an ordinary skill whose name starts with `ud-dreamwork-` —
-that prefix is the entire discovery mechanism. At initialization step 3
-the loop finds plugins in its available-skills list (never by listing
-directories), resolves each against the target's DREAMWORK.md Plugins
-section, and invokes the ones recorded as load. One plugin, one concern:
-a plugin earns its context cost or it doesn't load.
+A plugin is an Agent-Skills-valid source package whose name starts with
+`ud-dreamwork-`, but the prefix is **identity, not ambient discovery**. Plugin
+packages must not be installed under ordinary harness skill roots: inactive
+Dreamwork contributes no plugin prompt entries or `/skill:` commands.
+Initialization step 3 reads exact Load IDs from the target's `DREAMWORK.md`,
+resolves only deterministic install-relative/explicit paths with
+`plugin_resolver.py`, then reads those `SKILL.md` files directly. One plugin,
+one concern: a plugin earns its active-loop context cost or it does not load.
 
 ## Contract
 
-- **It's a skill.** `SKILL.md` with `name` + `description` frontmatter.
-  The description states what it extends and when to load it — the human
-  reads it when the loop asks "load this?", so write for that moment.
-- **Loading is a recorded decision.** DREAMWORK.md records both
-  polarities (load these / don't load those); an unrecorded plugin
-  triggers one ask, and the answer persists either way. Never re-ask,
-  never auto-load on silence.
+- **The source remains a valid skill package.** `SKILL.md` has matching
+  `name` + `description` frontmatter for validation, packaging and portable
+  direct reading. Do not symlink the package into `~/.agents/skills`,
+  `~/.pi/agent/skills`, or another ordinary discovery root.
+- **Loading is a recorded decision.** DREAMWORK.md records both polarities
+  (exact Load IDs / Don't load reasons). A package existing on the machine is
+  not a proposal and never auto-loads or consumes ordinary-session context.
+  Installation/proposal is explicit; the answer persists either way.
 - **The core rules are inherited, not optional.** Everything in
   ud-dreamwork's Guardrails binds plugin behavior too: subagents never
   use `attn` and never touch loop machinery; every user-facing ask lands
@@ -65,9 +68,9 @@ The loop offers five seams; use the ones you need:
   `file-formats.md`; `lint.py` enforces it.
 
   The copy exists because **`watch.py` reads the target** and plugin
-  skills do not live there — they sit in `~/.claude-p/skills/`,
-  `~/.agents/skills/`, and elsewhere, varying by harness and machine. A
-  composer reading the plugin's own files would work on one machine and
+  packages do not live in the target — they sit bundled beside the core,
+  in a canonical sibling package directory, or under an explicit resolver
+  root. A composer reading package files would work on one machine and
   silently show nothing on the next. Consequences worth knowing before
   you design around them:
 
