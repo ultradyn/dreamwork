@@ -18,9 +18,25 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **237**
+Next id: **239**
 
 ## Open
+
+- **#238** — Preserve `/answers` UI state across data refresh · P1 · bug ·
+  20m · origin: **human** · **do next via watch 14:16** · open answered
+  disclosures close after `data.json` refresh; diagnose with requested c2c
+  helper `grok-sugar-vesi-x6tv` and red-first browser guard · preserve every
+  human-controlled `/answers` state through keyed snapshot/restore, smoothly
+  and on the same logical record despite duplicate titles/reorder/deletion ·
+  obey transitions.md · in progress
+
+- **#237** — `[Opus5]` JSON-character rain on data refresh · P2 · idea ·
+  origin: **human** · **human via watch 14:13** · on each `data.json`
+  refresh, a subtle top-down sheet of ASCII rain using JSON punctuation such
+  as ``{}[]""'',`` with lightly jittered timing · **MODEL GATE: do not
+  analyse, design, implement, review or dispatch except with an Opus 5 agent**
+  · later must obey transitions.md, reduced-motion parity, bounded cost and
+  per-frame visual guards · parked until eligible model exists
 
 - **#236** — Record compact topic-chat action provenance · P2 · idea · 20m
   design · origin: **human** · **human via watch 14:09** · each ephemeral
@@ -49,7 +65,8 @@ Next id: **237**
   loopback remains default; opt-in listen interfaces and explicit Host allowlist
   with ports/IPv6 handled; preserve intentional localhost aliases and protect
   writes from DNS rebinding/cross-origin abuse · docs/migration/TDD first ·
-  in progress
+  threat-model review at `.dreamwork/review/lan-bind-threat-model.html` ·
+  awaiting A trusted-LAN vs B auth/TLS decision
 
 - **#230** — Add a `use subagent` composer checkbox · P2 · task · later ·
   origin: **human** · **human via watch 12:57** · request fresh-context,

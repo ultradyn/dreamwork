@@ -2,6 +2,17 @@
 
 ## Open
 
+- **P1 · 2026-07-26 — #233 LAN binding: trust the LAN, or require
+  authentication first?** The threat-model review is at
+  `.dreamwork/review/lan-bind-threat-model.html`. Host + Origin checks stop
+  DNS rebinding and browser CSRF, but do not authenticate another LAN client.
+  Rec A: explicit unauthenticated trusted-LAN mode with loopback default,
+  exact Host allowlist, same-origin browser writes, explicit advertised URL,
+  IPv6 correctness and a loud startup warning. Alternative B: stop and design
+  auth/TLS before non-local binding.
+
+  Answer `Approve A: trusted-LAN mode`, or `B: require authentication`.
+
 - **P2 · 2026-07-26 — #225 `explore` command: approve the one-shot
   proposal contract?** The review artifact is at
   `.dreamwork/review/explore-command-contract.html`. Rec: hidden command
