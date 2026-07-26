@@ -267,6 +267,18 @@ exception; an element leaving fades rather than vanishing.
   selection background to it (~.3s, the dream easing) — the composer's one
   piece of crisp motion. It lands without sliding on open and on reflow; see
   The composer.
+- **Composer success confirmation** (#255). Main and popped-out composers use
+  one `confirmationFor` lifecycle. Success arrives through `.dreamin`, remains
+  readable for about five seconds even if a new draft begins, then departs by
+  fading, blurring and drifting upward before it clears. Typing cancels only
+  the panel's courtesy-close; manual close, route change and popout `pagehide`
+  hard-clean immediately and invalidate timers, listeners and in-flight
+  attempt callbacks. Rejection/connection/validation claims replace success
+  immediately because falsehood must not
+  linger through a gentle exit. Reduced motion keeps the hold and clear but
+  snaps visual states. `confirmation.mjs` traces the real main delayed-POST
+  race, close, popout and reduced phases; normal departure must show many
+  intermediate opacity/transform values, reduced departure none.
 - **Answer-submit morph.** Submitting an answer (button or **Ctrl/Cmd+Enter**,
   which works from any answer box) *is* the confirmation: the card reshapes
   in place into its answered-awaiting-fold state and the typed text lifts

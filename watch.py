@@ -1090,15 +1090,13 @@ STYLE = """<style>
     transition:color .3s ease; }
   .pipbtn:hover, .pipbtn:focus-visible { color:var(--accent); }
   .pipbtn svg { display:inline-block; vertical-align:-2px; }
-  /* the composer's one piece of feedback, so it ARRIVES rather than appearing
-     (#159): `setCmdMsg` snaps it to `.dreamin` and it eases up into place, the
-     same enter every other arrival on this page uses. Faster than the page's
-     0.85s dream, and that is a property of this surface rather than a taste:
-     the panel auto-dismisses 1425ms after a send, so a card-speed arrival
-     would still be arriving when the panel began to leave. */
+  /* the composer's status arrives and departs on one atmospheric envelope.
+     Success remains readable for #255's hold; reduced motion keeps timing but
+     snaps both visual states. */
   .cmdmsg { color:var(--dim); font-size:.7rem; min-height:1em; margin-top:.5rem;
     transition:color .4s ease, opacity .35s ease, filter .35s ease,
                transform .35s cubic-bezier(.32,.1,.2,1); }
+  .cmdmsg.depart { opacity:0; filter:blur(7px); transform:translateY(-5px); }
   /* no reserved slack under the buttons: the status line only takes room
      once it has something to say, and the panel grows downward to meet it
      (nothing above it moves). */
@@ -3832,8 +3830,12 @@ const POPOUT_CSS = `
   button { background:#1e293b; color:__ACCENT__; border:1px solid #334155;
     border-radius:4px; font:inherit; padding:.3rem .9rem; cursor:pointer;
     margin-top:.4rem; }
-  .pmsg { color:#6b7280; font-size:.7rem; min-height:1em; margin-top:.4rem; }
+  .pmsg { color:#6b7280; font-size:.7rem; min-height:1em; margin-top:.4rem;
+    transition:opacity .35s ease,filter .35s ease,transform .35s cubic-bezier(.32,.1,.2,1); }
   .pmsg.ok { color:__ACCENT__; }
+  .pmsg.dreamin { transition:none;opacity:0;filter:blur(7px);transform:translateY(5px); }
+  .pmsg.depart { opacity:0;filter:blur(7px);transform:translateY(-5px); }
+  @media (prefers-reduced-motion:reduce){.pmsg{transition:none!important}}
   iframe { border:0; width:100%; height:calc(100vh - 54px); display:block;
     background:#0b0f19; }`;
 const POPOUT_BODY = (base, path) => `
@@ -3905,6 +3907,42 @@ async function openPopout(name, size, fill) {
   if (w) { fill(w, base, path, tint); mountPopoutBg(w, tint); }
   return w;
 }
+/* #255 — one confirmation lifecycle for every composer surface. Success is
+   valid even when another draft begins, so it owns its ~5s readable hold and
+   atmospheric departure. False/error claims withdraw it immediately. Closing
+   a surface is destruction: clear synchronously and cancel old callbacks. */
+const CMD_CONFIRM_HOLD_MS = 5000;
+function confirmationFor(doc,id,baseClass,reduced) {
+  const view=doc.defaultView||window,node=()=>doc.getElementById(id);
+  let holdT=0,clearT=0,generation=0,departEnd=null;
+  const cancel=()=>{
+    view.clearTimeout(holdT);view.clearTimeout(clearT);holdT=clearT=0;
+    const m=node();if(m&&departEnd)m.removeEventListener('transitionend',departEnd);
+    departEnd=null;
+  };
+  const clear=()=>{generation++;cancel();const m=node();if(m){m.textContent='';m.className=baseClass;}};
+  const show=(text,ok,lifecycle,expectedGeneration)=>{
+    if(expectedGeneration!==undefined&&expectedGeneration!==generation)return false;
+    generation++;const mine=generation;cancel();const m=node();if(!m)return false;
+    m.className=baseClass+(ok?' ok':'');m.textContent=text;
+    if(!reduced&&text){m.classList.add('dreamin');void m.offsetWidth;
+      view.requestAnimationFrame(()=>{if(mine===generation)m.classList.remove('dreamin')});}
+    if(lifecycle)holdT=view.setTimeout(()=>{if(mine!==generation)return;
+      if(reduced){clear();return;}
+      m.classList.add('depart');
+      departEnd=()=>{if(mine===generation)clear();};
+      m.addEventListener('transitionend',departEnd,{once:true});
+      clearT=view.setTimeout(departEnd,650);
+    },CMD_CONFIRM_HOLD_MS);
+    return true;
+  };
+  const begin=()=>{
+    clear();const mine=generation;
+    return {success:()=>show('sent to the dream',true,true,mine),
+      claim:(text,ok=false)=>show(text,ok,false,mine)};
+  };
+  return {begin,claim:(text,ok=false)=>show(text,ok,false),clear};
+}
 async function requestPopout() {
   const w = await openPopout('dreamcmd', { width: 340, height: 320 },
     (w, base, path, tint) => {
@@ -3916,7 +3954,8 @@ async function requestPopout() {
       // it was popped out FROM is the honest hint, and it is also the thing he
       // popped it out to keep beside him.
       const from = fromPath();
-      const msg = doc.getElementById('pmsg');
+      const confirmation=confirmationFor(doc,'pmsg','pmsg',w.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      w.addEventListener('pagehide',confirmation.clear,{once:true});
       doc.addEventListener('keydown', ev => {        // Ctrl/Cmd+Enter submits
         if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
           ev.preventDefault(); doc.getElementById('pform').requestSubmit();
@@ -3927,17 +3966,16 @@ async function requestPopout() {
         const kind = doc.getElementById('pkind').value;
         const text = doc.getElementById('ptext').value.trim();
         if (kind !== 'do-next' && !text) {
-          msg.textContent = 'a thought is needed'; msg.className = 'pmsg'; return;
+          confirmation.claim('a thought is needed'); return;
         }
+        const attempt=confirmation.begin();
         try {
           const r = await fetch(endpoint, { method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ kind, text, from }) });
-          if (r.ok) { msg.textContent = 'sent to the dream';
-            msg.className = 'pmsg ok'; doc.getElementById('ptext').value = ''; }
-          else { msg.textContent = 'rejected (' + r.status + ')';
-            msg.className = 'pmsg'; }
-        } catch (e) { msg.textContent = 'no connection'; msg.className = 'pmsg'; }
+          if (r.ok) { if(!attempt.success())return; doc.getElementById('ptext').value = ''; }
+          else attempt.claim('rejected (' + r.status + ')');
+        } catch (e) { attempt.claim('no connection'); }
       });
     });
   if (w && window.__closeCmd) window.__closeCmd();
@@ -3955,7 +3993,7 @@ function popoutDoc(url, label) {
 (function () {
   const pal = document.getElementById('cmdpalette');
   if (!pal) return;
-  const cmsg = () => document.getElementById('cmdmsg');
+  const confirmation=confirmationFor(document,'cmdmsg','cmdmsg',rmr);
   /* ── the status line ARRIVES, it does not appear (#159) ──────────────────
      It used to be four bare `textContent` assignments: the text landed,
      `:empty` stopped applying, and the line was simply THERE on the next
@@ -3972,30 +4010,13 @@ function popoutDoc(url, label) {
      and removing it, the element never commits opacity 0 and the transition
      has nothing to run from. That IS #154, and it is cheaper to be correct by
      construction here than to rely on some other read forcing the layout. */
-  function setCmdMsg(text, ok) {
-    const m = cmsg(); if (!m) return;
-    m.className = 'cmdmsg' + (ok ? ' ok' : '');
-    m.textContent = text;
-    if (rmr || !text) return;             // reduced motion: it is simply there
-    m.classList.add('dreamin');           // snap to nothing...
-    void m.offsetWidth;                   // ...and COMMIT that, or see above
-    requestAnimationFrame(() => m.classList.remove('dreamin'));
-  }
-  /* Clearing is NOT a departure, and it deliberately does not animate. Both
-     callers are the page WITHDRAWING a claim that has become false: he has
-     resumed typing, so `sent to the dream` now sits above an unsent thought
-     (#131), or the panel is closing and taking the line with it. A false
-     confirmation that faded out slowly would be a false confirmation that is
-     merely quieter — which is the failure #131 exists to prevent, not a
-     gentler version of it.
-
-     The confirmation's real departure is the PANEL's: it drifts away on the
-     same soft blur it arrived on, 1425ms after the send, and takes this line
-     with it. There was never a missing exit animation here to write. */
-  const clearCmdMsg = () => {
-    const m = cmsg(); if (!m) return;
-    m.textContent = ''; m.className = 'cmdmsg';
-  };
+  const setCmdMsg=(text,ok)=>confirmation.claim(text,ok);
+  /* A successful claim departs through confirmationFor. Clearing here means
+     destruction (manual close/route change), so it is intentionally instant:
+     keeping a dead surface's timer alive can erase a later message after the
+     composer reopens. False/error claims replace success immediately for the
+     same reason — a false statement must not linger through a departure. */
+  const clearCmdMsg=confirmation.clear;
   let open = false;
   const CMD_GAP = 18;            // breathing room under the +/× opener
   /* ── the panel does not close under him (#131) ───────────────────────────
@@ -4010,7 +4031,6 @@ function popoutDoc(url, label) {
      on a timer. Any sign of him still being in here cancels the dismiss, and
      `composing` covers the race where he resumes DURING the POST, before
      there is a timer to cancel. */
-  const CMD_DISMISS_MS = 1425;               // was 950; his 1.5x
   let dismissT = 0, composing = false;
   const cancelDismiss = () => { clearTimeout(dismissT); dismissT = 0; };
   /* ── the half-typed thought survives a reload (#163) ─────────────────────
@@ -4359,12 +4379,7 @@ function popoutDoc(url, label) {
       // are lost, which is the one thing this exists to prevent. The value is
       // a single command, so the write is far too small to be worth batching.
       if (ev === 'input') saveDraft();
-      if (!dismissT) return;
-      cancelDismiss();
-      // A stale "sent to the dream" sitting above a fresh, unsent thought is
-      // a false confirmation on his steering channel — he could read it as
-      // the new command having landed. It goes the moment he resumes.
-      clearCmdMsg();
+      if (dismissT) cancelDismiss();
     });
   function openCmd() {
     cancelDismiss(); composing = false;
@@ -4434,9 +4449,10 @@ function popoutDoc(url, label) {
       // a second fetch here would be a third of his submissions unwitnessed,
       // which is #191's lesson about one gesture spelled two ways, aimed at
       // data instead of at motion.
+      const attempt=confirmation.begin();
       const r = await postJSON('/command', { kind, text, from: fromPath() });
       if (r && r.ok) {
-        setCmdMsg('sent to the dream', true);
+        if(!attempt.success())return;
         const plus = document.getElementById('cmdplus');
         if (plus) { const b = plus.getBoundingClientRect();
           ripple(b.left + b.width / 2, b.top + b.height / 2); }
@@ -4446,9 +4462,9 @@ function popoutDoc(url, label) {
         // he may already have started typing again while the POST was in
         // flight, before there was any timer to cancel
         cancelDismiss();
-        if (!composing) dismissT = setTimeout(closeCmd, CMD_DISMISS_MS);
-      } else if (r) setCmdMsg('rejected (' + r.status + ')', false);
-      else setCmdMsg('no connection', false);   // postJSON returns null on throw
+        if (!composing) dismissT=setTimeout(closeCmd,CMD_CONFIRM_HOLD_MS+650);
+      } else if (r) attempt.claim('rejected (' + r.status + ')');
+      else attempt.claim('no connection');   // postJSON returns null on throw
       // if he is watching the history, it must include what he just did —
       // including, and especially, when it failed
       if (histEl && histEl.open) renderHist();

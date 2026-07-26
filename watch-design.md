@@ -1570,44 +1570,41 @@ arithmetic non-obvious, and both are load-bearing:
 Nothing under the buttons is reserved: `.cmdmsg:empty` collapses, so the
 panel grows downward only when there is something to say.
 
-**And what it says ARRIVES** (#159). The status line was four bare
-`textContent` assignments: the text landed, `:empty` stopped applying, and the
-line was simply *there* on the next paint — the one surface on this page that
-turns up without easing in, and the composer's only feedback that a steer
-reached the loop at all. `setCmdMsg` is now the single implementation for all
-four messages (`sent to the dream`, `rejected (…)`, `no connection`, `a
-thought is needed`), because with four assignment sites a fifth message would
-have arrived differently from the other four. It is the standing `.dreamin`
-snap, whose first new user this is since #154 made it work at all — and the
-forced reflow between adding the class and removing it is not decoration:
-without a style recalc in between the element never commits opacity 0 and the
-transition has nothing to run *from*, which **is** #154.
+**What it says arrives and departs** (#159/#255). `confirmationFor` is the
+single lifecycle controller consumed by the main composer's `.cmdmsg` and the
+popped-out composer's `.pmsg`; sharing this one seam does not wait for #241's
+full composer mount extraction. Every claim enters through the standing
+`.dreamin` snap. The forced reflow between adding and removing that class is
+load-bearing: without a committed opacity-zero frame there is no arrival.
 
-**Its enter is .35s rather than the page's .85s, and that is a property of the
-surface.** The panel auto-dismisses 1425ms after a send, so a card-speed
-arrival would still be arriving as the panel began to leave.
+A successful `sent to the dream` is true about the command that just landed,
+not about whatever draft is typed next. It therefore stays readable for about
+five seconds independently of typing and of the panel's courtesy-close state,
+then departs through the same soft opacity/blur/upward drift and clears. Typing
+cancels only the courtesy close, so the steering channel stays open; it cannot
+strand or truncate the valid confirmation. Left alone, the panel closes after
+the confirmation lifecycle instead of taking the line away early.
 
-**Clearing is not a departure and deliberately does not animate.** Both
-callers are the page *withdrawing a claim that has become false* — he has
-resumed typing, so `sent to the dream` now sits above an unsent thought
-(#131), or the panel is closing and taking the line with it. A false
-confirmation that faded out slowly would be a false confirmation that is
-merely quieter, which is the failure #131 exists to prevent rather than a
-gentler form of it. The confirmation's real departure is the **panel's**: it
-drifts away on the same soft blur it arrived on and takes this line with it.
-There was no missing exit animation here to write.
+**Destruction and falsehood do not depart slowly.** Manual close, route change,
+popout `pagehide`, or unmount hard-cleans the controller and invalidates every
+old timer **and in-flight submission attempt**. A response returning after that
+boundary cannot recreate success; a newer submit similarly supersedes the old
+attempt. A later rejection, connection failure or validation claim cancels any
+success lifecycle and replaces it immediately; fading a false claim would
+merely leave it false for longer. The departure listener is tracked state too,
+not fire-and-forget: clear/replacement/fallback removes it so a missing
+`transitionend` cannot accumulate stale closures on the persistent node.
+Reduced motion keeps the same hold and clear semantics but snaps arrival/
+departure visual states.
 
-`dismiss.mjs` traces it per frame, and the design of that check is the point:
-"did the text turn up" passes on the bug, and so does a **two-frame fade** —
-it looks instant and satisfies every end-state assertion there is. What
-separates arriving from appearing is the *number* of intermediate values on
-the way, so the assertion is on that, for opacity and for the drift. Shown red
-by returning early from `setCmdMsg`: one distinct opacity (100) and one
-distinct transform (none), from the first lit frame.
-
-The popped-out composer still carries its own `.pmsg` and is untouched here —
-that divergence is #99's, and fixing it in two places would have made the copy
-harder to delete rather than easier.
+`confirmation.mjs` showed the old design red in exactly the reported races:
+typing during a delayed real POST left main success forever, popout success was
+permanent, and neither had a departure trace. It now uses fresh contexts for
+main race, close/in-flight-response invalidation, forced transition fallback,
+popout and reduced phases; normal arrival/departure must traverse many opacity
+and transform values, while reduced motion traverses none.
+`dismiss.mjs` retains the panel courtesy and #159 arrival checks, updated so
+typing preserves success and left-alone close follows the lifecycle.
 
 **A steer carries the page it was sent from, and that page is a HINT** (#126).
 The client sends `location.pathname + location.search` with every write
@@ -1727,20 +1724,15 @@ it they blink in a frame after the disclosure has finished opening, which is
 #196 at a smaller size, and "it is only a small panel" is exactly how a page
 ends up with one gesture that snaps.
 
-**The panel never closes under him** (#131). The auto-dismiss after a send is
-a *courtesy* — it gets the panel out of the way once the thought has landed —
-and a courtesy must never take a channel away from someone still using it.
-That is the same rule as #118, one surface over: what the human is in the
-middle of doing outranks anything the page decided on a timer. Any `input`,
-`keydown` or `pointerdown` inside the panel cancels the dismiss, and a
-`composing` flag covers the race where he resumes *during* the POST, before
-there is a timer to cancel. Resuming also clears the `sent to the dream`
-confirmation, because a stale one sitting above a fresh unsent thought is a
-false confirmation on his steering channel — he could read it as the new
-command having landed. The wait is `CMD_DISMISS_MS` (1425ms, his 1.5×).
-`dev/capture/dismiss.mjs` guards it, and asserts the panel is **still open at
-1.0s** as well as that it eventually closes: an end-state-only check passes on
-the old timing.
+**The panel never closes under him** (#131/#255). Auto-dismiss is a courtesy,
+not the confirmation lifecycle. Any `input`, `keydown` or `pointerdown` inside
+the panel cancels that courtesy, and `composing` covers the race where he
+resumes during the POST before a dismiss timer exists. The valid success still
+belongs to the command that landed: it remains readable and clears on its own
+controller while the panel stays open. Left alone, the courtesy waits until
+the lifecycle has completed, then closes the panel; it cannot remove the
+confirmation early. `dev/capture/dismiss.mjs` guards both branches and
+`confirmation.mjs` owns the per-frame lifecycle proof.
 
 **One vocabulary.** `COMMANDS` (top of `watch.py`) is the single source of
 steering kinds — `{kind, label, desc, common}`. The server derives

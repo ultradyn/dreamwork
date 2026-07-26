@@ -12,7 +12,8 @@
    early from `setCmdMsg` before the `.dreamin` snap: one distinct opacity
    (100), one distinct transform (none), from the first lit frame.
 
-   #131 — the composer must not close under him.
+   #131/#255 — the composer must not close under him, while a valid success
+   confirmation keeps and completes its own lifecycle.
 
    His words: "if on the composer, someone enters something, ctrl+enter
    submits, then starts typing again, the composer should not fade away. also
@@ -25,9 +26,10 @@
 
      - typing again CANCELS the dismiss, and it stays cancelled (the panel is
        still open well past the point it would have closed)
-     - with no further typing it does still close, so the courtesy survives
-     - it waits ~1.4s rather than ~0.95s, and it has NOT closed at 1.0s —
-       asserting only the end state would pass on the old timing
+     - with no further typing it still closes, after the ~5s confirmation
+       lifecycle rather than taking the confirmation away early
+     - typing does not truncate a valid success; that success departs/clears
+       independently while the panel remains open
 
    Writes to the target it is pointed at (POST /command), so point it at a
    scratch copy.  usage: node dismiss.mjs <outdir> <port> */
@@ -135,26 +137,28 @@ await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(100
 
 // (1) submit and walk away: the courtesy still happens, on the new timing
 await openPanel(p);
-const alone = await p.evaluate(RUN(-1, 2600));
+const alone = await p.evaluate(RUN(-1, 6800));
 const tc = closedAt(alone);
 notes.push(`left alone: closed at ${tc}ms` +
            ` | msg at 1000ms "${(alone.find(s => s[0] >= 1000) || [])[2]}"`);
 ok('left alone, the panel still closes itself', tc !== null);
-// the 1.5x is the point: at 1.0s the old build had already gone
-ok('...but not on the old timing — still open at 1.0s', tc === null || tc > 1050);
-ok('...and it does not linger either', tc !== null && tc < 2200);
+ok('#255 ...after the confirmation lifecycle, not while it is readable',
+   tc !== null && tc > 5300);
+ok('...and it does not linger after that lifecycle', tc !== null && tc < 6400);
 
 // (2) he starts typing again inside the dismiss window
 await openPanel(p);
-const resumed = await p.evaluate(RUN(400, 3200));
+const resumed = await p.evaluate(RUN(400, 6800));
 const tr = closedAt(resumed);
 const msgAfter = (resumed.find(s => s[0] >= 900) || [])[2];
-notes.push(`resumed at 400ms: closed at ${tr} | msg at 900ms "${msgAfter}"`);
+const msgFinal = resumed.at(-1)[2];
+notes.push(`resumed at 400ms: closed at ${tr} | msg at 900ms "${msgAfter}" final "${msgFinal}"`);
 ok('typing again CANCELS the dismiss — the panel stays open', tr === null);
 ok('...and it stays cancelled, not merely postponed',
    resumed.at(-1)[1] === true && resumed.at(-1)[0] > 3000);
-// a "sent to the dream" above a fresh unsent thought is a false confirmation
-ok('the stale confirmation clears when he resumes', !msgAfter);
+ok('#255 typing does not truncate the valid success confirmation',
+   /sent to the dream/.test(msgAfter));
+ok('#255 ...and success clears on its own lifecycle', !msgFinal);
 
 await p.screenshot({ path: `${OUT}/composer.png` });
 
