@@ -18,12 +18,40 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **267**
+Next id: **271**
 
 ## Open
 
-- **#266** — Review-dock note/answer can land on the wrong question · P1 · bug ·
-  25m · origin: **human** · confirmed **2026-07-26 16:12** by helper · on
+- **#270** — Harden and re-review the #229 topic-chat proposal · P1 ·
+  architecture/review · origin: **human** · **human via watch 16:47** · exact
+  Grok review preserved under the #229 question after a second #266 wrong-target
+  submission · update artifact with a single recovery authority/order, concrete
+  bounded worker adapter, per-target cross-process lease, transcript confinement,
+  explicit attachment MVP and atomic promotion, derived-only index, queue-full
+  semantics, idempotent finalisation, privacy/export and provenance redaction ·
+  retain transcript-first/simple-mode strengths · re-run offline, visual and
+  geometry review · blocked on #263 event model and #266 stable dock identity
+
+- **#269** — Make every Web UI text draft durable and cross-tab coherent · P1 ·
+  client reliability/module · origin: **human** · **human via watch 16:45** ·
+  composer, answer/note boxes, future chat inputs and every later user text field
+  get a stable logical input ID; autosave content before submission to one
+  project-partitioned IndexedDB draft store; restore across reloads and route
+  transitions; synchronise the same logical input across tabs so multiple views
+  behave as one box · define ownership/conflict/clear-on-durable-receipt rules,
+  privacy/retention and migration from composer localStorage · expose one deep
+  module that future inputs must consume · design alongside #263 receipt boundary
+
+- **#268** — Hide Dreamwork-only plugins from ordinary skill discovery · P1 ·
+  plugin integration · 25m · origin: **human** · **human via watch 16:27** ·
+  apply the #267 survivor across `ud-dreamwork-*`: plugins should not appear as
+  user-invocable/general model skills when Dreamwork is inactive, but the active
+  loop must still resolve and load them predictably · preserve install/update
+  compatibility, explicit file-based fallback and tests · blocked on #267
+
+- **#266** — Review-dock note/answer can land on the wrong question · P0/P1 · bug ·
+  25m · origin: **human** · first confirmed **2026-07-26 16:12** by helper;
+  reproduced again by the human's **16:47** #229 review landing on #257/#258 · on
   `/review?p=threaded-topic-chats.html&q=…#229…` a note was posted with
   `from` still showing that URL but `body.question` = #255 title
   (submissions.log 15:41:31) · root cause candidate: `data-qkey` is a
@@ -32,7 +60,7 @@ Next id: **267**
   URL `q=` is unchanged · fix: bind dock/submit to stable title (or qid), not
   list index; red browser: open review dock for A, insert higher-priority open
   entry, submit note, assert it appends under A not B · re-homed human words
-  onto #229 + #253; do not treat as #255 content
+  onto #229 + #253; neither misroute is content for #255 or #257/#258
 
 - **#265** — Add a research command to the composer · P2 · command design ·
   origin: **human** · **human via watch 16:05** · hidden/menu command for
@@ -808,6 +836,13 @@ Next id: **267**
   **blocked**: human pick
 
 ## Recently landed
+
+**#267** contextual plugin discovery research is durable at
+`.dreamwork/docs/research/contextual-plugin-discovery.md`: Pi's hidden
+frontmatter retains a user command and dynamic resource discovery still
+registers a normal skill. The IGC survivor removes global discovery symlinks
+and has active Dreamwork read only declared plugin files from deterministic
+install-relative paths; #268 owns implementation (2026-07-26).
 
 **#232** the answer-morph pause is the intentional 1.6s rerender hold around
 an 850ms local morph, followed by a phase-dependent 2s live poll; later loop
