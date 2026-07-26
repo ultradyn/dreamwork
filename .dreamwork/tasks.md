@@ -129,18 +129,9 @@ Next id: **289**
   background shader and any substantial Jupiter/storm revision as separate named
   implementations; later let the user choose · define registry/interface,
   project setting/default/migration, capability/perf metadata, cross-tab sync,
-  reduced-motion behavior and fallback; do not add selection UI until #279 proves
-  a worthwhile second shader and #228 shared settings lands
-
-- **#279** — Prototype a Jupiter-like higher-fluid-dynamics storm shader · P1 ·
-  visual experiment/design · origin: **human** · **human via watch 18:12** · use
-  `/home/xertrov/Documents/storm{1,2,3,4,5,6,7}.{webp,jpg}` as visual references;
-  current presented storm is too simple and geometry needs work · create a copy/
-  separate implementation so current background remains unchanged; establish
-  bands/vortices/depth/scale, deterministic render and perf breakpoint; run
-  visual+geometry review/fix and present proposal before product wiring · **#278
-  diagnosis complete:** no runaway timebase/multi-RAF to inherit; phase-dependent
-  agitation and nav warp remain perceptual inputs to control · now unblocked
+  reduced-motion behavior and fallback; do not add selection UI until a future
+  prototype proves a worthwhile second shader and #228 shared settings lands ·
+  **#279 did not clear this gate**: deterministic technical base, visual FAIL
 
 
 - **#277** — Let departing UI elements blur and liquify before they travel · P2 ·
@@ -962,6 +953,18 @@ Next id: **289**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#279** — Prototype a Jupiter-like higher-fluid-dynamics storm shader · P1 ·
+  visual experiment/design · completed 2026-07-26 as an honest **failed
+  prototype** · all seven supplied references inspected; three standalone
+  variants built without touching production · first evidence pass FAILed blank
+  capture/telemetry race/submerged geometry; deterministic static pipeline,
+  duplicate hashes, readback/contrast sanity and eye/wall composition fixed ·
+  final Vision still FAILed reference-level fine turbulence, luminous material
+  depth and organic multi-scale detail; Terra evidence/debrief PASS after
+  bounding non-white and expected-framing claims · current `watch.py` shader
+  remains unchanged; #280 stays blocked · throwaway primary source preserved at
+  branch `prototype/279-jovian-final`, tip `a1c180c`
 
 - **#271** — Rerender review docks on cross-browser data ticks · P1 · bug ·
   completed 2026-07-26 · diagnosis:
