@@ -2,6 +2,28 @@
 
 ## Open
 
+- **P2 · 2026-07-27 — #284 file heading: accept the two-line basename/path
+  lockup?** Exceptional-quality read-only design review compared three layouts.
+
+  Rec **H1**: on `/file`, make the basename a bright semantic heading on its own
+  primary line; place the exact parent path beneath it as subdued, selectable
+  metadata with a real keyboard/focus-visible copy button that copies the full
+  path. Associate the path with the heading for screen readers. Copy success or
+  failure uses the existing atmospheric polite-confirmation idiom; reduced motion
+  snaps visuals but keeps message timing/function. Long paths wrap anywhere
+  inside the column; never ellipsise or reorder segments. Reuse the existing
+  keyed route transition rather than animating path text independently.
+
+  **H2** makes parent segments clickable breadcrumbs (refuted until real
+  directory routes exist). **H3** keeps parent path inline after the basename
+  (refuted: long paths steal the primary line and destabilise 520px geometry).
+
+  Red-first evidence will prove luminance hierarchy, exact clipboard bytes,
+  semantic heading/description/button labels, 520px no-overflow geometry, plus
+  normal intermediate route travel and reduced-motion settling. Approval
+  authorizes an isolated implementation/review/deploy for #284. Answer `Approve
+  H1`, `Approve H1 with changes: …`, `Choose H2`, or `Pause #284`.
+
 - **P1 · 2026-07-27 — #286 note/answer paragraphs: preserve authored blank
   lines in the managed question record?** Read-only diagnosis traced the loss.
 
