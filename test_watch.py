@@ -2,6 +2,7 @@
 """Unit tests for watch.py's data collector. Run: python3 test_watch.py"""
 
 import http.server
+import inspect
 import json
 import os
 import re
@@ -562,6 +563,38 @@ class TestCollector(unittest.TestCase):
             with open(os.path.join(d, ".dreamwork", "lessons.md"), "a") as f:
                 f.write("- new lesson\n")
             self.assertGreater(watch.watched_mtime(d), before)
+
+    def test_answers_route_and_ask_are_wired(self):
+        self.assertIn("function buildAnswers(d)", watch.PAGE)
+        self.assertIn("/answers", watch.PAGE)
+        self.assertIn("postJSON('/ask'", watch.PAGE)
+        self.assertNotIn("fetch('/ask'", watch.PAGE)
+        self.assertIn('self.path == "/ask"', inspect.getsource(watch.make_handler))
+
+    def test_answers_channel_parse_append_collect(self):
+        text = ("# Questions for the dreamer\n\n## Open\n\n"
+                "- **2026-07-26 — Why?** Human context.\n\n"
+                "## Answered\n\n- **Old?** → answered (2026-07-26): Loop reply.\n")
+        self.assertEqual(watch.parse_open_answers(text)[0]["title"],
+                         "2026-07-26 — Why?")
+        self.assertEqual(watch.parse_answered_answers(text)[0]["when"],
+                         "2026-07-26")
+        hostile = "Can this work?\n## forged\n- **fake entry**\nAll my words."
+        new = watch.append_human_question(text, hostile, "2026-07-26")
+        self.assertIn("- **2026-07-26 — Can this work?**", new)
+        parsed = watch.parse_open_answers(new)
+        self.assertEqual(len(parsed), 2)
+        self.assertIn("## forged", parsed[-1]["body"])
+        self.assertIn("fake entry", parsed[-1]["body"])
+        self.assertIn("All my words.", parsed[-1]["body"])
+        self.assertEqual(watch.answers_health(text, 2), "ok")
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            with open(os.path.join(d, ".dreamwork", "answers.md"), "w") as f:
+                f.write(text)
+            data = watch.collect(d)
+            self.assertEqual(len(data["answers_open"]), 1)
+            self.assertEqual(len(data["answers_answered"]), 1)
 
     def test_parse_open_questions(self):
         qs = watch.parse_open_questions(QUESTIONS)
@@ -1590,11 +1623,31 @@ class TestAppShell(unittest.TestCase):
     def test_view_routes_serve_one_shell(self):
         with tempfile.TemporaryDirectory() as d:
             base = self._serve(make_target(d))
-            for path in ("/", "/questions", "/file?p=DREAMWORK.md"):
+            for path in ("/", "/questions", "/answers", "/file?p=DREAMWORK.md"):
                 status, body = self._get(base + path)
                 self.assertEqual(status, 200)
                 self.assertIn('id="view"', body)      # same app shell
                 self.assertIn("dreamwork watch", body)
+
+    def test_ask_creates_optional_ledger_after_witness_and_wakes_loop(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            apath = os.path.join(d, ".dreamwork", "answers.md")
+            self.assertFalse(os.path.exists(apath))
+            base = self._serve(d)
+            status, _ = self._post(base + "/ask", {
+                "question": "Can this wake the dreamer?", "from": "/answers"})
+            self.assertEqual(status, 200)
+            with open(apath, encoding="utf-8") as f:
+                text = f.read()
+            self.assertEqual(len(watch.parse_open_answers(text)), 1)
+            with open(os.path.join(d, ".dreamwork", "submissions.log"), encoding="utf-8") as f:
+                witnessed = [json.loads(line) for line in f]
+            self.assertEqual(witnessed[-1]["path"], "/ask")
+            self.assertEqual(witnessed[-1]["req"]["question"],
+                             "Can this wake the dreamer?")
+            with open(os.path.join(d, ".dreamwork", "watch-events.log"), encoding="utf-8") as f:
+                self.assertIn("question for dreamer", f.read())
 
     def test_filedata_returns_confined_content(self):
         with tempfile.TemporaryDirectory() as d:

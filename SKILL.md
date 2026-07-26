@@ -72,17 +72,19 @@ On each tick, best-effort, refresh `.dreamwork/status.json` (current task,
 queue depth, last tick time, last commit, and the session goal — which
 persists across ticks, rewritten only on a pivot) — the watch.py
 dashboard reads it; failing to write it never blocks the loop. And if
-`questions.md` changed since your last look, check for new
-human-authored blocks (`Note (human, via …)`) —
-fold them first: act on the answer, then move the entry to Answered.
+`answers.md` has Open entries, answer and fold those human-to-dreamer asks
+before selecting work. If `questions.md` changed since your last look, check
+for new human-authored blocks (`Note (human, via …)`) — fold them first: act
+on the answer, then move the entry to Answered.
 
 Check `.dreamwork/watch-events.log`'s mtime too. A command he types into
 the dashboard composer exists **only** as a line in that file — nothing
 is written anywhere else, and the write is best-effort — so if the tail
 monitor is not armed (a resumed session, a compacted one, a `watch.py`
 started after init), his `do now:` is lost with no error anywhere. The
-answer channel is durable because answers land in `questions.md`; the
-command channel is not.
+human responses are durable because they land in `questions.md`, and human
+questions are durable because they land in `answers.md`; the command channel
+is not.
 
 ## Selecting the next task
 
@@ -266,6 +268,14 @@ results, no ceremony.
   instead: durable shared state wants a single writer, or the next
   fan-out races it (two dreamers mint the same id, and the ledger loses
   exactly what it exists to keep).
+- `.dreamwork/answers.md` — questions from the human to the dreamer. On each
+  tick, read `## Open` before selecting work. Answer by preserving the entire
+  human-authored entry, prefixing its body with a loop-authored
+  `→ answered (YYYY-MM-DD HH:MM): <resolution>`, and moving it intact under
+  literal `## Answered`. Do not answer through a server endpoint. If an answer
+  re-blocks or needs reopening, add a new Open entry naming the prior title;
+  threaded chat lifecycle remains out of scope (#229). Exact shape:
+  `file-formats.md`.
 - `.dreamwork/questions.md` — open questions for the human: proposals
   awaiting a response, unclear-goals items, parked scope calls. Answers
   fold into DREAMWORK.md or tasks and the entry moves to a short Answered

@@ -157,6 +157,30 @@ def check_questions(dw: Path, watch, rep: Report) -> None:
         )
 
 
+def check_answers(dw: Path, watch, rep: Report) -> None:
+    """Optional channel from the human to the dreamer."""
+    path = dw / "answers.md"
+    if not path.exists():
+        rep.add(OK, "answers.md", "absent — /ask creates it on first use")
+        return
+    text = path.read_text()
+    heads = [ln.strip() for ln in text.splitlines()
+             if ln.strip().startswith("## ")]
+    if "## Open" not in heads or "## Answered" not in heads:
+        rep.add(ERROR, "answers.md", "requires literal `## Open` and `## Answered` headings")
+        return
+    if watch is None:
+        rep.add(WARN, "answers.md", "headings present; watch.py unimportable")
+        return
+    o = len(watch.parse_open_answers(text))
+    a = len(watch.parse_answered_answers(text))
+    health = watch.answers_health(text, o + a)
+    if health == "unreadable":
+        rep.add(ERROR, "answers.md", "content exists but no entries parse")
+    else:
+        rep.add(OK, "answers.md", f"{o} open, {a} answered")
+
+
 # DELIBERATELY WIDER THAN THE PARSER’S, and that is the whole design. This
 # regex asks "does this READ to a human as prioritised", so it accepts
 # separators `watch.py` does not; whether the parser HONOURED it is asked of
@@ -654,6 +678,7 @@ def main(argv: list[str] | None = None) -> int:
     watch = load_watch()
     rep = Report()
     check_questions(dw, watch, rep)
+    check_answers(dw, watch, rep)
     check_tasks(dw, rep)
     check_status(dw, rep)
     check_watch_port(dw, rep)

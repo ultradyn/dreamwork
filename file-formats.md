@@ -17,6 +17,33 @@ the parser.
 below. If the shape is not stated below, say so rather than inventing
 one — an invented shape that looks right is exactly how this fails.**
 
+## `.dreamwork/answers.md`
+
+Optional, read by `watch.py` for `/answers` and written by POST `/ask`. Missing is
+calm; the first successful ask atomically creates the skeleton.
+
+```markdown
+# Questions for the dreamer
+
+## Open
+
+- **2026-07-26 — Human-authored question title** Human-authored context.
+
+## Answered
+
+- **2026-07-26 — Human-authored question title** → answered (2026-07-26 13:00):
+  Loop-authored resolution.
+```
+
+The headings are literal `## Open` and `## Answered`; entries reuse the shared
+`- **Title** body` grammar. Direction is distinct from `questions.md`: Open is
+always authored by the human and asks the dreamer. To answer, the coordinator
+writes a loop-attributed `→ answered (<timestamp>): <resolution>` at the start
+of the body, moves the entire entry (including any body/thread) from Open to
+Answered, and leaves its human-authored title and question intact. Reopening is
+not an MVP state: create a new linked question which names the prior title.
+There is no dreamer-answer HTTP endpoint in this increment.
+
 ## `.dreamwork/questions.md`
 
 Read by `watch.py` for `/questions`, the open-question badge, and the

@@ -47,8 +47,10 @@ carries a `+` command opener (steer the loop without a chat turn).
   (`os.execv`) when its own source mtime changes — edit-and-see with no
   manual restart; the close-on-exec listening socket frees the port and the
   generation bump reloads clients.
-- **Single-document router**: `/`, `/questions`, `/file`, `/review` serve
-  one shell; the client router renders the view, pushState/popstate drive
+- **Single-document router**: `/`, `/questions`, `/answers`, `/file`, and
+  `/review` serve one shell. `/answers` is the distinct human-to-dreamer
+  question ledger while `/questions` remains dreamer-to-human. The client
+  router renders the view; pushState/popstate drive
   the URL. The `#dreambg` canvas is a sibling of `#view` — never unmounted,
   so the background survives navigation. Route changes dissolve through a
   turbulence mist (see Motion language); reduced-motion swaps instantly.
@@ -168,8 +170,15 @@ low-emphasis PiP glyph (`pipBtn`) sits after doc/review affordances
 floats the target in an identity-headed window (`openPopout` → Document
 Picture-in-Picture, `window.open` fallback) that stays put while the main tab
 navigates and carries the same dreaming field (see Shader). Views are pure builders returning `#view`'s innerHTML
-(`buildDashboard`,
-`buildQuestions`, `buildFile`, `buildReview`); the router swaps them. Add a
+(`buildDashboard`, `buildQuestions`, `buildAnswers`, `buildFile`,
+`buildReview`); the router swaps them. `answerRecord` is deliberately not
+`qaCard`: its Open author is the human, it has no human answer/comment controls,
+and Answered records are quiet disclosures. The compact ask form clears only
+after a confirmed `/ask` success; refused/unreachable sends keep the words and
+explain the outcome. Its value, caret, resize, scroll and focus ride live
+`/mtime` renders through `snapshotAskState`/`restoreAskState`. Open records
+arrive through the standing `.dreamin` idiom; answered disclosures inherit the
+shared transition/reduced-motion rules in `transitions.md`. Add a
 view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
 
 **`expand` is structure; HOW it moves is `transitions.md`'s, not this

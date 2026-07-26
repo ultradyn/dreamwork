@@ -542,6 +542,19 @@ STYLE = """<style>
   /* the box states everything about itself, because nothing above it does
      any more (#139). No margin: it fills the wrapper it shares a border with,
      exactly as the send button does. */
+  .askform { margin:0 0 var(--space); max-width:56ch; }
+  .askform textarea { display:block; box-sizing:border-box; width:100%; min-height:5rem;
+    margin:.35rem 0; padding:.55rem; resize:vertical; color:var(--text);
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    font:inherit; font-size:.75rem; outline:none; transition:border-color .3s ease; }
+  .askform textarea:focus { border-color:var(--border); }
+  .askform button { color:var(--lit); background:var(--panel2); border:1px solid var(--line);
+    border-radius:var(--radius); padding:.35rem .7rem; font:inherit; cursor:pointer; }
+  .aq { margin:.55rem 0 1rem; padding-left:.7rem; border-left:1px solid var(--line); }
+  .aq.open { border-left-color:var(--accent); }
+  .aqbody { color:var(--muted); margin-top:.25rem; }
+  .aq > summary { color:var(--muted); cursor:pointer; }
+
   .qfield textarea { flex:1; min-width:0; background:none; border:0; margin:0;
     box-sizing:border-box; color:var(--text); font:inherit; font-size:.75rem;
     padding:.4rem .55rem; min-height:2.4rem; resize:vertical; outline:none; }
@@ -1404,6 +1417,8 @@ const postJSON = async (url, body) => {
 };
 const postAnswer = (title, text) =>
   postJSON('/answer', { question: title, answer: text, from: fromPath() });
+const postAsk = text =>
+  postJSON('/ask', { question: text, from: fromPath() });
 const postComment = (title, note, section) =>
   postJSON('/comment',
            { question: title, comment: note, section, from: fromPath() });
@@ -1842,6 +1857,7 @@ function buildDashboard(d) {
          ? expand(`archive (${d.dreams_archive.length})`,
                   d.dreams_archive.map(dreamBlock).join(''), 'dim') : '');
   h += qSection(d);
+  h += `<div class="dim"><a href="/answers">questions for the dreamer · ${d.answers_open.length} open</a></div>`;
   if (d.reviews.length) {
     h += label('reviews') + d.reviews.map(r =>
       `<div><a href="/review?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` +
@@ -1879,6 +1895,31 @@ function buildQuestions(d) {
     ? d.answered_entries.map((e, j) => qaCard(e, 'a' + j)).join('')
     : '<div class="dim">(none yet)</div>');
   return h + `</div>`;
+}
+function answerRecord(e, answered=false) {
+  const body = `<div class="aqbody">${mdB(e.body)}</div>`;
+  return answered
+    ? `<details class="aq answered"><summary>${esc(e.title)}</summary>${body}</details>`
+    : `<article class="aq open dreamin"><div class="qt">${esc(e.title)}</div>` +
+      `<div class="label">you asked · awaiting dreamer</div>${body}</article>`;
+}
+function buildAnswers(d) {
+  let h = `<form id="askform" class="askform"><label class="label" for="askbox">ask the dreamer</label>` +
+    `<textarea id="askbox" placeholder="A question for the dreamer"></textarea>` +
+    `<div><button type="submit">Ask</button> <span id="askmsg" class="dim" aria-live="polite"></span></div></form>`;
+  h += label(`open (${d.answers_open.length})`) +
+    (d.answers_open.map(e => answerRecord(e)).join('') || `<div class="dim">none awaiting the dreamer</div>`);
+  h += label(`answered (${d.answers_answered.length})`) +
+    (d.answers_answered.map(e => answerRecord(e, true)).join('') || `<div class="dim">none yet</div>`);
+  return `<div id="answersections">${h}</div>`;
+}
+async function sendAsk(form) {
+  const box = form.querySelector('#askbox'), msg = form.querySelector('#askmsg');
+  const words = box.value.trim(); if (!words) return;
+  let res = null; msg.textContent = 'asking…';
+  try { res = await postAsk(words); } catch (e) {}
+  if (res && res.ok) { box.value = ''; msg.textContent = 'asked'; await tick(); }
+  else msg.textContent = res ? 'question was refused — your words are kept' : 'dreamwork is unreachable — your words are kept';
 }
 function buildFile(param, text) {
   const body = text == null
@@ -2400,6 +2441,7 @@ function applyTitle() {
 
 function routeOf(loc) {
   if (loc.pathname === '/questions') return { name: 'questions', param: null };
+  if (loc.pathname === '/answers') return { name: 'answers', param: null };
   if (loc.pathname === '/file')
     return { name: 'file',
              param: new URLSearchParams(loc.search).get('p') };
@@ -2457,7 +2499,24 @@ async function buildCurrent() {
   const d = await ensureData();
   if (view.name === 'review') return buildReview(view.param, view.q, d);
   if (!d) return '<div class="dim">loading…</div>';
-  return view.name === 'questions' ? buildQuestions(d) : buildDashboard(d);
+  if (view.name === 'questions') return buildQuestions(d);
+  if (view.name === 'answers') return buildAnswers(d);
+  return buildDashboard(d);
+}
+function snapshotAskState() {
+  const box = document.getElementById('askbox');
+  if (!box || (!box.value && box !== document.activeElement)) return null;
+  return {value:box.value, focus:box === document.activeElement,
+          start:box.selectionStart, end:box.selectionEnd, scroll:box.scrollTop,
+          height:box.style.height};
+}
+function restoreAskState(saved) {
+  if (!saved) return;
+  const box = document.getElementById('askbox'); if (!box) return;
+  box.value = saved.value; box.scrollTop = saved.scroll;
+  if (saved.height) box.style.height = saved.height;
+  try { box.setSelectionRange(saved.start, saved.end); } catch (e) {}
+  if (saved.focus) refocus(box);
 }
 function setContent(html) {
   document.getElementById('view').innerHTML = html;
@@ -3005,12 +3064,13 @@ addEventListener('resize', () => paintIndicators(true));
 const TITLES = {
   dashboard: () => 'dreamwork watch',
   questions: () => 'questions',
+  answers: () => 'answers',
   file: v => esc(v.param || ''),
   review: v => `review<span class="revname">${esc(v.param || '')}</span>`,
 };
 function crumbsFor(v, d) {
   const home = { k:'home', html:'<a href="/">&larr; dashboard</a>' };
-  if (v.name === 'questions') return [home];
+  if (v.name === 'questions' || v.name === 'answers') return [home];
   if (v.name === 'file') return [home,
     { k:'pip', html: pipBtn('/file?p=' + encodeURIComponent(v.param || ''),
                             v.param || 'file') }];
@@ -3306,6 +3366,7 @@ async function tick() {
       // they were to where the new grouping put them (#104/#77). What the
       // human is mid-way through typing rides across the swap (#118).
       const kept = snapshotCardState();
+      const askKept = snapshotAskState();
       const folds = snapshotFolds();
       const before = snapshotCards();
       // #151: the commits panel animates on a NEW COMMIT, never on a tick.
@@ -3321,6 +3382,7 @@ async function tick() {
         ? snapshotBars() : null;
       if (view.name === 'dashboard') setContent(buildDashboard(data));
       else if (view.name === 'questions') setContent(buildQuestions(data));
+      else if (view.name === 'answers') setContent(buildAnswers(data));
       // FOLDS FIRST, then the cards inside them (#179). Both must land before
       // the regroups, which MEASURE — a section restored afterwards would be
       // measured shut and then opened underneath the animation — but the
@@ -3331,6 +3393,7 @@ async function tick() {
       // the card first re-filled the box and silently dropped the focus.
       restoreFolds(folds);
       restoreCardState(kept);
+      restoreAskState(askKept);
       regroupCards(before);
       regroupCards(gitBefore, null, GIT_LIST);
       regroupBars(burnBefore);
@@ -3955,6 +4018,11 @@ function popoutDoc(url, label) {
     clearCmdMsg();
   }
   window.__closeCmd = closeCmd;
+  document.addEventListener('submit', e => {
+    if (e.target && e.target.id === 'askform') {
+      e.preventDefault(); sendAsk(e.target);
+    }
+  });
   document.addEventListener('click', e => {
     const pip = e.target.closest && e.target.closest('.pipbtn');
     if (pip) { e.preventDefault();
@@ -5263,6 +5331,61 @@ def title_priority(title):
     return int(m.group(1)) if m else PRIORITY_DEFAULT
 
 
+def parse_open_answers(text):
+    """Human-authored questions awaiting the dreamer, in file order."""
+    return _parse_entries(text, "Open", lift_answer=False)
+
+
+def parse_answered_answers(text):
+    """Questions resolved by the loop, in file order."""
+    items = _parse_entries(text, "Answered", lift_answer=False)
+    for item in items:
+        item["when"] = answered_at(item["body"])
+    return items
+
+
+def append_human_question(text, question, stamp):
+    """Append a human question without letting pasted Markdown forge records.
+
+    The compact title is a locator; the complete original words live in the
+    body. Every body line is indented, so neither `##` nor `- **` can become a
+    top-level structural token. Newlines remain visible and meaningful.
+    """
+    raw = (question or "").strip()
+    if not raw:
+        return text
+    first = next((line.strip() for line in raw.splitlines() if line.strip()), raw)
+    sentence = re.split(r"(?<=[?.!])\s+", first, maxsplit=1)[0]
+    title = " ".join(sentence.split())
+    if len(title) > 80:
+        title = title[:77].rstrip() + "…"
+    if not text:
+        text = "# Questions for the dreamer\n\n## Open\n\n## Answered\n"
+    body = "\n".join("  " + line if line else "" for line in raw.splitlines())
+    entry = f"- **{stamp} — {title}**\n{body}\n"
+    marker = "## Answered"
+    at = text.find(marker)
+    if at < 0:
+        return text
+    prefix = text[:at].rstrip() + "\n\n" + entry + "\n"
+    return prefix + text[at:].lstrip()
+
+
+def answers_health(text, entries=None):
+    """Health of the optional human-to-dreamer answers ledger."""
+    if text is None:
+        return "missing"
+    if entries is None:
+        entries = len(parse_open_answers(text)) + len(parse_answered_answers(text))
+    if entries:
+        return "ok"
+    heads = [line.strip() for line in text.splitlines()
+             if line.strip().startswith("## ")]
+    prose = [line for line in text.splitlines()
+             if line.strip() and not line.lstrip().startswith("#")]
+    return "empty" if not prose and {"## Open", "## Answered"}.issubset(heads) else "unreadable"
+
+
 def parse_open_questions(text):
     """[{title, body, answer, follows, priority}] for `## Open`, IN THE ORDER
     THE PAGE SHOWS THEM.
@@ -5607,6 +5730,9 @@ def collect(target):
     questions = read_text(os.path.join(dw, "questions.md"))
     q_open = parse_open_questions(questions)
     q_answered = parse_answered(questions)
+    answers = read_text(os.path.join(dw, "answers.md"))
+    a_open = parse_open_answers(answers)
+    a_answered = parse_answered_answers(answers)
     return {
         "target": os.path.abspath(target),
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -5636,6 +5762,10 @@ def collect(target):
         # the same number.
         "questions_health": questions_health(
             questions, len(q_open) + len(q_answered)),
+        "answers_open": a_open,
+        "answers_answered": a_answered,
+        "answers_health": answers_health(
+            answers, len(a_open) + len(a_answered)),
         "status": _safe_json(read_text(os.path.join(dw, "status.json"))),
         "git": git_tail(target),
         # which revision this process is running (#140), so a stale page
@@ -5907,7 +6037,7 @@ def make_handler(target, dev=False):
             parsed = urllib.parse.urlparse(self.path)
             # Same-document routes all return the one app shell; the client
             # router renders the matching view (deep links keep working).
-            if parsed.path in ("/", "/questions", "/file", "/review"):
+            if parsed.path in ("/", "/questions", "/answers", "/file", "/review"):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
@@ -5986,6 +6116,8 @@ def make_handler(target, dev=False):
             self._body = body
             if self.path == "/answer":
                 self._handle_answer()
+            elif self.path == "/ask":
+                self._handle_ask()
             elif self.path == "/comment":
                 self._handle_comment()
             elif self.path == "/command":
@@ -5994,6 +6126,32 @@ def make_handler(target, dev=False):
                 self._handle_tint()
             else:
                 self.send_error(404)
+
+        def _handle_ask(self):
+            req = self._read_json()
+            if req is None:
+                return
+            try:
+                question = str(req["question"]).strip()
+            except (KeyError, TypeError):
+                self.send_error(400)
+                return
+            if not question:
+                self.send_error(400)
+                return
+            path = os.path.join(target, ".dreamwork", "answers.md")
+            stamp = time.strftime("%Y-%m-%d")
+            with ANSWER_LOCK:
+                text = read_text(path)
+                new_text = append_human_question(text, question, stamp)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                tmp = path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write(new_text)
+                os.replace(tmp, path)
+            log_event(target, f'question for dreamer{from_hint(req.get("from"))}: '
+                      f'"{one_line(question)}" -> .dreamwork/answers.md')
+            self._send(json.dumps({"ok": True}), "application/json")
 
         def _handle_answer(self):
             req = self._read_json()
