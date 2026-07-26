@@ -213,6 +213,7 @@ Next id: **219**
   · found by #140, which pads to two; the source should · not panels'
   holdings, so filed instead of fixed
 - **#213** — The ledger has no provenance field · P2 · idea · 20m ·
+  **in progress — coordinator, awaiting Web UI design review** ·
   measured during #142 pre-work: `**human HH:MM**` appears on 6 of 63
   open entries, other human-markers on ~6 more — so the human-vs-loop
   split (the "most telling number" for the burndown) is NOT derivable
@@ -222,7 +223,8 @@ Next id: **219**
   panel drawing the split STATES its coverage rather than implying one
   it cannot support
 - **#210** — A guard can go VACUOUS when a fixture grows, with no red
-  light · P2 · chore · 25m · from #197's find: identity.mjs held a
+  light · P2 · chore · 25m · **in progress — diagnose-210, utility owns
+  no files** · from #197's find: identity.mjs held a
   literal 3 beside a fixture of 2 and the GAP was its whole check; #197
   seeded a third question, the numbers met, and it kept passing — only
   surfaced because an unrelated assertion made someone read it · the
