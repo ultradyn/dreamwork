@@ -18,9 +18,43 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **245**
+Next id: **250**
 
 ## Open
+
+- **#249** — Add dev-overlay sampling cadence controls · P2 · dev UI · 25m ·
+  origin: **human** · **human via watch 14:37** · frame-time graph + other
+  stats update at selectable `1s` / `10f` / `1f` cadence using the existing
+  tiny sliding button-group idiom, not a new toggle · default rec `1s` for low
+  overhead · keep per-frame measurement/aggregation correct when display is
+  slower; persist/sync under #228 project settings · transitions/reduced-motion
+  and perf guard required · blocked on #245 and #228
+
+- **#248** — Decide whether answers records need persisted IDs · P3 · design ·
+  20m · origin: **loop** · late #238 review · exact-content twins cannot
+  retain distinct identity through reorder without a durable file-format id;
+  evaluate whether real workflows justify migration rather than solving a
+  semantically invisible distinction by default
+- **#247** — Harden answer-state IDs and deletion guard · P2 · test/bug ·
+  15m · origin: **loop** · late #238 review · missing server `aid` must not
+  emit colliding empty `data-keep`; deletion phase must prove old node detached
+  / replacement occurred · document exact-content twin ordinal limit honestly
+  · queued behind active #245 Grok ownership
+- **#246** — Keep Grok usefully occupied when work is available · P2 · routine
+  · origin: **human** · **human via watch 14:33** · proactively assign
+  `grok-sugar-vesi-x6tv` unblocked small/medium in-repo work with disjoint
+  ownership · no manufactured busywork, cross-repo/external authority,
+  collisions or model-gate bypass; diagnose first unless ownership explicit;
+  coordinator validates every result · active durable routine
+- **#245** — Build `ud-dreamwork-worktrees` plugin · P1 · plugin · several
+  increments · origin: **human** · **do next via watch 14:33** · assigned
+  to `grok-sugar-vesi-x6tv` · teach safe parallel worktrees in two modes:
+  bounded coordinator-launched subagents (usually one task/branch), and
+  longer-running c2c/protocol co-agents that may process multiple tasks with
+  durable ownership/status/comms · cover eligibility, ignore/baseline, claims,
+  naming, commits, validation, rebase/conflicts, cleanup preserving ignored
+  scratch, restart/authority and coordinator integration · follow plugin
+  conventions/TDD/docs/review · in progress
 
 - **#244** — Define repository-browser visibility policy · P2 · design ·
   25m · origin: **human** · **human via watch 14:29** · decide tracked,

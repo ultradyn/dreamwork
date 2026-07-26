@@ -73,7 +73,11 @@ dreamwork-version: 5853e1789929
   a promise: what is inside is still there, and the summary says what.
 - Subagent lifecycle (2026-07-25): **prefer fresh subagents; reuse an
   existing one only if it stopped less than ~4 minutes ago.** Retire
-  idle dreamers rather than leaving them parked. A dreamer here reached
+  idle dreamers rather than leaving them parked. Exception/routine
+  (human-set 2026-07-26): keep the named co-agent `grok-sugar-vesi-x6tv`
+  usefully occupied whenever unblocked small/medium in-repo work exists with
+  disjoint ownership; never manufacture busywork, violate a model gate, or
+  skip coordinator validation. A dreamer here reached
   ~600k tokens because the coordinator accepted its own "I have room"
   three times — the incumbent is the party least able to judge its own
   context cost, so the call is the coordinator's.
