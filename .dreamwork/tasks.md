@@ -473,11 +473,6 @@ Next id: **289**
   default visible row, never initial, discoverable by established cycling/
   secondary affordance and keyboard/touch · red-first, implement in increments
 
-- **#221** — Sort dashboard reviews by datetime · P2 · implementation · 15m ·
-  origin: **human** · **approved via watch 18:25** · sort review artifacts by
-  newest filesystem `mtime`; filename is deterministic tie-break; displayed age
-  and ordering share this source · red-first undated artifact + equal-mtime guard
-
 
 - **#218** — Add filed-to-landed median · P2 · task · 20m ·
   origin: **loop** · blocked on #217 · `ledger_series` already computes
@@ -953,6 +948,18 @@ Next id: **289**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#221** — Sort dashboard reviews by exact filesystem datetime · P2 ·
+  implementation · landed 2026-07-26 · newest exact `st_mtime_ns` first;
+  filename ascending only on exact nanosecond ties; displayed age derives from
+  the same stat result; disappearing TOCTOU entries are skipped while other
+  stat errors surface · stable keyed review rows travel through the existing
+  atmospheric FLIP system and reduced motion settles instantly · causal guard
+  proves exact BigInt filesystem order survives server payload, transform-free
+  natural geometry and settled DOM; reds cover disabled FLIP, pre-causal DOM
+  mutation, smoothly wrong final order and adjacent-nanosecond Number collapse ·
+  final Standards + Spec PASS; 459 tests + 46 subtests · integrated through
+  `b9159db` · separate #288 authority incident remains open
 
 - **#279** — Prototype a Jupiter-like higher-fluid-dynamics storm shader · P1 ·
   visual experiment/design · completed 2026-07-26 as an honest **failed
