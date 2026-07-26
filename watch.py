@@ -2912,8 +2912,9 @@ function setLiveContent(html) {
   setContent(html);
 }
 /* One-shot atmospheric arrival for NEW /answers open rows (#293 amend).
-   Keys by data-aqid (title). First paint of the answers view, and hard
-   refresh, settle fully visible without replaying .dreamin. Live-added
+   Keys by data-aqid (server `open:` aid over title+body+ordinal — never
+   title alone). First paint of the answers view, and hard refresh,
+   settle fully visible without replaying .dreamin. Live-added
    rows (after a successful /ask) snap to the enter pose then ease in;
    reduced motion leaves them fully visible (function, no start pose).
    window.__dwSkipOpenAskArrival is a deliberate inject point for the
