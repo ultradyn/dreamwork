@@ -124,14 +124,61 @@ parent=[/usr/lib/systemd/systemd --user]
 
 Mitigation doc already proves opportunistic **`git status`** (not `rev-parse`) is the lock-taking class for prompts/statuslines. KDE file managers often run short-lived git for VCS overlays; those would match **CREATE/DELETE ~2 s** if a refresh timer is active.
 
+### 2026-07-27 ATTRIBUTION FOUND: `pi-powerline-footer` footer refresh (high confidence)
+
+Path note: the watcher logs `/home/xertrov/src/dreamwork/.git/index.lock`;
+`~/src/dreamwork` is a **symlink** to `~/.llm-general/skills/ud-dreamwork` —
+same repo, two spellings. All evidence below is this checkout.
+
+During #292/#293 integration, every coordinator commit attempt (01:26, 01:49,
+01:55, 02:01, 02:57, 03:00, 03:03 AEST) found a **fresh holderless zero-byte
+`index.lock`** blocking `git add`/`git merge`. Each was removed only after the
+established evidence gate. Following the watcher log at 03:03:00 produced the
+decisive capture:
+
+```
+argv=[git status --porcelain] cwd=~/.llm-general/skills/ud-dreamwork parent=[pi]
+```
+
+- **250 of 282** `parent=[pi` snapshot lines in the watcher log involve this
+  repo — a pi-spawned `git status --porcelain` is the dominant recurring
+  lock-taker here by two orders of magnitude.
+- Code-level source identified: **`pi-powerline-footer/git-status.ts`** (npm
+  extension, loaded by every pi session) — `fetchGitStatus()` calls
+  `runGit(["status", "--porcelain"], 500)`. Two defects combine:
+  1. **No `--no-optional-locks`** — so `git status` refreshes the index and
+     takes `index.lock` on every footer refresh;
+  2. **`runGit` kills the child on a 500ms timeout** (`proc.kill()`), which
+     lands mid-refresh under load and leaves a **zero-byte orphan lock**.
+- Causal fit with today's timeline: orphans appeared right after heavy
+  coordinator verification runs (`pytest -n 2`, browser guards, deploy) —
+  exactly when a 500ms `git status` would time out — and each orphan then
+  blocked the next coordinator `git add`/`git commit` in the same chain.
+- pi core itself uses `--no-optional-locks` for its footer branch query;
+  this npm extension did not.
+
+**Mitigation applied (2026-07-27):** patched the installed
+`~/.pi/agent/npm/node_modules/pi-powerline-footer/git-status.ts` to spawn
+`git --no-optional-locks status --porcelain`. Footer status becomes read-only
+(never takes `index.lock`), which eliminates both the orphan production and
+the extension's own `File exists` failures. Caveats: effective on next pi
+restart; overwritten by package upgrade until fixed upstream. Documented in
+`~/.llm-general/systems/xsm/git-index-lock-mitigation.md`.
+
+**Verification plan:** watcher stays armed; if orphan CREATEs in this repo
+stop across normal coordinator activity after pi restart, #283 can close as
+attributed + mitigated. A residual non-pi creator would reappear in the log
+and reopen Phase A/B.
+
 ### Creator confidence
 
 | Claim | Confidence |
 |-------|------------|
 | Creator is **not** proven to be 1246815 | **High** |
 | Creator is short-lived / not durable `git` binary under `pgrep -x git` sampling | **High** |
-| Creator is in the **KIO/Dolphin/filenamesearch** family | **Medium** (open Dolphin + FUSE cwd + cadence; no openat attribution yet) |
-| Exact argv/open flags of creator | **Not established** (tooling limit without CAP/audit) |
+| Creator is **`pi-powerline-footer`'s 500ms-timeout `git status --porcelain`** | **High** (watcher capture + exact argv match + code-level kill mechanism + load-correlated timing; see 2026-07-27 section) |
+| Creator is in the **KIO/Dolphin/filenamesearch** family | **Refuted as primary** (2026-07-27: KIO PID was an over-credited D-state artifact) |
+| Exact argv/open flags of creator | **Established** for the dominant creator: `git status --porcelain`, index-refresh lock, SIGTERM at 500ms |
 
 ### Why the current watcher cannot prove creators
 
