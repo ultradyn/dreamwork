@@ -21,7 +21,9 @@ cover it too.
 | `stop-hook-variant.md` | Unimplemented wake fallback design | Only if implemented or invalidated |
 | `DREAMWORK.template.md` | Wizard seed for new targets | Yes — must track wizard section changes |
 | `migrations/` | Versioned target-affecting changes; latest filename = version | Append-only; README holds the protocol |
-| `.dreamwork/docs/plans/` | Active feature plans (ud-dreamtask, ud-dreamwork-github, artifact-templates, daemon-mode, dreamhub-stage1, parallel-architecture, goal-hierarchies, composer-row) | Prune when features fully land |
+| `.dreamwork/docs/plans/` | Active feature plans (ud-dreamtask, ud-dreamwork-github, artifact-templates, daemon-mode, dreamhub-stage1, dreamhub-platform, dreamnode-api, parallel-architecture, goal-hierarchies, composer-row) | Prune when features fully land |
+| `.dreamwork/docs/plans/dreamhub-platform.md` | The platform pre-plan: local/LAN/mesh, paid tunnel and hosted dreamers as one node-API stack; the seam options, the measured remote-use defects, staging, unknowns, and the decisions awaiting the human | Keep while undecided; fold into `dreamhub-design.md` as stages land |
+| `.dreamwork/docs/plans/dreamnode-api.md` | The proposed `dreamnode` `/v1` contract — resources with ETags, change-notice event stream, intents with idempotent receipts, the three auth planes, the relay link, versioning | Same lifetime as the platform pre-plan; becomes a design record if built |
 | `.dreamwork/docs/research-*.md` | What a commissioned answer MEANS for this project; the research itself goes to the KB when it is generic | Keep while the conclusion holds |
 | `.dreamwork/docs/spikes/` | Timeboxed experiments that answered a question with a number; the branch holds the diff | Keep — a measured answer outlives the code that produced it |
 | `.dreamwork/review/` | Rich decision artifacts paired with a questions.md entry | Banner them decided; archive with the answered question |
