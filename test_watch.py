@@ -605,6 +605,44 @@ class TestCollector(unittest.TestCase):
             self.assertEqual(len(data["answers_open"]), 1)
             self.assertEqual(len(data["answers_answered"]), 1)
 
+    def test_answered_answers_aid_stable_across_reorder(self):
+        # #238: content identity, not position — swap order, same body keeps id
+        a = ("# Q\n\n## Answered\n\n"
+             "- **Duplicate?** → answered (2026-07-26): first loop answer.\n\n"
+             "- **Duplicate?** → answered (2026-07-26): second loop answer.\n")
+        b = ("# Q\n\n## Answered\n\n"
+             "- **Duplicate?** → answered (2026-07-26): second loop answer.\n\n"
+             "- **Duplicate?** → answered (2026-07-26): first loop answer.\n")
+        pa, pb = watch.parse_answered_answers(a), watch.parse_answered_answers(b)
+        self.assertEqual(len(pa), 2)
+        self.assertNotEqual(pa[0]["aid"], pa[1]["aid"])
+        by_body_a = {x["body"].strip(): x["aid"] for x in pa}
+        by_body_b = {x["body"].strip(): x["aid"] for x in pb}
+        self.assertEqual(by_body_a, by_body_b)
+        # aids are namespaced digests, never positional a+i
+        for x in pa:
+            self.assertTrue(x["aid"].startswith("ans:"))
+            self.assertNotRegex(x["aid"], r"^a\d+$")
+
+    def test_answered_answers_aid_unique_for_exact_duplicates(self):
+        twin = ("# Q\n\n## Answered\n\n"
+                "- **Same** → answered (2026-07-26): identical body.\n\n"
+                "- **Same** → answered (2026-07-26): identical body.\n")
+        items = watch.parse_answered_answers(twin)
+        self.assertEqual(len(items), 2)
+        self.assertNotEqual(items[0]["aid"], items[1]["aid"])
+        # deterministic: re-parse yields the same pair in the same order
+        again = watch.parse_answered_answers(twin)
+        self.assertEqual([x["aid"] for x in items], [x["aid"] for x in again])
+
+    def test_answers_open_state_rides_data_keep_seam(self):
+        # #238: no third snapshot path; answered details carry data-keep=aid
+        self.assertIn('data-keep="${id}"', watch.PAGE)
+        self.assertIn("e.aid", watch.PAGE)
+        self.assertIn("data-aid", watch.PAGE)
+        self.assertIn("'data-aid'", watch.PAGE)  # ghost strip list
+        self.assertNotIn("answerRecord(e, true, 'a' + i)", watch.PAGE)
+
     def test_atomic_write_text_replaces_and_leaves_no_temp(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "answers.md")

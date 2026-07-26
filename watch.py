@@ -9,6 +9,7 @@ on its next tick. No other write paths exist.
 """
 
 import argparse
+import hashlib
 import http.server
 import json
 import os
@@ -1898,12 +1899,17 @@ function buildQuestions(d) {
     : '<div class="dim">(none yet)</div>');
   return h + `</div>`;
 }
-function answerRecord(e, answered=false, key='') {
+function answerRecord(e, answered=false) {
   const body = `<div class="aqbody">${mdB(e.body)}</div>`;
-  return answered
-    ? `<details class="aq answered" data-aid="${esc(key)}"><summary>${esc(e.title)}</summary>${body}</details>`
-    : `<article class="aq open dreamin"><div class="qt">${esc(e.title)}</div>` +
-      `<div class="label">you asked · awaiting dreamer</div>${body}</article>`;
+  // #238: content-stable aid from the server backs both list identity and
+  // data-keep so open rides the existing snapshotFolds seam (re-open only).
+  if (answered) {
+    const id = esc(e.aid || '');
+    return `<details class="aq answered" data-aid="${id}" data-keep="${id}">` +
+      `<summary>${esc(e.title)}</summary>${body}</details>`;
+  }
+  return `<article class="aq open dreamin"><div class="qt">${esc(e.title)}</div>` +
+    `<div class="label">you asked · awaiting dreamer</div>${body}</article>`;
 }
 function buildAnswers(d) {
   let h = d.answers_health === 'unreadable'
@@ -1914,7 +1920,7 @@ function buildAnswers(d) {
   h += label(`open (${d.answers_open.length})`) +
     (d.answers_open.map(e => answerRecord(e)).join('') || `<div class="dim">none awaiting the dreamer</div>`);
   h += label(`answered (${d.answers_answered.length})`) +
-    (d.answers_answered.map((e, i) => answerRecord(e, true, 'a' + i)).join('') || `<div class="dim">none yet</div>`);
+    (d.answers_answered.map(e => answerRecord(e, true)).join('') || `<div class="dim">none yet</div>`);
   return `<div id="answersections">${h}</div>`;
 }
 async function sendAsk(form) {
@@ -2756,7 +2762,7 @@ function dreamAway(wrap, node, rect, clipTop) {
   // ghost is appended to `.wrap`, i.e. last — so that one attribute surviving
   // means the next tick reads the section as still open and re-opens it under
   // him, a second after he shut it.
-  const IDS = ['data-qid', 'data-qkey', 'data-sha', 'data-keep'];
+  const IDS = ['data-qid', 'data-qkey', 'data-sha', 'data-keep', 'data-aid'];
   for (const n of [node, ...node.querySelectorAll(IDS.map(a => `[${a}]`).join(','))])
     for (const a of IDS) n.removeAttribute(a);
   node.classList.add('qaghost');
@@ -5342,11 +5348,55 @@ def parse_open_answers(text):
     return _parse_entries(text, "Open", lift_answer=False)
 
 
+def _answer_aid_parts(title, when, body, follows):
+    """Normalized fields for #238 content identity (trailing noise ignored)."""
+    follows_blob = json.dumps(follows or [], sort_keys=True,
+                              separators=(",", ":"), ensure_ascii=False)
+    return (
+        (title or "").strip(),
+        (when or "").strip(),
+        (body or "").strip(),
+        follows_blob,
+    )
+
+
+def answer_record_aid(title, when, body, follows, ordinal=0):
+    """Deterministic content identity for an answered answers.md record (#238).
+
+    Namespaced SHA-256 over the full logical record (title, resolution
+    timestamp, body, follows) plus a 0-based occurrence ordinal among
+    exact-content twins in file order. Fields are stripped so trailing
+    newlines from the parser do not invent a new id on reorder. The same
+    value backs `data-aid` and `data-keep` on the page so open state rides
+    `snapshotFolds` and FLIP tracks the logical record, not list position.
+    Body edits change the id (fail to restore is acceptable; never open
+    another record).
+    """
+    t, w, b, follows_blob = _answer_aid_parts(title, when, body, follows)
+    payload = "\n".join(["ans.v1", t, w, b, follows_blob, str(int(ordinal))])
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
+    return f"ans:{digest}"
+
+
 def parse_answered_answers(text):
-    """Questions resolved by the loop, in file order."""
+    """Questions resolved by the loop, in file order.
+
+    Each item carries `aid` — a content-stable id for the page's open-state
+    restore (#238). Exact content twins get successive ordinals so they stay
+    distinguishable; reordering different records keeps each id.
+    """
     items = _parse_entries(text, "Answered", lift_answer=False)
+    seen = {}
     for item in items:
         item["when"] = answered_at(item["body"])
+        twin_key = _answer_aid_parts(
+            item.get("title"), item.get("when"), item.get("body"),
+            item.get("follows"))
+        ordinal = seen.get(twin_key, 0)
+        seen[twin_key] = ordinal + 1
+        item["aid"] = answer_record_aid(
+            item.get("title"), item.get("when"), item.get("body"),
+            item.get("follows"), ordinal)
     return items
 
 

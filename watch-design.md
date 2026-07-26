@@ -178,8 +178,19 @@ after a confirmed `/ask` success; refused/unreachable sends keep the words and
 explain the outcome. Its value, caret, resize, scroll and focus ride live
 `/mtime` renders through `snapshotAskState`/`restoreAskState`. Open records
 arrive through the standing `.dreamin` idiom; answered disclosures inherit the
-shared transition/reduced-motion rules in `transitions.md`. Add a
-view by adding a builder + a `routeOf`/`TINT`/`SEED` entry, not new chrome.
+shared transition/reduced-motion rules in `transitions.md`. **What he opened
+on an answered record survives the tick (#238)** the same way a section does:
+each answered `<details>` carries a content-stable `aid` from
+`parse_answered_answers` (SHA-256 over title, resolution `when`, body,
+`follows`, plus a 0-based occurrence ordinal among exact-content twins) on
+both `data-aid` (list FLIP) and `data-keep` (the existing
+`snapshotFolds`/`restoreFolds` seam — **re-open only**, never close). Not
+positional `a+i` and not title alone: duplicate titles, reorder, and deletion
+of another record must keep open on the same logical body. A body edit may
+fail to restore (prefer miss over opening the wrong record). No third
+snapshot path. `dev/capture/answers.mjs` proves node replacement plus the
+three identity cases. Add a view by adding a builder + a `routeOf`/`TINT`/`SEED`
+entry, not new chrome.
 
 **`expand` is structure; HOW it moves is `transitions.md`'s, not this
 file's.** A `<details>` that changes the page's layout travels: the card's own
@@ -359,8 +370,10 @@ Two seams exist; extend one rather than adding a third.
 scroll, box height, destination mode and every `<details>` inside it (#118,
 #111), keyed by `data-qid`. `snapshotFolds`/`restoreFolds` carries a section's
 `open`, keyed by `data-keep` (#141) — a new section opts in by carrying the
-attribute. Both run **before** the regroups, which measure, and **folds run
-before cards** (#179, above).
+attribute. Answered disclosures on `/answers` opt in the same way (#238), with
+`data-keep` equal to their content-stable `aid` (not list index). Both run
+**before** the regroups, which measure, and **folds run before cards** (#179,
+above).
 
 ### The persistent chrome
 
