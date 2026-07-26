@@ -2264,14 +2264,13 @@ const TITLE_ROUTE = { dashboard: () => '', questions: () => 'questions',
 const STALE_TICK_MS = 10 * 60 * 1000;
 const statusOf = d => (d && d.status && typeof d.status === 'object')
   ? d.status : null;
-/* the honest count of what is waiting on HIM. `awaiting_human` is the loop's
-   own statement and outranks anything derived (#130); open questions are the
-   fallback for a target whose loop has not written one. */
+/* The honest count of what is visibly waiting on HIM. It derives from the
+   open questions he can inspect, never from hand-maintained status prose;
+   `awaiting_human` still names WHAT waits in the status panel (#181). */
 function titleNeed(d) {
   if (!d) return null;
   if (d.questions_health === 'unreadable') return '!';
-  const s = statusOf(d), a = s && s.awaiting_human;
-  return String(Array.isArray(a) ? a.length : (d.open_questions || 0));
+  return String(d.open_questions || 0);
 }
 function titleLive(d) {
   const s = statusOf(d);

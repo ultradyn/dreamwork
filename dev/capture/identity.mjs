@@ -146,11 +146,11 @@ notes.push(`awaiting ${AWAIT_N}, ${OPENQ} open q`);
 ok('the two counts differ, so a title reading the wrong one is visible ' +
    '(else every check about WHICH source is vacuous)',
    OPENQ > 0 && AWAIT_N !== OPENQ);
-let t = await titleWhen(x => x.startsWith(`(${AWAIT_N})`));
-notes.push(`awaiting ${AWAIT_N}:            ${t}`);
+let t = await titleWhen(x => x.startsWith(`(${OPENQ})`));
+notes.push(`awaiting ${AWAIT_N}, visible ${OPENQ}: ${t}`);
 ok('the count is FIRST — tabs truncate from the right', /^\(\d+\) /.test(t));
-ok('...and it is awaiting_human\'s length, not the open-question count',
-   t.startsWith(`(${AWAIT_N}) `));
+ok('...and it is the visible open-question count, not awaiting_human drift',
+   t.startsWith(`(${OPENQ}) `));
 ok('the project is the target\'s own name', t.includes('alpha-loop'));
 /* ...and the app's name is beside it (his ruling, 15:30). Asserted as the
    compound field rather than as a substring, so a title that dropped the
@@ -158,28 +158,33 @@ ok('the project is the target\'s own name', t.includes('alpha-loop'));
 ok('...beside the app\'s, in one field', t.includes('dreamwork/alpha-loop'));
 ok('...and the loop reads as alive', /·\s*dreaming/.test(t));
 ok('the dashboard route adds nothing after the state',
-   new RegExp(`^\\(${AWAIT_N}\\) dreamwork/alpha-loop · dreaming$`).test(t));
+   new RegExp(`^\\(${OPENQ}\\) dreamwork/alpha-loop · dreaming$`).test(t));
 
 // ── it changes with no navigation at all ──────────────────────────────────
 /* The whole feature. A title assembled once in navigate() passes every check
    above and none of the ones below. */
 writeStatus({ awaiting_human: ['only this one now'] });
-t = await titleWhen(x => x.startsWith('(1)'));
-notes.push(`awaiting 1 (live):     ${t}`);
-ok('a new count reaches the title with no navigation', t.startsWith('(1) '));
+await sleep(2600);
+t = await title();
+notes.push(`awaiting prose changed, visible count stable: ${t}`);
+ok('awaiting_human prose may change without changing the visible count',
+   t.startsWith(`(${OPENQ}) `));
 
-// ── zero reads as zero ────────────────────────────────────────────────────
+// ── zero still reads as the visible count ─────────────────────────────────
 writeStatus({ awaiting_human: [] });
-t = await titleWhen(x => x.startsWith('(0)'));
-notes.push(`awaiting none:         ${t}`);
-ok('zero renders as (0), not as an empty bracket', t.startsWith('(0) '));
+await sleep(2600);
+t = await title();
+notes.push(`awaiting none, visible count stable: ${t}`);
+ok('an empty awaiting_human does not erase visible open questions',
+   t.startsWith(`(${OPENQ}) `));
 
 // ── the fallback: no status.json at all ───────────────────────────────────
 /* A target whose loop has never written one still has questions.md, so the
    count falls back to the entries in it — the number the server reported
    above, not a literal, which is what #197 broke by adding one. */
 rmSync(SPATH, { force: true });
-t = await titleWhen(x => x.startsWith(`(${OPENQ})`));
+await sleep(2600);               // count is unchanged; wait for status to vanish
+t = await title();
 notes.push(`no status.json:        ${t}`);
 ok('with no status.json the count falls back to open questions',
    t.startsWith(`(${OPENQ}) `));
@@ -204,7 +209,8 @@ writeFileSync(QPATH, QGOOD);
 
 // ── an unparseable last_tick claims nothing, and is still shown ───────────
 writeStatus({ awaiting_human: [], last_tick: 'whenever' });
-t = await titleWhen(x => x.startsWith('(0)') && !/dreaming|stalled/.test(x));
+await sleep(2600);               // count stays OPENQ, only liveness changes
+t = await title();
 notes.push(`last_tick 'whenever':  ${t}`);
 ok('an unparseable last_tick produces no liveness word',
    !/dreaming|stalled/.test(t));
@@ -220,8 +226,8 @@ writeStatus({ awaiting_human: ['still waiting on you'],
 t = await titleWhen(x => /stalled/.test(x));
 notes.push(`tick 11m old:          ${t}`);
 ok('a tick older than two heartbeats reads as stalled', /stalled/.test(t));
-ok('...and the count is still there beside it — both facts, not one',
-   /^\(1\) dreamwork\/alpha-loop · stalled/.test(t));
+ok('...and the visible count is still there beside it — both facts, not one',
+   new RegExp(`^\\(${OPENQ}\\) dreamwork/alpha-loop · stalled`).test(t));
 
 // ── the flip rides the CLOCK, not a disk change ───────────────────────────
 /* A loop that stops writing generates no event: no mtime change, no tick,
@@ -242,13 +248,13 @@ ok('...and nothing did touch disk (the mtime never moved)',
 
 // ── the route is the LAST field, so it truncates first ────────────────────
 writeStatus({ awaiting_human: ['one'] });
-await titleWhen(x => x.startsWith('(1)'));
+await sleep(2600);               // prose changes; visible count does not
 const routed = {};
 for (const [name, path] of [['questions', '/questions'],
                             ['file', '/file?p=watch.py'],
                             ['review', '/review?p=goal-hierarchies.html']]) {
   await p.goto(BASE + path, { waitUntil: 'networkidle' });
-  routed[name] = await titleWhen(x => x.startsWith('(1)'));
+  routed[name] = await titleWhen(x => x.startsWith(`(${OPENQ})`));
 }
 notes.push('routes:\n' + Object.entries(routed)
   .map(([k, v]) => `  ${k.padEnd(10)} ${v}`).join('\n'));
@@ -256,8 +262,9 @@ ok('a route appends itself after the state', /· questions$/.test(routed.questio
 ok('...the file route names the file', /· watch\.py$/.test(routed.file));
 ok('...the review route names the artifact',
    /· review goal-hierarchies\.html$/.test(routed.review));
-ok('...and every route still leads with the count and the project',
-   Object.values(routed).every(v => /^\(1\) dreamwork\/alpha-loop · /.test(v)));
+ok('...and every route still leads with the visible count and the project',
+   Object.values(routed).every(v =>
+     new RegExp(`^\\(${OPENQ}\\) dreamwork/alpha-loop · `).test(v)));
 
 // ── the favicon (#153) ────────────────────────────────────────────────────
 /* Read PIXELS, not the href. Two icons differ as strings the moment anything
@@ -309,7 +316,9 @@ const favRead = () => p.evaluate(FAV_READ);
 const stalled = extra => writeStatus({ awaiting_human: [],
   last_tick: iso(Date.now() - 11 * 60 * 1000), ...extra });
 stalled();
+writeFileSync(QPATH, '# Questions for the human\n\n## Open\n\n## Answered\n');
 await titleWhen(x => /^\(0\).*stalled/.test(x));
+await sleep(1200);               // favicon follows title on the next age sweep
 const favA = await favRead();
 notes.push(`favicon: ${favA.href.slice(0, 24)}… ${favA.href.length}b ` +
            `ring=${favA.ring} pip=${favA.pip} lum=${favA.lum}`);
@@ -318,12 +327,13 @@ ok('the favicon is inline — a data URI, not a file beside the server',
 ok('...and it is drawn, not blank', favA.lum > 0);
 ok('the ring carries the page\'s hue, not grey',
    favA.ring[3] > 40 && favA.ring[2] > favA.ring[0] + 20);
-ok('nothing waiting: no badge', favA.pip[3] < 20);
-
+ok('nothing visibly waiting: no badge', favA.pip[3] < 20);
 // it rests while the loop is not ticking
 await sleep(3000);
 const stall2 = await favRead();
 ok('a stalled loop\'s icon holds still', stall2.href === favA.href);
+writeFileSync(QPATH, QGOOD);
+await titleWhen(x => new RegExp(`^\\(${OPENQ}\\).*stalled`).test(x));
 
 // ...and it advances once a second while the loop is dreaming. Polled
 // rather than sampled after a fixed sleep: on a loaded machine a 1s
@@ -345,7 +355,7 @@ ok('...and a stalled icon reads faded in a single frame, not only across two',
 
 // the badge, frame pinned again
 stalled({ awaiting_human: ['you are the bottleneck'] });
-await titleWhen(x => x.startsWith('(1)'));
+await titleWhen(x => x.startsWith(`(${OPENQ})`));
 const favPip = await favRead();
 notes.push(`pip accent: ${favPip.pip}`);
 ok('something waiting: a badge appears', favPip.pip[3] > 200);
