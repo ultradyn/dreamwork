@@ -102,52 +102,7 @@
     they were indistinguishable from his.
     **This question is genuinely open and has never been answered.**
 
-- **P2 · 2026-07-25 — should the PreCompact hook ship, and as a plugin? (#138)**
-  This one is here because it was missing. It has been listed as
-  awaiting you in `status.json` for hours and was never written down —
-  the third time today an ask lived only in a task description
-  (also #158, #172). Recording it is the fix; see #181 for the
-  mechanism fix.
 
-  **The thing itself**: compaction can drop what the loop knows. The
-  loop's answer is to write down before compacting, which currently
-  depends on an agent remembering to. Claude Code fires a **PreCompact**
-  hook for both manual and automatic compaction, so the write-down could
-  be automatic. Verified against the binary (2.1.219) while writing
-  `compaction.md`: a hook's stdout is appended to the summariser's focus
-  instructions — undocumented, and genuinely useful, because the loop
-  could tell the summariser what must survive.
-
-  **Why it needs you and not a rec**: a hook is a line in *your* machine
-  config, not project content. It fires on every compaction in that
-  project, including sessions that have nothing to do with dreamwork. And
-  blocking a compact is a hard skip, not a postponement — a hook that
-  fails at the wrong moment removes the compaction rather than delaying
-  it.
-
-  Rec: **yes, as an optional plugin, off by default** — same shape as
-  `ud-dreamwork-github`, so loading it is a recorded decision in
-  DREAMWORK.md rather than something the loop does to your config. Bundle
-  it with #156 (the PostToolUse lint hook), since both are the same
-  question — may the loop install hooks — and answering once beats twice.
-
-  Answer "ship it", "not yet", or name a different shape.
-
-- **P2 · 2026-07-25 — whose is `ud-dw-generate`? It is untracked in this repo
-  and I am not touching it.** An 8KB executable appeared at 16:17: a
-  preview-URL minter that reads repo+branch from the cwd, mints a nonce,
-  and creates a directory on a server (config outside version control,
-  keyed by repo slug; the example names `dd2-data-download-page`).
-
-  Not mine and not the dreamer's — it flagged the same file and left it
-  alone, which was right. Two agents have been committing in this tree
-  all afternoon; both stage by explicit path, so it has survived, but it
-  is not gitignored and one `git add -A` from anywhere would sweep it in.
-
-  **Nothing needs deciding urgently** — it is safe as long as nobody gets
-  careless. Say what it is when you get a moment: yours to keep here,
-  something that belongs in another repo, or scratch to delete. Until you
-  do it stays exactly where it is.
 
 - **P2 · 2026-07-25 — #194: where does an upgrade check get its commit range,
   when the release has no repo?** Your version idea is captured and
@@ -187,6 +142,74 @@
   the future upgrade pass has to read blind.
 
 ## Answered
+
+- **P2 · 2026-07-25 — whose is `ud-dw-generate`? It is untracked in this repo
+  and I am not touching it.**
+  → answered (2026-07-26 18:51): Leave the executable byte-for-byte
+  untouched. Added only `ud-dw-generate.notes.md`: intended standalone
+  purpose is random ASCII-safe data (hex initially); current script came
+  from Max’s dd2 download-page request and remains coupled to dd2. Revisit
+  after dd2 is fixed and remove that dependency under #285.
+ An 8KB executable appeared at 16:17: a
+  preview-URL minter that reads repo+branch from the cwd, mints a nonce,
+  and creates a directory on a server (config outside version control,
+  keyed by repo slug; the example names `dd2-data-download-page`).
+
+  Not mine and not the dreamer's — it flagged the same file and left it
+  alone, which was right. Two agents have been committing in this tree
+  all afternoon; both stage by explicit path, so it has survived, but it
+  is not gitignored and one `git add -A` from anywhere would sweep it in.
+
+  **Nothing needs deciding urgently** — it is safe as long as nobody gets
+  careless. Say what it is when you get a moment: yours to keep here,
+  something that belongs in another repo, or scratch to delete. Until you
+  do it stays exactly where it is.
+  - **Answer (via watch, 2026-07-26 18:50):** uhh yeah it was just meant
+    to generate hex i think. add a ud-dw-generate.notes.md next to it
+    saying that ud-dw-generate should generate random data (ascii safe)
+    and that it was based on something Max requested in the dd2 download
+    page repo but we should revisit it later once i get the dd2 thing
+    fixed up so it doesn't depend on it.
+
+- **P2 · 2026-07-25 — should the PreCompact hook ship, and as a plugin? (#138)**
+  → answered (2026-07-26 18:50): Approved as recommended: ship #138 and
+  #156 together as one optional plugin, off by default. Loading is a
+  recorded DREAMWORK.md decision; it never silently edits machine config.
+  PreCompact preservation must be silent/fail-safe and must not turn a
+  preservation failure into skipped compaction. Two byte-identical receipts
+  at 18:48:53 are one logical answer and a #274 duplicate-delivery witness.
+
+  This one is here because it was missing. It has been listed as
+  awaiting you in `status.json` for hours and was never written down —
+  the third time today an ask lived only in a task description
+  (also #158, #172). Recording it is the fix; see #181 for the
+  mechanism fix.
+
+  **The thing itself**: compaction can drop what the loop knows. The
+  loop's answer is to write down before compacting, which currently
+  depends on an agent remembering to. Claude Code fires a **PreCompact**
+  hook for both manual and automatic compaction, so the write-down could
+  be automatic. Verified against the binary (2.1.219) while writing
+  `compaction.md`: a hook's stdout is appended to the summariser's focus
+  instructions — undocumented, and genuinely useful, because the loop
+  could tell the summariser what must survive.
+
+  **Why it needs you and not a rec**: a hook is a line in *your* machine
+  config, not project content. It fires on every compaction in that
+  project, including sessions that have nothing to do with dreamwork. And
+  blocking a compact is a hard skip, not a postponement — a hook that
+  fails at the wrong moment removes the compaction rather than delaying
+  it.
+
+  Rec: **yes, as an optional plugin, off by default** — same shape as
+  `ud-dreamwork-github`, so loading it is a recorded decision in
+  DREAMWORK.md rather than something the loop does to your config. Bundle
+  it with #156 (the PostToolUse lint hook), since both are the same
+  question — may the loop install hooks — and answering once beats twice.
+
+  Answer "ship it", "not yet", or name a different shape.
+  - **Answer (via watch, 2026-07-26 18:48):** rec
+  - **Answer (via watch, 2026-07-26 18:48):** rec
 
 - **P2 · 2026-07-26 — #213 task-origin contract: adopt the forward-only
   cutoff?**

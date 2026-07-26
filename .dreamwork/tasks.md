@@ -18,9 +18,18 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **285**
+Next id: **286**
 
 ## Open
+
+- **#285** — Rebuild `ud-dw-generate` as a standalone ASCII-safe random-data
+  generator · P2 · utility design · origin: **human** · **human via watch 18:50**
+  · current untracked executable came from a dd2 download-page request but is
+  coupled to dd2 preview infrastructure and is not the intended generator ·
+  preserve it untouched; provenance/intent recorded in `ud-dw-generate.notes.md`
+  · after dd2 is fixed, define CLI/output/length/entropy/error contract (hex is
+  initial expected safe shape), remove dd2 dependency, add deterministic contract
+  tests without weakening randomness, then decide install/commit location
 
 - **#284** — De-emphasise directory paths in file-view headings · P2 · UI
   polish · origin: **human** · **human via watch 18:33** · full paths such as
@@ -114,14 +123,14 @@ Next id: **285**
   secrets, reverse proxy and threat model · public/WAN support remains forbidden
   until a reviewed design is approved
 
-- **#274** — Make duplicate Web UI submissions idempotent end to end · P0/P1 · bug ·
-  origin: **loop** · 25m · at 17:48 one human #233 action produced two byte-identical
-  `/answer` receipts and two identical question bullets in the same second ·
-  preserve one exact answer; diagnose double-click/client handler versus retry;
-  stable client action UUID before send, server receipt dedupe and idempotent
-  application belong to #263/#269 · red fixture must replay/concurrently submit
-  same ID and assert one receipt/application while a new ID with same text remains
-  a distinct intentional action
+- **#274** — Make duplicate Web UI submissions idempotent end to end · P0/P1 ·
+  bug · origin: **loop** · witnesses: at 17:48 one #233 action produced two
+  byte-identical answers ~188ms apart; #138 at 18:48:53 produced two fully byte-
+  identical same-timestamp receipts and duplicate Answer bullets · preserve one
+  logical answer per intent; diagnose double-click/handler versus retry; stable
+  client UUID before send, receipt dedupe and idempotent application belong to
+  #263/#269 · replay/concurrent same-ID fixture asserts one receipt/application;
+  new ID with same text remains a distinct intentional action
 
 - **#271** — Make notes appear promptly across open dashboard browsers · P1 · bug ·
   25m · origin: **human** · **human via watch 16:58** · observed symptom only:
@@ -479,13 +488,15 @@ Next id: **285**
   origin: **loop** · blocked on #213 · preserve human/loop/unknown at
   first sight; a later edit must never retroactively classify an arrival
 
-- **#138** — Ship a PreCompact hook so the write-down is automatic ·
-  P2 · task · 60m · **scope gate applies**: Claude Code-specific
-  machinery in a harness-portable skill, and it touches his own config
-  — rec is an optional plugin, but confirm before building. A hook
-  fires AT compaction, so it guarantees the write-down and cannot buy
-  landing time; stdout becomes summariser instructions, so it must be
-  silent by construction
+- **#138/#156** — Ship optional compaction/lint hooks plugin · P2 · feature ·
+  60m · origin: **loop** · **approved via watch 18:48** as recommended · one
+  optional plugin, off by default, same shape as `ud-dreamwork-github`; loading
+  is an explicit recorded `DREAMWORK.md` decision and never silent machine-
+  config mutation · Claude Code PreCompact writes preservation focus but cannot
+  buy landing time; silent/fail-safe so hook failure never blocks/skips compact ·
+  bundle PostToolUse ledger lint under same consent boundary · test manual/auto
+  compaction, stdout contract, unavailable target and failure behavior · two
+  identical approval deliveries applied once; duplicate witness recorded #274
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
