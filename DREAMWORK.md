@@ -54,9 +54,11 @@ dreamwork-version: 5853e1789929
 
 - Cadence & comms: brief updates; `attn` (TTS) only for blockers,
   questions, and notable milestones.
+- Subagent models (2026-07-26): use `pooler/gpt-5.6-sol` with low
+  thinking by default; planning subagents use `pooler/gpt-5.6-xhigh`.
 - Autonomy: commit each increment (the skill folder is its own git repo).
-  Push at session wrap and whenever asked — not per increment
-  (2026-07-25). Deploy is not authorized.
+  Push and deploy as needed (authorized 2026-07-26); neither needs a
+  separate confirmation.
 - Detail is ranked, never withheld (2026-07-25, his words): "in general
   we always want to present the user with more details if there are more
   details and users might want them." A thing that exists must be

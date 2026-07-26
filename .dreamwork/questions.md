@@ -129,63 +129,6 @@
 
   Answer "ship it", "not yet", or name a different shape.
 
-- **P1 · 2026-07-25 — may I deploy the dashboard? DREAMWORK.md says no, and a
-  deploy plainly happened.** Line 56 reads "Deploy is not authorized."
-  Meanwhile `just deploy` exists as a recipe, `status.json` tracks a
-  deployed revision, and there is a server answering on 35110 from a
-  snapshot written at 15:54. Both cannot be true, and I would rather ask
-  than pick the reading that suits me.
-
-  Two readings. Either it means **the project under test** — a generic
-  guardrail carried in from the skill, with the watch dashboard exempt
-  because it is the loop's own instrument rather than a product — or it
-  means **literally do not run `just deploy`**, in which case that has
-  been getting violated and should stop today.
-
-  **Why it is not academic right now**: the deployed snapshot is
-  `10ca98a` (15:48) and every `watch.py` fix since is invisible to you —
-  including **#179, the P1 you reported**: the dashboard taking focus out
-  of the box while you type. It is fixed and committed. You cannot feel
-  it until a redeploy, so the dashboard in front of you still has the bug
-  you reported.
-
-  The title, the favicon and the tint ARE deployed — you should be seeing
-  those already.
-
-  **For the current count, ask rather than trust this sentence**:
-  `python3 deployed.py --target .` names the revision and lists every
-  commit it is missing. I wrote "five" here first and then "two", and
-  both were out of date within the hour — which is #181's point exactly,
-  and the reason #147 now computes this instead of anyone stating it.
-
-  Worth knowing about that fix, because the report was a red herring: the
-  commits panel was innocent. `focus()` on an element inside a **closed**
-  `<details>` does nothing and reports nothing, so restoring your caret
-  into a folded section returned the box filled, caret placed, and dead.
-  It fired on every re-render, not just a commit — the panel was simply
-  the one thing whose re-render you could see.
-
-  **Rec: yes, deploy now.** `just deploy` snapshots `git show HEAD:watch.py`,
-  not the working tree, so it takes the committed fix and none of the
-  half-done #174/#184 work still in flight. That revision has passed 281
-  pytest, lint, the new motion guard, and five other relevant guards; the
-  full guard suite runs when the batch closes. If you would rather deploy
-  only fully-gated revisions, say so and it waits — it is your dashboard
-  and your interruption cost either way.
-
-  Either answer folds into DREAMWORK.md, because that line needs to stop
-  being ambiguous.
-  - **Follow-up (loop, 2026-07-25 16:24):** correcting my own numbers
-    above — I first wrote "five commits behind, missing the title,
-    favicon and tint", then "matches no commit at all". Both were wrong.
-    A shell loop was mangling `$r:watch.py` into `$r` + `tch.py`, and I
-    had `2>/dev/null` on it, so `git show` failed on **every** iteration
-    and the comparison silently compared nothing — three wrong answers in
-    a row from a check that was never running. Redone in Python with
-    errors visible. This is the fourth silent-comparison bug today and
-    the reason #147 is now in progress: a staleness check done by hand
-    gets it wrong, which is precisely the argument for the hub doing it.
-
 - **P2 · 2026-07-25 — whose is `ud-dw-generate`? It is untracked in this repo
   and I am not touching it.** An 8KB executable appeared at 16:17: a
   preview-URL minter that reads repo+branch from the cwd, mints a nonce,
@@ -275,6 +218,11 @@
   under every answer.
 
 ## Answered
+
+- **May I deploy the dashboard?** → yes (2026-07-26): push and deploy as
+  needed; neither requires separate confirmation. DREAMWORK.md now carries
+  the durable authority, resolving the earlier contradiction. The stale
+  live snapshot should be updated immediately.
 
 - **May the dashboard read the session transcript? (#180)** → "Yes the
   dashboard may" via watch (2026-07-25 15:36), with three mitigations
