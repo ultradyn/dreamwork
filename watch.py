@@ -4612,44 +4612,44 @@ def git_tail(target, n=GIT_ROWS):
     it displayed would be reading its own output back. Whatever the row shows
     is derived here; nothing downstream parses it.
 
-    Split on the unit separator, not on a space: a subject may contain
-    anything at all, and `%h %s` cannot be taken apart again without guessing
-    where one ends. A record that does not split into enough fields is dropped
-    rather than half-read.
+    Git's `-z` mode makes NUL the framing byte. Commit messages and paths
+    cannot contain NUL, so unlike the former unit/record separators this frame
+    cannot collide with a subject, body, or filename. A malformed record is
+    dropped rather than half-read.
 
-    THE RECORD SEPARATOR IS WHY THIS IS ONE CALL. `--name-only` prints the
-    file list *after* the format, on its own lines, so a line-oriented parse
-    cannot tell a filename from the next commit — but `%x1e` at the head of
-    the format makes each commit one record, and the trailing `%x1f` puts the
-    file list in the last field. A body may itself contain a separator (it is
-    his prose), so the body is rejoined from the middle rather than indexed.
+    THE RECORD FRAME IS WHY THIS IS ONE CALL. `--name-only` prints the file
+    list *after* the format, so a line-oriented parse cannot tell a filename
+    from the next commit. Two leading NULs plus the prior record's terminator
+    create a run of at least three between records; single NULs frame fields
+    and filenames inside one record.
     """
     try:
         res = subprocess.run(
             ["git", "--no-optional-locks", "-C", target, "log", "-n", str(n),
-             "--name-only",
-             "--pretty=format:%x1e%h\x1f%ct\x1f%s\x1f%an\x1f%H\x1f%b\x1f"],
+             "-z", "--name-only",
+             "--pretty=format:%x00%x00%h%x00%ct%x00%s%x00%an%x00%H%x00%b%x00"],
             capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         return []
     if res.returncode != 0:
         return []
     out = []
-    for rec in res.stdout.split("\x1e"):
-        if not rec.strip():
-            continue
-        parts = rec.split("\x1f")
-        if len(parts) < 7:
+    for rec in re.split("\x00{3,}", res.stdout):
+        parts = rec.lstrip("\x00").split("\x00")
+        if len(parts) < 5:
             continue
         try:
             when = int(parts[1])
         except ValueError:
             continue
-        files = [f for f in parts[-1].splitlines() if f.strip()]
+        body = parts[5].strip("\n") if len(parts) > 5 else ""
+        files = parts[6:] if len(parts) > 6 else []
+        if files:
+            files[0] = files[0].removeprefix("\n")
+        files = [f for f in files if f]
         out.append({
             "sha": parts[0], "t": when, "subject": parts[2],
-            "who": parts[3], "full": parts[4],
-            "body": "\x1f".join(parts[5:-1]).strip("\n"),
+            "who": parts[3], "full": parts[4], "body": body,
             "files": files[:GIT_FILES],
             "more": max(0, len(files) - GIT_FILES),
         })

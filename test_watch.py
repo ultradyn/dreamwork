@@ -348,11 +348,14 @@ class TestCollector(unittest.TestCase):
             # parse rejoins the middle rather than indexing a fixed position
             commit("feat: with a body", "line one\nline two\x1fand a separator",
                    "a.txt", "sub/b.txt")
-            commit("fix: no body at all", None, "c.txt")
+            commit("fix: subject \x1f carries one separator \x1e and the other",
+                   None, "c.txt")
             rows = watch.git_tail(d)
             self.assertEqual(len(rows), 2)
             newest, older = rows
-            self.assertEqual(newest["subject"], "fix: no body at all")
+            self.assertEqual(
+                newest["subject"],
+                "fix: subject \x1f carries one separator \x1e and the other")
             self.assertEqual(newest["body"], "")
             self.assertEqual(newest["files"], ["c.txt"])
             self.assertEqual(older["who"], "a commit author")
