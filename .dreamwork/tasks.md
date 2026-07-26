@@ -151,21 +151,6 @@ Next id: **287**
   while preserving iframe, selected target, focus/draft and transition/RM state ·
   keep unsent #269 draft semantics separate from received-note propagation
 
-- **#270** — Harden and re-review the #229 topic-chat proposal · P1 ·
-  architecture/review · origin: **human** · **human revision directive via watch
-  17:10** · active now · update artifact against the full Grok architecture
-  review preserved in the answered #229 thread and measured UX review at
-  `.dreamwork/docs/research/review-route-ux-272.md` · define one recovery
-  authority/order, bounded worker adapter, per-target cross-process lease,
-  transcript confinement, attachment MVP/atomic promotion, derived index,
-  queue-full semantics, idempotent finalisation, privacy/export and provenance
-  redaction; also propose viewport-bounded sticky header/thread/composer dock,
-  decision navigation, mobile Document/Discussion model, #254 nesting and global
-  composer treatment with transitions/RM · retain transcript-first/simple-mode
-  strengths · self-review against Dreamwork goals, independently visually review,
-  then present a **new** review artifact/question · no implementation authority ·
-  design consumes #263; implementation remains blocked on #266
-
 - **#269** — Make every Web UI text draft durable and cross-tab coherent · P1 ·
   client reliability/module · origin: **human** · **human via watch 16:45** ·
   composer, answer/note boxes, future chat inputs and every later user text field
@@ -435,17 +420,16 @@ Next id: **287**
   parallel processing outside the main queue; integrate with #228 project
   settings, expose dispatch/ownership/result channel, and never silently fall
   back to inline · blocked on #229's lifecycle design
-- **#229** — Propose threaded topic chats with ephemeral agents · P1 · task ·
-  origin: **human** · **do next via watch 12:57** · self-contained HTML
-  proposal integrated with dream dashboard: durable per-topic chat log as the
-  primary input; one fresh ephemeral agent per turn; in-flight lock + queued
-  follow-up; optional interrupt analysis; dashboard placement and UI; failure,
-  recovery, privacy, concurrency, cost, state machine, and smallest staged
-  build · proposal only, no implementation authority · artifact complete and
-  visually reviewed at `.dreamwork/review/threaded-topic-chats.html` · awaiting
-  A–E approval in questions.md · **human amendment (re-homed 16:12 onto this
-  card after #266 misfile):** chats attach to any artifact or precise reference
-  within one, and remain listed on the global `/chat` route · also under #253
+- **#229** — Decide revised topic-chat proposal direction · P1 · proposal gate ·
+  origin: **human** · v2 artifact at
+  `.dreamwork/review/threaded-topic-chats-v2.html` (`9f08e47`) supersedes v1 for
+  future design, retains old artifact as history · integrates 15 Grok concerns,
+  #272 measured UX and #253 attachment/main-dreamer amendments · architecture
+  PASS; Vision/Geometry FAIL→fix→PASS; offline clean, instant bounded decision
+  navigation, desktop dock and mobile Document/Discussion model · **awaiting new
+  R1–R4 dashboard answer** · proposal approval is not implementation authority;
+  implementation remains gated on #263 prove-applied, WorkerAdapter proof, #239
+  and consumption of landed #266 plus #269/#271
 
 - **#228** — Unify project dashboard settings · P2 · idea · 30m ·
   origin: **human** · implication of **human via watch 12:49**: all
@@ -950,6 +934,13 @@ Next id: **287**
   **blocked**: human pick
 
 ## Recently landed
+
+**#270** rebuilt the #229 topic-chat proposal around one #263 receipt authority,
+main-dreamer-first operation, explicit bounded worker promotion, shared leases,
+idempotent finalisation, attachment MVP, derived indexes and staged cutover.
+Grok architecture PASS; Vision/Geometry FAILed then PASSed after anchor/mobile/
+long-scroll fixes. Artifact `threaded-topic-chats-v2.html` at `9f08e47`; new R1–R4
+question filed, no implementation authority (2026-07-26).
 
 **#233** adds explicit unauthenticated trusted-LAN binding while preserving the
 loopback default. Exact Host gates every request; browser writes additionally

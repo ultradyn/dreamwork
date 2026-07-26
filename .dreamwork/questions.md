@@ -2,9 +2,26 @@
 
 ## Open
 
+- **P1 · 2026-07-26 — #229/#270 topic chats v2: accept the revised
+  proposal direction?** New reviewed artifact:
+  `.dreamwork/review/threaded-topic-chats-v2.html`. It supersedes v1 for future
+  design while preserving the old artifact as history.
 
+  Rec **R1**: accept the revised direction only. It has one recovery spine
+  (client attempt → durable #263 receipt → application → transcript), starts
+  with the main dreamer, requires explicit proved WorkerAdapter promotion,
+  shares cross-process leases/caps, makes attachments MVP, keeps indexes
+  derived, and replaces the unreachable review composer with a viewport dock
+  plus mobile Document/Discussion tabs.
 
+  Architecture PASS. Vision and Geometry initially found clipped decision
+  navigation, a detached mobile v2 marker and a 1.5s long-range smooth scroll;
+  all were fixed and both rereviews PASS. Approval does **not** authorize
+  implementation: #263 prove-applied reconciliation, WorkerAdapter proof, #239,
+  and #266/#269/#271 integration gates remain.
 
+  Answer `Accept R1 as proposal direction only`, `Accept R2 with amendments:
+  …`, `Choose R3; rework … and show …`, or `Choose R4; pause topic chats`.
 
 - **P3 · 2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
   Stages 1-5 shipped: the skill exists, is installed and indexed, walks
