@@ -2,40 +2,33 @@
 
 ## Pre-dispatch (coordinator)
 
-- [ ] Task eligible and unblocked
-- [ ] Owned paths listed and **disjoint** from in-flight claims
-- [ ] Ports/resources assigned if worker will bind any
-- [ ] `.worktrees/` is gitignored
-- [ ] Branch name chosen; worktree path free
-- [ ] Worktree created from clean baseline (current master tip)
-- [ ] Claim recorded (status.json / peers registry)
-- [ ] Prompt includes ownership, forbids, red-first, evidence template
-- [ ] Wake channel actually delivers (not write-only)
+- [ ] Task eligible; paths disjoint from active claims
+- [ ] Ports assigned if needed
+- [ ] `.worktrees/` gitignored; claims ledger exists (co-agent)
+- [ ] Atomic `git worktree add -b fix/N-slug .worktrees/N-slug <base>`
+- [ ] Claim recorded (ledger for co-agent; status projection)
+- [ ] Prompt: ownership, forbids, red-first, evidence template
+- [ ] Wake channel delivers
 
-## Pre-merge (coordinator)
+## Pre-merge
 
-- [ ] Evidence receipt present with **hash** (if landed)
-- [ ] Red proof credible; green commands re-run or spot-checked
-- [ ] Diff limited to owned paths
-- [ ] Rebased onto current master; conflicts resolved deliberately
-- [ ] Descriptive commit message(s); trailers if migration/feature/consent
-- [ ] No push from worker unless authorized
-- [ ] Ledger/status update plan ready
+- [ ] Receipt present (co-agent: inbox + ack)
+- [ ] Hash if landed; red/green credible
+- [ ] Diff limited to owned paths in that worktree
+- [ ] Rebased; descriptive commits; trailers if needed
+- [ ] Cleanup decision recorded if non-obvious scratch
 
 ## Cleanup
 
-- [ ] `git worktree list` reviewed
-- [ ] Worktree `git status` clean of valued work
-- [ ] **Untracked + ignored** scratch inspected
-- [ ] No `remove --force` / `rm -rf` unless Max approved after inspect
-- [ ] Worktree removed; merged branch deleted if appropriate
-- [ ] Claim cleared; peer heartbeats updated
+- [ ] Inspect untracked + ignored
+- [ ] Non-obvious artifacts: decision recorded; move before remove
+- [ ] No force remove without Max
+- [ ] Claim released; branch deleted if merged
 
-## Worker self-check before "done"
+## Worker before “done”
 
-- [ ] Only owned paths modified
-- [ ] Parent checkout / other worktrees untouched
-- [ ] Tests/lint/guards as required — green after red if new checks
-- [ ] Commit on branch; explicit path staging
-- [ ] Evidence receipt complete
+- [ ] Owned paths only (this worktree)
+- [ ] Tests green after red if new checks
+- [ ] Explicit path staging; commit on branch
+- [ ] Receipt complete; co-agent: inbox then wake
 - [ ] No push / merge / deploy / attn

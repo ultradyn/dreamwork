@@ -1,35 +1,45 @@
 # Evidence receipt — worker → coordinator
 
-Return this structure (markdown or plain) when finishing, failing, or
-blocking. Silence is not a result.
+Return this structure in the **durable inbox** (`inbox.md`, `kind:receipt`)
+and/or the subagent final report. c2c text alone is not sufficient for
+co-agent merge.
 
 ```markdown
 ## Evidence receipt
 
 - **status:** landed | blocked | failed | null
 - **task:** #N — title
-- **branch:** fix/#N-slug
-- **worktree:** /abs/path/.worktrees/#N-slug
-- **commit hash:** <full or short sha>  (required if landed)
-- **files owned:** list paths actually touched
-- **files not touched:** confirm parent/tasks/other worktrees clean
-- **red proof:** what failed before the fix (command + key FAIL lines)
-- **green proof:** commands run + pass summary (pytest, guards, lint, …)
-- **verification:** project verification routine result
-- **risks / ideas:** optional follow-ups (not silently done)
-- **blocked on:** if blocked — question text (also in questions.md if human)
+- **claim_id:** c-… (co-agent) or n/a (subagent)
+- **branch:** fix/N-slug
+- **worktree:** /abs/path/.worktrees/N-slug
+- **commit hash:** <sha>  (required if landed)
+- **files owned:** paths actually touched under the grant
+- **worktree attestation:** `git status` / diff summary **for this
+  worktree only** — owned paths clean or listed; do **not** claim
+  other actors' checkouts or the main tree are untouched (you cannot
+  honestly observe them). Attest: "no edits outside owned paths in
+  this worktree" via `git status` + path filter.
+- **red proof:** command + key FAIL lines (or justified none)
+- **green proof:** commands + pass summary
+- **verification:** project verification result
+- **cleanup decision:** none | disposable-only | held-for-owner
+  (if non-obvious untracked/ignored artifacts exist, name them and
+  who decides — do not delete until decided)
+- **risks / ideas:** optional
+- **blocked on:** if blocked
 ```
 
 ## Rules
 
 - **hash** required for `landed`.
-- **red** required when a new check was introduced (or state "no new check;
-  existing suite only" with justification).
-- **green** names exact commands, not "tests passed".
 - **files owned** must match the grant; extras are a protocol break.
-- Failed/null: still send a receipt — coordinator must not invent success.
+- **worktree attestation** replaces the old “files not touched” global
+  claim — scope is the owned worktree and owned paths only.
+- Failed/null: still send a receipt.
+- Co-agent: append inbox line **then** wake coordinator; wait for ack
+  before assuming merge.
 
 ## Coordinator gate
 
-No merge without a receipt (or Max override recorded). Spot-check at least
-one red→green claim when stakes are high.
+No merge without receipt (+ inbox ack path for co-agent). Spot-check red→green
+when stakes are high.

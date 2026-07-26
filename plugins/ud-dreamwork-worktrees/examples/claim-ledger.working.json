@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "revision": 4,
+  "updated": "2026-07-26T13:55:00Z",
+  "claims": [
+    {
+      "id": "c-20260726-001",
+      "peer": "grok-sugar-vesi-x6tv",
+      "task_id": 247,
+      "task": "#247 — missing-aid guard",
+      "state": "working",
+      "paths": ["watch.py", "dev/capture/answers.mjs"],
+      "branch": "fix/247-missing-aid",
+      "worktree": ".worktrees/247-missing-aid",
+      "offered_at": "2026-07-26T13:50:00Z",
+      "claimed_at": "2026-07-26T13:51:00Z",
+      "last_seen": "2026-07-26T13:55:00Z",
+      "updated": "2026-07-26T13:55:00Z",
+      "updated_by": "coordinator",
+      "receipt_id": null,
+      "ack_revision": null,
+      "notes": ""
+    }
+  ]
+}

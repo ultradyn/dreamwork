@@ -2,43 +2,35 @@
 
 ## Preflight
 
-1. Target is a git repo; `.gitignore` lists `.worktrees/` (migration).
-2. Main checkout: coordinator commits its own work first; do not carry
-   foreign dirty files into a merge.
-3. Choose slug/branch; ensure branch name unused.
+1. Target is a git repo; `.gitignore` lists `.worktrees/`.
+2. Co-agent: claims ledger present (empty ok).
+3. Branch name free: `fix/N-slug` (no `#`).
 
 ## Create
 
 ```bash
-git worktree add -b fix/#N-slug .worktrees/#N-slug master
-# or: git worktree add .worktrees/#N-slug existing-branch
+git worktree add -b fix/N-slug .worktrees/N-slug master
+# attach existing branch only when it already exists:
+# git worktree add .worktrees/N-slug fix/N-slug
 ```
 
-Confirm clean baseline: `git status` in the worktree shows the expected
-branch and no leftover unowned files.
+Confirm clean baseline on the expected branch.
 
 ## Validate (before merge)
 
-- Evidence receipt present (`evidence.md`).
-- Independent green sample or cold-read of diff + tests named in receipt.
-- Rebase onto current master:
-  ```bash
-  cd .worktrees/#N-slug
-  git fetch origin   # if used
-  git rebase master  # or origin/master
-  ```
-- Conflicts: coordinator resolves or returns to worker — **never** blind
-  `-X theirs`.
+- Evidence receipt present (`evidence.md`; co-agent: inbox + ack).
+- Spot-check red/green or cold-read.
+- Rebase onto current master inside the worktree; resolve conflicts
+  deliberately (never blind `-X theirs`).
 
 ## Merge
 
-- Prefer merge or ff into master from the **coordinator** session on main
-  checkout (or explicit PR if that is the project flow).
-- Workers: **no push** unless Max authorized.
+Coordinator (or Max) on main checkout / project PR flow. Workers: **no push**
+unless Max authorized.
 
 ## Cleanup (never force-blind)
 
-**Never** as first action:
+**Never** first:
 
 - `git worktree remove --force`
 - `rm -rf .worktrees/<slug>`
@@ -46,23 +38,28 @@ branch and no leftover unowned files.
 **Do:**
 
 1. `git worktree list`
-2. In the worktree: `git status -sb` (tracked dirty?)
-3. Inspect **untracked and ignored** scratch (`git status --ignored`,
-   `find` for local DBs, screenshots, `.pytest_cache` you care about).
-4. If valuable scratch exists → copy out or ask Max; abort cleanup.
-5. If clean / only disposable, remove the worktree then the merged branch:
-   `git worktree remove .worktrees/#N-slug`
-   then `git branch -d fix/#N-slug`
-6. Clear claim in status / peer registry.
+2. Worktree `git status -sb`
+3. Inspect **untracked and ignored** scratch (`git status --ignored`).
+4. Classify artifacts:
+   - **Obviously disposable** (e.g. `__pycache__`, `.pytest_cache`) → may
+     remove with worktree.
+   - **Non-obvious** (logs, screenshots, local DBs, half-written notes) →
+     **owner/coordinator decision required**, recorded in the evidence
+     receipt `cleanup decision` field or claim `notes`. Move valuable
+     scratch out **before** remove.
+5. If clean / disposable-only, remove worktree then merged branch:
+   `git worktree remove .worktrees/N-slug`
+   then `git branch -d fix/N-slug` when merged.
+6. Clear claim ledger entry / status projection.
 
 If remove refuses (dirty): stop and report — do **not** `--force` without
-Max.
+Max after inspect.
 
 ## Failure paths
 
 | Situation | Action |
 |-----------|--------|
-| Tests red after rebase | fix in worktree or abandon with receipt |
-| Worker null result | no merge; reopen task |
-| Orphan worktree, no claim | inspect; report maintenance; clean only if empty |
-| Conflict with main | coordinator owns resolution |
+| Tests red after rebase | fix or abandon with receipt |
+| Null result | no merge |
+| Orphan worktree | inspect; decision; then clean |
+| Path conflict | reject new claim |
