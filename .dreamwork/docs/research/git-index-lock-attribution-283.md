@@ -224,11 +224,23 @@ timeout 60s inotifywait -m -q -e create,delete,moved_to,moved_from \
 It recorded **0 `index.lock` events in 60 seconds**, compared with the previous
 ~2-second CREATE/DELETE cadence. (An earlier Python observer was discarded
 because a blocking `readline()` could exceed 60 seconds on the zero-event
-outcome.) This strongly supports the **closed window** as the cadence trigger
-and increases confidence in the file-manager/KIO hypothesis if that window was
-indeed Dolphin. It does not identify the application, PID, executable, argv, or
-`openat(O_CREAT)` caller. No lock, Git state, KIO process, service, watcher, or
-configuration was changed, and privileged tracing remains unauthorized.
+outcome.) At that moment this supported the closed window as a trigger candidate,
+but it did not identify the application, PID, executable, argv, or
+`openat(O_CREAT)` caller.
+
+**Later recurrence falsifies the strong interpretation.** At 00:46:33–37, with
+the window still closed, the watcher recorded new dreamwork CREATE/DELETE churn
+followed by holderless zero-byte inode `253401791`; the coordinator verified no
+`lsof`/`fuser` holder, no live repo Git process and no operation state before
+removing that stale lock at 00:53. A second holderless zero-byte lock, inode
+`253453575`, recurred at 00:57 and again blocked a reviewed cherry-pick; the same
+positive holder/process/operation-state checks preceded its removal. The same watcher interval also saw churn in
+other repositories. Therefore the 60-second quiet period was transient: closing
+the window did **not** eliminate the underlying source and does not strongly
+attribute it to that window. KIO/filenamesearch remains circumstantial context;
+the snapshots again showed only long-lived PID 1246815, already falsified as the
+creator. No Git/KIO/service/watcher/configuration change was made, and privileged
+tracing remains unauthorized.
 2. **H2 (name):** Tight sampler with `pgrep -f git` catches short-lived `git status`/`git diff` with cwd under dreamwork within one CREATE.
 3. **H3 (service):** Any `inotifywait` exit under current unit leaves `ActiveState=inactive` and `Result=success` with NRestarts=0.
 4. **H4 (stuck PID):** 1246815 never appears in `/proc/locks` as holder of dreamwork index (lsof if available); remains D forever until reboot/kill -9 of FUSE stack.

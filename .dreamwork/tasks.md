@@ -22,18 +22,6 @@ Next id: **292**
 
 ## Open
 
-- **#291** — Restore the command composer's 1.5s courtesy-close · P1 · UI bug ·
-  origin: **human** · **human via watch 2026-07-27 00:40** · exact ask: “bug:
-  the command composer remains open for like 5s now before automatically
-  disappearing. It should auto-disappear 1.5s after sending a command msg unless
-  the user has typed something in the mean time.” · preserve #255's independent
-  ~5s confirmation lifecycle while restoring a ~1.5s panel courtesy-close for
-  successful **command** sends; typing after send cancels only panel close and
-  keeps the valid confirmation; hard destruction still invalidates timers and
-  in-flight callbacks · diagnose whether current command path accidentally ties
-  panel close to confirmation departure; red-first main/popout and reduced-motion
-  evidence; every visual change follows `transitions.md`
-
 - **#290** — Add a dashboard-settable main-dreamer run mode · P1 ·
   orchestration/control-plane design · origin: **human** · **human via watch
   2026-07-27 00:38** · exact ask: “add a 'run mode' for the main dreamer that
@@ -982,6 +970,15 @@ Next id: **292**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#291** — Restore the command composer's 1.5s courtesy-close · P1 ·
+  landed 2026-07-27 · successful main-panel command sends again auto-dismiss
+  after 1425ms unless input resumes during/after POST; the ~5s confirmation
+  remains independent while typing keeps the panel open; manual/context close
+  remains destructive · explicitly opened command popouts are persistent and
+  prove success remains visible beyond the main courtesy threshold · real guard
+  was RED against the prior 5.65s coupling; 504 tests + 46 subtests, dismiss +
+  confirmation guards, lint/diff clean; Standards + Spec PASS · `26c4bee`
 
 - **#268** — Hide Dreamwork-only plugins from ordinary skill discovery · P1 ·
   landed/migrated 2026-07-27 · active loops parse only exact bounded
