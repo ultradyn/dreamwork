@@ -70,6 +70,18 @@ that make "who may touch this" answerable without asking:
 - **Ownership is per module, declared at dispatch**, and recorded in
   `status.json`'s `agents` block as it already is. Finer modules mean
   finer ownership, which is the whole point.
+- **Claims and holdings move through files; messages only wake readers.**
+  The coordinator is the sole writer of the shared ledger. A landed report
+  names what it did *and did not* do from its brief, so a crossed correction
+  exposes the gap rather than implying it was applied. An instruction that
+  must precede a commit names the commit boundary it must precede.
+- **Absence is not established inside the report window.** If a report may
+  still be arriving, wait a beat and read the inbox again before declaring it
+  missing. The reader can be stale just as easily as the writer.
+- **Explicit staging protects ownership only when the staged change is
+  yours.** A held path carrying edits you did not make is a question, not a
+  commit; `git add <path>` is not permission to sweep another agent's
+  mid-proof work into your increment.
 - **Shared vocabularies get one owner.** `COMMANDS`, the token block,
   the motion constants: one module, one holder, everyone else reads.
   Today's failures were all shared mutable state without a named owner —
