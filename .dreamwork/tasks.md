@@ -18,9 +18,22 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **229**
+Next id: **231**
 
 ## Open
+
+- **#230** — Add a `use subagent` composer checkbox · P2 · task · later ·
+  origin: **human** · **human via watch 12:57** · request fresh-context,
+  parallel processing outside the main queue; integrate with #228 project
+  settings, expose dispatch/ownership/result channel, and never silently fall
+  back to inline · blocked on #229's lifecycle design
+- **#229** — Propose threaded topic chats with ephemeral agents · P1 · task ·
+  origin: **human** · **do next via watch 12:57** · self-contained HTML
+  proposal integrated with dream dashboard: durable per-topic chat log as the
+  primary input; one fresh ephemeral agent per turn; in-flight lock + queued
+  follow-up; optional interrupt analysis; dashboard placement and UI; failure,
+  recovery, privacy, concurrency, cost, state machine, and smallest staged
+  build · proposal only, no implementation authority · in progress
 
 - **#228** — Unify project dashboard settings · P2 · idea · 30m ·
   origin: **human** · implication of **human via watch 12:49**: all
