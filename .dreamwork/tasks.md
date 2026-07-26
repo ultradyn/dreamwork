@@ -512,11 +512,6 @@ Next id: **222**
   verbatim in the task; it is the dream dissolve's ghost held low and
   continuous, not a new effect. Taste is the deliverable — wants a
   dreamer that iterates on captures until satisfied
-- **#127** — One deliberate way to compact a dreamwork agent · P2 ·
-  task · 45m · *mostly landed* · `compaction.md` + the harness dialect
-  table in `~/.llm-general/ai-coding/agent-compaction.md`; hooks
-  researched and folded in. Remaining: the managed sender, which the
-  dreamhub plan places in stage 2 (needs a session handle). See #138
 - **#124** — Break up watch.py; norms for cheap parallel work · P2 ·
   task · 120m · plan: `docs/plans/parallel-architecture.md` · seams as
   batches demand them, starting with #112's components
@@ -565,6 +560,11 @@ Next id: **222**
   **blocked**: human pick
 
 ## Recently landed
+
+**#127** deliberate compaction is documented in `compaction.md` plus the
+shared harness-dialect table. Reconciled complete: a managed sender belongs
+to dreamhub stage 2 because it requires a session handle; optional hooks are
+the independently gated #138, not unfinished #127 work (2026-07-26).
 
 **#209** closed by proving the existing keyboard path (4f9ed58): plugcmd
 focuses the dots opener, Tabs into a visible plugin command, presses Enter,
