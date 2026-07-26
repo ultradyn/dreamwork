@@ -24,6 +24,19 @@ const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 const notes = [];
 const errs = [];
 let finished = false;
+
+/** Predicate wait: poll page until fn returns truthy or timeout. */
+async function waitPage(page, fn, { timeout = 4000, interval = 50, label = 'cond' } = {}) {
+  const t0 = Date.now();
+  let last = null;
+  while (Date.now() - t0 < timeout) {
+    last = await page.evaluate(fn);
+    if (last) return last;
+    await sleep(interval);
+  }
+  notes.push(`waitPage timeout (${label}): last=` + JSON.stringify(last));
+  return last;
+}
 process.on('exit', () => {
   if (!finished) checks.push('FAIL the guard threw before finishing its checks');
   console.log(notes.join('\n'));
@@ -349,27 +362,22 @@ const eventsBefore = existsSync(eventsFile)
   : 0;
 const postsAtArm = posts.length;
 await pB.click('.runchip[data-mode="hot"]');
-// sample A for intermediate adoption (not only end state)
-let intermediate = null;
-const t0 = Date.now();
-while (Date.now() - t0 < 2500) {
-  intermediate = await pA.evaluate(() => {
-    const on = document.querySelector('.runchip.on:not([disabled])');
-    const count = document.getElementById('runcount');
-    const bar = document.getElementById('runbar');
-    const fill = document.getElementById('runbarfill');
-    const w = fill ? parseFloat(getComputedStyle(fill).width) || 0 : 0;
-    return {
-      on: on && on.dataset.mode,
-      count: count ? count.textContent : '',
-      barHidden: bar ? bar.hidden : true,
-      fillW: w,
-    };
-  });
-  if (intermediate.on === 'hot' && /arms in \d+s/.test(intermediate.count || ''))
-    break;
-  await sleep(100);
-}
+// predicate wait — not a fixed sleep (storage-event latency varies)
+const intermediate = await waitPage(pA, () => {
+  const on = document.querySelector('.runchip.on:not([disabled])');
+  const count = document.getElementById('runcount');
+  const bar = document.getElementById('runbar');
+  const fill = document.getElementById('runbarfill');
+  const c = count ? count.textContent : '';
+  const mode = on && on.dataset.mode;
+  if (mode !== 'hot' || !/arms in \d+s/.test(c) || !/hot/.test(c)) return null;
+  return {
+    on: mode,
+    count: c,
+    barHidden: bar ? bar.hidden : true,
+    fillW: fill ? parseFloat(getComputedStyle(fill).width) || 0 : 0,
+  };
+}, { timeout: 5000, label: 'A adopt hot arm' });
 notes.push('A intermediate adopt: ' + JSON.stringify(intermediate));
 ok('cross-tab: A selects hot while B is arming (storage adopt)',
    intermediate && intermediate.on === 'hot');
@@ -439,48 +447,46 @@ ok('cross-tab: exactly one new run-mode events line for the shared commit',
 ok('cross-tab: newest events line names hot',
    eventLines2.length && /run-mode via watch.*hot/.test(eventLines2[eventLines2.length - 1]));
 
-// ── cross-tab CANCEL: B arms then reselects committed; A must snap back ─
-// (cancel produces no mtime change — tombstone is the only signal)
+// ── cross-tab CANCEL: B arms a *different* mode then reselects committed ─
+// After the shared commit above, file/UI are `hot`. Re-picking hot is a
+// CANCEL not an arm (that was the flake: fixed sleep + wrong premise).
+// Arm assisted (real change), wait for A via predicate, then cancel → hot.
 await pA.evaluate(() => { window.__setItemLog = []; });
-await pB.evaluate(() => {
-  if (typeof pickRunMode === 'function') pickRunMode('hot');
+// ensure B's data.run_mode matches file (hot) so pickRunMode('assisted') arms
+await pB.evaluate(async () => {
+  const d = await (await fetch('/data.json')).json();
+  if (data) data.run_mode = d.run_mode;
 });
-await sleep(400);
-const aArmed = await pA.evaluate(() => {
-  const on = document.querySelector('.runchip.on:not([disabled])');
-  const count = document.getElementById('runcount');
-  return { on: on && on.dataset.mode, count: count ? count.textContent : '' };
-});
-ok('cancel setup: A adopted B hot arm',
-   aArmed.on === 'hot' && /arms in/.test(aArmed.count || ''));
-// B cancels by re-selecting committed hot... wait, committed is hot now.
-// Arm assisted then cancel back to hot.
 await pB.evaluate(() => {
   if (typeof pickRunMode === 'function') pickRunMode('assisted');
 });
-await sleep(400);
-const aOnAssisted = await pA.evaluate(() => {
-  const on = document.querySelector('.runchip.on:not([disabled])');
-  return on && on.dataset.mode;
-});
-ok('cancel setup: A shows assisted pending', aOnAssisted === 'assisted');
-await pB.evaluate(() => {
-  // re-select committed (hot) → cancel tombstone
-  if (typeof pickRunMode === 'function') pickRunMode('hot');
-});
-await sleep(500);
-const aAfterCancel = await pA.evaluate(() => {
+const aArmed = await waitPage(pA, () => {
   const on = document.querySelector('.runchip.on:not([disabled])');
   const count = document.getElementById('runcount');
-  return {
-    on: on && on.dataset.mode,
-    count: count ? count.textContent : '',
-  };
+  const c = count ? count.textContent : '';
+  const mode = on && on.dataset.mode;
+  return (mode === 'assisted' && /arms in \d+s/.test(c) && /assisted/.test(c))
+    ? { on: mode, count: c } : null;
+}, { timeout: 5000, label: 'A adopt assisted arm' });
+notes.push('cancel setup A armed: ' + JSON.stringify(aArmed));
+ok('cancel setup: A adopted B assisted arm (predicate)',
+   !!(aArmed && aArmed.on === 'assisted' && /arms in/.test(aArmed.count || '')));
+// cancel: re-select committed hot → tombstone; no mtime change
+await pB.evaluate(() => {
+  if (typeof pickRunMode === 'function') pickRunMode('hot');
 });
+const aAfterCancel = await waitPage(pA, () => {
+  const on = document.querySelector('.runchip.on:not([disabled])');
+  const count = document.getElementById('runcount');
+  const c = count ? count.textContent : '';
+  const mode = on && on.dataset.mode;
+  // converged: hot selected, no arms-in countdown
+  return (mode === 'hot' && !/arms in/.test(c)) ? { on: mode, count: c } : null;
+}, { timeout: 5000, label: 'A cancel converge hot' });
 notes.push('A after cancel: ' + JSON.stringify(aAfterCancel));
 ok('cross-tab cancel: A converges to committed hot without arm text',
-   aAfterCancel.on === 'hot' &&
-   (!aAfterCancel.count || !/arms in/.test(aAfterCancel.count)));
+   !!(aAfterCancel && aAfterCancel.on === 'hot' &&
+      (!aAfterCancel.count || !/arms in/.test(aAfterCancel.count))));
 ok('cross-tab cancel: A still does not write pending',
    !(await pA.evaluate(() =>
      (window.__setItemLog || []).some(x =>
