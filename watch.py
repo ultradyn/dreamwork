@@ -6167,13 +6167,18 @@ def plugin_commands(target):
 
 
 def list_reviews(review_dir):
-    reviews = [
-        {"name": name,
-         "mtime": os.path.getmtime(os.path.join(review_dir, name))}
-        for name in os.listdir(review_dir)
-        if name.endswith(".html")
-    ]
-    reviews.sort(key=lambda review: (-review["mtime"], review["name"]))
+    reviews = []
+    for name in os.listdir(review_dir):
+        if not name.endswith(".html"):
+            continue
+        try:
+            stat = os.stat(os.path.join(review_dir, name))
+        except FileNotFoundError:
+            # An atomic writer may replace/remove an entry after listdir.
+            continue
+        reviews.append({"name": name, "mtime_ns": stat.st_mtime_ns,
+                        "mtime": stat.st_mtime_ns / 1_000_000_000})
+    reviews.sort(key=lambda review: (-review["mtime_ns"], review["name"]))
     return reviews
 
 

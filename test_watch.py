@@ -1350,16 +1350,18 @@ class TestCollector(unittest.TestCase):
             self.assertEqual([r["name"] for r in data["reviews"]],
                              ["plan-review.html"])
 
-    def test_collect_orders_reviews_by_displayed_mtime_then_filename(self):
+    def test_collect_orders_reviews_by_exact_mtime_ns_then_filename(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
             rd = os.path.join(d, ".dreamwork", "review")
             os.makedirs(rd)
+            # These adjacent epoch nanoseconds collapse to the same float.
+            # Their names deliberately demand the opposite lexical order.
             mtimes = {
-                "z-old.html": 1_700_000_000_000_000_001,
+                "a-older.html": 1_700_000_000_000_000_000,
+                "z-newer.html": 1_700_000_000_000_000_001,
                 "z-tied.html": 1_700_000_002_000_000_003,
                 "a-tied.html": 1_700_000_002_000_000_003,
-                "a-new.html": 1_700_000_004_000_000_007,
             }
             for name, mtime_ns in mtimes.items():
                 path = os.path.join(rd, name)
@@ -1370,15 +1372,44 @@ class TestCollector(unittest.TestCase):
             reviews = watch.collect(d)["reviews"]
 
             self.assertEqual([r["name"] for r in reviews], [
-                "a-new.html", "a-tied.html", "z-tied.html", "z-old.html",
+                "a-tied.html", "z-tied.html", "z-newer.html", "a-older.html",
             ])
-            # The value exposed to the age renderer is the same filesystem
-            # mtime that determined each row's place, not another date source.
+            self.assertEqual(
+                [r["mtime_ns"] for r in reviews],
+                [mtimes[r["name"]] for r in reviews],
+            )
+            # Age seconds is derived from that same authoritative exact ns.
             self.assertEqual(
                 [r["mtime"] for r in reviews],
-                [os.stat(os.path.join(rd, r["name"])).st_mtime
-                 for r in reviews],
+                [r["mtime_ns"] / 1_000_000_000 for r in reviews],
             )
+
+    def test_list_reviews_skips_an_entry_that_vanishes_before_stat(self):
+        with tempfile.TemporaryDirectory() as rd:
+            path = os.path.join(rd, "gone.html")
+            with open(path, "w") as f:
+                f.write("<!doctype html><p>x")
+            real_stat = os.stat
+
+            def vanishing_stat(candidate, *args, **kwargs):
+                if candidate == path:
+                    os.unlink(path)
+                    raise FileNotFoundError(candidate)
+                return real_stat(candidate, *args, **kwargs)
+
+            with unittest.mock.patch.object(watch.os, "stat",
+                                            side_effect=vanishing_stat):
+                self.assertEqual(watch.list_reviews(rd), [])
+
+    def test_list_reviews_does_not_hide_permission_errors(self):
+        with tempfile.TemporaryDirectory() as rd:
+            path = os.path.join(rd, "blocked.html")
+            with open(path, "w") as f:
+                f.write("<!doctype html><p>x")
+            with unittest.mock.patch.object(
+                    watch.os, "stat", side_effect=PermissionError(path)):
+                with self.assertRaises(PermissionError):
+                    watch.list_reviews(rd)
 
     def test_resolve_confined_nested(self):
         with tempfile.TemporaryDirectory() as d:
