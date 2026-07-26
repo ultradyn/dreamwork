@@ -4,58 +4,7 @@
 
 
 
-- **P2 · 2026-07-26 — #253 contextual review annotations: keep the review
-  iframe and bridge selections to a parent-owned side rail?** Research is at
-  `.dreamwork/docs/research/contextual-review-annotations.md`. Three models
-  were tested: one chat per mark is too noisy/expensive; one document-wide
-  chat loses per-selection resolution; the survivor is lightweight anchored
-  sidecar notes with one-time promotion into #229 topic chat for deep or agent
-  work.
 
-  Rec: preserve the iframe as static, style-isolated evidence and add a narrow,
-  versioned `postMessage` selection bridge. The parent validates quote/context
-  and owns the mutable annotation rail. Anchors combine artifact hash, heading
-  path, paragraph ordinal and normalised quote/context; ambiguous edits become
-  explicit orphans, never silently move. Typed task/update requests mint normal
-  human-origin ledger tasks; workers run only after chat promotion or ordinary
-  coordinator dispatch.
-
-  Answer `Approve #253 iframe bridge as recommended`, or choose `in-page`
-  annotation rendering instead.
-  - **Note (human, via watch, 2026-07-26 15:41; moved from #255):** chats
-    should attach to any artifact or a precise reference within an artifact,
-    while all chats remain visible from the global `/chat` route.
-  - **Reply (loop, 2026-07-26 15:42):** Folded into #253/#229. Attachment is
-    provenance/navigation, not a private namespace: an artifact-level or
-    selection-level chat still appears in `/chat`. MVP should have one primary
-    attachment plus reciprocal backlinks; multiple references can follow.
-  - **Note (human, via watch, 2026-07-26 15:43; moved from #255):** provide a
-    simple mode first with no subagent; the main dreamer responds as it does now.
-  - **Reply (loop, 2026-07-26 15:44):** Adopted as staging: attached discussions
-    begin in main-dreamer mode, then may be explicitly promoted to a dedicated
-    fresh worker without forking transcript or attachment history. No silent
-    fallback or automatic dispatch. This lets sidecar discussion ship before
-    #229's worker orchestration.
-
-
-
-- **P2 · 2026-07-26 — #213 task-origin contract: adopt the forward-only
-  cutoff?** The review is at `.dreamwork/review/task-origin-contract.html`.
-  Rec: record `origin: **human|loop**` on every new ledger task and begin
-  enforcement at the current next id, #216; leave all older tasks unknown
-  rather than backfilling guesses. This increment adds the contract and
-  linter only. First-seen history parsing and the honest three-way
-  human/loop/unmarked visualisation remain later increments.
-
-  Answer `rec`, or leave a note naming what should change.
-  - **Note (human, via watch, 2026-07-26 15:33):** the burndown warning that
-    most entries cannot split human steers from loop ideas should be addressed
-    by tracking task provenance.
-  - **Reply (loop, 2026-07-26 15:34):** Confirmed as the #213 goal. #216 then
-    parses first-seen origin and #217 renders human / loop / historical-unknown
-    coverage. The remaining decision is migration honesty: rec remains the
-    forward-only cutoff; guessing old origins would make the chart look more
-    precise by making it less true.
 
 - **P3 · 2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
   Stages 1-5 shipped: the skill exists, is installed and indexed, walks
@@ -238,6 +187,69 @@
   the future upgrade pass has to read blind.
 
 ## Answered
+
+- **P2 · 2026-07-26 — #213 task-origin contract: adopt the forward-only
+  cutoff?**
+  → answered (2026-07-26 18:37): Approved: enforce origin: human|loop for tasks from
+  the #216 cutoff onward; historical records remain honestly unknown. The
+  contract/linter is authorized; parsing and three-way UI remain #216/#217.
+ The review is at `.dreamwork/review/task-origin-contract.html`.
+  Rec: record `origin: **human|loop**` on every new ledger task and begin
+  enforcement at the current next id, #216; leave all older tasks unknown
+  rather than backfilling guesses. This increment adds the contract and
+  linter only. First-seen history parsing and the honest three-way
+  human/loop/unmarked visualisation remain later increments.
+
+  Answer `rec`, or leave a note naming what should change.
+  - **Note (human, via watch, 2026-07-26 15:33):** the burndown warning that
+    most entries cannot split human steers from loop ideas should be addressed
+    by tracking task provenance.
+  - **Reply (loop, 2026-07-26 15:34):** Confirmed as the #213 goal. #216 then
+    parses first-seen origin and #217 renders human / loop / historical-unknown
+    coverage. The remaining decision is migration honesty: rec remains the
+    forward-only cutoff; guessing old origins would make the chart look more
+    precise by making it less true.
+  - **Answer (via watch, 2026-07-26 18:36):** rec
+
+- **P2 · 2026-07-26 — #253 contextual review annotations: keep the review
+  iframe and bridge selections to a parent-owned side rail?**
+  → answered (2026-07-26 18:37): Approved as recommended: preserve the style-isolated
+  iframe; add a narrow versioned postMessage selection bridge; parent owns
+  validated anchored annotations and explicit orphans; attached chats stay
+  globally visible, begin with the main dreamer, and only promote explicitly.
+ Research is at
+  `.dreamwork/docs/research/contextual-review-annotations.md`. Three models
+  were tested: one chat per mark is too noisy/expensive; one document-wide
+  chat loses per-selection resolution; the survivor is lightweight anchored
+  sidecar notes with one-time promotion into #229 topic chat for deep or agent
+  work.
+
+  Rec: preserve the iframe as static, style-isolated evidence and add a narrow,
+  versioned `postMessage` selection bridge. The parent validates quote/context
+  and owns the mutable annotation rail. Anchors combine artifact hash, heading
+  path, paragraph ordinal and normalised quote/context; ambiguous edits become
+  explicit orphans, never silently move. Typed task/update requests mint normal
+  human-origin ledger tasks; workers run only after chat promotion or ordinary
+  coordinator dispatch.
+
+  Answer `Approve #253 iframe bridge as recommended`, or choose `in-page`
+  annotation rendering instead.
+  - **Note (human, via watch, 2026-07-26 15:41; moved from #255):** chats
+    should attach to any artifact or a precise reference within an artifact,
+    while all chats remain visible from the global `/chat` route.
+  - **Reply (loop, 2026-07-26 15:42):** Folded into #253/#229. Attachment is
+    provenance/navigation, not a private namespace: an artifact-level or
+    selection-level chat still appears in `/chat`. MVP should have one primary
+    attachment plus reciprocal backlinks; multiple references can follow.
+  - **Note (human, via watch, 2026-07-26 15:43; moved from #255):** provide a
+    simple mode first with no subagent; the main dreamer responds as it does now.
+  - **Reply (loop, 2026-07-26 15:44):** Adopted as staging: attached discussions
+    begin in main-dreamer mode, then may be explicitly promoted to a dedicated
+    fresh worker without forking transcript or attachment history. No silent
+    fallback or automatic dispatch. This lets sidecar discussion ship before
+    #229's worker orchestration.
+  - **Answer (via watch, 2026-07-26 18:35):** Approve #253 iframe bridge
+    as recommended
 
 - **P2 · 2026-07-26 — #221 review datetime ordering: use file mtime?**
   → answered (2026-07-26 18:26): Approved: newest filesystem mtime first, filename

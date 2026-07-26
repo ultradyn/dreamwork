@@ -18,9 +18,18 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **284**
+Next id: **285**
 
 ## Open
+
+- **#284** — De-emphasise directory paths in file-view headings · P2 · UI
+  polish · origin: **human** · **human via watch 18:33** · full paths such as
+  `.dreamwork/docs/research/contextual-review-annotations.md` currently compete
+  with the document itself · make the basename the primary title and render the
+  parent path as subdued secondary context below or adjacent; preserve exact
+  copyable path, breadcrumbs/deep links, narrow-layout wrapping, contrast and
+  screen-reader meaning · follow existing atmospheric transitions/RM; coordinate
+  with #281/#282 task/file navigation rather than inventing another header model
 
 - **#283** — Diagnose recurring orphaned Git index locks and dead attribution
   watcher · P1 · tooling/system reliability · origin: **loop** · blocked the
@@ -30,9 +39,15 @@ Next id: **284**
   no `lsof`/`fuser` holder, no live repo Git process and no merge/rebase/
   cherry-pick state · `git-lock-watch.service` exited cleanly at 16:12 on
   2026-07-20 after ~6 days, so `Restart=on-failure` left it dead and its log has
-  no current witness · restore existing watcher for future attribution, then
-  diagnose why it exits 0 and capture creator PID/exe/cgroup on recurrence before
-  changing mitigations; coordinate any host-level fix with system KB entry
+  no current witness · watcher restarted at 18:29 and captured recurrence:
+  symlink `/home/xertrov/src/dreamwork` is this checkout; lock create/delete
+  repeated ~2s from 18:29:17–33, then final zero-byte create at 18:29:36 (inode
+  `251691418`) remained · every snapshot saw PID `1246815`, reparented D-state
+  `git rev-parse --is-inside-work-tree`, cwd KIO `filenamesearch`, but watcher
+  samples all Git processes so this is correlated/candidate evidence, **not yet
+  creator proof**; a short-lived writer may evade 50ms snapshots · diagnose why
+  watcher exits 0; improve attribution to capture exec/exit or syscall-level
+  creator before changing mitigations; coordinate host fix with system KB entry
 
 - **#282** — Link task references to rich hover previews · P1 · task-navigation
   feature · origin: **human** · **human via watch 18:22** · whenever `#229`-style
@@ -248,17 +263,16 @@ Next id: **284**
   responsive layout, atmospheric transition + reduced-motion · evidence:
   `.dreamwork/review/evidence/review-note-reply-unclear.png` · separate from
   broader #253 research · queued after active #250/#251
-- **#253** — Research contextual review discussions and taskable annotations ·
-  P2 · research/design · origin: **human** · completed research at
-  `.dreamwork/docs/research/contextual-review-annotations.md` (`b9b6a47`) ·
-  sidecar anchors + optional one-time #229 promotion is the IGC survivor;
-  precise or whole-artifact attached chats remain globally visible at `/chat` ·
-  **human amendment 15:41/15:43** (also re-homed onto #229 after #266 misfile):
-  chats attach to any artifact or precise in-artifact reference and still appear
-  at `/chat`; ship main-dreamer response mode first with no subagent, then
-  allow explicit promotion to a fresh worker without forking
-  transcript/attachment history; no silent dispatch · iframe bridge vs in-page
-  decision awaiting human answer · no implementation authority
+- **#253** — Add contextual review annotations and attached discussions · P2 ·
+  approved design/implementation · origin: **human** · **approved via watch
+  18:35** · preserve static style-isolated iframe; narrow versioned `postMessage`
+  selection bridge; parent validates quote/context and owns mutable side rail ·
+  anchors combine artifact hash, heading path, paragraph ordinal and normalised
+  quote/context; ambiguous edits become explicit orphans · chats attach to whole
+  artifact/selection and remain globally visible at `/chat`; main dreamer first,
+  explicit worker promotion only, preserving transcript/attachment history ·
+  typed task/update requests mint normal human-origin tasks · coordinate storage
+  and transcript contract with revised #270/#229 before red-first UI increments
 
 - **#252** — Render Markdown files on `/file` · P2 · feature · 25m · origin:
   **human** · **human via watch 15:17** · `.md` paths default to rendered
@@ -572,16 +586,13 @@ Next id: **284**
   for · candidate: assert the x-position of load-bearing columns in the
   guards that own them, or a coarse screenshot-diff capture (NOT gated)
   that flags layout deltas for a human eye · relates #210's vacuity class
-- **#213** — The ledger has no provenance field · P2 · idea · 20m ·
-  **in progress — coordinator, awaiting Web UI design review** ·
-  measured during #142 pre-work: `**human HH:MM**` appears on 6 of 63
-  open entries, other human-markers on ~6 more — so the human-vs-loop
-  split (the "most telling number" for the burndown) is NOT derivable
-  from `git log -p tasks.md` at usable coverage · adopt a convention
-  going forward (origin marked on every NEW entry at write time, cheap
-  then and impossible later); historical entries stay unmarked and any
-  panel drawing the split STATES its coverage rather than implying one
-  it cannot support
+- **#213** — Enforce forward-only task provenance · P2 · implementation · 20m ·
+  **approved via watch 18:36** · record `origin: **human|loop**` on every task
+  from cutoff #216 onward; historical tasks remain unknown rather than guessed ·
+  first increment adds the ledger contract and linter only; first-seen parsing
+  remains #216 and honest human/loop/historical-unknown UI remains #217 ·
+  red-first linter fixtures must prove new missing/invalid origin fails while
+  old unmarked entries and explicit unknown coverage remain accepted
 - **#211** — A title that GAINS a priority departs and arrives instead
   of travelling · P3 · idea · 20m · honest today (`data-qid` is the
   title, and the title changed) but a human watching the loop stamp
