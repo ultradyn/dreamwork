@@ -52,24 +52,6 @@ Next id: **296**
   lint/file-formats/doc-map/compaction and failure recovery are acceptance scope ·
   blocked on #264 design and relevant #263 cutover decisions
 
-- **#293** — Render submitted `/answers` question text visibly · P1 · UI bug ·
-  origin: **human** · **human via watch 2026-07-27 01:17** · exact ask: “bug:
-  when a question is submitted it's meant to go in the list and kind of does but
-  the text stays invisible (though i can still see my cursor change to an I beam
-  when hovering it) also, the question text on /answers stays invisible even
-  after page refresh” · same isolated Grok worktree as #292 but requires its own
-  RED: successful real submit creates durable record, live regroup and hard
-  refresh both expose readable text with computed opacity/color/layout and no
-  invisible hitbox; follow transitions/RM and exceptional UI contract
-
-- **#292** — Make Ctrl/Cmd+Enter submit `/answers` questions · P1 · UI bug ·
-  origin: **human** · **human via watch 2026-07-27 01:17** · exact ask: “bug
-  (give it to grok): on the /answers page, ctrl+enter does not work to submit a
-  question to the dreamer, even though it should.” · Grok owns an isolated
-  red-first diagnosis/fix for the real `/answers` ask form, with unit + browser
-  causal proof, keyboard parity, no duplicate submit, and relevant design/
-  transition contract updates only if behavior changes require them
-
 - **#290** — Add a dashboard-settable main-dreamer run mode · P1 ·
   orchestration/control-plane design · origin: **human** · **human via watch
   2026-07-27 00:38** · exact ask: “add a 'run mode' for the main dreamer that
@@ -1027,6 +1009,20 @@ Next id: **296**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#292/#293** — `/answers` Ctrl+Enter submit and visible question text ·
+  P1 · landed 2026-07-27 · Ctrl/Cmd+Enter on the `/answers` ask textarea
+  submits exactly once durably: in-flight guard blocks rapid double-press,
+  generation invalidation on leaving the route stops a late response touching
+  a rebuilt form, failures keep the user's words · submitted text is visibly
+  readable live and after hard refresh: permanent `.dreamin` enter-pose
+  removed from open-row HTML, keyed one-shot arrival (`open:` aids over
+  title+body+ordinal, exact-title twins distinct), computed opacity/color/
+  geometry proven live and post-reload, reduced-motion parity, sabotage
+  inject proves the guard is non-vacuous · Grok-owned isolated branch
+  (`9693106` + `f3f491c` + doc-nit `b931c04`), Standards and Spec reviews
+  PASS, 506 tests + 46 subtests, answers guard ×2, merged `73ba7d8`,
+  deployed dashboard PID 1053756 serving HEAD
 
 - **#291** — Restore the command composer's 1.5s courtesy-close · P1 ·
   landed 2026-07-27 · successful main-panel command sends again auto-dismiss
