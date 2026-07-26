@@ -18,9 +18,22 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **216**
+Next id: **219**
 
 ## Open
+
+- **#218** — Add filed-to-landed median · P2 · task · 20m ·
+  origin: **loop** · blocked on #217 · `ledger_series` already computes
+  arrival/landing pairs and discards them; render the median without a
+  velocity score after provenance work
+- **#217** — Render honest provenance coverage · P2 · task · 25m ·
+  origin: **loop** · blocked on #216 · draw human/loop/unmarked rather
+  than implying the historical unknown remainder is loop-originated;
+  keep explicit coverage copy and update watch-design.md plus a red-first
+  browser guard
+- **#216** — Parse first-seen origin in ledger history · P2 · task · 20m ·
+  origin: **loop** · blocked on #213 · preserve human/loop/unknown at
+  first sight; a later edit must never retroactively classify an arrival
 
 - **#206** — Coordinator and dreamer messages race, four crossings in
   one afternoon · P2 · idea · 30m · the two directions have different
