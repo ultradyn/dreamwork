@@ -2,6 +2,34 @@
 
 ## Open
 
+- **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
+  pre-phase on the existing card ghost?** Max directed Grok toward shader work;
+  read-only review mapped the actual transition matrix. Route departures already
+  have full SVG dissolve mist. Card/list/thread/section ghosts only blur while
+  leaving, with no brief in-place liquify phase. Ambient/Jovian shaders are a
+  separate layer and #279 failed that visual gate.
+
+  Rec **D1**: prototype a 150–220ms CSS-only `.pregone` phase on the **single
+  existing absolute ghost**: blur 0→~8px, opacity 1→~0.8, at most 2px upward drift,
+  then the current `.gone` fade/travel. The data/DOM commit and survivor FLIP stay
+  immediate—the corpse dreamfades while the live list is already correct. Apply
+  v1 only to question/answer rows, nested thread bodies and section folds. Do not
+  add it to route dissolve (double mist), survivor FLIP, commit special travel,
+  composer confirmation, indicators, or ambient background. Reduced motion skips
+  the phase/ghost. Total corpse lifetime remains ≤1.1s.
+
+  Prototype gate: disposable question-card leave only; pixel/geometry review must
+  read as “dissolve then leave,” not “mush then snap”; measure multi-card frame
+  behavior; guard ordered intermediate blur+opacity, no transform overshoot,
+  settled crisp live tree, no route double ghost, and RM no blur/travel. If visual
+  review fails, stop—do not escalate to per-ghost SVG/WebGL without another ask.
+
+  **D2** attaches the route SVG filter to every ghost (refuted: expensive and
+  double-mist risk). **D3** uses WebGL element textures (refuted: new system and
+  repeats #279's craft risk). Approval authorizes only the isolated D1 prototype
+  and visual/performance review, not production integration/deployment. Answer
+  `Approve D1 prototype`, `Approve D1 with changes: …`, or `Pause #277`.
+
 - **P2 · 2026-07-27 — #284 file heading: accept the two-line basename/path
   lockup?** Exceptional-quality read-only design review compared three layouts.
 
