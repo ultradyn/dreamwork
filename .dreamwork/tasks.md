@@ -18,9 +18,23 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **289**
+Next id: **290**
 
 ## Open
+
+- **#289** — Show review decision status and open its associated question · P2 ·
+  dashboard review-list feature/design · origin: **human** · **human via watch
+  2026-07-26 23:22** · exact ask: “webui dashboard: the list of reviews should
+  have ✔/✘ on the left for accepted or rejected, and also a similar icon for
+  waiting/pending. could also darken the ones that are done a bit. and also,
+  when i click one of the reviews, it should also open the question or whatever
+  that it's associated with (works if i click the question)” · define one
+  truthful review↔question association/status contract (accepted/rejected/
+  pending plus stale/missing); render accessible icon + text semantics and let
+  completed rows recede without becoming illegible; activating a review keeps
+  the artifact open while opening/focusing the same associated question context
+  the question-driven path already uses · no filename/text inference; proposal
+  + transition/RM/a11y guards before implementation
 
 - **#288** — Prevent isolated agents from killing protected live services to
   satisfy invented test premises · P0/P1 · tooling/authority incident · origin:
