@@ -1302,11 +1302,21 @@ const qaInner = (q, key) => {
 const qaCard = (q, key) =>
   `<div class="qa ${qaState(q, key)}" data-qkey="${key}"` +
   ` data-qid="${encodeURIComponent(q.title)}">${qaInner(q, key)}</div>`;
-/* resolve a card key against live data — the one place a key becomes an
-   entry, for both writes and re-renders. */
-const qaEntry = key => {
+/* Resolve the logical question a LIVE CARD names, never merely the position it
+   occupied when rendered (#266). A review route does not rebuild its dock on
+   the data tick, so its `o<n>` can become stale while questions_open re-sorts.
+   `data-qid` is the title identity the card already uses to survive regrouping;
+   writes resolve that identity against fresh data. The positional fallback is
+   only for callers with no live card, and fails closed when neither matches. */
+const qaEntry = (key, card) => {
   if (!data || !key) return null;
   const list = key[0] === 'a' ? data.answered_entries : data.questions_open;
+  const qid = card && card.dataset.qid;
+  if (qid) {
+    let title = null;
+    try { title = decodeURIComponent(qid); } catch (e) { return null; }
+    return (list || []).find(entry => entry.title === title) || null;
+  }
   return (list || [])[+key.slice(1)] || null;
 };
 /* the page he was on when he sent it (#126). The query string is kept because
@@ -2047,10 +2057,10 @@ function submitCard(key) {
 }
 async function sendAnswer(key) {
   const el = document.getElementById('qi' + key);
-  const q = qaEntry(key);
+  const card = el && el.closest('.qa');
+  const q = qaEntry(key, card);
   if (!el || !el.value.trim() || !q) return;
   const val = el.value.trim();
-  const card = el.closest('.qa');
   const fromRect = el.getBoundingClientRect();   // the box the text lived in
   const res = await postAnswer(q.title, val);
   // a failed write must NOT run the morph: the morph IS the confirmation, and
@@ -2089,10 +2099,10 @@ async function sendAnswer(key) {
    answer: the note lifts from the box into the thread, ripple accenting. */
 async function sendComment(key) {
   const el = document.getElementById('qi' + key);
-  const entry = qaEntry(key);
+  const card = el && el.closest('.qa');
+  const entry = qaEntry(key, card);
   if (!el || !el.value.trim() || !entry) return;
   const val = el.value.trim();
-  const card = el.closest('.qa');
   const fromRect = el.getBoundingClientRect();
   const res = await postComment(entry.title, val,
                                 key[0] === 'o' ? 'Open' : 'Answered');
