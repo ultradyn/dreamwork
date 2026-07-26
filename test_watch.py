@@ -1390,6 +1390,20 @@ class TestAppShell(unittest.TestCase):
                       '/reviewraw', 'linkifyReview'):
             self.assertIn(token, watch.PAGE)
 
+    def test_qa_compose_has_accessible_name_and_send_floor(self):
+        # #273: placeholder is not a name; dock/cards need aria-label that
+        # tracks mode, and the send control must meet the 44px target floor.
+        # RED proved by temporarily dropping these tokens.
+        for token in ('qaFieldLabel', 'qaSendLabel',
+                      'aria-label="${esc(qaFieldLabel(mode, title))}"',
+                      'aria-label="${esc(qaSendLabel(mode))}"',
+                      'min-height:44px', 'min-block-size:44px'):
+            self.assertIn(token, watch.PAGE)
+        self.assertIn('qaCompose(key, st, q.title)', watch.PAGE)
+        # mode switch must rewrite the name, not leave a stale answer label
+        self.assertIn("ta.setAttribute('aria-label', qaFieldLabel(mode, title))",
+                      watch.PAGE)
+
     def test_page_has_command_palette_wiring(self):
         # Static guard: the + opener, the palette, POST /command, the dream
         # ripple, and the pop-out (Document Picture-in-Picture + window.open

@@ -559,10 +559,14 @@ STYLE = """<style>
 
   .qfield textarea { flex:1; min-width:0; background:none; border:0; margin:0;
     box-sizing:border-box; color:var(--text); font:inherit; font-size:.75rem;
-    padding:.4rem .55rem; min-height:2.4rem; resize:vertical; outline:none; }
+    padding:.4rem .55rem; min-height:44px; resize:vertical; outline:none; }
+  /* #273: send is a real control — min 44px touch/pointer target. Flex stretch
+     already matches the field height; the floor stops a short single-line box
+     from shrinking the button below the a11y floor (review dock and cards). */
   .qsend { flex:none; background:var(--panel2); color:var(--accent);
     border:0; border-left:1px solid var(--line); font:inherit;
     font-size:.7rem; padding:0 1rem; cursor:pointer;
+    min-height:44px; min-block-size:44px;
     transition:background .3s ease, color .3s ease; }
   .qsend:hover { background:#26344a; }
   .qmodes { margin-top:.3rem; }
@@ -1189,7 +1193,16 @@ const QMODES = { answer: 'answer', note: 'add note' };
 const qaModesFor = st => st === 'folded' ? ['note'] : ['answer', 'note'];
 const qaDefaultMode = st => st === 'open' ? 'answer' : 'note';
 const QPLACE = { answer: 'answer…', note: 'add a note…' };
-const qaCompose = (key, st) => {
+/* #273: accessible name tracks mode + target. Placeholder alone is not a
+   name; the dock especially needs which question is being answered. */
+const qaFieldLabel = (mode, title) => {
+  const act = mode === 'note' ? 'add a note on' : 'answer';
+  const t = String(title || '').replace(/\\s+/g, ' ').trim();
+  const short = t.length > 90 ? t.slice(0, 87) + '…' : t;
+  return short ? `${act} ${short}` : (mode === 'note' ? 'add a note' : 'answer');
+};
+const qaSendLabel = mode => mode === 'note' ? 'send note' : 'send answer';
+const qaCompose = (key, st, title) => {
   const modes = qaModesFor(st), mode = qaDefaultMode(st);
   const group = modes.length < 2 ? '' :
     `<div class="sgroup qmodes" role="radiogroup"` +
@@ -1201,8 +1214,10 @@ const qaCompose = (key, st) => {
     ).join('') + `</div>`;
   return `<div class="qcompose" data-mode="${mode}">` +
     `<div class="qfield">` +
-    `<textarea id="qi${key}" placeholder="${QPLACE[mode]}"></textarea>` +
+    `<textarea id="qi${key}" placeholder="${QPLACE[mode]}"` +
+    ` aria-label="${esc(qaFieldLabel(mode, title))}"></textarea>` +
     `<button type="button" class="qsend"` +
+    ` aria-label="${esc(qaSendLabel(mode))}"` +
     ` onclick="submitCard('${key}')">send</button></div>` +
     group + `</div>`;
 };
@@ -1270,7 +1285,7 @@ const qaInner = (q, key) => {
       (WHO[q.answer_by] ? `<span class="who">${WHO[q.answer_by]}</span>` : '') +
       stamp(q.answer_when) + `${mdInline(q.answer)}</div>` : '';
   const foot = followThread(settled, true) + answer +
-               followThread(since, false) + qaCompose(key, st);
+               followThread(since, false) + qaCompose(key, st, q.title);
   if (st === 'folded')
     return `<details class="qfold"><summary class="qt">${esc(q.title)}` +
       (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : '') +
@@ -2013,7 +2028,18 @@ function setCardMode(comp, mode, snap) {
     b.setAttribute('aria-checked', on ? 'true' : 'false');
   });
   const ta = comp.querySelector('textarea');
-  if (ta) ta.placeholder = QPLACE[mode] || '';
+  if (ta) {
+    ta.placeholder = QPLACE[mode] || '';
+    // #273: keep the accessible name in lockstep with the mode control.
+    const card = comp.closest('.qa');
+    const titleEl = card && (card.querySelector(':scope > .qt')
+      || card.querySelector(':scope > .qfold > .qt')
+      || card.querySelector('.qt'));
+    const title = titleEl ? titleEl.textContent.replace(/\\s+/g, ' ').trim() : '';
+    ta.setAttribute('aria-label', qaFieldLabel(mode, title));
+    const send = comp.querySelector('.qsend');
+    if (send) send.setAttribute('aria-label', qaSendLabel(mode));
+  }
   if (group) slideIndicator(group, !!snap);
 }
 function submitCard(key) {

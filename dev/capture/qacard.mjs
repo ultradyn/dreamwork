@@ -32,6 +32,13 @@ const SHAPE = `(card) => { const root = card.querySelector(':scope > .qfold') ||
   titleTag: (root.querySelector(':scope > .qt') || {}).tagName || null,
   hasInput: !!root.querySelector(':scope > .qcompose .qfield textarea'),
   inputId: (root.querySelector(':scope > .qcompose textarea') || {}).id || null,
+  // #273: accessible name + 44px send floor (dock and every card share qaCompose)
+  inputAria: (root.querySelector(':scope > .qcompose textarea') || {})
+               .getAttribute?.('aria-label') || null,
+  sendAria: (root.querySelector(':scope > .qcompose .qsend') || {})
+              .getAttribute?.('aria-label') || null,
+  sendH: (() => { const b = root.querySelector(':scope > .qcompose .qsend');
+    return b ? b.getBoundingClientRect().height : 0; })(),
   modes: [...root.querySelectorAll(':scope > .qcompose .qmode')]
            .map(b => b.dataset.mode),
   hasAnsTag: !!root.querySelector(':scope > .anstag'),
@@ -42,6 +49,31 @@ const SHAPE = `(card) => { const root = card.querySelector(':scope > .qfold') ||
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(900);
 const qs = await p.evaluate(`[...document.querySelectorAll('.qa')].map(${SHAPE})`);
 await p.screenshot({ path: `${OUT}/questions.png`, fullPage: true });
+
+const byState = s => qs.filter(c => c.cls.includes(s));
+const open = byState('open'), awaiting = byState('awaiting'), folded = byState('folded');
+
+// #273 mode rewrite while still on /questions (open card present)
+let modeOk = { ok: false };
+if (open[0]) {
+  modeOk = await p.evaluate(async (key) => {
+    const card = document.querySelector(`.qa[data-qkey="${key}"]`);
+    if (!card) return { ok: false, why: 'no card' };
+    const noteBtn = card.querySelector('.qmode[data-mode="note"]');
+    const ta = card.querySelector('textarea');
+    const send = card.querySelector('.qsend');
+    if (!noteBtn || !ta) return { ok: false, why: 'no controls' };
+    const before = ta.getAttribute('aria-label') || '';
+    noteBtn.click();
+    await new Promise(r => setTimeout(r, 50));
+    const after = ta.getAttribute('aria-label') || '';
+    const sendL = send ? (send.getAttribute('aria-label') || '') : '';
+    return {
+      ok: /note/i.test(after) && after !== before && /note/i.test(sendL),
+      before, after, sendL
+    };
+  }, open[0].key);
+}
 
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' }); await sleep(900);
 const dash = await p.evaluate(`[...document.querySelectorAll('.qa')].map(${SHAPE})`);
@@ -64,8 +96,6 @@ if (title) {
   }
 }
 
-const byState = s => qs.filter(c => c.cls.includes(s));
-const open = byState('open'), awaiting = byState('awaiting'), folded = byState('folded');
 const sameShape = (a, b2) => JSON.stringify(a.order) === JSON.stringify(b2.order) &&
   a.hasTitle === b2.hasTitle && a.hasInput === b2.hasInput &&
   JSON.stringify(a.modes) === JSON.stringify(b2.modes) && a.cls === b2.cls;
@@ -98,6 +128,25 @@ ok('dashboard renders the identical card as /questions',
    dash.length > 0 && dash.every(d => qs.some(q => sameShape(d, q))));
 ok('the review dock renders the identical card as /questions',
    dock.length === 1 && qs.some(q => sameShape(dock[0], q)));
+
+// #273 — review dock a11y: named field + 44px send (shared compose path)
+const withInput = c => c.hasInput;
+ok('every input card has an aria-label on the textarea (#273)',
+   qs.filter(withInput).every(c => c.inputAria && c.inputAria.length > 2));
+ok('open cards name "answer"; awaiting/folded name "note" (#273 mode)',
+   open.every(c => /^answer\b/i.test(c.inputAria || '')) &&
+   [...awaiting, ...folded].filter(withInput)
+     .every(c => /note/i.test(c.inputAria || '')));
+ok('send controls are named and at least 44px tall (#273)',
+   qs.filter(withInput).every(c =>
+     c.sendAria && /send/i.test(c.sendAria) && c.sendH + 0.01 >= 44));
+if (dock[0] && dock[0].hasInput) {
+  ok('review dock textarea has accessible name (#273)',
+     !!(dock[0].inputAria && dock[0].inputAria.length > 2));
+  ok('review dock send is ≥44px (#273)', dock[0].sendH + 0.01 >= 44);
+}
+ok('switching to note rewrites textarea + send aria-label (#273)',
+   !!(modeOk && modeOk.ok));
 
 console.log('states: open=' + open.length + ' awaiting=' + awaiting.length +
             ' folded=' + folded.length + ' dash=' + dash.length +
