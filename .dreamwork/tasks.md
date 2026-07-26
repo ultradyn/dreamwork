@@ -18,9 +18,23 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **250**
+Next id: **252**
 
 ## Open
+
+- **#251** — Prove old answer node disconnects after deletion refresh · P2 ·
+  test · 10m · origin: **loop** · late #247 review · assigned with #250 to
+  `grok-sugar-vesi-x6tv` in `.worktrees/250-missing-aid-motion` · retain the
+  original node handle and prove it becomes disconnected; fresh queried-node
+  `isConnected` is tautological · red-first · in progress
+- **#250** — Preserve motion for missing-aid answer disclosures · P1 · bug ·
+  20m · origin: **loop** · late #247 review · assigned to
+  `grok-sugar-vesi-x6tv` in `.worktrees/250-missing-aid-motion` · missing-aid
+  fail-closed rows currently match the delegated summary handler but fail its
+  keyed host lookup, so `preventDefault` swallows the toggle and no atmospheric
+  disclosure transition runs · preserve no persistent identity; add local
+  non-keyed click transition with reduced-motion parity and real intermediate
+  geometry guard · in progress
 
 - **#249** — Add dev-overlay sampling cadence controls · P2 · dev UI · 25m ·
   origin: **human** · **human via watch 14:37** · frame-time graph + other
@@ -36,11 +50,11 @@ Next id: **250**
   evaluate whether real workflows justify migration rather than solving a
   semantically invisible distinction by default
 - **#247** — Harden answer-state IDs and deletion guard · P2 · test/bug ·
-  15m · origin: **loop** · late #238 review · assigned to
-  `grok-sugar-vesi-x6tv` in `.worktrees/247-answer-state` · missing server
-  `aid` must not emit colliding empty `data-keep`; deletion phase must prove old
-  node detached / replacement occurred · document exact-content twin ordinal
-  limit honestly · research complete; implementation in progress
+  origin: **loop** · completed at `ba03c1f` · missing server aid omits both
+  persistence/FLIP attributes; exact-content twin ordinal limit documented;
+  deletion guard strengthened · 439 tests, lint, focused answers browser and
+  independent Standards/Spec PASS · pushed/deployed · late review follow-ups
+  #250/#251 correct the unkeyed click-motion gap and true old-node proof
 - **#246** — Keep Grok usefully occupied when work is available · P2 · routine
   · origin: **human** · **human via watch 14:33** · proactively assign
   `grok-sugar-vesi-x6tv` unblocked small/medium in-repo work with disjoint
@@ -135,8 +149,10 @@ Next id: **250**
   `Date.now() + 1600` toward 850ms, choosing the shortest reasonable value
   that cannot let `/mtime` replacement interrupt answer/note morphs · measure
   CARD travel, lifted hero/cleanup and relevant guard window; red-prove early
-  release rather than assuming CARD_MS is the whole critical path · queued
-  behind active #233
+  release rather than assuming CARD_MS is the whole critical path · research:
+  1150ms `flipDock` transform + ~1000ms card cleanup make 850ms unsafe; use a
+  forced-mtime race to choose a named ~1200–1300ms hold or event completion ·
+  stale #233 LAN dependency removed · queued after active #250/#251 correction
 
 - **#233** — Allow explicit LAN bind and Host names · P1 · task · 30m
   design + increments · origin: **human** · **do next via chat 13:55** ·
