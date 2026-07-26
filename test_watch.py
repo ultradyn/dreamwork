@@ -839,6 +839,41 @@ class TestCollector(unittest.TestCase):
         self.assertNotIn("fetch('/ask'", watch.PAGE)
         self.assertIn('self.path == "/ask"', inspect.getsource(watch.make_handler))
 
+    def test_answers_askbox_ctrl_enter_and_open_visibility_contract(self):
+        # #292: Ctrl/Cmd+Enter must reach the ask form, not only cards/composer.
+        self.assertIn("t.id === 'askbox'", watch.PAGE)
+        self.assertIn("askform", watch.PAGE)
+        self.assertIn("askInFlight", watch.PAGE)
+        self.assertIn("if (askInFlight) return;", watch.PAGE)
+        # #293: open answer rows must not permanently carry the enter-snap pose.
+        self.assertNotIn('class="aq open dreamin"', watch.PAGE)
+        self.assertIn('data-aqid=', watch.PAGE)
+        self.assertIn("function revealNewOpenAsks", watch.PAGE)
+        self.assertIn(".aq.open .qt", watch.PAGE)
+        self.assertIn("open_answer_aid", inspect.getsource(watch))
+
+    def test_open_answer_aid_distinguishes_title_twins(self):
+        text = (
+            "# Questions for the dreamer\n\n## Open\n\n"
+            "- **2026-07-27 — Twin title**\n  body alpha\n\n"
+            "- **2026-07-27 — Twin title**\n  body beta\n\n"
+            "## Answered\n"
+        )
+        items = watch.parse_open_answers(text)
+        self.assertEqual(len(items), 2)
+        self.assertTrue(all(i.get("aid", "").startswith("open:") for i in items))
+        self.assertNotEqual(items[0]["aid"], items[1]["aid"])
+        # exact twins get ordinals, still unique
+        twin = (
+            "# Questions for the dreamer\n\n## Open\n\n"
+            "- **Same**\n  exact\n\n"
+            "- **Same**\n  exact\n\n"
+            "## Answered\n"
+        )
+        t2 = watch.parse_open_answers(twin)
+        self.assertEqual(len(t2), 2)
+        self.assertNotEqual(t2[0]["aid"], t2[1]["aid"])
+
     def test_answers_channel_parse_append_collect(self):
         text = ("# Questions for the dreamer\n\n## Open\n\n"
                 "- **2026-07-26 — Why?** Human context.\n\n"

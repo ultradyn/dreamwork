@@ -290,9 +290,225 @@ await page.route('**/ask',r=>r.fulfill({status:409,body:'refused'})); await page
 ok('failed ask keeps words',await page.locator('#askbox').inputValue()==='Keep these exact words');
 ok('failed ask explains outcome',(await page.locator('#askmsg').textContent()).includes('kept'));
 ok('page-owned errors',errs.length===0); if(errs.length) console.error(errs.join('\n'));
-const reduced=await br.newPage({reducedMotion:'reduce'}); await reduced.goto(`http://127.0.0.1:${PORT}/answers`); await reduced.waitForSelector('#answersections');
+
+/* #292 — Ctrl/Cmd+Enter must submit the /answers ask form (composer + card
+   already do). Real keyboard, one durable submit, no duplicate. */
+await page.unroute('**/ask').catch(()=>{});
+writeFileSync(ansPath,'# Questions for the dreamer\n\n## Open\n\n## Answered\n');
+await page.goto(`http://127.0.0.1:${PORT}/answers`,{waitUntil:'networkidle'});
+await page.waitForSelector('#askbox');
+const askText='Ctrl-enter submit from answers askbox';
+await page.locator('#askbox').fill(askText);
+await page.locator('#askbox').focus();
+await page.keyboard.press('Control+Enter');
+const submitted=await page.waitForFunction(()=>{
+  const box=document.querySelector('#askbox');
+  const n=document.querySelectorAll('.aq.open').length;
+  return box&&box.value===''&&n>=1;
+},null,{timeout:5000}).then(()=>true).catch(()=>false);
+ok('#292 Ctrl+Enter clears the box and creates an open entry',submitted);
+const nOpen=await page.locator('.aq.open').count();
+ok('#292 exactly one open entry after one Ctrl+Enter',submitted&&nOpen===1);
+const onDisk=(await import('node:fs')).readFileSync(ansPath,'utf8');
+ok('#292 durable answers.md received the question',submitted&&onDisk.includes(askText));
+// second Ctrl+Enter with empty box must not forge another entry
+if(submitted){
+  await page.locator('#askbox').focus();
+  await page.keyboard.press('Control+Enter');
+  await sleep(400);
+}
+ok('#292 empty Ctrl+Enter does not double-submit',
+   submitted&&await page.locator('.aq.open').count()===1);
+
+/* G1 HIGH: rapid double Ctrl+Enter while /ask is delayed — exactly one POST
+   and one durable record (in-flight guard). */
+writeFileSync(ansPath,'# Questions for the dreamer\n\n## Open\n\n## Answered\n');
+await page.goto(`http://127.0.0.1:${PORT}/answers`,{waitUntil:'networkidle'});
+await page.waitForSelector('#askbox');
+let askPosts=0;
+await page.route('**/ask',async route=>{
+  askPosts++;
+  await sleep(700);
+  await route.continue();
+});
+// Title is first sentence only; unique marker lives only in the body so a
+// single write is not double-counted when grepping the file.
+const bodyMark='INFLIGHT_BODY_'+Date.now();
+const duplex='Short duplex title?\n\n'+bodyMark+' trailing words for the body.';
+await page.locator('#askbox').fill(duplex);
+await page.locator('#askbox').focus();
+await page.keyboard.press('Control+Enter');
+await page.keyboard.press('Control+Enter'); // before first response
+await page.waitForFunction(()=>document.querySelector('#askbox')?.value===''&&document.querySelectorAll('.aq.open').length>=1,null,{timeout:8000}).catch(()=>{});
+await sleep(200);
+const openAfterDup=await page.locator('.aq.open').count();
+const diskDup=(await import('node:fs')).readFileSync(ansPath,'utf8');
+const diskHits=(diskDup.match(new RegExp(bodyMark,'g'))||[]).length;
+const openHeads=(diskDup.match(/^- \*\*/gm)||[]).length;
+ok('#292 delayed double Ctrl+Enter issues exactly one /ask',askPosts===1);
+ok('#292 delayed double Ctrl+Enter leaves exactly one open row',openAfterDup===1);
+ok('#292 delayed double Ctrl+Enter writes the body marker once',diskHits===1);
+ok('#292 delayed double Ctrl+Enter adds exactly one open entry head',openHeads===1);
+await page.unroute('**/ask').catch(()=>{});
+
+/* G2: exact-title distinct-body twins have distinct data-aqid; a new twin arrives. */
+writeFileSync(ansPath,
+  '# Questions for the dreamer\n\n## Open\n\n'+
+  '- **2026-07-27 — Twin title**\n  first body only\n\n'+
+  '- **2026-07-27 — Twin title**\n  second body different\n\n'+
+  '## Answered\n');
+await page.goto(`http://127.0.0.1:${PORT}/answers`,{waitUntil:'networkidle'});
+await page.waitForFunction(()=>document.querySelectorAll('.aq.open').length===2,null,{timeout:5000});
+const twinIds=await page.evaluate(()=>[...document.querySelectorAll('.aq.open')].map(e=>e.dataset.aqid||''));
+ok('#293 twin open rows both carry data-aqid',twinIds.length===2&&twinIds.every(Boolean));
+ok('#293 twin open rows have distinct data-aqid',twinIds[0]!==twinIds[1]);
+
+/* #293 — submitted open entry text must be visibly readable (opacity/color),
+   live after submit and after hard refresh. Stuck .dreamin is opacity 0 with
+   a still-hitbox I-beam — existence checks pass over that. */
+const liveVis=submitted?await page.locator('.aq.open').first().evaluate(el=>{
+  const qt=el.querySelector('.qt');
+  const body=el.querySelector('.aqbody')||el;
+  if(!qt) return {ok:false};
+  const csq=getComputedStyle(qt), csb=getComputedStyle(body), cse=getComputedStyle(el);
+  const parseRgb=s=>{const m=String(s).match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);return m?[+m[1],+m[2],+m[3]]:null;};
+  const lum=rgb=>rgb?0.2126*rgb[0]+0.7152*rgb[1]+0.0722*rgb[2]:0;
+  return {
+    ok:true,
+    text:(qt.textContent||'').trim(),
+    dreamin:el.classList.contains('dreamin'),
+    opEl:parseFloat(cse.opacity),
+    opQt:parseFloat(csq.opacity),
+    opBody:parseFloat(csb.opacity),
+    colorQt:csq.color,
+    colorBody:csb.color,
+    lumQt:lum(parseRgb(csq.color)),
+    h:el.getBoundingClientRect().height,
+    w:el.getBoundingClientRect().width,
+  };
+}):{ok:false};
+ok('#293 live open entry exists with title text',
+   liveVis.ok&&liveVis.text.length>0);
+ok('#293 live open entry is not stuck in .dreamin',liveVis.ok&&!liveVis.dreamin);
+ok('#293 live title opacity is fully visible',liveVis.ok&&liveVis.opQt>=0.95&&liveVis.opEl>=0.95);
+ok('#293 live title has non-transparent readable color',
+   liveVis.ok&&liveVis.lumQt>30&&!/rgba\(0,\s*0,\s*0,\s*0\)/.test(liveVis.colorQt||''));
+ok('#293 live entry has real geometry (not zero box)',
+   liveVis.ok&&liveVis.h>8&&liveVis.w>40);
+
+let refreshVis={ok:false};
+if(submitted){
+  await page.reload({waitUntil:'networkidle'});
+  const hasOpen=await page.waitForSelector('.aq.open',{timeout:5000}).then(()=>true).catch(()=>false);
+  if(hasOpen){
+    refreshVis=await page.locator('.aq.open').first().evaluate(el=>{
+      const qt=el.querySelector('.qt');
+      if(!qt) return {ok:false};
+      const csq=getComputedStyle(qt), cse=getComputedStyle(el);
+      const parseRgb=s=>{const m=String(s).match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);return m?[+m[1],+m[2],+m[3]]:null;};
+      const lum=rgb=>rgb?0.2126*rgb[0]+0.7152*rgb[1]+0.0722*rgb[2]:0;
+      return {
+        ok:true,
+        text:(qt.textContent||'').trim(),
+        dreamin:el.classList.contains('dreamin'),
+        opQt:parseFloat(csq.opacity),
+        opEl:parseFloat(cse.opacity),
+        lumQt:lum(parseRgb(csq.color)),
+        h:el.getBoundingClientRect().height,
+      };
+    });
+  }
+}
+ok('#293 after hard refresh open text still present',
+   refreshVis.ok&&refreshVis.text.length>0);
+ok('#293 after hard refresh not stuck in .dreamin',refreshVis.ok&&!refreshVis.dreamin);
+ok('#293 after hard refresh title opacity fully visible',
+   refreshVis.ok&&refreshVis.opQt>=0.95&&refreshVis.opEl>=0.95);
+ok('#293 after hard refresh title color still readable',
+   refreshVis.ok&&refreshVis.lumQt>30);
+ok('#293 after hard refresh geometry remains',refreshVis.ok&&refreshVis.h>8);
+
+/* #293 arrival: live-added open row must traverse intermediate opacities
+   (enter-snap). RED inject: __dwSkipOpenAskArrival skips the mechanism. */
+const ARRIVE=(skip)=>`((skip)=>new Promise(async res=>{
+  window.__dwSkipOpenAskArrival=!!skip;
+  const box=document.getElementById('askbox');
+  const form=document.getElementById('askform');
+  if(!box||!form) return res({ok:false,why:'no form'});
+  const before=new Set([...document.querySelectorAll('.aq.open[data-aqid]')].map(e=>e.dataset.aqid));
+  box.value='Open-row arrival trace '+Math.random().toString(36).slice(2,7);
+  box.dispatchEvent(new Event('input',{bubbles:true}));
+  const seen=[];
+  const t0=performance.now();
+  form.requestSubmit();
+  await new Promise(r=>{
+    (function step(){
+      const els=[...document.querySelectorAll('.aq.open[data-aqid]')];
+      const neu=els.find(e=>!before.has(e.dataset.aqid))||els[els.length-1];
+      if(neu){
+        const cs=getComputedStyle(neu);
+        seen.push({t:Math.round(performance.now()-t0),
+                   op:Math.round(parseFloat(cs.opacity)*100),
+                   tf:cs.transform,
+                   dreamin:neu.classList.contains('dreamin')});
+      }
+      if(performance.now()-t0<2200) requestAnimationFrame(step); else r();
+    })();
+  });
+  window.__dwSkipOpenAskArrival=false;
+  const ops=[...new Set(seen.map(s=>s.op))];
+  const tfs=[...new Set(seen.map(s=>s.tf))];
+  res({ok:true,seen,ops,tfs,final:seen.at(-1)||null,n:seen.length});
+}))(${skip?'true':'false'})`;
+
+// RED: skip arrival → snap (few opacity positions, all high)
+const redArr=await page.evaluate(ARRIVE(true));
+ok('#293 RED disabled arrival still creates a row',
+   redArr.ok&&redArr.final&&redArr.final.op>=95);
+ok('#293 RED disabled arrival does NOT ease through many opacities',
+   redArr.ok&&redArr.ops.filter(o=>o<95).length===0&&redArr.ops.length<=3);
+
+// GREEN: real arrival after another submit
+const greenArr=await page.evaluate(ARRIVE(false));
+const greenOps=greenArr.ops||[];
+ok('#293 GREEN live open arrival eases through many opacities',
+   greenArr.ok&&new Set(greenOps).size>=4&&Math.min(...greenOps)<=10);
+ok('#293 GREEN live open arrival ends fully visible',
+   greenArr.ok&&greenArr.final&&greenArr.final.op>=95&&!greenArr.final.dreamin);
+ok('#293 GREEN live open arrival drifts (not only fades)',
+   greenArr.ok&&(greenArr.tfs||[]).length>=2);
+
+const reduced=await br.newPage({reducedMotion:'reduce'});
+// F1: seed a real answered disclosure — never pass on absence
+writeFileSync(ansPath,
+  '# Questions for the dreamer\n\n## Open\n\n## Answered\n\n'+
+  '- **Seeded for RM** → answered (2026-07-27): loop body for reduced motion.\n');
+await reduced.goto(`http://127.0.0.1:${PORT}/answers`,{waitUntil:'networkidle'});
+await reduced.waitForSelector('#answersections');
 ok('reduced motion preserves function',await reduced.locator('#askbox').isVisible());
-const rd=reduced.locator('.aq.answered').first(); await rd.locator('summary').click();
-ok('reduced motion answered disclosure opens',await rd.getAttribute('open')!==null);
-await rd.locator('summary').click(); ok('reduced motion answered disclosure closes',await rd.getAttribute('open')===null);
+const rd=reduced.locator('.aq.answered').filter({hasText:'Seeded for RM'}).first();
+const hasRd=await rd.count()>0;
+ok('#F1 reduced-motion answered disclosure is present (seeded)',hasRd);
+if(hasRd){
+  await rd.locator('summary').click();
+  ok('reduced motion answered disclosure opens',await rd.getAttribute('open')!==null);
+  await rd.locator('summary').click();
+  ok('reduced motion answered disclosure closes',await rd.getAttribute('open')===null);
+} else {
+  ok('reduced motion answered disclosure opens',false);
+  ok('reduced motion answered disclosure closes',false);
+}
+// #292 under reduced motion too
+await reduced.locator('#askbox').fill('reduced ctrl enter ask');
+await reduced.locator('#askbox').focus();
+await reduced.keyboard.press('Control+Enter');
+const rmSub=await reduced.waitForFunction(()=>document.querySelector('#askbox')?.value===''&&document.querySelectorAll('.aq.open').length>=1,null,{timeout:5000}).then(()=>true).catch(()=>false);
+ok('#292 reduced motion Ctrl+Enter still submits',rmSub);
+// RM arrival: ≤2 opacity positions (snap), ends visible
+const rmArr=await reduced.evaluate(ARRIVE(false));
+const rmOps=rmArr.ops||[];
+ok('#293 reduced motion open arrival snaps (≤2 opacity positions)',
+   rmArr.ok&&new Set(rmOps).size<=2);
+ok('#293 reduced motion open arrival ends fully visible',
+   rmArr.ok&&rmArr.final&&rmArr.final.op>=95&&!rmArr.final.dreamin);
 await br.close(); console.log(checks.join('\n')); if(checks.some(x=>x.startsWith('FAIL'))) process.exit(1);

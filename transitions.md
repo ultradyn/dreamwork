@@ -246,6 +246,13 @@ exception; an element leaving fades rather than vanishing.
   fading up from nothing). Snap the start, force a reflow, then remove the
   class on the next frame to animate in. A brief opacity delay keeps it
   genuinely absent for the first ~150ms so it emerges rather than blends.
+  **Never leave `.dreamin` on settled content (#293).** `/answers` open
+  records once baked the class into every row's HTML; with no rAF removal they
+  stayed at opacity 0 forever (including after hard refresh) while still
+  taking pointer hits. `.dreamin` is a start pose, not a skin. Live-added open
+  rows use a one-shot keyed arrival (`revealNewOpenAsks`): start pose on new
+  `data-aqid` only, rAF remove; reduced motion never applies the start pose.
+  First paint / hard refresh settles visible without replaying arrival.
 - **The mist filter — the load-bearing rule.** Put *all* softening (blur
   **and** displacement) inside **one** SVG filter
   (`feTurbulence`→`feDisplacementMap`→`feGaussianBlur`) driven per-frame

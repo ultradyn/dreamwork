@@ -793,9 +793,20 @@ STYLE = """<style>
   .askform button { color:var(--lit); background:var(--panel2); border:1px solid var(--line);
     border-radius:var(--radius); padding:.35rem .7rem; font:inherit; cursor:pointer; }
   .aq { margin:.55rem 0 1rem; padding-left:.7rem; border-left:1px solid var(--line); }
-  .aq.open { border-left-color:var(--accent); }
+  .aq.open { border-left-color:var(--accent);
+    /* so removing the enter-snap .dreamin eases in rather than popping
+       (#293 arrival). .dreamin's transition:none beats this while posed. */
+    transition:opacity .55s ease, filter .55s ease,
+               transform .55s cubic-bezier(.32,.1,.2,1); }
+  /* Open title is the subject of the row — same luminance step as a
+     question card's .qt (#293 makes the rule explicit so a future style
+     catch-all cannot leave the words uncoloured). */
+  .aq.open .qt { color:var(--lit); }
   .aqbody { color:var(--muted); margin-top:.25rem; }
   .aq > summary { color:var(--muted); cursor:pointer; }
+  @media (prefers-reduced-motion:reduce) {
+    .aq.open { transition:none; }
+  }
 
   .qfield textarea { flex:1; min-width:0; background:none; border:0; margin:0;
     box-sizing:border-box; color:var(--text); font:inherit; font-size:.75rem;
@@ -2179,7 +2190,18 @@ function answerRecord(e, answered=false) {
     return `<details class="aq answered" data-aid="${id}" data-keep="${id}">` +
       `<summary>${esc(e.title)}</summary>${body}</details>`;
   }
-  return `<article class="aq open dreamin"><div class="qt">${esc(e.title)}</div>` +
+  // Open records must NOT bake a permanent `.dreamin` into the HTML (#293):
+  // that class is only the enter-snap start pose. New open rows receive a
+  // one-shot arrival in revealNewOpenAsks() after setContent (start pose +
+  // rAF remove). Hard refresh / first paint of existing rows stays fully
+  // visible — no stuck pose. Identity is server `aid` (title+body+ordinal),
+  // never title alone — exact-title distinct-body twins must both arrive.
+  if (!e.aid) {
+    return `<article class="aq open"><div class="qt">${esc(e.title)}</div>` +
+      `<div class="label">you asked · awaiting dreamer</div>${body}</article>`;
+  }
+  return `<article class="aq open" data-aqid="${esc(e.aid)}">` +
+    `<div class="qt">${esc(e.title)}</div>` +
     `<div class="label">you asked · awaiting dreamer</div>${body}</article>`;
 }
 function buildAnswers(d) {
@@ -2194,11 +2216,26 @@ function buildAnswers(d) {
     (d.answers_answered.map(e => answerRecord(e, true)).join('') || `<div class="dim">none yet</div>`);
   return `<div id="answersections">${h}</div>`;
 }
+/* /answers ask: one in-flight attempt at a time (#292).
+   · While a POST is pending, further submit/Ctrl+Enter is a no-op (does not
+     queue a second request with the same bytes).
+   · Generation counters supersession: a response for an older attempt cannot
+     clear a newer draft or status after the form was reset/re-armed.
+   · Failure keeps his words; only a matching successful generation clears.
+   · Navigating away mid-flight is destruction of the surface; the next paint
+     starts generation 0 and does not apply a late success to a new form. */
+let askFlightGen = 0, askInFlight = false;
 async function sendAsk(form) {
+  if (askInFlight) return;
   const box = form.querySelector('#askbox'), msg = form.querySelector('#askmsg');
+  if (!box) return;
   const words = box.value.trim(); if (!words) return;
+  askInFlight = true;
+  const mine = ++askFlightGen;
   let res = null; msg.textContent = 'asking…';
   try { res = await postAsk(words); } catch (e) {}
+  if (mine !== askFlightGen) { askInFlight = false; return; }
+  askInFlight = false;
   if (res && res.ok) { box.value = ''; msg.textContent = 'asked'; await tick(); }
   else msg.textContent = res ? 'question was refused — your words are kept' : 'dreamwork is unreachable — your words are kept';
 }
@@ -2854,12 +2891,43 @@ function setLiveContent(html) {
   }
   setContent(html);
 }
+/* One-shot atmospheric arrival for NEW /answers open rows (#293 amend).
+   Keys by data-aqid (title). First paint of the answers view, and hard
+   refresh, settle fully visible without replaying .dreamin. Live-added
+   rows (after a successful /ask) snap to the enter pose then ease in;
+   reduced motion leaves them fully visible (function, no start pose).
+   window.__dwSkipOpenAskArrival is a deliberate inject point for the
+   browser guard's RED of the arrival mechanism. */
+let knownOpenAskKeys = null;
+function revealNewOpenAsks() {
+  if (view.name !== 'answers') { knownOpenAskKeys = null; return; }
+  const nodes = [...document.querySelectorAll('.aq.open[data-aqid]')];
+  const now = new Set(nodes.map(el => el.dataset.aqid));
+  if (knownOpenAskKeys === null || window.__dwSkipOpenAskArrival) {
+    // first answers paint, or inject: settle without stuck dreamin
+    nodes.forEach(el => el.classList.remove('dreamin'));
+    knownOpenAskKeys = now;
+    return;
+  }
+  const rmr = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  for (const el of nodes) {
+    if (knownOpenAskKeys.has(el.dataset.aqid)) continue;
+    if (rmr) continue;                          // already fully lit
+    el.classList.add('dreamin');
+    void el.offsetWidth;                        // commit opacity 0
+    requestAnimationFrame(() => {
+      if (el.isConnected) el.classList.remove('dreamin');
+    });
+  }
+  knownOpenAskKeys = now;
+}
 function setContent(html) {
   document.getElementById('view').innerHTML = html;
   // fresh groups carry a 0-width indicator, so land it rather than let it
   // slide up out of nothing (the enter-snap rule)
   paintIndicators(true);
   ages();
+  revealNewOpenAsks();
 }
 /* ── what the human did to a card survives a tick (#118, #111) ────────────
    The tick re-renders the question list through `innerHTML`, so every card
@@ -4433,7 +4501,8 @@ function popoutDoc(url, label) {
     if (e.key === 'Escape' && open) closeCmd();
   });
   // Ctrl/Cmd+Enter submits from a text field: an answer box (anywhere —
-  // questions view, review dock) or the command palette.
+  // questions view, review dock), the command palette, or the /answers
+  // ask box (#292 — same shortcut, same one-submit rule).
   document.addEventListener('keydown', e => {
     if (!((e.ctrlKey || e.metaKey) && e.key === 'Enter')) return;
     const t = e.target;
@@ -4442,6 +4511,10 @@ function popoutDoc(url, label) {
     } else if (t && t.id === 'cmdtext') {
       e.preventDefault();
       document.getElementById('cmdform').requestSubmit();
+    } else if (t && t.id === 'askbox') {
+      e.preventDefault();
+      const form = document.getElementById('askform');
+      if (form) form.requestSubmit();
     }
   });
   addEventListener('resize', () => {
@@ -5732,9 +5805,37 @@ def title_priority(title):
     return int(m.group(1)) if m else PRIORITY_DEFAULT
 
 
+def open_answer_aid(title, body, ordinal=0):
+    """Content identity for an Open answers.md record (arrival key #293).
+
+    Same discipline as answered aids: title+body + ordinal among exact twins.
+    Namespace `open:` so it never collides with `ans:` fold keys. Title-only
+    keys would merge distinct bodies and skip a second row's enter animation.
+    """
+    t = (title or "").strip()
+    b = (body or "").strip()
+    payload = "\n".join(["open.v1", t, b, str(int(ordinal))])
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
+    return f"open:{digest}"
+
+
 def parse_open_answers(text):
-    """Human-authored questions awaiting the dreamer, in file order."""
-    return _parse_entries(text, "Open", lift_answer=False)
+    """Human-authored questions awaiting the dreamer, in file order.
+
+    Each item carries `aid` for collision-safe open-row arrival (#293): exact
+    title twins with distinct bodies stay unique; exact content twins get
+    successive ordinals (delete renumbers — fail closed for animation keys).
+    """
+    items = _parse_entries(text, "Open", lift_answer=False)
+    seen = {}
+    for item in items:
+        twin_key = ((item.get("title") or "").strip(),
+                    (item.get("body") or "").strip())
+        ordinal = seen.get(twin_key, 0)
+        seen[twin_key] = ordinal + 1
+        item["aid"] = open_answer_aid(
+            item.get("title"), item.get("body"), ordinal)
+    return items
 
 
 def _answer_aid_parts(title, when, body, follows):
