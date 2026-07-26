@@ -13,9 +13,13 @@ const rd = join(target, '.dreamwork', 'review');
 writeFileSync(join(rd, 'a.html'), '<!doctype html><p>a');
 writeFileSync(join(rd, 'z.html'), '<!doctype html><p>z');
 const stamp = (name, seconds) => utimesSync(join(rd, name), seconds, seconds);
-const expectedReviews = () => readdirSync(rd).filter(name=>name.endsWith('.html')).map(name => ({
-  name, mtime_ns: Number(statSync(join(rd, name), { bigint:true }).mtimeNs)
-})).sort((a,b) => b.mtime_ns-a.mtime_ns || a.name.localeCompare(b.name));
+// Preserve nanoseconds in Node: JSON numbers cannot carry this 64-bit oracle.
+// The browser proves that the server payload and settled DOM keep this sequence.
+const orderedReviewNames = reviews => reviews.sort((a,b) => a.mtimeNs===b.mtimeNs
+  ? a.name.localeCompare(b.name) : a.mtimeNs>b.mtimeNs ? -1 : 1).map(review => review.name);
+const expectedReviewNames = () => orderedReviewNames(readdirSync(rd).filter(name=>name.endsWith('.html')).map(name => ({
+  name, mtimeNs: statSync(join(rd, name), { bigint:true }).mtimeNs
+})));
 stamp('a.html', 1_700_000_000); stamp('z.html', 1_700_000_100);
 const srv = spawn('python3', ['-u', 'watch.py', '--target', target, '--port', '0'], { stdio: ['ignore', 'pipe', 'inherit'] });
 const line = await new Promise((resolve, reject) => { let s=''; srv.stdout.on('data', b => { s += b; const m=s.match(/http:\/\/[^:]+:(\d+)/); if(m) resolve(m[1]); }); srv.on('exit', reject); });
@@ -28,6 +32,18 @@ async function run(reduced, sabotage='none') {
     const p = await br.newPage({viewport:{width:1000,height:1100}, reducedMotion: reduced?'reduce':'no-preference'});
     await p.goto(base, {waitUntil:'networkidle'});
     if (sabotage==='regroup') await p.evaluate(() => { regroupCards = () => {}; });
+    if (sabotage==='wrong-order') await p.evaluate(() => {
+      const originalSetLiveContent = setLiveContent;
+      setLiveContent = (...args) => {
+        const value = originalSetLiveContent(...args);
+        if (window.__corruptNextReviewOrder) {
+          window.__corruptNextReviewOrder = false;
+          const rows = [...document.querySelectorAll('[data-review]')];
+          if (rows.length >= 3) rows[0].before(rows[2]);
+        }
+        return value;
+      };
+    });
     await p.waitForFunction(() => {
       const rows=[...document.querySelectorAll('[data-review]')];
       if (rows.length<2) return false;
@@ -50,7 +66,7 @@ async function run(reduced, sabotage='none') {
       const sameGeometry = (a,b) => a && b && a.length===b.length && a.every((x,i)=>x.key===b[i].key && Math.abs(x.top-b[i].top)<=epsilon);
       const exactExpected = next => expected && Array.isArray(next?.reviews)
         && next.reviews.length===expected.length
-        && next.reviews.every((review,i) => review.name===expected[i].name && review.mtime_ns===expected[i].mtime_ns);
+        && next.reviews.every((review,i) => review.name===expected[i]);
       const finish=(fn,value) => { if(done) return; done=true; observer.disconnect(); setData=originalSetData; delete window.__armExpectedReviews; delete window.__reviewGuardReady; fn(value); };
       const fail=message => finish(reject,new Error(message));
       setData=function(next) {
@@ -90,6 +106,8 @@ async function run(reduced, sabotage='none') {
             const matrix=x.transform==='none' ? null : new DOMMatrixReadOnly(x.transform);
             return {key:x.key,top:x.top-(matrix ? matrix.m42 : 0)};
           });
+          if (orderOf(natural)!==expected.join('|'))
+            return fail('settled natural review order differs from exact filesystem order');
         }
         if (causal) frames.push(now);
         previous=now;
@@ -98,7 +116,10 @@ async function run(reduced, sabotage='none') {
           const atNatural=intended && now.every(x=>Math.abs(x.top-natural.find(y=>y.key===x.key).top)<=epsilon);
           const finished=now.every(x=>x.transform==='none' && !x.animating);
           stableAfter = atNatural && finished && sameGeometry(frames.at(-2),now) ? stableAfter+1 : 0;
-          if (stableAfter>=4) return finish(resolve,{oldGeometry,natural,frames:frames.slice(Math.max(0,changedFrame-1)),causalTimestamp:causal.timestamp,firstChanged:{source:firstChanged.source,timestamp:firstChanged.timestamp}});
+          if (stableAfter>=4) {
+            if (order!==expected.join('|')) return fail('settled review DOM order differs from exact filesystem order');
+            return finish(resolve,{oldGeometry,natural,frames:frames.slice(Math.max(0,changedFrame-1)),causalTimestamp:causal.timestamp,firstChanged:{source:firstChanged.source,timestamp:firstChanged.timestamp},expectedOrder:expected});
+          }
         }
         if (performance.now()-started>6500) return fail('review reorder did not explicitly settle before timeout');
         requestAnimationFrame(frame);
@@ -107,8 +128,9 @@ async function run(reduced, sabotage='none') {
     }), {epsilon:EPS}).then(value=>({value}),error=>({error}));
     await p.waitForFunction(() => window.__reviewGuardReady===true);
     stamp('a.html', nextStamp);
-    const expected=expectedReviews();
+    const expected=expectedReviewNames();
     await p.evaluate(expected => window.__armExpectedReviews(expected), expected);
+    if (sabotage==='wrong-order') await p.evaluate(() => { window.__corruptNextReviewOrder = true; });
     if (sabotage==='early-reorder') await p.evaluate(() => {
       const rows=[...document.querySelectorAll('[data-review]')];
       rows[0].parentElement.insertBefore(rows.at(-1),rows[0]);
@@ -117,8 +139,9 @@ async function run(reduced, sabotage='none') {
     const outcome=await capture;
     if (outcome.error) throw outcome.error;
     const result=outcome.value;
-    const {oldGeometry,natural,frames}=result;
-    const intended=natural.map(x=>x.key).join('|')!==oldGeometry.map(x=>x.key).join('|');
+    const {oldGeometry,natural,frames,expectedOrder}=result;
+    const expectedSequence=expectedOrder.join('|');
+    const intended=natural.map(x=>x.key).join('|')===expectedSequence && expectedSequence!==oldGeometry.map(x=>x.key).join('|');
     const keyed=oldGeometry.length>=2 && natural.length===oldGeometry.length && oldGeometry.every(x=>x.key && natural.some(y=>y.key===x.key));
     const causal=result.firstChanged.timestamp>=result.causalTimestamp;
     const rows=oldGeometry.filter(x=>Math.abs(x.top-natural.find(y=>y.key===x.key).top)>2);
@@ -134,7 +157,7 @@ async function run(reduced, sabotage='none') {
     if (sabotage!=='none') return pass;
     ok(`${reduced?'reduced':'normal'}: expected setData causally precedes first changed ${result.firstChanged.source}`, causal);
     ok(`${reduced?'reduced':'normal'}: stable keyed review rows exist`, keyed);
-    ok(`${reduced?'reduced':'normal'}: old and new orders differ`, intended);
+    ok(`${reduced?'reduced':'normal'}: settled DOM equals exact filesystem order`, intended);
     for (const m of motions) ok(`${reduced?'reduced':'normal'}: ${m.key} ${reduced?'reorders instantly without transition':'travels through intermediate Y positions without overshoot'}`, reduced ? m.distinct<=3&&m.endpoints : m.distinct>=8&&m.bounded&&m.endpoints);
     return pass;
   } finally { await br.close(); }
@@ -144,6 +167,20 @@ try {
   stamp('z.html',1_700_000_400); await run(true);
   stamp('a.html',1_700_000_000); stamp('z.html',1_700_000_100);
   if (await run(false, 'regroup')) throw new Error('self-test: disabled review regroup incorrectly passed normal motion guard');
+  stamp('a.html',1_700_000_000); stamp('z.html',1_700_000_100);
+  try {
+    await run(false, 'wrong-order');
+    throw new Error('self-test: smoothly wrong review order incorrectly passed expected-order guard');
+  } catch (error) {
+    if (!String(error).includes('differs from exact filesystem order')) throw error;
+  }
+  const adjacentNs = 1_700_000_000_000_000_000n;
+  if (Number(adjacentNs)!==Number(adjacentNs+1n)) throw new Error('self-test: adjacent-nanosecond fixture does not expose Number collision');
+  const adjacentOrder=orderedReviewNames([
+    {name:'a.html',mtimeNs:adjacentNs},
+    {name:'z.html',mtimeNs:adjacentNs+1n}
+  ]).join('|');
+  if (adjacentOrder!=='z.html|a.html') throw new Error('self-test: exact mtime oracle collapsed adjacent nanoseconds');
   stamp('a.html',1_700_000_000); stamp('z.html',1_700_000_100);
   try {
     await run(false, 'early-reorder');
