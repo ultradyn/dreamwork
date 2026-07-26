@@ -11,7 +11,8 @@ const exposed=await page.locator('#askbox').waitFor({state:'visible',timeout:500
 ok('answers route exposes #askbox',exposed);
 if(!exposed){console.log(checks.join('\n'));await br.close();process.exit(1)}
 ok('route title',await page.locator('#chrome .htitle').textContent()==='answers');
-ok('seeded human question visible',(await page.locator('#answersections').textContent()).includes('Can an answer re-block'));
+ok('missing channel is calm',await page.locator('.aq.open').count()===0 &&
+   (await page.locator('#answersections').textContent()).includes('none awaiting the dreamer'));
 const asked='Does the live ask persist?\n## not a section\n- **not another entry**';
 await page.locator('#askbox').fill(asked); await page.locator('#askbox').focus();
 const tickResponse=await page.evaluate(()=>fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'do-next',text:'',from:'/answers'})}).then(r=>r.status));
@@ -22,6 +23,7 @@ ok('focus survives live tick',await page.evaluate(()=>document.activeElement?.id
 await page.locator('#askform button').click(); await page.waitForFunction(()=>document.querySelector('#askbox')?.value==='');
 await page.waitForTimeout(400);
 const pageText=await page.locator('#answersections').textContent();
+ok('first ask creates exactly one entry',await page.locator('.aq.open').count()===1);
 ok('successful ask appears',pageText.includes('Does the live ask persist?'));
 ok('multiline markdown meaning survives',pageText.includes('not a section')&&pageText.includes('not another entry'));
 await page.route('**/ask',r=>r.fulfill({status:409,body:'refused'})); await page.locator('#askbox').fill('Keep these exact words'); await page.locator('#askform button').click(); await page.waitForFunction(()=>document.querySelector('#askmsg')?.textContent.includes('kept'));
