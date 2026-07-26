@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+"""ud-dw-generate — derive the preview location for the current repo+branch.
+
+    ud-dw-generate branch-url [--set-nonce HEX] [--json] [--no-create]
+
+Answers one question: "where do I put a preview of what I am working on right
+now, so the person I am working for can look at it?" It reads the repo and
+branch from the CURRENT DIRECTORY, mints a nonce, checks the target does not
+already exist, creates it on the server with permissions that let the agent
+write there, and prints the path and URL.
+
+The nonce is the whole point of the layout. Preview URLs get pasted into chat
+and outlive the branch, so a stable path per branch would silently replace what
+someone was looking at a minute ago. A fresh nonce per preview means an old URL
+keeps showing what it showed. Pass --set-nonce to update an existing preview
+deliberately, which is the only way to overwrite one.
+
+CONFIGURATION lives OUTSIDE version control, because it names hosts and paths.
+Searched in order, first hit wins:
+
+    $UD_DW_PREVIEW_CONFIG                     (explicit path)
+    <repo-root>/.preview-target.json          (must be gitignored)
+    ~/.config/ud-dreamwork/preview-targets.json
+
+The last form is keyed by repo slug so one file can serve many repos:
+
+    {"dd2-data-download-page": {"host": "...", "root": "...", ...}}
+
+Required keys: host, root, base_url.
+Optional: owner (chown target, default: the ssh user), dir_mode (default 2775),
+          sudo (default true — public roots are usually not user-writable).
+
+Exit codes: 0 ok, 1 usage/config error, 2 remote operation failed.
+"""
+import argparse
+import json
+import os
+import re
+import secrets
+import subprocess
+import sys
+
+NONCE_BYTES = 5          # 10 hex chars — long enough not to guess, short enough to paste
+MAX_NONCE_TRIES = 8
+
+
+def die(msg, code=1):
+    print("ud-dw-generate: " + msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def run(cmd, **kw):
+    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+
+
+def slugify(name, limit=48):
+    """Lowercase, non-alphanumerics to single dashes, trimmed.
+
+    Branch names carry slashes (feat/foo), dots and capitals; all three are
+    hostile in a URL path segment, so they collapse to dashes rather than
+    being escaped — a preview path is for humans reading a chat message.
+    """
+    s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    if len(s) > limit:
+        s = s[:limit].rstrip("-")
+    return s or "unnamed"
+
+
+def git(*args, cwd=None):
+    r = run(["git"] + list(args), cwd=cwd)
+    if r.returncode != 0:
+        die("not in a git repository (or git failed): " + r.stderr.strip())
+    return r.stdout.strip()
+
+
+def load_config(repo_root, repo_slug):
+    explicit = os.environ.get("UD_DW_PREVIEW_CONFIG")
+    candidates = []
+    if explicit:
+        candidates.append((explicit, False))
+    candidates.append((os.path.join(repo_root, ".preview-target.json"), False))
+    candidates.append((os.path.expanduser("~/.config/ud-dreamwork/preview-targets.json"), True))
+
+    for path, keyed in candidates:
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path) as fh:
+                data = json.load(fh)
+        except Exception as e:
+            die("could not read config %s: %s" % (path, e))
+        if keyed:
+            if repo_slug not in data:
+                continue
+            data = data[repo_slug]
+        missing = [k for k in ("host", "root", "base_url") if k not in data]
+        if missing:
+            die("config %s is missing required key(s): %s" % (path, ", ".join(missing)))
+        data["_source"] = path
+        return data
+
+    die(
+        "no preview target configured for '%s'.\n"
+        "  Create one of:\n"
+        "    %s/.preview-target.json            (add it to .gitignore)\n"
+        "    ~/.config/ud-dreamwork/preview-targets.json   (keyed by repo slug)\n"
+        '  Shape: {"host": "SERVER_1", "root": "/srv/public-files", '
+        '"base_url": "https://example.invalid"}' % (repo_slug, repo_root)
+    )
+
+
+def remote_exists(cfg, path):
+    r = run(["ssh", cfg["host"], "test -e %s" % shq(path)])
+    if r.returncode == 0:
+        return True
+    if r.returncode == 1:
+        return False
+    die("could not reach %s to check the target path: %s"
+        % (cfg["host"], (r.stderr or "").strip()), code=2)
+
+
+def shq(s):
+    return "'" + s.replace("'", "'\\''") + "'"
+
+
+def create_remote(cfg, path):
+    sudo = "sudo " if cfg.get("sudo", True) else ""
+    owner = cfg.get("owner")
+    mode = str(cfg.get("dir_mode", "2775"))
+    parts = ["%smkdir -p %s" % (sudo, shq(path))]
+    if owner:
+        parts.append("%schown -R %s %s" % (sudo, shq(owner), shq(path)))
+    else:
+        # Default to the connecting user so the agent can write without sudo
+        # on every later copy. `id -un` resolves on the far side.
+        parts.append("%schown -R \"$(id -un)\":\"$(id -gn)\" %s" % (sudo, shq(path)))
+    parts.append("%schmod %s %s" % (sudo, shq(mode), shq(path)))
+    r = run(["ssh", cfg["host"], " && ".join(parts)])
+    if r.returncode != 0:
+        die("could not create %s on %s: %s"
+            % (path, cfg["host"], (r.stderr or "").strip()), code=2)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="ud-dw-generate", add_help=True)
+    ap.add_argument("command", choices=["branch-url"])
+    ap.add_argument("--set-nonce", metavar="HEX",
+                    help="reuse this nonce instead of minting one (the only way "
+                         "to update an existing preview in place)")
+    ap.add_argument("--json", action="store_true", help="machine-readable output only")
+    ap.add_argument("--no-create", action="store_true",
+                    help="compute and print, but do not touch the server")
+    args = ap.parse_args()
+
+    repo_root = git("rev-parse", "--show-toplevel")
+    repo_name = os.path.basename(repo_root)
+    repo_slug = slugify(repo_name)
+
+    branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    if branch == "HEAD":                      # detached
+        branch = "detached-" + git("rev-parse", "--short", "HEAD")
+    branch_slug = slugify(branch)
+
+    cfg = load_config(repo_root, repo_slug)
+    root = cfg["root"].rstrip("/")
+    base_url = cfg["base_url"].rstrip("/")
+
+    def path_for(nonce):
+        return "%s/%s/branches/%s/%s" % (root, repo_slug, branch_slug, nonce)
+
+    if args.set_nonce:
+        if not re.fullmatch(r"[0-9a-fA-F]{4,32}", args.set_nonce):
+            die("--set-nonce must be 4-32 hex characters")
+        nonce = args.set_nonce.lower()
+        remote_path = path_for(nonce)
+        reused = (not args.no_create) and remote_exists(cfg, remote_path)
+    else:
+        # Mint until unused. Collision is vanishingly unlikely; the loop is
+        # here because "vanishingly unlikely" and "checked" are different
+        # claims, and this one is cheap to check.
+        reused = False
+        for attempt in range(MAX_NONCE_TRIES):
+            nonce = secrets.token_hex(NONCE_BYTES)
+            remote_path = path_for(nonce)
+            if args.no_create or not remote_exists(cfg, remote_path):
+                break
+        else:
+            die("could not find an unused nonce after %d tries" % MAX_NONCE_TRIES, code=2)
+
+    if not args.no_create:
+        create_remote(cfg, remote_path)
+
+    url = "%s/%s/branches/%s/%s/" % (base_url, repo_slug, branch_slug, nonce)
+    out = {
+        "repo": repo_name,
+        "repo_slug": repo_slug,
+        "repo_root": repo_root,
+        "branch": branch,
+        "branch_slug": branch_slug,
+        "nonce": nonce,
+        "host": cfg["host"],
+        "remote_path": remote_path,
+        "url": url,
+        "created": not args.no_create,
+        "reused_existing": bool(reused),
+        "config_source": cfg["_source"],
+    }
+
+    if args.json:
+        print(json.dumps(out, indent=2))
+        return
+
+    print("repo    %s  (slug %s)" % (repo_name, repo_slug))
+    print("branch  %s  (slug %s)" % (branch, branch_slug))
+    print("nonce   %s%s" % (nonce, "  (reused)" if reused else ""))
+    print("host    %s" % cfg["host"])
+    print("path    %s" % remote_path)
+    print("url     %s" % url)
+    if not args.no_create:
+        print("\ndirectory created and writable; copy files into it, then share the url")
+    else:
+        print("\n--no-create: nothing was created on the server")
+
+
+if __name__ == "__main__":
+    main()
