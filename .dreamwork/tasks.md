@@ -18,9 +18,21 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **291**
+Next id: **292**
 
 ## Open
+
+- **#291** — Restore the command composer's 1.5s courtesy-close · P1 · UI bug ·
+  origin: **human** · **human via watch 2026-07-27 00:40** · exact ask: “bug:
+  the command composer remains open for like 5s now before automatically
+  disappearing. It should auto-disappear 1.5s after sending a command msg unless
+  the user has typed something in the mean time.” · preserve #255's independent
+  ~5s confirmation lifecycle while restoring a ~1.5s panel courtesy-close for
+  successful **command** sends; typing after send cancels only panel close and
+  keeps the valid confirmation; hard destruction still invalidates timers and
+  in-flight callbacks · diagnose whether current command path accidentally ties
+  panel close to confirmation departure; red-first main/popout and reduced-motion
+  evidence; every visual change follows `transitions.md`
 
 - **#290** — Add a dashboard-settable main-dreamer run mode · P1 ·
   orchestration/control-plane design · origin: **human** · **human via watch
