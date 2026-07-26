@@ -2,6 +2,19 @@
 
 ## Open
 
+- **P1 · 2026-07-26 — #229 threaded topic chats: approve the proposed
+  architecture and defaults?** The reviewed artifact is at
+  `.dreamwork/review/threaded-topic-chats.html`. Rec: a compact dashboard
+  chat index + dedicated `/chat` route; append-only Markdown transcript as
+  primary truth and fresh worker input; one run and one editable queued
+  follow-up per chat; deep orchestration module; global cap 2; machine-local
+  gitignored chats; no MVP cancellation until `cancelled` can be durably
+  finalised; manual retention. This is proposal approval only, not authority
+  to implement.
+
+  Answer `Approve A–E as recommended`, or name changes to A surface,
+  B privacy, C concurrency, D cancellation, or E retention.
+
 - **P2 · 2026-07-26 — #221 review datetime ordering: use file mtime?**
   The decision artifact is at `.dreamwork/review/review-datetime-order.html`.
   Rec: newest filesystem mtime first, filename as the deterministic tie-break.
@@ -201,42 +214,22 @@
   with the trailers since every commit written before they exist is one
   the future upgrade pass has to read blind.
 
-- **P1 · 2026-07-25 — which "t3 connect" do you mean, and does it change #201?
-  (#202)** I searched and could not find a product or protocol by that
-  name, so I am asking rather than building against the nearest match.
-
-  Three candidates, and they are very different jobs:
-
-  **(a) T3 Code** — most likely. Theo's open-source **control plane for
-  coding agents** (`github.com/pingdotgg/t3code`, `t3.codes`), a GUI over
-  Codex/Claude/Cursor/OpenCode. It already has the remote mode you
-  described one paragraph earlier: agents on a machine on the LAN, laptop
-  as a thin client through its web interface. "T3 connect" is plausibly
-  that feature.
-  **(b) Claude Code's `/remote`** — exposes the running session to
-  claude.ai and the phone app. Already in the harness this loop runs in.
-  **(c) Agent Client Protocol (ACP)** — JSON-RPC 2.0 over stdin/stdout,
-  the open standard Microsoft's terminal adopted. Much the smallest job
-  if what you want is "speak the standard".
-
-  **The part worth your attention regardless of which it is.** You asked
-  for #201 — dreamhub streams and drives agent TUIs in the browser — in
-  the same message. **T3 Code already is that.** So the two ideas are not
-  independent: there is a build-versus-integrate decision under them, and
-  it is much cheaper to take deliberately now than to discover halfway
-  through #201.
-
-  I do not think full replacement is right — this dashboard is tied to
-  *this loop's* state (questions, ledger, dreams, tint, the shader) in a
-  way a general agent GUI will not be. But "dreamhub streams TUIs itself"
-  and "T3 Code streams them and dreamwork links out" are both coherent,
-  and the second is far less code.
-
-  **Not blocking**: #201's first increment is the herdr control path and
-  the `/compact` button, which needs no terminal rendering and is useful
-  under every answer.
-
 ## Answered
+
+- **P1 · 2026-07-25 — which "t3 connect" do you mean, and does it change #201?
+  (#202)** → resolved (2026-07-26): the linked primary source identifies T3
+  Connect precisely. It is Clerk-backed environment discovery/linking plus a
+  managed Cloudflare tunnel around an ordinary authenticated T3 Code server;
+  it is not a TUI, agent, ACP, or PTY protocol. T3 Code overlaps #201's desired
+  user outcome, but Connect itself cannot adopt or stream an existing herdr
+  PTY. Keep #201's `/compact` herdr-control increment; before terminal
+  rendering, investigate whether T3 Code exposes a supported deep link,
+  embedding surface, or adopt-existing-session API. Research and revision-
+  pinned first-party citations live at
+  `.dreamwork/docs/research/t3-code-connect.md`.
+  - **Answer (via watch, 2026-07-26 13:05):** I'm not exactly sure, but
+    it's mentioned here and in the T3 code app.
+    https://github.com/pingdotgg/t3code/blob/5719e8ac4020dda0e375ef61d044b61f55a0df8a/apps/web/src/cloud/connectOnboarding.ts#L14
 
 - **May I deploy the dashboard?** → yes (2026-07-26): push and deploy as
   needed; neither requires separate confirmation. DREAMWORK.md now carries

@@ -42,7 +42,9 @@ Next id: **232**
   primary input; one fresh ephemeral agent per turn; in-flight lock + queued
   follow-up; optional interrupt analysis; dashboard placement and UI; failure,
   recovery, privacy, concurrency, cost, state machine, and smallest staged
-  build · proposal only, no implementation authority · in progress
+  build · proposal only, no implementation authority · artifact complete and
+  visually reviewed at `.dreamwork/review/threaded-topic-chats.html` · awaiting
+  A–E approval in questions.md
 
 - **#228** — Unify project dashboard settings · P2 · idea · 30m ·
   origin: **human** · implication of **human via watch 12:49**: all
@@ -153,15 +155,6 @@ Next id: **232**
   /tmp target minutes old is somebody working; the same command on a
   repo target hours old is the orphan class · when a held port is
   found, capture `ss -tlnp` and name pid+command in the report
-- **#202** — "T3 connect": searched, the name does not resolve · P2 ·
-  task · **human 17:27** · no product/protocol by that name found ·
-  three candidates: **T3 Code** (Theo's open-source coding-agent control
-  plane, `pingdotgg/t3code` — has the LAN thin-client mode he described),
-  Claude Code's own `/remote`, or **ACP** (JSON-RPC over stdio, the open
-  standard) · **the finding worth more than the answer: T3 Code ALREADY
-  IS #201**, so those two ideas hide a build-vs-integrate decision ·
-  parked in questions.md · not blocking — #201's herdr control path is
-  useful under every answer
 - **#201** — Stream and control an agent's TUI in the browser via herdr ·
   P2 · idea · several increments · **human 17:27** · substrate EXISTS and
   is documented: `~/.llm-general/ai-coding/herdr/` verified against 0.7.4
@@ -175,7 +168,11 @@ Next id: **232**
   — the localhost bind and per-target isolation must survive explicitly ·
   **`/compact` button FIRST**: `compaction.md` already has the protocol
   and #127 parks the sender in stage 2, and it needs NO rendering, so it
-  tests the herdr path before committing to an emulator
+  tests the herdr path before committing to an emulator · #202 resolved:
+  **T3 Connect is Clerk discovery/linking + managed Cloudflare reachability,
+  not a terminal/agent protocol**; primary-source research at
+  `.dreamwork/docs/research/t3-code-connect.md` · before implementing terminal
+  rendering, investigate a supported T3 Code deep-link/embed/adopt-session API
 - **#200** — Monitor context usage; threshold triggers a self-audit ·
   P2 · idea · 2 parts · **human 17:23** · his example ("3 questions
   answered ages ago, forgotten?") turned out to be guard pollution, NOT
@@ -550,6 +547,12 @@ Next id: **232**
   **blocked**: human pick
 
 ## Recently landed
+
+**#202** “T3 connect” resolved from the human's exact source: Connect wraps an
+ordinary T3 Code server with Clerk discovery/linking and a managed Cloudflare
+tunnel; it does not supply TUI/PTY streaming. #201 keeps its transport-neutral
+`/compact` first increment and gains a pre-render integration investigation.
+See `.dreamwork/docs/research/t3-code-connect.md` (2026-07-26).
 
 **#226** cross-browser tint synchronisation was already correct; the identity
 guard now proves it through two separate Chromium processes rather than two

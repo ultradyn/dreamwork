@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en-au">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#229 · Threaded topic chats</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0b0f19;--panel:#111827;--panel2:#1e293b;--line:#1f2937;
+  --border:#334155;--text:#d1d5db;--bright:#f3f4f6;--lit:#e5e7eb;
+  --muted:#9ca3af;--dim:#6b7280;--dimmer:#4b5563;--accent:#a5b4fc;
+  --warn:#fcd34d;--bad:#fda4af;--ok:#86efac;--space:1.6rem;--radius:4px;
+  --ease:cubic-bezier(.32,.1,.2,1)
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--dimmer) transparent}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--dimmer);border-radius:var(--radius)}
+::-webkit-scrollbar-thumb:hover{background:var(--dim)}
+html{background:var(--bg)}
+body{margin:0;padding:2.5rem 1rem 5rem;background:
+  radial-gradient(ellipse at 50% -16rem,rgba(99,102,241,.10),transparent 38rem),var(--bg);
+  color:var(--text);font-family:ui-monospace,'JetBrains Mono',monospace;
+  font-size:.8rem;line-height:1.68;overflow-wrap:anywhere}
+.wrap{width:min(100%,1040px);margin:0 auto}
+.read{max-width:78ch}.wide{width:100%}
+h1,h2,h3{font:inherit;font-weight:normal;margin:0;color:var(--bright)}
+h1{font-size:1rem}h2{font-size:.92rem}h3{color:var(--lit)}
+p{margin:.58rem 0}a{color:var(--accent)}strong{font-weight:inherit;color:var(--bright)}
+code{color:var(--lit);background:var(--panel);padding:0 .3ch;border-radius:3px}
+pre{margin:.65rem 0;padding:.8rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.45);
+  color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+ul,ol{margin:.45rem 0;padding-left:2.2ch}li{margin:.3rem 0}hr{border:0;border-top:1px solid var(--line);margin:2rem 0}
+.sub{color:var(--dim);margin:.25rem 0 1.7rem}.label{color:var(--dim);text-transform:uppercase;
+  letter-spacing:.08em;font-size:.7rem;margin:var(--space) 0 .5rem}.quiet{color:var(--muted)}
+.lead{font-size:.86rem;color:var(--lit);max-width:74ch}.accent{color:var(--accent)}.warn{color:var(--warn)}
+.decision{border-left:1px solid var(--accent);padding:.15rem 0 .15rem 1.4ch;margin:1rem 0}
+.notice{border-left:1px solid var(--warn);padding:.15rem 0 .15rem 1.4ch;color:var(--muted)}
+.kicker{display:flex;gap:1ch;align-items:baseline;flex-wrap:wrap}.kicker .proposal{color:var(--warn)}
+.summary-line{display:grid;grid-template-columns:12ch minmax(0,1fr);gap:1.5ch;padding:.42rem 0;
+  border-top:1px solid var(--line)}.summary-line .key{color:var(--dim);text-transform:uppercase;font-size:.7rem;letter-spacing:.06em}
+.summary-line:last-child{border-bottom:1px solid var(--line)}
+.call{margin:1.2rem 0;padding:1rem 1.2ch;background:linear-gradient(90deg,rgba(165,180,252,.08),transparent);
+  border-left:2px solid var(--accent)}
+figure{margin:1rem 0 1.7rem;overflow-x:auto}svg{display:block;width:100%;height:auto;min-width:660px}
+.mobile-diagram,.igc-mobile{display:none}
+svg text{font-family:ui-monospace,'JetBrains Mono',monospace}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem 2rem}
+.term{border-top:1px solid var(--line);padding-top:.5rem}.term dt{color:var(--lit)}.term dd{color:var(--muted);margin:.1rem 0 0}
+table{width:100%;border-collapse:collapse;margin:.65rem 0;font-size:.75rem}th,td{padding:.65rem .7ch;
+  text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}th{color:var(--dim);font-weight:normal;
+  text-transform:uppercase;letter-spacing:.06em;font-size:.67rem}td:first-child{color:var(--lit)}
+.pass{color:var(--ok)}.fail{color:var(--bad)}.unknown{color:var(--warn)}.survivor td{background:rgba(165,180,252,.045)}
+.matrix-note{display:grid;grid-template-columns:9ch minmax(0,1fr);gap:1ch;margin:.25rem 0}.matrix-note span:first-child{color:var(--dim)}
+/* Disclosures use the dashboard's air + luminance idiom. The content travels
+   through the browser's interpolable details-content size; reduced motion is instant. */
+details{margin:.7rem 0;border-top:1px solid var(--line)}summary{cursor:pointer;list-style:none;color:var(--muted);
+  min-block-size:44px;padding:.6rem 0;outline:none;display:flex;align-items:center}summary::-webkit-details-marker{display:none}summary::before{content:'+ ';color:var(--dim)}
+details[open]>summary{color:var(--lit);padding-top:1rem}details[open]>summary::before{content:'- '}
+details::details-content{block-size:0;opacity:0;overflow:hidden;filter:blur(3px);
+  transition:block-size .7s var(--ease),opacity .45s ease,filter .45s ease;transition-behavior:allow-discrete}
+details[open]::details-content{block-size:auto;opacity:1;filter:none}
+@starting-style{details[open]::details-content{block-size:0;opacity:0;filter:blur(3px)}}
+.details-in{padding:0 0 .8rem 1.4ch;color:var(--muted)}
+/* Wireframes are intentionally the dashboard, not product cards. */
+.frames{display:grid;grid-template-columns:minmax(260px,.76fr) minmax(360px,1.24fr);gap:1.3rem;align-items:start}
+.frame{border:1px solid var(--border);background:rgba(11,15,25,.86);min-width:0;box-shadow:0 18px 50px rgba(0,0,0,.18)}
+.framebar{display:flex;align-items:center;gap:1ch;padding:.72rem 1ch;border-bottom:1px solid var(--line);color:var(--dim)}
+.framebar b{font-weight:normal;color:var(--bright)}.plus{color:var(--accent);font-size:1rem}.crumb{color:var(--dimmer)}
+.framebody{padding:1rem 1.2ch}.f-label{color:var(--dim);font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;margin:1rem 0 .35rem}
+.chatrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1ch;padding:.55rem 0;border-bottom:1px solid var(--line)}
+.chatname{color:var(--lit)}.preview{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.meta{color:var(--dimmer);font-size:.68rem;text-align:right}
+.live{color:var(--accent)}.fault{color:var(--warn)}
+.turn{display:grid;grid-template-columns:7ch minmax(0,1fr);gap:1ch;padding:.75rem 0;border-bottom:1px solid var(--line)}
+.who{color:var(--dim);text-transform:uppercase;font-size:.66rem;letter-spacing:.06em}.human .body{color:var(--lit)}.agent .body{color:var(--muted)}
+.turntime{display:block;color:var(--dimmer);font-size:.65rem;margin-top:.3rem}.composer{margin-top:1rem}.field{display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.field textarea{font:inherit;color:var(--lit);background:transparent;border:0;resize:vertical;min-height:4.7rem;padding:.7rem 1ch;flex:1;outline:none}
+.field textarea:focus{box-shadow:inset 0 0 0 1px var(--accent)}button{font:inherit;color:var(--accent);background:transparent;border:0;border-left:1px solid var(--border);padding:.6rem 1ch}
+button{min-block-size:44px}button:focus-visible,summary:focus-visible{outline:1px solid var(--accent);outline-offset:3px}.lockline{display:flex;justify-content:space-between;gap:1ch;color:var(--dim);margin:.45rem 0}
+.queuebox{border-left:1px solid var(--accent);padding:.55rem 0 .55rem 1ch;margin-top:.8rem}.queuehead{display:flex;justify-content:space-between;gap:1ch;color:var(--accent)}
+.queueactions{color:var(--dim);white-space:nowrap}.cancel-demo{color:var(--dimmer);text-decoration:line-through}
+.filetree{display:grid;grid-template-columns:20ch minmax(0,1fr);gap:.3rem 1ch;margin:.8rem 0}.filetree div:nth-child(odd){color:var(--lit)}.filetree div:nth-child(even){color:var(--muted)}
+.stages{counter-reset:stage}.stage{display:grid;grid-template-columns:3ch minmax(0,1fr);gap:1ch;padding:.7rem 0;border-top:1px solid var(--line)}
+.stage::before{counter-increment:stage;content:counter(stage,decimal-leading-zero);color:var(--accent)}
+.state-list{display:grid;grid-template-columns:13ch minmax(0,1fr);gap:.35rem 1ch}.state-list dt{color:var(--lit)}.state-list dd{margin:0;color:var(--muted)}
+.check{padding:.5rem 0;border-top:1px solid var(--line)}.check b{font-weight:normal;color:var(--bad)}.check span{color:var(--ok)}
+.choice{padding:.8rem 0;border-top:1px solid var(--line)}.choice:last-child{border-bottom:1px solid var(--line)}.answer{margin-top:.45rem;color:var(--lit)}
+footer{color:var(--dimmer);margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line)}
+@media(max-width:780px){body{padding:1.5rem .8rem 4rem}.grid2,.frames{grid-template-columns:1fr}.summary-line{grid-template-columns:1fr;gap:.12rem}.frame{width:100%}.filetree{grid-template-columns:1fr}.filetree div:nth-child(even){margin-bottom:.45rem}.desktop-diagram,.igc-desktop{display:none}.mobile-diagram,.igc-mobile{display:grid}figure{overflow:visible}.mobile-diagram{gap:.5rem}.mobile-node{border-left:1px solid var(--border);padding:.65rem 1ch;background:rgba(17,24,39,.45)}.mobile-node strong,.mobile-state strong{display:block;color:var(--lit)}.mobile-arrow{color:var(--dim);padding-left:1ch}.mobile-state{display:grid;grid-template-columns:10ch minmax(0,1fr);gap:1ch;padding:.65rem 0;border-top:1px solid var(--line)}.igc-mobile{gap:.7rem}.igc-row{border-top:1px solid var(--line);padding:.65rem 0}.igc-verdicts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.35rem 1ch;margin-top:.45rem}.igc-verdicts span{white-space:nowrap}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important;filter:none!important}}
+@media print{:root{color-scheme:light;--bg:#fff;--panel:#fff;--panel2:#fff;--line:#bbb;--border:#777;--text:#111;--bright:#000;--lit:#111;--muted:#333;--dim:#444;--dimmer:#555;--accent:#1e40af;--warn:#7c4a03;--bad:#991b1b;--ok:#166534}body{background:#fff;color:#111}.frame,.mobile-node{background:#fff;box-shadow:none}pre{background:#f4f4f5;color:#111;border-left-color:#777}svg text{fill:#111!important}svg rect{fill:#fff!important;stroke:#555!important}svg path,svg line{stroke:#555!important}svg marker path{fill:#555!important}details::details-content{block-size:auto;opacity:1;filter:none}}
+</style>
+</head>
+<body>
+<main class="wrap">
+<header class="read">
+  <div class="kicker"><h1>Threaded topic chats</h1><span class="proposal">proposal only</span></div>
+  <div class="sub">design review · task #229 · no implementation authority</div>
+  <p class="lead"><strong>Recommendation:</strong> add a quiet <code>chats</code> section to the dashboard and a dedicated
+  <code>/chat?p=&lt;chat-id&gt;</code> view. Each human turn starts one fresh worker which reads an append-only Markdown transcript,
+  writes one terminal result, and is discarded. There is no durable model session.</p>
+</header>
+
+<section class="read" aria-labelledby="summary">
+  <div class="label" id="summary">Executive recommendation</div>
+  <div class="summary-line"><div class="key">surface</div><div>Dashboard shows a compact recent-chat list; the dedicated chat route owns reading and writing. Do not put full conversations in the dashboard.</div></div>
+  <div class="summary-line"><div class="key">memory</div><div><code>transcript.md</code> is the conversational source of truth and the primary prompt input on every turn. It is human- and agent-readable; JSON does not replace it.</div></div>
+  <div class="summary-line"><div class="key">process</div><div>One in-flight worker per chat. Separate chats may run concurrently under a small global cap; proposed default: <strong>2</strong>.</div></div>
+  <div class="summary-line"><div class="key">follow-up</div><div>A second send becomes one visible, durable, editable queue item. It is not transcript history until dispatch atomically promotes it to a human turn.</div></div>
+  <div class="summary-line"><div class="key">interrupt</div><div><strong>Defer in MVP.</strong> Do not pretend a harness stop is a chat reply. Later, offer “cancel run” only if cancellation can append an explicit <code>cancelled</code> terminal outcome.</div></div>
+  <div class="summary-line"><div class="key">module</div><div>Put file locking, leases, recovery, worker spawning and finalisation behind one deep Python module; <code>watch.py</code> remains a thin HTTP/UI adapter.</div></div>
+  <div class="call"><strong>The governing invariant:</strong> human words reach durable storage before dispatch, parsing or validation can lose them; an agent answer becomes conversational history only once, with an honest terminal outcome.</div>
+</section>
+
+<section class="read" aria-labelledby="terms">
+  <div class="label" id="terms">Ubiquitous language</div>
+  <dl class="grid2">
+    <div class="term"><dt>Chat</dt><dd>A durable, named conversation about one topic. It is a file-backed record, not a model session.</dd></div>
+    <div class="term"><dt>Turn</dt><dd>One accepted human contribution or one terminal agent contribution in the transcript, with a stable id.</dd></div>
+    <div class="term"><dt>Queued follow-up</dt><dd>The one durable human draft accepted while a worker is active. Editable and cancellable; not yet a turn.</dd></div>
+    <div class="term"><dt>Run</dt><dd>The lifecycle that begins when a human turn is dispatched and ends in exactly one terminal outcome.</dd></div>
+    <div class="term"><dt>Worker</dt><dd>A fresh ephemeral subagent process for one run. It reconstructs context, answers, and is discarded.</dd></div>
+    <div class="term"><dt>Transcript</dt><dd>The append-only Markdown record and primary context input for every fresh worker.</dd></div>
+    <div class="term"><dt>Process state</dt><dd>Small machine-readable lease/recovery facts about the active run. Never the conversational source of truth.</dd></div>
+    <div class="term"><dt>Terminal outcome</dt><dd>Exactly one of <code>completed</code>, <code>failed</code>, or later <code>cancelled</code>; never an implied success.</dd></div>
+  </dl>
+  <p class="quiet">Avoid <em>thread</em> in implementation names: it is overloaded with OS threads and model conversation threads. The user-facing phrase may remain “topic chat”; code should say <code>chat</code>, <code>turn</code>, <code>run</code>, and <code>worker</code>.</p>
+</section>
+
+<hr>
+<section class="wide" aria-labelledby="flow">
+  <div class="label" id="flow">Recommended data flow</div>
+  <figure>
+  <svg class="desktop-diagram" viewBox="0 0 1000 392" role="img" aria-labelledby="flow-title flow-desc">
+    <title id="flow-title">Topic chat architecture and data flow</title>
+    <desc id="flow-desc">Human input passes through the localhost dashboard to a topic chats module. The module durably records input, manages transcript queue and lease files, starts a fresh worker with the transcript, and finalises one answer back into the transcript.</desc>
+    <defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7Z" fill="#4b5563"/></marker></defs>
+    <g font-size="12">
+      <text x="20" y="20" fill="#4b5563" letter-spacing="1">ACTOR / SURFACE</text><text x="350" y="20" fill="#4b5563" letter-spacing="1">DEEP MODULE</text><text x="710" y="20" fill="#4b5563" letter-spacing="1">DURABLE / EPHEMERAL</text>
+      <rect x="20" y="40" width="250" height="76" fill="#111827" stroke="#1f2937"/><text x="38" y="68" fill="#f3f4f6">human · /chat</text><text x="38" y="91" fill="#9ca3af">send, edit queue, cancel queue</text>
+      <path d="M270 78H350" stroke="#4b5563" marker-end="url(#arrow)"/><text x="278" y="65" fill="#6b7280">POST</text>
+      <rect x="350" y="40" width="300" height="270" fill="#111827" stroke="#334155"/><text x="370" y="68" fill="#a5b4fc">topic_chats</text><text x="370" y="91" fill="#9ca3af">submit(chat_id, text, request_id)</text><text x="370" y="113" fill="#9ca3af">edit_queue / cancel_queue</text><text x="370" y="135" fill="#9ca3af">read / list / reconcile</text>
+      <line x1="370" y1="156" x2="630" y2="156" stroke="#1f2937"/><text x="370" y="181" fill="#6b7280">hides: confinement · append framing</text><text x="370" y="203" fill="#6b7280">leases · cap · spawn · recovery</text><text x="370" y="225" fill="#6b7280">idempotent finalisation · redaction</text>
+      <rect x="378" y="249" width="244" height="42" fill="#1e293b" stroke="#334155"/><text x="393" y="275" fill="#e5e7eb">fresh worker adapter</text>
+      <path d="M650 82H710" stroke="#a5b4fc" marker-end="url(#arrow)"/><rect x="710" y="40" width="270" height="80" fill="#1e293b" stroke="#a5b4fc"/><text x="728" y="67" fill="#a5b4fc">transcript.md</text><text x="728" y="89" fill="#e5e7eb">primary prompt input</text><text x="728" y="108" fill="#9ca3af">append-only conversation</text>
+      <path d="M650 174H710" stroke="#4b5563" marker-end="url(#arrow)"/><rect x="710" y="139" width="270" height="70" fill="#111827" stroke="#1f2937"/><text x="728" y="166" fill="#e5e7eb">queue.md</text><text x="728" y="188" fill="#9ca3af">one editable pending follow-up</text>
+      <path d="M650 254H710" stroke="#4b5563" marker-end="url(#arrow)"/><rect x="710" y="228" width="270" height="70" fill="#111827" stroke="#1f2937"/><text x="728" y="255" fill="#e5e7eb">run.json</text><text x="728" y="277" fill="#9ca3af">exclusive lease + recovery facts</text>
+      <path d="M500 310V352H720" stroke="#4b5563" marker-end="url(#arrow)"/><rect x="720" y="322" width="260" height="55" fill="#111827" stroke="#1f2937"/><rect x="730" y="333" width="214" height="22" fill="#111827"/><text x="738" y="348" fill="#e5e7eb">worker process · discarded</text><text x="738" y="367" fill="#6b7280">bounded output, no session reuse</text>
+      <path d="M850 322V298" stroke="#a5b4fc" marker-end="url(#arrow)"/><text x="862" y="316" fill="#6b7280">terminal result</text>
+      <text x="20" y="355" fill="#6b7280">watch.py only maps HTTP ↔ module results and renders data; it does not own subprocess or file-state transitions.</text>
+    </g>
+  </svg>
+  <div class="mobile-diagram" aria-label="Topic chat architecture and data flow">
+    <div class="mobile-node"><strong>human · /chat</strong>send, edit queue, cancel queue</div><div class="mobile-arrow">↓ durable submit</div>
+    <div class="mobile-node"><strong>topic_chats module</strong>confinement · transcript framing · leases · cap · recovery · finalisation</div><div class="mobile-arrow">↓ reads and writes</div>
+    <div class="mobile-node"><strong>transcript.md</strong>primary prompt input · append-only conversation</div>
+    <div class="mobile-node"><strong>queue.md + run.json</strong>one editable follow-up · exclusive lease and recovery facts</div><div class="mobile-arrow">↓ one bounded run</div>
+    <div class="mobile-node"><strong>fresh worker</strong>terminal result is finalised once; worker is discarded</div>
+  </div>
+  </figure>
+</section>
+
+<section class="read" aria-labelledby="architectures">
+  <div class="label" id="architectures">Architecture decision · IGC</div>
+  <p class="quiet"><strong>Context:</strong> a localhost, stdlib-only, single-shell dashboard already polls files and replaces view DOM. The feature must preserve human words, reconstruct every worker from disk, stay legible after crashes, and not turn <code>watch.py</code> into an orchestrator.</p>
+  <div class="igc-desktop" style="overflow-x:auto">
+  <table aria-label="IGC decision matrix">
+    <thead><tr><th>Idea</th><th>All</th><th>G1 durable truth</th><th>G2 fresh worker</th><th>G3 simple UI</th><th>G4 crash honest</th><th>G5 stdlib fit</th></tr></thead>
+    <tbody>
+      <tr class="survivor"><td><strong>A · Markdown transcript + queue file + lease, behind module</strong></td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td></tr>
+      <tr><td>B · one JSON event log as all truth</td><td class="fail">✘</td><td class="fail">✘</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td></tr>
+      <tr><td>C · persistent model session + exported history</td><td class="fail">✘</td><td class="fail">✘</td><td class="fail">✘</td><td class="pass">✔</td><td class="fail">✘</td><td class="unknown">?</td></tr>
+    </tbody>
+  </table></div>
+  <div class="igc-mobile" aria-label="IGC decision matrix, stacked for mobile">
+    <div class="igc-row survivor"><strong>A · Markdown transcript + queue + lease</strong><div class="igc-verdicts"><span class="pass">All ✔</span><span class="pass">G1 ✔</span><span class="pass">G2 ✔</span><span class="pass">G3 ✔</span><span class="pass">G4 ✔</span><span class="pass">G5 ✔</span></div></div>
+    <div class="igc-row"><strong>B · JSON event log as all truth</strong><div class="igc-verdicts"><span class="fail">All ✘</span><span class="fail">G1 ✘</span><span class="pass">G2 ✔</span><span class="pass">G3 ✔</span><span class="pass">G4 ✔</span><span class="pass">G5 ✔</span></div></div>
+    <div class="igc-row"><strong>C · persistent model session</strong><div class="igc-verdicts"><span class="fail">All ✘</span><span class="fail">G1 ✘</span><span class="fail">G2 ✘</span><span class="pass">G3 ✔</span><span class="fail">G4 ✘</span><span class="unknown">G5 ?</span></div></div>
+  </div>
+  <p class="quiet"><strong>Goals:</strong> G1 human/agent-readable durable conversation is primary; G2 no durable model session; G3 queue/lock status can be explained in one view; G4 restart never invents completion or loses accepted input; G5 no dependency or daemon is required.</p>
+  <div class="matrix-note"><span>B fails G1</span><div>JSON makes the machine representation the conversation and forces every human and worker through a renderer. It can support process facts, but it must not become the transcript.</div></div>
+  <div class="matrix-note"><span>C fails</span><div>Session continuity contradicts fresh-per-turn, and an export can lag or disappear exactly when the harness crashes. It also makes recovery depend on a model provider’s session semantics.</div></div>
+  <div class="decision"><strong>Tentative survivor: A.</strong> Its remaining unknown is not the architecture but the worker adapter: the available Pi/Claude dispatch mechanism must provide a bounded, attributable result and a reliable process identity before implementation.</div>
+  <details><summary>Placement alternatives</summary><div class="details-in">
+    <p><strong>Dashboard-only:</strong> refuted. Full transcripts and composers would turn the glance surface into a conversation workspace and make stable deep links impossible.</p>
+    <p><strong>Dedicated <code>/chat</code> only:</strong> refuted. Chats become invisible unless the human already remembers their URL; active and queued work belongs in the dashboard’s glance hierarchy.</p>
+    <p><strong>Review artifact only:</strong> refuted. Artifacts are static proposals in an iframe and intentionally isolated; using them as an operational write surface would confuse review evidence with live application state.</p>
+    <p><strong>Dashboard index + dedicated route:</strong> survives. The index states what exists and what needs attention; the route gives one subject a URL, matching the dashboard’s established expand-versus-navigate rule.</p>
+  </div></details>
+</section>
+
+<hr>
+<section class="wide" aria-labelledby="ui">
+  <div class="label" id="ui">Specific UI proposal</div>
+  <div class="frames">
+    <article class="frame" aria-label="Dashboard topic chat list wireframe">
+      <div class="framebar"><span class="plus">+</span><b>dreamwork watch</b><span class="crumb">home</span></div>
+      <div class="framebody">
+        <div class="f-label">chats · 3</div>
+        <div class="chatrow"><div><div class="chatname">release retention</div><div class="preview">Keep partial output outside the transcript…</div></div><div class="meta live">working<br>18s</div></div>
+        <div class="chatrow"><div><div class="chatname">dashboard information order</div><div class="preview">Queued: compare questions and chats…</div></div><div class="meta live">1 queued</div></div>
+        <div class="chatrow"><div><div class="chatname">agent cost policy</div><div class="preview">A global cap should be visible rather than…</div></div><div class="meta">idle<br>7m</div></div>
+        <div class="chatrow"><div class="chatname accent">+ new topic chat</div><div class="meta">opens /chat</div></div>
+        <p class="quiet">Order: needs attention, active, queued, then most recently changed. Rows navigate; they do not expand.</p>
+      </div>
+    </article>
+    <article class="frame" aria-label="Dedicated topic chat view wireframe">
+      <div class="framebar"><span class="plus">+</span><b>release retention</b><span class="crumb">home · chats</span></div>
+      <div class="framebody">
+        <div class="turn human"><div class="who">you</div><div class="body">Should partial worker output become part of the durable conversation?<span class="turntime">turn 0007 · 13:06</span></div></div>
+        <div class="turn agent"><div class="who">agent</div><div class="body">Only a completed response should enter the primary transcript. Preserve failed partial output separately and label it as diagnostic evidence.<span class="turntime">turn 0008 · completed · fresh worker discarded</span></div></div>
+        <div class="turn human"><div class="who">you</div><div class="body">How should restart recovery expose that evidence?<span class="turntime">turn 0009 · 13:09</span></div></div>
+        <div class="lockline"><span class="live">agent working · 22s</span><span>this chat is locked</span></div>
+        <div class="composer">
+          <div class="field"><textarea aria-label="Queued follow-up example">Also distinguish a clean failure from a stale lease.</textarea><button type="button">queue</button></div>
+          <div class="lockline"><span>one follow-up may wait</span><span>not yet in transcript</span></div>
+        </div>
+        <div class="queuebox"><div class="queuehead"><span>queued follow-up · saved</span><span class="queueactions">edit · cancel</span></div><div class="quiet">Also distinguish a clean failure from a stale lease.</div></div>
+      </div>
+    </article>
+  </div>
+  <p class="quiet"><strong>Interaction contract.</strong> While idle, the button says <code>send</code>; a successful durable append immediately restates the human turn and changes the status to <code>agent working</code>. While running, it says <code>queue</code>; only one queued item exists, so a second edit updates that item rather than creating a hidden list. The queue’s saved state survives ticks and reloads because it is on disk, not only in DOM state.</p>
+  <details><summary>Status, cancellation and fault states</summary><div class="details-in">
+    <ul>
+      <li><strong>Global cap reached:</strong> the human turn is already in the transcript; status reads <code>waiting for a worker · 2/2 active</code>. This is dispatch waiting, not the editable follow-up queue.</li>
+      <li><strong>Worker active:</strong> composer is in queue mode. The page shows run age and fresh-worker identity; it does not stream speculative prose into the transcript.</li>
+      <li><strong>MVP cancellation:</strong> absent. Do not show a control the worker adapter cannot honour and finalise durably.</li>
+      <li><strong>Later cancellation:</strong> label it <code>cancel run</code>, never “interrupt”. The click first durably records a cancellation request, then stops the worker, then appends a terminal <code>cancelled</code> agent turn. A completion racing cancellation is resolved once by finalisation under the chat lease; whichever terminal outcome commits first is shown.</li>
+      <li><strong>Stale lease:</strong> amber fault line: <code>worker state is stale · recover</code>. Sending remains disabled until reconciliation prevents two workers answering the same human turn.</li>
+      <li><strong>Malformed transcript:</strong> amber fault line with the path and parser error; no worker starts and no repair is attempted silently.</li>
+    </ul>
+  </div></details>
+</section>
+
+<section class="read" aria-labelledby="files">
+  <div class="label" id="files">Exact storage proposal</div>
+  <div class="filetree">
+    <div><code>.dreamwork/chats/index.json</code></div><div>Small derived index for list order/title/status cache; rebuildable from chat directories, never conversational truth.</div>
+    <div><code>…/&lt;chat-id&gt;/transcript.md</code></div><div>Append-only canonical conversation and primary worker input.</div>
+    <div><code>…/&lt;chat-id&gt;/queue.md</code></div><div>Optional single pending human follow-up; atomically replaced on edit, removed on cancel or promotion.</div>
+    <div><code>…/&lt;chat-id&gt;/run.json</code></div><div>Exclusive lease and recovery state for the current run; created with exclusive-create semantics.</div>
+    <div><code>…/&lt;chat-id&gt;/runs/&lt;run-id&gt;.partial</code></div><div>Optional bounded diagnostic output from an incomplete worker; never included in prompts automatically.</div>
+  </div>
+  <p><strong>Path naming.</strong> <code>chat-id</code> is a generated lowercase slug plus a short random suffix, for example <code>release-retention-a4c2</code>. The title remains editable inside the transcript; identity never depends on a rename. All resolution passes through the existing confinement principle: no absolute paths, <code>~</code>, separators, traversal or symlink escape.</p>
+
+  <details><summary><code>transcript.md</code> v1</summary><div class="details-in">
+<pre># Chat: Release retention
+
+&lt;!-- dreamwork-chat: 1
+chat-id: release-retention-a4c2
+created: 2026-07-26T12:58:00+10:00
+--&gt;
+
+## Turn 0001 · human · 2026-07-26T12:58:11+10:00
+&lt;!-- turn-id: 0190f1f0-… --&gt;
+
+Should partial worker output become part of the durable conversation?
+
+## Turn 0002 · agent · 2026-07-26T12:59:04+10:00 · completed
+&lt;!-- turn-id: 0190f1f1-…; run-id: 0190f1f0-…; in-reply-to: 0190f1f0-… --&gt;
+
+Only a completed response should enter the primary transcript…</pre>
+    <p>Turn headings are framing, not decoration. A human block is written with the same hostile-input discipline as <code>human_block()</code>: text cannot forge a heading, metadata comment or next turn. The writer escapes or indents structural lookalikes; the parser and writer share one grammar.</p>
+    <p>A non-success terminal turn is explicit and contains no invented answer:</p>
+<pre>## Turn 0010 · agent · 2026-07-26T13:12:19+10:00 · failed
+&lt;!-- turn-id: …; run-id: …; in-reply-to: … --&gt;
+
+Worker ended without a complete answer. Diagnostic output is retained
+outside the transcript as `runs/….partial`.</pre>
+  </div></details>
+
+  <details><summary><code>queue.md</code> v1</summary><div class="details-in">
+<pre>---
+queue-version: 1
+queue-id: 0190f204-…
+created: 2026-07-26T13:10:02+10:00
+updated: 2026-07-26T13:10:44+10:00
+revision: 2
+---
+Also distinguish a clean failure from a stale lease.</pre>
+    <p>The browser submits an expected revision when editing or cancelling; a stale tab gets <code>409</code> and the current durable queue back. Promotion is idempotent: before appending, recovery searches the transcript for <code>queue-id</code>. If present, it removes the queue file; if absent, it appends exactly one human turn, fsyncs, then removes the queue. The queue is included in a worker prompt only after promotion.</p>
+  </div></details>
+
+  <details><summary><code>run.json</code> v1</summary><div class="details-in">
+<pre>{
+  "version": 1,
+  "chat_id": "release-retention-a4c2",
+  "run_id": "0190f1f0-…",
+  "reply_to": "0190f1f0-…",
+  "phase": "running",
+  "pid": 42891,
+  "host": "xsm",
+  "boot_id": "…",
+  "started_at": "2026-07-26T12:58:12+10:00",
+  "heartbeat_at": "2026-07-26T12:58:42+10:00",
+  "cancel_requested_at": null
+}</pre>
+    <p>Create with <code>O_CREAT|O_EXCL</code>; update by write-temp + fsync + <code>os.replace</code>. Ownership is not “PID exists”: recovery must match host and boot id, confirm the PID belongs to the expected worker where available, and check heartbeat age. Uncertainty enters <code>recovering</code>; it never launches a second worker.</p>
+  </div></details>
+  <p class="notice"><strong>Submission ordering:</strong> every chat POST also passes through the existing first-act <code>.dreamwork/submissions.log</code> witness before path dispatch, JSON parsing or validation. Accepted text then reaches <code>transcript.md</code> or <code>queue.md</code>. The witness prevents raw words being lost; the chat files state what the application accepted.</p>
+</section>
+
+<hr>
+<section class="wide" aria-labelledby="state">
+  <div class="label" id="state">State machine</div>
+  <figure>
+  <svg class="desktop-diagram" viewBox="0 0 1000 320" role="img" aria-labelledby="state-title state-desc">
+    <title id="state-title">Chat run state machine</title><desc id="state-desc">An idle chat accepts a durable turn, waits for global capacity, runs one worker, finalises completed or failed, promotes an optional queue, and returns idle. Stale leases enter recovery rather than spawning another worker.</desc>
+    <defs><marker id="sa" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7Z" fill="#4b5563"/></marker></defs>
+    <g font-size="12">
+      <text x="18" y="18" fill="#4b5563" letter-spacing="1">STATE</text><text x="18" y="306" fill="#4b5563">Dashed path is deferred cancellation; amber recovery never auto-spawns.</text>
+      <rect x="20" y="70" width="120" height="52" fill="#111827" stroke="#1f2937"/><text x="80" y="101" text-anchor="middle" fill="#e5e7eb">idle</text>
+      <rect x="210" y="70" width="150" height="52" fill="#111827" stroke="#1f2937"/><text x="285" y="94" text-anchor="middle" fill="#e5e7eb">waiting capacity</text><text x="285" y="111" text-anchor="middle" fill="#6b7280">turn durable</text>
+      <rect x="430" y="70" width="130" height="52" fill="#1e293b" stroke="#a5b4fc"/><text x="495" y="94" text-anchor="middle" fill="#a5b4fc">running</text><text x="495" y="111" text-anchor="middle" fill="#9ca3af">lease held</text>
+      <rect x="650" y="70" width="130" height="52" fill="#111827" stroke="#334155"/><text x="715" y="94" text-anchor="middle" fill="#e5e7eb">finalising</text><text x="715" y="111" text-anchor="middle" fill="#6b7280">once</text>
+      <rect x="850" y="34" width="130" height="52" fill="#111827" stroke="#334155"/><text x="915" y="66" text-anchor="middle" fill="#86efac">completed</text>
+      <rect x="850" y="112" width="130" height="52" fill="#111827" stroke="#334155"/><text x="915" y="144" text-anchor="middle" fill="#fda4af">failed</text>
+      <rect x="430" y="210" width="130" height="52" fill="#111827" stroke="#fcd34d"/><text x="495" y="234" text-anchor="middle" fill="#fcd34d">recovering</text><text x="495" y="251" text-anchor="middle" fill="#9ca3af">send locked</text>
+      <rect x="650" y="210" width="130" height="52" fill="#111827" stroke="#334155"/><text x="715" y="242" text-anchor="middle" fill="#9ca3af">cancelled</text>
+      <path d="M140 96H210" stroke="#4b5563" marker-end="url(#sa)"/><text x="145" y="83" fill="#6b7280">append turn</text>
+      <path d="M360 96H430" stroke="#a5b4fc" marker-end="url(#sa)"/><text x="367" y="83" fill="#6b7280">cap slot</text>
+      <path d="M560 96H650" stroke="#a5b4fc" marker-end="url(#sa)"/><text x="573" y="83" fill="#6b7280">result / exit</text>
+      <path d="M780 92L850 64" stroke="#4b5563" marker-end="url(#sa)"/><path d="M780 103L850 133" stroke="#4b5563" marker-end="url(#sa)"/>
+      <path d="M915 86V190H80V122" stroke="#4b5563" marker-end="url(#sa)"/><rect x="536" y="167" width="260" height="21" fill="#0b0f19"/><text x="546" y="182" fill="#6b7280">promote queue if present, else idle</text>
+      <path d="M915 164V190" stroke="#4b5563"/>
+      <path d="M495 122V210" stroke="#fcd34d" marker-end="url(#sa)"/><text x="505" y="170" fill="#fcd34d">stale / restart</text>
+      <path d="M560 236H650" stroke="#4b5563" marker-end="url(#sa)"/><text x="570" y="223" fill="#6b7280">reconcile</text>
+      <path d="M560 110L650 220" stroke="#6b7280" stroke-dasharray="5 5" marker-end="url(#sa)"/><text x="580" y="176" fill="#6b7280">later: cancel</text>
+    </g>
+  </svg>
+  <div class="mobile-diagram" aria-label="Chat run state machine">
+    <div class="mobile-state"><strong>idle</strong><span>append human turn durably</span></div><div class="mobile-arrow">↓ wait for cap</div>
+    <div class="mobile-state"><strong>waiting</strong><span>turn is durable; no process yet</span></div><div class="mobile-arrow">↓ acquire slot + lease</div>
+    <div class="mobile-state"><strong>running</strong><span>one fresh worker; later text enters queue</span></div><div class="mobile-arrow">↓ terminal result</div>
+    <div class="mobile-state"><strong>finalising</strong><span>append exactly one completed or failed outcome</span></div><div class="mobile-arrow">↓ promote queue or return idle</div>
+    <div class="mobile-state"><strong>recovering</strong><span>stale/uncertain lease locks sending until reconciled</span></div>
+  </div>
+  </figure>
+  <dl class="state-list read">
+    <dt>idle</dt><dd>No run lease. A send appends a human turn before anything dispatches.</dd>
+    <dt>waiting capacity</dt><dd>The chat owns a durable unanswered human turn but no process; this differs from the editable follow-up queue.</dd>
+    <dt>running</dt><dd>Exactly one worker and lease for this chat. Further accepted text goes only to <code>queue.md</code>.</dd>
+    <dt>finalising</dt><dd>The module holds the chat lock, checks <code>run-id</code> was not finalised, appends one terminal agent turn, fsyncs, then removes the lease.</dd>
+    <dt>recovering</dt><dd>Ownership is uncertain or the process restarted. Read-only reconciliation precedes any new worker.</dd>
+  </dl>
+</section>
+
+<section class="read" aria-labelledby="failure">
+  <div class="label" id="failure">Failure, trust and resource policy</div>
+  <details><summary>Crash / restart recovery</summary><div class="details-in">
+    <ol>
+      <li>At server start and before every submit, <code>reconcile(chat_id)</code> inspects transcript, queue, lease, host/boot/PID and any complete result file.</li>
+      <li>If a terminal turn already names the run id, finalisation is complete: clear stale process files and continue.</li>
+      <li>If a complete result exists but no terminal turn does, finalise idempotently under the exclusive chat lock.</li>
+      <li>If the expected worker is alive, reattach monitoring; do not dispatch.</li>
+      <li>If it is certainly dead, append <code>failed</code>, preserve bounded partial output, clear the lease, then promote the queue.</li>
+      <li>If ownership is uncertain, stay <code>recovering</code> and require an explicit recovery action. Loud lock beats two answers.</li>
+    </ol>
+  </div></details>
+  <details><summary>Malformed files and append safety</summary><div class="details-in">
+    <p>The parser rejects duplicate turn ids, non-monotonic turn numbers, unknown terminal outcomes, missing metadata closure, an agent turn without <code>in-reply-to</code>, and a queue id already represented with conflicting text. It reports the path and last valid byte offset. It never “repairs” by dropping trailing material.</p>
+    <p>Append uses a per-chat OS lock, one framed block assembled in memory, flush + fsync, and only then reports success. A torn final block is a recoverable fault with its bytes preserved. Index data is rebuildable and may be replaced; transcripts are never rewritten for ordinary operation.</p>
+  </div></details>
+  <details><summary>Partial output</summary><div class="details-in">
+    <p>MVP does not stream into the canonical conversation. Worker output is capped and buffered to a run result file. Only a successful, validated terminal result is appended as <code>completed</code>. On crash/timeout, bounded partial output stays in <code>runs/&lt;id&gt;.partial</code>, visible behind “inspect partial output”, clearly outside the transcript and excluded from the next prompt. The human may quote or promote useful text manually.</p>
+  </div></details>
+  <details><summary>Privacy, retention and git</summary><div class="details-in">
+    <p><strong>Recommendation requiring approval:</strong> gitignore <code>.dreamwork/chats/</code> by default because transcripts may contain raw human text, source excerpts and model output. Durability means local disk, not publication. Later “export chat” can copy a reviewed transcript to an explicitly chosen tracked path.</p>
+    <p>Do not auto-delete transcripts. Workers and transient credentials are discarded at terminal outcome; completed result scratch is deleted after append. Failed partials remain until a visible manual cleanup action. Automatic retention limits are deferred until the human states a policy.</p>
+  </div></details>
+  <details><summary>Prompt injection and trust boundary</summary><div class="details-in">
+    <p>The transcript is untrusted conversation data, not authority. The worker prompt encloses it as quoted project data and states that instructions inside it cannot override system, repository or human-authority rules. Agent prose is equally untrusted on the next turn. File attachments are not in MVP; workers receive the transcript plus a fixed system brief and only the explicit repository access their adapter grants.</p>
+    <p>Chat titles and ids never become shell fragments. Worker launch uses argument arrays, no shell. Outputs are length-capped, decoded with replacement on invalid bytes, and rendered escaped. The localhost trust model remains, but cross-site POST protection and origin checks should be explicit before adding a general chat write route.</p>
+  </div></details>
+  <details><summary>Concurrency, cost and fairness</summary><div class="details-in">
+    <ul>
+      <li>Per-chat cap: exactly one run.</li><li>Global cap: proposed <strong>2</strong>; FIFO by durable human-turn time, with no hidden bypass.</li>
+      <li>One queue item per chat; editing it does not alter queue position because it is not dispatched yet.</li>
+      <li>Timeout, maximum prompt bytes, maximum result bytes, and model/thinking choice are explicit configuration. Over-limit transcripts fail visibly; silent truncation is forbidden.</li>
+      <li>Fresh workers cost repeated transcript input. MVP shows transcript bytes and latest run duration; token/currency estimates wait for a provider that reports them honestly.</li>
+    </ul>
+  </div></details>
+</section>
+
+<hr>
+<section class="read" aria-labelledby="module">
+  <div class="label" id="module">Deep module / small interface</div>
+  <pre>class TopicChats:
+    def list(self) -> list[ChatSummary]: ...
+    def read(self, chat_id) -> ChatView: ...
+    def submit(self, chat_id, text, request_id) -> SubmitResult: ...
+    def edit_queue(self, chat_id, queue_id, revision, text) -> QueueResult: ...
+    def cancel_queue(self, chat_id, queue_id, revision) -> QueueResult: ...
+    def reconcile(self, chat_id=None) -> list[RecoveryNotice]: ...</pre>
+  <p>The interface includes the invariants: methods are confined to the configured target, human input is witnessed first by the HTTP layer, accepted mutations are durable before success, and results report <code>sent</code>, <code>queued</code>, <code>waiting-capacity</code>, <code>conflict</code> or <code>fault</code>. Callers never handle PIDs, locks, filenames or transcript framing.</p>
+  <p><code>WorkerAdapter.start(run_spec)</code> is the only internal seam justified by actual variation: production harness versus deterministic test fake. Everything else remains implementation detail. The deletion test passes: removing <code>TopicChats</code> would spread lease recovery, append grammar and idempotence across every route and test.</p>
+  <p><strong>Relationship to task #230:</strong> the later composer <code>use subagent</code> checkbox may reuse the worker adapter and global-cap policy. It is a separate interaction with different durable context and must not silently create or append to a topic chat. This proposal does not design its checkbox, ownership or result placement.</p>
+</section>
+
+<section class="read" aria-labelledby="delivery">
+  <div class="label" id="delivery">Staged delivery</div>
+  <div class="stages">
+    <div class="stage"><div><strong>Contract + parser, no worker.</strong> Define formats in <code>file-formats.md</code>, confinement, hostile-input round trips, append/fsync behaviour, and a static read-only <code>/chat</code> fixture. Prove malformed states are loud.</div></div>
+    <div class="stage"><div><strong>Single-chat vertical slice.</strong> Create chat, append human turn, start one fake/real fresh worker, append completed/failed terminal turn, discard worker. No queue, no cancellation, global cap 1.</div></div>
+    <div class="stage"><div><strong>Queue + recovery.</strong> One editable/cancellable <code>queue.md</code>, promotion idempotence, startup reconciliation, stale lease UI, and preservation of browser typing/focus across live re-renders.</div></div>
+    <div class="stage"><div><strong>Dashboard index + bounded concurrency.</strong> Compact chat section, <code>/chat</code> route/chrome/tint entries, global cap 2 and waiting-capacity status. Different chats can run together.</div></div>
+    <div class="stage"><div><strong>Only after evidence:</strong> honest cancellation, partial-output inspection, export/retention controls and shared settings integration. Each needs explicit approval where noted below.</div></div>
+  </div>
+  <p class="quiet">Every UI state change uses <code>transitions.md</code>: the route uses the existing dissolve; rows arriving/leaving and status changes use the established snap-then-drift/regroup idiom; live data commits immediately; queue edits preserve typed text, caret, focus and disclosures; reduced motion changes timing, never function.</p>
+</section>
+
+<section class="read" aria-labelledby="checks">
+  <div class="label" id="checks">Verification</div>
+  <details><summary>Red-first acceptance checks (12)</summary><div class="details-in">
+  <div class="check"><b>RED 01</b> Kill the server between receipt and validation; <span>raw human text remains in <code>submissions.log</code>.</span></div>
+  <div class="check"><b>RED 02</b> Paste headings/comments that imitate turn framing; <span>round-trip yields one human turn with byte-equivalent visible text.</span></div>
+  <div class="check"><b>RED 03</b> Race two sends to one idle chat; <span>one becomes the dispatched turn, one the visible queue, never two workers.</span></div>
+  <div class="check"><b>RED 04</b> Crash after transcript append but before queue removal; <span>recovery finds <code>queue-id</code> and does not duplicate the turn.</span></div>
+  <div class="check"><b>RED 05</b> Crash after result write but before transcript finalisation; <span>restart appends exactly one terminal agent turn.</span></div>
+  <div class="check"><b>RED 06</b> Reuse a live PID from another process or prior boot; <span>ownership is not accepted from PID alone and no second worker starts.</span></div>
+  <div class="check"><b>RED 07</b> Give malformed transcript/state; <span>dashboard shows an amber path-specific fault and dispatch stays locked.</span></div>
+  <div class="check"><b>RED 08</b> Run three chats with cap 2; <span>two run, one visibly waits, and FIFO survives restart.</span></div>
+  <div class="check"><b>RED 09</b> Fail after partial worker output; <span>transcript says <code>failed</code>, partial is inspectable but absent from the next prompt.</span></div>
+  <div class="check"><b>RED 10</b> Type/edit queue while two mtime ticks replace the view; <span>text, revision, caret, focus and queue status survive.</span></div>
+  <div class="check"><b>RED 11</b> Trace row/status/queue transitions per frame; <span>multiple intermediate positions, no overshoot, settled crispness, reduced-motion parity.</span></div>
+  <div class="check"><b>RED 12</b> Attempt traversal, symlink escape, oversized prompt/output and forged chat id; <span>all refuse loudly without starting a worker or losing the witnessed submission.</span></div>
+  </div></details>
+</section>
+
+<hr>
+<section class="read" aria-labelledby="decisions">
+  <div class="label" id="decisions">Decision boundary</div>
+  <h2>Decided by this proposal (tentative design)</h2>
+  <ul>
+    <li>Fresh-per-turn means no durable model session; transcript reconstruction is mandatory.</li>
+    <li>Markdown transcript is primary conversational truth; process JSON is subordinate and minimal.</li>
+    <li>One run per chat; one visible editable queue item; no silent second send.</li>
+    <li>Dashboard index plus dedicated route; deep orchestration module rather than logic spread through <code>watch.py</code>.</li>
+    <li>MVP does not stream partial output into conversation and does not claim interrupted work completed.</li>
+  </ul>
+  <h2 style="margin-top:1rem">Deferred deliberately</h2>
+  <ul><li>Cancellation/interrupt control; automatic retention; attachments; search; branching chats; multi-queue; token-cost accounting; chat export; #230’s composer checkbox.</li></ul>
+  <h2 style="margin-top:1rem">Requires human approval before implementation</h2>
+  <div class="choice"><strong>A · Architecture and surface</strong><p>Approve dashboard index + <code>/chat</code>, file-backed fresh workers, and staged delivery?</p><div class="answer">Proposed answer: <code>approve A: dashboard index + dedicated chat route; transcript-first fresh workers</code></div></div>
+  <div class="choice"><strong>B · Privacy</strong><p>Keep all topic chats machine-local and gitignored by default, with explicit export later?</p><div class="answer">Proposed answer: <code>approve B: gitignore chats by default; no automatic publication</code></div></div>
+  <div class="choice"><strong>C · Concurrency</strong><p>Use a global cap of two concurrent topic-chat workers, one per chat?</p><div class="answer">Proposed answer: <code>approve C: global cap 2</code></div></div>
+  <div class="choice"><strong>D · Cancellation</strong><p>Omit cancellation from MVP; add only after the adapter can durably finalise <code>cancelled</code>?</p><div class="answer">Proposed answer: <code>approve D: defer cancellation; never fake interrupt history</code></div></div>
+  <div class="choice"><strong>E · Retention</strong><p>Retain transcripts and failed partials until manual cleanup; do not auto-delete without a later policy?</p><div class="answer">Proposed answer: <code>approve E: manual retention for now</code></div></div>
+  <div class="call"><strong>One-line approval text:</strong><br><code>Approve A–E as recommended. Proceed later by the staged plan; this proposal itself is not implementation authority.</code></div>
+</section>
+
+<footer class="read">Prepared for task #229 · 2026-07-26. This artifact proposes a design; it records neither approval nor authority to modify the dashboard.</footer>
+</main>
+</body>
+</html>
