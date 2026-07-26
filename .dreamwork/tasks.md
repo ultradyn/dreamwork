@@ -22,14 +22,6 @@ Next id: **221**
 
 ## Open
 
-- **#220** — Enter maintenance when no work is actionable · P2 · idea ·
-  15m · origin: **human** · **human via watch 12:03**: if all tasks are
-  done or blocked, do maintenance instead of wasting selection cycles ·
-  current gap is the step-4 phrase “List empty”; a non-empty queue whose
-  tasks are all blocked is actionably identical · rec: say “no unblocked
-  actionable work” and reuse existing `roll.py --no-backlog` rather than
-  add another flag unless implementation disproves that sufficiency
-
 
 - **#218** — Add filed-to-landed median · P2 · task · 20m ·
   origin: **loop** · blocked on #217 · `ledger_series` already computes
@@ -611,6 +603,11 @@ Next id: **221**
   **blocked**: human pick
 
 ## Recently landed
+
+**#220** a fully blocked queue now enters maintenance (07742b9): selection
+says “no unblocked actionable work,” not “list empty,” and reuses the
+existing `roll.py --no-backlog`; no duplicate flag was needed. Human steer
+via Web UI at 12:03 (2026-07-26).
 
 **#219** browser guards are bounded and self-identifying (ccc47a0): each
 capture/hub check has a configurable 120s timeout and prints its name plus
