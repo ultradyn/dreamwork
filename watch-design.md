@@ -189,7 +189,23 @@ positional `a+i` and not title alone: duplicate titles, reorder, and deletion
 of another record must keep open on the same logical body. A body edit may
 fail to restore (prefer miss over opening the wrong record). No third
 snapshot path. `dev/capture/answers.mjs` proves node replacement plus the
-three identity cases. Add a view by adding a builder + a `routeOf`/`TINT`/`SEED`
+three identity cases.
+
+**Missing `aid` fails closed (#247).** If the server entry has no `aid`,
+`answerRecord` emits a plain `<details class="aq answered">` with **neither**
+`data-aid` nor `data-keep`. Empty attributes collide (every missing record
+shares `""` as a fold/FLIP key and can re-open the wrong disclosure). A
+shared sentinel such as `ans:missing` collides the same way. Prefer closed
+over wrong-record open.
+
+**Exact-content twins and deletion (#247).** The ordinal is file-order among
+*currently* equal twins. Deleting an earlier twin renumbers later ones, so a
+survivor's `aid` changes and open restore fails closed — it must not migrate
+onto a different body. Distinct bodies keep stable aids across deletion of a
+peer (the browser guard asserts preAid, marker replacement, and same-aid on
+the survivor).
+
+Add a view by adding a builder + a `routeOf`/`TINT`/`SEED`
 entry, not new chrome.
 
 **`expand` is structure; HOW it moves is `transitions.md`'s, not this

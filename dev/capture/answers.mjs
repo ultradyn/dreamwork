@@ -18,6 +18,21 @@ ok('answers route exposes #askbox',exposed);
 if(!exposed){console.log(checks.join('\n'));await br.close();process.exit(1)}
 ok('route title',await page.locator('#chrome .htitle').textContent()==='answers');
 ok('missing channel is calm',await page.locator('.aq').count()===0);
+/* #247: live answerRecord render — missing aid omits BOTH attrs; present keeps both.
+   Uses the page's own function (not fabricated HTML). No disk injection needed. */
+const ar=await page.evaluate(()=>{
+  if(typeof answerRecord!=='function') return {ok:false,why:'no answerRecord'};
+  const missing=answerRecord({title:'T',body:'B'},true);
+  const present=answerRecord({title:'T',body:'B',aid:'ans:test'},true);
+  return {ok:true,missing,present};
+});
+ok('#247 answerRecord is page-global', ar.ok);
+ok('#247 missing-aid render omits data-aid', ar.ok && !ar.missing.includes('data-aid'));
+ok('#247 missing-aid render omits data-keep', ar.ok && !ar.missing.includes('data-keep'));
+ok('#247 missing-aid is plain aq answered details',
+  ar.ok && ar.missing.startsWith('<details class="aq answered"><summary>T</summary>'));
+ok('#247 present-aid render has both attrs',
+  ar.ok && ar.present.includes('data-aid="ans:test"') && ar.present.includes('data-keep="ans:test"'));
 const asked='Does the live ask persist?\n## not a section\n- **not another entry**';
 await page.locator('#askbox').fill(asked); await page.locator('#askbox').focus();
 const tickResponse=await page.evaluate(()=>fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'do-next',text:'',from:'/answers'})}).then(r=>r.status));
@@ -122,7 +137,10 @@ ok('#238 open follows body across reorder', reorder.openOnFirstBody);
 ok('#238 open is not stuck on index 0 after reorder', !reorder.openOnIndex0);
 ok('#238 closed peer stays closed after reorder', reorder.closedPeer);
 
-// Deletion: open the second body; delete the first body from disk
+// Deletion: open the second body; delete the first body from disk.
+// #247: non-vacuous — capture preAid + marker; require a *new* node with the
+// same aid still open. End-state "one open details" alone can pass without
+// the tick replacing the survivor (no-op / wrong-record restore).
 writeFileSync(ansPath, seedTwoDup('first loop answer.','second loop answer.'));
 await page.waitForFunction(()=>document.querySelectorAll('.aq.answered').length===2,null,{timeout:5000});
 await page.evaluate(()=>[...document.querySelectorAll('.aq.answered')].forEach(d=>{d.open=false;}));
@@ -132,21 +150,42 @@ await page.waitForFunction(()=>{
   const el=[...document.querySelectorAll('.aq.answered')].find(e=>(e.querySelector('.aqbody')?.textContent||'').includes('second loop answer'));
   return el && el.open;
 },{timeout:3000});
+const preDel=await openSecond.evaluate(e=>{
+  e.__dwMark=1;
+  return {
+    aid:e.dataset.aid||'',
+    keep:e.dataset.keep||'',
+    body:(e.querySelector('.aqbody')||{}).textContent||'',
+  };
+});
+ok('#247 deletion preAid present on open survivor', !!preDel.aid && preDel.aid===preDel.keep);
 writeFileSync(ansPath, '# Questions for the dreamer\n\n## Open\n\n## Answered\n\n- **Duplicate?** → answered (2026-07-26): second loop answer.\n');
 const t1=Date.now();
-let del={ready:false, open:false, count:0};
+let del={ready:false, open:false, count:0, sameAid:false, replaced:false, connected:false, aid:''};
 while(Date.now()-t1<5200){
-  const st=await page.evaluate(()=>{
+  const st=await page.evaluate(({preAid, needle})=>{
     const all=[...document.querySelectorAll('.aq.answered')];
     if(all.length!==1) return {ready:false, count:all.length};
-    const body=all[0].querySelector('.aqbody')?.textContent||'';
-    if(!body.includes('second loop answer')) return {ready:false, count:1};
-    return {ready:true, open:!!all[0].open, count:1};
-  });
+    const el=all[0];
+    const body=el.querySelector('.aqbody')?.textContent||'';
+    if(!body.includes(needle)) return {ready:false, count:1};
+    const aid=el.dataset.aid||'';
+    return {
+      ready:true,
+      open:!!el.open,
+      count:1,
+      sameAid:!!(preAid && aid===preAid),
+      replaced:!(el.__dwMark),
+      connected:!!el.isConnected,
+      aid,
+    };
+  }, {preAid:preDel.aid, needle:'second loop answer'});
   if(st.ready){del=st; break;}
   await sleep(50);
 }
 ok('#238 deletion leaves the survivor', del.ready && del.count===1);
+ok('#247 deletion survivor keeps same aid', del.sameAid && del.aid===preDel.aid);
+ok('#247 deletion replaced connected survivor node', del.replaced && del.connected);
 ok('#238 open survives deletion of the other record', del.open);
 
 writeFileSync(ansPath,'# Questions for the dreamer\n\nprose no reader can see\n');

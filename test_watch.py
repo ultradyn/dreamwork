@@ -643,6 +643,58 @@ class TestCollector(unittest.TestCase):
         self.assertIn("'data-aid'", watch.PAGE)  # ghost strip list
         self.assertNotIn("answerRecord(e, true, 'a' + i)", watch.PAGE)
 
+    def test_answer_record_missing_aid_omits_both_attrs(self):
+        # #247: fail closed — missing aid must not emit empty data-aid/data-keep
+        # (empty keys collide folds/FLIP) and must not emit a shared sentinel
+        # as an id *value*. Branch-order in PAGE + node execution of the
+        # extracted answerRecord (real renderer output, not fabricated HTML).
+        import re, subprocess, json, textwrap
+        page = watch.PAGE
+        self.assertIn("if (!e.aid)", page)
+        self.assertNotIn("e.aid || ''", page)
+        start = page.index("function answerRecord(e, answered=false)")
+        end = page.index("function buildAnswers", start)
+        fn = page[start:end].rstrip()
+        # no sentinel as a literal id value (comments may name the anti-pattern)
+        self.assertNotIn("'ans:missing'", fn)
+        self.assertNotIn('"ans:missing"', fn)
+        self.assertNotIn("`ans:missing`", fn)
+        with_attrs = 'data-aid="${id}" data-keep="${id}"'
+        self.assertIn(with_attrs, fn)
+        i_branch = fn.index("if (!e.aid)")
+        i_plain = fn.index(
+            'return `<details class="aq answered"><summary>${esc(e.title)}</summary>`',
+            i_branch)
+        i_with = fn.index(with_attrs, i_branch)
+        self.assertLess(i_plain, i_with)
+        script = textwrap.dedent("""\
+            const esc = s => String(s ?? '').replace(/&/g,'&amp;')
+              .replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            const mdB = s => s;
+            %s
+            const missing = answerRecord({title:'T', body:'B'}, true);
+            const present = answerRecord(
+              {title:'T', body:'B', aid:'ans:deadbeef'}, true);
+            process.stdout.write(JSON.stringify({missing, present}));
+        """) % fn
+        out = subprocess.check_output(["node", "-e", script], text=True)
+        rendered = json.loads(out)
+        self.assertEqual(
+            rendered["missing"],
+            '<details class="aq answered"><summary>T</summary>'
+            '<div class="aqbody">B</div></details>')
+        self.assertNotIn("data-aid", rendered["missing"])
+        self.assertNotIn("data-keep", rendered["missing"])
+        self.assertIn('data-aid="ans:deadbeef"', rendered["present"])
+        self.assertIn('data-keep="ans:deadbeef"', rendered["present"])
+
+    def test_answer_record_aid_doc_states_twin_deletion_fail_closed(self):
+        # #247: exact-content twin ordinal renumbers on earlier twin deletion
+        doc = watch.answer_record_aid.__doc__ or ""
+        self.assertIn("Exact-content twin limitation", doc)
+        self.assertIn("renumbers", doc)
+        self.assertIn("fails closed", doc)
+
     def test_atomic_write_text_replaces_and_leaves_no_temp(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "answers.md")

@@ -1901,10 +1901,16 @@ function buildQuestions(d) {
 }
 function answerRecord(e, answered=false) {
   const body = `<div class="aqbody">${mdB(e.body)}</div>`;
-  // #238: content-stable aid from the server backs both list identity and
-  // data-keep so open rides the existing snapshotFolds seam (re-open only).
+  // #238/#247: content-stable aid from the server backs both list identity and
+  // data-keep so open rides snapshotFolds (re-open only). Missing aid must
+  // fail CLOSED: omit both data-aid and data-keep so empty keys cannot collide
+  // folds or FLIP, and never emit a shared sentinel like ans:missing.
   if (answered) {
-    const id = esc(e.aid || '');
+    if (!e.aid) {
+      return `<details class="aq answered"><summary>${esc(e.title)}</summary>` +
+        `${body}</details>`;
+    }
+    const id = esc(e.aid);
     return `<details class="aq answered" data-aid="${id}" data-keep="${id}">` +
       `<summary>${esc(e.title)}</summary>${body}</details>`;
   }
@@ -5371,6 +5377,11 @@ def answer_record_aid(title, when, body, follows, ordinal=0):
     `snapshotFolds` and FLIP tracks the logical record, not list position.
     Body edits change the id (fail to restore is acceptable; never open
     another record).
+
+    Exact-content twin limitation (#247): the ordinal is file-order among
+    currently equal twins. Deleting an earlier twin renumbers later ones, so
+    a survivor's aid changes and open restore fails closed — it must not
+    migrate onto a different body.
     """
     t, w, b, follows_blob = _answer_aid_parts(title, when, body, follows)
     payload = "\n".join(["ans.v1", t, w, b, follows_blob, str(int(ordinal))])
