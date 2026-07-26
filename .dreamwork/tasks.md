@@ -270,15 +270,6 @@ Next id: **289**
   transition/reduced-motion and deterministic offline/public fallback · fold
   into #239 resolver, never a second theme pipeline · blocked on #239
 
-- **#255** — Make composer confirmation self-dismiss reliably · P1 · UI bug ·
-  20m · origin: **human** · **approved via watch 18:18** · `sent to the dream`
-  can remain indefinitely if user types during POST or closes/reopens composer ·
-  implement one shared success lifecycle: atmospheric arrival, readable ~5s,
-  atmospheric departure then clear, independent of typing/open state; hard-clean
-  on close/unmount; false/error claims withdraw immediately; RM keeps timing/
-  function without movement/blur · main/popout share helper; red-first timing +
-  intermediate-motion guard · unblocked, next after current LAN/doc checkpoint
-
 - **#254** — Render review notes and loop replies as threaded conversation ·
   P1 · UX bug · 20m · origin: **human** · **human via watch 15:20** · a
   human Note followed by loop Answer currently reads as sibling bullets on the
@@ -949,6 +940,17 @@ Next id: **289**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#255** — Make composer confirmation self-dismiss reliably · P1 · UI bug ·
+  landed 2026-07-26 · one document-scoped `confirmationFor` controller serves
+  main and popout: atmospheric arrival, ~5s readable hold, atmospheric
+  departure/clear; reduced motion keeps timing and snaps visuals · typing
+  cancels only panel courtesy-close; close/route/pagehide hard-clean timers,
+  listener and in-flight attempt callbacks; newer submit supersedes older;
+  error/rejection/validation replace success immediately · guard REDs proved
+  the original permanent main/popout messages, popout enter-snap, fallback
+  listener leak and close-during-POST resurrection · `dismiss` + `confirmation`
+  PASS, Standards + Spec PASS, 459 tests + 46 subtests · `74837df`
 
 - **#221** — Sort dashboard reviews by exact filesystem datetime · P2 ·
   implementation · landed 2026-07-26 · newest exact `st_mtime_ns` first;
