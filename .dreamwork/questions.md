@@ -84,6 +84,14 @@
   human/loop/unmarked visualisation remain later increments.
 
   Answer `rec`, or leave a note naming what should change.
+  - **Note (human, via watch, 2026-07-26 15:33):** the burndown warning that
+    most entries cannot split human steers from loop ideas should be addressed
+    by tracking task provenance.
+  - **Reply (loop, 2026-07-26 15:34):** Confirmed as the #213 goal. #216 then
+    parses first-seen origin and #217 renders human / loop / historical-unknown
+    coverage. The remaining decision is migration honesty: rec remains the
+    forward-only cutoff; guessing old origins would make the chart look more
+    precise by making it less true.
 
 - **P3 · 2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
   Stages 1-5 shipped: the skill exists, is installed and indexed, walks
