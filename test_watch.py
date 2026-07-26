@@ -4,6 +4,7 @@
 import http.server
 import json
 import os
+import re
 import tempfile
 import threading
 import time
@@ -317,6 +318,15 @@ class TestCollector(unittest.TestCase):
             self.assertLess(r["marked"], r["entries"])
         watch._LEDGER_SNAPS.clear()
         watch._LEDGER_CACHE.clear()
+
+    def test_live_data_assignments_go_through_one_seam(self):
+        # `ensureData` consumes mtime as it fetches, so reactive hooks wired
+        # beside it are dead on a fresh page and look perfect on later ticks.
+        # Every fetcher must assign through setData; a bare assignment silently
+        # re-arms #208's exact failure.
+        assignments = re.findall(r"(?m)^\s*data\s*=", watch.PAGE)
+        self.assertEqual(assignments, ["  data ="])
+        self.assertEqual(watch.PAGE.count("setData(await"), 2)
 
     def test_git_tail_carries_what_an_expanded_row_shows(self):
         # #166: the row expands onto the full sha, the author, the message
