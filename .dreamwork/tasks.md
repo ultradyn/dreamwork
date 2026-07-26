@@ -18,9 +18,19 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **239**
+Next id: **240**
 
 ## Open
+
+- **#239** — Canonicalise generated HTML review styling · P2 · idea ·
+  30m design · origin: **human** · **human via watch 14:23** · reviews,
+  answers, proposals and explorations should consistently use Dreamwork style
+  from one canonical source, replaceable by a Dreamwork plugin · rec:
+  target-local `.dreamwork/review-style.md` seeded from skill default; every
+  HTML generator resolves it; explicit plugin override contract; artifact
+  records style source/version; offline-clean always; absent/broken plugin
+  falls back loudly to project file, never undocumented agent taste · connect
+  to #225/#229/#235 + initialization/file-formats
 
 - **#238** — Preserve `/answers` UI state across data refresh · P1 · bug ·
   20m · origin: **human** · **do next via watch 14:16** · open answered
