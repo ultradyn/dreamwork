@@ -411,11 +411,11 @@ notes.push('A setItem log during adopt: ' + JSON.stringify(setItems));
 ok('cross-tab: A never setItem run-mode-pending (no write-back)',
    !setItems.some(x => String(x.k).indexOf('dw:run-mode-pending:') === 0));
 
-// wait for shared final commit, then a quiet window so a dual-fire would
-// still land in the count (not a premature PASS on the first of two).
+// wait for shared final commit, then a quiet window that EXCEEDS the 1.5s
+// orphan defer (+ poll slack) so a dual-fire via reclaim still fails the count.
 const tWait2 = Date.now();
 while (posts.length === postsAtArm && Date.now() - tWait2 < 14000) await sleep(200);
-await sleep(900); // dual-fire / orphan-reclaim window (~1.5s deferred)
+await sleep(2200); // M2: must be > orphan defer 1500ms + granularity
 const slice = posts.slice(postsAtArm);
 const postsThisArm = slice.length;
 dumpPosts('cross-tab shared arm', slice);
@@ -590,6 +590,69 @@ if (existsSync(eventsFile)) {
   ok('leave-dashboard: last events line names assisted',
      /assisted/.test(last));
 }
+
+// ── tab-CLOSE mid-arm: survivor orphan-reclaims (Standards B1) ─────────
+// Owner arms, survivor adopts display-only, owner tab closes before POST.
+// sessionStorage owner dies with the tab; pending must survive past `until`
+// so the survivor can claim after the orphan defer.
+await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+await sleep(600);
+await p.evaluate(async () => {
+  await fetch('/run-mode', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'lackadaisical' }),
+  });
+  if (data) data.run_mode = 'lackadaisical';
+  try {
+    Object.keys(localStorage)
+      .filter(k => k.indexOf('dw:run-mode-pending:') === 0)
+      .forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
+});
+await sleep(300);
+const pOwner = await ctx.newPage();
+pOwner.on('pageerror', e => errs.push('owner:' + String(e)));
+await pOwner.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+await sleep(500);
+const postsTC = posts.length;
+const eventsTC = existsSync(eventsFile)
+  ? readFileSync(eventsFile, 'utf8').split('\n').filter(l => l.includes('run-mode')).length
+  : 0;
+await pOwner.evaluate(() => {
+  if (typeof pickRunMode === 'function') pickRunMode('hot');
+});
+const survArmed = await waitPage(p, () => {
+  const on = document.querySelector('.runchip.on:not([disabled])');
+  const count = document.getElementById('runcount');
+  const c = count ? count.textContent : '';
+  return (on && on.dataset.mode === 'hot' && /arms in \d+s/.test(c))
+    ? { on: on.dataset.mode, count: c } : null;
+}, { timeout: 5000, label: 'survivor adopt before owner close' });
+ok('tab-close setup: survivor adopted owner hot arm',
+   !!(survArmed && survArmed.on === 'hot'));
+// kill the owner mid-arm — its sessionStorage owner id dies with it
+await pOwner.close();
+// wait past arm + orphan defer (1.5s) + quiet
+const tTC = Date.now();
+while (posts.length === postsTC && Date.now() - tTC < 16000) await sleep(200);
+await sleep(2200);
+const sliceTC = posts.slice(postsTC);
+dumpPosts('tab-close orphan arm', sliceTC);
+ok('tab-close: exactly one POST after owner closed mid-arm',
+   sliceTC.length === 1);
+if (sliceTC.length === 1) {
+  ok('tab-close: POST is orphan reclaim (or sole survivor commit)',
+     sliceTC[0].orphan === true || sliceTC[0].mode === 'hot');
+}
+await sleep(400);
+const afterTC = await p.evaluate(async () =>
+  (await (await fetch('/data.json')).json()).run_mode);
+ok('tab-close: file/data settled to hot via survivor', afterTC === 'hot');
+const eventsTCAfter = existsSync(eventsFile)
+  ? readFileSync(eventsFile, 'utf8').split('\n').filter(l => l.includes('run-mode')).length
+  : 0;
+ok('tab-close: exactly one new events line',
+   eventsTCAfter === eventsTC + 1);
 
 finished = true;
 await br.close();

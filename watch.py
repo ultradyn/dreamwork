@@ -2795,6 +2795,9 @@ function runTabId() {
     return id;
   } catch (e) { return 'anon'; }
 }
+// How long after `until` an unclaimed arm stays readable for orphan reclaim
+// (tab-close mid-arm). Must exceed the deferred reclaim delay (1500ms).
+const RUN_ORPHAN_GRACE_MS = 3000;
 function readRunPending() {
   try {
     const k = runPendingKey();
@@ -2802,12 +2805,24 @@ function readRunPending() {
     const p = JSON.parse(localStorage.getItem(k) || 'null');
     if (!p || typeof p.mode !== 'string') return null;
     if (RUN_MODES.indexOf(p.mode) < 0) return null;
-    // cancel tombstone: peers must converge to mode immediately (no until)
-    if (p.phase === 'cancel') return p;
     if (typeof p.until !== 'number') return null;
-    if (Date.now() >= p.until) { localStorage.removeItem(k); return null; }
+    // Cancel tombstones: readable until `until`, then GC (M1). Live peers
+    // still see them for converge-to-mode during the short grace window.
+    if (p.phase === 'cancel') {
+      if (Date.now() >= p.until) { localStorage.removeItem(k); return null; }
+      return p;
+    }
+    // Arm pending: do NOT purge at `until` — orphan reclaim (tab close) reads
+    // the same record after the deadline. GC only after orphan grace.
+    if (Date.now() >= p.until + RUN_ORPHAN_GRACE_MS) {
+      localStorage.removeItem(k);
+      return null;
+    }
     return p;
   } catch (e) { return null; }
+}
+function pendingIsLiveArm(p) {
+  return !!(p && !p.phase && typeof p.until === 'number' && Date.now() < p.until);
 }
 function writeRunPending(mode, until, owner) {
   try {
@@ -2820,11 +2835,12 @@ function writeRunPending(mode, until, owner) {
 function writeRunCancel(mode) {
   // Distinguish cancel from "initiator cleared pending to POST": followers
   // must paint the committed mode now (cancel produces no mtime change).
+  // `until` is the tombstone expiry (M1), not an arm deadline.
   try {
     const k = runPendingKey();
     if (!k) return;
     localStorage.setItem(k, JSON.stringify({
-      mode, phase: 'cancel', until: Date.now() + 500, owner: runTabId(),
+      mode, phase: 'cancel', until: Date.now() + 800, owner: runTabId(),
     }));
   } catch (e) {}
 }
@@ -2913,6 +2929,7 @@ function armRunModeUI(mode, until, gen) {
     else {
       // Display-only path: do NOT race the owner at the same deadline.
       // Orphan reclaim is deferred so a live initiator always wins the CAS.
+      // Pending must still be readable after `until` (see readRunPending grace).
       clearRunArmUI();
       setTimeout(() => {
         if (gen !== runArmGen) return;
@@ -2938,7 +2955,8 @@ function claimRunPending(mode, { orphan = false } = {}) {
     const p = JSON.parse(raw);
     if (!p || p.phase === 'cancel' || p.mode !== mode) return false;
     if (p.owner && p.owner !== runTabId()) {
-      // Not the arming tab: only an orphan reclaim after the deadline may claim.
+      // Not the arming tab: only orphan reclaim after deadline + 1s may claim
+      // (live owner still has exclusive window at `until`).
       if (!orphan) return false;
       if (typeof p.until === 'number' && Date.now() < p.until + 1000)
         return false;
@@ -3018,7 +3036,9 @@ function pickRunMode(mode) {
 }
 function runModePicker(d) {
   const pending = readRunPending();
-  const arm = pending && !pending.phase ? pending : null;
+  // Only a still-counting arm paints as selected pending; expired-but-
+  // reclaimable pending must not look like an active countdown.
+  const arm = pendingIsLiveArm(pending) ? pending : null;
   const cur = arm ? arm.mode : committedRunMode(d);
   const chips = RUN_MODES.map(n =>
     `<button type="button" role="radio" class="sgbtn runchip` +
@@ -3051,7 +3071,7 @@ function syncRunModeFromData() {
     clearRunArmUI();
     return;
   }
-  if (pending) {
+  if (pending && !pending.phase) {
     // Ownership is timer+flag state, NOT picker DOM. An initiator that
     // navigates to /questions mid-arm must still POST at the deadline —
     // reclaim via sessionStorage owner id (survives reload; lost on tab close).
@@ -3059,10 +3079,26 @@ function syncRunModeFromData() {
       runArmShouldCommit = true;
     if (document.querySelector('.sgroup.runmodes'))
       paintRunModeSelection(pending.mode, true);
-    // Always keep the commit/display timer alive when pending is live, even
-    // when the chips are not in the DOM (non-dashboard routes).
-    runArmGen++;
-    armRunModeUI(pending.mode, pending.until, runArmGen);
+    if (pendingIsLiveArm(pending)) {
+      // Still counting: keep commit/display timer alive even without picker DOM.
+      runArmGen++;
+      armRunModeUI(pending.mode, pending.until, runArmGen);
+    } else if (runArmShouldCommit || !pending.owner || pending.owner === runTabId()) {
+      // Past until, still reclaimable: fire claim now (reload after deadline).
+      runArmGen++;
+      commitRunMode(pending.mode, runArmGen, { orphan: !runArmShouldCommit });
+    } else {
+      // Follower seeing expired pending: schedule orphan reclaim once.
+      runArmGen++;
+      const gen = runArmGen, mode = pending.mode;
+      setTimeout(() => {
+        if (gen !== runArmGen) return;
+        const p = readRunPending();
+        const cur = committedRunMode(data);
+        if (p && !p.phase && p.mode === mode && cur !== mode)
+          commitRunMode(mode, gen, { orphan: true });
+      }, 200);
+    }
     return;
   }
   if (document.querySelector('.sgroup.runmodes'))
