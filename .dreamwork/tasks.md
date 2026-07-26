@@ -18,18 +18,16 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **273**
+Next id: **274**
 
 ## Open
 
-- **#272** — Visually review the live #229 review-and-discussion route · P1 ·
-  UX review · 20m · origin: **human** · **human do-next via watch 16:59** ·
-  Grok reviews exact live route `http://localhost:35111/review?p=threaded-topic-
-  chats.html&q=P1%20%C2%B7%202026-07-26%20%E2%80%94%20%23229%20threaded%20topic%
-  20chats%3A%20approve%20the%20proposed%20architecture%20and%20defaults%3F` at
-  desktop and mobile, identifies concrete hierarchy/navigation/comprehension/
-  interaction/accessibility issues and proposes scoped solutions · proposal-only,
-  no submits or source edits · in progress: owner Grok; fold findings into #270
+- **#273** — Fix small review-dock accessibility and touch-target defects · P1 ·
+  UI/accessibility · 15m · origin: **human** · **human via watch 17:07** ·
+  implement only review-safe #272 findings: explicit accessible label for dock
+  answer/note textarea and minimum 44px dock send target without structural
+  layout change · red-first DOM/geometry guards; confirm existing transitions
+  and reduced-motion behavior remain unchanged · isolated worktree, owner Grok
 
 - **#271** — Make notes appear promptly across open dashboard browsers · P1 · bug ·
   25m · origin: **human** · **human via watch 16:58** · observed symptom only:
@@ -41,14 +39,19 @@ Next id: **273**
   #269 cross-tab drafts without conflating received notes with unsent text
 
 - **#270** — Harden and re-review the #229 topic-chat proposal · P1 ·
-  architecture/review · origin: **human** · **human via watch 16:47** · exact
-  Grok review preserved under the #229 question after a second #266 wrong-target
-  submission · update artifact with a single recovery authority/order, concrete
-  bounded worker adapter, per-target cross-process lease, transcript confinement,
-  explicit attachment MVP and atomic promotion, derived-only index, queue-full
-  semantics, idempotent finalisation, privacy/export and provenance redaction ·
-  retain transcript-first/simple-mode strengths · re-run offline, visual and
-  geometry review · blocked on #263 event model and #266 stable dock identity
+  architecture/review · origin: **human** · **human revision directive via watch
+  17:10** · active now · update artifact against the full Grok architecture
+  review preserved in the answered #229 thread and measured UX review at
+  `.dreamwork/docs/research/review-route-ux-272.md` · define one recovery
+  authority/order, bounded worker adapter, per-target cross-process lease,
+  transcript confinement, attachment MVP/atomic promotion, derived index,
+  queue-full semantics, idempotent finalisation, privacy/export and provenance
+  redaction; also propose viewport-bounded sticky header/thread/composer dock,
+  decision navigation, mobile Document/Discussion model, #254 nesting and global
+  composer treatment with transitions/RM · retain transcript-first/simple-mode
+  strengths · self-review against Dreamwork goals, independently visually review,
+  then present a **new** review artifact/question · no implementation authority ·
+  design consumes #263; implementation remains blocked on #266
 
 - **#269** — Make every Web UI text draft durable and cross-tab coherent · P1 ·
   client reliability/module · origin: **human** · **human via watch 16:45** ·
@@ -860,6 +863,13 @@ Next id: **273**
   **blocked**: human pick
 
 ## Recently landed
+
+**#272** visually reviewed the live #229 route in isolated desktop/mobile
+browsers. Measured evidence and ranked fixes are durable at
+`.dreamwork/docs/research/review-route-ux-272.md`; critical findings are a
+composer more than 4–5k px below the viewport and a decision prompt disconnected
+across the iframe/dock seam. #273 owns small fixes; #270 owns the structural
+proposal (2026-07-26).
 
 **#267** contextual plugin discovery research is durable at
 `.dreamwork/docs/research/contextual-plugin-discovery.md`: Pi's hidden
