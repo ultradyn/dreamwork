@@ -2,7 +2,31 @@
 
 ## Open
 
-- **P1 · 2026-07-27 — #254 note/reply conversation: use one rooted exchange\n  branch rather than flat siblings or a nesting staircase?** Evidence:\n  `.dreamwork/review/evidence/review-note-reply-unclear.png`.\n\n  The screenshot's actual order is loop **Answer** first, then Max's later\n  **YOU** note. Today they render as visually similar sibling rows, so the note\n  reads like unrelated continuation. Rec **N1**: make the loop Answer the root\n  response to the question and render later human Notes plus loop Replies as one\n  connected discussion branch beneath it at a single inset depth. Preserve exact\n  chronology, author and timestamp; recognise explicit `Reply (loop, …)`; never\n  indent each turn more deeply; if no root exists, keep the note top-level rather\n  than guessing. This is conventional comment→reply hierarchy without turning a\n  long exchange into a diagonal staircase.\n\n  **N2** nests only new explicit Reply tags, leaving legacy Notes flat until a\n  file-format migration; this avoids inferred adjacency but leaves the reported\n  case broken. **N3** uses a flat chat timeline with stronger bubbles/labels; it\n  clarifies authorship but does not satisfy the requested comment→reply nesting.\n\n  Approval authorizes a written design/spec only. It does not authorize parser,\n  file-format, UI, migration, deployment, or transition changes. Answer `Accept\n  N1 for written design`, `Accept N2 for written design`, `Choose N3`, or name a\n  different relationship rule.\n\n- **P0/P1 · 2026-07-26 — #288 protected-service boundary: contain
+- **P1 · 2026-07-27 — #254 note/reply conversation: use one rooted exchange
+  branch rather than flat siblings or a nesting staircase?** Evidence:
+  `.dreamwork/review/evidence/review-note-reply-unclear.png`.
+
+  The screenshot's actual order is loop **Answer** first, then Max's later
+  **YOU** note. Today they render as visually similar sibling rows, so the note
+  reads like unrelated continuation. Rec **N1**: make the loop Answer the root
+  response to the question and render later human Notes plus loop Replies as one
+  connected discussion branch beneath it at a single inset depth. Preserve exact
+  chronology, author and timestamp; recognise explicit `Reply (loop, …)`; never
+  indent each turn more deeply; if no root exists, keep the note top-level rather
+  than guessing. This is conventional comment→reply hierarchy without turning a
+  long exchange into a diagonal staircase.
+
+  **N2** nests only new explicit Reply tags, leaving legacy Notes flat until a
+  file-format migration; this avoids inferred adjacency but leaves the reported
+  case broken. **N3** uses a flat chat timeline with stronger bubbles/labels; it
+  clarifies authorship but does not satisfy the requested comment→reply nesting.
+
+  Approval authorizes a written design/spec only. It does not authorize parser,
+  file-format, UI, migration, deployment, or transition changes. Answer `Accept
+  N1 for written design`, `Accept N2 for written design`, `Choose N3`, or name a
+  different relationship rule.
+
+- **P0/P1 · 2026-07-26 — #288 protected-service boundary: contain
   subagent tools or isolate the dashboard identity?** Decision artifact:
   `.dreamwork/review/protected-service-boundary-288.html`; analysis:
   `.dreamwork/docs/research/protected-service-boundary-288.md`.
