@@ -178,6 +178,19 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
      after.value === '');
 }
 
+/* ── do-now is immediate; after success the composer returns to capture ── */
+{
+  await openComposer();
+  await p.click('.cmdkind[data-kind="do-now"]');
+  await type('the urgent thing');
+  await p.evaluate(`document.getElementById('cmdform').requestSubmit()`);
+  await sleep(600);
+  const kind = await p.evaluate(
+    `document.querySelector('#cmdkinds .cmdkind.on').dataset.kind`);
+  ok('after a successful do-now, the composer returns to add idea',
+     kind === 'add-idea');
+}
+
 /* ── emptying the box is his act, and the store follows it ────────────── */
 {
   await type('something he then thinks better of');

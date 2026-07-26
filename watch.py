@@ -4006,6 +4006,7 @@ function popoutDoc(url, label) {
         if (plus) { const b = plus.getBoundingClientRect();
           ripple(b.left + b.width / 2, b.top + b.height / 2); }
         document.getElementById('cmdtext').value = '';
+        if (kind === 'do-now') setKind('add-idea');
         clearDraft();             // the one moment it is safe to forget (#163)
         // he may already have started typing again while the POST was in
         // flight, before there was any timer to cancel
