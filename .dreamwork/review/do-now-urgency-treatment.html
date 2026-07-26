@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="en-au">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#257 · #258 · do-now danger &amp; shader emotion</title>
+<meta name="dreamwork-style-source" content="offline-embedded-fallback · #239 resolver not yet shipped · tokens mirrored from watch.py :root + proposed --danger">
+<meta name="dreamwork-host-bg-hook" content="proposal: body.dreamwork-host-bg (or #239 class) — host injects live shader under artifact chrome; offline uses radial-gradient field below">
+<style>
+:root{
+  color-scheme:dark;
+  interpolate-size:allow-keywords;
+  --bg:#0b0f19;
+  --panel:#111827;
+  --panel2:#0f1626;
+  --line:#273247;
+  --border:#334155;
+  --text:#d1d5db;
+  --bright:#f3f4f6;
+  --muted:#9ca3af;
+  --dim:#7c8798;
+  --dimmer:#5b6575;
+  --accent:#a5b4fc;
+  --ok:#86efac;
+  --bad:#fda4af;
+  --warn:#fcd34d;
+  /* #257 proposed — rose interrupt, not amber BROKEN */
+  --danger:#f87171;
+  --danger-soft:rgba(248,113,113,.18);
+  --danger-glow:rgba(248,113,113,.42);
+  --radius:4px;
+  --ease:cubic-bezier(.32,.12,.2,1);
+  --space:1.6rem;
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#4b5563 transparent}
+html,body{margin:0;min-height:100%}
+body{
+  padding:2.4rem 1rem 5rem;
+  background:
+    radial-gradient(ellipse at 18% -10rem,rgba(248,113,113,.07),transparent 34rem),
+    radial-gradient(ellipse at 72% -8rem,rgba(99,102,241,.12),transparent 40rem),
+    var(--bg);
+  color:var(--text);
+  font:.82rem/1.7 ui-monospace,"JetBrains Mono",ui-sans-serif,system-ui,monospace;
+}
+.wrap{max-width:1040px;margin:auto}
+.read{max-width:72ch}
+h1,h2,h3{font:inherit;font-weight:normal;color:var(--bright);margin:0}
+h1{font-size:1.08rem;letter-spacing:.01em}
+h2{font-size:.95rem}
+.sub,.label{color:var(--dim)}
+.sub{margin:.25rem 0 1.6rem;line-height:1.55}
+.label{
+  text-transform:uppercase;letter-spacing:.08em;font-size:.68rem;
+  margin:2.2rem 0 .65rem;color:var(--dim);
+}
+.lead{color:#e5e7eb;font-size:.9rem;line-height:1.65}
+.decision{
+  border-left:2px solid var(--danger);
+  padding:.45rem 0 .45rem 1.3ch;
+  background:linear-gradient(90deg,rgba(248,113,113,.08),transparent);
+  margin:1rem 0 0;
+}
+.decision.ok{
+  border-left-color:var(--accent);
+  background:linear-gradient(90deg,rgba(165,180,252,.08),transparent);
+}
+.rows{border-bottom:1px solid var(--line)}
+.row{
+  display:grid;grid-template-columns:15ch minmax(0,1fr);gap:1.4ch;
+  border-top:1px solid var(--line);padding:.55rem 0;
+}
+.key{color:var(--dim);text-transform:uppercase;font-size:.68rem;letter-spacing:.05em}
+.pass{color:var(--ok)}.fail{color:var(--bad)}.warn{color:var(--warn)}.danger{color:var(--danger)}
+code{
+  color:#e5e7eb;background:var(--panel);padding:.05rem .35ch;border-radius:3px;
+  font:inherit;font-size:.92em;
+}
+.note{color:var(--muted);font-size:.78rem}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1.1rem}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}
+.card{
+  border:1px solid var(--line);border-radius:6px;background:rgba(17,24,39,.72);
+  padding:.85rem .95rem 1rem;min-width:0;
+}
+.card.rec{border-color:color-mix(in oklab,var(--danger) 45%,var(--line));
+  box-shadow:inset 0 0 0 1px rgba(248,113,113,.08)}
+.card h3{margin-bottom:.35rem}
+.card .tag{
+  display:inline-block;font-size:.65rem;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--danger);border:1px solid color-mix(in oklab,var(--danger) 40%,transparent);
+  border-radius:999px;padding:.1rem .55rem;margin-bottom:.45rem;
+}
+.card .tag.dim{color:var(--dim);border-color:var(--line)}
+.card .tag.ok{color:var(--ok);border-color:color-mix(in oklab,var(--ok) 40%,transparent)}
+.pillrow{display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0}
+.pill{
+  font-size:.65rem;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:.12rem .55rem;
+}
+.pill.on{color:var(--danger);border-color:color-mix(in oklab,var(--danger) 50%,var(--line))}
+
+/* ── composer mock (mirrors watch.py sgroup / sgbtn / sgind shape) ── */
+.stage{
+  border:1px solid var(--line);border-radius:8px;
+  background:
+    linear-gradient(180deg,rgba(15,22,38,.55),rgba(11,15,25,.88)),
+    radial-gradient(ellipse at 30% 0%,rgba(99,102,241,.12),transparent 55%);
+  padding:.9rem 1rem 1.05rem;margin:.4rem 0 .2rem;
+  position:relative;overflow:hidden;
+}
+.stage.mobile{max-width:22rem}
+.stage-label{
+  display:flex;justify-content:space-between;align-items:baseline;gap:1rem;
+  color:var(--dimmer);font-size:.65rem;text-transform:uppercase;letter-spacing:.07em;
+  margin-bottom:.55rem;
+}
+.stage-label b{color:var(--muted);font-weight:normal;text-transform:none;letter-spacing:0;font-size:.72rem}
+.composer{
+  border:1px solid var(--border);border-radius:6px;
+  background:rgba(11,15,25,.72);padding:.55rem .65rem .65rem;
+  backdrop-filter:blur(6px);
+}
+.cmdpick{display:flex;align-items:flex-start;gap:.15rem}
+.sgroup{position:relative;display:flex;flex-wrap:wrap;gap:.1rem;flex:1 1 auto}
+.sgind{
+  position:absolute;top:0;left:0;z-index:0;width:0;height:0;
+  background:transparent;border:1px solid var(--border);
+  border-radius:var(--radius);box-sizing:border-box;
+  transition:transform .3s var(--ease),width .3s var(--ease),height .3s var(--ease),
+             border-color .35s ease,box-shadow .35s ease;
+}
+.sgbtn{
+  position:relative;z-index:1;background:none;font:inherit;
+  border:1px solid transparent;border-radius:var(--radius);
+  color:var(--dim);cursor:pointer;padding:.28rem .5rem;font-size:.72rem;
+  transition:color .3s ease,text-shadow .3s ease;
+}
+.sgbtn:hover{color:var(--muted)}
+.sgbtn.on{color:var(--accent);text-shadow:0 0 12px rgba(165,180,252,.45)}
+.sgbtn:focus-visible{
+  outline:none;color:var(--bright);
+  box-shadow:0 0 0 1px color-mix(in oklab,var(--accent) 55%,transparent);
+}
+.sgbtn:disabled{opacity:.38;cursor:not-allowed;text-shadow:none}
+.fake-field{
+  margin-top:.45rem;min-height:2.6rem;border-radius:4px;
+  border:1px solid var(--line);background:rgba(17,24,39,.55);
+  color:var(--dimmer);padding:.4rem .55rem;font-size:.75rem;
+}
+
+/* D1 — scoped rose ghost-outline on the selected do-now only */
+.d1 .sgbtn.danger-on{
+  color:var(--danger);
+  text-shadow:0 0 12px var(--danger-glow);
+}
+.d1 .sgbtn.danger-on:focus-visible{
+  box-shadow:0 0 0 1px color-mix(in oklab,var(--danger) 65%,transparent);
+}
+.d1 .sgind.danger{
+  border-color:color-mix(in oklab,var(--danger) 72%,var(--border));
+  box-shadow:0 0 0 1px rgba(248,113,113,.12),0 0 18px rgba(248,113,113,.1);
+}
+
+/* D2 — full-group hazard rail + wash */
+.d2.hazard .composer{
+  border-color:color-mix(in oklab,var(--danger) 40%,var(--border));
+  background:
+    linear-gradient(90deg,rgba(248,113,113,.1),transparent 42%),
+    rgba(11,15,25,.78);
+  box-shadow:inset 2px 0 0 var(--danger);
+}
+.d2 .sgbtn.danger-on{
+  color:var(--danger);
+  text-shadow:0 0 14px var(--danger-glow);
+}
+.d2 .sgind.danger{
+  border-color:var(--danger);
+  background:rgba(248,113,113,.08);
+  box-shadow:0 0 22px rgba(248,113,113,.16);
+}
+.d2 .sgbtn:not(.danger-on):not(:disabled){color:color-mix(in oklab,var(--danger) 22%,var(--dim))}
+
+/* state strip */
+.states{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem}
+.state .caption{color:var(--dimmer);font-size:.65rem;text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:.35rem}
+
+/* token chips */
+.swatches{display:flex;flex-wrap:wrap;gap:.7rem;margin:.5rem 0}
+.swatch{
+  display:flex;align-items:center;gap:.55rem;min-width:14rem;
+  border:1px solid var(--line);border-radius:6px;padding:.45rem .65rem;
+  background:rgba(17,24,39,.55);
+}
+.swatch i{
+  width:1.35rem;height:1.35rem;border-radius:4px;display:block;flex:none;
+  border:1px solid rgba(255,255,255,.12);
+}
+.swatch .meta{line-height:1.35}
+.swatch .meta b{display:block;color:var(--bright);font-weight:normal;font-size:.78rem}
+.swatch .meta span{color:var(--dim);font-size:.68rem}
+
+/* axes */
+.axis{
+  display:grid;grid-template-columns:4.5rem 1fr;gap:.7rem;align-items:center;
+  border-top:1px solid var(--line);padding:.55rem 0;
+}
+.axis:first-child{border-top:0}
+.axis .name{color:var(--danger);text-transform:uppercase;letter-spacing:.06em;font-size:.68rem}
+.axis .bar{
+  height:.35rem;border-radius:99px;background:var(--line);position:relative;overflow:hidden;
+}
+.axis .bar > i{
+  position:absolute;inset:0 auto 0 0;width:var(--w,40%);
+  background:linear-gradient(90deg,color-mix(in oklab,var(--danger) 30%,var(--line)),var(--danger));
+  border-radius:inherit;
+}
+.axis .desc{grid-column:2;color:var(--muted);font-size:.75rem;margin-top:-.15rem}
+
+/* shader fields */
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.field{
+  border:1px solid var(--line);border-radius:8px;overflow:hidden;
+  background:#070a12;position:relative;min-height:11.5rem;
+}
+.field canvas{display:block;width:100%;height:11.5rem}
+.field .flabel{
+  position:absolute;left:.7rem;top:.55rem;z-index:2;
+  font-size:.65rem;letter-spacing:.07em;text-transform:uppercase;
+  color:rgba(209,213,219,.72);
+  text-shadow:0 1px 8px #000;
+}
+.field .fnote{
+  position:absolute;left:.7rem;right:.7rem;bottom:.55rem;z-index:2;
+  font-size:.68rem;color:rgba(156,163,175,.9);line-height:1.4;
+  text-shadow:0 1px 10px #000;
+}
+.field.rec{border-color:color-mix(in oklab,var(--danger) 40%,var(--line))}
+
+.choices{border-bottom:1px solid var(--line)}
+.choice{border-top:1px solid var(--line);padding:.75rem 0}
+.choice b{color:var(--danger);font-weight:normal}
+.choice .rec-line{color:var(--ok);margin-top:.25rem}
+details{border-top:1px solid var(--line);margin:.55rem 0}
+summary{
+  min-block-size:44px;display:flex;align-items:center;color:var(--muted);
+  cursor:pointer;list-style:none;
+}
+summary::before{content:"+ ";color:var(--dim)}
+details[open]>summary::before{content:"− "}
+details::details-content{
+  block-size:0;opacity:0;overflow:hidden;filter:blur(3px);
+  transition:block-size .7s var(--ease),opacity .45s ease,filter .45s ease;
+  transition-behavior:allow-discrete;
+}
+details[open]::details-content{block-size:auto;opacity:1;filter:none}
+@starting-style{details[open]::details-content{block-size:0;opacity:0;filter:blur(3px)}}
+.inside{padding:0 0 .85rem 1.4ch;color:var(--text)}
+footer{
+  color:var(--dim);border-top:1px solid var(--line);margin-top:2.6rem;padding-top:1rem;
+  font-size:.72rem;line-height:1.55;
+}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+.compare-note{color:var(--dim);font-size:.72rem;margin:.35rem 0 0}
+
+@media(max-width:860px){
+  .grid2,.grid3,.fields,.states{grid-template-columns:1fr}
+  .row{grid-template-columns:1fr;gap:.15rem}
+  body{padding:1.4rem .8rem 4rem}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important;filter:none!important}
+}
+@media print{
+  :root{color-scheme:light;--bg:#fff;--panel:#fff;--text:#111;--bright:#000;--muted:#333;--dim:#444}
+  body{background:#fff}
+  .field canvas{display:none}
+}
+</style>
+</head>
+<body class="dreamwork-host-bg">
+<main class="wrap">
+
+<header class="read">
+  <h1>do-now as interrupt, not decoration</h1>
+  <div class="sub">
+    visual treatment · tasks <strong class="danger">#257</strong> + <strong class="danger">#258</strong>
+    · proposal only · no production code
+  </div>
+  <p class="lead">
+    <strong>Recommendation:</strong>
+    ship <span class="danger">D1 · scoped rose ghost-outline</span> on the selected
+    <code>do now</code> control, paired with a <span class="danger">storm field plus a
+    restrained rose cast</span> on the existing dreaming shader. Ordinary kinds stay
+    calm indigo. Amber <code>--warn</code> remains the exclusive BROKEN signal.
+  </p>
+  <p class="note">
+    Why now: the human asked for intentional danger-red on selected do-now
+    (label, sliding indicator, hover/focus/pressed/disabled, keyboard, popout,
+    transitions, reduced-motion) and for composable shader emotion axes rather
+    than a hard-coded “red mode.” Implementation is blocked on the shared
+    composer mount <code>#241</code>; this artifact is the approval gate.
+  </p>
+</header>
+
+<section class="read">
+  <div class="label">Tokens — exact, not approximate</div>
+  <div class="swatches" role="list">
+    <div class="swatch" role="listitem">
+      <i style="background:#f87171"></i>
+      <div class="meta"><b>--danger · #f87171</b><span>proposed · rose interrupt · hue ~0° · contrast on --bg ≈ 6.9:1</span></div>
+    </div>
+    <div class="swatch" role="listitem">
+      <i style="background:#fcd34d"></i>
+      <div class="meta"><b>--warn · #fcd34d</b><span>existing · BROKEN only · hue ~46° · never urgency</span></div>
+    </div>
+    <div class="swatch" role="listitem">
+      <i style="background:#a5b4fc"></i>
+      <div class="meta"><b>--accent · #a5b4fc</b><span>existing · live / needs him · hue ~230°</span></div>
+    </div>
+    <div class="swatch" role="listitem">
+      <i style="background:#0b0f19;box-shadow:inset 0 0 0 1px #334155"></i>
+      <div class="meta"><b>--bg · #0b0f19</b><span>field · text ramp unchanged</span></div>
+    </div>
+  </div>
+  <div class="rows" style="margin-top:.8rem">
+    <div class="row"><div class="key">rule</div><div>
+      <code>--danger</code> is a third colour, not a reassignment of
+      <code>--warn</code> or <code>--accent</code>. Project tints already exclude the
+      amber band (~35–70°) so a tint cannot masquerade as BROKEN; the same
+      discipline forbids painting do-now amber.
+    </div></div>
+    <div class="row"><div class="key">ghost glow</div><div>
+      Selected danger label: <code>text-shadow: 0 0 12px rgba(248,113,113,.42)</code>.
+      Indicator: transparent fill, rose border, optional soft outer glow —
+      the dreaming field must stay visible through the control (ghost rule #121).
+    </div></div>
+    <div class="row"><div class="key">not</div><div>
+      Filled red chip · full-composer red wash as default · orange/amber “urgent”
+      · pulsing opacity that competes with the shader breath · any new WebGL pass.
+    </div></div>
+  </div>
+</section>
+
+<section>
+  <div class="label">D1 vs D2 — same selection, different radius of alarm</div>
+  <div class="grid2">
+    <div class="card rec">
+      <div class="tag">recommended · D1</div>
+      <h3>scoped rose ghost-outline</h3>
+      <p class="note">Only the active <code>do now</code> label + its sliding outline
+      take danger. Neighbours remain dim. The rest of the page stays dream-calm.
+      Alarm is precise: “this kind interrupts.”</p>
+      <div class="stage d1" data-demo="d1-desk">
+        <div class="stage-label"><span>desktop · selected</span><b>do now</b></div>
+        <div class="composer">
+          <div class="cmdpick">
+            <div class="sgroup" role="radiogroup" aria-label="command kind D1">
+              <span class="sgind danger" aria-hidden="true"></span>
+              <button type="button" class="sgbtn" data-k="add-idea">add idea</button>
+              <button type="button" class="sgbtn" data-k="do-next">do next</button>
+              <button type="button" class="sgbtn danger-on on" data-k="do-now" aria-checked="true">do now</button>
+              <button type="button" class="sgbtn" data-k="answer">answer</button>
+            </div>
+          </div>
+          <div class="fake-field">interrupt the loop — highest priority…</div>
+        </div>
+      </div>
+      <p class="compare-note pass">Survives: scarce colour budget, ghost outline, ordinary kinds stay calm.</p>
+    </div>
+    <div class="card">
+      <div class="tag dim">alternative · D2</div>
+      <h3>full-group hazard rail</h3>
+      <p class="note">Left danger rail + warm wash across the whole composer group.
+      Louder; reads as “the whole control surface is on fire,” which overstates
+      a kind selection and trains the eye to ignore red.</p>
+      <div class="stage d2 hazard" data-demo="d2-desk">
+        <div class="stage-label"><span>desktop · selected</span><b>do now</b></div>
+        <div class="composer">
+          <div class="cmdpick">
+            <div class="sgroup" role="radiogroup" aria-label="command kind D2">
+              <span class="sgind danger" aria-hidden="true"></span>
+              <button type="button" class="sgbtn" data-k="add-idea">add idea</button>
+              <button type="button" class="sgbtn" data-k="do-next">do next</button>
+              <button type="button" class="sgbtn danger-on on" data-k="do-now" aria-checked="true">do now</button>
+              <button type="button" class="sgbtn" data-k="answer">answer</button>
+            </div>
+          </div>
+          <div class="fake-field">interrupt the loop — highest priority…</div>
+        </div>
+      </div>
+      <p class="compare-note fail">Refuted as default: spends the whole rail on a mode switch; competes with --warn rails.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="label">Composer states — D1 recommended treatment</div>
+  <div class="states">
+    <div class="state">
+      <div class="caption">neutral · add idea</div>
+      <div class="stage d1" data-demo="st-neutral">
+        <div class="composer">
+          <div class="cmdpick"><div class="sgroup" role="radiogroup" aria-label="neutral">
+            <span class="sgind" aria-hidden="true"></span>
+            <button type="button" class="sgbtn on" data-k="add-idea" aria-checked="true">add idea</button>
+            <button type="button" class="sgbtn" data-k="do-now">do now</button>
+          </div></div>
+        </div>
+      </div>
+    </div>
+    <div class="state">
+      <div class="caption">selected · do now</div>
+      <div class="stage d1" data-demo="st-sel">
+        <div class="composer">
+          <div class="cmdpick"><div class="sgroup" role="radiogroup" aria-label="selected">
+            <span class="sgind danger" aria-hidden="true"></span>
+            <button type="button" class="sgbtn" data-k="add-idea">add idea</button>
+            <button type="button" class="sgbtn danger-on on" data-k="do-now" aria-checked="true">do now</button>
+          </div></div>
+        </div>
+      </div>
+    </div>
+    <div class="state">
+      <div class="caption">keyboard focus</div>
+      <div class="stage d1" data-demo="st-focus">
+        <div class="composer">
+          <div class="cmdpick"><div class="sgroup" role="radiogroup" aria-label="focus">
+            <span class="sgind danger" aria-hidden="true"></span>
+            <button type="button" class="sgbtn" data-k="add-idea">add idea</button>
+            <button type="button" class="sgbtn danger-on on" data-k="do-now" aria-checked="true" data-force-focus>do now</button>
+          </div></div>
+        </div>
+      </div>
+    </div>
+    <div class="state">
+      <div class="caption">disabled · example</div>
+      <div class="stage d1" data-demo="st-dis">
+        <div class="composer">
+          <div class="cmdpick"><div class="sgroup" role="radiogroup" aria-label="disabled">
+            <span class="sgind" aria-hidden="true"></span>
+            <button type="button" class="sgbtn on" data-k="add-idea" aria-checked="true">add idea</button>
+            <button type="button" class="sgbtn" data-k="do-now" disabled>do now</button>
+          </div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note" style="margin-top:.7rem">
+    Focus ring reuses the danger hue when the focused control is the danger
+    selection; disabled is opacity only — no rose glow on a control that cannot
+    act. Pressed can darken text-shadow slightly; no layout shift.
+  </p>
+</section>
+
+<section>
+  <div class="label">Mobile — same contract, tighter row</div>
+  <div class="grid2">
+    <div class="stage d1 mobile" data-demo="m-d1">
+      <div class="stage-label"><span>mobile · D1</span><b>scoped</b></div>
+      <div class="composer">
+        <div class="cmdpick">
+          <div class="sgroup" role="radiogroup" aria-label="mobile D1">
+            <span class="sgind danger" aria-hidden="true"></span>
+            <button type="button" class="sgbtn" data-k="add-idea">add idea</button>
+            <button type="button" class="sgbtn" data-k="do-next">do next</button>
+            <button type="button" class="sgbtn danger-on on" data-k="do-now" aria-checked="true">do now</button>
+          </div>
+        </div>
+        <div class="fake-field">priority interrupt…</div>
+      </div>
+    </div>
+    <div class="stage d2 hazard mobile" data-demo="m-d2">
+      <div class="stage-label"><span>mobile · D2</span><b>full rail</b></div>
+      <div class="composer">
+        <div class="cmdpick">
+          <div class="sgroup" role="radiogroup" aria-label="mobile D2">
+            <span class="sgind danger" aria-hidden="true"></span>
+            <button type="button" class="sgbtn" data-k="add-idea">add idea</button>
+            <button type="button" class="sgbtn" data-k="do-next">do next</button>
+            <button type="button" class="sgbtn danger-on on" data-k="do-now" aria-checked="true">do now</button>
+          </div>
+        </div>
+        <div class="fake-field">priority interrupt…</div>
+      </div>
+    </div>
+  </div>
+  <p class="compare-note">
+    On a narrow row D2’s wash leaves almost no calm surface; D1 still reads as a
+    precise selection. Touch targets remain the existing padded buttons (≥44px
+    effective with padding in production composer).
+  </p>
+</section>
+
+<section>
+  <div class="label">#258 · shader emotion axes (not a red mode)</div>
+  <p class="read note" style="margin:0 0 .8rem">
+    Map multi-float semantic inputs onto the existing uniforms
+    (<code>tintCur</code>, <code>hueCur</code>, <code>warp</code>) rather than a boolean
+    “danger shader.” Initial consumer: do-now selection eases the field stormier
+    and slightly rose-cast; architecture stays reusable.
+  </p>
+  <div class="card" style="margin-bottom:1rem">
+    <div class="axis"><div class="name">U · urgency</div>
+      <div><div class="bar" style="--w:72%"><i></i></div>
+      <div class="desc">storm intensity → warp envelope depth + fractal curl gain. do-now target ≈ 0.55–0.75 sustained (not a one-shot pulse).</div></div>
+    </div>
+    <div class="axis"><div class="name">A · agitation</div>
+      <div><div class="bar" style="--w:48%"><i></i></div>
+      <div class="desc">temporal unrest → advection / domain drift rate. Keep modest; high A without U reads as glitch, not interrupt.</div></div>
+    </div>
+    <div class="axis"><div class="name">V · valence</div>
+      <div><div class="bar" style="--w:35%"><i></i></div>
+      <div class="desc">affect hue bias on composite. Negative valence → restrained rose (~ +0.04–0.08 pageTint toward danger hue), never full red plate.</div></div>
+    </div>
+  </div>
+  <div class="rows">
+    <div class="row"><div class="key">easing</div><div>
+      Same atmosphere τ as tint/hue today: exponential lerp
+      <code>1 − exp(−dt / 0.6)</code> (~600&nbsp;ms time-constant). Selection change
+      drifts; it does not snap. Reduced-motion: jump targets, freeze animation.
+    </div></div>
+    <div class="row"><div class="key">decay</div><div>
+      Leaving do-now: U/A/V targets return to route ambient over the same τ.
+      No sticky storm after kind change (pairs with successful do-now → add-idea #224).
+    </div></div>
+    <div class="row"><div class="key">compose</div><div>
+      Simultaneous sources max by priority band: route ambient &lt; selection emotion
+      &lt; hard fault (none yet). Do not sum unbounded floats. One writer on the
+      shader handle per frame (existing <code>window.dreambg</code> pattern).
+    </div></div>
+    <div class="row"><div class="key">perf</div><div>
+      <strong>≤ 0.3&nbsp;ms</strong> extra CPU per frame for emotion math; <strong>no new
+      GPU pass</strong> — only uniform targets. Existing 4-pass stack stays.
+      Text always wins; luminance cap unchanged.
+    </div></div>
+    <div class="row"><div class="key">a11y / RM</div><div>
+      Colour is not the only signal: selected kind label + outline already change.
+      RM: static danger colour on control; shader holds final tint/hue, no warp
+      animation. Prefer <code>prefers-reduced-motion</code> already wired in draw loop.
+    </div></div>
+  </div>
+</section>
+
+<section>
+  <div class="label">Shader field comparison — offline canvas approx</div>
+  <p class="note read" style="margin:0 0 .65rem">
+    Approximations of the live WebGL field for side-by-side review. Not production
+    shaders; for geometry/atmosphere judgment only. Live system remains
+    domain-warped fBm + blur composite.
+  </p>
+  <div class="fields">
+    <div class="field" id="field-storm">
+      <div class="flabel">storm only · U high · V neutral</div>
+      <canvas width="640" height="360" aria-label="storm-only field preview"></canvas>
+      <div class="fnote">More curl and contrast; indigo family preserved. Calmer colour story, less “interrupt.”</div>
+    </div>
+    <div class="field rec" id="field-rose">
+      <div class="flabel">recommended · storm + restrained rose</div>
+      <canvas width="640" height="360" aria-label="storm with rose cast preview"></canvas>
+      <div class="fnote">Same storm, mild rose bias in the midtones. Matches D1 without painting the page red.</div>
+    </div>
+  </div>
+</section>
+
+<section class="read">
+  <div class="label">Sequencing &amp; surfaces</div>
+  <div class="rows">
+    <div class="row"><div class="key">#241 first</div><div>
+      Danger treatment must mount through <strong>one composer contract</strong>
+      (main document, Document PiP, <code>window.open</code> fallback). Implementing
+      on the main row alone re-creates the popout museum problem (#99/#240).
+      Rec: land #241 seam, then #257 chrome + #258 emotion hooks on that seam.
+    </div></div>
+    <div class="row"><div class="key">#255</div><div>
+      Confirmation lifecycle is independent; do not couple danger colour to
+      “sent to the dream.” Shared timers still matter for popout parity.
+    </div></div>
+    <div class="row"><div class="key">#239 / #256</div><div>
+      This artifact embeds offline tokens as the <strong>fallback</strong> style source
+      (<code>meta name="dreamwork-style-source"</code>). Proposed host background hook:
+      class <code>dreamwork-host-bg</code> on <code>body</code> — when the dashboard hosts a
+      generated review, the live shader shows through; offline/public opens use the
+      embedded radial field. Fold into #239 resolver; never a second theme pipeline.
+    </div></div>
+    <div class="row"><div class="key">guards</div><div>
+      Intermediate indicator travel already exists for kind changes; add colour
+      assertion that selected do-now outline/label resolve to danger (not warn,
+      not accent). RM path: colour present, motion optional. Shader: uniform
+      targets move under selection without frame-time budget regression.
+    </div></div>
+  </div>
+</section>
+
+<section class="read">
+  <div class="label">IGC snapshot</div>
+  <div class="grid3">
+    <div class="card">
+      <h3>Goal</h3>
+      <p class="note">Selected do-now is unmistakably an interrupt; BROKEN and live remain distinct; ordinary commands stay calm; popout cannot drift.</p>
+    </div>
+    <div class="card">
+      <h3>Context</h3>
+      <p class="note">Ghost outline idiom, scarce accent, amber = fault, 4-pass shader with tint/hue/warp, shared composer still pending #241.</p>
+    </div>
+    <div class="card">
+      <h3>Surviving idea</h3>
+      <p class="note">D1 + U/A/V storm with restrained rose cast. D2 and hard red-mode refuted as defaults.</p>
+    </div>
+  </div>
+</section>
+
+<section class="read">
+  <div class="label">Decision requested</div>
+  <div class="choices">
+    <div class="choice">
+      <b>A · control radius</b>
+      Scoped rose ghost-outline on the selected do-now only (D1),
+      <em>or</em> full-group hazard rail/wash (D2).
+      <div class="rec-line">Recommend: A = D1 scoped.</div>
+    </div>
+    <div class="choice">
+      <b>B · field emotion</b>
+      Storm-only ambient under do-now,
+      <em>or</em> storm + restrained rose cast via valence.
+      <div class="rec-line">Recommend: B = storm + restrained rose.</div>
+    </div>
+    <div class="choice">
+      <b>C · token</b>
+      Adopt <code>--danger: #f87171</code> distinct from <code>--warn</code> / <code>--accent</code>.
+      <div class="rec-line">Recommend: C yes.</div>
+    </div>
+    <div class="choice">
+      <b>D · sequence</b>
+      Implement chrome + emotion on the #241 shared composer mount (not a main-only patch).
+      <div class="rec-line">Recommend: D yes.</div>
+    </div>
+  </div>
+  <div class="decision">
+    <strong>Recommended answer:</strong>
+    <code>Approve A=D1, B=storm+rose, C, D as recommended.</code>
+  </div>
+  <div class="decision ok" style="margin-top:.7rem">
+    <strong>One clarifying option if he wants louder:</strong>
+    keep D1 as default; allow a future settings-gated “hazard wash” experiment
+    without making D2 the production baseline.
+  </div>
+</section>
+
+<details>
+  <summary>Implementation sketch after approval (not authorised yet)</summary>
+  <div class="inside">
+    <ol>
+      <li>Add <code>--danger</code> to watch <code>:root</code> + watch-design colour rules (third colour, BROKEN stays amber).</li>
+      <li>Kind-selected class on do-now only: danger text-shadow + <code>.sgind</code> border colour; slideIndicator unchanged geometry.</li>
+      <li>Expose emotion targets on <code>window.dreambg</code> (<code>setEmotion({u,a,v})</code> or discrete setters); map to existing tint/hue/warp targets; τ=0.6; RM snap.</li>
+      <li>Wire selection in the single composer mount after #241; browser guards for colour + intermediate indicator travel + RM.</li>
+      <li>No #237 work; no production changes in this design commit.</li>
+    </ol>
+  </div>
+</details>
+
+<details>
+  <summary>Contrast &amp; non-goals</summary>
+  <div class="inside">
+    <p><code>#f87171</code> on <code>#0b0f19</code> ≈ 6.9:1 (AA large / UI component). Body text stays on the existing ramp; danger is for chrome, not paragraphs.</p>
+    <p><strong>Non-goals:</strong> hard-coded red full-screen mode; using warn amber for urgency; new shader pass; emotion API in plugins v1; changing do-now command semantics or server priority (visual only until product says otherwise).</p>
+  </div>
+</details>
+
+<footer>
+  Prepared for #257 + #258 · offline self-contained · style-source: embedded fallback pending #239 ·
+  host-bg hook proposal: <code>body.dreamwork-host-bg</code> (#256) ·
+  no production code, no tasks/questions edits, no #237 ·
+  interactive demos re-layout the sliding outline on resize; canvas fields respect reduced-motion by drawing a static frame.
+</footer>
+</main>
+
+<script>
+(function () {
+  const rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function layoutGroup(group) {
+    const ind = group.querySelector('.sgind');
+    const on = group.querySelector('.sgbtn.on') || group.querySelector('.sgbtn[aria-checked="true"]');
+    if (!ind || !on) return;
+    const gr = group.getBoundingClientRect();
+    const br = on.getBoundingClientRect();
+    ind.style.width = br.width + 'px';
+    ind.style.height = br.height + 'px';
+    ind.style.transform = 'translate(' + (br.left - gr.left) + 'px,' + (br.top - gr.top) + 'px)';
+  }
+
+  function layoutAll() {
+    document.querySelectorAll('.sgroup').forEach(layoutGroup);
+  }
+
+  document.querySelectorAll('.sgroup').forEach(group => {
+    group.querySelectorAll('.sgbtn:not(:disabled)').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const isDangerKind = btn.getAttribute('data-k') === 'do-now';
+        group.querySelectorAll('.sgbtn').forEach(b => {
+          b.classList.remove('on', 'danger-on');
+          b.removeAttribute('aria-checked');
+        });
+        btn.classList.add('on');
+        btn.setAttribute('aria-checked', 'true');
+        if (isDangerKind) btn.classList.add('danger-on');
+        const ind = group.querySelector('.sgind');
+        if (ind) ind.classList.toggle('danger', isDangerKind);
+        const stage = group.closest('.stage');
+        if (stage && stage.classList.contains('d2')) {
+          stage.classList.toggle('hazard', isDangerKind);
+        }
+        layoutGroup(group);
+      });
+    });
+  });
+
+  /* force-focus visual for the dedicated focus cell without stealing real focus on load */
+  document.querySelectorAll('[data-force-focus]').forEach(el => {
+    el.style.boxShadow = '0 0 0 1px color-mix(in oklab, var(--danger) 65%, transparent)';
+    el.style.color = 'var(--danger)';
+  });
+
+  window.addEventListener('resize', layoutAll);
+  requestAnimationFrame(layoutAll);
+
+  function paintField(canvas, mode) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    const img = ctx.createImageData(w, h);
+    const d = img.data;
+    const rose = mode === 'rose';
+    const t0 = performance.now() * 0.001;
+    function frame(now) {
+      const t = rm ? t0 : now * 0.001;
+      for (let y = 0; y < h; y += 2) {
+        for (let x = 0; x < w; x += 2) {
+          const u = x / w, v = y / h;
+          const n1 = Math.sin((u * 6.2 + t * 0.35) + Math.cos(v * 5.1 - t * 0.22) * 1.4);
+          const n2 = Math.sin((u * 11.0 - t * 0.55) * (1.1 + 0.35 * Math.sin(t * 0.4))
+                    + Math.cos(v * 9.0 + t * 0.31) * 2.1);
+          const storm = 0.42 + 0.28 * n1 + 0.18 * n2;
+          let r = 18 + storm * 38;
+          let g = 24 + storm * 48;
+          let b = 48 + storm * 90;
+          if (rose) {
+            r += 36 + storm * 42;
+            g += 4 + storm * 8;
+            b += 10 + storm * 12;
+          }
+          const i = (y * w + x) * 4;
+          d[i] = r; d[i+1] = g; d[i+2] = b; d[i+3] = 255;
+          if (x + 1 < w) {
+            d[i+4] = r; d[i+5] = g; d[i+6] = b; d[i+7] = 255;
+          }
+          if (y + 1 < h) {
+            const j = ((y + 1) * w + x) * 4;
+            d[j] = r; d[j+1] = g; d[j+2] = b; d[j+3] = 255;
+            if (x + 1 < w) {
+              d[j+4] = r; d[j+5] = g; d[j+6] = b; d[j+7] = 255;
+            }
+          }
+        }
+      }
+      /* soft vignette */
+      ctx.putImageData(img, 0, 0);
+      const grd = ctx.createRadialGradient(w*0.5, h*0.4, h*0.1, w*0.5, h*0.5, h*0.75);
+      grd.addColorStop(0, 'rgba(0,0,0,0)');
+      grd.addColorStop(1, 'rgba(7,10,18,0.55)');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, w, h);
+      if (!rm) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  const cStorm = document.querySelector('#field-storm canvas');
+  const cRose = document.querySelector('#field-rose canvas');
+  if (cStorm) paintField(cStorm, 'storm');
+  if (cRose) paintField(cRose, 'rose');
+})();
+</script>
+</body>
+</html>
