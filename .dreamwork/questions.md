@@ -24,6 +24,23 @@
   Answer `Approve A–D as recommended`, or name changes to A name,
   B dispatch, C authority, or D output.
 
+- **P1 · 2026-07-26 — #257/#258 do-now urgency: approve the scoped rose
+  signal and restrained ambient cast?** Reviewed artifact:
+  `.dreamwork/review/do-now-urgency-treatment.html` (desktop/mobile vision and
+  geometry PASS). Amber `--warn` already means BROKEN, so intentional
+  interruption needs its own rose-red `--danger` token.
+
+  Rec A: colour only the selected `do-now` label and existing ghost-outline
+  indicator, not the whole command rail. Rec B: the shader gets a slight storm
+  plus restrained rose cast, never a hard red wash. Rec C: use `#f87171`,
+  distinct from warn amber and accent lilac. Rec D: implement composer chrome
+  after #241's shared mount; shader emotion axes may follow independently.
+  Reduced motion retains colour/state but removes energetic pulse; no new
+  full-resolution shader pass.
+
+  Answer `Approve A–D as recommended`, or choose A full-group hazard, B
+  storm-only, a different danger token, or different sequencing.
+
 - **P2 · 2026-07-26 — #253 contextual review annotations: keep the review
   iframe and bridge selections to a parent-owned side rail?** Research is at
   `.dreamwork/docs/research/contextual-review-annotations.md`. Three models
@@ -49,6 +66,13 @@
     provenance/navigation, not a private namespace: an artifact-level or
     selection-level chat still appears in `/chat`. MVP should have one primary
     attachment plus reciprocal backlinks; multiple references can follow.
+  - **Note (human, via watch, 2026-07-26 15:43; moved from #255):** provide a
+    simple mode first with no subagent; the main dreamer responds as it does now.
+  - **Reply (loop, 2026-07-26 15:44):** Adopted as staging: attached discussions
+    begin in main-dreamer mode, then may be explicitly promoted to a dedicated
+    fresh worker without forking transcript or attachment history. No silent
+    fallback or automatic dispatch. This lets sidecar discussion ship before
+    #229's worker orchestration.
 
 - **P1 · 2026-07-26 — #255 composer confirmation lifecycle: approve the
   shared 5-second design?** Root cause is measured: typing during the POST sets
@@ -83,7 +107,7 @@
   - **Note (human, via watch, 2026-07-26 14:47):** I added a task recently
     that intereacted with the threaded topic chats; has the html artifact
     been updated?
-  - **Answer (loop, 2026-07-26 14:48):** Yes for the two feature amendments:
+  - **Follow-up (loop, 2026-07-26 14:48):** Yes for the two feature amendments:
     the artifact's “Human amendments · 14:09” section explicitly includes
     #235 (`/answers` follow-up promotion) and #236 (compact accessed-file/tool
     provenance). The later cross-cutting #239 generated-HTML style-source

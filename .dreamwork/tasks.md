@@ -18,9 +18,19 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **260**
+Next id: **261**
 
 ## Open
+
+- **#260** — Make post-compaction submission reconciliation cursor-based · P1 ·
+  reliability · 25m · origin: **loop** · incident confirmed by **human 15:47** ·
+  coordinator guessed a 15:43 cutoff after cancelled compaction and falsely
+  concluded no missed messages before scanning the full witness · add durable /
+  best-effort processed submission cursor or acknowledged range; recovery must
+  enumerate every later `submissions.log` record by endpoint/kind and map it to
+  task/question/answer/settings folding while preserving exact text · cover
+  command/comment/answer/ask/tint separately; file format/migration/lint +
+  red-first incident fixture
 
 - **#259** — Cycle composer modes with Shift+Tab · P1 · keyboard UX · 20m ·
   origin: **human** · **human via watch 15:40** · inside response textarea,
@@ -32,20 +42,15 @@ Next id: **260**
   red-first keyboard-only guards · blocked on #241 shared composer
 
 - **#258** — Research composable shader emotion inputs · P2 · research/design
-  · origin: **human** · **human via watch 15:30** · semantic multi-float
-  inputs such as urgency/agitation/valence rather than hard-coded red mode · map
-  bounded axes to tint, turbulence, advection, contrast/pulse; define
-  easing/decay, simultaneous-state composition/priority, cost caps,
-  accessibility and reduced-motion static-colour parity · initial use: do-now
-  selection eases toward stormier urgent field; reusable for future dangerous /
-  urgent states · independent architecture after #257
+  · origin: **human** · **human via watch 15:30** · urgency/agitation/valence
+  axes designed in `.dreamwork/review/do-now-urgency-treatment.html`; no hard
+  red mode/new full-res pass; restrained rose cast vs storm-only decision
+  awaiting human A–D answer · implementation follows approval and #257 chrome
 - **#257** — Give `do-now` a danger and urgency treatment · P1 · visual/UI
-  design · origin: **human** · **human via watch 15:30** · selected do-now
-  replaces normal lilac with intentional danger-red signaling interruption /
-  urgency across label, sliding indicator, hover/focus/pressed/disabled,
-  keyboard, popout/shared composer, transitions and reduced-motion · ordinary
-  commands remain calm; concise visual proposal + intermediate indicator travel
-  guard before implementation · blocked on shared composer seam #241
+  design · origin: **human** · **human via watch 15:30** · decision artifact
+  landed at `f944552`; scoped rose ghost-outline vs full-rail hazard, exact
+  token/states/mobile/RM/perf/sequencing all reviewed · desktop/mobile Vision +
+  Geometry PASS · awaiting A–D approval; implementation blocked on #241
 
 - **#256** — Define a host-provided generated-artifact background hook · P2 ·
   design amendment · origin: **human** · **human via watch 15:25** · generated
@@ -77,8 +82,10 @@ Next id: **260**
   `.dreamwork/docs/research/contextual-review-annotations.md` (`b9b6a47`) ·
   sidecar anchors + optional one-time #229 promotion is the IGC survivor;
   precise or whole-artifact attached chats remain globally visible at `/chat` ·
-  iframe bridge vs in-page decision awaiting human answer in questions.md · no
-  implementation authority
+  **human amendment 15:43:** ship main-dreamer response mode first with no
+  subagent, then allow explicit promotion to a fresh worker without forking
+  transcript/attachment history; no silent dispatch · iframe bridge vs in-page
+  decision awaiting human answer · no implementation authority
 
 - **#252** — Render Markdown files on `/file` · P2 · feature · 25m · origin:
   **human** · **human via watch 15:17** · `.md` paths default to rendered
