@@ -18,15 +18,24 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **220**
+Next id: **221**
 
 ## Open
 
-- **#219** — Make hung browser guards self-identifying and bounded · P2 ·
-  bug · 25m · origin: **loop** · `just test` hung beyond ten minutes on
-  2026-07-26 with no surviving process or output naming the stalled guard;
-  normal baseline is ~20s · diagnose first, then ensure every guard has a
-  loud bounded timeout
+- **#220** — Enter maintenance when no work is actionable · P2 · idea ·
+  15m · origin: **human** · **human via watch 12:03**: if all tasks are
+  done or blocked, do maintenance instead of wasting selection cycles ·
+  current gap is the step-4 phrase “List empty”; a non-empty queue whose
+  tasks are all blocked is actionably identical · rec: say “no unblocked
+  actionable work” and reuse existing `roll.py --no-backlog` rather than
+  add another flag unless implementation disproves that sufficiency
+
+- **#219** — Make slow browser guards self-identifying and bounded · P2 ·
+  bug · 25m · origin: **loop** · corrected diagnosis: the 2026-07-26 run
+  completed in ~16m under heavy browser load, so the coordinator's 10m
+  capture timeout was too short; the real gap is that a stalled individual
+  guard has no bound, and captured output cannot name it · in progress:
+  per-guard timeout red-proved with `qacard` exiting 124 by name
 
 - **#218** — Add filed-to-landed median · P2 · task · 20m ·
   origin: **loop** · blocked on #217 · `ledger_series` already computes
