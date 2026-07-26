@@ -20,7 +20,8 @@ dev/capture/fixture/.dreamwork/submissions.log
 # worktrees for isolated dreamer spikes
 .worktrees/
 
-# playwright MCP scratch — noise in git status is how a stray `git add -A`
-# sweeps someone else's work
+# harness-local runtime state — task backends and browser automation are
+# session ephemera, not project content
+.pi/
 .playwright-mcp/
 *.tmp.*
