@@ -88,7 +88,9 @@ Next id: **296**
   10s resettable atmospheric progress/reduced-motion parity, and how the
   coordinator consumes changes · do not imply the highest tier's recursive
   hierarchy is authorized or specified; coordinate with #264 concurrency,
-  #229/#270 chats, and #288 containment
+  #229/#270 chats, and #288 containment · **2026-07-27 01:57 Max authorised
+  Grok to implement modes 1–3 now and encouraged broad disjoint subagent use;
+  hierarchical remains visibly disabled/planned pending #264 and #288**
 
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch

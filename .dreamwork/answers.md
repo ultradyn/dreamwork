@@ -2,8 +2,29 @@
 
 ## Open
 
-
 ## Answered
+
+- **2026-07-27 — What are the task dependencies of the run mode task?**
+  → answered (2026-07-27 01:57): **Modes 1–3 have no hard dependency and I
+  have sent the implementation to Grok.** The implementable v1 is:
+  `lackadaisical`, `hot`, and `assisted`, backed by authoritative local
+  `.dreamwork/run-mode`, mirrored into status, and emitted as one coalesced
+  event after the resettable 10-second dashboard countdown.
+
+  Only the proposed **hierarchical/many-agent** tier is dependency-blocked: it
+  stays visible but disabled until #264 defines concurrent task ownership and
+  #288 defines real containment/authority. #229/#270 are coordination inputs,
+  not blockers for modes 1–3. Grok may use several disjoint read-only subagents
+  for design, tests, and review while remaining the sole writer in its exact
+  worktree. It will first finish the small new-commit #292/#293 stale-request
+  lifecycle correction found by fresh review, then take #290 through red-first
+  implementation and exceptional visual verification.
+
+  **Human:** What are the task dependencies of the run mode task? If there are
+  none, please send it to grok. you can send more tasks than you think -- it is
+  fast and has subagents.
+
+
 
 - **2026-07-27 — Do we have a task for SQLite/tool-based task access?**
   → answered (2026-07-27 01:19): **Yes, partly: #264 was already the broad
