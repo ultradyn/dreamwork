@@ -52,28 +52,6 @@ Next id: **296**
   lint/file-formats/doc-map/compaction and failure recovery are acceptance scope ·
   blocked on #264 design and relevant #263 cutover decisions
 
-- **#290** — Add a dashboard-settable main-dreamer run mode · P1 ·
-  orchestration/control-plane design · origin: **human** · **human via watch
-  2026-07-27 00:38** · exact ask: “add a 'run mode' for the main dreamer that
-  is settable in the webui. This should have options like lackadaisical,
-  something about it running continuously / hot, one for using a few subagents /
-  helpers, and one for using many in a kind of tiered hierarchy. Probably needs
-  some planning around the higher tiers, but 1-3 should be doable now. All it
-  needs to do is track it in state so that the agent can check it / be told the
-  up-to-date mode when checking status commands or whatever, and emit an event
-  in the log it monitors. There should be a 10s cooldown in the webui when
-  changing with a progress bar that ticks down from 10s to 0s. Any changes to
-  run mode in this time reset the countdown. This avoids spamming the dreamer
-  and keeps instructions on runmode clearer and more spread out.” · design
-  durable state authority vs derived status, exact mode names/semantics,
-  start/reload compatibility, event coalescing/idempotency, multi-tab behavior,
-  10s resettable atmospheric progress/reduced-motion parity, and how the
-  coordinator consumes changes · do not imply the highest tier's recursive
-  hierarchy is authorized or specified; coordinate with #264 concurrency,
-  #229/#270 chats, and #288 containment · **2026-07-27 01:57 Max authorised
-  Grok to implement modes 1–3 now and encouraged broad disjoint subagent use;
-  hierarchical remains visibly disabled/planned pending #264 and #288**
-
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch
   2026-07-26 23:22** · exact ask: “webui dashboard: the list of reviews should
@@ -1009,6 +987,21 @@ Next id: **296**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#290** — Add a dashboard-settable main-dreamer run mode · P1 · landed
+  2026-07-27 · authoritative gitignored `.dreamwork/run-mode` drives three
+  selectable modes (lackadaisical / hot / assisted) with hierarchical kept
+  visibly planned-disabled behind #264/#288 · server validates, atomically
+  writes, and emits exactly one watch event on real change; identical finals
+  silent · 10s resettable arm with atmospheric progress bar, RM text parity ·
+  one shared pending across tabs: initiator-only POST via sessionStorage owner
+  id + CAS claim, followers display-only, cancel tombstone converges peers
+  without an event, ownership survives navigation/reload, tab-close orphans
+  reclaimed inside a 3s grace · review rounds closed dual-POST race, orphan
+  reclaim dead code, tombstone expiry, guard quiet-window and flake findings ·
+  TestRunMode 9/9, 515 tests + 46 subtests, runmode guard PASS repeatedly incl
+  under pytest -n 2 load; final Standards + Spec PASS · deployed PID 2583034 ·
+  `b0db53d`
 
 - **#292/#293** — `/answers` Ctrl+Enter submit and visible question text ·
   P1 · landed 2026-07-27 · Ctrl/Cmd+Enter on the `/answers` ask textarea
