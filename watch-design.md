@@ -56,7 +56,7 @@ carries a `+` command opener (steer the loop without a chat turn).
   existing stable-`data-qid` snapshot, while the artifact iframe browsing
   context stays mounted at its current URL and scroll. Dashboard review
   artifacts are ordered by filesystem mtime newest-first, with ascending
-  filename as the deterministic exact-mtime tie-break. The displayed age uses
+  filename as the deterministic exact-mtime tie-break. The displayed
   age seconds are derived from that same exact nanosecond result, so ordering
   and visible recency cannot disagree. A live mtime reorder keys each stable
   review row by filename and runs it through the existing list FLIP: normal
