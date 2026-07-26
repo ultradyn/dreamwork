@@ -49,6 +49,94 @@ def make_target(root):
     return root
 
 
+class TestRequestAuthority(unittest.TestCase):
+    def test_normalise_host_token(self):
+        cases = {
+            "Example.COM.": "example.com",
+            "127.000.000.001": None,
+            "127.0.0.1": "127.0.0.1",
+            "[2001:0db8::1]": "2001:db8::1",
+            "2001:db8::1": "2001:db8::1",
+            "LOCALHOST": "localhost",
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                if expected is None:
+                    with self.assertRaises(ValueError):
+                        watch.normalise_host_token(raw)
+                else:
+                    self.assertEqual(watch.normalise_host_token(raw), expected)
+
+        for raw in ("", "*", "*.example.com", "example.com:80", "bad host",
+                    "bad/host", "bad\nhost", "[::1", "::1]", "-bad.example",
+                    "bad-.example", "a..b"):
+            with self.subTest(rejected=raw):
+                with self.assertRaises(ValueError):
+                    watch.normalise_host_token(raw)
+
+    def test_split_host_header(self):
+        cases = {
+            "Example.COM.:35110": ("example.com", 35110),
+            "localhost": ("localhost", None),
+            "127.0.0.1:80": ("127.0.0.1", 80),
+            "[2001:db8::1]:35110": ("2001:db8::1", 35110),
+            "[::1]": ("::1", None),
+            "2001:db8::1": None,
+            "example.com:0": None,
+            "example.com:65536": None,
+            "example.com:not-a-port": None,
+            "one.example, two.example": None,
+            "": None,
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(watch.split_host_header(raw), expected)
+
+    def test_host_and_origin_authority(self):
+        auth = watch.RequestAuthority(["localhost", "xsm", "192.168.1.20",
+                                       "2001:db8::1"], 35110)
+        for header in ("localhost:35110", "XSM:35110", "192.168.1.20:35110",
+                       "[2001:db8::1]:35110"):
+            with self.subTest(allowed=header):
+                self.assertTrue(auth.host_allowed(header))
+        for header in (None, "", "evil.test:35110", "xsm:35111", "xsm:bad",
+                       "2001:db8::1"):
+            with self.subTest(rejected=header):
+                self.assertFalse(auth.host_allowed(header))
+
+        self.assertTrue(auth.origin_allowed(None, "xsm:35110"))
+        self.assertTrue(auth.origin_allowed("", "xsm:35110"))
+        self.assertTrue(auth.origin_allowed("http://xsm:35110", "XSM:35110"))
+        self.assertTrue(auth.origin_allowed("http://[2001:db8::1]:35110",
+                                            "[2001:db8::1]:35110"))
+        for origin in ("null", "https://xsm:35110", "http://evil:35110",
+                       "http://xsm:35111", "http://user@xsm:35110",
+                       "http://xsm:35110/path", "not a url"):
+            with self.subTest(rejected_origin=origin):
+                self.assertFalse(auth.origin_allowed(origin, "xsm:35110"))
+
+    def test_bind_family_and_display_host(self):
+        self.assertEqual(watch.bind_family("127.0.0.1"), watch.socket.AF_INET)
+        self.assertEqual(watch.bind_family("0.0.0.0"), watch.socket.AF_INET)
+        self.assertEqual(watch.bind_family("::1"), watch.socket.AF_INET6)
+        self.assertEqual(watch.bind_family("::"), watch.socket.AF_INET6)
+        with self.assertRaises(ValueError):
+            watch.bind_family("localhost")
+
+        self.assertEqual(watch.display_host("127.0.0.1", ["localhost"], None),
+                         "127.0.0.1")
+        self.assertEqual(watch.display_host("::1", ["::1"], None), "[::1]")
+        self.assertEqual(watch.display_host("0.0.0.0", ["xsm"], "xsm"), "xsm")
+        self.assertEqual(watch.display_host("::", ["2001:db8::1"],
+                                            "2001:db8::1"), "[2001:db8::1]")
+        with self.assertRaises(ValueError):
+            watch.display_host("0.0.0.0", ["xsm"], None)
+        with self.assertRaises(ValueError):
+            watch.display_host("::", ["xsm"], None)
+        with self.assertRaises(ValueError):
+            watch.display_host("0.0.0.0", ["xsm"], "other")
+
+
 class TestCollector(unittest.TestCase):
     def test_age_str(self):
         self.assertEqual(watch.age_str(30), "30s")

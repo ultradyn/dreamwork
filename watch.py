@@ -11,10 +11,12 @@ on its next tick. No other write paths exist.
 import argparse
 import hashlib
 import http.server
+import ipaddress
 import json
 import os
 import random
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -29,6 +31,150 @@ import webbrowser
 # the shell". Sent on /mtime; the client reloads when it changes. This alone
 # (no --autoreload) fixes stale open tabs after a manual restart/redeploy.
 GENERATION = "%.6f" % time.time()
+
+
+_HOST_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z")
+
+
+def normalise_host_token(raw):
+    """Return one canonical host-only allowlist token.
+
+    No ports, wildcards or DNS lookups: the allowlist is exact and stable.
+    IPv6 accepts bracketed configuration input for convenience but stores the
+    compressed address without brackets; brackets belong only to authorities.
+    """
+    if not isinstance(raw, str) or not raw or raw != raw.strip():
+        raise ValueError("host must be a non-empty token")
+    if any(ord(c) < 33 or ord(c) == 127 for c in raw):
+        raise ValueError("host contains whitespace or control characters")
+    if raw.startswith("["):
+        if not raw.endswith("]"):
+            raise ValueError("malformed bracketed host")
+        raw = raw[1:-1]
+    elif "]" in raw or "[" in raw:
+        raise ValueError("malformed bracketed host")
+
+    try:
+        return ipaddress.ip_address(raw).compressed.lower()
+    except ValueError:
+        pass
+    if ":" in raw or "*" in raw or "/" in raw:
+        raise ValueError("host token must not contain a port or wildcard")
+    name = raw.lower()
+    if name.endswith("."):
+        name = name[:-1]
+    if not name or len(name) > 253:
+        raise ValueError("invalid DNS host length")
+    labels = name.split(".")
+    # Never reinterpret a rejected IPv4 spelling as DNS. Different HTTP/DNS
+    # stacks disagree on leading-zero and non-canonical numeric forms, which
+    # would make an exact allowlist non-exact at the socket boundary.
+    if len(labels) == 4 and all(label.isdigit() for label in labels):
+        raise ValueError("non-canonical IPv4 address")
+    if not all(_HOST_LABEL.fullmatch(label) for label in labels):
+        raise ValueError("invalid DNS host")
+    return name
+
+
+def split_host_header(raw):
+    """Parse one HTTP authority into `(canonical_host, explicit_port)`.
+
+    Bare IPv6 is deliberately rejected: HTTP requires brackets and guessing
+    which colon begins a port turns an allowlist into an ambiguity.
+    """
+    if not isinstance(raw, str) or not raw or raw != raw.strip() or "," in raw:
+        return None
+    host, port = raw, None
+    if raw.startswith("["):
+        close = raw.find("]")
+        if close < 0:
+            return None
+        host = raw[1:close]
+        rest = raw[close + 1:]
+        if rest:
+            if not rest.startswith(":"):
+                return None
+            port = rest[1:]
+    else:
+        if raw.count(":") > 1:
+            return None
+        if ":" in raw:
+            host, port = raw.rsplit(":", 1)
+    if port is not None:
+        if not port.isascii() or not port.isdigit():
+            return None
+        port = int(port)
+        if not 1 <= port <= 65535:
+            return None
+    try:
+        return normalise_host_token(host), port
+    except ValueError:
+        return None
+
+
+class RequestAuthority:
+    """Exact Host and same-origin policy for one listening server."""
+
+    def __init__(self, allowed_hosts, port):
+        self.allowed_hosts = frozenset(normalise_host_token(h)
+                                       for h in allowed_hosts)
+        self.port = int(port)
+
+    def host_allowed(self, header):
+        parsed = split_host_header(header)
+        if not parsed:
+            return False
+        host, port = parsed
+        return host in self.allowed_hosts and (port is None or port == self.port)
+
+    def origin_allowed(self, origin, host_header):
+        if origin is None or origin == "":
+            return True                 # CLI/non-browser client
+        if origin == "null" or not self.host_allowed(host_header):
+            return False
+        try:
+            parsed = urllib.parse.urlsplit(origin)
+            if (parsed.scheme != "http" or parsed.username is not None or
+                    parsed.password is not None or parsed.path not in ("", "/") or
+                    parsed.query or parsed.fragment):
+                return False
+            origin_host = normalise_host_token(parsed.hostname or "")
+            origin_port = parsed.port or 80
+        except (ValueError, UnicodeError):
+            return False
+        request_host = split_host_header(host_header)
+        if not request_host:
+            return False
+        host, port = request_host
+        return origin_host == host and origin_port == (port or self.port)
+
+
+def bind_family(address):
+    """Return the socket family for a numeric bind address."""
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError as exc:
+        raise ValueError("--bind must be a numeric IPv4 or IPv6 address") from exc
+    return socket.AF_INET6 if parsed.version == 6 else socket.AF_INET
+
+
+def display_host(bind, allowed_hosts, url_host=None):
+    """Choose one navigable, allowed host for printed/opened URLs."""
+    bind_ip = ipaddress.ip_address(bind)
+    allowed = frozenset(normalise_host_token(h) for h in allowed_hosts)
+    if url_host is not None:
+        chosen = normalise_host_token(url_host)
+        if chosen not in allowed:
+            raise ValueError("--url-host must also be allowed")
+    elif bind_ip.is_unspecified:
+        raise ValueError("wildcard bind requires --url-host")
+    else:
+        chosen = bind_ip.compressed.lower()
+    try:
+        return "[{}]".format(ipaddress.IPv6Address(chosen).compressed)
+    except ValueError:
+        return chosen
+
 
 # The steering vocabulary — ONE source. The server validates POST /command
 # against it, the composer renders its buttons and its hover menu from it,
