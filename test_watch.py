@@ -1641,6 +1641,14 @@ class TestAppShell(unittest.TestCase):
                       "'gpu'", "'draw'", 'performance.now()'):
             self.assertIn(token, watch.PAGE)
 
+    def test_live_tick_renders_through_the_current_view_seam(self):
+        # #271: a partial route switch left /review's dock stale even after
+        # tick() fetched fresh data. One builder seam keeps live and navigate
+        # aligned as routes are added.
+        self.assertIn('setContent(await buildCurrent());', watch.PAGE)
+        self.assertNotIn("if (view.name === 'dashboard') setContent(buildDashboard(data));",
+                         watch.PAGE)
+
     def test_page_has_review_route_wiring(self):
         # Static guard: /review is an in-app route that embeds the artifact
         # (from /reviewraw) and docks the originating question, which morphs

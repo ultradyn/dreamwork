@@ -3697,9 +3697,10 @@ async function tick() {
       // the same gate for the same reason, one panel down (#142)
       const burnBefore = (view.name === 'dashboard' && burnKey(data) !== wasBurn)
         ? snapshotBars() : null;
-      if (view.name === 'dashboard') setContent(buildDashboard(data));
-      else if (view.name === 'questions') setContent(buildQuestions(data));
-      else if (view.name === 'answers') setContent(buildAnswers(data));
+      // Reuse the router's current-view seam so every data-backed route,
+      // including the review dock, receives the same live snapshot (#271).
+      // Card-owned state rides the existing #118/#269 discipline below.
+      setContent(await buildCurrent());
       // FOLDS FIRST, then the cards inside them (#179). Both must land before
       // the regroups, which MEASURE — a section restored afterwards would be
       // measured shut and then opened underneath the animation — but the

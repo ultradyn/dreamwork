@@ -50,7 +50,12 @@ carries a `+` command opener (steer the loop without a chat turn).
 - **Port** persisted to `.dreamwork/watch-port` (random 3000–63000 once)
   so bookmarks survive restarts; port-in-use error names the port.
 - **Live reload**: poll `/mtime` ~2s → re-fetch `/data.json` → re-render
-  the active view in place (no transition). No websockets. `/mtime` is
+  the active view in place (no transition), including a `/review` question
+  dock. The tick uses the router's `buildCurrent` seam rather than a partial
+  route list; card drafts, selection, resize, scroll and focus ride the
+  existing stable-`data-qid` snapshot, while the artifact iframe stays at its
+  current URL and scroll. `dev/capture/noteprop.mjs` proves propagation using
+  two separate Chromium processes and a `/questions` control (#271). No websockets. `/mtime` is
   `"<generation> <mtime>"`: a changed *mtime* re-renders the data; a changed
   *generation* (the server was restarted/redeployed, or rebuilt under
   `--autoreload`) triggers a full `location.reload()` so open tabs never go
