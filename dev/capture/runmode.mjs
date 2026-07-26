@@ -6,6 +6,8 @@
    - only final POST writes file + one events line; identical final silent
    - reduced motion: no continuous bar width animation; same text + apply time
    - hard refresh / re-render follows authoritative file when no pending
+   - cross-tab: page B arms pending; page A adopts via storage listener without
+     writing localStorage back; one shared final POST/event (not two)
 
    usage: node runmode.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
@@ -63,8 +65,9 @@ ok('default selection is lackadaisical (or committed)',
    chips.some(c => c.on && !c.disabled));
 
 // ── arm + intermediate progress (normal motion) ─────────────────────────
+// Context-level: every page's /run-mode must be counted for cross-tab once.
 const posts = [];
-p.on('request', req => {
+ctx.on('request', req => {
   if (req.method() === 'POST' && req.url().includes('/run-mode'))
     posts.push({ t: Date.now(), url: req.url() });
 });
@@ -254,6 +257,186 @@ notes.push('after reload: ' + JSON.stringify(afterReload));
 ok('hard refresh shows committed mode without a stuck arm',
    afterReload.on === 'assisted' &&
    (!afterReload.count || !/arms in/.test(afterReload.count)));
+
+// ── cross-tab: shared pending via storage event ─────────────────────────
+// Premise: two pages, same origin/context, same data.target. Page B writes
+// localStorage pending; page A must adopt through the `storage` listener
+// without calling setItem itself. Sabotage first so the check is shown RED
+// when the adoption path cannot run.
+await p.evaluate(() => {
+  if (typeof pickRunMode === 'function') pickRunMode('assisted'); // cancel arm
+  try {
+    Object.keys(localStorage)
+      .filter(k => k.indexOf('dw:run-mode-pending:') === 0)
+      .forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
+});
+await sleep(200);
+
+const pA = p; // follower
+const pB = await ctx.newPage();
+pB.on('pageerror', e => errs.push('B:' + String(e)));
+await pB.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+await sleep(700);
+
+const targets = await Promise.all([
+  pA.evaluate(async () => (await (await fetch('/data.json')).json()).target),
+  pB.evaluate(async () => (await (await fetch('/data.json')).json()).target),
+]);
+notes.push('cross-tab targets: ' + JSON.stringify(targets));
+ok('both pages share the same data.target (cross-tab premise)',
+   targets[0] && targets[0] === targets[1]);
+
+// Instrument setItem on A — adoption must not write pending back
+await pA.evaluate(() => {
+  window.__setItemLog = [];
+  const orig = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function (k, v) {
+    window.__setItemLog.push({ k, v: String(v).slice(0, 80) });
+    return orig(k, v);
+  };
+});
+
+// RED: poison A's lexical `data.target` so runPendingKey() ≠ B's storage
+// key — the storage listener's key match fails closed and A must NOT show
+// B's arm. (Must mutate `data`, not window.data: the bundle uses a top-level
+// let, which is not a window property.)
+const aBeforeSab = await pA.evaluate(() => {
+  const on = document.querySelector('.runchip.on:not([disabled])');
+  return on && on.dataset.mode;
+});
+await pA.evaluate(() => { data.target = data.target + '-sabotage'; });
+await pB.click('.runchip[data-mode="hot"]');
+await sleep(600);
+const sabotaged = await pA.evaluate(() => {
+  const on = document.querySelector('.runchip.on:not([disabled])');
+  const count = document.getElementById('runcount');
+  return {
+    on: on && on.dataset.mode,
+    count: count ? count.textContent : '',
+  };
+});
+notes.push('sabotaged A: ' + JSON.stringify({ sabotaged, aBeforeSab }));
+ok('RED premise: with mismatched target, A does NOT adopt B hot arm',
+   sabotaged.on !== 'hot' && !/arms in.*hot/.test(sabotaged.count || ''));
+
+// cancel B arm + clear pending before the real path
+await pB.evaluate(() => {
+  if (typeof pickRunMode === 'function') pickRunMode('assisted');
+  try {
+    Object.keys(localStorage)
+      .filter(k => k.indexOf('dw:run-mode-pending:') === 0)
+      .forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
+});
+// restore A's target and wipe any poison-side effects
+await pA.evaluate((tgt) => {
+  data.target = tgt;
+  window.__setItemLog = [];
+  try {
+    Object.keys(localStorage)
+      .filter(k => k.indexOf('dw:run-mode-pending:') === 0)
+      .forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
+  if (typeof pickRunMode === 'function') pickRunMode('assisted');
+}, targets[0]);
+await sleep(300);
+
+// GREEN: B arms hot; A must adopt intermediate countdown via storage only
+const eventsBefore = existsSync(eventsFile)
+  ? readFileSync(eventsFile, 'utf8').split('\n').filter(l => l.includes('run-mode')).length
+  : 0;
+const postsAtArm = posts.length;
+await pB.click('.runchip[data-mode="hot"]');
+// sample A for intermediate adoption (not only end state)
+let intermediate = null;
+const t0 = Date.now();
+while (Date.now() - t0 < 2500) {
+  intermediate = await pA.evaluate(() => {
+    const on = document.querySelector('.runchip.on:not([disabled])');
+    const count = document.getElementById('runcount');
+    const bar = document.getElementById('runbar');
+    const fill = document.getElementById('runbarfill');
+    const w = fill ? parseFloat(getComputedStyle(fill).width) || 0 : 0;
+    return {
+      on: on && on.dataset.mode,
+      count: count ? count.textContent : '',
+      barHidden: bar ? bar.hidden : true,
+      fillW: w,
+    };
+  });
+  if (intermediate.on === 'hot' && /arms in \d+s/.test(intermediate.count || ''))
+    break;
+  await sleep(100);
+}
+notes.push('A intermediate adopt: ' + JSON.stringify(intermediate));
+ok('cross-tab: A selects hot while B is arming (storage adopt)',
+   intermediate && intermediate.on === 'hot');
+ok('cross-tab: A shows intermediate arms-in countdown for hot',
+   intermediate && /arms in \d+s/.test(intermediate.count || '') &&
+   /hot/.test(intermediate.count || ''));
+ok('cross-tab: A does not POST during B-led arm (no early write)',
+   posts.length === postsAtArm);
+
+const setItems = await pA.evaluate(() => window.__setItemLog || []);
+notes.push('A setItem log during adopt: ' + JSON.stringify(setItems));
+ok('cross-tab: A never setItem run-mode-pending (no write-back)',
+   !setItems.some(x => String(x.k).indexOf('dw:run-mode-pending:') === 0));
+
+// wait for shared final commit
+const tWait2 = Date.now();
+while (posts.length === postsAtArm && Date.now() - tWait2 < 14000) await sleep(200);
+const postsThisArm = posts.length - postsAtArm;
+notes.push('cross-tab posts this arm: ' + postsThisArm);
+ok('cross-tab: exactly one POST for the shared arm', postsThisArm === 1);
+
+// follower settles via /mtime poll after initiator POST — wait for it
+let settledA = null;
+const tSettle = Date.now();
+while (Date.now() - tSettle < 5000) {
+  settledA = await pA.evaluate(async () => {
+    const d = await (await fetch('/data.json')).json();
+    const on = document.querySelector('.runchip.on:not([disabled])');
+    const count = document.getElementById('runcount');
+    return {
+      run_mode: d.run_mode,
+      on: on && on.dataset.mode,
+      count: count ? count.textContent : '',
+    };
+  });
+  if (settledA.run_mode === 'hot' && settledA.on === 'hot' &&
+      (!settledA.count || !/arms in/.test(settledA.count)))
+    break;
+  await sleep(250);
+}
+const settledB = await pB.evaluate(() => {
+  const on = document.querySelector('.runchip.on:not([disabled])');
+  const count = document.getElementById('runcount');
+  return {
+    on: on && on.dataset.mode,
+    count: count ? count.textContent : '',
+  };
+});
+notes.push('settled A/B: ' + JSON.stringify({ settledA, settledB }));
+ok('cross-tab: settled run_mode is hot', settledA && settledA.run_mode === 'hot');
+ok('cross-tab: A settles on hot without stuck arm text',
+   settledA && settledA.on === 'hot' &&
+   (!settledA.count || !/arms in/.test(settledA.count)));
+ok('cross-tab: B settles on hot',
+   settledB.on === 'hot' &&
+   (!settledB.count || !/arms in/.test(settledB.count)));
+
+let eventLines2 = [];
+if (existsSync(eventsFile)) {
+  eventLines2 = readFileSync(eventsFile, 'utf8').split('\n')
+    .filter(l => l.includes('run-mode'));
+}
+const newEvents = eventLines2.length - eventsBefore;
+notes.push('cross-tab events delta: ' + newEvents + ' total=' + eventLines2.length);
+ok('cross-tab: exactly one new run-mode events line for the shared commit',
+   newEvents === 1);
+ok('cross-tab: newest events line names hot',
+   eventLines2.length && /run-mode via watch.*hot/.test(eventLines2[eventLines2.length - 1]));
 
 finished = true;
 await br.close();

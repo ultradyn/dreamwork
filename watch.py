@@ -2776,6 +2776,10 @@ async function pickTint(name) {
 let runArmGen = 0;
 let runArmTimer = null;
 let runArmTick = null;
+// Only the tab that called pickRunMode POSTs. Followers that adopt via the
+// storage listener (or setContent resume without ownership) display the same
+// countdown but do not dual-fire /run-mode — that would double the event path.
+let runArmShouldCommit = false;
 function runPendingKey() {
   return (data && data.target) ? ('dw:run-mode-pending:' + data.target) : null;
 }
@@ -2870,12 +2874,21 @@ function armRunModeUI(mode, until, gen) {
   }, 250);
   runArmTimer = setTimeout(() => {
     if (gen !== runArmGen) return;
-    commitRunMode(mode, gen);
+    if (runArmShouldCommit) commitRunMode(mode, gen);
+    else {
+      // follower: initiator POSTs; we clear the arm chrome and wait for
+      // /mtime to carry the committed mode (or a newer pending).
+      clearRunArmUI();
+      if (count) count.textContent = '';
+    }
   }, remainingMs());
 }
 async function commitRunMode(mode, gen) {
   if (gen !== runArmGen) return;
   const msg = document.getElementById('runmsg');
+  // Drop the shared pending before the POST so a peer that only displays
+  // cannot race a second ownership claim; initiator remains the sole writer.
+  clearRunPending();
   let ok = false, body = null;
   try {
     const res = await fetch('/run-mode', {
@@ -2887,7 +2900,7 @@ async function commitRunMode(mode, gen) {
   } catch (e) { ok = false; }
   if (gen !== runArmGen) return;
   if (ok) {
-    clearRunPending();
+    runArmShouldCommit = false;
     clearRunArmUI();
     if (msg) msg.textContent = '';
     if (data) data.run_mode = mode;
@@ -2895,6 +2908,7 @@ async function commitRunMode(mode, gen) {
   } else if (msg) {
     msg.textContent = 'could not save the run mode — the write was refused';
     clearRunPending();
+    runArmShouldCommit = false;
     clearRunArmUI();
     paintRunModeSelection(committedRunMode(data), true);
   }
@@ -2907,6 +2921,7 @@ function pickRunMode(mode) {
   // re-selecting the committed mode cancels any pending arm
   if (mode === cur) {
     runArmGen++;
+    runArmShouldCommit = false;
     clearRunPending();
     clearRunArmUI();
     paintRunModeSelection(mode, false);
@@ -2915,6 +2930,7 @@ function pickRunMode(mode) {
   const until = Date.now() + RUN_ARM_MS;
   runArmGen++;
   const gen = runArmGen;
+  runArmShouldCommit = true;   // this tab owns the final POST
   writeRunPending(mode, until);
   paintRunModeSelection(mode, false);
   armRunModeUI(mode, until, gen);
@@ -2945,8 +2961,8 @@ function runModePicker(d) {
 function syncRunModeFromData() {
   // After a re-render or remote tick: resume shared pending if live, else
   // follow the authoritative file. Never invent a pending from server alone.
-  // Always re-arm when pending exists — setContent destroys bar DOM but the
-  // deadline in localStorage is the cross-tab truth.
+  // Re-arm preserves runArmShouldCommit so an initiator that lost its DOM
+  // to setContent still owns the POST; a follower stays display-only.
   const pending = readRunPending();
   if (pending) {
     if (document.querySelector('.sgroup.runmodes'))
@@ -2957,19 +2973,26 @@ function syncRunModeFromData() {
   }
   if (document.querySelector('.sgroup.runmodes'))
     paintRunModeSelection(committedRunMode(data), true);
+  runArmShouldCommit = false;
   clearRunArmUI();
 }
 window.addEventListener('storage', e => {
   if (!e.key || e.key.indexOf('dw:run-mode-pending:') !== 0) return;
   if (!data || e.key !== runPendingKey()) return;
-  // another tab rewrote the shared pending — adopt without writing back
+  // another tab rewrote the shared pending — adopt UI without write-back
+  // and without claiming the POST (initiator owns commit).
   const pending = readRunPending();
   runArmGen++;
   if (!pending) {
+    // Peer cleared pending (commit starting or cancel). Do not paint
+    // committedRunMode(data) yet: data is often still the OLD mode while
+    // the initiator's POST is in flight, which would snap followers back
+    // to the pre-arm selection. Clear the arm chrome; /mtime carries truth.
+    runArmShouldCommit = false;
     clearRunArmUI();
-    paintRunModeSelection(committedRunMode(data), true);
     return;
   }
+  runArmShouldCommit = false;
   paintRunModeSelection(pending.mode, true);
   armRunModeUI(pending.mode, pending.until, runArmGen);
 });
