@@ -3,33 +3,6 @@
 ## Open
 
 
-- **P2 · 2026-07-26 — #225 `explore` command: approve the one-shot
-  proposal contract?** The review artifact is at
-  `.dreamwork/review/explore-command-contract.html`. Rec: hidden command
-  named `explore`; fresh research/design subagent by default; one concise,
-  offline-clean HTML decision artifact; explicit alternatives, unknowns and
-  smallest experiment; proposal-only authority; accepted recommendations
-  become ordinary human-approved tasks.
-
-  Answer `Approve A–D as recommended`, or name changes to A name,
-  B dispatch, C authority, or D output.
-
-- **P1 · 2026-07-26 — #257/#258 do-now urgency: approve the scoped rose
-  signal and restrained ambient cast?** Reviewed artifact:
-  `.dreamwork/review/do-now-urgency-treatment.html` (desktop/mobile vision and
-  geometry PASS). Amber `--warn` already means BROKEN, so intentional
-  interruption needs its own rose-red `--danger` token.
-
-  Rec A: colour only the selected `do-now` label and existing ghost-outline
-  indicator, not the whole command rail. Rec B: the shader gets a slight storm
-  plus restrained rose cast, never a hard red wash. Rec C: use `#f87171`,
-  distinct from warn amber and accent lilac. Rec D: implement composer chrome
-  after #241's shared mount; shader emotion axes may follow independently.
-  Reduced motion retains colour/state but removes energetic pulse; no new
-  full-resolution shader pass.
-
-  Answer `Approve A–D as recommended`, or choose A full-group hazard, B
-  storm-only, a different danger token, or different sequencing.
 
 - **P2 · 2026-07-26 — #253 contextual review annotations: keep the review
   iframe and bridge selections to a parent-owned side rail?** Research is at
@@ -64,33 +37,7 @@
     fallback or automatic dispatch. This lets sidecar discussion ship before
     #229's worker orchestration.
 
-- **P1 · 2026-07-26 — #255 composer confirmation lifecycle: approve the
-  shared 5-second design?** Root cause is measured: typing during the POST sets
-  `composing=true`, so success never creates the panel's 1425ms courtesy-close
-  timer; later input handlers see no timer and leave `sent to the dream`
-  forever. The popout has an independently permanent message path.
 
-  Rec: separate the concerns. A successful confirmation always owns one shared
-  lifecycle: atmospheric arrival, readable for about 5s, atmospheric departure,
-  then clear. Typing keeps the panel open but does not erase or strand that
-  valid confirmation. Closing/unmounting hard-cleans it. The panel's courtesy
-  close stays independent. False/error claims still withdraw immediately.
-  Reduced motion keeps the 5s semantics but snaps visual states. Main and
-  popout consume the same lifecycle helper; this does not attempt #241's full
-  composer extraction.
-
-  Answer `Approve #255 as recommended`, or say whether typing should instead
-  clear a valid confirmation immediately.
-
-
-- **P2 · 2026-07-26 — #221 review datetime ordering: use file mtime?**
-  The decision artifact is at `.dreamwork/review/review-datetime-order.html`.
-  Rec: newest filesystem mtime first, filename as the deterministic tie-break.
-  The row already displays age from that mtime, so ordering and its visible
-  claim share one source. Parsing filenames fails for undated artifacts;
-  embedded metadata would add a new format without new information.
-
-  Answer `rec`, or leave a note naming a different authoritative datetime.
 
 - **P2 · 2026-07-26 — #213 task-origin contract: adopt the forward-only
   cutoff?** The review is at `.dreamwork/review/task-origin-contract.html`.
@@ -291,6 +238,113 @@
   the future upgrade pass has to read blind.
 
 ## Answered
+
+- **P2 · 2026-07-26 — #221 review datetime ordering: use file mtime?**
+  → answered (2026-07-26 18:26): Approved: newest filesystem mtime first, filename
+  as deterministic tie-break; the displayed age and ordering use the same
+  source.
+
+  The decision artifact is at `.dreamwork/review/review-datetime-order.html`.
+  Rec: newest filesystem mtime first, filename as the deterministic tie-break.
+  The row already displays age from that mtime, so ordering and its visible
+  claim share one source. Parsing filenames fails for undated artifacts;
+  embedded metadata would add a new format without new information.
+
+  Answer `rec`, or leave a note naming a different authoritative datetime.
+  - **Answer (via watch, 2026-07-26 18:25):** rec
+
+- **P2 · 2026-07-26 — #225 `explore` command: approve the one-shot
+  proposal contract?**
+  → answered (2026-07-26 18:26): Approved with “hidden” clarified to mean exactly
+  maintenance-style secondary disclosure: a real accessible composer kind,
+  absent from the default visible row and never initially selected, but
+  discoverable through the established cycling/secondary affordance. It is
+  not undocumented, slash-only or keyboard/touch-inaccessible.
+ The review artifact is at
+  `.dreamwork/review/explore-command-contract.html`. Rec: hidden command
+  named `explore`; fresh research/design subagent by default; one concise,
+  offline-clean HTML decision artifact; explicit alternatives, unknowns and
+  smallest experiment; proposal-only authority; accepted recommendations
+  become ordinary human-approved tasks.
+
+  Answer `Approve A–D as recommended`, or name changes to A name,
+  B dispatch, C authority, or D output.
+  - **Note (human, via watch, 2026-07-26 18:23):** what does 'hidden' mean
+    here? I meant it to be like 'maintenance' in the composer, just not
+    shown by default.
+  - **Note (human, via watch, 2026-07-26 18:24):** LGTM. rec. (assuming we
+    mean the same thing by 'hidden')
+  - **Answer (via watch, 2026-07-26 18:25):** LGTM. rec. (assuming we
+    mean the same thing by 'hidden')
+
+- **P1 · 2026-07-26 — #255 composer confirmation lifecycle: approve the
+  shared 5-second design?**
+  → answered (2026-07-26 18:19): Approved as recommended: one shared ~5s success
+  lifecycle independent of typing/panel close, with atmospheric arrival/
+  departure, hard cleanup on unmount, and reduced-motion timing parity.
+  Implementation is now authorized.
+ Root cause is measured: typing during the POST sets
+  `composing=true`, so success never creates the panel's 1425ms courtesy-close
+  timer; later input handlers see no timer and leave `sent to the dream`
+  forever. The popout has an independently permanent message path.
+
+  Rec: separate the concerns. A successful confirmation always owns one shared
+  lifecycle: atmospheric arrival, readable for about 5s, atmospheric departure,
+  then clear. Typing keeps the panel open but does not erase or strand that
+  valid confirmation. Closing/unmounting hard-cleans it. The panel's courtesy
+  close stays independent. False/error claims still withdraw immediately.
+  Reduced motion keeps the 5s semantics but snaps visual states. Main and
+  popout consume the same lifecycle helper; this does not attempt #241's full
+  composer extraction.
+
+  Answer `Approve #255 as recommended`, or say whether typing should instead
+  clear a valid confirmation immediately.
+  - **Answer (via watch, 2026-07-26 18:18):** Approve #255 as
+    recommended
+
+- **P1 · 2026-07-26 — #257/#258 do-now urgency: approve the scoped rose
+  signal and restrained ambient cast?**
+  → answered (2026-07-26 18:19): D1 approved as the default. Other recommendations
+  accepted except the earlier simple shader treatment, superseded by
+  #278–#280. D2 may become an optional toggle after redesigning its left
+  rail as border plus top-cast red light. #257 awaits #241 implementation;
+  #258 closes into the new shader diagnosis/prototype/selector track.
+ Reviewed artifact:
+  `.dreamwork/review/do-now-urgency-treatment.html` (desktop/mobile vision and
+  geometry PASS). Amber `--warn` already means BROKEN, so intentional
+  interruption needs its own rose-red `--danger` token.
+
+  Rec A: colour only the selected `do-now` label and existing ghost-outline
+  indicator, not the whole command rail. Rec B: the shader gets a slight storm
+  plus restrained rose cast, never a hard red wash. Rec C: use `#f87171`,
+  distinct from warn amber and accent lilac. Rec D: implement composer chrome
+  after #241's shared mount; shader emotion axes may follow independently.
+  Reduced motion retains colour/state but removes energetic pulse; no new
+  full-resolution shader pass.
+
+  Answer `Approve A–D as recommended`, or choose A full-group hazard, B
+  storm-only, a different danger token, or different sequencing.
+  - **Note (human, via watch, 2026-07-26 18:12):** for the storm shader
+    stuff, can we make the stormy version look more like jupiter? ohh and i
+    notice having left this open that the shaders seem to get faster over
+    time. anyway, i got some images that are kinda like what I want,
+    basically more fluid dynamics at higher levels. The shaders presented
+    are a bit simple. geometry should use some work.
+    /home/xertrov/Documents/storm{1,2,3,4,5,6,7}.{webp,jpg} if we need to
+    make substantial changes to the current bg shader, we should create a
+    copy of it that we can edit without changing the original. keep both,
+    we might let the user choose between different bg shaders in future.
+  - **Follow-up (loop, 2026-07-26 18:13):** Captured as #278 acceleration
+    diagnosis, #279 a separate Jupiter-like reference-driven storm prototype,
+    and #280 a later preserved-shader registry/selector. The current shader
+    remains untouched. This is an amendment, not A–D approval: scoped composer
+    danger chrome remains separately reviewable; the shader recommendation will
+    return in a new visual proposal after diagnosis/prototype review.
+  - **Answer (via watch, 2026-07-26 18:17):** yeah D1 is a go. I like
+    the idea of having an option for D2 that we can toggle, but idk that
+    the left side is the right place for the glow. maybe just border +
+    glow from above like red lighting or something? rec on any other
+    questions for this one.
 
 - **P1 · 2026-07-26 — #233 LAN binding: trust the LAN, or require
   authentication first?** The threat-model review is at

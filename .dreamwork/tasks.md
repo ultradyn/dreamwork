@@ -18,9 +18,63 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **278**
+Next id: **284**
 
 ## Open
+
+- **#283** — Diagnose recurring orphaned Git index locks and dead attribution
+  watcher · P1 · tooling/system reliability · origin: **loop** · blocked the
+  18:27 steering commit and earlier #233 commits/cherry-picks · current witness:
+  `.git/index.lock` inode `251560857`, zero bytes, uid/gid 1000, created
+  `2026-07-26 17:56:57.381998849 +1000`, already ~31m old when commit failed;
+  no `lsof`/`fuser` holder, no live repo Git process and no merge/rebase/
+  cherry-pick state · `git-lock-watch.service` exited cleanly at 16:12 on
+  2026-07-20 after ~6 days, so `Restart=on-failure` left it dead and its log has
+  no current witness · restore existing watcher for future attribution, then
+  diagnose why it exits 0 and capture creator PID/exe/cgroup on recurrence before
+  changing mitigations; coordinate any host-level fix with system KB entry
+
+- **#282** — Link task references to rich hover previews · P1 · task-navigation
+  feature · origin: **human** · **human via watch 18:22** · whenever `#229`-style
+  references appear in Markdown docs or review HTML, link to the canonical task
+  detail route and provide an accessible hover/focus panel with date, honest
+  origin (human/loop/unknown), title, useful metadata and truncated description ·
+  central resolver/parser, no regex rewriting inside code/pre/existing links;
+  keyboard/touch behavior, confinement, transitions/RM and stale/missing task
+  states · blocked on #281 route/data contract and #213 origin contract
+
+- **#281** — Add a rich interactive `/tasks` page · P1 · dashboard feature/design
+  · origin: **human** · **human via watch 18:22** · list all durable Dreamwork
+  tasks at least as well designed as the rest of the Web UI; define canonical
+  task detail URL, honest open/landed/blocked/unknown states, search/filter/sort,
+  origin/date/priority/type/owner/dependencies, deep links and responsive/a11y
+  interactions · ledger remains authority; no duplicate task database · requires
+  self-contained proposal before implementation and coordinates with #213/#216
+
+- **#280** — Design selectable preserved background shaders · P2 · visual/settings
+  design · origin: **human** · **human via watch 18:12** · keep the current
+  background shader and any substantial Jupiter/storm revision as separate named
+  implementations; later let the user choose · define registry/interface,
+  project setting/default/migration, capability/perf metadata, cross-tab sync,
+  reduced-motion behavior and fallback; do not add selection UI until #279 proves
+  a worthwhile second shader and #228 shared settings lands
+
+- **#279** — Prototype a Jupiter-like higher-fluid-dynamics storm shader · P1 ·
+  visual experiment/design · origin: **human** · **human via watch 18:12** · use
+  `/home/xertrov/Documents/storm{1,2,3,4,5,6,7}.{webp,jpg}` as visual references;
+  current presented storm is too simple and geometry needs work · create a copy/
+  separate implementation so the current background remains unchanged; establish
+  intended bands/vortices/depth/scale, deterministic render and perf breakpoint;
+  run visual+geometry review/fix and present a new proposal before product wiring ·
+  blocked on #278 timebase diagnosis so the prototype does not inherit acceleration
+
+- **#278** — Diagnose background shader acceleration over time · P1 · visual/perf
+  bug · origin: **human** · **human observed via watch 18:12** · shader appears to
+  get faster the longer the page stays open · reproduce with a long deterministic
+  frame/time trace; distinguish absolute-time growth, accumulated warp/twist,
+  multiple animation loops, timestamp units and re-render/reset behavior; measure
+  displacement/phase velocity at fixed intervals; diagnose before fix and preserve
+  the existing visual baseline
 
 - **#277** — Let departing UI elements blur and liquify before they travel · P2 ·
   visual/motion idea · origin: **human** · **human via watch 17:49** · elements
@@ -162,16 +216,12 @@ Next id: **278**
   reduced-motion snap; popout inherits through #241, no duplicate handler ·
   red-first keyboard-only guards · blocked on #241 shared composer
 
-- **#258** — Research composable shader emotion inputs · P2 · research/design
-  · origin: **human** · **human via watch 15:30** · urgency/agitation/valence
-  axes designed in `.dreamwork/review/do-now-urgency-treatment.html`; no hard
-  red mode/new full-res pass; restrained rose cast vs storm-only decision
-  awaiting human A–D answer · implementation follows approval and #257 chrome
 - **#257** — Give `do-now` a danger and urgency treatment · P1 · visual/UI
-  design · origin: **human** · **human via watch 15:30** · decision artifact
-  landed at `f944552`; scoped rose ghost-outline vs full-rail hazard, exact
-  token/states/mobile/RM/perf/sequencing all reviewed · desktop/mobile Vision +
-  Geometry PASS · awaiting A–D approval; implementation blocked on #241
+  implementation · origin: **human** · **human via watch 15:30** · **D1 approved
+  18:17:** scoped rose ghost-outline default; `#f87171`, sequencing, RM/perf and
+  non-shader recommendations accepted · D2 remains optional future toggle only,
+  redesigned from left rail to border + top-cast red lighting · prior simple
+  storm/rose shader superseded by #278–#280 · blocked on #241 shared composer
 
 - **#256** — Define a host-provided generated-artifact background hook · P2 ·
   design amendment · origin: **human** · **human via watch 15:25** · generated
@@ -182,13 +232,13 @@ Next id: **278**
   into #239 resolver, never a second theme pipeline · blocked on #239
 
 - **#255** — Make composer confirmation self-dismiss reliably · P1 · UI bug ·
-  20m · origin: **human** · **human via watch 15:23** · `sent to the dream`
-  can remain indefinitely if the user types another command or closes composer ·
-  dream-fade in, remain readable ~5s, dream-fade out independent of typing/open
-  state; close/unmount must not strand it · reduced-motion keeps timing/function
-  without movement/blur · lifecycle must be reusable by #241/#240 popout, not
-  copied · red-first submit→type→close/reopen timing + intermediate-motion guard
-  · queued after active #250/#251
+  20m · origin: **human** · **approved via watch 18:18** · `sent to the dream`
+  can remain indefinitely if user types during POST or closes/reopens composer ·
+  implement one shared success lifecycle: atmospheric arrival, readable ~5s,
+  atmospheric departure then clear, independent of typing/open state; hard-clean
+  on close/unmount; false/error claims withdraw immediately; RM keeps timing/
+  function without movement/blur · main/popout share helper; red-first timing +
+  intermediate-motion guard · unblocked, next after current LAN/doc checkpoint
 
 - **#254** — Render review notes and loop replies as threaded conversation ·
   P1 · UX bug · 20m · origin: **human** · **human via watch 15:20** · a
@@ -387,21 +437,19 @@ Next id: **278**
   across tabs + separate browsers, never localStorage · needs settings format,
   migration, keyboard red proof, and transition-conformant UI
 
-- **#225** — Add an `explore` proposal command · P2 · idea · 30m design,
-  then implementation increments · origin: **human** · **human via watch
-  12:44** · request a concise feasibility/design sketch: is the idea sound,
-  how could it work, what alternatives survive, and what is the smallest
-  next experiment? Deliver a polished self-contained HTML artifact with
-  diagrams/comparisons where useful and expandable reasoning · rec name is
-  `explore` (`proposal` presupposes one solution; `feasibility check` is too
-  narrow) · hidden/non-default command, no implementation authority; accepted
-  outcomes become normal tasks · design/output contract review before code ·
-  in progress: contract artifact first, no command code
+- **#225** — Add an `explore` proposal command · P2 · implementation ·
+  origin: **human** · **approved via watch 18:25** · one-shot fresh research/
+  design subagent produces one concise offline-clean decision artifact with
+  alternatives, unknowns and smallest experiment; proposal-only authority;
+  accepted outcomes become ordinary tasks · command is a real accessible
+  composer kind in exactly maintenance-style secondary disclosure: absent from
+  default visible row, never initial, discoverable by established cycling/
+  secondary affordance and keyboard/touch · red-first, implement in increments
 
-- **#221** — Sort dashboard reviews by datetime · P2 · idea · 15m ·
-  origin: **human** · **human via watch 12:10** · establish which datetime
-  is authoritative (filename, mtime, or embedded metadata), then sort the
-  dashboard list by it with stable tie behaviour
+- **#221** — Sort dashboard reviews by datetime · P2 · implementation · 15m ·
+  origin: **human** · **approved via watch 18:25** · sort review artifacts by
+  newest filesystem `mtime`; filename is deterministic tie-break; displayed age
+  and ordering share this source · red-first undated artifact + equal-mtime guard
 
 
 - **#218** — Add filed-to-landed median · P2 · task · 20m ·
@@ -875,6 +923,12 @@ Next id: **278**
   **blocked**: human pick
 
 ## Recently landed
+
+**#258** composable shader emotion research produced the first reviewed
+urgency/shader proposal, then the human superseded its simple storm geometry
+with a separate acceleration diagnosis, Jupiter-like prototype and selectable
+preserved-shader track (#278–#280). D1 composer urgency remains #257
+(2026-07-26).
 
 **#266** fixes both observed review-dock wrong-target submissions by resolving
 writes through the visible card's stable `data-qid`, never its stale positional
