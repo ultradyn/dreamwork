@@ -50,9 +50,9 @@ branch and no leftover unowned files.
 3. Inspect **untracked and ignored** scratch (`git status --ignored`,
    `find` for local DBs, screenshots, `.pytest_cache` you care about).
 4. If valuable scratch exists → copy out or ask Max; abort cleanup.
-5. If clean / only disposable:  
-   `git worktree remove .worktrees/#N-slug`  
-   then delete branch if merged: `git branch -d fix/#N-slug`
+5. If clean / only disposable, remove the worktree then the merged branch:
+   `git worktree remove .worktrees/#N-slug`
+   then `git branch -d fix/#N-slug`
 6. Clear claim in status / peer registry.
 
 If remove refuses (dirty): stop and report — do **not** `--force` without
