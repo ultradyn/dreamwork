@@ -18,9 +18,27 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **253**
+Next id: **255**
 
 ## Open
+
+- **#254** — Render review notes and loop replies as threaded conversation ·
+  P1 · UX bug · 20m · origin: **human** · **human via watch 15:20** · a
+  human Note followed by loop Answer currently reads as sibling bullets on the
+  main question, obscuring authorship/causality · render conventional
+  comment→reply nesting with durable authorship semantics, accessibility,
+  responsive layout, atmospheric transition + reduced-motion · evidence:
+  `.dreamwork/review/evidence/review-note-reply-unclear.png` · separate from
+  broader #253 research · queued after active #250/#251
+- **#253** — Research contextual review discussions and taskable annotations ·
+  P2 · research/design · origin: **human** · **human via watch 15:20** ·
+  selected/highlighted document text opens a contextual side-thread; typed
+  comment kinds include question/task/update request; investigate dedicated
+  responsive subagent with coordinator participation and whether this is a
+  specialisation of #229 topic chats · cover durable anchors across edits,
+  task authority/ownership, threads/context/provenance, artifact update flow,
+  privacy, accessibility/mobile and recovery · proposal/review artifact before
+  implementation
 
 - **#252** — Render Markdown files on `/file` · P2 · feature · 25m · origin:
   **human** · **human via watch 15:17** · `.md` paths default to rendered
