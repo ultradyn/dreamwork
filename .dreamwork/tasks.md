@@ -531,13 +531,6 @@ Next id: **222**
   human_block, plugin-commands.json) and all assumed absence was
   observable, unchecked · a guard that DELETES (a dream, a review) and
   asserts the open page loses it would cover the class, not the instance
-- **#208** — `data` has one seam; nothing may assign around it · P3 ·
-  chore · 15m · #86's second find: hooking off `tick` looked live and
-  was not (`ensureData` consumes the mtime as it fetches — fine on every
-  later change, dead on a fresh page) · fixed via one `setData` both
-  fetchers assign through, but only convention holds it — a check that
-  no bare `data =` exists outside the seam, or the trap re-arms with the
-  third fetcher · touches lint.py or test_watch.py
 - **#209** — The `...` menu has no keyboard path, and plugin commands
   live ONLY there · P2 · bug · 25m · it opens on hover and focus-within;
   a keyboard user cannot reach what #86 just shipped · relates #92
@@ -577,6 +570,11 @@ Next id: **222**
   **blocked**: human pick
 
 ## Recently landed
+
+**#208** the single `setData` seam is now guarded (b91931a): a static test
+permits one assignment inside the seam and requires both fetchers to use it.
+Red proof bypassed the seam in `ensureData` and failed on the extra bare
+assignment; all 128 watch tests pass (2026-07-26).
 
 **#166** and **#140** were stale duplicate open lines, reconciled against
 git and the handoff: commit-row expansion landed at 9ed526f; deployed
