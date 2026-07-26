@@ -207,11 +207,6 @@ Next id: **219**
   for · candidate: assert the x-position of load-bearing columns in the
   guards that own them, or a coarse screenshot-diff capture (NOT gated)
   that flags layout deltas for a human eye · relates #210's vacuity class
-- **#212** — deployed.py splits a commit line and the hub destructures
-  it · P3 · bug · 10m · `line.split(" ", 1)` yields a ONE-element list
-  for a commit with an empty subject and dreamhub destructures `[h, s]`
-  · found by #140, which pads to two; the source should · not panels'
-  holdings, so filed instead of fixed
 - **#213** — The ledger has no provenance field · P2 · idea · 20m ·
   **in progress — coordinator, awaiting Web UI design review** ·
   measured during #142 pre-work: `**human HH:MM**` appears on 6 of 63
@@ -607,6 +602,11 @@ Next id: **219**
   **blocked**: human pick
 
 ## Recently landed
+
+**#212** closed as refuted: a real empty-subject commit preserves the
+separator in `git log --format='%h %s'`, so `split(" ", 1)` already returns
+`[hash, ""]`. The proposed regression test passed before any production
+change; there was no red-capable bug to fix (2026-07-26).
 
 **#210** reconciled as already fixed by #197 (3f411f3): the guard now
 sets `AWAIT_N = OPENQ + 2` and explicitly asserts the counts differ.
