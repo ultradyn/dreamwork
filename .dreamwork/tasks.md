@@ -22,13 +22,6 @@ Next id: **274**
 
 ## Open
 
-- **#273** — Fix small review-dock accessibility and touch-target defects · P1 ·
-  UI/accessibility · 15m · origin: **human** · **human via watch 17:07** ·
-  implement only review-safe #272 findings: explicit accessible label for dock
-  answer/note textarea and minimum 44px dock send target without structural
-  layout change · red-first DOM/geometry guards; confirm existing transitions
-  and reduced-motion behavior remain unchanged · isolated worktree, owner Grok
-
 - **#271** — Make notes appear promptly across open dashboard browsers · P1 · bug ·
   25m · origin: **human** · **human via watch 16:58** · observed symptom only:
   with two browsers open to the same Dreamwork dashboard page, a note posted in
@@ -863,6 +856,12 @@ Next id: **274**
   **blocked**: human pick
 
 ## Recently landed
+
+**#273** adds mode-and-target-aware accessible names to shared question/dock
+textareas and send controls, and floors the send target at 44 px without a
+structural layout change. Red evidence, 143-unit module, focused `qacard` browser
+guard, lint and diff-check passed; integrated, deployed and cleaned at `a6e98cc`
+(2026-07-26).
 
 **#272** visually reviewed the live #229 route in isolated desktop/mobile
 browsers. Measured evidence and ranked fixes are durable at

@@ -53,7 +53,10 @@ dreamwork-version: 5853e1789929
 ## Preferences & Routines
 
 - Cadence & comms: brief updates; `attn` (TTS) only for blockers,
-  questions, and notable milestones.
+  questions, and notable milestones. **Dreamwork decisions never use the
+  harness Ask User Question tool** (human-set 2026-07-26): write the ask to
+  `.dreamwork/questions.md`, say it is waiting on the dashboard, and continue
+  the normal loop unless the dependency genuinely blocks all useful work.
 - Subagent models (2026-07-26): use `codex-pooler/gpt-5.6-sol` with
   `thinking: low` by default; planning subagents use the same model with
   `thinking: xhigh` (the executable registry form of `pooler/gpt-5.6-xhigh`).
