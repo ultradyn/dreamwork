@@ -2,6 +2,36 @@
 
 ## Open
 
+- **P2 · 2026-07-27 — #295 shader dithering: replace the temporal white-noise
+  LSB dither with static screen-space IGN?** Grok's read-only map found the
+  composite pass **already dithers** — `col += (hash(gl_FragCoord.xy+t)-0.5)/255`
+  — but the time seed makes it shimmer/grainy while ±½ LSB white noise is too
+  weak and wrong-shaped to fully break 8-bit banding on the dark soft ramps
+  (vignette corners, glow shoulders, hue-tinted near-black plates).
+
+  Rec **D1**: static interleaved gradient noise, amplitude 1/255, screen-space
+  `gl_FragCoord`, luminance-shared (same scalar added to RGB), applied in the
+  final composite only, after hue/vignette, skipped on debug layers
+  (`mode != 0`). No `t` anywhere in the seed: freeze-frame dual-draw must be
+  pixel-identical; normal motion advects the field under a fixed pattern.
+  Bayer 8×8 is the documented fallback if IGN looks wrong on SwiftShader;
+  blue-noise texture is deferred to a v2 only if visual review fails D1.
+
+  Guard shape (RED-capable): temporal stability (sabotage reintroducing `+t`
+  fails), crop-zoom banding metric on a known soft-ramp ROI with an amp=0
+  control proving the metric is non-vacuous, DPR sweep (desktop/mobile,
+  scale 1/2), text-contrast sample under the 72ch column, no new passes/FBOs
+  (≤~5 ALU, within the #278 budget), and the standing detailed
+  visual-review-and-fix loop (vision + geometry) before merge. Not coupled to
+  #277 ghosts; no FBO/WORLD_SCALE changes; #280 registry later records
+  `dither: "lsb-ign-v1"` as a capability.
+
+  **D2** keeps temporal white noise (refuted: shimmer). **D3** goes straight to
+  blue-noise textures (refuted for v1: asset + sampling cost, #279 overreach
+  risk). Approval authorizes red-first implementation in an isolated worktree
+  plus the visual gate — not deployment. Answer `Accept D1`, `Accept D1 with
+  amendments: …`, `Bayer instead`, or `Pause #295`.
+
 - **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
   pre-phase on the existing card ghost?** Max directed Grok toward shader work;
   read-only review mapped the actual transition matrix. Route departures already
