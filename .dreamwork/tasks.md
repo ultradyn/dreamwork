@@ -22,15 +22,6 @@ Next id: **232**
 
 ## Open
 
-- **#231** — Add `/answers` for questions to the dreamer · P1 · task ·
-  origin: **human** · **do next via watch 13:04** · simple opposite of
-  `/questions`: human asks, dreamer answers · distinct durable
-  `.dreamwork/answers.md`; submit + open/answered rendering + navigation +
-  loop folding contract · preserve raw submissions recovery, transitions,
-  channel health, and stdlib-only architecture · seed the human's exact
-  question about reopening/reblocking/linking prior questions · keep MVP
-  separate from #229 threaded-chat design · in progress
-
 - **#230** — Add a `use subagent` composer checkbox · P2 · task · later ·
   origin: **human** · **human via watch 12:57** · request fresh-context,
   parallel processing outside the main queue; integrate with #228 project
@@ -547,6 +538,14 @@ Next id: **232**
   **blocked**: human pick
 
 ## Recently landed
+
+**#231** `/answers` is live: the human can ask the dreamer through a distinct,
+durable `.dreamwork/answers.md` channel; the seeded governance question is its
+first open item. Missing-first-create, unreadable health, raw/client recovery,
+strict writes, live draft/focus, failure retention, and atmospheric answered
+folds are guarded. Two-axis review/fix/rereview PASS; 136 Python tests, lint,
+focused browser guard, and diff-check pass; b87475e deployed (human via Web UI,
+2026-07-26).
 
 **#202** “T3 connect” resolved from the human's exact source: Connect wraps an
 ordinary T3 Code server with Clerk discovery/linking and a managed Cloudflare
