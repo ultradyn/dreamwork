@@ -18,9 +18,17 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **256**
+Next id: **257**
 
 ## Open
+
+- **#256** — Define a host-provided generated-artifact background hook · P2 ·
+  design amendment · origin: **human** · **human via watch 15:25** · generated
+  HTML declares a canonical class/hook whose embedded background comes from
+  Dreamwork Web UI, complements active shader/theme without duplicating it ·
+  define host injection/containment, theme tokens, plugin override,
+  transition/reduced-motion and deterministic offline/public fallback · fold
+  into #239 resolver, never a second theme pipeline · blocked on #239
 
 - **#255** — Make composer confirmation self-dismiss reliably · P1 · UI bug ·
   20m · origin: **human** · **human via watch 15:23** · `sent to the dream`
