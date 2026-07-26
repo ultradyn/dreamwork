@@ -249,6 +249,30 @@ if (HAVE && LANDED) {
   // there is deliberately no way for a plugin to ask for this
   ok('a plugin CANNOT promote itself into the main row',
      r.every(x => CORE.indexOf(x.kind) >= 0));
+  /* Keyboard-only: focus the dots button, then Tab into the first declared
+     plugin command. `focus-within` is the menu's actual open state; a click
+     here would prove only the pointer path and leave #209 untouched. Do this
+     AFTER checking non-promotion: selecting an uncommon kind deliberately
+     gives it a row seat for the indicator. */
+  await p.focus('.cmdmorebtn');
+  let keyboard = { kind: null, visible: false };
+  for (let i = 0; i < CORE.length + 2; i++) {
+    await p.keyboard.press('Tab');
+    keyboard = await p.evaluate(`({
+      kind: (document.activeElement.dataset || {}).kind || null,
+      visible: !!(document.activeElement.closest &&
+        document.activeElement.closest('#cmdmenu')) &&
+        getComputedStyle(document.activeElement).visibility === 'visible'
+    })`);
+    if (keyboard.kind === 'gh-sync') break;
+  }
+  notes.push(`keyboard reached ${JSON.stringify(keyboard)}`);
+  ok('a keyboard-only path reaches a visible plugin command',
+     keyboard.kind === 'gh-sync' && keyboard.visible);
+  if (keyboard.kind === 'gh-sync') await p.keyboard.press('Enter');
+  ok('...and Enter selects it through the same command path',
+     await p.evaluate(`document.querySelector('.cmdkind.on').dataset.kind`) ===
+       'gh-sync');
 }
 
 /* ── 4. the server accepts what the composer offers ───────────────────────
