@@ -128,5 +128,6 @@ checklist + owner decision.
 
 ## Migration / version
 
-Plugin migration stamps `.dreamwork/worktrees-version` and may create an
-empty ledger. See `migrations/` and `references/file-formats.md`.
+Plugin migration may stamp `.dreamwork/worktrees-version`. The claims file
+is created **lazily on first co-agent offer**, not at mere plugin load.
+See `migrations/` and `references/file-formats.md`.

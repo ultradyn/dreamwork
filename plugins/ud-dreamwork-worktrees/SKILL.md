@@ -112,7 +112,9 @@ After symlink, **verification:** next dreamwork init must list the skill in
 available-skills / offer a load-ask for `ud-dreamwork-worktrees`. There is
 no separate install helper script claimed by this plugin.
 
-Apply migrations on load (gitignore + empty claims ledger + version stamp).
+On load: ensure `.worktrees/` is gitignored; optionally stamp
+`.dreamwork/worktrees-version`. Do **not** create runtime `claims.json` or
+`inbox.jsonl` until the first co-agent offer (lazy).
 
 ## Same-host boundary (co-agent v1)
 

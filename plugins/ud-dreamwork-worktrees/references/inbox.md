@@ -7,13 +7,14 @@ coordinator owns on the machine.
 ## Path
 
 ```
-~/.config/dreamwork/worktrees/<target-slug>/inbox.jsonl
+~/.config/dreamwork/worktrees/<stable-target-slug>/inbox.jsonl
 ```
 
-- `target-slug`: basename of the target absolute path, or a stable hash of
-  it if basenames collide.
+- `stable-target-slug`: **deterministic once**, shared with `claims.json`
+  (see `file-formats.md`). Not basename-only; no adaptive “hash if collision”
+  rule that could change after first use.
 - Machine-local, **never committed**, never under `.dreamwork/`.
-- Directory created by coordinator on first co-agent offer.
+- Directory created by coordinator on **first co-agent offer** (lazy).
 
 ## Schema (one JSON object per line)
 

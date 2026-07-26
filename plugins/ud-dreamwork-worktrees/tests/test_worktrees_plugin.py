@@ -102,6 +102,18 @@ class TestClaimLedgerSchema(unittest.TestCase):
         self.assertIn("cross-host", blob)
         self.assertTrue("relay" in blob or "adapter" in blob)
 
+    def test_stable_target_slug_is_deterministic(self):
+        ff = _read(REFS / "file-formats.md").lower()
+        self.assertIn("stable-target-slug", ff)
+        self.assertIn("sha256", ff)
+        self.assertIn("realpath", ff)
+        self.assertNotIn("if basenames collide", _read(REFS / "inbox.md").lower())
+
+    def test_lazy_claims_file_not_at_plugin_load(self):
+        skill = _read(SKILL).lower()
+        self.assertIn("first co-agent offer", skill)
+        self.assertIn("lazy", skill)
+
 
 class TestInboxSchema(unittest.TestCase):
     def test_receipt_jsonl_parses(self):

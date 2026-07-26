@@ -2,6 +2,22 @@
 
 Plugin-local contract (mirrors core `file-formats.md` discipline).
 
+## `stable-target-slug` (deterministic)
+
+Used for both `claims.json` and `inbox.jsonl` under
+`~/.config/dreamwork/worktrees/<stable-target-slug>/`.
+
+Compute once from the target’s resolved absolute path:
+
+1. `abs = os.path.realpath(target)`
+2. `base = re.sub(r'[^a-zA-Z0-9._-]+', '-', os.path.basename(abs)).strip('-') or 'target'`
+3. `digest = sha256(abs.encode('utf-8')).hexdigest()[:12]`
+4. `stable-target-slug = f"{base}-{digest}"`
+
+No adaptive collision rule. Two checkouts with the same basename get
+different digests; renaming the directory changes the slug (new empty
+state — expected for machine-local paths).
+
 ## Machine-local `claims.json`
 
 Path: `~/.config/dreamwork/worktrees/<stable-target-slug>/claims.json`
