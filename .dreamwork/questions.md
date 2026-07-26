@@ -2,6 +2,35 @@
 
 ## Open
 
+- **P1 · 2026-07-26 — #287 Matt Pocock skills bridge: accept the thin
+  protocol/profile-adapter direction?** Cited research and coordinator/Grok
+  iteration: `.dreamwork/docs/research/matt-pocock-skills-bridge-287.md`.
+
+  Rec **A1**: accept revised Approach A′ and authorize writing the formal plugin
+  specification only. `ud-dreamwork-matt-skills` adapts selected Dreamwork
+  increments to Matt’s domain/grill/TDD/review/handoff norms while Dreamwork keeps
+  the sole task queue, dashboard ask channel, scope/authority gates, worktree
+  ownership, and compaction truth. It performs no tracker polling, creates no
+  ready-agent queue/command or handoff authority, never auto-fires user-only
+  skills, and remains useful without GitHub or `.scratch`.
+
+  Defaults resolved from existing contracts: narrated process profile is normal;
+  genuinely model-invocable installed skills may run when applicable; user-only
+  commands require the human; one active grill serializes only its own
+  `questions.md` chain; the chain is durable truth and any machine-local state is
+  rebuildable; capabilities are detected and incompatibilities warned without
+  exact-SHA lockout; `writing-great-skills` is author/review-time guidance, not a
+  per-tick context tax. Observed friction does **not** yet justify new core
+  runtime hooks—only clearer plugin documentation unless red evidence emerges.
+
+  Approval does **not** authorize implementation, loading the plugin, running
+  `setup-matt-pocock-skills`, editing CONTEXT/CLAUDE/AGENTS files, external
+  tracker actions, or core Dreamwork changes. It authorizes a committed written
+  spec for a second human review before planning/implementation.
+
+  Answer `Accept A1 for specification only`, `Accept A2 with amendments: …`,
+  `Choose A3; revise … and rereview`, or `Choose A4; pause the bridge`.
+
 - **P0/P1 · 2026-07-26 — #260/#262/#263/#269/#274: accept the
   reviewed durable user-event contract for implementation planning?** Design:
   `.dreamwork/docs/plans/user-event-journal.md`; narrow crash proof:

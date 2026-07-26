@@ -32,7 +32,10 @@ Next id: **288**
   responsibilities, lifecycle hooks, precedence/conflicts, state, authority,
   tests, and activation · record concrete authoring/runtime friction and split
   plugin-local adaptation from narrowly justified core Dreamwork improvements ·
-  reviewed proposal and dashboard approval before Grok implementation · next-up
+  revised A′ removes polling/dual queues/handoff authority, scopes grilling,
+  distinguishes invocation truth and rejects speculative core hooks · dashboard
+  A1–A4 asks for written-spec authority only; no implementation/load authority ·
+  awaiting human
 
 - **#286** — Preserve intentional paragraph breaks in rendered question notes
   and answers · P2 · rendering/data-integrity bug · origin: **human** · **human
