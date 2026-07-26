@@ -42,8 +42,10 @@ outcome.
 | project id | assigned at `add` time from the path | permanent; **never recomputed**, for the reason the hub already learned — a recomputed slug renames an existing project when a colliding one is added, and every link that named it points elsewhere |
 | project slug | the human-typeable name, node-scoped | permanent; qualified by node name when two nodes collide |
 
-A fleet URL is therefore `…/n/<node>/p/<project>/…`, and *origin* isolation
-per node is recommended in the platform plan for the artifact-XSS reason.
+A fleet URL is therefore `…/n/<node>/p/<project>/…` for navigation, with a
+subdomain per node available above it once a user routinely has more than
+one machine — the platform plan states that fork and why artifacts get
+their own origin regardless.
 
 ## Resources
 

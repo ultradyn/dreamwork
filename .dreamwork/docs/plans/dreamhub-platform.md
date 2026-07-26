@@ -217,7 +217,7 @@ Consequences worth having:
 
 New repo, ours, any language. Nodes dial **out** to it over WSS, so no
 port forwarding, no DNS, no certificates for the user, and CGNAT works.
-It does four things and should be resisted from doing a fifth:
+It does four things, and must be resisted from acquiring a fifth:
 
 1. **Authenticates a node to an account** and multiplexes browser sessions
    to it (request/response and streams framed over the one link).
@@ -272,8 +272,16 @@ take the session with it.
 So: artifacts are served from a **separate origin**, sandboxed
 (`<iframe sandbox>` plus a restrictive CSP), never from the API or app
 origin. This is the same instinct as the repo's origin-per-project
-decision, one level up, and it argues on its own for **origin isolation
-per node** in the URL layout.
+decision, one level up.
+
+It also puts a fork in the URL layout, and the deciding factor is the same
+one: **a subdomain per node** (`<node>.…`) gives origin isolation between
+two of a user's machines for the cost of a wildcard certificate, where
+**one origin with path scoping** (`/n/<node>/p/<project>/`) is simpler and
+means a bug in one node's content is a bug in the whole session. Rec:
+path scoping inside the app for navigation, a subdomain per node once more
+than one machine is normal, and artifacts on their own origin either way —
+they are the only surface serving repository-authored HTML.
 
 ## What each component is allowed to know
 
@@ -442,16 +450,56 @@ the platform repo's contribution guide points at them rather than
 paraphrasing, because a paraphrase is the second description this repo
 keeps learning not to write.
 
+## The web product — surfaces, tiers, and the two moments that decide it
+
+Almost every surface already exists; the shell is what is new.
+
+| Surface | Derives from | New work |
+|---|---|---|
+| fleet | `dreamhub.py`'s rows | across machines, and an offline state |
+| project | `watch.py`'s dashboard | mounted rather than reimplemented |
+| question and answer | the questions route and the review dock | nothing, once intents carry receipts |
+| artifact | `/review` + `/reviewraw` | its own sandboxed origin |
+| node health | new | linked, reachable, version, capabilities, last seen |
+| device linking | new | the code/QR flow, and revocation |
+| channels | `daemon-mode.md` stage 4 | content policy (below) |
+| account and billing | new | the only genuinely unfamiliar surface |
+
 Two design questions the shell raises that the current styleguide does not
 answer, and they belong to whoever holds `watch-design.md`:
 
 - **What does absence look like?** A node asleep, a relay unreachable, a
   summary from 40 minutes ago, a project whose consent was never given.
-  The page's existing doctrine says the answer plainly: it says what it
-  does not know, and it never lets a stale state read as live.
+  The page's existing doctrine already gives the answer's shape: it says
+  what it does not know, and it never lets a stale state read as live.
 - **What is the phone for?** Rec: glance at the fleet, read and answer a
   question, read a dream or an artifact, send `do now`. Not: reading a
   320 KB snapshot, browsing the file tree, or reviewing a diff.
+
+**Two moments decide whether this is adopted**, and both are product work
+rather than architecture:
+
+- **Install to linked.** One command installs the node, one command prints
+  a code, one paste in the browser and the fleet has a row in it. Anything
+  longer than that and a mesh VPN plus a bookmark wins, because that is
+  what the buyer already has.
+- **The first time the node is offline.** This is where a lesser product
+  lies — a spinner, a cached page that looks live, a send that reports
+  success. Rec: the row says asleep and how long; a send says *queued, will
+  arrive when your machine wakes*, and its receipt says so too; and the
+  page never renders a stale summary without its age beside it.
+
+**The tier split, as a principle rather than a price list:** nothing that
+works locally today becomes paid. The paid tier sells **reach, identity and
+continuity** — being reachable from anywhere without configuring a tunnel,
+one account over several machines, push when a loop needs you, queued
+answers that survive a shut laptop, and (D7) a real certificate for a name
+on your own LAN. Hosted dreamers sell **not owning a machine at all**.
+
+**Notification content policy**, because a push payload leaves the machine
+by definition: the project and the count by default (*"hark is waiting on
+you · 2 questions"*), never the question text unless that project opted in.
+The same rule as the summary cache, for the same reason.
 
 ## The hosted runtime (P3), and its unit economics
 
@@ -518,7 +566,7 @@ calls disqualifying.
    *Fix:* require offset-aware timestamps in `file-formats.md`, accept
    naive ones as node-local for compatibility, and say which was used.
 3. **The page fetches the whole project on every change.** 320,840 bytes
-   measured, with `linkable_paths` shipping the entire file tree (221
+   measured, with `linkable_paths` shipping the entire file tree (228
    entries here) to a page that only needs it to decide which code spans
    are clickable. Over a relay that is both a bandwidth bill and an
    inventory of the customer's repository.
@@ -762,6 +810,15 @@ D0/D1 as the two answers that unblock everything else.
   configuration never remote — because an authenticated web session is
   remote code execution, and that has to be said in the design and in the
   copy.
+- **The tier split is a principle, not a price list:** nothing that works
+  locally today becomes paid. The paid tier sells reach, identity and
+  continuity — reachable anywhere with no tunnel to configure, one account
+  over several machines, push when a loop needs you, queued answers that
+  survive a shut laptop, and a real certificate for a name on your own LAN.
+  Two product moments decide adoption: install-to-linked in three steps,
+  and the first time the node is offline, which is where a lesser product
+  lies and this one has to say *queued, will arrive when your machine
+  wakes.*
 - **Privacy claims are limited honestly:** TLS terminates at the relay, so
   E2E against ourselves is theatre while we serve the client. Sealing the
   offline intent queue to the node's key is real and cheap; the sending
