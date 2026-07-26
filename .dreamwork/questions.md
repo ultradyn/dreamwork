@@ -2,6 +2,15 @@
 
 ## Open
 
+- **P2 · 2026-07-26 — #221 review datetime ordering: use file mtime?**
+  The decision artifact is at `.dreamwork/review/review-datetime-order.html`.
+  Rec: newest filesystem mtime first, filename as the deterministic tie-break.
+  The row already displays age from that mtime, so ordering and its visible
+  claim share one source. Parsing filenames fails for undated artifacts;
+  embedded metadata would add a new format without new information.
+
+  Answer `rec`, or leave a note naming a different authoritative datetime.
+
 - **P2 · 2026-07-26 — #213 task-origin contract: adopt the forward-only
   cutoff?** The review is at `.dreamwork/review/task-origin-contract.html`.
   Rec: record `origin: **human|loop**` on every new ledger task and begin
