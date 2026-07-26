@@ -18,9 +18,18 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **255**
+Next id: **256**
 
 ## Open
+
+- **#255** — Make composer confirmation self-dismiss reliably · P1 · UI bug ·
+  20m · origin: **human** · **human via watch 15:23** · `sent to the dream`
+  can remain indefinitely if the user types another command or closes composer ·
+  dream-fade in, remain readable ~5s, dream-fade out independent of typing/open
+  state; close/unmount must not strand it · reduced-motion keeps timing/function
+  without movement/blur · lifecycle must be reusable by #241/#240 popout, not
+  copied · red-first submit→type→close/reopen timing + intermediate-motion guard
+  · queued after active #250/#251
 
 - **#254** — Render review notes and loop replies as threaded conversation ·
   P1 · UX bug · 20m · origin: **human** · **human via watch 15:20** · a
