@@ -22,12 +22,6 @@ Next id: **225**
 
 ## Open
 
-- **#224** — Reset composer kind after a do-now send · P2 · idea · 15m ·
-  origin: **human** · **human via watch 12:36** · after a successful
-  `do now`, return the selected command type to `add idea`; preserve the
-  existing successful-send draft clearing and use the established indicator
-  transition rather than snapping
-
 - **#221** — Sort dashboard reviews by datetime · P2 · idea · 15m ·
   origin: **human** · **human via watch 12:10** · establish which datetime
   is authoritative (filename, mtime, or embedded metadata), then sort the
@@ -518,6 +512,11 @@ Next id: **225**
   **blocked**: human pick
 
 ## Recently landed
+
+**#224** successful `do now` returns the composer to `add idea` through the
+existing animated indicator path (a6a7ad2, deployed). Red proof held the old
+kind; the focused draft guard passes. Rejected/unreachable sends and other
+successful kinds are unchanged (human via Web UI, 2026-07-26).
 
 **#157 + #222 + #223** links now promise only reachable destinations
 (0c1f5ad, deployed): the collector ships existing target-relative paths;
