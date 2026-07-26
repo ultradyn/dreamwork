@@ -28,6 +28,20 @@ cannot fail on a motion bug, and neither can "did it move". `transitions.md`
 opens with how to check, and the reasoning behind it cost three batches to
 learn.
 
+## Exceptional Web UI quality
+
+**Every contribution to the Web UI must be of EXCEPTIONAL quality.** Merely
+functional, conventional, or locally polished work does not meet the acceptance
+bar. Treat composition, interaction, copy, accessibility, responsive behavior,
+motion, reduced-motion parity, and evidence as one product-quality obligation.
+
+Before designing, implementing, or reviewing Web UI work, load the relevant
+design and visual skills rather than relying on generic frontend defaults. Use a
+focused subagent when it would materially improve dedication, visual judgment,
+or review depth; explicitly tell that agent to load the relevant design skills
+and this repository's design/transition contracts. Delegation never replaces
+coordinator inspection, red-first guards, or visual review of the actual pixels.
+
 ## The rest of the design
 
 `watch-design.md` is the styleguide — tokens, type, components, copy
