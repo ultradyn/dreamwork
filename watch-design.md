@@ -203,10 +203,26 @@ navigates and carries the same dreaming field (see Shader). Views are pure build
 and Answered records are quiet disclosures. The compact ask form clears only
 after a confirmed `/ask` success; refused/unreachable sends keep the words and
 explain the outcome. Its value, caret, resize, scroll and focus ride live
-`/mtime` renders through `snapshotAskState`/`restoreAskState`. Open records
-arrive through the standing `.dreamin` idiom; answered disclosures inherit the
-shared transition/reduced-motion rules in `transitions.md`. **What he opened
-on an answered record survives the tick (#238)** the same way a section does:
+`/mtime` renders through `snapshotAskState`/`restoreAskState`. **Ctrl/Cmd+Enter
+from `#askbox` submits the ask form (#292)** — the same shortcut the composer
+and question cards already honour; empty boxes do not POST. **One in-flight
+`/ask` at a time:** while a POST is pending, further submit/Ctrl+Enter is a
+no-op (no second request with the same bytes). A generation counter means a
+late response cannot clear a newer draft; failure keeps his words; only the
+matching successful generation clears the box. **Leaving `/answers` destroys
+the surface:** `invalidateAskFlight` so a rebuilt form is never stuck blocked,
+and a late success cannot clear/status/`tick` the new form. **Open records must not bake a
+permanent `.dreamin` into the HTML (#293).** That class is only the enter-snap
+start pose. New open rows (keyed by server `aid` on `data-aqid` — title+body+
+ordinal, never title alone) receive a one-shot arrival after `setContent` via
+`revealNewOpenAsks`: commit `.dreamin`, then remove it on the next frame so
+the standing transition eases them in. First paint of the answers view and
+hard refresh settle fully visible without replaying a stuck pose. Reduced
+motion leaves new rows fully lit (function, no start pose). Settled open rows
+use `.aq.open .qt` at `--lit` and body at `--muted`. Answered disclosures
+inherit the shared transition/reduced-motion rules in `transitions.md`.
+**What he opened on an answered record survives the tick (#238)** the same way a
+section does:
 each answered `<details>` carries a content-stable `aid` from
 `parse_answered_answers` (SHA-256 over title, resolution `when`, body,
 `follows`, plus a 0-based occurrence ordinal among exact-content twins) on
