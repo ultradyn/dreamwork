@@ -30,12 +30,6 @@ Next id: **221**
   actionable work” and reuse existing `roll.py --no-backlog` rather than
   add another flag unless implementation disproves that sufficiency
 
-- **#219** — Make slow browser guards self-identifying and bounded · P2 ·
-  bug · 25m · origin: **loop** · corrected diagnosis: the 2026-07-26 run
-  completed in ~16m under heavy browser load, so the coordinator's 10m
-  capture timeout was too short; the real gap is that a stalled individual
-  guard has no bound, and captured output cannot name it · in progress:
-  per-guard timeout red-proved with `qacard` exiting 124 by name
 
 - **#218** — Add filed-to-landed median · P2 · task · 20m ·
   origin: **loop** · blocked on #217 · `ledger_series` already computes
@@ -617,6 +611,12 @@ Next id: **221**
   **blocked**: human pick
 
 ## Recently landed
+
+**#219** browser guards are bounded and self-identifying (ccc47a0): each
+capture/hub check has a configurable 120s timeout and prints its name plus
+exit code. Red proof: a 1s qacard run said `FAIL qacard (exit 124)`; normal
+focused status passed. The original run had not hung — it completed in ~16m
+under host load ~68 on 16 CPUs (2026-07-26).
 
 **#212** closed as refuted: a real empty-subject commit preserves the
 separator in `git log --format='%h %s'`, so `split(" ", 1)` already returns
