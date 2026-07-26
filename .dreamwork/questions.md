@@ -2,6 +2,35 @@
 
 ## Open
 
+- **P1 · 2026-07-27 — #290 main-dreamer run modes: accept the local
+  three-mode v1 and reserve hierarchy?** Read-only architecture map from Grok
+  confirms `status.json` is an ephemeral loop claim, `/command` is wake-only,
+  and `.dreamwork/watch-tint` is the closest durable-setting precedent.
+
+  Rec **M1**: machine-local/gitignored `.dreamwork/run-mode` is authoritative;
+  `status.json` mirrors it but never owns it. Selectable v1 modes are
+  **lackadaisical** (idle-friendly, no proactive fan-out), **hot** (continuous
+  bounded work, coordinator-only), and **assisted** (hot plus a few disjoint
+  helpers under existing ownership rules). Show **hierarchical** as planned but
+  disabled until #264 concurrency and #288 containment/authority design make it
+  honest.
+
+  The dashboard shares one pending mode/deadline across tabs. Every change resets
+  a visible 10-second countdown; only the final mode is atomically persisted and
+  emits one monitored event. Identical final submissions are idempotent. Reduced
+  motion removes the continuously animated width but retains the second-by-second
+  text countdown and identical application time/function. Reload/tick reads the
+  authoritative file; compaction cannot lose it.
+
+  **M2** commits the mode to Git so collaborators inherit it (not recommended: an
+  operational posture becomes a surprising project default). **M3** puts it only
+  in `status.json` (refuted: tick/compaction writers may overwrite it).
+
+  Approval authorizes a written design and visual proposal only—no endpoint,
+  state file, event, UI, mode-policy, subagent fan-out, deployment, or hierarchy.
+  Answer `Accept M1 for design`, `Accept M1 with mode-name changes: …`, `Choose
+  M2`, or `Pause #290`.
+
 - **P1 · 2026-07-27 — #254 note/reply conversation: use one rooted exchange
   branch rather than flat siblings or a nesting staircase?** Evidence:
   `.dreamwork/review/evidence/review-note-reply-unclear.png`.
