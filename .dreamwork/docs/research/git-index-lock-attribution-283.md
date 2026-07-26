@@ -208,6 +208,27 @@ Success criterion: one CREATE event with **matching openat of `index.lock` and O
 ## 5. Next falsifiable hypothesis (priority order)
 
 1. **H1 (UI):** Closing Dolphin on `ud-dreamwork` stops CREATE/DELETE cadence within 30 s.
+
+### 2026-07-27 L1 falsification result
+
+At 00:16 AEST Max answered, exactly: “closed. but not sure that it's dolphin is
+it? if it is that's good to know.” The coordinator therefore treats the closed
+window's application identity as unknown rather than silently upgrading it to
+Dolphin. A corrected, wall-clock-bounded observer ran:
+
+```sh
+timeout 60s inotifywait -m -q -e create,delete,moved_to,moved_from \
+  /home/xertrov/.llm-general/skills/ud-dreamwork/.git
+```
+
+It recorded **0 `index.lock` events in 60 seconds**, compared with the previous
+~2-second CREATE/DELETE cadence. (An earlier Python observer was discarded
+because a blocking `readline()` could exceed 60 seconds on the zero-event
+outcome.) This strongly supports the **closed window** as the cadence trigger
+and increases confidence in the file-manager/KIO hypothesis if that window was
+indeed Dolphin. It does not identify the application, PID, executable, argv, or
+`openat(O_CREAT)` caller. No lock, Git state, KIO process, service, watcher, or
+configuration was changed, and privileged tracing remains unauthorized.
 2. **H2 (name):** Tight sampler with `pgrep -f git` catches short-lived `git status`/`git diff` with cwd under dreamwork within one CREATE.
 3. **H3 (service):** Any `inotifywait` exit under current unit leaves `ActiveState=inactive` and `Result=success` with NRestarts=0.
 4. **H4 (stuck PID):** 1246815 never appears in `/proc/locks` as holder of dreamwork index (lsof if available); remains D forever until reboot/kill -9 of FUSE stack.

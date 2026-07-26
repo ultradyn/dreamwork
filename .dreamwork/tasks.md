@@ -116,11 +116,14 @@ Next id: **290**
   partial diagnosis at
   `.dreamwork/docs/research/git-index-lock-attribution-283.md`: pipeline EOF can
   exit 0 and evade `Restart=on-failure` (high confidence); 1246815 is falsified
-  as creator; KIO/Dolphin is medium-confidence circumstantial only; exact argv/
-  `openat(O_CREAT)` remains unknown · next safe experiment awaits dashboard:
-  close the repo's Dolphin window for a bounded 60s cadence observation, then
-  request capability/audit instrumentation only if needed · coordinate any host
-  fix with system KB entry
+  as creator; KIO/Dolphin was medium-confidence circumstantial only; exact argv/
+  `openat(O_CREAT)` remains unknown · **L1 completed 2026-07-27 00:21** after Max
+  said exactly “closed. but not sure that it's dolphin is it? if it is that's
+  good to know.”: corrected read-only 60s inotify observer saw **0** index-lock
+  events versus the former ~2s cadence, strongly supporting the closed window
+  as trigger without proving its application or creator · next: report result;
+  no privileged tracing or host mitigation authorized · coordinate any future
+  host fix with system KB entry
 
 - **#282** — Link task references to rich hover previews · P1 · task-navigation
   feature · origin: **human** · **human via watch 18:22** · whenever `#229`-style

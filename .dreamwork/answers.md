@@ -4,6 +4,14 @@
 
 ## Answered
 
+- **2026-07-27 — #283 safe Dolphin-window falsification observation**
+  → in progress from the dashboard answer at 00:16. Max's exact words were:
+  “closed. but not sure that it's dolphin is it? if it is that's good to
+  know.” The coordinator does not assume the closed window was Dolphin. It is
+  observing this repository's existing `index.lock` events for 60 seconds,
+  read-only, then will report whether the former cadence stopped or persisted.
+  No privileged tracing or process/KIO/Git mutation was authorized.
+
 - **2026-07-26 — What causes the pause between answer and question movement?**
   → answered (2026-07-26 14:00): it is mostly an intentional **1.6-second
   client-side rerender hold**. After `POST /answer` succeeds, `sendAnswer()`
