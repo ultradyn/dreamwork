@@ -144,6 +144,21 @@ Mitigation doc already proves opportunistic **`git status`** (not `rev-parse`) i
 
 ## 3. Reproducible instrumentation plan (no fix; safer tools first)
 
+### Host capability check after L1 recurrence (read-only)
+
+The host has no `strace`, `perf`, `bpftrace`, `execsnoop`, BCC `opensnoop`,
+`sysdig`, `trace-cmd`, or SystemTap command installed. `auditctl` is present,
+but audit-rule changes require privileged authority; unprivileged BPF is
+disabled (`kernel.unprivileged_bpf_disabled=2`), perf is restricted
+(`kernel.perf_event_paranoid=2`), and Yama `ptrace_scope=1` limits attachment.
+A faster `/proc` sampler remains observationally weak because the creator can
+open, close, and exit before the inotify event is delivered—the failure already
+seen with 50ms snapshots. There is therefore no honest user-scoped path on this
+host to bind `openat(O_CREAT)` to PID/exe/argv without installing a tracer,
+attaching to a suspected process family, or authorising privileged audit/eBPF.
+The watcher remains active (`Result=success`, `NRestarts=0`) and provides
+recurrence timing, not creator identity.
+
 **Constraints:** no sudo/package install/service mutation in this phase. Prefer user-scoped tools.
 
 ### Phase A — prove class without CAP (run anytime recurrence is live)
