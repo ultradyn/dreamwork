@@ -141,9 +141,12 @@ Next id: **292**
   said exactly “closed. but not sure that it's dolphin is it? if it is that's
   good to know.”: corrected read-only 60s inotify observer saw **0** index-lock
   events versus the former ~2s cadence, strongly supporting the closed window
-  as trigger without proving its application or creator · next: report result;
-  no privileged tracing or host mitigation authorized · coordinate any future
-  host fix with system KB entry
+  as trigger without proving its application or creator; later 00:46/00:57
+  holderless recurrences falsified the strong window interpretation · host has no
+  honest unprivileged tracer installed/permitted; L3/L2/L4 dashboard ask now
+  chooses reviewed bounded audit, user-tracer research, or stop-with-unknown · no
+  privileged tracing or host mitigation currently authorized · coordinate any
+  future host fix with system KB entry
 
 - **#282** — Link task references to rich hover previews · P1 · task-navigation
   feature · origin: **human** · **human via watch 18:22** · whenever `#229`-style
