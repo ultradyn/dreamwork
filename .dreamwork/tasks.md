@@ -18,9 +18,24 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **240**
+Next id: **242**
 
 ## Open
+
+- **#241** — Extract one composer mount contract · P2 · task · 30m ·
+  origin: **human** · implication of **human via watch 14:25** · make the
+  existing rich composer mountable in main document, Document PiP and
+  `window.open` fallback without duplicating command vocabulary, plugin
+  refresh, per-project draft/settings, submission witness, keyboard behavior,
+  transitions or styling · prerequisite to #240; blocked behind #238
+- **#240** — Bring the full composer and dream field into popouts · P2 · UI ·
+  45m · origin: **human** · **human via watch 14:25** · retire legacy
+  dropdown; reuse main button-group composer while retaining `+ command ·
+  <name-slug>` header; same submission morph/ripple/confirmation · shared
+  dreaming shader under ~80%-opaque popout surface so behind remains subtly
+  visible · one component, not copied variant · transition/reduced-motion,
+  keyboard/draft/plugin sync, shader continuity/fallback and visual/per-frame
+  guards · blocked on #241
 
 - **#239** — Canonicalise generated HTML review styling · P2 · idea ·
   30m design · origin: **human** · **human via watch 14:23** · reviews,
