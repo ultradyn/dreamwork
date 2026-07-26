@@ -1,11 +1,18 @@
 # Co-agent claim ledger
 
-**Authoritative durable store (v1):** `.dreamwork/co-agent-claims.json`
-**Writer:** coordinator only (single-writer serialization).
-**Readers:** coordinator on startup/tick; peers read copies the coordinator
-sends in protocol messages (peers never write this file).
+**Authoritative durable store (v1):**
+`~/.config/dreamwork/worktrees/<stable-target-slug>/claims.json`
+(machine-local; **not** under `.dreamwork/`, never committed).
+
+**Writer:** coordinator only (single-writer serialization, atomic replace).
+**Readers:** coordinator on startup/tick; peers receive claim snapshots via
+protocol messages (peers never write this file).
 **Dashboard:** `.dreamwork/status.json` `agents` may **project** active
 claims for the human; it is not the ledger.
+
+**Same-host only (v1):** this path is local to the coordinator machine.
+Remote c2c peers cannot share it; do not dispatch co-agent claims
+cross-host until a relay/shared-fs adapter exists.
 
 ## Schema (`version: 1`)
 
@@ -96,7 +103,7 @@ Peers never CAS-write the ledger.
 
 ## Startup reconstruction
 
-1. Load `.dreamwork/co-agent-claims.json` (missing → `{version:1,revision:0,claims:[]}`).
+1. Load `~/.config/dreamwork/worktrees/<stable-target-slug>/claims.json` (missing → `{version:1,revision:0,claims:[]}`).
 2. `git worktree list`; match worktrees to claims.
 3. Active claims with missing worktree → `blocked` or `stale` + notes.
 4. Project active claims into status.json for the dashboard (optional).

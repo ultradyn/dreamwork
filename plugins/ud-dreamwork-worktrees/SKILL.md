@@ -32,7 +32,7 @@ work already fits.
 | Mode | Lifetime | Tasks | Durable state |
 |------|----------|-------|----------------|
 | **Subagent** | one batch | one task / branch / worktree | branch commits + evidence report |
-| **Co-agent** | session peer | multi-task via claim/release | `.dreamwork/co-agent-claims.json` + machine-local inbox.jsonl |
+| **Co-agent** | session peer | multi-task via claim/release | `~/.config/dreamwork/worktrees/<stable-target-slug>/claims.json` + machine-local inbox.jsonl |
 
 - Subagent: `references/subagent-mode.md`
 - Co-agent: `references/co-agent-mode.md`, `claim-ledger.md`, `inbox.md`
@@ -44,13 +44,14 @@ work already fits.
 ### Init
 
 1. Ensure `.worktrees/` gitignore (`migrations/2026-07-26-01-…`).
-2. Ensure empty claims ledger + `worktrees-version`
-   (`migrations/2026-07-26-02-…`).
+2. Apply migration 02: machine-local claims dir ready on demand; optional
+   `.dreamwork/worktrees-version` stamp (no project claim ledger).
 3. DREAMWORK.md Plugins lines (silence = off):
    - `worktrees-subagent: on|off`
    - `worktrees-coagent: on|off`
 4. Commit yes / push no unless project authorizes push; merge = coordinator
    or Max only.
+5. Co-agent v1 is **same-host only** (peer must write the local inbox).
 
 ### Tick (optional)
 
@@ -75,11 +76,12 @@ do **not** auto-delete worktrees.
 
 | Store | Owner | Durable? |
 |-------|-------|----------|
-| `.dreamwork/co-agent-claims.json` | coordinator | yes (project) |
-| `.dreamwork/worktrees-version` | coordinator | yes |
-| `~/.config/dreamwork/worktrees/<slug>/inbox.jsonl` | peer+coordinator append | machine-local |
-| status.json agents | projection | session |
-| Git branch in `.worktrees/` | worker | yes |
+| `~/.config/.../claims.json` | coordinator | machine-local (authoritative claims) |
+| `~/.config/.../inbox.jsonl` | peer + coordinator append | machine-local |
+| `.dreamwork/worktrees-version` | coordinator | project (migration stamp only) |
+| `.gitignore` `.worktrees/` | project | project |
+| status.json agents | projection of claims | session |
+| Git branch under `.worktrees/` | worker | yes (git) |
 
 ## Install / activation
 
@@ -112,7 +114,16 @@ no separate install helper script claimed by this plugin.
 
 Apply migrations on load (gitignore + empty claims ledger + version stamp).
 
+## Same-host boundary (co-agent v1)
+
+Peer-writable machine-local inbox implies **same host** as the
+coordinator. c2c aliases may be cross-host; do **not** offer co-agent
+claims to remote peers in v1 — they cannot append the local inbox.
+Cross-host needs a durable relay/shared-filesystem adapter (future);
+until then, use subagent mode or keep peers local. State eligibility at
+dispatch: same-host only.
+
 ## Non-goals
 
-Automating merge/push/force-remove; multi-host worktrees; replacing core
+Automating merge/push/force-remove; cross-host co-agent; replacing core
 Subagents prose.

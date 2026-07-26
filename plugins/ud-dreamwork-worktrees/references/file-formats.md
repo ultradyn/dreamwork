@@ -1,15 +1,16 @@
 # File formats owned by ud-dreamwork-worktrees
 
-Plugin-local contract (mirrors core `file-formats.md` discipline). Target
-files the loop or coordinator parse must match these shapes.
+Plugin-local contract (mirrors core `file-formats.md` discipline).
 
-## `.dreamwork/co-agent-claims.json`
+## Machine-local `claims.json`
 
-- **Writer:** coordinator only.
+Path: `~/.config/dreamwork/worktrees/<stable-target-slug>/claims.json`
+
+- **Writer:** coordinator only (atomic whole-file replace + revision CAS).
 - **Shape:** see `claim-ledger.md` (`version`, `revision`, `claims[]`).
-- **Missing file:** treat as empty ledger v1.
-- **Lint (plugin tests):** schema examples + transition table must stay
-  aligned with this doc.
+- **Missing file:** treat as empty ledger v1; create on demand — **never
+  commit** this file into the project.
+- **Not** `.dreamwork/co-agent-claims.json` (that path is forbidden).
 
 ## `.dreamwork/worktrees-version`
 

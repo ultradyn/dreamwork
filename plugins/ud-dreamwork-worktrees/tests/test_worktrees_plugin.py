@@ -70,16 +70,37 @@ class TestClaimLedgerSchema(unittest.TestCase):
         text = _read(REFS / "claim-ledger.md").lower()
         self.assertIn("revision", text)
         self.assertIn("coordinator only", text)
-        self.assertIn("co-agent-claims.json", text)
+        self.assertIn("claims.json", text)
+        self.assertIn("~/.config/dreamwork/worktrees", text)
         self.assertIn("status.json", text)
         self.assertTrue("project" in text or "projection" in text)
+        # must NOT use a committed project ledger
+        self.assertNotIn(".dreamwork/co-agent-claims.json", text)
+        self.assertNotIn("`.dreamwork/co-agent-claims", text)
 
     def test_transition_table_complete(self):
         text = _read(REFS / "claim-ledger.md").lower()
         for st in CLAIM_STATES:
             self.assertIn(st, text, st)
-        # no ambiguous and/or for authoritative store
         self.assertNotIn("status.json and/or", text)
+
+    def test_no_committed_project_claim_ledger(self):
+        # Authoritative docs must not prescribe a project-tree ledger path
+        # as the live store (forbidding the obsolete name is OK).
+        skill = _read(SKILL).lower()
+        ledger = _read(REFS / "claim-ledger.md").lower()
+        self.assertNotIn(".dreamwork/co-agent-claims.json", skill)
+        self.assertIn("~/.config/dreamwork/worktrees", ledger)
+        self.assertIn("claims.json", ledger)
+        self.assertIn("never committed", ledger)
+        self.assertIn("machine-local", ledger + _read(REFS / "file-formats.md").lower())
+
+    def test_same_host_boundary_documented(self):
+        blob = (_read(SKILL) + _read(REFS / "co-agent-mode.md")
+                + _read(REFS / "claim-ledger.md")).lower()
+        self.assertIn("same-host", blob)
+        self.assertIn("cross-host", blob)
+        self.assertTrue("relay" in blob or "adapter" in blob)
 
 
 class TestInboxSchema(unittest.TestCase):

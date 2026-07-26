@@ -19,13 +19,20 @@ Deep schemas: `claim-ledger.md`, `inbox.md`, `file-formats.md`.
 
 | Store | Role |
 |-------|------|
-| `.dreamwork/co-agent-claims.json` | **Only** durable claim ledger (coordinator writes) |
+| `~/.config/dreamwork/worktrees/<stable-target-slug>/claims.json` | **Only** durable claim ledger (coordinator writes) |
 | `~/.config/dreamwork/worktrees/<slug>/inbox.jsonl` | Append-only receipts / acks (real reader+writer) |
 | c2c / harness DM | Wake only — not a receipt |
 | `.dreamwork/status.json` agents | Optional **projection** for dashboard |
 
-There is **no** peer-private claim file. Restart uses the ledger +
-coordinator messages + worktree `git status`.
+There is **no** peer-private claim file and **no** project-tree claim
+ledger. Restart uses machine-local `claims.json` + coordinator messages +
+worktree `git status`.
+
+## Same-host eligibility
+
+v1 co-agent requires the peer to append the **local** inbox. Dispatch only
+to **same-host** peers. Cross-host c2c aliases are ineligible until a
+durable relay or shared-filesystem adapter exists (future).
 
 ## Runnable claim / release / resume protocol
 

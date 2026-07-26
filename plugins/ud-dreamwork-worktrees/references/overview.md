@@ -17,8 +17,8 @@ the main checkout.
 ## Two modes
 
 1. **Subagent** — one task, one branch, one worktree; report + merge.
-2. **Co-agent** — durable peer; `.dreamwork/co-agent-claims.json` +
-   machine-local inbox receipts; multi-task claim/release.
+2. **Co-agent** — durable peer; machine-local `claims.json` +
+   `inbox.jsonl`; multi-task claim/release; **same-host only** in v1.
 
 ## Authority floor
 
@@ -31,9 +31,12 @@ the main checkout.
 
 ```
 <target>/
-  .worktrees/                    # gitignored
-  .dreamwork/co-agent-claims.json
-  .dreamwork/worktrees-version
+  .worktrees/                      # gitignored
+  .dreamwork/worktrees-version     # optional migration stamp only
+
+~/.config/dreamwork/worktrees/<slug>/
+  claims.json                      # coordinator claim ledger (not git)
+  inbox.jsonl                      # receipts + acks (not git)
 ```
 
 Branch names: `fix/N-short-slug`, `feat/N-short-slug` — ledger id
