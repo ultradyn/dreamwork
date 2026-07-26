@@ -24,6 +24,24 @@
   Answer `Approve A–D as recommended`, or name changes to A name,
   B dispatch, C authority, or D output.
 
+- **P1 · 2026-07-26 — #255 composer confirmation lifecycle: approve the
+  shared 5-second design?** Root cause is measured: typing during the POST sets
+  `composing=true`, so success never creates the panel's 1425ms courtesy-close
+  timer; later input handlers see no timer and leave `sent to the dream`
+  forever. The popout has an independently permanent message path.
+
+  Rec: separate the concerns. A successful confirmation always owns one shared
+  lifecycle: atmospheric arrival, readable for about 5s, atmospheric departure,
+  then clear. Typing keeps the panel open but does not erase or strand that
+  valid confirmation. Closing/unmounting hard-cleans it. The panel's courtesy
+  close stays independent. False/error claims still withdraw immediately.
+  Reduced motion keeps the 5s semantics but snaps visual states. Main and
+  popout consume the same lifecycle helper; this does not attempt #241's full
+  composer extraction.
+
+  Answer `Approve #255 as recommended`, or say whether typing should instead
+  clear a valid confirmation immediately.
+
 - **P1 · 2026-07-26 — #229 threaded topic chats: approve the proposed
   architecture and defaults?** The reviewed artifact is at
   `.dreamwork/review/threaded-topic-chats.html`. Rec: a compact dashboard

@@ -18,9 +18,25 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
-Next id: **257**
+Next id: **259**
 
 ## Open
+
+- **#258** — Research composable shader emotion inputs · P2 · research/design
+  · origin: **human** · **human via watch 15:30** · semantic multi-float
+  inputs such as urgency/agitation/valence rather than hard-coded red mode · map
+  bounded axes to tint, turbulence, advection, contrast/pulse; define
+  easing/decay, simultaneous-state composition/priority, cost caps,
+  accessibility and reduced-motion static-colour parity · initial use: do-now
+  selection eases toward stormier urgent field; reusable for future dangerous /
+  urgent states · independent architecture after #257
+- **#257** — Give `do-now` a danger and urgency treatment · P1 · visual/UI
+  design · origin: **human** · **human via watch 15:30** · selected do-now
+  replaces normal lilac with intentional danger-red signaling interruption /
+  urgency across label, sliding indicator, hover/focus/pressed/disabled,
+  keyboard, popout/shared composer, transitions and reduced-motion · ordinary
+  commands remain calm; concise visual proposal + intermediate indicator travel
+  guard before implementation · blocked on shared composer seam #241
 
 - **#256** — Define a host-provided generated-artifact background hook · P2 ·
   design amendment · origin: **human** · **human via watch 15:25** · generated
@@ -66,18 +82,15 @@ Next id: **257**
   competing transform · blocked on #158
 
 - **#251** — Prove old answer node disconnects after deletion refresh · P2 ·
-  test · 10m · origin: **loop** · late #247 review · assigned with #250 to
-  `grok-sugar-vesi-x6tv` in `.worktrees/250-missing-aid-motion` · retain the
-  original node handle and prove it becomes disconnected; fresh queried-node
-  `isConnected` is tautological · red-first · in progress
+  test · origin: **loop** · completed with #250 at `f17f307` · original
+  ElementHandle is proven connected before refresh and disconnected after;
+  evaluation errors fail closed · same-aid new survivor stays open · PASS
 - **#250** — Preserve motion for missing-aid answer disclosures · P1 · bug ·
-  20m · origin: **loop** · late #247 review · assigned to
-  `grok-sugar-vesi-x6tv` in `.worktrees/250-missing-aid-motion` · missing-aid
-  fail-closed rows currently match the delegated summary handler but fail its
-  keyed host lookup, so `preventDefault` swallows the toggle and no atmospheric
-  disclosure transition runs · preserve no persistent identity; add local
-  non-keyed click transition with reduced-motion parity and real intermediate
-  geometry guard · in progress
+  origin: **loop** · completed at `f17f307` · identity-less answered details
+  use a local human-click fold reusing travel/reveal/ghost without persistence
+  key; normal open/close prove >2 intermediate card heights + following-marker
+  positions; reduced-motion function preserved · behavioral RED against old
+  `watch.py`; 440 tests, browser/lint/diff and Standards/Spec PASS · deployed
 
 - **#249** — Add dev-overlay sampling cadence controls · P2 · dev UI · 25m ·
   origin: **human** · **human via watch 14:37** · frame-time graph + other
