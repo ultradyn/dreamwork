@@ -2779,28 +2779,54 @@ let runArmTick = null;
 // Only the tab that called pickRunMode POSTs. Followers that adopt via the
 // storage listener (or setContent resume without ownership) display the same
 // countdown but do not dual-fire /run-mode — that would double the event path.
+// After a hard refresh, sessionStorage owner id can reclaim commit ownership.
 let runArmShouldCommit = false;
+let runArmUntil = 0;   // last armed deadline; avoids bar snap-restart on tick
 function runPendingKey() {
   return (data && data.target) ? ('dw:run-mode-pending:' + data.target) : null;
+}
+function runTabId() {
+  try {
+    let id = sessionStorage.getItem('dw:run-mode-tab');
+    if (!id) {
+      id = 't' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      sessionStorage.setItem('dw:run-mode-tab', id);
+    }
+    return id;
+  } catch (e) { return 'anon'; }
 }
 function readRunPending() {
   try {
     const k = runPendingKey();
     if (!k) return null;
     const p = JSON.parse(localStorage.getItem(k) || 'null');
-    if (!p || typeof p.mode !== 'string' || typeof p.until !== 'number')
-      return null;
-    if (Date.now() >= p.until) { localStorage.removeItem(k); return null; }
+    if (!p || typeof p.mode !== 'string') return null;
     if (RUN_MODES.indexOf(p.mode) < 0) return null;
+    // cancel tombstone: peers must converge to mode immediately (no until)
+    if (p.phase === 'cancel') return p;
+    if (typeof p.until !== 'number') return null;
+    if (Date.now() >= p.until) { localStorage.removeItem(k); return null; }
     return p;
   } catch (e) { return null; }
 }
-function writeRunPending(mode, until) {
+function writeRunPending(mode, until, owner) {
   try {
     const k = runPendingKey();
     if (!k) return;
-    localStorage.setItem(k, JSON.stringify({ mode, until }));
+    const body = { mode, until, owner: owner || runTabId() };
+    localStorage.setItem(k, JSON.stringify(body));
   } catch (e) { /* private mode / full disk — live UI still arms locally */ }
+}
+function writeRunCancel(mode) {
+  // Distinguish cancel from "initiator cleared pending to POST": followers
+  // must paint the committed mode now (cancel produces no mtime change).
+  try {
+    const k = runPendingKey();
+    if (!k) return;
+    localStorage.setItem(k, JSON.stringify({
+      mode, phase: 'cancel', until: Date.now() + 500, owner: runTabId(),
+    }));
+  } catch (e) {}
 }
 function clearRunPending() {
   try {
@@ -2826,6 +2852,7 @@ function paintRunModeSelection(mode, snap) {
 function clearRunArmUI() {
   if (runArmTimer) { clearTimeout(runArmTimer); runArmTimer = null; }
   if (runArmTick) { clearInterval(runArmTick); runArmTick = null; }
+  runArmUntil = 0;
   const bar = document.getElementById('runbar');
   const fill = document.getElementById('runbarfill');
   const count = document.getElementById('runcount');
@@ -2837,7 +2864,11 @@ function clearRunArmUI() {
   if (count) count.textContent = '';
 }
 function armRunModeUI(mode, until, gen) {
-  clearRunArmUI();
+  // Stop prior timers without zeroing runArmUntil before we compare — a
+  // setContent rebuild with the same deadline must resume mid-drain, not
+  // snap the fill back to 100%.
+  if (runArmTimer) { clearTimeout(runArmTimer); runArmTimer = null; }
+  if (runArmTick) { clearInterval(runArmTick); runArmTick = null; }
   const bar = document.getElementById('runbar');
   const fill = document.getElementById('runbarfill');
   const count = document.getElementById('runcount');
@@ -2854,17 +2885,21 @@ function armRunModeUI(mode, until, gen) {
   setCount();
   if (!rm && bar && fill) {
     bar.hidden = false;
-    // enter-snap then linear drain 100% → 0% over remaining time
-    fill.classList.add('snap');
-    fill.style.width = '100%';
-    void fill.offsetWidth;
     const left = remainingMs();
+    // remaining fraction of the full arm — not always 100%, so a tick that
+    // rebuilds the DOM mid-arm continues the drain instead of restarting.
+    const frac = Math.max(0, Math.min(1, left / RUN_ARM_MS));
+    fill.classList.add('snap');
+    fill.style.transitionDuration = '0ms';
+    fill.style.width = (frac * 100) + '%';
+    void fill.offsetWidth;
     fill.style.transitionDuration = Math.max(0, left) + 'ms';
     fill.classList.remove('snap');
     fill.style.width = '0%';
   } else if (bar) {
     bar.hidden = true;
   }
+  runArmUntil = until;
   runArmTick = setInterval(() => {
     if (gen !== runArmGen) return;
     setCount();
@@ -2876,10 +2911,17 @@ function armRunModeUI(mode, until, gen) {
     if (gen !== runArmGen) return;
     if (runArmShouldCommit) commitRunMode(mode, gen);
     else {
-      // follower: initiator POSTs; we clear the arm chrome and wait for
-      // /mtime to carry the committed mode (or a newer pending).
+      // Follower (or orphaned display arm): if the file still disagrees and
+      // pending is live, claim the POST so a dead initiator cannot strand us.
+      const p = readRunPending();
+      const cur = committedRunMode(data);
+      if (p && !p.phase && p.mode === mode && cur !== mode) {
+        runArmShouldCommit = true;
+        commitRunMode(mode, gen);
+        return;
+      }
       clearRunArmUI();
-      if (count) count.textContent = '';
+      paintRunModeSelection(committedRunMode(data), true);
     }
   }, remainingMs());
 }
@@ -2922,22 +2964,28 @@ function pickRunMode(mode) {
   if (mode === cur) {
     runArmGen++;
     runArmShouldCommit = false;
-    clearRunPending();
+    writeRunCancel(cur);           // peers must converge (cancel ≠ commit-clear)
     clearRunArmUI();
     paintRunModeSelection(mode, false);
+    // drop tombstone after storage has fired in other tabs
+    setTimeout(() => {
+      const p = readRunPending();
+      if (p && p.phase === 'cancel') clearRunPending();
+    }, 100);
     return;
   }
   const until = Date.now() + RUN_ARM_MS;
   runArmGen++;
   const gen = runArmGen;
   runArmShouldCommit = true;   // this tab owns the final POST
-  writeRunPending(mode, until);
+  writeRunPending(mode, until, runTabId());
   paintRunModeSelection(mode, false);
   armRunModeUI(mode, until, gen);
 }
 function runModePicker(d) {
   const pending = readRunPending();
-  const cur = pending ? pending.mode : committedRunMode(d);
+  const arm = pending && !pending.phase ? pending : null;
+  const cur = arm ? arm.mode : committedRunMode(d);
   const chips = RUN_MODES.map(n =>
     `<button type="button" role="radio" class="sgbtn runchip` +
     `${n === cur ? ' on' : ''}" data-mode="${esc(n)}"` +
@@ -2961,18 +3009,32 @@ function runModePicker(d) {
 function syncRunModeFromData() {
   // After a re-render or remote tick: resume shared pending if live, else
   // follow the authoritative file. Never invent a pending from server alone.
-  // Re-arm preserves runArmShouldCommit so an initiator that lost its DOM
-  // to setContent still owns the POST; a follower stays display-only.
   const pending = readRunPending();
-  if (pending) {
+  if (pending && pending.phase === 'cancel') {
     if (document.querySelector('.sgroup.runmodes'))
       paintRunModeSelection(pending.mode, true);
+    runArmShouldCommit = false;
+    clearRunArmUI();
+    return;
+  }
+  if (pending) {
+    // Ownership is timer+flag state, NOT picker DOM. An initiator that
+    // navigates to /questions mid-arm must still POST at the deadline —
+    // reclaim via sessionStorage owner id (survives reload; lost on tab close).
+    if (pending.owner && pending.owner === runTabId())
+      runArmShouldCommit = true;
+    if (document.querySelector('.sgroup.runmodes'))
+      paintRunModeSelection(pending.mode, true);
+    // Always keep the commit/display timer alive when pending is live, even
+    // when the chips are not in the DOM (non-dashboard routes).
     runArmGen++;
     armRunModeUI(pending.mode, pending.until, runArmGen);
     return;
   }
   if (document.querySelector('.sgroup.runmodes'))
     paintRunModeSelection(committedRunMode(data), true);
+  // No live pending: drop ownership/timers. Do not do this merely because
+  // the dashboard picker is absent while an arm is still shared.
   runArmShouldCommit = false;
   clearRunArmUI();
 }
@@ -2980,16 +3042,19 @@ window.addEventListener('storage', e => {
   if (!e.key || e.key.indexOf('dw:run-mode-pending:') !== 0) return;
   if (!data || e.key !== runPendingKey()) return;
   // another tab rewrote the shared pending — adopt UI without write-back
-  // and without claiming the POST (initiator owns commit).
   const pending = readRunPending();
   runArmGen++;
   if (!pending) {
-    // Peer cleared pending (commit starting or cancel). Do not paint
-    // committedRunMode(data) yet: data is often still the OLD mode while
-    // the initiator's POST is in flight, which would snap followers back
-    // to the pre-arm selection. Clear the arm chrome; /mtime carries truth.
+    // Peer cleared pending to POST. Keep the armed selection (do not snap
+    // to stale data.run_mode); /mtime carries the committed file.
     runArmShouldCommit = false;
     clearRunArmUI();
+    return;
+  }
+  if (pending.phase === 'cancel') {
+    runArmShouldCommit = false;
+    clearRunArmUI();
+    paintRunModeSelection(pending.mode, true);
     return;
   }
   runArmShouldCommit = false;

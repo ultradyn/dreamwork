@@ -343,6 +343,7 @@ await pA.evaluate((tgt) => {
 await sleep(300);
 
 // GREEN: B arms hot; A must adopt intermediate countdown via storage only
+await pA.evaluate(() => { window.__setItemLog = []; }); // drop setup cancel noise
 const eventsBefore = existsSync(eventsFile)
   ? readFileSync(eventsFile, 'utf8').split('\n').filter(l => l.includes('run-mode')).length
   : 0;
@@ -437,6 +438,125 @@ ok('cross-tab: exactly one new run-mode events line for the shared commit',
    newEvents === 1);
 ok('cross-tab: newest events line names hot',
    eventLines2.length && /run-mode via watch.*hot/.test(eventLines2[eventLines2.length - 1]));
+
+// ── cross-tab CANCEL: B arms then reselects committed; A must snap back ─
+// (cancel produces no mtime change — tombstone is the only signal)
+await pA.evaluate(() => { window.__setItemLog = []; });
+await pB.evaluate(() => {
+  if (typeof pickRunMode === 'function') pickRunMode('hot');
+});
+await sleep(400);
+const aArmed = await pA.evaluate(() => {
+  const on = document.querySelector('.runchip.on:not([disabled])');
+  const count = document.getElementById('runcount');
+  return { on: on && on.dataset.mode, count: count ? count.textContent : '' };
+});
+ok('cancel setup: A adopted B hot arm',
+   aArmed.on === 'hot' && /arms in/.test(aArmed.count || ''));
+// B cancels by re-selecting committed hot... wait, committed is hot now.
+// Arm assisted then cancel back to hot.
+await pB.evaluate(() => {
+  if (typeof pickRunMode === 'function') pickRunMode('assisted');
+});
+await sleep(400);
+const aOnAssisted = await pA.evaluate(() => {
+  const on = document.querySelector('.runchip.on:not([disabled])');
+  return on && on.dataset.mode;
+});
+ok('cancel setup: A shows assisted pending', aOnAssisted === 'assisted');
+await pB.evaluate(() => {
+  // re-select committed (hot) → cancel tombstone
+  if (typeof pickRunMode === 'function') pickRunMode('hot');
+});
+await sleep(500);
+const aAfterCancel = await pA.evaluate(() => {
+  const on = document.querySelector('.runchip.on:not([disabled])');
+  const count = document.getElementById('runcount');
+  return {
+    on: on && on.dataset.mode,
+    count: count ? count.textContent : '',
+  };
+});
+notes.push('A after cancel: ' + JSON.stringify(aAfterCancel));
+ok('cross-tab cancel: A converges to committed hot without arm text',
+   aAfterCancel.on === 'hot' &&
+   (!aAfterCancel.count || !/arms in/.test(aAfterCancel.count)));
+ok('cross-tab cancel: A still does not write pending',
+   !(await pA.evaluate(() =>
+     (window.__setItemLog || []).some(x =>
+       String(x.k).indexOf('dw:run-mode-pending:') === 0 &&
+       !String(x.v).includes('cancel')))));
+// cancel must not emit another run-mode event
+const eventsAfterCancel = existsSync(eventsFile)
+  ? readFileSync(eventsFile, 'utf8').split('\n').filter(l => l.includes('run-mode')).length
+  : 0;
+ok('cross-tab cancel: no extra events line',
+   eventsAfterCancel === eventLines2.length);
+
+// ── leave-dashboard mid-arm: initiator still POSTs (Standards fix) ─────
+// Arm assisted on dashboard, navigate to /questions before deadline; the
+// commit timer must survive missing .runmodes DOM.
+await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+await sleep(600);
+// ensure known committed baseline for a real change
+await p.evaluate(async () => {
+  await fetch('/run-mode', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'hot' }),
+  });
+  if (data) data.run_mode = 'hot';
+  try {
+    Object.keys(localStorage)
+      .filter(k => k.indexOf('dw:run-mode-pending:') === 0)
+      .forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
+});
+await sleep(300);
+const postsLeave = posts.length;
+const eventsLeave = existsSync(eventsFile)
+  ? readFileSync(eventsFile, 'utf8').split('\n').filter(l => l.includes('run-mode')).length
+  : 0;
+await p.evaluate(() => {
+  if (typeof pickRunMode === 'function') pickRunMode('assisted');
+});
+await sleep(300);
+const midArm = await p.evaluate(() => {
+  const count = document.getElementById('runcount');
+  return count ? count.textContent : '';
+});
+ok('leave-dashboard setup: arm text present on dashboard',
+   /arms in \d+s.*assisted/.test(midArm));
+// leave the dashboard while arm is live
+await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+await sleep(400);
+const onQuestions = await p.evaluate(() => ({
+  path: location.pathname,
+  hasPicker: !!document.querySelector('.sgroup.runmodes'),
+}));
+notes.push('on questions mid-arm: ' + JSON.stringify(onQuestions));
+ok('leave-dashboard: picker absent on /questions', !onQuestions.hasPicker);
+// wait past arm for the POST (up to 12s)
+const tLeave = Date.now();
+while (posts.length === postsLeave && Date.now() - tLeave < 13000) await sleep(200);
+const postsAfterLeave = posts.length - postsLeave;
+notes.push('leave-dashboard posts: ' + postsAfterLeave);
+ok('leave-dashboard: exactly one POST after navigating mid-arm',
+   postsAfterLeave === 1);
+await sleep(400);
+const afterLeave = await p.evaluate(async () =>
+  (await (await fetch('/data.json')).json()).run_mode);
+ok('leave-dashboard: file/data settled to assisted', afterLeave === 'assisted');
+const eventsLeaveAfter = existsSync(eventsFile)
+  ? readFileSync(eventsFile, 'utf8').split('\n').filter(l => l.includes('run-mode')).length
+  : 0;
+ok('leave-dashboard: exactly one new events line for assisted',
+   eventsLeaveAfter === eventsLeave + 1);
+if (existsSync(eventsFile)) {
+  const last = readFileSync(eventsFile, 'utf8').split('\n')
+    .filter(l => l.includes('run-mode')).pop() || '';
+  ok('leave-dashboard: last events line names assisted',
+     /assisted/.test(last));
+}
 
 finished = true;
 await br.close();
