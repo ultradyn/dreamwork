@@ -6166,6 +6166,17 @@ def plugin_commands(target):
     return out
 
 
+def list_reviews(review_dir):
+    reviews = [
+        {"name": name,
+         "mtime": os.path.getmtime(os.path.join(review_dir, name))}
+        for name in os.listdir(review_dir)
+        if name.endswith(".html")
+    ]
+    reviews.sort(key=lambda review: (-review["mtime"], review["name"]))
+    return reviews
+
+
 def collect(target):
     now = time.time()
     dw = os.path.join(target, ".dreamwork")
@@ -6189,13 +6200,8 @@ def collect(target):
             "skill-version": (read_text(
                 os.path.join(dw, "skill-version")) or "").strip(),
         },
-        "reviews": [
-            {"name": n, "mtime": os.path.getmtime(
-                os.path.join(dw, "review", n))}
-            for n in sorted(os.listdir(os.path.join(dw, "review")),
-                            reverse=True)
-            if n.endswith(".html")
-        ] if os.path.isdir(os.path.join(dw, "review")) else [],
+        "reviews": list_reviews(os.path.join(dw, "review"))
+        if os.path.isdir(os.path.join(dw, "review")) else [],
         "open_questions": open_question_count(questions),
         "questions_open": q_open,
         "answered_entries": q_answered,

@@ -54,7 +54,13 @@ carries a `+` command opener (steer the loop without a chat turn).
   dock. The tick uses the router's `buildCurrent` seam rather than a partial
   route list; card drafts, selection, resize, scroll and focus ride the
   existing stable-`data-qid` snapshot, while the artifact iframe browsing
-  context stays mounted at its current URL and scroll. Same-origin artifacts
+  context stays mounted at its current URL and scroll. Dashboard review
+  artifacts are ordered by filesystem mtime newest-first, with ascending
+  filename as the deterministic exact-mtime tie-break. The displayed age uses
+  that same mtime value, so ordering and visible recency cannot disagree. This
+  changes initial/static collection order only; ticks retain the existing
+  section-fold/regroup motion rather than introducing a second reorder gesture.
+  Same-origin artifacts
   additionally permit explicit scroll restoration; cross-origin access is
   caught and treated as opaque, so it never prevents the dock refresh. `dev/capture/noteprop.mjs` proves propagation using
   two separate Chromium processes and a `/questions` control (#271). No websockets. `/mtime` is

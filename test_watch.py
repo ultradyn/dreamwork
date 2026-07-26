@@ -1350,6 +1350,36 @@ class TestCollector(unittest.TestCase):
             self.assertEqual([r["name"] for r in data["reviews"]],
                              ["plan-review.html"])
 
+    def test_collect_orders_reviews_by_displayed_mtime_then_filename(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            rd = os.path.join(d, ".dreamwork", "review")
+            os.makedirs(rd)
+            mtimes = {
+                "z-old.html": 1_700_000_000_000_000_001,
+                "z-tied.html": 1_700_000_002_000_000_003,
+                "a-tied.html": 1_700_000_002_000_000_003,
+                "a-new.html": 1_700_000_004_000_000_007,
+            }
+            for name, mtime_ns in mtimes.items():
+                path = os.path.join(rd, name)
+                with open(path, "w") as f:
+                    f.write("<!doctype html><p>x")
+                os.utime(path, ns=(mtime_ns, mtime_ns))
+
+            reviews = watch.collect(d)["reviews"]
+
+            self.assertEqual([r["name"] for r in reviews], [
+                "a-new.html", "a-tied.html", "z-tied.html", "z-old.html",
+            ])
+            # The value exposed to the age renderer is the same filesystem
+            # mtime that determined each row's place, not another date source.
+            self.assertEqual(
+                [r["mtime"] for r in reviews],
+                [os.stat(os.path.join(rd, r["name"])).st_mtime
+                 for r in reviews],
+            )
+
     def test_resolve_confined_nested(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
