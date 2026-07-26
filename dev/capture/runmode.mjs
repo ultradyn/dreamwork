@@ -79,11 +79,30 @@ ok('default selection is lackadaisical (or committed)',
 
 // ── arm + intermediate progress (normal motion) ─────────────────────────
 // Context-level: every page's /run-mode must be counted for cross-tab once.
+// Dump tab/orphan/from on failure so dual-POST is diagnosable (owner vs
+// follower vs counting artifact).
 const posts = [];
+const t0posts = Date.now();
 ctx.on('request', req => {
-  if (req.method() === 'POST' && req.url().includes('/run-mode'))
-    posts.push({ t: Date.now(), url: req.url() });
+  if (req.method() !== 'POST' || !req.url().includes('/run-mode')) return;
+  let body = null;
+  try { body = req.postDataJSON(); } catch (e) {
+    try { body = req.postData(); } catch (e2) { body = null; }
+  }
+  posts.push({
+    t: Date.now(),
+    dt: Date.now() - t0posts,
+    url: req.url(),
+    frame: (() => { try { return req.frame() && req.frame().url(); } catch (e) { return null; } })(),
+    mode: body && body.mode,
+    tab: body && body.tab,
+    orphan: body && body.orphan,
+    from: body && body.from,
+  });
 });
+function dumpPosts(label, slice) {
+  notes.push(label + ' POST dump n=' + slice.length + ' ' + JSON.stringify(slice));
+}
 
 await p.click('.runchip[data-mode="hot"]');
 await sleep(200);
@@ -392,12 +411,20 @@ notes.push('A setItem log during adopt: ' + JSON.stringify(setItems));
 ok('cross-tab: A never setItem run-mode-pending (no write-back)',
    !setItems.some(x => String(x.k).indexOf('dw:run-mode-pending:') === 0));
 
-// wait for shared final commit
+// wait for shared final commit, then a quiet window so a dual-fire would
+// still land in the count (not a premature PASS on the first of two).
 const tWait2 = Date.now();
 while (posts.length === postsAtArm && Date.now() - tWait2 < 14000) await sleep(200);
-const postsThisArm = posts.length - postsAtArm;
+await sleep(900); // dual-fire / orphan-reclaim window (~1.5s deferred)
+const slice = posts.slice(postsAtArm);
+const postsThisArm = slice.length;
+dumpPosts('cross-tab shared arm', slice);
 notes.push('cross-tab posts this arm: ' + postsThisArm);
 ok('cross-tab: exactly one POST for the shared arm', postsThisArm === 1);
+if (postsThisArm !== 1) {
+  notes.push('DUAL-POST diagnosis: tabs=' +
+    JSON.stringify(slice.map(p => ({ tab: p.tab, orphan: p.orphan, dt: p.dt, mode: p.mode }))));
+}
 
 // follower settles via /mtime poll after initiator POST — wait for it
 let settledA = null;

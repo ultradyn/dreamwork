@@ -2911,31 +2911,65 @@ function armRunModeUI(mode, until, gen) {
     if (gen !== runArmGen) return;
     if (runArmShouldCommit) commitRunMode(mode, gen);
     else {
-      // Follower (or orphaned display arm): if the file still disagrees and
-      // pending is live, claim the POST so a dead initiator cannot strand us.
-      const p = readRunPending();
-      const cur = committedRunMode(data);
-      if (p && !p.phase && p.mode === mode && cur !== mode) {
-        runArmShouldCommit = true;
-        commitRunMode(mode, gen);
-        return;
-      }
+      // Display-only path: do NOT race the owner at the same deadline.
+      // Orphan reclaim is deferred so a live initiator always wins the CAS.
       clearRunArmUI();
-      paintRunModeSelection(committedRunMode(data), true);
+      setTimeout(() => {
+        if (gen !== runArmGen) return;
+        const p = readRunPending();
+        const cur = committedRunMode(data);
+        if (p && !p.phase && p.mode === mode && cur !== mode)
+          commitRunMode(mode, gen, { orphan: true });
+        else
+          paintRunModeSelection(committedRunMode(data), true);
+      }, 1500);
     }
   }, remainingMs());
 }
-async function commitRunMode(mode, gen) {
+/** Claim the pending arm for a single POST. Returns false if a peer already
+ *  claimed or the pending is not ours to fire — prevents dual-POST at the
+ *  shared deadline (owner + follower timers both firing). */
+function claimRunPending(mode, { orphan = false } = {}) {
+  try {
+    const k = runPendingKey();
+    if (!k) return false;
+    const raw = localStorage.getItem(k);
+    if (!raw) return false;
+    const p = JSON.parse(raw);
+    if (!p || p.phase === 'cancel' || p.mode !== mode) return false;
+    if (p.owner && p.owner !== runTabId()) {
+      // Not the arming tab: only an orphan reclaim after the deadline may claim.
+      if (!orphan) return false;
+      if (typeof p.until === 'number' && Date.now() < p.until + 1000)
+        return false;
+    }
+    localStorage.removeItem(k);   // claim — peer re-read sees null
+    return true;
+  } catch (e) { return false; }
+}
+async function commitRunMode(mode, gen, opts) {
   if (gen !== runArmGen) return;
   const msg = document.getElementById('runmsg');
-  // Drop the shared pending before the POST so a peer that only displays
-  // cannot race a second ownership claim; initiator remains the sole writer.
-  clearRunPending();
+  const orphan = !!(opts && opts.orphan);
+  // CAS: only one tab POSTs for a given arm. Identical final stays server-side
+  // idempotent if a second request still slips through.
+  if (!claimRunPending(mode, { orphan })) {
+    runArmShouldCommit = false;
+    clearRunArmUI();
+    paintRunModeSelection(committedRunMode(data), true);
+    return;
+  }
   let ok = false, body = null;
   try {
     const res = await fetch('/run-mode', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, from: location.pathname + location.search }),
+      body: JSON.stringify({
+        mode,
+        from: location.pathname + location.search,
+        // diagnostic only — server ignores unknown fields
+        tab: runTabId(),
+        orphan: orphan || false,
+      }),
     });
     ok = res.ok;
     if (ok) body = await res.json().catch(() => ({ ok: true, mode }));
