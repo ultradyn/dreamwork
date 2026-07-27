@@ -50,6 +50,15 @@ Read by `watch.py` for `/questions`, the open-question badge, and the
 `/answer` and `/comment` write paths. The single most important format
 in the loop, because it is the channel to the human.
 
+**Both write paths replace it atomically** (`atomic_write_text`: temp,
+`fsync`, `os.replace`, parent `fsync`) — never by opening it in plain
+write mode. That is a durability contract, not a preference: opening it to
+write truncates it first, so anything that stops the write before the flush
+loses every question he ever asked and every answer he ever gave. It was
+written the truncating way until #370, and the correct helper had been
+thirty lines above it the whole time, in use by `/ask`. A failed write must
+leave the file byte-identical and no `.questions.md.*.tmp` behind.
+
 ```markdown
 # Questions for the human
 

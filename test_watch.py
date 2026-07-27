@@ -4059,3 +4059,132 @@ class TestPluginCommands(unittest.TestCase):
                       ".classList.add('qreveal', 'dreamin')",
                       '.cmdmenuitem.qreveal'):
             self.assertIn(token, watch.PAGE)
+
+
+class TestAnswerWritesAreAtomic(unittest.TestCase):
+    """#370 — `/answer` and `/comment` truncated `questions.md` in place.
+
+    Both routes wrote `with open(qpath, "w") as f: f.write(new_text)`. The
+    truncation happens at open, so anything that stops the write between there
+    and the flush leaves his questions file destroyed — every open question,
+    every answered one, every thread. Thirty lines earlier `/ask` already wrote
+    `answers.md` through `atomic_write_text`, which does temp + fsync +
+    os.replace + parent fsync, so the correct pattern was already in the module
+    and these two routes simply did not use it.
+
+    The failure is induced rather than mocked, because the design's own rule is
+    to kill at a real seam instead of patching durability away: `RLIMIT_FSIZE`
+    set just above the file's current length makes the longer post-answer text
+    fail partway through a real `write(2)`. Under the old code that leaves a
+    file of exactly the limit's size holding half the new text; under
+    `atomic_write_text` the original is byte-identical and no temp survives.
+
+    `SIGXFSZ` has to be ignored first — its default action terminates the
+    process, which would take the test runner with it and report as a crash
+    rather than a red.
+    """
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _size_cap(limit):
+        import resource
+        import signal as sig
+        prev = sig.signal(sig.SIGXFSZ, sig.SIG_IGN)
+        soft, hard = resource.getrlimit(resource.RLIMIT_FSIZE)
+        resource.setrlimit(resource.RLIMIT_FSIZE, (limit, hard))
+        try:
+            yield
+        finally:
+            resource.setrlimit(resource.RLIMIT_FSIZE, (soft, hard))
+            sig.signal(sig.SIGXFSZ, prev)
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _post(self, url, obj):
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+        except Exception:
+            # Under the old truncating write the handler thread dies and the
+            # connection drops with no response at all — and the traceback it
+            # tries to print hits the same size cap. Swallowed on purpose: the
+            # claim being tested is about the FILE, and letting a transport
+            # error escape here would make the red say "RemoteDisconnected"
+            # instead of "his questions file was damaged".
+            return 0
+
+    def _interrupted(self, d, route, payload):
+        """POST `route` with the file size capped, and return the file after."""
+        qpath = os.path.join(d, ".dreamwork", "questions.md")
+        before = open(qpath, encoding="utf-8").read()
+        # The cap must sit ABOVE the current file and BELOW the file plus what
+        # the route appends — derived from both, never a literal, or the day the
+        # fixture grows this test starts asserting nothing.
+        grown = len(before.encode()) + 40
+        self.assertGreater(grown, len(before.encode()),
+                           "the cap must allow the file that already exists")
+        base = self._serve(d)
+        with self._size_cap(grown):
+            status = self._post(base + route, payload)
+        after = open(qpath, encoding="utf-8").read()
+        leftovers = [f for f in os.listdir(os.path.join(d, ".dreamwork"))
+                     if f.startswith(".questions.md")]
+        return before, after, status, leftovers
+
+    def test_an_interrupted_answer_leaves_questions_md_intact(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            before, after, status, leftovers = self._interrupted(
+                d, "/answer",
+                {"question": "A real open question?",
+                 "answer": "x" * 400, "from": "/questions"})
+            self.assertNotEqual(status, 200,
+                                "a write that could not complete must not report success")
+            self.assertEqual(after, before,
+                             "his questions file was damaged by a failed answer")
+            self.assertEqual(leftovers, [], "a temp file survived the failure")
+
+    def test_an_interrupted_comment_leaves_questions_md_intact(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            before, after, status, leftovers = self._interrupted(
+                d, "/comment",
+                {"question": "A real open question?",
+                 "comment": "y" * 400, "section": "Open", "from": "/questions"})
+            self.assertNotEqual(status, 200)
+            self.assertEqual(after, before,
+                             "his questions file was damaged by a failed comment")
+            self.assertEqual(leftovers, [])
+
+    def test_the_size_cap_really_does_stop_the_write(self):
+        # The precondition of both tests above: if the cap were ineffective they
+        # would pass on an unmodified file for the wrong reason. Proved on a
+        # scratch file through the same mechanism, in the same process.
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "probe")
+            with open(p, "w") as f:
+                f.write("z" * 50)
+            with self._size_cap(60), self.assertRaises(OSError) as cm:
+                with open(p, "w") as f:
+                    f.write("z" * 500)
+                    f.flush()
+            self.assertEqual(cm.exception.errno, errno.EFBIG)
+
+    def test_neither_route_uses_a_truncating_open(self):
+        # The production line, named. `open(qpath, "w")` truncates before it
+        # writes; this is the construct that must not come back.
+        src = inspect.getsource(watch)
+        self.assertNotIn('open(qpath, "w"', src)
+        self.assertEqual(src.count("atomic_write_text(qpath"), 2,
+                         "both /answer and /comment write through the atomic path")

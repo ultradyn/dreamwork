@@ -8784,8 +8784,13 @@ def make_handler(target, dev=False, authority=None):
                 if not matched:
                     self.send_error(409)
                     return
-                with open(qpath, "w", encoding="utf-8") as f:
-                    f.write(new_text)
+                # Atomic, like /ask thirty lines up (#370). Opening this path in
+                # plain write mode empties the file before it writes, so a
+                # failure between those two moments loses every question he ever
+                # asked and every answer he ever gave. (Phrased without the
+                # construct itself: the check for it greps the source, and an
+                # explanation quoting what it forbids is a violation of it.)
+                atomic_write_text(qpath, new_text)
             log_event(target,
                       f'answer{from_hint(req.get("from"))}: "{one_line(title)}"'
                       f' -> .dreamwork/questions.md '
@@ -8818,8 +8823,7 @@ def make_handler(target, dev=False, authority=None):
                 if not matched:
                     self.send_error(409)
                     return
-                with open(qpath, "w", encoding="utf-8") as f:
-                    f.write(new_text)
+                atomic_write_text(qpath, new_text)   # #370, as above
             hint = ("(re-evaluate — a note on an answered entry may amend it)"
                     if section == "Answered" else "(fold with the entry)")
             log_event(target,
