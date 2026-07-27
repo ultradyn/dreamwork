@@ -24,9 +24,32 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **335**
+Next id: **336**
 
 ## Open
+
+- **#335** — lint should catch an open entry that declares ITSELF completed ·
+  P2 · tooling/correctness · origin: **loop** · found by tripping over #261, which
+  sat in `## Open` for a full day carrying *"completed **2026-07-26 16:21**"* in
+  its own metadata run · #323 cannot see this class: it compares the ledger
+  against git and warns when a `close(#N)`/`merge(#N)` commit is not cited, so an
+  entry closed in PROSE with no such commit is invisible to it · **the naive rule
+  is wrong and this was measured, not guessed**: grepping the 108 open entries for
+  a completion keyword near a date or sha returns FIVE hits and only ONE is real —
+  precision 1-in-5 · so the discriminator is POSITION, not vocabulary: a
+  completion marker inside the entry's **metadata clause** (the ` · `-separated
+  run immediately after the title, where `P1`, `origin:` and `owner:` live) is a
+  self-declared close; the same words deep in the prose body are not · **the four
+  false positives are the required fixtures, each a different way of being
+  legitimately open**: `#275` (*"research + design landed `4b49ecb` … ask open"* —
+  one half done, the human's ask still pending), `#283` (*"**L1 completed
+  2026-07-27 00:21**"* — a sub-stage of several), `#269` (*"LANDED `0366706`"* /
+  *"merged `e383492`"* — the acute half landed, the broader scope deliberately
+  open), and `#281` (*"(merged `9c00cd2`)"* — a sha cited for a sub-finding inside
+  an in-progress entry) · a check that flags any of those four is worse than no
+  check, because the loop learns to ignore it · assert all four stay silent AT
+  RUNTIME in the check itself, not in a comment · WARN not ERROR, same reasoning
+  as #323 · red-prove against #261's exact text restored to Open
 
 - **#331** — One shared notion of "an ids-only bold span", instead of a fourth
   one-separator patch · P2 · correctness/refactor · origin: **loop** · from #327's
@@ -632,16 +655,6 @@ Next id: **335**
   coverage for write failure, accepted-but-unwitnessed requests, stale/multiple
   ports and concurrent same-target processes · blocked on #263 event model
 
-- **#261** — Recover reported 14:47–15:17 Web UI submissions · P0 · incident ·
-  origin: **human** · completed **2026-07-26 16:21** · human confirmed use of
-  live `localhost:35111`; exact words were not found in either server
-  `submissions.log` or browser IndexedDB, copied Brave Sessions/Session Storage/
-  localStorage/form state, Pi transcript, Git history/unreachable-object scan,
-  clipboard history, or the still-open tab's final DOM textarea dump · this is
-  **not evidence that no submission occurred**; it means no available witness
-  retained the exact text · live tab/process were preserved through recovery ·
-  prevention continues in #260/#262/#263
-
 - **#260** — Make post-compaction submission reconciliation cursor-based · P1 ·
   reliability · 25m · origin: **loop** · incident confirmed by **human 15:47** ·
   coordinator guessed a 15:43 cutoff after cancelled compaction and falsely
@@ -1218,6 +1231,21 @@ Next id: **335**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#261** — Recover reported 14:47–15:17 Web UI submissions · P0 · incident ·
+  origin: **human** · completed **2026-07-26 16:21** · human confirmed use of
+  live `localhost:35111`; exact words were not found in either server
+  `submissions.log` or browser IndexedDB, copied Brave Sessions/Session Storage/
+  localStorage/form state, Pi transcript, Git history/unreachable-object scan,
+  clipboard history, or the still-open tab's final DOM textarea dump · this is
+  **not evidence that no submission occurred**; it means no available witness
+  retained the exact text · live tab/process were preserved through recovery ·
+  prevention continues in #260/#262/#263
+  · **moved to landed 2026-07-27 22:57**: it had declared itself *completed
+  2026-07-26 16:21* in its own metadata run while sitting in `## Open` for a
+  full day. #323's check could not see it — that check compares the ledger
+  against git and this entry was closed in PROSE, with no `close(#261)` commit
+  to name. The gap is filed as #335.
 
 - **#332** — `status.json` says WHICH tasks the loop claims, as integers ·
   closed `d05d442` · P2 · contract/data · origin: **loop** · from #327 · added
