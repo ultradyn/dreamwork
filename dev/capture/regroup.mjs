@@ -69,6 +69,18 @@ const TRACE = `((ms) => new Promise(res => {
 }))(5200)`;
 
 const uniq = a => [...new Set(a)];
+/* Frames strictly BETWEEN the two ends, 3% deadband — the frame-rate-free
+   form of "it travelled". A snap has none of these at any frame rate, so the
+   floor is ONE and the assertion is not a bet on how many frames this box
+   drew (idle ~31 frames / 5 part-way; six CPU burners ~14 / 2 — any floor
+   above 1 sits on the frame rate). Same helper `reviewsplit.mjs` /
+   `headertravel.mjs` use; deliberately not a second idiom (#311,
+   transitions.md "Checking a transition"). */
+const between = (vals, a, b) => {
+  const lo = Math.min(a, b), hi = Math.max(a, b), eps = (hi - lo) * 0.03;
+  return vals.filter(v => v > lo + eps && v < hi - eps).length;
+};
+const span = vals => Math.abs(vals.at(-1) - vals[0]);
 const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 const runs = {};
 
@@ -103,8 +115,20 @@ const settledAt = f => {
 
 ok('no page errors', n.errs.length === 0 && r.errs.length === 0);
 ok('the fixture regrouped at all (the card changed state)', landedAt(n.frames) > 0);
-ok('#77 the answered card TRAVELS (many intermediate positions)',
-   uniq(tops(n.frames)).length >= 6);
+/* `uniq(tops).length >= 6` was a claim about how many frames THIS BOX drew
+   inside the .85s FLIP, not about the motion — it reddened on a healthy
+   commit twice on 2026-07-27 and passed when re-run with fewer guards in
+   flight. The vacuity precondition the count carried only implicitly is
+   stated next, derived from the trace: with no range there is nothing for
+   `between` to find, so a card that never moved would read as "no travel to
+   check" rather than failing. (#311.) */
+const tps = tops(n.frames);
+ok('#77 the answered card really moves (else the travel check is vacuous) '
+ + `(${tps[0]} -> ${tps.at(-1)}, ${span(tps).toFixed(0)}px)`,
+   span(tps) >= 30);
+ok('#77 the answered card TRAVELS (frames strictly part-way, at any frame rate) '
+ + `(${between(tps, tps[0], tps.at(-1))} of ${tps.length} part-way)`,
+   between(tps, tps[0], tps.at(-1)) >= 1);
 // The view re-renders through innerHTML, so the NODE is replaced; identity
 // is carried by data-qid and the FLIP animates the new node from the old
 // node's rect. That is what must hold: the question is continuously present
@@ -120,19 +144,51 @@ ok('#77 the travel is a FLIP, not a re-layout',
 // at frame 0 instead of folding it.
 ok('#113 the crossing card never morphs by scale',
    n.frames.every(x => x.scaled === 0));
-ok('#104 a question below it also moves',
-   n.neighbour && uniq(nTops(n.frames)).length > 1);
-ok('#104 that neighbour SLIDES rather than jumping',
-   n.neighbour && uniq(nTops(n.frames)).length >= 4);
+/* Same conversion as the card above: `uniq(nTops).length > 1` / `>= 4` were
+   frame counts. The neighbour's path is non-monotonic (it is pushed DOWN by
+   the answered card's height change, then pulled UP into the gap the regroup
+   opens) so `between(first, last)` reads only the part-way frames inside the
+   net displacement — which is still many for a real slide and zero for a
+   teleport, which is the distinction. */
+const nps = nTops(n.frames);
+ok('#104 a question below it also moves (else its travel check is vacuous) '
+ + `(${nps[0]} -> ${nps.at(-1)}, ${span(nps).toFixed(0)}px)`,
+   n.neighbour && span(nps) >= 8);
+ok('#104 that neighbour SLIDES rather than jumping '
+ + `(${between(nps, nps[0], nps.at(-1))} of ${nps.length} part-way)`,
+   n.neighbour && between(nps, nps[0], nps.at(-1)) >= 1);
 ok('liveness is not held: the DOM regroups before the motion settles',
    landedAt(n.frames) >= 0 && landedAt(n.frames) < settledAt(n.frames));
 // reduced motion changes timing, never function: the same regrouping
 // happens, in discrete steps, with no FLIP transform ever applied
 ok('reduced motion: no card is ever FLIPped',
    r.frames.every(x => x.flipping === 0));
-ok('reduced motion: positions step rather than ramp',
-   uniq(tops(r.frames)).length * 4 <= uniq(tops(n.frames)).length &&
-   uniq(nTops(r.frames)).length * 4 <= uniq(nTops(n.frames)).length);
+/* The same trap inverted, and the hollow direction: the old ratio
+   `uniq(r).length * 4 <= uniq(n).length` tied the reduced contract to the
+   normal frame count, so under load the NORMAL side dropped and the check
+   tightened over a reduced build that was perfectly instant. The
+   frame-rate-free form is the same measure as the travel check with the
+   opposite expectation — instant means NO frame part-way, however few were
+   drawn. The neighbour's reduced path steps through a layout excursion that
+   lies OUTSIDE its [first, last] window (a height-change shove before the
+   regroup pulls it back), so `between(first, last) === 0` still holds and
+   a smooth ramp between the ends would not. (#311.) */
+{
+  const rTps = tops(r.frames);
+  ok('reduced motion: the card still ends somewhere else (else vacuous) '
+   + `(${rTps[0]} -> ${rTps.at(-1)})`,
+     span(rTps) >= 30);
+  ok('reduced motion: ...the card LANDS instantly, no frame part-way '
+   + `(${between(rTps, rTps[0], rTps.at(-1))} part-way of ${rTps.length})`,
+     between(rTps, rTps[0], rTps.at(-1)) === 0);
+  const rNps = nTops(r.frames);
+  ok('reduced motion: the neighbour still ends somewhere else (else vacuous) '
+   + `(${rNps[0]} -> ${rNps.at(-1)})`,
+     span(rNps) >= 8);
+  ok('reduced motion: ...and the neighbour LANDS instantly too, no frame part-way '
+   + `(${between(rNps, rNps[0], rNps.at(-1))} part-way of ${rNps.length})`,
+     between(rNps, rNps[0], rNps.at(-1)) === 0);
+}
 
 console.log('target positions  : ' + JSON.stringify(uniq(tops(n.frames))));
 console.log('neighbour positions: ' + JSON.stringify(uniq(nTops(n.frames))));
