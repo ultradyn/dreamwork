@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **388**
+Next id: **389**
 
 ## Open
 
@@ -157,6 +157,28 @@ Next id: **388**
   can regenerate · `test_every_shipped_artifact_still_satisfies_the_new_rules` excludes this
   one violation **by name**, so a new one in the same file is still caught · related: **#379**
 
+- **#388** — A guard's own `watch.py` is starved to death at extreme load, and every guard
+  inherits it · P3 · guards/infrastructure · origin: **loop** · 20m · **surfaced by #386 and
+  correctly declared out of its scope** — the lane could have quietly absorbed it and did not
+  · at load **100+** on 16 cores a guard throws `TypeError: fetch failed [cause] ECONNREFUSED
+  127.0.0.1:<port>`: the `watch.py` the guard spawned for itself never became reachable, or
+  stopped being reachable mid-run. It is **not** specific to `gitrow` — every guard that spawns
+  its own server inherits it, so under contention any guard can report a fault that belongs to
+  the harness
+  · **this is the worst class of guard failure we have**, worse than a flake, because it arrives
+  as *"the guard threw before finishing its checks"* — a third verdict that is neither pass nor
+  fail and reads as a real problem with the page. #383 already had to fix `burndown` to say what
+  threw, which is how we can see this one at all
+  · rec: the fix is almost certainly a readiness wait rather than a timeout bump — poll the
+  server's own endpoint until it answers, with a bounded deadline, before the first navigation,
+  and make the failure say *"the server never came up in Ns"* rather than surfacing a raw
+  `ECONNREFUSED`. Measure first: find whether the refusal happens at startup or mid-run, because
+  those are different bugs and the report above is consistent with either
+  · **do not chase this by making guards more patient in general** — a longer timeout hides a
+  server that died, and the whole reason we can distinguish these classes today is that #383
+  made a throwing guard name its own exception
+  · related: #383, #386
+
 - **#387** — The ledger-lint hook cannot see how the coordinator actually edits the ledger ·
   P2 · dogfood/reliability · origin: **loop** · 15m · **found by installing the thing, which is
   the only way this was ever going to surface.** #361 turned on
@@ -182,24 +204,6 @@ Next id: **388**
   coordinator's habit to Write/Edit for ledger files, which costs nothing and covers the
   writer that actually caused the incidents
   · related: #361
-
-- **#386** — `gitrow` opens 0px under load: the gesture does not run, and the motion check
-  correctly says nothing moved · P3 · guards/reliability · origin: **loop** · 15m ·
-  **separated out of #383 rather than papered over inside it.** #383 replaced the three motion
-  guards' frame-counting with `between()`, and after that fix `revieworder` and `burndown` are
-  3/3 under moderate load while `gitrow` is **2/3**
-  · **the residual failure is a different fault from the one #383 fixed.** #383's bug was a
-  real travel with too few samples counted as no travel. This one is a **0px open** — the row
-  never opened, so there is genuinely no motion and the check is right to fail. The instrument
-  is not hollow here; the *gesture* did not happen
-  · so the fix is click readiness, not tolerance: find what makes the click land on a row that
-  is not yet ready to open under load, and wait for that condition rather than for time. Widening
-  the motion assertion would make the guard unable to see a real snap, which is the failure mode
-  `.dreamwork/lessons.md` keeps recording
-  · rec: reproduce under the same moderate load (3 busyloops) that the #383 lane used, since it
-  is the only condition known to show it, and check whether the row's own arrival transition is
-  still in flight when the click is dispatched
-  · related: #383
 
 - **#385** — Humanized age beside a question's date, in his `XXa YYb` format · P2 · dashboard/UX ·
   origin: **human** · 25m · **human via watch `add-idea` 2026-07-28 05:41**: *"questions have the
@@ -2388,6 +2392,58 @@ Next id: **388**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#386** — `gitrow` opens 0px under load: the gesture does not run, and the motion check
+  correctly says nothing moved · P3 · guards/reliability · origin: **loop** · 15m ·
+  **separated out of #383 rather than papered over inside it.** #383 replaced the three motion
+  guards' frame-counting with `between()`, and after that fix `revieworder` and `burndown` are
+  3/3 under moderate load while `gitrow` is **2/3**
+  · **the residual failure is a different fault from the one #383 fixed.** #383's bug was a
+  real travel with too few samples counted as no travel. This one is a **0px open** — the row
+  never opened, so there is genuinely no motion and the check is right to fail. The instrument
+  is not hollow here; the *gesture* did not happen
+  · so the fix is click readiness, not tolerance: find what makes the click land on a row that
+  is not yet ready to open under load, and wait for that condition rather than for time. Widening
+  the motion assertion would make the guard unable to see a real snap, which is the failure mode
+  `.dreamwork/lessons.md` keeps recording
+  · rec: reproduce under the same moderate load (3 busyloops) that the #383 lane used, since it
+  is the only condition known to show it, and check whether the row's own arrival transition is
+  still in flight when the click is dispatched
+  · related: #383
+
+  · **closed `1cd588a`** — and the lane refuted this entry's own hypothesis, which said the row's
+  arrival transition was still in flight when the click landed. **It is not a page-readiness bug
+  at all; it is a test-harness timing race.** The click was dispatched as a *separate* Playwright
+  roundtrip after a fixed sleep, while the 1500ms trace window was bounded to its own start —
+  so under load the click's transport+actionability latency landed it **after the window closed**,
+  and the trace honestly recorded 0px
+  · **the discriminator is the good part**: the CLOSE gesture, on a row that had been open through
+  several roundtrips and was fully settled, failed **identically** — 0px, one position, no ghost.
+  A settled row cannot be mid-arrival, so the readiness story was dead. Two failure faces, one
+  cause: `open: 22 -> 64, 2 positions, 0 part-way` (window closed mid-animation) and
+  `close: 0px, 1 position` (click landed after it entirely)
+  · fix: the click is dispatched **inside** the trace evaluate — the `dreamfade.mjs` idiom, action
+  and trace in one browser roundtrip, so click latency cannot eat the window. #141's
+  pointer-events contract is preserved by hit-testing `elementFromPoint`, so a summary he could
+  not press still fails
+  · **motion assertions unchanged in strictness, verified line by line** — `t.moved >= 60`,
+  `t.partway >= 1`, `hPartway >= 1`, `mid >= 1`, `t.late <= 4`, `t.over <= 4` all byte-identical.
+  Two *preconditions* were added, not loosened: the click-reached-the-summary gate, so a future
+  failure says what it saw instead of "nothing moved"
+  · **the red still bites after the fix, which was the actual risk here**: #383's page-injected
+  snapping `travelCard` still produces `FAIL opening: ...and it travels there rather than
+  teleporting` plus the two others, by name. The fix changed how the click lands, not what the
+  motion check sees. Production lines named: `travelCard` (`watch.py:4709`) and `foldDetailsLocal`
+  (`watch.py:5071`)
+  · **verified independently by me, and the verdict is conclusive rather than encouraging**:
+  `PASS gitrow` at load **100** on 16 cores. Load here can only manufacture false *reds* — a
+  dropped intermediate frame — so a green under 6x oversubscription is stronger evidence than a
+  green on an idle box
+  · one tradeoff it flagged and I am recording rather than burying: the synthetic
+  `elementFromPoint` + `summary.click()` drops Playwright's own actionability checks
+  (visibility/stability). Safe today because the row is always settled when the gesture runs; if a
+  future change makes it transiently unstable, the synthetic click fires where a real pointer
+  would have waited
 
 - **#383** — Three motion guards give different verdicts on unchanged code · P2 ·
   guards/verification · origin: **loop** · 30m · owner: dispatched dreamer on `ccc @grok`, brief
