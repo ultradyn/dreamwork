@@ -2092,3 +2092,132 @@ Next id: **9**
         import inspect
         src = inspect.getsource(lint.run_checks)
         assert "check_cited_shas(dw, rep)" in src
+
+
+class TestRelatedMarkers:
+    """#353: `related:` makes "these two are one piece of work" explicit.
+
+    The ledger has carried this relation implicitly for a year by writing two
+    ids in one title — `- **#250/#251**`. #346's store cannot hold that, since
+    `task(id PRIMARY KEY)` is one row per id, and his 01:23 ruling asked for the
+    relation to become explicit rather than inferred from a slash. Splitting
+    those entries without a marker would destroy the only record of the pairing.
+
+    The reciprocity case below is the one that matters. SQLite gets `CHECK (a <
+    b)` so the pair exists ONCE and cannot disagree with itself; prose has to
+    duplicate it, because an entry is read alone. This check is the only thing
+    standing between duplication and two halves that contradict each other.
+    """
+
+    def build(self, tmp_path, ledger):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(ledger)
+        return t
+
+    def rows(self, t, level=None):
+        rep = lint.Report()
+        lint.check_related_markers(t / ".dreamwork", lint.load_watch(), rep)
+        return [d for lvl, w, d in rep.rows
+                if w == "tasks.md" and (level is None or lvl == level)]
+
+    LEDGER = """# Tasks
+
+Next id: **9**
+
+## Open
+
+- **#1** — a task · P2 · origin: **loop** · related: **#2** · still going
+- **#2** — its other half · P2 · origin: **loop** · related: **#1** · going too
+- **#3** — unrelated to anything · P2 · origin: **loop** · alone
+"""
+
+    def test_a_reciprocal_pair_is_clean_and_counted_once(self, tmp_path):
+        t = self.build(tmp_path, self.LEDGER)
+        errs = self.rows(t, lint.ERROR)
+        assert errs == [], errs
+        oks = self.rows(t, lint.OK)
+        # Counted ONCE, not twice: the relation is symmetric, and a count of 2
+        # would mean the check is thinking in rows rather than in pairs.
+        assert len(oks) == 1 and "1 related pair(s)" in oks[0], oks
+
+    def test_a_one_sided_relation_errors(self, tmp_path):
+        # Precondition, derived rather than assumed: the ledger this starts from
+        # must be clean, or "it errors now" proves nothing about the edit.
+        assert self.rows(self.build(tmp_path, self.LEDGER), lint.ERROR) == []
+        t = self.build(tmp_path, self.LEDGER.replace(
+            "origin: **loop** · related: **#1** · going too", "origin: **loop** · going too"))
+        errs = self.rows(t, lint.ERROR)
+        assert len(errs) == 1, errs
+        assert "#1 is related to #2" in errs[0] and "does not say so back" in errs[0]
+
+    def test_a_relation_naming_a_missing_id_errors(self, tmp_path):
+        t = self.build(tmp_path, self.LEDGER.replace("related: **#2**", "related: **#77**"))
+        errs = self.rows(t, lint.ERROR)
+        # Two distinct faults, and both are real: #77 does not exist, AND #2's
+        # own marker is now one-sided. Asserting only the first would let the
+        # reciprocity pass go missing.
+        assert any("#77" in e and "not an id in the ledger" in e for e in errs), errs
+        assert any("does not say so back" in e for e in errs), errs
+
+    def test_an_entry_related_to_itself_errors(self, tmp_path):
+        t = self.build(tmp_path, self.LEDGER.replace("related: **#2**", "related: **#1**"))
+        errs = self.rows(t, lint.ERROR)
+        assert any("names ITSELF" in e for e in errs), errs
+
+    def test_two_markers_on_one_entry_error(self, tmp_path):
+        t = self.build(tmp_path, self.LEDGER.replace(
+            "related: **#2** · still going", "related: **#2** · related: **#3** · still going"))
+        errs = self.rows(t, lint.ERROR)
+        assert any("has 2 `related:` markers" in e for e in errs), errs
+
+    def test_the_wrong_case_errors_rather_than_reading_as_prose(self, tmp_path):
+        t = self.build(tmp_path, self.LEDGER.replace("related: **#2**", "Related: **#2**"))
+        errs = self.rows(t, lint.ERROR)
+        assert any("wrong case" in e for e in errs), errs
+
+    def test_a_hard_wrapped_marker_is_still_read(self, tmp_path):
+        # The loop writes at ~72 columns, so the marker wraps in real entries.
+        # An entry-local join is what makes that legal; without it this pair
+        # reads as one-sided and the check fires on correct data.
+        wrapped = self.LEDGER.replace(
+            "origin: **loop** · related: **#2** · still going",
+            "origin: **loop** · related:\n  **#2** · still going")
+        assert "related:\n" in wrapped        # precondition: the wrap is really there
+        t = self.build(tmp_path, wrapped)
+        assert self.rows(t, lint.ERROR) == [], self.rows(t, lint.ERROR)
+
+    def test_a_cross_reference_in_prose_is_not_a_marker(self, tmp_path):
+        # Two shapes, and the FIRST is the one with a narrow production line.
+        # #1 already has a marker, so its prose ids can only be counted by a
+        # loose extraction — which is `found[0]` vs `flat` at the `named =` line,
+        # and nothing else in the check. #3 has no marker at all, so its prose is
+        # gated out earlier; that half is enforced by the marker-existence gate
+        # and cannot be broken without breaking most of this class with it.
+        t = self.build(tmp_path, self.LEDGER
+            .replace("· still going", "· blocked on #3, superseded by #7")
+            .replace("· alone", "· blocked on #1 and see #2 for the other half"))
+        errs = self.rows(t, lint.ERROR)
+        assert errs == [], errs
+        # Precondition: the prose ids really are in the marked entry's text, or
+        # this passes for want of anything to notice.
+        assert "#7" in (t / ".dreamwork" / "tasks.md").read_text()
+
+    def test_a_marker_naming_no_id_errors(self, tmp_path):
+        t = self.build(tmp_path, self.LEDGER.replace("related: **#2**", "related: **soon**"))
+        errs = self.rows(t, lint.ERROR)
+        assert any("naming no id" in e for e in errs), errs
+
+    def test_a_ledger_with_no_markers_says_nothing_at_all(self, tmp_path):
+        # This is the live ledger's state today, and the reason the check can be
+        # an ERROR rather than a WARN: there is no legacy to grandfather.
+        bare = self.LEDGER.replace(" · related: **#2**", "").replace(" · related: **#1**", "")
+        assert "related:" not in bare        # precondition: really stripped
+        t = self.build(tmp_path, bare)
+        assert self.rows(t) == [], self.rows(t)
+
+    def test_the_check_is_registered_in_run_checks(self, tmp_path):
+        import inspect
+        src = inspect.getsource(lint.run_checks)
+        assert "check_related_markers(dw, watch, rep)" in src

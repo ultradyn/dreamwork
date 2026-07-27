@@ -1641,6 +1641,113 @@ def check_cited_shas(dw: Path, rep: Report) -> None:
         rep.add(OK, "tasks.md", f"{len(shas)} cited commit(s) all resolve")
 
 
+# Case-insensitive on purpose, so a wrong case is FOUND and then errored rather
+# than silently reading as prose. Same reasoning as the origin marker's
+# vocabulary check: an unreadable claim must not look like an absent one.
+RELATED_MARKER = re.compile(r"related:\s*\*\*([^*]*?)\*\*", re.I)
+RELATED_ID = re.compile(r"#(\d+)")
+
+
+def check_related_markers(dw: Path, watch, rep: Report) -> None:
+    """A `related:` marker names tasks that are one piece of work (#353).
+
+    The ledger has expressed this relation for a year by writing two ids in one
+    title — `- **#250/#251**` — which is an IMPLICIT relation, readable only by a
+    human who notices the slash. #346's store cannot represent it at all, because
+    `task(id PRIMARY KEY)` is one row per id, and his 01:23 ruling asked for the
+    relation to become explicit: a symmetric n:n `related` table, distinct from
+    one-way `depends`.
+
+    So splitting those entries has to put the relation somewhere the migration can
+    read, or the split DESTROYS the only record of which two tasks were one piece
+    of work. This is that somewhere, and it follows the origin marker's idiom
+    because a second idiom for `key: **value**` would be a second thing to learn:
+
+        · related: **#251**
+        · related: **#251, #292**
+
+    THE RECIPROCITY RULE IS THE POINT, and it is where the SQL and the Markdown
+    differ for a reason. `related` in SQLite carries `CHECK (a < b)` so the pair is
+    stored ONCE and cannot disagree with itself. Prose has no such luxury: an
+    entry is read alone, so a reader who lands on #250 must learn about #251
+    without going looking. Both entries therefore carry the marker — and the
+    disagreement that duplication invites is exactly what this check removes.
+    Reciprocity is cheap to enforce and impossible to remember.
+
+    ERRORs rather than WARNs, unlike `check_cited_shas`, because there is no
+    legacy to grandfather: at the time of writing the live ledger has **zero**
+    `related:` markers (measured, not assumed — `RELATED_MARKER` finds none in 180
+    entries), so nothing existing can be broken by strictness, and the first
+    marker written is checked on the day it is written.
+
+    Deliberately NOT here: `depends`. Its Markdown form would have to reconcile
+    with the 29 entries that say `blocked on #N` in prose today, which is its own
+    task and its own decision about whether that prose becomes a marker or stays
+    prose. Naming a `depends:` shape now, with nothing using it and 29 entries
+    contradicting it, would be a contract written ahead of its evidence.
+    """
+    path = dw / "tasks.md"
+    if not path.exists():
+        return
+    try:
+        text = path.read_text()
+    except OSError:
+        return
+    entries = watch.ledger_entries(text)
+    # The marker may hard-wrap: the loop writes at ~72 columns, so join each
+    # entry's lines before reading it, the same allowance the origin rule makes.
+    claims: dict[int, set[int]] = {}
+    all_ids = {i for ids, _ in entries for i in ids}
+    for ids, raw in entries:
+        flat = re.sub(r"\s+", " ", raw)
+        found = RELATED_MARKER.findall(flat)
+        if not found:
+            continue
+        if len(found) > 1:
+            rep.add(ERROR, "tasks.md", (
+                f"{'/'.join('#%d' % i for i in ids)} has {len(found)} `related:` "
+                f"markers — two claims about the same relation is none; list every "
+                f"id in one marker (#353)"))
+            continue
+        if "related: **" not in flat:
+            rep.add(ERROR, "tasks.md", (
+                f"{'/'.join('#%d' % i for i in ids)} writes its related marker in "
+                f"the wrong case — the vocabulary is exactly `related:` so a reader "
+                f"never has to interpret it (#353)"))
+            continue
+        named = {int(n) for n in RELATED_ID.findall(found[0])}
+        if not named:
+            rep.add(ERROR, "tasks.md", (
+                f"{'/'.join('#%d' % i for i in ids)} has a `related:` marker naming "
+                f"no id — the value is one or more `#N`, comma separated (#353)"))
+            continue
+        for own in ids:
+            claims[own] = named
+        for target in sorted(named):
+            if target in ids:
+                rep.add(ERROR, "tasks.md", (
+                    f"{'/'.join('#%d' % i for i in ids)} names ITSELF as related — "
+                    f"the relation is between two tasks (#353)"))
+            elif target not in all_ids:
+                rep.add(ERROR, "tasks.md", (
+                    f"{'/'.join('#%d' % i for i in ids)} is related to #{target}, "
+                    f"which is not an id in the ledger — a relation pointing at "
+                    f"nothing is worse than none (#353)"))
+    for own, named in sorted(claims.items()):
+        for target in sorted(named):
+            if target == own or target not in all_ids:
+                continue        # already reported above
+            back = claims.get(target)
+            if back is None or own not in back:
+                rep.add(ERROR, "tasks.md", (
+                    f"#{own} is related to #{target} but #{target} does not say so "
+                    f"back — an entry is read alone, so both carry the marker and "
+                    f"this check is what keeps them agreeing (#353)"))
+    if claims:
+        pairs = {tuple(sorted((a, b))) for a, named in claims.items() for b in named}
+        rep.add(OK, "tasks.md", f"{len(pairs)} related pair(s), all reciprocal")
+
+
 def run_checks(dw: Path, watch, rep: Report) -> None:
     """Every check, in one place, because a SECOND copy of this list drifted.
 
@@ -1669,6 +1776,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_doc_map_plans(dw, rep)
     check_review_artifacts(dw, rep)
     check_cited_shas(dw, rep)
+    check_related_markers(dw, watch, rep)
     check_status_keys(dw, rep)
 
 

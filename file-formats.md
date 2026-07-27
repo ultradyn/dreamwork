@@ -372,6 +372,55 @@ Two looser rules were tried and both are wrong, measured on the live ledger:
 If **every** cited sha is missing, the check says nothing: that is a fresh clone
 or the wrong target, not a ledger that is entirely wrong.
 
+## `.dreamwork/tasks.md` — `related:`, the relation that used to be a slash (#353)
+
+For a year the ledger said "these two tasks are one piece of work" by writing
+both ids in one title — `- **#250/#251**`. That is an **implicit** relation:
+readable only by a human who notices the slash, and unrepresentable in #346's
+store, where `task(id PRIMARY KEY)` is one row per id. His 01:23 ruling asked for
+it to become explicit — a symmetric n:n `related`, distinct from one-way
+`depends` — so splitting those entries needs somewhere for the relation to live,
+or the split destroys the only record of the pairing.
+
+The marker follows the origin marker's `key: **value**` idiom, because a second
+idiom for the same shape would be a second thing to learn:
+
+```text
+· related: **#251** ·              one id
+· related: **#251, #292** ·        several, comma separated
+```
+
+**Both entries carry it, and that reciprocity is the contract's whole point.**
+In SQLite the pair is stored once under `CHECK (a < b)` and so cannot disagree
+with itself. Prose has no such luxury — an entry is read alone, so a reader who
+lands on `#250` must learn about `#251` without going looking. Duplication is
+therefore mandatory, and the disagreement it invites is exactly what
+`lint.check_related_markers` removes: reciprocity is cheap to enforce and
+impossible to remember.
+
+It **ERRORs**, unlike the citation check above, because there is no legacy to
+grandfather: the live ledger has zero `related:` markers at the time of writing,
+so strictness breaks nothing and the first marker written is checked the day it
+is written. The five errors:
+
+- more than one marker on an entry (two claims about one relation is none);
+- the wrong case — `Related:` is a claim a reader would have to interpret;
+- a value naming no `#N` at all;
+- an id that is not in the ledger (a relation pointing at nothing is worse
+  than none);
+- an entry naming itself.
+
+**The marker may hard-wrap**, like `origin:`, because the loop writes at ~72
+columns; the check joins each entry's lines before reading it. A bare `#N` in a
+body remains a **cross-reference, never a relation** — `blocked on #264` creates
+no obligation, or most of history would suddenly owe reciprocal markers.
+
+`depends` is deliberately **not** specified here. Its Markdown form has to
+reconcile with the 29 entries that today say `blocked on #N` in prose, and
+deciding that — marker or prose — is its own task. A contract written ahead of
+its evidence, with nothing using it and 29 entries contradicting it, is worse
+than none.
+
 ## `.dreamwork/tasks.md` — an open entry that declares ITSELF completed (#335)
 
 The section above catches the case where *git* says a task landed. This one
