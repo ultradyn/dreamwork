@@ -24,9 +24,23 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **303**
+Next id: **304**
 
 ## Open
+
+- **#303** — Make `lint.py` notice a `status.json` that lost known keys · P3 ·
+  chore · 20m · origin: **loop** · goal: make a silent projection-rewrite loss
+  loud ← DREAMWORK.md *Nothing fails quietly* · this coordinator's wholesale
+  rewrite of `status.json` at 16:07 dropped `retired_today` (fifteen prior
+  lanes' retirements) and lint reported the result **clean**, because a
+  projection missing a key is indistinguishable from one that never had it ·
+  it caught the estimated future `last_tick` in the same write, so the shape of
+  the fix is known: warn when a previously-present key disappears · needs a
+  durable notion of "previously present" that does not itself become a second
+  fallible truth — simplest candidate is the git-tracked handoff/doc trail
+  rather than a new sidecar file, and status.json is gitignored, so decide that
+  before implementing · check by reddening on a key removal, not on a schema
+  list that would need updating with every new field
 
 - **#301** — Teach the ledger patterns to see combined entry heads · P2 · bug ·
   25m · origin: **loop** · found by `dreamer-taskspage` during the #281 design

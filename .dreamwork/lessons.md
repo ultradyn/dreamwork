@@ -936,3 +936,16 @@ this shape and convert opportunistically.)
   complete. The conservative runtime behaviour was right and the broader
   prose was not — narrow the claim to the observable contract rather than
   implying a detector that does not exist. (dreamer, 2026-07-27, #216)
+- **Rewriting a projection file wholesale silently drops the fields you did
+  not know were load-bearing.** Taking over a target, this coordinator
+  authored a fresh `status.json` from scratch rather than merging into the
+  parsed dict, and `retired_today` — fifteen prior lanes' retirements, the
+  only record of who did what before the handoff — vanished with no error
+  anywhere. `lint.py` validated the result as clean, because a projection
+  with a missing key is indistinguishable from one that never had it. It was
+  recoverable only because the old contents happened to still be in the
+  session's context. Merge into what you read; never re-author a file whose
+  full key set you have not enumerated. (Same tick, `lint.py` DID catch an
+  estimated `last_tick` four minutes in the future — the difference is that
+  someone had written a check for that one.)
+  (coordinator, 2026-07-27, #281 handover)
