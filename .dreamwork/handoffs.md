@@ -16,4 +16,7 @@ flagged twice.
 
 ## Pending
 
+- **#398** · landed `9f2012a` · 2026-07-28 09:26 · by ccc @grok — lint check: post-obligation briefs must mention handoffs.md
+
 ## Folded
+- **#398** → folded (2026-07-28 09:31): folded into `## Recently landed` citing `9f2012a`; verification owed

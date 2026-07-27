@@ -68,26 +68,6 @@ Next id: **400**
   · blocked: `watch.py` is held by **#392a**
   · related: **#392**
 
-- **#398** — a brief written after the hand-off obligation landed must carry it · P2 ·
-  lint/loop-durability · origin: **loop** · the enforcement half of **#394**, and it exists because
-  I wrote in that entry that it **could not** be checked
-  · what I got wrong there: *"a `lint.py` check that a landed-and-committed lane left a hand-off is
-  not possible (lint cannot know a lane ran)"*. True, and irrelevant — **the checkable artifact is
-  the brief**, which is a committed file whose add-commit is resolvable, and a brief that dispatches
-  a lane without the obligation *is* the defect. The unenforceable thing was never the target
-  · **the cutoff resolves from git by content, never a pinned sha** — the idiom
-  `test_review_artifact.py::_prechange_review_artifact` already uses. Measured so the lane can check
-  itself: **29 briefs, 2 mention `handoffs.md`**, the obligation landed at **`6f72b8d` 08:57**, the
-  two compliant briefs were added 09:15+ and the newest non-compliant at **06:13** — so the cutoff
-  separates them cleanly and **the check must be GREEN today**, 27 grandfathered and 2 in scope
-  · **the hollow outcome is specific and it would look like a clean pass:** a cutoff that resolves
-  to "no commit found" skips every brief and prints nothing. So the test must assert the resolved
-  commit is real *and* contains the obligation, and assert at runtime that both sides of the cutoff
-  are non-empty — a check made vacuous by everything falling on one side must say so
-  · a false positive on the live tree is the way to make this worse; a check that nags on correct
-  files gets muted
-  · related: **#394**
-
 - **#397** — `watch.py` is the loop's contention bottleneck; propose splitting it · P1 ·
   architecture/design · origin: **loop** · **the strongest result of #264's evidence half, and it
   needs his ruling before anything is built**
@@ -2741,6 +2721,27 @@ Next id: **400**
   **blocked**: human pick
 
 ## Recently landed
+- **#398** — a brief written after the hand-off obligation landed must carry it · origin: **loop** ·
+  closed 2026-07-28 09:31 · `9f2012a`
+  · `ccc @grok`, brief `.dreamwork/docs/briefs/398-brief-handoff-check.md`. **Folded from a
+  hand-off**, and that sentence is the point: this is the **first fold in the channel's history**
+  and the first time `#381`'s work ran end to end with a real producer rather than my temp-target
+  test. `lint` WARNed *"#398 is named as landed in a hand-off … but is still under `## Open` — fold
+  it"*, exactly as designed, and this commit is the fold
+  · **it is also `#394`'s verification, and the comparison is clean because both arms ran:** the
+  obligation delivered by **relay** produced nothing (`#395` landed, wrote no line, never mentioned
+  the relay); delivered in the **dispatch prompt** it produced a line on the first attempt. Same
+  obligation, same wording, two channels, opposite outcomes — so the rule *"obligations go in the
+  prompt, refinements go in the relay"* is measured rather than reasoned
+  · the check itself: **`3 brief(s) in scope after hand-off obligation, 27 grandfathered`** on the
+  live tree, matching the split I measured before dispatch, and carrying the coverage number in the
+  idiom `#395` established an hour earlier
+  · **VERIFICATION OWED, and deliberately not claimed:** the discriminating red — making the
+  cutoff resolution return nothing, which must fail **loudly** rather than grandfather every brief —
+  needs an injection into `lint.py`, and **that lane is still running and owns it.** Per the lesson
+  filed twenty minutes ago, an injection is a write and gets the same ownership analysis as any
+  other. So the fold records the landing; it does not assert the check is sound
+  · related: **#394**
 - **#396** — an inline `data-mark` puts its flag outside the reading column and clips past the page
   edge · origin: **loop** · closed 2026-07-28 09:26 · `7902818`
   · `ccc @glm52`, brief `.dreamwork/docs/briefs/396-inline-mark-refusal.md`. Refused at **build
