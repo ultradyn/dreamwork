@@ -319,8 +319,12 @@ you could not do the second while looking at the first.
 Motion for all of it — the keyed step travelling while the drag does not, the
 hairline arriving rather than blinking on, and both fades crossing rather than
 switching — is `transitions.md`'s.
-`dev/capture/reviewsplit.mjs` guards the pane, and each of its checks was
-shown red against a build broken in exactly the way that check names.
+`dev/capture/reviewsplit.mjs` guards the pane. Every check that names a
+behaviour was shown red against a build broken in exactly the way it names —
+25 injections across the three increments. There is one exception and it is
+named in its commit: the check that the question can scroll far enough for
+*half way down* to be a middle is the guard's own anti-vacuity assertion, and
+its failure mode was observed for real rather than injected.
 
 ### Components (idioms)
 
