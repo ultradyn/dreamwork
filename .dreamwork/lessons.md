@@ -963,3 +963,23 @@ this shape and convert opportunistically.)
   reason it has one. Anchor structural markers to line starts, and be
   suspicious of any format where documenting the format can break it.
   (coordinator, 2026-07-27, #304)
+- **A claim that X is being *held* somewhere cannot be checked by reading X.**
+  `position:sticky` shifts a box in LAYOUT, so `offsetTop` and
+  `getBoundingClientRect()` on a glued box already contain the offset and
+  report the same numbers as a box that merely happens to be last — the first
+  "the answer box is glued" check compared the box with itself and passed a
+  page where nothing was glued. The same day, in the same guard, a fade band
+  deleted outright (`content:none`) reported `opacity: 1` and a real `top` from
+  `getComputedStyle(el, '::before')`, because a pseudo-element that is never
+  generated still has a computed style: existence is a question for `content`,
+  drawn-ness one for `display`. Both claims were about a RELATIONSHIP — held
+  relative to where the content ends, hiding relative to a band that exists —
+  and reading one side of a relationship always returns something true.
+  (dreamer-reviewsplit, 2026-07-27, #305)
+- **A hard-coded scroll position in a guard has a shelf life.** `scrollTop =
+  220` was mid-range when it was written and became "scrolled to the very end"
+  when a 16px margin came off and the scrollport grew — after which three fade
+  checks passed for the wrong reason and two failed for the wrong one. Measure
+  `scrollHeight - clientHeight` and compute the position from it, and assert
+  the range is big enough for the middle to be a middle.
+  (dreamer-reviewsplit, 2026-07-27, #305)
