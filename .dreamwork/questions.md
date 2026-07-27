@@ -1,39 +1,6 @@
 # Questions for the human
 
 ## Open
-- **P1 · 2026-07-28 — one word: may I run `install.py --apply`?** You said `rec`
-  to #361 at 02:47, which authorised the `Load:` line and a reviewed `--print`. I
-  have done both and stopped there, because writing your Claude Code config is the
-  separate act.
-
-  **The condition I attached has dissolved, and for an embarrassing reason.** I told
-  you `--apply` would break a hardlink between `~/.claude/settings.json` and
-  `~/.claude-w/settings.json`. They are not hardlinked: same inode, yes, but
-  `st_nlink` is 1 and `~/.claude` is a **symlink** to `~/.claude-w`. One file, two
-  paths. A rename strands nothing. I measured the inode and inferred the rest.
-  (#369 is fixed and kept anyway — a genuinely hardlinked config is a real hazard —
-  and `--apply` now reads back what it wrote, re-stats the link count, and exits 2
-  naming both counts instead of reporting a success it cannot see.)
-
-  **What `--apply` will do**, dry-run against your real file, read-only, no
-  conflicts: add one `PostToolUse` group matching `Write|Edit` running
-  `posttooluse_ledger_lint.py`, and one new `PreCompact` group running
-  `precompact_focus.py`. Your existing `PostToolUse` c2c inbox hook (matcher
-  `^(?!mcp__).*`) is a separate object and is not touched. Everything else
-  unchanged. Timestamped `.bak-<ts>` written first, and its path reported.
-
-  **What it buys**: the ledger lint runs in the same turn as the write, before the
-  commit, while the agent that mangled the file still holds the context. Two of my
-  commits tonight went through a lint ERROR because the lint and the `git commit`
-  were in one shell command and the error scrolled past above the commit's output.
-  That is the window this closes.
-
-  It is Claude Code-specific, so it protects this session and other Claude lanes,
-  not pi or ccc agents. Deleting the DREAMWORK.md `Load:` line disables both hooks
-  without touching any config.
-
-  Answer `apply`, or `not yet`. No artifact — this is consent, not design.
-
 - **P1 · 2026-07-28 — implementation authority for the user-event journal:
   lanes A–D and F now, the cutover behind a second gate?** Artifact:
   `.dreamwork/review/user-event-journal-implementation.html`. Plan:
@@ -282,6 +249,55 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-28 — one word: may I run `install.py --apply`?**
+  → answered (2026-07-28 05:38): **"apply"**, and it is done — `--apply` run at
+  05:39, exit 0, `{"ok":true,"changed":true,"backup":".../settings.json.bak-20260728T053957"}`.
+  · **verified independently of the tool's own report**, by diffing a snapshot I took
+  before the write: non-hook keys byte-identical; your c2c `PostToolUse` group
+  (matcher `^(?!mcp__).*`) preserved exactly; **no pre-existing group lost** across
+  `PostToolUse`, `PreToolUse` or `SessionStart`; and exactly two groups added —
+  `PostToolUse` matching `Write|Edit` running `posttooluse_ledger_lint.py`, and a new
+  `PreCompact` running `precompact_focus.py`. Nothing else moved.
+  · `hardlinked: null` in the output is the correct answer rather than a missing one:
+  the field is `after if after > 1 else None`, and `~/.claude/settings.json` has
+  `st_nlink` 1 — it is reached through a directory **symlink**, which is the
+  correction #369 already carries.
+  · rollback is one line: delete the `Load:` line in DREAMWORK.md to disable both
+  hooks without touching config, or restore the timestamped backup above.
+ You said `rec`
+  to #361 at 02:47, which authorised the `Load:` line and a reviewed `--print`. I
+  have done both and stopped there, because writing your Claude Code config is the
+  separate act.
+
+  **The condition I attached has dissolved, and for an embarrassing reason.** I told
+  you `--apply` would break a hardlink between `~/.claude/settings.json` and
+  `~/.claude-w/settings.json`. They are not hardlinked: same inode, yes, but
+  `st_nlink` is 1 and `~/.claude` is a **symlink** to `~/.claude-w`. One file, two
+  paths. A rename strands nothing. I measured the inode and inferred the rest.
+  (#369 is fixed and kept anyway — a genuinely hardlinked config is a real hazard —
+  and `--apply` now reads back what it wrote, re-stats the link count, and exits 2
+  naming both counts instead of reporting a success it cannot see.)
+
+  **What `--apply` will do**, dry-run against your real file, read-only, no
+  conflicts: add one `PostToolUse` group matching `Write|Edit` running
+  `posttooluse_ledger_lint.py`, and one new `PreCompact` group running
+  `precompact_focus.py`. Your existing `PostToolUse` c2c inbox hook (matcher
+  `^(?!mcp__).*`) is a separate object and is not touched. Everything else
+  unchanged. Timestamped `.bak-<ts>` written first, and its path reported.
+
+  **What it buys**: the ledger lint runs in the same turn as the write, before the
+  commit, while the agent that mangled the file still holds the context. Two of my
+  commits tonight went through a lint ERROR because the lint and the `git commit`
+  were in one shell command and the error scrolled past above the commit's output.
+  That is the window this closes.
+
+  It is Claude Code-specific, so it protects this session and other Claude lanes,
+  not pi or ccc agents. Deleting the DREAMWORK.md `Load:` line disables both hooks
+  without touching any config.
+
+  Answer `apply`, or `not yet`. No artifact — this is consent, not design.
+  - **Answer (via watch, 2026-07-28 05:38):** apply
 
 - **P1 · 2026-07-28 — #367, your postit flags: four decisions, and the geometry
   refuted the literal reading of your own metaphor**
