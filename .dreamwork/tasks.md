@@ -506,15 +506,6 @@ Next id: **296**
   origin: **loop** · blocked on #213 · preserve human/loop/unknown at
   first sight; a later edit must never retroactively classify an arrival
 
-- **#138/#156** — Ship optional compaction/lint hooks plugin · P2 · feature ·
-  60m · origin: **loop** · **approved via watch 18:48** as recommended · one
-  optional plugin, off by default, same shape as `ud-dreamwork-github`; loading
-  is an explicit recorded `DREAMWORK.md` decision and never silent machine-
-  config mutation · Claude Code PreCompact writes preservation focus but cannot
-  buy landing time; silent/fail-safe so hook failure never blocks/skips compact ·
-  bundle PostToolUse ledger lint under same consent boundary · test manual/auto
-  compaction, stdout contract, unavailable target and failure behavior · two
-  identical approval deliveries applied once; duplicate witness recorded #274
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
@@ -967,6 +958,18 @@ Next id: **296**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#138/#156** — Ship optional compaction/lint hooks plugin · P2 · landed
+  2026-07-27 · `plugins/ud-dreamwork-hooks/`, off by default, same family
+  shape as ud-dreamwork-github; both hooks re-check the DREAMWORK.md Load
+  consent line every invocation and skip silently without it · PreCompact
+  appends a bounded preservation-focus record to machine-local
+  `~/.config/dreamwork/hooks/<slug>/` (1.5s budget, always exit 0) ·
+  PostToolUse lints the ledger on questions/tasks writes under the same
+  boundary (4s timeout, ok:false on failure, exit 0) · install.py --print
+  default, --apply idempotent with timestamped backup + clobber refusal,
+  never auto-applies · red-first 27 tests, 542 + 46 subtests, Standards +
+  Spec PASS · `d7983be`
 
 - **#245** — Build `ud-dreamwork-worktrees` plugin · P1 · landed earlier at
   `8af7dc3` (ledger rescan 2026-07-27 found the entry stale in Open) ·
