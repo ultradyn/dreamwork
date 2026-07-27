@@ -29,21 +29,35 @@ a travel.
 So, for anything in this document:
 
 - **An end-state check cannot fail on a motion bug, and neither can "did
-  it move".** Assert that the frames you captured are *part-way* — a
-  teleport has none between its ends, a travel has most of them there.
-  Prefer `between(frames, first, last)` with a small deadband, as
-  `reviewsplit.mjs:145` and `qsec.mjs` do.
+  it move".** Assert that some captured frame is *part-way* between the
+  two ends — a snap has none there, at any frame rate. The helper is
+  `between(vals, first, last)` with a ~3% deadband so a frame that really
+  is an end does not read as travel: `headertravel.mjs` and
+  `reviewsplit.mjs:145` have it, and `qsec.mjs:157` uses the same shape
+  **for its fade only** — the rest of that file still counts positions
+  and is half-converted, so copy the helper, not the file (#311).
 - **…but never assert an absolute COUNT of distinct positions.** It reads
   as the same rule and it is not: `uniq(positions).length >= 8` says "this
   machine rendered eight frames in 850ms", which is a fact about the box,
-  not about the motion. Four guards here encode it (`headertravel` >= 8
-  widths; `regroup`, `morph` >= 6 positions) and all four went red on a
-  commit that was fine — twice, for two different amounts of load — then
+  not about the motion. Five guards encoded it — `headertravel` (>= 8
+  widths, now converted), `regroup` and `morph` (>= 6 positions), and
+  `qsec` twice (>= 8 positions, >= 8 heights) — and they went red on a
+  commit that was fine, twice, for two different amounts of load, then
   passed when re-run with fewer guards in flight. Base `f72f730` failed
-  the threshold in 3 of 5 runs on its own. A part-way *fraction* survives
-  a slow box because a teleport has zero part-way frames however few you
-  sample; a minimum count cannot. (#311, measured 2026-07-27 at load 40-90
-  on 16 cores.)
+  the threshold in 3 of 5 runs on its own.
+- **The floor is ONE part-way frame, and not a fraction or a bigger
+  count.** Both of those are still bets on the frame rate. Measured on
+  `headertravel`'s 1s column glide: idle, 31 frames with **5** part-way;
+  under six added CPU burners, 14 frames with **2**. So a floor of 2 was
+  already sitting exactly on the line — and note that 5 of 31 is nowhere
+  near "most", because the trace window deliberately outlives the
+  transition and most frames sit at the settled end. A fraction would
+  therefore be tuned to the window length, which is the literal-with-an
+  -expiry-date trap one bullet down. Zero-versus-some is the whole
+  distinction between a snap and a travel; whether the travel is too
+  FAST is a separate question, answered by the no-frame-past-the-end rule
+  above, and this assertion must not smuggle it in.
+  (#311, measured 2026-07-27 at load 40-90 on 16 cores.)
 - **Bound the trace window to the interaction.** A guard that watches
   long enough will see a later tick supply the movement it was asserting;
   one traced 5.2s across a 1.6s hold and was green over a real teleport
