@@ -201,6 +201,18 @@
   repeats #279's craft risk). Approval authorizes only the isolated D1 prototype
   and visual/performance review, not production integration/deployment. Answer
   `Approve D1 prototype`, `Approve D1 with changes: …`, or `Pause #277`.
+  - **Note (human, via watch, 2026-07-28 01:39):** [Low priority to answer]
+    Is this still relevant?
+  - **Follow-up (loop, 2026-07-28 01:44):** Yes, and the gap is still one line.
+    `watch.py:666` is the whole departure: `.qaghost.gone { opacity:0;
+    filter:blur(6px); transform:translateY(-10px); }` — one class, so the blur and
+    the travel begin together and the element is already moving by the time it
+    starts dissolving. There is no `.pregone` in the tree and nothing has replaced
+    it; #277 is open and unstarted, and none of tonight's motion work
+    (#300's morph popover, the route dissolve) touched this path. So the proposal
+    still describes the real code. What has changed is only queue position: it sits
+    behind seven approved-and-unstarted `watch.py` items, so answering it costs you
+    nothing today and I will not start it before those.
 
 - **P1 · 2026-07-26 — #229/#270 topic chats v2: accept the revised
   proposal direction?** New reviewed artifact:
@@ -423,6 +435,30 @@
   Access free-tier current limits, Caddy `forward_auth` exact current semantics,
   and shoo-as-custom-OIDC-behind-CF-Access (plausible via shoo's OIDC
   discovery, not verified end to end).
+  - **Note (human, via watch, 2026-07-28 01:39):** okay we should separate
+    two concepts here: 1. self-hosted with a tunnel or over a shared mesh
+    or lan -- we should aim for simpler auth methods; ssh tunnel, session
+    key auth'd via ssh (magic-link esq), user/pw, sqrl if possible, etc. 2.
+    a service that is provided as a subscription that allows you to
+    register dreamwork agents against a central dreamhub that you can log
+    into and use and pay like $2/mo for. wrt stdlib only, that only applies
+    for self-hosted stuff. for the SaaS frontend, we can include
+    dependencies where required.
+  - **Follow-up (loop, 2026-07-28 01:44):** filed as **#359** (the hosted service)
+    and **#360** (self-hosted, ssh-derived auth). Your split answers Q1 by refusing
+    its dichotomy and it settles the constraint that shaped the whole design —
+    stdlib-only was always a property of the self-hosted binary, so the SaaS is
+    free of it. Q2 is **redirected, not answered**: the landed design put a mature
+    reverse proxy at the boundary, and you are right that a self-hosted tool whose
+    auth depends on a third party's control plane is not self-hosted. Of your four
+    methods the second is the one worth building — a session key issued over ssh
+    makes ssh's existing authentication the hub's without the hub verifying
+    anything; user/pw needs a KDF, and `hashlib.scrypt` keeps even that in stdlib.
+    SQRL I will check for a live client before designing against it.
+    **Still open on this entry, and cheap to answer:** Q3 read-only or read+write,
+    Q5 whether the redacted `/summary.json` may be designed now, Q6 who besides
+    you should ever reach it. Q4 moved to #359 — the self-hosted half has no
+    identity provider under your direction.
 
 
 ## Answered

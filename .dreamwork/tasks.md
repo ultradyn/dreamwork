@@ -24,9 +24,48 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **359**
+Next id: **361**
 
 ## Open
+
+- **#359** — A hosted Dreamhub as a paid service, agents registering against it · P2 ·
+  product/architecture · origin: **human** · **human via watch 2026-07-28 01:39**, splitting
+  #275 in two: *"a service that is provided as a subscription that allows you to register
+  dreamwork agents against a central dreamhub that you can log into and use and pay like
+  $2/mo for. wrt stdlib only, that only applies for self-hosted stuff. for the SaaS
+  frontend, we can include dependencies where required."* · **this is a different product,
+  not a deployment mode of the local hub** — the local hub reads one machine's
+  `.dreamwork/` off disk, whereas this one has many agents pushing to it from many
+  machines, which makes registration, tenancy, transport and retention the design rather
+  than afterthoughts · the constraint that shaped every earlier answer is **lifted here**:
+  stdlib-only was a property of the self-hosted binary, so the SaaS may take dependencies
+  · what it needs designed before any code: what an agent registers *as* and how that
+  credential is issued and revoked; what it pushes and how often; whether the server ever
+  stores project content or only derived status; tenant isolation; and the price point's
+  actual implication — $2/mo is a strong statement about per-tenant cost, so storage and
+  egress are design inputs, not billing details · unblocks nothing and blocks nothing;
+  it can be designed while #275 continues on the self-hosted half
+
+- **#360** — Self-hosted remote Dreamhub auth built on ssh, not a hosted IdP · P2 ·
+  security design · origin: **human** · **human via watch 2026-07-28 01:39**, redirecting
+  #275's recommendation: *"self-hosted with a tunnel or over a shared mesh or lan -- we
+  should aim for simpler auth methods; ssh tunnel, session key auth'd via ssh
+  (magic-link esq), user/pw, sqrl if possible"* · **the redirect is real and worth naming**:
+  #275's landed design put a mature authenticating reverse proxy (Cloudflare Access,
+  Tailscale Funnel) at the boundary and called that the safe answer; he is asking instead
+  for auth the operator already owns, and the reasoning is sound — a self-hosted tool
+  whose auth depends on a third party's control plane is not self-hosted · the four he
+  named, in the order they cost least: **ssh tunnel** (no auth code at all, the hub stays
+  loopback-bound and ssh is the boundary — this is already possible today and should be
+  documented before anything is built); **session key issued over ssh**, which is the
+  interesting one — the operator runs one command on the box, it prints a URL with a
+  one-shot token, and the browser trades it for a session cookie, so ssh's existing
+  authentication becomes the hub's without the hub verifying anything itself; **user/pw**,
+  which needs a KDF and therefore leaves stdlib-only territory unless `hashlib.scrypt`
+  suffices (it does — measure it); **SQRL**, which he flagged as conditional and which
+  needs a primary-source check that any current client exists at all · blocked on #233
+  base LAN mode for the transport, and it supersedes #276's bearer token if the ssh-issued
+  session lands · public/WAN serving stays forbidden regardless
 
 - **#357** — A CLI warning layer that surfaces incomplete data and what is waiting ·
   P2 · tooling/feature · origin: **human** · **human via watch 2026-07-28 01:23**, inside his
@@ -698,6 +737,17 @@ Next id: **359**
   tripped `check_landed_asks`, which correctly reads an open ask naming only landed
   ids as a forgotten fold; the guard caught the coordinator, not a false positive ·
   **blocked on: his ruling on the six questions** in questions.md
+  · **PARTLY ANSWERED and SPLIT, human via watch 2026-07-28 01:39.** He answered Q1 by
+  refusing the dichotomy: it is not public-or-private, it is **two products** — self-hosted
+  over a tunnel/mesh/LAN, and a hosted subscription service. Those left this entry as
+  **#360** (self-hosted, ssh-derived auth, and it redirects the reverse-proxy
+  recommendation this task landed) and **#359** (the SaaS, where stdlib-only does not
+  apply). He also settled the constraint that shaped the whole design: *"wrt stdlib only,
+  that only applies for self-hosted stuff"* · Q2 is redirected rather than answered — he
+  does not want a third party's control plane as the boundary of a self-hosted tool ·
+  **still open on this entry**: Q3 read-only vs read+write, Q5 the redacted
+  `/summary.json`, Q6 the allowlist. Q4's identity provider question is now #359's, since
+  the self-hosted half has no IdP at all under his direction
 
 - **#300** — Let run-mode descriptions liquefy through one shared popover · P2
   · Web UI feature · 35m · origin: **human** · **human via watch `add-idea`
