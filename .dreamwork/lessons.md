@@ -1621,7 +1621,13 @@ this shape and convert opportunistically.)
   one-file commit and leaves the peer's file still staged. The general shape:
   **a safeguard can name the right danger and the wrong mechanism, and it then reads
   as protection while providing none** — the way to tell is to reproduce the failure
-  it claims to prevent, not to re-read the rule. (coordinator, #263 lane A)
+  it claims to prevent, not to re-read the rule. **And the fix has its own quiet
+  edge, found within the hour: `git commit --only <directory>` does not pick up
+  untracked files inside it and does not say it skipped them**, so a commit landed
+  claiming to add three briefs and carried none. For a new file the sequence is
+  `git add <file>` then `git commit --only <file>` — verified to still leave a
+  concurrent lane's staged work alone. Both halves of this share one shape: **a git
+  command that reads as though it did the thing.** (coordinator, #263 lane A)
 - **Before holding a verification for a quiet machine, ask which direction the
   noise pushes the verdict.** I deferred #277's `dreamfade` guard twice waiting for
   an idle box, on the reasonable-sounding grounds that load had already made motion
