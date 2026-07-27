@@ -4079,13 +4079,11 @@ function showRunDesc(mode) {
 
   const gen = rundescMorphGen;  // do not bump — hide is what cancels
   text.classList.remove('in');
-  // Force a clean start: snap full-opacity one frame, then dissolve.
-  text.style.transition = 'none';
-  text.classList.remove('out');
-  void text.offsetWidth;
-  text.style.transition = '';
+  // Start the dissolve from the live computed style. Do NOT thrash
+  // transition:none first: that cost ~130ms of still-at-1 frames under
+  // load before the browser painted the fall, and the morph guard's
+  // short window then saw only endpoints (false red, real motion).
   text.classList.add('out');
-  void text.offsetWidth;
   let done = false;
   const finishMorph = () => {
     if (done) return;

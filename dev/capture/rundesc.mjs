@@ -407,8 +407,12 @@ if (enabled.length >= 2) {
     // start morph by showing B (same function pointerover calls)
     const frames = [];
     const t0 = performance.now();
-    const MS = 750;
+    // Window must outlive the dissolve (.34s) + resolve + load slack.
+    // Under load rAF is sparse; a 750ms window with a late switch once
+    // sampled only the settled ends (transitions.md load lesson).
+    const MS = 1100;
     let switched = false;
+    let switchAt = -1;
     return await new Promise(resolve => {
       const step = () => {
         const t = performance.now() - t0;
@@ -424,9 +428,10 @@ if (enabled.length >= 2) {
           txt: text.textContent,
           out: text.classList.contains('out'),
         });
-        // fire the swap once we have a baseline of settled A
-        if (!switched && frames.length >= 3) {
+        // One baseline frame, then swap — keep most of the window for travel.
+        if (!switched && frames.length >= 1) {
           switched = true;
+          switchAt = frames.length;
           if (typeof showRunDesc === 'function') showRunDesc(b);
           else {
             const chipB = document.querySelector(`.runchip[data-mode="${b}"]`);
@@ -438,9 +443,14 @@ if (enabled.length >= 2) {
         if (t < MS) requestAnimationFrame(step);
         else {
           const ops = frames.map(f => f.op);
-          const minOp = Math.min(...ops);
-          const maxOp = Math.max(...ops);
-          const midCount = between(ops, maxOp, minOp);
+          // Prefer opacity samples AFTER the switch — pre-switch 1s must
+          // not pad the span into a false green, and must not dilute the
+          // mid-count when the whole window is mostly settled A.
+          const after = switchAt >= 0 ? ops.slice(switchAt) : ops;
+          const use = after.length ? after : ops;
+          const minOp = Math.min(...use);
+          const maxOp = Math.max(...use);
+          const midCount = between(use, maxOp, minOp);
           const endText = text.textContent || '';
           const shellRect = (() => {
             const r = shell.getBoundingClientRect();
@@ -448,13 +458,14 @@ if (enabled.length >= 2) {
           })();
           resolve({
             n: frames.length,
+            switchAt,
             first: ops[0], last: ops[ops.length - 1],
             minOp, maxOp, midCount,
             startText, endText,
             startOp,
             hadOut: frames.some(f => f.out),
             shellRect,
-            opsSample: ops.filter((_, i) => i % 3 === 0).map(v => +v.toFixed(3)),
+            opsSample: use.filter((_, i) => i % 2 === 0).map(v => +v.toFixed(3)),
           });
         }
       };
@@ -489,6 +500,13 @@ pRM.on('pageerror', e => errs.push('RM:' + String(e)));
 await pRM.goto(`${BASE}/`, { waitUntil: 'networkidle' });
 await sleep(500);
 
+// Wait for the section on the RM page (fresh load; absence is a named fail)
+if (!(await present(pRM, '#runmode', 'RM page run mode section'))) {
+  notes.push('RM: #runmode missing on reduced-motion page');
+}
+if (!(await present(pRM, '#rundesc', 'RM page description surface'))) {
+  notes.push('RM: #rundesc missing on reduced-motion page');
+}
 const rmParity = await pRM.evaluate(async () => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const between = (frames, first, last) => {
@@ -497,34 +515,35 @@ const rmParity = await pRM.evaluate(async () => {
     return frames.filter(v => v > lo + pad && v < hi - pad).length;
   };
   const chips = [...document.querySelectorAll('#runmode .runchip:not([disabled])')];
-  if (chips.length < 2) return { ok: false, why: 'need 2 chips' };
+  if (chips.length < 2) return { ok: false, why: 'need 2 chips', n: chips.length };
+  if (typeof showRunDesc !== 'function')
+    return { ok: false, why: 'showRunDesc missing' };
+  if (typeof RUN_MODE_DESC === 'undefined')
+    return { ok: false, why: 'RUN_MODE_DESC missing' };
   const a = chips[0], b = chips[1];
-  // show A
-  a.dispatchEvent(new PointerEvent('pointerover', {
-    bubbles: true, cancelable: true, view: window,
-  }));
-  await sleep(50);
+  // Drive the presentation function under RM (same body pointerover calls).
+  // Prefer the function over a synthetic event so a missed event dispatch
+  // cannot make RM checks vacuous under load.
+  showRunDesc(a.dataset.mode);
+  await sleep(40);
   const textA = document.getElementById('rundesc-text')?.textContent || '';
   const descA = a.getAttribute('aria-describedby');
   // swap to B while sampling — RM must NOT visit intermediate opacity
   const text = document.getElementById('rundesc-text');
   const ops = [];
   const t0 = performance.now();
-  b.dispatchEvent(new PointerEvent('pointerover', {
-    bubbles: true, cancelable: true, view: window,
-  }));
+  showRunDesc(b.dataset.mode);
   while (performance.now() - t0 < 200) {
     if (text) ops.push(parseFloat(getComputedStyle(text).opacity));
     await new Promise(r => requestAnimationFrame(r));
   }
   const textB = text?.textContent || '';
   const descB = b.getAttribute('aria-describedby');
-  const mid = between(ops, Math.max(...ops, 0), Math.min(...ops, 1));
-  // Also: same RUN_MODE_DESC content as normal path would use
-  const expectedA = (typeof RUN_MODE_DESC !== 'undefined')
-    ? RUN_MODE_DESC[a.dataset.mode] : null;
-  const expectedB = (typeof RUN_MODE_DESC !== 'undefined')
-    ? RUN_MODE_DESC[b.dataset.mode] : null;
+  const mid = ops.length
+    ? between(ops, Math.max(...ops), Math.min(...ops))
+    : 0;
+  const expectedA = RUN_MODE_DESC[a.dataset.mode];
+  const expectedB = RUN_MODE_DESC[b.dataset.mode];
   return {
     ok: true,
     textA, textB,
@@ -535,6 +554,7 @@ const rmParity = await pRM.evaluate(async () => {
     matchA: textA === expectedA,
     matchB: textB === expectedB,
     modes: [a.dataset.mode, b.dataset.mode],
+    rmMatch: matchMedia('(prefers-reduced-motion: reduce)').matches,
   };
 });
 notes.push('reduced-motion: ' + JSON.stringify(rmParity));
