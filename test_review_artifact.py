@@ -1248,6 +1248,44 @@ def test_a_mark_label_must_carry_readable_text(template, attr, outcome):
         ra.render(fields, template=template)
 
 
+def test_a_label_with_padding_around_real_text_survives(template):
+    """The #389 relay's second discriminating direction: a label that is REAL
+    TEXT with whitespace around it (`"  the cliff  "`) must NOT be refused —
+    only a label that is whitespace ALONE is blank. A heavy-handed refusal
+    (rejecting any label that is not already trimmed) breaks this; the check is
+    `not label.strip()`, which strips a padded label and leaves real text, so it
+    falls through to the labels list.
+
+    Production line: `if not label.strip()` in `_EssentialMarkScan._see`. Break
+    by refusing when `label != label.strip()` (a "tidy" check) and the padded
+    label is rejected.
+    """
+    padded = '<section id="cliff" data-mark="   the cliff   "><p>x</p></section>'
+    labels, no_id, blanks = ra.essential_marks(padded)
+    assert labels == ["   the cliff   "], labels    # stored verbatim, not trimmed
+    assert blanks == []
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += "\n" + padded
+    ra.render(fields, template=template)            # builds — a padded label is a mark
+
+
+def test_a_valueless_mark_on_an_id_less_element_is_not_a_no_id_error(template):
+    """The #389 relay's neighbour 4: a valueless `data-mark` is not a mark, so
+    even on an element with no id it must NOT trigger the no-id refusal — that
+    rule is about marks, and there is no mark here. Refusing here would reject a
+    harmless stray attribute. Today this is ([], [], []); keep it so.
+
+    Production line: the `if label is None: return` carve-out in `_see` sits
+    BEFORE the no-id collection, so a valueless attribute is gone before no-id
+    ever sees it.
+    """
+    labels, no_id, blanks = ra.essential_marks("<p data-mark>stray</p>")
+    assert (labels, no_id, blanks) == ([], [], []), (labels, no_id, blanks)
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += "\n<p data-mark>stray</p>"
+    ra.render(fields, template=template)            # no-id refusal does NOT fire
+
+
 def test_eight_marks_warn_and_fifteen_refuse(template):
     """The caps from his 2026-07-28 05:35 ruling (he overrode a five-and-refuse
     proposal): WARN at 8 or more through the advisory channel, REFUSE at 15 or
