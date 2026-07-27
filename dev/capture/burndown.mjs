@@ -33,6 +33,7 @@ import { mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
+import { makeReporter } from './report.mjs';
 
 const OUT = process.argv[2];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -43,15 +44,25 @@ const freePort = () => new Promise(res => {
 });
 const PORT = await freePort();
 
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
-const notes = []; const errs = [];
-let finished = false;
-process.on('exit', () => {
-  if (!finished) checks.push('FAIL the guard threw before finishing its checks');
-  console.log(notes.join('\n'));
-  console.log('----');
-  console.log(checks.join('\n'));
-  if (errs.length) console.log(errs.join('\n'));
+const { ok, declare, finish, notes, errs } = makeReporter();
+/* #334: this guard used to hand-roll its checks/ok/exit handler — the very
+   reporter #324's sweep made structural. #281's plan cites burndown as the
+   guard-writing precedent, so leaving the old idiom here pointed new work at
+   the outdated shape. Adopting report.mjs inherits the crash sentinel and
+   the coverage declaration by construction, the same inheritance every
+   converted guard gets. */
+declare({
+  drives: 'two own-server targets (a planted git ledger and a bare non-git ' +
+          'copy) on ephemeral ports; GET / and /data.json on each; a real ' +
+          'git commit to the planted ledger while the first page is open ' +
+          '(the /mtime poll path); POST /command {add-idea} then ' +
+          '`tick()` (a re-render that changes no number); a reduced-motion ' +
+          'context on the first target',
+  traceWindow: '4.2s per motion capture — one /mtime poll (2s) plus the bar ' +
+               'travel — deliberately stopping before the next tick could ' +
+               'supply the motion being asserted (the regroup.mjs trap); ' +
+               '1.2s for the quiet-tick capture; panel-height and ' +
+               'panel-below premises measured across the same 4.2s window'
 });
 
 // ── a planted ledger history ──────────────────────────────────────────────
@@ -408,5 +419,4 @@ await p.screenshot({ path: `${OUT}/burndown.png`, fullPage: false });
 ok('no page errors', errs.length === 0);
 await br.close();
 try { srv.kill(); } catch (e) {}
-finished = true;
-process.exitCode = checks.some(c => c.startsWith('FAIL')) ? 1 : 0;
+finish();
