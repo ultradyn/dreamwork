@@ -1914,11 +1914,11 @@ this shape and convert opportunistically.)
   · **Measured, not reasoned:** #385's criterion 4 asked that the questions headline show an age
   and that a fixture's two ages differ. Both held; the guard was green; I re-ran its discriminating
   red myself and it was a good one. Fifteen minutes later the deployed page showed my
-  fourteen-minute-old question as **`08h 17m ago`**, because `data-ct` resolves to **midnight** of
+  ~24-minute-old question as **`08h 17m ago`**, because `data-ct` resolves to **midnight** of
   the entry's date. The two fixture ages differed by two days and were both wrong by eight hours,
   and nothing in the check could see it (#392).
   · **The tell is that the criterion never names a number the code does not already produce.**
-  "These two differ" is computed from the output; "an entry written at 08:03 renders 14m, not 8h"
+  "These two differ" is computed from the output; "an entry written at 07:54 renders 24m, not 8h"
   is computed from the *input* and compared against the output. Only the second can catch an
   offset. **A check that only compares outputs to each other cannot find a systematic error — one
   value must come from outside the system.**

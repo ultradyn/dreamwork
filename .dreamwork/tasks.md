@@ -33,7 +33,9 @@ Next id: **393**
   · **#385 shipped the format correctly and the input to it is date-precision.** `data-ct` for a
   questions entry resolves to **midnight local** of the entry's date, because a questions.md
   headline carries `P2 · 2026-07-28 — title` and there is **no time in the data**. Measured on the
-  live dashboard at 08:18: my #367 question, filed at **08:03**, renders **`08h 17m ago`**
+  live dashboard at 08:18: my #367 question, which **landed at 07:54** (`git log -S` on its
+  headline, exact), renders **`08h 17m ago`** — so `data-ct` is midnight to the second, and
+  the entry was ~24 minutes old
   · **the error is worst exactly where it matters most.** It is bounded by 24h, and it is largest
   for the *newest* entries — the ones where "how long has this been waiting?" is the question he is
   actually asking. An entry filed minutes ago can read as most of a day old
@@ -52,6 +54,15 @@ Next id: **393**
   it always wants two figures
   · rec: **(a) plus a floor** — a date-only entry must not claim sub-day precision it does not
   have. Do not silently keep showing a confident wrong number
+  · **(b) is now measured, so the choice is decidable rather than a menu.** `git log --format=%cI
+  -1 -S'<headline substring>' -- .dreamwork/questions.md` returns the exact landing time and costs
+  **18ms**. Exact, needs no format change, covers history — but 3 open questions is 54ms while
+  **3 open + 49 answered is ~0.94s per page build**, and `/data.json` is built per request, so it
+  is not a runtime path without a cache. It is also pickaxe-fragile: an edited headline dates the
+  edit, not the filing
+  · **so: (a) at runtime, (b) as a one-time backfill, and never (b) per request.** Record a time in
+  the entry format going forward; for entries that predate it, either backfill once from git or
+  render at the precision the data actually has. Do not put a git call in the request path
   · **the red must catch the offset, not the presence**: assert that an entry written at a known
   time renders an age matching that time and **not** midnight — a check that only asserts two
   entries differ passes with every age wrong by the same amount
