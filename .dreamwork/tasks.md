@@ -29,21 +29,21 @@ Next id: **378**
 ## Open
 
 - **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
-  reliability bug · origin: **loop** · 15m · found by dreamer-263-plan, coordinator verified:
-  `watch.py:8387` does `body = self.rfile.read(min(nbytes, MAX_BODY))` and **never compares
-  `len(body)` to what was promised** — `git grep -n 'len(body)' -- watch.py` returns nothing.
-  The next line computes `truncated = nbytes > MAX_BODY`, which catches a body that was too big
-  and not one that arrived short
-  · so a connection dropped mid-body produces a partial payload that `log_submission` records as
-  a complete submission · it is the same class as #370 and #262 — his words witnessed wrongly —
-  but here the file is intact and the *content* is silently short, which is worse to detect
-  · **#263's plan already places the fix** at its increment 20 (envelope decided before the body
-  is read), and it also raises the design question the fix depends on: whether the server should
-  keep a partial witness *marked incomplete* rather than discard it. That is Q2 of #263's ask,
-  so this entry waits on it rather than guessing
-  · filed separately because #263's lane E may wait behind a second gate and this should not
-  · blocked on `watch.py` being free, and on #263 Q2 for the discard-vs-mark decision
-
+  reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified
+  · **the half that needs no ruling from him is DONE (`d33cc2f`)**: `submissions.log` now
+  records `short: true` and `got: <bytes>` when fewer bytes arrive than were promised, and
+  `file-formats.md` states that `short` and `truncated` are opposite conditions — a cap this
+  server applied versus a promise the client broke — with `lint.py` refusing either half of
+  the pair alone · proved with a real socket (larger `Content-Length` than bytes sent, then
+  `shutdown(SHUT_WR)`), because urllib will not lie about `Content-Length` and a mocked read
+  proves nothing about the read
+  · **what REMAINS is only the policy, and it is his**: whether a short body is refused, or
+  kept as a partial witness marked incomplete and allowed to proceed. That is **Q2 of #263's
+  ask**, filed 2026-07-28 and unanswered · the behaviour is deliberately unchanged until he
+  rules, and the witness is now truthful either way, so his answer is implementable in one
+  increment whichever way it goes
+  · #263's plan places that half at its increment 20 (envelope decided before the body is
+  read) · **blocked on #263 Q2 only** — no longer on `watch.py`, which is free
 - **#368** — Break the large Python files into a modular, testable codebase · P2 ·
   refactor/architecture · origin: **human** · **human via watch `add-idea` 2026-07-28 02:46**:
   *"after the cli, we should refactor the large python files into a proper modular codebase
