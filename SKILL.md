@@ -77,6 +77,18 @@ before selecting work. If `questions.md` changed since your last look, check
 for new human-authored blocks (`Note (human, via …)`) — fold them first: act
 on the answer, then move the entry to Answered.
 
+**Read `.dreamwork/handoffs.md`'s `## Pending` before selecting work too.** A
+session that lands work it does not own the ledger for (every session but you)
+appends one line per landing there — the delivery half of the single-writer
+rule, because its report dies in its own session otherwise and the entry sits
+done-but-open until someone happens to look (#334 sat an hour; #362 was found
+by accident). For each pending hand-off, fold the task into `## Recently
+landed` citing the hand-off's sha, then append a `→ folded (<ts>)` line under
+`## Folded` so it is not flagged again — nothing ever moves between the
+sections, both only grow by append. This is the one act on `tasks.md` a
+foreign session cannot do for itself, so consuming its hand-off is how its
+landed work reaches the ledger at all.
+
 Check `.dreamwork/watch-events.log`'s mtime too. A command he types into
 the dashboard composer exists **only** as a line in that file — nothing
 is written anywhere else, and the write is best-effort — so if the tail
