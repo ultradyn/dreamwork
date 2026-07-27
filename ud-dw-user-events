@@ -40,8 +40,21 @@ EX_USAGE = 64
 EX_NOINPUT = 66
 EX_SOFTWARE = 70
 
-COMMANDS = ("list", "show")
+COMMANDS = ("list", "show", "replay", "purge")
+
+# Read-only classification: the dispatcher routes read commands to the read
+# path (read-only journal handle, never a managed file) and consults
+# `_write_authorized` before any write-capable code runs. `replay`/`purge` are
+# the only commands permitted a domain effect; widening `_write_authorized` is
+# the F3 red line (a read command must never be write-authorized).
+READ_COMMANDS = frozenset({"list", "show"})
+WRITE_COMMANDS = frozenset({"replay", "purge"})
 _HELP = __doc__
+
+
+def _write_authorized(command: str) -> bool:
+    """The read-only guard. True only for commands permitted a domain effect."""
+    return command in WRITE_COMMANDS
 
 
 class _CliError(Exception):
@@ -191,6 +204,29 @@ def cmd_show(args, ctx, out):
     return EX_OK
 
 
+def cmd_replay(args, ctx, out):
+    """The only write-authorized command. Domain effects are NOT implemented:
+    lane D's application adapters (#19) are not built, so replay is permitted
+    but applies nothing. It says so honestly rather than pretending an effect."""
+    out.write(json.dumps({
+        "replay": "not_implemented",
+        "reason": "no application adapters registered (lane D #19 not built)",
+        "applied": 0,
+    }) + "\n")
+    return EX_OK
+
+
+def cmd_purge(args, ctx, out):
+    """Refused. Purge is an operator-only script and is NOT authorised under
+    this plan (the approval clause excludes payload purge; design §Retention).
+    It is classified write-capable so the guard knows, but never enabled."""
+    raise _CliError(
+        EX_SOFTWARE,
+        "purge is not authorised under this plan (operator-only; see "
+        "user-event-journal.md §Retention and scripted purge)",
+    )
+
+
 def _print_top_help(out) -> None:
     out.write(_HELP)
     if not _HELP.endswith("\n"):
@@ -213,6 +249,8 @@ def _command_parser(command: str) -> argparse.ArgumentParser:
         p.add_argument("receipt", help="receipt id or sequence number")
         p.add_argument("--max-bytes", type=int, default=4096, dest="max_bytes",
                        help="bound on exact bytes shown (default 4096)")
+    elif command == "replay":
+        p.add_argument("--limit", type=int, default=20, help="max receipts to replay")
     return p
 
 
@@ -246,11 +284,20 @@ def main(argv=None, out=None) -> int:
         journal=_resolve_journal(args), target=args.target, format=args.format
     )
     try:
-        if command == "list":
-            return cmd_list(args, ctx, out)
-        if command == "show":
-            return cmd_show(args, ctx, out)
-        return EX_USAGE  # unreachable while COMMANDS lists only implemented cmds
+        if command in READ_COMMANDS:
+            if command == "list":
+                return cmd_list(args, ctx, out)
+            if command == "show":
+                return cmd_show(args, ctx, out)
+            return EX_USAGE
+        # The read-only guard: only write-authorized commands reach the write
+        # path. Deleting/widening `_write_authorized` is the F3 red line.
+        if _write_authorized(command):
+            if command == "replay":
+                return cmd_replay(args, ctx, out)
+            if command == "purge":
+                return cmd_purge(args, ctx, out)
+        return EX_USAGE  # unknown command slipped past the COMMANDS gate
     except _CliError as e:
         print(e.message, file=sys.stderr)
         return e.exit_code

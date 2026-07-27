@@ -74,6 +74,64 @@ def seed_journal(path: Path, n: int, *, body: bytes | None = None) -> list:
 
 
 # ---------------------------------------------------------------------------
+# F3 — replay is the only command that may cause a domain effect
+# ---------------------------------------------------------------------------
+
+
+def test_no_command_but_replay_touches_a_domain_file(module, tmp_path):
+    from user_events.domain_files import build_managed_text
+
+    target = tmp_path / "target"
+    target.mkdir()
+    # Managed files built by the production writer helper (imported, never
+    # edited — lane C owns domain_files.py).
+    (target / "questions.md").write_text(
+        build_managed_text("- **Q1** — an open question\n", 1, "test"))
+    (target / "tasks.md").write_text(build_managed_text("tasks body\n", 1, "test"))
+    db = tmp_path / "journal.sqlite3"  # journal OUTSIDE the target
+    (res,) = seed_journal(db, 1)
+
+    # Derive the protected set by WALKING the directory, never a hardcoded list
+    # — a directory that grows is how a check goes hollow after its red run.
+    managed = sorted(p for p in target.rglob("*") if p.is_file())
+    assert managed, "fixture has no files to protect — the check would be vacuous"
+    before = {p: p.read_bytes() for p in managed}
+
+    # Every READ command leaves every managed file byte-identical. health is
+    # added in F4; deriving from READ_COMMANDS means this covers it then too.
+    read_cmds = [
+        ["list", "--format", "jsonl"],
+        ["show", str(res.sequence)],
+    ]
+    # (health joins read_cmds once F4 registers it in READ_COMMANDS)
+    read_cmds += [["health"]] if "health" in module.READ_COMMANDS else []
+    for cmd in read_cmds:
+        buf = io.StringIO()
+        code = module.main(
+            cmd + ["--journal", str(db), "--target", str(target)], out=buf)
+        assert code == module.EX_OK, f"{cmd[0]} failed: {buf.getvalue()!r}"
+        after = {p: p.read_bytes() for p in managed}
+        assert after == before, f"{cmd[0]} touched a managed domain file"
+
+    # Discriminating half — the read-only guard (F3 red line). replay/purge are
+    # the ONLY write-authorized commands; no read command is write-authorized.
+    write_auth = {c for c in module.COMMANDS if module._write_authorized(c)}
+    assert write_auth == {"replay", "purge"}, f"read-only guard widened: {write_auth}"
+    for c in module.READ_COMMANDS:
+        assert not module._write_authorized(c), f"{c!r} is write-authorized"
+
+    # replay is permitted (the only write-authorized, implemented command); its
+    # domain effects are not built, so it reports not_implemented and applies
+    # nothing — and still touches no managed file.
+    rbuf = io.StringIO()
+    rcode = module.main(
+        ["replay", "--journal", str(db), "--target", str(target)], out=rbuf)
+    assert rcode == module.EX_OK
+    assert json.loads(rbuf.getvalue())["replay"] == "not_implemented"
+    assert {p: p.read_bytes() for p in managed} == before, "replay mutated a file"
+
+
+# ---------------------------------------------------------------------------
 # F2 — show is the only exact-bytes path; truncation reports what it dropped
 # ---------------------------------------------------------------------------
 
