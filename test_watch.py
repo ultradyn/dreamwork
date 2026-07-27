@@ -3834,6 +3834,39 @@ class TestRunMode(unittest.TestCase):
                       'runbarfill', 'prefers-reduced-motion'):
             self.assertIn(token, watch.PAGE)
 
+    def test_run_mode_desc_is_contract_copy_and_wired(self):
+        """#300 — shared description surface, one per mode, no marketing."""
+        # every selectable + planned mode has a line
+        for m in list(watch.RUN_MODES) + list(watch.RUN_MODES_PLANNED):
+            self.assertIn(m, watch.RUN_MODE_DESC)
+            self.assertTrue(watch.RUN_MODE_DESC[m].strip())
+        # no extra keys invent a mode the file cannot hold
+        for k in watch.RUN_MODE_DESC:
+            self.assertIn(k, set(watch.RUN_MODES) | set(watch.RUN_MODES_PLANNED))
+        # behavioural words from file-formats.md / SKILL.md, not slogans
+        self.assertIn("no proactive fan-out",
+                      watch.RUN_MODE_DESC["lackadaisical"])
+        self.assertIn("coordinator only", watch.RUN_MODE_DESC["hot"])
+        self.assertIn("helpers", watch.RUN_MODE_DESC["assisted"])
+        self.assertIn("#264", watch.RUN_MODE_DESC["hierarchical"])
+        self.assertIn("#288", watch.RUN_MODE_DESC["hierarchical"])
+        # page embeds the table and the pure-presentation surface
+        self.assertIn("const RUN_MODE_DESC = ", watch.PAGE)
+        for token in ('id="rundesc"', 'id="rundesc-text"',
+                      'function showRunDesc(', 'function hideRunDesc(',
+                      'aria-describedby="rundesc-text"'):
+            self.assertIn(token, watch.PAGE)
+        # hover path must not call the arm/write path by name in showRunDesc
+        # (structural: the function exists and pickRunMode is separate)
+        self.assertIn('function pickRunMode(', watch.PAGE)
+        idx = watch.PAGE.index('function showRunDesc(')
+        end = watch.PAGE.index('function rundescPointerInside(', idx)
+        body = watch.PAGE[idx:end]
+        self.assertNotIn('pickRunMode(', body)
+        self.assertNotIn("fetch('/run-mode'", body)
+        self.assertNotIn('writeRunPending(', body)
+        self.assertNotIn('commitRunMode(', body)
+
     def test_post_path_is_witnessed_like_other_writes(self):
         with tempfile.TemporaryDirectory() as d:
             base = self._serve(make_target(d))

@@ -1553,14 +1553,32 @@ second-by-second text and the same application time** — timing may change,
 function may not. A refused write reverts the selection and says so in
 `--warn`, never confirming a write that did not land.
 
+**One shared description surface (#300).** Hovering or focusing any chip
+explains that mode in a single `#rundesc` below the group and **above** the
+arm/countdown — never a per-button tooltip, never over the countdown.
+`RUN_MODE_DESC` holds one sentence per mode, traced to the behavioural
+contract in `file-formats.md` / `SKILL.md` (what continues, stops, commits),
+not marketing. Button→button keeps the shell fixed (`min-height:2.6em`) while
+the words dissolve and resolve; first arrival and final departure reuse the
+atmospheric blur/drift idiom (`transitions.md`). Keyboard focus shows the
+same text; every chip's `aria-describedby="rundesc-text"` resolves to that
+live node. Escape / pointer-leave / blur dismiss with **no mode side effect**
+— hover must never call `pickRunMode`, write pending, or POST. Reduced motion
+swaps text instantly with identical meaning and the same wiring.
+
 **Consumption honesty.** The file + the events line are how an agent learns
 the mode. This dashboard does not, by itself, change a running session's
 scheduler; the loop that tails the events log (or re-reads the file on tick)
 must apply policy per its own skill protocol.
 
-`dev/capture/runmode.mjs` is the browser guard: real 10s arm intermediate
-progress, reset, commit, event exactly-once, hierarchical disabled, reduced-
-motion text path, and cross-tab pending via storage.
+`dev/capture/runmode.mjs` is the browser guard for the arm/commit path: real
+10s arm intermediate progress, reset, commit, event exactly-once,
+hierarchical disabled, reduced-motion text path, and cross-tab pending via
+storage. `dev/capture/rundesc.mjs` guards the description surface: one
+stable box across every chip, zero arm/file/event side effects on
+hover/focus/Escape (including pending localStorage and the countdown text,
+because a 10s arm is silent to POST for ten seconds), per-frame morph
+`between()` intermediates, reduced-motion parity, and hover≡focus text.
 
 ### The project tint
 

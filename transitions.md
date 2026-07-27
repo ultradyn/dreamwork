@@ -504,6 +504,21 @@ exception; an element leaving fades rather than vanishing.
   countdown. Guard: `dev/capture/runmode.mjs` (intermediate bar widths
   under motion, ≤2 under RM, reset, event exactly-once, hierarchical
   disabled).
+- **Run-mode description morph (#300).** One shared `#rundesc` shell under
+  the chips explains the hovered/focused mode. **First arrival** snaps the
+  shell to a pose (opacity 0, blur, 4px rise) then eases in on the page's
+  atmospheric envelope; **final departure** (Escape, pointer-leave, blur)
+  adds `.depart` and dissolves upward — the same soft exit as `.cmdmsg`.
+  **Button→button** holds the shell fixed (`min-height` so geometry does
+  not jump) while `.rundesc-text` dissolves (`.out`: opacity→0, blur 6px)
+  and the new sentence resolves (`.in` start pose, then clear). Rapid
+  hover retargets the pending mode without restarting the dissolve, so a
+  fast sweep still lands the last mode rather than cancelling forever.
+  Reduced motion snaps text with identical copy and `aria-describedby`.
+  Hover/focus/dismiss are pure presentation — they must not arm, write
+  pending, or POST. Guard: `dev/capture/rundesc.mjs` (one surface,
+  geometry span, zero side effects including arm countdown + pending
+  localStorage, rAF `between()` on text opacity, RM parity, hover≡focus).
 - **The review split (#305) — where a DRAG is the one thing that does not
   travel.** `/review`'s two columns are separated by an invisible bar he can
   drag. Dragging is *continuous input*: his pointer already supplies every

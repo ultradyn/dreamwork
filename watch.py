@@ -314,6 +314,19 @@ RUN_MODES = ("lackadaisical", "hot", "assisted")
 RUN_MODE_DEFAULT = "lackadaisical"
 RUN_MODES_PLANNED = ("hierarchical",)
 RUN_ARM_MS = 10_000
+# #300 — one shared hover/focus description per mode. Copy is the behavioural
+# contract (file-formats.md / SKILL.md run-mode paragraph), never marketing.
+# hierarchical is not selectable; its line names why it stays disabled.
+RUN_MODE_DESC = {
+    "lackadaisical":
+        "idle-friendly · no proactive fan-out · the default pace",
+    "hot":
+        "continuous bounded work · coordinator only · no helper fan-out",
+    "assisted":
+        "continuous work · a few disjoint helpers under existing ownership",
+    "hierarchical":
+        "planned · needs concurrency (#264) and containment (#288)",
+}
 
 # Design tokens + shared shell: every watch page renders through these,
 # so a redesign is a token/component edit, not a page-by-page hunt.
@@ -1404,9 +1417,31 @@ STYLE = """<style>
               font-variant-numeric:tabular-nums; }
   .runmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
   .runmsg:empty { display:none; }
+  /* #300 — one shared description surface for the run-mode chips.
+     Geometry is stable while open (min-height holds the longest line), so
+     button→button swaps morph words in place rather than spawning a new
+     tooltip per chip. Sits ABOVE the arm/countdown, never over it.
+     Arrival/departure: atmospheric blur+drift (cmdmsg's idiom). Swaps:
+     shell fixed, text dissolves then resolves. Reduced motion: instant. */
+  .rundesc { margin:.28rem 0 .12rem; min-height:0; max-width:100%;
+    font-size:.7rem; color:var(--dim); line-height:1.4;
+    overflow:hidden;
+    transition:opacity .42s ease, filter .42s ease,
+               transform .42s cubic-bezier(.32,.1,.2,1); }
+  .rundesc[hidden] { display:none; }
+  .rundesc.open { min-height:2.6em; }   /* shell holds across mode swaps */
+  .rundesc.pose { transition:none !important; opacity:0;
+    filter:blur(6px); transform:translateY(4px); }
+  .rundesc.depart { opacity:0; filter:blur(7px); transform:translateY(-4px); }
+  .rundesc-text { display:block; max-width:100%;
+    transition:opacity .34s ease, filter .34s ease,
+               transform .34s cubic-bezier(.32,.1,.2,1); }
+  .rundesc-text.out { opacity:0; filter:blur(6px); transform:translateY(-2px); }
+  .rundesc-text.in { opacity:0; filter:blur(4px); transform:translateY(2px); }
   @media (prefers-reduced-motion: reduce) {
     .runbar { display:none; }
     .runbarfill { transition:none; }
+    .rundesc, .rundesc-text { transition:none; }
   }
   /* ── what he has sent, from this browser (#165) ───────────────────────
      The row is the page's standing shape for a list of small facts — the
@@ -3893,26 +3928,231 @@ function runModePicker(d) {
   // reclaimable pending must not look like an active countdown.
   const arm = pendingIsLiveArm(pending) ? pending : null;
   const cur = arm ? arm.mode : committedRunMode(d);
+  // aria-describedby always points at the one shared surface (#300).
+  // Hover/focus only rewrite that surface — never arm, POST, or localStorage.
   const chips = RUN_MODES.map(n =>
     `<button type="button" role="radio" class="sgbtn runchip` +
     `${n === cur ? ' on' : ''}" data-mode="${esc(n)}"` +
     ` aria-checked="${n === cur ? 'true' : 'false'}"` +
+    ` aria-describedby="rundesc-text"` +
     ` onclick="pickRunMode('${esc(n)}')">${esc(n)}</button>`).join('') +
     RUN_MODES_PLANNED.map(n =>
       `<button type="button" role="radio" class="sgbtn runchip" data-mode="${esc(n)}"` +
       ` aria-checked="false" aria-disabled="true" disabled` +
+      ` aria-describedby="rundesc-text"` +
       ` title="planned — needs #264 concurrency and #288 containment">` +
       `${esc(n)}</button>`).join('');
   return `<section class="runmode" id="runmode" aria-label="run mode">` +
     label('run mode') +
     `<div class="sgroup runmodes" role="radiogroup" aria-label="run mode">` +
     `<div class="sgind"></div>${chips}</div>` +
+    `<div class="rundesc" id="rundesc" role="tooltip" hidden aria-hidden="true">` +
+    `<span class="rundesc-text" id="rundesc-text"></span></div>` +
     `<div class="runarm" id="runarm">` +
     `<div class="runbar" id="runbar" hidden aria-hidden="true">` +
     `<div class="runbarfill" id="runbarfill"></div></div>` +
     `<span class="runcount" id="runcount" aria-live="polite"></span></div>` +
     `<div class="runmsg" id="runmsg" aria-live="polite"></div></section>`;
 }
+/* ── #300 shared run-mode description ───────────────────────────────────
+   Pure presentation. Hover, focus, Escape and pointer-leave never write a
+   mode, never arm, never touch localStorage or POST /run-mode. One shell
+   morphs its text in place so the eye never meets a second tooltip. */
+let rundescMode = null;
+let rundescPendingMode = null;  // retarget mid-dissolve without cancelling it
+let rundescMorphGen = 0;
+let rundescHideTimer = null;
+let rundescMorphTimer = null;
+function rundescReduced() {
+  return matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+function runDescFor(mode) {
+  if (!mode) return '';
+  if (typeof RUN_MODE_DESC !== 'undefined' && RUN_MODE_DESC[mode])
+    return RUN_MODE_DESC[mode];
+  return '';
+}
+function hideRunDesc(immediate) {
+  const shell = document.getElementById('rundesc');
+  const text = document.getElementById('rundesc-text');
+  if (!shell) return;
+  if (rundescHideTimer) { clearTimeout(rundescHideTimer); rundescHideTimer = null; }
+  if (rundescMorphTimer) { clearTimeout(rundescMorphTimer); rundescMorphTimer = null; }
+  if (!shell.classList.contains('open') && shell.hidden) {
+    rundescMode = null;
+    rundescPendingMode = null;
+    return;
+  }
+  rundescMorphGen++;   // cancel any in-flight morph
+  rundescPendingMode = null;
+  const rm = !!immediate || rundescReduced();
+  const finish = () => {
+    shell.classList.remove('open', 'pose', 'depart');
+    shell.setAttribute('aria-hidden', 'true');
+    shell.hidden = true;
+    if (text) {
+      text.textContent = '';
+      text.classList.remove('out', 'in');
+    }
+    rundescMode = null;
+    rundescPendingMode = null;
+  };
+  if (rm) { finish(); return; }
+  shell.classList.add('depart');
+  const onEnd = e => {
+    if (e.target !== shell || e.propertyName !== 'opacity') return;
+    shell.removeEventListener('transitionend', onEnd);
+    finish();
+  };
+  shell.addEventListener('transitionend', onEnd);
+  rundescHideTimer = setTimeout(finish, 550);
+}
+function rundescResolveText(text, shell) {
+  // End of dissolve: paint the LATEST pending mode (rapid hover retargets
+  // without restarting the dissolve, which would cancel forever).
+  const mode = rundescPendingMode || rundescMode;
+  const body = runDescFor(mode);
+  if (!body) return;
+  text.textContent = body;
+  shell.dataset.mode = mode;
+  rundescMode = mode;
+  rundescPendingMode = null;
+  text.classList.remove('out');
+  text.classList.add('in');
+  void text.offsetWidth;
+  text.classList.remove('in');
+}
+function showRunDesc(mode) {
+  // Presentation only. Must never arm, write pending state, commit, or POST.
+  // (Those live in pick/commit helpers — this function only paints text.)
+  const body = runDescFor(mode);
+  if (!body) return;
+  const shell = document.getElementById('rundesc');
+  const text = document.getElementById('rundesc-text');
+  if (!shell || !text) return;
+  if (rundescHideTimer) { clearTimeout(rundescHideTimer); rundescHideTimer = null; }
+  shell.classList.remove('depart');
+  const rm = rundescReduced();
+  const first = !shell.classList.contains('open') || shell.hidden;
+
+  if (first) {
+    rundescMorphGen++;
+    if (rundescMorphTimer) { clearTimeout(rundescMorphTimer); rundescMorphTimer = null; }
+    text.classList.remove('out', 'in');
+    text.textContent = body;
+    shell.dataset.mode = mode;
+    shell.hidden = false;
+    shell.setAttribute('aria-hidden', 'false');
+    shell.classList.add('open');
+    if (rm) {
+      shell.classList.remove('pose');
+    } else {
+      shell.classList.add('pose');
+      void shell.offsetWidth;
+      shell.classList.remove('pose');
+    }
+    rundescMode = mode;
+    rundescPendingMode = null;
+    return;
+  }
+
+  // Already open on this mode and not mid-dissolve — nothing to do.
+  if (mode === rundescMode && text.textContent === body
+      && !text.classList.contains('out')) return;
+
+  // Button→button: shell stays open; text dissolves then resolves.
+  if (rm) {
+    rundescMorphGen++;
+    if (rundescMorphTimer) { clearTimeout(rundescMorphTimer); rundescMorphTimer = null; }
+    text.classList.remove('out', 'in');
+    text.textContent = body;
+    shell.dataset.mode = mode;
+    rundescMode = mode;
+    rundescPendingMode = null;
+    return;
+  }
+
+  // Mid-dissolve: retarget the resolve leg only. Restarting .out would
+  // cancel the in-flight transitionend/timeout forever under rapid hover.
+  rundescPendingMode = mode;
+  if (text.classList.contains('out')) return;
+
+  const gen = rundescMorphGen;  // do not bump — hide is what cancels
+  text.classList.remove('in');
+  // Force a clean start: snap full-opacity one frame, then dissolve.
+  text.style.transition = 'none';
+  text.classList.remove('out');
+  void text.offsetWidth;
+  text.style.transition = '';
+  text.classList.add('out');
+  void text.offsetWidth;
+  let done = false;
+  const finishMorph = () => {
+    if (done) return;
+    done = true;
+    if (rundescMorphTimer) { clearTimeout(rundescMorphTimer); rundescMorphTimer = null; }
+    text.removeEventListener('transitionend', once);
+    // hideRunDesc bumps gen; a live morph keeps the same gen.
+    if (gen !== rundescMorphGen) return;
+    rundescResolveText(text, shell);
+  };
+  const once = e => {
+    if (e.target !== text || e.propertyName !== 'opacity') return;
+    finishMorph();
+  };
+  text.addEventListener('transitionend', once);
+  rundescMorphTimer = setTimeout(finishMorph, 380);
+}
+function rundescPointerInside(node) {
+  const sec = document.getElementById('runmode');
+  return !!(sec && node && sec.contains(node));
+}
+// Document-level once: the section is rebuilt by the tick's innerHTML, so a
+// per-element bind would die every two seconds. Hover never selects.
+document.addEventListener('pointerover', e => {
+  const b = e.target && e.target.closest && e.target.closest('#runmode .runchip');
+  if (!b) return;
+  showRunDesc(b.dataset.mode);
+});
+document.addEventListener('pointerout', e => {
+  const sec = document.getElementById('runmode');
+  if (!sec) return;
+  // Leaving the whole section (not merely crossing a chip) dismisses.
+  if (!rundescPointerInside(e.target)) return;
+  if (rundescPointerInside(e.relatedTarget)) return;
+  // Keep open while a chip holds keyboard focus.
+  if (sec.querySelector('.runchip:focus')) return;
+  hideRunDesc();
+});
+document.addEventListener('focusin', e => {
+  const b = e.target && e.target.closest && e.target.closest('#runmode .runchip');
+  if (b) showRunDesc(b.dataset.mode);
+});
+document.addEventListener('focusout', e => {
+  const sec = document.getElementById('runmode');
+  if (!sec) return;
+  // Defer: focus may be moving to a sibling chip.
+  setTimeout(() => {
+    if (!sec.isConnected) return;
+    if (sec.contains(document.activeElement)) {
+      const b = document.activeElement.closest
+        && document.activeElement.closest('.runchip');
+      if (b) showRunDesc(b.dataset.mode);
+      return;
+    }
+    // Pointer still over the section keeps it open.
+    if (sec.matches(':hover')) return;
+    hideRunDesc();
+  }, 0);
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const shell = document.getElementById('rundesc');
+  if (!shell || !shell.classList.contains('open')) return;
+  hideRunDesc();
+  // Presentation only — do not cancel an arm, do not blur a chip forcibly
+  // unless that would leave the tooltip stranded (it is already dismissed).
+});
 function syncRunModeFromData() {
   // After a re-render or remote tick: resume shared pending if live, else
   // follow the authoritative file. Never invent a pending from server alone.
@@ -6767,6 +7007,8 @@ PAGE = page_shell('dreamwork watch', APP_BODY,
                   + "const RUN_MODES_PLANNED = "
                   + json.dumps(list(RUN_MODES_PLANNED)) + ";\n"
                   + "const RUN_ARM_MS = " + json.dumps(RUN_ARM_MS) + ";\n"
+                  + "const RUN_MODE_DESC = "
+                  + json.dumps(RUN_MODE_DESC, ensure_ascii=True) + ";\n"
                   + COMPONENTS_JS + VIEWS_JS + FAVICON_JS + SHADER_JS
                   + ROUTER_JS + COMMAND_JS)
 
