@@ -1421,7 +1421,13 @@ this shape and convert opportunistically.)
   operationally: **when the question is "is this id in this section", import the reader the
   rest of the system uses and ask it.** A second regex over the same file is not a second
   opinion — it is one more thing that can be wrong in the same way, and it carries the
-  authority of a measurement while having none of the standing.
+  authority of a measurement while having none of the standing. And the reader answers in
+  its own units: **`parse_ledger` returns sets of STRING ids**, so `346 in open_ids` is
+  silently `False` for an int, with no error and no hint. That happened on #346/#347/#348 —
+  the count had risen 111 to 113, the membership test said `{False}`, and the claim was
+  written down anyway on the strength of the count. Importing the right reader is half the
+  discipline; **checking the type it hands back is the other half**, because a wrong-units
+  membership test fails exactly the way a genuinely absent id does.
 
 - **`cd` persists between tool calls, so a worktree dispatch silently redirects every later
   write into that agent's tree.** Right after `cd .worktrees/339-highlight && ccc …`, an
