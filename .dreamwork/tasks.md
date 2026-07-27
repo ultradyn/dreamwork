@@ -228,6 +228,20 @@ Next id: **398**
   · related: **#385**
 
 
+  · **SPLIT 2026-07-28 09:14, because the half that stops the wrongness needs none of the held
+  files.** **#392a — honest degradation** (`watch.py`, `test_watch.py`, `watch-design.md`): a
+  date-only entry stops claiming a sub-day figure. Every entry in the file is date-only today, so
+  this alone removes the whole user-visible error. **#392b — a time in the format** (`file-formats.md`
+  plus a writer): precise ages for entries filed from now on. `b` is blocked on `#396`; `a` is not
+  · **the presentation decision is made, and it needs no new vocabulary.** *The number of figures
+  encodes the precision.* **Two figures means we know the time; one figure means we know only the
+  day.** So a date-only entry shows `03d ago`, not `03d 08h ago` — the missing second figure *is*
+  the signal, read against the timed entries beside it. That reuses `#385`'s existing greyed-pad
+  idiom rather than inventing a tilde or a tooltip, and it degrades to exactly the information the
+  data holds
+  · **the same-day case must be decided rather than fall out**: `0d ago` reads wrong for something
+  filed this morning, and it is the case he will see most. Whoever takes it decides and justifies it
+  · rec order: **a first**, since it is the fix
 - **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
   reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified
   · **the half that needs no ruling from him is DONE (`d33cc2f`)**: `submissions.log` now
