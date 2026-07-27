@@ -984,3 +984,18 @@ this shape and convert opportunistically.)
   where the tests enumerate what production enumerates is this bug waiting;
   make production export the list and have the tests call it.
   (coordinator, 2026-07-27, #306)
+- **Do not brief a dreamer in N increments before you know the feature has
+  N-1 working intermediates.** `#305` was dispatched as "three increments,
+  commit each"; the feature turned out to be one atomic change — a split pane
+  is not usable without the drag, and the persistence hunks are a handful of
+  lines inside the same functions. At ~38 minutes the dreamer had 335
+  uncommitted insertions and my checkpoint told it to split, which would have
+  manufactured two broken commits to satisfy a cap whose purpose is bounding
+  risk. The cap is real, but the risk it bounds is *uncommitted work*, not
+  *large diffs*: a coherent 335-line feature that is committed and reviewable
+  is safer than three commits that do not run. Brief the cap as "commit at
+  every point where the tree works", and where you genuinely want a seam, name
+  it at dispatch from the code rather than from the number three — a seam
+  invented afterwards is churn, and the coordinator who invented it should say
+  so plainly rather than let the dreamer absorb the contradiction.
+  (coordinator, 2026-07-27, #305)
