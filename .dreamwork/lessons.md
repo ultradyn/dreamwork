@@ -1288,3 +1288,26 @@ this shape and convert opportunistically.)
   reasoning — which makes `-m` the wrong tool for them, and a scratch file is one
   extra call. For exit status: never read `$?` through a pipe; redirect to a file
   and check the status directly.
+
+- **Pin the EXPLICIT ccc alias (`@oc-glm52`), never the generic one (`@glm52`).**
+  Tonight `@glm52` resolved to `runner=opencode provider=zai-coding-plan` for five
+  successful agents and then, an hour later, to `runner=grok provider=llmp` for the
+  sixth — the alias config changed under the loop. The grok-runner agent produced
+  **127 bytes of log and zero file writes in twelve minutes** while sitting in
+  state `S`, i.e. live and silent, which is the failure mode hardest to tell from
+  slow. `ccc --help` prints the resolved alias table; `@oc-glm52` and `@gk-glm52`
+  name the runner explicitly and cannot drift. **Symptom to watch for:** a log that
+  is only a warning line after several minutes, when the working runner streams
+  hundreds of KB. Check `wc -c` on the log and `find -newermt` in the worktree
+  before assuming an agent is merely thinking.
+
+- **Killing a `ccc` wrapper does NOT kill the runner it spawned.** `kill <ccc pid>`
+  returned success and `occupied.py` then showed the child — `grok --model glm-5.2
+  --always-approve -p …` — still live with its cwd in the same worktree. Twenty
+  seconds later a replacement agent was launched there, so for a moment **two
+  agents shared one worktree**, which is precisely the split brain the disjointness
+  invariant exists to prevent. **After killing any dispatched agent, re-run
+  `occupied.py` on its worktree and kill what remains before launching a
+  replacement** — the wrapper is not the process doing the work, and the same fact
+  is already recorded in the other direction (a ccc agent's visible process is a
+  shell wrapper, so `ps | grep opencode` can never find it).
