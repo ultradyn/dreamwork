@@ -1777,3 +1777,11 @@ this shape and convert opportunistically.)
   who accidentally makes a read command write** (a cache, a log, an mtime touch).
   Distinct from "assert the outcome, not the mechanism" — this is about properties that
   are facts of the dispatch table rather than of any run. (#263 lane F)
+- **`grep -c` exits 1 when the count is zero, so the success case breaks an `&&`
+  chain.** The #367 lane lost the tail of a verification sequence to this: it was
+  counting occurrences it *wanted* to be zero, got zero, and every check after the
+  `&&` silently did not run. The shell cannot tell "no matches" from "failed", and
+  neither could the transcript. Append `|| true` whenever the **count itself** is the
+  result rather than the match — and more generally, a verification chain joined by
+  `&&` reports a skipped tail as a pass, so prefer `;` with per-step echoes for
+  anything whose zero is a legitimate answer. (#367 lane)

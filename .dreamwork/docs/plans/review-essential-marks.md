@@ -121,7 +121,11 @@ experience rather than about the code — which is the pattern worth noticing.
 1. **M1 · the rail-plus-strip split at 780px — `rec`, taken.** Build both
    presentations; the cliff measurement stands.
 2. **M2 · the cap — OVERRIDDEN.** I proposed **five, refusing the build** above
-   it. He set **soft 7, hard 15**: a warning at 7, a refusal at 15. So the build
+   it. He set **soft 7, hard 15** — meaning seven is *allowed*: the warning
+   starts at 8, the refusal at 15. (This line used to read "a warning at 7",
+   which the #367 builder flagged as contradicting both `file-formats.md` and
+   its own brief. A cap of 7 that warns *at* 7 is a cap of 6; the code is
+   `MARKS_WARN_AT = 8`.) So the build
    never fails on the count a careful author might legitimately reach, and the
    forcing function moves from a refusal to a warning across a band. My "five and
    refuse" was the tidier rule and the wrong one — a refusal at the number where

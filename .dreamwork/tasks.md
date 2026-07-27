@@ -24,9 +24,33 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **389**
+Next id: **390**
 
 ## Open
+
+- **#389** — an essential mark with an empty or whitespace-only label is accepted · P3 ·
+  correctness/authoring · origin: **loop** · found by coordinator while auditing #367
+  increment 1, **not reported by the lane that built it** — it flagged the *valueless*
+  `data-mark` (boolean form) as an open question and was right that ignoring it is correct,
+  but the neighbouring case went unnoticed
+  · measured, not assumed: `data-mark` valueless → `([], [])`, ignored, correct.
+  `data-mark=""` → `([''], [])` and `data-mark="   "` → `(['   '], [])` — **both collected as
+  marks with unreadable labels**, and no test covers any of the three
+  · **why it matters more than P3 sounds**: the contract's line is "the label is what the tab
+  reads", so an empty label renders a tab with nothing in it. It counts toward the cap, it
+  takes a next/prev stop, and it looks exactly like a **rendering bug in increment 2's tab
+  code** — so the cost is not the blank tab, it is the hour someone spends debugging the
+  renderer for a defect that is in the parser
+  · **the inconsistency is the actual defect**: absent-value is ignored while empty-value is
+  accepted, which no author could predict. Pick one rule and test all three
+  · rec: **refuse** `""` and whitespace-only (an authoring mistake the builder should name,
+  like the no-id refusal beside it), keep ignoring the valueless form. `file-formats.md`
+  already states this as the target — the contract is deliberately ahead of the code here, the
+  same way it was written before #367 itself, so **this task is what closes that gap**
+  · small: a `.strip()` in `essential_marks()` plus a refusal branch, and one test asserting
+  all three cases — the discriminating half is that the *valueless* form must stay ignored,
+  since a rule that refuses everything falsy passes any test that only checks `""`
+  · natural to fold into increment 2, but independently committable today
 
 - **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
   reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified
@@ -129,7 +153,9 @@ Next id: **389**
   on his desktop
   · **RULED 2026-07-28 05:35 (`0597bc6`), so this is unblocked to build.** M1 (the 780px
   rail/strip split) and M4 (marks are not a `nav` entry) went with the rec. **M2 and M3 were
-  overridden**: the cap is **soft 7 / hard 15** — warn at seven, refuse at fifteen — not my
+  overridden**: the cap is **soft 7 / hard 15** — seven is allowed, so the warning starts at
+  **8** and the refusal at 15 (`MARKS_WARN_AT = 8`; a cap of 7 that warns *at* 7 is a cap of
+  6, and this line and the plan's both used to say "at seven") — not my
   five-and-refuse; and the label is **two-line tabs at a smaller text size, up to ~6 words**,
   not my ~12 characters with builder truncation. The tab grows to fit the label; nobody
   truncates. The rulings are now recorded in the plan's §"What was decided", which wins over
@@ -140,6 +166,23 @@ Next id: **389**
   gutter outside `.wrap` is 16px at every viewport from 1120px down. Measure ~6 words at two
   lines against that gutter first. If it does not fit somewhere, **report the measurement**;
   do not quietly reintroduce a cap he just removed
+  · **increment 1 LANDED 2026-07-28 06:58 (`dbcbcc5`), and it is the safety net rather than
+  the feature**: `essential_marks()` parses `data-mark` in document order, warns at 8, refuses
+  at 15, refuses a mark whose element has no `id` of its own. **No visible change, no template
+  touch, no artifact rebuilt** — which is the whole point: the frame now carries the machinery,
+  so every later increment is shippable on its own. 70 tests in `test_review_artifact.py`
+  · **coordinator verified independently, not folded**: the byte-identity guarantee is the
+  criterion most likely to be hollow, so I recomputed its frozen baseline from a ref **I**
+  picked by hand (`12d17ad`, confirmed to carry neither `MARKS_WARN_AT` nor `essential_marks`)
+  and it matched to the digit — the constant is genuinely pre-change, not recomputed with the
+  new code. Then I injected the realistic regression rather than the lane's placeholder — an
+  unguarded marks stylesheet (`increment 2's CSS added without checking labels is non-empty`) —
+  and `test_a_source_with_no_marks_renders_byte_identically_apart_from_the_stamp` went red
+  alone, neighbours green. Snapshot-restored; 70 pass
+  · **still to build: increments 2+** — the rail/strip presentation, the tab, next/prev, and
+  the owed two-line-tab gutter measurement above. **Increment 1 hands increment 2 a guarantee
+  it should not squander:** every mark's `id` is on the marked element itself, so next/prev can
+  key off it directly with nothing to invent
   · the first increment is unchanged by the rulings: the source contract in `file-formats.md`
   plus the "declares no marks ⇒ byte-identical output" check, red first, which touches no
   artifact — and it is the one that makes the frame change safe to ship before any artifact

@@ -1047,6 +1047,24 @@ list, so it cannot drift from the passage it points at:
   to walk them in.
 - **A mark on an element with no stable id is an error** — next/prev must be able
   to land on it, so the builder assigns nothing implicitly and refuses instead.
+  **The `id` must be on the SAME element that carries the `data-mark`**, not on an
+  ancestor. `<section id="x"><p data-mark="y">` is refused, and that is correct
+  rather than pedantic: the flag points at a height on the page, and the element at
+  that height is the marked one — a parent id scrolls somewhere else. Increment 1's
+  builder already enforces this (the #367 lane found it by writing fixtures the
+  other way and having every one refused), and increments that render the tab and
+  next/prev must key off the marked element's own id. So the body a renderer
+  receives has every mark individually addressable, by construction.
+- **A label must carry readable text.** `data-mark` with **no value** (the boolean
+  attribute form) is **not a mark** and is ignored — the contract defines a mark by
+  its label, and a valueless flag has nothing for a tab to read. `data-mark=""` and
+  a whitespace-only label are **authoring mistakes and are refused**, because they
+  do reach the renderer and produce a tab with nothing in it — a blank postit that
+  reads as a rendering bug and is not one.
+  **Gap, and it is the code that is behind:** increment 1 ignores the valueless form
+  correctly but *accepts* `""` and `"   "` as marks with empty labels, with no test
+  covering either. Filed as **#389**; this clause is the target, in the same
+  ahead-of-the-code way the rest of this section was written before #367.
 
 **The count, per his ruling of 2026-07-28 05:35** — he overrode the loop's
 proposal of five-and-refuse:
