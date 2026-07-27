@@ -771,6 +771,20 @@ Next id: **338**
   explicit worker promotion only, preserving transcript/attachment history ·
   typed task/update requests mint normal human-origin tasks · coordinate storage
   and transcript contract with revised #270/#229 before red-first UI increments
+  · **APPROVED for WRITTEN DESIGN ONLY, human via watch 2026-07-27 23:03**
+  (`rec` = Accept N1) · N1 is: the loop **Answer** becomes the root response to
+  the question, and later human Notes plus loop Replies render as one connected
+  discussion branch beneath it at a **single** inset depth — conventional
+  comment→reply hierarchy without a diagonal staircase · preserve exact
+  chronology, author and timestamp; recognise an explicit `Reply (loop, …)`;
+  never indent each turn more deeply; **if no root exists, keep the note
+  top-level rather than guessing** · **the scope limit is part of the approval
+  and is not the loop's to widen**: his ask granted a design/spec document and
+  explicitly NOT parser, file-format, UI, migration, deployment or transition
+  changes · so the deliverable is the spec plus a review artifact, and
+  implementation is a separate ask afterwards · stated here rather than left in
+  the answered question, because an approval whose scope lives only in
+  questions.md is one the next agent reads as broader than it is
 
 - **#252** — Render Markdown files on `/file` · P2 · feature · 25m · origin:
   **human** · **human via watch 15:17** · `.md` paths default to rendered

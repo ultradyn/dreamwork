@@ -139,30 +139,6 @@
   `Accept V1 for design`, `Accept V1 with amendments: …`, `Choose V2`, or
   `Pause #289`.
 
-- **P1 · 2026-07-27 — #254 note/reply conversation: use one rooted exchange
-  branch rather than flat siblings or a nesting staircase?** Evidence:
-  `.dreamwork/review/evidence/review-note-reply-unclear.png`.
-
-  The screenshot's actual order is loop **Answer** first, then Max's later
-  **YOU** note. Today they render as visually similar sibling rows, so the note
-  reads like unrelated continuation. Rec **N1**: make the loop Answer the root
-  response to the question and render later human Notes plus loop Replies as one
-  connected discussion branch beneath it at a single inset depth. Preserve exact
-  chronology, author and timestamp; recognise explicit `Reply (loop, …)`; never
-  indent each turn more deeply; if no root exists, keep the note top-level rather
-  than guessing. This is conventional comment→reply hierarchy without turning a
-  long exchange into a diagonal staircase.
-
-  **N2** nests only new explicit Reply tags, leaving legacy Notes flat until a
-  file-format migration; this avoids inferred adjacency but leaves the reported
-  case broken. **N3** uses a flat chat timeline with stronger bubbles/labels; it
-  clarifies authorship but does not satisfy the requested comment→reply nesting.
-
-  Approval authorizes a written design/spec only. It does not authorize parser,
-  file-format, UI, migration, deployment, or transition changes. Answer `Accept
-  N1 for written design`, `Accept N2 for written design`, `Choose N3`, or name a
-  different relationship rule.
-
 - **P0/P1 · 2026-07-26 — #288 protected-service boundary: contain
   subagent tools or isolate the dashboard identity?** Decision artifact:
   `.dreamwork/review/protected-service-boundary-288.html`; analysis:
@@ -472,6 +448,40 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-27 — #254 note/reply conversation: use one rooted exchange
+  branch rather than flat siblings or a nesting staircase?**
+
+  → answered (2026-07-27 23:03): **rec = Accept N1 for written design.** The
+  authority granted is a design/spec document and NOTHING else — his own words
+  in the ask bound it: not parser, not file format, not UI, not migration, not
+  deployment, not transitions. So the deliverable is a written spec plus a
+  review artifact, and the implementation is a separate ask afterwards. Folded
+  into #254 with that boundary stated in the entry, because an approval whose
+  scope lives only in an answered question is an approval the next agent will
+  read as broader than it is. Evidence:
+  `.dreamwork/review/evidence/review-note-reply-unclear.png`.
+
+  The screenshot's actual order is loop **Answer** first, then Max's later
+  **YOU** note. Today they render as visually similar sibling rows, so the note
+  reads like unrelated continuation. Rec **N1**: make the loop Answer the root
+  response to the question and render later human Notes plus loop Replies as one
+  connected discussion branch beneath it at a single inset depth. Preserve exact
+  chronology, author and timestamp; recognise explicit `Reply (loop, …)`; never
+  indent each turn more deeply; if no root exists, keep the note top-level rather
+  than guessing. This is conventional comment→reply hierarchy without turning a
+  long exchange into a diagonal staircase.
+
+  **N2** nests only new explicit Reply tags, leaving legacy Notes flat until a
+  file-format migration; this avoids inferred adjacency but leaves the reported
+  case broken. **N3** uses a flat chat timeline with stronger bubbles/labels; it
+  clarifies authorship but does not satisfy the requested comment→reply nesting.
+
+  Approval authorizes a written design/spec only. It does not authorize parser,
+  file-format, UI, migration, deployment, or transition changes. Answer `Accept
+  N1 for written design`, `Accept N2 for written design`, `Choose N3`, or name a
+  different relationship rule.
+  - **Answer (via watch, 2026-07-27 23:02):** rec
 
 - **P1 · 2026-07-27 — #283 index-lock attribution: authorise one bounded
   privileged audit capture, or stop at recurrence evidence?**
