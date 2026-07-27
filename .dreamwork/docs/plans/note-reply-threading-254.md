@@ -389,6 +389,40 @@ Also out of scope by design:
    `NOTE_TAGS`, or a loop-attributed answer form — without which step 2
    cannot run and his reported entry stays flat. The one that makes #254
    visible where he saw it.
+
+   **SETTLED — he chose this, `rec` = R1, via watch 2026-07-27 23:38.** The
+   design's own headline objection (N1 as approved leaves his card flat) was put
+   to him as three options; he took the one this section named. So the loop
+   resolution tag is **no longer a follow-up this design implies — it is part of
+   the design**, and the two alternatives are closed with reasons worth keeping:
+
+   - **R2, promoting a loop reply to root when he has not answered, is refused.**
+     One line, fixes his card immediately, and inverts on the very common shape
+     where the loop asks *him* a clarifying question and he answers it: the
+     loop's question becomes the root and his answer hangs beneath it, reading
+     backwards. This is the same objection D1 already makes — a root is a
+     RESOLUTION, not merely the first loop contribution — so R2 would have
+     contradicted a decision inside the document he was approving.
+   - **R3, shipping N1 and accepting the card stays flat, is refused by him**,
+     which retires the honest-but-unsatisfying option rather than leaving it as
+     a fallback someone reaches for later under time pressure.
+
+   What R1 obliges, stated so the implementation increment cannot drift: a
+   **new** recognised tag, distinct from `Answer (via watch, …)` which is *his*
+   and must stay his — attribution is the thing #109 made a correctness matter.
+   The tag names a loop **resolution**, not any loop reply, so writing it is a
+   deliberate act by whatever produces the resolution; a loop contribution that
+   is not a resolution keeps using `Follow-up (loop, …)` and stays a branch
+   member. With a root present, N1 then runs unchanged on his card — the design
+   body needs no other amendment, which is why R1 was the recommendation.
+
+   **Not yet authorised, and deliberately not done here.** The tag has to land in
+   `NOTE_TAGS`, in `file-formats.md`, and in the parser's tests together, and
+   `file-formats.md` must NOT be edited ahead of the parser: a documented tag the
+   renderer does not recognise is the #340/#343 defect written into the contract
+   itself, which is worse than either half alone. His 23:03 grant covered the
+   written design only and choosing among design options did not widen it, so
+   implementation is one separate increment awaiting one word from him.
 2. **Two-answer data loss.** `_parse_entries` overwrites `cur["answer"]`,
    so on an entry with two `Answer (via watch, …)` bullets the earlier
    answer's words are **gone from every surface**. The live

@@ -1,74 +1,6 @@
 # Questions for the human
 
 ## Open
-
-- **P1 · 2026-07-27 — #254: the design you just approved will not change the card
-  you complained about. Which way do you want it?** Artifact:
-  `.dreamwork/review/note-reply-threading-254.html`; spec:
-  `.dreamwork/docs/plans/note-reply-threading-254.md`.
-
-  You approved N1 at 23:03 and it is written up as approved. But the agent that wrote
-  it checked its own design against your actual screenshot and found it does nothing
-  there — and it is right. Verified.
-
-  Why: N1 roots the branch at **your Answer**, and that question has no Answer at
-  all. It has a note from you and a reply from the loop. Your own tie-breaker
-  ("if no root exists, keep the note top-level rather than guessing") then says:
-  leave it flat. Which is exactly how it looks today.
-
-  There was a second, separate bug in that card, and it is already fixed: the loop had
-  written its reply with a tag (`Answer (loop, …)`) that the parser does not recognise,
-  so it was not treated as a reply at all — it fell into the question's body and
-  rendered above the note it was answering. That one is repaired in the file.
-
-  So the remaining question is what should happen when **the loop replies to something
-  and you never answer it** — which is the common shape, and the shape of your
-  screenshot.
-
-  Rec **R1: add a loop resolution tag.** Today `Answer (via watch, …)` is *yours* — the
-  page writes it when you answer, and there is no equivalent the loop can write. Give
-  the loop one, and N1 works on your card unchanged, because now there is a root to
-  hang the branch from. Costs one recognised tag in `file-formats.md`.
-
-  **R2: let a loop reply become the root when you have not answered.** One line, fixes
-  your card immediately — but it inverts on the very common case where the loop asks
-  *you* a clarifying question and you answer it: the loop's question becomes the root
-  and your answer becomes a reply underneath it, which reads backwards.
-
-  **R3: ship N1 as-is and accept that this card stays flat.** Honest, and the threading
-  still helps every question that does have an answer — but the thing you reported is
-  not fixed.
-
-  Answer `R1` (rec), `R2`, `R3`, or say what you would rather see.
-
-- **P2 · 2026-07-27 — #281 Q6, asked again in plain terms: should a task row on
-  `/tasks` carry a button that points the loop at that task?** You said *"you'll
-  need to explain what this means sorry"* — fair, the original asked in the
-  loop's own vocabulary.
-
-  Plainly: today, to aim the loop at one specific task, you type into the
-  dashboard composer — `do-next: #281 …` — and the loop picks it up on its next
-  tick. That machinery already exists and needs nothing new built.
-
-  The question is whether **each row on the new `/tasks` page also carries a
-  small button that sends exactly that**, so aiming the loop is one click on the
-  row you are already reading instead of retyping its number into a box
-  elsewhere.
-
-  Rec **yes, but as a follow-up, after the page reads correctly** — because it
-  changes what the page *is*. A list you only read is safe to get wrong; a list
-  that can start work is a control panel, and a mis-click redirects the loop.
-  How much authority a page holds is your call, not something to fold quietly
-  into a list view.
-
-  Answer `yes, v1`, `yes, follow-up` (rec), or `read-only`.
-
-- **P2 · 2026-07-27 — #252 Markdown `/file` modes: one quiet Rendered/Source switch in the file heading?** #158 already made `.md`/`.markdown`/`.mdx` reflow safely through the existing escape-first `mdB` pipeline while source files stay verbatim. #252 adds the explicit exact-bytes path and mode transition the human requested.
-
-  Rec **M1**: for Markdown only, place a compact two-position **Rendered / Source** segmented switch beside the path heading. Rendered is the default; Source shows the exact escaped bytes in the existing `<pre>` and is deep-linkable with `?view=source` so copy/share preserves intent. Changing mode dissolves the body with the page's small atmospheric blur/fade gesture, keeps the heading/control fixed, restores the same scroll ratio where possible, and reduced-motion swaps instantly. Internal Markdown links reuse confined `/file` routing; external links remain explicit external anchors; raw HTML is always inert. Source is never syntax-rewritten, so exact copy remains trustworthy. Mobile keeps the same two labels in one row rather than hiding either mode.
-
-  **M2** is a side-by-side rendered/source split (refuted: halves the reading column, poor on mobile, and makes exact/source secondary controls harder to understand). **M3** keeps Source as default with Rendered opt-in (refuted: contradicts the human's explicit default-rendered brief and #158's now-landed line). Approval authorises an isolated red-first implementation, deterministic desktop/mobile captures, and interleaved vision + geometry review; not deployment. Answer `Accept M1`, `Accept M1 with amendments: …`, or `Pause #252`.
-
 - **P2 · 2026-07-27 — #295 shader dithering: replace the temporal white-noise
   LSB dither with static screen-space IGN?** Grok's read-only map found the
   composite pass **already dithers** — `col += (hash(gl_FragCoord.xy+t)-0.5)/255`
@@ -485,6 +417,127 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-27 — #254: the design you just approved will not change the card
+  you complained about. Which way do you want it?**
+
+  → answered (2026-07-27 23:38): **R1 — give the loop a resolution tag.** His
+  `rec` took the option that makes N1 work on his card unchanged, and it closes the
+  two alternatives with reasons worth keeping. **R2** (promote a loop reply to root
+  when he has not answered) is refused because it inverts on the very common shape
+  where the loop asks *him* a clarifying question and he answers it — the loop's
+  question would become the root and his answer would hang beneath it, reading
+  backwards; that is the same objection the spec's own D1 makes, so R2 would have
+  contradicted a decision inside the document he approved. **R3** (ship N1, accept
+  the card stays flat) he refused, which retires the honest-but-unsatisfying
+  fallback rather than leaving it for someone to reach for later under time
+  pressure. Folded into `.dreamwork/docs/plans/note-reply-threading-254.md` §8,
+  where the resolution tag has moved from *"follow-up this design implies"* to part
+  of the design. What R1 obliges, so the implementation cannot drift: a **new** tag
+  distinct from `Answer (via watch, …)`, which is *his* and stays his — attribution
+  is what #109 made a correctness matter — naming a loop **resolution** rather than
+  any loop reply, so a non-resolution loop contribution keeps `Follow-up (loop, …)`
+  and stays a branch member. **Implementation is not authorised by this**: his 23:03
+  grant was the written design only and choosing among design options did not widen
+  it, so `NOTE_TAGS` + `file-formats.md` + tests remain one increment awaiting one
+  word. And they must land together — documenting a tag the renderer does not
+  recognise would write the #340/#343 defect into the contract itself.
+
+  Artifact:
+  `.dreamwork/review/note-reply-threading-254.html`; spec:
+  `.dreamwork/docs/plans/note-reply-threading-254.md`.
+
+  You approved N1 at 23:03 and it is written up as approved. But the agent that wrote
+  it checked its own design against your actual screenshot and found it does nothing
+  there — and it is right. Verified.
+
+  Why: N1 roots the branch at **your Answer**, and that question has no Answer at
+  all. It has a note from you and a reply from the loop. Your own tie-breaker
+  ("if no root exists, keep the note top-level rather than guessing") then says:
+  leave it flat. Which is exactly how it looks today.
+
+  There was a second, separate bug in that card, and it is already fixed: the loop had
+  written its reply with a tag (`Answer (loop, …)`) that the parser does not recognise,
+  so it was not treated as a reply at all — it fell into the question's body and
+  rendered above the note it was answering. That one is repaired in the file.
+
+  So the remaining question is what should happen when **the loop replies to something
+  and you never answer it** — which is the common shape, and the shape of your
+  screenshot.
+
+  Rec **R1: add a loop resolution tag.** Today `Answer (via watch, …)` is *yours* — the
+  page writes it when you answer, and there is no equivalent the loop can write. Give
+  the loop one, and N1 works on your card unchanged, because now there is a root to
+  hang the branch from. Costs one recognised tag in `file-formats.md`.
+
+  **R2: let a loop reply become the root when you have not answered.** One line, fixes
+  your card immediately — but it inverts on the very common case where the loop asks
+  *you* a clarifying question and you answer it: the loop's question becomes the root
+  and your answer becomes a reply underneath it, which reads backwards.
+
+  **R3: ship N1 as-is and accept that this card stays flat.** Honest, and the threading
+  still helps every question that does have an answer — but the thing you reported is
+  not fixed.
+
+  Answer `R1` (rec), `R2`, `R3`, or say what you would rather see.
+  - **Answer (via watch, 2026-07-27 23:38):** rec
+
+- **P2 · 2026-07-27 — #281 Q6, asked again in plain terms: should a task row on
+  `/tasks` carry a button that points the loop at that task?**
+
+  → answered (2026-07-27 23:39): **Yes, as a follow-up — filed as #344.** His
+  words: *"yes, can be a followup (add to tasks in that case)"*, so the instruction
+  to file it is explicit and is done rather than deferred to a later grooming pass.
+  He took the recommendation's sequencing: `/tasks` earns read-correctness first,
+  then gains the control. The reason that sequencing was recommended is recorded on
+  #344 so it survives whoever implements it — a list you only read is safe to get
+  wrong, a list that can start work is a control panel, and a mis-click redirects
+  the loop.
+
+  You said *"you'll
+  need to explain what this means sorry"* — fair, the original asked in the
+  loop's own vocabulary.
+
+  Plainly: today, to aim the loop at one specific task, you type into the
+  dashboard composer — `do-next: #281 …` — and the loop picks it up on its next
+  tick. That machinery already exists and needs nothing new built.
+
+  The question is whether **each row on the new `/tasks` page also carries a
+  small button that sends exactly that**, so aiming the loop is one click on the
+  row you are already reading instead of retyping its number into a box
+  elsewhere.
+
+  Rec **yes, but as a follow-up, after the page reads correctly** — because it
+  changes what the page *is*. A list you only read is safe to get wrong; a list
+  that can start work is a control panel, and a mis-click redirects the loop.
+  How much authority a page holds is your call, not something to fold quietly
+  into a list view.
+
+  Answer `yes, v1`, `yes, follow-up` (rec), or `read-only`.
+  - **Answer (via watch, 2026-07-27 23:39):** yes, can be a followup
+    (add to tasks in that case)
+
+- **P2 · 2026-07-27 — #252 Markdown `/file` modes: one quiet Rendered/Source switch in the file heading?**
+
+  → answered (2026-07-27 23:39): **Accept M1 — one quiet Rendered/Source switch
+  beside the path heading.** His `rec`. Rendered stays the default, Source shows
+  exact escaped bytes and is deep-linkable via `?view=source`, the mode change uses
+  the page's existing atmospheric dissolve with reduced-motion parity, and Source is
+  never syntax-rewritten so copied bytes stay trustworthy. Two consequences for
+  whoever picks it up. First, the approval authorises a red-first implementation
+  with deterministic desktop/mobile captures and interleaved vision + geometry
+  review — **not deployment**. Second, `#252`'s recorded blocker is now wrong: it
+  says *blocked on #158*, and #158 has landed at `5c45d83`, so the real constraint
+  is file ownership — `watch.py` is held by the #326 agent — not the dependency.
+  Corrected on the ledger entry in the same increment, because a stale blocker is
+  how a ready task sits unstarted while the loop looks past it.
+
+  #158 already made `.md`/`.markdown`/`.mdx` reflow safely through the existing escape-first `mdB` pipeline while source files stay verbatim. #252 adds the explicit exact-bytes path and mode transition the human requested.
+
+  Rec **M1**: for Markdown only, place a compact two-position **Rendered / Source** segmented switch beside the path heading. Rendered is the default; Source shows the exact escaped bytes in the existing `<pre>` and is deep-linkable with `?view=source` so copy/share preserves intent. Changing mode dissolves the body with the page's small atmospheric blur/fade gesture, keeps the heading/control fixed, restores the same scroll ratio where possible, and reduced-motion swaps instantly. Internal Markdown links reuse confined `/file` routing; external links remain explicit external anchors; raw HTML is always inert. Source is never syntax-rewritten, so exact copy remains trustworthy. Mobile keeps the same two labels in one row rather than hiding either mode.
+
+  **M2** is a side-by-side rendered/source split (refuted: halves the reading column, poor on mobile, and makes exact/source secondary controls harder to understand). **M3** keeps Source as default with Rendered opt-in (refuted: contradicts the human's explicit default-rendered brief and #158's now-landed line). Approval authorises an isolated red-first implementation, deterministic desktop/mobile captures, and interleaved vision + geometry review; not deployment. Answer `Accept M1`, `Accept M1 with amendments: …`, or `Pause #252`.
+  - **Answer (via watch, 2026-07-27 23:39):** rec
 
 - **P1 · 2026-07-26 — #287 Matt Pocock skills bridge: accept the thin
   protocol/profile-adapter direction?**

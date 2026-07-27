@@ -24,9 +24,33 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **344**
+Next id: **345**
 
 ## Open
+
+- **#344** — A per-row control on `/tasks` that points the loop at that task · P2 ·
+  feature · origin: **human** · **human via watch 2026-07-27 23:39**, answering
+  #281 Q6: *"yes, can be a followup (add to tasks in that case)"* — the filing is his
+  explicit instruction, not the loop's inference · each row on `/tasks` carries a
+  small control that sends exactly what he types today as `do-next: #<id>`, so aiming
+  the loop is one click on the row he is already reading rather than retyping the
+  number into a composer elsewhere · **the transport already exists and must be
+  reused, not reinvented**: the composer's `do-next` path (`watch.py:280` `COMMANDS`,
+  the events-log write at `:7807`) is the same channel, so this is a second surface on
+  one mechanism — a second way to enqueue a steer would be a second thing able to
+  disagree with the first
+  · **sequenced deliberately after `/tasks` reads correctly, which is the half he
+  agreed to**, and the reason is recorded here so it survives whoever implements it:
+  a list you only read is safe to get wrong, but a list that can start work is a
+  control panel, and a mis-click redirects the loop. How much authority a page holds
+  is his call, so the read surface earns trust first
+  · that makes the interaction design load-bearing rather than decorative: the
+  control must be unmistakable about what it will do before it is pressed, must not
+  sit where a scanning eye lands, and needs a confirmation or an undo path — a
+  silent successful mis-click is the failure mode, and it is invisible precisely
+  because it succeeds
+  · **P2, not P1** — his own sequencing puts it behind the read work, and #281's
+  page is not landed yet · blocked on #281
 
 - **#343** — lint must reject an unrecognised author tag in questions.md and
   answers.md · **P1** · reliability · origin: **loop** · a threaded bullet whose
@@ -1058,7 +1082,27 @@ Next id: **344**
   explicit Source/Raw mode for exact bytes/copy; reuse safe Markdown + confined
   link classification; never execute embedded HTML/scripts · atmospheric mode
   transition + reduced-motion parity · one pipeline with #158 reflow, not a
-  competing transform · blocked on #158
+  competing transform
+  · **APPROVED, human via watch 2026-07-27 23:39 (`rec` = Accept M1)**: one compact
+  two-position **Rendered / Source** segmented switch beside the path heading, for
+  Markdown only · Rendered is the default; Source shows the exact escaped bytes in
+  the existing `<pre>` and is deep-linkable with `?view=source` so a copied or
+  shared link preserves intent · the mode change uses the page's existing
+  atmospheric dissolve with the heading and control held fixed, restores the same
+  scroll ratio where possible, and swaps instantly under reduced motion
+  (`transitions.md` governs, as it does for everything) · Source is **never**
+  syntax-rewritten, so copied bytes stay trustworthy — that is the whole point of
+  the mode and is not a detail to optimise away · mobile keeps both labels in one
+  row rather than hiding either · authorises a red-first implementation with
+  deterministic desktop/mobile captures and interleaved vision + geometry review,
+  **not deployment**
+  · **its recorded blocker was stale and is corrected here**: the entry said
+  *blocked on #158*, but #158 landed at `5c45d83` and its own entry already says so
+  — so this has been startable and was being looked past. The real constraint is
+  file ownership: `watch.py` is held by the #326 agent, which also blocks #336,
+  #337, #331 and #322 · a stale blocker is how a ready, approved task sits
+  unstarted while the loop reads the queue as empty, which is why the correction
+  goes in the entry rather than being remembered
 
 - **#249** — Add dev-overlay sampling cadence controls · P2 · dev UI · 25m ·
   origin: **human** · **human via watch 14:37** · frame-time graph + other
