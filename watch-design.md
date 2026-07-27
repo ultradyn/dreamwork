@@ -535,7 +535,10 @@ both the page's own vocabulary:
   cards, borders or fills, whitespace *is* the structural device, so claiming
   space is what being foregrounded looks like here. It costs the summary an 8px
   shift under his pointer on the click that opens it — that is what "air above"
-  means, and it is the half he asked for by name.
+  means, and it is the half he asked for by name. **Both sides stay** (#391):
+  #277 cut the rule to bottom-only (`padding:0 0 .5rem`) to quiet that 8px
+  shift when fold motion made it more visible, and every surface lost top air
+  at once. The shift is the feature, not a fold-motion bug; do not re-cut it.
 - **Luminance.** The summary steps one place **up** the text ramp, because
   emphasis on this page is luminance (the same rule as `**bold**`). **Never
   `font-weight`**: a mono face steps rather than transitions, and re-metricing

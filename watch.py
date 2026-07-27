@@ -523,9 +523,16 @@ STYLE = """<style>
      so the growth has to be in the layout by then — the CARD's height travel
      is what animates it, carrying every card below for free. A padding
      transition would hand `regroupCards` a start-of-transition rect and the
-     FLIP would aim at a height the card never reaches, snapping at the end. */
+     FLIP would aim at a height the card never reaches, snapping at the end.
+
+     BOTH sides, not only the bottom. `padding:.5rem 0` is load-bearing for
+     #169: top air is the half that shifts the summary 8px under the pointer,
+     and that shift *is* the prominence he asked for by name. #277 (22f9884)
+     cut it to `padding:0 0 .5rem` to quiet that shift when the fold motion
+     made it more visible; that left every disclosure bottom-only and broke
+     prominence.mjs on all four surfaces. Do not re-cut the top. */
   details { margin:.25rem 0; }
-  details[open] { padding:0 0 .5rem; }
+  details[open] { padding:.5rem 0; }
   summary { cursor:pointer; color:var(--lit); list-style:none; }
   details[open] > summary { color:var(--bright); }
   summary::before { content:"+ "; color:var(--dim); }
