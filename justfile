@@ -266,9 +266,16 @@ deploy rev="HEAD":
 # Deliberately NOT gated in `just test`: making adjacency mandatory would be
 # worse than the status quo. It is a prompt to look, not a proof (#155).
 #
-# Range defaults to the styleguide era — d1df255 is where watch-design.md
-# became authoritative, so earlier commits could not have obeyed the rule.
-audit-styleguide range="d1df255..HEAD" window="3":
+# Range defaults to 1d089ad — the most recent commit that violated the rule
+# (fix(#304), 2026-07-27). Everything after it obeys; the 11 misses before it
+# (a 2-day burst, 2026-07-26..27) are NOT back-filled: reconstructed entries
+# written from diffs by someone who did not make the change are the fabrication
+# this check exists to prevent (#313). The baseline is derived from history
+# (the last miss), not a round number; the convention held for ~378 commits
+# after d1df255 (where watch-design.md became authoritative) before the burst.
+# The recipe prints a runtime count of pre-baseline misses so the gaps stay
+# visible; pass 'just audit-styleguide d1df255..HEAD' to list them in full.
+audit-styleguide range="1d089ad..HEAD" window="3":
     #!/usr/bin/env bash
     set -euo pipefail
     mapfile -t all < <(git log --format=%h {{range}})
@@ -297,4 +304,30 @@ audit-styleguide range="d1df255..HEAD" window="3":
     done
     echo "watch.py commits: $ok with a styleguide entry (watch-design.md or file-formats.md) within {{window}}, $miss without"
     echo "(adjacency, not coverage — see the comment above this recipe)"
+    # Pre-baseline visibility — the default range skips commits before
+    # 1d089ad, but silently narrowing coverage is its own dishonesty
+    # (CLAUDE.md: a check that bounds coverage must say what it is not
+    # covering). The count is derived at runtime; a hardcoded literal would
+    # carry today's truth silently into next week (.dreamwork/lessons.md).
+    if git rev-parse --verify -q 1d089ad >/dev/null 2>&1 && \
+       git rev-parse --verify -q d1df255 >/dev/null 2>&1; then
+      mapfile -t pre < <(git log --format=%h d1df255..1d089ad)
+      p_wp=0; p_miss=0
+      for p_i in "${!pre[@]}"; do
+        git show --stat --format= --name-only "${pre[$p_i]}" | grep -qx "watch.py" || continue
+        p_wp=$((p_wp+1))
+        p_lo=$(( p_i - {{window}} )); [ "$p_lo" -lt 0 ] && p_lo=0
+        p_hi=$(( p_i + {{window}} )); [ "$p_hi" -ge "${#pre[@]}" ] && p_hi=$(( ${#pre[@]} - 1 ))
+        p_found=""
+        for p_j in $(seq "$p_lo" "$p_hi"); do
+          if git show --stat --format= --name-only "${pre[$p_j]}" \
+               | grep -qxE "watch-design.md|file-formats.md"; then
+            p_found=1; break
+          fi
+        done
+        [ -n "$p_found" ] || p_miss=$((p_miss+1))
+      done
+      echo "pre-baseline (d1df255..1d089ad): $p_wp watch.py commits, $p_miss without a styleguide entry"
+      echo "  list them: just audit-styleguide d1df255..HEAD"
+    fi
     [ "$miss" -eq 0 ]
