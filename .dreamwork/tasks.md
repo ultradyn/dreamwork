@@ -47,18 +47,6 @@ Next id: **349**
   assert no rendered nav item's text differs from its source text by an inserted break,
   which is checkable without a screenshot
 
-- **#348** — Teach the build-time highlighter `sql`, since schema designs are what it is
-  read for · P3 · review tooling · origin: **loop** · found writing #346's design, whose
-  code blocks are `CREATE TABLE` statements · #339 supports python json bash javascript
-  html, and correctly leaves an unmarked or unsupported block plain rather than guessing
-  — so #346's schema renders as plain text, which is the designed behaviour and not a bug
-  · the case for adding it is that `.dreamwork/docs/plans/` will accumulate schema work
-  through #294/#346, and a `CREATE TABLE` block is exactly where a colour tells a reader
-  where the constraint ends · small: one `_scanner` spec plus the token classes that
-  already exist (`kw`, `str`, `num`, `com`, `typ`) — no new CSS · the existing acceptance
-  tests generalise: the round-trip must recover the source, and `test_the_supported_
-  languages_are_the_advertised_set` pins the list against the template's own prose, so
-  adding a language without documenting it fails
 
 - **#346** — Design #294's task entity schema and read-only CLI surface, the half that
   is not gated on #263 · P1 · schema/CLI design · origin: **loop** · split from #294
@@ -1663,6 +1651,35 @@ Next id: **349**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#348** — Teach the build-time highlighter `sql`, since schema designs are what it is
+  read for · **closed `d22fb09`** · P3 · review tooling · origin: **loop** · found writing #346's design, whose
+  code blocks are `CREATE TABLE` statements · #339 supports python json bash javascript
+  html, and correctly leaves an unmarked or unsupported block plain rather than guessing
+  — so #346's schema renders as plain text, which is the designed behaviour and not a bug
+  · the case for adding it is that `.dreamwork/docs/plans/` will accumulate schema work
+  through #294/#346, and a `CREATE TABLE` block is exactly where a colour tells a reader
+  where the constraint ends · small: one `_scanner` spec plus the token classes that
+  already exist (`kw`, `str`, `num`, `com`, `typ`) — no new CSS · the existing acceptance
+  tests generalise: the round-trip must recover the source, and `test_the_supported_
+  languages_are_the_advertised_set` pins the list against the template's own prose, so
+  adding a language without documenting it fails
+  · **landed 2026-07-28 00:54** — `(?i:…)` scoped to the sql keyword/type patterns
+  rather than `re.IGNORECASE` on the shared master pattern, which would have reached
+  every other language's spec and made `_PY`'s `typ` match `none`. `com` before `op`
+  (`--` opens a comment, `-` is also an operator) and `kw`/`typ` before `var`, both
+  commented and both pinned by a test
+  · **#346's artifact was deliberately NOT marked `language-sql`** — its block is
+  shorthand, not DDL, and mislabelling it to manufacture a consumer would be #339's
+  never-guess rule broken in the other direction
+  · the advertised-set test was strengthened while here: it now DERIVES the language
+  list from the template's own authoring comment and compares it to
+  `SUPPORTED_LANGUAGES`, so supported-but-unadvertised (invisible to the next author)
+  and advertised-but-unsupported (renders plain, no explanation) both fail
+  · three red proofs, each naming its production line; the FIRST ATTEMPT at them was
+  invalid and is recorded in `lessons.md` — `git checkout --` as the injection-undo
+  reverted the uncommitted feature itself, so two proofs failed because the feature
+  was absent and read as clean discriminating reds
 
 - **#339** — Syntax highlighting for code blocks in the review-artifact template ·
   **closed `be8812e`** · P2 · review tooling/visual · origin: **human** · **human via watch `add-idea`
