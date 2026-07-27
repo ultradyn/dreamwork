@@ -2593,6 +2593,9 @@ Next id: **9**
         # Counted ONCE, not twice: the relation is symmetric, and a count of 2
         # would mean the check is thinking in rows rather than in pairs.
         assert len(oks) == 1 and "1 related pair(s)" in oks[0], oks
+        # Coverage number (#395): unparseable count is always named so a silent
+        # skip cannot hide — 0 here, because the fixture is well-formed.
+        assert "0 entries unparseable" in oks[0], oks
 
     def test_a_one_sided_relation_errors(self, tmp_path):
         # Precondition, derived rather than assumed: the ledger this starts from
@@ -2690,6 +2693,140 @@ Next id: **9**
         # the summary line is genuinely reachable — otherwise this passes vacuously.
         assert "related: **#2**" in (t / ".dreamwork" / "tasks.md").read_text()
         assert not any("all reciprocal" in d for d in rows), rows
+
+    def test_an_unbolded_relation_marker_is_flagged_not_skipped(self, tmp_path):
+        """#395: missing bold used to hit `if not found: continue` in silence.
+
+        Production line that must change for this to fail: the branch that
+        ERRORS when RELATED_FIELD matches and RELATED_MARKER does not — restore
+        a bare `if not found: continue` and this goes green wrongly.
+        """
+        unbolded = self.LEDGER.replace("related: **#2**", "related: #2")
+        # Precondition, runtime: RELATED_MARKER genuinely does not match the
+        # unbolded field — a fixture the bold regex still accepted would prove
+        # nothing about the silent-skip hole.
+        entry_line = next(ln for ln in unbolded.splitlines() if "related: #2" in ln)
+        assert lint.RELATED_FIELD.search(entry_line), entry_line
+        assert not lint.RELATED_MARKER.search(entry_line), entry_line
+        t = self.build(tmp_path, unbolded)
+        errs = self.rows(t, lint.ERROR)
+        assert any("unparseable" in e and "#1" in e for e in errs), errs
+        # Shape named, not a reciprocity symptom about a claim we never saw.
+        assert any("unparseable" in e for e in errs), errs
+
+    def test_a_correctly_bolded_marker_still_passes(self, tmp_path):
+        """Neighbour of the unbolded case: the required form stays quiet."""
+        t = self.build(tmp_path, self.LEDGER)
+        assert self.rows(t, lint.ERROR) == [], self.rows(t, lint.ERROR)
+        oks = self.rows(t, lint.OK)
+        assert any("1 related pair(s)" in o and "0 entries unparseable" in o
+                   for o in oks), oks
+
+    def test_two_adjacent_bold_spans_are_flagged_rather_than_silently_truncated(
+            self, tmp_path):
+        """#395 trap 2: `**#393**, **#394**` used to keep only the first id.
+
+        Production line: RELATED_ADJACENT_SPANS branch — accept adjacent spans
+        as one marker (or drop the branch) and this fails by going quiet or by
+        reciprocating on a truncated set.
+        """
+        # Give #3 a reciprocal link to #1 so a truncated parse (only #2 kept)
+        # would look reciprocal on the first id alone — the shape error must
+        # still fire rather than a reciprocity complaint about the drop.
+        ledger = """# Tasks
+
+Next id: **9**
+
+## Open
+
+- **#1** — multi · P2 · origin: **loop** · related: **#2**, **#3** · still going
+- **#2** — half a · P2 · origin: **loop** · related: **#1** · going too
+- **#3** — half b · P2 · origin: **loop** · related: **#1** · alone
+"""
+        # Precondition: RELATED_MARKER captures only the first span's interior
+        # on the multi-id entry (the silent truncation #395 names).
+        multi_line = next(ln for ln in ledger.splitlines() if "related: **#2**, **#3**" in ln)
+        captured = lint.RELATED_MARKER.findall(multi_line)
+        assert captured == ["#2"], captured
+        assert lint.RELATED_ADJACENT_SPANS.search(multi_line)
+        t = self.build(tmp_path, ledger)
+        errs = self.rows(t, lint.ERROR)
+        assert any("adjacent bold spans" in e for e in errs), errs
+
+    def test_the_marker_vocabulary_in_prose_does_not_manufacture_a_marker(
+            self, tmp_path):
+        """#395 trap 3: mid-sentence `related: **…**` is not a field claim.
+
+        Production line: field anchoring on RELATED_MARKER / RELATED_FIELD —
+        remove `(?:^|[·])\\s*` and this fails (phantom marker from prose).
+        """
+        # Mid-sentence full form, deliberately NOT on a ·-field boundary.
+        # Unanchored matching would treat related: **#9** as a real claim.
+        prose = self.LEDGER.replace(
+            "· alone",
+            "· the required form is related: **#9** mid-sentence and must not "
+            "count as a claim · alone")
+        unanchored = re.compile(r"related:\s*\*\*([^*]*?)\*\*", re.I)
+        poisoned = next(ln for ln in prose.splitlines() if "mid-sentence" in ln)
+        # Precondition: unanchored WOULD manufacture a phantom; anchored must not.
+        assert unanchored.findall(poisoned) == ["#9"], poisoned
+        assert not lint.RELATED_MARKER.findall(poisoned), \
+            "anchored matcher must not see a mid-sentence phantom"
+        assert not lint.RELATED_FIELD.search(
+            poisoned.replace("related: **#9**", "X")
+        ) or not lint.RELATED_FIELD.search(
+            re.sub(r".*?(related: \*\*#9\*\*)", r"\1", poisoned)
+        )
+        # Field anchor: `related:` is preceded by words, not only whitespace after ·.
+        assert not re.search(r"(?:^|[·])\s*related:\s*\*\*#9\*\*", poisoned)
+        t = self.build(tmp_path, prose)
+        errs = self.rows(t, lint.ERROR)
+        assert errs == [], errs
+        oks = self.rows(t, lint.OK)
+        assert any("1 related pair(s)" in o for o in oks), oks
+
+    def test_it_flags_the_unbolded_markers_in_the_actual_revision_that_hid_them(
+            self, tmp_path):
+        """The real case, not a fixture: `tasks.md` at `660a294^` (= 8d70486).
+
+        Model: check_placeholder_citations proved against 4ce04e0 for #362.
+        Three unbolded markers hid four broken relations (#388→#383, #388→#386,
+        #387→#361, #386→#383). A check tuned only to today's repaired tree is
+        hollow — this is the criterion that makes it a check.
+        """
+        import subprocess
+        repo = Path(lint.__file__).parent
+        got = subprocess.run(
+            ["git", "-C", str(repo), "show", "660a294^:.dreamwork/tasks.md"],
+            capture_output=True, text=True)
+        if got.returncode != 0:
+            pytest.skip("history not present (zip install); fixtures still cover it")
+        blob = got.stdout
+        # Precondition: the historical unbolded forms are still in that blob.
+        assert "related: #383, #386" in blob, \
+            "historical unbolded #388 marker gone — this test no longer proves anything"
+        assert "related: #361" in blob, \
+            "historical unbolded #387 marker gone — this test no longer proves anything"
+        # Third unbolded is #386 → #383 (landed section); count unbolded fields.
+        unbolded_hits = re.findall(r"related: #\d+", blob)
+        assert len(unbolded_hits) >= 3, unbolded_hits
+        # RELATED_MARKER must not match those unbolded fields (the hole).
+        for hit in ("related: #383, #386", "related: #361"):
+            assert not lint.RELATED_MARKER.search(hit), hit
+            assert lint.RELATED_FIELD.search("· " + hit)
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(blob)
+        rep = lint.Report()
+        lint.check_related_markers(dw, lint.load_watch(), rep)
+        errs = [d for lvl, w, d in rep.rows
+                if lvl == lint.ERROR and w == "tasks.md"]
+        # Must name the three entries that carried unbolded markers.
+        named = " ".join(errs)
+        for eid in ("#388", "#387", "#386"):
+            assert eid in named, (eid, errs)
+        assert sum(1 for e in errs if "unparseable" in e) >= 3, errs
 
 
 class TestStatusAgreesWithLedger:

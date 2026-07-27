@@ -2103,7 +2103,25 @@ def check_cited_shas(dw: Path, rep: Report) -> None:
 # Case-insensitive on purpose, so a wrong case is FOUND and then errored rather
 # than silently reading as prose. Same reasoning as the origin marker's
 # vocabulary check: an unreadable claim must not look like an absent one.
-RELATED_MARKER = re.compile(r"related:\s*\*\*([^*]*?)\*\*", re.I)
+#
+# Field-anchored (#395): the marker must sit on a `·`-delimited field boundary
+# (or at the start of the flattened entry). Matching mid-sentence lets the
+# non-greedy `[^*]*?` run forward to the next `**` anywhere in the entry and
+# manufactures a phantom marker — #395's own ledger entry produced five before
+# it was reworded. Anchoring does not create a new phantom class: a real claim
+# is already a `· related: **…**` field, so matching only there is the same
+# surface the writer uses. Prose that happens to write that full field form is
+# a real claim, not a phantom; mid-sentence vocabulary without the field
+# boundary is ignored.
+RELATED_MARKER = re.compile(r"(?:^|[·])\s*related:\s*\*\*([^*]*?)\*\*", re.I)
+# A field-anchored `related:` whether or not the value is bolded — the seam
+# #395 closes. Without this, an unbolded marker falls through `if not found:
+# continue` and is skipped in silence, which hid four broken relations.
+RELATED_FIELD = re.compile(r"(?:^|[·])\s*related:\s*", re.I)
+# Two adjacent bold spans after the field prefix: only the first id is captured
+# and the rest surface as a misleading reciprocity complaint (#395 trap 2).
+RELATED_ADJACENT_SPANS = re.compile(
+    r"(?:^|[·])\s*related:\s*\*\*[^*]*\*\*\s*,\s*\*\*", re.I)
 RELATED_ID = re.compile(r"#(\d+)")
 
 
@@ -2133,6 +2151,19 @@ def check_related_markers(dw: Path, watch, rep: Report) -> None:
     disagreement that duplication invites is exactly what this check removes.
     Reciprocity is cheap to enforce and impossible to remember.
 
+    A present-but-unparseable marker is an ERROR, not a silent skip (#395). The
+    hole was specifically missing bold: `· related: #383` matched no
+    RELATED_MARKER, hit `if not found: continue`, and four broken relations hid
+    behind that. Wrong-case markers still match and still fire the case branch —
+    that branch is not dead. Two adjacent bold spans
+    (`**#393**, **#394**`) are a shape error of their own rather than a truncated
+    reciprocity complaint. Field anchoring keeps mid-sentence vocabulary from
+    manufacturing phantom markers.
+
+    The OK summary reports how many entries were unparseable as well as how many
+    pairs checked: a check that counts what it examined cannot silently stop
+    examining things.
+
     ERRORs rather than WARNs, unlike `check_cited_shas`, because there is no
     legacy to grandfather: at the time of writing the live ledger has **zero**
     `related:` markers (measured, not assumed — `RELATED_MARKER` finds none in 180
@@ -2157,27 +2188,51 @@ def check_related_markers(dw: Path, watch, rep: Report) -> None:
     # entry's lines before reading it, the same allowance the origin rule makes.
     claims: dict[int, set[int]] = {}
     all_ids = {i for ids, _ in entries for i in ids}
+    n_unparseable = 0
     for ids, raw in entries:
         flat = re.sub(r"\s+", " ", raw)
+        head = "/".join("#%d" % i for i in ids)
+        fields = list(RELATED_FIELD.finditer(flat))
         found = RELATED_MARKER.findall(flat)
-        if not found:
+        if not fields:
             continue
-        if len(found) > 1:
+        if not found:
+            # Field present, bold form absent — the #395 hole. Name the shape,
+            # not a downstream reciprocity symptom about claims we never saw.
+            n_unparseable += 1
             rep.add(ERROR, "tasks.md", (
-                f"{'/'.join('#%d' % i for i in ids)} has {len(found)} `related:` "
+                f"{head} has a `related:` marker that is unparseable — the form "
+                f"is `· related: **#N** ·` or `· related: **#N, #M** ·` with the "
+                f"bold span; without it the marker is read as absent and the "
+                f"reciprocity check skips the entry in silence (#353)"))
+            continue
+        if len(fields) > 1 or len(found) > 1:
+            rep.add(ERROR, "tasks.md", (
+                f"{head} has {max(len(fields), len(found))} `related:` "
                 f"markers — two claims about the same relation is none; list every "
                 f"id in one marker (#353)"))
             continue
-        if "related: **" not in flat:
+        if RELATED_ADJACENT_SPANS.search(flat):
+            # One span must hold the whole list. Feeding only the first id into
+            # reciprocity makes the message point at the silent drop, not the shape.
+            n_unparseable += 1
             rep.add(ERROR, "tasks.md", (
-                f"{'/'.join('#%d' % i for i in ids)} writes its related marker in "
+                f"{head} has a `related:` marker with two adjacent bold spans — "
+                f"only the first id is read and the rest are dropped; put every "
+                f"id in one span: `· related: **#N, #M** ·` (#353)"))
+            continue
+        if "related: **" not in flat:
+            # Reachable, not dead (#395 trap 1): Related: **#7** and related:**#7**
+            # both match RELATED_MARKER while failing this literal-prefix test.
+            rep.add(ERROR, "tasks.md", (
+                f"{head} writes its related marker in "
                 f"the wrong case — the vocabulary is exactly `related:` so a reader "
                 f"never has to interpret it (#353)"))
             continue
         named = {int(n) for n in RELATED_ID.findall(found[0])}
         if not named:
             rep.add(ERROR, "tasks.md", (
-                f"{'/'.join('#%d' % i for i in ids)} has a `related:` marker naming "
+                f"{head} has a `related:` marker naming "
                 f"no id — the value is one or more `#N`, comma separated (#353)"))
             continue
         for own in ids:
@@ -2185,11 +2240,11 @@ def check_related_markers(dw: Path, watch, rep: Report) -> None:
         for target in sorted(named):
             if target in ids:
                 rep.add(ERROR, "tasks.md", (
-                    f"{'/'.join('#%d' % i for i in ids)} names ITSELF as related — "
+                    f"{head} names ITSELF as related — "
                     f"the relation is between two tasks (#353)"))
             elif target not in all_ids:
                 rep.add(ERROR, "tasks.md", (
-                    f"{'/'.join('#%d' % i for i in ids)} is related to #{target}, "
+                    f"{head} is related to #{target}, "
                     f"which is not an id in the ledger — a relation pointing at "
                     f"nothing is worse than none (#353)"))
     for own, named in sorted(claims.items()):
@@ -2207,10 +2262,17 @@ def check_related_markers(dw: Path, watch, rep: Report) -> None:
     # same run as `#250 is related to #251 but #251 does not say so back`, because
     # the summary was unconditional — a reader scanning for the OK line would have
     # been told the opposite of the truth by the check that found it.
+    #
+    # The unparseable count is coverage (#395): had the pre-fix check printed
+    # "N pairs, K entries unparseable" the silent-skip hole would have been on
+    # screen for days. A check that counts what it examined cannot silently
+    # stop examining things.
     if claims and not any(lvl == ERROR and w == "tasks.md" and "(#353)" in d
                           for lvl, w, d in rep.rows):
         pairs = {tuple(sorted((a, b))) for a, named in claims.items() for b in named}
-        rep.add(OK, "tasks.md", f"{len(pairs)} related pair(s), all reciprocal")
+        rep.add(OK, "tasks.md", (
+            f"{len(pairs)} related pair(s), all reciprocal; "
+            f"{n_unparseable} entries unparseable"))
 
 
 def run_checks(dw: Path, watch, rep: Report) -> None:
