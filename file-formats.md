@@ -307,6 +307,49 @@ Do not reach for a prose keyword instead. It was tried and it is wrong:
 (`#301 fixed the LANDED half`), so a keyword rule flags the stale case for
 the wrong reason and cannot separate it from a deliberate partial.
 
+## `.dreamwork/tasks.md` — an open entry that declares ITSELF completed (#335)
+
+The section above catches the case where *git* says a task landed. This one
+catches the case where **the entry says so about itself** and no commit
+exists to notice: `#261`, a P0, sat under `## Open` for a full day carrying
+`completed **2026-07-26 16:21**` in its own metadata run. It was closed in
+prose, so there was no `close(#261)` commit for `check_landed_still_open` to
+find, and it was structurally invisible. `#247` was a second instance,
+undetected until this check ran.
+
+**The contract is about POSITION, not vocabulary.** An entry's metadata is
+the ` · `-separated chain of short tags immediately following the title —
+the run that carries `P1`, `origin:`, `owner:`. A completion marker
+(`completed`, `landed`, `merged` near a date or a sha) **inside that run is
+a self-declared close**; the same words in the prose body are not, and are
+normal. So:
+
+- **Do not put a completion marker in the metadata run of an entry you
+  intend to leave open.** If work partly landed, say so in the body and cite
+  the sha, exactly as the `#323` contract above requires.
+- Where the metadata run ends is defined operationally, because a ` · `
+  chain fades into prose rather than ending at a delimiter: the scan walks
+  tokens left to right and stops at the first that contains `;` or exceeds
+  50 characters. That boundary is a heuristic. It is correct on all real
+  entries today, and every failure is a WARN naming the matched phrase, so a
+  misjudgement is visible rather than silent — but if it ever needs to be
+  exact, the fix is a real title/body separator in the format, not a longer
+  regex.
+
+`lint.check_self_completed_open` **WARNs**, never ERRORs — same reasoning as
+`#323`: strong evidence worth a look, not a gate. The message names the id
+and the matched phrase precisely so a false positive is obvious to whoever
+reads it. Missing file, absent `## Open`, or an empty one: silent.
+
+**A naive keyword rule is wrong here and this was measured, not assumed.**
+Searching whole open entries for the same vocabulary returns five hits of
+which one is real — and each false positive is a *different* legitimate
+reason to be open: `#275` (research landed, his ask still pending), `#283`
+(one sub-stage of several), `#269` (acute half landed, broader scope
+deliberately open), `#281` (a sha cited for a sub-finding). Removing the
+position test makes all four fire plus five more. Position is the entire
+value of the check; the vocabulary is the cheap part.
+
 ## `.dreamwork/tasks.md` — first-seen origin from git history (#216)
 
 `task_origins.py` answers "who filed each task" as a fact about the
