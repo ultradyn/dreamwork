@@ -763,3 +763,40 @@ a shared **working tree** (dirty-file pollution and one index sweep), a shared *
 So the evidence points at **modularity, not a concurrency mechanism** — and it names the
 file: `watch.py`, with six tasks queued behind it. That is a conclusion I would not have
 reached from inside the fan-out, because from here the problem *feels* like contention.
+
+## The steering channel I trusted all session is unreliable, and I measured it late
+
+I have written nine relay files today on the belief that a coordinator can steer a running
+lane. That belief is now measured and it is half wrong.
+
+**`#389`'s lane read its relay and acted on it** — its report carries *"Bonus red (relay's
+second direction)"* and a whole section *"Relay (#389) neighbours — measured and decided"*.
+**`#395`'s lane did not.** Its relay was written four minutes into a fifteen-minute run, and
+its report mentions the relay zero times and did not do the thing the relay asked. Same
+mechanism, same *"re-read it between increments"* line in both briefs, opposite outcomes.
+
+**The discriminator is the lane's own decomposition, which it chooses after dispatch and which
+I cannot see.** A lane that treats its task as one increment never reaches a boundary, so it
+never re-reads. There is no timing I can pick that fixes this, and — worse — **a missed steer
+is silent at both ends**: I cannot tell "read it and judged it irrelevant" from "never opened
+it" except by scanning the report for evidence of receipt, which I had not been doing.
+
+So the rule, and it is a sorting rule rather than a resolution:
+
+> **Sort every steer by "what if this is never read". If the answer is "the deliverable is
+> incomplete", it belongs in the dispatch prompt.** The relay is for refinements that are safe
+> to miss — a ratification, a sharpened edge case, a neighbour worth checking.
+
+I had been using it correctly by accident and incorrectly on purpose in the same hour: the
+`#367` relay carried a *ratification* (harmless to miss — it confirmed something the lane had
+already done), and the `#395` relay carried a *new obligation* (write a hand-off line), which
+simply did not happen. The obligation is now in `SKILL.md` as a dispatch-time requirement and
+`#397` is the first prompt to carry it, which makes its landing the actual test.
+
+**The uncomfortable part** is that `#381`'s lane told me this hours earlier, in a section of
+its report I read and enjoyed and filed under irony: *"the relay is itself a write-then-hope
+channel: the coordinator writes a steer, a lane that has gone idle never reads it, and nothing
+wakes it — the same class of problem one layer up."* It even offered the fix. I recorded the
+observation and did not test the claim, and then spent two hours writing relays. **A lane
+naming a defect in the coordinator's own machinery is the same signal as a lane naming one in
+its own work, and I have a documented rule about the second and none about the first.**
