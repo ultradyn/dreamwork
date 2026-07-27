@@ -407,6 +407,40 @@ def test_a_short_grid_row_warns_and_still_builds(template):
                      warn=warned.append) and len(warned) == 1
 
 
+def test_a_refusal_still_reports_the_advice_it_had_already_computed(template):
+    """#379: `render` raised on the component violation before ever calling
+    `grid_warnings`, so a source with both faults showed the error on one run and
+    the warning only on the next — after the author had already fixed and
+    rebuilt.
+
+    The priority is unchanged and must stay so: this asserts the refusal still
+    happens. What changed is that it no longer swallows an advisory.
+
+    The production line is the placement of the `warn(...)` loop relative to the
+    two `raise`s. Move it back below them and this fails on `warned == []` while
+    every other row here still passes.
+    """
+    warned = []
+    # Three items in a four-column grid (the advisory) AND a stray child inside
+    # one of them (the refusal). Both faults, one source.
+    fields = _with_facts(
+        '<div class="facts">'
+        + '<div class="fact"><span class="number">1</span></div>' * 2
+        + '<div class="fact"><strong>3</strong><span class="caption">c</span></div>'
+        + '</div>')
+    with pytest.raises(ra.ArtifactError) as caught:
+        ra.render(fields, template=template, warn=warned.append)
+    # Precondition, derived rather than assumed: the thing that refused really is
+    # the component rule, not some earlier gate that would make the grid check
+    # unreachable for a reason unrelated to #379.
+    assert "documented component" in str(caught.value), caught.value
+    assert len(warned) == 1, warned
+    assert "empty track" in warned[0]
+    # And the grid really was short — three items against the template's own
+    # column count, read at runtime so a reshaped grid moves this with it.
+    assert ra.grid_columns(template) == 4
+
+
 def test_no_warn_callback_means_no_crash(template):
     """`warn=None` is the library default and must not be called."""
     fields = _with_facts('<div class="facts">'

@@ -723,6 +723,16 @@ def render(fields, template=None, warn=None):
     # marked code blocks. Runs after slot fill (so it sees authored code) and
     # before the fetch check (so its spans are held to the offline contract).
     out = highlight(out)
+    # #379 — advisories are emitted BEFORE any refusal, so a source with two
+    # faults reports both on one run. This used to sit below both `raise`s, which
+    # meant an author whose source had a component violation and a short grid row
+    # saw the error, fixed it, rebuilt, and only then learned about the dead
+    # track. The priority is deliberately unchanged: a refusal still refuses and
+    # still writes nothing. What changed is that it no longer discards advice
+    # already computed from the same document.
+    if warn is not None:
+        for message in grid_warnings(out, template):
+            warn(message)
     violations = fetch_violations(out)
     if violations:
         raise ArtifactError(
@@ -737,9 +747,6 @@ def render(fields, template=None, warn=None):
             "output misuses %d documented component(s) — the template styles "
             "the documented classes and nothing else, so this renders wrong "
             "with no other symptom:\n  %s" % (len(strays), "\n  ".join(strays)))
-    if warn is not None:
-        for message in grid_warnings(out, template):
-            warn(message)
     return out
 
 

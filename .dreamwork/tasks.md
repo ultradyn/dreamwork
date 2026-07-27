@@ -142,14 +142,6 @@ Next id: **381**
   can regenerate · `test_every_shipped_artifact_still_satisfies_the_new_rules` excludes this
   one violation **by name**, so a new one in the same file is still caught · related: **#379**
 
-- **#379** — A fatal component violation hides the grid warning until the next run · P3 ·
-  review tooling · origin: **loop** · 5m · found by #365's measurement · `build` raises on a
-  component violation before `grid_warnings` runs, so a source with both faults shows the error
-  on one run and the warning on the next · **the priority is correct** — a refusal must
-  outrank an advisory — and the entry exists so the sequence is not read later as a bug, or
-  "fixed" by demoting the refusal · if it is ever worth changing, the change is to collect
-  warnings before raising, not to reorder the checks · related: **#378**
-
 - **#363** — lint's landed-but-open WARN cannot tell a forgotten fold from a live lane · P3 ·
   tooling/honesty · origin: **loop** · 10m · reported by dreamer-264-boundary as report-only ·
   `check_landed_still_open` says an entry under Open has a close/merge commit and asks the
@@ -2289,6 +2281,20 @@ Next id: **381**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#379** — A refusal no longer swallows the advisory it had already computed · landed
+  `PENDING` · origin: **loop** · `render` raised on the component violation before
+  `grid_warnings` ran, so a source with both faults showed the error, and the author fixed it,
+  rebuilt, and only then learned about the dead grid track
+  · **the entry's own rec was to collect warnings before raising rather than reorder the
+  checks, and that is what landed**: the `warn(...)` loop moved above both `raise`s. Priority
+  unchanged — a refusal still refuses and still writes nothing
+  · red first, and the red was discriminating: the test asserts the refusal really was the
+  component rule (`"documented component" in str(exc)`) before asserting `warned == []`, so it
+  cannot pass on some earlier gate making the grid check unreachable for an unrelated reason.
+  It also derives the column count from the template at runtime rather than writing `4`
+  · verified no restamp: rebuilding an artifact after the change is byte-identical, because
+  `template_stamp` digests the template and not this module · related: **#378**
 
 - **#380** — `check_cited_shas` said nothing on four different exits, and one fired · landed
   `8d7de88` · origin: **loop** · found by a flake, not by anyone reading the code: one full-suite
