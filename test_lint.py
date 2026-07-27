@@ -72,16 +72,14 @@ def target(tmp_path: Path, **files) -> Path:
 
 
 def run(t: Path):
+    """Run exactly what `lint.py` runs — never a second copy of the list.
+
+    This helper used to hand-maintain its own sequence and had drifted six
+    checks behind main(), so a newly added check was tested by nothing while
+    its tests passed. `lint.run_checks` is now the single definition.
+    """
     rep = lint.Report()
-    dw = t / ".dreamwork"
-    watch = lint.load_watch()
-    lint.check_questions(dw, watch, rep)
-    lint.check_tasks(dw, rep)
-    lint.check_status(dw, rep)
-    lint.check_watch_port(dw, rep)
-    lint.check_watch_tint(dw, watch, rep)
-    lint.check_skill_version(dw, rep)
-    lint.check_dreams(dw, rep)
+    lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
     return rep
 
 
@@ -941,3 +939,66 @@ class TestLedgerSectionSplit:
         openids, landed = watch.parse_ledger(self.HAZARD)
         assert openids == {"7", "8"}
         assert landed == {"5"}, "a real heading line must still end the open section"
+
+
+class TestLandedAsks:
+    """#306: an ask whose subject has already shipped must not read as a gate.
+
+    #290 was authorized in answers.md and its implementation landed and
+    deployed, while the P1 question sat Open for ~15 hours — because the
+    answering commit wrote the answer channel and the ledger and never touched
+    the ask channel. A handoff had to carry a hand-written "this question is
+    stale" caveat, which is a human remembering instead of a tool checking.
+
+    WARN and not ERROR, deliberately: a legitimate amendment thread on a
+    landed task exists, and this cannot tell one from a forgotten fold.
+    """
+
+    LEDGER = ("# Task ledger\n\nNext id: **9**\n\n" + "## " + "Open" + "\n\n"
+              "- **#7** — still live · P2 · task · origin: **loop**\n\n"
+              + "## " + "Recently landed" + "\n\n"
+              "**#5** shipped (abc1234). **#6** shipped (def5678).\n")
+
+    def _q(self, *titles):
+        body = "# Questions for the human\n\n## Open\n\n"
+        for ti in titles:
+            body += f"- **{ti}** some body text.\n\n"
+        return body + "## Answered\n\n"
+
+    def test_an_ask_for_a_landed_task_warns(self, tmp_path):
+        rep = run(target(tmp_path, **{
+            "tasks.md": self.LEDGER,
+            "questions.md": self._q("P1 · 2026-07-27 — #5 do the shipped thing?"),
+        }))
+        rows = [d for _, w, d in rep.rows if w == "questions.md" and "#5" in d]
+        assert rows, "an open ask naming only a landed id must be reported"
+        assert "landed" in rows[0], "must say WHY, not just name the id"
+        assert lint.WARN in [l for l, w, _ in rep.rows if w == "questions.md"], \
+            "this is a WARN: an amendment thread on a landed task is legitimate"
+
+    def test_an_ask_naming_one_open_id_is_left_alone(self, tmp_path):
+        """The rule is ALL named ids landed, not any — measured, not guessed.
+
+        The naive any-landed rule fired on this repo's real
+        `#229/#270 topic chats v2` question, where #270 had landed but #229 was
+        still open, so the ask was genuinely live. A check that cries wolf on a
+        live question teaches the reader to ignore it.
+        """
+        rep = run(target(tmp_path, **{
+            "tasks.md": self.LEDGER,
+            "questions.md": self._q("P1 · 2026-07-27 — #5/#7 half shipped?"),
+        }))
+        assert not [d for _, w, d in rep.rows if w == "questions.md" and "fold" in d], \
+            "a question naming a still-open id must not be flagged"
+
+    def test_an_ask_naming_no_task_is_left_alone(self, tmp_path):
+        rep = run(target(tmp_path, **{
+            "tasks.md": self.LEDGER,
+            "questions.md": self._q("P2 · 2026-07-27 — a general policy question?"),
+        }))
+        assert not [d for _, w, d in rep.rows if w == "questions.md" and "fold" in d]
+
+    def test_this_repo_has_no_forgotten_folds(self):
+        rep = lint.Report()
+        lint.check_landed_asks(lint.SKILL_DIR / ".dreamwork", lint.load_watch(), rep)
+        assert not [d for l, w, d in rep.rows if l == lint.WARN], rep.render()

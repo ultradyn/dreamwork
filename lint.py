@@ -301,6 +301,51 @@ def check_tasks(dw: Path, rep: Report) -> None:
     check_ledger_sections(text, rep)
 
 
+def check_landed_asks(dw: Path, watch, rep: Report) -> None:
+    """#306: an ask whose subject has already shipped is not a gate.
+
+    #290 was authorized by the human in `answers.md` and its implementation
+    landed and deployed, while the P1 question sat in `questions.md` Open for
+    ~15 hours — because the answering commit wrote the answer channel and the
+    ledger and never touched the ask channel. The two do not cross-reference,
+    and an ask whose subject has landed looks exactly like one still waiting,
+    so a coordinator handoff had to carry a hand-written "this question is
+    stale" caveat. That is a human remembering in place of a tool checking.
+
+    **All** named ids must be landed, not any. The naive any-landed rule was
+    measured against this repo first and fired on the real `#229/#270 topic
+    chats v2` question, where #270 had landed but #229 was still open and the
+    ask was genuinely live. A check that cries wolf on a live question teaches
+    the reader to ignore it, which is worse than no check.
+
+    WARN, not ERROR: an amendment thread on a landed task is legitimate, and
+    this cannot tell one from a forgotten fold. It names the id and asks for a
+    fold or a reason. The actual cure — one write path that folds the ask when
+    the answer is recorded — belongs to #263's event journal; this is only the
+    detector.
+    """
+    qpath, tpath = dw / "questions.md", dw / "tasks.md"
+    if watch is None or not qpath.exists() or not tpath.exists():
+        return
+    try:
+        _open_ids, landed = watch.parse_ledger(tpath.read_text())
+        asks = watch.parse_open_questions(qpath.read_text())
+    except Exception:
+        return  # the shape checks above own reporting an unreadable file
+    if not landed:
+        return
+
+    for entry in asks:
+        ids = re.findall(r"#(\d+)", entry.get("title", ""))
+        if ids and all(i in landed for i in ids):
+            rep.add(
+                WARN,
+                "questions.md",
+                f"open ask names only landed task(s) {', '.join('#' + i for i in ids)}"
+                f" — fold it, or add a note saying why it is still open (#306)",
+            )
+
+
 def check_ledger_sections(text: str, rep: Report) -> None:
     """#304: a SECOND, independent reader of where the open section is.
 
@@ -827,6 +872,30 @@ def check_dreams(dw: Path, rep: Report) -> None:
         rep.add(OK, "dreams/", f"{len(names)} named correctly")
 
 
+def run_checks(dw: Path, watch, rep: Report) -> None:
+    """Every check, in one place, because a SECOND copy of this list drifted.
+
+    `test_lint.py`'s helper used to hand-maintain its own sequence, and it had
+    fallen six checks behind — including the one being added when this was
+    found. A check absent from the test harness is a check whose tests cannot
+    fail, which is the failure mode this repo keeps rediscovering. One list,
+    called by `main()` and by the tests, cannot drift from itself.
+    """
+    check_questions(dw, watch, rep)
+    check_answers(dw, watch, rep)
+    check_tasks(dw, rep)
+    check_landed_asks(dw, watch, rep)
+    check_status(dw, rep)
+    check_watch_port(dw, rep)
+    check_watch_tint(dw, watch, rep)
+    check_run_mode(dw, watch, rep)
+    check_plugin_commands(dw, watch, rep)
+    check_submissions(dw, rep)
+    check_skill_version(dw, rep)
+    check_dreamwork_frontmatter(dw, rep)
+    check_dreams(dw, rep)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="lint",
@@ -843,18 +912,7 @@ def main(argv: list[str] | None = None) -> int:
 
     watch = load_watch()
     rep = Report()
-    check_questions(dw, watch, rep)
-    check_answers(dw, watch, rep)
-    check_tasks(dw, rep)
-    check_status(dw, rep)
-    check_watch_port(dw, rep)
-    check_watch_tint(dw, watch, rep)
-    check_run_mode(dw, watch, rep)
-    check_plugin_commands(dw, watch, rep)
-    check_submissions(dw, rep)
-    check_skill_version(dw, rep)
-    check_dreamwork_frontmatter(dw, rep)
-    check_dreams(dw, rep)
+    run_checks(dw, watch, rep)
 
     print(f"lint {dw}")
     print(rep.render())

@@ -974,3 +974,13 @@ this shape and convert opportunistically.)
   tool checking. When you record a decision, close the thing that asked for
   it in the same commit — and where two files hold two halves of one fact,
   assume they have already drifted. (coordinator, 2026-07-27, #306)
+- **A test harness that hand-copies the production list of checks will drift,
+  and the checks missing from it have tests that cannot fail.**
+  `test_lint.py`'s `run()` maintained its own sequence of lint checks and had
+  fallen six behind `main()` — including the check being added when this was
+  noticed, so its new tests passed while exercising nothing. The tell was a
+  test that failed for no visible reason: the fixture parsed, both parsers
+  worked in isolation, and the check simply was not being called. Any place
+  where the tests enumerate what production enumerates is this bug waiting;
+  make production export the list and have the tests call it.
+  (coordinator, 2026-07-27, #306)

@@ -28,29 +28,6 @@ Next id: **307**
 
 ## Open
 
-- **#306** — Notice an open question whose subject has already landed · P2 ·
-  chore · 25m · origin: **loop** · goal: stop a shipped feature from reading as
-  an open gate ← DREAMWORK.md *Nothing fails quietly* · **found by folding
-  #290**: he authorized it in `answers.md` at 01:57 and the implementation
-  landed and deployed, but the answering commit `4c18941` wrote `answers.md`
-  and the ledger and never touched `questions.md`, so the P1 ask sat Open for
-  ~15 hours with its own work already on the dashboard — and the previous
-  coordinator's handoff had to carry a hand-written "the #290 question is
-  stale" caveat, which is a human remembering instead of a tool checking ·
-  a question whose subject has landed is indistinguishable from one still
-  waiting, and the ask channel and the answer channel do not cross-reference ·
-  **checkable rule**: an Open `questions.md` entry naming `#N` in its title,
-  where `#N` is in the ledger's landed set, is at least a WARN — the same shape
-  as #304's two-readers-must-agree check, and cheap because `parse_ledger`
-  already returns that set · decide deliberately whether it is WARN or ERROR:
-  a legitimately-open follow-up question about a landed task exists (an
-  amendment thread), so ERROR may be too strong — WARN that names the id and
-  says "landed at <sha>, fold or say why" is probably right · red-first by
-  planting an open question for a landed id and watching it warn, then folding
-  it and watching the warning go · the deeper fix (one write path that folds
-  the ask when the answer is recorded) belongs with #263's event journal, not
-  here — this is the detector, not the cure
-
 - **#305** — Read a review document and answer its question side by side · P1 ·
   Web UI feature/design · ~75m, **needs splitting** · origin: **human** ·
   **do next via watch 16:34** · sent from `/review?p=tasks-page.html` while
@@ -1112,6 +1089,30 @@ Next id: **307**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#306** — Notice an open question whose subject has already landed · P2 ·
+  origin: **loop** · landed 2026-07-27 · `check_landed_asks` warns when an open
+  `questions.md` entry names **only** task ids that are in the ledger's landed
+  set, so a shipped feature can no longer read as an open gate the way #290 did
+  for ~15 hours · **the rule is ALL named ids landed, not any, and that was
+  measured before it was written**: the naive any-landed rule was run against
+  this repo first and fired on the real `#229/#270 topic chats v2` question,
+  where #270 had landed but #229 was still open and the ask was genuinely live
+  — a check that cries wolf on a live question teaches the reader to ignore it ·
+  WARN not ERROR, deliberately: an amendment thread on a landed task is
+  legitimate and this cannot tell one from a forgotten fold, so it names the id
+  and asks for a fold or a reason · the real cure — one write path that folds
+  the ask when the answer is recorded — stays with #263; this is the detector ·
+  **found while building it, and fixed as part of it:** `test_lint.py`'s `run()`
+  helper hand-maintained its own copy of the check sequence and had drifted six
+  checks behind `main()` (`check_answers`, `check_landed_asks`, `check_run_mode`,
+  `check_plugin_commands`, `check_submissions`, `check_dreamwork_frontmatter`),
+  so a new check was exercised by nothing while its tests passed — the exact
+  checks-that-cannot-fail shape this repo keeps rediscovering. Both now call one
+  `lint.run_checks`, which cannot drift from itself · red-first: the two
+  positive checks failed on the absent function, and the all-vs-any decision was
+  proven by running the naive rule and watching it flag the live question ·
+  604 passed + 54 subtests, lint clean
 
 - **#304** — Anchor the ledger section split to line starts · P2 ·
   origin: **loop** · landed 2026-07-27 · a section is now opened by a heading
