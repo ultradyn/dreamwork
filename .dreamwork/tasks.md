@@ -24,9 +24,48 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **354**
+Next id: **357**
 
 ## Open
+
+- **#354** — `/filebytes` buffers a whole file with no cap · P2 · dashboard/robustness ·
+  origin: **loop** · reported by `ccc-glm52-336` as out of scope, not fixed · `read_text` caps
+  at 200_000 characters; `/filebytes` deliberately does not cap, and the agent's reasoning is
+  right and worth keeping: **a cap on a byte stream corrupts an image rather than truncating
+  readable text**, so the text cap's idiom does not transfer · consequence: a 1GB PNG in the
+  target buffers 1GB in the server process · mitigated by confinement (only files inside the
+  target are reachable) and by the dashboard being loopback-only today, which is exactly the
+  mitigation `#275`/`#276` would remove · rec: HTTP `Range`/`206 Partial Content`, which is
+  the only cap that does not corrupt — so this is a real feature, not a one-line guard, and
+  that is why it was not smuggled into #336 · also revisit `Cache-Control: private, max-age=0,
+  must-revalidate`, chosen conservatively because `--autoreload` re-execs on source mtime and
+  a stale image mid-edit would confuse
+
+- **#355** — `/reviewraw` still serves artifacts through `read_text(limit=2_000_000)` · P3 ·
+  dashboard/consistency · origin: **loop** · reported by `ccc-glm52-336`, outside its
+  ownership · #336 gave `/file` a byte path and a type allowlist; `/reviewraw` kept the text
+  path · **not a defect today**: it is confined to `.dreamwork/review/`, and an artifact's
+  contract is self-contained HTML the loop itself built, so the trust story genuinely differs
+  from an arbitrary file · flagged because *"what about reviewraw's Content-Type?"* is the
+  next reader's natural question and it deserves a recorded answer rather than a rediscovery ·
+  the 2MB cap is the substantive half: an artifact over it is silently truncated, and a
+  truncated self-contained page can render as a blank frame with no error — check whether any
+  artifact is near it before deciding
+
+- **#356** — Two narrow papercuts in the new `/file` image view · P3 · dashboard/polish ·
+  origin: **loop** · both reported by `ccc-glm52-336` with its reasoning for not fixing them,
+  which stands · **(a) `imgFailed` reuses build-time metadata**: when an `<img>` fails to
+  decode, the fallback panel is built from `data-mime`/`data-size` captured when the view was
+  built, not refetched — so if the file changed between build and load failure the panel shows
+  stale type and size. It declined to refetch because that adds a roundtrip in the failure path
+  for a narrow window · **(b) `safe_attachment_filename` is ASCII-only**: a non-ASCII filename
+  gets `_`-substituted in `Content-Disposition`. RFC 6266's `filename*=UTF-8''…` is the fix; it
+  declined because the URL basename is the browser's default anyway and a malformed header is
+  worse than a drab name · **the AVIF detection note belongs here too**: AVIF has no fixed
+  magic prefix, only an `ftyp` box, and the brand check accepts `avif`/`avis`/`mif1` — an
+  AVIF-compatible file with another major brand (e.g. `ma1a`) is served as a download instead
+  of inline. Conservative failure mode, and a detection-vs-decode mismatch degrades through
+  `imgFailed` rather than leaving a broken icon
 
 - **#353** — Normalise the Markdown ledger so the store's schema can be strict · P1 ·
   data normalisation/prerequisite · origin: **human** · **human via watch 2026-07-28 01:13**,
