@@ -991,6 +991,28 @@ class TestLandedAsks:
         assert not [d for _, w, d in rep.rows if w == "questions.md" and "fold" in d], \
             "a question naming a still-open id must not be flagged"
 
+    def test_a_prose_note_does_not_clear_it_and_the_message_admits_that(self, tmp_path):
+        """The remedy a check suggests must be one that actually works.
+
+        The first message said "add a note saying why it is still open". The
+        check reads titles, so a note changes nothing — the entry would warn on
+        every run forever, which is the cry-wolf failure the class docstring
+        opens by naming. Both halves are asserted because either alone rots: a
+        message-only test passes over a check that started reading bodies, and a
+        behaviour-only test passes over a message that lies about it.
+        """
+        q = self._q("P1 · 2026-07-27 — #5 do the shipped thing?")
+        noted = q.replace("some body text.",
+                          "some body text.\n  · still open: the research produced the ask.")
+        assert noted != q, "the note must actually be in the fixture"
+        rows = [d for _, w, d in run(target(tmp_path, **{
+            "tasks.md": self.LEDGER, "questions.md": noted,
+        })).rows if w == "questions.md" and "#5" in d]
+        assert rows, "a note in the body must NOT silence it — titles are what is read"
+        assert "note" in rows[0] and "cannot clear" in rows[0], \
+            "so the message must tell the reader a note will not work"
+        assert "reopen" in rows[0], "and name the remedy that does, beside the fold"
+
     def test_an_ask_naming_no_task_is_left_alone(self, tmp_path):
         rep = run(target(tmp_path, **{
             "tasks.md": self.LEDGER,

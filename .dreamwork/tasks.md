@@ -24,9 +24,63 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **314**
+Next id: **315**
 
 ## Open
+
+- **#275** — Research public Dreamhub authentication informed by shoo.dev · P2 ·
+  security research/design · origin: **human** · **human via answer 17:48** ·
+  evaluate shoo.dev's actual primary-source auth/deployment model and alternatives
+  for public Dreamhub; define identity, TLS, session/cookie, CSRF, authorization,
+  secrets, reverse proxy and threat model · public/WAN support remains forbidden
+  until a reviewed design is approved
+  · research + design landed `4b49ecb` (ccc-glm52-275, worktree removed); ask open
+  in questions.md with `.dreamwork/review/hub-public-auth.html` · **the premise was
+  corrected by the research**: shoo.dev is not a tunnel/expose tool but a hosted
+  Google-OAuth PKCE broker returning an ES256 id_token, so identity is Google-only ·
+  its GitHub repo returns 404 (coordinator re-checked independently: still 404), the
+  site says "SUPER EARLY WIP", and no security review or threat model exists, so the
+  server is unauditable · and this hub is stdlib-only Python, which cannot verify
+  ES256 in-process — coordinator confirmed `cryptography` 49.0.0 is the third-party
+  path · recommendation: read-only loopback hub behind a mature authenticating
+  reverse proxy owning TLS/identity/session, allowlist at the proxy, and a redacted
+  `/summary.json` replacing `/data.json`, which today serves DREAMWORK.md,
+  questions.md and lessons.md in full · shoo fits later as an optional IdP BEHIND
+  the proxy, never as the boundary · artifact verified offline-clean by the
+  coordinator, not on report: zero external resource loads, 6 citation links, no
+  `@import` or outward `url()` · public/WAN serving REMAINS FORBIDDEN until he rules
+  on the six questions; nothing was implemented and no bind address or flag moved
+  · **NOT landed, and #306's check is why.** The research half is done and merged,
+  but this task's own terms are "public/WAN support remains forbidden until a
+  reviewed design is APPROVED" — so it is blocked-on-human, not complete. Closing it
+  tripped `check_landed_asks`, which correctly reads an open ask naming only landed
+  ids as a forgotten fold; the guard caught the coordinator, not a false positive ·
+  **blocked on: his ruling on the six questions** in questions.md
+
+- **#314** — `audit-styleguide` asks the wrong question, so its misses are a
+  mix · P3 · tooling/correctness · ~40m · origin: **loop** · goal: a check
+  should not accrue failures for work it was never about ← DREAMWORK.md
+  *Nothing fails quietly* · found while landing #313: the recipe's filter is
+  "this commit touched `watch.py`", but `watch.py` is one file holding the
+  server, the git/ledger parsers AND the entire UI (which is why #124 exists at
+  all) · so the 11 historical misses are not 11 lapses. **Verified by reading
+  each commit's file list, after a truncated first read nearly produced the
+  opposite conclusion:** `db1a1bc` (git history NUL framing) and `e51da7e`
+  (quieting expected peer disconnects) touch only `watch.py` + `test_watch.py`
+  and change no pixel; `1d089ad` (#304's ledger section anchoring) is a parser
+  fix that also carries `lint.py` and both test files. None of those can
+  reasonably owe a `watch-design.md` entry · whereas `a6e98cc` (review-dock a11y
+  label + 44px send floor) and `bfa561f` (title count) are real UI changes with
+  guard edits alongside, and those ARE genuine misses · so the audit currently
+  teaches "ignore me" not because people are sloppy but because it asks a
+  question `watch.py`'s shape cannot answer · options, needing a call: filter on
+  the DIFF rather than the filename (does the hunk touch `STYLE`/markup?), or
+  split the file (#124) and let the filename mean something again, or let a
+  commit declare `Styleguide: n/a` with a reason and count that as answered ·
+  the third is cheapest and keeps the prompt-to-look intent (#155) while making
+  the answer explicit rather than absent · **do not** widen the window or drop
+  the check — #313 already established that a permanently red check is the one
+  outcome unavailable
 
 - **#311** — Two motion guards assert a frame COUNT the box cannot supply · P2 ·
   guard craft · ~40m · origin: **loop** · goal: a guard must not go red for a
@@ -88,20 +142,6 @@ Next id: **314**
   standing risk on the delegated half is that this task LOOSENS assertions, so
   a red proof per guard is the only thing between it and quietly disabling four
   guards — briefed as such · #308 is the sibling rounding half and has landed
-
-
-- **#313** — `just audit-styleguide` is red for everybody on 10 historical
-  commits · P3 · chore/tooling · ~30m · origin: **loop** · the recipe enforces
-  that a commit changing the UI records a styleguide entry within 3 commits;
-  ten commits predate or missed that and it now fails for anyone who runs it,
-  which makes a green audit unavailable as evidence · oldest first: `db1a1bc`,
-  `0c1f5ad`, `a6a7ad2`, `bfa561f`, `a6e98cc`, `fe55cd3`, `7a0ffd5`, `2e92b49`,
-  `e51da7e`, `cf33aa6` · none are #305's · two honest options and this needs a
-  call, not a guess: **back-fill** the missing entries (real work, and the
-  entries would be reconstructed after the fact, which is the thing the audit
-  exists to prevent), or **scope** the audit to commits after a stated
-  baseline and say so in the recipe · a check that is permanently red teaches
-  people to ignore it, so leaving it is the one option that is not available
 
 
 
@@ -1133,28 +1173,37 @@ Next id: **314**
 
 ## Recently landed
 
-- **#275** — Research public Dreamhub authentication informed by shoo.dev · P2 · landed 2026-07-27 ·
-  security research/design · origin: **human** · **human via answer 17:48** ·
-  evaluate shoo.dev's actual primary-source auth/deployment model and alternatives
-  for public Dreamhub; define identity, TLS, session/cookie, CSRF, authorization,
-  secrets, reverse proxy and threat model · public/WAN support remains forbidden
-  until a reviewed design is approved
-  · research + design landed `4b49ecb` (ccc-glm52-275, worktree removed); ask open
-  in questions.md with `.dreamwork/review/hub-public-auth.html` · **the premise was
-  corrected by the research**: shoo.dev is not a tunnel/expose tool but a hosted
-  Google-OAuth PKCE broker returning an ES256 id_token, so identity is Google-only ·
-  its GitHub repo returns 404 (coordinator re-checked independently: still 404), the
-  site says "SUPER EARLY WIP", and no security review or threat model exists, so the
-  server is unauditable · and this hub is stdlib-only Python, which cannot verify
-  ES256 in-process — coordinator confirmed `cryptography` 49.0.0 is the third-party
-  path · recommendation: read-only loopback hub behind a mature authenticating
-  reverse proxy owning TLS/identity/session, allowlist at the proxy, and a redacted
-  `/summary.json` replacing `/data.json`, which today serves DREAMWORK.md,
-  questions.md and lessons.md in full · shoo fits later as an optional IdP BEHIND
-  the proxy, never as the boundary · artifact verified offline-clean by the
-  coordinator, not on report: zero external resource loads, 6 citation links, no
-  `@import` or outward `url()` · public/WAN serving REMAINS FORBIDDEN until he rules
-  on the six questions; nothing was implemented and no bind address or flag moved
+- **#313** — `just audit-styleguide` is red for everybody on 10 historical
+  commits · P3 · landed 2026-07-27 · chore/tooling · ~30m · origin: **loop** · the recipe enforces
+  that a commit changing the UI records a styleguide entry within 3 commits;
+  ten commits predate or missed that and it now fails for anyone who runs it,
+  which makes a green audit unavailable as evidence · oldest first: `db1a1bc`,
+  `0c1f5ad`, `a6a7ad2`, `bfa561f`, `a6e98cc`, `fe55cd3`, `7a0ffd5`, `2e92b49`,
+  `e51da7e`, `cf33aa6` · none are #305's · two honest options and this needs a
+  call, not a guess: **back-fill** the missing entries (real work, and the
+  entries would be reconstructed after the fact, which is the thing the audit
+  exists to prevent), or **scope** the audit to commits after a stated
+  baseline and say so in the recipe · a check that is permanently red teaches
+  people to ignore it, so leaving it is the one option that is not available
+  · scoped, not back-filled — `45a8c6c`, merged `9d8502c` (ccc-glm52-313,
+  worktree removed) · **the brief was wrong twice and the dreamer corrected both**:
+  the recipe reports **11** misses, not 10 (the filed list was stale by one at the
+  top — `1d089ad`, fix(#304) from 16:36 THIS SESSION, i.e. this coordinator is one
+  of the violators), and they are not "months old history" but a 2-day burst,
+  2026-07-26 12:13 to 2026-07-27 16:36, after the convention held for ~378 commits
+  from `d1df255` · baseline is `1d089ad`, the most recent miss, derived from history
+  rather than picked: every earlier candidate still contains a miss and would leave
+  the recipe red, so it is the only point from which the enforced window is
+  all-green, and it is self-maintaining because the next miss reddens it · the
+  pre-baseline count is computed AT RUNTIME each run, not a literal, so it stays
+  true as history grows, and the recipe prints what it is not covering plus the
+  command to list it — bounding coverage silently would have been one dishonesty
+  traded for another · **coordinator re-proved the load-bearing claim rather than
+  accepting it**: appended a line to `watch.py`, committed, audit went to exit 1
+  with `MISS`, reset, audit back to exit 0, `watch.py` byte-identical · 620 pytest,
+  lint clean · it surfaced #314: the filter asks "touched watch.py", which that
+  file's shape cannot answer, so the 11 are a mix of real misses and false ones
+
 
 - **#312** — The command palette lets a phone scroll the whole page sideways ·
   P2 · Web UI bug · ~30m · origin: **loop** · found by dreamer-reviewsplit

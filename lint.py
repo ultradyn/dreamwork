@@ -320,9 +320,17 @@ def check_landed_asks(dw: Path, watch, rep: Report) -> None:
 
     WARN, not ERROR: an amendment thread on a landed task is legitimate, and
     this cannot tell one from a forgotten fold. It names the id and asks for a
-    fold or a reason. The actual cure — one write path that folds the ask when
-    the answer is recorded — belongs to #263's event journal; this is only the
-    detector.
+    fold or a reopen — and says so precisely, because those are the only two
+    that clear it. It reads titles, so a prose "still open because…" note in the
+    body cannot silence it; the message used to suggest exactly that, which
+    would leave the entry warning forever and teach the reader to ignore the
+    check, the failure this docstring opens by naming. Caught the first time it
+    fired on real work: the coordinator closed #275 in the ledger while its
+    six-question ask was live, and the honest remedy was the reopen — that
+    task's own terms make approval part of done.
+
+    The actual cure — one write path that folds the ask when the answer is
+    recorded — belongs to #263's event journal; this is only the detector.
     """
     qpath, tpath = dw / "questions.md", dw / "tasks.md"
     if watch is None or not qpath.exists() or not tpath.exists():
@@ -342,7 +350,8 @@ def check_landed_asks(dw: Path, watch, rep: Report) -> None:
                 WARN,
                 "questions.md",
                 f"open ask names only landed task(s) {', '.join('#' + i for i in ids)}"
-                f" — fold it, or add a note saying why it is still open (#306)",
+                f" — fold the ask, or reopen the task; a note in the body cannot"
+                f" clear this, only the title is read (#306)",
             )
 
 
