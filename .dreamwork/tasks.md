@@ -93,19 +93,6 @@ Next id: **314**
   baseline and say so in the recipe · a check that is permanently red teaches
   people to ignore it, so leaving it is the one option that is not available
 
-- **#308** — Record the whole-pixel rounding trap in `transitions.md` · P3 ·
-  chore · 10m · origin: **loop** · goal: a motion guard should not be able to
-  report a clean ease as a snap ← DREAMWORK.md *Nothing fails quietly* · found
-  in dream grooming (#142's batch, one archive from being lost): rounding a
-  per-frame trace to whole pixels reported a clean 2.1px ease as a snap, which
-  is an instrument bug that presents as a feature bug · the trap is live in the
-  idiom, not hypothetical — `reviewsplit.mjs`'s `distinct()` rounds, and it is
-  only safe there because its travel assertions require >=60px of movement, so
-  the guard whose gesture IS small is the one that will be bitten · belongs in
-  `transitions.md` beside how to check a transition, which is where someone
-  writing a motion guard is already looking · **blocked while
-  dreamer-reviewsplit owns `transitions.md`** — take it after #305 merges
-
 
 - **#303** — Make `lint.py` notice a `status.json` that lost known keys · P3 ·
   chore · 20m · origin: **loop** · goal: make a silent projection-rewrite loss
@@ -1165,6 +1152,36 @@ Next id: **314**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#308** — Record the whole-pixel rounding trap in `transitions.md` · P3 · landed 2026-07-27 ·
+  chore · 10m · origin: **loop** · goal: a motion guard should not be able to
+  report a clean ease as a snap ← DREAMWORK.md *Nothing fails quietly* · found
+  in dream grooming (#142's batch, one archive from being lost): rounding a
+  per-frame trace to whole pixels reported a clean 2.1px ease as a snap, which
+  is an instrument bug that presents as a feature bug · the trap is live in the
+  idiom, not hypothetical — `reviewsplit.mjs`'s `distinct()` rounds, and it is
+  only safe there because its travel assertions require >=60px of movement, so
+  the guard whose gesture IS small is the one that will be bitten · belongs in
+  `transitions.md` beside how to check a transition, which is where someone
+  writing a motion guard is already looking · **blocked while
+  dreamer-reviewsplit owns `transitions.md`** — take it after #305 merges
+  · **it turned out to be three traps, not one, and the document's own opening
+  rule was the source of the other two.** `transitions.md`'s first instruction for
+  checking a transition said *assert the count of distinct intermediate positions*,
+  which is what `headertravel`, `regroup` and `morph` encode and why all three go
+  red on a slow box (#311) · so the bullet is now split: assert the frames you
+  captured are PART-WAY (frame-rate-free — a teleport has none at any frame rate),
+  and never an absolute count · plus the rounding trap this task was filed for,
+  plus the mirror-image fixed-window terminal-state trap `dismiss.mjs:134` encodes
+  · all three named as one mistake: **a motion check must not encode a property of
+  the machine** — frame count, pixel rounding and elapsed-time windows are all
+  facts about the box, and each turns a guard into a load meter that reports its
+  findings as feature bugs · the cited idiom was verified in place rather than
+  taken on report: `reviewsplit.mjs:148` filters strictly-between with a 3%
+  deadband, and `qsec.mjs:157` does the same with no tunable threshold at all
+  · landed in `9ba67db`, whose ledger half this entry is — that commit's message
+  claimed the close while `tasks.md` still listed it Open, because the guarded
+  edit and the commit were chained with `;` instead of `&&`
 
 - **#305** — Read a review document and answer its question side by side · P1 · landed 2026-07-27 ·
   Web UI feature/design · ~75m, **needs splitting** · origin: **human** ·

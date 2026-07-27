@@ -1086,3 +1086,16 @@ this shape and convert opportunistically.)
   anything holding a guard port. Same shape as #203's orphan rule: age and
   idleness prove nothing, provenance proves it.
   (coordinator, 2026-07-27, #305)
+- **A precondition assertion is decorative if the shell chains past it.** The
+  #308 close ran a `python3` edit that opened with `assert m, "#308 block not
+  found"`, and the regex was stale (it expected `#311` to follow #308; filing
+  #311-#313 at the top of Open had put `#303` there). The assertion fired
+  exactly as designed — and the commit landed anyway, because the two commands
+  were joined with `;` instead of `&&`. The result is the worst of both: a
+  correct `transitions.md`, a commit message announcing the close, and a ledger
+  still listing the task Open. Guarded edits and the commit that records them
+  are ONE operation; join them with `&&`, or put the commit in a separate call
+  after reading the guard's output. This is the same family as "assert in the
+  check the precondition the check depends on" (CLAUDE.md) with the failure one
+  level out: the precondition was asserted, and nothing was listening.
+  (coordinator, 2026-07-27, #308)
