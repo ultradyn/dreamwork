@@ -915,6 +915,74 @@ def check_status_task_ids(dw: Path, rep: Report) -> None:
                 " — ids are integers; a quoted id matches no task row, silently")
 
 
+def check_status_agrees_with_ledger(dw: Path, watch, rep: Report) -> None:
+    """#362 — the two halves of one fact, and they had already drifted.
+
+    `status.json` states queue depth and which tasks are in flight; `tasks.md`
+    IS queue depth and what is in flight. Two files holding two halves of one
+    fact, which `lessons.md` (#306) says to assume have already drifted — and
+    they had, in both fields, at the moment this was written:
+
+    - `queue` summed to **115** while `parse_ledger` read **123** open. Nothing
+      compared them, so eight tasks of drift accumulated silently across a night
+      of hand-maintained edits.
+    - `current_task_ids` was `[]` while `agents[].task_ids` named three tasks in
+      flight. `check_status_task_ids` above validates member TYPES and passes an
+      empty list, so `[]` lints clean — and `file-formats.md` says `/tasks`
+      badges rows from that field, so #281 would have shipped badging nothing.
+
+    Both are WARNs, not ERRORs, and the distinction is the whole design:
+    `status.json` is a projection of a live process, written best-effort on a
+    tick, and the loop is explicitly told that failing to write it must never
+    block. A momentary lag while an increment is mid-flight is normal and
+    truthful; crying red on it would punish the loop for the honesty this file
+    exists to provide. What is not truthful is drift nobody ever measures, and a
+    WARN measures it.
+
+    The `current_task_ids` case is a CONTRADICTION rather than a lag, so it is
+    reported whatever the numbers say: a loop that knows three agents' task ids
+    cannot simultaneously not know which tasks are current. It is silent when
+    the field is absent, because absent means "not adopted" by this file's
+    contract, and silent when `agents` is absent for the same reason.
+    """
+    path = dw / "status.json"
+    tasks = dw / "tasks.md"
+    if not path.exists() or not tasks.exists():
+        return
+    try:
+        data = json.loads(path.read_text())
+        text = tasks.read_text()
+    except (json.JSONDecodeError, OSError):
+        return
+    if not isinstance(data, dict):
+        return
+    open_ids, _ = watch.parse_ledger(text)
+
+    queue = data.get("queue")
+    if isinstance(queue, dict):
+        counts = [v for v in queue.values() if isinstance(v, int)]
+        if len(counts) == len(queue) and counts:
+            total = sum(counts)
+            if total != len(open_ids):
+                rep.add(WARN, "status.json", (
+                    f"queue sums to {total} but the ledger has {len(open_ids)} open "
+                    f"entries ({total - len(open_ids):+d}) — two files holding two "
+                    f"halves of one fact drift, and nothing measured this one "
+                    f"until #362"))
+
+    current = data.get("current_task_ids")
+    agents = data.get("agents")
+    if isinstance(current, list) and not current and isinstance(agents, list):
+        owned = sorted({i for a in agents if isinstance(a, dict)
+                        for i in (a.get("task_ids") or []) if isinstance(i, int)})
+        if owned:
+            rep.add(WARN, "status.json", (
+                f"current_task_ids is empty while agents claim {owned} — a loop that "
+                f"knows its agents' task ids cannot not know which tasks are current, "
+                f"and `/tasks` badges rows from this field, so it would badge nothing "
+                f"(#362)"))
+
+
 def check_status_push(dw: Path, rep: Report) -> None:
     """#190 — the loop's push-channel health, as written into status.json.
 
@@ -1770,6 +1838,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_landed_asks(dw, watch, rep)
     check_status(dw, rep)
     check_status_task_ids(dw, rep)
+    check_status_agrees_with_ledger(dw, watch, rep)
     check_status_push(dw, rep)
     check_watch_port(dw, rep)
     check_watch_tint(dw, watch, rep)

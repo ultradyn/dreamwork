@@ -24,9 +24,41 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **362**
+Next id: **364**
 
 ## Open
+
+- **#363** — lint's landed-but-open WARN cannot tell a forgotten fold from a live lane · P3 ·
+  tooling/honesty · origin: **loop** · 10m · reported by dreamer-264-boundary as report-only ·
+  `check_landed_still_open` says an entry under Open has a close/merge commit and asks the
+  reader to fold it or cite the sha — but tonight the same message fired for `#334`, which is
+  another session's *live* lane mid-flight, and for `#264` an hour after its design merged
+  while its ask is legitimately open. Both are correct behaviour and neither is a forgotten
+  fold · **the gap is in what a reader can conclude**: the message reads as an accusation, so
+  a coordinator sweeping lint output must go and check each one by hand, which is the cost the
+  check exists to remove · rec: name the discriminator the check already has access to —
+  whether `status.json` says an agent owns that task id, or whether the entry was modified
+  more recently than the commit — and soften the wording when it does. Small, and it should
+  stay a WARN either way
+
+- **#362** — Nothing compared status.json's queue with the ledger, so it drifted · P2 ·
+  tooling/reliability · origin: **loop** · 20m · found by dreamer-264-boundary while measuring
+  for #264, and the numbers are the argument: `queue` summed to **115** while `parse_ledger`
+  read **123** open, and `current_task_ids` was `[]` while three agents named their `task_ids`
+  · both restate what `tasks.md` already knows, and `lessons.md` (#306) says to assume that
+  two files holding two halves of one fact have already drifted — they had, in both fields, and
+  eight tasks of drift accumulated across one night of hand-maintained edits with nothing
+  measuring it · the second one is a live bug beyond the drift: `file-formats.md` says `/tasks`
+  badges rows from `current_task_ids`, and `check_status_task_ids` validates member *types* so
+  `[]` lints clean — #281 would have shipped badging nothing
+  · **LANDED `<pending>`** — `lint.check_status_agrees_with_ledger`, WARN on both, contract in
+  `file-formats.md`, red-proved first against the real drift as it actually stood (both WARNs
+  fired; restoring only the queue half isolated one) and then with five discriminating
+  fixture injections · **WARN not ERROR is deliberate**: this file is a best-effort projection
+  the loop is told must never block a tick, so a momentary lag mid-increment is truthful and
+  crying red on it would punish the honesty the file exists for
+  · the drift itself was hand-fixed at 02:06 before the check landed, which is why the red
+  proof had to reconstruct it from the recorded values rather than observe it
 
 - **#361** — Turn on the ledger-lint hook we built and never switched on · P1 ·
   dogfood/reliability · origin: **loop** · 15m · **the evidence is two incidents tonight, four

@@ -2238,3 +2238,96 @@ Next id: **9**
         # the summary line is genuinely reachable — otherwise this passes vacuously.
         assert "related: **#2**" in (t / ".dreamwork" / "tasks.md").read_text()
         assert not any("all reciprocal" in d for d in rows), rows
+
+
+class TestStatusAgreesWithLedger:
+    """#362: the two halves of one fact, measured drifted the day it was written.
+
+    `status.json` states queue depth and what is in flight; `tasks.md` IS queue
+    depth and what is in flight. Both were wrong at once on 2026-07-28: `queue`
+    summed to 115 against 123 open entries, and `current_task_ids` was `[]` while
+    three agents named their task ids. Nothing compared either pair, so eight
+    tasks of drift accumulated across one night of hand-maintained edits.
+
+    WARN, not ERROR, and the distinction is the design: `status.json` is a
+    best-effort projection of a live process, and the loop is told that failing to
+    write it must never block. A momentary lag mid-increment is truthful. Drift
+    nobody measures is not.
+    """
+
+    def build(self, tmp_path, ledger_open, **status):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        entries = "\n".join(
+            f"- **#{i}** — task {i} · P2 · origin: **loop** · going" for i in range(1, ledger_open + 1))
+        (dw / "tasks.md").write_text(
+            f"# Tasks\n\nNext id: **{ledger_open + 1}**\n\n## Open\n\n{entries}\n")
+        (dw / "status.json").write_text(json.dumps(status))
+        # Precondition: the ledger really parses to the count this test reasons
+        # about. A fixture that hand-counts its own entries proves nothing about
+        # the reader the check uses.
+        import watch as _w
+        got, _ = lint.load_watch().parse_ledger((dw / "tasks.md").read_text())
+        assert len(got) == ledger_open, (len(got), ledger_open)
+        return t
+
+    def rows(self, t):
+        rep = lint.Report()
+        lint.check_status_agrees_with_ledger(t / ".dreamwork", lint.load_watch(), rep)
+        return [(lvl, d) for lvl, w, d in rep.rows if w == "status.json"]
+
+    def test_a_queue_that_agrees_says_nothing(self, tmp_path):
+        t = self.build(tmp_path, 5, queue={"in_progress": 2, "pending": 3},
+                       current_task_ids=[1, 2],
+                       agents=[{"name": "a", "task_ids": [1, 2]}])
+        assert self.rows(t) == [], self.rows(t)
+
+    def test_a_queue_that_disagrees_warns_with_the_signed_gap(self, tmp_path):
+        t = self.build(tmp_path, 12, queue={"in_progress": 1, "pending": 3})
+        rows = self.rows(t)
+        assert len(rows) == 1, rows
+        lvl, d = rows[0]
+        # WARN, never ERROR: a projection lagging mid-increment is truthful.
+        assert lvl == lint.WARN, rows
+        assert "sums to 4" in d and "123" not in d and "12 open" in d
+        # The signed gap is the useful part — direction says which side is behind.
+        assert "-8" in d, d
+
+    def test_an_empty_current_while_agents_claim_ids_warns(self, tmp_path):
+        t = self.build(tmp_path, 4, queue={"in_progress": 0, "pending": 4},
+                       current_task_ids=[],
+                       agents=[{"name": "a", "task_ids": [7]}, {"name": "b", "task_ids": [9]}])
+        rows = self.rows(t)
+        # The queue agrees here, so this must be the ONLY row — otherwise the two
+        # faults are not separable and neither message means anything on its own.
+        assert len(rows) == 1, rows
+        assert "current_task_ids is empty" in rows[0][1] and "[7, 9]" in rows[0][1]
+
+    def test_an_empty_current_with_no_agents_is_silent(self, tmp_path):
+        # An idle loop truthfully claims nothing and owns nothing.
+        t = self.build(tmp_path, 4, queue={"in_progress": 0, "pending": 4},
+                       current_task_ids=[], agents=[])
+        assert self.rows(t) == [], self.rows(t)
+
+    def test_an_absent_field_is_not_adopted_rather_than_wrong(self, tmp_path):
+        t = self.build(tmp_path, 4, agents=[{"name": "a", "task_ids": [1]}])
+        assert self.rows(t) == [], self.rows(t)
+
+    def test_a_non_integer_queue_value_is_left_to_check_status(self, tmp_path):
+        # `check_status` owns type complaints. The guard is not crash-avoidance —
+        # `counts` already filters to ints — it is against comparing a PARTIAL sum
+        # to the full ledger, which would report a confident wrong gap on a file
+        # whose real fault is a type error somebody else is already reporting.
+        t = self.build(tmp_path, 9, queue={"in_progress": "two", "pending": 3})
+        assert self.rows(t) == [], self.rows(t)
+
+    def test_a_missing_tasks_md_is_silent(self, tmp_path):
+        t = self.build(tmp_path, 3, queue={"in_progress": 9, "pending": 9})
+        (t / ".dreamwork" / "tasks.md").unlink()
+        assert self.rows(t) == [], self.rows(t)
+
+    def test_the_check_is_registered_in_run_checks(self, tmp_path):
+        import inspect
+        src = inspect.getsource(lint.run_checks)
+        assert "check_status_agrees_with_ledger(dw, watch, rep)" in src

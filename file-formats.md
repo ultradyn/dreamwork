@@ -689,6 +689,29 @@ The file is **gitignored ephemera** and stays that way. It describes a
 running process, so a committed one would be a lie the moment it landed;
 that is also why there is no history to compute stats from (#142).
 
+**Two of those fields restate what `tasks.md` already knows, and they had
+drifted (#362).** `queue` restates open-entry depth; `current_task_ids`
+restates what is in flight. On 2026-07-28 both were wrong at once — `queue`
+summed to 115 against 123 open entries, and `current_task_ids` was `[]`
+while three agents named their `task_ids` — because nothing compared either
+pair. Eight tasks of drift accumulated across one night of hand-maintained
+edits. That is the failure `lessons.md` (#306) tells you to assume: where
+two files hold two halves of one fact, they have already drifted.
+
+So `lint.check_status_agrees_with_ledger` **WARNs** when `queue` does not sum
+to `parse_ledger`'s open count, and when `current_task_ids` is empty while
+`agents[].task_ids` is not. WARN and not ERROR is the load-bearing choice:
+this file is a best-effort projection the loop is explicitly told must never
+block a tick, so a momentary lag mid-increment is *truthful* and crying red
+on it would punish exactly the honesty the file exists to provide. Drift
+nobody measures is the thing that is not truthful.
+
+It is silent on an absent field (absent means "not adopted", as everywhere
+here), silent when `agents` is absent or empty, and silent when a `queue`
+value is not an integer — that last one belongs to `check_status`, and
+comparing a *partial* sum to the full ledger would report a confident wrong
+gap on a file whose real fault someone else is already naming.
+
 ## `.dreamwork/.status-keys` — the only file `lint.py` writes (#303)
 
 One key per line, sorted, `#` comment lines and blanks ignored on read.
