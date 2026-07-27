@@ -581,3 +581,37 @@ is the right adjustment; abandoning them is not.
 - **grok drew the geometry measurement** for #367 increment 2 specifically because it
   is multimodal: the task needs someone to look at whether a two-line tab still reads
   as a postit, and no number answers that.
+
+## The cheapest refutation of the day, and it was cheap because I asked for it by name
+
+#354's design lane (`ccc @grok`) refuted the ledger's own recorded recommendation in
+**about five minutes**: `Range`/`206` is not the fix for `/filebytes` buffering a whole
+file, because the common client is an `<img>` tag which sends **no `Range` header**. The
+real fix is chunked streaming, with `Range` as a separate second capability.
+
+**That refutation was not luck, and the contrast with today's other six is the finding.**
+The earlier refutations arrived *incidentally* — a lane doing its assigned work noticed the
+brief's premise was wrong. This one arrived because the brief contained a numbered question
+whose text was, in effect, *"here is the specific claim I think most likely to be wrong,
+and if you conclude the entry's own recommendation is incomplete, say so plainly; that is a
+valuable result, not a contradiction of your brief."*
+
+So the transferable practice is sharper than "give lanes permission to disagree", which I
+already do at the bottom of every brief and which produces incidental refutations:
+
+> **Name the single claim you would least like to be wrong, make it a numbered
+> deliverable, and say that refuting it is a success condition.** A general permission
+> gets used when a lane trips over the problem. A named target gets checked on purpose.
+
+Two supporting details. First, the claim I named was **inherited from another agent and I
+had told the lane to inherit it too** — *"What is established — inherit it, do not
+re-derive it"* — so the invitation had to be explicit enough to override my own framing,
+and it was, because it named the exact sub-claim rather than gesturing at the section.
+Second, I nearly did not get this at all: I had started writing an **implementation** brief
+for #354 and only found the design-only one I had written two hours earlier while trying to
+save it. Had I dispatched the implementation, a lane would have built `Range`, every test
+would have passed, and the 1GB buffer would still be there on the `<img>` path — a
+correct-looking feature over an untouched bug. **The design-first order was load-bearing
+and I had already reasoned my way to it once and forgotten.** That is an argument for
+reading the briefs directory before writing a brief, which is now cheap and which I did not
+do.

@@ -427,6 +427,32 @@ Next id: **392**
   that is why it was not smuggled into #336 · also revisit `Cache-Control: private, max-age=0,
   must-revalidate`, chosen conservatively because `--autoreload` re-execs on source mtime and
   a stale image mid-edit would confuse
+  · **DESIGNED 2026-07-28 08:07 (`0d2d4f6`, `ccc @grok`), and the design REFUTED this entry's own
+  recommendation** — which is the result worth having. Plan `.dreamwork/docs/plans/filebytes-range.md`,
+  grounded in line numbers throughout. **`Range` alone does not fix the bug:** the common client is
+  `<img src="/filebytes…">` (`watch.py:2939-2956`) which sends **no `Range` header**, so that path
+  keeps buffering the whole file. The real fix is **chunked streaming from disk with a bounded
+  buffer**, with single-range `206` as a **second, separate** capability. The recorded rec was not
+  wrong about Range being the only non-corrupting *partial response* — it was wrong that Range is
+  the fix
+  · the 1GB is held as one full `bytes` from `read_bytes` (`:7107-7117`) inside `_send_bytes`
+  (`:8968-8984`) → unbounded `f.read()` → a single `wfile.write`. Confinement **is** real and
+  tested (`test_filebytes_blocks_escape`), it simply does not bound size
+  · **staging, and the split matters for authority**: **(1) stream the full GET** — 64KiB
+  read/write loop, `Content-Length` from `stat`, MIME/disposition/nosniff/`Cache-Control`
+  unchanged, full-GET body byte-identical to disk, `fileimg`/`fileview`/`filehead` green with no
+  client change. **(2) single-range `206`/`416` + `Accept-Ranges`.** **(3) optional.**
+  · **increment 1 is AUTHORISED by the coordinator and dispatched**: it fixes a memory bug in an
+  existing endpoint and changes nothing observable — no new capability, no new surface, no visible
+  behaviour. **Increment 2 is a new protocol capability and waits**; it is not urgent while the
+  dashboard is loopback-only, and it is exactly what `#275`/`#276` would make urgent
+  · the plan names the hollow implementation to pre-empt: headers-only tests **cannot** tell
+  read-all-then-slice from real streaming, so the check must observe **per-`read` sizes** and fail
+  on a single whole-file read. Named red: restoring `:8968` / `:7115-7116`
+  · `Cache-Control: private, max-age=0, must-revalidate` **stays** for v1 — revisit as a separate
+  product call, not as a side effect
+  · plan §7 covers **#355** and agrees with my measurement: not a defect today, make truncation
+  **loud**, do not raise the cap
 
 - **#355** — `/reviewraw` still serves artifacts through `read_text(limit=2_000_000)` · P3 ·
   dashboard/consistency · origin: **loop** · reported by `ccc-glm52-336`, outside its
