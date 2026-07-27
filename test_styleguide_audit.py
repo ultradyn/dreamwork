@@ -170,3 +170,102 @@ def test_ui_constants_track_watch_py_at_head():
         "UI changes. ui_shaped=%r UI_CONSTANTS=%r"
         % (sorted(ui_shaped), list(a.UI_CONSTANTS))
     )
+
+
+# ─── nearest_entry: the window's unit, and what may vouch for a change (#320) ─
+
+def _fixture(spec):
+    """Build (rel, has_entry, is_ui_at) from a compact spec string.
+
+    One character per commit in history order: `.` bookkeeping (ledger, merge —
+    irrelevant, excluded from the window), `u` a UI commit with no styleguide
+    file, `U` a UI commit that also carries one, `d` a docs-only commit (a
+    styleguide file, no UI), `w` a non-UI watch.py commit (parser/server — it
+    IS relevant so it consumes window budget, but it neither documents nor
+    blocks). Indices are positions in the full history, so the fixture
+    exercises the very thing #320 is about: the gap between "commits" and
+    "commits the window counts".
+
+    `rel` is derived by calling the REAL window_positions, never rebuilt here.
+    That is load-bearing and was learned the hard way: an earlier version of
+    this fixture computed `rel` itself, and reverting the window's unit back
+    to raw commits left all of these tests GREEN — they were exercising
+    nearest_entry's walk over a list the test itself had already filtered,
+    so the one decision #320 is about was outside the check entirely.
+    """
+    files = {
+        ".": frozenset({"README.md"}),          # ledger/merge: irrelevant
+        "u": frozenset({"watch.py"}),
+        "U": frozenset({"watch.py", "watch-design.md"}),
+        "d": frozenset({"watch-design.md"}),
+        "w": frozenset({"watch.py"}),           # UI-ness is a diff property
+    }
+    commits = [(str(i), str(i)) for i in range(len(spec))]
+    _, rel = a.window_positions(commits, lambda full: files[spec[int(full)]])
+    return (
+        rel,
+        lambda i: bool(files[spec[i]] & frozenset(a.STYLEGUIDE_FILES)),
+        lambda i: spec[i] in ("u", "U"),
+    )
+
+
+def test_bookkeeping_between_a_change_and_its_entry_does_not_hide_it():
+    # The #320 case, verbatim in shape: cdb89df (a UI change) then SIX
+    # bookkeeping commits then the commit documenting it. Counted in raw
+    # commits the entry is 7 away and invisible at window=3; counted in
+    # relevant commits it is the very next one.
+    spec = "u......d"
+    rel, has_entry, is_ui = _fixture(spec)
+    # Precondition, asserted rather than assumed: the gap must actually
+    # EXCEED the window in raw commits, or this test proves nothing. A
+    # fixture edit that shortens the run would otherwise pass vacuously.
+    raw_gap = spec.index("d") - spec.index("u")
+    assert raw_gap > 3, f"fixture no longer spans past window=3 (gap {raw_gap})"
+    found, q = a.nearest_entry(rel.index(0), rel, 3, has_entry, is_ui)
+    assert found, "a UI change lost its entry to a run of ledger commits"
+    assert rel[q] == spec.index("d")
+
+
+def test_a_neighbouring_ui_commit_never_vouches_for_this_one():
+    # The a6e98cc/f17f307 case: the next relevant commit is a UI commit that
+    # carries a styleguide file. That entry documents ITS OWN change, so it
+    # must not clear this one. This is the assertion that keeps the filter
+    # from being a pure widening of the window — without it the pre-baseline
+    # reports 0 misses instead of 11.
+    rel, has_entry, is_ui = _fixture("uU")
+    found, _ = a.nearest_entry(0, rel, 3, has_entry, is_ui)
+    assert not found, (
+        "a different UI commit's styleguide entry was credited to this "
+        "change — sideways credit makes the audit unable to fail"
+    )
+
+
+def test_a_ui_commit_blocks_the_search_from_reaching_past_it():
+    # Undocumented UI, then another undocumented UI, then a docs commit. The
+    # docs commit belongs to the nearer UI change; the far one stays a MISS.
+    rel, has_entry, is_ui = _fixture("uud")
+    assert a.nearest_entry(1, rel, 3, has_entry, is_ui)[0], "nearer one owns it"
+    assert not a.nearest_entry(0, rel, 3, has_entry, is_ui)[0], (
+        "the search reached past an intervening UI commit"
+    )
+
+
+def test_documenting_in_the_same_commit_is_the_ideal_and_passes():
+    rel, has_entry, is_ui = _fixture("U")
+    assert a.nearest_entry(0, rel, 3, has_entry, is_ui)[0]
+
+
+def test_window_is_still_finite_in_relevant_commits():
+    # Not an unbounded search: the count of N is unchanged, only its unit.
+    # Spaced with `w` (relevant, so it consumes window budget, but neither
+    # documenting nor blocking) so the ONLY thing under test is distance.
+    rel, has_entry, is_ui = _fixture("uwwwwd")
+    assert not a.nearest_entry(0, rel, 3, has_entry, is_ui)[0], (
+        "an entry 5 relevant commits away was credited at window=3"
+    )
+    # And the same shape just inside the window IS found — otherwise the
+    # assertion above could be passing for any reason at all.
+    rel, has_entry, is_ui = _fixture("uwwd")
+    assert a.nearest_entry(0, rel, 3, has_entry, is_ui)[0], (
+        "an entry 3 relevant commits away should be inside window=3"
+    )

@@ -53,6 +53,28 @@ WHY NOT THE OTHER TWO OPTIONS (so this is not re-litigated)
     calls wrong — never how an ordinary non-UI commit passes (a non-UI commit
     passes by not touching a UI constant).
 
+#320 — WHAT THE WINDOW COUNTS, and what may vouch for a change
+  #314's diff filter fixed WHICH commits are asked the question; it left the
+  adjacency window counting raw commits, which measures this repo's commit
+  RATE rather than documentation adjacency. The coordinator lands a ledger
+  update between every increment, so `cdb89df` and the commit documenting it
+  sat SIX purely-bookkeeping commits apart — genuinely adjacent, reported as
+  undocumented. So the window's UNIT is now relevant commits (touching
+  watch.py or a styleguide file); see window_positions.
+
+  That change ALONE is a monotone weakening — a strict superset of the old
+  search — and applied by itself it took the pre-baseline from 11 misses to
+  4, silencing `a6e98cc` and `bfa561f` above. It therefore ships with a
+  RESTRICTING companion rule (nearest_entry): the search may not reach past
+  another UI commit, and a neighbouring UI commit never supplies the entry
+  even when it carries a styleguide file, because that entry is its own.
+  Only the two real shapes pass — same commit, or a nearby docs-only commit.
+
+  The two rules are checked against each other, not just asserted: each is
+  reintroduced as a bug in test_styleguide_audit.py's red proofs. The first
+  version of those tests built the relevant-commit list itself and stayed
+  green when the unit was reverted — a check outside the decision it named.
+
 WHAT IT PROVES — and still does not
   Adjacency, not coverage: a styleguide entry NEAR the code documents it, but
   the check cannot tell whether the doc actually describes the change. A
@@ -256,12 +278,97 @@ def classify_ui(sha):
     return bool(touched), touched
 
 
+def is_relevant(files):
+    """Could this commit participate in the audit's question at all?
+
+    True iff it touches watch.py or a styleguide file. Everything else — a
+    ledger update, a merge, a fix to `reaper.py` — is invisible to the
+    question "was this UI change documented?", and it is the UNIT the window
+    is counted in (see window_positions).
+    """
+    return "watch.py" in files or bool(files & frozenset(STYLEGUIDE_FILES))
+
+
+def window_positions(commits, files_of):
+    """Index -> position among the RELEVANT commits, plus that ordered list.
+
+    The window is +-N *relevant* commits, not +-N commits, and that
+    distinction is the whole of #320. Counted over all commits it measures
+    the repo's commit RATE, not documentation adjacency: this repo's
+    coordinator commits a ledger update between every increment, so a UI
+    change and the styleguide entry that documents it are routinely six
+    ledger/merge commits apart while being genuinely adjacent in the only
+    sense the audit cares about. `cdb89df` (#302's per-route tint) and
+    `34131c7` (which documents it) had SIX commits between them, NONE of
+    which touched watch.py or any styleguide file — an unbroken run of
+    bookkeeping. Under an all-commits window that reads as undocumented;
+    under this one, the entry is the very next relevant commit.
+
+    Skipping bookkeeping is NOT sufficient on its own, and this was measured,
+    not reasoned: the relevant-only window is a strict superset of the
+    all-commits window, so misses can only ever FALL — monotone weakening,
+    the same move #313 made. Applied alone it took the pre-baseline from 7
+    misses to 0, silencing `a6e98cc` and `bfa561f`, both verified BY READING
+    as genuine undocumented UI changes. A filter that cannot fail on the
+    cases it was built from is hollow however good its rationale sounds.
+
+    So the window carries a second, RESTRICTING rule that the old one lacked
+    (see nearest_entry): it may not cross another UI commit. An entry cannot
+    document this change if a different UI change sits between them claiming
+    it. That is what keeps a burst of UI work from stretching one stray
+    styleguide touch across all of it, and it is why this is not merely a
+    wider window: it newly catches cases the all-commits window passed.
+    """
+    rel = [i for i, (full, _) in enumerate(commits) if is_relevant(files_of(full))]
+    return {i: p for p, i in enumerate(rel)}, rel
+
+
+def nearest_entry(p, rel, window, has_entry, is_ui_at):
+    """Short sha of the styleguide entry creditable to relevant-position ``p``.
+
+    Two rules, and the second is the one that keeps this honest:
+
+    1. Search at most ``window`` relevant commits either side (bookkeeping
+       already excluded — see window_positions).
+    2. **Stop a direction the moment it reaches another UI commit.** That
+       commit's own claim on any further entry comes first, so an entry
+       beyond it cannot be credited here.
+
+    Only ``p`` itself, or a NON-UI neighbour, can supply the entry. A
+    neighbouring UI commit always blocks, even when it carries a styleguide
+    file — because that entry is its OWN. Getting this backwards (checking
+    entry before blocker for neighbours too) is what let `a6e98cc` be
+    credited to `f17f307`, a UI commit documenting its own #250/#251 work;
+    the two changes have nothing to do with each other. So the only shapes
+    that pass are the two real ones: document it in the same commit, or in a
+    nearby docs-only commit.
+
+    Rule 2 is what distinguishes this from a widened window. In a burst of UI
+    work, rule 1 alone lets one stray styleguide touch vouch for every commit
+    around it; with rule 2 a run of undocumented UI commits blocks itself and
+    each one stays a MISS. Verified: without it the pre-baseline reports 0
+    misses, with it 7.
+    """
+    if has_entry(rel[p]):
+        return True, p
+    for step in (-1, 1):
+        for k in range(1, window + 1):
+            q = p + step * k
+            if q < 0 or q >= len(rel):
+                break
+            if is_ui_at(rel[q]):
+                break  # its entry, if any, is its own; do not reach past it
+            if has_entry(rel[q]):
+                return True, q
+    return False, None
+
+
 def classify_range(revrange, window):
     """Classify every commit in revrange. Returns a structured result.
 
     A watch.py commit is one whose file list includes watch.py. Among those:
       - non-UI  : diff touches no UI constant (server/parser/helper). Passes.
-      - UI ok   : a styleguide file was touched within +-window commits.
+      - UI ok   : a styleguide entry is creditable to it (nearest_entry).
       - UI exempt: no styleguide entry, but carries `Styleguide: n/a`. Passes.
       - UI miss : UI change, no entry, no hatch. FAILS the audit.
     The styleguide-window search is bounded by the range's own commit list, so
@@ -269,23 +376,41 @@ def classify_range(revrange, window):
     the boundary — same limitation the pre-#314 recipe had; pass a wider range.
     """
     commits = commit_list(revrange)
+    cache, ui_cache = {}, {}
+
+    def files_of(full):
+        if full not in cache:
+            cache[full] = touched_files(full)
+        return cache[full]
+
+    def ui_of(full):
+        """(is_ui, consts), memoised — nearest_entry asks about neighbours."""
+        if full not in ui_cache:
+            if "watch.py" not in files_of(full):
+                ui_cache[full] = (False, [])
+            else:
+                ui_cache[full] = classify_ui(full)
+        return ui_cache[full]
+
+    def has_entry(i):
+        return bool(files_of(commits[i][0]) & frozenset(STYLEGUIDE_FILES))
+
+    def is_ui_at(i):
+        return ui_of(commits[i][0])[0]
+
+    pos_of, rel = window_positions(commits, files_of)
     ui_ok, ui_exempt, ui_miss, non_ui, untouched = [], [], [], 0, 0
     for i, (full, short) in enumerate(commits):
-        files = touched_files(full)
+        files = files_of(full)
         if "watch.py" not in files:
             untouched += 1
             continue
-        is_ui, consts = classify_ui(full)
+        is_ui, consts = ui_of(full)
         if not is_ui:
             non_ui += 1
             continue
-        lo = max(0, i - window)
-        hi = min(len(commits) - 1, i + window)
-        entry = None
-        for j in range(lo, hi + 1):
-            if touched_files(commits[j][0]) & frozenset(STYLEGUIDE_FILES):
-                entry = commits[j][1]
-                break
+        found, q = nearest_entry(pos_of[i], rel, window, has_entry, is_ui_at)
+        entry = commits[rel[q]][1] if found else None
         if entry is not None:
             ui_ok.append((short, consts, entry))
         elif has_escape_hatch(full):
@@ -294,6 +419,7 @@ def classify_range(revrange, window):
             ui_miss.append((short, consts))
     return {
         "commits": commits,
+        "relevant": rel,
         "ui_ok": ui_ok,
         "ui_exempt": ui_exempt,
         "ui_miss": ui_miss,
@@ -319,10 +445,18 @@ def print_report(res, revrange, window, out=sys.stdout):
     print(file=out)
     print(
         f"watch.py commits: {ui_total} UI "
-        f"({len(res['ui_ok'])} with a styleguide entry within {window}, "
+        f"({len(res['ui_ok'])} with a styleguide entry within {window} "
+        f"relevant commits, "
         f"{len(res['ui_exempt'])} exempt via Styleguide: n/a, "
         f"{len(res['ui_miss'])} without), "
         f"{res['non_ui']} non-UI (server/parser/helper, not subject to the audit)",
+        file=out,
+    )
+    print(
+        f"window unit: {len(res['relevant'])} of {len(res['commits'])} commits in "
+        f"range touch watch.py or a styleguide file; the other "
+        f"{len(res['commits']) - len(res['relevant'])} (ledger, merges, unrelated "
+        f"fixes) cannot carry an entry and are not counted toward the window",
         file=out,
     )
     print(
