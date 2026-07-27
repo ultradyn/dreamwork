@@ -1,6 +1,62 @@
 # Questions for the human
 
 ## Open
+- **P1 · 2026-07-28 — implementation authority for the user-event journal:
+  lanes A–D and F now, the cutover behind a second gate?** Artifact:
+  `.dreamwork/review/user-event-journal-implementation.html`. Plan:
+  `.dreamwork/docs/plans/user-event-journal-implementation.md` (976 lines, `741b983`).
+  The plan authorises no code and says so in its own second section — this entry is
+  the gate.
+
+  35 red-first increments in eight lanes. 18 of 20 design fixtures placed; the two
+  that could not be placed are excluded *by your own approval clause*, not by a
+  design gap.
+
+  Rec **G1**: grant **lanes A–D and F** now — the digest, the journal, the
+  domain-file store, the application adapters, and the CLI. Every one is new files
+  and **zero change to any response**, so nothing he can see moves. Hold **lane E**
+  (the HTTP cutover, where `200` becomes `202 + Location`) and **lane H** (the
+  mixed-version gate) behind a second gate once A–D are proved.
+
+  Three narrower calls, each with a rec:
+
+  - **Q2 — one amendment to the design.** Amend §"Receive and idempotency" law 2 so
+    the server keeps a **partial witness, marked incomplete**, for an interrupted
+    body. **Rec: yes.** Today it witnesses interrupted bodies *badly*: `watch.py:8387`
+    reads `min(nbytes, MAX_BODY)` and never compares the result to `nbytes`, so a
+    short read is recorded as a complete line (that is #371, filed). Tightening
+    receipts without this amendment would make a partial answer **less** recoverable
+    than it is now for every non-browser client.
+  - **Q3 — is `200 → 202` on the six write routes a non-event?** **Rec: yes**, and it
+    is measured rather than assumed: every client check in the page is `res.ok`
+    (9 sites), so the browser cannot tell the difference; 15 test assertions pin the
+    literal `200` and move with it. That count was **13** by grep and **15** by an
+    `ast` walk — grep missed four multi-line `assertEqual(self._post(...), 200)`
+    statements — and the plan carries the script so the number is repeatable.
+  - **Q4 — purge and PostgreSQL: not built, or built-but-not-run?** **Rec: not
+    built.** Your approval excluded payload purge and PostgreSQL operation, so
+    fixtures 18 and 19's Postgres half have nowhere to land. Saying "not built" keeps
+    the fixture list honest instead of carrying two tests that are permanently
+    skipped.
+
+  One testability finding worth your eye, because it is the only place the plan
+  cannot fully honour its own rule: *"journal fsync failure ⇒ no 202"* is not
+  inducible through stdlib SQLite — no pluggable VFS, no failable pragma, and a
+  patched `os.fsync` never reaches SQLite's own syscall. Increment 22 therefore
+  proves the *contract* at a real seam (`chmod 0500` on the journal's parent before
+  start) and records the `fsync`-specific case as a deferred gap with an `LD_PRELOAD`
+  shim named. A mocked `fsync` test would be exactly what the design's own "kill at
+  named seams rather than mocking away durability" sentence forbids.
+
+  Scheduling note, which is a fact about the tree rather than the plan: lanes E and
+  G both live inside the single 8,647-line `watch.py`, so they share one lane in
+  practice no matter what the dependency graph says. That is the real constraint on
+  parallelism here, and it is an argument for #368 (the modular split) landing before
+  E does.
+
+  Answer `Grant G1`, `Grant G1 with changes: …`, `Grant all lanes including E and H`,
+  or `Hold #263`. Q2/Q3/Q4 can each be answered `rec` or overridden individually.
+
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
   You said "defer publishing repo for a bit", which answers an open
   question belonging to the dreamwork instance on **x-game**
