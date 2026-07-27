@@ -3414,6 +3414,237 @@ class TestBundleParses(unittest.TestCase):
             os.unlink(path)
 
 
+class TestFileHeadingLockup(unittest.TestCase):
+    """#284 — the basename is the heading, the parent path is metadata, and
+    the copy button promises the EXACT path back.
+
+    What is checkable here and nowhere else is the path SPLIT, which no
+    browser guard will reach: a guard drives whatever paths its fixture
+    happens to hold, and the cases that matter are the edges (a root-level
+    file with no parent, a path with a trailing slash, a name that is all
+    dots). Those are one regex away from wrong and silent — a heading that
+    renders the whole path again, or a metadata line that invents a `./`.
+
+    The rest of this class is structural, and it is deliberately about the
+    two guarantees a rendered-DOM check cannot state as an intention: that
+    the path element declares no shortening, and that the copy button opens
+    no new attribute-injection site."""
+
+    def _eval(self, expr):
+        """Evaluate `expr` against the REAL `fileBase`/`fileDir` source, cut
+        out of the page bundle. Not a re-implementation: if either function
+        is renamed, deleted or changed, this stops finding it (loud) or
+        stops agreeing with it (also loud)."""
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — the path-split gate did NOT run")
+        m = re.search(r"const fileBase = .*?\n};\nconst fileDir = .*?\n};",
+                      watch.PAGE, re.S)
+        self.assertIsNotNone(
+            m, "fileBase/fileDir are not in the page in the shape this test "
+               "reads them — find them and fix the cut, do not delete the test")
+        r = subprocess.run(
+            [node, "-e", m.group(0) + "\nconsole.log(JSON.stringify(" + expr + "))"],
+            capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_the_split_is_exact_and_invents_nothing(self):
+        deep = ".dreamwork/docs/research/contextual-review-annotations.md"
+        cases = [
+            # path, basename, parent
+            (deep, "contextual-review-annotations.md", ".dreamwork/docs/research/"),
+            # a root-level file has NO parent: no invented "./"
+            ("lint.py", "lint.py", ""),
+            # a dotfile at the root is still a root-level file
+            (".gitignore", ".gitignore", ""),
+            # a trailing slash names no file, so the whole thing is the label
+            # and there is no parent to claim
+            ("a/b/", "a/b/", ""),
+            ("", "", ""),
+            # the parent keeps its trailing slash: that slash is a boundary
+            # the path really has
+            ("a/b.md", "b.md", "a/"),
+        ]
+        got = self._eval("[" + ",".join(
+            "[fileBase(%s), fileDir(%s)]" % (json.dumps(p), json.dumps(p))
+            for p, _, _ in cases) + "]")
+        for (path, base, parent), (gb, gd) in zip(cases, got):
+            self.assertEqual(gb, base, f"basename of {path!r}")
+            self.assertEqual(gd, parent, f"parent of {path!r}")
+            # THE PROPERTY THAT MATTERS, derived rather than restated: the two
+            # halves must reassemble into the path character for character,
+            # because the copy button promises exactly that string back.
+            if gd:
+                self.assertEqual(gd + gb, path)
+
+    def test_the_heading_is_a_real_h1_and_the_title_is_the_basename(self):
+        # A screen reader's heading list is the reason this is an <h1> rather
+        # than the styled <span> it was, and the copy button describes itself
+        # by its id — so both the tag and the id are contract, not decoration.
+        self.assertIn('<h1 class="htitle" id="htitle"></h1>', watch.PAGE)
+        self.assertIn("file: v => esc(fileBase(v.param || '')),", watch.PAGE)
+        # ...and it must not have gained UA weight/size in the process: this
+        # page says "more important" with luminance, never with metrics.
+        self.assertIn(".htitle { display:inline; font:inherit; margin:0; }",
+                      watch.PAGE)
+
+    def test_the_path_element_declares_no_shortening(self):
+        # His reasoning, and the one rule with no room in it: a path that lies
+        # about its own segments is worse than one that takes two lines. So
+        # the metadata line may wrap anywhere and may NOT ellipsise, clamp,
+        # or refuse to break.
+        rule = re.search(r"\n  \.fdir \{(.*?)\}", watch.PAGE, re.S)
+        self.assertIsNotNone(rule, "the .fdir rule is gone")
+        body = rule.group(1)
+        self.assertIn("overflow-wrap:anywhere", body)
+        for forbidden in ("text-overflow", "nowrap", "line-clamp", "direction:"):
+            self.assertNotIn(forbidden, body,
+                             f".fdir must not declare {forbidden}")
+        self.assertIn("user-select:text", body)   # the clipboard fallback
+
+    def test_the_copy_button_opens_no_new_attribute_injection_site(self):
+        # `esc()` is div.textContent -> innerHTML: it escapes < > &, and NOT
+        # the double quote. So any esc()'d value in a double-quoted attribute
+        # can be broken out of by a crafted query string, and the button's
+        # path is entirely query-controlled. It therefore carries NO path
+        # attribute at all and reads `view.param` instead.
+        btn = re.search(r"const copyPathBtn = .*?;\n", watch.PAGE, re.S)
+        self.assertIsNotNone(btn, "copyPathBtn is gone")
+        self.assertNotIn("esc(", btn.group(0),
+                         "the copy button must not interpolate an esc()'d "
+                         "value into an attribute — read view.param instead")
+        self.assertIn("view.param", watch.PAGE)
+        # associated with the heading for screen readers, and with the
+        # metadata line first so the description reads as the full path
+        self.assertIn("'fdir htitle' : 'htitle'", btn.group(0))
+
+    def test_both_copy_outcomes_speak_on_the_one_confirmation_lifecycle(self):
+        # One idiom, not a second: `.cmdmsg` is the composer's component and
+        # `confirmationFor` is the composer's lifecycle. `note` is the only
+        # thing added — claim WITH the hold-and-depart lifecycle.
+        self.assertIn("confirmationFor(document, 'fmsg', 'cmdmsg fmsg', rmr)",
+                      watch.PAGE)
+        self.assertIn("note:(text,ok=true)=>show(text,ok,true)", watch.PAGE)
+        self.assertIn("c.note('path copied', true)", watch.PAGE)
+        self.assertIn(
+            "c.note('copy was blocked — the path beside it is selectable', false)",
+            watch.PAGE)
+        # the live region, or nothing is announced at all
+        self.assertIn('<div class="cmdmsg fmsg" id="fmsg" aria-live="polite">',
+                      watch.PAGE)
+
+
+class TestFileViewMode(unittest.TestCase):
+    """#252 — Rendered / Source for markdown at `/file`.
+
+    The browser guard drives the switch; what belongs here is the pair of
+    guarantees that are about the SHAPE of the code rather than about the
+    rendered page, because both are the kind of thing a later edit undoes
+    without any check noticing:
+
+    - **Source is the verbatim path that already existed**, not a second
+      renderer. If a highlighter or any other transform is ever introduced
+      between the server's string and the escaped text node, the mode stops
+      being what he asked for — and #351 is an open request to add exactly
+      such a highlighter to this view.
+    - **`?view=source` is a ROUTE**, read in one place and written in one
+      place, so a copied link and the page it came from cannot disagree.
+    """
+
+    def test_source_is_the_existing_verbatim_path_and_is_never_rewritten(self):
+        # ONE expression, and it is the same `<pre>${esc(text)}</pre>` every
+        # non-markdown file at /file has always rendered — both modes read
+        # `src`, so there is no second renderer to drift.
+        self.assertIn("const src = `<pre>${esc(text)}</pre>`;", watch.PAGE)
+        self.assertIn(
+            "const body = (isMarkdownFile(param) && mode !== 'source') "
+            "? mdB(text) : src;", watch.PAGE)
+        # ...and nothing tokenising may appear on this path. #339's highlighter
+        # is a build-time function in review_artifact.py and must stay there;
+        # `tok-` is the class prefix it emits.
+        self.assertNotIn("tok-", watch.PAGE,
+                         "the page must carry no tokeniser output: Source's "
+                         "bytes are the point of the mode (#252 vs #351)")
+
+    def test_the_mode_is_read_from_the_route_and_written_back_to_it(self):
+        # Read in exactly one place...
+        self.assertEqual(
+            1, watch.PAGE.count("sp.get('view') === 'source' ? 'source' : 'rendered'"),
+            "the mode must be parsed in routeOf and nowhere else")
+        # ...and written in exactly one place, so a deep link and the address
+        # bar cannot disagree about which mode is showing.
+        self.assertEqual(
+            1, watch.PAGE.count("(mode === 'source' ? '&view=source' : '')"))
+        # an unknown value is rendered, never a third state
+        self.assertIn("const mode = opts.mode === 'source' ? 'source' : 'rendered';",
+                      watch.PAGE)
+        # every entry point into navigate carries it, or one of them silently
+        # loses the mode (the deep-link bug this was red-proved against)
+        for site in ("{ push: true, q: r.q, mode: r.mode }",
+                     "{ push: false, q: r.q, mode: r.mode }",
+                     "{ push: false, transition: false, q: r.q, mode: r.mode }"):
+            self.assertIn(site, watch.PAGE, f"navigate call missing the mode: {site}")
+
+    def test_the_switch_is_links_markdown_only_and_holds_its_own_state(self):
+        # Links, not buttons: that is what makes the mode deep-linkable, the
+        # switch keyboard-operable, and the swap ride the router's dissolve.
+        sw = re.search(r"const fileModeSwitch = .*?\n};", watch.PAGE, re.S)
+        self.assertIsNotNone(sw, "fileModeSwitch is gone")
+        self.assertIn('<a class="sgbtn fmode" data-mode="rendered"', sw.group(0))
+        self.assertIn('<a class="sgbtn fmode" data-mode="source"', sw.group(0))
+        self.assertNotIn("<button", sw.group(0))
+        # the `.on` state is NOT in the html — see paintFileMode: a rewritten
+        # crumb is fresh nodes, and a fresh .sgind grows out of the row's left
+        # edge instead of sliding to the other label
+        self.assertNotIn("fmode on", sw.group(0))
+        self.assertIn("stable: true", watch.PAGE)
+        self.assertIn("if (isMarkdownFile(p))", watch.PAGE)
+        # ...and the sliding group is the SHARED one, not a second switch
+        self.assertIn('class="sgroup fmodes"', watch.PAGE)
+        self.assertIn("slideIndicator(g, !slide)", watch.PAGE)
+
+    def test_mobile_keeps_both_labels_in_one_row(self):
+        # His rule. `.sgroup` wraps by default and a wrapped two-position
+        # switch is a stack with the indicator sliding vertically through it.
+        rule = re.search(r"\n  #meta \.fmodes \{(.*?)\}", watch.PAGE, re.S)
+        self.assertIsNotNone(rule, "the #meta .fmodes rule is gone")
+        self.assertIn("flex-wrap:nowrap", rule.group(1))
+        # ...and it must OUT-SPECIFY `.sgroup`, which re-declares
+        # `display:flex; flex-wrap:wrap` later in the same sheet at plain class
+        # specificity. A bare `.fmodes` lost both, which made the switch a
+        # block-level flex container that broke its own crumb in two.
+        self.assertIn("display:inline-flex", rule.group(1))
+        self.assertLess(watch.PAGE.index("#meta .fmodes {"),
+                        watch.PAGE.index("  .sgroup {"),
+                        "this block sits ABOVE .sgroup, so its selector — not "
+                        "source order — is what makes the display stick")
+        # nothing may hide either half at any width
+        for m in re.finditer(r"\.fmodes?[^{]*\{[^}]*display:none[^}]*\}", watch.PAGE):
+            self.fail(f"a width hides part of the switch: {m.group(0)!r}")
+
+    def test_the_reading_position_is_measured_in_layout_space(self):
+        # Two traps, both documented in transitions.md and both live on this
+        # path: `documentElement.scrollHeight` counts the outgoing GHOST, and
+        # `getBoundingClientRect` reads visual space while `#view` is
+        # mid-`enter` (pushed back in Z and scaled down). offsetTop/offsetHeight
+        # are immune to both.
+        fn = re.search(r"function contentBottom\(\) \{.*?\n\}", watch.PAGE, re.S)
+        self.assertIsNotNone(fn, "contentBottom is gone")
+        body = fn.group(0)
+        self.assertIn("offsetTop", body)
+        self.assertIn("offsetHeight", body)
+        for forbidden in ("getBoundingClientRect", "scrollHeight"):
+            self.assertNotIn(forbidden, body,
+                             f"contentBottom must not use {forbidden} — it "
+                             f"answers for the ghost or for a transform")
+        # a ratio, not a pixel offset: the two panes are different heights
+        self.assertIn("window.scrollY / range", watch.PAGE)
+        self.assertIn("if (modeSwap) restoreScrollRatio(keepRatio);", watch.PAGE)
+
+
 class TestProjectTint(unittest.TestCase):
     """#143 — his colour for this project, on disk and in the page."""
 
