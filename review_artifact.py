@@ -685,6 +685,30 @@ def highlight(document):
 MARKS_WARN_AT = 8        # soft cap 7: warn at 8 or more (advisory, via `warn`)
 MARKS_REFUSE_AT = 15     # hard cap 15: refuse — fifteen flags is wallpaper
 
+# A flag anchors with `left:calc(var(--measure) + .4ch)` against its own box
+# (the marked element, made `position:relative` by `.is-marked`). For a BLOCK
+# element that box starts at the reading column's left edge, so the flag lands
+# at the column's right edge — correct. For an INLINE element the containing
+# block is the inline box, which sits wherever the text flow placed it, so
+# `left` resolves from that box's offset and the flag drifts right and clips
+# past the page edge (measured: clipped by 151px at the 861px cliff). The
+# builder cannot compute layout, so the gate is the TAG, not a computed style.
+#
+# An ALLOWLIST rather than an inline denylist: an unknown tag must REFUSE
+# rather than silently clip, and an allowlist fails closed on every element
+# nobody thought of while a denylist (`span`, `em`, …) fails open on `abbr`,
+# `kbd`, `mark`, `sub` and whatever arrives next. It also sidesteps the trap a
+# denylist walks into: an element the artifact's own CSS made `display:block`
+# is geometrically fine, and only a tag-name allowlist can say yes to a `<span>`
+# the page re-floated without saying yes to one it did not. CSS-induced shape
+# changes (a block the CSS floated or shrank) are NOT handled here — they are
+# #367 increment 2b's territory, not this refusal's.
+MARKS_BLOCK_HOSTS = frozenset("""
+    address article aside blockquote caption dd details div dl dt figcaption
+    figure footer h1 h2 h3 h4 h5 h6 header li main nav ol p pre section summary
+    table td th tr ul
+""".split())
+
 
 def _readable_label(label):
     """A label carries readable text iff some character is outside Unicode
@@ -753,9 +777,10 @@ class _EssentialMarkScan(html.parser.HTMLParser):
         self.labels = []     # mark labels, in document order
         self.no_id = []      # labels whose element had no stable id
         self.empty = []      # where-descriptions for blank-label marks
+        self.inline = []     # (where, label) for marks on a non-block element
         self._seen = 0       # count of data-mark attrs carrying a value
 
-    def _see(self, attrs):
+    def _see(self, tag, attrs):
         table = dict(attrs)
         label = table.get("data-mark", _ABSENT)
         if label is _ABSENT:         # element carries no data-mark attribute
@@ -773,29 +798,39 @@ class _EssentialMarkScan(html.parser.HTMLParser):
         self.labels.append(label)
         if not str(table.get("id", "")).strip():
             self.no_id.append(label)
+        # A mark on an inline element anchors from the inline box and clips
+        # (#396). Same class as a blank label or a missing id — refused, with
+        # the offending element AND its label named, never a bare "inline".
+        if tag not in MARKS_BLOCK_HOSTS:
+            element_id = str(table.get("id", "")).strip()
+            where = "<%s>" % tag if not element_id else \
+                '<%s id="%s">' % (tag, element_id)
+            self.inline.append((where, label))
 
     def handle_starttag(self, tag, attrs):
-        self._see(attrs)
+        self._see(tag, attrs)
 
     def handle_startendtag(self, tag, attrs):
-        self._see(attrs)
+        self._see(tag, attrs)
 
 
 def essential_marks(document):
-    """Essential mark labels in document order, plus blanks and the no-id set.
+    """Essential mark labels in document order, plus blanks, no-id and inline.
 
-    Returns ``(labels, no_id, empty)``, all in document order. A mark is a
-    `data-mark` attribute carrying a VALUE; the label is what the tab will
+    Returns ``(labels, no_id, empty, inline)``, all in document order. A mark is
+    a `data-mark` attribute carrying a VALUE; the label is what the tab will
     read. A valueless `data-mark` (the boolean-attribute form) is not a mark
     and is ignored. An empty or whitespace-only label is a mark the author
     botched — recorded in `empty` for the builder to refuse, because it would
-    render a blank tab. Increment 1 parses, caps and validates; it renders
-    nothing yet.
+    render a blank tab. A mark on an element whose tag is not a block container
+    is recorded in `inline` (as `(where, label)`) for the builder to refuse —
+    the flag would anchor from the inline box and clip (#396). Increment 1
+    parses, caps and validates; it renders nothing yet.
     """
     scan = _EssentialMarkScan()
     scan.feed(document)
     scan.close()
-    return scan.labels, scan.no_id, scan.empty
+    return scan.labels, scan.no_id, scan.empty, scan.inline
 
 
 # ── the visible rail (#367 increment 2a) ──────────────────────────────────
@@ -1042,7 +1077,7 @@ def render(fields, template=None, warn=None):
     # the source's BODY (the contract: a mark flags a passage inside body), so
     # this READS `fields["body"]` and never touches `out` — which is the whole
     # reason a no-marks source renders byte-identically apart from the stamp.
-    labels, marks_no_id, blanks = essential_marks(fields["body"])
+    labels, marks_no_id, blanks, marks_inline = essential_marks(fields["body"])
     # #379 — advisories are emitted BEFORE any refusal, so a source with two
     # faults reports both on one run. This used to sit below both `raise`s, which
     # meant an author whose source had a component violation and a short grid row
@@ -1080,6 +1115,19 @@ def render(fields, template=None, warn=None):
             "next/prev cannot land on them — give each flagged element a real "
             "id (the builder assigns nothing implicitly): %s"
             % ", ".join(repr(label) for label in marks_no_id))
+    # A mark on an inline element anchors the flag from the inline box's own
+    # offset rather than the reading column's edge, so the flag clips past the
+    # page edge (#396). Same treatment as a blank label or a missing id: the
+    # builder refuses and names the offending element AND its label, because
+    # "an inline mark" in a fifty-mark document is not actionable.
+    if marks_inline:
+        raise ArtifactError(
+            "essential mark(s) sit on inline element(s), so the flag would "
+            "anchor from the inline box's offset and clip past the page edge "
+            "rather than the reading column's edge — put each on a block "
+            "container (p, li, section, h1-h6, blockquote, td, figure, ...): "
+            "%s" % ", ".join("%s carrying label %r" % (where, label)
+                             for where, label in marks_inline))
     if len(labels) >= MARKS_REFUSE_AT:
         raise ArtifactError(
             "essential marks: %d declared, the hard cap is %d — fifteen flags "

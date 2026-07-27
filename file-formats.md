@@ -1115,8 +1115,25 @@ list, so it cannot drift from the passage it points at:
 <section aria-labelledby="crux-t" data-mark="the cliff">
 ```
 
-- **`data-mark="<label>"`** on any element inside `body`. The label is what the
-  tab reads.
+- **`data-mark="<label>"`** on a **block** element inside `body`. The label is what the
+  tab reads, and the element must be a block container: the flag anchors with
+  `left:calc(var(--measure) + .4ch)` against its own box (the marked element,
+  made `position:relative`), so for a block — whose box starts at the reading
+  column's left edge — it lands at the column's right edge. For an **inline**
+  element the containing block is the inline box, so `left` resolves from that
+  box's offset and the flag drifts right and clips past the page edge (measured
+  on a two-marks-one-line probe: clipped by 151px at the 861px cliff, and the
+  flag does not reflow so the clipping grows as the viewport shrinks). The
+  builder cannot compute layout, so the gate is the **tag**, not a computed
+  style: a `MARKS_BLOCK_HOSTS` allowlist (`p`, `li`, `section`, `div`,
+  `h1`–`h6`, `blockquote`, `td`, `figure`, …) in `review_artifact.py`. An
+  allowlist rather than an inline denylist on purpose — an unknown tag
+  **refuses** (fails closed) instead of silently clipping, where a denylist of
+  `span`/`em`/… would fail open on `abbr`, `kbd`, `mark`, `sub` and whatever
+  ships next. `data-mark` on a `<span>`, `<em>`, `<a>`, `<code>` or any other
+  inline tag is **refused at build time**, with the offending element and its
+  label named (a loud build error is the point — a clipped flag is silent).
+  Closed by #396.
 - **Document order is mark order.** There is no explicit index, because an index
   is a second thing to keep in sync and the reading order is the order he wants
   to walk them in.

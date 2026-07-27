@@ -1234,8 +1234,13 @@ def test_marks_are_collected_in_document_order():
     body = ('<section id="z" data-mark="zulu last"><p>z</p></section>'
             '<section id="a" data-mark="alpha first"><p>a</p></section>'
             '<section id="m" data-mark="mike middle"><p>m</p></section>')
-    labels, no_id, blanks = ra.essential_marks(body)
+    labels, no_id, blanks, inline = ra.essential_marks(body)
     assert labels == ["zulu last", "alpha first", "mike middle"], labels
+    # Precondition, derived not assumed: every mark here is on a <section>
+    # (block), so the inline refusal (a different axis) is not what this order
+    # test is exercising — if any were inline, the assertion below could pass
+    # for a reason unrelated to document order.
+    assert inline == [], "fixture gained an inline mark — order test is muddied"
     # Precondition that makes this about ORDER rather than mere presence: a
     # sorted collection would pass the assertion above iff the input were
     # already alphabetical. It is deliberately not.
@@ -1278,7 +1283,7 @@ def test_a_mark_label_must_carry_readable_text(template, attr, outcome):
 
     # essential_marks is where the split lives: valueless yields no label and
     # no blank; empty/whitespace yield a blank and no label; real yields a label.
-    labels, no_id, blanks = ra.essential_marks(element)
+    labels, no_id, blanks, _inline = ra.essential_marks(element)
     if outcome == "ignored":
         assert labels == [] and blanks == [], (labels, blanks)
     elif outcome == "refused":
@@ -1313,7 +1318,7 @@ def test_a_label_with_padding_around_real_text_survives(template):
     label is rejected.
     """
     padded = '<section id="cliff" data-mark="   the cliff   "><p>x</p></section>'
-    labels, no_id, blanks = ra.essential_marks(padded)
+    labels, no_id, blanks, _inline = ra.essential_marks(padded)
     assert labels == ["   the cliff   "], labels    # stored verbatim, not trimmed
     assert blanks == []
     fields = ra.parse_source(SOURCE)
@@ -1331,8 +1336,12 @@ def test_a_valueless_mark_on_an_id_less_element_is_not_a_no_id_error(template):
     BEFORE the no-id collection, so a valueless attribute is gone before no-id
     ever sees it.
     """
-    labels, no_id, blanks = ra.essential_marks("<p data-mark>stray</p>")
-    assert (labels, no_id, blanks) == ([], [], []), (labels, no_id, blanks)
+    labels, no_id, blanks, inline = ra.essential_marks("<p data-mark>stray</p>")
+    # valueless on a <p> (block): not a mark at all, so every axis is empty —
+    # including the inline axis, which is the precondition that keeps this test
+    # about the no-id rule rather than about the tag rule.
+    assert (labels, no_id, blanks, inline) == ([], [], [], []), \
+        (labels, no_id, blanks, inline)
     fields = ra.parse_source(SOURCE)
     fields["body"] += "\n<p data-mark>stray</p>"
     ra.render(fields, template=template)            # no-id refusal does NOT fire
@@ -1607,3 +1616,99 @@ def test_a_label_of_only_zero_width_spaces_is_refused(template):
     fields["body"] += "\n" + element
     with pytest.raises(ra.ArtifactError, match="readable text"):
         ra.render(fields, template=template)
+
+
+# ── an inline data-mark is refused (#396) ─────────────────────────────────
+#
+# The geometry break #367 increment 2a shipped: a flag anchors with
+# `left:calc(var(--measure) + .4ch)` against its own box, and for an INLINE
+# element that box is the inline box — so `left` resolves from the inline
+# box's offset, the flag drifts right, and it clips past the page edge
+# (measured by the human: clipped by 151px at the 861px cliff; the flag does
+# not reflow, clipping grows as the viewport shrinks). Block marks anchor at
+# the column edge and are fine.
+#
+# The decision is a BUILD-TIME refusal, not support or a clamp — following the
+# same idiom as the blank-label (#389) and no-id (#367) refusals. The gate is
+# a BLOCK-ELEMENT ALLOWLIST (`MARKS_BLOCK_HOSTS`), not an inline denylist: an
+# unknown tag refuses (fails closed) rather than silently clipping, and a
+# denylist would fail open on every inline tag nobody thought of (abbr, kbd,
+# mark, sub, ...). The browser guard (markrail) proved its anchor assertion
+# sees an inline flag: with an inline mark as the worst flag, "the flag anchors
+# at the reading column's right edge (within 2px)" went RED by 46.4px.
+
+
+def test_an_inline_data_mark_is_refused(template):
+    """A flag on an inline element anchors from the inline box's offset and
+    clips past the page edge (#396), so the builder refuses at BUILD time
+    rather than ship a silently clipped flag. Same idiom as the blank-label and
+    no-id refusals: a loud build error, never a quiet clip.
+
+    Production line: `if tag not in MARKS_BLOCK_HOSTS: self.inline.append(...)`
+    in `_EssentialMarkScan._see` — drop the inline recording and an inline mark
+    builds. The element carries an id, so the no-id refusal cannot be what
+    fires; the refusal under test is the inline one.
+    """
+    # Precondition, derived not assumed: <span> is NOT in the block allowlist,
+    # or the inline refusal can never fire on it and this test is vacuous.
+    assert "span" not in ra.MARKS_BLOCK_HOSTS, \
+        "<span> is in the block allowlist — the inline refusal cannot catch " \
+        "it; pick a different inline tag for this test"
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += ('\n<p class="read">prose with '
+                       '<span id="phrase" data-mark="an inline phrase">'
+                       'an inline flag</span> inside it</p>')
+    with pytest.raises(ra.ArtifactError, match="inline element"):
+        ra.render(fields, template=template)
+
+
+def test_a_block_data_mark_is_still_accepted(template):
+    """The refusal discriminates by tag — it does not forbid marks outright. A
+    mark on a section (the commonest passage container) still builds and plants
+    a flag, so the allowlist is not so narrow it refuses the case the feature
+    is for.
+
+    Production line: `MARKS_BLOCK_HOSTS` membership, read in `_see` — remove the
+    marked tag (`section`) and the BUILD refuses, so this reddens on the render
+    line. The precondition asserts a *representative* block tag (`p`), not the
+    one marked below, deliberately: that keeps the red on the build behaviour
+    rather than on this assert, which is the discrimination under test.
+    """
+    # Precondition, derived not assumed: the allowlist is real and holds block
+    # tags (a representative one plus a size floor), or the refusal would be
+    # total and this would pass for the wrong reason.
+    assert "p" in ra.MARKS_BLOCK_HOSTS and len(ra.MARKS_BLOCK_HOSTS) > 5
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += ('\n<section id="blk" data-mark="a block passage">'
+                       '<p class="read">the body of the passage</p></section>')
+    built = ra.render(fields, template=template)
+    assert 'data-mid="0"' in built, "a block mark planted no flag"
+
+
+def test_the_refusal_names_the_element_and_the_label(template):
+    """An inline refusal that says only 'inline mark refused' makes an author
+    hunt through a document for the offender. Match the existing refusals'
+    detail: name the offending element (tag AND id, so it is findable) AND its
+    label (so the author knows which flag). #389's blank refusal names WHERE;
+    this one names WHERE and WHAT.
+
+    Production line: the `%s carrying label %r` formatting in render()'s inline
+    refusal — drop `where` (or `label`) from it and this fails on the substring
+    that went missing.
+    """
+    # Precondition: <em> is inline (not in the allowlist) — derived, not
+    # assumed, so a future allowlist widening cannot quietly un-test this.
+    assert "em" not in ra.MARKS_BLOCK_HOSTS
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += ('\n<p class="read">prose with '
+                       '<em id="emphasis" data-mark="the emphasised bit">'
+                       'an emphasis</em> inside it</p>')
+    with pytest.raises(ra.ArtifactError) as caught:
+        ra.render(fields, template=template)
+    msg = str(caught.value)
+    # the element: tag and id, so the author can find it in the source
+    assert '<em id="emphasis">' in msg, \
+        "the refusal does not name the offending element: %r" % msg
+    # the label, so the author knows which flag it is
+    assert "the emphasised bit" in msg, \
+        "the refusal does not name the mark's label: %r" % msg
