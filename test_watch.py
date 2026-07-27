@@ -4188,3 +4188,106 @@ class TestAnswerWritesAreAtomic(unittest.TestCase):
         self.assertNotIn('open(qpath, "w"', src)
         self.assertEqual(src.count("atomic_write_text(qpath"), 2,
                          "both /answer and /comment write through the atomic path")
+
+
+class TestShortBodyIsWitnessedAsShort(unittest.TestCase):
+    """#371 — an interrupted body was recorded as a complete submission.
+
+    `do_POST` reads `min(nbytes, MAX_BODY)` and never compares the result to
+    what was promised, so a connection dropped mid-body yields a partial
+    payload. `truncated` next to it catches the opposite case — a body too
+    LARGE — and reads as though it covered both.
+
+    The damage is in the recovery log rather than in a file: `submissions.log`
+    stores `bytes` as the DECLARED length beside a shorter payload, with nothing
+    saying it arrived short. That file exists so his words can be recovered when
+    a handler refuses them, and a reader cannot tell a genuinely short answer
+    from a truncated one.
+
+    **This fixes only the half that needs no decision from him.** Whether the
+    server should then reject, or keep a partial witness marked incomplete and
+    proceed, is Q2 of #263's open ask; the entry says to wait rather than guess,
+    so the response behaviour here is deliberately unchanged. Recording the
+    shortfall is compatible with either answer and makes both implementable.
+    """
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server.server_address
+
+    @staticmethod
+    def _post_short(addr, path, declared, sent):
+        """POST claiming `declared` bytes and sending `sent`, then half-close.
+
+        urllib will not lie about Content-Length, and a mock would prove
+        nothing about the read — so this is a real socket dropping a real body
+        mid-flight, which is the event being witnessed.
+        """
+        s = socket.create_connection(addr, timeout=5)
+        try:
+            head = (f"POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                    f"Content-Type: application/json\r\n"
+                    f"Content-Length: {declared}\r\nConnection: close\r\n\r\n")
+            s.sendall(head.encode() + sent)
+            s.shutdown(socket.SHUT_WR)      # the drop: EOF before `declared`
+            with contextlib.suppress(OSError):
+                while s.recv(4096):
+                    pass
+        finally:
+            s.close()
+
+    def _witness(self, d):
+        path = os.path.join(d, ".dreamwork", "submissions.log")
+        with open(path, encoding="utf-8") as f:
+            lines = [json.loads(line) for line in f if line.strip()]
+        self.assertTrue(lines, "nothing was witnessed at all")
+        return lines[-1]
+
+    def test_a_body_that_arrives_short_is_recorded_as_short(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            addr = self._serve(d)
+            sent = b'{"question": "A real open question?", "answer": "abc'
+            declared = len(sent) + 500
+            # The precondition: the two numbers must actually differ, derived
+            # from the payload rather than asserted as literals.
+            self.assertGreater(declared, len(sent))
+            self._post_short(addr, "/answer", declared, sent)
+            rec = self._witness(d)
+            self.assertEqual(rec["bytes"], declared,
+                             "`bytes` stays what he SENT, per the format contract")
+            self.assertEqual(rec["got"], len(sent),
+                             "the number of bytes that actually arrived must be recorded")
+            self.assertTrue(rec.get("short"),
+                            "a short body must be marked, or a reader cannot tell "
+                            "a truncated answer from a genuinely brief one")
+
+    def test_a_complete_body_is_not_marked_short(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            addr = self._serve(d)
+            body = b'{"question": "A real open question?", "answer": "complete"}'
+            self._post_short(addr, "/answer", len(body), body)
+            rec = self._witness(d)
+            self.assertEqual(rec["bytes"], len(body))
+            self.assertNotIn("short", rec,
+                             "marking a complete body would make the flag meaningless")
+            self.assertNotIn("got", rec, "`got` is only worth its bytes when it differs")
+
+    def test_an_oversize_body_is_truncated_not_short(self):
+        # The two conditions are distinct and the old code conflated them: too
+        # LARGE is a cap the server applied, too SMALL is a promise the client
+        # broke. A reader recovering his words needs to know which.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            addr = self._serve(d)
+            body = b'{"a": "' + b'z' * (watch.MAX_BODY + 100) + b'"}'
+            self._post_short(addr, "/answer", len(body), body)
+            rec = self._witness(d)
+            self.assertTrue(rec.get("truncated"))
+            self.assertNotIn("short", rec,
+                             "a body the server capped did not arrive short")

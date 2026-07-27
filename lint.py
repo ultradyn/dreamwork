@@ -1553,6 +1553,15 @@ def check_submissions(dw: Path, rep: Report) -> None:
             bad.append(f"line {i}: why={rec['why']!r} not json/decode")
         if "truncated" in rec and rec["truncated"] is not True:
             bad.append(f"line {i}: truncated must be true when present")
+        # #371's pair. `short` is the opposite condition to `truncated` and the
+        # two say different things to someone recovering his words, so the flag
+        # is worthless without the count beside it.
+        if "short" in rec and rec["short"] is not True:
+            bad.append(f"line {i}: short must be true when present")
+        if ("short" in rec) != ("got" in rec):
+            bad.append(f"line {i}: got must be present iff short is")
+        if "got" in rec and not isinstance(rec["got"], int):
+            bad.append(f"line {i}: got is not an int")
 
     if bad:
         rep.add(ERROR, "submissions.log",

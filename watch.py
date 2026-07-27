@@ -8416,7 +8416,7 @@ MAX_BODY = 20_000
 SUBMIT_LOCK = threading.Lock()
 
 
-def log_submission(target, path, body, nbytes, truncated=False):
+def log_submission(target, path, body, nbytes, truncated=False, short=False):
     """His words on disk before anything is allowed to refuse them (#199).
 
     His framing: "because the user's time is the most valuable thing". Before
@@ -8466,6 +8466,16 @@ def log_submission(target, path, body, nbytes, truncated=False):
             rec["why"] = "decode"
     if truncated:
         rec["truncated"] = True
+    # A body that arrived SHORT is the opposite condition to `truncated` and was
+    # conflated with it (#371): too large is a cap this server applied, too small
+    # is a promise the client broke. Without this, `bytes` stated the declared
+    # length beside a shorter payload and nothing said so — and this file exists
+    # to recover his words, so a reader could not tell a truncated answer from a
+    # genuinely brief one. Recorded only when it differs, because a marker that
+    # is always present says nothing.
+    if short:
+        rec["short"] = True
+        rec["got"] = len(body)
     try:
         line = json.dumps(rec, ensure_ascii=False)
     except (TypeError, ValueError):        # a value json cannot render
@@ -8737,9 +8747,17 @@ def make_handler(target, dev=False, authority=None):
             if nbytes < 0:
                 self.send_error(400)
                 return
-            body = self.rfile.read(min(nbytes, MAX_BODY))
+            want = min(nbytes, MAX_BODY)
+            body = self.rfile.read(want)
             truncated = nbytes > MAX_BODY
-            log_submission(target, self.path, body, nbytes, truncated)
+            # `truncated` catches a body too LARGE. Nothing caught one that
+            # arrived SHORT (#371) — a connection dropped mid-body reads fewer
+            # bytes than promised and was witnessed as complete. The response
+            # behaviour is deliberately unchanged: whether to refuse or to keep
+            # a partial marked incomplete is Q2 of #263's open ask, and this
+            # only makes the witness truthful, which either answer needs.
+            short = len(body) < want
+            log_submission(target, self.path, body, nbytes, truncated, short)
             # ...and only now may a request be turned away. An over-long body
             # is still refused — the cap is what makes the read bounded — but
             # it is refused with its first MAX_BODY bytes already kept, so a

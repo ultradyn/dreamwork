@@ -604,8 +604,20 @@ site rather than four, so a handler added later cannot forget, and every
 | `req` | any JSON value | the body, when it parsed |
 | `raw` + `why` | strings | instead of `req` when it did not. `raw` is the body decoded with `errors="replace"`; `why` is `"json"` (valid UTF-8, not JSON) or `"decode"` (not valid UTF-8) |
 | `truncated` | optional, `true` | only when the body exceeded the 20,000-byte cap (then rejected 413, first 20,000 bytes kept). **Absent otherwise, never `false`** |
+| `short` + `got` | optional, `true` + int | only when FEWER bytes arrived than were promised — a connection dropped mid-body. `got` is how many actually arrived. **Absent otherwise, never `false`/`0`** |
 
 **Exactly one of `req` / `raw`; `why` is present iff `raw` is.**
+
+**`truncated` and `short` are opposite conditions and neither implies the
+other** (#371): `truncated` is a cap *this server* applied to a body too
+large, `short` is a promise *the client* broke. Before `short` existed,
+`bytes` stated the declared length beside a shorter payload with nothing
+saying so — and since this file exists so his words can be recovered after a
+handler refuses them, a reader could not distinguish a truncated answer from
+a genuinely brief one. Recording it does **not** decide what the response
+should be; whether the server refuses a short body or keeps a partial
+witness marked incomplete is an open question to the human, and the
+behaviour is unchanged until he rules.
 
 **Why `req` rather than the raw body always**: `json.loads` then
 `json.dumps` round-trips every value faithfully, so nothing of his is

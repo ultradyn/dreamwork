@@ -844,6 +844,26 @@ class TestSubmissionsLog:
         assert self.run_s(tmp_path, self.rec(truncated=False) + "\n").failed
         assert not self.run_s(tmp_path, self.rec(truncated=True) + "\n").failed
 
+    def test_short_needs_got_beside_it(self, tmp_path):
+        # #371: `short` says a body arrived incomplete and `got` says by how
+        # much. The flag alone tells a reader recovering his words that
+        # something is missing without telling them what they have, so the
+        # contract pairs them and this refuses either half on its own.
+        assert self.run_s(tmp_path, self.rec(short=True) + "\n").failed
+        assert self.run_s(tmp_path, self.rec(got=11) + "\n").failed
+        assert not self.run_s(tmp_path,
+                              self.rec(short=True, got=11) + "\n").failed
+
+    def test_short_false_is_an_error_and_got_must_be_an_int(self, tmp_path):
+        # Same contract as `truncated`: absent, never false.
+        assert self.run_s(tmp_path, self.rec(short=False, got=11) + "\n").failed
+        assert self.run_s(tmp_path, self.rec(short=True, got="11") + "\n").failed
+
+    def test_short_and_truncated_can_both_be_absent(self, tmp_path):
+        # They are opposite conditions, so the ordinary record carries neither
+        # — and a check that demanded one of them would fail every good line.
+        assert not self.run_s(tmp_path, self.rec() + "\n").failed
+
     def test_empty_file_is_fine(self, tmp_path):
         rep = self.run_s(tmp_path, "")
         assert not rep.failed and "no submissions" in rep.rows[0][2]
