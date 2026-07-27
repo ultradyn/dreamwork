@@ -24,9 +24,28 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **407**
+Next id: **408**
 
 ## Open
+- **#407** — `/questions` has **no** timed ages, so the one-figure precision signal has nothing on
+  the page to be read against · P3 · dashboard/design-rationale · origin: **loop** · found by
+  measuring the deployed page while verifying **#392a**, not by reading the design
+  · `watch-design.md` justifies the one-figure form as *"the MISSING second figure is the signal,
+  **read against the timed entries beside it**"*. Measured on the live page: **38 of 38** age nodes
+  are day-precision and the timed sample is **empty**. There are no timed entries beside it
+  · **the rendering is still honest** — that is the point of `#392a` and it holds; nothing claims
+  precision it lacks. What is inaccurate is the **stated rationale**, and a rationale is what the
+  next lane reasons from
+  · the contrast is real **across** surfaces (a commit's age elsewhere shows two figures) and absent
+  **within** this one. So a reader who does not already know the convention cannot infer precision
+  from `/questions` alone; they infer it from the styleguide
+  · **this is the caveat-holds-an-axis-fixed shape**: the design varied *precision* and held
+  *page composition* fixed, and the defect is in the axis held fixed
+  · smallest fix is one sentence in `watch-design.md` saying the contrast is cross-surface. The
+  larger question — whether a page of uniformly day-precision ages needs any signal at all — is
+  worth asking before writing that sentence
+  · related: **#392**
+
 - **#405** — the loop has been managing file contention by hand all session when his standing
   convention already removes it: **worktrees** · **P1** · loop/parallelism · origin: **loop** ·
   found because **#397's plan named it as the cheaper alternative to the thing #397 was asked to
@@ -410,7 +429,7 @@ Next id: **407**
   (07-26 20:23 → 07-27 12:23) — 111 ids, 110 unique. `lint.check_tasks` has ERRORed on exactly
   that since `b7151ec`, so the check was never the problem; it was not run or not read. **No new
   task filed** — nothing to build
-  · related: **#385, #399**
+  · related: **#385, #399, #407**
 
 
   · **SPLIT 2026-07-28 09:14, because the half that stops the wrongness needs none of the held
@@ -427,6 +446,31 @@ Next id: **407**
   · **the same-day case must be decided rather than fall out**: `0d ago` reads wrong for something
   filed this morning, and it is the case he will see most. Whoever takes it decides and justifies it
   · rec order: **a first**, since it is the fix
+  · **#392a LANDED and is VERIFIED CLOSED** — `159917b` (2026-07-28 09:43, `ccc @glm52`, brief
+  `.dreamwork/docs/briefs/392a-date-only-degradation.md`). `watch.py` + `test_watch.py` +
+  `watch-design.md`; no guard and no `justfile` line, correctly, because a text-only change is not a
+  transition and it said so
+  · **verified by the coordinator, not folded from the report** (there was no report — see below):
+  **231 passed** in `test_watch.py`; `just audit-styleguide` clean (0 UI commits without an entry);
+  `lint` 0 errors; deployed snapshot **byte-identical** to `HEAD:watch.py` by sha256 **with an arity
+  check** (2 lines, 1 distinct hash — the check that silently told me nothing this morning)
+  · **the red was taken in a WORKTREE, not against the live file** — `.worktrees/verify-392a` off
+  `HEAD`, injection `if (el.dataset.day === '1')` → `if (false)`, which reinstates `#392`'s exact
+  bug. Discriminating: `test_a_date_only_question_shows_one_figure_not_two` **failed** showing
+  `got '03d 08h ago'`, `test_an_entry_dated_today_does_not_read_as_stale` **failed** with
+  `'05h 00m ago' != 'today'`, and the timed neighbour **stayed green**. Injection grep-confirmed and
+  `ast.parse`-confirmed before believing the result. **The live tree was never dirty** — which is
+  **#405** demonstrated rather than argued
+  · **and criterion 3 is real, not decorative:** the traceback shows the derived precondition
+  assertions (`assertRegex(date, …)`, `assertNotRegex(title, r'\d{2}:\d{2}|T\d')`) executing before
+  the failing assert
+  · **checked on the deployed page with real data, which is how `#392` was found in the first
+  place: 38 age nodes, all 38 day-precision, ZERO two-figure renders.** My `#367` question — which
+  read `08h 17m ago` at 08:18 while being 24 minutes old — now reads `today`. Pixels reviewed: the
+  word carries the same dimmed `.age` treatment and reads naturally beside `01d`/`03d ago`;
+  `OPEN (3)` confirms no entry was dropped
+  · **#392b remains open** (put a time INTO the format) and `file-formats.md` is now free
+
 - **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
   reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified
   · **the half that needs no ruling from him is DONE (`d33cc2f`)**: `submissions.log` now

@@ -2236,3 +2236,35 @@ this shape and convert opportunistically.)
   taken** — and then whether anything upstream quietly succeeds instead. A fallback nobody reaches
   looks identical to one nobody needs.
 
+- **The coordinator inbox HAS now lost a report, so the sentence that says it never has is wrong —
+  and it is the sentence used to justify routing everything through it.** · `SKILL.md` states that
+  dreamers *"append to the coordinator inbox and have never lost one"*, and offers that as the reason
+  to dispatch utilities the same way. `#392a` landed real work (`159917b`), wrote a hand-off line,
+  and **never appended to the inbox**. Its reasoning, its rejected alternatives (it chose the word
+  `today` over `0d`) and its stated uncertainties are gone. I have its diff and its commit messages,
+  and I reconstructed the rest by reading the code — which worked, and only because the change was
+  small.
+  · **Measured across four lanes in one batch, three channels:** git **4/4**; the hand-off line
+  **4/4 written** but **3/4 in the right section**; the inbox **3/4**. Exactly one channel cannot be
+  skipped, and it is the one nobody designed as a channel: **a lane cannot land work without
+  committing**, so the commit is structurally reliable in a way an append never is.
+  · The lesson is not "watch the inbox harder" — that is what the sentence already assumed. It is
+  that **"has never failed" is an absence of observation, not a property**, and it decays silently:
+  nobody re-checks a claim like that, and its counterexample looks exactly like a quiet lane.
+  · Practical form: **put what must survive in the commit** — message, and any document the work
+  produced. Treat the inbox as the place richer context *usually* arrives, never as the place a
+  deliverable lives.
+
+- **A compliance measurement taken at commit time measures the wrong moment: landing and reporting
+  are not one act.** · At 09:46 I observed that two lanes had landed commits and neither had written
+  its hand-off line, and I nearly filed "prompt placement is insufficient" as a finding. I withheld
+  the count on the grounds that both lanes were **still alive**. Both wrote their lines within the
+  next fifteen minutes; the final count was **4 of 4**. The fix was working and the measurement was
+  early.
+  · **The general rule: before recording a compliance failure, establish that the agent has
+  FINISHED.** A live process and a non-compliant one are indistinguishable from the artefact, and
+  the honest instrument is `pgrep`, not the file. Cheap, and it would have inverted this conclusion.
+  · Worth pairing with the opposite error, which this repo has also paid for: an agent that says it
+  is done and is not. **Neither the artefact nor the agent's own word settles it — the harness
+  does.**
+

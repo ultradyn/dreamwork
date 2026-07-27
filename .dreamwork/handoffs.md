@@ -25,3 +25,4 @@ flagged twice.
 - **#398** → folded (2026-07-28 09:31): folded into `## Recently landed` citing `9f2012a`; verification owed
 - **#397** → folded (2026-07-28 09:52): folded into `## Recently landed` citing `1b508b0`; recommendation (do-not-extract) accepted, no ruling requested, worktree alternative filed as #405
 - **#401** → folded (2026-07-28 09:58): audit half folded into the `#401` entry citing `f2c950e`; fix half stays open, still needs `watch.py`
+- **#392a** → folded (2026-07-28 10:00): verified and closed against `#392`'s entry citing `159917b` — independent red taken in a worktree, deployed page checked (38/38 day-precision, zero two-figure). NOTE: the Pending line above sits **under `## Folded`** (the `cat >>` trap) and is left in place deliberately as `#406`'s fixture.
