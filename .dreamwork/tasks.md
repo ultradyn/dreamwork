@@ -24,9 +24,63 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **336**
+Next id: **338**
 
 ## Open
+
+- **#337** — `do next` should fall back to `add idea` after submitting, as
+  `do now` already does · P2 · dashboard UX · origin: **human** · **human via
+  watch `add-idea` 2026-07-27 23:01**: *"for the command composer, when the user
+  submits something under 'do next' it should autoselect 'add idea' after
+  submitting (just like 'do now' does)"* · **his premise verified exactly**:
+  `watch.py:5567` is `if (kind === 'do-now') setKind('add-idea');` — one kind is
+  special-cased and `do-next` is not · the literal fix is one condition, but
+  **that is the wrong shape and the file says so itself**: `COMMANDS`
+  (`watch.py:280`) is plugin-extensible (#86) and its comment states *"nothing
+  downstream assumes a fixed set"*, so a hardcoded list of two kinds is a third
+  place a new kind has to be remembered · rec: give the kind a property (e.g.
+  `sticky: false`) and have the submit path read it, so `add-idea` is the only
+  sticky kind and every steering kind — including `maintenance` in the hover
+  menu and anything a plugin adds later — decays to it · **the reason this is
+  worth more than a convenience**: a mode that persists silently raises the
+  authority of his NEXT message, so the composer should decay toward the least
+  dangerous kind rather than hold the most recent one; that also makes it
+  consistent with #257's danger treatment for `do-now` instead of orthogonal to
+  it · obeys `transitions.md` for the mode change itself, which already has an
+  idiom (#300 morphs the run-mode descriptions through one popover) · blocked on
+  `watch.py` being free; sequence after #336, which is his newer and higher steer
+
+- **#336** — `/file` must show an image, not its bytes as mojibake · **P1** ·
+  **next-up** · dashboard bug · origin: **human** · **human via watch `do-next`
+  2026-07-27 23:00**, typed from the page it happened on
+  (`/file?p=.dreamwork/review/evidence/review-note-reply-unclear.png`): *"viewing
+  images should work. this renderes as binary ascii like: ..."* followed by the
+  actual U+FFFD soup · **diagnosed, so the implementer starts from the cause**:
+  `/filedata` (`watch.py:7885`) is the only file-content endpoint and it does
+  `read_text(full)` → `json.dumps({"path", "content"})`, while `read_text`
+  (`watch.py:6147`) opens with `encoding="utf-8", errors="replace"` — so every
+  byte that is not valid UTF-8 becomes `\ufffd` and the client renders the result
+  in a `<pre>`. His paste IS that replacement character stream · it also
+  truncates at `limit=200_000`, so the 248KB evidence PNGs he was reading are cut
+  off as well as corrupted · **this is not only about images**: any binary file in
+  the tree renders as plausible-looking garbage rather than saying what it is,
+  which is the quiet-wrong-state DREAMWORK.md forbids · scope: detect type
+  (extension AND magic bytes — an extension alone is a guess), serve raster
+  images from a byte endpoint confined by the SAME `resolve_confined` gate as
+  `/filedata`, render `<img>` in the file view, and for a non-image binary say
+  what it is (type, size) with a download affordance instead of dumping bytes —
+  detail ranked, never withheld · **the security call is load-bearing and must be
+  made deliberately, not defaulted**: a raw-bytes endpoint that echoes a guessed
+  `Content-Type` turns `.svg` and `.html` in the tree into stored XSS against the
+  dashboard's own origin, and #276/#275 are actively considering LAN and public
+  exposure · so serve inline ONLY an allowlist of raster types
+  (`png|jpeg|gif|webp|avif`), send everything else as
+  `application/octet-stream` with `Content-Disposition: attachment`, and never
+  reflect a client-supplied type · SVG is explicitly OUT of the inline allowlist
+  and the entry says so because the next reader will want to add it · obeys
+  `transitions.md` for however the image arrives in the view, and
+  `watch-design.md` for its framing · **blocked on `watch.py` being free** —
+  `fade326` holds it for #326 right now; this is next in line behind it
 
 - **#335** — lint should catch an open entry that declares ITSELF completed ·
   P2 · tooling/correctness · origin: **loop** · found by tripping over #261, which
@@ -470,6 +524,16 @@ Next id: **336**
   chooses reviewed bounded audit, user-tracer research, or stop-with-unknown · no
   privileged tracing or host mitigation currently authorized · coordinate any
   future host fix with system KB entry
+  · **his ruling, via watch 2026-07-27 22:58: `Close after quiet window`** (the
+  loop's rec), plus *"also please copy the report to ~/.llm-general/misc-reports/"*
+  — done, verbatim, with a `README.md` there recording that a report is the
+  INVESTIGATION while the machine's current state is the `~/CLAUDE.md` mitigation
+  entry · **so what closes this entry is now written down rather than remembered**:
+  zero new orphaned `.git/index.lock` files in a quiet window after the next pi
+  restart, which is the event that makes the patched `pi-powerline-footer`
+  effective · until that restart happens the absence of orphans proves nothing,
+  because the unpatched extension is still the one running · `git-lock-watch`
+  stays armed as the witness
 
 - **#282** — Link task references to rich hover previews · P1 · task-navigation
   feature · origin: **human** · **human via watch 18:22** · whenever `#229`-style

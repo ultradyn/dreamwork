@@ -110,22 +110,6 @@
   authorizes an isolated implementation/review/deploy for #284. Answer `Approve
   H1`, `Approve H1 with changes: …`, `Choose H2`, or `Pause #284`.
 
-- **P1 · 2026-07-27 — #283 index-lock attribution: authorise one bounded
-  privileged audit capture, or stop at recurrence evidence?** Updated report:
-  `.dreamwork/docs/research/git-index-lock-attribution-283.md`.
-
-  **2026-07-27 03:20 update — RESOLVED without L2/L3:** the existing
-  git-lock-watch journal captured the creator in the act: `git status
-  --porcelain` spawned by `pi-powerline-footer` (250/282 parent-pi snapshots
-  in this repo). Code-level: `runGit(["status","--porcelain"],500)` had no
-  `--no-optional-locks` and a 500ms `proc.kill()`, so under load the status
-  died mid index-refresh and orphaned the lock. The installed extension is
-  patched (effective on next pi restart; documented in the host mitigation
-  ledger). L3/L2/L4 are moot. Remaining decision: keep #283 open until a
-  quiet window after the next pi restart confirms zero new orphans, or close
-  now with the watcher armed. Answer `Close after quiet window` (rec) or
-  `Close #283 now`.
-
 - **P1 · 2026-07-27 — #289 review status/association: keep the decision
   record inside its owning question?** Read-only IGC compared a sidecar index,
   embedded question metadata, and a hybrid.
@@ -488,6 +472,37 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-27 — #283 index-lock attribution: authorise one bounded
+  privileged audit capture, or stop at recurrence evidence?**
+
+  → answered (2026-07-27 23:00): **Close after quiet window** (his rec), and
+  the report is copied to `~/.llm-general/misc-reports/` as he asked —
+  verbatim, because it already carries the 2026-07-27 attribution and the
+  code-level fix, so it is not a snapshot that stops before the answer. Added
+  a `README.md` there naming what the directory is for and, load-bearing for
+  whoever reads it later, that a report is the INVESTIGATION while the current
+  state of the machine is the `~/CLAUDE.md` mitigation entry plus
+  `~/.llm-general/systems/<hostname>/` — a reader acting on the report alone
+  could re-apply a fix that is already in place. #283 stays OPEN with its
+  closing condition now written into the ledger entry rather than living only
+  here: zero new orphaned locks in a quiet window after the next pi restart,
+  which is the event that makes the patched extension effective. Updated report:
+  `.dreamwork/docs/research/git-index-lock-attribution-283.md`.
+
+  **2026-07-27 03:20 update — RESOLVED without L2/L3:** the existing
+  git-lock-watch journal captured the creator in the act: `git status
+  --porcelain` spawned by `pi-powerline-footer` (250/282 parent-pi snapshots
+  in this repo). Code-level: `runGit(["status","--porcelain"],500)` had no
+  `--no-optional-locks` and a 500ms `proc.kill()`, so under load the status
+  died mid index-refresh and orphaned the lock. The installed extension is
+  patched (effective on next pi restart; documented in the host mitigation
+  ledger). L3/L2/L4 are moot. Remaining decision: keep #283 open until a
+  quiet window after the next pi restart confirms zero new orphans, or close
+  now with the watcher armed. Answer `Close after quiet window` (rec) or
+  `Close #283 now`.
+  - **Answer (via watch, 2026-07-27 22:58):** rec also please copy the
+    report to ~/.llm-general/misc-reports/
 
 - **P1 · 2026-07-27 — #281 `/tasks`: seven taste calls on the design proposal
   you asked for first.**
