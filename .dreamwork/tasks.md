@@ -228,7 +228,9 @@ Next id: **388**
   · **no ask goes to him on this** — per his 05:35 rule, reusing `agePair` over a second
   humanizer is the one clearly superior answer, so it gets decided here and recorded rather than
   put to him. The only judgement worth flagging in the eventual report is (b)
-  · blocked while `watch.py` is contested — a c2c peer holds it with #277 pending merge
+  · **briefed and queued** (`.dreamwork/docs/briefs/385-humanized-age.md`), waiting on the one
+  `watch.py` slot, which #300 holds from 06:13. The peer that had it released it when #277
+  merged; the constraint now is simply that one file admits one lane
 
 - **#382** — `plugcmd` fails on a fixed 900ms sleep, not on a 400 · P2 · guards/verification ·
   origin: **loop** · 25m · owner: dispatched dreamer on `ccc @oc-glm52`, brief
@@ -1028,6 +1030,15 @@ Next id: **388**
   the self-hosted half has no IdP at all under his direction
 
 - **#300** — Let run-mode descriptions liquefy through one shared popover · P2
+  · **IN PROGRESS 2026-07-28 06:13** — he re-raised it himself as `do-next` at 06:07:
+  *"run mode button group needs a nice description that shows when any of the buttons are
+  hovered. see the original task for a more."* Dispatched to `ccc @grok` with brief
+  `.dreamwork/docs/briefs/300-runmode-popover.md`, sole holder of `watch.py`, port 39891
+  · **routed to grok specifically because this one needs vision** — the acceptance includes
+  visual review loops on rendered pixels and a text morph only judgeable from intermediate
+  frames, and `@glm52` is not multimodal. That is the first time the model choice here has
+  been forced by a capability rather than a preference
+  · the entry below is the requirements document; `ca12a3c` only captured it
   · Web UI feature · 35m · origin: **human** · **human via watch `add-idea`
   14:37** · hovering a run-mode button should explain that mode; all buttons
   share one geometrically stable description surface so moving between them
