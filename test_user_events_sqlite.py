@@ -9,17 +9,83 @@ Named production lines whose deletion must fail each test (plan §Lane B):
       → chain property (c) naming the ordinal
 - B4: AND state = 'validated' predicate in the claim UPDATE
       → test_rejected_receipt_can_never_be_claimed
+- B5: lease_until > <backend now> predicate in the claim UPDATE
+      → test_expired_lease_is_reclaimable_and_the_stale_claimant_cannot_finish
+- B6: expected == stored_chain_hash comparison in advance_cursor
+      → test_broken_chain_forces_rebuild_not_a_silent_advance
+- B7: UNIQUE(client_action_id) constraint in the schema
+      → test_two_processes_one_uuid_make_one_receipt
+- B8: registry entry for a backend
+      → test_every_contract_test_runs_under_every_registered_backend
 
 Must not fake (plan): second connection for pragmas; no raw INSERT for B2;
-no H_i formula copy for B3; revisions read back from store for B4.
+no H_i formula copy for B3; revisions read back from store for B4;
+no patched clock for B5; processes not threads for B7; no hand-copied
+contract-test list for B8.
 """
 
 from __future__ import annotations
 
+import multiprocessing as mp
+import os
+import time
 import uuid
 from pathlib import Path
 
 from user_events.sqlite import BUSY_TIMEOUT_MS, Envelope, open_journal
+
+
+# ---------------------------------------------------------------------------
+# B7 — module-level child entry (must be picklable under spawn)
+# ---------------------------------------------------------------------------
+
+def _b7_child_receive(
+    path: str,
+    action_id: str,
+    body: bytes,
+    barrier: "mp.synchronize.Barrier",
+    result_queue: "mp.queues.Queue",
+) -> None:
+    """One OS process: wait on barrier, then receive() the same UUID+bytes."""
+    # Report pid before barrier so the parent can assert distinct interpreters
+    # even if receive() hangs.
+    pid = os.getpid()
+    try:
+        barrier.wait(timeout=30)
+        j = open_journal(path)
+        try:
+            env = Envelope(
+                client_action_id=action_id,
+                protocol_version="1",
+                method="POST",
+                route="/answer",
+                content_type="application/json",
+                body=body,
+            )
+            r = j.receive(env)
+            result_queue.put(
+                {
+                    "pid": pid,
+                    "kind": r.kind,
+                    "receipt_id": r.receipt_id,
+                    "sequence": r.sequence,
+                    "request_digest": r.request_digest,
+                    "ok": True,
+                    "error": None,
+                }
+            )
+        finally:
+            j.close()
+    except Exception as exc:  # noqa: BLE001 — surface to parent
+        result_queue.put(
+            {
+                "pid": pid,
+                "ok": False,
+                "error": f"{type(exc).__name__}: {exc}",
+                "kind": None,
+                "receipt_id": None,
+            }
+        )
 
 
 def _envelope(
@@ -373,6 +439,95 @@ def test_stale_revision_transition_is_refused(tmp_path: Path):
         )
         assert still["revision"] == after["revision"], (
             "stale transition must not advance revision"
+        )
+    finally:
+        j.close()
+
+
+def test_two_processes_one_uuid_make_one_receipt(tmp_path: Path):
+    """B7: two real OS processes, one UUID+bytes → exactly one receipt.
+
+    PRODUCTION LINE WHOSE DELETION MUST FAIL THIS TEST:
+      UNIQUE(client_action_id) on receipts in the schema.
+
+    Threads are not processes. A threaded version of this test passes with no
+    database constraint at all — that is #262's bug reproduced as a green test.
+    Children are multiprocessing spawn workers in separate interpreters; we
+    assert distinct os.getpid() values at runtime.
+    """
+    path = tmp_path / "twoproc.sqlite3"
+    # Create schema once in the parent so both children open an existing file.
+    parent = open_journal(path)
+    parent.close()
+
+    action_id = str(uuid.uuid4())
+    body = b'{"text":"concurrent-same-uuid"}'
+    # spawn = separate interpreters (not fork of this one).
+    ctx = mp.get_context("spawn")
+    barrier = ctx.Barrier(2)
+    result_queue = ctx.Queue()
+
+    procs = [
+        ctx.Process(
+            target=_b7_child_receive,
+            args=(str(path), action_id, body, barrier, result_queue),
+        )
+        for _ in range(2)
+    ]
+    for p in procs:
+        p.start()
+    results = []
+    try:
+        for _ in range(2):
+            # Bounded wait — load on this box is high; never hang forever.
+            results.append(result_queue.get(timeout=60))
+        for p in procs:
+            p.join(timeout=30)
+            assert p.exitcode == 0, f"child exitcode={p.exitcode}"
+    finally:
+        for p in procs:
+            if p.is_alive():
+                p.kill()
+                p.join(timeout=5)
+
+    assert len(results) == 2, f"expected 2 results, got {len(results)}"
+    for r in results:
+        assert r.get("ok"), f"child failed: {r.get('error')}"
+
+    pids = {r["pid"] for r in results}
+    assert len(pids) == 2, (
+        f"children must be separate OS processes with distinct pids; got {pids}. "
+        "If pids collide this is threads or the same process twice."
+    )
+    # Parent is a third pid — belt and braces against accidental in-process call.
+    assert os.getpid() not in pids
+
+    kinds = {r["kind"] for r in results}
+    assert kinds <= {"inserted", "replay"}, (
+        f"both results must be insert-or-replay (202-shaped), got kinds={kinds}"
+    )
+    assert "inserted" in kinds or all(r["kind"] == "replay" for r in results), (
+        "at least the racing winner inserts; both-replay is only ok if a prior "
+        "row existed — it does not here"
+    )
+    # Exactly one of the two is the insert; the other is the replay. (If both
+    # report inserted without UNIQUE, that is the bug this test exists to catch.)
+    inserted = [r for r in results if r["kind"] == "inserted"]
+    assert len(inserted) == 1, (
+        f"exactly one process must insert; got inserted={len(inserted)} "
+        f"kinds={[r['kind'] for r in results]}"
+    )
+    receipt_ids = {r["receipt_id"] for r in results}
+    assert len(receipt_ids) == 1 and None not in receipt_ids, (
+        f"both must share one receipt_id, got {receipt_ids}"
+    )
+
+    # Authoritative count from a fresh open — not from the children's memory.
+    j = open_journal(path)
+    try:
+        assert j.receipt_count() == 1, (
+            f"two processes same UUID must leave exactly one receipt row; "
+            f"got {j.receipt_count()}"
         )
     finally:
         j.close()
