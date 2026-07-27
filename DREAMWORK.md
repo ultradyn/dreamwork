@@ -99,6 +99,19 @@ dreamwork-version: 5853e1789929
   steering takes two acts, write then wake. The thing worth saying mid-flight is
   usually something neither party could have known at dispatch, which is exactly
   why the channel has to exist before it is needed.
+  · **but the channel is unreliable for anything mandatory, measured 2026-07-28
+  09:12 — so it carries refinements only, and obligations go in the dispatch
+  prompt.** `#389`'s lane read its relay and reported on it by name; `#395`'s lane
+  never opened one written four minutes into its run, and the obligation in it
+  simply did not happen. The discriminator is whether the lane's task decomposes
+  into increments at all — a lane that treats it as one never reaches a boundary
+  and so never re-reads — and **that is decided by the lane, after dispatch, and
+  is invisible to the coordinator.** Worse, a missed steer is silent at both ends:
+  "read it and judged it irrelevant" and "never opened it" look identical unless
+  the report is scanned for evidence of receipt. So sort every steer by *what if
+  this is never read*: if the answer is "the deliverable is incomplete", it is
+  prompt material, not relay material. `#381`'s lane named this flaw hours before
+  I tested it and I filed it as an aside.
   · **disjointness must cover the environment, not only files.** The loop's stated
   invariant is disjoint *files*; CPU, guard ports and the wall clock are shared, so
   a lane that consumes one is scheduled against the lanes that *measure* it.
