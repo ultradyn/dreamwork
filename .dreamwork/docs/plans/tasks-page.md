@@ -86,7 +86,25 @@ or bookmark:
 |---|---|---|
 | `q` | free-text search | `/tasks?q=transition` |
 | `f` | facet filter, comma-separated | `/tasks?f=open,P1` |
-| `s` | sort key | `/tasks?s=oldest` |
+| `s` | sort key — **he sets it**, the default is only a default | `/tasks?s=oldest` |
+
+**`s` is a user control, not a constant** (his ruling 2): the default is
+priority-then-newest-id and he can change it from the controls row beside the
+filters. Three consequences for the URL contract, all of which keep it
+consistent with `?t=<id>`:
+
+- **The default is never written.** `s` is absent at the default sort and
+  present only when he has chosen another, exactly as `f` is absent at the
+  default filter. A URL that spells out every default is a URL nobody can
+  read, and `/tasks?t=281` stays the short canonical form `#282` hardcodes.
+- **An unrecognised `s` falls back to the default and is dropped**, the same
+  rule §Task 6 states for an unknown facet: ignored, never an empty list and
+  never a 400. `?s=urgency` renders the default sort, and the next
+  `replaceState` removes the key rather than preserving a value nothing
+  honours.
+- **Sort changes `replaceState` like the other two**, so choosing a sort does
+  not add a Back step (§1.3). Reorder is a view of one list, not a
+  destination.
 
 Ephemeral, deliberately **not** in the URL: scroll position, which
 disclosures are open, focus, and the caret. They are per-window state that
@@ -208,11 +226,63 @@ landed, 121 total).
   (`**dreamer-qsec holds it**`). The page therefore renders **no owner**, and
   says the ledger has none, rather than regexing for `dreamer-*` and inventing
   a field. `#294` is where owner becomes a column.
-- **The ledger cannot tell open from in-progress.** The only in-flight signal
-  that exists anywhere is `status.json` — the loop's own live claim — so a
-  task is shown as claimed **only** when `status.json`'s `task` or an agent's
-  `in_flight` names its id, and it is labelled as the loop's claim, not as a
-  fact (§3).
+- **In-progress is shown, it is labelled "in progress", and its evidence has
+  to be structured.** His ruling 5 drops the *"this is a claim"* hedge, and
+  that raises the bar on the evidence rather than lowering it: while the badge
+  hedged, a loose read was merely vague; saying **in progress** makes it a
+  statement, and a statement has to be right. So the page reads the signal
+  from a **structured field that names an id**, never from prose.
+
+  **Measured against the live file, prose is not usable, and it is worth
+  showing why.** `.dreamwork/status.json` today carries
+  `task: "TWO agents in flight on his two do-nexts: #269 … and #325 …. #326 …
+  is diagnosed and queued behind #269's hold on watch.py."`, plus
+  `current_task` naming `#327` and `coordinator_next` naming `#326`, `#281`
+  and `#269`. An "is `#N` mentioned in status.json" test therefore marks
+  **five** tasks in progress at once — and one of them, `#326`, is described
+  in that very sentence as *queued*. That is a false statement on the page,
+  which §3's own rule forbids, and it is the same defect as regexing
+  `dreamer-*` into an owner column one bullet up.
+
+  `agents[].in_flight` does not rescue it: `file-formats.md:494` documents it
+  as *"one line: what it is doing right now"*, and the live file writes
+  `"in_flight": true` — a bool, naming no id at all.
+
+  **So the evidence, in priority order, and the page shows nothing when
+  neither exists:**
+  1. **A structured id list in `status.json`** — `current_task_ids` at the top
+     level and `task_ids` per agent, arrays of ints. This does not exist yet;
+     it is a `file-formats.md` addition that the coordinator owns and it is
+     recorded in §10 as required-but-not-made. Until it lands, this source is
+     absent and contributes nothing.
+  2. **The ledger's own `· in progress` chain token**, which the coordinator
+     already writes — `#281`'s entry carries it today and it is the only
+     entry that does. It is a parsed field like every other on the record, it
+     needs no second reader, and it survives a target with no `status.json`.
+  3. **Neither present → no badge.** Not "open, probably"; the row is simply
+     `open`, which is what the ledger says.
+
+- **"Reported: Xm Ys ago" is a measurement, and the formatter already
+  exists.** `agePair(ct)` (`watch.py:1441`) renders exactly `05m 23s` — two
+  units, each zero-padded, so the field never changes width — and `ages()`
+  applies it to any `.age[data-ct]` node once a second (`watch.py:2756-2757`),
+  which is also what keeps the number alive between ticks. **Do not author a
+  second formatter**; this is the same one-idiom rule the rest of the page
+  obeys.
+
+  **What the age is the age *of*** — the moment the claim was written, not the
+  moment the page rendered, because an age computed from `now` reads
+  `00m 00s` forever and would be the exact hedge-dressed-as-a-fact his ruling
+  removed:
+  - ledger token → the commit time of the **first snapshot in which that
+    entry carried the marker**, out of `ledger_history` (§2.2). Git-derived,
+    so it survives grooming and cannot be rewritten.
+  - `status.json` → the file's own **mtime**, which the server observes
+    rather than the loop claims. `last_tick` is the loop's own claim about the
+    same moment and is the fallback, labelled, when mtime is unavailable.
+  - **No age available → the badge says so** (`in progress · when it was
+    reported is unknown`) rather than showing a zero. An unknown renders as
+    unknown here as everywhere else.
 - **A task's own history is not visible beyond arrival and landing.** Nothing
   records a re-open, a re-prioritisation or a hand-off; `#264` is the design
   lane for a transactional transition history.
@@ -230,19 +300,43 @@ One axis, as the question card has one: **who is this waiting on?**
 | state | evidenced by | treatment |
 |---|---|---|
 | `open` | the entry sits under `## Open`, nothing else claims it | full ramp, the default |
-| `claimed` | `status.json` names the id — **the loop's claim, labelled** | the page's one accent here: a rail plus `the loop says it is on this` |
+| `in progress` | a **structured** source names the id: the ledger's `· in progress` token, or `status.json`'s `*_task_ids` once that field exists (§2.3). Never prose | the page's one accent here: a rail plus **`in progress`** — no hedge — and a hover/focus box reading `Reported: Xm Ys ago` |
 | `blocked` | an explicit `blocked on …` in the entry text. **Never inferred** | one step down the ramp; blockers listed |
 | `blocked · blocker landed` | as above, and every named id is in the landed set | says so: `blocked on #216 · which landed 2026-07-27`. The page does **not** silently unblock it — only the coordinator can |
 | `landed` | git says the id first appeared under `## Recently landed`, or the entry sits there now | dim end of the ramp; carries the date and the sha |
 | `landed · entry pruned` | git says landed; no entry in the current file | as above, title from the last snapshot |
 | `unknown` | leading token parses no id, or no section can be determined | rendered **as unknown and still listed** — the entry exists, so it is reachable |
 
-Two rules follow and are worth stating because both are easy to get wrong:
+**The `Reported:` box is a transition and obeys `transitions.md`.** It arrives
+and departs on the existing hover/focus idiom; it is **not** hover-only —
+§7's rule stands, so it opens on focus as well and the badge itself carries
+the state, which is the part a touch reader gets without it. Nothing
+load-bearing lives in the box: the age refines the badge, it does not replace
+it.
+
+Three rules follow and are worth stating because all three are easy to get
+wrong:
 
 - **A blocker that is missing is not the same as a blocker that landed.**
   `blocked on #999` where no such id exists renders `blocked on #999 · not in
   this ledger` — a wrong claim on the page is worse than an incomplete one,
   and this is exactly the shape of a typo nobody would otherwise notice.
+- **"not in this ledger" needs a third state beside it, because the landed
+  reader has a measured blind spot.** `_landed_ids` reads
+  `LEDGER_COMBINED_MENTION` (`watch.py:6340`), an ids-only bold span joined by
+  `/`. The landed section's compacted roll-up also writes **space-joined**
+  spans — `**#121 #123**`, `**#104 #77**`, `**#109 #116**`,
+  `**#107 #108 #110**`, `**#102 #106**` — and `**#96 stage 1**`, none of which
+  match. Measured on today's file: **#77, #96, #102, #104, #106, #107, #108,
+  #109, #110, #116, #121 and #123 are in neither the open set nor the landed
+  set**, though every one of them landed and is named in the file.
+  So `blocked on #106` must **not** render `not in this ledger` — that is
+  precisely the wrong claim this rule exists to prevent, and it would be wrong
+  on twelve real ids. The cross-check is three-way:
+  **in the landed set** → `which landed <date>`; **in the open set** →
+  `still open`; **in neither, but `ledger_history` has ever seen the id** →
+  `state unknown` with no date. Only an id no snapshot has ever named earns
+  `not in this ledger`. The reader gap itself is out of scope and filed (§10).
 - **`blocked_note`'s prose is always shown**, because "blocked on user-event
   model #263" says more than `[263]` does, and dropping the words to keep the
   ids is the truncation failure in miniature.
@@ -275,10 +369,22 @@ the list payload measures **139KB**, see §4.3.)
   geometry, motion and the ghost-outline rule are free. Two groups: **state**
   (`open` · `blocked` · `landed` · `all`) and **priority** (`P0-1` · `P2` ·
   `P3` · `any`). Multi-select within a group is a `,`-joined `f` value.
-- **Sort** — `priority` (default), `newest`, `oldest`, `effort`. `effort`
-  puts the 39 un-estimated tasks in a **labelled tail** (`no estimate · 39`)
-  rather than sorting them as zero or hiding them: `nothing is dropped, only
-  demoted`.
+- **Sort — a third group in the same controls row, on the same `.sgroup`**
+  (his ruling 2: *"user configurable alongside filters"*). `priority`
+  (default), `newest`, `oldest`, `effort`; single-select, because two sort
+  keys at once is a claim about tie-breaks the reader cannot see. It is the
+  same component as the two filter groups and it sits beside them rather than
+  in a menu of its own: a control he has to open is a control he does not know
+  he has, and the whole point of his ruling is that the ranking stops being
+  the page's opinion.
+  `effort` puts the un-estimated tasks in a **labelled tail**
+  (`no estimate · N`, the count derived at render) rather than sorting them as
+  zero or hiding them: `nothing is dropped, only demoted`.
+
+  **Three groups is the row's budget, and it is spent.** At ≤540px the row
+  stacks (§7); a fourth group would make the stack taller than the first two
+  rows of results, which is the point at which the controls stop serving the
+  list. Any later facet is a value inside an existing group, not a new one.
 - **The count line is always present** and names the denominator:
   `38 of 104 open · 17 landed`. It is an `aria-live="polite"` region, which is
   the screen-reader equivalent of watching rows travel (§7).
@@ -309,11 +415,44 @@ is why the single-record shape exists at all.
 
 In `watch-design.md`'s vocabulary. Every component named below already exists.
 
-### 5.1 The column
+### 5.1 The column, and the seam `/tasks2` composes
 
-**One 72ch column, centred, as every reading view.** `/review` is documented
-as *the* deliberate width exception and stays the only one; a two-pane
-triage layout is open question 1.
+**`/tasks` is one 72ch column, centred, as every reading view** — his ruling,
+not a refusal of the wide layout. The wide two-pane list-plus-detail triage
+layout is **approved and lives at `/tasks2` (`#328`)**, which is why this page
+does not need to be two things: he gets the reading column at one address and
+the triage bench at another.
+
+`watch-design.md` records `/review` as the styleguide's one width exception
+(`watch-design.md:158-161`, `:613`), so `/tasks2` adds the second and must say
+so in that document when it lands — that is `#328`'s obligation, not this
+plan's.
+
+**What this plan owes `#328` is a seam, and it is exactly three things**, each
+of which this plan already produces for its own reasons:
+
+- **`ledger_index(target)` and the record shape** (§2) — `/tasks2` reads the
+  same records through the same `/tasksdata`. It adds **no second parser and
+  no second endpoint shape**; the constraint in §8 binds it identically.
+- **`taskRow(t)` and `taskFacets(t)`** (§5.2) — the list pane is this page's
+  row, unchanged. A row that only renders correctly inside a 72ch column
+  would force `#328` to author a second one, so the row is written to lay out
+  in its container rather than against the page.
+- **`buildTaskDetail(t, d)`** (§5.3) — the detail pane is this page's detail
+  view, called with a container instead of a route. Keeping the builder
+  container-agnostic is the whole seam; it costs nothing here.
+
+**And `/tasks2` inherits `/review`'s split idiom rather than authoring a
+second one.** `#305` reworked that pane and the machinery is now specific and
+reusable: a window-tall two-column pane measured by `fitReview` into `--rvh`
+(layout, via `offsetTop`, never a rect read through the dissolve's
+transform), the gutter promoted to a keyboard-operable `role="separator"`, the
+ratio clamped in CSS as `clamp(32ch, var(--rsplit), calc(100% - 26ch))`, the
+width persisted in `localStorage['dw.review.split']` and emitted into the
+markup so a fresh load *paints* at his width, and a `@media (max-width:900px)`
+branch that goes back to one document rather than crushing two columns
+(`watch-design.md:192-322`). None of that is this plan's work; naming it here
+is what stops `#328` from re-deriving it.
 
 ### 5.2 The list
 
@@ -371,11 +510,14 @@ Three things about it are decisions, not defaults:
 
 ### 5.4 Colour, stated because both loud colours are enumerable
 
-- **`--accent` is spent on exactly one thing: the `claimed` rail.** It is the
-  only live, in-flight fact on this page. Everything else here is work for the
-  *loop*, not an errand for him, which is the burndown panel's rule (`#142`)
-  one surface over. It does **not** breathe — the awaiting-fold wisp stays the
-  page's one continuously moving exception.
+- **`--accent` is spent on exactly one thing: the `in progress` rail.** It is
+  the only live, in-flight fact on this page. Everything else here is work for
+  the *loop*, not an errand for him, which is the burndown panel's rule
+  (`#142`) one surface over. It does **not** breathe — the awaiting-fold wisp
+  stays the page's one continuously moving exception.
+  The `Reported: Xm Ys ago` box spends **no** second colour: it is `--dim`
+  text on the panel, because the age qualifies the accent rather than
+  competing with it.
 - **`--warn` appears in exactly one state: a `tasks.md` the reader cannot
   see** — amber, on the rail, with the line count and the path as a `/file`
   link. This is not a third use of amber: it is `#136`'s use (a file the
@@ -586,7 +728,7 @@ instead of a 120s timeout.
 | H unknown id | `/tasks?t=9999` states it honestly, the list stays reachable, the title says so | rendering an empty detail |
 | I focus | after his navigation focus is the detail title; after Back it is the row; after a **tick** it has not moved | moving focus in `setContent` |
 | J hotkey | `/` focuses search; `/` typed inside the search box inserts a slash | no target guard |
-| K colour audit | `--accent` resolves on the claimed rail and nowhere else; `--warn` only in the unreadable state | accenting priority (the sabotage `status.mjs` used) |
+| K colour audit | `--accent` resolves on the `in progress` rail and nowhere else; `--warn` only in the unreadable state | accenting priority (the sabotage `status.mjs` used) |
 | L three nothings | missing / unreadable / no-match render three distinguishable states | collapsing no-match into no-tasks |
 
 Resolve `--accent` through a throwaway element, not off `:root` — the token is
@@ -808,55 +950,56 @@ codec, the `aria-live` count line, `/` and Escape handling.
 
 ---
 
-## Open questions for Max
+## His rulings — answered 2026-07-27 21:47, and binding
 
-Each is a taste-or-authority call this proposal could not settle from the
-recorded contracts. A one-line answer unblocks each.
+The seven open questions this document was written to ask have been answered.
+They are recorded here as **decisions**, not as recommendations, because a
+plan that still argues its own refuted option is a plan that gets built
+wrong. Where his answer overrode the recommendation, the reasoning above has
+been amended to match — §1.2, §4.2, §5.1 and §3 each carry his call now, not
+the proposal's.
 
-1. **Should `/tasks` be allowed a wider column on a wide screen — a two-pane
-   list-plus-detail triage layout?**
-   *Rec: no, for v1.* `watch-design.md` names `/review` as *the* deliberate
-   width exception, and a second exception is how a one-column page becomes a
-   two-column one. The morph plus a canonical URL gives most of the benefit,
-   and a split view can be added later without changing the data contract.
+1. **A wider two-pane list-plus-detail triage layout — APPROVED, at its own
+   route.** *"yes, but at `/tasks2`, and keep a simpler one-column variant at
+   `/tasks`."* So the recommendation (*no, for v1*) is **overruled**, and the
+   proposal's argument against a second width exception is not the reason to
+   skip it — it is the reason `/tasks` stays one column while the wide layout
+   gets its own address. `/tasks2` is **`#328`** and is out of this plan's
+   scope; what this plan owes it is a clean seam and no second parser (§5.1).
 
-2. **Default sort: priority band first, or newest id first (the file's own
-   order)?**
-   *Rec: priority, then newest id.* It is the same reason `questions.md` sorts
-   in the parse — the page's job is telling you what to look at first — and
-   the ledger is written newest-first, which is arrival order, not urgency.
+2. **Default sort: priority, then newest id — accepted, "but user
+   configurable alongside filters."** So sort is a **control**, not a
+   constant, and it lives in the controls row with the filters. §1.2 and §4.2
+   carry the consequences; the URL key was already `s`, which is what makes
+   this a UI addition rather than a contract change.
 
-3. **Default filter: open only, or everything?**
-   *Rec: open only, with `17 landed` visible in the count line and one click
-   away.* The page is for steering; 17 settled rows diluting 104 live ones is
-   the opposite of ranking.
+3. **Default filter: open only — as proposed**, with the landed count visible
+   in the count line and one click away.
 
-4. **Is `/tasks?t=281` the URL `#282` should hardcode, or do you want
-   `/tasks/281`?**
-   *Rec: `?t=281`.* It keeps the server's route allowlist an exact membership
-   test, matches `/file?p=` and `/review?p=`, and needs no router change.
-   `/tasks/281` reads nicer and costs prefix routing in the same seam `#133`
-   will touch.
+4. **`/tasks?t=281` is the canonical detail URL — as proposed.** `#282` may
+   hardcode it.
 
-5. **Should the loop's `status.json` claim ("I am on #281 right now") be shown
-   at all, given it is a claim and not a fact?**
-   *Rec: yes, labelled as the loop's claim and carrying the page's only accent
-   here.* It is the sole in-flight signal that exists, and `#294` is what turns
-   it into a fact. The alternative is a page that cannot tell you what is
-   happening now.
+5. **Show the in-flight signal, but say "in progress" — the hedge is
+   rejected.** No *"this is a claim"* label; the honesty is carried instead by
+   a hover box reading **"Reported: Xm Ys ago"**.
 
-6. **Do you want a write affordance on a row later — `do now: #281` sent
-   straight from the list?**
-   *Rec: not in v1, and yes as a follow-up.* It needs no new endpoint or
-   vocabulary (`/command` + `do-now` already exist), so it is cheap — but it
-   turns a read-only page into a steering surface, and that is your call to
-   make deliberately rather than mine to fold into a list page.
+   **Why his version is better, stated because it should shape the rest of
+   the copy:** freshness is a *fact*, where "the loop's claim" is a
+   *disclaimer*. A disclaimer admits the page might be wrong and leaves the
+   reader no way to tell; a measured age makes staleness **legible** — a
+   signal reported four seconds ago and one reported forty minutes ago read
+   differently, and only the measurement can say which he is looking at.
+   Anywhere else in this document that hedges where it could instead show a
+   measurement is the same defect and is to be fixed the same way.
 
-7. **The two §10 bugs** — `parse_ledger`'s blindness to combined
-   entries (a live wrong number on the burndown), and `/answers`' missing
-   dissolve signature. *Rec: file both now; the combined-entry one is a P2 bug
-   rather than a polish item, because the burndown is on the dashboard and is
-   currently under-counting.*
+6. **A per-row write affordance is NOT approved and NOT in scope.** He asked
+   what it would mean rather than answering it, and it has been re-asked as
+   its own question. Nothing in this plan may assume it: §Global constraints'
+   read-only rule stands unchanged, and no increment adds a POST seam.
+
+7. **File the findings — as proposed.** Both original findings have since
+   been fixed by other tasks (`#301`/`#315` and `#302`); §10 now carries what
+   replaced them.
 
 ---
 
