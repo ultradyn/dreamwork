@@ -24,9 +24,29 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **300**
+Next id: **301**
 
 ## Open
+
+- **#300** — Let run-mode descriptions liquefy through one shared popover · P2
+  · Web UI feature · 35m · origin: **human** · **human via watch `add-idea`
+  14:37** · hovering a run-mode button should explain that mode; all buttons
+  share one geometrically stable description surface so moving between them
+  morphs/liquefies the words in place rather than spawning unrelated tooltips ·
+  copy is sourced from the actual hierarchical/park/hot behavioural contract,
+  including what continues, stops and commits, never marketing shorthand that
+  can contradict runtime semantics · keyboard focus shows the same description
+  and `aria-describedby` exposes it; touch/focus parity must not add a surprise
+  second tap or interfere with #290's 10-second arm/reset/cancel/cross-tab rules ·
+  first arrival and final departure reuse the atmospheric blur/drift idiom;
+  button→button swaps keep the shell fixed while old text dissolves and new text
+  resolves, with several causal intermediate opacity/blur states rather than a
+  frame-zero replacement; reduced-motion swaps text instantly with identical
+  meaning/function · Escape/pointer-leave/blur dismissal has no mode side effect
+  and popover geometry clamps on desktop/mobile without obscuring the countdown ·
+  red-first real-route guard + deterministic captures; multiple interleaved
+  vision/geometry visual-review-and-fix loops until both PASS · depends on
+  landed #290 and must keep its exactly-once POST/event guards green
 
 - **#298** — Explain each burndown column on hover, focus and touch · P2 ·
   Web UI feature · 25m · origin: **human** · **human via watch `add-idea`
