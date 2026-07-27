@@ -1894,7 +1894,12 @@ this shape and convert opportunistically.)
   page), and told the lane to stop if it saw changes that were not its own. Every part of
   that is wrong in the same way: **`git commit --only watch.py` still sweeps in a concurrent
   lane's uncommitted work in that file** — `--only` isolates *paths*, not *hunks*, which is
-  precisely the gap it does not close — and the party asked to notice is the one least able
+  precisely the gap it does not close (**deduced, not observed**: the #264 evidence lane went
+  looking and found **no instance** of a same-file hunk sweep in the whole session — the one
+  index sweep, `12f47e3`, was a plain `git commit`, which is `--only`'s *absence*. The two
+  failures that did happen are a bare `git commit` burying a staged file, and `--only
+  <directory>` silently skipping untracked ones. Keep the mechanism, drop the pretence that it
+  bit) — and the party asked to notice is the one least able
   to, because unfamiliar diff in a file it is actively editing reads as its own work. The
   disjointness invariant exists because **a check that depends on a lane's vigilance is not
   an invariant**; the two mechanisms that hold by construction are running the lanes in

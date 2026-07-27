@@ -1808,6 +1808,31 @@ Next id: **397**
   · **so the #294 chain is now clear of him on the design side**: #263's contract approved
   01:27, this boundary approved 02:45. What remains between here and #294 is work, not consent —
   #263's red-first plan, then its implementation gate
+  · **EMPIRICAL HALF LANDED** `3eea4e3` — `.dreamwork/docs/research/2026-07-28-parallel-lanes-evidence.md`,
+  `ccc @glm52`, brief `.dreamwork/docs/briefs/264-parallel-evidence.md`. 10 incidents with
+  locators, **split 4 damage / 6 near-miss** as asked, since the ratio is what the answer turns on
+  · **THE RESULT THAT KILLS AN OPTION, and it is what this task was for:** *"record-level
+  concurrency primitives — locks, CAS, leases, SQLite, per-record spools — would have prevented
+  **zero** of the actual damage, because **no two lanes ever wrote the same record**."* Zero
+  concurrent-write instances across every writer and 121 commits in the window; the single-writer
+  ledger and the append-only inbox both held **by construction**
+  · **what did cause damage**: shared **CPU** (load-starved guards producing deterministic false
+  reds), a shared **working tree** (dirty-file pollution, one index sweep), a shared **registry**
+  (one lane's new file reddening others' baselines), and **one overloaded single-writer file**. So
+  the evidence points at **modularity, not a concurrency mechanism** — and names `watch.py`, with
+  six tasks queued behind it. **This bears directly on #294**, his stated blocker: it does not
+  refute the SQLite migration, but it removes *concurrency safety* as the argument for it
+  · **it refuted this coordinator twice, which is what I asked it to do.** (1) *"Thirteen lanes"*
+  conflated cumulative dispatches with concurrency: **~17 dispatched, ~12 counting #263 as one,
+  peak concurrency 5** — and `dogfood-orchestration.md`'s own tally drifts nine → ten → thirteen.
+  Corrected there. (2) The `git commit --only` **same-file hunk sweep I put in six briefs has no
+  instance** — the one index sweep was a plain `git commit`, i.e. `--only`'s absence. Mechanism
+  kept, claimed observation withdrawn, in `lessons.md`
+  · lane's own caveats, kept because they bound the result: git does not label lanes, so ~17/~12/
+  peak-5 are inferences; a hunk sweep leaves no `--stat` mark, so its absence is consistent rather
+  than proven; two incidents predate the fan-out window
+  · **the broad research half remains open** — the primitive comparison and the #294 migration
+  script, cutover and rollback. This task answered the evidence question, not that one
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
