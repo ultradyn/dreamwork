@@ -79,6 +79,77 @@ Lane A cost one false start: dispatched to `@glm52` at 05:10, which died in ~2
 seconds on the model error above. **That is itself a result** — a misconfigured
 alias fails fast and loudly, which is the good case.
 
+## Results, scored against that bar — all four lanes in, 05:52
+
+Wall-clock is measured from the run directory name (epoch of dispatch) to the
+transcript's mtime (written at exit), under
+`~/.local/state/cc-w/ccc/runs/<runner>-<epoch>-<pid>-0/`.
+
+| lane | runner | task | cost | primary | red-proof | discipline |
+|---|---|---|---|---|---|---|
+| A | `@oc-glm52` | #382 plugcmd | **19m** | **pass** — green | **pass** | pass |
+| B | `@grok` | #383 three motion guards | **38m** | **pass** — 3/3 isolated | **pass**, per-guard and discriminating | pass |
+| C | `@pi-glm52` | #354 filebytes plan | 25m | n/a (design) | n/a | pass |
+| D | `@pi-glm52` | #384 two-line selector | **18m** | **pass** — both green | n/a (no check changed) | pass — but did not commit, as instructed |
+
+**Four for four on discipline.** Not one touched `watch.py`, all four appended
+once to the inbox, none used `attn`, all staged by explicit path. The
+file-ownership section of the brief is doing real work, and it is cheap to write.
+
+**The cost column is the surprising one, and it does not favour either model the
+way the brief-writing did.** #384 was a **two-line** change and cost 18m; #383
+rebuilt the sampling instrument in three guards, ran a characterisation matrix
+under three load levels, and produced three separate sabotage red-runs, for 38m.
+So roughly **ten times the work for twice the wall-clock**. Read carefully that
+is not "grok is 5× more efficient": #384's 18m was spent almost entirely on
+*verification* — it reverted its own two lines to prove `draft`'s tail flake was
+pre-existing, which is exactly what I want and is nearly all of its cost. The
+floor for a well-verified change on this box is ~18m regardless of diff size,
+and **that floor, not the model, is what sets the price of a small task.**
+
+Consequence for how I dispatch: a two-line fix is not cheap enough to be worth a
+lane of its own. Batch small mechanical fixes into one brief, or do them inline.
+
+**Both models scored the same on the two criteria that matter** (primary and
+red-proof), across four lanes. On this evidence I cannot distinguish them on
+quality, and I should stop trying to: the difference that showed up repeatedly was
+**speed on large tasks** (grok) and **observability during the run** (opencode
+streams a live transcript; grok writes zero bytes until exit, which cost me
+visibility on the longest lane of the batch).
+
+## The result that actually matters, and it is not about the models
+
+**Three of the four lanes refuted something I had told them was established.**
+
+- Lane A (#382): I briefed a timing race, documented with measurements. It was a
+  wrong CSS selector. My hypothesis explained none of the anomaly I had in hand.
+- Lane B (#383): I briefed "they sample on a wall-clock schedule and a loaded
+  machine drops the sample outside the window." They counted *distinct sampled
+  values* — a real smooth travel sampled seven times failed a `>= 8` threshold.
+  The count was never a property of the motion at all.
+- Lane D (#384): I filed, having explicitly "checked rather than assumed", that
+  neither guard asserted on the misread node. `subslog` did.
+
+Three for three against the coordinator. The common shape: **I was confidently
+wrong in exactly the place I had done the most work.** Each error sat inside the
+part of the brief I had measured and written up carefully, and the careful writeup
+is what made it survive — a paragraph of evidence reads as a settled fact to
+whoever gets it next.
+
+Two things follow, and they change how I brief:
+
+1. **Say which claims are load-bearing and invite refutation of those
+   specifically.** Every one of these briefs did include "if you conclude my
+   recommendation is wrong, say so plainly — that is a valuable result." All three
+   agents used it. That sentence is not politeness; it is the highest-yield line in
+   the template and it should be attached to the *named hypothesis*, not left as a
+   general permission at the bottom.
+2. **Distinguish measured from inferred in the brief's own prose.** My briefs
+   presented both in the same voice under a heading that said "what is established
+   — do not re-derive it". The measurement (`said` comes back `""`) was solid every
+   time; the *explanation* attached to it was wrong three times out of three. A
+   brief should mark the join.
+
 ## Observed differences, measured at 05:20 with three lanes in flight
 
 **The biggest practical difference is not speed, it is observability.**

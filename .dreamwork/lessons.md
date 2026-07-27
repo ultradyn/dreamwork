@@ -1585,3 +1585,26 @@ this shape and convert opportunistically.)
   flags four filenames and a run of prose on the live ledger, precision 0-in-4,
   while a closed vocabulary of slot shapes flags all nine real ones and none of
   the four. (coordinator, #381)
+- **The claim most likely to be wrong is the one you did the most work on — and
+  writing it up carefully is what makes it survive.** Three dispatched lanes in one
+  batch each refuted something their brief listed under *"what is established — do
+  not re-derive it"*: a fixed-`setTimeout` race that was a wrong CSS selector
+  (#382), a wall-clock sampling window that was a `distinct >= 8` frame count on a
+  genuinely smooth travel (#383), and an explicit "checked rather than assumed"
+  that no guard asserted on the misread node, when one did (#384). Three for three
+  against the coordinator, and every error sat inside the most-measured part of the
+  brief. The measurements were right every time; the **explanation attached to
+  them** was wrong every time. So: mark the join between measured and inferred in
+  the brief's own prose — presenting both in one voice under one confident heading
+  is what turns a guess into an inherited fact — and attach "refute this if it is
+  wrong" to the **named hypothesis** rather than leaving it as general permission
+  at the bottom. All three agents used that permission; it is the highest-yield
+  line in the template. (coordinator, #382/#383/#384)
+- **A well-verified small change costs the same as a well-verified large one, and
+  the floor is the verification.** A two-line selector fix (#384) cost 18 minutes;
+  rebuilding the sampling instrument in three guards with a load matrix and three
+  separate sabotage red-runs (#383) cost 38. Ten times the work for twice the
+  clock, because #384's time went almost entirely on proving a neighbouring flake
+  was pre-existing — which is exactly what should have happened. Consequence for
+  dispatch: a two-line fix does not earn a lane of its own. Batch small mechanical
+  fixes into one brief, or do them inline. (coordinator, #384)
