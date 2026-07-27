@@ -758,6 +758,20 @@ this shape and convert opportunistically.)
   never with `git checkout <file>`.** The whole-file revert also destroyed
   51 lines of uncommitted work that shared the file. If a script made the
   injection, a script unmakes it. (dreamer-gesture, 2026-07-25)
+  **It happened again on 2026-07-28 (#348), and worse.** `git checkout --
+  review_artifact.py` reverted the uncommitted feature *under test*, so the two
+  injections that followed ran against a tree with no sql support: they failed
+  because the feature was ABSENT, printed one tidy `FAILED` line each, and read
+  exactly like discriminating reds. Two of three proofs were worthless and
+  nothing announced it — the tell was `git status` showing only the test file
+  modified. So the rule gains a mechanism and a check. Mechanism: **snapshot to
+  scratch and restore from the snapshot** (`cp f $S/bak` / `cp $S/bak f`), which
+  cannot reach anything but the file injected into; `git checkout` is correct only
+  once the work under test is committed. Check: **after every undo, confirm the
+  tree still contains what you meant to keep**, because a red from the harness,
+  the scaffolding or the undo is indistinguishable in the output from a real one.
+  That this lesson existed for three days and did not prevent the repeat is
+  itself the finding — see #349.
 - **A dreamer retiring in prose is not a dreamer retired.** Twice on
   2026-07-25 an agent replied "shutdown acknowledged, retiring" and then
   stayed alive and idle, because the handshake needs a structured
@@ -1387,25 +1401,15 @@ this shape and convert opportunistically.)
   metacharacter list: **if a message quotes the contents of a file, it goes through a
   file.**
 
-- **The human's note tag and the loop's note tag are spelled differently, and writing
-  the wrong one deletes your words from the page in silence.** The human's is
-  `- **Note (human, via watch, …)`; the loop's is `- **Follow-up (loop, …)` —
-  asymmetric names for the same act, and `Note (loop, …)` is in neither `NOTE_TAGS`
-  nor `ANSWER_TAGS` (`watch.py:6770`, `:6810`). The coordinator wrote `Note (loop, …)`
-  on the P0 question gating five lanes, *in the same hour* it had written a merge
-  message explaining that `Answer (loop, …)` was the #254 bug for exactly this reason.
-  Knowing the failure mode by name did not prevent committing it. What caught it was
-  running the parser: `_parse_entries(txt, "Open", True)` returned the correct tag as
-  one contribution with `author='loop'`, and the wrong tag as **zero contributions with
-  the raw tag leaked into the entry body** — the #340 defect, self-inflicted. Two
-  things follow. **`lint.py` did not notice**: it reported `clean (0 warnings), 14 open`
-  with the bad tag in place, because it counts entries and never validates an author
-  tag, so the only signal was voluntary (#343 files this). And the general rule, which
-  is cheaper than memorising four tag spellings: **when writing a file a tool parses,
-  run the tool's parser on it before committing — and change one character to confirm
-  the check discriminates.** The format doc tells you what the shape is; only the
-  parser tells you whether what you wrote is that shape.
-
+- **When writing a file a tool parses, run the tool's parser on it before committing —
+  and change one character to confirm the check discriminates.** The format doc tells you
+  what the shape is; only the parser tells you whether what you wrote IS that shape.
+  Learned on the author tags, whose two channels are spelled asymmetrically
+  (`- **Note (human, via watch, …)` vs `- **Follow-up (loop, …)`), so `Note (loop, …)`
+  matches neither `NOTE_TAGS` nor `ANSWER_TAGS` and silently deletes the words from the
+  page. The incident narrative is pruned: that specific failure now has a check,
+  `lint.check_author_tags` (#343), and a check no longer has to persuade anyone. What
+  survives here is the general habit, which has no check and cannot have one.
 - **A hand-rolled scan over `tasks.md` has now lost twice to per-id set membership — stop
   writing them.** Validating #335's new check, the coordinator measured twice that #247 was
   not under `## Open` and was wrong both times: once a regex requiring `- **#247** — ` that
@@ -1470,19 +1474,3 @@ this shape and convert opportunistically.)
   the suite discriminates at all; two failed small distinct subsets, and the third failing
   nothing is what found this.
 
-- **An injection-undo that reaches for `git checkout --` destroys the very work it is
-  proving, unless that work is already committed — and the proofs that follow look clean
-  while meaning nothing.** Red-proving #348 (sql in the review highlighter), each injection
-  was reverted with `git checkout -- review_artifact.py`. The first revert took the
-  uncommitted `_SQL` spec with it. Injections two and three then ran against a tree with no
-  sql support at all, so the sql tests failed **because the feature was gone**, printed one
-  tidy `FAILED` line each, and read exactly like discriminating reds. Twenty minutes of work
-  was gone and two of three proofs were worthless, and neither fact announced itself: the
-  tell was `git status` showing only the test file modified. The rule: **for an injection you
-  intend to undo, snapshot to scratch and restore from the snapshot** (`cp file $S/bak` /
-  `cp $S/bak file`), because that undo cannot reach anything but the file you injected into.
-  Reach for git only when the work under test is committed — at which point `checkout` is
-  exactly right. The deeper point is the one this file keeps making in new costumes: a red
-  that comes from the harness, the scaffolding, or the undo mechanism proves nothing about
-  the check, and it is indistinguishable from a real one in the output. **Name what you
-  broke, then confirm the tree still contains everything else you meant to keep.**

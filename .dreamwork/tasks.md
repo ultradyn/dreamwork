@@ -24,9 +24,38 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **349**
+Next id: **350**
 
 ## Open
+
+- **#349** — `lessons.md` is 117 entries and 1476 lines, and a lesson in it failed to
+  prevent its own repeat · P2 · dogfood/loop reliability · origin: **loop** · found
+  pruning it during the maintenance rotation · **the evidence is specific and it is
+  tonight's**: line 757 has recorded since **2026-07-25** *"Revert a deliberate RED
+  injection with the inverse of the injection, never with `git checkout <file>`"*, naming
+  the exact consequence — destroyed uncommitted work sharing the file. On **2026-07-28**
+  the coordinator did precisely that while red-proving #348, lost the feature under test,
+  and produced two proofs that failed for the wrong reason while looking clean. The
+  lesson existed, was correct, was specific, and was not read
+  · **so the failure is not the writing, it is the reading**: nothing re-reads 1476 lines
+  before acting, and the file has no retrieval path other than a human scrolling it. The
+  same file already knows this about itself at line 1002 — *"grepping a dream for its own
+  phrasing does not tell you whether its lesson is already recorded"* — and that is how a
+  duplicate of 757 got appended tonight before the pruning pass caught it
+  · **the graduation rule is working and is not enough**: `SKILL.md` says prune when a
+  lesson becomes a guardrail, and #343's `check_author_tags` earned exactly that pruning
+  in this pass. But a lesson that *cannot* become a check (a habit, a shell hazard, a
+  judgement) has no exit and no index, so the un-graduatable ones accumulate — and they
+  are the ones that need to be recalled at the moment of acting
+  · rec: **not** summarisation, which loses the evidence half the format exists to keep
+  (`file-formats.md` says why). Candidates worth an IGC: a keyword/context index the loop
+  consults at the top of the specific acts these lessons govern (before an injection,
+  before writing a parsed file, before a worktree dispatch); splitting by act rather than
+  by date so the relevant dozen is readable; or a check that refuses a *new* lesson whose
+  first sentence is a near-duplicate of an existing one, which would have caught tonight's
+  · **do not implement before asking him** — this changes a durable record he reads, and
+  the cheap wrong answer (aggressive pruning) destroys evidence that is the point of the
+  file
 
 - **#347** — A review artifact's nav breaks words mid-syllable when the header is long ·
   P2 · review tooling/visual · origin: **loop** · found building #346's artifact by
