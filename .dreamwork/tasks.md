@@ -24,9 +24,38 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **327**
+Next id: **329**
 
 ## Open
+
+- **#327** — Re-review the `/tasks` proposal against everything that landed since
+  it was written · P1 · design review · origin: **human** · **human via watch
+  2026-07-27 21:47** ("please do a full review of the tasks-page proposal and
+  related docs relative to anything that might have changed since then, make sure
+  it all still works") · the proposal and plan were fixed at `f2c1bd0` and the
+  ground moved under them the same day: #301 and #315 both widened the ledger
+  readers the page's data contract is built on, #302 changed `/answers`, #305
+  reworked `/review`'s layout the two-pane variant would inherit from, and #192's
+  shared guard reporter changes how its guards should be written · re-read
+  `.dreamwork/docs/plans/tasks-page.md` and `.dreamwork/review/tasks-page.html`
+  against current `watch.py`, `watch-design.md`, `transitions.md` and
+  `file-formats.md`, and report per claim: still true / drifted / now wrong ·
+  amend both artifacts in place for anything drifted, so the approved plan is the
+  one that gets built · this lands BEFORE #281's implementation, because building
+  from a stale contract is the failure it exists to prevent · **next-up**
+
+- **#328** — Add `/tasks2`, the wide two-pane task triage layout · P2 · dashboard
+  feature · origin: **human** · **human via watch 2026-07-27 21:47** · his answer
+  to #281 Q1: the list-plus-detail wide layout IS wanted, but as a SECOND route,
+  with `/tasks` kept as the simpler one-column variant — "We can do them in
+  whichever order you prefer" · shares #281's data contract and entry-level
+  reader exactly; adds no second parser and no new task database · `/review` is
+  the existing precedent for a deliberate width exception (`watch-design.md`) and
+  #305 just reworked its split, so inherit that idiom rather than authoring a
+  second one — including the draggable divider · obeys `transitions.md` for the
+  pane transitions and for anything that appears or departs on selection ·
+  blocked on #281 landing first (its reader, URL contract and row rendering are
+  the parts `/tasks2` composes)
 
 - **#326** — The answer box sits on a black band instead of the text fading ·
   **P1** · **next-up** · bug/visual · ~30m · origin: **human** · **human via chat
@@ -296,7 +325,16 @@ Next id: **327**
   section update after real task commands · mixed-version/writer freeze,
   replay/idempotency, Git history/provenance import, dashboard consumers,
   lint/file-formats/doc-map/compaction and failure recovery are acceptance scope ·
-  blocked on #264 design and relevant #263 cutover decisions
+  blocked on #264 design and relevant #263 cutover decisions · **`/tasks` read
+  requirements folded in (human's steer, watch 2026-07-27 21:47: factor them in
+  so we do not pay for two migrations)** — the schema and the CLI's read surface
+  must serve, per entry: id, title, priority band, type, origin marker, owner /
+  blocked-on, dependency ids, open|landed state, and the free-text tail #281
+  renders; plus set-level filtering (open-only with a landed count),
+  sort by priority-then-id AND by user-chosen key, and single-entry fetch by id
+  for `?t=<id>`. The migration re-points #281's entry-level reader and nothing
+  else, which is only true while that reader stays the sole parser — verify that
+  invariant still holds at cutover rather than assuming it
 
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch
@@ -349,7 +387,11 @@ Next id: **327**
   keep exact receipt bytes unchanged; distinguish soft source wrapping from
   intentional blank-line paragraph breaks; render the latter visibly in notes/
   answers without turning every hard-wrap into `<br>` · red-first multiline
-  answer+note through server/file parse/browser render, plus copy/raw recovery
+  answer+note through server/file parse/browser render, plus copy/raw recovery ·
+  **B1 accepted for DESIGN only, human via watch 2026-07-27 21:50 ("rec B1")** —
+  the paragraph-aware safe writer is authorised as a written design + fixture
+  proposal; grammar/writer/parser/renderer/migration changes need their own
+  approval, per the ask's terms · unblocked for the design increment
   assertion; coordinate #252 Markdown rendering and #254 nested replies
 
 - **#285** — Rebuild `ud-dw-generate` as a standalone ASCII-safe random-data
@@ -429,7 +471,23 @@ Next id: **327**
   level (`parse_ledger`, `entry_origins`, `ledger_entries`), so this needs a new
   entry-level reader as ONE deep module, fail-closed to `unknown` exactly as
   `entry_origins` is, and that reader is both #213's blocking contract and the
-  seam #294 later re-points at SQLite · in progress
+  seam #294 later re-points at SQLite · **APPROVED with amendments, human via
+  watch 2026-07-27 21:47** — implementation of the twelve increments is
+  authorised (not deployment) under these rulings: `/tasks` stays the **simpler
+  one-column** variant and the wide two-pane triage layout becomes a **separate
+  `/tasks2`** route (#328), order the loop's choice; default sort is priority
+  then newest id but **must be user-configurable alongside the filters**, not
+  fixed; default filter open-only with the landed count visible and one click
+  away; `?t=281` is the canonical detail URL, so #282 may hardcode it; the
+  in-flight signal is labelled **"in progress"** with NO "this is a claim"
+  hedge, its honesty carried instead by a hover box reading *"Reported: Xm Ys
+  ago"* — freshness is a fact where "claim" is a disclaimer; a per-row write
+  affordance is re-asked as its own question and is NOT in this scope · the
+  entry-level reader is the ONE seam: `/tasks` must never parse the ledger
+  Markdown itself, because that constraint is exactly what keeps #294 a
+  one-function re-point rather than a second migration · blocked-behind: #327's
+  drift re-review lands first, since #301/#315 moved the readers this depends on
+  · in progress
 
 - **#280** — Design selectable preserved background shaders · P2 · visual/settings
   design · origin: **human** · **human via watch 18:12** · keep the current
