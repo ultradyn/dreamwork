@@ -98,5 +98,76 @@ class TestDomainFileLock(unittest.TestCase):
                 proc.wait(timeout=10.0)
 
 
+# Bodies used in the lineage test carry a distinctive token so a one-byte
+# change to the body is unambiguous and provably does not touch the footer.
+_BODY = ("the quick brown fox\n"
+         "a second line carrying TOKEN so a one-byte body edit is exact\n"
+         "third line")
+_WRONG_DIGEST = "0" * 64      # valid-looking hex, asserted to differ from real
+
+
+class TestDomainFileLineage(unittest.TestCase):
+    """Increment 12 (C2 lineage): embedded generation + body digest excluding
+    only its own field."""
+
+    def test_body_digest_excludes_only_itself(self):
+        # PRODUCTION LINE WHOSE DELETION FAILS THIS TEST (on its THIRD assertion):
+        #   the single `_DIGEST_LINE_RE.sub("body_digest:", text, count=1)` in
+        #   canonical_body(). Delete that exclusion and the digest becomes
+        #   self-referential: validate() then reads False for every file, and
+        #   re-emitting an unchanged body yields a DIFFERENT digest (because the
+        #   hash now includes the old digest value) — which is the exclusion
+        #   property this third assertion exists to catch.
+        text1 = domain_files.build_managed_text(
+            body=_BODY, generation=7, identity="receipt-abc|adapter-answer")
+        md1 = domain_files.parse_metadata(text1)
+        d1 = md1["body_digest"]
+
+        # Precondition, asserted at runtime and chosen to hold WHETHER OR NOT
+        # the exclusion filter is present, so the test reaches its third
+        # (discriminating) assertion instead of failing early on the very
+        # property under test. validate(text1) is deliberately NOT used here:
+        # without the exclusion a digest is self-referential and validate is
+        # False for every file, so asserting it would mask the third assertion
+        # and the red would land on the precondition instead.
+        self.assertIsNotNone(md1, "precondition: fixture has a managed footer")
+        self.assertEqual(len(d1), 64,
+                         "precondition: embedded digest is a SHA-256")
+        self.assertTrue(all(c in "0123456789abcdef" for c in d1),
+                        "precondition: embedded digest is hex")
+        self.assertNotEqual(d1, _WRONG_DIGEST,
+                            "precondition: wrong digest must differ from real")
+
+        # 1. Rewrite the digest field ALONE to a wrong value: validation fails.
+        #    Only the digest field changed — the body and generation are intact.
+        tampered = domain_files.set_digest_value(text1, _WRONG_DIGEST)
+        self.assertNotEqual(tampered, text1,
+                            "precondition: tamper actually changed the text")
+        self.assertFalse(domain_files.validate(tampered),
+                         "a wrong digest field must not validate")
+
+        # 2. Change ONE byte of the body (not the footer): validation fails.
+        changed = text1.replace("TOKEN", "TOKEM", 1)
+        self.assertNotEqual(changed, text1,
+                            "precondition: body edit actually changed the text")
+        self.assertEqual(domain_files.parse_metadata(changed)["body_digest"],
+                         d1, "precondition: the body edit left the digest field "
+                              "untouched (the change is in the body)")
+        self.assertFalse(domain_files.validate(changed),
+                         "a body with one byte changed must not validate")
+
+        # 3. Re-emit the SAME body with the digest recomputed: the digest is
+        #    UNCHANGED. That is the exclusion property — the digest covers the
+        #    body minus its own field, so an unchanged body yields the same
+        #    digest. This is the assertion that fails when the exclusion is gone.
+        re_emitted = domain_files.recompute_digest(text1)
+        d2 = domain_files.parse_metadata(re_emitted)["body_digest"]
+        self.assertEqual(
+            d1, d2,
+            "re-emitting an unchanged body must yield the same digest "
+            "(exclusion property); a differing digest means the digest is "
+            "self-referential")
+
+
 if __name__ == "__main__":
     unittest.main()
