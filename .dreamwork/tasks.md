@@ -497,6 +497,30 @@ Next id: **339**
   distinguishes invocation truth and rejects speculative core hooks · dashboard
   A1–A4 asks for written-spec authority only; no implementation/load authority ·
   awaiting human
+  · **his conditional rec + two amendments, human via watch 2026-07-27 23:08**:
+  *"Will this be a problem with the future migrations we're planning?"* (sqlite
+  tasks, the CLI, threaded discussions, dreamhub/modularity) — *"If not, then rec
+  also we should call the plugin `ud-dreamwork-matt-pocock-skills`"*, and *"we
+  don't want to rewrite the skills … we want to create a generic wrapper /
+  adapter layer that says how to unify them and what to change to make it
+  compatible with dreamwork"* · **RENAMED** to `ud-dreamwork-matt-pocock-skills`
+  (was `ud-dreamwork-matt-skills`) · **answered in the questions thread: no
+  collision, CONDITIONAL on three constraints the spec must be written against**
+  — (1) the bridge touches tasks ONLY through the tool/CLI seam
+  (`dreamwork tasks list|get|grab|cycle`), never by parsing `tasks.md`, so #294's
+  cutover is invisible to it rather than a second conversion; (2) grill chains use
+  the EXISTING `questions.md` author-tag grammar and `human_block()` — an invented
+  chain shape would break the parser and #254's rooted-exchange rule at once, and
+  silently; a new tag is a reviewed `file-formats.md` change, never a side effect;
+  (3) no per-target state dreamhub must learn to read — machine-local bridge state
+  stays rebuildable, the `questions.md` chain stays the durable truth ·
+  **on "do not rewrite"**: §9 already says *adapt* and keeps suite skills
+  user-invoked, but never states the prohibition, which is how a later agent
+  "adapts" by editing upstream — so the spec states it outright, and *what to
+  change to make it compatible* becomes a WRITTEN compatibility note listing the
+  gaps, not edits anyone makes · authority remains specification only: no
+  implementation, no loading the plugin, no `setup-matt-pocock-skills`, no
+  CONTEXT/CLAUDE/AGENTS edits, no tracker actions, no core changes
 
 - **#286** — Preserve intentional paragraph breaks in rendered question notes
   and answers · P2 · rendering/data-integrity bug · origin: **human** · **human

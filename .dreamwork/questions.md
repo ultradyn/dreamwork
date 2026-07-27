@@ -180,6 +180,51 @@
     that or not. but we want to like great a generic wrapper / adapter
     layer that says how to unify them and what to change to make it
     compatible with dreamwork.
+  - **Follow-up (loop, 2026-07-27 23:16):** Short answer: **no, it should not
+    collide with those migrations — but only because of three constraints, and
+    they are cheap now and expensive later.** Taking your question first, then
+    your two amendments.
+  - **Follow-up (loop, 2026-07-27 23:16):** **1. SQLite tasks + the CLI (#294).**
+    The bridge never owns the queue — it produces *candidates*, exactly as
+    `ud-dreamwork-github` does with forge issues, and `tasks.md` stays
+    coordinator-owned. The one real hazard is that if the spec is written against
+    `tasks.md` **the file**, the bridge becomes a second parser that #294 then has
+    to migrate — the very thing you told me to avoid twice tonight. So the
+    constraint is: the bridge reads and writes tasks **only** through the
+    tool/CLI seam (`dreamwork tasks list|get|grab|cycle`), never by parsing
+    Markdown, from the first line of the spec. That makes the SQLite cutover
+    invisible to it instead of a second conversion.
+  - **Follow-up (loop, 2026-07-27 23:16):** **2. Threaded discussions (#254).**
+    A "grill" is a question-and-answer chain and it lives in `questions.md`,
+    which is the file #254 is about to give a rooted reply structure. Constraint:
+    grill turns use the **existing** author-tag grammar and `human_block()` — no
+    invented chain format. A bespoke sub-bullet shape would break the parser and
+    #254's rooted-exchange rule at the same time, and it would break them
+    silently, which is the failure mode this project cares most about. If a grill
+    genuinely needs a new tag, that is a `file-formats.md` change reviewed on its
+    own, not a side effect of the bridge.
+  - **Follow-up (loop, 2026-07-27 23:16):** **3. Dreamhub and modularity.** Low
+    risk, and already handled by a default you approved: any machine-local bridge
+    state is rebuildable, and the durable truth is the `questions.md` chain. The
+    constraint is just that the bridge adds no per-target state the hub must
+    learn to read — otherwise "more modular" turns into one more thing every
+    reader needs to know about.
+  - **Follow-up (loop, 2026-07-27 23:16):** **Your amendments, both accepted.**
+    The plugin is renamed **`ud-dreamwork-matt-pocock-skills`**. And on rewriting:
+    §9 does not imply it — it says *adapt* Matt's suite to Dreamwork's grain,
+    keeps most suite skills user-invoked, and reads CONTEXT/ADRs rather than
+    replacing DREAMWORK.md. But it never states the prohibition outright, which
+    is exactly how a later agent "adapts" by editing upstream. So the spec will
+    say it plainly: the upstream skills are **not modified**, the bridge is a
+    wrapper that maps his vocabulary onto ours, and *"what to change to make it
+    compatible"* becomes a **written** compatibility note — a documented list of
+    the gaps, not a set of edits anyone makes.
+  - **Follow-up (loop, 2026-07-27 23:16):** Nothing here needs another decision
+    from you unless you disagree with one of the three constraints. They are
+    folded into #287's ledger entry so the spec is written against them. Say the
+    word if you would rather the bridge wait until after the SQLite cutover
+    entirely — it does not need to, given constraint 1, but that is your call and
+    it is a one-word answer.
 
 - **P0/P1 · 2026-07-26 — #260/#262/#263/#269/#274: accept the
   reviewed durable user-event contract for implementation planning?** Design:
