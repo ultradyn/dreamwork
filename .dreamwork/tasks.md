@@ -135,6 +135,30 @@ Next id: **368**
   whether `status.json` says an agent owns that task id, or whether the entry was modified
   more recently than the commit — and soften the wording when it does. Small, and it should
   stay a WARN either way
+  · **REC WITHDRAWN 2026-07-28 02:46, by trying to build it.** The discriminator would have
+  been **wrong**, and the way it fails is the finding: #334's work merged at `ecc1f44` **01:39**,
+  so from that minute the WARN was correct and the entry was a forgotten fold. Its worktree
+  survived for another hour. A liveness signal — a worktree naming the id, or `status.json`
+  saying an agent owns it — would therefore have printed *"another lane is mid-flight"* for a
+  full hour after that stopped being true, which is worse than the blunt message: a
+  softened WARN is one nobody re-checks
+  · **and the check was never the problem.** It fired correctly all three times. What went
+  wrong is that a coordinator overrode it **from memory** — "that is another session's lane" —
+  three times across four hours, and was right only the first time. A cleverer message cannot
+  fix a reader who is already sure
+  · **so the real gap is upstream and it is a hole in the single-writer rule.** Another session
+  landed #334 and correctly did not touch `tasks.md`, because the ledger has one writer. Its
+  work therefore sat done-but-open with **nothing at all telling that writer it had landed** —
+  the report went into its own session, not here. The single-writer rule has no delivery half
+  · rec, replacing the withdrawn one: **treat this WARN as authoritative and never override it
+  from memory** — check git, which takes one command — and give the single-writer rule a
+  delivery half so a foreign session's landing arrives rather than waiting to be noticed.
+  `#357`'s ambient counts are one end of that; the other is that a session which lands work it
+  cannot fold should leave a line in `.dreamwork/inbox.md`, which is already the channel
+  everything else reports through
+  · **both forgotten folds tonight were found by a check, not by a person** (#330 and #334),
+  and the third case — #264 — was silenced properly by citing its sha. The mechanism works;
+  the habit around it did not
 
 - **#362** — Nothing compared status.json's queue with the ledger, so it drifted · P2 ·
   tooling/reliability · origin: **loop** · 20m · found by dreamer-264-boundary while measuring
@@ -879,14 +903,6 @@ Next id: **368**
   is the opposite assertion and must stay a count · `dev/capture/states.mjs` is
   currently held by `ccc-glm52-324`, whose brief covers report.mjs adoption only,
   so sequence this after #324 lands to avoid two agents in one file
-
-- **#334** — `burndown.mjs` hand-rolls the reporter the plan cites it as a model
-  for · P3 · chore · origin: **loop** · from #327: `dev/capture/burndown.mjs:47-56`
-  still has its own `checks`/`ok`/exit handler, and `#281`'s plan cites burndown as
-  the guard-writing precedent — so the plan points new work at the outdated idiom ·
-  it is not in #324's fifteen, so it would otherwise be missed by the sweep ·
-  convert it to `report.mjs` with its own crash injection, exactly as #324 does,
-  and it stops being a trap for whoever reads the plan
 
 - **#328** — Add `/tasks2`, the wide two-pane task triage layout · P2 · dashboard
   feature · origin: **human** · **human via watch 2026-07-27 21:47** · his answer
@@ -2235,6 +2251,19 @@ Next id: **368**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#334** — `burndown.mjs` hand-rolls the reporter the plan cites it as a model for ·
+  **closed `2747c8d`** · P3 · chore · origin: **loop** · from #327:
+  `dev/capture/burndown.mjs` kept its own `checks`/`ok`/exit handler while `#281`'s plan cited
+  burndown as the guard-writing precedent — so the plan pointed new work at the outdated idiom,
+  and it was not in #324's fifteen so the sweep would have missed it · converted to
+  `report.mjs` with its own crash injection, exactly as #324 does · merged `ecc1f44`
+  · **landed by a DIFFERENT session and folded here an hour later**, which is the interesting
+  part and is now #363's real content: that session correctly did not touch this file (the
+  ledger has one writer), so its work sat done-but-open with nothing telling the writer it had
+  landed. `check_landed_still_open` was in fact right from 01:39 onward — the coordinator read
+  its WARN as "another lane is mid-flight" from memory, three times, and was wrong after the
+  first
 
 - **#330** — A guard run should not dirty the tree it is verifying · **closed `a617606`** ·
   P3 · tooling/dogfood friction · origin: **loop** · `provenance.mjs` wrote its four evidence
