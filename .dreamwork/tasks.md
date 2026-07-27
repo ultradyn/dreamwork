@@ -196,6 +196,23 @@ Next id: **361**
   · in the Markdown there is no `related` table yet, so the split entries must carry the
   relation in prose the migration can read — decide that shape with #346, or the
   normalisation destroys the only record of which two tasks were one piece of work
+  · **HALF LANDED `638b32a`: the prose shape is decided, contracted and checked.** The
+  marker follows the origin marker's key-and-bold idiom, both entries of a pair carry it,
+  and `lint.check_related_markers` ERRORs on a one-sided pair, a dangling id, a
+  self-reference, two markers, the wrong case or an empty value. Contract in
+  `file-formats.md`; red-proved with 10 injections, 8 discriminating to a single test
+  · **it can ERROR rather than WARN because of a measurement**: `watch.ledger_entries` finds
+  zero such markers in 180 entries, so there is no legacy to grandfather and the first one
+  written is checked the day it is written
+  · and the same scan corrected one assumption in this entry: **all three combined entries
+  are under `## Recently landed`, not Open** — so the split edits history, not in-flight
+  work, which lowers the risk materially and means no dreamer's context goes stale under it
+  · `depends` was deliberately left unspecified: its Markdown form has to reconcile with the
+  **29 entries that say "blocked on #N" in prose**, which is its own decision and its own
+  task, not a line to smuggle into this one
+  · **what remains under this id**: write the six split entries with their markers, and
+  resolve the 4 compound bands. The classification of each pair is still to propose to him,
+  per his own uncertainty — *"like 250/251 i guess, not sure exactly what they are"*
 
 - **#352** — Standardize the duplicated ledger parsing before the store migration ·
   P1 · refactor/prerequisite · origin: **human** · **human via watch 2026-07-28 01:05**,
