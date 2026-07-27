@@ -2166,6 +2166,21 @@ mirrored from JS because CSS cannot set it. Both the row and the menu render
 from `COMMANDS` at whatever length it has — plugin kinds (#86) appear with no
 redesign, which is the whole point of the shape.
 
+**The menu grows LEFT from the ⋯, and the page never scrolls sideways (#312).**
+The ⋯ sits at the right end of the kinds row, so the menu is anchored to its
+RIGHT edge (`right:0`) and opens leftward into the room the composer already
+occupies — a `left:0` menu grew right, off-screen, by 122px at a 390px phone.
+That it did so while *shut* was the trap: `visibility:hidden` is not
+`display:none`, so the box was still laid out and still counted toward
+`documentElement.scrollWidth`, palette open or closed, on every route — a
+phone could thumb the whole dashboard sideways. The body never scrolls
+horizontally; the menu holds its preferred `32ch` wherever that fits and
+`max-width:calc(100vw - 2rem)` clamps it before its left edge can cross the
+viewport. `dev/capture/hfit.mjs` is the red light: at 390px it asserts
+`scrollWidth <= clientWidth` on each route, palette closed and (on the
+dashboard) with the menu open, and it asserts the menu is present and
+populated first so the check can never pass over an absent subject.
+
 ### Motion language
 
 **Moved to `transitions.md`** (skill root, 2026-07-25) so it can be
