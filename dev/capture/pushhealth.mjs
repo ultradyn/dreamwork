@@ -30,12 +30,17 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 import { mkdirSync, writeFileSync, rmSync, cpSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = +(process.argv[3] || 39893);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
-const notes = [];
+const { ok, declare, finish, checks, notes, errs } = makeReporter();
+declare({
+  drives: 'three scratch targets rendering ABSENT / OK / FAILED push ' +
+          'states on /, each on its own port, compared for distinguishability',
+  traceWindow: 'static read per state at ~1.1s settle; no motion traced',
+});
 
 // The fixture's status.json, loaded so we can plant a `push` field per state.
 const FIX_STATUS = JSON.parse(
@@ -44,8 +49,9 @@ const FIX_STATUS = JSON.parse(
 // the ABSENT state is truthful. A fixture that grew one silently would make
 // the ABSENT case test a lie.
 if ('push' in FIX_STATUS) {
-  console.log('FAIL fixture status.json already carries a `push` key — ' +
-              'the ABSENT state would not be truthful; edit the fixture');
+  ok('fixture status.json lacks a `push` key (so the ABSENT state is truthful)',
+     false);
+  finish();
   process.exit(1);
 }
 
@@ -81,17 +87,16 @@ for (const [name, push] of Object.entries(states)) {
                      { stdio: 'ignore' }));
 }
 // Reap every server we start, in a trap, including on failure — the task's
-// hard rule. `exit` covers normal and process.exit(); the signal/exception
-// handlers ensure a failure still reaps before the process goes down.
+// hard rule. The reporter's own exit handler (registered in makeReporter)
+// prints the checks + crash sentinel; this one only reaps servers. Both
+// fire on normal exit, process.exit(), crash, and signal — so the explicit
+// SIGTERM/SIGINT/uncaughtException handlers the guard used to carry are
+// covered by this exit handler + Node's default signal→exit path.
 const stopAll = () => servers.forEach(s => { try { s.kill(); } catch (e) {} });
 process.on('exit', stopAll);
-process.on('SIGTERM', () => { stopAll(); process.exit(1); });
-process.on('SIGINT',  () => { stopAll(); process.exit(1); });
-process.on('uncaughtException', e => { console.log('FAIL guard threw:', e); stopAll(); process.exit(1); });
 await sleep(2500);
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
-const errs = [];
 
 /* Resolve `--warn` through a throwaway element: `--warn` off :root comes back
    as authored (`#fcd34d`) while every computed colour is `rgb(...)`, so
@@ -195,8 +200,4 @@ ok('the dashboard proper still renders under it (status is not blank)',
 ok('no page errors', errs.length === 0);
 await br.close();
 stopAll();
-
-console.log(notes.join('\n'));
-console.log('----');
-console.log(checks.join('\n'));
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+finish();

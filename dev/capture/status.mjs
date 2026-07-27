@@ -23,22 +23,31 @@
        still be findable.
    usage: node status.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
 
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
-const notes = [];
+const { ok, declare, finish, checks, notes, errs } = makeReporter();
+declare({
+  drives: 'the status panel on / (one route, one glance read, one fold toggle)',
+  traceWindow: 'static read at ~1.2s and a re-read ~0.4s after fold-open; ' +
+               'no motion traced',
+});
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const p = await br.newPage({ viewport: { width: 1100, height: 1400 } });
-const errs = []; p.on('pageerror', e => errs.push(String(e)));
+p.on('pageerror', e => errs.push(String(e)));
 await p.goto(`${BASE}/`, { waitUntil: 'networkidle' }); await sleep(1200);
 
 const raw = await p.evaluate(async () =>
   (await (await fetch('/data.json')).json()).status);
-if (!raw) { console.log('FAIL fixture needs a .dreamwork/status.json'); process.exit(1); }
+if (!raw) {
+  ok('fixture provides a .dreamwork/status.json to read', false);
+  notes.push('fixture needs a .dreamwork/status.json');
+  await br.close(); finish(); process.exit(1);
+}
 
 const probe = await p.evaluate(() => {
   const sec = document.getElementById('status');
@@ -73,7 +82,11 @@ const probe = await p.evaluate(() => {
       getComputedStyle(el).color === accent).map(el => el.textContent.trim()),
   };
 });
-if (!probe) { console.log('FAIL no #status section rendered'); process.exit(1); }
+if (!probe) {
+  ok('#status section rendered', false);
+  notes.push('no #status section rendered');
+  await br.close(); finish(); process.exit(1);
+}
 
 notes.push(`glance (${probe.height}px tall): ${probe.glance.slice(0, 400)}`);
 notes.push(`folds: ${probe.folds} (${probe.openFolds} open)`);
@@ -137,8 +150,4 @@ await p.screenshot({ path: `${OUT}/status-open.png`, fullPage: true });
 
 ok('no page errors', errs.length === 0);
 await br.close();
-
-console.log(notes.join('\n'));
-console.log('----');
-console.log(checks.join('\n'));
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+finish();
