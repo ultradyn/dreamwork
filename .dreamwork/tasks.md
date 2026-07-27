@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **384**
+Next id: **385**
 
 ## Open
 
@@ -142,6 +142,25 @@ Next id: **384**
   can regenerate · `test_every_shipped_artifact_still_satisfies_the_new_rules` excludes this
   one violation **by name**, so a new one in the same file is still caught · related: **#379**
 
+- **#384** — Two more guards read the wrong `.cmdmsg`, and their notes lie about it · P3 ·
+  guards/honesty · origin: **loop** · 10m · found by generalising #382's cause: `watch.py` has
+  **two** elements carrying `class="cmdmsg"` — `#fmsg` at 1562 and `#cmdmsg` at 1587 — so
+  `document.querySelector('.cmdmsg')` returns the file-message node, never the composer's
+  · `dev/capture/draft.mjs:159-160` and `dev/capture/subslog.mjs:152` both do exactly that
+  · **checked rather than assumed, and the answer is the interesting part**: in both files the
+  read feeds only `notes.push(...)`, never an `ok(...)`. Their assertions are on other things
+  (`after.value === TEXT`; the submissions-log record), so **they are not hollow** — they pass for
+  the right reasons. `plugcmd.mjs` is the only one where the selector is load-bearing, which is
+  why it is the only one red
+  · so the harm is smaller but real: a **diagnostic note that states a falsehood**, and the next
+  person to debug this area trusts it. That is not hypothetical — the coordinator read
+  `plugcmd`'s empty string as evidence of a slow round-trip and filed #382 with a race hypothesis
+  that was wrong, because the note said the message was empty when the message it named was never
+  the one being written to
+  · fix is the selector only; no assertion should change, and if one has to, that means this entry
+  mis-measured and the finding should come back rather than the assertion move
+  · related: **#382**
+
 - **#382** — `plugcmd` fails on a fixed 900ms sleep, not on a 400 · P2 · guards/verification ·
   origin: **loop** · 25m · owner: dispatched dreamer on `ccc @oc-glm52`, brief
   `.dreamwork/docs/briefs/382-plugcmd-race.md`, owns `dev/capture/plugcmd.mjs`, port 39897
@@ -158,6 +177,7 @@ Next id: **384**
   (a guard finding)? Measuring both is the brief's first step, before any change
   · `watch.py` is off-limits to this lane — another agent holds it — so a fix that must live
   there comes back as a report instead
+  · related: **#384**
 
 - **#383** — Three motion guards give different verdicts on unchanged code · P2 ·
   guards/verification · origin: **loop** · 30m · owner: dispatched dreamer on `ccc @grok`, brief
