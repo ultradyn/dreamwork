@@ -252,3 +252,43 @@ def test_kill_pid_refuses_a_live_server(monkeypatch, capsys):
     assert killed == [], "a live pid must never be killed"
     err = capsys.readouterr().err
     assert "REFUSED pid=424245" in err and "not dead-lane" in err
+
+
+def test_a_deployed_dashboard_is_never_reaped_even_when_dead_lane(monkeypatch, capsys):
+    """The instance the human READS must not be sweepable. (#203 follow-up.)
+
+    `is_deployed` was computed and printed as a note, but not consulted by the
+    kill path — so a deployed dashboard whose cwd had gone `(deleted)`
+    classified as dead-lane like anything else and `--all-dead --yes` would
+    SIGTERM it. That is reachable in practice: `just deploy` starts the
+    snapshot from the current directory, so deploying from a worktree and later
+    removing that worktree produces exactly this record.
+
+    The two preconditions are asserted rather than assumed, because each one
+    alone makes the test vacuous: if the fixture were not dead-lane the sweep
+    would skip it for the ordinary reason, and if it were not flagged deployed
+    there would be nothing for the new guard to key on.
+    """
+    fake = _dead_record(424244)
+    fake["is_deployed"] = True
+    fake["cmd"] = ("python3 /home/xertrov/.cache/dreamwork/deployed/"
+                   "ud-dreamwork-watch.py --port 35110")
+    assert fake["classification"] == "dead-lane", \
+        "fixture must be dead-lane, else --all-dead skips it for the wrong reason"
+    assert fake["is_deployed"], "fixture must be flagged deployed, else nothing is tested"
+    monkeypatch.setattr(reaper, "gather", lambda hours: [fake])
+    killed = []
+    monkeypatch.setattr("os.kill", lambda pid, sig: killed.append((pid, sig)))
+
+    rc = reaper.main(["--kill", "--all-dead", "--yes"])
+    assert killed == [], "the deployed dashboard must survive a --yes sweep"
+    out = capsys.readouterr().out
+    assert "deployed" in out.lower(), \
+        "and the skip must SAY it was the deployed instance, not vanish silently"
+    assert rc == 0, "sparing it is the correct outcome, not an error"
+
+    # ...and naming it explicitly must not be a way around the guard either:
+    # an operator reaching for --pid is at least as likely to have the wrong pid.
+    killed.clear()
+    reaper.main(["--kill", "--pid", "424244"])
+    assert killed == [], "--pid must not reach the deployed instance either"

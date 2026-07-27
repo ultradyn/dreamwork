@@ -336,6 +336,18 @@ def do_kill(records, pid_targets, all_dead, never_kill):
         if pid <= 1 or pid == self_pid:
             skipped.append((pid, "protected (init/self)"))
             continue
+        # The instance the human READS is never sweepable, and the dead-lane
+        # rule does not exempt it: `just deploy` starts the snapshot from the
+        # current directory, so deploying from a worktree and later removing
+        # that worktree leaves the deployed dashboard with a `(deleted)` cwd and
+        # classifies it exactly like an orphan. `is_deployed` was already
+        # computed for the display note; consulting it here is what makes the
+        # note load-bearing. No flag overrides this — an operator who really
+        # means to stop the deployed instance has `just deploy` and a plain
+        # `kill`, neither of which can be reached by a sweep.
+        if rec.get("is_deployed"):
+            skipped.append((pid, "the DEPLOYED dashboard — never reaped by this tool"))
+            continue
         if rec["classification"] != DEAD_LANE:
             # --all-dead can't reach here; only --pid of a non-dead server can
             refused.append((pid, f"{rec['classification']} (not dead-lane); "
