@@ -28,30 +28,6 @@ Next id: **392**
 
 ## Open
 
-- **#390** — `reconcile` raises `FileNotFoundError` on a domain that has no file yet · P2 ·
-  reliability gap · origin: **loop** · found by #263 lane D, **reported rather than absorbed**,
-  and it is the neighbour-enumeration instruction paying for itself the same hour it was sent
-  · lane D's `reconcile` calls `_read_locked(path)` (a plain `open`). On a **never-created**
-  domain file that raises instead of proving `NOT_APPLIED` and creating it — so a brand-new
-  domain, one with no prior generation, is not handled at all
-  · **why it matters:** every domain starts in exactly this state exactly once, so this is not
-  an edge case, it is the **first** case. The journal's whole promise is that an answer reaches
-  its file exactly once even if the server dies mid-write; on a fresh install the first answer
-  hits an unhandled exception
-  · the lane verified the neighbouring behaviour is deliberate rather than accidental:
-  `prove_applied("")` on an empty file and on a plain non-managed file both return `UNKNOWN`
-  via `parse_metadata → None → guard`, which is fail-closed per law 8. **That is a decision.**
-  This one is not — it is a missing branch
-  · rec: `reconcile` treats an absent file as `NOT_APPLIED` with generation 0 and creates it
-  through the store's durable-replace, so the create path and the update path share one proof.
-  Do **not** special-case it earlier than the proof — the proof is where exactly-once is won
-  · **the red is cheap and must be discriminating:** delete the absent-file branch and the
-  first-answer-on-a-fresh-domain test must fail. The neighbour to keep green is the empty-file
-  case, which must stay `UNKNOWN` — a branch that treats "absent" and "empty" alike would pass
-  a test that only checks absent, and those two are genuinely different (one has no bytes, one
-  has bytes that do not parse)
-  · blocked on nothing; `user_events/apply.py` is free as of `6cd9f95`
-
 - **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
   reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified
   · **the half that needs no ruling from him is DONE (`d33cc2f`)**: `submissions.log` now
@@ -2466,6 +2442,28 @@ Next id: **392**
 
 ## Recently landed
 
+- **#390** — a fresh domain's first answer creates its file · origin: **loop** · closed
+  2026-07-28 08:06 · `fa65bce`
+  · `ccc @glm52`, brief `.dreamwork/docs/briefs/390-reconcile-absent-file.md`. `reconcile`
+  translates `FileNotFoundError` to `text = None`, and `prove_applied` gains
+  `if text is None: return Proof.NOT_APPLIED` — so the create path and the update path share
+  **one proof**, which is where exactly-once is won. 7 tests in `test_user_events_apply.py`
+  · **coordinator re-ran the discriminating red**, which is the one that mattered: collapsing
+  the branch to `if not text:` — the natural falsy test — makes absent and empty prove alike and
+  reddens exactly `test_an_absent_file_and_an_empty_file_do_not_prove_the_same_thing`, with the
+  other six green. Its assertion message names the trap rather than printing two enums.
+  Snapshot-restored; 7 pass
+  · **its one honest caveat is resolved without the revert it offered.** It could not capture a
+  pre-change test count because another lane's commits overlapped its run, so it *inferred* the
+  baseline from a +2 delta. Checked directly instead: `fa65bce` adds exactly 2 `def test_` and
+  removes **0**, so the inference holds and no test was lost
+  · **one contract widening a future reader should know**: `prove_applied`'s `text` went
+  `str` → `Optional[str]`. Backward-compatible, the `str` path is byte-for-byte unchanged, and
+  it is what lets create and update share the proof — but it is a widening on the function
+  carrying lane D's delicate D1/D2 reds, and the lane flagged it rather than letting it pass
+  · **law 8 untouched, and the lane argued why rather than asserting it**: law 8 governs
+  *present* files, and an absent file has no bytes and no lineage, so its predicate cannot be
+  evaluated. `prove_applied("")` is still `UNKNOWN`
 - **#385** — humanized `XXa YYb` age beside a question's date · origin: **human** · closed
   2026-07-28 08:02 · `e1926b4` `8dc448c` `0dd136e` `aabe9fb`
   · `ccc @grok`, brief `.dreamwork/docs/briefs/385-humanized-age.md`. **All three gaps closed:**
