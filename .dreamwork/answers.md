@@ -94,6 +94,13 @@
   answer, then pauses for about a second, then animates the question as it
   moves into answered · awaiting fold. What causes the middle pause?
 
+  **Update (2026-07-27, #234):** the hold is now a named `MORPH_HOLD_MS`
+  of **1250ms**, derived from the measured critical path (flipDock's
+  1150ms transform is the longest visible leg, plus a beat of slack) rather
+  than padded — the quiet middle is ~350ms shorter, and
+  `dev/capture/morphhold.mjs` red-proved the early release against the old
+  1600ms value.
+
 
 - **2026-07-26 — Can an answer re-block or reopen a question?** → answered
   (2026-07-26 13:45): an answer first leaves the dreamer's question in

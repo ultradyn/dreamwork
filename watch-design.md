@@ -803,8 +803,9 @@ field so they appear to be one thing."*
   object whose halves are inset differently, which is what a leftover
   `.qa textarea` catch-all quietly made of it (#139).
 - **The mode picks the endpoint** (`/answer` vs `/comment`) and nothing else
-  — the typed text, the submit morph, Ctrl/Cmd+Enter and the ~1.6s
-  `holdRerenderUntil` guard are identical either way. The mode group is the
+  — the typed text, the submit morph, Ctrl/Cmd+Enter and the
+  `MORPH_HOLD_MS` (1250ms, #234) `holdRerenderUntil` guard are identical
+  either way. The mode group is the
   shared sliding group, not a second implementation of one.
 - **Only offer modes the state can accept.** `/answer` appends into the Open
   section, so a **folded** entry is note-only and the group is not rendered

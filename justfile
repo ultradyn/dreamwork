@@ -61,6 +61,10 @@ lint:
 #                changes which card the next phase would pick. Sharing the
 #                server would make it order-dependent, and an order-dependent
 #                guard reports run order as a bug in the page.
+#   morphhold    morph's shape again (own server, pristine target per
+#                phase), and it DRIVES `tick()` directly plus POSTs /command
+#                to force the mtime — the 2s poll's phase is luck, and a
+#                hold measurement that depends on luck is not one.
 #   prominence   ordinary (OUT, PORT) on the shared server, but it visits BOTH
 #                routes in one page: #169's expand idiom belongs to every
 #                disclosure, and the four that exist live on two views.
@@ -112,7 +116,7 @@ lint:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health dashboard identity motion morph prominence qsec submitlog indicator draft subslog history plugcmd qorder revieworder serving gitrow burndown answers runmode"
+    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health dashboard identity motion morph morphhold prominence qsec submitlog indicator draft subslog history plugcmd qorder revieworder serving gitrow burndown answers runmode"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}

@@ -10,8 +10,9 @@
    UI too, but it traces for 5.2s — past `holdRerenderUntil` — so the tick's
    own regroup travels the neighbour and every "it slid" check passes over a
    teleport that happened 1.6s earlier. THE WINDOW IS THE WHOLE MEASUREMENT.
-   This guard traces 1400ms, inside the hold, and asserts the card node was
-   never replaced across it — so whatever moved, the MORPH moved, not a tick.
+   This guard traces 1200ms, inside the hold (`MORPH_HOLD_MS`, 1250 — #234),
+   and asserts the card node was never replaced across it — so whatever
+   moved, the MORPH moved, not a tick.
 
    `sendComment` has the identical shape (it appends a note, the card grows),
    so it is measured here too rather than left for the next person to find
@@ -73,9 +74,10 @@ const BASE = `http://127.0.0.1:${PORT}`;
   }
 }
 
-/* The trace starts BEFORE the send and runs for 1400ms: `holdRerenderUntil`
-   is 1600ms and `CARD_MS` is 850, so the whole gesture fits inside the window
-   and the tick cannot be the thing that moved anything.
+/* The trace starts BEFORE the send and runs for 1200ms: the hold
+   (`MORPH_HOLD_MS`, 1250) starts when the POST resolves and `flipDock`'s
+   1150ms transform is the longest visible leg, so the whole gesture fits
+   inside the window and the tick cannot be the thing that moved anything.
 
    `data-trace` is set on the card node itself. `card.innerHTML = …` keeps the
    node, a tick's `innerHTML` swap of the LIST does not — so this attribute
@@ -113,7 +115,7 @@ const TRACE = mode => `((ms) => new Promise(res => {
   first.querySelector('textarea').value =
     'a traced ${mode} long enough to change the card height by more than a line';
   first.querySelector('.qsend').click();
-}))(1400)`;
+}))(1200)`;
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 async function phase(mode, reduced) {
