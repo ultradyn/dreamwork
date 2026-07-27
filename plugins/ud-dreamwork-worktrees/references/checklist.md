@@ -20,6 +20,7 @@
 
 ## Cleanup
 
+- [ ] **Process check first** — `occupied.py <worktree>`; if it names a live process, stop (`--force` does not answer this)
 - [ ] Inspect untracked + ignored
 - [ ] Non-obvious artifacts: decision recorded; move before remove
 - [ ] No force remove without Max
