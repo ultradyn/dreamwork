@@ -108,36 +108,6 @@ Next id: **398**
   `markrail` stays green with it present, the assertion is not watching the anchor
   · related: **#367**
 
-- **#395** — a relation marker without bold parses as absent, so the reciprocity check silently
-  skips it · P2 · lint/correctness · origin: **loop** · found by **lint rejecting my own edit**,
-  then probing why the shape it wanted was the shape it wanted
-  · `RELATED_MARKER` is `related` + colon + `\s*\*\*([^*]*?)\*\*` — it **requires** the bold
-  span, and `check_related` does `if not found: continue`. So a marker written without asterisks is
-  read as *no marker at all* and the entry is skipped in silence. The check that exists because
-  *"an entry is read alone"* stops applying to any entry whose marker is merely mis-shaped
-  · **four broken relations were hiding behind it, measured before repair:** `#388 → #383` (nothing
-  back), `#388 → #386` (#386 named only #383), `#387 → #361` (nothing back), `#386 → #383` (nothing
-  back). Three entries, all with unbolded markers. **Repaired in the same commit** — bolded the
-  three markers and added the missing back-references to `#383` and `#361` — so the check now sees
-  and enforces all four
-  · **it is not a dead branch, which I assumed and had to correct by measuring:** the wrong-case
-  ERROR *is* reachable — a capitalised marker and a marker missing its space both produce a match
-  while failing the literal-prefix test. The hole is specifically **missing bold**, not case
-  · **the multi-id form is a second trap and it bit me first:** two adjacent bold spans yield only
-  the first id, because the regex captures one span. The correct form is one span holding the whole
-  comma list. That distinction is invisible in the file, and the check reports the *reciprocity*
-  failure rather than the *shape* failure — so the error message points away from the cause
-  · **a third trap, found by writing this entry:** the marker vocabulary **cannot be quoted in
-  prose**. Naming it in an entry body makes `[^*]*?` run forward to the next `**` anywhere in the
-  entry and manufactures a phantom marker — this entry produced **five** before it was reworded.
-  Any fix should anchor the marker to its own `·` field rather than matching it mid-sentence
-  · **rec:** flag a marker that is present-but-unparseable rather than skipping it. Assert the
-  precondition that the fixture's marker really is unparseable by running the regex on it, not by
-  trusting the literal
-  · **red-first note for whoever takes it:** un-bold one of the markers repaired here and the check
-  must ERROR. If it comes back green the fix is not watching the seam. `lint.py` and `test_lint.py`
-  are the files; both were free as of 08:42
-  · related: **#353**
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
   dashboard/transitions · origin: **loop** · from **#381's own caveat**, probed rather than accepted
   · `#381` surfaced pending hand-offs by adding a span to the existing `stfacts` row, which is the
@@ -2730,6 +2700,32 @@ Next id: **398**
   **blocked**: human pick
 
 ## Recently landed
+- **#395** — a relation marker without bold parses as absent · origin: **loop** · closed
+  2026-07-28 09:14 · `301f195`
+  · `ccc @grok`, brief `.dreamwork/docs/briefs/395-relation-marker-shape.md`. A present-but-
+  unparseable marker is now an ERROR naming the **shape** rather than a downstream reciprocity
+  symptom, `RELATED_FIELD` anchors the match to line-start or a `·` separator so prose cannot
+  manufacture a phantom, and adjacent bold spans are flagged instead of silently truncated to the
+  first id
+  · **coordinator verified all three claims independently.** (1) **Against the real revision**:
+  `lint.py --target` on a temp target holding `660a294^`'s ledger names **#388, #387 and #386**,
+  with the precondition checked first — that blob really does carry 3 unbolded markers. (2) **The
+  discriminating red**: restoring `if not found: continue` fails **both**
+  `test_an_unbolded_relation_marker_is_flagged_not_skipped` **and**
+  `test_it_flags_the_unbolded_markers_in_the_actual_revision_that_hid_them`, while **15 other
+  related tests stayed green**; injection grepped for before believing it, restored from a `cp`
+  snapshot, byte-exact. (3) **The coverage number is live**: a clean run now prints *"19 related
+  pair(s), all reciprocal; 0 entries unparseable"* — the general fix, and the line whose absence let
+  this hole sit open
+  · **no false positive on 130 open entries**, which was the way to make this worse: a check that
+  nags on good entries gets muted
+  · trap 1 respected — the wrong-case branch was **kept**, since it does fire
+  · lane's caveats: the coverage count prints only on the clean summary, not beside ERRORs (a
+  deliberate choice, to avoid claiming reciprocity next to errors); a trailing comma inside one span
+  is accepted. Both fine
+  · its spec note, which I will apply when `file-formats.md` frees: line 516 still says the ledger has
+  zero relation markers, which is stale prose
+  · related: **#353**
 - **#381** — the single-writer rule has no delivery half · origin: **loop** · closed
   2026-07-28 08:42 · `38b541c` `f09a1ba` `374c044`
   · `ccc @glm52`, brief `.dreamwork/docs/briefs/381-handoff-delivery.md`. `.dreamwork/handoffs.md`
