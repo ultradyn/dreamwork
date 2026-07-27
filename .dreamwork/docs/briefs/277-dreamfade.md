@@ -98,7 +98,8 @@ holds `watch.py` there right now, and the coordinator is the only writer of
 `.dreamwork/tasks.md` and `.dreamwork/questions.md`. Do not edit either, in
 either checkout — report queue changes to me instead.
 
-Commit inside your worktree, by **explicit path** (`git add -A` in this tree
+Commit inside your worktree with **`git commit --only <paths> -m …`** (`git add`
+plus a bare `git commit` commits the whole index, not the paths you named) (`git add -A` in this tree
 sweeps up other agents' half-finished work). Do not merge to master, do not
 push.
 

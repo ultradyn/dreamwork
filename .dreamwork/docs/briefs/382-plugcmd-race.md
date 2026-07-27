@@ -117,8 +117,8 @@ plugin path the round-trip has not completed by then.** It is a race, not a 400.
   then run the guard against it. That is how the facts above were measured.
 - The guards import playwright by absolute path — see the top of any `.mjs` in
   `dev/capture/`. A bare `import ... from 'playwright'` will not resolve.
-- Commit your own work, **staging by explicit path only** (`git add -A` will bury
-  other agents' half-finished work — several are live in this tree). Do not push.
+- Commit your own work, **`git commit --only <paths> -m …`** (`git add <path>` alone does NOT isolate it —
+  `git commit` commits the whole index and will bury other agents' staged work — several are live in this tree). Do not push.
 - Cap yourself at roughly 20-30 minutes of work. If it grows past that, land a
   coherent point, commit, and report the remainder.
 

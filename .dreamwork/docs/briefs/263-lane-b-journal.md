@@ -166,8 +166,9 @@ reuse rather than authoring a second), `justfile`.
   the increment that needs a real 1-second lease and a real sleep. Nothing in
   *your* batch should sleep or poll on wall-clock time. If you find yourself
   writing a `sleep`, you have probably wandered into `B5` — stop and report it.
-- Commit **each increment separately**, staging **by explicit path only** —
-  `git add -A` will bury other agents' half-finished work, and lanes A and C are
+- Commit **each increment separately**, committing with **`git commit --only <paths> -m …`** —
+  `git add <path>` alone does **not** isolate your commit, because `git commit`
+  commits the whole index and will bury other agents' staged work, and lanes A and C are
   live in this tree right now. **Do not push.**
 - Cap yourself at roughly **40 minutes**. Four increments will likely not fit, and
   **that is expected and fine**: land `B1` and `B2` well rather than four badly.

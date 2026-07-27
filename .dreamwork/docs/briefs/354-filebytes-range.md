@@ -111,8 +111,8 @@ are using that port range.
 ## Operational constraints
 
 - Limit any builds/tests to 2 threads. You should not need to run tests at all.
-- Commit your plan, **staging by explicit path only** (`git add -A` will bury other
-  agents' work — several lanes are live in this tree). Do not push.
+- Commit your plan, **`git commit --only <paths> -m …`** (`git add <path>` alone does NOT isolate it —
+  `git commit` commits the whole index and will bury other agents' staged work — several lanes are live in this tree). Do not push.
 - Cap yourself at roughly 25 minutes.
 
 ## How to report

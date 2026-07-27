@@ -130,7 +130,8 @@ contract (document it in the same commit — that is a repo rule, and
 - `#367` (tabbed pointers with next/prev). It is the same frame and it is
   deliberately **not** yours.
 
-Commit **by explicit path** (`git add -A` sweeps up other agents' work in this
+Commit with **`git commit --only <paths> -m …`** — a bare `git commit` takes the
+whole index, not the paths you added — (`git add -A` sweeps up other agents' work in this
 tree). One commit for all three tasks. Do not merge to master. Do not push.
 
 ## Reporting

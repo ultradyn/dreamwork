@@ -116,8 +116,8 @@ on with `transitions.md` and `dreamfade.mjs` as your references and do not wait.
 - Limit builds/tests to 2 threads.
 - The guards import playwright by absolute path — see the top of any `.mjs` in
   `dev/capture/`. A bare `import ... from 'playwright'` will not resolve.
-- Commit your own work, **staging by explicit path only** (`git add -A` will bury
-  other agents' half-finished work — several are live in this tree). Do not push.
+- Commit your own work, **`git commit --only <paths> -m …`** (`git add <path>` alone does NOT isolate it —
+  `git commit` commits the whole index and will bury other agents' staged work — several are live in this tree). Do not push.
 - Cap yourself at roughly 20-30 minutes. If it grows past that, land a coherent
   point, commit, and report the remainder. Characterisation alone (step 1) is a
   perfectly good increment to land if the fix does not fit.

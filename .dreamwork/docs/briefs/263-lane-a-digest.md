@@ -112,8 +112,9 @@ that range.
 
 - Limit builds/tests to **2 threads**. The box is at load ~60 with other lanes
   live; prefer `-p no:randomly -x` and a single file where you can.
-- Commit **each increment separately**, staging **by explicit path only** —
-  `git add -A` will bury other agents' half-finished work, and several are live
+- Commit **each increment separately**, committing with **`git commit --only <paths> -m …`** —
+  `git add <path>` alone does **not** isolate your commit, because `git commit`
+  commits the whole index and will bury other agents' staged work, and several are live
   in this tree right now. **Do not push.**
 - Cap yourself at roughly **30 minutes**. If it grows past that, land increment 1
   alone — it is a coherent, committable point — and report the remainder.

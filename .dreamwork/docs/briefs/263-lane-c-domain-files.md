@@ -136,8 +136,9 @@ withheld), `user_events/digest.py` (lane A owns it), `dev/capture/*`,
 - Limit builds/tests to **2 threads**. The box is at load ~60 with other lanes
   live, so subprocess tests will be slow — give your child-process waits generous
   bounded timeouts, and **never an unbounded wait**.
-- Commit **each increment separately**, staging **by explicit path only** —
-  `git add -A` will bury other agents' half-finished work, and several are live in
+- Commit **each increment separately**, committing with **`git commit --only <paths> -m …`** —
+  `git add <path>` alone does **not** isolate your commit, because `git commit`
+  commits the whole index and will bury other agents' staged work, and several are live in
   this tree. **Do not push.**
 - Cap yourself at roughly **30–40 minutes**. Three increments may not fit; if they
   do not, **land increment 11 or 11+12 and report the remainder**. A coherent
