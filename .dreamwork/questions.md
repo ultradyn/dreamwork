@@ -1,6 +1,51 @@
 # Questions for the human
 
 ## Open
+- **P1 · 2026-07-28 — #367, your postit flags: four decisions, and the geometry
+  refuted the literal reading of your own metaphor** Your 02:36 idea — *"pointer
+  labels at the most important parts … like those little thin postits that lawyers
+  use"*, plus next/prev, because reviews are *"sometimes quite long"*.
+
+  Decision artifact:
+  `.dreamwork/review/review-essential-marks.html`; design:
+  `.dreamwork/docs/plans/review-essential-marks.md`. Design only — nothing built,
+  no template touched, no artifact restamped.
+
+  **They are quite long: the longest is 19.6 screens** (19,582px, 6,533 words),
+  median 1,777. So the complaint is real, and the maximum is where flags pay.
+
+  **I measured before designing, and it killed three designs including yours.**
+  A list of the sections would be **22 entries** in the artifact that needs it most
+  — your five-flags analogy rules that out, and the `nav` is already that axis.
+  Tabs protruding past the page edge cannot work: the margin outside `.wrap` is
+  **16px at every viewport from 1120px down**, so the physical reading of the
+  metaphor is affordable on one monitor and nothing on a laptop. And a flag on each
+  marked block's edge would scatter, because blocks in a section run from 614px to
+  the full 1120px.
+
+  **What survives**: a mark is a **flag at a height**, anchored to the reading
+  column's right edge — which is fixed at **613.5px** and left-aligned, leaving
+  **506px of wrap already empty** beside it. Above 780px that is the tab rail;
+  below it the same marks are a compact strip under the top rail, because the slack
+  is 54px there and a tab needs 96. Next/prev walks them in document order in both,
+  so only the presentation changes.
+
+  **The thing worth your eye**: #367's own entry guessed the hard case was mobile.
+  The real cliff is **~780px** — above both existing breakpoints — so a design that
+  answered only for 390px would have looked right in review and broken in a
+  half-width window on your desktop, which is where you read these.
+
+  Four decisions, all recommended in the artifact: **M1** rail above 780 / strip
+  below · **M2** cap of five, and over it **refuses the build** rather than warning
+  · **M3** ~12-character labels, refused rather than truncated — *this is the one I
+  want your read on, not your ratification, because you are the person who reads the
+  tabs* · **M4** marks are not also `nav` entries.
+
+  `rec` takes all four. Approving authorises the source contract in
+  `file-formats.md` plus the "declares no marks &rarr; byte-identical output" check,
+  red first — not the template change, which restamps all 16 artifacts and is a
+  separate increment.
+
 - **P1 · 2026-07-28 — one word: may I run `install.py --apply`?** You said `rec`
   to #361 at 02:47, which authorised the `Load:` line and a reviewed `--print`. I
   have done both and stopped there, because writing your Claude Code config is the

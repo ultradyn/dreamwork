@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **380**
+Next id: **381**
 
 ## Open
 
@@ -111,9 +111,47 @@ Next id: **380**
   `.choice`/`.answer`, so a new `.mark` component must earn its rule the same way and not by
   analogy · and the frame batch it was waiting to ride landed at `405092f`, so this is now its
   own commit and its own rebuild, which is one restamp of 15 artifacts and acceptable
-  · **next-up when a lane is free**: it is his idea, typed from inside the problem, and every
-  design constraint above is already recorded — so this starts with the source-mark contract
-  (`file-formats.md`) and the cap, not with CSS
+  · **design landed design-only 2026-07-28 04:30, awaiting his ruling.** Plan
+  `.dreamwork/docs/plans/review-essential-marks.md`, artifact
+  `.dreamwork/review/review-essential-marks.html`, asked in `questions.md` as four decisions
+  M1-M4. Measured first, and **the measurement refuted three designs including the literal
+  reading of his own metaphor**: a per-section list would be 22 entries in the artifact that
+  needs it most; the margin outside `.wrap` is **16px at every viewport from 1120px down**, so a
+  tab protruding past the page edge is affordable only above ~1250px; and blocks within a section
+  run 614px to 1120px, so a per-block anchor would scatter the flags across 500px
+  · **the shape that survived**: a mark is a flag at a *height*, anchored to the reading column's
+  right edge — `.read` is a fixed **613.5px** (78ch at 13.12px, which does not scale) and
+  left-aligned, leaving **506px of wrap already empty** at 1280px. Rail above 780px, compact
+  strip below, next/prev walking document order in both
+  · **constraint (e) above was wrong in a way worth keeping recorded**: it anticipated the hard
+  case at mobile, and the cliff is at **~780px** — above both existing breakpoints (860, 480).
+  A design answering only for 390px would have passed review and broken in a half-width window
+  on his desktop
+  · blocked on his answer; the first increment is the source contract in `file-formats.md` plus
+  the "declares no marks ⇒ byte-identical output" check, red first, which touches no artifact
+
+- **#380** — `check_cited_shas` has four exits that say nothing, and one of them fired · P2 ·
+  lint/verification · origin: **loop** · 20m · found by a **flake**: the full suite failed once on
+  `test_a_dead_cited_sha_warns` (`assert 0 == 1`), then passed 25 runs in isolation and a full
+  re-run, and no single other test file reproduces it — so the check declined to run and said so
+  nowhere
+  · **the docstring already states the principle the code breaks.** It ends *"Skipped in silence
+  when the target is not a git repository — 'cannot check' must not read as 'nothing to fix'"*,
+  which is self-contradicting: silence is exactly what makes "cannot check" read as "nothing to
+  fix". Four silent exits at `lint.py:1878-1896` — `OSError`/`SubprocessError`, non-zero exit with
+  empty stdout, every citation missing, and (unstated) `zip(shas, stdout.splitlines())` truncating
+  when git answers for fewer shas than were asked about
+  · the `zip` truncation is a defect independent of the flake: `--batch-check` writes one line per
+  input, so a short answer means something went wrong, and a dead sha in the truncated tail is
+  never examined
+  · rec: keep WARN for a real anomaly inside a real repo (`.git` present, git failed), use an OK
+  row for the legitimately-unknowable cases so the skip is *visible* without failing a
+  non-repo target, and compare the line count. **Two existing tests encode the silence as
+  intended** — `test_every_sha_missing_says_nothing` and
+  `test_a_target_that_is_not_a_git_repo_is_silent` — so they change with it, and their names are
+  the tell
+  · this is the repo's own documented failure mode (a check that passes over the thing it was
+  written for) reappearing as a check that vanishes over it; `lessons.md` gets the distillation
 
 - **#378** — One `.fact` sits outside any `.facts` grid, in a file with no source · P3 ·
   review tooling · origin: **loop** · 10m · found by #365's measurement and verified

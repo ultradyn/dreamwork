@@ -1,0 +1,540 @@
+<!doctype html>
+<!--Built from the dreamwork review template v1+e3a46914 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
+<meta name="dreamwork-review-template" content="v1+e3a46914">
+<title>#367 · Pointer flags to a review's essentials · design</title>
+<style>
+/* Offline-clean by construction: no fetches, no external fonts, no images.
+   Tokens are watch.py's, value for value, because this is read inside the
+   dashboard's own iframe. */
+:root{
+  color-scheme:dark;
+  --bg:#090d16;--bg2:#0c1220;--panel:#111827;--panel2:#162033;
+  --line:#1f2937;--border:#334155;--text:#cbd5e1;--bright:#f4f7fb;
+  --lit:#e5e7eb;--muted:#98a3b5;--dim:#697589;--dimmer:#4b5568;
+  --accent:#a5b4fc;--accent2:#7dd3fc;--ok:#86efac;--warn:#fcd34d;
+  --bad:#fda4af;--ink:#050810;--radius:5px;
+  --ease:cubic-bezier(.32,.1,.2,1);--measure:78ch
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--dimmer) transparent}
+*::selection{background:rgba(165,180,252,.24);color:var(--bright)}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--dimmer);border-radius:4px}
+html{background:var(--bg);scroll-padding-top:5.5rem}
+body{margin:0;background:
+  radial-gradient(ellipse 68rem 34rem at 46% -14rem,rgba(99,102,241,.13),transparent 68%),
+  radial-gradient(ellipse 34rem 24rem at 92% 12%,rgba(14,165,233,.045),transparent 70%),
+  linear-gradient(180deg,var(--bg),#0a0f19 55%,var(--bg));
+  color:var(--text);font-family:ui-monospace,"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  font-size:.82rem;line-height:1.7;overflow-wrap:anywhere}
+a{color:var(--accent);text-underline-offset:.22em;text-decoration-thickness:1px}
+a:hover{color:var(--bright)}
+code{color:var(--lit);background:rgba(22,32,51,.72);padding:.03rem .32ch;border-radius:3px}
+pre{margin:.75rem 0;padding:.9rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.52);color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+/* syntax highlighting tokens (#339) — emitted at build time by
+   review_artifact.py as <span class="tok-…"> inside pre>code. No script in
+   the artifact; if a rule is ever lost the token takes the block's own
+   colour, so highlighting never breaks the code itself. Scoped to pre code
+   so an inline <code> snippet is never coloured by accident. */
+pre code .tok-kw{color:var(--accent)}
+pre code .tok-str{color:var(--ok)}
+pre code .tok-num{color:var(--warn)}
+pre code .tok-com{color:var(--dimmer);font-style:italic}
+pre code .tok-fn{color:var(--accent2)}
+pre code .tok-typ{color:var(--warn)}
+pre code .tok-dec{color:var(--accent)}
+pre code .tok-op{color:var(--muted)}
+pre code .tok-tag{color:var(--accent)}
+pre code .tok-attr{color:var(--accent2)}
+pre code .tok-var{color:inherit}
+strong{font-weight:inherit;color:var(--bright)}em{color:var(--lit)}
+p{margin:.62rem 0}ul,ol{margin:.55rem 0;padding-left:2.4ch}li{margin:.34rem 0}
+h1,h2,h3,h4{margin:0;font:inherit;font-weight:normal;color:var(--bright)}
+h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit);margin-top:1.4rem}
+.wrap{width:min(calc(100% - 2rem),1120px);margin:0 auto}.read{max-width:var(--measure)}
+.skip{position:fixed;z-index:99;top:.6rem;left:.6rem;transform:translateY(-180%);display:inline-flex;align-items:center;min-height:44px;padding:.6rem 1ch;background:var(--bright);color:var(--ink);border-radius:var(--radius);text-decoration:none}
+.skip:focus{transform:none;transition:transform .35s var(--ease)}
+.toprail{position:sticky;top:0;z-index:20;background:rgba(9,13,22,.91);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
+.toprail-in{width:min(calc(100% - 2rem),1120px);min-height:58px;margin:auto;display:flex;align-items:center;gap:1rem;justify-content:space-between}
+.identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
+main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
+.label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
+.quiet{color:var(--muted)}.dim{color:var(--dim)}.dimmer{color:var(--dimmer)}
+.kicker{display:flex;gap:1ch;align-items:baseline;flex-wrap:wrap}.proposal{color:var(--warn)}
+.sub{color:var(--dim);margin:.25rem 0 1.7rem}
+.lead{font-size:.9rem;line-height:1.78;color:var(--lit);max-width:76ch}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(240px,.45fr);gap:2.5rem;align-items:end}
+/* The one rule this template adds to the artifact it was cut from, and the
+   only entry in test_review_artifact.py's TEMPLATE_ONLY: tasks-page.html
+   always carries an aside, a template has to render without one. */
+.hero-grid.solo{grid-template-columns:minmax(0,1fr)}
+.version-mark{border-left:1px solid var(--accent);padding:.2rem 0 .2rem 1.25rem}
+.version-mark .big{display:block;color:var(--bright);font-size:2.4rem;line-height:1;letter-spacing:-.07em}
+.version-mark small{color:var(--dim)}
+.call{margin:1.2rem 0;padding:1rem 1.2ch;background:linear-gradient(90deg,rgba(165,180,252,.09),transparent);border-left:2px solid var(--accent);max-width:84ch}
+.notice{margin:1rem 0;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--warn);color:var(--muted);max-width:84ch}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:1.1rem 0}
+.fact{background:var(--bg2);padding:.95rem}.fact .number{display:block;color:var(--bright);font-size:1.3rem;line-height:1.1}.fact .caption{display:block;color:var(--dim);margin-top:.3rem;font-size:.72rem}
+table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem;min-width:max-content}
+th,td{text-align:left;vertical-align:top;padding:.62rem .72ch;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-size:.66rem;text-transform:uppercase;letter-spacing:.065em;font-weight:normal}
+td:first-child{color:var(--lit)}.pass{color:var(--ok)}.unknown{color:var(--warn)}.fail{color:var(--bad)}
+.row-accent td{background:rgba(165,180,252,.045)}
+.scroller{overflow-x:auto}
+.summary-line{display:grid;grid-template-columns:17ch minmax(0,1fr);gap:1.5ch;padding:.5rem 0;border-top:1px solid var(--line)}
+.summary-line:last-child{border-bottom:1px solid var(--line)}
+.key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.68rem}
+.deltas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line)}
+.delta{display:grid;grid-template-columns:3.2ch minmax(0,1fr);gap:1ch;padding:.8rem 1rem .8rem 0;border-bottom:1px solid var(--line)}
+.delta b{color:var(--accent);font-weight:normal}.delta span{color:var(--muted)}
+figure{margin:1rem 0 1.7rem}.figscroll{overflow-x:auto}
+svg{display:block;height:auto}svg text{font-family:ui-monospace,"JetBrains Mono",monospace}
+figcaption{color:var(--dim);font-size:.72rem;margin-top:.4rem}
+
+/* ── the drawn page ───────────────────────────────────────────────────── */
+.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem;align-items:start}
+.frame{border:1px solid var(--border);background:rgba(9,13,22,.8);min-width:0;box-shadow:0 22px 60px rgba(0,0,0,.19)}
+.framebar{display:flex;align-items:center;flex-wrap:wrap;gap:0 1ch;min-height:42px;padding:.35rem 1ch;border-bottom:1px solid var(--line);color:var(--dim);font-size:.72rem}
+.framebar b{font-weight:normal;color:var(--lit);white-space:nowrap}
+.framebody{padding:.9rem 1.1ch}
+.mockhead{display:flex;align-items:center;gap:1ch;margin-bottom:.2rem}
+.opener{color:var(--accent)}
+.mocktitle{color:var(--bright)}
+.crumbs{color:var(--dim);font-size:.72rem;margin-bottom:1rem}
+.ctl{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.2rem 0 .7rem}
+.searchbox{flex:1;min-width:15ch;display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.searchbox span{padding:.3rem .8ch;color:var(--lit)}
+.searchbox i{font-style:normal;color:var(--dimmer);padding:.3rem .8ch;margin-left:auto}
+.sgroup{display:inline-flex;border:1px solid transparent;gap:.15rem}
+.sgbtn{padding:.22rem .7ch;color:var(--dim);border:1px solid transparent;border-radius:var(--radius);white-space:nowrap}
+.sgbtn.on{color:var(--lit);border-color:var(--border)}
+.countline{color:var(--dim);font-size:.72rem;border-bottom:1px solid var(--line);padding-bottom:.5rem;margin-bottom:.2rem}
+.countline b{color:var(--lit);font-weight:normal}
+.tk{display:block;padding:.5rem 0 .52rem;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.tk-1{display:flex;gap:1ch;align-items:baseline}
+.tkid{color:var(--dim);font-weight:normal;flex:none}
+.tkt{color:var(--text);min-width:0;flex:1}
+.tkp{flex:none;color:var(--dim);font-size:.72rem}
+.tkp.p01{color:var(--bright)}.tkp.p2{color:var(--text)}.tkp.p3{color:var(--dim)}
+.tk-2{display:block;color:var(--dim);font-size:.7rem;padding-left:5.5ch}
+.tk.claimed{border-left:2px solid var(--accent);padding-left:.9ch;margin-left:-1.1ch}
+.tk.claimed .tkt{color:var(--bright)}
+.tk.claimed .tk-2 em{color:var(--accent);font-style:normal}
+.tk.blocked .tkt{color:var(--muted)}
+.tk.landed .tkt,.tk.landed .tkid{color:var(--dim)}.tk.landed .tk-2{color:var(--dimmer)}
+.tk.unknownstate .tkt{color:var(--muted)}
+.tk.unknownstate .tk-2 em{color:var(--warn);font-style:normal}
+.tk-2 .stale{color:var(--warn);font-style:normal}
+.hilite{background:rgba(165,180,252,.16);color:var(--bright)}
+.warnline{border-left:2px solid var(--warn);padding:.45rem 0 .45rem 1ch;color:var(--muted);margin:.5rem 0}
+.warnline b{color:var(--warn);font-weight:normal}
+.calmline{color:var(--dim);padding:.45rem 0}
+.detgrid{display:grid;grid-template-columns:13ch minmax(0,1fr);gap:.05rem 1.3ch;font-size:.75rem}
+.detgrid dt{color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-size:.66rem;padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd{margin:0;color:var(--text);padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd em{font-style:normal;color:var(--dim)}
+.mockbody{color:var(--muted);font-size:.75rem;margin-top:1rem;border-top:1px solid var(--line);padding-top:.7rem}
+.peek{color:var(--dim);font-size:.72rem;border-top:1px solid var(--line);margin-top:.8rem;padding-top:.55rem}
+.annot{display:grid;grid-template-columns:3.5ch minmax(0,1fr);gap:.7ch;font-size:.72rem;color:var(--muted);margin:.45rem 0}
+.annot b{color:var(--accent2);font-weight:normal}
+
+/* ── prose furniture ──────────────────────────────────────────────────── */
+.spine{margin:1.4rem 0}
+.spine-row{display:grid;grid-template-columns:15ch 2.4rem minmax(0,1fr);align-items:stretch;min-height:88px}
+.spine-key{padding:.85rem 1rem .85rem 0;color:var(--lit);text-align:right}
+.spine-rail{position:relative}
+.spine-rail::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border)}
+.spine-row:first-child .spine-rail::before{top:50%}
+.spine-row:last-child .spine-rail::before{bottom:50%}
+.spine-dot{position:absolute;z-index:1;left:50%;top:1.15rem;width:9px;height:9px;transform:translateX(-50%);border-radius:50%;background:var(--bg);border:1px solid var(--accent);box-shadow:0 0 0 5px var(--bg)}
+.spine-body{padding:.7rem 0 .85rem 1rem;border-top:1px solid var(--line)}
+.spine-body p{color:var(--muted);margin:.2rem 0;max-width:var(--measure)}
+.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1.6rem}
+.check{padding:.55rem 0;border-top:1px solid var(--line)}
+.check b{font-weight:normal;color:var(--bad)}.check span{color:var(--ok)}
+.stages{counter-reset:stage}
+.stage{counter-increment:stage;display:grid;grid-template-columns:3.4ch minmax(0,1fr);gap:1ch;padding:.68rem 0;border-top:1px solid var(--line)}
+.stage::before{content:counter(stage,decimal-leading-zero);color:var(--accent)}
+.stage b{color:var(--lit);font-weight:normal}.stage span{color:var(--muted)}
+details{border-top:1px solid var(--line);margin:.65rem 0}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;min-height:44px;padding:.6rem 0;color:var(--muted);outline:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+ ";color:var(--dim);white-space:pre}
+details[open]>summary{color:var(--lit);padding-top:1rem}
+details[open]>summary::before{content:"\2212 "}
+.details-in{padding:0 0 1rem 1.5ch;color:var(--muted)}
+details::details-content{block-size:0;opacity:0;filter:blur(3px);overflow:hidden;transition:block-size .72s var(--ease),opacity .45s ease,filter .45s ease;transition-behavior:allow-discrete}
+details[open]::details-content{block-size:auto;opacity:1;filter:none}
+@starting-style{details[open]::details-content{block-size:0;opacity:0;filter:blur(3px)}}
+#decision{scroll-margin-top:4.75rem}
+.choice{padding:1rem 0;border-top:1px solid var(--line)}
+.choice:last-of-type{border-bottom:1px solid var(--line)}
+.choice-grid{display:grid;grid-template-columns:4.5ch minmax(0,1fr);gap:1ch}
+.choice-grid>div{max-width:var(--measure)}
+.choice-tag{color:var(--accent);font-size:1rem}
+.answer{margin-top:.4rem;color:var(--lit)}
+.approval{padding:1rem;background:linear-gradient(90deg,rgba(165,180,252,.1),transparent);color:var(--lit);margin-top:1.2rem}
+footer{margin-top:3.5rem;padding:1.2rem 0 2rem;border-top:1px solid var(--line);color:var(--dimmer)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+@media(max-width:860px){
+  .hero-grid,.frames,.deltas,.checks{grid-template-columns:1fr}
+  .facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .version-mark{border-left:0;border-top:1px solid var(--line);padding:.7rem 0 0;display:flex;align-items:baseline;gap:1rem}
+  .version-mark .big{flex:none;font-size:1.4rem;letter-spacing:-.04em}
+  .identity span{display:none}.topactions .full{display:none}.topactions{min-width:0}
+  .spine-row{grid-template-columns:9ch 1.8rem minmax(0,1fr)}.spine-key{font-size:.72rem;padding-right:.4rem}
+  .summary-line{grid-template-columns:1fr;gap:.05rem}
+  .detgrid{grid-template-columns:1fr}.detgrid dd{border-top:0;padding-top:0}
+}
+@media(max-width:480px){
+  body{font-size:.79rem}.facts{grid-template-columns:1fr}
+  .tk-2{padding-left:0}.choice-grid{grid-template-columns:3.4ch minmax(0,1fr)}
+  .topactions .status{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;transition-delay:0s!important;filter:none!important}
+  .skip:focus{transition:none}
+}
+@media print{
+  :root{color-scheme:light;--bg:#fff;--bg2:#fff;--panel:#f4f4f5;--panel2:#fff;--line:#bbb;--border:#777;--text:#111;--bright:#000;--lit:#111;--muted:#333;--dim:#444;--dimmer:#555;--accent:#273fa2;--accent2:#075985;--ok:#166534;--warn:#7c4a03;--bad:#991b1b}
+  body{background:#fff}.toprail{position:static;background:#fff;backdrop-filter:none}.topactions{display:none}
+  .frame{box-shadow:none}details::details-content{block-size:auto;opacity:1;filter:none}
+  .frame,.call,.notice,.choice{break-inside:avoid}a{color:#111;text-decoration:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#decision">Skip to the decisions</a>
+<nav class="toprail" aria-label="Artifact navigation">
+  <div class="toprail-in">
+    <div class="identity"><b>essential marks</b><span>task #367 · design only</span></div>
+    <div class="topactions"><span class="status">awaiting review</span><a class="full" href="#findings">findings</a><a href="#shape">shape</a><a href="#decision">decision</a></div>
+  </div>
+</nav>
+
+<main class="wrap" id="top">
+
+<header>
+  <div class="hero-grid">
+    <div>
+      <div class="kicker"><h1>Your longest review is 19.6 screens. Here is where the flags can actually go.</h1><span class="proposal">design only — nothing is built</span></div>
+      <div class="sub">task #367 · 28 July 2026 · your 02:36 idea, measured</div>
+      <p class="lead">You asked for <em>"pointer labels at the most important parts … like those
+      little thin postits that lawyers use"</em>, plus next/prev, because reviews are
+      <em>"sometimes quite long"</em>. They are: the longest is <strong>19.6 screens</strong>. Before
+      designing anything I measured the page it would live on, and the measurement <strong>killed
+      three plausible designs</strong> — including the literal reading of your own metaphor. What
+      survives is below. Full reasoning at
+      <code>.dreamwork/docs/plans/review-essential-marks.md</code>.</p>
+      <div class="call"><strong>Recommendation.</strong> A mark is a <strong>flag at a height</strong>,
+      anchored to the right edge of the reading column — not to a block, and not to the page's outer
+      margin. Above <strong>780px</strong> it is a thin tab in the 506px of wrap the reading column
+      already leaves empty; below 780px the same marks become a compact strip under the top rail.
+      Next/prev walks them in document order in <strong>both</strong>, so behaviour never changes with
+      width — only presentation does. Cap: <strong>five</strong>, and over the cap
+      <strong>refuses the build</strong>.</div>
+    </div>
+    <div class="version-mark" aria-label="At a glance">
+      <span class="big">19.6</span>
+      <small>screens tall, your longest review artifact<br>19,582px at a 1000px viewport · 6,533 words<br>your complaint checks out</small>
+    </div>
+  </div>
+</header>
+
+<section id="long" aria-labelledby="lo-t">
+  <div class="label" id="lo-t">"Sometimes they are quite long" — how long, exactly</div>
+  <p class="read">Measured across all 16 built artifacts, not estimated. The distribution
+  matters as much as the maximum: the median review is short enough that flags would be
+  decoration, and the top few are where they pay for themselves. A design that helps only the
+  median would be solving a problem you do not have.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">19.6</span><span class="caption">screens for <code>threaded-topic-chats-v2</code> — 19,582px at a 1000px viewport, the longest of the 16</span></div>
+    <div class="fact"><span class="number">6,533</span><span class="caption">words in it. You read that one at 02:56 and answered it in four words, which is the ratio this task is about</span></div>
+    <div class="fact"><span class="number">22</span><span class="caption"><code>&lt;section&gt;</code>s in it, carrying 23 <code>.label</code>s — the number a per-section list would produce</span></div>
+    <div class="fact"><span class="number">1,777</span><span class="caption">median words across the 16. Half of your reviews do not need flags at all, and should show none</span></div>
+  </div>
+</section>
+
+<section id="findings" aria-labelledby="f-t">
+  <div class="label" id="f-t">Three designs the geometry killed before I drew anything</div>
+  <div class="scroller"><table>
+  <thead><tr><th>the obvious design</th><th>what refutes it</th><th>measured how</th></tr></thead>
+  <tbody>
+  <tr><td><strong>A list of the sections</strong> — a table of contents in the top rail, jump to any</td>
+      <td class="fail">Twenty-two entries in the artifact that needs it most, and your analogy rules exactly this out: a lawyer flags five clauses, not every clause. Worse, the structural axis <em>already exists</em> — the <code>.topactions</code> nav is it</td>
+      <td>counted <code>&lt;section&gt;</code> and <code>.label</code> in every built artifact</td></tr>
+  <tr><td><strong>Tabs protruding past the page edge</strong> — the literal reading of the postit metaphor</td>
+      <td class="fail">There is no page edge to protrude past. <code>.wrap</code> is <code>min(calc(100% - 2rem),1120px)</code>, so the margin outside it is <strong>16px at every viewport from 1120px down</strong>. It works on one monitor and vanishes on a laptop</td>
+      <td>computed <code>.wrap</code> width at 1440/1280/1120/960/860/780/700/480/390</td></tr>
+  <tr><td><strong>A flag on each marked block's right edge</strong></td>
+      <td class="fail">Blocks in a section are not one width. <code>.read</code> paragraphs are 614px; tables, <code>.facts</code> and <code>.spine</code> span the full 1120px wrap. The flags would scatter across 500px of horizontal space by accident of what the passage happens to be</td>
+      <td>measured every component's box in a built artifact</td></tr>
+  </tbody></table></div>
+  <div class="notice"><strong>The one that would have shipped broken.</strong> #367's own entry
+  guessed the hard case was mobile — <em>"on mobile a protruding edge tab competes with the
+  column for width"</em>. The real cliff is at <strong>~780px</strong>, above both existing
+  breakpoints (860 and 480). A design that answered only for 390px would have looked correct in
+  review and broken in a half-width window on your desktop, which is where you read these.</div>
+</section>
+
+<section id="geometry" aria-labelledby="g-t">
+  <div class="label" id="g-t">Where there is actually room, and where it runs out</div>
+  <p class="read">The reading measure is <code>78ch</code>, and the surprise is that it does not
+  scale: the font is a fixed 13.12px, so <code>.read</code> computes to <strong>613.5px at every
+  viewport</strong> and sits <strong>left-aligned</strong> in the wrap. Half the wrap is already
+  empty on a wide screen. That empty half is the whole design.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">613.5px</span><span class="caption">the reading column, fixed — 78ch at 13.12px, unchanged from 1440px down to where the wrap itself gets narrower</span></div>
+    <div class="fact"><span class="number">506px</span><span class="caption">unused wrap to the right of it at a 1280px viewport. Flags need 96</span></div>
+    <div class="fact"><span class="number">16px</span><span class="caption">the margin <em>outside</em> the wrap at 1120px and every width below. This is why the literal metaphor fails</span></div>
+    <div class="fact"><span class="number">780px</span><span class="caption">where 96px of slack runs out: 134px at 780, <strong>54px at 700</strong>, negative below 560</span></div>
+  </div>
+  <div class="scroller"><table>
+  <thead><tr><th>viewport</th><th><code>.wrap</code></th><th>slack right of <code>.read</code></th><th>room for a 96px flag</th></tr></thead>
+  <tbody>
+  <tr><td>1440</td><td>1120</td><td>506</td><td class="pass">yes</td></tr>
+  <tr><td>1280</td><td>1120</td><td>506</td><td class="pass">yes</td></tr>
+  <tr><td>1120</td><td>1088</td><td>474</td><td class="pass">yes</td></tr>
+  <tr><td>960</td><td>928</td><td>314</td><td class="pass">yes</td></tr>
+  <tr><td>860</td><td>828</td><td>214</td><td class="pass">yes</td></tr>
+  <tr><td>780</td><td>748</td><td>134</td><td class="pass">yes — and this is the last one</td></tr>
+  <tr><td>700</td><td>668</td><td>54</td><td class="fail">no</td></tr>
+  <tr><td>480</td><td>448</td><td>&minus;166</td><td class="fail">no</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="shape" aria-labelledby="sh-t">
+  <div class="label" id="sh-t">The shape: one behaviour, two presentations, drawn to scale</div>
+  <p class="read">A flag marks a <em>height</em>, the way a physical one does — it protrudes at
+  the height of the clause regardless of what is printed on that line. So it anchors to the
+  reading column's right edge and takes its vertical position from the passage, which is what
+  makes it immune to the block-width problem that killed the third design.</p>
+  <div class="frames">
+
+  <div class="frame">
+    <div class="framebar"><b>&ge;780px — the flag rail</b><span>1:3.2 — every x is a real measurement</span></div>
+    <div class="framebody">
+      <figure>
+      <svg viewBox="0 0 400 250" width="100%" role="img" aria-label="At viewports 780px and wider, a column of thin flag tabs sits in the empty wrap to the right of the reading column, each at the vertical position of the passage it marks. The reading column is 613.5px, the flag 96px, and 403px of wrap remains empty beyond it.">
+        <rect x="0" y="0" width="400" height="250" fill="#0c1220"/>
+        <rect x="1" y="6" width="398" height="238" fill="none" stroke="#1f2937" stroke-dasharray="3 3"/>
+        <text x="4" y="19" fill="#4b5568" font-size="7">viewport 1280</text>
+
+        <!-- the wrap: 1120px at 1:3.2 = 350 units, 80px gutters = 25 each side -->
+        <rect x="25" y="26" width="350" height="212" fill="none" stroke="#334155"/>
+        <text x="29" y="37" fill="#697589" font-size="7">.wrap 1120</text>
+
+        <!-- the reading column: 613.5px = 191.7 units, x 25 to 216.7 -->
+        <g fill="#334155">
+          <rect x="25" y="46" width="188" height="3"/><rect x="25" y="53" width="181" height="3"/>
+          <rect x="25" y="60" width="191" height="3"/><rect x="25" y="67" width="124" height="3"/>
+        </g>
+        <g fill="#334155">
+          <rect x="25" y="84" width="191" height="3"/><rect x="25" y="91" width="184" height="3"/>
+          <rect x="25" y="98" width="167" height="3"/>
+        </g>
+        <!-- a full-wrap component, to show it reaches past the reading column -->
+        <rect x="25" y="114" width="350" height="26" fill="none" stroke="#1f2937"/>
+        <text x="29" y="130" fill="#4b5568" font-size="6.5">a table or .facts — the full wrap, 1120</text>
+        <g fill="#334155">
+          <rect x="25" y="152" width="180" height="3"/><rect x="25" y="159" width="190" height="3"/>
+          <rect x="25" y="166" width="142" height="3"/>
+        </g>
+        <g fill="#334155">
+          <rect x="25" y="190" width="187" height="3"/><rect x="25" y="197" width="174" height="3"/>
+          <rect x="25" y="204" width="161" height="3"/><rect x="25" y="211" width="99" height="3"/>
+        </g>
+
+        <!-- reading column boundary at 216.7 -->
+        <line x1="217" y1="42" x2="217" y2="232" stroke="#1f2937" stroke-dasharray="2 3"/>
+
+        <!-- the flags: 96px = 30 units, at the height of their passage -->
+        <g font-size="6.5">
+          <rect x="219" y="44" width="30" height="13" fill="#a5b4fc" opacity=".9"/>
+          <text x="223" y="53" fill="#050810">ask</text>
+          <rect x="219" y="86" width="30" height="13" fill="#a5b4fc" opacity=".5"/>
+          <text x="223" y="95" fill="#050810">cliff</text>
+          <rect x="219" y="154" width="30" height="13" fill="#a5b4fc" opacity=".5"/>
+          <text x="223" y="163" fill="#050810">cap</text>
+          <rect x="219" y="192" width="30" height="13" fill="#a5b4fc" opacity=".5"/>
+          <text x="223" y="201" fill="#050810">sign</text>
+        </g>
+        <text x="254" y="53" fill="#98a3b5" font-size="6.5">&larr; you are here</text>
+
+        <!-- dimensions -->
+        <g stroke="#4b5568" stroke-width=".6">
+          <line x1="25" y1="228" x2="217" y2="228"/><line x1="25" y1="225" x2="25" y2="231"/><line x1="217" y1="225" x2="217" y2="231"/>
+          <line x1="219" y1="228" x2="249" y2="228"/><line x1="249" y1="225" x2="249" y2="231"/>
+          <line x1="251" y1="228" x2="375" y2="228"/><line x1="375" y1="225" x2="375" y2="231"/>
+        </g>
+        <text x="94" y="236" fill="#697589" font-size="6.5">.read 613.5</text>
+        <text x="228" y="222" fill="#a5b4fc" font-size="6.5">96</text>
+        <text x="278" y="236" fill="#697589" font-size="6.5">still empty: 403</text>
+      </svg>
+      <figcaption>Drawn at 1:3.2, so every horizontal position here is a measured one: the tabs
+      sit in space the page already wastes, and 403px of it is <em>still</em> spare after they
+      do. Nothing moves, nothing narrows, and the marked passage keeps its measure. The current
+      mark is lit and named; the rest are quiet. The labels are one-word here because the
+      drawing's <em>text</em> is oversized relative to its boxes — a real 96px tab holds about
+      twelve characters, which is what M3 is about.</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="framebar"><b>&lt;780px — the essentials strip</b><span>1:2 — the tab that does not fit</span></div>
+    <div class="framebody">
+      <figure>
+      <svg viewBox="0 0 390 250" width="100%" role="img" aria-label="Below 780px the same marks become one compact row of labelled pills under the top rail, with previous and next controls. The reading column is still 613.5px, leaving only 54px of slack — so a 96px flag drawn at that position runs off the edge of the screen, which is the reason the presentation changes.">
+        <rect x="0" y="0" width="390" height="250" fill="#0c1220"/>
+        <rect x="350" y="0" width="40" height="250" fill="#050810"/>
+        <text x="353" y="19" fill="#4b5568" font-size="5.5">off-screen</text>
+        <rect x="1" y="6" width="348" height="238" fill="none" stroke="#1f2937" stroke-dasharray="3 3"/>
+        <text x="4" y="19" fill="#4b5568" font-size="7">viewport 700</text>
+
+        <!-- the wrap: 668px at 1:2 = 334 units, 16px gutters = 8 each side -->
+        <rect x="8" y="26" width="334" height="212" fill="none" stroke="#334155"/>
+        <text x="12" y="37" fill="#697589" font-size="7">.wrap 668</text>
+
+        <!-- the strip: the marks, in a row, with next/prev -->
+        <rect x="8" y="44" width="334" height="20" fill="#111827" stroke="#1f2937"/>
+        <g font-size="7">
+          <rect x="13" y="48" width="46" height="12" fill="#a5b4fc" opacity=".9"/><text x="16" y="57" fill="#050810">the ask</text>
+          <rect x="63" y="48" width="46" height="12" fill="#162033" stroke="#334155"/><text x="66" y="57" fill="#98a3b5">the cliff</text>
+          <rect x="113" y="48" width="46" height="12" fill="#162033" stroke="#334155"/><text x="116" y="57" fill="#98a3b5">the cap</text>
+          <rect x="163" y="48" width="46" height="12" fill="#162033" stroke="#334155"/><text x="166" y="57" fill="#98a3b5">sign</text>
+          <text x="290" y="58" fill="#98a3b5" font-size="9">&#8249;</text>
+          <text x="299" y="58" fill="#e5e7eb" font-size="8">1 of 4</text>
+          <text x="330" y="58" fill="#98a3b5" font-size="9">&#8250;</text>
+        </g>
+
+        <!-- the reading column: STILL 613.5px = 306.75 units, x 8 to 314.75 -->
+        <g fill="#334155">
+          <rect x="8" y="82" width="301" height="3"/><rect x="8" y="89" width="293" height="3"/>
+          <rect x="8" y="96" width="305" height="3"/><rect x="8" y="103" width="189" height="3"/>
+        </g>
+        <rect x="8" y="118" width="334" height="24" fill="none" stroke="#1f2937"/>
+        <text x="12" y="133" fill="#4b5568" font-size="6.5">a table — still the full wrap</text>
+        <g fill="#334155">
+          <rect x="8" y="156" width="297" height="3"/><rect x="8" y="163" width="303" height="3"/>
+          <rect x="8" y="170" width="241" height="3"/>
+          <rect x="8" y="188" width="299" height="3"/><rect x="8" y="195" width="289" height="3"/>
+          <rect x="8" y="202" width="306" height="3"/><rect x="8" y="209" width="145" height="3"/>
+        </g>
+
+        <!-- the reading column's right edge, and the 54px that is left beyond it -->
+        <line x1="315" y1="76" x2="315" y2="218" stroke="#4b5568" stroke-dasharray="2 3"/>
+        <!-- the tab that cannot fit: 96px = 48 units, drawn to scale, overflowing -->
+        <rect x="315" y="82" width="48" height="13" fill="none" stroke="#fcd34d" stroke-width=".7" stroke-dasharray="3 2" opacity=".75"/>
+        <text x="318" y="91" fill="#fcd34d" font-size="6.5" opacity=".8">96px tab</text>
+        <text x="318" y="105" fill="#fcd34d" font-size="6" opacity=".65">54 fits</text>
+        <g stroke="#4b5568" stroke-width=".6">
+          <line x1="8" y1="228" x2="313" y2="228"/><line x1="8" y1="225" x2="8" y2="231"/><line x1="313" y1="225" x2="313" y2="231"/>
+          <line x1="317" y1="228" x2="342" y2="228"/><line x1="342" y1="225" x2="342" y2="231"/>
+        </g>
+        <text x="120" y="236" fill="#697589" font-size="6.5">.read 613.5 — unchanged</text>
+        <text x="322" y="222" fill="#fcd34d" font-size="6.5" opacity=".8">54</text>
+      </svg>
+      <figcaption>Not a shrunken rail, and the amber ghost is the whole argument — a 96px tab
+      drawn to scale at the same place it sits in the wide frame, with 54px of it inside the page
+      and the rest off the edge of the screen. Note what has <em>not</em> changed:
+      <code>.read</code> is still 613.5px, identical to the wide case, so the strip exists
+      because the flags ran out of room and not because the text did. Your <em>"next/prev
+      button"</em> is already this; the fallback is the thing you asked for.</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  </div>
+  <div class="notice"><strong>Why this counts as one feature and not two.</strong> Next/prev
+  walks the marks in document order in both presentations, and both derive from the same
+  source-declared list. The 780px switch changes <em>where a mark is drawn</em> and nothing about
+  what a mark is or what pressing next does. If the two forms needed different behaviour, that
+  would be the signal the design was wrong.</div>
+</section>
+
+<section id="source" aria-labelledby="so-t">
+  <div class="label" id="so-t">Marks come from the source, and that is half the value</div>
+  <p class="read">The authoring dreamer declares them, and the cap is five. An artifact that
+  cannot name its three-to-five essential passages has not decided what it is asking you for —
+  so the cap is a forcing function on the writer before it is a convenience for the reader. That
+  is worth as much as your saved minutes, and it is the reason not to derive marks
+  automatically: a heuristic would produce twenty-two of them and mean nothing.</p>
+  <div class="summary-line"><span class="key">declared where</span><span>on the marked element in the review source, with a short label — a contract in <code>file-formats.md</code>, checked by <code>lint.py</code>, in the same commit</span></div>
+  <div class="summary-line"><span class="key">over the cap</span><span><strong>refuses the build</strong>, the way an outward fetch and a component violation already do. A cap that warns is a cap that gets ignored</span></div>
+  <div class="summary-line"><span class="key">none declared</span><span>the page renders <strong>exactly as it does today</strong> — no rail, no strip, no reserved space. All 16 existing artifacts are in this state</span></div>
+  <div class="notice"><strong>That last row is the first check to write.</strong> A frame change
+  restamps and rebuilds all 16 artifacts, so "declares no marks &rarr; byte-identical output" is
+  what makes this safe to ship before a single artifact adopts it. It goes red first: declare a
+  mark, watch the check fail, remove it.</div>
+</section>
+
+<section id="motion" aria-labelledby="mo-t">
+  <div class="label" id="mo-t">Next/prev is movement, so <code>transitions.md</code> governs it</div>
+  <p class="read">Pressing next moves you 4,000px down a document. That is the largest movement
+  anything on these pages performs, and this repo has already got it wrong once.</p>
+  <div class="scroller"><table>
+  <thead><tr><th>the question</th><th>the answer, and where it comes from</th></tr></thead>
+  <tbody>
+  <tr><td>Smooth-scroll the jump?</td><td class="fail"><strong>No — already refuted.</strong> #229's v2 review shipped a 1.5s smooth scroll and it failed the transitions gate. What you want is a <em>settled landing</em>, not a journey past 3,000px of prose you are skipping on purpose</td></tr>
+  <tr><td>Is that inherited or chosen?</td><td class="pass"><strong>Chosen here.</strong> The template declares no <code>scroll-behavior</code> at all — measured, zero occurrences — so nothing is being overridden and "instant, with the arrival marked" is available</td></tr>
+  <tr><td>How do you know you arrived?</td><td class="unknown">The arriving mark changes state, and <em>that</em> is the transition — it takes the page's existing idiom rather than a second one. The arrival is what animates; the travel is not</td></tr>
+  <tr><td>Reduced motion?</td><td class="pass"><strong>The jump is the function and survives untouched.</strong> Nothing about <em>finding</em> a passage may depend on animation — only the arrival's acknowledgement is motion, and it degrades to a state change</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="decision" aria-labelledby="d-t">
+  <div class="label" id="d-t">Four decisions, with recommendations</div>
+
+  <div class="choice"><strong>M1 · The rail above 780px, the strip below it</strong> — two
+  presentations of one behaviour, switching at the measured cliff.
+  <div class="answer"><strong>Rec: take it.</strong> The alternative is one presentation
+  everywhere, which means either no flags on a narrow window or a strip on a 1440px monitor with
+  506px of wrap sitting empty beside the text. Both are worse in a way you would notice within a
+  day.</div></div>
+
+  <div class="choice"><strong>M2 · Cap of five, and over the cap refuses the build</strong>
+  — rather than warning, or a higher number.
+  <div class="answer"><strong>Rec: five, refusing.</strong> Your own framing is that flags work
+  because there are few of them; the artifact that needs them most has 22 sections, so the
+  pressure to creep is real and immediate. Say a number if five is wrong — it is one constant and
+  trivial to change — but the <em>refusing</em> half is what makes it hold.</div></div>
+
+  <div class="choice"><strong>M3 · How long is a label, and who shortens it?</strong> A tab is
+  ~96px, which is roughly <strong>12 characters</strong>. Either the author writes short and the
+  builder refuses anything longer, or the builder truncates.
+  <div class="answer"><strong>Rec: refuse, do not truncate.</strong> Truncation is silent and
+  produces "the transition boun…" on your page; refusal happens on my machine while the author is
+  still there to write a better label. This is the one decision where I would like your read
+  rather than your ratification — you are the person who reads the tabs.</div></div>
+
+  <div class="choice"><strong>M4 · Do marks also appear in the top-rail <code>nav</code>?</strong>
+  <div class="answer"><strong>Rec: no.</strong> The nav is the structural axis
+  (<code>findings</code> / <code>shape</code> / <code>decision</code>); marks are the
+  "read-this-if-nothing-else" axis. Merging them gives you the table of contents this design
+  spent its first measurement ruling out. The cost of being wrong here is small and reversible,
+  which is why it is last.</div></div>
+</section>
+
+<section id="next" aria-labelledby="n-t">
+  <div class="label" id="n-t">What approval means, and what it does not</div>
+  <div class="approval">Approving accepts <strong>the four decisions above</strong> and nothing
+  more. It does <strong>not</strong> authorise touching the template, restamping the 16
+  artifacts, adding a class to any existing source, changing the nav, or shipping a keybinding —
+  the first commit is the source contract in <code>file-formats.md</code> plus the
+  "no marks &rarr; byte-identical" check, red first, and it changes no artifact you have read.
+  The frame change is a separate increment with a separate rebuild, deliberately, because
+  <code>template_stamp</code> digests the frame's bytes and every artifact restamps at once.</div>
+</section>
+
+<footer>task #367 · design only · <code>.dreamwork/docs/plans/review-essential-marks.md</code> <span class="dimmer">· built from review template v1+e3a46914</span></footer>
+
+</main>
+</body>
+</html>

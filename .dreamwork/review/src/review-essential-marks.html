@@ -1,0 +1,320 @@
+<!--dreamwork-review-source
+title: #367 · Pointer flags to a review's essentials · design
+identity: essential marks
+context: task #367 · design only
+status: awaiting review
+headline: Your longest review is 19.6 screens. Here is where the flags can actually go.
+tag: design only — nothing is built
+sub: task #367 · 28 July 2026 · your 02:36 idea, measured
+skip: Skip to the decisions
+skip_href: #decision
+-->
+<!--#nav-->
+<a class="full" href="#findings">findings</a><a href="#shape">shape</a><a href="#decision">decision</a>
+<!--#lead-->
+<p class="lead">You asked for <em>"pointer labels at the most important parts … like those
+little thin postits that lawyers use"</em>, plus next/prev, because reviews are
+<em>"sometimes quite long"</em>. They are: the longest is <strong>19.6 screens</strong>. Before
+designing anything I measured the page it would live on, and the measurement <strong>killed
+three plausible designs</strong> — including the literal reading of your own metaphor. What
+survives is below. Full reasoning at
+<code>.dreamwork/docs/plans/review-essential-marks.md</code>.</p>
+<!--#call-->
+<div class="call"><strong>Recommendation.</strong> A mark is a <strong>flag at a height</strong>,
+anchored to the right edge of the reading column — not to a block, and not to the page's outer
+margin. Above <strong>780px</strong> it is a thin tab in the 506px of wrap the reading column
+already leaves empty; below 780px the same marks become a compact strip under the top rail.
+Next/prev walks them in document order in <strong>both</strong>, so behaviour never changes with
+width — only presentation does. Cap: <strong>five</strong>, and over the cap
+<strong>refuses the build</strong>.</div>
+<!--#aside-->
+<span class="big">19.6</span>
+<small>screens tall, your longest review artifact<br>19,582px at a 1000px viewport · 6,533 words<br>your complaint checks out</small>
+<!--#body-->
+<section id="long" aria-labelledby="lo-t">
+  <div class="label" id="lo-t">"Sometimes they are quite long" — how long, exactly</div>
+  <p class="read">Measured across all 16 built artifacts, not estimated. The distribution
+  matters as much as the maximum: the median review is short enough that flags would be
+  decoration, and the top few are where they pay for themselves. A design that helps only the
+  median would be solving a problem you do not have.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">19.6</span><span class="caption">screens for <code>threaded-topic-chats-v2</code> — 19,582px at a 1000px viewport, the longest of the 16</span></div>
+    <div class="fact"><span class="number">6,533</span><span class="caption">words in it. You read that one at 02:56 and answered it in four words, which is the ratio this task is about</span></div>
+    <div class="fact"><span class="number">22</span><span class="caption"><code>&lt;section&gt;</code>s in it, carrying 23 <code>.label</code>s — the number a per-section list would produce</span></div>
+    <div class="fact"><span class="number">1,777</span><span class="caption">median words across the 16. Half of your reviews do not need flags at all, and should show none</span></div>
+  </div>
+</section>
+
+<section id="findings" aria-labelledby="f-t">
+  <div class="label" id="f-t">Three designs the geometry killed before I drew anything</div>
+  <div class="scroller"><table>
+  <thead><tr><th>the obvious design</th><th>what refutes it</th><th>measured how</th></tr></thead>
+  <tbody>
+  <tr><td><strong>A list of the sections</strong> — a table of contents in the top rail, jump to any</td>
+      <td class="fail">Twenty-two entries in the artifact that needs it most, and your analogy rules exactly this out: a lawyer flags five clauses, not every clause. Worse, the structural axis <em>already exists</em> — the <code>.topactions</code> nav is it</td>
+      <td>counted <code>&lt;section&gt;</code> and <code>.label</code> in every built artifact</td></tr>
+  <tr><td><strong>Tabs protruding past the page edge</strong> — the literal reading of the postit metaphor</td>
+      <td class="fail">There is no page edge to protrude past. <code>.wrap</code> is <code>min(calc(100% - 2rem),1120px)</code>, so the margin outside it is <strong>16px at every viewport from 1120px down</strong>. It works on one monitor and vanishes on a laptop</td>
+      <td>computed <code>.wrap</code> width at 1440/1280/1120/960/860/780/700/480/390</td></tr>
+  <tr><td><strong>A flag on each marked block's right edge</strong></td>
+      <td class="fail">Blocks in a section are not one width. <code>.read</code> paragraphs are 614px; tables, <code>.facts</code> and <code>.spine</code> span the full 1120px wrap. The flags would scatter across 500px of horizontal space by accident of what the passage happens to be</td>
+      <td>measured every component's box in a built artifact</td></tr>
+  </tbody></table></div>
+  <div class="notice"><strong>The one that would have shipped broken.</strong> #367's own entry
+  guessed the hard case was mobile — <em>"on mobile a protruding edge tab competes with the
+  column for width"</em>. The real cliff is at <strong>~780px</strong>, above both existing
+  breakpoints (860 and 480). A design that answered only for 390px would have looked correct in
+  review and broken in a half-width window on your desktop, which is where you read these.</div>
+</section>
+
+<section id="geometry" aria-labelledby="g-t">
+  <div class="label" id="g-t">Where there is actually room, and where it runs out</div>
+  <p class="read">The reading measure is <code>78ch</code>, and the surprise is that it does not
+  scale: the font is a fixed 13.12px, so <code>.read</code> computes to <strong>613.5px at every
+  viewport</strong> and sits <strong>left-aligned</strong> in the wrap. Half the wrap is already
+  empty on a wide screen. That empty half is the whole design.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">613.5px</span><span class="caption">the reading column, fixed — 78ch at 13.12px, unchanged from 1440px down to where the wrap itself gets narrower</span></div>
+    <div class="fact"><span class="number">506px</span><span class="caption">unused wrap to the right of it at a 1280px viewport. Flags need 96</span></div>
+    <div class="fact"><span class="number">16px</span><span class="caption">the margin <em>outside</em> the wrap at 1120px and every width below. This is why the literal metaphor fails</span></div>
+    <div class="fact"><span class="number">780px</span><span class="caption">where 96px of slack runs out: 134px at 780, <strong>54px at 700</strong>, negative below 560</span></div>
+  </div>
+  <div class="scroller"><table>
+  <thead><tr><th>viewport</th><th><code>.wrap</code></th><th>slack right of <code>.read</code></th><th>room for a 96px flag</th></tr></thead>
+  <tbody>
+  <tr><td>1440</td><td>1120</td><td>506</td><td class="pass">yes</td></tr>
+  <tr><td>1280</td><td>1120</td><td>506</td><td class="pass">yes</td></tr>
+  <tr><td>1120</td><td>1088</td><td>474</td><td class="pass">yes</td></tr>
+  <tr><td>960</td><td>928</td><td>314</td><td class="pass">yes</td></tr>
+  <tr><td>860</td><td>828</td><td>214</td><td class="pass">yes</td></tr>
+  <tr><td>780</td><td>748</td><td>134</td><td class="pass">yes — and this is the last one</td></tr>
+  <tr><td>700</td><td>668</td><td>54</td><td class="fail">no</td></tr>
+  <tr><td>480</td><td>448</td><td>&minus;166</td><td class="fail">no</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="shape" aria-labelledby="sh-t">
+  <div class="label" id="sh-t">The shape: one behaviour, two presentations, drawn to scale</div>
+  <p class="read">A flag marks a <em>height</em>, the way a physical one does — it protrudes at
+  the height of the clause regardless of what is printed on that line. So it anchors to the
+  reading column's right edge and takes its vertical position from the passage, which is what
+  makes it immune to the block-width problem that killed the third design.</p>
+  <div class="frames">
+
+  <div class="frame">
+    <div class="framebar"><b>&ge;780px — the flag rail</b><span>1:3.2 — every x is a real measurement</span></div>
+    <div class="framebody">
+      <figure>
+      <svg viewBox="0 0 400 250" width="100%" role="img" aria-label="At viewports 780px and wider, a column of thin flag tabs sits in the empty wrap to the right of the reading column, each at the vertical position of the passage it marks. The reading column is 613.5px, the flag 96px, and 403px of wrap remains empty beyond it.">
+        <rect x="0" y="0" width="400" height="250" fill="#0c1220"/>
+        <rect x="1" y="6" width="398" height="238" fill="none" stroke="#1f2937" stroke-dasharray="3 3"/>
+        <text x="4" y="19" fill="#4b5568" font-size="7">viewport 1280</text>
+
+        <!-- the wrap: 1120px at 1:3.2 = 350 units, 80px gutters = 25 each side -->
+        <rect x="25" y="26" width="350" height="212" fill="none" stroke="#334155"/>
+        <text x="29" y="37" fill="#697589" font-size="7">.wrap 1120</text>
+
+        <!-- the reading column: 613.5px = 191.7 units, x 25 to 216.7 -->
+        <g fill="#334155">
+          <rect x="25" y="46" width="188" height="3"/><rect x="25" y="53" width="181" height="3"/>
+          <rect x="25" y="60" width="191" height="3"/><rect x="25" y="67" width="124" height="3"/>
+        </g>
+        <g fill="#334155">
+          <rect x="25" y="84" width="191" height="3"/><rect x="25" y="91" width="184" height="3"/>
+          <rect x="25" y="98" width="167" height="3"/>
+        </g>
+        <!-- a full-wrap component, to show it reaches past the reading column -->
+        <rect x="25" y="114" width="350" height="26" fill="none" stroke="#1f2937"/>
+        <text x="29" y="130" fill="#4b5568" font-size="6.5">a table or .facts — the full wrap, 1120</text>
+        <g fill="#334155">
+          <rect x="25" y="152" width="180" height="3"/><rect x="25" y="159" width="190" height="3"/>
+          <rect x="25" y="166" width="142" height="3"/>
+        </g>
+        <g fill="#334155">
+          <rect x="25" y="190" width="187" height="3"/><rect x="25" y="197" width="174" height="3"/>
+          <rect x="25" y="204" width="161" height="3"/><rect x="25" y="211" width="99" height="3"/>
+        </g>
+
+        <!-- reading column boundary at 216.7 -->
+        <line x1="217" y1="42" x2="217" y2="232" stroke="#1f2937" stroke-dasharray="2 3"/>
+
+        <!-- the flags: 96px = 30 units, at the height of their passage -->
+        <g font-size="6.5">
+          <rect x="219" y="44" width="30" height="13" fill="#a5b4fc" opacity=".9"/>
+          <text x="223" y="53" fill="#050810">ask</text>
+          <rect x="219" y="86" width="30" height="13" fill="#a5b4fc" opacity=".5"/>
+          <text x="223" y="95" fill="#050810">cliff</text>
+          <rect x="219" y="154" width="30" height="13" fill="#a5b4fc" opacity=".5"/>
+          <text x="223" y="163" fill="#050810">cap</text>
+          <rect x="219" y="192" width="30" height="13" fill="#a5b4fc" opacity=".5"/>
+          <text x="223" y="201" fill="#050810">sign</text>
+        </g>
+        <text x="254" y="53" fill="#98a3b5" font-size="6.5">&larr; you are here</text>
+
+        <!-- dimensions -->
+        <g stroke="#4b5568" stroke-width=".6">
+          <line x1="25" y1="228" x2="217" y2="228"/><line x1="25" y1="225" x2="25" y2="231"/><line x1="217" y1="225" x2="217" y2="231"/>
+          <line x1="219" y1="228" x2="249" y2="228"/><line x1="249" y1="225" x2="249" y2="231"/>
+          <line x1="251" y1="228" x2="375" y2="228"/><line x1="375" y1="225" x2="375" y2="231"/>
+        </g>
+        <text x="94" y="236" fill="#697589" font-size="6.5">.read 613.5</text>
+        <text x="228" y="222" fill="#a5b4fc" font-size="6.5">96</text>
+        <text x="278" y="236" fill="#697589" font-size="6.5">still empty: 403</text>
+      </svg>
+      <figcaption>Drawn at 1:3.2, so every horizontal position here is a measured one: the tabs
+      sit in space the page already wastes, and 403px of it is <em>still</em> spare after they
+      do. Nothing moves, nothing narrows, and the marked passage keeps its measure. The current
+      mark is lit and named; the rest are quiet. The labels are one-word here because the
+      drawing's <em>text</em> is oversized relative to its boxes — a real 96px tab holds about
+      twelve characters, which is what M3 is about.</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="framebar"><b>&lt;780px — the essentials strip</b><span>1:2 — the tab that does not fit</span></div>
+    <div class="framebody">
+      <figure>
+      <svg viewBox="0 0 390 250" width="100%" role="img" aria-label="Below 780px the same marks become one compact row of labelled pills under the top rail, with previous and next controls. The reading column is still 613.5px, leaving only 54px of slack — so a 96px flag drawn at that position runs off the edge of the screen, which is the reason the presentation changes.">
+        <rect x="0" y="0" width="390" height="250" fill="#0c1220"/>
+        <rect x="350" y="0" width="40" height="250" fill="#050810"/>
+        <text x="353" y="19" fill="#4b5568" font-size="5.5">off-screen</text>
+        <rect x="1" y="6" width="348" height="238" fill="none" stroke="#1f2937" stroke-dasharray="3 3"/>
+        <text x="4" y="19" fill="#4b5568" font-size="7">viewport 700</text>
+
+        <!-- the wrap: 668px at 1:2 = 334 units, 16px gutters = 8 each side -->
+        <rect x="8" y="26" width="334" height="212" fill="none" stroke="#334155"/>
+        <text x="12" y="37" fill="#697589" font-size="7">.wrap 668</text>
+
+        <!-- the strip: the marks, in a row, with next/prev -->
+        <rect x="8" y="44" width="334" height="20" fill="#111827" stroke="#1f2937"/>
+        <g font-size="7">
+          <rect x="13" y="48" width="46" height="12" fill="#a5b4fc" opacity=".9"/><text x="16" y="57" fill="#050810">the ask</text>
+          <rect x="63" y="48" width="46" height="12" fill="#162033" stroke="#334155"/><text x="66" y="57" fill="#98a3b5">the cliff</text>
+          <rect x="113" y="48" width="46" height="12" fill="#162033" stroke="#334155"/><text x="116" y="57" fill="#98a3b5">the cap</text>
+          <rect x="163" y="48" width="46" height="12" fill="#162033" stroke="#334155"/><text x="166" y="57" fill="#98a3b5">sign</text>
+          <text x="290" y="58" fill="#98a3b5" font-size="9">&#8249;</text>
+          <text x="299" y="58" fill="#e5e7eb" font-size="8">1 of 4</text>
+          <text x="330" y="58" fill="#98a3b5" font-size="9">&#8250;</text>
+        </g>
+
+        <!-- the reading column: STILL 613.5px = 306.75 units, x 8 to 314.75 -->
+        <g fill="#334155">
+          <rect x="8" y="82" width="301" height="3"/><rect x="8" y="89" width="293" height="3"/>
+          <rect x="8" y="96" width="305" height="3"/><rect x="8" y="103" width="189" height="3"/>
+        </g>
+        <rect x="8" y="118" width="334" height="24" fill="none" stroke="#1f2937"/>
+        <text x="12" y="133" fill="#4b5568" font-size="6.5">a table — still the full wrap</text>
+        <g fill="#334155">
+          <rect x="8" y="156" width="297" height="3"/><rect x="8" y="163" width="303" height="3"/>
+          <rect x="8" y="170" width="241" height="3"/>
+          <rect x="8" y="188" width="299" height="3"/><rect x="8" y="195" width="289" height="3"/>
+          <rect x="8" y="202" width="306" height="3"/><rect x="8" y="209" width="145" height="3"/>
+        </g>
+
+        <!-- the reading column's right edge, and the 54px that is left beyond it -->
+        <line x1="315" y1="76" x2="315" y2="218" stroke="#4b5568" stroke-dasharray="2 3"/>
+        <!-- the tab that cannot fit: 96px = 48 units, drawn to scale, overflowing -->
+        <rect x="315" y="82" width="48" height="13" fill="none" stroke="#fcd34d" stroke-width=".7" stroke-dasharray="3 2" opacity=".75"/>
+        <text x="318" y="91" fill="#fcd34d" font-size="6.5" opacity=".8">96px tab</text>
+        <text x="318" y="105" fill="#fcd34d" font-size="6" opacity=".65">54 fits</text>
+        <g stroke="#4b5568" stroke-width=".6">
+          <line x1="8" y1="228" x2="313" y2="228"/><line x1="8" y1="225" x2="8" y2="231"/><line x1="313" y1="225" x2="313" y2="231"/>
+          <line x1="317" y1="228" x2="342" y2="228"/><line x1="342" y1="225" x2="342" y2="231"/>
+        </g>
+        <text x="120" y="236" fill="#697589" font-size="6.5">.read 613.5 — unchanged</text>
+        <text x="322" y="222" fill="#fcd34d" font-size="6.5" opacity=".8">54</text>
+      </svg>
+      <figcaption>Not a shrunken rail, and the amber ghost is the whole argument — a 96px tab
+      drawn to scale at the same place it sits in the wide frame, with 54px of it inside the page
+      and the rest off the edge of the screen. Note what has <em>not</em> changed:
+      <code>.read</code> is still 613.5px, identical to the wide case, so the strip exists
+      because the flags ran out of room and not because the text did. Your <em>"next/prev
+      button"</em> is already this; the fallback is the thing you asked for.</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  </div>
+  <div class="notice"><strong>Why this counts as one feature and not two.</strong> Next/prev
+  walks the marks in document order in both presentations, and both derive from the same
+  source-declared list. The 780px switch changes <em>where a mark is drawn</em> and nothing about
+  what a mark is or what pressing next does. If the two forms needed different behaviour, that
+  would be the signal the design was wrong.</div>
+</section>
+
+<section id="source" aria-labelledby="so-t">
+  <div class="label" id="so-t">Marks come from the source, and that is half the value</div>
+  <p class="read">The authoring dreamer declares them, and the cap is five. An artifact that
+  cannot name its three-to-five essential passages has not decided what it is asking you for —
+  so the cap is a forcing function on the writer before it is a convenience for the reader. That
+  is worth as much as your saved minutes, and it is the reason not to derive marks
+  automatically: a heuristic would produce twenty-two of them and mean nothing.</p>
+  <div class="summary-line"><span class="key">declared where</span><span>on the marked element in the review source, with a short label — a contract in <code>file-formats.md</code>, checked by <code>lint.py</code>, in the same commit</span></div>
+  <div class="summary-line"><span class="key">over the cap</span><span><strong>refuses the build</strong>, the way an outward fetch and a component violation already do. A cap that warns is a cap that gets ignored</span></div>
+  <div class="summary-line"><span class="key">none declared</span><span>the page renders <strong>exactly as it does today</strong> — no rail, no strip, no reserved space. All 16 existing artifacts are in this state</span></div>
+  <div class="notice"><strong>That last row is the first check to write.</strong> A frame change
+  restamps and rebuilds all 16 artifacts, so "declares no marks &rarr; byte-identical output" is
+  what makes this safe to ship before a single artifact adopts it. It goes red first: declare a
+  mark, watch the check fail, remove it.</div>
+</section>
+
+<section id="motion" aria-labelledby="mo-t">
+  <div class="label" id="mo-t">Next/prev is movement, so <code>transitions.md</code> governs it</div>
+  <p class="read">Pressing next moves you 4,000px down a document. That is the largest movement
+  anything on these pages performs, and this repo has already got it wrong once.</p>
+  <div class="scroller"><table>
+  <thead><tr><th>the question</th><th>the answer, and where it comes from</th></tr></thead>
+  <tbody>
+  <tr><td>Smooth-scroll the jump?</td><td class="fail"><strong>No — already refuted.</strong> #229's v2 review shipped a 1.5s smooth scroll and it failed the transitions gate. What you want is a <em>settled landing</em>, not a journey past 3,000px of prose you are skipping on purpose</td></tr>
+  <tr><td>Is that inherited or chosen?</td><td class="pass"><strong>Chosen here.</strong> The template declares no <code>scroll-behavior</code> at all — measured, zero occurrences — so nothing is being overridden and "instant, with the arrival marked" is available</td></tr>
+  <tr><td>How do you know you arrived?</td><td class="unknown">The arriving mark changes state, and <em>that</em> is the transition — it takes the page's existing idiom rather than a second one. The arrival is what animates; the travel is not</td></tr>
+  <tr><td>Reduced motion?</td><td class="pass"><strong>The jump is the function and survives untouched.</strong> Nothing about <em>finding</em> a passage may depend on animation — only the arrival's acknowledgement is motion, and it degrades to a state change</td></tr>
+  </tbody></table></div>
+</section>
+
+<section id="decision" aria-labelledby="d-t">
+  <div class="label" id="d-t">Four decisions, with recommendations</div>
+
+  <div class="choice"><strong>M1 · The rail above 780px, the strip below it</strong> — two
+  presentations of one behaviour, switching at the measured cliff.
+  <div class="answer"><strong>Rec: take it.</strong> The alternative is one presentation
+  everywhere, which means either no flags on a narrow window or a strip on a 1440px monitor with
+  506px of wrap sitting empty beside the text. Both are worse in a way you would notice within a
+  day.</div></div>
+
+  <div class="choice"><strong>M2 · Cap of five, and over the cap refuses the build</strong>
+  — rather than warning, or a higher number.
+  <div class="answer"><strong>Rec: five, refusing.</strong> Your own framing is that flags work
+  because there are few of them; the artifact that needs them most has 22 sections, so the
+  pressure to creep is real and immediate. Say a number if five is wrong — it is one constant and
+  trivial to change — but the <em>refusing</em> half is what makes it hold.</div></div>
+
+  <div class="choice"><strong>M3 · How long is a label, and who shortens it?</strong> A tab is
+  ~96px, which is roughly <strong>12 characters</strong>. Either the author writes short and the
+  builder refuses anything longer, or the builder truncates.
+  <div class="answer"><strong>Rec: refuse, do not truncate.</strong> Truncation is silent and
+  produces "the transition boun…" on your page; refusal happens on my machine while the author is
+  still there to write a better label. This is the one decision where I would like your read
+  rather than your ratification — you are the person who reads the tabs.</div></div>
+
+  <div class="choice"><strong>M4 · Do marks also appear in the top-rail <code>nav</code>?</strong>
+  <div class="answer"><strong>Rec: no.</strong> The nav is the structural axis
+  (<code>findings</code> / <code>shape</code> / <code>decision</code>); marks are the
+  "read-this-if-nothing-else" axis. Merging them gives you the table of contents this design
+  spent its first measurement ruling out. The cost of being wrong here is small and reversible,
+  which is why it is last.</div></div>
+</section>
+
+<section id="next" aria-labelledby="n-t">
+  <div class="label" id="n-t">What approval means, and what it does not</div>
+  <div class="approval">Approving accepts <strong>the four decisions above</strong> and nothing
+  more. It does <strong>not</strong> authorise touching the template, restamping the 16
+  artifacts, adding a class to any existing source, changing the nav, or shipping a keybinding —
+  the first commit is the source contract in <code>file-formats.md</code> plus the
+  "no marks &rarr; byte-identical" check, red first, and it changes no artifact you have read.
+  The frame change is a separate increment with a separate rebuild, deliberately, because
+  <code>template_stamp</code> digests the frame's bytes and every artifact restamps at once.</div>
+</section>
+<!--#footer-->
+task #367 · design only · <code>.dreamwork/docs/plans/review-essential-marks.md</code>
