@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **386**
+Next id: **387**
 
 ## Open
 
@@ -142,6 +142,24 @@ Next id: **386**
   can regenerate · `test_every_shipped_artifact_still_satisfies_the_new_rules` excludes this
   one violation **by name**, so a new one in the same file is still caught · related: **#379**
 
+- **#386** — `gitrow` opens 0px under load: the gesture does not run, and the motion check
+  correctly says nothing moved · P3 · guards/reliability · origin: **loop** · 15m ·
+  **separated out of #383 rather than papered over inside it.** #383 replaced the three motion
+  guards' frame-counting with `between()`, and after that fix `revieworder` and `burndown` are
+  3/3 under moderate load while `gitrow` is **2/3**
+  · **the residual failure is a different fault from the one #383 fixed.** #383's bug was a
+  real travel with too few samples counted as no travel. This one is a **0px open** — the row
+  never opened, so there is genuinely no motion and the check is right to fail. The instrument
+  is not hollow here; the *gesture* did not happen
+  · so the fix is click readiness, not tolerance: find what makes the click land on a row that
+  is not yet ready to open under load, and wait for that condition rather than for time. Widening
+  the motion assertion would make the guard unable to see a real snap, which is the failure mode
+  `.dreamwork/lessons.md` keeps recording
+  · rec: reproduce under the same moderate load (3 busyloops) that the #383 lane used, since it
+  is the only condition known to show it, and check whether the row's own arrival transition is
+  still in flight when the click is dispatched
+  · related: #383
+
 - **#385** — Humanized age beside a question's date, in his `XXa YYb` format · P2 · dashboard/UX ·
   origin: **human** · 25m · **human via watch `add-idea` 2026-07-28 05:41**: *"questions have the
   date in their headline, next to that they should have humanized time in a standard XXa YYb
@@ -171,25 +189,6 @@ Next id: **386**
   put to him. The only judgement worth flagging in the eventual report is (b)
   · blocked while `watch.py` is contested — a c2c peer holds it with #277 pending merge
 
-- **#384** — Two more guards read the wrong `.cmdmsg`, and their notes lie about it · P3 ·
-  guards/honesty · origin: **loop** · 10m · found by generalising #382's cause: `watch.py` has
-  **two** elements carrying `class="cmdmsg"` — `#fmsg` at 1562 and `#cmdmsg` at 1587 — so
-  `document.querySelector('.cmdmsg')` returns the file-message node, never the composer's
-  · `dev/capture/draft.mjs:159-160` and `dev/capture/subslog.mjs:152` both do exactly that
-  · **checked rather than assumed, and the answer is the interesting part**: in both files the
-  read feeds only `notes.push(...)`, never an `ok(...)`. Their assertions are on other things
-  (`after.value === TEXT`; the submissions-log record), so **they are not hollow** — they pass for
-  the right reasons. `plugcmd.mjs` is the only one where the selector is load-bearing, which is
-  why it is the only one red
-  · so the harm is smaller but real: a **diagnostic note that states a falsehood**, and the next
-  person to debug this area trusts it. That is not hypothetical — the coordinator read
-  `plugcmd`'s empty string as evidence of a slow round-trip and filed #382 with a race hypothesis
-  that was wrong, because the note said the message was empty when the message it named was never
-  the one being written to
-  · fix is the selector only; no assertion should change, and if one has to, that means this entry
-  mis-measured and the finding should come back rather than the assertion move
-  · related: **#382**
-
 - **#382** — `plugcmd` fails on a fixed 900ms sleep, not on a 400 · P2 · guards/verification ·
   origin: **loop** · 25m · owner: dispatched dreamer on `ccc @oc-glm52`, brief
   `.dreamwork/docs/briefs/382-plugcmd-race.md`, owns `dev/capture/plugcmd.mjs`, port 39897
@@ -207,26 +206,6 @@ Next id: **386**
   · `watch.py` is off-limits to this lane — another agent holds it — so a fix that must live
   there comes back as a report instead
   · related: **#384**
-
-- **#383** — Three motion guards give different verdicts on unchanged code · P2 ·
-  guards/verification · origin: **loop** · 30m · owner: dispatched dreamer on `ccc @grok`, brief
-  `.dreamwork/docs/briefs/383-flaky-motion-guards.md`, owns `dev/capture/revieworder.mjs`,
-  `gitrow.mjs`, `burndown.mjs`, port 39895
-  · **the evidence is the disagreement, not the failure**: between the 04:40 full sweep and a
-  focused re-run with the tree unchanged, `revieworder` went FAIL → **PASS**, `gitrow` failed on
-  *opening* then on *closing*, and `burndown` went from a named assertion to *"the guard threw
-  before finishing its checks"*. A check that disagrees with itself is worse than a red one,
-  because neither answer can be believed
-  · all three sample **intermediate** frames of a transition, which is correct — `transitions.md`
-  says an end-state assertion cannot fail on a motion bug — but the hypothesis to confirm is that
-  they sample on a wall-clock schedule, so a loaded machine drops the sample outside the window.
-  If so there is one defective idiom and one fix, not three
-  · **the trap named in the brief**: widening a tolerance until the check stops failing makes it
-  hollow, which this repo treats as worse than red. `dev/capture/dreamfade.mjs` already samples
-  per-frame via rAF and is the idiom to reuse rather than author a second one
-  · the human has another agent writing KB material on testing animation in the browser; the
-  brief tells this lane to look for it once and report whether it changed the approach — free
-  signal on whether the KB earns its keep
 
 - **#381** — The single-writer rule has no delivery half · P2 · loop architecture/reliability ·
   origin: **loop** · 45m · **split out of #363, which landed the reader-facing half at
@@ -2321,6 +2300,69 @@ Next id: **386**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#383** — Three motion guards give different verdicts on unchanged code · P2 ·
+  guards/verification · origin: **loop** · 30m · owner: dispatched dreamer on `ccc @grok`, brief
+  `.dreamwork/docs/briefs/383-flaky-motion-guards.md`, owns `dev/capture/revieworder.mjs`,
+  `gitrow.mjs`, `burndown.mjs`, port 39895
+  · **the evidence is the disagreement, not the failure**: between the 04:40 full sweep and a
+  focused re-run with the tree unchanged, `revieworder` went FAIL → **PASS**, `gitrow` failed on
+  *opening* then on *closing*, and `burndown` went from a named assertion to *"the guard threw
+  before finishing its checks"*. A check that disagrees with itself is worse than a red one,
+  because neither answer can be believed
+  · all three sample **intermediate** frames of a transition, which is correct — `transitions.md`
+  says an end-state assertion cannot fail on a motion bug — but the hypothesis to confirm is that
+  they sample on a wall-clock schedule, so a loaded machine drops the sample outside the window.
+  If so there is one defective idiom and one fix, not three
+  · **the trap named in the brief**: widening a tolerance until the check stops failing makes it
+  hollow, which this repo treats as worse than red. `dev/capture/dreamfade.mjs` already samples
+  per-frame via rAF and is the idiom to reuse rather than author a second one
+  · the human has another agent writing KB material on testing animation in the browser; the
+  brief tells this lane to look for it once and report whether it changed the approach — free
+  signal on whether the KB earns its keep
+
+  · **closed `0d92862`** — the shared mechanism was confirmed and it was not the wall-clock
+  hypothesis in this brief: all three counted *distinct sampled values* (`distinct >= 8`), so a
+  loaded machine that produced a genuine smooth travel with seven samples failed, and the count
+  was never a property of the motion. Replaced by the `between(frames, first, last)` idiom
+  already used by `dreamfade`/`fileimg` — at least one frame strictly between the endpoints,
+  plus a vacuity span floor so "it never moved" cannot pass as "it moved a little"
+  · **red-proof is discriminating per guard**, each by sabotaging the named production line:
+  `regroupCards` → both revieworder travel checks FAIL by name; a page-injected snapping
+  `travelCard` → gitrow's three opening/closing checks FAIL; a no-op `regroupBars` → burndown's
+  TRAVELS check FAILs. All three PASS again after restore from the `cp` snapshot
+  · `burndown` also now reports what *threw* (`uncaughtException`/`unhandledRejection` push the
+  real error into a named FAIL) — its "the guard threw before finishing its checks" was hiding a
+  `TypeError` on `r0.provline` when the panel had not rendered
+  · **honestly left flaky, and it is a different fault**: `gitrow` 2/3 under moderate load, where
+  the failure is a **0px open** — the click or gesture did not run at all — not too few frames of
+  a real travel. Filed as #386 rather than papered over here
+
+- **#384** — Two more guards read the wrong `.cmdmsg`, and their notes lie about it · P3 ·
+  guards/honesty · origin: **loop** · 10m · found by generalising #382's cause: `watch.py` has
+  **two** elements carrying `class="cmdmsg"` — `#fmsg` at 1562 and `#cmdmsg` at 1587 — so
+  `document.querySelector('.cmdmsg')` returns the file-message node, never the composer's
+  · `dev/capture/draft.mjs:159-160` and `dev/capture/subslog.mjs:152` both do exactly that
+  · **checked rather than assumed, and the answer is the interesting part**: in both files the
+  read feeds only `notes.push(...)`, never an `ok(...)`. Their assertions are on other things
+  (`after.value === TEXT`; the submissions-log record), so **they are not hollow** — they pass for
+  the right reasons. `plugcmd.mjs` is the only one where the selector is load-bearing, which is
+  why it is the only one red
+  · so the harm is smaller but real: a **diagnostic note that states a falsehood**, and the next
+  person to debug this area trusts it. That is not hypothetical — the coordinator read
+  `plugcmd`'s empty string as evidence of a slow round-trip and filed #382 with a race hypothesis
+  that was wrong, because the note said the message was empty when the message it named was never
+  the one being written to
+  · fix is the selector only; no assertion should change, and if one has to, that means this entry
+  mis-measured and the finding should come back rather than the assertion move
+  · related: **#382**
+  · **closed `4d60217`** — and the lane refuted the premise above for one of the two.
+  `subslog.mjs` *does* assert on it: `ok('and the page still told him it failed', msg === 'no
+  connection')` was reading `#fmsg`, so that assertion had never once looked at the composer.
+  The fix changes no assertion; it points a live one at the node it always claimed to check.
+  `draft.mjs` was as filed — note text only
+  · the lane also reverted just the two lines and reproduced `draft`'s tail click-timeout
+  unchanged, which is how we know that flake is pre-existing rather than caused here
 
 - **#361** — Turn on the ledger-lint hook we built and never switched on · P1 ·
   dogfood/reliability · origin: **loop** · 15m · **the evidence is two incidents tonight, four
