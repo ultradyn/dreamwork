@@ -594,6 +594,25 @@ Next id: **397**
   · plan §7 covers **#355** and agrees with my measurement: not a defect today, make truncation
   **loud**, do not raise the cap
 
+  · **INCREMENT 1 LANDED** `0f77a1f` — `ccc @grok`, brief
+  `.dreamwork/docs/briefs/354-inc1-stream-filebytes.md`. `_send_bytes` is now stat + open + a
+  64 KiB read/write loop; `Content-Length` comes from the stat size; peak body memory is one chunk
+  rather than one file. `Cache-Control` kept, no client or guard change
+  · **coordinator verified the red that was the whole point**, because headers-only tests cannot
+  tell real streaming from read-all-then-slice and the plan's author flagged that instrumentation
+  as their least-certain piece. Replacing the loop with an unbounded `body.read()` fails
+  `test_a_plain_get_never_reads_the_whole_file_at_once` with **`largest single read was 524288 on a
+  524288-byte file`** — it reports the number rather than "not equal", which is the discriminating
+  form. `test_content_length_comes_from_stat_not_from_reading` and
+  `test_fileview_image_served_byte_identical` **both stayed green** under that injection, so the
+  test isolates the streaming property rather than general breakage. Injection grepped for before
+  believing the result; restored from a `cp` snapshot, byte-exact
+  · **`Range` deliberately NOT built** — increment 2, unauthorised. The design refuted it as the
+  fix: an `<img>` sends no `Range` header, so `Range` alone would have left the common path
+  buffering. That refutation is why this increment exists at all
+  · lane's caveats, recorded rather than absorbed: mid-stream disconnect was not injection-tested
+  (only structural continuity of `#299`); the probe watches `file.read`, so a hollow that read the
+  whole file through a different API would dodge it — though that is the production seam
 - **#355** — `/reviewraw` still serves artifacts through `read_text(limit=2_000_000)` · P3 ·
   dashboard/consistency · origin: **loop** · reported by `ccc-glm52-336`, outside its
   ownership · #336 gave `/file` a byte path and a type allowlist; `/reviewraw` kept the text
