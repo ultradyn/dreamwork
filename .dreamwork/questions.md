@@ -1,6 +1,44 @@
 # Questions for the human
 
 ## Open
+- **P2 · 2026-07-28 — #367: what do 5–7 marks become below the cliff?**
+  Artifact: `.dreamwork/review/367-strip-below-cliff.html` (one decision, three
+  options, ~2 screens). It has the specimen that makes the case in one glance.
+
+  **Your 05:35 ruling — two-line tabs, ~6 words, nobody truncates — moved two
+  things and I have taken both, reversibly:** a worst-case tab is **180×32.3px**,
+  not the 96px one-line flag every number rested on, so the rail/strip cliff is
+  **~830px** and not the literal 780 (at 780 the flag is clipped **mid-word**);
+  and two marks closer than a tab height are the renderer's problem, not an
+  authoring rule you have to remember.
+
+  **The one thing I cannot decide for you:** below the cliff there is no lateral
+  space — the reading column is fixed at 613.5px and the page's outer margin is
+  16px at every width from 1120px down — so at your soft cap of 7 a strip needs
+  **3 rows and ~214px** of chrome stacked above the text. Truncation is off the
+  table because you removed it.
+
+  - **A · Pay the chrome** — the strip grows to as many rows as the marks need.
+  - **B · Bounded strip, then "+3 more"** — **rec: reject.** Keeps the chrome
+    *and* becomes an incomplete index, and it truncates the *set* rather than a
+    label, which is the argument you already rejected one level up.
+  - **C · Just the walk — rec.** No labels in the chrome below the cliff: one row
+    with next/prev and "3 of 7", and the label appears *at* the mark you land on.
+    ~32px instead of 214, nothing truncated, every mark reachable. The rail's
+    affordance is lateral space at a height; below the cliff there is none, so
+    preserving the *index* preserves the wrong half. The *walk* was your own
+    second sentence.
+
+  **The honest cost of C, which is yours to price:** it loses the at-a-glance
+  overview. On a narrow window you would have to walk the marks to learn what
+  they are. A says that overview is worth 214px; C says it is not.
+
+  **This does not block increment 2a** — the rail, tab and next/prev *above* the
+  cliff — which is fully specified and whose brief is written. 2a renders
+  **nothing** below the cliff rather than a provisional strip, deliberately: a
+  provisional strip is what ships and then gets argued with once you rule.
+  Increment 1 has already landed and changed no artifact you have read.
+
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
   You said "defer publishing repo for a bit", which answers an open
   question belonging to the dreamwork instance on **x-game**
