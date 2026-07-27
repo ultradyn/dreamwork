@@ -125,6 +125,21 @@ Next id: **397**
   through a file"* — which is already the right paragraph and already load-bearing
   · related: **#381**
 
+  · **LANDED (instruction), VERIFICATION PENDING** 2026-07-28 08:59 — `SKILL.md` now states the
+  obligation at dispatch time with the reason: the inbox carries judgement, is prose, and is read by
+  a coordinator **once**; the hand-off carries the id and the sha and is read by `lint.py` and the
+  dashboard **forever**. Relayed to all three live lanes with `handoffs.md` explicitly granted,
+  since none of their briefs could have granted it
+  · **it is not verified yet and I will not record it as such.** The test is whether a hand-off line
+  actually appears when a lane lands — and **the relay is itself a write-then-hope channel with no
+  wake**, which is the irony `#381`'s lane pointed at and did not act on. A lane already past its
+  increment boundary may never read it, so a silent result proves nothing about the instruction and
+  everything about the delivery. If none of the three writes a line, the finding is that the
+  instruction must reach a lane **in its dispatch prompt**, not in a relay it may never open
+  · so the durable half of this fix is the brief template rather than `SKILL.md` alone — every
+  future dispatch prompt carries the line, and that is a coordinator habit with no enforcement.
+  A `lint.py` check that a landed-and-committed lane left a hand-off is not possible (lint cannot
+  know a lane ran); what *is* checkable is the condition `#381` already checks
 - **#392** — the humanized question age is measured from midnight, so it is wrong by up to a
   day · P2 · dashboard/correctness · origin: **loop** · found by coordinator **looking at the
   deployed page** after redeploying, not by any check
