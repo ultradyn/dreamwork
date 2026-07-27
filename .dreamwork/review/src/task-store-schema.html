@@ -1,0 +1,150 @@
+<!--dreamwork-review-source
+title: #346 · Task store schema · what the ledger actually contains
+identity: sqlite migration
+context: task #346 · design only
+status: awaiting review
+headline: Five things in your ledger that break the obvious schema.
+tag: design only — nothing is built
+sub: task #346 · 28 July 2026 · four decisions, S1 to S4
+skip: Skip to the decisions
+skip_href: #decisions
+-->
+<!--#nav-->
+<a class="full" href="#findings">findings</a><a href="#shape">shape</a><a href="#decisions">decisions</a>
+<!--#lead-->
+<p class="lead">You said the sqlite db and cli are becoming a blocker, and invited a
+question. This is the answer in two parts: <strong>the part that is genuinely gated is
+smaller than #294 claimed</strong>, and the part that is not gated is designed here — the
+task entity, its read-only CLI, and the migration's report half. Nothing is built. The full
+design is <code>.dreamwork/docs/plans/task-store-schema.md</code>.</p>
+<!--#call-->
+<div class="call"><strong>Recommendation.</strong> Approve the shape and take the four recs
+(S1 keep combined entries, S2 keep compound bands, S3 leave the 60 as NULL, S4 free text with
+NULL) — then answer <strong>#263 E1</strong>, which is the only thing standing between this
+design and the rest of #294. E1 is not a design question: the design is finished and PASS.
+It asks whether you authorise implementing it.</div>
+<!--#aside-->
+<span class="big">5</span>
+<small>findings, each breaking a schema that looks right<br>111 open ids measured through the real reader<br>0 tables created under this id</small>
+<!--#body-->
+<section id="why" aria-labelledby="why-t">
+  <div class="label" id="why-t">Why this half can start without your #263 answer</div>
+  <p class="read">#294's own entry said starting would mean designing "against an unsettled
+  event model". Read against the document rather than from memory, that is not the state.
+  <code>user-event-journal.md:4</code> says <em>"human approval required; no implementation
+  authority"</em>, and its approval gate authorises <em>"a separate red-first implementation
+  plan"</em>. The model is designed, reviewed and PASS. It is <strong>unratified</strong>.</p>
+  <p>What #264 gates is one question: <em>does a task transition share #263's journal or use
+  a task-state outbox?</em> That is about how a <strong>transition</strong> becomes durable.
+  The columns describing a task <strong>at rest</strong> are the same either way — a
+  journal-sourced materialised view and an outbox-sourced table expose one entity. So the
+  entity and its read surface are separable, and doing them now makes the gated half smaller
+  rather than racing it.</p>
+  <div class="notice"><strong>Out of scope here, deliberately:</strong> every write verb,
+  <code>grab</code>, claims, leases, CAS, the history table, the burndown projection, cutover
+  — and creating the schema at all. A schema that exists before #263 is ratified is the double
+  migration you have warned about twice.</div>
+</section>
+
+<section id="findings" aria-labelledby="f-t">
+  <div class="label" id="f-t">The five findings, measured against the live ledger</div>
+  <p class="read">Every number below comes from <code>watch.ledger_entries</code> and
+  <code>watch.parse_ledger</code> — the readers the system already uses. A fresh regex was
+  tried first and was wrong: <code>text.index('## Open')</code> matched a prose mention of the
+  heading in the file's own preamble and reported <strong>10</strong> open entries instead of
+  <strong>111</strong>. Third time tonight a hand-rolled scan of this file has produced a
+  confident wrong number, so the doc records it.</p>
+  <div class="scroller"><table>
+  <thead><tr><th>what is in there</th><th>measured</th><th>what it breaks</th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td><strong>An entry is not a task id</strong> — one body, two permanent ids</td><td><code>#138/#156</code>, <code>#250/#251</code>, <code>#292/#293</code> — 3 entries</td><td class="fail"><code>task(id PRIMARY KEY, body)</code> must duplicate a body you state once, or drop an id</td></tr>
+    <tr><td><strong>The count that would catch that agrees by accident</strong></td><td>open entries 111, open ids 111 — all three combined entries are landed</td><td class="fail">a check pinning them equal passes today, survives its own red-proof, and starts lying the day a combined entry opens</td></tr>
+    <tr><td><strong>Priority is not a closed set</strong></td><td>P2×88, P3×35, P1×30, P0×2, <strong>P0/P1×3</strong>, <strong>P1/P2×1</strong>, none×6</td><td class="fail">an enum with NOT NULL rejects 11 real entries; <code>#99</code> also carries its band in a different position</td></tr>
+    <tr><td><strong>Origin has four states, not three</strong></td><td>human 56, loop 41, explicit <code>unknown</code> 8, <strong>no marker at all 60</strong></td><td class="fail"><code>DEFAULT 'unknown'</code> merges two different facts across 60 entries: predates-and-audited vs predates-and-untouched</td></tr>
+    <tr><td><strong>The dot-separated fields are not positional</strong></td><td>reading "the field after the band" as type yields <strong>65</strong> values, incl. <code>landed 2026-07-27</code> and <code>origin: **loop**</code></td><td class="fail">any positional parse mis-assigns <code>type</code>; the real set is ~10 values</td></tr>
+  </tbody>
+  </table></div>
+  <p class="quiet">Finding 4 is the same shape as the rule you already have for #289: a
+  missing review record must read <code>unlinked</code> and never <code>pending</code>. A
+  state the schema cannot represent gets silently merged into its neighbour.</p>
+</section>
+
+<section id="shape" aria-labelledby="s-t">
+  <div class="label" id="s-t">The shape that survives all five</div>
+  <p>Entry and identity separate — finding 1's only honest answer. Per-entry attributes live
+  on the entry; <code>task</code> is permanent identity pointing at it, so
+  <code>#138</code> and <code>#156</code> share one body that cannot disagree with itself.</p>
+  <pre><code>entry(entry_id PK, state open|landed, title, body verbatim,
+      priority NULL, priority_rank NULL, type NULL, origin NULL, source_line)
+task (id PK, entry_id -&gt; entry, ordinal)</code></pre>
+  <div class="summary-line"><span>priority + priority_rank</span><span>two columns: your words kept verbatim, plus a derived rank so <code>P0/P1</code> sorts with <code>P0</code> instead of after it</span></div>
+  <div class="summary-line"><span>type NULL</span><span>populated only from unambiguous forms; the migration <em>reports</em> what it could not read. #339's ruling: a misdetected value is worse than none</span></div>
+  <div class="summary-line"><span>origin NULL</span><span>NULL means no marker was ever written; <code>unknown</code> means it was audited and recorded as unknown</span></div>
+  <div class="summary-line"><span>dependency edges</span><span>not parsed from prose. Today's blocked-on is free text; each stored edge keeps the exact substring it was read from, and every unparsed phrase is listed for you rather than guessed into a graph</span></div>
+  <div class="summary-line"><span>review_decision</span><span><code>artifact</code> as PRIMARY KEY <em>is</em> the "exactly one owning question" rule, so a conflicting second claim is refused at write time. <code>unlinked</code> is deliberately not a value — it is the absence of a row</span></div>
+  <p class="quiet">Read verbs only: <code>tasks list</code> (open-only carries the landed
+  count), <code>tasks get &lt;id&gt;</code>, <code>tasks count</code>, <code>reviews
+  list|get</code>. No write verb exists under this id in any form, including a dry-run one.</p>
+</section>
+
+<section id="seam" aria-labelledby="sm-t">
+  <div class="label" id="sm-t">The invariant #294 said to verify — it is already false</div>
+  <p class="read">#294 says the migration "re-points #281's entry-level reader and nothing
+  else, which is only true while that reader stays the sole parser". It is not the sole parser
+  now, and this was worth measuring before cutover rather than at it.</p>
+  <div class="facts">
+    <div class="fact"><strong>2</strong><small>implementations of <code>ledger_entries</code> — lint's and watch's. Identical logic; the source differs (watch's drops the annotations), so a source-equality check would fail on a behaving pair</small></div>
+    <div class="fact"><strong>3</strong><small>callers: <code>lint.py</code>, <code>watch.py</code>, <code>task_origins.py</code></small></div>
+    <div class="fact"><strong>1</strong><small>fixture pinning the two, at <code>test_watch.py:863</code> — behavioural, which is the better kind, and weaker than it reads</small></div>
+  </div>
+  <p>The consequence is concrete: re-pointing <code>watch.py</code> alone leaves
+  <code>lint.py</code> and <code>task_origins.py</code> parsing a file that cutover renames to
+  <code>tasks.md.deprecated</code> — so lint would quietly become a checker of history. Either
+  the store's reader becomes the single implementation all three call, or that is accepted
+  explicitly.</p>
+</section>
+
+<section id="decisions" aria-labelledby="d-t">
+  <div class="label" id="d-t">The four decisions</div>
+  <p class="read">All four are the same question in different clothes: <strong>how much of
+  today's looseness is a feature to preserve, and how much is an artefact to resolve at
+  cutover?</strong> The recs lean the same way each time — preserve, because the looseness is
+  yours and the schema is new.</p>
+
+  <div class="choice"><strong>S1 · Combined entries.</strong> Keep them, with the entry/task
+  split above? Or split <code>#138/#156</code>, <code>#250/#251</code>, <code>#292/#293</code>
+  into single-id entries once, before migrating, and forbid new ones?
+  <div class="answer"><strong>Rec: keep.</strong> Forbidding is simpler forever but edits
+  three of your existing entries, and combining is a thing you did on purpose — two ids, one
+  piece of work. The cost is that every consumer joins one table.</div></div>
+
+  <div class="choice"><strong>S2 · Compound bands.</strong> Does <code>P0/P1</code> stay
+  legal after cutover, or is it an artefact to resolve to one band as each entry is touched?
+  <div class="answer"><strong>Rec: stays legal.</strong> <code>P0/P1</code> says something a
+  single band cannot — genuinely urgent, not yet certain which. The rank column makes it sort
+  correctly without editing your words.</div></div>
+
+  <div class="choice"><strong>S3 · The 60 unmarked origins.</strong> Leave NULL permanently as
+  "predates the convention, never audited"? Or backfill to explicit <code>unknown</code> so
+  the column can be NOT NULL?
+  <div class="answer"><strong>Rec: leave NULL.</strong> Backfilling asserts an audit that did
+  not happen, and the distinction is exactly the one your own #289 rule protects. NOT NULL is
+  not worth a false claim about 60 entries.</div></div>
+
+  <div class="choice"><strong>S4 · Is <code>type</code> a closed set?</strong> Freeze the ~10
+  real values at cutover, or keep it free text with NULL for unread?
+  <div class="answer"><strong>Rec: free text with NULL.</strong> Closing the set means the
+  migration must classify all 237 entries correctly, and finding 5 says it cannot. A NULL you
+  can see beats a category you cannot trust.</div></div>
+</section>
+
+<section id="next" aria-labelledby="n-t">
+  <div class="label" id="n-t">What approval means, and what it does not</div>
+  <div class="approval">Approving accepts the entity shape, the read verbs, and the four recs
+  you do not overrule. It <strong>does not</strong> authorise creating a table, writing a
+  migration, shipping a CLI, or any cutover — those wait on #263 E1 like the rest of #294.
+  The next increment under this id is the eight red-first fixtures, each of which names the
+  production line that must change for it to fail.</div>
+</section>
+<!--#footer-->
+task #346 · design only · <code>.dreamwork/docs/plans/task-store-schema.md</code>
