@@ -58,6 +58,28 @@
   do not overrule. It authorises **no** table, migration, CLI or cutover — those
   wait on #263 E1 like the rest of #294. Answer `rec`, `rec except S<n>: ...`, or
   `Pause #346`.
+  - **Note (human, via watch, 2026-07-28 01:05):** with the cli btw, we
+    should consider writing it in something other than python. We ideally
+    want a small (fast to load) portable binary + quick to recompile. It
+    should also support extensions kind of like how git does, eg
+    `git-thingy` can be run `git thingy`. that way we can have python
+    modules (or go or rust or ocaml) also before we work on this proper we
+    should standardize the current python parsing so we fix the duplicate
+    code issues and such now in case it matters as we migrate and things.
+  - **Follow-up (loop, 2026-07-28 01:08):** all three folded. (c) is filed as
+    **#352** and treated as the prerequisite you called it — the duplication is
+    already measured, so it is not a research task: `ledger_entries` has two
+    implementations (`lint.py` and `watch.py:6599`, whose docstring claims it is
+    lint's *"VERBATIM"* while the source differs), three callers (`lint.py`,
+    `watch.py`, `task_origins.py`), and one behavioural fixture pinning them
+    (`test_watch.py:863`, a single hostile input). Rec is one module all three
+    import, so the pin stops needing to exist. (a) and (b): the design doc's CLI
+    section now says the language is undecided rather than quietly Python, and
+    records that git-style `dreamwork-thingy` dispatch is what makes a compiled
+    core affordable — an extension in any language becomes a sibling executable
+    instead of a plugin API to design. The read verbs and the entity they read are
+    language-independent and stand. **Still open for you: S1–S4**, which this note
+    does not answer.
 
 - **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
   pre-phase on the existing card ghost?** Max directed Grok toward shader work;

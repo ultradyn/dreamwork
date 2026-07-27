@@ -167,6 +167,37 @@ dreamwork reviews get <artifact>
 
 No write verb exists under this id, in any form, including a `--dry-run` one.
 
+**The implementation language is an open decision, not Python (his note, watch
+2026-07-28 01:05).** This section originally named verbs without naming what
+implements them, and the unstated assumption was Python, because everything in
+this skill is Python. That assumption is withdrawn rather than defended. His
+criteria: *"a small (fast to load) portable binary + quick to recompile"* — which
+are precisely the three Python fails, and a CLI the loop invokes on every tick
+pays load time on every tick.
+
+He also fixed the shape that makes the choice affordable: **git-style extension
+dispatch**, where `dreamwork-thingy` on PATH is invoked as `dreamwork thingy`, so
+*"we can have python modules (or go or rust or ocaml)"*. That converts the core's
+language from a lock-in into an implementation detail — an extension in any
+language is a sibling executable, not a plugin API to design. It also means the
+read verbs above are the part that must be fast and small, while anything
+elaborate can live outside the core.
+
+Consequence for this document: the verbs, their output shape and the entity they
+read are language-independent and stand as written. What is deliberately NOT
+decided here is the core's language, the extension-discovery rule (PATH scan vs a
+declared directory), and how a `--json` contract stays stable across
+independently-compiled extensions. Those want their own IGC, and #294's
+"do not pay for two migrations" instruction applies to the CLI surface too.
+
+**And one thing must happen before any of it (#352).** His words: *"before we work
+on this proper we should standardize the current python parsing so we fix the
+duplicate code issues and such now in case it matters as we migrate and things."*
+That is the duplication §"The invariant #294 says to verify" measured — two
+`ledger_entries` implementations, three callers, one behavioural fixture. His
+reason is the migration, and it is the strongest form of the argument: "re-point
+the reader" is only a meaningful plan once there is one reader.
+
 `list --state open` prints the landed count alongside, because #281's read
 requirement says so and because an open-only list with no denominator is how a
 queue silently overstates what is left. `get <id>` serves `?t=<id>` and must
