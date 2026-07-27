@@ -1844,3 +1844,28 @@ this shape and convert opportunistically.)
   life** — say "take the count from the tree, not from this brief". Disjoint file
   ownership does not give disjoint test suites, which is the same lesson as disjoint
   files not giving disjoint environments, arriving through a different door.
+- **"Probably load flakes" is a hypothesis, and the quiet re-run is how you learn which
+  one was real — mine hid a P1 behind ten correct guesses.** #385 finished with a full
+  `just test` showing eleven failing guards at load 121, attributed them to
+  multi-lane contention, and said honestly that it had not re-run quietly. It was right
+  about **ten of the eleven** — they all pass at load 37–48. The eleventh, `prominence`,
+  fails **every time, in isolation, on all four of its surfaces** (#391): a real
+  regression that predates today's lanes and had been sitting behind a load-flake
+  reading. The asymmetry already recorded here — *these guards fail by dropping frames,
+  so load manufactures false reds only; a green under load is conclusive and a red needs
+  a re-run* — is what makes the re-run cheap and mandatory, and this is the first time it
+  paid a P1. **A high hit rate on "that's just noise" is exactly what makes the exception
+  invisible:** ten correct dismissals train you to accept the eleventh. So the rule is
+  not "distrust the lane" — the lane reasoned well and disclosed the gap — it is
+  **never let a load-attributed red be closed by attribution; close it with a quiet
+  run, and if the fleet is busy, leave it open and named.**
+- **A readiness probe that falls through on failure turns a config error into a mystery,
+  and I did it to myself while investigating #388.** I spawned `watch.py` with a flag it
+  does not have (`--no-open`), so argparse killed it instantly; my `for i in $(seq 1 40)`
+  curl loop then failed forty times, **fell through without checking**, and the guard
+  reported `ERR_CONNECTION_REFUSED`. I briefly read that as a guard bug. That is exactly
+  #388's thesis reproduced first-hand: **`ECONNREFUSED` cannot distinguish "the server was
+  starved" from "the server never started"**, and the fix is not a longer timeout but a
+  probe whose failure is **fatal and named** — `if [ "$up" != yes ]; then echo "server
+  never came up in Ns"; cat the log; exit 1; fi`. Print the server's own stderr on that
+  path; mine said `unrecognized arguments` the whole time and nobody was looking.

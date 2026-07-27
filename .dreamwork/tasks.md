@@ -24,9 +24,44 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **391**
+Next id: **392**
 
 ## Open
+
+- **#391** — `prominence` fails deterministically: expanding no longer claims air · P1 ·
+  regression / dashboard · origin: **loop** · found by coordinator re-running what #385 had
+  reported as *"probably load/concurrency flakes"* · **it is not a flake, and it would have
+  shipped as one**
+  · **the finding, measured at load 37–48 rather than the 121 the lane saw it at:** of the
+  **eleven** guards #385 listed as suspicious, **ten pass** in a quiet run — `confirmation`,
+  `qsec`, `draft`, `history`, `reviewsplit`, `runmode`, `fileview`, `dreamfade`, `indicator`,
+  `reviewdraft`. Exactly one fails, and it fails **every time, in isolation, on all four of its
+  surfaces**: the questions fold, a standalone expand, a settled thread, and a folded question
+  card
+  · the failing assertion is `dev/capture/prominence.mjs:95`,
+  `open.padTop > closed.padTop + 2 && open.padBottom > closed.padBottom + 2` — *"expanding
+  claims air above and below"*
+  · **the guard's own vacuity precondition PASSES** (`it really did open`), so the disclosure
+  genuinely expands and it is the **padding** that no longer grows. Four different surfaces
+  failing identically points at **one shared rule**, not four bugs
+  · **not #385's doing, and I checked rather than assumed**: with `watch.py` restored to
+  `a6959cf` (06:39, before #385's first touch) the guard still fails all four. The guard file
+  itself last changed **2026-07-25 18:16** (`7ac4f02`), so it is `watch.py` that moved — the
+  regression predates today's lanes and has been sitting behind a load-flake reading
+  · **bisect is owed and is the first task**: `a6959cf` is a known-bad point; walk `git log --
+  watch.py` back until it passes. Each step is ~1 minute of guard time. **Beware the trap I
+  hit:** `git show <ref>:watch.py > watch.py` **truncates the file before git runs**, so a bad
+  ref leaves an empty `watch.py` and the guard then fails for a completely different reason.
+  Write to a temp and `mv` only on success
+  · reproducing it needs the harness, not a bare server: `just guards` copies
+  `dev/capture/fixture` to a temp target, so running `node dev/capture/prominence.mjs` against
+  a server on the live repo fails differently (`.qsec` is absent) and tells you nothing
+  · the guard prints its measured `pad A/B -> A'/B'` numbers to stdout on exit, but the `just
+  guards` runner filters them. **Surface those numbers first** — whether padding is unchanged
+  or shrinking distinguishes a deleted rule from an overridden one, and it is one line of
+  runner change or one direct invocation with the fixture
+  · related: #383 (which made a throwing guard name its own exception, and is why this was
+  legible at all), #388
 
 - **#390** — `reconcile` raises `FileNotFoundError` on a domain that has no file yet · P2 ·
   reliability gap · origin: **loop** · found by #263 lane D, **reported rather than absorbed**,
