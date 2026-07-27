@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **373**
+Next id: **374**
 
 ## Open
 
@@ -1960,42 +1960,53 @@ Next id: **373**
   shell commands; no hidden reasoning or full response retention beyond the
   transcript · future fresh workers receive this compact discovery index ·
   define trustworthy capture, bounds/redaction, failed-run semantics and file
-  shape · blocked on #229 approval; amend its proposal first
+  shape · blocked on #373 (#229 approved 2026-07-28 02:56, sequenced after the
+  CLI); amend its proposal first
 - **#235** — Promote `/answers` follow-ups into topic chats · P2 · idea ·
   25m design · origin: **human** · **human via watch 14:09** · answered
   record offers a follow-up which atomically creates a topic chat seeded with
   original human question + dreamer answer + follow-up, links the settled
   answer to it, and dispatches fresh subagent · avoid duplicate live histories
-  and `/answers` bloat · blocked on #229 approval/implementation
+  and `/answers` bloat · blocked on #373 (#229 approved 2026-07-28 02:56; the
+  implementation it waited on now waits on #294/#346)
 
 - **#230** — Add a `use subagent` composer checkbox · P2 · task · later ·
   origin: **human** · **human via watch 12:57** · request fresh-context,
   parallel processing outside the main queue; integrate with #228 project
   settings, expose dispatch/ownership/result channel, and never silently fall
-  back to inline · blocked on #229's lifecycle design
-- **#229** — Decide revised topic-chat proposal direction · P1 · proposal gate ·
-  origin: **human** · v2 artifact at
-  `.dreamwork/review/threaded-topic-chats-v2.html` (`9f08e47`) supersedes v1 for
-  future design, retains old artifact as history · integrates 15 Grok concerns,
-  #272 measured UX and #253 attachment/main-dreamer amendments · architecture
-  PASS; Vision/Geometry FAIL→fix→PASS; offline clean, instant bounded decision
-  navigation, desktop dock and mobile Document/Discussion model · **awaiting new
-  R1–R4 dashboard answer** · proposal approval is not implementation authority;
-  implementation remains gated on #263 prove-applied, WorkerAdapter proof, #239
-  and consumption of landed #266 plus #269/#271
-  · **human via watch 2026-07-27 23:24**: *"we should use the cli only to interact
-  with topic chats. Whatever directory they are in, we need an AGENTS.md (and
-  CLAUDE.md symlinked to it) that specify to always use the dreamwork cli to
-  interact with the topic chats."* · so chat storage is reached ONLY through the
-  `dreamwork` CLI — no agent reads or writes those files directly — and the
-  prohibition is **enforced where it is discoverable**, by an `AGENTS.md` in the
-  storage directory with `CLAUDE.md` symlinked to it, so an agent that wanders in
-  meets the rule instead of having to have been told · **this is the same seam he
-  approved for #287** (touch tasks only through the CLI, never the file) now stated
-  as a general pattern, and it is the reason #294's CLI is a dependency of this
-  rather than a parallel effort · the guard-by-documentation half is cheap and worth
-  copying: a directory that explains how to touch it survives agents who never read
-  the plan
+  back to inline · blocked on #373's lifecycle design (was #229, decided
+  2026-07-28 02:56)
+
+- **#373** — Build topic chats v2 on the accepted R1 direction · P1 · feature ·
+  origin: **human** · **answered via watch 2026-07-28 02:56**: *"rec, after cli and
+  sqlite"* · succeeds **#229**, which closed as decided the same minute — R1 is the
+  direction, and the artifact of record is
+  `.dreamwork/review/threaded-topic-chats-v2.html` (`9f08e47`), which supersedes v1
+  for future design while retaining v1 as history · the direction itself: one
+  recovery spine (client attempt → durable #263 receipt → application → transcript),
+  starts with the main dreamer, requires an explicit *proved* WorkerAdapter
+  promotion, shares cross-process leases and caps, attachments are MVP not later,
+  indexes stay derived, and the unreachable review composer is replaced by a
+  viewport dock plus mobile Document/Discussion tabs
+  · **the seam that sets the order** · **human via watch 2026-07-27 23:24**: *"we
+  should use the cli only to interact with topic chats. Whatever directory they are
+  in, we need an AGENTS.md (and CLAUDE.md symlinked to it) that specify to always
+  use the dreamwork cli to interact with the topic chats."* · so chat storage is
+  reached ONLY through the `dreamwork` CLI, no agent reads or writes those files
+  directly, and the prohibition is enforced **where it is discoverable** — an
+  `AGENTS.md` in the storage directory with `CLAUDE.md` symlinked to it, so an agent
+  that wanders in meets the rule instead of having to have been told · this is the
+  same seam he approved for #287 (touch tasks only through the CLI, never the file),
+  now stated as a general pattern · which is why his two words are a dependency and
+  not a preference: **blocked on #294** (SQLite ledger + CLI API) **and #346**
+  (entity schema + read-only CLI surface) — building the UI first would mean
+  building precisely the direct file access the rule forbids
+  · **what approval did not lift**: #263 prove-applied reconciliation, the
+  WorkerAdapter proof, #239, and consumption of landed #266 plus #269/#271 · v2
+  review record: architecture PASS; Vision/Geometry FAIL → fix → PASS (clipped
+  decision navigation, a detached mobile v2 marker, a 1.5s long-range smooth scroll,
+  all three fixed); offline clean, instant bounded decision navigation
+  · #236, #235 and #230 were blocked on "#229 approval" and now point here
 
 - **#228** — Unify project dashboard settings · P2 · idea · 30m ·
   origin: **human** · implication of **human via watch 12:49**: all

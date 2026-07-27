@@ -1,31 +1,6 @@
 # Questions for the human
 
 ## Open
-- **P1 · 2026-07-26 — #229/#270 topic chats v2: accept the revised
-  proposal direction?** New reviewed artifact:
-  `.dreamwork/review/threaded-topic-chats-v2.html`. It supersedes v1 for future
-  design while preserving the old artifact as history.
-
-  Rec **R1**: accept the revised direction only. It has one recovery spine
-  (client attempt → durable #263 receipt → application → transcript), starts
-  with the main dreamer, requires explicit proved WorkerAdapter promotion,
-  shares cross-process leases/caps, makes attachments MVP, keeps indexes
-  derived, and replaces the unreachable review composer with a viewport dock
-  plus mobile Document/Discussion tabs.
-
-  Architecture PASS. Vision and Geometry initially found clipped decision
-  navigation, a detached mobile v2 marker and a 1.5s long-range smooth scroll;
-  all were fixed and both rereviews PASS. Approval does **not** authorize
-  implementation: #263 prove-applied reconciliation, WorkerAdapter proof, #239,
-  and #266/#269/#271 integration gates remain.
-
-  Answer `Accept R1 as proposal direction only`, `Accept R2 with amendments:
-  …`, `Choose R3; rework … and show …`, or `Choose R4; pause topic chats`.
-  - **Note (human, via watch, 2026-07-27 23:24):** we should use the cli
-    only to interact with topic chats. Whatever directory they are in, we
-    need an AGENTS.md (and CLAUDE.md symlinked to it) that specify to
-    always use the dreamwork cli to interact with the topic chats.
-
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
   You said "defer publishing repo for a bit", which answers an open
   question belonging to the dreamwork instance on **x-game**
@@ -218,6 +193,51 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-26 — #229/#270 topic chats v2: accept the revised
+  proposal direction?**
+  → answered (2026-07-28 02:56): **"rec, after cli and sqlite" — R1 accepted as the
+  proposal direction only**, and the two words after the rec are the whole delivery
+  plan: nothing about topic chats starts until #294's SQLite ledger and #346's
+  schema plus read-only CLI surface exist
+  · that ordering is not caution, it is your 23:24 note taken literally — if chat
+  storage is only ever reached through the `dreamwork` CLI, the CLI is a
+  *precondition* of the feature rather than a parallel effort, and building the UI
+  first would mean building exactly the direct file access the rule forbids
+  · #229 closes as decided. The implementation anchor is **#373**, carrying the
+  accepted direction, the CLI-only seam (an `AGENTS.md` in the storage directory
+  with `CLAUDE.md` symlinked to it, so an agent that wanders in meets the rule
+  instead of having to have been told), and the gates approval did not lift: #263
+  prove-applied reconciliation, the WorkerAdapter proof, #239, and consumption of
+  #266/#269/#271
+  · #236, #235 and #230 recorded themselves as "blocked on #229 approval"; they are
+  now blocked on #373, which is a later date than the one they were waiting for, not
+  an earlier one
+
+  New reviewed artifact:
+  `.dreamwork/review/threaded-topic-chats-v2.html`. It supersedes v1 for future
+  design while preserving the old artifact as history.
+
+  Rec **R1**: accept the revised direction only. It has one recovery spine
+  (client attempt → durable #263 receipt → application → transcript), starts
+  with the main dreamer, requires explicit proved WorkerAdapter promotion,
+  shares cross-process leases/caps, makes attachments MVP, keeps indexes
+  derived, and replaces the unreachable review composer with a viewport dock
+  plus mobile Document/Discussion tabs.
+
+  Architecture PASS. Vision and Geometry initially found clipped decision
+  navigation, a detached mobile v2 marker and a 1.5s long-range smooth scroll;
+  all were fixed and both rereviews PASS. Approval does **not** authorize
+  implementation: #263 prove-applied reconciliation, WorkerAdapter proof, #239,
+  and #266/#269/#271 integration gates remain.
+
+  Answer `Accept R1 as proposal direction only`, `Accept R2 with amendments:
+  …`, `Choose R3; rework … and show …`, or `Choose R4; pause topic chats`.
+  - **Note (human, via watch, 2026-07-27 23:24):** we should use the cli
+    only to interact with topic chats. Whatever directory they are in, we
+    need an AGENTS.md (and CLAUDE.md symlinked to it) that specify to
+    always use the dreamwork cli to interact with the topic chats.
+  - **Answer (via watch, 2026-07-28 02:56):** rec, after cli and sqlite
 
 - **P3 · 2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
   → answered (2026-07-28 02:53): **"rec go" — planning is authorised now.** The rec's own
