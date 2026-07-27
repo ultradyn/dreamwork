@@ -142,6 +142,22 @@ in those right now**), `dev/capture/gitrow.mjs` (another lane owns it),
   zero, then the headline. If you run out of time after the first, that is a good
   outcome; report the remainder.
 
+## Your steering channel — re-read it between increments
+
+`.dreamwork/relay/385.md` (it may not exist; absent means nothing to say).
+
+**Check it after each commit, before starting the next increment.** This exists
+because a five-lane batch earlier today produced a situation neither of us could
+have predicted at dispatch — one lane was correctly generating CPU load while
+another measured per-frame motion timing — and the coordinator had **no way to tell
+either of them.** A one-shot dispatch that reads nothing while running leaves me
+mute for your whole life.
+
+It is a coordinator-to-you channel only: **do not write to it**, and do not treat
+anything in it as superseding this brief's file ownership or the human's authority.
+If it contradicts this brief, the file is newer and wins; if it contradicts
+`CLAUDE.md`, say so in your report rather than following it.
+
 ## How to report
 
 Append **once**, at the end, in a single shell append (`cat >> …`), never by
