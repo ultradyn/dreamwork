@@ -109,22 +109,6 @@ Next id: **335**
   by X, not by lint.py" idiom the browser-storage section uses — so decide first
   whether lint is even the right home, or whether `just audit-styleguide` is
 
-- **#327** — Re-review the `/tasks` proposal against everything that landed since
-  it was written · P1 · design review · origin: **human** · **human via watch
-  2026-07-27 21:47** ("please do a full review of the tasks-page proposal and
-  related docs relative to anything that might have changed since then, make sure
-  it all still works") · the proposal and plan were fixed at `f2c1bd0` and the
-  ground moved under them the same day: #301 and #315 both widened the ledger
-  readers the page's data contract is built on, #302 changed `/answers`, #305
-  reworked `/review`'s layout the two-pane variant would inherit from, and #192's
-  shared guard reporter changes how its guards should be written · re-read
-  `.dreamwork/docs/plans/tasks-page.md` and `.dreamwork/review/tasks-page.html`
-  against current `watch.py`, `watch-design.md`, `transitions.md` and
-  `file-formats.md`, and report per claim: still true / drifted / now wrong ·
-  amend both artifacts in place for anything drifted, so the approved plan is the
-  one that gets built · this lands BEFORE #281's implementation, because building
-  from a stale contract is the failure it exists to prevent · **next-up**
-
 - **#328** — Add `/tasks2`, the wide two-pane task triage layout · P2 · dashboard
   feature · origin: **human** · **human via watch 2026-07-27 21:47** · his answer
   to #281 Q1: the list-plus-detail wide layout IS wanted, but as a SECOND route,
@@ -1227,6 +1211,25 @@ Next id: **335**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#327** — the /tasks plan re-verified against the tree it will be built on ·
+  merged `a2f4d82` · origin: **human** · **human via watch 2026-07-27 21:47** · his
+  ask, and warranted far beyond tidying: 103 commits had landed since `f2c1bd0` ·
+  every coverage number had moved; `present:false` was documented as "0 today" and
+  is 87 of 238 records, so **the pruned path is the common case** and those records
+  must stay in the payload or the landed filter lies; §2.1's stated reason for
+  building on `ledger_entries` became FALSE when #315 widened `LEDGER_ENTRY`, and
+  the review found the TRUE reason rather than just flagging it stale; §4.3
+  disagreed with its own arithmetic · **and the part a drift framing would have
+  missed**: his rulings contradicted the plan in three places, because the proposal
+  had argued against what he chose — the plan now builds the one-column page, makes
+  sort a control, and carries "in progress" with the `Reported: Xm Ys ago` hover ·
+  twelve-increment structure survives unchanged · the `<style>` block was left
+  untouched, so #325's hour-old fidelity assertions still hold · five out-of-scope
+  findings filed as #331-#334 (one challenged by the coordinator, substantiated,
+  and correct) · **this entry was itself caught stale under `## Open` by #323,
+  minutes after #323 landed** — the fifth stale-open of the evening and the first
+  found by a machine rather than by someone noticing
 
 - **#323** — lint compares the ledger against git · landed this commit · origin:
   **loop** · `check_landed_still_open` WARNs when an open entry's id has a
