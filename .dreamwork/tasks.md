@@ -1572,9 +1572,25 @@ Next id: **368**
   `REFERENCES` is a **syntax error** in SQLite (`near ".": syntax error`), so the
   `task_event.receipt_id` constraint can only exist in one file; and `sqlite3` appears in no
   `.py` in the repo, so the one-file choice is free now and expensive later
-  · **blocked on his ruling** on four questions (T1 the boundary, T2 status.json losing its
-  task-derived fields, T3 must burndown survive a fresh clone, T4 any consumer outside the
-  dashboard) · T3 is the one that could still move the shape
+  · **APPROVED IN FULL 2026-07-28 02:45 — T1 rec, T2 rec, T3 rec, T4 no.** *"mm yeah i like
+  task history as an event log that gets processed. good point re git lagging. proper tooling
+  will prevent that! T1: rec t2: rec t3: rec t4: no, we're good to go"* · the boundary stands as
+  designed and nothing in it needs rework
+  · **T3 is the consequential one**: taking the rec means the canonical event byte form is
+  defined on day one, so a committed append-only text export stays a provable projection and
+  surviving a fresh clone is a deployment choice rather than a schema change · his *"good point
+  re git lagging"* endorses the measurement behind it — 331 ledger commits, median gap 4.8min,
+  p90 20min, max 13.3h
+  · **T2 retires three `status.json` fields** — `queue`, `current_task_ids`, per-agent
+  `task_ids` — and they are precisely the three that drifted while this was being designed. So
+  the field removal is not tidying: it deletes the second copy that made the drift possible
+  · *"proper tooling will prevent that"* is his **third** naming of the same idea tonight, which
+  is why #357 is now P1
+  · **what this does NOT authorise, stated because approval reads as a licence**: no table, no
+  migration, no CLI, no cutover. Those wait on #263's plan (in flight) and #294 behind it
+  · **so the #294 chain is now clear of him on the design side**: #263's contract approved
+  01:27, this boundary approved 02:45. What remains between here and #294 is work, not consent —
+  #263's red-first plan, then its implementation gate
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent

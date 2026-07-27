@@ -1,75 +1,6 @@
 # Questions for the human
 
 ## Open
-- **P1 · 2026-07-28 — #264 the task-transition boundary: one append-only log, no
-  outbox, and burndown becomes a query.** Decision artifact:
-  `.dreamwork/review/task-transition-boundary.html`; design:
-  `.dreamwork/docs/plans/task-transition-boundary.md`, landed design-only at
-  `914648c`. This answers the amendment you added at 14:11, and it needed your
-  #263 approval first, which arrived at 01:27.
-
-  **It is neither of the two options you named**, and the reason is one sentence.
-  *"Never dual-write two fallible truths"* forbids storing one fact twice — it
-  does not forbid storing two facts. "He asked for this at 14:11" and "the loop
-  started #264 at 01:47" are different facts, neither derived from the other, and
-  their entire relationship is a foreign key. Sharing #263's journal treats them
-  as one fact by putting them in one table; an outbox treats them as one fact by
-  making one a projection of the other's queue.
-
-  **The shape.** A task transition is one row appended to its own append-only
-  `task_event` log, in the same SQLite file as #263's journal, in the same
-  transaction as the compare-and-swap that moves `task_state`. Burndown and the
-  dashboard status section become **queries** over that log, so neither can be
-  stale. `task_state` is the only materialised row in the whole design, and only
-  because a claim needs something to CAS against. The rule that keeps it that
-  small: *a materialised row exists only where a **writer** must CAS against it;
-  everything a **reader** wants is a query.* One consequence is worth your
-  attention — `blocked` becomes derived from the dependency graph, so landing a
-  blocker writes no unblock event at all and blocked can never drift.
-
-  **Why the journal cannot simply absorb it**, checked rather than argued:
-  `Transition.receipt_id` is mandatory in #263's own notation (nine sibling
-  fields carry `?`, that one does not), and its states are the *receipt's*
-  processing lifecycle. Most task transitions have no receipt at all — the loop
-  starts a task on its own tick, a task is unblocked by another landing. And
-  separately: **zero task state is mutated at HTTP time today.** Your `do now:`
-  writes one events-log line and nothing else; it becomes a task only when an LLM
-  reads that log on a later tick, one line sometimes filing a task, marking
-  another blocked and re-prioritising a third. No transaction could hold both the
-  `202` and that judgement.
-
-  **The measurement that made this urgent rather than theoretical.** Three
-  numbers describing queue depth on one page already disagreed: the ledger read
-  123 open while `status.json` said 115, and `current_task_ids` was empty while
-  three tasks were in flight. I hand-fixed both; neither had any check behind it,
-  which is why they drifted. That is exactly the two-halves-of-one-fact failure
-  #306 predicted.
-
-  Four questions, each answerable in a word:
-
-  - **T1 · The boundary.** Take the shape above? *Rec: yes* — the only one of the
-    three where each fact has exactly one home, and the smallest.
-  - **T2 · `status.json` loses its task-derived fields** (`queue`,
-    `current_task_ids`, per-agent `task_ids`) and the dashboard queries the store?
-    *Rec: yes* — those three fields **are** the drift measured above. Everything
-    else in that file is a live process describing itself, which is what it is for,
-    and stays.
-  - **T3 · Must the burndown survive a fresh clone?** Today it does, because git
-    history *is* the source and the ledger is committed; a SQLite store would be
-    gitignored and machine-local. *Rec: yes, and it costs nothing now* — the hash
-    chain needs a canonical byte form anyway, so a committed append-only text
-    export becomes a provable projection and a deployment choice later rather than
-    a schema change. **This is the one answer that could still move the shape.**
-  - **T4 · Any burndown or status consumer outside the dashboard** this would
-    break? *Rec: only you know* — #334 is live on `burndown.mjs` and #281 on
-    `/tasks`; both were reasoned about, neither touched.
-
-  Approval would authorise the boundary as a design direction only. It authorises
-  no table, no migration, no CLI and no cutover — those still wait on #263's
-  implementation plan, and #294 behind it.
-
-  Answer `rec`, `rec except T<n>: …`, or `Pause #264`.
-
 - **P1 · 2026-07-28 — #361: may I switch on the ledger-lint hook we built in
   #138/#156 and never turned on?** One line from you, then a reviewed install.
   No artifact — it is a consent question, not a design.
@@ -104,6 +35,7 @@
 
   Answer `rec`, `rec but show me install.py --print first` (the same thing,
   said explicitly), or `Pause #361`.
+  - **Answer (via watch, 2026-07-28 02:47):** sure, rec
 
 - **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
   pre-phase on the existing card ghost?** Max directed Grok toward shader work;
@@ -393,6 +325,105 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-28 — #264 the task-transition boundary: one append-only log, no
+  outbox, and burndown becomes a query.**
+  → answered (2026-07-28 02:45): **approved in full — T1 rec, T2 rec, T3 rec, T4 no.**
+  *"mm yeah i like task history as an event log that gets processed. good point re git
+  lagging. proper tooling will prevent that! T1: rec t2: rec t3: rec t4: no, we're good to
+  go"* · so the boundary stands as designed: task history is its own append-only
+  `task_event` log in #263's database, appended in the same transaction as the state CAS,
+  and burndown plus the dashboard status section become **queries** over it.
+  · **T3 mattered most and you took the rec**, so the canonical event byte form is defined on
+  day one — the hash chain needs one anyway — which keeps a committed append-only text export
+  a provable projection, and surviving a fresh clone a deployment choice rather than a schema
+  change. Your *"good point re git lagging"* is the measured half: 331 commits touch the
+  ledger, median gap 4.8 minutes, p90 20 minutes, max 13.3 hours.
+  · **T2 rec retires three `status.json` fields** — `queue`, `current_task_ids` and the
+  per-agent `task_ids` — because those three ARE the drift measured while designing this (123
+  open against 115, and an empty current list beside three live agents). Everything else in
+  that file is a live process describing itself and stays.
+  · *"proper tooling will prevent that"* is the third time you have named the same thing
+  tonight, so **#357** is P1 and its shape is settled by your own words *"tacked on"*: a
+  footer every verb emits, not a verb you have to remember to run.
+  · **Your answer arrived twice, byte-identical, again** — #274's fourth witness. This time
+  `lint.check_unfolded_answers` reported it within one minute instead of an hour. One copy
+  removed in the fold; nothing of your words lost.
+  · Approval is the boundary as a design direction. It authorises no table, no migration, no
+  CLI and no cutover — those wait on #263's plan, in flight now, and #294 behind it.
+
+  Decision artifact:
+  `.dreamwork/review/task-transition-boundary.html`; design:
+  `.dreamwork/docs/plans/task-transition-boundary.md`, landed design-only at
+  `914648c`. This answers the amendment you added at 14:11, and it needed your
+  #263 approval first, which arrived at 01:27.
+
+  **It is neither of the two options you named**, and the reason is one sentence.
+  *"Never dual-write two fallible truths"* forbids storing one fact twice — it
+  does not forbid storing two facts. "He asked for this at 14:11" and "the loop
+  started #264 at 01:47" are different facts, neither derived from the other, and
+  their entire relationship is a foreign key. Sharing #263's journal treats them
+  as one fact by putting them in one table; an outbox treats them as one fact by
+  making one a projection of the other's queue.
+
+  **The shape.** A task transition is one row appended to its own append-only
+  `task_event` log, in the same SQLite file as #263's journal, in the same
+  transaction as the compare-and-swap that moves `task_state`. Burndown and the
+  dashboard status section become **queries** over that log, so neither can be
+  stale. `task_state` is the only materialised row in the whole design, and only
+  because a claim needs something to CAS against. The rule that keeps it that
+  small: *a materialised row exists only where a **writer** must CAS against it;
+  everything a **reader** wants is a query.* One consequence is worth your
+  attention — `blocked` becomes derived from the dependency graph, so landing a
+  blocker writes no unblock event at all and blocked can never drift.
+
+  **Why the journal cannot simply absorb it**, checked rather than argued:
+  `Transition.receipt_id` is mandatory in #263's own notation (nine sibling
+  fields carry `?`, that one does not), and its states are the *receipt's*
+  processing lifecycle. Most task transitions have no receipt at all — the loop
+  starts a task on its own tick, a task is unblocked by another landing. And
+  separately: **zero task state is mutated at HTTP time today.** Your `do now:`
+  writes one events-log line and nothing else; it becomes a task only when an LLM
+  reads that log on a later tick, one line sometimes filing a task, marking
+  another blocked and re-prioritising a third. No transaction could hold both the
+  `202` and that judgement.
+
+  **The measurement that made this urgent rather than theoretical.** Three
+  numbers describing queue depth on one page already disagreed: the ledger read
+  123 open while `status.json` said 115, and `current_task_ids` was empty while
+  three tasks were in flight. I hand-fixed both; neither had any check behind it,
+  which is why they drifted. That is exactly the two-halves-of-one-fact failure
+  #306 predicted.
+
+  Four questions, each answerable in a word:
+
+  - **T1 · The boundary.** Take the shape above? *Rec: yes* — the only one of the
+    three where each fact has exactly one home, and the smallest.
+  - **T2 · `status.json` loses its task-derived fields** (`queue`,
+    `current_task_ids`, per-agent `task_ids`) and the dashboard queries the store?
+    *Rec: yes* — those three fields **are** the drift measured above. Everything
+    else in that file is a live process describing itself, which is what it is for,
+    and stays.
+  - **T3 · Must the burndown survive a fresh clone?** Today it does, because git
+    history *is* the source and the ledger is committed; a SQLite store would be
+    gitignored and machine-local. *Rec: yes, and it costs nothing now* — the hash
+    chain needs a canonical byte form anyway, so a committed append-only text
+    export becomes a provable projection and a deployment choice later rather than
+    a schema change. **This is the one answer that could still move the shape.**
+  - **T4 · Any burndown or status consumer outside the dashboard** this would
+    break? *Rec: only you know* — #334 is live on `burndown.mjs` and #281 on
+    `/tasks`; both were reasoned about, neither touched.
+
+  Approval would authorise the boundary as a design direction only. It authorises
+  no table, no migration, no CLI and no cutover — those still wait on #263's
+  implementation plan, and #294 behind it.
+
+  Answer `rec`, `rec except T<n>: …`, or `Pause #264`.
+  - **Answer (via watch, 2026-07-28 02:45):** mm yeah i like task
+    history as an event log that gets processed. good point re git
+    lagging. proper tooling will prevent that! T1: rec t2: rec t3: rec
+    t4: no, we're good to go
+
 
 - **P1 · 2026-07-28 — #346 task-store schema: approve the entity shape and
   four decisions (S1-S4)?**
