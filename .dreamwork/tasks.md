@@ -92,31 +92,6 @@ Next id: **322**
   ids as a forgotten fold; the guard caught the coordinator, not a false positive ·
   **blocked on: his ruling on the six questions** in questions.md
 
-- **#314** — `audit-styleguide` asks the wrong question, so its misses are a
-  mix · P3 · tooling/correctness · ~40m · origin: **loop** · goal: a check
-  should not accrue failures for work it was never about ← DREAMWORK.md
-  *Nothing fails quietly* · found while landing #313: the recipe's filter is
-  "this commit touched `watch.py`", but `watch.py` is one file holding the
-  server, the git/ledger parsers AND the entire UI (which is why #124 exists at
-  all) · so the 11 historical misses are not 11 lapses. **Verified by reading
-  each commit's file list, after a truncated first read nearly produced the
-  opposite conclusion:** `db1a1bc` (git history NUL framing) and `e51da7e`
-  (quieting expected peer disconnects) touch only `watch.py` + `test_watch.py`
-  and change no pixel; `1d089ad` (#304's ledger section anchoring) is a parser
-  fix that also carries `lint.py` and both test files. None of those can
-  reasonably owe a `watch-design.md` entry · whereas `a6e98cc` (review-dock a11y
-  label + 44px send floor) and `bfa561f` (title count) are real UI changes with
-  guard edits alongside, and those ARE genuine misses · so the audit currently
-  teaches "ignore me" not because people are sloppy but because it asks a
-  question `watch.py`'s shape cannot answer · options, needing a call: filter on
-  the DIFF rather than the filename (does the hunk touch `STYLE`/markup?), or
-  split the file (#124) and let the filename mean something again, or let a
-  commit declare `Styleguide: n/a` with a reason and count that as answered ·
-  the third is cheapest and keeps the prompt-to-look intent (#155) while making
-  the answer explicit rather than absent · **do not** widen the window or drop
-  the check — #313 already established that a permanently red check is the one
-  outcome unavailable
-
 - **#300** — Let run-mode descriptions liquefy through one shared popover · P2
   · Web UI feature · 35m · origin: **human** · **human via watch `add-idea`
   14:37** · hovering a run-mode button should explain that mode; all buttons
@@ -1065,6 +1040,23 @@ Next id: **322**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#314** — `audit-styleguide` asked the wrong question, so its misses were a
+  mix · P3 · landed 2026-07-27 · tooling/correctness · ~40m · origin: **loop** ·
+  goal: a check should not accrue failures for work it was never about ←
+  DREAMWORK.md *Nothing fails quietly* · 3068b43, merged bff36ec · the filter was
+  "did this commit touch `watch.py`?" — but that one file holds the HTTP server,
+  the git and ledger parsers AND the whole UI (#124 is the split), so it could
+  not tell a stylesheet change from a regex fix · now filters on the DIFF: does
+  the commit touch a line inside one of the eight UI-bearing module constants,
+  with **the boundaries resolved AT the audited commit** via `git show
+  <sha>:watch.py` parsed with `ast`, never at HEAD — line numbers move, and
+  judging last week's commit with today's numbers is the expiry-dated-literal
+  trap · four named false positives (`06eacad`, `1d089ad`, `db1a1bc`, `e51da7e`)
+  drop out as parser/server work · `Styleguide: n/a` kept only as a narrow,
+  loudly-reported hatch, used by no commit · **it did not go green**, and that was
+  correct: `cdb89df` remained a true positive, which #320 then explained (the
+  window's unit) and #321 finally closed (the doc naming the task)
 
 - **#321** — The styleguide audit had no honest way to close a miss once the
   window shut · P2 · landed 2026-07-27 · tooling · ~30m · origin: **loop** ·
