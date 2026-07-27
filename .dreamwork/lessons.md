@@ -1573,3 +1573,15 @@ this shape and convert opportunistically.)
   one — the dead sha was in the truncated tail. The level is the discrimination,
   not the silence: WARN when `.git` is present and git still failed, OK when the
   target simply is not a repository. (coordinator, #380)
+- **A validator whose pattern only matches WELL-FORMED values is blind to a
+  malformed one — the absence looks identical to "nothing to check".**
+  `check_cited_shas` exists to answer "does this citation point at a commit", and
+  it could not see `` landed `<pending>` `` at all, because its regex requires
+  7-40 hex characters. So the one entry in the ledger whose citation pointed at
+  nothing was invisible to precisely the check named after that question, and
+  #362 sat done-but-open for hours until someone found it by accident. Ask of any
+  validator: what does a value have to look like to escape the pattern entirely?
+  That class needs its own row, not a wider pattern — the wider rule was tried and
+  flags four filenames and a run of prose on the live ledger, precision 0-in-4,
+  while a closed vocabulary of slot shapes flags all nine real ones and none of
+  the four. (coordinator, #381)

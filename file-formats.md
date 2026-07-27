@@ -378,8 +378,38 @@ Two looser rules were tried and both are wrong, measured on the live ledger:
   *before* it (``merged `7cdfc61`** (agent `fade326``). Proximity cannot tell
   which token a keyword belongs to.
 
-If **every** cited sha is missing, the check says nothing: that is a fresh clone
-or the wrong target, not a ledger that is entirely wrong.
+If **every** cited sha is missing, the check does not warn — that is a fresh clone
+or the wrong target, not a ledger that is entirely wrong — but it says so in an
+OK row. Every exit from this check reports which exit it took, because four of
+them used to be bare `return`s and one of them fired: the check skipped, left no
+trace, and the flake it produced took twenty-five runs to characterise (#380).
+"Cannot check" must never render as "nothing to fix", and silence is exactly how
+it does.
+
+## `.dreamwork/tasks.md` — a landing citation must not be a placeholder (#381)
+
+A commit cannot cite its own sha, so the commit that lands work writes a slot and
+a **follow-up** fills it in:
+
+```text
+· landed `PENDING` ·        →  · landed `12d17ad` ·
+```
+
+`lint.check_placeholder_citations` WARNs while the slot is unfilled. It is a WARN
+and not an ERROR precisely because that intermediate state is honest and
+unavoidable for one commit — erroring would block the commit doing the work. The
+WARN exists for the follow-up, which was carried entirely by the writer
+remembering, and twice on 2026-07-28 was not: `#362` read ``**LANDED `<pending>`**``
+under `## Open` for hours and was found by accident while selecting an unrelated
+task, invisible to `check_cited_shas` because a placeholder is not hex.
+
+The recognised slot shapes are a **closed vocabulary** — `<…>`, `pending`, `tbd`,
+`todo`, `xxx…`, `sha`, `hash`, `???`, `---`, case-insensitive. The looser rule
+was tried first and is wrong: *a landing keyword introducing a token that is not
+a sha* flags four things on the live ledger and none is a placeholder
+(`questions.md`, `dev/capture/report.mjs`, `dither: "lsb-ign-v1"`, and a run of
+prose). Precision 0-in-4, so the closure is the discrimination, and those four
+tokens are pinned in the tests so nobody re-widens it to catch them.
 
 ## `.dreamwork/tasks.md` — `related:`, the relation that used to be a slash (#353)
 

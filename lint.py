@@ -1845,6 +1845,64 @@ CITED_SHA = re.compile(
     r"(?:landed|merged?|closed?|commit|fixed|reverted|sha)\**\s*(?:at|in|as)?\s*\**\s*"
     r"`([0-9a-f]{7,40})`", re.I)
 
+# The same lead-in, capturing ANY backticked token, so a citation that is not hex
+# is visible at all. `CITED_SHA` cannot see one — which is how #362 hid.
+CITED_ANY = re.compile(
+    r"(?:landed|merged?|closed?|commit|fixed|reverted|sha)\**\s*(?:at|in|as)?\s*\**\s*"
+    r"`([^`\n]{1,40})`", re.I)
+# A CLOSED vocabulary of slot shapes, and the closure is the discrimination. The
+# obvious rule — a landing keyword introducing a token that is not a sha — was
+# measured on the live ledger first and flags four things, none of them a
+# placeholder: `questions.md`, `dev/capture/report.mjs`, `dither: "lsb-ign-v1"`,
+# and a run of prose. Precision 0-in-4. This vocabulary flags all nine shapes an
+# unfilled slot actually takes and none of those four.
+PLACEHOLDER_CITATION = re.compile(
+    r"^(?:<[^>]*>|pending|tbd|todo|x{3,}|sha|hash|\?+|-+)$", re.I)
+
+
+def check_placeholder_citations(dw: Path, rep: Report) -> None:
+    """A landing citation that is an unfilled slot rather than a commit (#381).
+
+    #362's entry read ``**LANDED `<pending>`**`` and sat under `## Open` for
+    hours before being found BY ACCIDENT while selecting an unrelated task.
+    Nothing saw it: `check_cited_shas` reads hex, and a placeholder is not hex,
+    so the one check whose whole subject is "does this citation point at a
+    commit" was structurally blind to a citation that pointed at nothing.
+
+    **WARN, never ERROR, and the reason is a real constraint rather than
+    caution.** A commit cannot cite its own sha, so ``landed `PENDING``` is what
+    the ledger honestly says for exactly one commit — the one that does the work.
+    Erroring would block it. What is missing is not a prohibition but a nudge for
+    the FOLLOW-UP, which until now was carried entirely by the writer
+    remembering, and twice tonight was not.
+    """
+    path = dw / "tasks.md"
+    if not path.exists():
+        return
+    try:
+        text = path.read_text()
+    except OSError:
+        return
+    seen = []
+    for match in CITED_ANY.finditer(text):
+        token = match.group(1)
+        if not PLACEHOLDER_CITATION.match(token):
+            continue
+        # The nearest preceding entry id, so the row names something findable.
+        before = text[:match.start()]
+        ids = re.findall(r"- \*\*#(\d+)", before)
+        where = "#%s" % ids[-1] if ids else "an entry"
+        if (where, token) not in seen:
+            seen.append((where, token))
+    for where, token in seen:
+        rep.add(
+            WARN, "tasks.md",
+            f"{where} cites `{token}` as a landing, which is a placeholder and "
+            f"not a commit — expected for the one commit that cannot name its "
+            f"own sha, so this is the reminder to fill it in with a follow-up "
+            f"(#381)",
+        )
+
 
 def check_cited_shas(dw: Path, rep: Report) -> None:
     """A ledger entry that cites a commit which does not exist (#350).
@@ -2107,6 +2165,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_doc_map_plans(dw, rep)
     check_review_artifacts(dw, rep)
     check_cited_shas(dw, rep)
+    check_placeholder_citations(dw, rep)
     check_related_markers(dw, watch, rep)
     check_status_keys(dw, rep)
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are

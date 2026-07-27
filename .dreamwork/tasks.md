@@ -161,8 +161,20 @@ Next id: **382**
   **writes a hand-off** the ledger's writer reads on its next tick — the same shape as the
   dreamer inbox, which has never lost one, and pointedly not a status mirror. `#357`'s ambient
   counts are the other end of the same gap
-  · a cheap partial worth doing first regardless: `check_cited_shas` should notice a landing
-  citation that is a **placeholder rather than a sha**, which is the shape #362 wore for hours
+  · **the cheap partial LANDED `PENDING`**: `lint.check_placeholder_citations` WARNs on a landing
+  citation that is an unfilled slot, contract in `file-formats.md`. WARN and not ERROR for a real
+  reason — a commit cannot cite its own sha, so the slot is honest for exactly one commit and
+  erroring would block the commit doing the work; the WARN exists for the follow-up
+  · **the discrimination was measured, and the obvious rule was refuted**: "a landing keyword
+  introducing a token that is not a sha" flags four things on the live ledger and none is a
+  placeholder (`questions.md`, `dev/capture/report.mjs`, `dither: "lsb-ign-v1"`, a run of prose)
+  — precision 0-in-4. A closed vocabulary of slot shapes flags all nine real ones and none of the
+  four, and those four are pinned in tests so nobody re-widens it
+  · red-proved against **the actual revision that hid it**, not a fixture: `tasks.md` at
+  `4ce04e0` fires exactly one WARN naming `#362`, and the test asserts the historical placeholder
+  is still in that revision so it cannot pass over an absent injection
+  · **the delivery half remains and is the real gap** — this only makes the omission visible to
+  whoever runs lint, which is still the ledger's writer and not the session that landed the work
 
 - **#361** — Turn on the ledger-lint hook we built and never switched on · P1 ·
   dogfood/reliability · origin: **loop** · 15m · **the evidence is two incidents tonight, four

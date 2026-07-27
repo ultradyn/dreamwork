@@ -2013,6 +2013,142 @@ class TestAuthorTags:
         assert self._tag_warns(run(t)) == []
 
 
+class TestPlaceholderCitations:
+    """#381's cheap half: a landing citation that is an unfilled slot.
+
+    The incident is from tonight. #362's entry read `**LANDED `<pending>`**` and
+    sat under `## Open` for hours; it was found by accident while selecting an
+    unrelated task. No check saw it, because `check_cited_shas` only reads hex
+    and a placeholder is not hex, so it was invisible to the one check whose
+    subject is exactly "does this citation point at a commit".
+
+    **WHY IT IS A WARN AND NOT AN ERROR, which the measurement forced.** A
+    placeholder is an unavoidable intermediate state: the commit that lands the
+    work cannot cite its own sha, so `landed `PENDING`` is what the ledger
+    honestly says for exactly one commit. Erroring would block the very commit
+    that does the work. The WARN's job is to make the FOLLOW-UP happen, which is
+    otherwise carried entirely by the writer remembering.
+
+    **THE DISCRIMINATION, measured on the live ledger before the rule was
+    written.** The obvious rule — a landing keyword introducing a backticked
+    token that is not a sha — was tried first and is wrong: it flags four things
+    on the real file and none of them is a placeholder (`questions.md`,
+    `dev/capture/report.mjs`, `dither: "lsb-ign-v1"`, and a run of prose). So
+    precision was 0-in-4. The rule is instead a CLOSED vocabulary of slot-shaped
+    tokens, which flags all nine real shapes and none of the four.
+    """
+
+    LEDGER = """# Tasks
+
+Next id: **9**
+
+## Open
+
+- **#1** — a task · P2 · origin: **loop** · still going
+
+## Recently landed
+
+- **#2** — landed but the sha was never filled in · landed `<pending>` · origin: **loop**
+"""
+
+    def rows(self, tmp_path, ledger, level=None):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(ledger)
+        rep = lint.Report()
+        lint.run_checks(dw, lint.load_watch(), rep)
+        return [d for lvl, w, d in rep.rows
+                if w == "tasks.md" and "placeholder" in d
+                and (level is None or lvl == level)]
+
+    def test_a_placeholder_citation_warns(self, tmp_path):
+        warns = self.rows(tmp_path, self.LEDGER, lint.WARN)
+        assert len(warns) == 1, warns
+        assert "<pending>" in warns[0]
+        assert "#2" in warns[0]
+
+    @pytest.mark.parametrize("token", [
+        "<pending>", "PENDING", "pending", "TBD", "TODO", "<sha>", "xxxxxxx",
+        "???", "---",
+    ])
+    def test_every_slot_shape_is_caught(self, tmp_path, token):
+        """Nine shapes an unfilled slot actually takes. One vocabulary, so a
+        writer who reaches for a different placeholder is still caught."""
+        warns = self.rows(tmp_path,
+                          self.LEDGER.replace("<pending>", token), lint.WARN)
+        assert len(warns) == 1, (token, warns)
+
+    @pytest.mark.parametrize("token", [
+        "questions.md", "dev/capture/report.mjs", 'dither: "lsb-ign-v1"',
+        " is load-bearing — ",
+    ])
+    def test_the_four_live_false_positives_are_not_flagged(self, tmp_path, token):
+        """These are the exact tokens the REFUTED rule flagged on the real
+        ledger. They are the reason "not a sha" is not the test, and they are
+        pinned here so nobody re-widens the rule to catch them."""
+        assert self.rows(tmp_path, self.LEDGER.replace("<pending>", token)) == []
+
+    def test_a_real_sha_is_not_a_placeholder(self, tmp_path):
+        """Precondition for the whole check: the ordinary case stays quiet.
+
+        `deadbee` is hex and 7 long, so it reaches `check_cited_shas` instead —
+        and that check is separately silent here because the fixture is not a git
+        repository, which is asserted rather than assumed.
+        """
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(self.LEDGER.replace("<pending>", "deadbee"))
+        assert not (t / ".git").exists()
+        rep = lint.Report()
+        lint.run_checks(dw, lint.load_watch(), rep)
+        assert [d for _, w, d in rep.rows
+                if w == "tasks.md" and "placeholder" in d] == []
+
+    def test_the_live_ledger_has_no_placeholder_citations(self):
+        """Held to the real file, which is the only claim that matters. This is
+        also the row that would have caught #362 hours earlier."""
+        dw = Path(lint.__file__).parent / ".dreamwork"
+        rep = lint.Report()
+        lint.check_placeholder_citations(dw, rep)
+        assert rep.rows == [], rep.render()
+
+    def test_it_catches_362_in_the_actual_revision_that_hid_it(self, tmp_path):
+        """The real case, not a fixture: `tasks.md` as it stood at `4ce04e0`.
+
+        A fixture proves the pattern matches; this proves the check would have
+        caught the incident that motivated it, in the bytes that hid it. The
+        precondition is asserted first — if that revision no longer carries the
+        placeholder, the test must fail loudly rather than pass over an absent
+        injection.
+        """
+        import subprocess
+        got = subprocess.run(
+            ["git", "-C", str(Path(lint.__file__).parent),
+             "show", "4ce04e0:.dreamwork/tasks.md"],
+            capture_output=True, text=True)
+        if got.returncode != 0:
+            pytest.skip("history not present (zip install); fixtures still cover it")
+        assert "**LANDED `<pending>`**" in got.stdout, \
+            "the historical placeholder is gone — this test no longer proves anything"
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(got.stdout)
+        rep = lint.Report()
+        lint.check_placeholder_citations(dw, rep)
+        assert len(rep.rows) == 1, rep.render()
+        level, _, detail = rep.rows[0]
+        assert level == lint.WARN
+        assert detail.startswith("#362 "), detail
+
+    def test_the_check_is_registered_in_run_checks(self):
+        import inspect
+        assert "check_placeholder_citations(dw, rep)" in \
+            inspect.getsource(lint.run_checks)
+
+
 class TestCitedShas:
     """#350: a ledger entry that cites a commit which does not exist.
 
