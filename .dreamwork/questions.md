@@ -1,46 +1,6 @@
 # Questions for the human
 
 ## Open
-- **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
-  pre-phase on the existing card ghost?** Max directed Grok toward shader work;
-  read-only review mapped the actual transition matrix. Route departures already
-  have full SVG dissolve mist. Card/list/thread/section ghosts only blur while
-  leaving, with no brief in-place liquify phase. Ambient/Jovian shaders are a
-  separate layer and #279 failed that visual gate.
-
-  Rec **D1**: prototype a 150–220ms CSS-only `.pregone` phase on the **single
-  existing absolute ghost**: blur 0→~8px, opacity 1→~0.8, at most 2px upward drift,
-  then the current `.gone` fade/travel. The data/DOM commit and survivor FLIP stay
-  immediate—the corpse dreamfades while the live list is already correct. Apply
-  v1 only to question/answer rows, nested thread bodies and section folds. Do not
-  add it to route dissolve (double mist), survivor FLIP, commit special travel,
-  composer confirmation, indicators, or ambient background. Reduced motion skips
-  the phase/ghost. Total corpse lifetime remains ≤1.1s.
-
-  Prototype gate: disposable question-card leave only; pixel/geometry review must
-  read as “dissolve then leave,” not “mush then snap”; measure multi-card frame
-  behavior; guard ordered intermediate blur+opacity, no transform overshoot,
-  settled crisp live tree, no route double ghost, and RM no blur/travel. If visual
-  review fails, stop—do not escalate to per-ghost SVG/WebGL without another ask.
-
-  **D2** attaches the route SVG filter to every ghost (refuted: expensive and
-  double-mist risk). **D3** uses WebGL element textures (refuted: new system and
-  repeats #279's craft risk). Approval authorizes only the isolated D1 prototype
-  and visual/performance review, not production integration/deployment. Answer
-  `Approve D1 prototype`, `Approve D1 with changes: …`, or `Pause #277`.
-  - **Note (human, via watch, 2026-07-28 01:39):** [Low priority to answer]
-    Is this still relevant?
-  - **Follow-up (loop, 2026-07-28 01:44):** Yes, and the gap is still one line.
-    `watch.py:666` is the whole departure: `.qaghost.gone { opacity:0;
-    filter:blur(6px); transform:translateY(-10px); }` — one class, so the blur and
-    the travel begin together and the element is already moving by the time it
-    starts dissolving. There is no `.pregone` in the tree and nothing has replaced
-    it; #277 is open and unstarted, and none of tonight's motion work
-    (#300's morph popover, the route dissolve) touched this path. So the proposal
-    still describes the real code. What has changed is only queue position: it sits
-    behind seven approved-and-unstarted `watch.py` items, so answering it costs you
-    nothing today and I will not start it before those.
-
 - **P1 · 2026-07-26 — #229/#270 topic chats v2: accept the revised
   proposal direction?** New reviewed artifact:
   `.dreamwork/review/threaded-topic-chats-v2.html`. It supersedes v1 for future
@@ -95,6 +55,7 @@
     at 17:23 whether three answers had been forgotten, and on the page
     they were indistinguishable from his.
     **This question is genuinely open and has never been answered.**
+  - **Answer (via watch, 2026-07-28 02:53):** rec go
 
 
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
@@ -289,6 +250,74 @@
 
 
 ## Answered
+
+- **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
+  pre-phase on the existing card ghost?**
+  → answered (2026-07-28 02:51): **"okay yep rec" — the D1 prototype is authorised**, and
+  you attached a delivery instruction: *"I'm going to set up an agent for you via c2c (load
+  the skill after compaction) and you can direct it in a worktree to prototype it and get it
+  to launch a live server for me. c2c alias: grok-heart-quint-sjax"*
+  · that peer is **alive on the broker** (checked, along with five other grok aliases), and
+  it is a fresh grant — DREAMWORK.md recorded that Grok held no coordinator grant after the
+  earlier ones were cancelled, so this supersedes that for this one task
+  · **what it is authorised to build**, unchanged from the rec: a 150-220ms CSS-only
+  `.pregone` phase on the SINGLE existing absolute ghost — blur 0→~8px, opacity 1→~0.8, at
+  most 2px upward drift — then the current fade/travel. The data/DOM commit and survivor FLIP
+  stay immediate, so the corpse dreamfades while the live list is already correct. v1 covers
+  question/answer rows, nested thread bodies and section folds only
+  · **and what it must not touch**: route dissolve (double mist), survivor FLIP, commit
+  special travel, composer confirmation, indicators, ambient background. Reduced motion skips
+  the phase and the ghost. Total corpse lifetime stays ≤1.1s
+  · the gap it closes is one line — `watch.py:666` is the whole departure today, a single
+  `.qaghost.gone` class, so blur and travel begin together and there is no in-place phase
+  · **the visual gate is the deliverable, not the diff**: pixel and geometry review must read
+  as *"dissolve then leave"* and not *"mush then snap"*, and if it fails, it stops — no
+  escalation to per-ghost SVG or WebGL without another ask. Approval covers the isolated
+  prototype and its live server, not production integration or deployment
+
+  Max directed Grok toward shader work;
+  read-only review mapped the actual transition matrix. Route departures already
+  have full SVG dissolve mist. Card/list/thread/section ghosts only blur while
+  leaving, with no brief in-place liquify phase. Ambient/Jovian shaders are a
+  separate layer and #279 failed that visual gate.
+
+  Rec **D1**: prototype a 150–220ms CSS-only `.pregone` phase on the **single
+  existing absolute ghost**: blur 0→~8px, opacity 1→~0.8, at most 2px upward drift,
+  then the current `.gone` fade/travel. The data/DOM commit and survivor FLIP stay
+  immediate—the corpse dreamfades while the live list is already correct. Apply
+  v1 only to question/answer rows, nested thread bodies and section folds. Do not
+  add it to route dissolve (double mist), survivor FLIP, commit special travel,
+  composer confirmation, indicators, or ambient background. Reduced motion skips
+  the phase/ghost. Total corpse lifetime remains ≤1.1s.
+
+  Prototype gate: disposable question-card leave only; pixel/geometry review must
+  read as “dissolve then leave,” not “mush then snap”; measure multi-card frame
+  behavior; guard ordered intermediate blur+opacity, no transform overshoot,
+  settled crisp live tree, no route double ghost, and RM no blur/travel. If visual
+  review fails, stop—do not escalate to per-ghost SVG/WebGL without another ask.
+
+  **D2** attaches the route SVG filter to every ghost (refuted: expensive and
+  double-mist risk). **D3** uses WebGL element textures (refuted: new system and
+  repeats #279's craft risk). Approval authorizes only the isolated D1 prototype
+  and visual/performance review, not production integration/deployment. Answer
+  `Approve D1 prototype`, `Approve D1 with changes: …`, or `Pause #277`.
+  - **Note (human, via watch, 2026-07-28 01:39):** [Low priority to answer]
+    Is this still relevant?
+  - **Follow-up (loop, 2026-07-28 01:44):** Yes, and the gap is still one line.
+    `watch.py:666` is the whole departure: `.qaghost.gone { opacity:0;
+    filter:blur(6px); transform:translateY(-10px); }` — one class, so the blur and
+    the travel begin together and the element is already moving by the time it
+    starts dissolving. There is no `.pregone` in the tree and nothing has replaced
+    it; #277 is open and unstarted, and none of tonight's motion work
+    (#300's morph popover, the route dissolve) touched this path. So the proposal
+    still describes the real code. What has changed is only queue position: it sits
+    behind seven approved-and-unstarted `watch.py` items, so answering it costs you
+    nothing today and I will not start it before those.
+  - **Answer (via watch, 2026-07-28 02:51):** okay yep rec. I'm going to
+    set up an agent for you via c2c (load the skill after compaction)
+    and you can direct it in a worktree to prototype it and get it to
+    launch a live server for me. c2c alias: grok-heart-quint-sjax
+
 
 - **P1 · 2026-07-28 — #361: may I switch on the ledger-lint hook we built in
   #138/#156 and never turned on?**

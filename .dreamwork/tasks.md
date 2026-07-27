@@ -24,9 +24,58 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **370**
+Next id: **373**
 
 ## Open
+
+- **#372** — The review template squeezes tables at mobile instead of scrolling them · P2 ·
+  review tooling/visual · origin: **loop** · 15m · reported by dreamer-263-plan · `.scroller` is
+  `overflow-x:auto` but the table inside carries no `min-width`, so at 390px it shrinks until
+  words break inside cells rather than the container scrolling · measured: the shipped
+  `task-transition-boundary.html` has **18** mid-word breaks at 390px, and folding a 3-column
+  table to 2 took a different artifact from 18 to **5** — so the container is not doing the job
+  it exists for · it is a template change, so it batches with #347, #364 and #367 · rec: a
+  `min-width` on the table so `.scroller` actually scrolls, and the word-`Range` instrument from
+  #347's correction as the check, since a break inside a cell is invisible to any end-state
+  assertion
+
+- **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
+  reliability bug · origin: **loop** · 15m · found by dreamer-263-plan, coordinator verified:
+  `watch.py:8387` does `body = self.rfile.read(min(nbytes, MAX_BODY))` and **never compares
+  `len(body)` to what was promised** — `git grep -n 'len(body)' -- watch.py` returns nothing.
+  The next line computes `truncated = nbytes > MAX_BODY`, which catches a body that was too big
+  and not one that arrived short
+  · so a connection dropped mid-body produces a partial payload that `log_submission` records as
+  a complete submission · it is the same class as #370 and #262 — his words witnessed wrongly —
+  but here the file is intact and the *content* is silently short, which is worse to detect
+  · **#263's plan already places the fix** at its increment 20 (envelope decided before the body
+  is read), and it also raises the design question the fix depends on: whether the server should
+  keep a partial witness *marked incomplete* rather than discard it. That is Q2 of #263's ask,
+  so this entry waits on it rather than guessing
+  · filed separately because #263's lane E may wait behind a second gate and this should not
+  · blocked on `watch.py` being free, and on #263 Q2 for the discard-vs-mark decision
+
+- **#370** — `/answer` and `/comment` truncate `questions.md` in place · **P0** ·
+  durability bug · origin: **loop** · 20m · **next-up** · found by dreamer-263-plan while
+  measuring seams, coordinator verified in the source rather than on report · `watch.py:8462`
+  and `:8496` write his answers and comments with `with open(qpath, "w"): f.write(new_text)` —
+  truncate in place, no temp file, no rename, no `fsync` · **thirty lines earlier, `/ask` writes
+  `answers.md` through `atomic_write_text`** (`:8433`), and that function already does temp +
+  `fsync` + `os.replace` + parent `fsync`. So the fix is one call and the correct pattern is
+  already in the module
+  · **why P0 rather than a tidy-up**: the truncation happens before the write, so a crash, a
+  full disk or a killed process between the two loses **the entire `questions.md`** — every open
+  question, every answered one, every thread — and it happens on precisely the two routes that
+  carry *his words*. `#262` established that his words must be durably witnessed before a 200;
+  this is the same principle failing one layer down, in the file itself
+  · and the exposure is not theoretical tonight: **his answers arrived twice each on four
+  occasions** (#274), so these routes fire more often than once per intent, doubling the window
+  · rec: swap both to `atomic_write_text` · red-first is available without mocking durability:
+  assert the two call sites use it (the production line is the `open(...)` call), and separately
+  that a `questions.md` survives a write interrupted between truncate and flush — inducible by
+  filling the parent directory or by `chmod` on the temp path, not by patching `os.fsync`
+  · **blocked on `watch.py` being free** — dreamer-284-252 holds it. This is the first thing to
+  land when it does
 
 - **#369** — `install.py --apply` would break the hardlink and protect the wrong session ·
   P1 · plugin bug/silent failure · origin: **loop** · 20m · **found by the pre-apply check his
@@ -609,9 +658,24 @@ Next id: **370**
   dreamer and worth keeping because it arrives already red: build a fixture source whose nav
   carries a deliberately long multi-word label, serve it through the existing `(OUT, PORT)`
   contract at `/reviewraw` rather than inventing a second one, load it at three widths, and
-  assert on every **visible** nav anchor that `getClientRects().length === 1` (a mid-word break
-  gives 2) plus `scrollWidth === clientWidth` on the document · adopt `report.mjs` (#324/#334's
-  idiom) rather than hand-rolling an exit handler
+  assert `scrollWidth === clientWidth` on the document · adopt `report.mjs` (#324/#334's idiom)
+  rather than hand-rolling an exit handler
+  · **CORRECTION 2026-07-28 02:52 — the `getClientRects().length === 1` half of that spec is
+  HOLLOW, and it was recorded here an hour ago.** `.topactions a` is `display:inline-flex`
+  (verified in the template), so the anchor stays **one box** while its text wraps *inside* it.
+  dreamer-263-plan hit exactly this: the instrument reported `1` for all four of its nav labels
+  while all four were visibly broken — "measur/ed", "sequen/ce", "fixtur/es", "decisi/ons"
+  · so for an hour this entry told whoever fixed #347 to ship a green check over a broken page,
+  which is the precise failure mode `CLAUDE.md` warns about and it got into the ledger anyway,
+  from a report the coordinator had already verified in its *other* claim
+  · **the instrument that works**: a `Range` over each **word** in the label, flagging any word
+  whose rects exceed one — and skipping words containing `-` or `/`, because breaking at a
+  hyphen or a slash is correct typography for paths and compounds
+  · **and its own first red-proof came back GREEN**: rewriting the labels through the DOM did
+  not reproduce the wrap, because the test's scaffolding stood in front of it. The discriminating
+  red came from rebuilding the original nav **from source** into a throwaway artifact —
+  `textRects` 1→2 on all four while `boxRects` stayed 1. Whoever builds this guard must inject
+  through the source, not the DOM
   · **blocked on `dev/capture/` being free** — dreamer-284-252 holds it. The one-declaration
   template fix should land in the same commit as the guard, since touching the frame rebuilds
   all 15 artifacts and wants to happen once
@@ -1664,8 +1728,38 @@ Next id: **370**
   acceptance fixtures" as its acceptance set — not code
   · **five lanes were waiting on this**: #264, #294, #287, #289 and #342's delivery toggle;
   #346 named it as the only thing standing between its design and the rest of #294
-  · that doc's own `**Status:** human approval required; no implementation authority` line is
-  now the stale half of a true statement — update it when the plan lands, do not delete it
+  · that doc's own status line saying human approval is required with no implementation
+  authority is now the stale half of a true statement — update it when the plan lands, do not
+  delete it
+  · **PLAN LANDED `741b983` (merged; plan only, ask open)** —
+  `.dreamwork/docs/plans/user-event-journal-implementation.md`, 976 lines, artifact at
+  `.dreamwork/review/user-event-journal-implementation.html` · **35 increments in 8 lanes**
+  (digest, journal, domain files, application, HTTP, CLI, browser, version gate), each naming
+  the test AND the production line whose absence makes it fail · 18 of 20 design fixtures placed
+  · **the two unplaceable fixtures are unplaceable for the right reason**: purge and the
+  PostgreSQL half, both excluded by his own approval clause — not design gaps
+  · and one is a real testability finding: *"journal fsync failure ⇒ no 202"* cannot be induced
+  through stdlib SQLite (no pluggable VFS, no failable pragma, and a patched `os.fsync` never
+  reaches SQLite's own syscall). Increment 22 tests the contract at a real seam — journal parent
+  directory `chmod 0500` — and the fsync-specific case is a recorded gap with an `LD_PRELOAD`
+  shim named, because mocking it away is what the design's own *"kill at named seams rather than
+  mocking away durability"* sentence forbids
+  · **the scheduling constraint is the file, not the graph**: lanes E and G both live inside the
+  single 8647-line `watch.py`, so they share one lane in practice however disjoint their
+  dependencies are · plan recommends lane E get its own `test_user_events_http.py`
+  · measured facts worth keeping: no `sqlite3` anywhere; `_send` (`:8231`) hardcodes
+  `send_response(200)` so it cannot express a status code at all; **every browser-side check is
+  `res.ok`** across 9 sites, so `200 → 202` is invisible to him and only 15 test assertions move
+  · one of its own measurements was wrong and it said so: the `200`-assertion count is **15** by
+  `ast`, not the 13 grep reported, because grep missed four multi-line `assertEqual` statements ·
+  the plan carries the `ast` script so the number is repeatable
+  · **three bugs it found on the way out**, all verified by the coordinator in the source and
+  filed rather than fixed: **#370** (P0, `/answer` and `/comment` truncate `questions.md` in
+  place while `/ask` is atomic), **#371** (an interrupted body is witnessed as complete), and
+  the correction to **#347** whose specified check turned out hollow
+  · **blocked on his ruling** on four questions (Q1 start lanes A-D and F now with E and H behind
+  a second gate, Q2 keep a partial witness marked incomplete, Q3 `200 → 202` as a non-event,
+  Q4 purge and PostgreSQL not built rather than built-not-run)
 
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
