@@ -24,9 +24,37 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **353**
+Next id: **354**
 
 ## Open
+
+- **#353** — Normalise the Markdown ledger so the store's schema can be strict · P1 ·
+  data normalisation/prerequisite · origin: **human** · **human via watch 2026-07-28 01:13**,
+  follow-up on the #346 ask: *"oh one thought is that we can make the shape as restrictive as
+  we want before migrating because we won't need the python / plaintext versions for much
+  longer. not sure if that helps us."* · **it helps a great deal and it inverted three of the
+  four #346 recommendations**: every refutation there was the same sentence — *"that edits
+  three of your existing entries"* — and that is a one-time cost against looseness the schema
+  would carry forever and every consumer would handle forever
+  · **bounded and countable, which is why it is a task and not a project**: 3 combined entries
+  to split (`#138/#156`, `#250/#251`, `#292/#293`), 4 compound bands to resolve (`P0/P1`×3,
+  `P1/P2`×1), 6 entries carrying no band (`#99`, `#315`, `#323`, `#325`, `#327`, `#333`), and
+  the tail of the 66 distinct values sitting where `type` should be · after it, `task(id
+  PRIMARY KEY)` needs no entry/task split, `priority` is a closed enum and `type` is a closed
+  set — a table and a join fewer, permanently
+  · **needs NO #263 answer**: normalising the plaintext is orthogonal to the event model, so
+  with #352 this is the second thing that turns his "sqlite is becoming a blocker" into
+  movement rather than waiting
+  · **the real risk is the one the loop already realised tonight**: this is a bulk edit to the
+  loop's own durable memory, and a fold script damaged `questions.md` at 23:5x by dropping the
+  newline after `## Open`, making every entry invisible to the dashboard · so the guards are
+  part of the task, not a nicety — parse with `watch.ledger_entries`/`parse_ledger` before and
+  after, assert entry and id counts move ONLY where a split is intended (and derive both, per
+  #346 finding 2, because they agree by accident today), diff every entry body for unintended
+  edits, and keep a pre-write backup as the fold script now does
+  · **do not start without his ruling on S1/S2/S4** — the entries are his words, and S2 in
+  particular may carry meaning a single band cannot (*"urgent, not yet certain which"*), which
+  only he can say · **blocked on that ruling**, not on any code
 
 - **#352** — Standardize the duplicated ledger parsing before the store migration ·
   P1 · refactor/prerequisite · origin: **human** · **human via watch 2026-07-28 01:05**,
@@ -190,6 +218,21 @@ Next id: **353**
   fixture). His reason is the migration, which is the strongest possible argument for doing it
   now: a duplicated parser is duplicated work to re-point at cutover, and the copy nobody
   re-points becomes a reader of a deprecated file
+  · **HIS 01:13 NOTE INVERTED THREE OF THE FOUR RECS** — *"we can make the shape as
+  restrictive as we want before migrating because we won't need the python / plaintext
+  versions for much longer"* · filed as **#353**; artifact and design doc rebuilt to say so
+  · **and finding 4 of that design was WRONG, corrected in place 01:18**: it reported 60
+  unmarked origins against 8 explicit `unknown` and read the split as audited-vs-untouched.
+  It is **50 and 12**, every unmarked entry's greatest leading id is below 216, so absence is
+  the contract's forward-only cutoff and is derivable — there was no distinction to preserve
+  and **S3 is withdrawn as a question**. Cause: the scan tested for the literal marker prefix with a
+  single space before the bold token, which misses every marker that wraps across a line
+  (the key and its bold value separated by a newline and indent). Writing that pattern out
+  here in full ERRORs this very check, which is its own small lesson about prose that quotes
+  a parsed token. `lint.py` contradicted the
+  measurement and lint was right, which is the lesson worth keeping — **a measurement that
+  contradicts an existing check is a reason to doubt the measurement first.** The other four
+  findings were re-measured wrap-tolerantly and all stand
   · **the S1–S4 ruling is still outstanding** — this note amends the CLI, it does not answer
   the entity questions, so the ask stays open
   · **design landed `03a5996`, artifact `31be2f1`, ask `9150e33` — awaiting his ruling on
@@ -395,39 +438,6 @@ Next id: **353**
   it · obeys `transitions.md` for the mode change itself, which already has an
   idiom (#300 morphs the run-mode descriptions through one popover) · blocked on
   `watch.py` being free; sequence after #336, which is his newer and higher steer
-
-- **#336** — `/file` must show an image, not its bytes as mojibake · **P1** ·
-  **next-up** · dashboard bug · origin: **human** · **human via watch `do-next`
-  2026-07-27 23:00**, typed from the page it happened on
-  (`/file?p=.dreamwork/review/evidence/review-note-reply-unclear.png`): *"viewing
-  images should work. this renderes as binary ascii like: ..."* followed by the
-  actual U+FFFD soup · **diagnosed, so the implementer starts from the cause**:
-  `/filedata` (`watch.py:7885`) is the only file-content endpoint and it does
-  `read_text(full)` → `json.dumps({"path", "content"})`, while `read_text`
-  (`watch.py:6147`) opens with `encoding="utf-8", errors="replace"` — so every
-  byte that is not valid UTF-8 becomes `\ufffd` and the client renders the result
-  in a `<pre>`. His paste IS that replacement character stream · it also
-  truncates at `limit=200_000`, so the 248KB evidence PNGs he was reading are cut
-  off as well as corrupted · **this is not only about images**: any binary file in
-  the tree renders as plausible-looking garbage rather than saying what it is,
-  which is the quiet-wrong-state DREAMWORK.md forbids · scope: detect type
-  (extension AND magic bytes — an extension alone is a guess), serve raster
-  images from a byte endpoint confined by the SAME `resolve_confined` gate as
-  `/filedata`, render `<img>` in the file view, and for a non-image binary say
-  what it is (type, size) with a download affordance instead of dumping bytes —
-  detail ranked, never withheld · **the security call is load-bearing and must be
-  made deliberately, not defaulted**: a raw-bytes endpoint that echoes a guessed
-  `Content-Type` turns `.svg` and `.html` in the tree into stored XSS against the
-  dashboard's own origin, and #276/#275 are actively considering LAN and public
-  exposure · so serve inline ONLY an allowlist of raster types
-  (`png|jpeg|gif|webp|avif`), send everything else as
-  `application/octet-stream` with `Content-Disposition: attachment`, and never
-  reflect a client-supplied type · SVG is explicitly OUT of the inline allowlist
-  and the entry says so because the next reader will want to add it · obeys
-  `transitions.md` for however the image arrives in the view, and
-  `watch-design.md` for its framing · **blocked on `watch.py` being free** —
-  `fade326` holds it for #326 right now; this is next in line behind it
-
 
 
 - **#331** — One shared notion of "an ids-only bold span", instead of a fourth
@@ -1760,6 +1770,67 @@ Next id: **353**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#336** — `/file` must show an image, not its bytes as mojibake · **closed `203ee06`** · **P1** ·
+  **next-up** · dashboard bug · origin: **human** · **human via watch `do-next`
+  2026-07-27 23:00**, typed from the page it happened on
+  (`/file?p=.dreamwork/review/evidence/review-note-reply-unclear.png`): *"viewing
+  images should work. this renderes as binary ascii like: ..."* followed by the
+  actual U+FFFD soup · **diagnosed, so the implementer starts from the cause**:
+  `/filedata` (`watch.py:7885`) is the only file-content endpoint and it does
+  `read_text(full)` → `json.dumps({"path", "content"})`, while `read_text`
+  (`watch.py:6147`) opens with `encoding="utf-8", errors="replace"` — so every
+  byte that is not valid UTF-8 becomes `\ufffd` and the client renders the result
+  in a `<pre>`. His paste IS that replacement character stream · it also
+  truncates at `limit=200_000`, so the 248KB evidence PNGs he was reading are cut
+  off as well as corrupted · **this is not only about images**: any binary file in
+  the tree renders as plausible-looking garbage rather than saying what it is,
+  which is the quiet-wrong-state DREAMWORK.md forbids · scope: detect type
+  (extension AND magic bytes — an extension alone is a guess), serve raster
+  images from a byte endpoint confined by the SAME `resolve_confined` gate as
+  `/filedata`, render `<img>` in the file view, and for a non-image binary say
+  what it is (type, size) with a download affordance instead of dumping bytes —
+  detail ranked, never withheld · **the security call is load-bearing and must be
+  made deliberately, not defaulted**: a raw-bytes endpoint that echoes a guessed
+  `Content-Type` turns `.svg` and `.html` in the tree into stored XSS against the
+  dashboard's own origin, and #276/#275 are actively considering LAN and public
+  exposure · so serve inline ONLY an allowlist of raster types
+  (`png|jpeg|gif|webp|avif`), send everything else as
+  `application/octet-stream` with `Content-Disposition: attachment`, and never
+  reflect a client-supplied type · SVG is explicitly OUT of the inline allowlist
+  and the entry says so because the next reader will want to add it · obeys
+  `transitions.md` for however the image arrives in the view, and
+  `watch-design.md` for its framing · **blocked on `watch.py` being free** —
+  `fade326` holds it for #326 right now; this is next in line behind it
+
+
+  · **landed 2026-07-28 01:12** — `detect_file_kind` requires an allowlisted extension
+  AND matching magic bytes; images come from a new `/filebytes` behind the SAME
+  `resolve_confined` gate as `/filedata`; any other binary gets a panel naming its type
+  and size with a download link. SVG stays out of the inline allowlist
+  · **the security posture was re-verified adversarially by the coordinator**, not
+  accepted from the report: `.svg`/`.html` resolve to kind=text and can only be served
+  `application/octet-stream` with an attachment disposition; a PNG-magic file carrying
+  an SVG script payload is served `image/png`, safe because `X-Content-Type-Options:
+  nosniff` is present; an SVG payload with a `.png` extension and no PNG magic falls to
+  the attachment path
+  · **the agent reported a GREEN RED-RUN rather than hiding it**: the brief's "flip the
+  allowlist to include svg and watch the test fail" did NOT fail, because the magic gate
+  catches it. Correct behaviour, real gap — nothing could fail on an allowlist-only
+  widening, closed in `345252c` with a test that fails on either single-table change,
+  since the realistic accident is a reader editing the two tables declared four lines
+  apart and forgetting magic
+  · **THIS ENTRY'S OWN PREMISE WAS WRONG and the agent caught it**: it claimed the file
+  is 248KB and over the old 200_000 `read_text` cap. It is **153065 bytes** and always
+  has been (added at that size in `cbbb222`), so the truncation half never bit him — the
+  bug he saw was pure mojibake. The 248KB belongs to `provenance-desktop.png` in a
+  different evidence subdirectory; two files were conflated when this was filed.
+  Truncation is still proved, separately, with a synthetic >200KB PNG deriving the cap
+  from `read_text.__defaults__` rather than hard-coding it
+  · served bytes byte-identical to disk: 153065 bytes, sha256 `312f4ea4…`, verified
+  independently · 790 passed + 54 subtests on master, `just audit-styleguide` passes
+  because `watch-design.md` gained its section in the same commit, and the coordinator
+  ran the `fileimg` guard itself on port 39894 (PASS)
 
 - **#350** — lint refuses a ledger citation whose commit does not exist ·
   **closed this commit** · P2 · reliability · origin: **loop** · found by the maintenance

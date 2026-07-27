@@ -68,15 +68,30 @@ in a different position entirely — after a plan pointer rather than as a
 `·`-separated field. So `priority TEXT NOT NULL CHECK(priority IN ('P0',…))`
 rejects 11 real entries, and a positional parse misreads a twelfth.
 
-**4. Origin has four states, not three.** 56 `human`, 41 `loop`, 8 explicit
-`unknown`, and **60 with no origin marker at all**. `lint.py` enforces exactly
-one marker on the 113 entries from #216 onward; everything older has none. The
-contract reserves `**unknown**` for what predates the convention — so an
-explicit `unknown` means *predates and was audited*, and absence means
-*predates and was never touched*. `origin TEXT NOT NULL DEFAULT 'unknown'`
-erases that distinction across 60 entries. This is the same shape as #289's
-requirement that a missing review record be `unlinked` and never `pending`: **a
-state the schema cannot represent gets silently merged into its neighbour.**
+**4. Origin is three states plus a derivable absence — and the first version of
+this finding was WRONG.** Corrected 2026-07-28 01:18. It claimed "four states",
+60 unmarked against 8 explicit `unknown`, and read the difference as *audited*
+versus *never touched*. All three parts were wrong, and the cause is worth more
+than the numbers: the scan tested `'origin: **' in body`, which misses every
+entry whose marker wraps across a line break as `origin:\n  **loop**`. `lint.py`
+disagreed with it — reporting origin recorded on all entries from #216 onward —
+and lint was right.
+
+Wrap-tolerantly: **50** entries carry no marker and **12** carry explicit
+`unknown`. And the split is not a judgement at all, it is the contract's own
+forward-only cutoff: **every one of the 50 has a leading id below 216, and every
+one of the 12 has an id at or above it.** `file-formats.md` says the rule "looks
+only forward, and the past stays honestly unknown rather than retroactively
+classified", with `unknown` reserved for *post-cutoff* ids that predate the
+contract.
+
+So the schema can be strict here, because **absence is derivable from the id and
+no information is lost either way** — an assertable invariant (`origin IS NULL`
+iff the entry's greatest leading id `< 216`) rather than looseness to preserve.
+The earlier version of this finding invented a distinction the contract does not
+make, and then argued for preserving it. Recorded rather than deleted because the
+mistake is the instructive part: a measurement that contradicts an existing check
+is a reason to doubt the measurement first.
 
 **5. The `·`-separated fields are not positional.** Extracting "the field after
 the priority band" as `type` over all entries yields 65 distinct values,
@@ -271,21 +286,72 @@ three checks in this repo have passed over the thing they were named for:
    refused by the store. Break by dropping the PRIMARY KEY.
 8. **`list --state open` carries the landed count.** Break by omitting it.
 
+## His 01:13 insight changes three of the four recommendations
+
+*"oh one thought is that we can make the shape as restrictive as we want before
+migrating because we won't need the python / plaintext versions for much longer.
+not sure if that helps us."*
+
+It helps more than that hedge suggests, because it removes the **only** objection
+behind three of the four recs below. Each refutation was a variant of *"that edits
+your existing entries"* — S1 splitting three combined entries, S2 resolving four
+compound bands, S4 classifying entries whose type cannot be read. Every one of
+those costs are one-time edits to a file that is on its way out. Weighed against a
+schema that carries the looseness **forever**, and against every consumer of that
+schema having to handle it, the trade inverts.
+
+So the plan becomes **normalise the Markdown first, then let the schema be
+strict**, and the work is bounded and countable rather than open-ended:
+
+| what | how many entries | after normalising |
+|---|---|---|
+| combined entries split | 3 | `task(id PRIMARY KEY)`, no entry/task join |
+| compound bands resolved | 4 (`P0/P1`×3, `P1/P2`×1) | `priority` is a closed enum |
+| entries with no band | 6 | band becomes NOT NULL, or stays a deliberate NULL |
+| unreadable `type` | the tail of 66 distinct field-after-band values | `type` is a closed set |
+
+**S3 moves for a different reason, not his.** Its objection was about truth, not
+cost, and finding 4's correction dissolves it: absence is the contract's
+forward-only cutoff and is derivable from the id, so there is no distinction being
+preserved and nothing to lose by being strict.
+
+**The one real cost, stated because it is not nothing.** Normalising means bulk
+edits to the loop's own durable memory, and a fold script damaged
+`questions.md` earlier tonight by dropping a newline after a heading. So
+normalisation is its own task with its own guards — parse before and after with
+the real reader, assert entry and id counts are unchanged except where a split is
+intended, and diff every entry body for unintended edits — and it is **not**
+started without his ruling, because the entries are his words.
+
+**And it needs no #263 answer.** Normalising the plaintext is orthogonal to the
+event model, so it is startable the moment he rules — which makes it the second
+thing after #352 that turns his "sqlite is becoming a blocker" into movement.
+
 ## Open questions for him
+
 
 Paired with a review artifact and a questions.md entry, per the standing rule.
 
-- **S1.** Combined entries: keep them (entry/task split above), or split all
-  three into single-id entries as a one-off before migrating and forbid new
-  ones? The split schema is honest but every consumer then joins; forbidding
-  them is simpler forever and edits three of his existing entries.
-- **S2.** Should `priority` accept new compound bands after cutover, or is
-  `P0/P1` an artefact to be resolved to one band as each entry is touched?
-- **S3.** 60 entries have no origin marker. Leave NULL permanently as "predates
-  the convention, never audited", or backfill to explicit `unknown`, which
-  loses the distinction but makes the column NOT NULL?
-- **S4.** Does `type` become a closed set at cutover (with the ~10 real values),
-  or stay free text with NULL for unread?
+- **S1.** Combined entries: split all three into single-id entries before
+  migrating and forbid new ones, or keep them with the entry/task split above?
+  **Rec REVISED to split** on his 01:13 note: the objection was that it edits three
+  of his entries, and that objection is spent if the plaintext is transitional. The
+  schema then loses a table and every consumer loses a join, permanently.
+- **S2.** Compound bands: resolve the four (`P0/P1`×3, `P1/P2`×1) before
+  migrating so `priority` is a closed enum, or keep them legal? **Rec REVISED to
+  resolve**, same reason — though this is the one where his prose carries meaning a
+  single band cannot ("urgent, not yet certain which"), so if any of the four still
+  says something, say so and it stays.
+- **S3.** Origin: **this question is withdrawn.** It rested on finding 4, which
+  was wrong. There are 50 unmarked entries, not 60, every one has an id below 216,
+  and absence is therefore the contract's forward-only cutoff rather than a
+  distinction worth preserving. The schema asserts the invariant instead; nothing
+  needs deciding.
+- **S4.** `type`: close the set at cutover (the ~10 real values), classifying the
+  unreadable ones in the Markdown first? **Rec REVISED to close it**, given his
+  note — the refutation was that the migration cannot classify 172 entries
+  correctly, and it does not have to if the entries are normalised by hand first,
+  with anything genuinely ambiguous left explicitly NULL rather than guessed.
 
 --- SUMMARY ---
 
@@ -293,11 +359,17 @@ Paired with a review artifact and a questions.md entry, per the standing rule.
   entity schema, the read-only CLI, and the migration's parse-and-report half.
   What #263 gates is how a *transition* becomes durable, which the columns
   describing a task at rest do not depend on.
-- Five findings from the live ledger, each breaking an obvious schema: entries
+- Five findings from the live ledger, four standing and one corrected: entries
   can carry two ids (3 real cases); the entry/id counts agree only by accident
-  today; priority bands include `P0/P1` and 6 entries have none; origin has four
-  states because absent and explicit `unknown` differ across 60 entries; and the
-  `·`-separated fields are not positional, so `type` cannot be parsed by index.
+  today; priority bands include `P0/P1`×3 and `P1/P2`×1 with 6 entries carrying
+  none; and the `·`-separated fields are not positional, so `type` cannot be
+  parsed by index (66 distinct values where the type should be).
+- **Finding 4 was wrong and is corrected in place.** It claimed origin had four
+  states across 60 unmarked entries; a scan that missed line-wrapped markers
+  produced that, `lint.py` contradicted it, and lint was right. It is 50 unmarked
+  and 12 explicit `unknown`, every unmarked entry has an id below 216, so absence
+  is the contract's forward-only cutoff and is derivable rather than a distinction
+  to preserve. S3 is withdrawn as a question.
 - Schema separates `entry` (the body and its attributes) from `task` (permanent
   ids pointing at it), keeps priority verbatim plus a derived rank, and refuses
   to invent dependency edges or a `type` it cannot read.
@@ -306,6 +378,18 @@ Paired with a review artifact and a questions.md entry, per the standing rule.
 - The "sole parser" invariant #294 says to verify is already false: two
   implementations, three callers, pinned by one behavioural fixture. Re-pointing
   watch.py alone leaves lint.py reading a deprecated file.
+- **His 01:13 note inverts three of the four recommendations.** Because the
+  plaintext ledger is transitional, the sole objection behind S1, S2 and S4 —
+  "that edits your existing entries" — is a one-time cost against looseness the
+  schema would carry forever. So: normalise the Markdown first (3 combined entries,
+  4 compound bands, 6 bandless, the unreadable-type tail), then let the schema be
+  strict. That work needs no #263 answer, so with #352 it is the second thing that
+  turns "sqlite is becoming a blocker" into movement.
+- **His 01:05 note makes the CLI's language an open decision**, not Python: he
+  wants a small fast-loading portable binary with git-style `dreamwork-thingy`
+  extension dispatch, which turns the core's language from a lock-in into a detail.
+  And he named a prerequisite — standardise the duplicated Python parsing first
+  (#352).
 - Eight red-first fixtures, each naming the production line that must change for
-  it to fail. Four questions for him (S1-S4), all about how much of today's
-  looseness to preserve versus resolve at cutover.
+  it to fail. Normalisation gets its own guards, because it means bulk edits to the
+  loop's own memory and a fold script damaged `questions.md` earlier tonight.

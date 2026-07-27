@@ -60,13 +60,18 @@ It asks whether you authorise implementing it.</div>
     <tr class="row-accent"><td><strong>An entry is not a task id</strong> — one body, two permanent ids</td><td><code>#138/#156</code>, <code>#250/#251</code>, <code>#292/#293</code> — 3 entries</td><td class="fail"><code>task(id PRIMARY KEY, body)</code> must duplicate a body you state once, or drop an id</td></tr>
     <tr><td><strong>The count that would catch that agrees by accident</strong></td><td>open entries 111, open ids 111 — all three combined entries are landed</td><td class="fail">a check pinning them equal passes today, survives its own red-proof, and starts lying the day a combined entry opens</td></tr>
     <tr><td><strong>Priority is not a closed set</strong></td><td>P2×88, P3×35, P1×30, P0×2, <strong>P0/P1×3</strong>, <strong>P1/P2×1</strong>, none×6</td><td class="fail">an enum with NOT NULL rejects 11 real entries; <code>#99</code> also carries its band in a different position</td></tr>
-    <tr><td><strong>Origin has four states, not three</strong></td><td>human 56, loop 41, explicit <code>unknown</code> 8, <strong>no marker at all 60</strong></td><td class="fail"><code>DEFAULT 'unknown'</code> merges two different facts across 60 entries: predates-and-audited vs predates-and-untouched</td></tr>
+    <tr><td><strong>Origin — this one was WRONG and is corrected</strong></td><td><strong>50</strong> unmarked (not 60) and <strong>12</strong> explicit <code>unknown</code> (not 8); every unmarked entry's id is <strong>below 216</strong></td><td class="unknown">nothing — absence is the contract's forward-only cutoff and is <em>derivable from the id</em>, so the schema can be strict. <strong>S3 is withdrawn.</strong></td></tr>
     <tr><td><strong>The dot-separated fields are not positional</strong></td><td>reading "the field after the band" as type yields <strong>65</strong> values, incl. <code>landed 2026-07-27</code> and <code>origin: **loop**</code></td><td class="fail">any positional parse mis-assigns <code>type</code>; the real set is ~10 values</td></tr>
   </tbody>
   </table></div>
-  <p class="quiet">Finding 4 is the same shape as the rule you already have for #289: a
-  missing review record must read <code>unlinked</code> and never <code>pending</code>. A
-  state the schema cannot represent gets silently merged into its neighbour.</p>
+  <div class="notice"><strong>Finding 4 was wrong, and how it was wrong is worth more than
+  the numbers.</strong> The first version claimed four states across 60 unmarked entries and
+  read the split as <em>audited</em> versus <em>never touched</em> — a distinction the contract
+  does not make. The scan tested <code>'origin: **' in body</code>, which misses every marker
+  that wraps across a line as <code>origin:\n  **loop**</code>. <code>lint.py</code> disagreed
+  with it and lint was right. The lesson: <strong>a measurement that contradicts an existing
+  check is a reason to doubt the measurement first.</strong> The other four findings were
+  re-measured wrap-tolerantly and all stand.</div>
 </section>
 
 <section id="shape" aria-labelledby="s-t">
@@ -79,7 +84,7 @@ It asks whether you authorise implementing it.</div>
 task (id PK, entry_id -&gt; entry, ordinal)</code></pre>
   <div class="summary-line"><span>priority + priority_rank</span><span>two columns: your words kept verbatim, plus a derived rank so <code>P0/P1</code> sorts with <code>P0</code> instead of after it</span></div>
   <div class="summary-line"><span>type NULL</span><span>populated only from unambiguous forms; the migration <em>reports</em> what it could not read. #339's ruling: a misdetected value is worse than none</span></div>
-  <div class="summary-line"><span>origin NULL</span><span>NULL means no marker was ever written; <code>unknown</code> means it was audited and recorded as unknown</span></div>
+  <div class="summary-line"><span>origin</span><span>three values, and NULL only for entries whose greatest leading id is below 216 — an asserted invariant, not preserved looseness</span></div>
   <div class="summary-line"><span>dependency edges</span><span>not parsed from prose. Today's blocked-on is free text; each stored edge keeps the exact substring it was read from, and every unparsed phrase is listed for you rather than guessed into a graph</span></div>
   <div class="summary-line"><span>review_decision</span><span><code>artifact</code> as PRIMARY KEY <em>is</em> the "exactly one owning question" rule, so a conflicting second claim is refused at write time. <code>unlinked</code> is deliberately not a value — it is the absence of a row</span></div>
   <p class="quiet">Read verbs only: <code>tasks list</code> (open-only carries the landed
@@ -106,36 +111,58 @@ task (id PK, entry_id -&gt; entry, ordinal)</code></pre>
 
 <section id="decisions" aria-labelledby="d-t">
   <div class="label" id="d-t">The four decisions</div>
-  <p class="read">All four are the same question in different clothes: <strong>how much of
-  today's looseness is a feature to preserve, and how much is an artefact to resolve at
-  cutover?</strong> The recs lean the same way each time — preserve, because the looseness is
-  yours and the schema is new.</p>
+  <p class="read">All four were the same question — <strong>how much of today's looseness is
+  a feature to preserve?</strong> — and your 01:13 note inverts the answer. Because the
+  plaintext is transitional, the sole objection behind S1, S2 and S4 was <em>"that edits your
+  existing entries"</em>: a one-time cost, weighed against looseness the schema would carry
+  forever and every consumer would handle forever. So the recs below are <strong>revised to
+  normalise the Markdown first, then let the schema be strict</strong>. S3 is withdrawn
+  outright, for a different reason: finding 4 was wrong.</p>
+  <div class="scroller"><table>
+  <thead><tr><th>normalise first</th><th>how many entries</th><th>what the schema gains</th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td>split the combined entries</td><td>3</td><td class="pass"><code>task(id PRIMARY KEY)</code> — one table fewer, and no join for any consumer</td></tr>
+    <tr><td>resolve compound bands</td><td>4</td><td class="pass"><code>priority</code> becomes a closed enum</td></tr>
+    <tr><td>entries with no band</td><td>6</td><td class="pass">band NOT NULL, or a deliberate NULL you chose</td></tr>
+    <tr><td>classify unreadable <code>type</code></td><td>the tail of 66 distinct values</td><td class="pass"><code>type</code> becomes a closed set</td></tr>
+  </tbody>
+  </table></div>
+  <div class="notice"><strong>The one real cost, because it is not nothing.</strong>
+  Normalising means bulk edits to the loop's own durable memory, and a fold script damaged
+  <code>questions.md</code> earlier tonight by dropping a newline after a heading. So it gets
+  its own task and its own guards — parse with the real reader before and after, assert the
+  counts move only where a split is intended, diff every body for unintended edits — and it
+  does not start without your ruling, because the entries are your words. It needs no #263
+  answer, so with #352 it is the second thing that turns "sqlite is a blocker" into
+  movement.</div>
 
-  <div class="choice"><strong>S1 · Combined entries.</strong> Keep them, with the entry/task
-  split above? Or split <code>#138/#156</code>, <code>#250/#251</code>, <code>#292/#293</code>
-  into single-id entries once, before migrating, and forbid new ones?
-  <div class="answer"><strong>Rec: keep.</strong> Forbidding is simpler forever but edits
-  three of your existing entries, and combining is a thing you did on purpose — two ids, one
-  piece of work. The cost is that every consumer joins one table.</div></div>
+  <div class="choice"><strong>S1 · Combined entries.</strong> Split
+  <code>#138/#156</code>, <code>#250/#251</code>, <code>#292/#293</code> into single-id
+  entries before migrating and forbid new ones? Or keep them behind an entry/task split?
+  <div class="answer"><strong>Rec REVISED to split</strong> on your note. The original rec was
+  keep, and its only argument was that splitting edits three of your entries — spent, if the
+  plaintext is on its way out. Splitting removes a table and a join permanently.</div></div>
 
-  <div class="choice"><strong>S2 · Compound bands.</strong> Does <code>P0/P1</code> stay
-  legal after cutover, or is it an artefact to resolve to one band as each entry is touched?
-  <div class="answer"><strong>Rec: stays legal.</strong> <code>P0/P1</code> says something a
-  single band cannot — genuinely urgent, not yet certain which. The rank column makes it sort
-  correctly without editing your words.</div></div>
+  <div class="choice"><strong>S2 · Compound bands.</strong> Resolve the four
+  (<code>P0/P1</code>&times;3, <code>P1/P2</code>&times;1) so <code>priority</code> is a closed
+  enum, or keep them legal?
+  <div class="answer"><strong>Rec REVISED to resolve</strong> — but this is the one where your
+  prose may carry meaning a single band cannot ("urgent, not yet certain which"). If any of the
+  four still says that, say so and it stays legal.</div></div>
 
-  <div class="choice"><strong>S3 · The 60 unmarked origins.</strong> Leave NULL permanently as
-  "predates the convention, never audited"? Or backfill to explicit <code>unknown</code> so
-  the column can be NOT NULL?
-  <div class="answer"><strong>Rec: leave NULL.</strong> Backfilling asserts an audit that did
-  not happen, and the distinction is exactly the one your own #289 rule protects. NOT NULL is
-  not worth a false claim about 60 entries.</div></div>
+  <div class="choice"><strong>S3 · Origin. <span class="dim">Withdrawn — nothing to
+  decide.</span></strong> It rested on finding 4, which was wrong.
+  <div class="answer">There are 50 unmarked entries, not 60; every one has an id below 216; so
+  absence is your contract's forward-only cutoff, derivable from the id, and not a distinction
+  anything needs to preserve. The schema asserts the invariant instead.</div></div>
 
-  <div class="choice"><strong>S4 · Is <code>type</code> a closed set?</strong> Freeze the ~10
-  real values at cutover, or keep it free text with NULL for unread?
-  <div class="answer"><strong>Rec: free text with NULL.</strong> Closing the set means the
-  migration must classify all 237 entries correctly, and finding 5 says it cannot. A NULL you
-  can see beats a category you cannot trust.</div></div>
+  <div class="choice"><strong>S4 · Is <code>type</code> a closed set?</strong> Close it at
+  cutover (the ~10 real values), classifying the unreadable ones by hand first? Or free text
+  with NULL?
+  <div class="answer"><strong>Rec REVISED to close it.</strong> The refutation was that the
+  migration cannot classify 172 entries correctly — and it does not have to, if they are
+  normalised by hand first, with anything genuinely ambiguous left explicitly NULL rather than
+  guessed.</div></div>
 </section>
 
 <section id="next" aria-labelledby="n-t">

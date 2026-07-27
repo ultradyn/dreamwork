@@ -80,6 +80,32 @@
     instead of a plugin API to design. The read verbs and the entity they read are
     language-independent and stand. **Still open for you: S1–S4**, which this note
     does not answer.
+  - **Note (human, via watch, 2026-07-28 01:13):** oh one thought is that
+    we can make the shape as restrictive as we want before migrating
+    because we won't need the python / plaintext versions for much longer.
+    not sure if that helps us.
+  - **Follow-up (loop, 2026-07-28 01:20):** it helps a lot more than "not sure" —
+    it **inverts three of the four recs**, and the artifact and design doc are
+    rebuilt to say so. Every refutation I wrote for S1, S2 and S4 was the same
+    sentence in different clothes: *"that edits three of your existing entries"*.
+    If the plaintext is on its way out, that is a one-time cost set against
+    looseness the schema carries forever and every consumer handles forever. So the
+    plan is now **normalise the Markdown first, then let the schema be strict**, and
+    it is bounded: **3** combined entries to split, **4** compound bands to resolve,
+    **6** entries with no band, and the tail of the 66 distinct values sitting where
+    `type` should be. Filed as **#353**, and it needs no #263 answer — so with #352
+    it is the second thing that turns "sqlite is a blocker" into movement.
+    **S3 is withdrawn, and not because of your note: finding 4 was WRONG.** I
+    reported 60 unmarked origins against 8 `unknown` and read the split as
+    audited-vs-untouched. It is **50 and 12**, every unmarked entry's id is below
+    216, so absence is just your contract's forward-only cutoff and is derivable
+    from the id — there was never a distinction to preserve. The scan tested
+    `'origin: **' in body`, which misses a marker wrapped as `origin:\n  **loop**`;
+    `lint.py` contradicted it and lint was right. I re-measured the other four
+    wrap-tolerantly and they all stand. **The one cost worth your attention**:
+    normalising means bulk edits to the loop's own memory, and a fold script damaged
+    `questions.md` earlier tonight — so #353 carries its own guards and does not
+    start without your ruling, because the entries are your words.
 
 - **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
   pre-phase on the existing card ghost?** Max directed Grok toward shader work;
