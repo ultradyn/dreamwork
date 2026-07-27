@@ -729,6 +729,104 @@ unclamped opener measures **-22px**, i.e. off-screen. Note the ghost is
 measured with `offsetWidth`, not `getBoundingClientRect()`: the dissolve
 lifts it with `scale(1.07)`, and only layout width answers "did it re-wrap".
 
+### The file heading lockup (#284)
+
+His report: a full path such as
+`.dreamwork/docs/research/contextual-review-annotations.md` in the heading
+**competes with the document itself**. It is the longest, brightest thing on
+the page and almost all of it is address rather than subject. So the heading
+splits in two, on one line each:
+
+| line | what | token |
+|---|---|---|
+| the `<h1>` | the **basename** — the document's name | `--bright`, `1rem` |
+| the crumb row | the **exact parent path**, selectable | `--dim`, `.8rem` |
+
+**The heading is a real `<h1>`, on every route.** It was a styled `<span>`;
+one top-level heading per document is what a screen reader's heading list is
+for, and it is also what the copy button describes itself by
+(`aria-describedby`). It carries **no** weight or size of its own
+(`font:inherit; margin:0`) — emphasis here is luminance, and a UA-bold 2em
+title would say "more important" twice while moving the metrics the `+` opener
+is centred against (#123). The `+` still shares its centreline: `.htitlebar`
+centres both boxes in the flex line, so a two-line lockup centres against the
+whole lockup rather than drifting.
+
+**The parent path is a CRUMB, and that is the whole reason there is no new
+component and no new motion.** The crumb row is already this page's subdued
+metadata line, directly beneath the heading, and crumbs are already keyed —
+so the path arrives, departs and travels on the same keyed route transition as
+`home` and the PiP glyph (see The persistent chrome). Animating path text on
+its own would have been a second gesture for a smaller reason.
+
+**It wraps anywhere and is never shortened.** His words, and there is no room
+in them: *a path that lies about its own segments is worse than one that takes
+two lines*. No ellipsis, no middle-truncation, no clamp, no reordering.
+`overflow-wrap:anywhere` is what lets a directory segment longer than the
+column break **inside** the segment — Chrome offers a soft-wrap opportunity
+after `/`, so slashes alone are not enough. It is selectable text on purpose:
+selecting it is the fallback when the clipboard is refused.
+
+**Copy hands back the whole path.** `.fcopy` is a real `<button>` (so Enter and
+Space activate it natively, and Tab reaches it in three stops) and it reads
+`view.param` rather than carrying a `data-path`. Two reasons, and the second is
+security: a second copy of the truth drifts, and `esc()` is
+`div.textContent → innerHTML`, which escapes `<`, `>` and `&` but **not** the
+double quote — so any `esc()`'d value interpolated into a double-quoted
+attribute can be broken out of by a crafted query string. Reading the route
+needs no escaping at all. `aria-describedby="fdir htitle"` names the metadata
+line and *then* the heading, so the button announces as the full path in
+reading order.
+
+**Its focus ring is the page's own.** `.pipbtn` marks focus by taking the
+accent alone, which is the same signal as hover; on a dark surface Chromium's
+default ring computes to `rgb(16,16,16)` and is invisible. So `.fcopy` draws
+a 1px accent outline with 2px of offset, plus an accent border — measured
+against the resolved `--accent`, not against the browser's idea of focus.
+
+**Both outcomes speak, on the page's ONE confirmation idiom.** `#fmsg` is the
+composer's `.cmdmsg` component driven by the composer's `confirmationFor`
+lifecycle (`transitions.md`, *Composer success confirmation*); the only thing
+added for it is `note(text, ok)` — `claim` **with** the hold-and-depart
+lifecycle, because a copy that failed a second ago is history rather than a
+standing claim. Voice: success is `path copied`; failure is
+`copy was blocked — the path beside it is selectable`, which names the fallback
+instead of apologising. A route change hard-clears it (the chrome survives
+navigation, so otherwise the message would follow him to another page and
+describe a path no longer on screen); a **mode** change does not, because that
+is the same file. Reduced motion keeps the ~5s hold and the same words and
+drops only the fade — timing, never function.
+
+**Where it sits costs no layout.** `.fmsg` is absolutely positioned at
+`top:100%` of `#chrome`, inside the 2rem gap `#meta`'s bottom margin already
+leaves above `#view`. A message that arrives therefore moves nothing at all,
+which is the cheapest possible way to obey "appearing is a transition".
+
+`dev/capture/filehead.mjs` guards it, and three of its checks are worth
+copying:
+
+- **the split is asserted as a reassembly** — `metadata + heading === the
+  route's path`, character for character. Two remembered strings would pass on
+  a dropped segment;
+- **the wrap's overflow condition is derived at runtime** (the same text
+  measured in the same font at `white-space:pre`, against the column's width)
+  and the *painted* right edge of the furthest line box is compared to the
+  column's. An earlier version compared `scrollWidth` to `clientWidth`, which
+  are **both 0** on an inline box: `0 <= 1` passed over an ellipsis, over a
+  nowrap, and over a page with no path at all;
+- **the confirmation's departure is traced per rAF**, with reduced motion
+  asserted to have *no* part-way frames on the same measure. "The message is
+  gone" cannot fail on a snap.
+
+Its focus-ring check is also a recorded finding: the first version asserted
+only that *an* outline was drawn, and deleting this page's focus rule left it
+green because the UA default satisfied it. A red run that comes back green is
+the check's fault.
+
+**H2 (clickable breadcrumb segments) stays refuted** until real directory
+routes exist — a segment that navigates nowhere is a false promise (#243/#244).
+**H3 refuted:** letting the long path keep the primary line is the reported bug.
+
 ### Prose rendering
 
 Everything the loop writes to disk is hard-wrapped at about 72 columns. A
@@ -2499,6 +2597,14 @@ The command surface carries the metaphor lightly: `command the dream`,
 `a thought for the dream…`, and confirmations `sent to the dream` /
 `received`. Never product-y CTA language ("Submit your request!"), never
 exclamation. When in doubt: what would a calm terminal say at 3am.
+
+A failure **names what he can do instead**, in the same breath and without
+apologising: `question was refused — your words are kept`,
+`dreamwork is unreachable — your words are kept`,
+`copy was blocked — the path beside it is selectable` (#284). The em dash is
+the idiom's own punctuation — a state, then its consequence for him. Success is
+shorter than failure because it needs no consequence: `path copied`, `asked`,
+`sent to the dream`.
 
 ## Non-goals
 

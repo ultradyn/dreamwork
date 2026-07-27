@@ -381,8 +381,47 @@ STYLE = """<style>
   .crumb.crumbout { position:absolute; z-index:2; pointer-events:none; }
   .crumb.crumbout::before { content:none; }
   .crumb.crumbgone { opacity:0; filter:blur(5px); transform:translateY(-7px); }
+  /* ── the file heading lockup (#284) ──────────────────────────────────────
+     His report: a full path like `.dreamwork/docs/research/contextual-review-
+     annotations.md` competes with the document it names. So the BASENAME is
+     the `<h1>` and the exact parent path sits BENEATH it — in the crumb row,
+     which already IS this page's subdued metadata line. That is the whole
+     reason there is no new component and no new motion here: the path is a
+     crumb, so it arrives, departs and travels on the keyed route transition
+     every other crumb already uses.
+
+     IT WRAPS ANYWHERE AND IS NEVER SHORTENED (human, 2026-07-27): "a path
+     that lies about its own segments is worse than one that takes two lines."
+     No ellipsis, no middle-truncation, no reordering — and `overflow-wrap:
+     anywhere` is what lets a long directory chain break INSIDE a segment
+     rather than push the column sideways, which is the only other thing an
+     unbreakable 60-character token can do. It is selectable text, because
+     selecting it is the fallback when the clipboard is refused. */
+  .fdir { color:var(--dim); user-select:text; -webkit-user-select:text;
+          overflow-wrap:anywhere; word-break:break-word; }
+  .fcopy { background:none; border:1px solid transparent; color:var(--muted);
+    border-radius:var(--radius); font:inherit; padding:0 .3rem; cursor:pointer;
+    transition:color .3s ease, border-color .3s ease; }
+  .fcopy:hover { color:var(--accent); }
+  /* A REAL focus ring, not a colour shift. `.pipbtn` marks focus by taking
+     the accent alone, which is the same signal as hover and unreadable to
+     anyone arriving by Tab on a page whose accent is already everywhere. The
+     copy button is keyboard-first by construction (it is a <button>, so
+     Enter and Space activate it natively), so its focus state has to be
+     visible without a colour memory. */
+  .fcopy:focus-visible { color:var(--accent); border-color:var(--accent);
+    outline:1px solid var(--accent); outline-offset:2px; }
+  /* The copy confirmation is the composer's confirmation — the same
+     `.cmdmsg` component and the same `confirmationFor` lifecycle, so this
+     page has exactly ONE polite-confirmation idiom rather than a second one
+     that drifts. What is its own is WHERE it sits: absolutely positioned in
+     the gap `#meta`'s 2rem bottom margin already leaves above `#view`, so a
+     message that arrives moves NOTHING. Appearing is a transition, and the
+     cheapest way to obey that is to need no layout in the first place. */
+  .fmsg { position:absolute; top:100%; left:0; margin-top:.15rem;
+          max-width:100%; }
   @media (prefers-reduced-motion: reduce) {
-    .crumb, .htitle { transition:none; }
+    .crumb, .htitle, .fcopy { transition:none; }
   }
   .label { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
            font-size:.7rem; margin:var(--space) 0 .5rem; }
@@ -1174,7 +1213,13 @@ STYLE = """<style>
      is not the ink centre) and is deliberately not chased: a magic nudge
      would be wrong the moment the mono stack falls back. */
   .htitlebar { display:flex; align-items:center; gap:.55rem; }
-  .htitle { display:inline; }
+  /* The page's title is a real `<h1>` on every route (#284) — one top-level
+     label per document, which is what a screen reader's heading list is for,
+     and what `/file`'s copy button describes itself by. It carries NO weight
+     or size of its own: emphasis on this page is luminance (see Type &
+     geometry), and a UA-bold 2em heading would say "more important" twice
+     while changing the metrics the + is centred against (#123). */
+  .htitle { display:inline; font:inherit; margin:0; }
   /* The opener hangs in the gutter LEFT of the reading column, so its offset
      is only affordable when the gutter exists. It does not on the review
      view's 1360px column, or in any narrow window — the button was sliced in
@@ -1447,8 +1492,9 @@ APP_BODY = """<canvas id="dreambg"></canvas>
 <div id="chrome">
  <header class="htitlebar"><button id="cmdplus" type="button"
    title="command the dream" aria-label="open command palette">+</button>
-  <span class="htitle"></span></header>
+  <h1 class="htitle" id="htitle"></h1></header>
  <div id="meta"></div>
+ <div class="cmdmsg fmsg" id="fmsg" aria-live="polite"></div>
 </div>
 <div id="view">loading…</div>
 <div id="cmdpalette" role="dialog" aria-label="command palette">
@@ -2654,6 +2700,24 @@ function isMarkdownFile(p) {
   const s = String(p || '').toLowerCase();
   return s.endsWith('.md') || s.endsWith('.markdown') || s.endsWith('.mdx');
 }
+/* #284 — the split the heading lockup rests on. Both halves come out of the
+   route's own `p` VERBATIM: nothing is normalised, no separator is inserted
+   and no segment is collapsed, because the copy button promises the exact
+   path back and the metadata line must agree with it character for character.
+   `fileDir` keeps its trailing slash for the same reason — that slash is a
+   segment boundary the path really has.
+
+   A root-level file has NO parent, and gets no metadata line rather than an
+   invented `./`. A heading that claims a directory it does not have is the
+   same lie as an ellipsis, one segment smaller. */
+const fileBase = p => {
+  const s = String(p || ''), i = s.lastIndexOf('/');
+  return i < 0 ? s : (s.slice(i + 1) || s);
+};
+const fileDir = p => {
+  const s = String(p || ''), i = s.lastIndexOf('/');
+  return i < 0 || !s.slice(i + 1) ? '' : s.slice(0, i + 1);
+};
 /* #336: human-readable byte count for the binary-file panel. Two units, two
    digits each — same shape as the commit age, so a 153065-byte PNG reads as
    `149.5 KB` rather than a long unbroken number. */
@@ -4727,15 +4791,38 @@ const TITLES = {
   dashboard: () => 'dreamwork watch',
   questions: () => 'questions',
   answers: () => 'answers',
-  file: v => esc(v.param || ''),
+  /* #284: the BASENAME is the heading. The parent path is metadata and lives
+     one line down, in the crumb row (`crumbsFor`). */
+  file: v => esc(fileBase(v.param || '')),
   review: v => `review<span class="revname">${esc(v.param || '')}</span>`,
 };
+/* The copy button carries no path of its own, on purpose: it reads
+   `view.param`, which is what the router parsed out of the URL and therefore
+   the same string the heading and the metadata line were built from. A
+   `data-path` attribute would be a second copy of the truth AND a new
+   attribute-injection site — `esc()` escapes `<`/`>`/`&` but not `"`, so a
+   query string can already break out of an attribute here (see the note in
+   watch-design.md). Reading the route needs no escaping at all.
+
+   `aria-describedby` names the metadata line and then the heading, in that
+   order, so a screen reader announces the button as the full path in reading
+   order: "copy path, button, .dreamwork/docs/research/, notes.md". When there
+   is no parent it describes itself by the heading alone. */
+const copyPathBtn = hasDir =>
+  `<button type="button" class="fcopy"` +
+  ` aria-describedby="${hasDir ? 'fdir htitle' : 'htitle'}">copy path</button>`;
 function crumbsFor(v, d) {
   const home = { k:'home', html:'<a href="/">&larr; dashboard</a>' };
   if (v.name === 'questions' || v.name === 'answers') return [home];
-  if (v.name === 'file') return [home,
-    { k:'pip', html: pipBtn('/file?p=' + encodeURIComponent(v.param || ''),
-                            v.param || 'file') }];
+  if (v.name === 'file') {
+    const p = v.param || '', dir = fileDir(p);
+    const row = [home];
+    if (dir) row.push({ k:'fdir', html:`<span class="fdir" id="fdir">${esc(dir)}</span>` });
+    row.push({ k:'fcopy', html: copyPathBtn(!!dir) });
+    row.push({ k:'pip', html: pipBtn('/file?p=' + encodeURIComponent(p),
+                                     p || 'file') });
+    return row;
+  }
   if (v.name === 'review') return [
     { k:'qs', html:'<a href="/questions">&larr; questions</a>' },
     { k:'home', html:'<a href="/">dashboard</a>' },
@@ -4839,6 +4926,43 @@ function renderChrome(v, d, snap) {
   }
   requestAnimationFrame(() => arrived.forEach(el => el.classList.remove('dreamin')));
 }
+/* ── copying the exact path (#284) ────────────────────────────────────────
+   The heading shows the basename and the metadata line shows the parent, so
+   the ONE place the whole path still exists in full is the route — and that
+   is what this copies, character for character, with no separator inserted
+   and nothing normalised. Reading `view.param` rather than an attribute is
+   also what keeps a second copy of the truth off the page.
+
+   Built lazily because `confirmationFor` is declared in COMMAND_JS, which is
+   concatenated after this block; a top-level call here would depend on where
+   the script boundaries happen to fall.
+
+   BOTH OUTCOMES SPEAK, on the page's one confirmation lifecycle. The failure
+   is not an apology — it names the fallback, and the fallback is real: the
+   metadata line is selectable text precisely so a refused clipboard leaves
+   him something to do. Under reduced motion `confirmationFor` keeps the hold
+   and the clear and drops only the fade, which is the hard contract: same
+   information, same timing, no movement. */
+let fileMsg = null;
+const fileConfirmation = () =>
+  (fileMsg || (fileMsg = confirmationFor(document, 'fmsg', 'cmdmsg fmsg', rmr)));
+async function copyFilePath() {
+  const path = (view && view.name === 'file' && view.param) || '';
+  const c = fileConfirmation();
+  if (!path) { c.note('there is no path to copy', false); return; }
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.writeText)
+      throw new Error('no clipboard');
+    await navigator.clipboard.writeText(path);
+    c.note('path copied', true);
+  } catch (e) {
+    c.note('copy was blocked — the path beside it is selectable', false);
+  }
+}
+addEventListener('click', e => {
+  const btn = e.target.closest && e.target.closest('.fcopy');
+  if (btn) copyFilePath();
+});
 /* Dream dissolve: the outgoing view becomes a ghost that liquifies into a
    swirling mist (turbulence displacement + blur grow) and drifts upward as
    it fades; the incoming view coalesces from the same mist and settles
@@ -4979,6 +5103,12 @@ async function navigate(name, param, opts) {
   // return visit is not blocked by a stuck askInFlight flag (#292 lifecycle).
   if (view && view.name === 'answers' && name !== 'answers')
     invalidateAskFlight();
+  // #284: a copy confirmation belongs to the file it was made on, and the
+  // chrome SURVIVES a route change — so without this the message would follow
+  // him onto another page and describe a path no longer on screen. Route
+  // change is destruction here, exactly as it is for the composer.
+  if (fileMsg && !(view && view.name === name && view.param === param))
+    fileMsg.clear();
   view = { name, param, q: opts.q || null };
   applyTitle();
   if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
@@ -5274,7 +5404,15 @@ function confirmationFor(doc,id,baseClass,reduced) {
     return {success:()=>show('sent to the dream',true,true,mine),
       claim:(text,ok=false)=>show(text,ok,false,mine)};
   };
-  return {begin,claim:(text,ok=false)=>show(text,ok,false),clear};
+  /* `note` is `claim` with the LIFECYCLE — a report of something that already
+     happened, so it holds for ~5s and then departs on the atmospheric exit
+     rather than sitting in the chrome until something else replaces it. The
+     composer has no use for it (its success text is fixed, and its failures
+     are claims that must not depart gently while still false); #284's copy
+     confirmation does, for both outcomes, because a copy that failed a second
+     ago is history and not a standing claim about the world. */
+  return {begin,claim:(text,ok=false)=>show(text,ok,false),
+          note:(text,ok=true)=>show(text,ok,true),clear};
 }
 async function requestPopout() {
   const w = await openPopout('dreamcmd', { width: 340, height: 320 },

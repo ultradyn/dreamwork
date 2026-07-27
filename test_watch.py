@@ -3414,6 +3414,129 @@ class TestBundleParses(unittest.TestCase):
             os.unlink(path)
 
 
+class TestFileHeadingLockup(unittest.TestCase):
+    """#284 — the basename is the heading, the parent path is metadata, and
+    the copy button promises the EXACT path back.
+
+    What is checkable here and nowhere else is the path SPLIT, which no
+    browser guard will reach: a guard drives whatever paths its fixture
+    happens to hold, and the cases that matter are the edges (a root-level
+    file with no parent, a path with a trailing slash, a name that is all
+    dots). Those are one regex away from wrong and silent — a heading that
+    renders the whole path again, or a metadata line that invents a `./`.
+
+    The rest of this class is structural, and it is deliberately about the
+    two guarantees a rendered-DOM check cannot state as an intention: that
+    the path element declares no shortening, and that the copy button opens
+    no new attribute-injection site."""
+
+    def _eval(self, expr):
+        """Evaluate `expr` against the REAL `fileBase`/`fileDir` source, cut
+        out of the page bundle. Not a re-implementation: if either function
+        is renamed, deleted or changed, this stops finding it (loud) or
+        stops agreeing with it (also loud)."""
+        import shutil
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available — the path-split gate did NOT run")
+        m = re.search(r"const fileBase = .*?\n};\nconst fileDir = .*?\n};",
+                      watch.PAGE, re.S)
+        self.assertIsNotNone(
+            m, "fileBase/fileDir are not in the page in the shape this test "
+               "reads them — find them and fix the cut, do not delete the test")
+        r = subprocess.run(
+            [node, "-e", m.group(0) + "\nconsole.log(JSON.stringify(" + expr + "))"],
+            capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_the_split_is_exact_and_invents_nothing(self):
+        deep = ".dreamwork/docs/research/contextual-review-annotations.md"
+        cases = [
+            # path, basename, parent
+            (deep, "contextual-review-annotations.md", ".dreamwork/docs/research/"),
+            # a root-level file has NO parent: no invented "./"
+            ("lint.py", "lint.py", ""),
+            # a dotfile at the root is still a root-level file
+            (".gitignore", ".gitignore", ""),
+            # a trailing slash names no file, so the whole thing is the label
+            # and there is no parent to claim
+            ("a/b/", "a/b/", ""),
+            ("", "", ""),
+            # the parent keeps its trailing slash: that slash is a boundary
+            # the path really has
+            ("a/b.md", "b.md", "a/"),
+        ]
+        got = self._eval("[" + ",".join(
+            "[fileBase(%s), fileDir(%s)]" % (json.dumps(p), json.dumps(p))
+            for p, _, _ in cases) + "]")
+        for (path, base, parent), (gb, gd) in zip(cases, got):
+            self.assertEqual(gb, base, f"basename of {path!r}")
+            self.assertEqual(gd, parent, f"parent of {path!r}")
+            # THE PROPERTY THAT MATTERS, derived rather than restated: the two
+            # halves must reassemble into the path character for character,
+            # because the copy button promises exactly that string back.
+            if gd:
+                self.assertEqual(gd + gb, path)
+
+    def test_the_heading_is_a_real_h1_and_the_title_is_the_basename(self):
+        # A screen reader's heading list is the reason this is an <h1> rather
+        # than the styled <span> it was, and the copy button describes itself
+        # by its id — so both the tag and the id are contract, not decoration.
+        self.assertIn('<h1 class="htitle" id="htitle"></h1>', watch.PAGE)
+        self.assertIn("file: v => esc(fileBase(v.param || '')),", watch.PAGE)
+        # ...and it must not have gained UA weight/size in the process: this
+        # page says "more important" with luminance, never with metrics.
+        self.assertIn(".htitle { display:inline; font:inherit; margin:0; }",
+                      watch.PAGE)
+
+    def test_the_path_element_declares_no_shortening(self):
+        # His reasoning, and the one rule with no room in it: a path that lies
+        # about its own segments is worse than one that takes two lines. So
+        # the metadata line may wrap anywhere and may NOT ellipsise, clamp,
+        # or refuse to break.
+        rule = re.search(r"\n  \.fdir \{(.*?)\}", watch.PAGE, re.S)
+        self.assertIsNotNone(rule, "the .fdir rule is gone")
+        body = rule.group(1)
+        self.assertIn("overflow-wrap:anywhere", body)
+        for forbidden in ("text-overflow", "nowrap", "line-clamp", "direction:"):
+            self.assertNotIn(forbidden, body,
+                             f".fdir must not declare {forbidden}")
+        self.assertIn("user-select:text", body)   # the clipboard fallback
+
+    def test_the_copy_button_opens_no_new_attribute_injection_site(self):
+        # `esc()` is div.textContent -> innerHTML: it escapes < > &, and NOT
+        # the double quote. So any esc()'d value in a double-quoted attribute
+        # can be broken out of by a crafted query string, and the button's
+        # path is entirely query-controlled. It therefore carries NO path
+        # attribute at all and reads `view.param` instead.
+        btn = re.search(r"const copyPathBtn = .*?;\n", watch.PAGE, re.S)
+        self.assertIsNotNone(btn, "copyPathBtn is gone")
+        self.assertNotIn("esc(", btn.group(0),
+                         "the copy button must not interpolate an esc()'d "
+                         "value into an attribute — read view.param instead")
+        self.assertIn("view.param", watch.PAGE)
+        # associated with the heading for screen readers, and with the
+        # metadata line first so the description reads as the full path
+        self.assertIn("'fdir htitle' : 'htitle'", btn.group(0))
+
+    def test_both_copy_outcomes_speak_on_the_one_confirmation_lifecycle(self):
+        # One idiom, not a second: `.cmdmsg` is the composer's component and
+        # `confirmationFor` is the composer's lifecycle. `note` is the only
+        # thing added — claim WITH the hold-and-depart lifecycle.
+        self.assertIn("confirmationFor(document, 'fmsg', 'cmdmsg fmsg', rmr)",
+                      watch.PAGE)
+        self.assertIn("note:(text,ok=true)=>show(text,ok,true)", watch.PAGE)
+        self.assertIn("c.note('path copied', true)", watch.PAGE)
+        self.assertIn(
+            "c.note('copy was blocked — the path beside it is selectable', false)",
+            watch.PAGE)
+        # the live region, or nothing is announced at all
+        self.assertIn('<div class="cmdmsg fmsg" id="fmsg" aria-live="polite">',
+                      watch.PAGE)
+
+
 class TestProjectTint(unittest.TestCase):
     """#143 — his colour for this project, on disk and in the page."""
 
