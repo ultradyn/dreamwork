@@ -49,7 +49,7 @@ carries a `+` command opener (steer the loop without a chat turn).
   presentation state that cross-window mtime polling propagates, not work for
   an agent. Every other POST is rejected; every other route reads. All file
   access goes through `resolve_confined()` (rejects absolute, `~`, traversal);
-  `/filedata` and `/reviewraw` are both behind it.
+  `/filedata`, `/filebytes` (#336) and `/reviewraw` are all behind it.
 - **Port** persisted to `.dreamwork/watch-port` (random 3000–63000 once)
   so bookmarks survive restarts; port-in-use error names the port.
 - **Live reload**: poll `/mtime` ~2s → re-fetch `/data.json` → re-render
@@ -785,6 +785,85 @@ The win peaks in the middle of the sweep — at a very narrow column both
 renderers are ink-limited, and at a wide one the source's own 72 columns
 nearly fit; it is the widths a card actually gets where a `<pre>` wraps every
 line a second time.
+
+### The file view's image and binary surfaces (#336)
+
+His report, typed from the page it happened on: *"viewing images should work.
+this renderes as binary ascii like:"* and a paste of U+FFFD soup. `/filedata`
+read every file as UTF-8 (`errors=replace`), so a 150KB evidence PNG became a
+`<pre>` of replacement characters — plausible-looking garbage instead of a
+state, which is the quiet-wrong DREAMWORK.md forbids in as many words. The
+fix splits the file-content path by **what the file is**, decided once on the
+server by **extension AND magic bytes** (an extension alone is a guess, and a
+guess is what produced the bug):
+
+- **Text** stays on `/filedata` and renders exactly as before — `<pre>` or
+  reflowed `.md` per #158. The branch the bug was in is unchanged for the
+  case it was right about.
+- **Image** (a raster whose extension is in `INLINE_IMAGE_EXTS` AND whose
+  magic bytes confirm it) is described by `/filedata` as
+  `{binary, kind:'image', mime, size}` and served as raw bytes by a new
+  `/filebytes` endpoint behind the **same `resolve_confined` gate**. The
+  view renders an `<img>` for it.
+- **Binary, non-image** is described the same way (`kind:'binary'`) and the
+  view shows a labelled panel — type, size — with a download link, never a
+  `<pre>` of bytes. The bytes are reachable via `/filebytes`, but only as
+  `application/octet-stream` with `Content-Disposition: attachment`.
+
+**The allowlist is raster-only, and that is the load-bearing security
+decision.** A raw-bytes endpoint that echoed a client-asserted
+Content-Type would turn any `.svg` or `.html` in the tree into stored XSS
+against the dashboard's own origin — and #275/#276 are actively
+considering LAN and public exposure, so this is not theoretical. So:
+
+- Inline Content-Types come from a server-side table
+  (`INLINE_IMAGE_EXTS` / `_INLINE_IMAGE_MIME`), never from the request.
+- **SVG is explicitly OUT of the inline allowlist**, and the entry says so
+  because the next reader will want to add it. Do not add it: the moment
+  SVG is inline it is XSS. (The magic-byte gate would also stop a naive
+  add — see below — but the allowlist is the contract and the magic gate
+  is defence in depth.)
+- Every non-inline response is `application/octet-stream` with
+  `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`.
+
+**Detection is extension AND magic bytes**, because either alone re-opens
+the bug a different way. `_magic_matches(ext, head)` requires the file's
+first bytes to begin with the signature `ext` claims — a `.png` containing
+an SVG body does not get served as `image/png`; an `.html` containing PNG
+bytes does not get served as an image either, because `.html` is not in
+the allowlist. AVIF, which has no fixed prefix, is gated on its ISO BMFF
+`ftyp` box brand (`avif`/`avis`/`mif1`).
+
+**Motion.** However the image arrives in the view, it obeys
+`transitions.md`. The route change is the reference implementation and the
+image is inside `#view`, so it rides the dream dissolve like every other
+element of the view — the guard traces `#view`'s opacity through the
+dissolve and requires intermediate frames (a snap visits none). The
+`<img>` also carries its own smaller arrival for the late-load case its
+bytes land after the view settled: a `.pose` start state at `opacity:0`,
+removed by `imgArrived()` on `load`, eased on `.fileimg`'s own `.55s`
+opacity transition. **The pose is opt-in by JS and suppressed by CSS under
+reduced motion**, so a JS error or a removed handler fails *visible*
+rather than invisible, and reduced motion keeps the same information with
+the movement removed — never a feature that silently degrades.
+
+**The binary-file panel is information, not an error.** The copy is read by
+a person who expected to see something:
+
+> **binary file**
+> type   application/octet-stream
+> size   149.5 KB
+> *[download the bytes](/filebytes?p=object.bin)*
+
+The file IS here, it is named, and its bytes are one click away — what it
+is not is text the page can show, so the page says that plainly. Same
+hairline rail, same dim labels, same `label` idiom as every fact list on
+this page, so it reads as a quiet part of the dashboard rather than as a
+fault. A load failure on an image (truncated upload, exotic codec) falls
+back to the same panel rather than leaving a broken-image icon — the
+bytes stay reachable. The download link's `filename=` is sanitised to
+ASCII alphanumerics + `.-_`, because a malformed `Content-Disposition`
+header is worse than a drab name.
 
 ### Authorship
 

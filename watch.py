@@ -430,6 +430,41 @@ STYLE = """<style>
   .age { color:var(--dim); margin-left:.5rem; }
   pre { white-space:pre-wrap; color:var(--muted); margin:.4rem 0 .8rem 1ch;
         border-left:1px solid var(--line); padding-left:1ch; }
+  /* ── the file view's image and binary surfaces (#336) ─────────────────
+     A raster image is served by /filebytes and rendered as an <img>, framed
+     like the rest of the column: hairline border on the panel fill (so its
+     own content does not fight the shader field behind it), `max-width:
+     100%` so it never breaks the 72ch reading column, `border-radius` for
+     the same soft edge every box on this page has. The .pose class is the
+     start state for the image's own arrival; see imgArrived. */
+  .fileimg-wrap { margin:.4rem 0 .8rem 1ch; padding-left:1ch;
+                  border-left:1px solid var(--line); }
+  .fileimg { display:block; max-width:100%; height:auto;
+             background:var(--panel); border:1px solid var(--border);
+             border-radius:var(--radius);
+             transition:opacity .55s ease; }
+  /* the start pose is OPT-IN: it is applied only by JS at build time, and
+     removed on `load` — so a JS error or a removed handler fails VISIBLE
+     (the image stays fully lit) rather than invisible. The rule lives here
+     rather than on .fileimg so the failure mode is "no animation", not
+     "no image". Reduced motion overrides it to opacity:1, which is the
+     same information and timing with the movement removed. */
+  .fileimg.pose { opacity:0; }
+  /* a non-image binary file: type and size as labelled facts, with a
+     download link instead of a <pre> full of mojibake. The same hairline
+     rail and dim labels every fact-list on this page uses, so it reads as
+     a quiet part of the dashboard rather than as an error panel. */
+  .filebin { margin:.4rem 0 .8rem 1ch; padding-left:1ch;
+             border-left:1px solid var(--line); }
+  .filebin-row { display:grid; grid-template-columns:6ch 1fr;
+                 gap:.5ch 1ch; margin:.32rem 0; align-items:baseline; }
+  .filebin-k { color:var(--dim); }
+  .filebin-v { color:var(--text); overflow-wrap:anywhere; }
+  .filebin-dl { display:inline-block; margin-top:.6rem; }
+  @media (prefers-reduced-motion: reduce) {
+    .fileimg { transition:none; }
+    .fileimg.pose { opacity:1; }
+  }
   /* rendered prose (#102). Same hairline rail and colour as the <pre> it
      replaces — this changes how the text WRAPS, not how the page reads. */
   .md { color:var(--muted); margin:.4rem 0 .8rem 1ch;
@@ -2619,11 +2654,105 @@ function isMarkdownFile(p) {
   const s = String(p || '').toLowerCase();
   return s.endsWith('.md') || s.endsWith('.markdown') || s.endsWith('.mdx');
 }
-function buildFile(param, text) {
-  if (text == null)
+/* #336: human-readable byte count for the binary-file panel. Two units, two
+   digits each — same shape as the commit age, so a 153065-byte PNG reads as
+   `149.5 KB` rather than a long unbroken number. */
+function humanSize(n) {
+  const units = [['B', 1], ['KB', 1024], ['MB', 1024 * 1024],
+                 ['GB', 1024 * 1024 * 1024]];
+  for (let i = units.length - 1; i >= 0; i--) {
+    if (n >= units[i][1]) {
+      const v = n / units[i][1];
+      const digits = i === 0 ? 0 : (v >= 100 ? 0 : 1);
+      return v.toFixed(digits) + ' ' + units[i][0];
+    }
+  }
+  return '0 B';
+}
+/* buildFile renders the body of /file for three kinds of file (#336):
+   - text: <pre> (or reflowed .md, per #158) — the standing behaviour.
+   - image: an <img> served from /filebytes, framed like everything else
+     in the column.
+   - binary (non-image): a panel that SAYS what the file is — type, size
+     — with a download affordance, instead of dumping its bytes into a
+     <pre> as plausible-looking mojibake. The bytes are reachable (the
+     download link) but never by accident, on the page's "detail is
+     ranked, never withheld" rule. */
+function buildFile(param, fetched) {
+  if (!fetched)
     return '<div id="filebody"><div class="dim">not found</div></div>';
+    if (fetched.binary) {
+      const dl = '/filebytes?p=' + encodeURIComponent(param || '');
+      const mime = fetched.mime || 'application/octet-stream';
+      const size = fetched.size || 0;
+      if (fetched.kind === 'image') {
+        /* MOTION: the image rides the route dissolve like every other part
+           of #view (it is inside #view). Its bytes arrive asynchronously,
+           though, so the <img> also carries its own arrival — a self-
+           contained opacity fade on load, applied as a start pose that
+           imgArrived() removes. Reduced motion suppresses the pose in CSS,
+           so the image is fully visible from the first frame and the load
+           handler is a no-op: same information and timing with the movement
+           removed, never a feature that silently degrades. The mime and
+           size travel as data-* so imgFailed can fall back to the binary
+           panel without refetching. */
+        return '<div id="filebody" class="fileimg-wrap">' +
+               `<img class="fileimg pose" alt="" src="${dl}" ` +
+               `data-mime="${esc(mime)}" data-size="${size}" ` +
+               `onload="imgArrived(this)" onerror="imgFailed(this)"></div>`;
+      }
+      /* NON-IMAGE BINARY. The copy is read by a person who expected to see
+         something — write it as information, not as an error. The file IS
+         here, it is named, and its bytes are one click away; what it is not
+         is text the page can show, so the page says that plainly. */
+      return '<div id="filebody"><div class="filebin">' +
+             label('binary file') +
+             '<div class="filebin-row"><span class="filebin-k">type</span>' +
+             `<span class="filebin-v">${esc(mime)}</span></div>` +
+             '<div class="filebin-row"><span class="filebin-k">size</span>' +
+             `<span class="filebin-v">${humanSize(size)}</span></div>` +
+             `<a class="filebin-dl" href="${dl}" download>download the bytes</a>` +
+             '</div></div>';
+    }
+  const text = fetched.text;
   const body = isMarkdownFile(param) ? mdB(text) : `<pre>${esc(text)}</pre>`;
   return `<div id="filebody">${body}</div>`;
+}
+/* the image's own arrival (#336): if its bytes land after the view settled,
+   it is still in its .pose start state — remove it once, on the load event,
+   to ease in on .fileimg's standing opacity transition. If the bytes
+   arrived during the route dissolve, the dissolve already carried the image
+   and the load event finds no .pose to remove. Idempotent. */
+function imgArrived(img) {
+  if (!img || img.dataset.arrived) return;
+  img.dataset.arrived = '1';
+  if (img.classList.contains('pose')) {
+    void img.offsetWidth;
+    img.classList.remove('pose');
+  }
+}
+/* a load failure (truncated upload, exotic codec the browser cannot decode)
+   is the wrong state to leave as a broken-image icon. Replace the dead <img>
+   with the same binary-info panel a non-image binary gets — the bytes stay
+   reachable via the download link. The mime/size come from the data-*
+   attributes captured at build time, so the failure path need not refetch. */
+function imgFailed(img) {
+  if (!img || img.dataset.failed) return;
+  img.dataset.failed = '1';
+  const body = img.closest('#filebody');
+  if (!body) return;
+  const mime = img.dataset.mime || 'application/octet-stream';
+  const size = parseInt(img.dataset.size || '0', 10) || 0;
+  const dl = img.getAttribute('src') || '';
+  body.className = '';
+  body.innerHTML = '<div class="filebin">' +
+    '<div class="label">image would not render</div>' +
+    '<div class="filebin-row"><span class="filebin-k">type</span>' +
+    `<span class="filebin-v">${esc(mime)}</span></div>` +
+    '<div class="filebin-row"><span class="filebin-k">size</span>' +
+    `<span class="filebin-v">${humanSize(size)}</span></div>` +
+    `<a class="filebin-dl" href="${esc(dl)}" download>download the bytes</a>` +
+    '</div>';
 }
 /* review view: the raw artifact in an iframe (style-isolated) with the
    originating question docked beside it (answer box included), so it can
@@ -3157,7 +3286,13 @@ const parseMtime = raw => {
                  : { gen: '', mtime: raw };
 };
 let view = { name: null, param: null, q: null };
-let fileCache = { param: null, text: undefined };
+/* /file view fetch (#336). `fetched` is one of:
+   - null: the file is missing or the request failed → 'not found'
+   - {text}: the file is text → render as today (md or <pre>)
+   - {binary, kind, mime, size}: a binary file → render an <img> (kind ===
+     'image') or a binary-info panel with a download affordance (else).
+   The /filedata response carries one of those shapes; never the bytes. */
+let fileCache = { param: null, fetched: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
 const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22 };
 /* per-route dissolve signature: each destination swirls from its own
@@ -3749,14 +3884,21 @@ async function ensureData() {
   return data;
 }
 async function fetchFile(param) {
-  if (fileCache.param === param) return fileCache.text;
-  let text = null;
+  if (fileCache.param === param) return fileCache.fetched;
+  let fetched = null;
   try {
     const res = await fetch('/filedata?p=' + encodeURIComponent(param || ''));
-    if (res.ok) text = (await res.json()).content;
+    if (res.ok) {
+      const j = await res.json();
+      if (j && j.binary) {
+        fetched = { binary: true, kind: j.kind, mime: j.mime, size: j.size };
+      } else if (j && typeof j.content === 'string') {
+        fetched = { text: j.content };
+      }
+    }
   } catch (e) {}
-  fileCache = { param, text };
-  return text;
+  fileCache = { param, fetched };
+  return fetched;
 }
 async function buildCurrent() {
   if (view.name === 'file')
@@ -6254,6 +6396,117 @@ def read_text(path, limit=200_000):
         return None
 
 
+def read_bytes(path):
+    # The byte mirror of read_text, for /filebytes (#336). No cap: the only
+    # inline case is the raster allowlist below, evidence PNGs are ~150KB, and
+    # a cap on a byte stream would corrupt the image rather than truncate
+    # readable text. The endpoint is confined to the target root, so a file
+    # large enough to matter here is something a dreamer put in the tree.
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+# ── #336: serving an image rather than its bytes as mojibake ──────────────
+# His report was a /file view of a 150KB evidence PNG rendering as U+FFFD
+# soup: /filedata did read_text (UTF-8, errors=replace) and the client
+# painted the result in a <pre>. The fix serves raster images as bytes from
+# a separate endpoint, and the SECURITY-LOAD-BEARING decision is which types
+# that endpoint will inline:
+#
+# A raw-bytes endpoint that echoes a client-supplied or extension-guessed
+# Content-Type turns any .svg or .html in the tree into stored XSS against
+# the dashboard's own origin — and #275/#276 are actively considering LAN
+# and public exposure, so this is not theoretical. So the inline allowlist
+# is RASTER ONLY, the Content-Type is taken from THIS table (never
+# reflected), and SVG is deliberately OUT. The next reader will want to
+# add SVG; do not, because the moment it is inline it is XSS.
+#
+# Detection is by EXTENSION AND MAGIC BYTES, because an extension alone is
+# a guess and a guess is what produced the bug. A .png whose bytes do not
+# begin with the PNG signature is not served as image/png; an .html whose
+# bytes do is not served as image either, because .html is not in the
+# allowlist. BOTH must agree.
+INLINE_IMAGE_EXTS = ("png", "jpg", "jpeg", "gif", "webp", "avif")
+_INLINE_IMAGE_MIME = {
+    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+    "gif": "image/gif", "webp": "image/webp", "avif": "image/avif",
+}
+# AVIF is an ISO BMFF container; there is no fixed magic prefix, only the
+# ftyp box (bytes 4-8 == b'ftyp') whose major brand identifies the codec.
+# These are the brands a browser will decode as AVIF; anything else with a
+# .avif extension fails magic and is served as a download.
+_AVIF_BRANDS = (b"avif", b"avis", b"mif1")
+
+
+def _magic_matches(ext, head):
+    """True iff `head` begins with the byte signature `ext` claims."""
+    if ext in ("png",):
+        return head.startswith(b"\x89PNG\r\n\x1a\n")
+    if ext in ("jpg", "jpeg"):
+        return head[:3] == b"\xff\xd8\xff"
+    if ext == "gif":
+        return head[:6] in (b"GIF87a", b"GIF89a")
+    if ext == "webp":
+        return head[:4] == b"RIFF" and head[8:12] == b"WEBP"
+    if ext == "avif":
+        return head[4:8] == b"ftyp" and head[8:12] in _AVIF_BRANDS
+    return False
+
+
+def detect_file_kind(full):
+    """'image' if `full` is an inline-safe raster, 'binary' for any other
+    non-text file, 'text' otherwise. None if the file cannot be inspected.
+
+    Pure over an extant path. The image verdict requires BOTH an allowlisted
+    extension AND matching magic bytes (#336); the binary verdict is taken
+    from the head so a UTF-16 file with a BOM does not read as 'text' on a
+    technicality, and so a .png containing ASCII does not get the image
+    treatment by virtue of its extension."""
+    try:
+        with open(full, "rb") as f:
+            head = f.read(32)
+    except OSError:
+        return None
+    ext = full.rsplit(".", 1)[-1].lower() if "." in full else ""
+    if ext in INLINE_IMAGE_EXTS and _magic_matches(ext, head):
+        return "image"
+    if _looks_binary(head):
+        return "binary"
+    return "text"
+
+
+def _looks_binary(head):
+    """A NUL byte, or a C0 control other than tab/CR/LF, means this is not
+    text. UTF-8's multibyte sequences are all >= 0x80, so they pass."""
+    for b in head:
+        if b == 0 or b == 0x7f or (b < 0x20 and b not in (0x09, 0x0a, 0x0d)):
+            return True
+    return False
+
+
+def inline_image_mime(full):
+    """The Content-Type /filebytes serves for an allowlisted raster, taken
+    from the extension. Never client-supplied; never includes svg."""
+    ext = full.rsplit(".", 1)[-1].lower() if "." in full else ""
+    return _INLINE_IMAGE_MIME.get(ext, "application/octet-stream")
+
+
+def safe_attachment_filename(name):
+    """`filename=` for Content-Disposition, with nothing in it that can
+    break an HTTP header or escape the quotes: ASCII alphanumerics plus
+    .-_ only, capped. resolve_confined already stripped path separators;
+    this is belt-and-braces against a quote or a control char, because a
+    malformed header is worse than a drab name."""
+    base = os.path.basename(name or "")
+    clean = "".join(
+        c if (c.isalnum() or c in ".-_") and ord(c) < 128 else "_"
+        for c in base).strip("._")
+    return (clean or "download")[:128]
+
+
 def linkable_paths(target):
     """Existing target-relative files a prose renderer may promise as links.
 
@@ -7968,6 +8221,35 @@ def make_handler(target, dev=False, authority=None):
             self.end_headers()
             self.wfile.write(data)
 
+        def _send_bytes(self, full, rel, *, inline):
+            """Serve `full` as raw bytes (#336).
+
+            `inline=True` serves the allowlisted raster MIME; `inline=False`
+            serves application/octet-stream + attachment disposition. Both
+            carry X-Content-Type-Options: nosniff — the latter because
+            `nosniff` is what makes a browser honour the octet-stream
+            disposition over a sniffed guess. `full` is already behind
+            resolve_confined; a None or missing file is a 404."""
+            if not full:
+                self.send_error(404); return
+            data = read_bytes(full)
+            if data is None:
+                self.send_error(404); return
+            self.send_response(200)
+            if inline:
+                ctype = inline_image_mime(full)
+                disp = "inline"
+            else:
+                ctype = "application/octet-stream"
+                disp = f"attachment; filename=\"{safe_attachment_filename(rel)}\""
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", disp)
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cache-Control", "private, max-age=0, must-revalidate")
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_GET(self):
             # Authority gates every path before it can disclose target state.
             if not self._preflight():
@@ -7985,14 +8267,50 @@ def make_handler(target, dev=False, authority=None):
                 self._send(f"{GENERATION} {watched_mtime(target)}",
                            "text/plain")
             elif parsed.path == "/filedata":
+                # #336: a binary file used to be UTF-8-decoded (errors=
+                # replace) into a string of U+FFFD and rendered in a <pre>
+                # as plausible-looking mojibake. Now the response describes
+                # it instead, and a separate /filebytes endpoint serves the
+                # raw bytes from the SAME resolve_confined gate.
                 rel = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
                 full = resolve_confined(target, rel)
-                text = read_text(full) if full else None
-                if text is None:
-                    self.send_error(404)
+                kind = detect_file_kind(full) if full else None
+                if kind == "text":
+                    text = read_text(full)
+                    if text is None:
+                        self.send_error(404); return
+                    self._send(json.dumps({"path": rel, "content": text}),
+                               "application/json")
                     return
-                self._send(json.dumps({"path": rel, "content": text}),
-                           "application/json")
+                if kind in ("image", "binary") and full:
+                    try:
+                        size = os.path.getsize(full)
+                    except OSError:
+                        self.send_error(404); return
+                    self._send(json.dumps({
+                        "path": rel, "binary": True, "kind": kind,
+                        "mime": (inline_image_mime(full)
+                                 if kind == "image"
+                                 else "application/octet-stream"),
+                        "size": size,
+                    }), "application/json")
+                    return
+                self.send_error(404)
+            elif parsed.path == "/filebytes":
+                # #336 — raw bytes, behind the SAME resolve_confined gate as
+                # /filedata. The Content-Type is taken from INLINE_IMAGE_EXTS
+                # and never from the client, because a reflected Content-Type
+                # turns any .svg or .html in the tree into stored XSS against
+                # this origin. An allowlisted raster (extension AND magic
+                # bytes) is served inline; everything else is
+                # application/octet-stream with an attachment disposition, so
+                # the bytes are reachable but never rendered by the browser.
+                rel = urllib.parse.parse_qs(parsed.query).get("p", [""])[0]
+                full = resolve_confined(target, rel)
+                if not full or detect_file_kind(full) != "image":
+                    self._send_bytes(full, rel, inline=False)
+                else:
+                    self._send_bytes(full, rel, inline=True)
             elif parsed.path == "/reviewraw":
                 # The raw self-contained artifact, for the /review view's
                 # iframe (style isolation). /review itself serves the shell;

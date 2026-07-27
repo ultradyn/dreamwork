@@ -17,6 +17,7 @@ import time
 import unittest
 import unittest.mock
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import watch
@@ -2800,6 +2801,237 @@ class TestAppShell(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 self._get(base + "/filedata?p=../etc/passwd")
             self.assertEqual(cm.exception.code, 404)
+
+    # ── #336: /file must show an image, not its bytes as mojibake ─────────
+    # His report, typed from
+    # /file?p=.dreamwork/review/evidence/review-note-reply-unclear.png:
+    # "viewing images should work. this renderes as binary ascii like:" and
+    # a paste of U+FFFD soup. The cause is diagnosed above (#336 in
+    # .dreamwork/tasks.md); these are the load-bearing proofs. A 1x1 PNG is
+    # too small to exercise the truncation half and too synthetic to be the
+    # file he actually saw, so the byte-identical proof uses a real PNG body
+    # whose length is the only thing that distinguishes "served in full"
+    # from "served up to the old limit" — and the limit is derived from
+    # watch.read_text.__defaults__ at runtime, never a literal here.
+    _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+    @staticmethod
+    def _build_png(target_size):
+        """A syntactically valid PNG of approximately `target_size` bytes,
+        by padding an ancillary tEXt chunk. The smallest valid file plus a
+        keyword means the result is within ~50 bytes of the request; the
+        byte-identical proof compares against what we built, not against
+        `target_size`, so the slack is irrelevant."""
+        import struct, zlib
+        def chunk(typ, data):
+            return (len(data).to_bytes(4, "big") + typ + data +
+                    struct.pack(">I", zlib.crc32(typ + data) & 0xffffffff))
+        ihdr = chunk(b"IHDR",
+                     struct.pack(">IIBBBBB", 1, 1, 8, 0, 0, 0, 0))
+        # Deflate of one filter-zero + one grayscale pixel.
+        idat = chunk(b"IDAT", zlib.compress(b"\x00\x00", 9))
+        iend = chunk(b"IEND", b"")
+        # tEXt: keyword b"evidence\x00" + text. Pad the text so the whole
+        # file lands near target_size; ancillary chunks may carry any text.
+        used = len(TestAppShell._PNG_MAGIC) + len(ihdr) + len(idat) + len(iend)
+        # The +9 is the chunk header (4 length + 4 type + 4 crc) plus the
+        # b"evidence\x00" keyword terminator inside the data.
+        pad = max(0, target_size - used - 12)
+        text = chunk(b"tEXt", b"evidence\x00" + b"a" * pad)
+        return TestAppShell._PNG_MAGIC + ihdr + text + idat + iend
+
+    def _get_bytes(self, url):
+        # The existing _get does .decode("utf-8"), which is wrong for binary
+        # responses. This returns the raw bytes and the headers; the headers
+        # carry the security-load-bearing Content-Type / Disposition /
+        # X-Content-Type-Options that #336 asserts as behaviour.
+        with urllib.request.urlopen(url, timeout=5) as r:
+            return r.status, r.read(), {k.lower(): v for k, v in r.headers.items()}
+
+    def test_fileview_image_served_byte_identical(self):
+        # PROOF 1: the file he reported renders as an <img>, and the bytes
+        # served are BYTE-IDENTICAL to the file on disk — full length and a
+        # digest, because "it looks like an image" is what the mojibake also
+        # claimed. Asserts the served length exceeds the OLD cap (derived
+        # from read_text's default at runtime, never a literal) so this also
+        # covers the truncation half: a file too large for the old endpoint
+        # is served whole by the new one.
+        import hashlib
+        OLD_LIMIT = watch.read_text.__defaults__[0]
+        with tempfile.TemporaryDirectory() as d:
+            target = make_target(d)
+            os.makedirs(os.path.join(target, ".dreamwork", "review", "evidence"))
+            png_path = os.path.join(target, ".dreamwork", "review", "evidence",
+                                    "review-note-reply-unclear.png")
+            png = self._build_png(OLD_LIMIT + 50_000)
+            with open(png_path, "wb") as f:
+                f.write(png)
+            # PRECONDITION, asserted rather than trusted: the file is bigger
+            # than the old cap. A test whose truncation proof is "the file
+            # exceeds the limit" is hollow if the fixture happens to make
+            # them equal — pin the gap at runtime.
+            self.assertGreater(len(png), OLD_LIMIT)
+            base = self._serve(target)
+            # /filedata describes the image rather than decoding it as text.
+            status, body, _ = self._get_bytes(base + "/filedata?p=" +
+                urllib.parse.quote(".dreamwork/review/evidence/review-note-reply-unclear.png"))
+            meta = json.loads(body)
+            self.assertTrue(meta.get("binary"))
+            self.assertEqual(meta["kind"], "image")
+            self.assertEqual(meta["mime"], "image/png")
+            self.assertEqual(meta["size"], len(png))
+            self.assertNotIn("content", meta)  # the mojibake path is gone
+            # /filebytes serves the raw bytes, byte-identical and uncut.
+            status, served, h = self._get_bytes(base + "/filebytes?p=" +
+                urllib.parse.quote(".dreamwork/review/evidence/review-note-reply-unclear.png"))
+            self.assertEqual(status, 200)
+            self.assertEqual(h["content-type"], "image/png")
+            self.assertEqual(len(served), len(png))
+            self.assertEqual(hashlib.sha256(served).digest(),
+                             hashlib.sha256(png).digest())
+            self.assertEqual(served, png)             # the whole file, byte for byte
+
+    def test_fileview_non_image_binary_says_what_it_is(self):
+        # PROOF 2: a non-image binary does NOT dump its bytes into a <pre>.
+        # /filedata describes it (kind=binary, mime, size); the bytes are
+        # reachable via /filebytes only as an attachment.
+        with tempfile.TemporaryDirectory() as d:
+            target = make_target(d)
+            # A .bin file with NUL bytes: not text, not in the image allowlist.
+            blob = b"\x00\x01\x02BINARY\xff" * 100
+            with open(os.path.join(target, "object.bin"), "wb") as f:
+                f.write(blob)
+            base = self._serve(target)
+            status, body, _ = self._get_bytes(base + "/filedata?p=object.bin")
+            meta = json.loads(body)
+            self.assertTrue(meta.get("binary"))
+            self.assertEqual(meta["kind"], "binary")
+            self.assertEqual(meta["size"], len(blob))
+            self.assertNotIn("content", meta)
+            # The byte endpoint serves it ONLY as octet-stream + attachment.
+            status, served, h = self._get_bytes(base + "/filebytes?p=object.bin")
+            self.assertEqual(status, 200)
+            self.assertEqual(h["content-type"], "application/octet-stream")
+            self.assertIn("attachment", h["content-disposition"])
+            self.assertEqual(h["x-content-type-options"], "nosniff")
+            self.assertEqual(served, blob)
+
+    def test_fileview_inline_allowlist_is_raster_only(self):
+        # PROOF 3 — the security decision, tested as BEHAVIOUR. SVG and HTML
+        # in the tree must NEVER be served inline as image/svg+xml or
+        # text/html: a raw-bytes endpoint that reflected a guessed type
+        # would turn either into stored XSS against this origin. The named
+        # production line is the allowlist membership check in
+        # detect_file_kind / INLINE_IMAGE_EXTS — flip it to include 'svg'
+        # and this test fails on the svg line.
+        with tempfile.TemporaryDirectory() as d:
+            target = make_target(d)
+            # An SVG with a script tag: if this is ever served as
+            # image/svg+xml, the browser executes it.
+            with open(os.path.join(target, "evil.svg"), "w") as f:
+                f.write('<svg xmlns="http://www.w3.org/2000/svg">'
+                        '<script>alert(1)</script></svg>')
+            # An HTML file in the tree: if this is ever served as text/html,
+            # the browser parses it as a document.
+            with open(os.path.join(target, "page.html"), "w") as f:
+                f.write("<!doctype html><script>alert(1)</script>")
+            # A PNG that genuinely is one (control: allowlist still works).
+            with open(os.path.join(target, "ok.png"), "wb") as f:
+                f.write(self._PNG_MAGIC + b"\x00" * 32)
+            base = self._serve(target)
+            # PRECONDITION: the raster allowlist does what it claims today,
+            # so the assertion below is discriminating rather than vacuous.
+            self.assertIn("png", watch.INLINE_IMAGE_EXTS)
+            # SVG: never inline, always attachment.
+            status, served, h = self._get_bytes(base + "/filebytes?p=evil.svg")
+            self.assertNotEqual(h["content-type"], "image/svg+xml")
+            self.assertNotEqual(h["content-type"], "text/html")
+            self.assertEqual(h["content-type"], "application/octet-stream")
+            self.assertIn("attachment", h["content-disposition"])
+            self.assertEqual(h["x-content-type-options"], "nosniff")
+            # HTML: never text/html either.
+            status, served, h = self._get_bytes(base + "/filebytes?p=page.html")
+            self.assertNotEqual(h["content-type"], "text/html")
+            self.assertNotEqual(h["content-type"], "image/svg+xml")
+            self.assertEqual(h["content-type"], "application/octet-stream")
+            self.assertIn("attachment", h["content-disposition"])
+            # Control: a real PNG is served inline, as image/png.
+            status, served, h = self._get_bytes(base + "/filebytes?p=ok.png")
+            self.assertEqual(h["content-type"], "image/png")
+            self.assertEqual(h["content-disposition"], "inline")
+
+    def test_fileview_magic_bytes_gate_extension_claims(self):
+        # PROOF 3b: detection requires extension AND magic bytes — a .png
+        # whose bytes are an SVG does not get served as image/png. Without
+        # this, an attacker (or a confused copy) plants XSS under an
+        # image extension. The named production line is _magic_matches()
+        # short-circuiting detect_file_kind away from 'image'.
+        with tempfile.TemporaryDirectory() as d:
+            target = make_target(d)
+            # An SVG body with a .png extension: extension is allowlisted,
+            # magic bytes do not match the PNG signature.
+            with open(os.path.join(target, "spoof.png"), "w") as f:
+                f.write('<svg xmlns="http://www.w3.org/2000/svg">'
+                        '<script>alert(1)</script></svg>')
+            base = self._serve(target)
+            status, served, h = self._get_bytes(base + "/filebytes?p=spoof.png")
+            self.assertNotEqual(h["content-type"], "image/png")
+            self.assertEqual(h["content-type"], "application/octet-stream")
+            self.assertIn("attachment", h["content-disposition"])
+
+    def test_filebytes_blocks_escape(self):
+        # PROOF 4: the byte endpoint is confined by the SAME gate as
+        # /filedata. Inheriting resolve_confined is not evidence that the
+        # new endpoint called it; prove it on /filebytes directly, against
+        # traversal, absolute, ~, empty, and a symlink that points outside.
+        # The target is a SUBDIRECTORY of the tempdir so a real secret can
+        # live outside it but inside the tempdir, which is what makes the
+        # symlink-escape assertion load-bearing rather than vacuous.
+        with tempfile.TemporaryDirectory() as d:
+            target = make_target(os.path.join(d, "target"))
+            with open(os.path.join(d, "secret.txt"), "w") as f:
+                f.write("outside the target")
+            base = self._serve(target)
+            for bad, desc in [
+                ("../secret.txt", "parent traversal"),
+                ("/etc/passwd", "absolute path"),
+                ("~x", "tilde"),
+                ("", "empty"),
+                (".", "dot"),
+            ]:
+                with self.assertRaises(urllib.error.HTTPError) as cm:
+                    self._get_bytes(base + "/filebytes?p=" +
+                                    urllib.parse.quote(bad, safe=''))
+                self.assertEqual(
+                    cm.exception.code, 404,
+                    f"/filebytes did not refuse {desc}: {bad!r}")
+            # A symlink that resolves outside the target root: the link
+            # itself sits inside the target (so it would pass a naive
+            # strings-only check) but realpath follows it to d/secret.txt.
+            link = os.path.join(target, "escape.link")
+            os.symlink(os.path.join(d, "secret.txt"), link)
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self._get_bytes(base + "/filebytes?p=escape.link")
+            self.assertEqual(cm.exception.code, 404)
+
+    def test_fileview_no_truncation_for_oversize_binary(self):
+        # PROOF 1 (truncation half): a binary file over the OLD text cap is
+        # served whole. read_text used to clamp at 200_000 CHARACTERS, which
+        # corrupted images too; /filebytes has no such cap, and this test
+        # would fail if anyone re-introduced one (the served length would
+        # come back clamped to the limit). The limit is derived at runtime.
+        OLD_LIMIT = watch.read_text.__defaults__[0]
+        with tempfile.TemporaryDirectory() as d:
+            target = make_target(d)
+            big = self._build_png(OLD_LIMIT + 12345)
+            with open(os.path.join(target, "big.png"), "wb") as f:
+                f.write(big)
+            self.assertGreater(len(big), OLD_LIMIT)  # precondition, derived
+            base = self._serve(target)
+            # Magic matches, extension allowlisted → served inline.
+            status, served, h = self._get_bytes(base + "/filebytes?p=big.png")
+            self.assertEqual(len(served), len(big))
+            self.assertEqual(h["content-type"], "image/png")
 
     def test_review_serves_shell_reviewraw_serves_artifact(self):
         with tempfile.TemporaryDirectory() as d:
