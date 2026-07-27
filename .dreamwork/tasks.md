@@ -24,9 +24,31 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **364**
+Next id: **365**
 
 ## Open
+
+- **#364** — The #346 artifact still asks four questions he has already answered · P2 ·
+  docs/accuracy · origin: **loop** · 15m · `.dreamwork/review/src/task-store-schema.html` is
+  the page he opens from the dashboard to rule on the task store, and it has been overtaken by
+  his own 01:23 ruling and by the work done since · stale in four places, measured: the
+  intro still frames the four decisions as open (line 22); the normalisation table still says
+  `resolve compound bands · 4` when three of them deliberately stay and the fourth was a
+  concatenation artefact (125); the S2 block still poses the question rather than stating the
+  answer (146-147); and the `priority + priority_rank` pair (85) is superseded by a closed band
+  column plus `priority_uncertain`, which is the shape that actually preserves *"urgent, not
+  yet certain which"* without a compound value
+  · **the design doc is already correct** — `task-store-schema.md` carries the S1/S2/S4
+  rulings and tonight's S2 resolution — so this is a one-way sync into the artifact, not a
+  decision · **cannot start yet**: a dreamer is live on that exact source file fixing two
+  render defects, so this waits for that merge rather than racing it · after the merge, verify
+  by looking at the rendered pixels, not the diff — `review_artifact.py check` reports
+  `current` on a page whose text is wrong
+  · **the general problem is worth naming even though this instance is cheap**: an artifact is
+  a snapshot of a question, and the moment he answers it the page he answered from becomes a
+  false record of the state. Nothing checks that. `check_review_artifacts` verifies the
+  template stamp, which is bytes, not truth. If this recurs, the check to want is whether an
+  artifact whose paired questions.md entry has moved to Answered was rebuilt after the answer
 
 - **#363** — lint's landed-but-open WARN cannot tell a forgotten fold from a live lane · P3 ·
   tooling/honesty · origin: **loop** · 10m · reported by dreamer-264-boundary as report-only ·
