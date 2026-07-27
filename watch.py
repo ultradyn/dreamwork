@@ -612,13 +612,19 @@ STYLE = """<style>
   a:hover { text-decoration:underline; }
   /* a card travels to its new place in the list rather than teleporting
      there (#104/#77); the transform is set and cleared by regroupCards */
-  /* `--qfade` belongs to the review dock (#305) and is listed HERE because a
-     `transition` shorthand on a more specific selector replaces this list
-     wholesale — declaring it on `.qdock > .qa` would silently take a card's
-     travel away on the one route that also re-groups cards. */
   .qa { margin:.6rem 0 1rem;
         transition:transform .85s cubic-bezier(.32,.1,.2,1),
-                   opacity .55s ease, filter .55s ease, --qfade .45s ease; }
+                   opacity .55s ease, filter .55s ease; }
+  /* THE QUESTION'S BODY, wrapped so the review dock has an edge that belongs
+     to the TEXT alone (#326). Everywhere else it must not exist at all, and
+     `display:contents` is how an element says that: no box is generated, so
+     margins collapse exactly as they did before it was introduced, and — the
+     half that is load-bearing rather than convenient — no box means no mask
+     and no scrollport either, which is what the narrow review layout wants
+     back. Two things read the wrapper's children as the card's own and both
+     are taught to look through it rather than at it: `cardBody` (the fold's
+     reveal and ghost) and `sendComment`'s first-thread insert. */
+  .qbody { display:contents; }
   /* a card that has left the list entirely dreams away where it stood */
   .qaghost { position:absolute; z-index:3; pointer-events:none;
     transition:opacity .7s ease, filter .7s ease, transform .7s ease; }
@@ -959,11 +965,14 @@ STYLE = """<style>
      into slivers. */
   @property --rsplit { syntax:'<percentage>'; inherits:false;
                        initial-value:70%; }
-  /* The question column's top fade depth, registered so it can travel. The
-     initial value has to be an absolute length: a registered property's
-     initial value must be computationally independent, so `1.5rem` would
-     make this whole rule invalid and the mask would never resolve. */
+  /* The question column's fade depths, head and foot, registered so they can
+     travel. The initial value has to be an absolute length: a registered
+     property's initial value must be computationally independent, so `1.5rem`
+     would make this whole rule invalid and the mask would never resolve.
+     ONE depth, stated twice, because the two ends lift on different states
+     (`attop` and `atend`) and a single property could not hold both. */
   @property --qfade { syntax:'<length>'; inherits:false; initial-value:24px; }
+  @property --qfoot { syntax:'<length>'; inherits:false; initial-value:24px; }
   #reviewwrap { display:grid; gap:0; align-items:stretch; margin-top:1rem;
     grid-template-columns:clamp(32ch, var(--rsplit), calc(100% - 26ch))
                           1.3rem minmax(0,1fr);
@@ -1009,77 +1018,93 @@ STYLE = """<style>
   .qdock { display:flex; flex-direction:column; min-height:0; min-width:0;
     will-change:transform, filter; }
   .qdock .label { margin-top:0; flex:none; }
-  /* THE QUESTION SCROLLS ALONGSIDE (#305 (a)). The card is the scroller, not
-     the dock, so `answering` stays put as a column head — it says what this
-     column IS, and a heading that scrolls away with its first paragraph makes
-     the reader ask again. `scrollbar-gutter` keeps the text from re-wrapping
-     the moment a live re-render changes the card's length. */
+  /* THE QUESTION SCROLLS ALONGSIDE (#305 (a)) — and what scrolls is the
+     question's BODY, not the whole card (#326). The dock is not the scroller,
+     so `answering` stays put as a column head — it says what this column IS,
+     and a heading that scrolls away with its first paragraph makes the reader
+     ask again. The card is not the scroller either, and that is the whole of
+     #326: a scrollport that contains the answer box cannot fade its text at
+     the box without fading the box, so the scrollport stops one element
+     short. `scrollbar-gutter` keeps the text from re-wrapping the moment a
+     live re-render changes the card's length. */
   /* the card's own 1rem bottom margin goes: "in line with the bottom of the
      review document" is a measurable claim and 16px is a visible miss. The
      card's border edge and the iframe's now end on the same line. */
-  /* THE TOP EDGE FADES TOO, once there is anything above it. Making the card
-     a scroller cut the first visible line in half directly under `answering`,
-     and half a row of glyph-tops under a heading reads as a rendering fault
-     rather than as scrolled text. Here a mask IS the right tool — the fade
-     belongs to the edge and to nothing else, there is no box to occlude — and
-     it is the same gesture as the foot, mirrored, not a second idiom. The
-     depth is a registered property so the edge ARRIVES when he leaves the top
-     and departs when he returns (transitions.md), instead of blinking. */
-  .qdock > .qa { flex:1 1 auto; min-height:0; overflow-y:auto;
-    display:flex; flex-direction:column;
-    scrollbar-gutter:stable; margin-bottom:0;
-    -webkit-mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade));
-    mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade)); }
-  .qdock.attop > .qa { --qfade:0px; }
+  .qdock > .qa { flex:1 1 auto; min-height:0; margin-bottom:0;
+    display:flex; flex-direction:column; }
+  /* BOTH EDGES FADE, and they are one gesture mirrored rather than two
+     mechanisms (#326 corrects #305 (c), which had a gradient BAND at the foot
+     and a mask at the head). His words: "the black stuff around the answer box
+     to emulate the fade thing is ugly. the text itself should fade, not be
+     covered by fake fade. and the buttons and text box shouldn't have anything
+     behind them". A band emulates a fade by painting `--bg` over whatever is
+     behind it — which on this page is the living shader — and it has to be as
+     tall as the box, so the box ends up sitting on a black plate. A mask fades
+     the GLYPHS and paints nothing at all.
+
+     Why a mask is now sayable when #305 argued it was not: the objection was
+     true of a scroller that contained the box ("a mask over the scroller
+     cannot be told about the box, and would dim his last line"). It is not
+     true of one that stops where the box begins. The mask's bottom edge IS the
+     scrollport's bottom edge, which is exactly where the text used to run into
+     the band, and the box is outside the masked element entirely — so there is
+     literally nothing behind it and nothing dimming it.
+
+     Head: making the body a scroller cut the first visible line in half
+     directly under `answering`, and half a row of glyph-tops under a heading
+     reads as a rendering fault rather than as scrolled text. Both depths are
+     registered properties so each edge ARRIVES when it is needed and departs
+     when it is not (transitions.md), instead of blinking.
+
+     The `transition` shorthand is safe HERE, where the same declaration on
+     `.qdock > .qa` would not be: a shorthand on a more specific selector
+     replaces the list wholesale, and `.qa` carries the card's own travel,
+     which the one route that also re-groups cards would then lose. `.qbody`
+     has no other transition to clobber. */
+  /* `display` is stated, and it is not a formality: the base rule makes this
+     element generate no box at all, and everything below — the flex sizing,
+     the scrollport, the mask — is silently inert without it. A block box
+     rather than a flex column, so the question's paragraphs collapse their
+     margins here exactly as they do on /questions. */
+  .qdock > .qa > .qbody { display:block; flex:1 1 auto; min-height:0;
+    overflow-y:auto; scrollbar-gutter:stable;
+    -webkit-mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade),
+      #000 calc(100% - var(--qfoot)), transparent);
+    mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade),
+      #000 calc(100% - var(--qfoot)), transparent);
+    transition:--qfade .45s ease, --qfoot .45s ease; }
+  .qdock.attop > .qa > .qbody { --qfade:0px; }
+  /* ...and the foot lifts when the body already ends at the box — his own
+     exception, carried over from #305 (c) unchanged in meaning: at the end of
+     the scroll nothing passes under the box, so a fade there would be dimming
+     his last line to hide nothing. A state with two ends, so it crosses
+     (transitions.md) rather than switching. */
+  .qdock.atend > .qa > .qbody { --qfoot:0px; }
   /* (b) THE INPUT IS GLUED TO THE BOTTOM, in line with the artifact's bottom
      edge — his second ask, and the reason the first one is worth anything: a
      question you can scroll past an answer box you cannot reach is still two
-     acts. It is `sticky` INSIDE the question's own scroller rather than a box
-     moved out of the card, because `.qcompose` is the shared component three
-     other surfaces render and four functions address through the card
-     (`snapshotCardState`, `setCardMode`, `submitCard`, the mode group). A
-     second copy on this one route would be a second thing to keep true.
-     The bottom margin goes because a sticky box parks its BORDER edge on the
-     scrollport: kept, it would be absent while stuck and reappear as a 3px
-     nudge the moment the body ended.
-
-     `margin-top:auto` (and the column flex above it) is what makes "glued"
-     unconditional. Sticky alone only holds a box the flow would push out of
+     acts. `.qcompose` stays the shared component three other surfaces render
+     and four functions address through the card (`snapshotCardState`,
+     `setCardMode`, `submitCard`, the mode group) — it is the LAST FLEX ITEM of
+     a card that does not scroll, which is glued by construction and needs
+     neither `position:sticky` nor `margin-top:auto` to be so. #305 needed both
+     and paid for them: sticky only holds a box the flow would push out of
      view, so a SHORT question left the box floating mid-column with 200px of
-     dead space beneath it — at a 1240px window the artifact ended at 1200 and
-     the box at 974. He asked for it in line with the artifact's bottom edge,
-     not in line with it when the question happens to be long, and one place
-     his hand can learn beats a place that depends on the text. Cost, stated
-     because it is real: flex items are independent formatting contexts, so
-     the card's internal margins no longer collapse through them and the dock
-     card runs ~20px taller than the same card on /questions. It is a scroller
-     and the delta is a few px per section, which is the cheaper of the two. */
-  .qdock > .qa > .qcompose { position:sticky; bottom:0; z-index:1;
-    margin-top:auto;
-    margin-bottom:0; padding-bottom:.3rem; }
-  /* (c) ...and the text passing UNDER it fades out rather than running into a
-     hard edge. The band is a pseudo-element BEHIND the compose's own children
-     (`z-index:-1` inside the sticky's stacking context), so the live text is
-     OCCLUDED, never masked: selection, copy and the last line are untouched.
-     The head of the column fades with a mask and this end does not, and the
-     difference is which thing is doing the hiding — up there the edge of the
-     box is, and a mask paints exactly that; down here the ANSWER BOX is, so
-     the fade has to be as tall as the box, stop where the box stops, and get
-     out of the way when the text ends. A mask over the scroller cannot be
-     told about the box, and would dim his last line at the end. */
-  .qdock > .qa > .qcompose::before { content:''; position:absolute;
-    left:0; right:0; bottom:0; top:-2rem; z-index:-1; pointer-events:none;
-    background:linear-gradient(to bottom, transparent, var(--bg) 2rem);
-    transition:opacity .45s ease; }
-  /* ...unless the body already ends at the box — his own exception. At the
-     end of the scroll nothing passes underneath, so a band there would be
-     dimming his last line to hide nothing. It is a state with two ends, so it
-     crossfades (transitions.md) rather than switching. */
-  .qdock.atend > .qa > .qcompose::before { opacity:0; }
+     dead space beneath it (at 1240px the artifact ended at 1200 and the box at
+     974), and the `margin-top:auto` that fixed that made every child of the
+     card a flex item, so its internal margins stopped collapsing and the dock
+     card ran ~20px taller than the same card on /questions. Both go: the
+     scroller takes the leftover space, the box takes what it needs, and the
+     body is a plain block box again, so it collapses margins the way
+     /questions does.
+     The bottom margin still goes and the .3rem padding stays, so the box's
+     border edge lands on the artifact's bottom line with air under its
+     buttons — the geometry #305 measured, reached without sticky. */
+  .qdock > .qa > .qcompose { margin-bottom:0; padding-bottom:.3rem; }
   @media (prefers-reduced-motion:reduce) {
     #reviewwrap.rkeyed { transition:none; }
     .rsplit::after { transition:none; }
-    .qdock > .qa > .qcompose::before { transition:none; }
+    .qdock > .qa > .qbody { transition:none; }
   }
   /* NARROW STACKS, it does not crush. Below 900px there is no room for two
      readable columns, so the pane goes back to being a document: one column,
@@ -1092,11 +1117,13 @@ STYLE = """<style>
     #reviewdoc { height:60vh; }
     #reviewframe { height:100%; }
     /* no inner scroller, so nothing is glued and nothing passes under the
-       box: both would be lying about a column that is now just a document */
-    .qdock > .qa { overflow:visible; -webkit-mask-image:none;
-                   mask-image:none; }
-    .qdock > .qa > .qcompose { position:static; }
-    .qdock > .qa > .qcompose::before { display:none; }
+       box: both would be lying about a column that is now just a document.
+       ONE line does all of it, because the wrapper goes back to the value it
+       has on every other route: `display:contents` generates no box, and an
+       element with no box carries no scrollport and no mask. Anything that
+       switched the fades off by name would have to name each of them, and
+       #326's whole point is that they are now one element's property. */
+    .qdock > .qa > .qbody { display:contents; }
   }
   /* the composer: the + opener sits in the heading's left gutter; the
      panel it toggles drifts in through a soft blur (the dream language),
@@ -1772,13 +1799,31 @@ const qaInner = (q, key) => {
       `<div class="anstext">` +
       (WHO[q.answer_by] ? `<span class="who">${WHO[q.answer_by]}</span>` : '') +
       stamp(q.answer_when) + `${mdInline(q.answer)}</div>` : '';
-  const foot = followThread(settled, true) + answer +
-               followThread(since, false) + qaCompose(key, st, q.title);
+  /* WHAT THE QUESTION SAYS IS WRAPPED; THE BOX HE ANSWERS IT WITH IS NOT
+     (#326). `.qbody` is the review dock's scrollport, so it holds everything
+     that should scroll — the title included, which is what #305 designed and
+     why its head fade is described as landing under `answering` rather than
+     under the title. A pinned title would also cost reading height without a
+     bound: at the 32ch floor a long one can run six lines and never scroll
+     away. On every route but the dock the wrapper generates no box at all
+     (`display:contents`), so this is one structure rather than two — which is
+     what lets `qacard.mjs` keep comparing the dock's card with /questions'
+     card shape for shape, and what lets the submit morph restate a dock card
+     through this same function without rebuilding the dock's layout.
+
+     A FOLDED entry keeps its title OUT of the wrapper, and has no choice: the
+     title IS the `<summary>`, which must be the disclosure's first child. The
+     wrapper's membership therefore differs by state — which nothing downstream
+     can see, because everything that reads the card's own children looks
+     through the wrapper (`cardBody`) and no dock card is ever folded. */
+  const foot = followThread(settled, true) + answer + followThread(since, false);
+  const compose = qaCompose(key, st, q.title);
   if (st === 'folded')
     return `<details class="qfold"><summary class="qt">${esc(q.title)}` +
       (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : '') +
-      `</summary>${body}${foot}</details>`;
-  return `<div class="qt">${esc(q.title)}</div>${body}${foot}`;
+      `</summary><div class="qbody">${body}${foot}</div>${compose}</details>`;
+  return `<div class="qbody"><div class="qt">${esc(q.title)}</div>` +
+         `${body}${foot}</div>${compose}`;
 };
 /* Two identities, deliberately. `data-qkey` ADDRESSES the entry in live data
    and is positional, so it is what writes use. `data-qid` is the question
@@ -2722,6 +2767,16 @@ function fitReview() {
   syncDockFade();                    // a resize changes what is still below
 }
 addEventListener('resize', fitReview);
+/* WHICH BOX SCROLLS, asked once (#326). The docked question's scrollport is
+   the body wrapper, not the card — the card holds the answer box too, and a
+   scrollport that holds the box cannot fade its text at the box. Off /review
+   the wrapper generates no box, so this returns an element whose scrollTop is
+   always 0, which is what those callers already assumed of the card. Declared
+   as a function so the three callers spread across three script blocks do not
+   depend on which block loads first. */
+function qaScroller(card) {
+  return card ? card.querySelector('.qbody') : null;
+}
 /* IS ANYTHING STILL PASSING UNDER THE ANSWER BOX? That is the only question
    the fade band asks, and the answer is a scroll distance, so it is read
    rather than remembered. A card that does not overflow at all answers "no"
@@ -2729,23 +2784,25 @@ addEventListener('resize', fitReview);
    fade — which is the zero case his exception describes.
 
    Called from the three places the answer can change and nowhere else: the
-   scroll itself, a re-render that replaces the card, and a resize. The
+   scroll itself, a resize, and a re-render — the last of those from the tick
+   AFTER the scroll it reads has been put back, not from inside the swap. The
    listener is delegated on the CAPTURE phase because `scroll` does not
    bubble and the card it is watching is replaced every two seconds. */
 function syncDockFade() {
   const dock = document.getElementById('qdock');
   if (!dock) return;
   const card = dock.querySelector(':scope > .qa');
-  if (!card) return;
-  const below = card.scrollHeight - card.clientHeight - card.scrollTop;
+  const body = card && qaScroller(card);
+  if (!body) return;
+  const below = body.scrollHeight - body.clientHeight - body.scrollTop;
   dock.classList.toggle('atend', below <= 2);
   /* and the mirror of it at the head: nothing is above at the top, so the
      title is crisp there and the edge only softens once he has scrolled */
-  dock.classList.toggle('attop', card.scrollTop <= 2);
+  dock.classList.toggle('attop', body.scrollTop <= 2);
 }
 addEventListener('scroll', e => {
   const t = e.target;
-  if (t && t.nodeType === 1 && t.classList.contains('qa')) syncDockFade();
+  if (t && t.nodeType === 1 && t.classList.contains('qbody')) syncDockFade();
 }, true);
 /* every number on this page that can drift without a disk change is written
    HERE, once a second, as TEXT into nodes that already exist — never through
@@ -2802,7 +2859,7 @@ function setCardMode(comp, mode, snap) {
     ta.placeholder = QPLACE[mode] || '';
     // #273: keep the accessible name in lockstep with the mode control.
     const card = comp.closest('.qa');
-    const titleEl = card && (card.querySelector(':scope > .qt')
+    const titleEl = card && (card.querySelector(':scope > .qbody > .qt')
       || card.querySelector(':scope > .qfold > .qt')
       || card.querySelector('.qt'));
     const title = titleEl ? titleEl.textContent.replace(/\\s+/g, ' ').trim() : '';
@@ -2893,7 +2950,13 @@ async function sendComment(key) {
     const thread = document.createElement('div'); thread.className = 'thread';
     host = document.createElement('div'); host.className = 'threadin';
     thread.appendChild(host);
-    card.insertBefore(thread, card.querySelector('.qcompose'));
+    /* into the BODY, at its end (#326). `insertBefore(…, '.qcompose')` put it
+       in the same visual place while the box was the card's last child, and
+       would now land it OUTSIDE the review dock's scroller — a note he cannot
+       scroll, wedged between the question and the box. The end of `.qbody` is
+       the end of the thread on every route, which is what the segment rule
+       below is about. */
+    (qaScroller(card) || card).appendChild(thread);
   }
   const f = document.createElement('div');
   f.className = 'follow human';        // it is his; say so, same as a reload
@@ -3828,13 +3891,22 @@ function setLiveContent(html) {
     parsed.innerHTML = html;
     const currentDock = document.getElementById('qdock');
     const nextDock = parsed.content.querySelector('#qdock');
-    if (currentDock && nextDock) currentDock.replaceWith(nextDock);
-    else setContent(html);
+    if (currentDock && nextDock) {
+      // THE FADE STATE RIDES ACROSS THE SWAP, like the scroll and the draft
+      // do (#326). The depths TRANSITION, so they are only ever allowed to
+      // move on a gesture — and a poll is not one. The server's markup carries
+      // neither class, so a fresh dock resolves the full 24px first and lands
+      // on its real value one style pass later: for half a second after every
+      // tick, both edges of a question he is only reading dimmed and lifted.
+      // The scroll position is restored below, so the state that was true
+      // before this swap is the state that is true after it; syncDockFade
+      // still runs once that restore has happened and corrects the one case
+      // where it is not — content that grew, which IS a change and does move.
+      for (const c of ['attop', 'atend'])
+        nextDock.classList.toggle(c, currentDock.classList.contains(c));
+      currentDock.replaceWith(nextDock);
+    } else setContent(html);
     paintIndicators(true); ages();
-    // the fresh card may be a different length, so what is below the box is a
-    // different answer; the restore that follows this scrolls it and the
-    // delegated listener catches that.
-    syncDockFade();
     // the new #qdock is a fresh node, so a half-typed answer is gone unless a
     // draft is put back into it — the review-dock reload loss he reported (#269).
     restoreAnswerDrafts();
@@ -3918,11 +3990,13 @@ function snapshotCardState() {
     const dets = [...card.querySelectorAll('details')].map(d => d.open);
     const typed = ta && (ta.value || ta === act);
     const opened = dets.some(Boolean);
-    // HOW FAR HE HAS READ is his too (#305). On /review the card is itself the
-    // scroller, and the tick replaces the whole dock — so a question he had
-    // scrolled halfway through would snap back to its first line every two
+    // HOW FAR HE HAS READ is his too (#305). On /review the question's body is
+    // the scroller (#326 — the card holds the answer box, which must not fade
+    // with the text), and the tick replaces the whole dock — so a question he
+    // had scrolled halfway through would snap back to its first line every two
     // seconds, which is #118 with reading in place of typing.
-    const read = card.scrollTop;
+    const sc = qaScroller(card);
+    const read = sc ? sc.scrollTop : 0;
     if (!typed && !opened && !read) return; // he has done nothing to this card
     m.set(card.dataset.qid, {
       open: dets, read,
@@ -3969,7 +4043,7 @@ function restoreCardState(saved) {
     const dets = [...card.querySelectorAll('details')];
     (s.open || []).forEach((o, i) => { if (o && dets[i]) dets[i].open = true; });
     // how far he had READ into the question (#305) — see putScroll
-    putScroll(card, s.read);
+    putScroll(qaScroller(card), s.read);
     if (s.value === null) return;
     const comp = card.querySelector('.qcompose');
     const ta = comp && comp.querySelector('textarea');
@@ -4181,11 +4255,17 @@ function ghostNode(el, rect) {
    be re-faded. So the toggle that caused the change is passed in when it is
    known, and when it is the card's own `.qfold` this is exactly what it always
    was. */
+/* `.qbody` is looked THROUGH, never at (#326). It is the review dock's
+   scrollport and nothing anywhere else — `display:contents`, no box — so a
+   ghost cloned from it has no rect and a `.qreveal` transition on it has
+   nothing to animate. The pieces that arrive and depart are its children, and
+   they are the same list this returned before the wrapper existed. */
 function cardBody(el, toggled) {
   const root = (toggled && el.contains(toggled)) ? toggled
              : (el.querySelector(':scope > .qfold') || el);
-  return [...root.children].filter(c =>
-    c.tagName !== 'SUMMARY' && !c.classList.contains('qt'));
+  return [...root.children]
+    .flatMap(c => c.classList.contains('qbody') ? [...c.children] : [c])
+    .filter(c => c.tagName !== 'SUMMARY' && !c.classList.contains('qt'));
 }
 /* was the height change caused by a disclosure NESTED inside the card, rather
    than by the card's own fold? The two need different departure ghosts, so
@@ -4859,6 +4939,16 @@ async function tick() {
       // the card first re-filled the box and silently dropped the focus.
       restoreFolds(folds);
       restoreCardState(kept);
+      // AFTER the restore, never before it (#326). What is above and below the
+      // docked question is a fact about its scroll position, and one line
+      // earlier that position is still 0 — so syncing there answers for a
+      // question scrolled to the top and then leans on the scroll steps
+      // running before the next style pass to correct it before anything is
+      // painted. That happens to hold, which is why no guard here fails on
+      // the other order; stating the precondition costs less than the
+      // reasoning does, and the fades are a transition, so the day it stops
+      // holding it is visible motion rather than a wrong number.
+      syncDockFade();
       restoreAskState(askKept);
       regroupCards(before);
       regroupCards(reviewBefore, null, REVIEW_LIST);

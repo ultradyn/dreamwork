@@ -248,63 +248,106 @@ you could not do the second while looking at the first.
   `/review` *paints* at his width instead of correcting to it a frame later.
   It is a preference, not shared state, and it needs no snapshot seam: the
   tick replaces only `#qdock`, never `#reviewwrap`.
-- **The question is the scroller, not the dock**, so `answering` stays put as
-  a column head. `scrollbar-gutter:stable` keeps a live re-render from
-  re-wrapping the text when the scrollbar comes and goes.
+- **The question's BODY is the scroller** — not the dock, so `answering` stays
+  put as a column head, and not the card, because the card holds the answer box
+  too and a scrollport that holds the box cannot fade its text at the box
+  without fading the box (#326, below). `qaInner` therefore wraps everything the
+  question *says* — its title included, so it still scrolls under `answering` —
+  in a `.qbody` element, and leaves `.qcompose` as that wrapper's sibling.
+  `scrollbar-gutter:stable` keeps a live re-render from re-wrapping the text
+  when the scrollbar comes and goes.
+  **Everywhere else `.qbody` must not exist, and `display:contents` is how an
+  element says so:** no box is generated, so margins collapse exactly as they
+  did before the wrapper, and — the half that is load-bearing rather than
+  convenient — no box means no mask and no scrollport, which is what the narrow
+  layout wants back. Proved rather than argued: every `.qa` rect and every
+  visible descendant rect on `/questions` and the dashboard is byte-identical
+  with and without the wrapper. Two things read the wrapper's children as the
+  card's own and both look **through** it — `cardBody` (the fold's reveal and
+  ghost, where a `display:contents` element would have no rect to animate) and
+  `sendComment`'s first-thread insert (which would otherwise land a note
+  *outside* the scroller, wedged between the question and the box). A folded
+  entry keeps its title out of the wrapper and has no choice: the title *is* the
+  `<summary>`, which must be the disclosure's first child.
 - **The answer box is glued to the foot of the pane**, ending on the same line
-  as the artifact. It is `position:sticky` **inside** the question's own
-  scroller rather than a second box lifted out of the card, because
-  `.qcompose` is the shared component three other surfaces render and four
-  functions address through the card (`snapshotCardState`, `setCardMode`,
-  `submitCard`, the mode group) — a copy for this one route would be a second
-  thing to keep true. The card's own `1rem` bottom margin goes with it: *"in
-  line with the bottom"* is a measurable claim, 16px is a visible miss, and a
-  sticky box parks its **border** edge on the scrollport, so a kept margin
-  would be absent while stuck and reappear as a nudge the moment the body
-  ended.
-  **And it is glued unconditionally**, which sticky alone does not give you:
-  sticky only holds a box the flow would push out of view, so a *short*
-  question left it floating mid-column — at a 1240px window the artifact ended
-  at 1200 and the box at 974. The dock card is therefore a flex column with
-  `margin-top:auto` on the compose, which resolves to zero the moment the
-  question overflows. One place his hand can learn beats a place that depends
-  on the length of the text. **The cost, stated because it is real:** flex
-  items are independent formatting contexts, so the card's internal margins no
-  longer collapse through them and the dock card runs ~20px taller than the
-  same card on `/questions`. It is a scroller, the delta is a few px per
-  section, and that is the cheaper of the two prices.
-- **Two fades, and they are not the same mechanism, because they are not
-  hiding the same thing.**
-  - At the **foot**, the *answer box* is doing the hiding, so the fade is a
-    gradient `::before` **behind the compose's own children** (`z-index:-1`
-    inside the sticky's stacking context): the live text is occluded, never
-    masked, so selection and copy are untouched. It has to be as tall as the
-    box, stop where the box stops, and get out of the way when the text ends —
-    none of which a mask over the scroller can be told about.
-  - At the **head**, the *edge of the box* is doing the hiding, and a mask
-    paints exactly that. Making the card a scroller left the first visible
-    line sliced in half directly under `answering`, which reads as a rendering
-    fault rather than as scrolled text. `--qfade` is the mask's depth, a
-    registered property so the edge **arrives** rather than blinking, and it
-    is listed in **`.qa`'s** transition rather than the dock's because a
-    `transition` shorthand on a more specific selector replaces the list
-    wholesale — declaring it on `.qdock > .qa` would silently take a card's
-    travel away on the one route that also re-groups cards. A registered
-    property's `initial-value` must be computationally independent, so it is
-    `24px`, not `1.5rem`.
+  as the artifact — and it is glued **by construction**: it is the last flex
+  item of a card that does not scroll. `.qcompose` stays the shared component
+  three other surfaces render and four functions address through the card
+  (`snapshotCardState`, `setCardMode`, `submitCard`, the mode group) — a copy
+  for this one route would be a second thing to keep true. The card's own `1rem`
+  bottom margin goes: *"in line with the bottom"* is a measurable claim and 16px
+  is a visible miss. `padding-bottom:.3rem` keeps air under the mode buttons
+  without a margin that would move the border edge off the artifact's line.
+  **#305 reached the same geometry with `position:sticky` + `margin-top:auto`
+  and paid for both; #326 removed them.** Sticky only holds a box the flow would
+  push out of view, so a *short* question left it floating mid-column — at a
+  1240px window the artifact ended at 1200 and the box at 974 — and the
+  `margin-top:auto` that fixed that made every child of the card a flex item, so
+  its internal margins stopped collapsing and the dock card ran ~20px taller
+  than the same card on `/questions`. With the scroller taking the leftover
+  space, the box needs neither, and the body is a plain block box again that
+  collapses margins the way `/questions` does.
+- **Two fades, one mechanism, mirrored.** *"The black stuff around the answer
+  box to emulate the fade thing is ugly. The text itself should fade, not be
+  covered by fake fade. And the buttons and text box shouldn't have anything
+  behind them (should look like it did before)"* (human, 2026-07-27, #326, about
+  the band #305 shipped an hour earlier). Both ends of the column are now a
+  single `mask-image` on `.qbody`: **the glyphs go translucent and nothing is
+  painted at all.**
+  - **Why the band was there, and why the objection to a mask stopped
+    applying.** #305 argued that *"a mask over the scroller cannot be told about
+    the box, and would dim his last line at the end"*, and that is true of a
+    scrollport that **contains** the box. It is not true of one that stops where
+    the box begins. A band, meanwhile, can only emulate a fade by painting
+    `--bg` over whatever is behind it — on this page that is the living shader —
+    and it has to be as tall as the box, so the box ends up sitting on a black
+    plate. That is the thing he was looking at.
+  - **At the foot** the mask's transparent edge *is* the scrollport's bottom
+    edge, which is exactly where the text used to run into the band, and the box
+    is outside the masked element entirely: nothing behind it, nothing dimming
+    it. **At the head** the same gradient, mirrored: making the body a scroller
+    left the first visible line sliced in half directly under `answering`, which
+    reads as a rendering fault rather than as scrolled text.
+  - **Two depths, `--qfade` (head) and `--qfoot` (foot), both `24px`** and both
+    registered properties, so each edge **arrives** and **departs** rather than
+    blinking (`transitions.md`). One property could not hold both, because the
+    two ends lift on different states. A registered property's `initial-value`
+    must be computationally independent, so it is `24px`, not `1.5rem`. The
+    `transition` shorthand sits on `.qbody`, which has no other transition to
+    clobber — the same declaration on `.qdock > .qa` would replace `.qa`'s list
+    wholesale and silently take a card's travel away on the one route that also
+    re-groups cards.
   - **Both lift where they would be lying.** `syncDockFade` reads one scroll
-    distance and sets `atend` (nothing passes under the box, so a band there
+    distance and sets `atend` (nothing passes under the box, so a fade there
     would dim his last line to hide nothing — *his own exception*) and `attop`
     (nothing is above, so the question's own title stays crisp). It is read
     from the scroll, never remembered, and called from the three places the
-    answer can change: the scroll, a re-render that replaces the card, and a
-    resize. The listener is delegated on the **capture** phase, because
-    `scroll` does not bubble and the card it watches is replaced every two
-    seconds.
+    answer can change: the scroll, a resize, and a re-render — the last of
+    those from the tick, **after** the restore that puts the scroll back, not
+    from inside the swap, because one line earlier that scroll is still 0 and
+    the answer would be about a question he is not looking at. The listener is
+    delegated on the **capture** phase, because `scroll` does not bubble and
+    the element it watches is replaced every two seconds.
+  - **A poll is not a gesture, so the state rides across the swap.** The dock
+    is replaced wholesale every two seconds and the server's markup carries
+    neither class, so a fresh dock resolved the full `24px` first and eased to
+    its real value one style pass later: **both edges of a question he was only
+    reading dimmed and lifted, every tick.** The classes are therefore copied
+    onto the incoming `#qdock` before it is swapped in — the same rule as the
+    scroll position and the half-typed draft, which is that a re-render carries
+    what the human's state was rather than starting from the server's default.
+    Content that *grew* is the one case where the carried answer is wrong, and
+    `syncDockFade` corrects it after the restore: that one IS a change, and it
+    moves. Guarded by tracing both depths across a real tick at three scroll
+    positions (`reviewsplit.mjs`), with the tick's own swap measured — the live
+    scroller is marked beforehand and its absence afterwards is what proves the
+    dock was replaced at all.
 - **How far he has READ is state he owns** (#118's rule, with reading in
-  place of typing): `snapshotCardState` carries `card.scrollTop` under `read`
-  and restores it, or a question he was halfway down would snap back to its
-  first line every two seconds.
+  place of typing): `snapshotCardState` carries the scroller's `scrollTop`
+  under `read` and restores it, or a question he was halfway down would snap
+  back to its first line every two seconds. Which element that is, is asked
+  once — `qaScroller(card)` — because three callers in three script blocks
+  would otherwise each carry their own answer.
   **And it goes back through `putScroll`, which CHECKS that it landed** —
   `refocus`'s rule (#179) applied to the other thing a restore hands back
   silently. A `scrollTop` assigned to a node the swap is one statement old is
@@ -324,6 +367,10 @@ you could not do the second while looking at the first.
   so it leaves the tab order with the layout it belonged to. Nothing is glued
   and neither fade is drawn: there is no inner scroller, so both would be
   lying about the layout — the box is simply the end of the question again.
+  **One line does all of it** — `.qbody` back to `display:contents`, the value
+  it has on every other route — because an element with no box carries no
+  scrollport and no mask. A rule that switched the fades off by name would have
+  to name each of them, and after #326 they are one element's property.
   Checked at 700px and at a 390px phone, where the pane hangs 0px off the side
   and the answer box is 358px wide in the page rather than floating over it.
 
@@ -336,6 +383,17 @@ behaviour was shown red against a build broken in exactly the way it names —
 named in its commit: the check that the question can scroll far enough for
 *half way down* to be a middle is the guard's own anti-vacuity assertion, and
 its failure mode was observed for real rather than injected.
+
+`dev/capture/qfade.mjs` guards #326 in **pixels**, and it has to: every
+assertion that could be written against the source text of the CSS would pass
+the next well-meaning band, because that one would have a different selector.
+So it hides the shader, paints the page a colour nothing in the design uses,
+and reads the composited result back — *no pixel inside the answer box's own
+box, or in the fade strip above it, may be the page's `--bg`*, which is the
+only colour a band can paint. The same plate measures the fade as a fade: the
+ink profile of the strip above the box falls toward the box and reaches the
+page colour at its edge, with the precondition (there IS text in that strip,
+and the question DOES overflow) derived at runtime and asserted first.
 
 ### Components (idioms)
 
