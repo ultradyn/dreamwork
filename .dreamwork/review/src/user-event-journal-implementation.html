@@ -1,0 +1,208 @@
+<!--dreamwork-review-source
+title: #263 · Red-first plan for the user-event journal · plan
+identity: user-event journal · plan
+context: task #263 · approved rec at 01:27 · plan only, no code
+status: awaiting review
+headline: Thirty-five increments, and two fixtures your own approval excludes.
+tag: plan only — no code
+sub: task #263 · 28 July 2026 · written plan, built by review_artifact.py
+skip: Skip to the decisions
+skip_href: #decision
+-->
+<!--#nav-->
+<a class="full" href="#measured">seams</a><a href="#fixtures">gaps</a><a href="#decision">asks</a>
+<!--#lead-->
+<p class="lead">Your <code>rec</code> at 01:27 authorised <em>a separate red-first
+implementation plan</em> and nothing else. That plan now exists at
+<code>.dreamwork/docs/plans/user-event-journal-implementation.md</code>: <strong>thirty-five
+increments of fifteen to twenty minutes</strong>, each with its test, its assertion, and the
+one production line whose deletion makes that test fail. It authorises no code — which is why
+this page asks for the next gate rather than reporting progress.</p>
+<!--#call-->
+<div class="call"><strong>Recommendation.</strong> Grant implementation authority for
+<strong>lanes A–D and F only</strong> — the digest, the journal, the domain-file store, the
+application adapters and the CLI. Every one of those is new files, new tests, and
+<em>zero</em> change to what the dashboard does or returns. Hold lanes E and H, which change
+the HTTP response and the version gate, behind a second gate. One amendment needs your ruling
+before lane E can start at all; it is <strong>Q2</strong>.</div>
+<!--#aside-->
+<span class="big">35</span>
+<small>increments, ~15–20 minutes each<br>18 of your 20 fixtures placed in one<br>0 lines of code this plan authorises</small>
+<!--#body-->
+<section id="measured" aria-labelledby="meas-t">
+  <div class="label" id="meas-t">What is actually there today, measured not remembered</div>
+  <p class="read">Every number below has a command in the plan, and one of them was wrong on
+  the first attempt — the fifteen was thirteen until a grep was replaced with an
+  <code>ast</code> walk. That correction is in the plan, because a scan over this repo's own
+  files has produced a confident wrong number before.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">0</span><span class="caption">tracked <code>.py</code> files that mention <code>sqlite3</code>. There is no database, no schema, no adapter, no <code>user_events/</code>. Lanes B–D are entirely greenfield</span></div>
+    <div class="fact"><span class="number">0</span><span class="caption">ways for <code>watch.py</code> to return a <code>202</code>. <code>_send</code> hardcodes <code>send_response(200)</code>, so the cutover adds a mechanism rather than changing an argument</span></div>
+    <div class="fact"><span class="number">0</span><span class="caption">cross-process locks in the whole file. <code>ANSWER_LOCK</code> is a <code>threading.Lock</code> — two <code>watch.py</code> processes on one target serialise against nothing</span></div>
+    <div class="fact"><span class="number">15</span><span class="caption">test and guard assertions that pin <code>200</code> on a write route. The browser pins none of them: every client check is <code>res.ok</code>, which <code>202</code> satisfies</span></div>
+  </div>
+  <div class="notice"><b>Two of those measurements changed the plan.</b> <code>do_POST</code>
+  has <em>no short-read check</em> — a client that closes mid-body today leaves a truncated
+  line in <code>submissions.log</code> that reads as complete. And because the browser only
+  ever checks <code>res.ok</code>, <code>200 → 202</code> is invisible to you and costs
+  exactly fifteen assertions. The first is a hazard the plan had to route around; the second
+  is why the cutover is one increment instead of a feature flag.</div>
+  <div class="scroller"><table>
+  <thead><tr><th>seam the design names</th><th>what exists in <code>watch.py</code> today</th></tr></thead>
+  <tbody>
+    <tr><td><code>JournalAdapter</code></td><td><b class="fail">absent.</b> No <code>sqlite3</code> import anywhere in the repo</td></tr>
+    <tr><td><code>DomainFileStore</code> · durable replace</td><td><b class="pass">already written.</b> <code>atomic_write_text</code> at <code>:7423</code> — temp, <code>fsync</code>, <code>os.replace</code>, parent <code>fsync</code></td></tr>
+    <tr><td><code>DomainFileStore</code> · the lock</td><td><b class="fail">absent.</b> No <code>fcntl</code>, no <code>flock</code>, no <code>O_EXCL</code>; an in-process <code>threading.Lock</code> only</td></tr>
+    <tr><td><code>DomainFileStore</code> · lineage</td><td><b class="fail">absent.</b> <code>domain_generation</code> and <code>body_digest</code> appear in the design document and nowhere else</td></tr>
+    <tr class="row-accent"><td><code>log_submission</code> · the one existing witness</td><td><b class="unknown">present, unproven.</b> <code>:8066</code>, one call site at <code>:8389</code>, and <code>except OSError: pass</code> at <code>:8128</code> — which is #262 verbatim. <strong>Zero direct unit tests</strong></td></tr>
+    <tr><td>task state at HTTP time</td><td><b class="pass">confirms #264's F3.</b> <code>_handle_command</code> validates and writes one log line. Nothing else</td></tr>
+  </tbody>
+  </table></div>
+</section>
+
+<section id="sequence" aria-labelledby="seq-t">
+  <div class="label" id="seq-t">The sequence, and the one invariant that makes it safe</div>
+  <p class="read">Eight lanes. Five can start cold on disjoint files. But
+  <code>watch.py</code> is one 8,647-line file that two of the lanes live inside and other
+  dreamers already hold — so <strong>lanes E and G share a single lane in practice</strong>,
+  and that, not the dependency graph, is the real scheduling constraint.</p>
+  <div class="spine">
+    <div class="spine-row"><div class="spine-key">A · digest</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p><b>2.</b> Length framing, then canonical method/media/route. Field
+      boundaries cannot be shifted to collide; case and parameter order cannot fork a digest.</p></div></div>
+    <div class="spine-row"><div class="spine-key">B · journal</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p><b>8.</b> Durable database, receive/replay/conflict, hash chain,
+      states, leased claims, cursor — then <b>two real OS processes on one file</b>, which is
+      the increment that would have caught #262.</p></div></div>
+    <div class="spine-row"><div class="spine-key">C · domain files</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p><b>5.</b> The OS-visible lock, embedded generation and body digest,
+      one atomic write for effect+marker+metadata, whole-file marker search, and
+      <code>rebaseline</code> as the only way to adopt a drifted successor.</p></div></div>
+    <div class="spine-row"><div class="spine-key">D · apply</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p><b>4.</b> Ternary proof, the reserved provisional successor, then
+      reconciliation against <b>really-killed child processes</b> — one effect per row of your
+      proof table. Five adapters last.</p></div></div>
+    <div class="spine-row"><div class="spine-key">E · HTTP</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p><b>6.</b> Envelope before body; journal in shadow; <b>the cutover</b>;
+      <code>submissions.log</code> demoted to best-effort; post-receipt rejection; and the
+      health state made visible, under <code>transitions.md</code>.</p></div></div>
+    <div class="spine-row"><div class="spine-key">F · CLI</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p><b>4.</b> <code>list</code>, <code>show</code>, <code>replay</code>,
+      <code>health</code>. <code>replay</code> is the only command permitted to cause a domain
+      effect, and a test walks the managed directory to prove the others cannot.</p></div></div>
+    <div class="spine-row"><div class="spine-key">G · browser</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p><b>4.</b> Draft store, attempt durable before the POST leaves the tab,
+      cross-tab conflict snapshot, one-time <code>localStorage</code> migration.</p></div></div>
+    <div class="spine-row"><div class="spine-key">H · gate</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p><b>2.</b> Mixed-version fail-closed, and a request spanning a quiesced
+      cutover. <b>Temp targets only</b> — running this against a live target is migration, and
+      migration is not authorised.</p></div></div>
+  </div>
+  <div class="notice"><b>The invariant, not the order, is what keeps this safe:</b>
+  <em>his words never have fewer durable homes than at the previous commit.</em> Two different
+  things get called "shadow" and they point in opposite directions, so the plan names them
+  separately — the <b>journal-shadow</b> phase before the cutover, where the journal is
+  written and its failures swallowed, and the <b>log-shadow</b> phase after it, where
+  <code>submissions.log</code> is best-effort by your decision 3.</div>
+  <div class="stages">
+    <div class="stage"><span><b>Journal-shadow.</b> A receipt is committed on every write while the response, the log and every handler stay byte-identical to a captured baseline. Rolling back is a revert.</span></div>
+    <div class="stage"><span><b>Cutover.</b> The journal commit authorises the response. Preconditions: the two-process test green, a real-target shadow window with the two counts asserted at runtime, and all fifteen <code>200</code> assertions moving in the same commit.</span></div>
+    <div class="stage"><span><b>Log-shadow.</b> A <code>submissions.log</code> failure becomes health, not a refusal — and a one-line grep in the CLI's own tests keeps the log from quietly becoming load-bearing again.</span></div>
+  </div>
+</section>
+
+<section id="fixtures" aria-labelledby="fx-t">
+  <div class="label" id="fx-t">Your twenty fixtures — eighteen placed, and the honest two</div>
+  <p class="read">The design's §"Red-first acceptance fixtures" is the acceptance set; the plan
+  invents no other. Each fixture is mapped to the increment that <em>first</em> makes it pass.
+  Two could not be placed, and both are the same reason: <strong>your approval clause
+  excludes them.</strong> Neither is a gap in your design — and the plan reads that exclusion
+  as <em>not built</em> rather than built-but-not-run, which is <strong>Q4</strong>. The third
+  row below is a different kind of thing: a testability finding, and the paragraph under the
+  table says what the plan does about it instead of fudging it.</p>
+  <div class="scroller"><table>
+  <thead><tr><th>fixture</th><th>why it is not in an increment</th></tr></thead>
+  <tbody>
+    <tr><td><b>18</b> · active-store purge, tombstone, residual report</td><td><b class="fail">excluded.</b> Your approval excludes <em>payload purge</em>, so nothing here builds one</td></tr>
+    <tr><td><b>19</b> · the <em>PostgreSQL</em> half of the multi-client suite</td><td><b class="fail">excluded.</b> Your approval excludes <em>PostgreSQL operation</em>. The SQLite half places at increment 9; increment 10 makes the suite ready for a second backend and stops there</td></tr>
+    <tr class="row-accent"><td><b>3</b> · journal <code>fsync</code> failure ⇒ no <code>202</code></td><td><b class="fail">a real gap.</b> Stdlib SQLite has no pluggable VFS, no failable pragma, and a patched <code>os.fsync</code> never reaches SQLite's own syscall</td></tr>
+  </tbody>
+  </table></div>
+  <div class="notice"><b>What the plan does about fixture 3, and why it does not fudge it.</b>
+  Increment 22 tests the <em>contract</em> — any journal open-or-commit failure yields no
+  <code>202</code> — at a real seam: the journal's parent directory <code>chmod 0500</code>
+  before start, so the open genuinely fails and nothing is mocked. The
+  <code>fsync</code>-specific case is recorded as a deferred gap with the mechanism named
+  (an <code>LD_PRELOAD</code> shim failing <code>fsync</code> for one path). Your own design
+  says crash fixtures must <em>"kill at named seams rather than mocking away durability"</em>
+  — so a mocked <code>fsync</code> is the exact thing that sentence forbids, and leaving the
+  gap visible is the design-conformant answer rather than the lazy one.</div>
+  <p class="read">The plan also names, per increment, <strong>what its tests must not
+  fake</strong> — because the failure mode here is not a missing test, it is a thorough one
+  that cannot fail. Four of the traps it forbids by name:</p>
+  <div class="checks">
+    <div class="check"><b>threads instead of processes</b> <span>passes with no DB constraint at all</span></div>
+    <div class="check"><b>a patched clock on lease expiry</b> <span>proves the patch, not backend time</span></div>
+    <div class="check"><b><code>urllib</code> for an interrupted body</b> <span>it always sends a complete body</span></div>
+    <div class="check"><b>a patched <code>open()</code> for the shadow</b> <span>breaks the journal write too</span></div>
+  </div>
+</section>
+
+<section id="decision" aria-labelledby="dec-t">
+  <div class="label" id="dec-t">Decisions wanted — one word each</div>
+  <div class="choice"><div class="choice-grid"><span class="choice-tag">Q1</span><div>
+    <strong>Start lanes A–D and F now, with E and H behind a second gate?</strong>
+    <div class="answer"><strong>Rec: yes.</strong> Those five lanes are new files and new
+    tests. No route changes, no response changes, no migration, nothing installed. The two
+    lanes that <em>do</em> change what your browser gets are the two that wait.</div>
+  </div></div></div>
+  <div class="choice"><div class="choice-grid"><span class="choice-tag">Q2</span><div>
+    <strong>Amend §"Receive and idempotency" law 2 so the server keeps a partial witness,
+    marked incomplete, for an interrupted body?</strong>
+    <div class="answer"><strong>Rec: yes.</strong> Law 2 is right that an interrupted body is
+    no receipt, and silent about the witness. Today the server witnesses it — badly, as a
+    truncated line that reads as complete. Tightening receipts without this makes a partial
+    answer <em>less</em> recoverable than it is now, for every client without a durable
+    attempt store: the CLI, <code>curl</code>, anything that is not the tab.</div>
+  </div></div></div>
+  <div class="choice"><div class="choice-grid"><span class="choice-tag">Q3</span><div>
+    <strong><code>200 → 202</code> on all six write routes — a non-event?</strong>
+    <div class="answer"><strong>Rec: yes.</strong> Measured: every client-side check is
+    <code>res.ok</code>, so nothing you see or click changes. Fifteen test and guard
+    assertions move, in the cutover's own commit. Confirming you agree is cheaper than
+    discovering you do not.</div>
+  </div></div></div>
+  <div class="choice"><div class="choice-grid"><span class="choice-tag">Q4</span><div>
+    <strong>Purge and PostgreSQL — not built, rather than built-but-not-run?</strong>
+    <div class="answer"><strong>Rec: not built.</strong> Fixtures 18 and 19's second half are
+    recorded unplaceable on that basis. Built-not-run code that erases payloads is a loaded
+    gun with a plan attached; if you want it later it gets its own design and its own gate.</div>
+  </div></div></div>
+  <div class="approval">Approving this grants implementation authority for lanes A–D and F,
+  rules Q2 either way, and leaves the cutover unauthorised. It authorises no migration, no
+  deployment, no PostgreSQL, no topic chats and no purge — the same six exclusions your
+  01:27 approval carried, unchanged.</div>
+</section>
+
+<details>
+  <summary>Two things found while measuring that are not #263's, reported not fixed</summary>
+  <div class="details-in">
+  <p><b><code>/answer</code> and <code>/comment</code> truncate <code>questions.md</code> in
+  place.</b> <code>watch.py:8462</code> and <code>:8496</code> do
+  <code>open(qpath, "w")</code> — no temp file, no rename, no <code>fsync</code> — while
+  <code>/ask</code> three lines above uses <code>atomic_write_text</code>. A crash between
+  truncate and write loses the whole file, on the two routes that carry your answers. It is
+  pre-existing, it is one function call to repair, and lane C would subsume it but lane C is a
+  long way off. It wants its own id.</p>
+  <p><b>No short-read check in <code>do_POST</code>.</b> <code>watch.py:8387</code> reads
+  <code>min(nbytes, MAX_BODY)</code> and never compares the result's length to the declared
+  one, so an interrupted body is recorded as though complete. Increment 20 fixes it; worth its
+  own id in case lane E waits.</p>
+  <p>Also noted: <code>log_submission</code> — the most durability-critical function in the
+  file — has no direct unit test, and <code>_send</code> cannot express a status code at all.</p>
+  </div>
+</details>
+<!--#footer-->
+<p>Plan: <code>.dreamwork/docs/plans/user-event-journal-implementation.md</code> · design:
+<code>.dreamwork/docs/plans/user-event-journal.md</code> (approved <code>rec</code> 01:27,
+contract only) · adjacent: <code>task-transition-boundary.md</code> (#264, ask open).</p>
