@@ -179,10 +179,46 @@ Next id: **390**
   unguarded marks stylesheet (`increment 2's CSS added without checking labels is non-empty`) —
   and `test_a_source_with_no_marks_renders_byte_identically_apart_from_the_stamp` went red
   alone, neighbours green. Snapshot-restored; 70 pass
-  · **still to build: increments 2+** — the rail/strip presentation, the tab, next/prev, and
-  the owed two-line-tab gutter measurement above. **Increment 1 hands increment 2 a guarantee
-  it should not squander:** every mark's `id` is on the marked element itself, so next/prev can
-  key off it directly with nothing to invent
+  · **still to build: increments 2+** — the rail/strip presentation, the tab, next/prev.
+  **Increment 1 hands increment 2 a guarantee it should not squander:** every mark's `id` is on
+  the marked element itself, so next/prev can key off it directly with nothing to invent
+  · **the owed measurement LANDED 2026-07-28 07:26 (`1696657`, `ccc @grok`), and it refuted the
+  geometry the design rests on.** Doc `.dreamwork/docs/measurements/367-two-line-tab-geometry.md`,
+  reproducible script `dev/capture/marktab-geometry.mjs`, screenshots under
+  `.dreamwork/docs/measurements/367-tabs/`. **A worst-case ~6-word two-line tab is 180×32.3px,
+  not the 96px flag every number in the plan assumed.** Consequences, all measured:
+    · **the 780px cliff does not hold — it moves to ~830px.** The tab fits inside `.wrap` down
+    to 830 (by 0.5px), is past the wrap at 820, and is **clipped past the page edge at 810 and
+    at 780**. Typical authored labels are 117–130px and would have hidden this; the worst case
+    is what decides a no-truncation design
+    · **vertical collision is possible in real documents.** Tab height 32.3px is the minimum
+    top-to-top gap; this artifact's densest adjacent block pair (`section#long` → `p.read`) is
+    **29.2px**. Section-level marks are safe (329–929px apart); block-level adjacent marks are
+    not
+    · **the strip below the cliff needs its own answer for 5–7 marks.** At the soft cap of 7,
+    worst-case labels need **3 rows / ~214px**; typical labels 2 rows / ~140px. He removed
+    truncation, so "shrink it" is not available
+  · **coordinator verified independently:** re-ran the lane's script and every number reproduced
+  **byte-identically**, including the screenshots — the measurement is deterministic, which is
+  stronger than the criterion asked for. I also looked at the images myself rather than reading
+  its vision notes. The 780px shot shows the tab clipped **mid-word**, and carries an irony worth
+  keeping: the artifact's own table in that same image reads *"780 · 134 · yes — and this is the
+  last one"*, so the design doc is being falsified by the prototype rendered on top of it
+  · **one boundary the lane did not name** (coordinator perimeter audit): its collision shot
+  uses **identical labels** for both tabs, which exaggerates "reads as one continuous chrome
+  mass" — distinct labels would separate better. The geometric finding stands regardless, and so
+  does the fix (a minimum gap or a divider), so this changes the evidence's strength and not the
+  conclusion
+  · **derived decisions, mine and reversible — these follow from his ruling rather than adding
+  to it**, and increment 2's brief carries them: **(i)** the rail/strip switch moves to the
+  measured wrap-fit boundary rather than staying at the literal 780, because he ruled no
+  truncation and a clipped flag is worse than no flag; **(ii)** two marks closer than the tab
+  height are the renderer's problem, not the author's — offset or stack them, and refuse only if
+  that is impossible, in the voice of the existing no-id refusal
+  · **one question is genuinely his and is NOT derivable**: at 5–7 marks the strip becomes
+  ~140–214px of chrome on a narrow screen. That is a reading-experience price, and he is the only
+  one who can say whether it is worth paying or whether the strip should cap what it *shows*
+  while next/prev still walks them all. Owed to him with an artifact
   · the first increment is unchanged by the rulings: the source contract in `file-formats.md`
   plus the "declares no marks ⇒ byte-identical output" check, red first, which touches no
   artifact — and it is the one that makes the frame change safe to ship before any artifact

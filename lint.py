@@ -1284,6 +1284,11 @@ NOT_GUARDS = frozenset({
     "report",                                    # shared exit-handler helper
     "beautycap", "cmdcap", "menucap", "reviewcap",  # capture tools, for looking
     "indtrace", "optrace", "rm-check2", "note82", "pip83", "worldspace",
+    # A measurement, not a guard: it renders prototype geometry against a COPY of a
+    # built artifact and prints numbers. It gates nothing because there is nothing
+    # yet to gate — #367 increment 2 has no shipped CSS. When that lands, its real
+    # guard is a separate file and this stays a measurement. (#367)
+    "marktab-geometry",
 })
 
 
