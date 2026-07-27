@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **378**
+Next id: **380**
 
 ## Open
 
@@ -104,30 +104,36 @@ Next id: **378**
   label), rendered as thin edge tabs; next/prev walks them in document order; the count is
   **capped low and the cap is stated**, because his whole point is that five flags help and
   fifty are wallpaper
-  · **cannot start yet**: `review_artifact.py`'s component vocabulary is now enforced
-  (`40a1d71`), so a new component means a new rule in `COMPONENT_CHILDREN` and #365 says
-  measure real usage before writing one · and the artifact frame wants one batched change
+  · **UNBLOCKED 2026-07-28 04:05, both reasons spent**: #365's measurement landed
+  (`09c3881`), so the way to add a component rule is now demonstrated rather than deferred —
+  count the class's real direct children across every built artifact, add the rule only if the
+  set is unanimous, and record the count. That pass also refuted `.summary-line` and
+  `.choice`/`.answer`, so a new `.mark` component must earn its rule the same way and not by
+  analogy · and the frame batch it was waiting to ride landed at `405092f`, so this is now its
+  own commit and its own rebuild, which is one restamp of 15 artifacts and acceptable
+  · **next-up when a lane is free**: it is his idea, typed from inside the problem, and every
+  design constraint above is already recorded — so this starts with the source-mark contract
+  (`file-formats.md`) and the cap, not with CSS
 
-- **#365** — The component check guards one component out of about twenty · P3 ·
-  review tooling · origin: **loop** · 20m · reported by dreamer-264-boundary as report-only,
-  and its restraint was right: `review_artifact.COMPONENT_CHILDREN` has exactly one entry
-  (`.fact`) because rules for the others would be guessing at usage nobody has measured —
-  which is the same complaint the check itself answers · **so the work is measurement first,
-  rules second**: for each candidate component, count its real usage across all 15 artifacts
-  and only then write the rule the measurement supports · the two obvious next candidates are
-  named because they appear in every recent artifact: `.summary-line` (two `<span>`s) and
-  `.choice`/`.answer` · two adjacent findings from the same lane, both cheap and neither
-  urgent: `protected-service-boundary-288.html` carries **one `.fact` with zero `.facts`
-  containers** (verified independently: `containers=0 facts=1`), so it gets the padding and
-  background with no grid around it — invisible to a source-level check because it is one of
-  the untemplated dozen with no source at all, and it belongs on whatever eventually migrates
-  them · and a fatal violation short-circuits before the grid warning, so a file with both
-  faults shows the error on one run and the warning on the next: correct priority, worth
-  knowing so it is not read later as a bug
-  · one real constraint to record rather than let someone discover: `<br>` as a direct child of
-  a component is now refused, because the rule is *every direct child carries a documented
-  class* rather than a tag blocklist. No existing file does it, and the strict form is what
-  catches the real defect without a maintained exemption list
+- **#378** — One `.fact` sits outside any `.facts` grid, in a file with no source · P3 ·
+  review tooling · origin: **loop** · 10m · found by #365's measurement and verified
+  independently: `protected-service-boundary-288.html` has `containers=0 facts=1`, so that
+  fact gets the component's padding and background with no grid around it · it also carries an
+  `.eyebrow` and a bare `<div>` inside the `.fact`, which the `COMPONENT_CHILDREN` rule
+  forbids · **invisible to every check that exists, and will stay so**: the file is one of the
+  untemplated dozen with no source at all, and both the component refusal and the grid warning
+  run in `build`, which never sees it · so this belongs to whatever migrates those files, not
+  to a new check — a checker that read built output instead would be reporting on files nobody
+  can regenerate · `test_every_shipped_artifact_still_satisfies_the_new_rules` excludes this
+  one violation **by name**, so a new one in the same file is still caught · related: **#379**
+
+- **#379** — A fatal component violation hides the grid warning until the next run · P3 ·
+  review tooling · origin: **loop** · 5m · found by #365's measurement · `build` raises on a
+  component violation before `grid_warnings` runs, so a source with both faults shows the error
+  on one run and the warning on the next · **the priority is correct** — a refusal must
+  outrank an advisory — and the entry exists so the sequence is not read later as a bug, or
+  "fixed" by demoting the refusal · if it is ever worth changing, the change is to collect
+  warnings before raising, not to reorder the checks · related: **#378**
 
 - **#363** — lint's landed-but-open WARN cannot tell a forgotten fold from a live lane · P3 ·
   tooling/honesty · origin: **loop** · 10m · reported by dreamer-264-boundary as report-only ·
