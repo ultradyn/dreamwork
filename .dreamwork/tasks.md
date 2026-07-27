@@ -24,9 +24,42 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **305**
+Next id: **306**
 
 ## Open
+
+- **#305** — Read a review document and answer its question side by side · P1 ·
+  Web UI feature/design · ~75m, **needs splitting** · origin: **human** ·
+  **do next via watch 16:34** · sent from `/review?p=tasks-page.html` while
+  reading the #281 artifact, so the friction is first-hand and the page he was
+  on is the page to fix · **his words, kept whole:** "should be able to scroll
+  the question alongside a review document, and the answer/add note input
+  should stay glued to the bottom in line with the bottom of the review
+  document. Above that the text from answering should fade out close to the
+  answer box (unless it is at the end of the question text body). use intuition
+  and judgement to fit the webui aesthetic + remain consistent with design +
+  produce an excellent design. Additionally, there should be an invisible
+  vertical bar between review doc and question being answered that allows
+  dragging left/right to change width of review doc and question block. We also
+  can extend the height of the review doc and RHS column if the height of the
+  window allows." · six distinct asks, and the last three are separable:
+  (a) question scrolls alongside the document rather than after it,
+  (b) the answer/note input is glued to the bottom, aligned with the document's
+  bottom edge, (c) question text fades toward the input, suppressed when the
+  body already ends there, (d) an invisible draggable divider resizes the two
+  columns, (e) both columns may grow taller when the viewport allows,
+  (f) the whole thing must read as this page's own aesthetic, not a generic
+  split pane · **the width question is the gate**: `watch-design.md` names
+  `/review` as *the* deliberate width exception and #281 Q1 asks him whether a
+  second two-pane layout is allowed — his answer here may already be that
+  ruling, so reconcile the two rather than building against one of them ·
+  the divider needs a persisted width, a keyboard-operable equivalent (a
+  drag-only affordance is not reachable), a reduced-motion story, and a
+  narrow-viewport fallback that stacks rather than shrinking both to unusable ·
+  the fade is a gradient over live text, so it must not clip the last line or
+  make copied text lossy · obey transitions.md and watch-design.md · likely
+  three increments: the two-column shell + splitter, the glued input + fade,
+  then the height/responsive behaviour
 
 - **#303** — Make `lint.py` notice a `status.json` that lost known keys · P3 ·
   chore · 20m · origin: **loop** · goal: make a silent projection-rewrite loss
