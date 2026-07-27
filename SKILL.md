@@ -326,7 +326,16 @@ results, no ceremony.
   the loop's and it got it wrong: dreamhub's stage-1 plan went to him
   as prose in a questions entry, and it was the largest design decision
   of the day. watch.py lists and serves them; archive alongside the
-  answered question.
+  answered question. **Do not hand-roll the page (#325).** Write only the
+  words, as `.dreamwork/review/src/<slug>.html`, and build:
+  `python3 <skill-dir>/review_artifact.py build .dreamwork/review/src/<slug>.html`
+  — `review-artifact.template.html` owns the frame, palette and footer, you
+  own the content, and `check` reports each artifact as current, stale or
+  untemplated. Hand-rolling is what produced five font stacks and eight page
+  backgrounds across twelve artifacts, all of it in the stylesheet nobody
+  meant to author; the source lives under `src/` because watch.py's
+  non-recursive listing would otherwise serve him a half-built page. Its
+  shape, and what `build` refuses, are in `file-formats.md`.
 - `.dreamwork/run-mode` — main-dreamer pace for this host (#290): one line,
   closed set (`lackadaisical` / `hot` / `assisted`), written by the
   dashboard after a 10s arm, dual-written with one `watch-events.log` line

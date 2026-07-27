@@ -1259,3 +1259,21 @@ this shape and convert opportunistically.)
   hollow check tends to move all its assertions together. (Same run, honestly: one
   assertion — "a successful answer clears the draft" — passed pre-fix vacuously,
   nothing having been stored to clear. Count such an assertion out of the proof.)
+
+- **Four traps in checks, all found by `tmpl325` inside one task (#325), each a
+  check that passed with the code it named deleted.** Worth keeping together
+  because they are one species: an assertion whose subject is not what its name
+  claims. (1) **A self-documenting HTML template cannot contain its own
+  markers** — documenting a `<!--…-->` syntax inside an HTML comment terminates
+  that comment at the first close sequence and spills the rest into the page;
+  guard it in code, since a note is read after the damage. (2) **"the selector
+  occurs somewhere in the stylesheet" is not "the component is styled"** —
+  `@media print`'s `break-inside` lists mention many components, so a presence
+  check over all contexts passes with the component's real rule deleted; require
+  the unconditional context AND a non-empty declaration set. (3) **An
+  indentation check must assert on a continuation line** — the first line
+  inherits the template's literal whitespace and passes with the formatting code
+  removed. (4) **A test named for a property it cannot fail on is worse than no
+  test**: `stamp_is_derived_from_bytes` passed against a hardcoded digest. When a
+  name claims derivation, the assertion must **vary the input** and watch the
+  output move.

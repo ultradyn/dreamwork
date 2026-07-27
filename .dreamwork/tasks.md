@@ -24,9 +24,22 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **329**
+Next id: **330**
 
 ## Open
+
+- **#329** — Teach `lint.py` to report stale review artifacts · P3 · tooling ·
+  origin: **loop** · from #325's report: `review_artifact.py check` already answers
+  current / stale / untemplated per artifact and exits 1 on any stale, but nothing
+  runs it, so an artifact silently keeps an old frame after the template improves —
+  which is exactly the drift #325 exists to end, returning by a different door ·
+  have `lint.py` run `check` over a target's `.dreamwork/review/*.html` and WARN
+  (not error) on `stale`, staying silent on `untemplated` so the twelve
+  pre-existing artifacts do not become permanent noise · #325 deliberately did not
+  add this: the source format lives in this skill's directory rather than a
+  target's `.dreamwork/`, and `file-formats.md` documents it in the same "checked
+  by X, not by lint.py" idiom the browser-storage section uses — so decide first
+  whether lint is even the right home, or whether `just audit-styleguide` is
 
 - **#327** — Re-review the `/tasks` proposal against everything that landed since
   it was written · P1 · design review · origin: **human** · **human via watch
@@ -92,32 +105,6 @@ Next id: **329**
   draft-loss fix)**, so this starts when that releases; he has authorised native
   subagents again for important work, and this is a visual-quality change on the
   surface he reads proposals on
-
-- **#325** — Make the review artifact a template, not twelve hand-rolled pages ·
-  **P1** · **next-up** · tooling/design · ~40m · origin: **human** · **human via
-  dashboard composer 2026-07-27 21:38** (verbatim: *"do-next: the tasks page
-  review page is nice and a good example. We should save it as a template so we
-  can include it in the bundle and also so we can iterate on it and perfect it as
-  a template."*) · so `tasks-page.html` is the reference he likes — **read it
-  first and let it define the target**, do not design a new look · **the drift is
-  measured, and it is the argument**: 12 artifacts in `.dreamwork/review/`, each
-  with its own inline `<style>`, carrying **5 distinct `font-family`
-  declarations** and at least 8 different page backgrounds (`#070a12`, `#080c14`,
-  `#0b0f19`, `#0b1220`, `#0d1422` … all meaning "the dark one") · every review
-  request ships an artifact (his standing rule, 2026-07-25), so this is not
-  cosmetic — it is the surface he reads loop proposals on, and it currently
-  reinvents itself every time · **the hard constraint**: artifacts must stay
-  SELF-CONTAINED and offline-clean (inline everything — styles, charts, math), so
-  the template cannot become a shared stylesheet the pages link to; it has to be
-  a source the generator inlines · **open design calls, none decided**: where the
-  template lives (this skill's directory, so it ships with the bundle), whether it
-  is a file a tool fills or a documented block agents copy, how an artifact
-  declares which template version it was built from, and whether existing
-  artifacts get migrated or only new ones adopt it · rec: a template plus a tiny
-  renderer, because "a documented block agents copy" is the mechanism #203 ruled
-  out — it asks every future author to remember, and the drift above is what that
-  produces · also worth checking: `watch.py` lists and serves these, so the
-  template must not break that listing
 
 - **#324** — Convert the remaining 15 tail-printing guards to the shared
   reporter · P3 · chore · ~40m · origin: **loop** · goal: a crash must never
@@ -1210,6 +1197,29 @@ Next id: **329**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#325** — the review artifact is a template with a builder · landed `2365cb0`,
+  merged `HEADSHA` · his 21:38 ask · the shape was decided by measurement: the
+  drift across twelve artifacts is entirely in the stylesheet (five font stacks,
+  eight page backgrounds, twelve inline stylesheets, zero shared source) while the
+  section markup is consistent — so template-owns-the-frame /
+  author-owns-the-words, and the obvious copyable block would have put the drifted
+  bytes back under per-author memory · sources at `.dreamwork/review/src/<slug>.html`
+  (a subdirectory because `watch.py`'s `list_reviews` is a non-recursive `*.html`
+  listing that would otherwise serve him a half-built page); stamp derived from the
+  template's bytes so staleness never depends on an author judging their own change
+  visible; `check` is three-valued (current/stale/untemplated) because two values
+  would have to lie about the twelve pre-existing artifacts · fidelity proven three
+  ways — style block extracted programmatically and inserted unedited, runtime
+  parsed comparison of every shared selector and palette token including inside
+  `@media`/`@starting-style`, and Chromium geometry matching to a tenth of a pixel
+  at 1180px · 41 new tests (730 total) · SKILL.md now points at the builder, which
+  was the one thing deciding whether this took effect · migration of the twelve
+  deliberately NOT filed and I agree: they record what was proposed and when, and
+  rebuilding would restyle pages he has already read and ruled on · this task's own
+  proposal source sits unbuilt at `.dreamwork/review/src/325-review-template.html`
+  by design — an artifact with no paired question would appear on his dashboard
+  from nowhere, and its one open call (migration) is answered
 
 - **#192** — Guards printed from a tail handler, so a crash read as a clean
   sheet · P2 · landed 2026-07-27 · chore · ~35m · origin: **loop** · goal: a
