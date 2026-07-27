@@ -1539,3 +1539,24 @@ this shape and convert opportunistically.)
   readback plus post-write link check turns a silent class into exit 2), which is
   exactly why the wrong premise could have gone unnoticed: the code was right for
   a reason that was not the stated one. (coordinator, #369, 2026-07-28)
+- **A CSS edit to a shared selector in `review-artifact.template.html` must be
+  mirrored byte-for-byte in `.dreamwork/review/tasks-page.html`.**
+  `test_template_rules_match_the_reference_rule_for_rule` pins every selector the
+  two share to identical declarations, and the only documented door for a
+  difference (`DECLARATION_DIVERGENCES`) is empty — so a one-line fix like
+  `white-space:nowrap` on `.topactions a` reddens the fidelity test unless the
+  reference carries it too. tasks-page.html is the hand-rolled artifact the
+  template was cut from: untemplated, never rebuilt, and the coupling is manual
+  and invisible until `just test` runs. The reference deserves the fix anyway —
+  but the next person editing a shared template selector should not have to
+  discover the second file by a red test. (dreamer, #347/#372, 2026-07-28-0337-two-seams-in-the-review-frame)
+- **`getClientRects().length === 1` on an `inline-flex` element is hollow: the
+  box stays one rect while the text wraps inside it.** The natural "did the box
+  split?" check reported `1` for four nav labels that were visibly broken
+  ("measur/ed"). The instrument that discriminates is a `Range` over each WORD —
+  a word split mid-character spans two lines and yields two rects while its box
+  stays one — skipping words with `-` or `/`, where a break is correct
+  typography. The inverse of the earlier Range lesson (rects are per inline box):
+  there the *contents* were stable and the *container* misbehaved; here the
+  container reports stable geometry while its contents break. A box-level or
+  end-state check passes over exactly this case. (dreamer, #347, 2026-07-28-0337-two-seams-in-the-review-frame)

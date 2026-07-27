@@ -1,11 +1,11 @@
 <!doctype html>
-<!--Built from the dreamwork review template v1+6ea37497 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<!--Built from the dreamwork review template v1+e3a46914 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
-<meta name="dreamwork-review-template" content="v1+6ea37497">
+<meta name="dreamwork-review-template" content="v1+e3a46914">
 <title>#254 · One rooted exchange per question · design</title>
 <style>
 /* Offline-clean by construction: no fetches, no external fonts, no images.
@@ -61,7 +61,7 @@ h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit);margin-top:1.4rem}
 .toprail{position:sticky;top:0;z-index:20;background:rgba(9,13,22,.91);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
 .toprail-in{width:min(calc(100% - 2rem),1120px);min-height:58px;margin:auto;display:flex;align-items:center;gap:1rem;justify-content:space-between}
 .identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius)}
+.topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
 main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
 .label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
@@ -81,7 +81,7 @@ main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
 .notice{margin:1rem 0;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--warn);color:var(--muted);max-width:84ch}
 .facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:1.1rem 0}
 .fact{background:var(--bg2);padding:.95rem}.fact .number{display:block;color:var(--bright);font-size:1.3rem;line-height:1.1}.fact .caption{display:block;color:var(--dim);margin-top:.3rem;font-size:.72rem}
-table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem}
+table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem;min-width:max-content}
 th,td{text-align:left;vertical-align:top;padding:.62rem .72ch;border-bottom:1px solid var(--line)}
 th{color:var(--dim);font-size:.66rem;text-transform:uppercase;letter-spacing:.065em;font-weight:normal}
 td:first-child{color:var(--lit)}.pass{color:var(--ok)}.unknown{color:var(--warn)}.fail{color:var(--bad)}
@@ -187,7 +187,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   .facts{grid-template-columns:repeat(2,minmax(0,1fr))}
   .version-mark{border-left:0;border-top:1px solid var(--line);padding:.7rem 0 0;display:flex;align-items:baseline;gap:1rem}
   .version-mark .big{flex:none;font-size:1.4rem;letter-spacing:-.04em}
-  .identity span{display:none}.topactions .full{display:none}
+  .identity span{display:none}.topactions .full{display:none}.topactions{min-width:0}
   .spine-row{grid-template-columns:9ch 1.8rem minmax(0,1fr)}.spine-key{font-size:.72rem;padding-right:.4rem}
   .summary-line{grid-template-columns:1fr;gap:.05rem}
   .detgrid{grid-template-columns:1fr}.detgrid dd{border-top:0;padding-top:0}
@@ -426,7 +426,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   </div>
 </details>
 
-<footer>Prepared for task #254 · 27 July 2026 · design only, self-contained, offline-clean, no external requests. <span class="dimmer">· built from review template v1+6ea37497</span></footer>
+<footer>Prepared for task #254 · 27 July 2026 · design only, self-contained, offline-clean, no external requests. <span class="dimmer">· built from review template v1+e3a46914</span></footer>
 
 </main>
 </body>

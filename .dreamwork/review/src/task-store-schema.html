@@ -18,11 +18,11 @@ smaller than #294 claimed</strong>, and the part that is not gated is designed h
 task entity, its read-only CLI, and the migration's report half. Nothing is built. The full
 design is <code>.dreamwork/docs/plans/task-store-schema.md</code>.</p>
 <!--#call-->
-<div class="call"><strong>Recommendation.</strong> Approve the shape and take the four recs
-(S1 keep combined entries, S2 keep compound bands, S3 leave the 60 as NULL, S4 free text with
-NULL) — then answer <strong>#263 E1</strong>, which is the only thing standing between this
-design and the rest of #294. E1 is not a design question: the design is finished and PASS.
-It asks whether you authorise implementing it.</div>
+<div class="call"><strong>Ruled 01:23 — the four decisions are answered.</strong> S1 splits the
+combined entries; S2 closes <code>priority</code> via a closed band plus <code>priority_uncertain</code>
+(the three <code>P0/P1</code> stay, deliberately); S3 is withdrawn; S4 closes <code>type</code> via a
+lookup table. What remains is <strong>#263 E1</strong>, the only thing standing between this
+design and the rest of #294. E1 is not a design question: the design is finished and PASS.</div>
 <!--#aside-->
 <span class="big">5</span>
 <small>findings, each breaking a schema that looks right<br>111 open ids measured through the real reader<br>0 tables created under this id</small>
@@ -80,9 +80,9 @@ It asks whether you authorise implementing it.</div>
   on the entry; <code>task</code> is permanent identity pointing at it, so
   <code>#138</code> and <code>#156</code> share one body that cannot disagree with itself.</p>
   <pre><code>entry(entry_id PK, state open|landed, title, body verbatim,
-      priority NULL, priority_rank NULL, type NULL, origin NULL, source_line)
+      priority band(P0-P3), priority_uncertain flag, type NULL, origin NULL, source_line)
 task (id PK, entry_id -&gt; entry, ordinal)</code></pre>
-  <div class="summary-line"><span>priority + priority_rank</span><span>two columns: your words kept verbatim, plus a derived rank so <code>P0/P1</code> sorts with <code>P0</code> instead of after it</span></div>
+  <div class="summary-line"><span>priority + priority_uncertain</span><span>a closed band column (<code>P0</code>&ndash;<code>P3</code>) plus a flag for &ldquo;could be higher&rdquo;, so <code>P0/P1</code> is band <code>P1</code> with the flag set &mdash; orderable, groupable, no compound value</span></div>
   <div class="summary-line"><span>type NULL</span><span>populated only from unambiguous forms; the migration <em>reports</em> what it could not read. #339's ruling: a misdetected value is worse than none</span></div>
   <div class="summary-line"><span>origin</span><span>three values, and NULL only for entries whose greatest leading id is below 216 — an asserted invariant, not preserved looseness</span></div>
   <div class="summary-line"><span>dependency edges</span><span>not parsed from prose. Today's blocked-on is free text; each stored edge keeps the exact substring it was read from, and every unparsed phrase is listed for you rather than guessed into a graph</span></div>
@@ -123,7 +123,7 @@ task (id PK, entry_id -&gt; entry, ordinal)</code></pre>
   <thead><tr><th>normalise first</th><th>how many entries</th><th>what the schema gains</th></tr></thead>
   <tbody>
     <tr class="row-accent"><td>split the combined entries</td><td>3</td><td class="pass"><code>task(id PRIMARY KEY)</code> — one table fewer, and no join for any consumer</td></tr>
-    <tr><td>resolve compound bands</td><td>4</td><td class="pass"><code>priority</code> becomes a closed enum</td></tr>
+    <tr><td>close compound bands in the schema</td><td>3 stay (the <code>P1/P2</code> was a split artefact)</td><td class="pass"><code>priority</code> is a closed band; <code>priority_uncertain</code> holds &ldquo;could be higher&rdquo; with no compound value</td></tr>
     <tr><td>entries with no band</td><td>6</td><td class="pass">band NOT NULL, or a deliberate NULL you chose</td></tr>
     <tr><td>classify unreadable <code>type</code></td><td>the tail of 66 distinct values</td><td class="pass"><code>type</code> becomes a closed set</td></tr>
   </tbody>
@@ -147,9 +147,12 @@ task (id PK, entry_id -&gt; entry, ordinal)</code></pre>
   <div class="choice"><strong>S2 · Compound bands.</strong> Resolve the four
   (<code>P0/P1</code>&times;3, <code>P1/P2</code>&times;1) so <code>priority</code> is a closed
   enum, or keep them legal?
-  <div class="answer"><strong>Rec REVISED to resolve</strong> — but this is the one where your
-  prose may carry meaning a single band cannot ("urgent, not yet certain which"). If any of the
-  four still says that, say so and it stays legal.</div></div>
+  <div class="answer"><strong>Ruled: priority closes, and the bands stay.</strong> The three
+  <code>P0/P1</code> each still mean something (&ldquo;at least P1, possibly the very top, not yet
+  certain which&rdquo;), so they stay &mdash; but the schema needs no compound value: a closed band
+  column plus <code>priority_uncertain</code> holds &ldquo;could be higher&rdquo;. The
+  <code>P1/P2</code> was never ambiguity &mdash; it was <code>#250</code>&rsquo;s P1 and
+  <code>#251</code>&rsquo;s P2 concatenated, and the split resolved it.</div></div>
 
   <div class="choice"><strong>S3 · Origin. <span class="dim">Withdrawn — nothing to
   decide.</span></strong> It rested on finding 4, which was wrong.
