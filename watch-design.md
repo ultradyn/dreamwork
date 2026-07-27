@@ -678,6 +678,18 @@ takes no punctuation with it. It is written with non-breaking spaces: an
 inline-block collapses the leading and trailing whitespace of generated
 content, and `content:" · "` renders flush against its neighbour.
 
+**A crumb never breaks inside itself** (`.crumb { white-space:nowrap }`), and
+the one exception is the path, which must wrap anywhere (`.fdir` re-enables
+wrapping for its own text). The rule exists because "the separator belongs to
+the crumb that follows" is only true if it cannot be *separated* from it: a
+crumb is an inline-block whose contents wrap like any other inline content, so
+once #252's switch made the row long enough to wrap at 390px, the row broke
+between the separator and the switch and left a lone `·` on a line of its own,
+17px above the crumb it belonged to. A trailing **word joiner** (U+2060) in the
+separator was tried first and does not work — it suppresses a break at its own
+position, and Chromium still takes the break opportunity before an atomic
+`inline-flex` box.
+
 **The column travels.** `/review` is the styleguide's one width exception,
 and changing width is a layout change, so it glides (`body.wsliding`) on the
 dissolve's own easing rather than snapping. Two consequences that are not
@@ -826,6 +838,135 @@ the check's fault.
 **H2 (clickable breadcrumb segments) stays refuted** until real directory
 routes exist — a segment that navigates nowhere is a false promise (#243/#244).
 **H3 refuted:** letting the long path keep the primary line is the reported bug.
+
+### Rendered / Source (#252)
+
+`.md` at `/file` reflows (see Prose rendering). Reflowing is right for reading
+and wrong for **checking**, so the mode is a choice he makes: one compact
+two-position switch beside the path, **markdown only**, `rendered` by default.
+
+**The mode is a ROUTE, not a toggle.** `?view=source`, parsed in exactly one
+place (`routeOf`) and written in exactly one place (`navigate`'s `url`), so a
+link he copies preserves the intent he copied it with and the address bar can
+never disagree with the page. Anything that is not `source` is rendered — an
+unknown value must not mint a third state, and `?view=` on a non-markdown path
+is inert, because that body is verbatim in either mode.
+
+**The switch is two ordinary internal links**, which buys three things at once
+and re-implements none of them: the mode is deep-linkable because it lives in
+the `href`; it is keyboard- and middle-click-operable because it is a link
+(Tab reaches `source` in five stops, Enter activates it); and the swap rides
+the router's existing dissolve because `isInternal` already claims `/file`. A
+pair of buttons would have needed a handler, a history push and a transition of
+its own. The active label carries `aria-current="page"` rather than a radio's
+checked state — these *are* pages.
+
+It is the standing **sliding selection group** (`.sgroup`/`.sgind`/`.sgbtn`,
+#121), so the travelling outline, its easing and its reduced-motion landing
+come for free. What is its own:
+
+- it sits in a line of text, so `display:inline-flex` on the row's baseline at
+  the crumb row's own size (`.7rem`), not a control panel bolted to it;
+- **both labels stay in one row at every width** (his rule). `.sgroup` wraps by
+  default and a wrapped two-position switch is a stack with the indicator
+  sliding vertically through it, so the switch sets `flex-wrap:nowrap`. Two
+  words cost under 16ch — there is no viewport where hiding or stacking half of
+  a binary choice is the better trade;
+- **the selector is `#meta .fmodes`, and that is a contract rather than a
+  habit.** `.sgroup` re-declares `display:flex; flex-wrap:wrap` at plain class
+  specificity and *later* in the sheet, so a bare `.fmodes` lost both: the
+  switch became a **block-level** flex container, which forces a line break
+  before and after itself — inside its own crumb — and orphaned the separator
+  above it. The id keeps the invariant true wherever this block sits in the
+  file, which is the same reasoning `.dreamin`'s `!important` states in its own
+  comment. Its guard asserts the *computed* `display` and `flex-wrap`, not only
+  that two labels happened to fit: two words fit in 390px whatever the wrap
+  rule says, so the observable check alone could not fail on this;
+- the active label takes `--accent`, i.e. `.sgbtn.on` unmodified. That is the
+  accent's rule rather than an exception to it: the mode is the live state of
+  the surface he is reading, not a settled preference like the project tint
+  (whose selected label deliberately wears its own hue instead).
+
+**`.on` is deliberately absent from the crumb's html**, and the crumb is
+declared `stable` so `renderChrome` never rewrites it while it survives. A
+rewritten `.sgroup` is fresh nodes with a 0-width indicator, so the outline
+would grow out of the row's left edge instead of sliding to the other label;
+`paintFileMode` paints the state after the row is assembled and slides the
+indicator only when the group actually survived. The crumb's key carries the
+**path** (`fview:<p>`), so switching *files* departs one switch and arrives
+another — a different file's control — while switching *mode* on one file keeps
+the same element. Nothing stale can survive a change of file.
+
+**Motion** is the route dissolve, unchanged (`transitions.md`, *The dream
+dissolve*): the heading and the switch are chrome, so they are the same
+elements before and after and are **held fixed** while the body dissolves under
+them. Reduced motion swaps instantly, with the same mode, the same bytes and
+the same restored reading position.
+
+**The reading position survives, as a ratio.** The two panes are different
+heights — a rendered document is shorter than the source it came from, by
+roughly its own markup — so the same pixel offset is a different place in the
+text. Two measurement traps are live on this path and both are
+`transitions.md` rules:
+
+- `documentElement.scrollHeight` counts the outgoing **ghost**, which is an
+  absolutely positioned clone inside `.wrap` and, going source → rendered, the
+  taller of the two. The restore would land low and then be clamped when the
+  corpse is removed a second later.
+- `getBoundingClientRect` answers in **visual** space, and on the frame this
+  runs `#view` is mid-`enter`: pushed back in Z and scaled down.
+
+So `contentBottom()` walks `offsetTop` up the `offsetParent` chain and adds
+`offsetHeight` — layout values, immune to both. A pointer user has to scroll
+back to the top to reach the switch, so the restore earns its keep on
+**popstate** (back/forward between the modes) and on a keyboard activation.
+
+**Source is never syntax-rewritten**, and that is the whole point of the mode
+rather than a detail to optimise away (his words). It is the same
+`` `<pre>${esc(text)}</pre>` `` every non-markdown file at `/file` has always
+rendered — reached by a second route, never by a second renderer — so there is
+nothing between the server's string and one escaped text node: no transform to
+audit, no tokeniser to drift out of step with the file. **#351 asks for syntax
+highlighting on `/file`; a markdown file's Source pane is the one place it must
+not reach.** `review_artifact.py`'s build-time highlighter (#339/#348) stays in
+review artifacts, and the page carries no `tok-` output at all.
+
+**Two limits on "exact", stated rather than implied**, because a guarantee with
+an unstated edge is worse than a narrower one:
+
+- `read_text` opens in **text mode**, so Python's universal-newline
+  translation turns `\r\n` into `\n` before the page ever sees it. A CRLF file
+  renders as LF in both modes. Nothing the loop writes is CRLF, and the raw
+  bytes remain reachable at `/filebytes`.
+- `read_text` caps at **200,000 characters**. Both modes are equally truncated;
+  neither claims otherwise, and again `/filebytes` is the uncapped path.
+
+`dev/capture/fileview.mjs` guards it. Four of its checks are worth copying:
+
+- **the deep link is LOADED, not clicked.** A switch that works only on click
+  is precisely the bug a click test cannot see, and the pasted link is the
+  point of the parameter;
+- **the pane is asserted to hold NO element children**, not "no `tok-` span":
+  the narrower form passes over every other rewrite;
+- **inertness AND visibility.** A page that *deleted* the `<script>` is also
+  inert and has silently lost the file's content, so the literal characters are
+  asserted present;
+- **the two modes' scroll ranges are asserted to DIFFER** before the ratio is
+  checked. With equal ranges, restoring a ratio is indistinguishable from
+  keeping a pixel offset — and from doing nothing.
+
+Three findings from red-proving it, all recorded because each cost a run:
+`page.click()` **scrolls its target into view**, and the switch is at the top of
+the document — so driving the scrolled phase through Playwright's mouse
+destroyed the ratio it was about to assert and read as a broken feature.
+`waitUntil:'networkidle'` plus a sleep is **not** enough before measuring
+height: `/filedata` is fetched after load, so under concurrent browsers the
+guard measured a `loading…` placeholder as the whole document and the range
+read 0. And the reduced-motion landing has **two independent implementations**
+— the `@media` block's `transition:none` and `slideIndicator`'s `rmr` branch —
+so removing either alone left the check green; it goes red only when both go,
+which is redundancy rather than a hollow check, and worth knowing before
+someone deletes "the duplicate".
 
 ### Prose rendering
 

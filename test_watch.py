@@ -3537,6 +3537,114 @@ class TestFileHeadingLockup(unittest.TestCase):
                       watch.PAGE)
 
 
+class TestFileViewMode(unittest.TestCase):
+    """#252 — Rendered / Source for markdown at `/file`.
+
+    The browser guard drives the switch; what belongs here is the pair of
+    guarantees that are about the SHAPE of the code rather than about the
+    rendered page, because both are the kind of thing a later edit undoes
+    without any check noticing:
+
+    - **Source is the verbatim path that already existed**, not a second
+      renderer. If a highlighter or any other transform is ever introduced
+      between the server's string and the escaped text node, the mode stops
+      being what he asked for — and #351 is an open request to add exactly
+      such a highlighter to this view.
+    - **`?view=source` is a ROUTE**, read in one place and written in one
+      place, so a copied link and the page it came from cannot disagree.
+    """
+
+    def test_source_is_the_existing_verbatim_path_and_is_never_rewritten(self):
+        # ONE expression, and it is the same `<pre>${esc(text)}</pre>` every
+        # non-markdown file at /file has always rendered — both modes read
+        # `src`, so there is no second renderer to drift.
+        self.assertIn("const src = `<pre>${esc(text)}</pre>`;", watch.PAGE)
+        self.assertIn(
+            "const body = (isMarkdownFile(param) && mode !== 'source') "
+            "? mdB(text) : src;", watch.PAGE)
+        # ...and nothing tokenising may appear on this path. #339's highlighter
+        # is a build-time function in review_artifact.py and must stay there;
+        # `tok-` is the class prefix it emits.
+        self.assertNotIn("tok-", watch.PAGE,
+                         "the page must carry no tokeniser output: Source's "
+                         "bytes are the point of the mode (#252 vs #351)")
+
+    def test_the_mode_is_read_from_the_route_and_written_back_to_it(self):
+        # Read in exactly one place...
+        self.assertEqual(
+            1, watch.PAGE.count("sp.get('view') === 'source' ? 'source' : 'rendered'"),
+            "the mode must be parsed in routeOf and nowhere else")
+        # ...and written in exactly one place, so a deep link and the address
+        # bar cannot disagree about which mode is showing.
+        self.assertEqual(
+            1, watch.PAGE.count("(mode === 'source' ? '&view=source' : '')"))
+        # an unknown value is rendered, never a third state
+        self.assertIn("const mode = opts.mode === 'source' ? 'source' : 'rendered';",
+                      watch.PAGE)
+        # every entry point into navigate carries it, or one of them silently
+        # loses the mode (the deep-link bug this was red-proved against)
+        for site in ("{ push: true, q: r.q, mode: r.mode }",
+                     "{ push: false, q: r.q, mode: r.mode }",
+                     "{ push: false, transition: false, q: r.q, mode: r.mode }"):
+            self.assertIn(site, watch.PAGE, f"navigate call missing the mode: {site}")
+
+    def test_the_switch_is_links_markdown_only_and_holds_its_own_state(self):
+        # Links, not buttons: that is what makes the mode deep-linkable, the
+        # switch keyboard-operable, and the swap ride the router's dissolve.
+        sw = re.search(r"const fileModeSwitch = .*?\n};", watch.PAGE, re.S)
+        self.assertIsNotNone(sw, "fileModeSwitch is gone")
+        self.assertIn('<a class="sgbtn fmode" data-mode="rendered"', sw.group(0))
+        self.assertIn('<a class="sgbtn fmode" data-mode="source"', sw.group(0))
+        self.assertNotIn("<button", sw.group(0))
+        # the `.on` state is NOT in the html — see paintFileMode: a rewritten
+        # crumb is fresh nodes, and a fresh .sgind grows out of the row's left
+        # edge instead of sliding to the other label
+        self.assertNotIn("fmode on", sw.group(0))
+        self.assertIn("stable: true", watch.PAGE)
+        self.assertIn("if (isMarkdownFile(p))", watch.PAGE)
+        # ...and the sliding group is the SHARED one, not a second switch
+        self.assertIn('class="sgroup fmodes"', watch.PAGE)
+        self.assertIn("slideIndicator(g, !slide)", watch.PAGE)
+
+    def test_mobile_keeps_both_labels_in_one_row(self):
+        # His rule. `.sgroup` wraps by default and a wrapped two-position
+        # switch is a stack with the indicator sliding vertically through it.
+        rule = re.search(r"\n  #meta \.fmodes \{(.*?)\}", watch.PAGE, re.S)
+        self.assertIsNotNone(rule, "the #meta .fmodes rule is gone")
+        self.assertIn("flex-wrap:nowrap", rule.group(1))
+        # ...and it must OUT-SPECIFY `.sgroup`, which re-declares
+        # `display:flex; flex-wrap:wrap` later in the same sheet at plain class
+        # specificity. A bare `.fmodes` lost both, which made the switch a
+        # block-level flex container that broke its own crumb in two.
+        self.assertIn("display:inline-flex", rule.group(1))
+        self.assertLess(watch.PAGE.index("#meta .fmodes {"),
+                        watch.PAGE.index("  .sgroup {"),
+                        "this block sits ABOVE .sgroup, so its selector — not "
+                        "source order — is what makes the display stick")
+        # nothing may hide either half at any width
+        for m in re.finditer(r"\.fmodes?[^{]*\{[^}]*display:none[^}]*\}", watch.PAGE):
+            self.fail(f"a width hides part of the switch: {m.group(0)!r}")
+
+    def test_the_reading_position_is_measured_in_layout_space(self):
+        # Two traps, both documented in transitions.md and both live on this
+        # path: `documentElement.scrollHeight` counts the outgoing GHOST, and
+        # `getBoundingClientRect` reads visual space while `#view` is
+        # mid-`enter` (pushed back in Z and scaled down). offsetTop/offsetHeight
+        # are immune to both.
+        fn = re.search(r"function contentBottom\(\) \{.*?\n\}", watch.PAGE, re.S)
+        self.assertIsNotNone(fn, "contentBottom is gone")
+        body = fn.group(0)
+        self.assertIn("offsetTop", body)
+        self.assertIn("offsetHeight", body)
+        for forbidden in ("getBoundingClientRect", "scrollHeight"):
+            self.assertNotIn(forbidden, body,
+                             f"contentBottom must not use {forbidden} — it "
+                             f"answers for the ghost or for a transform")
+        # a ratio, not a pixel offset: the two panes are different heights
+        self.assertIn("window.scrollY / range", watch.PAGE)
+        self.assertIn("if (modeSwap) restoreScrollRatio(keepRatio);", watch.PAGE)
+
+
 class TestProjectTint(unittest.TestCase):
     """#143 — his colour for this project, on disk and in the page."""
 

@@ -359,6 +359,21 @@ STYLE = """<style>
   /* non-breaking spaces: an inline-block collapses the leading/trailing
      whitespace of generated content, so " · " would render flush */
   .crumb + .crumb::before { content:"\\00a0\\00b7\\00a0"; color:var(--dim); }
+  /* A CRUMB NEVER BREAKS INSIDE ITSELF (#284, measured at 390px). The design
+     already says the separator belongs to the crumb that FOLLOWS — that is why
+     a departing crumb takes no punctuation with it — but a crumb is an
+     inline-block whose contents wrap like any other inline content, so as soon
+     as the row was long enough to wrap it broke between the separator and the
+     mode switch and left a lone `·` on a line of its own, 17px above the crumb
+     it belonged to.
+
+     A trailing WORD JOINER (U+2060) in the separator was the first attempt and
+     it did NOT work: it suppresses a break at its own position, and Chromium
+     still took the break opportunity before the switch's atomic `inline-flex`
+     box. `nowrap` is the rule actually wanted — a crumb is a short label — and
+     the ONE exception is the path, which must wrap anywhere (`.fdir` re-enables
+     wrapping for its own text). */
+  .crumb { white-space:nowrap; }
   /* the snapped start state for anything arriving: transition:none so it
      BEGINS here instead of animating toward here (the enter-snap rule).
 
@@ -398,7 +413,7 @@ STYLE = """<style>
      unbreakable 60-character token can do. It is selectable text, because
      selecting it is the fallback when the clipboard is refused. */
   .fdir { color:var(--dim); user-select:text; -webkit-user-select:text;
-          overflow-wrap:anywhere; word-break:break-word; }
+          white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
   .fcopy { background:none; border:1px solid transparent; color:var(--muted);
     border-radius:var(--radius); font:inherit; padding:0 .3rem; cursor:pointer;
     transition:color .3s ease, border-color .3s ease; }
@@ -420,6 +435,42 @@ STYLE = """<style>
      cheapest way to obey that is to need no layout in the first place. */
   .fmsg { position:absolute; top:100%; left:0; margin-top:.15rem;
           max-width:100%; }
+  /* ── Rendered / Source (#252) ────────────────────────────────────────────
+     The page's standing sliding selection group (#121), so the outline that
+     travels, its easing and its reduced-motion landing all come for free and
+     there is no second switch idiom here. What is its own is that it sits in
+     a line of TEXT: inline-flex on the row's baseline, at the crumb row's own
+     size, so it reads as part of the metadata line rather than as a control
+     panel bolted to it.
+
+     BOTH LABELS STAY IN ONE ROW AT EVERY WIDTH (his rule), which is what
+     `flex-wrap:nowrap` is for — `.sgroup` wraps by default, and a wrapped
+     two-position switch is a stack with an indicator sliding vertically
+     through it. Two words cost under 16ch: there is no viewport where hiding
+     or stacking half of a binary choice is the better trade.
+
+     The active label takes `--accent`, i.e. `.sgbtn.on` unmodified. That is
+     the accent's rule and not an exception to it: the mode is the live state
+     of the surface he is reading, not a settled preference like the project
+     tint (whose selected label deliberately wears its own hue instead).
+
+     SOURCE ORDER IS NOT A CONTRACT, and this is the rule that proves it here:
+     `.sgroup` declares `display:flex; flex-wrap:wrap` at the same specificity
+     and LATER in this sheet, so a plain `.fmodes` lost both. The switch was
+     therefore a BLOCK-level flex container, which forces a line break before
+     and after itself — inside its own crumb — and the separator was orphaned
+     on a line of its own 17px above it (measured at 390px). `#meta` is on the
+     selector so the invariant holds wherever this block sits in the file,
+     rather than depending on it sitting below `.sgroup`. The same reasoning
+     `.dreamin`'s `!important` states in its own comment. */
+  #meta .fmodes { display:inline-flex; flex-wrap:nowrap;
+                  vertical-align:baseline; gap:.1rem; }
+  .fmodes .fmode { padding:.1rem .4rem; font-size:.7rem; white-space:nowrap; }
+  /* the row's links underline on hover; a segmented control's labels must not
+     — the indicator is what says which one is live */
+  .fmodes .fmode:hover, .fmodes .fmode:focus-visible { text-decoration:none; }
+  .fmodes .fmode:focus-visible { outline:1px solid var(--accent);
+                                 outline-offset:2px; }
   @media (prefers-reduced-motion: reduce) {
     .crumb, .htitle, .fcopy { transition:none; }
   }
@@ -2733,7 +2784,9 @@ function humanSize(n) {
   }
   return '0 B';
 }
-/* buildFile renders the body of /file for three kinds of file (#336):
+/* buildFile renders the body of /file for three kinds of file (#336), and a
+   markdown file in one of two MODES (#252 — `mode` comes from the route, so
+   Rendered vs Source is deep-linkable):
    - text: <pre> (or reflowed .md, per #158) — the standing behaviour.
    - image: an <img> served from /filebytes, framed like everything else
      in the column.
@@ -2742,7 +2795,7 @@ function humanSize(n) {
      <pre> as plausible-looking mojibake. The bytes are reachable (the
      download link) but never by accident, on the page's "detail is
      ranked, never withheld" rule. */
-function buildFile(param, fetched) {
+function buildFile(param, fetched, mode) {
   if (!fetched)
     return '<div id="filebody"><div class="dim">not found</div></div>';
     if (fetched.binary) {
@@ -2779,7 +2832,20 @@ function buildFile(param, fetched) {
              '</div></div>';
     }
   const text = fetched.text;
-  const body = isMarkdownFile(param) ? mdB(text) : `<pre>${esc(text)}</pre>`;
+  /* #252 — SOURCE IS THE VERBATIM PATH THAT ALREADY EXISTED. It is the same
+     `<pre>${esc(text)}</pre>` every non-markdown file at /file has always
+     rendered, reached by a second route rather than by a second renderer, and
+     that is precisely what makes the bytes trustworthy: there is nothing
+     between the server's string and one escaped text node — no transform to
+     audit, no tokeniser to drift out of step with the file.
+
+     DO NOT HIGHLIGHT THIS PANE. #351 asks for syntax highlighting on /file,
+     and a markdown file's Source mode is the one pane it must not touch: he
+     asked for this mode so that what he copies out of it is the file. His
+     words: that is the whole point of the mode and not a detail to optimise
+     away. */
+  const src = `<pre>${esc(text)}</pre>`;
+  const body = (isMarkdownFile(param) && mode !== 'source') ? mdB(text) : src;
   return `<div id="filebody">${body}</div>`;
 }
 /* the image's own arrival (#336): if its bytes land after the view settled,
@@ -3906,9 +3972,17 @@ function applyTitle() {
 function routeOf(loc) {
   if (loc.pathname === '/questions') return { name: 'questions', param: null };
   if (loc.pathname === '/answers') return { name: 'answers', param: null };
-  if (loc.pathname === '/file')
-    return { name: 'file',
-             param: new URLSearchParams(loc.search).get('p') };
+  if (loc.pathname === '/file') {
+    const sp = new URLSearchParams(loc.search);
+    /* #252 — the view mode is part of the ROUTE, not a toggle the page
+       remembers, so a copied or shared link preserves the intent it was
+       copied with. Anything that is not `source` is rendered: an unknown
+       value must not mint a third state, and `?view=` on a non-markdown path
+       is simply inert (the switch is markdown-only and its body is verbatim
+       either way). */
+    return { name: 'file', param: sp.get('p'),
+             mode: sp.get('view') === 'source' ? 'source' : 'rendered' };
+  }
   if (loc.pathname === '/review') {
     const sp = new URLSearchParams(loc.search);
     return { name: 'review', param: sp.get('p'), q: sp.get('q') };
@@ -3966,7 +4040,7 @@ async function fetchFile(param) {
 }
 async function buildCurrent() {
   if (view.name === 'file')
-    return buildFile(view.param, await fetchFile(view.param));
+    return buildFile(view.param, await fetchFile(view.param), view.mode);
   const d = await ensureData();
   if (view.name === 'review') return buildReview(view.param, view.q, d);
   if (!d) return '<div class="dim">loading…</div>';
@@ -4811,6 +4885,48 @@ const TITLES = {
 const copyPathBtn = hasDir =>
   `<button type="button" class="fcopy"` +
   ` aria-describedby="${hasDir ? 'fdir htitle' : 'htitle'}">copy path</button>`;
+/* #252 — Rendered / Source, beside the path, for markdown only.
+   TWO ORDINARY INTERNAL LINKS, not buttons, and that is three things at once:
+   the mode is deep-linkable because it is in the href, it is keyboard- and
+   middle-click-operable because it is a link, and the swap rides the router's
+   existing dissolve because `isInternal` already claims `/file`. A pair of
+   buttons would have needed a handler, a history push and a transition of its
+   own — three re-implementations of what the route already does.
+
+   THE `.on` STATE IS DELIBERATELY NOT IN THIS HTML. `renderChrome` rewrites a
+   crumb whose html changed, and a rewritten `.sgroup` is fresh nodes with a
+   0-width indicator — the outline would grow out of the row's left edge
+   instead of sliding to the other label. Held out, the switch is a SURVIVOR
+   across a mode change and `paintFileMode` slides it: the sliding selection
+   group's own documented gesture (#121). That is also why the crumb is
+   declared `stable`. */
+const fileModeSwitch = p => {
+  const base = '/file?p=' + encodeURIComponent(p);
+  return '<span class="sgroup fmodes" role="group" aria-label="markdown view">' +
+    '<span class="sgind" aria-hidden="true"></span>' +
+    `<a class="sgbtn fmode" data-mode="rendered" href="${base}">rendered</a>` +
+    `<a class="sgbtn fmode" data-mode="source" href="${base}&amp;view=source">source</a>` +
+    '</span>';
+};
+/* The switch's state, painted AFTER the crumb row is assembled, because the
+   indicator needs the row's final geometry. `slide` is true only when the
+   group SURVIVED the render — a group that just arrived lands instead, on the
+   enter-snap rule, and reduced motion always lands (`slideIndicator`). */
+function paintFileMode(v, slide) {
+  const g = document.querySelector('#meta .fmodes');
+  if (!g) return;
+  const want = (v && v.mode === 'source') ? 'source' : 'rendered';
+  for (const a of g.querySelectorAll('.fmode')) {
+    const on = a.dataset.mode === want;
+    a.classList.toggle('on', on);
+    // `aria-current="page"` rather than a radio's checked state: these ARE
+    // pages, and saying so is what makes the switch honest to a screen reader
+    // about being navigation.
+    if (on) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  }
+  slideIndicator(g, !slide);
+}
 function crumbsFor(v, d) {
   const home = { k:'home', html:'<a href="/">&larr; dashboard</a>' };
   if (v.name === 'questions' || v.name === 'answers') return [home];
@@ -4819,6 +4935,12 @@ function crumbsFor(v, d) {
     const row = [home];
     if (dir) row.push({ k:'fdir', html:`<span class="fdir" id="fdir">${esc(dir)}</span>` });
     row.push({ k:'fcopy', html: copyPathBtn(!!dir) });
+    // Markdown only (#252). The key carries the PATH, so switching files
+    // departs one switch and arrives another (a different file's control),
+    // while switching MODE on one file keeps the same element and lets the
+    // indicator slide.
+    if (isMarkdownFile(p))
+      row.push({ k:'fview:' + p, html: fileModeSwitch(p), stable: true });
     row.push({ k:'pip', html: pipBtn('/file?p=' + encodeURIComponent(p),
                                      p || 'file') });
     return row;
@@ -4882,9 +5004,20 @@ function renderChrome(v, d, snap) {
   const next = crumbsFor(v, d);
   const prev = new Map([...meta.children].map(el => [el.dataset.k, el]));
   const row = [], arrived = [];
+  let keptModes = false;
   for (const c of next) {
     let el = prev.get(c.k);
-    if (el) { prev.delete(c.k); if (el.innerHTML !== c.html) el.innerHTML = c.html; }
+    if (el) {
+      prev.delete(c.k);
+      /* A `stable` crumb owns its own state and is never rewritten while it
+         survives (#252). The mode switch is the one: its `.on` class is
+         painted by `paintFileMode`, so an html comparison would see the live
+         class, disagree, and replace the nodes the FLIP and the sliding
+         indicator both need to be the SAME elements. Its key carries the
+         path, so nothing stale can survive a change of file. */
+      if (c.stable) keptModes = keptModes || /^fview:/.test(c.k);
+      else if (el.innerHTML !== c.html) el.innerHTML = c.html;
+    }
     else {
       el = document.createElement('span');
       el.className = 'crumb'; el.dataset.k = c.k; el.innerHTML = c.html;
@@ -4899,6 +5032,10 @@ function renderChrome(v, d, snap) {
     titleEl.innerHTML = nextTitle;
     if (snap && !rmr) { titleEl.classList.add('dreamin'); arrived.push(titleEl); }
   }
+  // #252: the switch's state and whether it slides. Before `ages()` only
+  // because both are "finish the row"; it needs the row's final geometry,
+  // which `replaceChildren` above has already committed.
+  paintFileMode(v, !!snap && keptModes);
   ages();
   /* The review pane's top IS the bottom of this chrome, so it is refitted
      wherever the chrome is (re)laid out — `setContent` runs BEFORE this on
@@ -5095,8 +5232,50 @@ function flipDock(dock, fromRect, toRect) {
   dock.addEventListener('transitionend', clear, { once: true });
   setTimeout(clear, 1500);                  // safety net
 }
+/* ── the reading position across a mode swap (#252) ───────────────────────
+   The document's scrollable range as the CONTENT implies it, in LAYOUT space.
+   Two traps, both documented in transitions.md and both live here:
+
+   - `documentElement.scrollHeight` answers for the outgoing GHOST too. The
+     ghost is an absolutely positioned clone inside `.wrap`, so while it lives
+     (~1.15s) it extends the document's scrollable area — and going
+     source -> rendered it is the taller of the two. The restore would land
+     low and then be clamped when the corpse is removed.
+   - `getBoundingClientRect` answers in VISUAL space, and on the frame this
+     runs `#view` is mid-`enter`: pushed back in Z and scaled down. Every rect
+     beneath it reads small. `offsetTop`/`offsetHeight` are layout values and
+     are immune to both, which is why the chain is walked by hand. */
+function contentBottom() {
+  const v = document.getElementById('view');
+  if (!v) return 0;
+  let y = 0;
+  for (let n = v; n; n = n.offsetParent) y += n.offsetTop;
+  return y + v.offsetHeight +
+    (parseFloat(getComputedStyle(document.body).paddingBottom) || 0);
+}
+const scrollRange = () => Math.max(0, contentBottom() - window.innerHeight);
+/* A RATIO, not a pixel offset: the two panes are different heights (a rendered
+   document is shorter than the source it came from, by roughly its own markup)
+   so the same pixel offset is a different place in the text. Null when there
+   is nothing to scroll, so a short file restores nothing rather than 0/0. */
+const scrollRatio = () => {
+  const range = scrollRange();
+  return range > 0 ? Math.min(1, window.scrollY / range) : null;
+};
+function restoreScrollRatio(r) {
+  if (r === null || r === undefined) return;
+  const range = scrollRange();
+  if (range > 0) window.scrollTo(0, Math.round(r * range));
+}
 async function navigate(name, param, opts) {
   opts = opts || {};
+  const mode = opts.mode === 'source' ? 'source' : 'rendered';
+  /* A mode swap is a change of REPRESENTATION, not of place: same file, same
+     point in it. Every other navigation is a new document and has no position
+     to keep, which is why this is not a general scroll-restore. */
+  const modeSwap = !!view && view.name === 'file' && name === 'file' &&
+                   view.param === param && (view.mode || 'rendered') !== mode;
+  const keepRatio = modeSwap ? scrollRatio() : null;
   if (window.__closeCmd) window.__closeCmd();   // context is changing
   // Leaving /answers destroys the ask surface — drop in-flight ownership so a
   // late /ask cannot clear or tick a form that no longer exists, and so a
@@ -5109,12 +5288,13 @@ async function navigate(name, param, opts) {
   // change is destruction here, exactly as it is for the composer.
   if (fileMsg && !(view && view.name === name && view.param === param))
     fileMsg.clear();
-  view = { name, param, q: opts.q || null };
+  view = { name, param, q: opts.q || null, mode };
   applyTitle();
   if (window.dreambg) window.dreambg.setTint(TINT[name] || 0);
   const url = name === 'questions' ? '/questions'
     : name === 'answers' ? '/answers'
-    : name === 'file' ? '/file?p=' + encodeURIComponent(param || '')
+    : name === 'file' ? '/file?p=' + encodeURIComponent(param || '') +
+        (mode === 'source' ? '&view=source' : '')
     : name === 'review' ? '/review?p=' + encodeURIComponent(param || '') +
         (opts.q ? '&q=' + encodeURIComponent(opts.q) : '')
     : '/';
@@ -5127,6 +5307,9 @@ async function navigate(name, param, opts) {
   } else {
     crossfade(html, { fromRect: opts.fromRect, review: name === 'review' });
   }
+  // after the new content is in layout, and only for the swap that has a
+  // position worth keeping
+  if (modeSwap) restoreScrollRatio(keepRatio);
 }
 /* only same-document routes are intercepted; external links, new-tab and
    modified clicks fall through to the browser. */
@@ -5144,7 +5327,10 @@ addEventListener('click', e => {
   if (!isInternal(a)) return;
   e.preventDefault();
   const r = routeOf(a);
-  const opts = { push: true, q: r.q };
+  // `routeOf` reads `search` off the <a> as readily as off `location`, so the
+  // mode switch needs no handler of its own: it is two ordinary internal links
+  // (#252), which is also what makes it keyboard-operable and deep-linkable.
+  const opts = { push: true, q: r.q, mode: r.mode };
   // a review link fired from inside a question card seeds the shared-element
   // morph: remember where the question sat so it can travel to its dock.
   if (r.name === 'review' && r.q) {
@@ -5155,7 +5341,7 @@ addEventListener('click', e => {
 });
 addEventListener('popstate', () => {
   const r = routeOf(location);
-  navigate(r.name, r.param, { push: false, q: r.q });
+  navigate(r.name, r.param, { push: false, q: r.q, mode: r.mode });
 });
 /* live tick: re-render the active data-driven view in place, no fade.
    Tolerates the brief unreachable window while the server restarts. */
@@ -5236,7 +5422,8 @@ async function tick() {
 setInterval(ages, 1000);
 (function () {                              // initial view from the URL
   const r = routeOf(location);
-  navigate(r.name, r.param, { push: false, transition: false, q: r.q });
+  navigate(r.name, r.param,
+           { push: false, transition: false, q: r.q, mode: r.mode });
   tick();
 })();
 """
