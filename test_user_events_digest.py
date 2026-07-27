@@ -64,3 +64,51 @@ def test_framing_boundary_cannot_be_shifted():
     )
 
 
+def test_case_and_parameter_order_do_not_fork_a_digest():
+    """Method case, media-type case, and parameter order cannot fork a digest.
+
+    Discriminating half: a different media type must yield a different digest
+    (without that assertion, `return ""` from request_digest would pass).
+    """
+    body = b'{"text":"hi"}'
+    shared = dict(
+        protocol_version="1",
+        route="/answer",
+        body=body,
+    )
+
+    # Three surface forms of one request — method case, media-type case, and
+    # a reordered two-parameter media type — must share one digest.
+    d_post_cased = request_digest(
+        method="POST",
+        content_type="Application/JSON; Charset=UTF-8; X=Y",
+        **shared,
+    )
+    d_post_lower = request_digest(
+        method="post",
+        content_type="application/json;charset=utf-8;x=y",
+        **shared,
+    )
+    d_params_reordered = request_digest(
+        method="POST",
+        content_type="application/json; x=y; charset=utf-8",
+        **shared,
+    )
+
+    assert d_post_cased == d_post_lower == d_params_reordered, (
+        "POST vs post, Application/JSON; Charset=UTF-8; X=Y vs "
+        "application/json;charset=utf-8;x=y, and a reordered two-parameter "
+        "media type must all give one digest"
+    )
+
+    # Discriminating half: a different media type must NOT share the digest.
+    # Without this, request_digest returning "" passes the whole test.
+    d_other = request_digest(
+        method="POST",
+        content_type="application/xml",
+        **shared,
+    )
+    assert d_other != d_post_cased, (
+        "a different media type must produce a different digest "
+        f"(got {d_other!r} == {d_post_cased!r})"
+    )

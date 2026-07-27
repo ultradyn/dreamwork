@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **387**
+Next id: **388**
 
 ## Open
 
@@ -141,6 +141,32 @@ Next id: **387**
   to a new check — a checker that read built output instead would be reporting on files nobody
   can regenerate · `test_every_shipped_artifact_still_satisfies_the_new_rules` excludes this
   one violation **by name**, so a new one in the same file is still caught · related: **#379**
+
+- **#387** — The ledger-lint hook cannot see how the coordinator actually edits the ledger ·
+  P2 · dogfood/reliability · origin: **loop** · 15m · **found by installing the thing, which is
+  the only way this was ever going to surface.** #361 turned on
+  `posttooluse_ledger_lint.py` and reported the window closed. It is half closed
+  · **verified, not assumed** — `~/.claude/settings.json` registers the hook under
+  `PostToolUse` with `matcher: "Write|Edit"`, so it fires on the **Write and Edit tools**.
+  Every ledger edit this coordinator makes goes through a Bash heredoc
+  (`python3 - <<PY … pathlib.Path(".dreamwork/tasks.md").write_text(…)`), because the edits are
+  structural — move an entry between sections, bump the next id, splice a citation. The matcher
+  never sees those, so the hook has not fired on a single real ledger write since it was
+  installed
+  · so the incident it was justified on — *"a `tasks.md` write introduced a lint ERROR and the
+  commit went through anyway"* — is still live for the writer that caused both instances of it
+  · **two candidate fixes, and they are not equivalent**: (a) add `Bash` to the matcher, which
+  fires the hook on **every** shell command in every session — the hook must then be cheap and
+  must decide quickly that a command touched no ledger file, and deciding that from a command
+  string is guesswork; (b) have the hook key off the **file** rather than the tool, if the
+  harness gives PostToolUse enough to do that for Bash. Measure (a)'s cost before choosing:
+  a hook on every Bash call is a tax on every session on this machine, not just this loop
+  · rec: read what PostToolUse actually delivers for a `Bash` event first — if it carries no
+  file information the hook would have to re-lint unconditionally, and *that* is the number
+  that decides between (a), (b), and a third option: keep the matcher and change the
+  coordinator's habit to Write/Edit for ledger files, which costs nothing and covers the
+  writer that actually caused the incidents
+  · related: #361
 
 - **#386** — `gitrow` opens 0px under load: the gesture does not run, and the motion check
   correctly says nothing moved · P3 · guards/reliability · origin: **loop** · 15m ·
