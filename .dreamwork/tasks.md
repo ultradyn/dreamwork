@@ -768,7 +768,10 @@ Next id: **357**
   blocker. ask a question of me if you would like to discuss."* · his read is
   correct and measured: this entry is now the gate on `#287`, `#289`, part of
   `#281`, `#229`/`#270`'s CLI-only seam, and `#342`'s toggle — five lanes
-  · **but the thing blocking it is not this task, it is his own answer on #263**,
+  · **THE GATE IS CLEARED — he approved #263 at 01:27 with `"rec"`.** The chain
+  `#294` ← `#264` ← `#263` now rests on #264's design rather than on him, and #264 is marked
+  next-up. The reasoning below is kept because it still holds about what approval covers
+  · **but the thing blocking it was not this task, it was his own answer on #263**,
   whose design is finished, reviewed and PASS and waits only on E1–E4. The chain is
   `#294` ← `#264` ← `#263`, so starting here without that answer means designing
   the schema against an unsettled event model — the exact double-migration he has
@@ -1142,7 +1145,13 @@ Next id: **357**
   task-transition history/materialised-view boundary that keeps burndown and the
   live dashboard status section current as the dreamer works; decide whether it
   shares #263's journal or uses a task-state outbox, but never dual-write two
-  fallible truths · blocked on user-event model #263
+  fallible truths
+  · **UNBLOCKED 2026-07-28 01:27** — #263's contract is approved (`"rec"`), so the event model
+  this waited on is settled and its own question is now answerable: journal-vs-outbox for task
+  transitions, *"but never dual-write two fallible truths"* · the approval covers the
+  CONTRACT, not #263's implementation, so this design may depend on the journal's shape but
+  must not assume the journal exists yet · **next-up**: it is the only thing between the
+  approval and #294, and #294 is his stated blocker
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
@@ -1159,7 +1168,17 @@ Next id: **357**
   `.dreamwork/docs/plans/user-event-journal.md` now PASS after resolving
   validation/status, all-writer DomainFileStore atomicity, hash-chain cursor,
   PostgreSQL, purge/cutover and external-drift/provisional-successor findings ·
-  dashboard E1–E4 asks for implementation-**plan** authority only · awaiting human
+  dashboard E1–E4 asked for implementation-**plan** authority only
+  · **APPROVED — `"rec"` via watch 2026-07-28 01:27.** The contract is accepted, and the
+  gate's own limits are what to read before acting on it: approval authorises *"a separate
+  red-first implementation plan"* and explicitly **not** implementation, migration,
+  deployment, PostgreSQL operation, topic chats, or payload purge · so the next increment
+  under this id is **the plan**, red-first, taking `user-event-journal.md`'s §"Red-first
+  acceptance fixtures" as its acceptance set — not code
+  · **five lanes were waiting on this**: #264, #294, #287, #289 and #342's delivery toggle;
+  #346 named it as the only thing standing between its design and the rest of #294
+  · that doc's own `**Status:** human approval required; no implementation authority` line is
+  now the stale half of a true statement — update it when the plan lands, do not delete it
 
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
