@@ -108,6 +108,19 @@ async function gesture(p, ms = 1500) {
 }
 
 const distinct = xs => new Set(xs.map(v => Math.round(v))).size;
+/* Frames strictly BETWEEN the two ends, 3% deadband — the frame-rate-free
+   form of "it travelled". A snap has none of these at any frame rate, so the
+   floor is ONE and the assertion is not a bet on how many frames this box
+   drew. Same helper `reviewsplit.mjs`/`headertravel.mjs`/`regroup.mjs`/
+   `morph.mjs` use; deliberately not a second idiom (#311, transitions.md
+   "Checking a transition"). `distinct()` (above) rounds to whole px and is
+   retained only for the diagnostic notes and the fade `mid` count, which is
+   already the part-way idiom and which this commit does not touch. */
+const between = (vals, a, b) => {
+  const lo = Math.min(a, b), hi = Math.max(a, b), eps = (hi - lo) * 0.03;
+  return vals.filter(v => v > lo + eps && v < hi - eps).length;
+};
+const span = vals => Math.abs(vals.at(-1) - vals[0]);
 const at = (seen, ms) => seen.reduce((a, b) =>
   Math.abs(b.t - ms) < Math.abs(a.t - ms) ? b : a);
 
@@ -165,11 +178,22 @@ ok('the dashboard has a questions fold, with cards in it and a panel below ' +
              `${t.late.toFixed(1)}px to go at the end of the travel, ` +
              `${t.over.toFixed(1)}px overshot`);
   ok('opening: the panel below is displaced at all (else vacuous)', t.moved >= 200);
-  // THE ASSERTION. A snap has two positions and passes every other check here.
-  ok('opening: ...and it travels there, rather than teleporting',
-     t.positions >= 8);
-  ok('opening: the section itself grows continuously rather than in one step',
-     distinct(seen.map(s => s.h)) >= 8);
+  // THE ASSERTION. `t.positions >= 8` (distinct rounded tops) was a claim about
+  // how many frames THIS BOX drew across the .85s fold, not about the motion;
+  // base `f72f730` failed it in 3 of 5 runs unaided. The frame-rate-free form
+  // is the frames strictly part-way; a snap has none at any frame rate. (#311.)
+  ok('opening: ...and it travels there, rather than teleporting '
+   + `(${between(t.tops, t.tops[0], t.tops.at(-1))} of ${t.tops.length} part-way)`,
+     between(t.tops, t.tops[0], t.tops.at(-1)) >= 1);
+  // the section's own height is the same gesture in a different measure; the
+  // vacuity it rested on implicitly is stated next, derived from the trace
+  const ohs = seen.map(s => s.h);
+  ok('opening: the section really grows (else its height check is vacuous) '
+   + `(${ohs[0].toFixed(0)} -> ${ohs.at(-1).toFixed(0)}, ${span(ohs).toFixed(0)}px)`,
+     span(ohs) >= 200);
+  ok('opening: the section itself grows continuously rather than in one step '
+   + `(${between(ohs, ohs[0], ohs.at(-1))} of ${ohs.length} part-way)`,
+     between(ohs, ohs[0], ohs.at(-1)) >= 1);
   ok('opening: the revealed body eases in rather than blinking on', mid >= 3);
   // 4px each: a clean ease lands within ~1.5px of final (sub-pixel rounding),
   // and the failure both describe is `details[open]`'s 2 x .5rem of air — 16px.
@@ -190,8 +214,9 @@ ok('the dashboard has a questions fold, with cards in it and a panel below ' +
              `${t.over.toFixed(1)}px overshot; ` +
              `ghost ${ghost ? JSON.stringify(ghost) : 'none'}`);
   ok('closing: the panel below is displaced at all (else vacuous)', t.moved >= 200);
-  ok('closing: ...and it travels there, rather than teleporting',
-     t.positions >= 8);
+  ok('closing: ...and it travels there, rather than teleporting '
+   + `(${between(t.tops, t.tops[0], t.tops.at(-1))} of ${t.tops.length} part-way)`,
+     between(t.tops, t.tops[0], t.tops.at(-1)) >= 1);
   ok('closing: ...and it has arrived when the travel ends, not after a snap',
      t.late <= 4);
   ok('closing: ...having never gone past where it ends up', t.over <= 4);
@@ -262,8 +287,17 @@ await p.screenshot({ path: `${OUT}/qsec.png`, fullPage: false });
      Math.abs(otops.at(-1) - otops[0]) >= 200 &&
      Math.abs(ctops.at(-1) - ctops[0]) >= 200 &&
      await rp.evaluate(`document.querySelector('.qsec').open === false`));
-  ok('reduced motion: ...instantly, in one step each way',
-     distinct(otops) <= 2 && distinct(ctops) <= 2);
+  /* `distinct(...) <= 2` was the hollow direction: satisfied by a box that
+     sampled a REAL ramp only twice, so under load it would pass a reduced-
+     motion build that animated. The frame-rate-free form is the same measure
+     as the travel check with the opposite expectation — instant means NO
+     frame part-way, however few were drawn. The vacuity is the function-
+     intact check above (each way still displaces >= 200px). (#311.) */
+  ok('reduced motion: ...instantly — no frame part-way either way '
+   + `(open ${between(otops, otops[0], otops.at(-1))} of ${otops.length}, `
+   + `close ${between(ctops, ctops[0], ctops.at(-1))} of ${ctops.length})`,
+     between(otops, otops[0], otops.at(-1)) === 0 &&
+     between(ctops, ctops[0], ctops.at(-1)) === 0);
   ok('reduced motion: and nothing is ghosted', !open.ghost && !close.ghost);
   await rp.screenshot({ path: `${OUT}/qsec-reduced.png`, fullPage: false });
   await ctx.close();
