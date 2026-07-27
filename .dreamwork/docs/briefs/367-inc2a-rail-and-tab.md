@@ -76,6 +76,9 @@ warning rather than trusting a table.
    artifact and add the rule only if the set is unanimous, recording the count. That
    pass already refuted `.summary-line` and `.choice`/`.answer`.
 
+If you disagree with any of the three, **say so in your report and implement it your
+way with the reason stated** — two lanes today were right to contradict their brief.
+
 ## One small carried-over fix, because you own the file
 
 #389 closed the empty-label hole but left **one measured limit**, correctly rather than
@@ -97,8 +100,6 @@ your guard against repeating it.
 This is a **secondary** priority — behind the tab and the rail. If you do not reach it, say
 so and it gets its own task.
 
-If you disagree with any of the three, **say so in your report and implement it your
-way with the reason stated** — two lanes today were right to contradict their brief.
 
 ## The trap that will eat your afternoon if nobody names it
 
@@ -201,6 +202,14 @@ increment regardless of how it looks.
 6. **`just test` exits 0** and **`just audit-styleguide` passes** — which means
    `watch-design.md` is updated **in the same commit** if you changed how a surface
    looks. That is enforced, not advisory.
+   **Note on which styleguide:** there is no separate review-artifact styleguide;
+   `watch-design.md` is the single source for both the dashboard and the artifact frame.
+   It was held by #391 when this brief was written and is **free as of `9e27c6e`**, so it
+   is yours. Add the rail, the tab and next/prev under their own heading rather than
+   appending to a dashboard bullet — and while you are in there, `#391` has just added a
+   note under the #169 Air bullet explaining why `details[open]` keeps padding on **both**
+   sides. Do not undo it: a one-sided rewrite of that shared rule is exactly what broke
+   #169 on four surfaces for three hours.
 7. **`python3 lint.py` exits 0**, run as its **own command** — never in the same shell
    command as a `git commit`. That has committed through a lint ERROR twice here.
 8. **`file-formats.md` still describes the code.** If you diverge from the essential-
