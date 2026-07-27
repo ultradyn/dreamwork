@@ -345,8 +345,18 @@ schema + `schema_version` row.
 *Test:* `test_pragmas_are_what_the_durability_boundary_claims` — reopen the file
 in a *fresh* connection and read `PRAGMA journal_mode`, `PRAGMA synchronous`,
 `PRAGMA busy_timeout` back.
-*Red line:* the `PRAGMA synchronous=FULL` execute. Deleting it leaves
-`synchronous=2`→`1` and the assertion fails.
+*Red line:* the `PRAGMA synchronous=FULL` execute. **This row was WRONG and lane B
+found it by obeying it** (amended 2026-07-28, `6a865e4`): it assumed deleting the
+pragma leaves `synchronous` at `1`, but **SQLite 3.53's compile-time default is
+already FULL (2)**, so the deletion changed nothing and the prescribed red came
+back **green**. Per this repo's rule that a green red-run is a finding and never a
+relief, the lane did not conclude the code was fine — it made the pragma
+load-bearing by pinning `NORMAL` and then `FULL`, so deleting the `FULL` execute
+now genuinely leaves `1`. Coordinator re-verified independently: the injection
+yields `AssertionError: expected synchronous=FULL (2), got 1` with 7 neighbours
+green. **The general trap, worth carrying to any other pragma or default in this
+plan: a red that depends on a value differing from the platform default is only as
+discriminating as that default, which the plan cannot see.**
 *Must not fake:* read the pragmas from a *second* connection, not the one that
 set them; `synchronous` is per-connection and asserting on the setter's own
 handle can pass with the pragma applied to the wrong scope.

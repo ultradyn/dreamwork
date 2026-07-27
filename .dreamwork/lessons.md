@@ -1640,3 +1640,15 @@ this shape and convert opportunistically.)
   green under conditions that only cause failure is conclusive, so identify the
   asymmetry before deciding a measurement needs better conditions.
   (coordinator, #277)
+- **A red-run that depends on a value differing from the platform default is only
+  as discriminating as that default — and the plan cannot see the default.** The
+  #263 plan prescribed, for `B1`, "delete the `PRAGMA synchronous=FULL` execute and
+  the assertion fails". On SQLite 3.53 the compile-time default **is already FULL**,
+  so the deletion changed nothing and the prescribed red came back **green**. The
+  lane obeyed the rule that a green red-run is a finding rather than a relief: it
+  did not conclude the code was fine, it made the pragma load-bearing (pin `NORMAL`,
+  then `FULL`) so the deletion genuinely leaves `1`. Verified twice — by the lane and
+  independently by the coordinator, `got 1` with seven neighbours green. Two things
+  generalise: **a durability setting that happens to match the platform default is
+  untested by construction**, and a written red line is a hypothesis about the
+  platform, so it earns the same scepticism as the code. (coordinator + lane B, #263)

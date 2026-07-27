@@ -1675,8 +1675,24 @@ Next id: **388**
   prefix from `length_framed`, `test_framing_boundary_cannot_be_shifted` FAILED
   (`b'abc' != b'abc'`) and its neighbour PASSED; restored from my own snapshot, byte-identical to
   the commit. The runtime precondition assertion is present and there is no `hashlib` in the test
-  · lane C (domain files) in flight on `@pi-glm52`; lane B's brief is written and ready to
-  dispatch (`263-lane-b-journal.md`, increments 3-6, `B2` needs A2 which is now in)
+  · **lane B (journal) DONE, `@grok`, ~20 minutes for all four increments** — `B1` `6a865e4`,
+  `B2` `9bea281`, `B3` `2e1e987`, `B4` `37d0066`. 8/8 tests green; touched only
+  `user_events/sqlite.py`, its test, and `.gitignore`
+  · **its most valuable output is a defect in my plan, not in the code.** The plan's `B1` red
+  line said "delete the `PRAGMA synchronous=FULL` execute and the assertion fails". SQLite
+  3.53's compile-time default **is already FULL**, so the deletion changed nothing and the
+  prescribed red came back green. The lane treated that as a finding rather than a relief —
+  which is the rule — and made the pragma load-bearing by pinning `NORMAL` then `FULL`. I
+  re-verified independently: the injection now yields `expected synchronous=FULL (2), got 1`
+  with 7 neighbours green. Plan row amended; lesson recorded
+  · read-only audit of its tests against my own acceptance criteria, all passing: zero
+  `hashlib` in the test (so it holds no copy of the `H_i` formula), no raw SQL `INSERT` (both
+  calls go through `receive()`), pragmas read from a **second** connection, and `B2` asserts the
+  result *kind* — which is the specific trap the plan named, since a deleted `SELECT` comparison
+  raises `IntegrityError` and a count-only assertion would "fail" for the wrong reason
+  · `B5`-`B8` were out of batch and correctly not started
+  · lane C (domain files) still in flight on `@pi-glm52`; lane F (CLI) dispatched 06:22 on
+  `@glm52` once `B2` existed
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses
