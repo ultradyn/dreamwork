@@ -144,7 +144,7 @@ Next id: **382**
 
 - **#381** — The single-writer rule has no delivery half · P2 · loop architecture/reliability ·
   origin: **loop** · 45m · **split out of #363, which landed the reader-facing half at
-  `PENDING`** · the ledger has exactly one writer, correctly, so a foreign session that lands
+  `28ac5ac`** · the ledger has exactly one writer, correctly, so a foreign session that lands
   work must not touch `tasks.md` — and today it has no way to tell the writer either. Its report
   goes into its own session. The entry therefore sits done-but-open with nothing anywhere saying
   it landed, until someone happens to look
@@ -2284,7 +2284,7 @@ Next id: **382**
   · **both forgotten folds tonight were found by a check, not by a person** (#330 and #334),
   and the third case — #264 — was silenced properly by citing its sha. The mechanism works;
   the habit around it did not
-  · **LANDED the reader-facing half `PENDING`**: the WARN now carries `%cI` and `%cr` from the
+  · **landed the reader-facing half `28ac5ac`**: the WARN now carries `%cI` and `%cr` from the
   same `git log` it already ran, so it reads *"#334 (`755b497` 2026-07-28 01:39, 3 hours ago) is
   under `## Open` …"*. Deliberately NOT a softening — the entry withdrew that — it is the one
   command the rec told the reader to run, run for them, so an override from memory has to be made
