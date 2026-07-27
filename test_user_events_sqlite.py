@@ -280,3 +280,99 @@ def test_chain_mutated_low_ordinal_is_named_by_verifier(tmp_path: Path):
         )
     finally:
         j.close()
+
+
+def test_rejected_receipt_can_never_be_claimed(tmp_path: Path):
+    """A rejected receipt is refused by claim(); validated can be claimed.
+
+    Revisions are read back from the store between calls — never tracked in
+    the test. Red line: AND state = 'validated' in the claim UPDATE.
+    """
+    path = tmp_path / "j.sqlite3"
+    j = open_journal(path)
+    try:
+        # --- rejected path ---
+        ins = j.receive(_envelope(body=b'{"text":"reject-me"}'))
+        assert ins.kind == "inserted"
+        # Read revision from the store (must not remember ins.revision alone).
+        stored = j.get_receipt(ins.receipt_id)
+        assert stored is not None
+        rev = stored["revision"]
+        tr = j.transition(ins.receipt_id, "rejected", expected_revision=rev)
+        assert tr.kind == "applied", f"reject transition failed: {tr!r}"
+        stored = j.get_receipt(ins.receipt_id)
+        assert stored["state"] == "rejected"
+        rev = stored["revision"]
+        claim = j.claim(
+            ins.receipt_id,
+            consumer="worker-a",
+            lease_seconds=30,
+            expected_revision=rev,
+        )
+        assert claim.kind == "refused", (
+            f"rejected receipt must not be claimable, got kind={claim.kind!r}"
+        )
+        stored = j.get_receipt(ins.receipt_id)
+        assert stored["state"] == "rejected", (
+            "claim must not move a rejected receipt out of rejected"
+        )
+
+        # --- validated path (discriminating half: claim works when validated) ---
+        ins2 = j.receive(_envelope(body=b'{"text":"validate-me"}'))
+        stored = j.get_receipt(ins2.receipt_id)
+        rev = stored["revision"]
+        tr2 = j.transition(ins2.receipt_id, "validated", expected_revision=rev)
+        assert tr2.kind == "applied"
+        stored = j.get_receipt(ins2.receipt_id)
+        assert stored["state"] == "validated"
+        rev = stored["revision"]
+        claim2 = j.claim(
+            ins2.receipt_id,
+            consumer="worker-a",
+            lease_seconds=30,
+            expected_revision=rev,
+        )
+        assert claim2.kind == "claimed", (
+            f"validated receipt must be claimable, got kind={claim2.kind!r}; "
+            "without this half, a claim that always refuses passes"
+        )
+        stored = j.get_receipt(ins2.receipt_id)
+        assert stored["state"] == "claimed"
+    finally:
+        j.close()
+
+
+def test_stale_revision_transition_is_refused(tmp_path: Path):
+    """A transition with a stale expected_revision does not mutate state.
+
+    Revisions are read back from the store; the test does not keep its own
+    counter across successful transitions.
+    """
+    path = tmp_path / "j.sqlite3"
+    j = open_journal(path)
+    try:
+        ins = j.receive(_envelope(body=b'{"text":"stale-check"}'))
+        stored = j.get_receipt(ins.receipt_id)
+        rev = stored["revision"]
+        # First transition succeeds and advances revision.
+        ok = j.transition(ins.receipt_id, "validated", expected_revision=rev)
+        assert ok.kind == "applied"
+        after = j.get_receipt(ins.receipt_id)
+        assert after["state"] == "validated"
+        assert after["revision"] == rev + 1
+        # Re-using the pre-transition revision must be stale.
+        stale = j.transition(
+            ins.receipt_id, "rejected", expected_revision=rev
+        )
+        assert stale.kind == "stale", (
+            f"stale expected_revision must be refused, got {stale.kind!r}"
+        )
+        still = j.get_receipt(ins.receipt_id)
+        assert still["state"] == "validated", (
+            "stale transition must not change state"
+        )
+        assert still["revision"] == after["revision"], (
+            "stale transition must not advance revision"
+        )
+    finally:
+        j.close()

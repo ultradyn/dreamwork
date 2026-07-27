@@ -14,7 +14,7 @@ import os
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Union
 
@@ -70,6 +70,34 @@ class ChainVerifyResult:
     head_hash: Optional[str] = None
     failed_ordinal: Optional[int] = None
 
+
+@dataclass(frozen=True)
+class TransitionResult:
+    """Outcome of transition(): applied | stale | invalid_edge | missing."""
+
+    kind: str
+    receipt_id: Optional[str] = None
+    state: Optional[str] = None
+    revision: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class ClaimResult:
+    """Outcome of claim(): claimed | refused | stale | missing."""
+
+    kind: str
+    receipt_id: Optional[str] = None
+    state: Optional[str] = None
+    revision: Optional[int] = None
+    claim_token: Optional[str] = None
+    lease_until: Optional[str] = None
+
+
+# Edges authorised at B4. claim requires validated; rejected is a sink.
+_TRANSITION_EDGES = {
+    ("received", "validated"),
+    ("received", "rejected"),
+}
 
 def _h0(journal_id: str) -> str:
     """H_0 = SHA-256(journal_id || schema_version)."""
@@ -491,6 +519,210 @@ class Journal:
                 state="received",
                 revision=1,
                 exact_payload_bytes=body,
+            )
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
+    def get_receipt(self, receipt_id: str) -> Optional[dict]:
+        """Read current receipt projection. Revisions must come from here, not the test."""
+        row = self.conn.execute(
+            "SELECT receipt_id, sequence, client_action_id, request_digest, "
+            "state, revision, exact_payload_bytes FROM receipts "
+            "WHERE receipt_id = ?",
+            (receipt_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "receipt_id": row["receipt_id"],
+            "sequence": int(row["sequence"]),
+            "client_action_id": row["client_action_id"],
+            "request_digest": row["request_digest"],
+            "state": row["state"],
+            "revision": int(row["revision"]),
+            "exact_payload_bytes": bytes(row["exact_payload_bytes"]),
+        }
+
+    def transition(
+        self,
+        receipt_id: str,
+        to_state: str,
+        expected_revision: int,
+    ) -> TransitionResult:
+        """Append a state transition against expected_revision (CAS).
+
+        received→validated and received→rejected are the B4 edges. A stale
+        expected_revision is refused without mutating state.
+        """
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.conn.execute(
+                "SELECT state, revision FROM receipts WHERE receipt_id = ?",
+                (receipt_id,),
+            ).fetchone()
+            if row is None:
+                self.conn.execute("COMMIT")
+                return TransitionResult(kind="missing")
+            from_state = row["state"]
+            current_rev = int(row["revision"])
+            if current_rev != expected_revision:
+                self.conn.execute("COMMIT")
+                return TransitionResult(
+                    kind="stale",
+                    receipt_id=receipt_id,
+                    state=from_state,
+                    revision=current_rev,
+                )
+            if (from_state, to_state) not in _TRANSITION_EDGES:
+                self.conn.execute("COMMIT")
+                return TransitionResult(
+                    kind="invalid_edge",
+                    receipt_id=receipt_id,
+                    state=from_state,
+                    revision=current_rev,
+                )
+            new_rev = current_rev + 1
+            self.conn.execute(
+                "UPDATE receipts SET state = ?, revision = ? WHERE receipt_id = ?",
+                (to_state, new_rev, receipt_id),
+            )
+            self.conn.execute(
+                """
+                INSERT INTO transitions (
+                    transition_id, receipt_id, at, from_state, to_state, revision
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (str(uuid.uuid4()), receipt_id, now, from_state, to_state, new_rev),
+            )
+            canonical = length_framed(
+                "receipt.transition",
+                receipt_id,
+                from_state,
+                to_state,
+                str(new_rev),
+            )
+            self._append_event(
+                event_kind="receipt.transition",
+                receipt_id=receipt_id,
+                at=now,
+                canonical_payload=canonical,
+            )
+            self.conn.execute("COMMIT")
+            return TransitionResult(
+                kind="applied",
+                receipt_id=receipt_id,
+                state=to_state,
+                revision=new_rev,
+            )
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
+    def claim(
+        self,
+        receipt_id: str,
+        consumer: str,
+        lease_seconds: int,
+        expected_revision: int,
+    ) -> ClaimResult:
+        """Claim a validated receipt. Rejected receipts can never be claimed.
+
+        The AND state = 'validated' predicate in the UPDATE is the B4 red line:
+        without it a rejected receipt can be claimed.
+        """
+        if lease_seconds <= 0:
+            raise ValueError("lease_seconds must be positive")
+        now = datetime.now(timezone.utc)
+        now_s = now.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        # lease_until from backend time (wall clock); B5 will stress expiry.
+        lease_until = (now + timedelta(seconds=lease_seconds)).strftime(
+            "%Y-%m-%dT%H:%M:%S.%fZ"
+        )
+        token = uuid.uuid4().hex
+
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.conn.execute(
+                "SELECT state, revision FROM receipts WHERE receipt_id = ?",
+                (receipt_id,),
+            ).fetchone()
+            if row is None:
+                self.conn.execute("COMMIT")
+                return ClaimResult(kind="missing")
+            if int(row["revision"]) != expected_revision:
+                self.conn.execute("COMMIT")
+                return ClaimResult(
+                    kind="stale",
+                    receipt_id=receipt_id,
+                    state=row["state"],
+                    revision=int(row["revision"]),
+                )
+            # --- B4 red line: AND state = 'validated' in the claim UPDATE ---
+            cur = self.conn.execute(
+                """
+                UPDATE receipts
+                SET state = 'claimed', revision = revision + 1
+                WHERE receipt_id = ?
+                  AND revision = ?
+                  AND state = 'validated'
+                """,
+                (receipt_id, expected_revision),
+            )
+            if cur.rowcount != 1:
+                # Either not validated (e.g. rejected) or lost the race.
+                self.conn.execute("COMMIT")
+                fresh = self.conn.execute(
+                    "SELECT state, revision FROM receipts WHERE receipt_id = ?",
+                    (receipt_id,),
+                ).fetchone()
+                return ClaimResult(
+                    kind="refused",
+                    receipt_id=receipt_id,
+                    state=fresh["state"] if fresh else None,
+                    revision=int(fresh["revision"]) if fresh else None,
+                )
+            new_rev = expected_revision + 1
+            self.conn.execute(
+                """
+                INSERT INTO transitions (
+                    transition_id, receipt_id, at, from_state, to_state,
+                    revision, consumer_id, claim_token, lease_until
+                ) VALUES (?, ?, ?, 'validated', 'claimed', ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    receipt_id,
+                    now_s,
+                    new_rev,
+                    consumer,
+                    token,
+                    lease_until,
+                ),
+            )
+            canonical = length_framed(
+                "receipt.claimed",
+                receipt_id,
+                consumer,
+                token,
+                lease_until,
+                str(new_rev),
+            )
+            self._append_event(
+                event_kind="receipt.claimed",
+                receipt_id=receipt_id,
+                at=now_s,
+                canonical_payload=canonical,
+            )
+            self.conn.execute("COMMIT")
+            return ClaimResult(
+                kind="claimed",
+                receipt_id=receipt_id,
+                state="claimed",
+                revision=new_rev,
+                claim_token=token,
+                lease_until=lease_until,
             )
         except Exception:
             self.conn.execute("ROLLBACK")
