@@ -648,3 +648,94 @@ def test_expired_lease_is_reclaimable_and_the_stale_claimant_cannot_finish(
     finally:
         j.close()
 
+
+def test_broken_chain_forces_rebuild_not_a_silent_advance(tmp_path: Path):
+    """B6: corrupt below high water → advance_cursor refuses; rebuild counts.
+
+    PRODUCTION LINE WHOSE DELETION MUST FAIL THIS TEST:
+      the `expected == stored_chain_hash` comparison in advance_cursor.
+      (Also load-bearing: verify_chain / rebuild — without it a broken chain
+      with a still-matching stored high-water hash would silent-advance.)
+
+    ordinals_read is asserted against a runtime-derived total, never a literal.
+    """
+    path = tmp_path / "cursor.sqlite3"
+    j = open_journal(path)
+    try:
+        bodies = [b'{"n":0}', b'{"n":1}', b'{"n":2}', b'{"n":3}']
+        for body in bodies:
+            r = j.receive(_envelope(body=body))
+            assert r.kind == "inserted"
+        high = j.head_ordinal()
+        # Runtime-derived total the rebuild must examine.
+        assert high == len(bodies), (
+            f"precondition: high water {high} must equal fixture size {len(bodies)}"
+        )
+        assert high >= 2, "precondition: need a low ordinal below high water"
+
+        # Honest advance first: expected is the verified head.
+        head = j.head_hash()
+        ok = j.advance_cursor("consumer-a", expected=head, scanned_through=high)
+        assert ok.kind == "advanced", f"clean advance failed: {ok!r}"
+        assert ok.ordinals_read == high
+
+        # Reset cursor by opening path — cursor is durable; re-advance from a
+        # second consumer so we do not depend on rewriting the first.
+        # Corrupt ordinal 1's stored hash; high-water ordinal stays put.
+        j.conn.execute(
+            "UPDATE events SET event_hash = ? WHERE event_ordinal = 1",
+            ("0" * 64,),
+        )
+        j.conn.commit()
+        assert j.head_ordinal() == high, "precondition: high water unchanged"
+
+        # Caller still holds the pre-corruption head (or the stored high hash —
+        # either way the chain is broken below). advance must refuse and the
+        # rebuild path must have read every ordinal through high.
+        # Use the *stored* high-water hash (unchanged by low-ordinal corruption)
+        # as expected: without verify/rebuild this would silent-advance.
+        stored_high = j.conn.execute(
+            "SELECT event_hash FROM events WHERE event_ordinal = ?",
+            (high,),
+        ).fetchone()[0]
+        refused = j.advance_cursor(
+            "consumer-b", expected=stored_high, scanned_through=high
+        )
+        assert refused.kind == "refused", (
+            f"broken chain must refuse advance, got kind={refused.kind!r}; "
+            "silent advance means verify/rebuild is gone"
+        )
+        assert refused.rebuild is True
+        assert refused.ordinals_read == high, (
+            f"rebuild must examine every ordinal through high={high}, "
+            f"got ordinals_read={refused.ordinals_read}"
+        )
+        # Cursor for consumer-b must not have advanced.
+        cur = j.cursor("consumer-b")
+        assert cur.scanned_through_event_ordinal == 0
+
+        # Discriminating half of the B6 red: with a good chain, a *wrong*
+        # expected must also refuse (this is the expected == stored comparison).
+        # Rebuild a fresh journal for an unbroken chain.
+    finally:
+        j.close()
+
+    path2 = tmp_path / "cursor-expected.sqlite3"
+    j2 = open_journal(path2)
+    try:
+        for body in (b'{"x":1}', b'{"x":2}'):
+            assert j2.receive(_envelope(body=body)).kind == "inserted"
+        high2 = j2.head_ordinal()
+        wrong = "f" * 64
+        real = j2.head_hash()
+        assert wrong != real, "precondition: wrong expected must differ from head"
+        bad = j2.advance_cursor(
+            "consumer-c", expected=wrong, scanned_through=high2
+        )
+        assert bad.kind == "refused", (
+            f"wrong expected must refuse, got kind={bad.kind!r}; "
+            "if this advances, the expected == stored_chain_hash comparison is gone"
+        )
+        assert bad.reason == "expected_mismatch"
+    finally:
+        j2.close()
