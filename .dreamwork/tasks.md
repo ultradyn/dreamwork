@@ -24,9 +24,28 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **297**
+Next id: **298**
 
 ## Open
+
+- **#297** — Make every dashboard disclosure travel instead of jump · P2 ·
+  Web UI bug · 60m · origin: **human** · **human via watch `add-idea`
+  14:09 (duplicate delivery recorded once)** · expanding/collapsing git rows,
+  dream filenames and miscellaneous dashboard details currently changes their
+  own or neighbouring positions abruptly; inventory every disclosure surface
+  and either keep its anchor geometrically stable or carry all surviving
+  elements through one smooth atmospheric fold/travel · the human's "anything
+  that could move should have CSS for smooth transitions" states the visible
+  outcome, not permission for a global `transition: all`: reuse the established
+  `travelCard`/`foldDetailsLocal`/FLIP + body arrival/departure idiom so layout
+  geometry is actually interpolated and reduced-motion keeps function while
+  snapping · red-first guards must drive every real disclosure family, bound
+  each trace to its click, count distinct intermediate positions, prove no
+  overshoot/snap at settlement, and cover reduced motion · `transitions.md`
+  already calls the plain `expand()` peeks (dreams, archive, Markdown files,
+  status overflow) unexamined; include commit rows and any other discovered
+  native `<details>` rather than fixing only the reported examples · relates
+  #169, which adds expanded-state prominence but does not replace continuity
 
 - **#295** — Add subtle dithering to background shaders · P2 · visual/shader
   quality · origin: **human** · **human via chat 2026-07-27 01:47** · add a
