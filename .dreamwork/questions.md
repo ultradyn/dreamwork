@@ -2,52 +2,27 @@
 
 ## Open
 
-- **P1 · 2026-07-27 — #281 `/tasks`: seven taste calls on the design proposal
-  you asked for first.** The self-contained artifact is
-  `.dreamwork/review/tasks-page.html` (open it from the dashboard's review
-  list); the implementation plan is `.dreamwork/docs/plans/tasks-page.md`,
-  twelve increments landed as design-only at `f2c1bd0`. #281's own entry
-  required a proposal before implementation, and #282's hovercards are blocked
-  on the route/data contract it defines, so this is the ask that unblocks both.
+- **P2 · 2026-07-27 — #281 Q6, asked again in plain terms: should a task row on
+  `/tasks` carry a button that points the loop at that task?** You said *"you'll
+  need to explain what this means sorry"* — fair, the original asked in the
+  loop's own vocabulary.
 
-  **Every one answers in a word, so a bare `rec` is a complete reply.**
+  Plainly: today, to aim the loop at one specific task, you type into the
+  dashboard composer — `do-next: #281 …` — and the loop picks it up on its next
+  tick. That machinery already exists and needs nothing new built.
 
-  1. **Wide-screen two-pane list-plus-detail triage layout?** Rec **no, for
-     v1** — `watch-design.md` names `/review` as *the* deliberate width
-     exception, and a second exception is how a one-column page becomes a
-     two-column one. A split view can be added later without changing the
-     data contract.
-  2. **Default sort: priority band, or newest id (the file's own order)?** Rec
-     **priority, then newest id** — the ledger is written in arrival order,
-     which is not urgency, and the page's job is to say what to look at first.
-  3. **Default filter: open only, or everything?** Rec **open only**, with the
-     landed count visible in the count line and one click away — 17 settled
-     rows diluting 103 live ones is the opposite of ranking.
-  4. **Is `/tasks?t=281` the canonical detail URL #282 hardcodes, or do you
-     want `/tasks/281`?** Rec **`?t=281`** — it keeps the server's route
-     allowlist an exact membership test and matches `/file?p=` and
-     `/review?p=`. `/tasks/281` reads nicer and costs prefix routing in the
-     very seam #133 will rewrite.
-  5. **Show the loop's `status.json` claim ("I am on #281 right now"), given
-     it is a claim and not a fact?** Rec **yes, labelled as the loop's claim**,
-     carrying the page's only accent. It is the sole in-flight signal that
-     exists; #294 is what turns it into a fact. The alternative is a page that
-     cannot tell you what is happening now.
-  6. **A write affordance on a row later — `do now: #281` sent from the
-     list?** Rec **not in v1, yes as a follow-up.** It needs no new endpoint or
-     vocabulary (`/command` + `do-now` exist), so it is cheap — but it turns a
-     read-only page into a steering surface, and that is deliberately your call
-     rather than something folded into a list page.
-  7. **The two findings the batch turned up** — now filed as **#301** (both
-     ledger patterns are blind to combined entry heads) and **#302** (`/answers`
-     has no `TINT`/`SEED` entry). Rec **filed, worked in id order behind
-     #281**; #301 is P2 because it is a wrong number on the live dashboard, and
-     the coordinator's own re-measurement narrowed *which* number — see the
-     entry.
+  The question is whether **each row on the new `/tasks` page also carries a
+  small button that sends exactly that**, so aiming the loop is one click on the
+  row you are already reading instead of retyping its number into a box
+  elsewhere.
 
-  Answer `rec`, `rec except N: …`, or answer them individually. Approval
-  authorises red-first implementation of the twelve increments in an isolated
-  worktree with the visual gate — not deployment.
+  Rec **yes, but as a follow-up, after the page reads correctly** — because it
+  changes what the page *is*. A list you only read is safe to get wrong; a list
+  that can start work is a control panel, and a mis-click redirects the loop.
+  How much authority a page holds is your call, not something to fold quietly
+  into a list view.
+
+  Answer `yes, v1`, `yes, follow-up` (rec), or `read-only`.
 
 - **P2 · 2026-07-27 — #252 Markdown `/file` modes: one quiet Rendered/Source switch in the file heading?** #158 already made `.md`/`.markdown`/`.mdx` reflow safely through the existing escape-first `mdB` pipeline while source files stay verbatim. #252 adds the explicit exact-bytes path and mode transition the human requested.
 
@@ -134,31 +109,6 @@
   normal intermediate route travel and reduced-motion settling. Approval
   authorizes an isolated implementation/review/deploy for #284. Answer `Approve
   H1`, `Approve H1 with changes: …`, `Choose H2`, or `Pause #284`.
-
-- **P1 · 2026-07-27 — #286 note/answer paragraphs: preserve authored blank
-  lines in the managed question record?** Read-only diagnosis traced the loss.
-
-  The browser and `submissions.log` retain exact newlines, but `human_block()`
-  currently collapses **all** whitespace into one paragraph before writing
-  `questions.md`; the parser treats a blank line as ending Note/Answer capture;
-  the renderer uses inline Markdown. Therefore the durable question channel
-  cannot reconstruct paragraphs today.
-
-  Rec **B1**: make the existing safe writer paragraph-aware. Within each
-  authored paragraph, soft newlines and source hard-wraps still join with spaces;
-  authored blank lines become indented paragraph separators that remain inside
-  the Note/Answer sub-record. The parser reconstructs `\n\n`, and the existing
-  block Markdown renderer emits separate paragraphs. Preserve #146's anti-forge
-  guarantees: pasted bullets/sections never become sibling entries, and exact
-  receipt bytes remain unchanged. #254 replies inherit this contract later.
-
-  **B2** stores a visible sentinel such as `¶` (refuted: invents an ugly private
-  dialect). **B3** reconstructs from `submissions.log` (refuted: receipt is not
-  the authoritative questions channel). **B4** keeps single paragraphs.
-
-  Approval authorizes a written design/fixture proposal only—no grammar, writer,
-  parser, renderer, migration, or deployment change. Answer `Accept B1 for
-  design`, `Accept B1 with amendments: …`, or `Choose B4; keep one paragraph`.
 
 - **P1 · 2026-07-27 — #283 index-lock attribution: authorise one bounded
   privileged audit capture, or stop at recurrence evidence?** Updated report:
@@ -538,6 +488,137 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-27 — #281 `/tasks`: seven taste calls on the design proposal
+  you asked for first.**
+  → answered (2026-07-27 21:55): **ruled — six of seven, with Q1 overridden
+  and Q6 sent back.** (1) **Not** as asked: the two-pane triage layout IS wanted,
+  but as a second route `/tasks2`, with `/tasks` kept as the simpler one-column
+  variant; order is the loop's choice. Filed as #328. (2) rec, plus the sort must
+  be **user-configurable alongside the filters**, not a fixed default. (3) rec —
+  open only, landed count visible and one click away. (4) rec — `?t=281` is
+  canonical, so #282 may hardcode it. (5) rec with the hedge removed: do **not**
+  label it "the loop's claim"; say **in progress** and put the honesty in a hover
+  box reading *"Reported: Xm Ys ago"*. That is better than what was proposed —
+  freshness is a fact where "claim" is a disclaimer, and it makes staleness
+  legible rather than merely admitted. (6) **not answered** — *"you'll need to
+  explain what this means sorry"*; re-asked plainly as its own entry, because the
+  original asked in the loop's private vocabulary about the very thing it was
+  meant to explain. (7) rec — and both have since landed (#301, #302).
+
+
+  The self-contained artifact is
+  `.dreamwork/review/tasks-page.html` (open it from the dashboard's review
+  list); the implementation plan is `.dreamwork/docs/plans/tasks-page.md`,
+  twelve increments landed as design-only at `f2c1bd0`. #281's own entry
+  required a proposal before implementation, and #282's hovercards are blocked
+  on the route/data contract it defines, so this is the ask that unblocks both.
+
+  **Every one answers in a word, so a bare `rec` is a complete reply.**
+  He also asked for two things the seven questions did not. First, **a full
+  re-review of the proposal and its related docs against everything that has
+  changed since `f2c1bd0`** — filed as #327, and warranted: #301 and #315 both
+  moved the ledger readers the page depends on, and #302 moved `/answers`.
+  Second, a ruling from me on ordering versus the SQLite migration.
+
+  **The ordering call, made as he delegated it (*"Up to you what's best"*):
+  `/tasks` first; #294 stays where it is.** His stated worry is paying for two
+  migrations, and the answer is already inside #281's own entry: the page needs
+  one new entry-level ledger reader as a single deep module, and **that reader is
+  the designated seam #294 re-points at SQLite.** The page's markup, sort,
+  filter, URL and hovercard contracts are therefore downstream of a *shape*, not
+  of a storage — the migration re-points one function, not a page. Two migrations
+  happen only if `/tasks` parses the Markdown itself, which is now a stated and
+  checkable constraint on the task rather than a hope. Against that, #294 is
+  blocked on #264 and #263, both still-unanswered design asks, so ordering it
+  first would idle a P1 surface behind two open questions. What his hint does buy
+  is real and has been taken: the `/tasks` read requirements are folded into
+  #294's acceptance scope, so the migration is built already knowing what the
+  page needs. The CLI is part of #294 and travels with it.
+
+  1. **Wide-screen two-pane list-plus-detail triage layout?** Rec **no, for
+     v1** — `watch-design.md` names `/review` as *the* deliberate width
+     exception, and a second exception is how a one-column page becomes a
+     two-column one. A split view can be added later without changing the
+     data contract.
+  2. **Default sort: priority band, or newest id (the file's own order)?** Rec
+     **priority, then newest id** — the ledger is written in arrival order,
+     which is not urgency, and the page's job is to say what to look at first.
+  3. **Default filter: open only, or everything?** Rec **open only**, with the
+     landed count visible in the count line and one click away — 17 settled
+     rows diluting 103 live ones is the opposite of ranking.
+  4. **Is `/tasks?t=281` the canonical detail URL #282 hardcodes, or do you
+     want `/tasks/281`?** Rec **`?t=281`** — it keeps the server's route
+     allowlist an exact membership test and matches `/file?p=` and
+     `/review?p=`. `/tasks/281` reads nicer and costs prefix routing in the
+     very seam #133 will rewrite.
+  5. **Show the loop's `status.json` claim ("I am on #281 right now"), given
+     it is a claim and not a fact?** Rec **yes, labelled as the loop's claim**,
+     carrying the page's only accent. It is the sole in-flight signal that
+     exists; #294 is what turns it into a fact. The alternative is a page that
+     cannot tell you what is happening now.
+  6. **A write affordance on a row later — `do now: #281` sent from the
+     list?** Rec **not in v1, yes as a follow-up.** It needs no new endpoint or
+     vocabulary (`/command` + `do-now` exist), so it is cheap — but it turns a
+     read-only page into a steering surface, and that is deliberately your call
+     rather than something folded into a list page.
+  7. **The two findings the batch turned up** — now filed as **#301** (both
+     ledger patterns are blind to combined entry heads) and **#302** (`/answers`
+     has no `TINT`/`SEED` entry). Rec **filed, worked in id order behind
+     #281**; #301 is P2 because it is a wrong number on the live dashboard, and
+     the coordinator's own re-measurement narrowed *which* number — see the
+     entry.
+
+  Answer `rec`, `rec except N: …`, or answer them individually. Approval
+  authorises red-first implementation of the twelve increments in an isolated
+  worktree with the visual gate — not deployment.
+  - **Answer (via watch, 2026-07-27 21:47):** Hmm perhaps we should do
+    the task migration to sqlite first so that we can factor in the
+    requirements of `/tasks`? 1. yes but let's do it at `/tasks2`, and
+    keep a simpler 1 column variant at `/tasks`. We can do them in
+    whichever order you prefer. 2. rec, but user configurable alongisde
+    filters 3. rec 4. rec 5. rec, though we don't need to draw attention
+    to the fact it's a claim, we can just say that it's inprog and have
+    a little box/tooltip on hover saying like 'Reported: Xm Ys ago' or
+    the like. 6. you'll need to explain what this means sorry. btw,
+    please do a full review of the tasks-page proposal and related docs
+    relative to anything that might have changed since then, make sure
+    it all still works. 7. rec Okay so on the sqlite thing, we can go
+    either way. Up to you what's best. However, keep in mind we might
+    need to do multiple migrations unless we factor in the requirements
+    of this task into sqlite task and then do the sqlite conversion
+    first. and before that we should probably do the cli i guess.
+
+- **P1 · 2026-07-27 — #286 note/answer paragraphs: preserve authored blank
+  lines in the managed question record?**
+  → answered (2026-07-27 21:50): **B1 accepted for design** — *"rec B1"*. The
+  paragraph-aware safe writer is authorised as a written design and fixture
+  proposal only; the grammar, writer, parser, renderer and migration changes
+  still need their own approval, per the ask's own terms. #286 is unblocked for
+  the design increment, and #254 replies inherit the contract it settles.
+
+  Read-only diagnosis traced the loss. The browser and `submissions.log` retain exact newlines, but `human_block()`
+  currently collapses **all** whitespace into one paragraph before writing
+  `questions.md`; the parser treats a blank line as ending Note/Answer capture;
+  the renderer uses inline Markdown. Therefore the durable question channel
+  cannot reconstruct paragraphs today.
+
+  Rec **B1**: make the existing safe writer paragraph-aware. Within each
+  authored paragraph, soft newlines and source hard-wraps still join with spaces;
+  authored blank lines become indented paragraph separators that remain inside
+  the Note/Answer sub-record. The parser reconstructs `\n\n`, and the existing
+  block Markdown renderer emits separate paragraphs. Preserve #146's anti-forge
+  guarantees: pasted bullets/sections never become sibling entries, and exact
+  receipt bytes remain unchanged. #254 replies inherit this contract later.
+
+  **B2** stores a visible sentinel such as `¶` (refuted: invents an ugly private
+  dialect). **B3** reconstructs from `submissions.log` (refuted: receipt is not
+  the authoritative questions channel). **B4** keeps single paragraphs.
+
+  Approval authorizes a written design/fixture proposal only—no grammar, writer,
+  parser, renderer, migration, or deployment change. Answer `Accept B1 for
+  design`, `Accept B1 with amendments: …`, or `Choose B4; keep one paragraph`.
+  - **Answer (via watch, 2026-07-27 21:50):** rec B1
 
 - **P1 · 2026-07-27 — #290 main-dreamer run modes: accept the local
   three-mode v1 and reserve hierarchy?**
