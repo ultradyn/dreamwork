@@ -208,34 +208,6 @@ Next id: **347**
   the live file does not contain, and assert the precondition that both answers differ
   in text, or the check cannot tell overwriting from idempotence
 
-- **#339** — Syntax highlighting for code blocks in the review-artifact template ·
-  P2 · review tooling/visual · origin: **human** · **human via watch `add-idea`
-  2026-07-27 23:19**, typed from `/review?p=threaded-topic-chats-v2.html`: *"in html
-  codeblocks like here with TopicChats, we should make syntax highlighting available
-  as part of the template. and if the template doesn't have code blocks, we can take
-  some from here"* · **his premise measured, and half of it is already done**: the
-  frame (`review-artifact.template.html:86-87`) already styles `code` and `pre`, and
-  those two rules are **byte-identical** to the ones in the artifact he was reading —
-  so there is nothing to copy across; what is genuinely missing is only the
-  HIGHLIGHTING (no `hljs`, no token classes anywhere in either) · **the binding
-  constraint is offline-cleanliness**: artifacts are self-contained and inline
-  everything, so a CDN highlighter is out — the choice is build-time tokenising in
-  `review_artifact.py` (emit `<span class=…>` at build, ship only CSS; no runtime
-  cost, no script, degrades to plain text) versus a small inlined highlighter (works
-  on content authored later, but adds script to every artifact) · rec **build-time**,
-  because an artifact is a frozen record and highlighting it at read time is work
-  done repeatedly for a result that cannot change · needs an explicit language marker
-  on the block (`<pre><code class="language-…">`) rather than guessing — a
-  misdetected language colours the code wrongly, which is worse than not colouring
-  it · **the consequence to plan for, and it is immediate**: `template_stamp()` is a
-  digest of the frame's bytes, deliberately so that editing the frame changes it
-  without anyone remembering to — so this change makes **every templated artifact
-  stale**, and #329's just-landed lint check will WARN on each until rebuilt · today's
-  twelve are `untemplated` and stay silent, but `#254`'s artifact is being built right
-  now and would go stale the moment this lands, so the task includes rebuilding
-  whatever was templated in the interim · that is not a defect in either change; it
-  is the staleness mechanism doing its job, and the entry says so because the next
-  agent will otherwise read the WARNs as a regression
 
 - **#338** — Bundle `use-igcs` with Dreamwork, because planning depends on it ·
   P2 · packaging/method · origin: **human** · **human via watch `add-idea`
@@ -1650,6 +1622,47 @@ Next id: **347**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#339** — Syntax highlighting for code blocks in the review-artifact template ·
+  **closed `be8812e`** · P2 · review tooling/visual · origin: **human** · **human via watch `add-idea`
+  2026-07-27 23:19**, typed from `/review?p=threaded-topic-chats-v2.html`: *"in html
+  codeblocks like here with TopicChats, we should make syntax highlighting available
+  as part of the template. and if the template doesn't have code blocks, we can take
+  some from here"* · **his premise measured, and half of it is already done**: the
+  frame (`review-artifact.template.html:86-87`) already styles `code` and `pre`, and
+  those two rules are **byte-identical** to the ones in the artifact he was reading —
+  so there is nothing to copy across; what is genuinely missing is only the
+  HIGHLIGHTING (no `hljs`, no token classes anywhere in either) · **the binding
+  constraint is offline-cleanliness**: artifacts are self-contained and inline
+  everything, so a CDN highlighter is out — the choice is build-time tokenising in
+  `review_artifact.py` (emit `<span class=…>` at build, ship only CSS; no runtime
+  cost, no script, degrades to plain text) versus a small inlined highlighter (works
+  on content authored later, but adds script to every artifact) · rec **build-time**,
+  because an artifact is a frozen record and highlighting it at read time is work
+  done repeatedly for a result that cannot change · needs an explicit language marker
+  on the block (`<pre><code class="language-…">`) rather than guessing — a
+  misdetected language colours the code wrongly, which is worse than not colouring
+  it · **the consequence to plan for, and it is immediate**: `template_stamp()` is a
+  digest of the frame's bytes, deliberately so that editing the frame changes it
+  without anyone remembering to — so this change makes **every templated artifact
+  stale**, and #329's just-landed lint check will WARN on each until rebuilt · today's
+  twelve are `untemplated` and stay silent, but `#254`'s artifact is being built right
+  now and would go stale the moment this lands, so the task includes rebuilding
+  whatever was templated in the interim · that is not a defect in either change; it
+  is the staleness mechanism doing its job, and the entry says so because the next
+  agent will otherwise read the WARNs as a regression
+  · **landed 2026-07-28 00:33** — build-time tokenising, as recommended: `tok-`
+  spans emitted by `review_artifact.py`, CSS in the frame, no script in the
+  artifact, plain text for a block with no `language-…` marker. Its own
+  prediction held exactly: the frame change staled the templated set, that set
+  was #254's artifact alone, and it was rebuilt in the same branch — the twelve
+  `untemplated` ones stayed silent as the entry said they would
+  · **the agent died without reporting**, so this was validated from the diff;
+  that turned up one defect (nothing could fail on the token re-escape, fixed
+  in `a2be1e3` with a discriminating red) and one thing worth keeping: lint's
+  `13 artifact(s), none stale` cannot distinguish a finished rebuild from a
+  skipped one, because it is silent on `untemplated` by design — the per-file
+  `review_artifact.py check` is what answers that, and it was run
 
 - **#343** — lint rejects an unrecognised author tag in questions.md and
   answers.md · **closed `335ecf0`** · **P1** · reliability · origin: **loop** · a threaded bullet whose
