@@ -274,10 +274,51 @@ interpret, and interpreting is guessing), or more than one marker (two
 claims is none). The error names the entry and the vocabulary, because
 "origin is wrong" reads as nonsense to someone who never met the rule.
 
-Deliberately NOT here: parsing origin from first sight in git history
-(#216) and rendering human/loop/unknown coverage on the dashboard (#217)
-are their own increments. This one is the contract and its enforcement;
-#216 and #217 build on a ledger that already tells the truth.
+Rendering human/loop/unknown coverage on the dashboard (#217) is its
+own increment and deliberately NOT here. First-sight parsing (#216) HAS
+landed — see the next section.
+
+## `.dreamwork/tasks.md` — first-seen origin from git history (#216)
+
+`task_origins.py` answers "who filed each task" as a fact about the
+task's ARRIVAL, never about its current text. It walks the ledger's own
+git history oldest-to-newest and classifies every numeric id from the
+FIRST snapshot where that id appears in a leading `- **#…**` token:
+
+```
+python3 task_origins.py --repo <target> [--path .dreamwork/tasks.md] [--json]
+```
+
+stdout is JSON either way (pretty by default, single-line with `--json`):
+`{repo, path, history_complete, history_note, tasks}` where each task is
+`{id, origin, first_commit, first_seen, title}`, sorted by id. Exit is
+nonzero ONLY for real repo/path/git errors — not-a-checkout, an absolute
+or `..`-escaping `--path`, git itself failing. A missing ledger is a
+truthful empty `tasks`, not an error.
+
+The load-bearing rules, each of which a reader of the CURRENT file would
+get wrong:
+
+- **First sight is final.** Only that snapshot's explicit marker speaks:
+  `human` and `loop` are accepted; missing, invalid, wrong-case, or
+  duplicated markers fail closed to `unknown`. A later edit — including
+  backfilling a marker — never retroactively classifies the arrival.
+  Commit author and message are never consulted.
+- **Combined entries classify every id in their leading token** from that
+  one entry; an id first seen separately and earlier keeps its earlier
+  record. A `#N` in a body is a cross-reference and classifies nothing.
+- **A deleted task stays in the output** — grooming cannot un-happen an
+  arrival. **Pre-cutoff ids are parsed too**: the cutoff governs the
+  linter's demands, not history's coverage.
+- **The grammar is imported from `lint.py`** (`ledger_entries`,
+  `ORIGIN_MARK`), not re-copied — a second copy of one rule is how the
+  priority check drifted. A malformed snapshot fails closed to `unknown`
+  for its affected entry and never crashes the walk.
+- **A shallow or partial clone reports `history_complete: false`** with a
+  `history_note`, rather than silently describing a later edit as the
+  arrival.
+
+#217 will render this; nothing in this module is a UI.
 
 ## What stays unguarded, and why
 
