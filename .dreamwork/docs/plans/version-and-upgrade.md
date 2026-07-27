@@ -113,3 +113,23 @@ same decision.
   in one session. That is a subprocess and a string compare; the
   *subagent* only fires when the hashes actually differ.
 - **No automatic migration from prose.** See the split above.
+
+## Decided by the loop, 2026-07-28 — the changelog ships in the release
+
+The commit-range question (#194) sat open in `questions.md` from 2026-07-25 and was
+**withdrawn without being answered** under his 05:35 rule.
+
+**Option (b) stands: CI writes the commits between tags into the release, and the
+upgrade pass reads that local file.** Option (a) — fetch the range from a private
+GitHub repo — puts a **credential requirement in the startup path of a loop whose
+entire promise is running unattended**, and fails with no network. That is not a
+taste difference between two workable designs, which is what makes it a decision
+rather than an ask.
+
+(b) also removes the auth question instead of answering it, gives the subagent
+better-shaped input than raw commits, is a few lines of CI, and produces a
+changelog worth having on its own. The git path stays available wherever history is
+actually present — a checkout like this one — so (b) costs nothing there.
+
+**The same decision settles the no-prior-hash fallback:** estimate the install date
+from asset mtimes, for an unzip and a clone alike.

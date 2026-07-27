@@ -336,3 +336,28 @@ bookmark badly enough to serialise stage 1 behind a watch.py change.
   namespaces are split (`tasks/` vs `hub/`).
 - **One open question, non-blocking**: confirm origin-per-project vs the
   single-URL `/{project}/` prefix.
+
+## Decided by the loop, 2026-07-28 — origin-per-project, and the ask is withdrawn
+
+The URL-space question (#96) sat open in `questions.md` from 2026-07-25 and was
+**withdrawn without being answered** under his 05:35 rule: a decision with one
+clearly superior answer is not an ask, and its reasoning belongs in an aux
+document, which is this one.
+
+**Origin-per-project stands.** The hub lists and links out; each project keeps its
+own port and its own URLs. The measurement that decides it: `routeOf()` and
+`isInternal()` compare `location.pathname` against string literals **inside a
+generated JS string**, so they cannot be reached from outside the page. Two of the
+three root-absolute sites (the fetches and `pushState`) can be shimmed; that third
+cannot. Under a path prefix a deep link therefore renders the **wrong view,
+silently** — which is the worst failure available, strictly worse than not
+supporting the prefix at all.
+
+`ssh -L` also yields a local port per remote project, so origin-per-project
+survives into the swarm stage unchanged, and prefix support (if ever wanted)
+belongs to #124's server-core seam where those three sites are being touched
+anyway.
+
+**Reopenable.** The single-URL bookmark is a preference only he holds, so if he
+wants it he can overturn this — the cost is a `watch.py` change and serialising
+stage 1 behind it. It is simply not worth his attention unasked.

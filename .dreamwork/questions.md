@@ -34,91 +34,6 @@
     they were indistinguishable from his.
     **This question is genuinely open and has never been answered.**
 
-- **P3 · 2026-07-25 — dreamhub URL space: one hub URL, or one per project?
-  (#96).** Your `daemon-mode.md` sketch was `/` lists projects and
-  `/{project}/…` reverse-proxies to that project's watch. The stage-1
-  plan ships **origin-per-project** instead — the hub lists and links
-  out, each project keeps its own port and its own URLs.
-
-  Why, measured rather than argued: the watch page is root-absolute in
-  three places, and only two of them can be patched from outside. The
-  fetches and `pushState` can be shimmed; `routeOf()`/`isInternal()`
-  compare `location.pathname` against string literals inside a
-  generated JS string and cannot be reached. So under a path prefix a
-  deep link renders the **wrong view, silently** — the worst available
-  failure. `ssh -L` also gives a local port per remote project, so
-  origin-per-project survives all the way into the swarm stage, and the
-  prefix work belongs to #124's server-core seam where those three
-  sites are being touched anyway.
-
-  **Not blocking** — the build proceeds on the rec. Answer only if you
-  want the single-URL bookmark badly enough to serialise stage 1 behind
-  a `watch.py` change. Full reasoning:
-  `.dreamwork/docs/plans/dreamhub-stage1.md`.
-  - **Follow-up (loop, 2026-07-25 17:24):** submissions attached to this
-    entry at 14:34-14:35 have been REMOVED. They were never his: they are
-    verbatim guard strings — `dev/capture/regroup.mjs:67` and
-    `dev/capture/oneinput.mjs:139,153` — that reached the real
-    `questions.md` because a guard ran against the live target instead of
-    the fixture (the runner gap, fixed in 7be4a22). They were previously
-    kept on the reasoning that they were his words; they are not. He asked
-    at 17:23 whether three answers had been forgotten, and on the page
-    they were indistinguishable from his.
-    **This question is genuinely open and has never been answered.**
-
-
-
-- **P2 · 2026-07-25 — #194: where does an upgrade check get its commit range,
-  when the release has no repo?** Your version idea is captured and
-  planned (`docs/plans/version-and-upgrade.md`); this is the one fork
-  that decides step 4 onward, so I would rather ask than build both.
-
-  The tension is inside the design and it is a real one: the CI
-  replacement exists precisely so a **zip carries a hash without carrying
-  the repo**. But the upgrade pass then wants every commit between two
-  hashes, and `git@github.com:ultradyn/dreamwork.git` is private. So a
-  zip-installed target has nothing to diff and no credentials to fetch
-  with.
-
-  Two ways out. **(a) Network + auth**: the pass fetches the range from
-  GitHub. Real upgrade fidelity, but it puts a credential requirement in
-  the startup path of a loop whose whole promise is running unattended,
-  and it fails on a plane. **(b) Ship a generated changelog in the
-  release**: CI writes the commits between tags into the zip, and the
-  subagent reads a local file.
-
-  **Rec: (b).** It removes the auth question rather than answering it,
-  works offline, is a few lines of CI, gives the subagent better-shaped
-  input than raw commits, and produces a changelog humans want anyway.
-  The git path stays available wherever history is actually present —
-  a checkout like this one — so (b) costs nothing there.
-
-  Same decision also settles the no-prior-hash fallback: estimating the
-  install date from asset mtimes is sound (for both an unzip and a clone,
-  mtime really is install time), but turning that date into "the oldest
-  plausible hash" needs history or a changelog — the same dependency.
-
-  Answer "changelog", "network", or name a third shape.
-
-  **Not blocking the whole idea** — `bin/ud-dw-githash`, the commit
-  trailers and the frontmatter all proceed regardless, and I would start
-  with the trailers since every commit written before they exist is one
-  the future upgrade pass has to read blind.
-  - **Note (human, via watch, 2026-07-26 18:54):** oh well it sees the old
-    commit in DREAMWORK.md, and the new one from the ud-dw-githash command.
-    also i'm making the repo public. not sure this answers your question,
-    so adding it as a note. also in our own dreamwork.md we should note an
-    exclusion because we're obviously going to see new commits all the
-    time.
-  - **Follow-up (loop, 2026-07-26 18:56):** Yes for the interval endpoints;
-    public removes authentication from a network fallback. The remaining
-    choice is where a zip/offline install gets the intervening objects. Rec:
-    local Git history when present, packaged generated changelog for zip/
-    offline use, and public-repo fetch only as explicit fallback. Leaving this
-    open for that source choice. I will also add the requested self-repo
-    exclusion: this development checkout must not treat ordinary new local
-    commits as an installed-release upgrade on every tick.
-
 - **P2 · 2026-07-27 — #275 public Dreamhub auth: six calls, and the first one
   rewrites the rest.** You asked for this via answer at 17:48. The artifact is
   `.dreamwork/review/hub-public-auth.html` (open it from the dashboard's review
@@ -193,6 +108,114 @@
 
 
 ## Answered
+
+- **P2 · 2026-07-25 — #194: where does an upgrade check get its commit range,
+  → resolved (2026-07-28 06:25): **decided by the loop, and withdrawn as an ask.**
+  Rec **(b)** stands — CI ships a generated changelog inside the release, and the
+  upgrade pass reads a local file. Withdrawn under his 05:35 rule: option (a) puts a
+  credential requirement in the startup path of a loop whose entire promise is
+  running unattended, and fails with no network. That is not a taste difference, so
+  I would be surprised by any answer other than the rec. (b) also removes the auth
+  question instead of answering it, and produces a changelog worth having anyway.
+  The git path stays available wherever history is present, so (b) costs nothing in
+  a checkout like this one. Same decision settles the no-prior-hash fallback.
+  Recorded in `.dreamwork/docs/plans/version-and-upgrade.md`.
+  when the release has no repo?** Your version idea is captured and
+  planned (`docs/plans/version-and-upgrade.md`); this is the one fork
+  that decides step 4 onward, so I would rather ask than build both.
+
+  The tension is inside the design and it is a real one: the CI
+  replacement exists precisely so a **zip carries a hash without carrying
+  the repo**. But the upgrade pass then wants every commit between two
+  hashes, and `git@github.com:ultradyn/dreamwork.git` is private. So a
+  zip-installed target has nothing to diff and no credentials to fetch
+  with.
+
+  Two ways out. **(a) Network + auth**: the pass fetches the range from
+  GitHub. Real upgrade fidelity, but it puts a credential requirement in
+  the startup path of a loop whose whole promise is running unattended,
+  and it fails on a plane. **(b) Ship a generated changelog in the
+  release**: CI writes the commits between tags into the zip, and the
+  subagent reads a local file.
+
+  **Rec: (b).** It removes the auth question rather than answering it,
+  works offline, is a few lines of CI, gives the subagent better-shaped
+  input than raw commits, and produces a changelog humans want anyway.
+  The git path stays available wherever history is actually present —
+  a checkout like this one — so (b) costs nothing there.
+
+  Same decision also settles the no-prior-hash fallback: estimating the
+  install date from asset mtimes is sound (for both an unzip and a clone,
+  mtime really is install time), but turning that date into "the oldest
+  plausible hash" needs history or a changelog — the same dependency.
+
+  Answer "changelog", "network", or name a third shape.
+
+  **Not blocking the whole idea** — `bin/ud-dw-githash`, the commit
+  trailers and the frontmatter all proceed regardless, and I would start
+  with the trailers since every commit written before they exist is one
+  the future upgrade pass has to read blind.
+  - **Note (human, via watch, 2026-07-26 18:54):** oh well it sees the old
+    commit in DREAMWORK.md, and the new one from the ud-dw-githash command.
+    also i'm making the repo public. not sure this answers your question,
+    so adding it as a note. also in our own dreamwork.md we should note an
+    exclusion because we're obviously going to see new commits all the
+    time.
+  - **Follow-up (loop, 2026-07-26 18:56):** Yes for the interval endpoints;
+    public removes authentication from a network fallback. The remaining
+    choice is where a zip/offline install gets the intervening objects. Rec:
+    local Git history when present, packaged generated changelog for zip/
+    offline use, and public-repo fetch only as explicit fallback. Leaving this
+    open for that source choice. I will also add the requested self-repo
+    exclusion: this development checkout must not treat ordinary new local
+    commits as an installed-release upgrade on every tick.
+
+
+- **P3 · 2026-07-25 — dreamhub URL space: one hub URL, or one per project?
+  → resolved (2026-07-28 06:25): **decided by the loop, and withdrawn as an ask —
+  he never answered it and no longer needs to.** Origin-per-project stands, on the
+  measurement already in this entry: `routeOf()`/`isInternal()` compare
+  `location.pathname` against literals inside a generated JS string and cannot be
+  reached from outside, so a path prefix makes a deep link render the **wrong view,
+  silently** — the worst failure on the menu. Withdrawn under his 05:35 rule that a
+  decision with one clearly superior answer is not an ask; the test *"would I be
+  surprised by any answer other than my rec"* is yes here, because the alternative
+  is measurably worse rather than merely different. The reasoning lives in
+  `.dreamwork/docs/plans/dreamhub-stage1.md`, which is the aux document his rule
+  asks for. **He can still overturn it** — the single-URL bookmark is a preference
+  only he holds — but it costs a `watch.py` change and it is not worth his
+  attention unasked.
+  (#96).** Your `daemon-mode.md` sketch was `/` lists projects and
+  `/{project}/…` reverse-proxies to that project's watch. The stage-1
+  plan ships **origin-per-project** instead — the hub lists and links
+  out, each project keeps its own port and its own URLs.
+
+  Why, measured rather than argued: the watch page is root-absolute in
+  three places, and only two of them can be patched from outside. The
+  fetches and `pushState` can be shimmed; `routeOf()`/`isInternal()`
+  compare `location.pathname` against string literals inside a
+  generated JS string and cannot be reached. So under a path prefix a
+  deep link renders the **wrong view, silently** — the worst available
+  failure. `ssh -L` also gives a local port per remote project, so
+  origin-per-project survives all the way into the swarm stage, and the
+  prefix work belongs to #124's server-core seam where those three
+  sites are being touched anyway.
+
+  **Not blocking** — the build proceeds on the rec. Answer only if you
+  want the single-URL bookmark badly enough to serialise stage 1 behind
+  a `watch.py` change. Full reasoning:
+  `.dreamwork/docs/plans/dreamhub-stage1.md`.
+  - **Follow-up (loop, 2026-07-25 17:24):** submissions attached to this
+    entry at 14:34-14:35 have been REMOVED. They were never his: they are
+    verbatim guard strings — `dev/capture/regroup.mjs:67` and
+    `dev/capture/oneinput.mjs:139,153` — that reached the real
+    `questions.md` because a guard ran against the live target instead of
+    the fixture (the runner gap, fixed in 7be4a22). They were previously
+    kept on the reasoning that they were his words; they are not. He asked
+    at 17:23 whether three answers had been forgotten, and on the page
+    they were indistinguishable from his.
+    **This question is genuinely open and has never been answered.**
+
 - **P1 · 2026-07-28 — implementation authority for the user-event journal:
   → answered (2026-07-28 05:43): **`rec` — all four.** So: **G1 granted** (lanes
   A–D and F may be implemented; **E, the HTTP cutover, and H, the mixed-version
