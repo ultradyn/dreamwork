@@ -335,4 +335,11 @@ for (const reduced of [false, true]) {
 }
 
 ok('no page errors', errs.length === 0);
+cleanup();
 finish();
+/* Explicit exit: the spawned python server holds an event-loop handle
+   even after SIGTERM, so without this the guard's checks all print PASS
+   and then it hangs until the runner's timeout kills it — reporting exit
+   124 over a green run. The 'exit' handler (registered above) fires on
+   this and reaps the child. */
+process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
