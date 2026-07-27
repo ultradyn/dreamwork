@@ -1044,7 +1044,15 @@ Next id: **308**
   accident is the more interesting bug
 - **#159** — "sent to the dream" appears instead of arriving · P3 · bug
   · 15m · use `.dreamin`, which only started working today (#154) ·
-  check the departure too · verify by per-frame trace, since a two-frame
+  ~~check the departure too~~ **answered, do not re-derive** (2026-07-27,
+  folded from the gesture batch dream before archiving it): the two
+  hand-clears are *retractions* — the page withdrawing a claim that has
+  become false — not departures, and the real departure is the panel's,
+  which already drifts away on the same soft blur it arrived on. A false
+  confirmation that fades slowly is a false confirmation that is quieter,
+  so this was recorded in `watch-design.md` (#159/#255, "what it says
+  arrives and departs") rather than animated · that leaves only the
+  ARRIVAL · verify by per-frame trace, since a two-frame
   fade looks instant and passes a "did it appear" check
 - **#156** — Lint questions.md at WRITE time (PostToolUse hook) · P2 ·
   idea · 40m · his idea, and it is the strongest version of the fix:
