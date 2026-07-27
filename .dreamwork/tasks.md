@@ -354,6 +354,26 @@ Next id: **397**
   adopts it
 
   · related: **#396**
+  · **INCREMENT 2a LANDED** `d4cbba8` `a818bf8` (+ `markrail` registered in the `justfile`, which the
+  brief had failed to grant — ratified by relay). `ccc @glm52`. The rail, the flag, next/prev, above
+  the cliff only; **below 860px nothing renders**, deliberately, because 2b is his call
+  · **coordinator verification, all three owed checks done.** (1) **The motion red re-run and it is
+  discriminating**: injecting `scroll-behavior:smooth` into the template's `html` rule fails exactly
+  *"...and LANDS SETTLED — an instant jump, not a smooth journey (0 part-way)"* plus its
+  reduced-motion twin, while every geometry neighbour stayed green. Restored from a `cp` snapshot,
+  byte-exact. First attempt injected into a `html {` rule that does not exist and the guard passed —
+  a green red-run, caught, not believed. (2) **Guard green at load 26.6**, which this repo's
+  asymmetry rule makes conclusive. (3) **The retired byte-identity test is not weaker**: the lane
+  dropped only the frozen whole-document digest and kept `_prechange_review_artifact`'s
+  content-resolution, comparing the **body region** against the live pre-change builder — so the
+  drift the digest existed to catch is still caught directly, and it no longer false-fails on frame
+  CSS the template is supposed to gain
+  · its `ch`-resolution finding is genuinely subtle and correct — a one-element flag would resolve
+  `--measure:78ch` against the *tab's* narrower font, so the flag is an outer block inheriting the
+  body font plus an inner visible postit
+  · **probing its caveat found #396 (P1)** — see that entry. The caveat's own axis was clean at three
+  densities; the axis it held constant was the element type
+  · **still open for 2b**: the strip below the cliff, awaiting his ruling on the artifact
 - **#378** — One `.fact` sits outside any `.facts` grid, in a file with no source · P3 ·
   review tooling · origin: **loop** · 10m · found by #365's measurement and verified
   independently: `protected-service-boundary-288.html` has `containers=0 facts=1`, so that

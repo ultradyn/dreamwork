@@ -2009,3 +2009,27 @@ this shape and convert opportunistically.)
   vocabulary **cannot be quoted in prose**: naming it in an entry body lets the non-greedy `[^*]*?`
   run to the next `**` anywhere in the entry, manufacturing phantom markers — my entry *about* this
   bug produced five of them.
+
+- **A caveat varies one axis and silently holds the others fixed. The defect is usually in one of
+  the fixed ones.** So when a lane names an uncertainty, test the axis it names *and* the axis it
+  assumed constant — the second is where it was not looking, which is exactly why it did not name it.
+  · **Measured:** #367 increment 2a's report ended with a precise, honest caveat — *"two non-nested
+  adjacent marked siblings closer than a tab height would not be staggered"*. It varies **distance**
+  between two marks. I built probe artifacts at three densities: adjacent paragraphs (13.1px apart),
+  consecutive list items (8.6px), flags 19.1px tall. **No overlap at any of them** — the caveat's own
+  axis was clean.
+  · **The axis it held constant was the marked element's *type*.** It assumed a block. An **inline**
+  `data-mark` — which `file-formats.md` documents as legal, *"on any element inside `body`"* — puts
+  the flag outside the reading column entirely, because `left` then resolves from the inline box's
+  offset. Measured: clipped past the page edge by **12px at 1000, 112px at 900, 151px at 861**, and
+  861 is one pixel above the cliff chosen to guarantee the worst case fits (#396). P1, on the
+  feature that had just shipped.
+  · **This is the fourth time today** that a lane flagged one case honestly, the flagged case was
+  fine, and the case beside it was a real defect. The pattern is now specific enough to act on
+  rather than to admire: **read the caveat as a sentence with variables, name every variable it
+  holds still, and vary one.**
+  · **And the guard was green throughout, correctly.** `markrail` asserts the flag anchors within 2px
+  of the reading column's right edge, and that is *true* for the block marks its fixture contains.
+  The hole is coverage, not logic — the same shape as [[a check that skips an unrecognised shape]],
+  reached from the other direction: there the check could not parse the input, here the input was
+  never in the fixture. **Both look like a passing check and neither is a check of the thing.**
