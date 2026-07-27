@@ -559,11 +559,6 @@ Next id: **301**
   origin: **loop** · blocked on #217 · `ledger_series` already computes
   arrival/landing pairs and discards them; render the median without a
   velocity score after provenance work
-- **#217** — Render honest provenance coverage · P2 · task · 25m ·
-  origin: **loop** · blocked on #216 · draw human/loop/unmarked rather
-  than implying the historical unknown remainder is loop-originated;
-  keep explicit coverage copy and update watch-design.md plus a red-first
-  browser guard
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
@@ -1006,6 +1001,15 @@ Next id: **301**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#217** — Render honest provenance coverage · P2 · origin: **loop** ·
+  landed 2026-07-27 · burndown now names first-sight human/loop/historical
+  unknown counts and committed-history denominator; unknown is hatched and
+  never inferred as loop, shallow coverage is explicit, mobile/a11y intact ·
+  target+HEAD cache and `(rev,path)` snapshots prevent nested-target poisoning ·
+  596 + 54 subtests, provenance guard 22/22, Vision + Geometry PASS, Spec +
+  Standards PASS after red-first cache fix · deployed :35110 PID 62810 ·
+  `c1f5aaa`
 
 - **#299** — Suppress expected peer-disconnect tracebacks at the HTTP
   handler boundary · P2 · origin: **human** · landed 2026-07-27 · exact
