@@ -2441,3 +2441,94 @@ class TestUnfoldedAnswers:
     def test_the_check_is_registered_in_run_checks(self, tmp_path):
         import inspect
         assert "check_unfolded_answers(dw, watch, rep)" in inspect.getsource(lint.run_checks)
+
+
+class TestGuardsRegistered:
+    """#377 — a guard that exists and is not in `DEFAULT_GUARDS` gates nothing.
+
+    This is #117's failure mode and it has now happened four times: `filehead`
+    and `fileview` were built with named red proofs and left unregistered on
+    purpose ("one line, still not mine"), and `fileimg` (#336) and `qfade`
+    (#326) had been sitting outside the list since they were written. All four
+    pass when invoked by hand, which is exactly why nobody noticed: the
+    evidence of a working guard and the evidence of a RUNNING guard look
+    identical in a report.
+
+    The check deliberately does NOT try to classify. Eleven other `.mjs` files
+    in that directory are captures, one-off traces and one shared helper, and a
+    checker that guessed which is which would either declare a real guard
+    non-load-bearing or nag forever. It reports the gap and names the list to
+    edit; a human decides.
+    """
+
+    def test_this_repo_has_every_guard_registered(self):
+        rep = lint.Report()
+        lint.check_guards_registered(lint.SKILL_DIR, rep)
+        levels_seen = levels(rep, "justfile")
+        assert lint.WARN not in levels_seen, rep.render()
+
+    def test_an_unregistered_guard_warns_and_names_it(self, tmp_path):
+        (tmp_path / "dev" / "capture").mkdir(parents=True)
+        (tmp_path / "justfile").write_text(
+            'guards port="1":\n    DEFAULT_GUARDS="alpha"\n', encoding="utf-8")
+        for name in ("alpha", "orphan"):
+            (tmp_path / "dev" / "capture" / f"{name}.mjs").write_text("//\n",
+                                                                     encoding="utf-8")
+        rep = lint.Report()
+        lint.check_guards_registered(tmp_path, rep)
+        assert lint.WARN in levels(rep, "justfile"), rep.render()
+        detail = next(d for lvl, w, d in rep.rows
+                      if w == "justfile" and lvl == lint.WARN)
+        assert "orphan" in detail, detail
+        assert "alpha" not in detail, "a registered guard must not be reported"
+        assert "DEFAULT_GUARDS" in detail, "must name the list to edit"
+
+    def test_the_known_non_guards_are_not_reported(self, tmp_path):
+        (tmp_path / "dev" / "capture").mkdir(parents=True)
+        (tmp_path / "justfile").write_text(
+            'guards port="1":\n    DEFAULT_GUARDS="alpha"\n', encoding="utf-8")
+        (tmp_path / "dev" / "capture" / "alpha.mjs").write_text("//\n",
+                                                               encoding="utf-8")
+        # `report.mjs` is the shared exit-handler helper every guard imports.
+        # If it were reported, the check would nag on every run forever, which
+        # is how a warning stops being read.
+        (tmp_path / "dev" / "capture" / "report.mjs").write_text("//\n",
+                                                                encoding="utf-8")
+        rep = lint.Report()
+        lint.check_guards_registered(tmp_path, rep)
+        assert lint.WARN not in levels(rep, "justfile"), rep.render()
+
+    def test_a_registered_name_with_no_file_is_reported(self, tmp_path):
+        (tmp_path / "dev" / "capture").mkdir(parents=True)
+        (tmp_path / "justfile").write_text(
+            'guards port="1":\n    DEFAULT_GUARDS="alpha ghost"\n', encoding="utf-8")
+        (tmp_path / "dev" / "capture" / "alpha.mjs").write_text("//\n",
+                                                               encoding="utf-8")
+        rep = lint.Report()
+        lint.check_guards_registered(tmp_path, rep)
+        assert lint.WARN in levels(rep, "justfile"), rep.render()
+        detail = " ".join(d for lvl, w, d in rep.rows
+                          if w == "justfile" and lvl == lint.WARN)
+        assert "ghost" in detail, detail
+
+    def test_a_target_without_a_justfile_is_silent(self, tmp_path):
+        rep = lint.Report()
+        lint.check_guards_registered(tmp_path, rep)
+        assert levels(rep, "justfile") == [], rep.render()
+
+    def test_the_count_it_reports_is_derived(self, tmp_path):
+        # The OK summary must count what it found, not restate a literal that
+        # was true the day it was written.
+        (tmp_path / "dev" / "capture").mkdir(parents=True)
+        names = ("alpha", "beta", "gamma")
+        (tmp_path / "justfile").write_text(
+            f'guards port="1":\n    DEFAULT_GUARDS="{" ".join(names)}"\n',
+            encoding="utf-8")
+        for name in names:
+            (tmp_path / "dev" / "capture" / f"{name}.mjs").write_text("//\n",
+                                                                     encoding="utf-8")
+        rep = lint.Report()
+        lint.check_guards_registered(tmp_path, rep)
+        detail = next(d for lvl, w, d in rep.rows
+                      if w == "justfile" and lvl == lint.OK)
+        assert str(len(names)) in detail, detail

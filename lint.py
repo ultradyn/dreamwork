@@ -1249,6 +1249,73 @@ def check_status_keys(dw: Path, rep: Report) -> None:
         rep.add(OK, ".status-keys", f"{len(union)} known key(s), none lost")
 
 
+GUARDS_LIST = re.compile(r'DEFAULT_GUARDS="([^"]*)"')
+
+# `.mjs` files in dev/capture/ that are deliberately not guards. Each is either
+# a capture tool the human runs to LOOK at something, a one-off trace kept for
+# its technique, or the shared helper. Named explicitly rather than pattern-
+# matched, because a heuristic that guessed would have to guess wrong in one of
+# the two possible directions: declare a real guard non-load-bearing, or nag
+# about a helper on every run until nobody reads the warning.
+NOT_GUARDS = frozenset({
+    "report",                                    # shared exit-handler helper
+    "beautycap", "cmdcap", "menucap", "reviewcap",  # capture tools, for looking
+    "indtrace", "optrace", "rm-check2", "note82", "pip83", "worldspace",
+})
+
+
+def check_guards_registered(root: Path, rep: Report) -> None:
+    """A guard file that is not in `DEFAULT_GUARDS` gates nothing (#377).
+
+    #117 named this once and it has happened four times since. `filehead` and
+    `fileview` arrived with seven named red proofs each and were deliberately
+    left unregistered — "one line, still not mine" — and `fileimg` (#336) and
+    `qfade` (#326) had been outside the list since they were written. All four
+    PASS when invoked by hand, which is precisely why nobody noticed: in a
+    report, a guard that works and a guard that runs look the same.
+
+    Two directions, and both are real. A file with no entry is a check nothing
+    invokes. An entry with no file is a runner line that either errors or is
+    skipped depending on the recipe, and it survives a rename of the guard it
+    named.
+
+    This does not classify. `NOT_GUARDS` is a hand-maintained list, so adding a
+    `.mjs` to that directory forces exactly one cheap decision: register it, or
+    say here why it is not a guard. That decision is the whole value — the four
+    misses above were all made by someone who never had to make it.
+
+    `root` is the skill directory (where the justfile lives), not `.dreamwork/`.
+    """
+    justfile = root / "justfile"
+    if not justfile.exists():
+        return
+    found = GUARDS_LIST.search(justfile.read_text(encoding="utf-8"))
+    if not found:
+        rep.add(WARN, "justfile",
+                "no DEFAULT_GUARDS assignment found — the guard runner's list is "
+                "the only thing that decides which guards actually run")
+        return
+    registered = set(found.group(1).split())
+    capture = root / "dev" / "capture"
+    files = {p.stem for p in capture.glob("*.mjs")} if capture.is_dir() else set()
+
+    orphans = sorted(files - registered - NOT_GUARDS)
+    if orphans:
+        rep.add(WARN, "justfile",
+                f"{len(orphans)} guard(s) in dev/capture/ are not in DEFAULT_GUARDS "
+                f"and so gate nothing: {', '.join(orphans)} — register them, or add "
+                f"them to lint.NOT_GUARDS with the reason they are not guards")
+    missing = sorted(registered - files)
+    if missing:
+        rep.add(WARN, "justfile",
+                f"DEFAULT_GUARDS names {len(missing)} guard(s) with no file in "
+                f"dev/capture/: {', '.join(missing)} — a renamed guard leaves its "
+                f"old name here and the runner cannot tell you")
+    if not orphans and not missing:
+        rep.add(OK, "justfile",
+                f"{len(registered)} guard(s) registered, each with a file")
+
+
 def _future_skew(stamp: str):
     """Seconds by which `stamp` is ahead of now, or None if unparseable.
 
@@ -1975,6 +2042,9 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_cited_shas(dw, rep)
     check_related_markers(dw, watch, rep)
     check_status_keys(dw, rep)
+    # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are
+    # the tool's own, so this only says anything when linting this repo.
+    check_guards_registered(dw.parent, rep)
 
 
 def main(argv: list[str] | None = None) -> int:

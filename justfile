@@ -126,6 +126,14 @@ lint:
 #                and a deletion, plus a shallow clone for the
 #                incomplete-coverage copy. Its load-bearing count check was
 #                shown red against the unknown-counted-as-loop sabotage.
+#   fileimg      #336, and it runs against the SHARED fixture: the datum is a
+#                binary file served through /filedata, which used to arrive as
+#                U+FFFD soup in a <pre>. Unregistered from the day it was
+#                written until #377's check found it.
+#   qfade        #326, a PIXEL guard on purpose — the claim is that the TEXT
+#                fades rather than being covered by a painted band, and the
+#                middle of its three claims cannot be written against the DOM
+#                at all. Also unregistered from the day it was written.
 #   filehead     OWN TARGET + OWN EPHEMERAL PORT (#284), gitrow-shaped: the
 #                datum is a FILE at a chosen path, and the shared fixture has
 #                no path long enough to make the heading compete with the
@@ -148,7 +156,7 @@ lint:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview"
+    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview fileimg qfade"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}

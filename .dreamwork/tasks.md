@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **377**
+Next id: **378**
 
 ## Open
 
@@ -1377,34 +1377,6 @@ Next id: **377**
   initial expected safe shape), remove dd2 dependency, add deterministic contract
   tests without weakening randomness, then decide install/commit location
 
-- **#284** — De-emphasise directory paths in file-view headings · P2 · UI
-  polish · origin: **human** · **human via watch 18:33** · full paths such as
-  `.dreamwork/docs/research/contextual-review-annotations.md` currently compete
-  with the document itself · make the basename the primary title and render the
-  parent path as subdued secondary context below or adjacent; preserve exact
-  copyable path, breadcrumbs/deep links, narrow-layout wrapping, contrast and
-  screen-reader meaning · follow existing atmospheric transitions/RM; coordinate
-  with #281/#282 task/file navigation rather than inventing another header model
-  · **APPROVED, human via watch 2026-07-27 23:46 (`rec H1`)**: basename as a bright
-  semantic heading on its own primary line, exact parent path beneath it as subdued
-  selectable metadata with a real keyboard- and focus-visible copy button that
-  copies the FULL path, associated with the heading for screen readers · copy
-  success and failure use the page's existing polite-confirmation idiom; reduced
-  motion snaps visuals but keeps the message's timing and function · long paths
-  wrap anywhere in the column and are **never** ellipsised or reordered — a path
-  that lies about its own segments is worse than one that takes two lines · reuse
-  the existing keyed route transition rather than animating path text on its own
-  (`transitions.md`)
-  · H2's clickable breadcrumbs stay refuted **until real directory routes exist**,
-  which makes them a follow-up of #243/#244, not of this · H3 refuted: long paths
-  steal the primary line and destabilise the 520px geometry
-  · **this approval is broader than tonight's others — implementation, review AND
-  deploy** · red-first evidence must prove luminance hierarchy, the exact clipboard
-  bytes, semantic heading/description/button labels, 520px no-overflow geometry,
-  and both normal route travel and reduced-motion settling
-  · the constraint is ownership, not authority: `watch.py` is held by the #326
-  agent until that merges
-
 - **#283** — Diagnose recurring orphaned Git index locks and dead attribution
   watcher · P1 · tooling/system reliability · origin: **loop** · blocked the
   18:27 steering commit and earlier #233 commits/cherry-picks · current witness:
@@ -1837,34 +1809,6 @@ Next id: **377**
   explicit worker promotion only, preserving transcript/attachment history ·
   typed task/update requests mint normal human-origin tasks · coordinate storage
   and transcript contract with revised #270/#229 before red-first UI increments
-
-- **#252** — Render Markdown files on `/file` · P2 · feature · 25m · origin:
-  **human** · **human via watch 15:17** · `.md` paths default to rendered
-  Markdown matching the dashboard aesthetic rather than plaintext · preserve
-  explicit Source/Raw mode for exact bytes/copy; reuse safe Markdown + confined
-  link classification; never execute embedded HTML/scripts · atmospheric mode
-  transition + reduced-motion parity · one pipeline with #158 reflow, not a
-  competing transform
-  · **APPROVED, human via watch 2026-07-27 23:39 (`rec` = Accept M1)**: one compact
-  two-position **Rendered / Source** segmented switch beside the path heading, for
-  Markdown only · Rendered is the default; Source shows the exact escaped bytes in
-  the existing `<pre>` and is deep-linkable with `?view=source` so a copied or
-  shared link preserves intent · the mode change uses the page's existing
-  atmospheric dissolve with the heading and control held fixed, restores the same
-  scroll ratio where possible, and swaps instantly under reduced motion
-  (`transitions.md` governs, as it does for everything) · Source is **never**
-  syntax-rewritten, so copied bytes stay trustworthy — that is the whole point of
-  the mode and is not a detail to optimise away · mobile keeps both labels in one
-  row rather than hiding either · authorises a red-first implementation with
-  deterministic desktop/mobile captures and interleaved vision + geometry review,
-  **not deployment**
-  · **its recorded blocker was stale and is corrected here**: the entry said
-  *blocked on #158*, but #158 landed at `5c45d83` and its own entry already says so
-  — so this has been startable and was being looked past. The real constraint is
-  file ownership: `watch.py` is held by the #326 agent, which also blocks #336,
-  #337, #331 and #322 · a stale blocker is how a ready, approved task sits
-  unstarted while the loop reads the queue as empty, which is why the correction
-  goes in the entry rather than being remembered
 
 - **#249** — Add dev-overlay sampling cadence controls · P2 · dev UI · 25m ·
   origin: **human** · **human via watch 14:37** · frame-time graph + other
@@ -2463,6 +2407,56 @@ Next id: **377**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#284** — De-emphasise directory paths in file-view headings · **closed `197feef`** ·
+  P2 · UI polish · origin: **human** · **human via watch 18:33**, approved 23:46 (`rec H1`)
+  · built by dreamer-284-252 at `aba33e0`, merged `6d94e40`, guard registered `197feef`
+  · `.htitle` is a real `<h1>` carrying the basename; the parent path is a **keyed crumb**
+  (`.fdir`) so it travels on the existing route transition rather than getting motion of its
+  own; `.fcopy` is a real `<button>` reading `view.param`, described by
+  `aria-describedby="fdir htitle"` so it announces as the full path in reading order · long
+  paths wrap and are never ellipsised, as he required
+  · **the finding worth keeping is a GREEN RED-RUN**: deleting `.fcopy:focus-visible` left the
+  focus check green, because Chromium's own default ring satisfied "an outline is drawn" — the
+  check was asserting the browser rather than the page, and on this dark surface that default
+  computes to `rgb(16,16,16)`. It now resolves `--accent` at runtime and compares. #375 exists
+  because the same pair-selector shape is elsewhere on the page
+  · a second check was hollow before it shipped: `scrollWidth <= clientWidth` on an inline box
+  compares `0 <= 1`, so the wrap proof passed over an ellipsis, over a nowrap, and over a page
+  with no path at all · related: **#252**
+
+- **#252** — Render Markdown files on `/file` · **closed `197feef`** · P2 · feature ·
+  origin: **human** · **human via watch 15:17**, approved 23:39 (`rec` = M1) · built by
+  dreamer-284-252 at `ae4215f`, merged `6d94e40`, guard registered `197feef`
+  · Rendered/Source is a **route**, parsed once in `routeOf` and written once in `navigate`'s
+  url, so `?view=source` deep-links and a copied link preserves intent · the switch is two
+  ordinary internal links inside a `stable` crumb keyed `fview:<path>`, with `.on` held out of
+  the html so the group survives a mode change and `paintFileMode` slides the shared `.sgind`
+  · Source is the pre-existing `<pre>${esc(text)}</pre>` and is asserted to hold **no element
+  children at all** rather than "no `tok-` span", which would pass on any other rewrite · scroll
+  ratio restored via `contentBottom()`
+  · its recorded blocker was stale and was corrected when it started: the entry said blocked on
+  #158, which had landed at `5c45d83`
+  · **#351 collides with this precisely**: turning off `white-space:pre-wrap` on `<pre>` now
+  also affects the Source pane, so #351 needs an explicit render-plain condition
+  (`isMarkdownFile(param) && mode === 'source'`), and the pytest check
+  `assertNotIn("tok-", watch.PAGE)` must be NARROWED to the Source path rather than deleted
+  · related: **#284**
+
+- **#377** — Nothing checked that a guard file is in `DEFAULT_GUARDS` · **closed `<this>`** ·
+  P2 · dogfood/tooling · origin: **loop** · #117 named this once and it had happened **four
+  times**: `filehead` and `fileview` arrived with seven named red proofs each and were left
+  unregistered on purpose ("one line, still not mine"), and `fileimg` (#336) and `qfade` (#326)
+  had been outside the list since the day they were written · all four PASS when invoked by
+  hand, which is exactly why nobody noticed — in a report, a guard that WORKS and a guard that
+  RUNS look identical
+  · `lint.check_guards_registered` now reports both directions (a file with no entry gates
+  nothing; an entry with no file survives a rename) and deliberately does **not** classify:
+  `lint.NOT_GUARDS` is hand-maintained, so a new `.mjs` forces one cheap decision — register
+  it, or say why it is not a guard. That decision is the whole value, since all four misses
+  were made by someone who never had to make it
+  · all four guards registered and run through the runner: PASS filehead, PASS fileview, PASS
+  fileimg, PASS qfade · 45 registered, each with a file
 
 - **#334** — `burndown.mjs` hand-rolls the reporter the plan cites it as a model for ·
   **closed `2747c8d`** · P3 · chore · origin: **loop** · from #327:
