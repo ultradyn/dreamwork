@@ -56,7 +56,17 @@ So, for anything in this document:
   machine rendered eight frames in 850ms", which is a fact about the box,
   not about the motion. Five guards encoded it — `headertravel` (>= 8
   widths), `regroup` and `morph` (>= 6 positions), and `qsec` twice
-  (>= 8 positions, >= 8 heights), **all five now converted** — and
+  (>= 8 positions, >= 8 heights), **all five now converted** — and a
+  SIXTH that this list did not count and that is **still unconverted**:
+  `states.mjs:114,118,122` holds three `uniq(h).length >= 6` height
+  counts, and this document went on to describe them approvingly (see
+  the question-state entry below), so the file endorsed at line 257 what
+  it forbids here. Measured 2026-07-27: those three are the only live
+  instances left in `dev/capture/` — every other match is a comment
+  recording its own conversion. Filed as #333; until it lands, this rule
+  has a standing exception it never agreed to, which is exactly how a
+  contract stops being one.
+
   `dismiss` holds two more on one trace with the terminal-state shape
   below, which is why "some checks passed" is not evidence a loaded run
   was sound: its neighbours got EASIER as frames spread apart while the
@@ -254,10 +264,23 @@ exception; an element leaving fades rather than vanishing.
 
   The guard is `dev/capture/states.mjs`, and its assertion is deliberately
   about **outcome, not mechanism**: every card that ended somewhere else
-  visited many intermediate positions. The first version demanded an inline
-  transform on everything that moved and was wrong — a card riding an
-  animated height above it travels perfectly with no transform of its own,
-  and the mechanism check would have forbidden the better motion.
+  moved through the middle rather than jumping. The first version demanded
+  an inline transform on everything that moved and was wrong — a card
+  riding an animated height above it travels perfectly with no transform of
+  its own, and the mechanism check would have forbidden the better motion.
+
+  **That outcome-not-mechanism reasoning is right; how this guard still
+  spells it is not.** It counts distinct heights (`uniq(h).length >= 6`, at
+  `states.mjs:114,118,122`), which the count rule above forbids for a reason
+  that applies here unchanged — six distinct heights is a fact about how
+  many frames this machine drew, not about whether the card passed through
+  the middle. Worse, the sentence above used to *describe* the count as the
+  virtue ("visited many intermediate positions"), so a reader arriving here
+  found the forbidden idiom endorsed by the same file that bans it 200 lines
+  earlier, and would reasonably cite the nearer sentence. `between()` states
+  the same intent without the frame-rate claim. #333 converts it; this note
+  stays until it does, because a known exception named in the open is a debt
+  and an unnamed one is a precedent.
 - **The section fold** (#196) — the same moment one level up, and the last
   gesture on this page that was still snapping. His report: clicking
   "questions · 8 to answer" makes the questions *"just appear and

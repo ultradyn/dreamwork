@@ -63,15 +63,27 @@ Next id: **335**
   `dreamhub.py` republishes status, so check both readers · this is a dependency of
   #281's badge, not of the whole page
 
-- **#333** — `transitions.md:262` still endorses the idiom its own rules forbid ·
-  P3 · docs correctness · origin: **loop** · from #327: the line describes
-  `states.mjs` as asserting "many intermediate positions", which reads as approving
-  exactly what §Checking a transition rules out 200 lines earlier · a future agent
-  cites the nearer sentence, which is why this is worth a task rather than a
-  shrug · decide which is true: either `states.mjs` is a deliberate exception and
-  the line should say so and why, or the sentence needs the `between()` wording ·
-  do not edit one and leave the other — the whole defect is that the file
-  disagrees with itself
+- **#333** — `states.mjs` is the SIXTH holder of the forbidden count idiom, and
+  unconverted · **P2** (raised from P3) · correctness · origin: **loop** · #327
+  filed this as a docs-wording slip; measuring it made it a real one · the count
+  rule in `transitions.md` says **never assert an absolute count of distinct
+  positions** — `uniq(positions).length >= 8` is a fact about how many frames the
+  machine drew, not about the motion — and names five guards that encoded it,
+  "**all five now converted**" · `dev/capture/states.mjs:114,118,122` holds three
+  more (`uniq(upH).length >= 6`, `uniq(dnH).length >= 6`, `uniq(tkH).length >= 6`),
+  and its line 134 comment instructs *"count intermediate positions"* · **measured
+  2026-07-27: those three are the only LIVE instances left in `dev/capture/`** —
+  every other grep hit is a comment recording its own conversion, so the "five"
+  count was accurate and simply never counted this guard · the document also
+  DESCRIBED them approvingly ("visited many intermediate positions"), so a reader
+  found the banned idiom endorsed 200 lines from the ban and would cite the nearer
+  sentence · **the doc half is done**: `transitions.md` now names the exception in
+  both places and says it is a debt · **remaining**: convert the three to
+  `between()` with the vacuity precondition the rule requires, red-first · note
+  `states.mjs:164-165` uses `<= 3` to assert reduced-motion does NOT animate — that
+  is the opposite assertion and must stay a count · `dev/capture/states.mjs` is
+  currently held by `ccc-glm52-324`, whose brief covers report.mjs adoption only,
+  so sequence this after #324 lands to avoid two agents in one file
 
 - **#334** — `burndown.mjs` hand-rolls the reporter the plan cites it as a model
   for · P3 · chore · origin: **loop** · from #327: `dev/capture/burndown.mjs:47-56`
