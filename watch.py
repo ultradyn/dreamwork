@@ -422,7 +422,7 @@ STYLE = """<style>
      transition would hand `regroupCards` a start-of-transition rect and the
      FLIP would aim at a height the card never reaches, snapping at the end. */
   details { margin:.25rem 0; }
-  details[open] { padding:.5rem 0; }
+  details[open] { padding:0 0 .5rem; }
   summary { cursor:pointer; color:var(--lit); list-style:none; }
   details[open] > summary { color:var(--bright); }
   summary::before { content:"+ "; color:var(--dim); }
@@ -662,19 +662,19 @@ STYLE = """<style>
   .qbody { display:contents; }
   /* a card that has left the list entirely dreams away where it stood */
   .qaghost { position:absolute; z-index:3; pointer-events:none;
-    transition:opacity .7s ease, filter .7s ease, transform .7s ease; }
+    transition:opacity .7s ease, transform .7s ease; }
   /* the departure has two beats (#277): dissolve in place first, then leave.
      Without this phase blur and travel begin together — the element is already
      moving by the time it starts dissolving, so it reads as "mush then snap"
      rather than "dissolve then leave". pregone softens the ghost where it
-     stands (blurs, dims, barely drifts) before .gone sends it away. The
-     shorter transition on this class is load-bearing: it overrides .qaghost's
-     .7s so the dissolve is its own fast beat, and when .pregone is removed the
-                     .7s returns for the departure. Commits skip this phase (line below). */
+     stands (dims, barely drifts) before .gone sends it away. The softer half
+     — blur and liquify — is the SVG mist filter (#departMist), driven per-frame
+     from rAF in dreamAway, exactly as the route dissolve drives #dissolveOut.
+     Commits skip this phase (line below) and keep their CSS blur. */
   .qaghost.pregone {
-    transition:opacity .18s ease, filter .18s ease, transform .18s ease;
-    opacity:.8; filter:blur(8px); transform:translateY(-2px); }
-  .qaghost.gone { opacity:0; filter:blur(8px); transform:translateY(-10px); }
+    transition:opacity .18s ease, transform .18s ease;
+    opacity:.8; transform:translateY(-2px); }
+  .qaghost.gone { opacity:0; transform:translateY(-10px); }
   /* ...but WHICH WAY it dreams away follows the list it is leaving (#174).
      A question card's neighbours travel UP to close the gap it left, so a
      ghost that rises is continuous with them. In the commits panel the
@@ -774,6 +774,7 @@ STYLE = """<style>
   .qa.folded { margin:.15rem 0 .35rem; }
   .qa.folded .qt { color:var(--muted); font-weight:inherit; }
   .qa.folded .qt:hover { color:var(--lit); }
+  .qa.folded .qfold { margin:0; }
   .qa.folded .qfold > * { color:var(--dim); }
   .qa.folded .qfold > summary { color:var(--muted); }
   /* ...and when he opens one, the whole card steps up (#169): a settled entry
@@ -1451,6 +1452,14 @@ APP_BODY = """<canvas id="dreambg"></canvas>
  <filter id="dissolveIn" x="-25%" y="-25%" width="150%" height="150%"
          color-interpolation-filters="sRGB">
   <feTurbulence type="fractalNoise" baseFrequency="0.009" numOctaves="1"
+                seed="7" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
+                     xChannelSelector="R" yChannelSelector="G" result="d"/>
+  <feGaussianBlur in="d" stdDeviation="0"/>
+ </filter>
+ <filter id="departMist" x="-25%" y="-25%" width="150%" height="150%"
+         color-interpolation-filters="sRGB">
+  <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="1"
                 seed="7" result="n"/>
   <feDisplacementMap in="SourceGraphic" in2="n" scale="0"
                      xChannelSelector="R" yChannelSelector="G" result="d"/>
@@ -4392,15 +4401,31 @@ function dreamAway(wrap, node, rect, clipTop) {
   wrap.appendChild(node);
   void node.offsetWidth;
   // Two beats (#277): dissolve in place first (.pregone, 180ms), then leave
-  // (.gone, 700ms). Removing .pregone restores .qaghost's .7s transition for
-  // the departure leg, and the browser retargets from the dissolve's mid-values
-  // to .gone's targets — so the two beats chain continuously. Commits are
-  // excluded: their gesture is the grow-and-fall (line 677), not a standing
-  // dissolve, and pregone's 2px upward drift would fight the 14px fall.
+  // (.gone, 700ms). The liquify/blur lives in an SVG mist filter (#departMist)
+  // driven per-frame from rAF — the same idiom as the route dissolve's
+  // #dissolveOut — so the ghost hazes and liquifies rather than just CSS-blurring.
+  // Removing .pregone restores .qaghost's .7s transition for the departure leg.
+  // Commits are excluded: their gesture is the grow-and-fall (line 677), and
+  // they keep CSS blur(6px) instead of the SVG filter.
   if (node.classList.contains('commit')) {
     node.classList.add('gone');
   } else {
+    const dm = document.querySelector('#departMist feDisplacementMap');
+    const bl = document.querySelector('#departMist feGaussianBlur');
+    const tu = document.querySelector('#departMist feTurbulence');
+    const smooth = x => x * x * (3 - 2 * x);
+    const t0m = performance.now();
+    const MIST_MS = 880;               // 180ms pregone + 700ms gone
+    node.style.filter = 'url(#departMist)';
     node.classList.add('pregone');
+    (function mistStep(now) {
+      const u = Math.min(1, (now - t0m) / MIST_MS);
+      const e = smooth(u);
+      if (dm) dm.setAttribute('scale', (e * 14).toFixed(2));
+      if (bl) bl.setAttribute('stdDeviation', (e * 4.5).toFixed(2));
+      if (tu) tu.setAttribute('baseFrequency', (0.012 + e * 0.01).toFixed(4));
+      if (u < 1 && node.isConnected) requestAnimationFrame(mistStep);
+    })(performance.now());
     setTimeout(() => {
       node.classList.remove('pregone');
       node.classList.add('gone');
