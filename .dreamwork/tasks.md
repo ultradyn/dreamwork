@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **320**
+Next id: **321**
 
 ## Open
 
@@ -794,26 +794,6 @@ Next id: **320**
   · **and it does NOT have to wait for #148.** This entry says the shared reporter lives in the shared runner and so waits for it; measured, that dependency is not real. The runner is the `justfile` recipe; the reporter is a MODULE the guards import. No guard in `dev/capture/` imports a sibling today (checked: zero relative imports across 49 files), but ESM relative imports work in these scripts as they stand — they already import playwright by path. So `dev/capture/``report.mjs` can land now, guards adopt it one at a time, and #148's runner adopts it later instead of blocking it. **Unblocked: `dev/capture/` being free is the only precondition**, and the reporter must carry all four obligations this entry names — the crash sentinel, absence-first, report-from-full-output-never-a-count, and the coverage plus trace-window declaration
   · **the mechanism, measured precisely, because the first attempt to classify it used a proxy and got it wrong.** All 17 are ONE class: they print their checks at the TAIL of the script, so a crash prints no checks at all — not a list of PASSes. The 22 that carry `finished` print from an exit handler and append *FAIL the guard threw before finishing its checks*, which is the target pattern. So "reads as a clean sheet" is true of what a **FAIL-grep** sees (nothing matches, therefore clean), not of what full output shows — full output shows a stack trace and no `----` block, which is honest. That distinction decides the fix: the guards do not need their PASS accumulation changed, they need the print MOVED into an exit handler with the sentinel
   · **and the way the wrong classification happened is the warning for whoever does this**: `grep -q "process.on('exit'"` looked like it measured "prints from an exit handler" and measured "has an exit handler". `health.mjs` matched and its handler is `stopAll` — server CLEANUP, with the printing at the tail like the other sixteen. It reported 1 vs 16 where the truth is 0 vs 17. A proxy that correlates with the property is not the property, and here it inverted the headline finding
-- **#190** — The loop's push channel to him is dead, and only the
-  dashboard can say so · P1 · bug · 20m · `attn` returns **403, OAuth2
-  token could not be validated** (grok/xAI), confirmed twice at 16:20 ·
-  it exits 1 so it fails loudly to the CALLER, it just cannot reach HIM ·
-  found by failing on a message that mattered: #179's P1 fix and the
-  deploy-authority ask · **what still works**: the dashboard reads
-  questions.md and status.json live, so both ARE visible at 35110 — he
-  is no longer PULLED, only able to find it by looking, and "walk away
-  and come back" is the whole promise · the channel for reporting a
-  broken channel was the broken channel (cf #144, #136) · fix is
-  probably his (re-auth); the loop should not touch a live auth token ·
-  **FALLBACK FOUND AND IT WORKS**: the harness's `PushNotification`
-  delivered to the terminal at 16:18 (mobile needs Remote Control, which
-  is off) · rule now in SKILL.md's Communication guardrail: check the
-  push left, fall back, name the channel that carried it — an unnoticed
-  failed push is worse than none, because the loop then believes it
-  escalated · **still his**: the xAI credential needs a re-auth
-  · **CONFIRMED with a cause, 2026-07-27 20:17**: `attn` exits 403 — "You have run out of credits or need a Grok subscription" — so the loop's only push channel to him is a paid quota that ran out, which is a failure that recurs on its own schedule and that no change here prevents · this is the entry's thesis demonstrated rather than argued: the loop could not tell him, and the dashboard is the only surface that can · raises the value of the dashboard-side half of this task specifically, over any retry or fallback in the sender
-  · **and the coordinator broke this entry's own rule while confirming it.** The rule here and in SKILL.md is *check the push left, fall back, name the channel that carried it* — an unnoticed failed push is worse than none, because the loop then believes it escalated. `attn` exited 403 at 20:17, the failure was noticed and recorded, and NO fallback was sent for eleven minutes; the human was unreachable that whole time while the loop reported progress to a transcript he was not reading. `PushNotification` then delivered on the first try (terminal; mobile still needs Remote Control, off) · so the failure mode is not that the fallback is missing or unknown — it is documented in this entry and it works. **It is that nothing makes the loop USE it**, which is the argument for the dashboard-side half being about push HEALTH rather than push retries
-  · **the cause changed and that matters for whose fix it is**: at 16:20 it was "OAuth2 token could not be validated", which reads as re-auth; at 20:17 it is "out of credits or need a subscription", which re-auth would not have fixed. Same 403, different remedy — so "fix is probably his (re-auth)" was right about the owner and wrong about the act, and a loop that had acted on the first diagnosis would have burned his time on the wrong thing. Do not collapse two 403s into one cause
 - **#189** — World-space anchoring silently collapses on native
   Wayland · P2 · bug · 35m · `screenX`/`screenY` return **0** on native
   Wayland by protocol, so #74's world space becomes "both windows at the
@@ -1084,6 +1064,49 @@ Next id: **320**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#320** — The styleguide audit's window counted commit rate, not documentation
+  adjacency · P2 · landed 2026-07-27 · tooling/correctness · ~35m · origin:
+  **loop** · goal: a check must fail for the reason it names ← DREAMWORK.md
+  *Nothing fails quietly* · f51c2bf · #314 fixed WHICH commits are asked the
+  question and left the window counting RAW commits; the coordinator lands a
+  ledger update between every increment, so `cdb89df` and the commit documenting
+  it sat SIX commits apart with not one of the six touching `watch.py` or a
+  styleguide file — genuinely adjacent, reported as undocumented · the unit is
+  now relevant commits (touching `watch.py` or a styleguide file) · **that change
+  alone is a monotone weakening** — a strict superset of the old search — and
+  measuring rather than reasoning caught it: applied by itself it took the
+  pre-baseline from 11 misses to **0**, silencing `a6e98cc` and `bfa561f`, both
+  verified BY READING as real undocumented UI changes, with `a6e98cc` credited to
+  `f17f307`, a UI commit whose entry documents its own #250/#251 work · so it
+  ships with a RESTRICTING companion rule: the search may not reach past another
+  UI commit, and a neighbouring UI commit never supplies the entry even when it
+  carries a styleguide file, because that entry is its own · only the two real
+  shapes pass — same commit, or a nearby docs-only commit · three red proofs, one
+  per rule · **the fourth finding is the one worth keeping**: the red proof for
+  the unit change initially came back GREEN, because the test fixture built the
+  relevant-commit list itself instead of calling `window_positions` — a check
+  sitting outside the single decision it was named for, which is this repo's
+  recurring failure mode and not a new one
+
+- **#190** — The loop's push channel to him is dead, and only the dashboard can
+  say so · P1 · landed 2026-07-27 · bug · ~25m · origin: **loop** · 9b7ce77,
+  merged 49297df, wired 92b243e · `status.json` gains
+  `push={at,channel,ok,detail}`; the dashboard renders `ok:false` as a `--warn`
+  rail naming the channel, the reason and the age, above `awaiting_human` because
+  a loop that cannot push cannot deliver that list either · **three states are
+  distinguishable FROM THE DATA** — absent key, `ok:true`, `ok:false` — and the
+  guard asserts the three fixtures genuinely differ before asserting any render,
+  so "renders nothing" in two of them cannot pass over the feature · new guard
+  `dev/capture/pushhealth.mjs`, 15 PASS, verified independently by the
+  coordinator rather than accepted from the report; now in DEFAULT_GUARDS (40) ·
+  **it deliberately adds no motion**, and that was checked rather than assumed:
+  `.stpush` is `border-left:2px solid var(--warn); padding-left:.8rem`,
+  value-for-value the structure of `.stneed` and `.qhealth.unreadable`, neither
+  of which animates — reusing the existing idiom, not authoring a second one ·
+  **the sender half stays out** — #203 established that "ask for more care" is
+  not a fix, and the gap here was never a missing fallback: `PushNotification`
+  exists, works, and is already the written rule; nothing makes the loop NOTICE
 
 - **#316** — Removing a worktree cannot ask whether anyone is still in it · P2 · landed 2026-07-27 ·
   tooling/safety · ~30m · origin: **loop** · goal: a destructive step should not
