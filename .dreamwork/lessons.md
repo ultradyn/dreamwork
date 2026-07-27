@@ -1324,3 +1324,29 @@ this shape and convert opportunistically.)
   a reliable signal, because an agent that has actually exited cannot send one.
   `TaskStop({task_id: "<name>"})` is the act; send the message for the agent's
   benefit if you like, then stop it.
+
+- **Write the DOCUMENTED status key, not a private one beside it.** This session
+  wrote its runtime state into an ad-hoc `dreamers` key while `agents` — the key
+  with two readers (`watch.py`'s glance and `dreamhub`'s `/hub.json`) — sat
+  untouched for ~40 minutes still listing two retired agents as `in_flight: true`.
+  The deployed dashboard therefore named departed agents as working, which is the
+  one thing a liveness surface must never do, and nothing complained: a stale
+  value and a fresh one are the same shape. `file-formats.md` says `in_flight` is
+  **one line of prose**; a bool there renders literally as `doing: true`, because
+  `watch.py` `String()`s it. **Before inventing a status field, grep
+  `file-formats.md` for the one that already exists** — and if a wholesale rewrite
+  drops a key, `#303`'s `.status-keys` memo will make you say the removal was
+  deliberate, which is the guardrail working.
+
+- **A measurement can be correct and answer the wrong question.** `#327` reported
+  that the landed reader misses space-joined bold id spans. I challenged it: I
+  measured `LEDGER_ENTRY` over entry heads with every separator and got **0
+  missed**, and the spans it named turned out to sit mid-sentence in prose. My
+  measurement was right and irrelevant — the defect is in
+  `LEDGER_COMBINED_MENTION`, a *different* reader whose whole job is harvesting ids
+  from roll-up prose. The finding was real and my refutation was not. **When
+  refuting a claim about "the reader", make the claimant name the reader and the
+  line before concluding anything** — asking for that is what resolved it, and it
+  cost one message instead of a wrongly-dropped P2. Asking a subagent to
+  substantiate is cheap; deciding it is wrong from your own adjacent measurement is
+  not.

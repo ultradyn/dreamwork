@@ -24,9 +24,62 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **331**
+Next id: **335**
 
 ## Open
+
+- **#331** — One shared notion of "an ids-only bold span", instead of a fourth
+  one-separator patch · P2 · correctness/refactor · origin: **loop** · from #327's
+  drift review, challenged by the coordinator and then substantiated ·
+  `LEDGER_COMBINED_MENTION` (`watch.py:6450`) is `\*\*(#\d+(?:/#\d+)*)\*\*` — `/`
+  only — while grooming's compacted roll-ups also write SPACE-joined spans
+  (`**#121 #123**`, `**#104 #77**`, `**#109 #116**`, `**#107 #108 #110**`,
+  `**#102 #106**`) and one `+`-joined (`**#157 + #222 + #223**`) · **measured two
+  ways**: #327 reports 12 ids in NEITHER `parse_ledger` set (#77 #96 #102 #104
+  #106 #107 #108 #109 #110 #116 #121 #123 — the net loss), and the coordinator
+  independently measured 19 ids in multi-id spans the pattern misses (the gross
+  miss, some recovered from other single mentions); the net figure is the
+  meaningful one and it is a live under-count on the burndown's completion series
+  · **the point of this task is NOT to add `[ /+]` to a third regex.** #301 widened
+  the landed reader, #315 widened the open readers and `LEDGER_ID` together, and
+  this is the same defect at a third door — three patches, one separator at a
+  time, each correct and each leaving the next · so: one shared definition of an
+  ids-only bold span that every reader consumes, and the existing pinning test
+  extended to hold them to it, exactly as `test_ledger_entry_rule_has_exactly_one_copy`
+  already holds two of them · **the hazard to respect**: `**#96 stage 1**` must
+  stay INERT — a span is ids-only or it is prose, and a widening that admits
+  trailing words would start reading section titles as task ids. Assert that at
+  runtime, in the check, with `**#96 stage 1**` as the fixture · red-prove the
+  net-12 case against the real ledger before and after
+
+- **#332** — `/tasks` needs structured task ids in `status.json` · P2 ·
+  contract/data · origin: **loop** · from #327: `#281`'s "in progress" badge cannot
+  be honest without knowing WHICH ids the loop claims, and prose in `task` is not a
+  substitute because one sentence routinely names several ids in different states
+  · add `current_task_ids` (array of ints, top level) and per-agent `task_ids`
+  (array of ints), documented in `file-formats.md`'s status.json table with the
+  wording drafted in the plan's §10 · #327 could not make the change because
+  `file-formats.md` was held by another agent at the time; it is free now ·
+  `dreamhub.py` republishes status, so check both readers · this is a dependency of
+  #281's badge, not of the whole page
+
+- **#333** — `transitions.md:262` still endorses the idiom its own rules forbid ·
+  P3 · docs correctness · origin: **loop** · from #327: the line describes
+  `states.mjs` as asserting "many intermediate positions", which reads as approving
+  exactly what §Checking a transition rules out 200 lines earlier · a future agent
+  cites the nearer sentence, which is why this is worth a task rather than a
+  shrug · decide which is true: either `states.mjs` is a deliberate exception and
+  the line should say so and why, or the sentence needs the `between()` wording ·
+  do not edit one and leave the other — the whole defect is that the file
+  disagrees with itself
+
+- **#334** — `burndown.mjs` hand-rolls the reporter the plan cites it as a model
+  for · P3 · chore · origin: **loop** · from #327: `dev/capture/burndown.mjs:47-56`
+  still has its own `checks`/`ok`/exit handler, and `#281`'s plan cites burndown as
+  the guard-writing precedent — so the plan points new work at the outdated idiom ·
+  it is not in #324's fifteen, so it would otherwise be missed by the sweep ·
+  convert it to `report.mjs` with its own crash injection, exactly as #324 does,
+  and it stops being a trap for whoever reads the plan
 
 - **#330** — A guard run should not dirty the tree it is verifying · P3 ·
   tooling/dogfood friction · origin: **loop** · running `just guards` rewrites the
