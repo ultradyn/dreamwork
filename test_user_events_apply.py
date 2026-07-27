@@ -480,6 +480,100 @@ class TestD4Adapters:
             "precondition: /command finds zero of its own markers in the file"
 
 
+# ===========================================================================
+# #390 — a fresh domain's first answer: an absent file proves NOT_APPLIED and
+# is created. Absent, empty and unparseable are three states landing in three
+# places: absent -> NOT_APPLIED (+ create); empty/unparseable -> UNKNOWN (law 8
+# fail-closed). The trap is a fix that treats absent and empty alike — it passes
+# a test that only checks absent, so the second test proves they differ.
+# ===========================================================================
+
+
+class Test390AbsentFile:
+    """The file-not-found case: the FIRST case every domain passes through, not
+    an edge case. Absent proves NOT_APPLIED and the file is created; an empty
+    file proves UNKNOWN. The two must not prove alike."""
+
+    def test_a_domain_with_no_file_proves_not_applied_and_the_first_effect_creates_it(
+            self, tmp_path):
+        # PRODUCTION LINE WHOSE DELETION FAILS THIS TEST:
+        #   the ``if text is None: return Proof.NOT_APPLIED`` branch at the top
+        #   of ``prove_applied``, fed by reconcile's FileNotFoundError->None
+        #   translation. Remove the reconcile try/except and reconcile raises
+        #   FileNotFoundError on the absent file (the reported crash); remove
+        #   the proof branch and None reaches parse_metadata and crashes. Either
+        #   way the first answer on a fresh domain does not land exactly once.
+        path = tmp_path / "fresh.md"
+        assert not path.exists(), "precondition: the domain file does not exist"
+
+        def append_effect(text, rid=REC):
+            return apply.ApplicationAdapter(ADAPTER).append_effect(text, rid)
+
+        finish_calls = []
+        proof = apply.reconcile(
+            str(path), receipt_id=REC, adapter=ADAPTER, application_ref=APP_REF,
+            append_effect=append_effect, reserved_successor=RESERVED,
+            committed_lineage=COMMITTED, has_marker=_has_answer_marker,
+            finish=lambda: finish_calls.append(True))
+        assert proof is apply.Proof.NOT_APPLIED
+        assert path.exists(), "the first effect created the file"
+        assert len(finish_calls) == 1, "NOT_APPLIED finishes exactly once"
+        text_once = path.read_text(encoding="utf-8")
+        # Single-application marker count, DERIVED from the file rather than a
+        # literal 1: a literal hides the day append_effect stops emitting one.
+        single = _count_markers(text_once)
+        assert single > 0, "precondition: one application lands a marker"
+
+        # Exactly-once on the CREATE path, MEASURED (the D3 analog, which
+        # measures the update path): apply a SECOND time to the now-created
+        # file. It must prove APPLIED and write NOTHING — the marker count stays
+        # at the single-application count derived above, never a literal 1.
+        finish_calls2 = []
+        proof2 = apply.reconcile(
+            str(path), receipt_id=REC, adapter=ADAPTER, application_ref=APP_REF,
+            append_effect=append_effect, reserved_successor=RESERVED,
+            committed_lineage=COMMITTED, has_marker=_has_answer_marker,
+            finish=lambda: finish_calls2.append(True))
+        assert proof2 is apply.Proof.APPLIED, (
+            "second apply must see its own marker and prove APPLIED; got %r"
+            % proof2)
+        text_twice = path.read_text(encoding="utf-8")
+        assert _count_markers(text_twice) == single, (
+            "exactly-once on the create path: a second apply must not duplicate "
+            "the effect; markers %d -> %d"
+            % (single, _count_markers(text_twice)))
+        assert len(finish_calls2) == 1, "APPLIED finishes once, writes nothing"
+
+    def test_an_absent_file_and_an_empty_file_do_not_prove_the_same_thing(
+            self, tmp_path):
+        # PRODUCTION LINE WHOSE DELETION FAILS THIS TEST:
+        #   the ``if text is None: return Proof.NOT_APPLIED`` branch in
+        #   ``prove_applied``. It is the only thing keeping ABSENT (None) apart
+        #   from EMPTY (""): collapse it onto empty — e.g. ``if not text:`` —
+        #   and both prove NOT_APPLIED, so they prove the SAME thing. That is
+        #   the #390 trap, and this is the red that catches it: the absent-only
+        #   test above stays green under the collapse, this one fails.
+        common = dict(receipt_id=REC, adapter=ADAPTER, application_ref=APP_REF,
+                      reserved_successor=RESERVED, committed_lineage=COMMITTED,
+                      has_marker=_has_answer_marker)
+        absent = apply.prove_applied(None, **common)
+        empty = apply.prove_applied("", **common)
+        # THE DISCRIMINATING ASSERTION — derive both proofs and assert they
+        # DIFFER. Asserting two literals would hide the day a change makes them
+        # equal; this repo has been bitten three times by fixtures whose two
+        # values happened to match. A check whose meaning needs two values to
+        # differ must prove the gap.
+        assert absent is not empty, (
+            "absent (None) and empty ('') must prove DIFFERENTLY: absent is "
+            "NOT_APPLIED (nothing happened yet; create the file), empty is "
+            "UNKNOWN (bytes-worth of existence, no managed witness, fail closed "
+            "law 8). Both proved %r — the #390 trap." % absent)
+        # Pin the meaning without pinning the implementation: absent proves
+        # NOT_APPLIED (the create path's proof); empty proves UNKNOWN.
+        assert absent is apply.Proof.NOT_APPLIED
+        assert empty is apply.Proof.UNKNOWN
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()

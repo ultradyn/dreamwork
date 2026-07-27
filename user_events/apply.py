@@ -182,7 +182,7 @@ def _is_valid_known_file(
 
 
 def prove_applied(
-    text: str,
+    text: Optional[str],
     *,
     receipt_id: str,
     adapter: str,
@@ -193,15 +193,42 @@ def prove_applied(
 ) -> Proof:
     """Ternary proof that ``receipt`` was applied to the file ``text``.
 
-    - torn / digest-mismatched / drifted-generation file  → ``UNKNOWN``
+    - absent file (``text is None``)                    → ``NOT_APPLIED``
+    - torn / digest-mismatched / drifted-generation file → ``UNKNOWN``
     - valid known-lineage or exact reserved successor with the marker → ``APPLIED``
     - valid known-lineage or exact reserved successor without the marker → ``NOT_APPLIED``
+
+    Absent vs empty is a deliberate three-way split, and conflating them is the
+    trap task #390 exists to close. An absent file (``None`` — the file does not
+    exist) has had nothing happen to it yet, so the effect is provably not
+    applied and the caller creates it through the normal not-applied write; this
+    is the FIRST case every domain passes through, not an edge case. An EMPTY
+    file (``""``) or any present-but-unparseable file has bytes-worth of
+    existence but no managed witness, so it fails closed to ``UNKNOWN`` (law 8).
+    ``prove_applied(None) is NOT_APPLIED`` and ``prove_applied("") is UNKNOWN``
+    must never collapse to the same verdict.
+
+    The absent branch lives HERE — in the proof — rather than as a pre-check in
+    ``reconcile``. "Has this happened?" is decided in one place, and the create
+    path and the update path share this one proof and one durable write: a
+    pre-check that short-circuited before the proof would be a second decider
+    that drifts. ``reconcile`` only translates the IO reality (a missing file)
+    into the proof's absent input (``None``).
 
     ``has_marker`` is a callable bound to the receipt (and, for adapters, to the
     route) so the proof machinery is independent of any one adapter's marker
     format — that is what lets increments 16/17 prove the machinery before any
     adapter exists (increment 19).
     """
+    # --- #390: absent file (None) → NOT_APPLIED, at the proof. Nothing has
+    # --- happened yet, so the effect is provably not applied and the caller
+    # --- creates the file through the shared not-applied write below. This is
+    # --- the line whose deletion makes the first-answer test fail (and whose
+    # --- collapse onto empty makes the absent-vs-empty test fail). An EMPTY
+    # --- file ("") is NOT None: it falls through to UNKNOWN — no managed
+    # --- witness, fail closed, law 8. Absent and empty must not prove alike.
+    if text is None:
+        return Proof.NOT_APPLIED
     md = domain_files.parse_metadata(text)
     # --- D1 red line: the single validation guard. Delete this branch and a
     # --- torn or drifted file falls through to the marker search, collapsing
@@ -267,7 +294,17 @@ def reconcile(
     body with this adapter's effect appended to the current body.
     """
     with domain_files.DomainFileLock(path):
-        text = _read_locked(path)
+        try:
+            text = _read_locked(path)
+        except FileNotFoundError:
+            # Absent file: translate the IO reality into the proof's absent
+            # input (None). The proof decides NOT_APPLIED; we do NOT short-
+            # circuit to a separate create path here — that would be a second
+            # "has this happened?" decider that drifts. Absence flows through
+            # the same proof and the same not-applied durable write below as a
+            # present-but-markerless file. (Distinct from an EMPTY file, which
+            # reads as "" and the proof reads as UNKNOWN — law 8 fail-closed.)
+            text = None
         proof = prove_applied(
             text,
             receipt_id=receipt_id, adapter=adapter,
@@ -288,9 +325,12 @@ def reconcile(
         # composes the store's durable-replace primitive directly under THIS
         # held lock rather than calling domain_files.write (which re-acquires
         # the same sidecar lock via a second file description and self-deadlocks
-        # — per flock(2), a process's second open is denied by its first).
+        # — per flock(2), a process's second open is denied by its first). The
+        # create path (absent file, text is None) and the update path (present
+        # file) share this one write; for an absent file the current body is
+        # empty, and _atomic_replace creates the file via its temp-then-rename.
         identity = make_identity(receipt_id, adapter, application_ref)
-        new_body = append_effect(text)
+        new_body = append_effect("" if text is None else text)
         new_text = domain_files.build_managed_text(
             new_body, reserved_successor, identity)
         domain_files._atomic_replace(path, new_text)
