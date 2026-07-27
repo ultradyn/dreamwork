@@ -24,9 +24,39 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **392**
+Next id: **393**
 
 ## Open
+- **#392** — the humanized question age is measured from midnight, so it is wrong by up to a
+  day · P2 · dashboard/correctness · origin: **loop** · found by coordinator **looking at the
+  deployed page** after redeploying, not by any check
+  · **#385 shipped the format correctly and the input to it is date-precision.** `data-ct` for a
+  questions entry resolves to **midnight local** of the entry's date, because a questions.md
+  headline carries `P2 · 2026-07-28 — title` and there is **no time in the data**. Measured on the
+  live dashboard at 08:18: my #367 question, filed at **08:03**, renders **`08h 17m ago`**
+  · **the error is worst exactly where it matters most.** It is bounded by 24h, and it is largest
+  for the *newest* entries — the ones where "how long has this been waiting?" is the question he is
+  actually asking. An entry filed minutes ago can read as most of a day old
+  · older entries look plausible and that is the trap: `02d 08h` for a 2026-07-25 entry is
+  believable, so nothing draws the eye. Only a same-day entry exposes it
+  · **this was a gap in my acceptance criteria, not in the lane's work.** #385's brief asked
+  whether a parseable timestamp reaches the client "or whether one has to be added", and criterion
+  4 asked only that the headline *show* an age and that a fixture's two ages *differ*. **Two ages
+  can differ and both be wrong by the same 8 hours.** See the `lessons.md` entry on differ-checks
+  · options, and the choice is a real one rather than a one-liner: **(a)** record a time in the
+  questions.md entry format going forward and degrade honestly for historical date-only entries —
+  durable, but it is a format change and `file-formats.md` has a live owner (#381); **(b)** derive
+  the timestamp server-side from the commit that introduced the entry — accurate for everything
+  including history, but git-per-entry is slow and fragile; **(c)** keep date precision and make
+  the imprecision **visible** rather than implied, which his `XXa YYb` spec makes awkward because
+  it always wants two figures
+  · rec: **(a) plus a floor** — a date-only entry must not claim sub-day precision it does not
+  have. Do not silently keep showing a confident wrong number
+  · **the red must catch the offset, not the presence**: assert that an entry written at a known
+  time renders an age matching that time and **not** midnight — a check that only asserts two
+  entries differ passes with every age wrong by the same amount
+  · related: **#385**
+
 
 - **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
   reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified
@@ -2504,6 +2534,10 @@ Next id: **392**
   the discriminating form. Its century length derives from the table's year rung when present and
   from the named `365 * 86400` expression when absent, so the check still probes a century under
   its own injection. Snapshot-restored; 32 age tests pass
+  · **but the third gap was closed only client-side, and the coordinator found it on the deployed
+  page 15 minutes later:** the age is measured from **midnight** of the entry's date because that
+  is all the data carries. Filed as **#392**; the lane built what was asked and the criterion did
+  not ask for accuracy · related: **#392**
   · **one correction to my own brief:** criterion 2 predicted the failure would show *a day count*
   above 99. With the week rung present it shows a **week** count. The lane's test is right and my
   arithmetic was not
