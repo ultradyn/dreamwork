@@ -271,97 +271,44 @@ deploy rev="HEAD":
       && echo "deployed {{rev}} ($(git rev-parse --short {{rev}})) on :$port" \
       || { echo "deploy failed — see $dir/serve.log"; exit 1; }
 
-# Does a change to watch.py have a styleguide entry NEAR it? Prints
-# violations; silence means the check found nothing to complain about.
+# Does a watch.py change that touches PRESENTATION have a styleguide entry
+# near it? Prints violations; silence means the check found nothing to complain
+# about. The logic lives in dev/styleguide_audit.py — read its docstring for
+# the full rationale; this comment says only what a caller needs to know.
 #
 # READ THIS BEFORE TRUSTING IT — what it proves is narrower than its name.
 # It measures ADJACENCY (did watch-design.md change around here), not
-# COVERAGE (is the behaviour actually written down). Three consequences,
-# all observed on 2026-07-25:
-#   - Touching both files passes whether or not the doc says anything about
-#     the change. A whitespace edit to watch-design.md satisfies it. This is
-#     the failure nobody notices, and it means 29 green commits proved only
-#     that the files moved together.
-#   - Documenting BEFORE the code — better practice than co-committing — was
-#     flagged as a miss when the two landed 2 minutes apart in adjacent
-#     commits. Hence the window below.
-#   - watch.py is both the page and the server, so a writer-only fix looked
-#     like an undocumented page change. FIXED by widening rather than by
-#     waiting for #124: EITHER watch-design.md OR file-formats.md counts,
-#     because watch.py changes are page changes OR server-contract changes
-#     and each documents itself in its own styleguide. #199 was the case —
-#     `log_submission` documented correctly in file-formats.md and reported
-#     as a MISS — and a standing MISS trains everyone to ignore the audit,
-#     which is the same failure family as a guard that only reddens under
-#     load (#203).
-#     RESIDUAL RISK, stated rather than discovered: a PAGE change documented
-#     only in file-formats.md now passes wrongly. Accepted — the reviewer
-#     reads the commit, and this only ever read adjacency.
+# COVERAGE (is the behaviour actually written down). A whitespace edit to
+# watch-design.md satisfies it. A standing MISS trains everyone to ignore the
+# audit, which is the same failure family as a guard that only reddens under
+# load (#203) — so the FILTER matters as much as the rule.
+#
+# #314 — the filter is on the DIFF, not the filename. watch.py is one file
+# holding the HTTP server, the git and ledger parsers, AND the whole UI (#124
+# is the split). "Did this commit touch watch.py?" could not tell a stylesheet
+# change from a regex fix, so it accrued failures for parser/server work it
+# was never about (06eacad, 1d089ad, db1a1bc, e51da7e) until "ignore me" was
+# the only lesson a standing MISS could teach. The UI lives in line-bounded
+# module constants (STYLE, APP_BODY, the *_JS blocks) whose contents are
+# served verbatim to the browser; everything else is server/parser/helper. So
+# "did this commit change presentation?" is mechanically answerable: does the
+# commit's diff touch a line inside one of those constants? The constant
+# boundaries are resolved AT THE COMMIT BEING AUDITED (git show <sha>:watch.py),
+# never at HEAD — line numbers move, and judging last week's commit with
+# today's line numbers is the "literal with an expiry date" trap. A non-UI
+# commit passes by NOT TOUCHING a UI constant, not by remembering a trailer.
+# `Styleguide: n/a` survives only as a narrow escape hatch for a genuine
+# judgement case the diff filter calls wrong (reported as EXEMPT, auditable).
+#
 # Deliberately NOT gated in `just test`: making adjacency mandatory would be
 # worse than the status quo. It is a prompt to look, not a proof (#155).
 #
-# Range defaults to 1d089ad — the most recent commit that violated the rule
-# (fix(#304), 2026-07-27). Everything after it obeys; the 11 misses before it
-# (a 2-day burst, 2026-07-26..27) are NOT back-filled: reconstructed entries
-# written from diffs by someone who did not make the change are the fabrication
-# this check exists to prevent (#313). The baseline is derived from history
-# (the last miss), not a round number; the convention held for ~378 commits
-# after d1df255 (where watch-design.md became authoritative) before the burst.
-# The recipe prints a runtime count of pre-baseline misses so the gaps stay
-# visible; pass 'just audit-styleguide d1df255..HEAD' to list them in full.
+# Range defaults to 1d089ad..HEAD — retained from #313 for continuity. The
+# pre-baseline burst (d1df255..1d089ad) is reported as a COUNT only and is NOT
+# back-filled: reconstructed entries written from diffs by someone who did not
+# make the change are the fabrication this check exists to prevent (#313).
+# Under #314's diff filter the count is recomputed (parser/server false
+# positives drop out; real UI misses remain), so it differs from #313's "11".
+# Pass a wider range to list pre-baseline misses in full.
 audit-styleguide range="1d089ad..HEAD" window="3":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    mapfile -t all < <(git log --format=%h {{range}})
-    miss=0; ok=0
-    for i in "${!all[@]}"; do
-      c="${all[$i]}"
-      git show --stat --format= --name-only "$c" | grep -qx "watch.py" || continue
-      # Look at this commit and {{window}} either side: a styleguide entry
-      # written just before or just after its code still documents it.
-      lo=$(( i - {{window}} )); [ "$lo" -lt 0 ] && lo=0
-      hi=$(( i + {{window}} )); [ "$hi" -ge "${#all[@]}" ] && hi=$(( ${#all[@]} - 1 ))
-      found=""
-      for j in $(seq "$lo" "$hi"); do
-        # either styleguide: the page's or the server contracts' (see header)
-        if git show --stat --format= --name-only "${all[$j]}" \
-             | grep -qxE "watch-design.md|file-formats.md"; then
-          found="${all[$j]}"; break
-        fi
-      done
-      if [ -n "$found" ]; then
-        ok=$((ok+1))
-      else
-        miss=$((miss+1))
-        echo "MISS $c $(git log -1 --format=%s "$c" | cut -c1-64)"
-      fi
-    done
-    echo "watch.py commits: $ok with a styleguide entry (watch-design.md or file-formats.md) within {{window}}, $miss without"
-    echo "(adjacency, not coverage — see the comment above this recipe)"
-    # Pre-baseline visibility — the default range skips commits before
-    # 1d089ad, but silently narrowing coverage is its own dishonesty
-    # (CLAUDE.md: a check that bounds coverage must say what it is not
-    # covering). The count is derived at runtime; a hardcoded literal would
-    # carry today's truth silently into next week (.dreamwork/lessons.md).
-    if git rev-parse --verify -q 1d089ad >/dev/null 2>&1 && \
-       git rev-parse --verify -q d1df255 >/dev/null 2>&1; then
-      mapfile -t pre < <(git log --format=%h d1df255..1d089ad)
-      p_wp=0; p_miss=0
-      for p_i in "${!pre[@]}"; do
-        git show --stat --format= --name-only "${pre[$p_i]}" | grep -qx "watch.py" || continue
-        p_wp=$((p_wp+1))
-        p_lo=$(( p_i - {{window}} )); [ "$p_lo" -lt 0 ] && p_lo=0
-        p_hi=$(( p_i + {{window}} )); [ "$p_hi" -ge "${#pre[@]}" ] && p_hi=$(( ${#pre[@]} - 1 ))
-        p_found=""
-        for p_j in $(seq "$p_lo" "$p_hi"); do
-          if git show --stat --format= --name-only "${pre[$p_j]}" \
-               | grep -qxE "watch-design.md|file-formats.md"; then
-            p_found=1; break
-          fi
-        done
-        [ -n "$p_found" ] || p_miss=$((p_miss+1))
-      done
-      echo "pre-baseline (d1df255..1d089ad): $p_wp watch.py commits, $p_miss without a styleguide entry"
-      echo "  list them: just audit-styleguide d1df255..HEAD"
-    fi
-    [ "$miss" -eq 0 ]
+    python3 dev/styleguide_audit.py {{range}} --window {{window}}
