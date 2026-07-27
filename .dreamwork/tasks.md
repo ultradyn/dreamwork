@@ -198,11 +198,25 @@ Next id: **389**
   string is guesswork; (b) have the hook key off the **file** rather than the tool, if the
   harness gives PostToolUse enough to do that for Bash. Measure (a)'s cost before choosing:
   a hook on every Bash call is a tax on every session on this machine, not just this loop
-  · rec: read what PostToolUse actually delivers for a `Bash` event first — if it carries no
-  file information the hook would have to re-lint unconditionally, and *that* is the number
-  that decides between (a), (b), and a third option: keep the matcher and change the
-  coordinator's habit to Write/Edit for ledger files, which costs nothing and covers the
-  writer that actually caused the incidents
+  · **the measurement is done, 07:08, and it kills option (a) outright** — and it needed no
+  experiment, only reading the hook: `posttooluse_ledger_lint.py:59-63` does
+  `payload["tool_input"]["file_path"]` and returns *"no file_path in tool input"* when absent.
+  A **Bash** event's `tool_input` carries a **command string**, not a path. So adding `Bash` to
+  the matcher would fire the hook and the hook would immediately decline, every time — the
+  file it needs is not in the payload and cannot be, since for this coordinator the path lives
+  *inside* a `python3 - <<PY` heredoc as Python source
+  · so (a) is not "expensive", it is **inert**, and that changes the shape of the answer:
+  widening the matcher requires *also* teaching the hook to guess a path out of shell text,
+  which is the guesswork this entry already suspected
+  · **new rec, better than the one it replaces: mtime, not the payload.** On a `Bash` event the
+  hook ignores `tool_input` entirely and compares the two ledger files' mtimes against a stored
+  value (`.dreamwork/.status-keys` already establishes the precedent that `lint.py` may own a
+  small state file). Lint only when one moved. That is robust to *any* writer — heredoc,
+  `sed`, an editor, another agent — which the `file_path` route can never be, and it costs one
+  `stat` per Bash call rather than a lint
+  · **and one thing needs no permission at all, so it is already in force**: this coordinator
+  now uses Write/Edit for ledger files where the edit is expressible that way, which covers the
+  writer that caused both incidents. Recorded here rather than left as an intention
   · related: #361
 
 - **#385** — Humanized age beside a question's date, in his `XXa YYb` format · P2 · dashboard/UX ·
