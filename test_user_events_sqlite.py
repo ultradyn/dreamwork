@@ -26,13 +26,37 @@ contract-test list for B8.
 
 from __future__ import annotations
 
+import inspect
 import multiprocessing as mp
 import os
 import time
 import uuid
 from pathlib import Path
 
-from user_events.sqlite import BUSY_TIMEOUT_MS, Envelope, open_journal
+import pytest
+
+from user_events.sqlite import (
+    BUSY_TIMEOUT_MS,
+    JOURNAL_BACKENDS,
+    Envelope,
+    open_journal,
+)
+
+
+# ---------------------------------------------------------------------------
+# B8 — backend fixture. Contract tests take journal_factory; B1 stays sqlite.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(params=list(JOURNAL_BACKENDS.keys()))
+def backend_name(request):
+    """Parametrise every contract test over the registered backends."""
+    return request.param
+
+
+@pytest.fixture
+def journal_factory(backend_name):
+    """Open-callable for the current backend. Derived from JOURNAL_BACKENDS."""
+    return JOURNAL_BACKENDS[backend_name]
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +69,7 @@ def _b7_child_receive(
     body: bytes,
     barrier: "mp.synchronize.Barrier",
     result_queue: "mp.queues.Queue",
+    backend: str,
 ) -> None:
     """One OS process: wait on barrier, then receive() the same UUID+bytes."""
     # Report pid before barrier so the parent can assert distinct interpreters
@@ -52,7 +77,8 @@ def _b7_child_receive(
     pid = os.getpid()
     try:
         barrier.wait(timeout=30)
-        j = open_journal(path)
+        open_fn = JOURNAL_BACKENDS[backend]
+        j = open_fn(path)
         try:
             env = Envelope(
                 client_action_id=action_id,
@@ -148,7 +174,9 @@ def test_pragmas_are_what_the_durability_boundary_claims(tmp_path: Path):
         second.close()
 
 
-def test_same_uuid_same_digest_replays_and_does_not_insert(tmp_path: Path):
+def test_same_uuid_same_digest_replays_and_does_not_insert(
+    tmp_path: Path, journal_factory,
+):
     """Same UUID + same digest returns the original receipt; no second row.
 
     Asserts result *kind* is 'replay'. Without the SELECT+compare before insert,
@@ -157,7 +185,7 @@ def test_same_uuid_same_digest_replays_and_does_not_insert(tmp_path: Path):
     Both calls go through receive(); no raw INSERT.
     """
     path = tmp_path / "j.sqlite3"
-    j = open_journal(path)
+    j = journal_factory(path)
     try:
         env = _envelope(body=b'{"text":"once"}')
         first = j.receive(env)
@@ -181,7 +209,7 @@ def test_same_uuid_same_digest_replays_and_does_not_insert(tmp_path: Path):
 
 
 def test_same_uuid_different_bytes_conflicts_and_preserves_the_original(
-    tmp_path: Path,
+    tmp_path: Path, journal_factory,
 ):
     """Same UUID + different body is conflict; original exact bytes stay.
 
@@ -189,7 +217,7 @@ def test_same_uuid_different_bytes_conflicts_and_preserves_the_original(
     through receive(); no raw INSERT.
     """
     path = tmp_path / "j.sqlite3"
-    j = open_journal(path)
+    j = journal_factory(path)
     try:
         action_id = str(uuid.uuid4())
         body_a = b'{"text":"alpha"}'
@@ -214,9 +242,9 @@ def test_same_uuid_different_bytes_conflicts_and_preserves_the_original(
         j.close()
 
 
-def _journal_with_id(path: Path, journal_id: str):
-    """open_journal then pin journal_id so two files share H_0 for relation tests."""
-    j = open_journal(path)
+def _journal_with_id(path: Path, journal_id: str, factory=open_journal):
+    """open then pin journal_id so two files share H_0 for relation tests."""
+    j = factory(path)
     j.conn.execute(
         "UPDATE meta SET value = ? WHERE key = 'journal_id'",
         (journal_id,),
@@ -226,7 +254,7 @@ def _journal_with_id(path: Path, journal_id: str):
     return j
 
 
-def test_chain_same_sequence_twice_yields_same_head(tmp_path: Path):
+def test_chain_same_sequence_twice_yields_same_head(tmp_path: Path, journal_factory):
     """Property (a): identical event sequences produce identical head hashes.
 
     Asserts a relation between two journals' outputs — no expected digest
@@ -242,7 +270,7 @@ def test_chain_same_sequence_twice_yields_same_head(tmp_path: Path):
     fixed_jid = "00000000-0000-4000-8000-bbbbbbbbbbbb"
 
     def build(path: Path) -> str:
-        j = _journal_with_id(path, fixed_jid)
+        j = _journal_with_id(path, fixed_jid, factory=journal_factory)
         try:
             for aid, body in zip(action_ids, bodies):
                 r = j.receive(_envelope(client_action_id=aid, body=body))
@@ -261,7 +289,9 @@ def test_chain_same_sequence_twice_yields_same_head(tmp_path: Path):
     assert head_a != "", "head hash must be non-empty"
 
 
-def test_chain_earlier_payload_byte_changes_the_head(tmp_path: Path):
+def test_chain_earlier_payload_byte_changes_the_head(
+    tmp_path: Path, journal_factory,
+):
     """Property (b): one byte changed in an *earlier* event changes the head.
 
     Two sequences share events 2 and 3 and differ by one byte in event 1's
@@ -278,7 +308,7 @@ def test_chain_earlier_payload_byte_changes_the_head(tmp_path: Path):
     fixed_jid = "00000000-0000-4000-8000-cccccccccccc"
 
     def head_for(path: Path, first_body: bytes) -> str:
-        j = _journal_with_id(path, fixed_jid)
+        j = _journal_with_id(path, fixed_jid, factory=journal_factory)
         try:
             j.receive(
                 _envelope(
@@ -311,14 +341,16 @@ def test_chain_earlier_payload_byte_changes_the_head(tmp_path: Path):
     )
 
 
-def test_chain_mutated_low_ordinal_is_named_by_verifier(tmp_path: Path):
+def test_chain_mutated_low_ordinal_is_named_by_verifier(
+    tmp_path: Path, journal_factory,
+):
     """Property (c): UPDATE a low-ordinal row → verify_chain names that ordinal.
 
     High-water ordinal stays put. Asserts failed_ordinal, not only ok==False.
     No H_i formula copy in the test.
     """
     path = tmp_path / "j.sqlite3"
-    j = open_journal(path)
+    j = journal_factory(path)
     try:
         for n in range(3):
             r = j.receive(_envelope(body=f'{{"n":{n}}}'.encode()))
@@ -348,14 +380,14 @@ def test_chain_mutated_low_ordinal_is_named_by_verifier(tmp_path: Path):
         j.close()
 
 
-def test_rejected_receipt_can_never_be_claimed(tmp_path: Path):
+def test_rejected_receipt_can_never_be_claimed(tmp_path: Path, journal_factory):
     """A rejected receipt is refused by claim(); validated can be claimed.
 
     Revisions are read back from the store between calls — never tracked in
     the test. Red line: AND state = 'validated' in the claim UPDATE.
     """
     path = tmp_path / "j.sqlite3"
-    j = open_journal(path)
+    j = journal_factory(path)
     try:
         # --- rejected path ---
         ins = j.receive(_envelope(body=b'{"text":"reject-me"}'))
@@ -408,14 +440,14 @@ def test_rejected_receipt_can_never_be_claimed(tmp_path: Path):
         j.close()
 
 
-def test_stale_revision_transition_is_refused(tmp_path: Path):
+def test_stale_revision_transition_is_refused(tmp_path: Path, journal_factory):
     """A transition with a stale expected_revision does not mutate state.
 
     Revisions are read back from the store; the test does not keep its own
     counter across successful transitions.
     """
     path = tmp_path / "j.sqlite3"
-    j = open_journal(path)
+    j = journal_factory(path)
     try:
         ins = j.receive(_envelope(body=b'{"text":"stale-check"}'))
         stored = j.get_receipt(ins.receipt_id)
@@ -444,7 +476,9 @@ def test_stale_revision_transition_is_refused(tmp_path: Path):
         j.close()
 
 
-def test_two_processes_one_uuid_make_one_receipt(tmp_path: Path):
+def test_two_processes_one_uuid_make_one_receipt(
+    tmp_path: Path, journal_factory, backend_name,
+):
     """B7: two real OS processes, one UUID+bytes → exactly one receipt.
 
     PRODUCTION LINE WHOSE DELETION MUST FAIL THIS TEST:
@@ -457,7 +491,7 @@ def test_two_processes_one_uuid_make_one_receipt(tmp_path: Path):
     """
     path = tmp_path / "twoproc.sqlite3"
     # Create schema once in the parent so both children open an existing file.
-    parent = open_journal(path)
+    parent = journal_factory(path)
     parent.close()
 
     action_id = str(uuid.uuid4())
@@ -470,7 +504,7 @@ def test_two_processes_one_uuid_make_one_receipt(tmp_path: Path):
     procs = [
         ctx.Process(
             target=_b7_child_receive,
-            args=(str(path), action_id, body, barrier, result_queue),
+            args=(str(path), action_id, body, barrier, result_queue, backend_name),
         )
         for _ in range(2)
     ]
@@ -523,7 +557,7 @@ def test_two_processes_one_uuid_make_one_receipt(tmp_path: Path):
     )
 
     # Authoritative count from a fresh open — not from the children's memory.
-    j = open_journal(path)
+    j = journal_factory(path)
     try:
         assert j.receipt_count() == 1, (
             f"two processes same UUID must leave exactly one receipt row; "
@@ -547,7 +581,7 @@ def _validate(j, receipt_id: str) -> int:
 
 
 def test_expired_lease_is_reclaimable_and_the_stale_claimant_cannot_finish(
-    tmp_path: Path,
+    tmp_path: Path, journal_factory,
 ):
     """B5: real short lease; after expiry a reclaimer wins; stale cannot finish.
 
@@ -561,7 +595,7 @@ def test_expired_lease_is_reclaimable_and_the_stale_claimant_cannot_finish(
     loaded box would otherwise make the test pass vacuously.
     """
     path = tmp_path / "claims.sqlite3"
-    j = open_journal(path)
+    j = journal_factory(path)
     try:
         ins = j.receive(_envelope(body=b'{"text":"lease-me"}'))
         assert ins.kind == "inserted"
@@ -649,7 +683,9 @@ def test_expired_lease_is_reclaimable_and_the_stale_claimant_cannot_finish(
         j.close()
 
 
-def test_broken_chain_forces_rebuild_not_a_silent_advance(tmp_path: Path):
+def test_broken_chain_forces_rebuild_not_a_silent_advance(
+    tmp_path: Path, journal_factory,
+):
     """B6: corrupt below high water → advance_cursor refuses; rebuild counts.
 
     PRODUCTION LINE WHOSE DELETION MUST FAIL THIS TEST:
@@ -660,7 +696,7 @@ def test_broken_chain_forces_rebuild_not_a_silent_advance(tmp_path: Path):
     ordinals_read is asserted against a runtime-derived total, never a literal.
     """
     path = tmp_path / "cursor.sqlite3"
-    j = open_journal(path)
+    j = journal_factory(path)
     try:
         bodies = [b'{"n":0}', b'{"n":1}', b'{"n":2}', b'{"n":3}']
         for body in bodies:
@@ -721,7 +757,7 @@ def test_broken_chain_forces_rebuild_not_a_silent_advance(tmp_path: Path):
         j.close()
 
     path2 = tmp_path / "cursor-expected.sqlite3"
-    j2 = open_journal(path2)
+    j2 = journal_factory(path2)
     try:
         for body in (b'{"x":1}', b'{"x":2}'):
             assert j2.receive(_envelope(body=body)).kind == "inserted"
@@ -739,3 +775,108 @@ def test_broken_chain_forces_rebuild_not_a_silent_advance(tmp_path: Path):
         assert bad.reason == "expected_mismatch"
     finally:
         j2.close()
+
+
+def _discover_contract_test_names() -> list[str]:
+    """Contract tests are those that take the journal_factory fixture.
+
+    Derived at runtime from this module's signatures — never a hand-copied list
+    (lessons.md: a copied list drifts, then agrees with itself while covering less).
+    """
+    import sys
+
+    suite = sys.modules[__name__]
+    names = []
+    for name, obj in inspect.getmembers(suite, inspect.isfunction):
+        if not name.startswith("test_"):
+            continue
+        if name == "test_every_contract_test_runs_under_every_registered_backend":
+            continue
+        try:
+            sig = inspect.signature(obj)
+        except (TypeError, ValueError):
+            continue
+        if "journal_factory" in sig.parameters:
+            names.append(name)
+    return sorted(names)
+
+
+def test_every_contract_test_runs_under_every_registered_backend():
+    """B8: every contract test is collected once per registered backend.
+
+    PRODUCTION LINE WHOSE DELETION MUST FAIL THIS TEST:
+      the JOURNAL_BACKENDS registry entry. Removing a backend drops the
+      product; this asserts the product, not a literal count.
+
+    Must not hold a hand-copied list of contract tests.
+    """
+    backends = list(JOURNAL_BACKENDS.keys())
+    contract_names = _discover_contract_test_names()
+    # Product, not a literal: backends × contract bases.
+    expected = len(backends) * len(contract_names)
+    # Runtime-derived precondition: the product must be positive. An empty
+    # registry or zero contract tests makes expected 0 and fails here — that
+    # is the B8 red (registry entry removed).
+    assert expected > 0, (
+        f"product of backends×contract tests must be > 0; "
+        f"backends={backends!r} ({len(backends)}), "
+        f"contract_names={contract_names!r} ({len(contract_names)})"
+    )
+
+    # Collect node ids via pytest (same suite, no hand list of node ids).
+    collected: list[str] = []
+
+    class _Collect:
+        def pytest_collection_modifyitems(self, items):
+            for item in items:
+                collected.append(item.nodeid)
+
+    ret = pytest.main(
+        [
+            "--collect-only",
+            "-q",
+            "-p",
+            "no:randomly",
+            "-p",
+            "no:cacheprovider",
+            str(Path(__file__).resolve()),
+        ],
+        plugins=[_Collect()],
+    )
+    assert ret == 0, f"collection failed with exit {ret}"
+
+    # Contract items: node id contains a contract base name and a backend param.
+    contract_items = []
+    for nodeid in collected:
+        if "test_every_contract_test_runs_under_every_registered_backend" in nodeid:
+            continue
+        for base in contract_names:
+            if base in nodeid:
+                contract_items.append(nodeid)
+                break
+
+    assert len(contract_items) == expected, (
+        f"expected {len(backends)} backends × {len(contract_names)} contract "
+        f"tests = {expected} collected items, got {len(contract_items)}; "
+        f"backends={backends}, contract_names={contract_names}, "
+        f"items={contract_items}"
+    )
+
+    # Each (backend, contract) pair appears — product, not a coincidence of count.
+    for backend in backends:
+        for base in contract_names:
+            matches = [
+                n for n in contract_items
+                if base in n and f"[{backend}]" in n
+            ]
+            # pytest may use [sqlite] or [sqlite0] depending on version; also
+            # accept backend name anywhere in the param bracket.
+            if not matches:
+                matches = [
+                    n for n in contract_items
+                    if base in n and backend in n
+                ]
+            assert matches, (
+                f"missing collected node for backend={backend!r} test={base!r}; "
+                f"contract_items={contract_items}"
+            )

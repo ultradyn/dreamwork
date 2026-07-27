@@ -1048,3 +1048,12 @@ def open_journal(path: PathLike) -> Journal:
         conn.close()
         raise
     return Journal(p, conn, journal_id)
+
+
+# Backend registry for the adapter contract suite (B8). A second backend adds
+# a registry entry and inherits every contract test; no new test is written.
+# The meta-test derives counts from this map and collected node ids — never a
+# hand-copied list of test names.
+JOURNAL_BACKENDS: dict = {
+    "sqlite": open_journal,
+}
