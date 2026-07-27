@@ -1082,7 +1082,7 @@
   - **Note (human, via watch, 2026-07-26 15:33):** the burndown warning that
     most entries cannot split human steers from loop ideas should be addressed
     by tracking task provenance.
-  - **Reply (loop, 2026-07-26 15:34):** Confirmed as the #213 goal. #216 then
+  - **Follow-up (loop, 2026-07-26 15:34):** Confirmed as the #213 goal. #216 then
     parses first-seen origin and #217 renders human / loop / historical-unknown
     coverage. The remaining decision is migration honesty: rec remains the
     forward-only cutoff; guessing old origins would make the chart look more
@@ -1115,13 +1115,13 @@
   - **Note (human, via watch, 2026-07-26 15:41; moved from #255):** chats
     should attach to any artifact or a precise reference within an artifact,
     while all chats remain visible from the global `/chat` route.
-  - **Reply (loop, 2026-07-26 15:42):** Folded into #253/#229. Attachment is
+  - **Follow-up (loop, 2026-07-26 15:42):** Folded into #253/#229. Attachment is
     provenance/navigation, not a private namespace: an artifact-level or
     selection-level chat still appears in `/chat`. MVP should have one primary
     attachment plus reciprocal backlinks; multiple references can follow.
   - **Note (human, via watch, 2026-07-26 15:43; moved from #255):** provide a
     simple mode first with no subagent; the main dreamer responds as it does now.
-  - **Reply (loop, 2026-07-26 15:44):** Adopted as staging: attached discussions
+  - **Follow-up (loop, 2026-07-26 15:44):** Adopted as staging: attached discussions
     begin in main-dreamer mode, then may be explicitly promoted to a dedicated
     fresh worker without forking transcript or attachment history. No silent
     fallback or automatic dispatch. This lets sidecar discussion ship before

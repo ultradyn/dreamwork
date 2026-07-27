@@ -86,6 +86,34 @@ Load-bearing details, each of which was a bug at some point:
   differently: `(human, via <channel>, <ts>)` and `(loop, <ts>)` are the
   current forms; `(via watch…)` reads as human and `(in-session…)` as
   loop, kept for entries written before the tags existed.
+  - **Closed means closed, and getting the word wrong deletes the bullet
+    in silence** (#343). The renderer matches an exact prefix
+    (`watch.py`'s `NOTE_TAGS` / `ANSWER_TAGS`), so anything else is not a
+    contribution at all: it falls into the entry BODY and renders as a
+    `·` item with its raw tag visible as text and **no author label** —
+    the #340 defect, reached by a one-word typo.
+  - **The two channels are spelled asymmetrically, which is the trap.**
+    His is `Note (human, …)`. The loop's is **`Follow-up (loop, …)`** —
+    *not* `Note (loop, …)`, *not* `Reply (loop, …)`, *not* `Answer
+    (loop, …)`. All three of those read perfectly reasonable and match
+    nothing. `Answer (via watch…)` is **his** and the loop must never
+    write it; there is currently no loop-authored *resolution* tag at
+    all, which is a gap #254's design records rather than papers over.
+  - Every one of those wrong spellings has actually occurred here:
+    `Answer (loop, …)` was the #254 bug, `Note (loop, …)` was written on
+    a P0 question an hour after that was explained, and **three
+    `Reply (loop, …)` bullets sat unrendered in the live file** until
+    `lint.check_author_tags` found them — measured through the real
+    parser, fixing them recovered 3 contributions (28 → 31).
+  - That check **WARNs** on a dated bolded bullet whose prefix is in
+    neither tuple, and it **imports the tuples from `watch.py` rather
+    than restating them**: a second copy of the tag list is a second
+    thing able to disagree with the renderer, and disagreeing with the
+    renderer is the entire defect. It matches a single leading word, a
+    timestamp inside the parentheses, and a colon after them — narrow on
+    purpose, because prose like `- **Four early asks, all applied
+    (2026-07-25)** —` is not a tag and one wrong WARN per run teaches the
+    reader to skip the right ones.
 - **Sub-bullet ORDER is chronological, and the page relies on it** (#128).
   A note written before the answer renders above it; one written after
   renders below. Append — never insert a note above an answer that

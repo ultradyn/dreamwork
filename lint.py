@@ -287,6 +287,85 @@ def check_answers(dw: Path, watch, rep: Report) -> None:
 PRIORITY = re.compile(r"^(P\d+)\s*[\u00b7:\-]\s*")
 
 
+# #343: the SHAPE of an author tag, which is what makes this check quiet
+# enough to be believed. Three parts, and each one was earned:
+#   - a single leading word (`Note`, `Answer`, `Follow-up`) — hyphens allowed,
+#     spaces not. This is what excludes prose that happens to parenthesise a
+#     date, e.g. the real `- **Four early asks, all applied (2026-07-25)** —`
+#     in this repo's questions.md, which was the check's only false positive
+#     when first run against live data.
+#   - a timestamp inside the parenthesis, which excludes ordinary bolded
+#     bullets like `- **Option A (cheapest):**`.
+#   - a colon immediately after the parenthesis, as every real tag has.
+# Narrower than it could be, deliberately: a WARN that fires once wrongly per
+# run teaches the reader to skip the ones that are right. The known cost is
+# that a tag mangled so badly it loses its colon is missed; the wrong-NAME
+# case this exists for keeps the shape and only changes the word.
+DATED_TAG = re.compile(r"^\s*- \*\*[A-Z][A-Za-z-]* \([^)]*\d{4}-\d{2}-\d{2}[^)]*\):")
+
+
+def check_author_tags(dw: Path, watch, rep: Report) -> None:
+    """#343: a tag the RENDERER does not know silently deletes his words.
+
+    `watch.py` recognises a contribution by an exact prefix (`NOTE_TAGS`,
+    `ANSWER_TAGS`). A bullet spelled any other way is not a contribution: it
+    falls into the entry BODY and renders as a `·` item with its raw tag
+    visible as text and no author label — the #340 defect, reachable by a
+    one-word typo, on the channel the loop depends on.
+
+    The typo is natural because the two channels are spelled ASYMMETRICALLY:
+    his is `Note (human, …)`, the loop's is `Follow-up (loop, …)`. `Note
+    (loop, …)` reads perfectly reasonable and matches nothing. It was written
+    on the P0 question gating five lanes an hour after a merge message
+    explaining that `Answer (loop, …)` was the #254 bug for this exact reason
+    — so knowing the failure by name demonstrably does not prevent it, and
+    `lint.py` reported `clean` over it.
+
+    The prefixes are READ FROM `watch.py`, never restated here. A second copy
+    of the tag list is a second thing able to disagree with the renderer, and
+    renderer-disagreement is the whole defect class; if watch.py gains a tag,
+    this check must accept it the same day without being edited.
+
+    WARN, not ERROR — same reasoning as #323 and #335: it names the line so a
+    false positive is obvious. A case could be made for ERROR, since there is
+    no legitimate reason to write a tag the renderer cannot read; it stays a
+    WARN because a human hand-editing these files mid-thought should not be
+    stopped, only told.
+    """
+    if watch is None:
+        # the tuples belong to watch.py; without them there is nothing to
+        # compare against, and inventing a fallback list here would be the
+        # second copy this check exists to avoid
+        return
+    prefixes = tuple(p for p, _ in list(watch.NOTE_TAGS) + list(watch.ANSWER_TAGS))
+    if not prefixes:
+        return
+    for name in ("questions.md", "answers.md"):
+        path = dw / name
+        if not path.exists():
+            continue
+        try:
+            lines = path.read_text().splitlines()
+        except OSError:
+            continue
+        bad = []
+        for ln in lines:
+            if not DATED_TAG.match(ln):
+                continue
+            s = ln.strip()
+            if any(s.startswith(p) for p in prefixes):
+                continue
+            bad.append(s[:46].rstrip())
+        if bad:
+            rep.add(
+                WARN, name,
+                f"{len(bad)} bullet(s) carry an author tag the renderer does not "
+                f"know, so they fall into the entry body with the tag showing and "
+                f"no author label (#343/#340): {'; '.join(bad[:3])}"
+                f" — the loop writes `- **Follow-up (loop, …)`, not `Note (loop, …)`",
+            )
+
+
 def check_priorities(watch, text: str) -> list[str]:
     """Titles that LOOK prioritised and do not SORT that way (#197).
 
@@ -1485,6 +1564,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     """
     check_questions(dw, watch, rep)
     check_answers(dw, watch, rep)
+    check_author_tags(dw, watch, rep)
     check_tasks(dw, rep)
     check_landed_asks(dw, watch, rep)
     check_status(dw, rep)

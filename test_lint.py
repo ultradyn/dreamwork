@@ -1852,3 +1852,107 @@ class TestSelfCompletedOpen:
             "tasks.md": "# Tasks\n\nNext id: **1**\n\n## Open\n\n## Recently landed\n"})
         rep = run(t)
         assert self._self_completed_warns(rep) == []
+
+
+class TestAuthorTags:
+    """#343: a bullet whose author tag the renderer does not know is not a
+    contribution — it falls into the entry BODY with its raw tag showing and no
+    author label, which is the #340 defect reachable by a one-word typo.
+
+    The evidence for this check is a live near-miss, not a hypothetical: the
+    coordinator wrote `Note (loop, …)` on the P0 question gating five lanes an
+    hour after writing a merge message explaining that `Answer (loop, …)` was
+    the #254 bug for exactly this reason.
+    """
+
+    HEAD = "# Questions\n\n## Open\n\n"
+    ENTRY = "- **P1 · 2026-07-27 — a question that needs an answer?** Body text.\n"
+
+    def _tag_warns(self, rep):
+        return [d for lvl, _w, d in rep.rows
+                if lvl in (lint.WARN, lint.ERROR) and "author tag" in d]
+
+    def _q(self, tag_line):
+        return self.HEAD + self.ENTRY + f"  {tag_line}\n\n## Answered\n"
+
+    def test_the_loops_real_tag_is_accepted(self, tmp_path):
+        t = target(tmp_path, **{"questions.md": self._q(
+            "- **Follow-up (loop, 2026-07-27 23:36):** the loop replying.")})
+        assert self._tag_warns(run(t)) == []
+
+    def test_his_real_tag_is_accepted(self, tmp_path):
+        t = target(tmp_path, **{"questions.md": self._q(
+            "- **Note (human, via watch, 2026-07-27 23:24):** his words.")})
+        assert self._tag_warns(run(t)) == []
+
+    def test_his_answer_tag_is_accepted(self, tmp_path):
+        t = target(tmp_path, **{"questions.md": self._q(
+            "- **Answer (via watch, 2026-07-27 23:38):** rec")})
+        assert self._tag_warns(run(t)) == []
+
+    def test_the_typo_that_actually_happened_is_caught(self, tmp_path):
+        """`Note (loop, …)` — reasonable-looking, and in neither tag set."""
+        t = target(tmp_path, **{"questions.md": self._q(
+            "- **Note (loop, 2026-07-27 23:36):** the loop replying.")})
+        warns = self._tag_warns(run(t))
+        assert len(warns) == 1, warns
+        assert "Note (loop," in warns[0]
+
+    def test_a_loop_answer_tag_is_caught(self, tmp_path):
+        """`Answer (loop, …)` is the #254 bug's own spelling."""
+        t = target(tmp_path, **{"questions.md": self._q(
+            "- **Answer (loop, 2026-07-27 23:38):** the loop resolving.")})
+        assert len(self._tag_warns(run(t))) == 1
+
+    def test_answers_md_is_checked_too(self, tmp_path):
+        t = target(tmp_path, **{"answers.md":
+            "# Answers\n\n## Open\n\n- **Q · 2026-07-27 — a question?** Body.\n"
+            "  - **Note (loop, 2026-07-27 23:36):** wrong tag here too.\n\n"
+            "## Answered\n"})
+        assert len(self._tag_warns(run(t))) == 1
+
+    def test_an_undated_bolded_bullet_is_not_an_author_tag(self, tmp_path):
+        """The discriminator is a DATE inside the parenthesis, so ordinary
+        prose bullets like `- **Option A (cheapest):**` must stay silent —
+        otherwise the check fires on entry bodies constantly and gets ignored.
+        """
+        t = target(tmp_path, **{"questions.md": self._q(
+            "- **Option A (cheapest):** do the simple thing.")})
+        assert self._tag_warns(run(t)) == []
+
+    def test_the_recognised_prefixes_come_from_watch_not_a_copy(self, tmp_path):
+        """The check must consume watch.py's own tuples. A second copy of the
+        tag list is a second thing able to disagree with the renderer, which is
+        the entire defect class. So: every prefix watch.py recognises must be
+        accepted here, derived at runtime — if watch.py gains a tag and lint
+        keeps a stale copy, this fails.
+        """
+        w = lint.load_watch()
+        if w is None:
+            pytest.skip("watch.py unimportable")
+        tags = [p for p, _ in list(w.NOTE_TAGS) + list(w.ANSWER_TAGS)]
+        assert len(tags) >= 5, tags
+        for n, prefix in enumerate(tags):
+            line = f"{prefix} 2026-07-27 23:36):** body." if prefix.endswith(",") \
+                   else f"{prefix}, 2026-07-27 23:36):** body."
+            sub = tmp_path / f"case{n}"
+            sub.mkdir()
+            t = target(sub, **{"questions.md": self._q(line)})
+            assert self._tag_warns(run(t)) == [], f"{prefix} was rejected: {line}"
+
+    def test_prose_that_parenthesises_a_date_is_not_an_author_tag(self, tmp_path):
+        """Found by running the check on the REAL questions.md, which is the only
+        place it could have been found: a summary bullet reading
+        `- **Four early asks, all applied (2026-07-25)** — …` has a date inside a
+        parenthesis and is not a tag. A real tag is a SINGLE word followed by the
+        parenthesis and then a colon; this has four words before the paren and no
+        colon after it. Precision matters more than reach for a WARN — one false
+        positive per run and the reader stops believing the other three.
+        """
+        t = target(tmp_path, **{"questions.md": self._q(
+            "- **Four early asks, all applied (2026-07-25)** — the review folded.")})
+        assert self._tag_warns(run(t)) == []
+
+    def test_missing_files_are_silent(self, tmp_path):
+        t = target(tmp_path, **{"tasks.md": "# Tasks\n\nNext id: **1**\n"})
+        assert self._tag_warns(run(t)) == []
