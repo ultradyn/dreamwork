@@ -24,11 +24,60 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **311**
+Next id: **314**
 
 ## Open
 
+- **#311** — Two motion guards assert a frame COUNT the box cannot supply · P2 ·
+  guard craft · ~40m · origin: **loop** · goal: a guard must not go red for a
+  reason unrelated to the thing it names ← DREAMWORK.md *Nothing fails quietly* ·
+  `headertravel.mjs:127` asserts `uniq(f.map(x => x.wrap)).length >= 8` and
+  `regroup.mjs:107` asserts `uniq(tops(n.frames)).length >= 6` — counts of
+  distinct rounded positions sampled across a .85s transition, so the threshold
+  is really "this machine rendered at least N frames" · **proven contended, not
+  inferred**: the same commit (`ae2fd58`) failed `headertravel` in a run
+  concurrent with a second guard suite (load 53.8, 35 chrome) and PASSED it
+  alone minutes later, with `regroup` failing the same way in the same
+  contended run · dreamer-reviewsplit A/B'd it five alternating pairs on base
+  `f72f730` vs its own HEAD: BASE saw 5, 6, 8, 8, 9 distinct widths — so base
+  itself fails three of five — and HEAD saw 5, 6, 6, 6, 7, i.e. #305 costs
+  about two rAF frames (a window-tall iframe rasters more than a 74vh one) and
+  tips a check already sitting one frame from red · the column TRAVELS in every
+  run, 3 to 7 frames part-way, which is the frame-rate-free half of the same
+  question · fix is the idiom `lessons.md` already prescribes and `qsec.mjs` +
+  `reviewsplit.mjs:145` already implement — count frames strictly BETWEEN the
+  two ends with a deadband, not distinct rounded positions · `qorder.mjs` has
+  the same shape (its own comment at :242 reasons about "one distinct
+  position") and the dreamer saw it pass in small runs and fail in the full
+  suite · **the dreamer deliberately did not touch either file**: changing
+  another feature's guard to make your own batch green is the move that wants a
+  second pair of eyes, and it was right about that · #308 is the sibling
+  rounding half of this and the two should land together or in sequence
 
+- **#312** — The command palette lets a phone scroll the whole page sideways ·
+  P2 · Web UI bug · ~30m · origin: **loop** · found by dreamer-reviewsplit
+  while scoping #305's responsive checks, and deliberately left out of scope so
+  #305's suite was not gated on someone else's bug · at a 390px viewport the
+  page overflows **122px horizontally on EVERY route**, dashboard included, and
+  the overflowing element is `.cmdmenu` · this is shipped behaviour on the
+  deployed dashboard, not a regression from #305 · `watch-design.md`'s
+  responsive contract says the body must never scroll horizontally, so the
+  styleguide already forbids it and no ruling is needed · wants a guard at
+  390px that asserts `documentElement.scrollWidth <= clientWidth` on each
+  route, which would also catch the next one
+
+- **#313** — `just audit-styleguide` is red for everybody on 10 historical
+  commits · P3 · chore/tooling · ~30m · origin: **loop** · the recipe enforces
+  that a commit changing the UI records a styleguide entry within 3 commits;
+  ten commits predate or missed that and it now fails for anyone who runs it,
+  which makes a green audit unavailable as evidence · oldest first: `db1a1bc`,
+  `0c1f5ad`, `a6a7ad2`, `bfa561f`, `a6e98cc`, `fe55cd3`, `7a0ffd5`, `2e92b49`,
+  `e51da7e`, `cf33aa6` · none are #305's · two honest options and this needs a
+  call, not a guess: **back-fill** the missing entries (real work, and the
+  entries would be reconstructed after the fact, which is the thing the audit
+  exists to prevent), or **scope** the audit to commits after a stated
+  baseline and say so in the recipe · a check that is permanently red teaches
+  people to ignore it, so leaving it is the one option that is not available
 
 - **#308** — Record the whole-pixel rounding trap in `transitions.md` · P3 ·
   chore · 10m · origin: **loop** · goal: a motion guard should not be able to
@@ -93,9 +142,16 @@ Next id: **311**
   audited and is contained** (17:28): `restoreReviewFrame` preserves the live
   browsing context rather than recreating the iframe, so its `scrollTo` never
   meets a fresh node, and the `setSelectionRange` calls are not
-  layout-dependent — no third instance, do not re-audit · NOT yet merged; the
-  dreamer's `pytest 600` is against base f72f730 and master is 611 after #307,
-  so the suite re-runs on the merged tree
+  layout-dependent — no third instance, do not re-audit · **MERGED** at
+  `ae2fd58` (a real merge, two parents; all five branch commits are ancestors),
+  plus `19c6aca` removing a diff3 base marker the coordinator's own
+  conflict-marker sweep did not name · merged tree verifies at **611 pytest +
+  54 subtests, lint clean**, and both parents' `lessons.md` content was proven
+  present by set containment rather than by absence of markers · guards: the
+  two motion FAILs seen in the first run (`headertravel`, `regroup`) were
+  CONTENTION, proven by re-running the identical commit alone — see #311, which
+  carries the evidence · the dreamer was retired at 18:44, harness-confirmed
+  stopped; worktree clean apart from gitignored `__pycache__`
 
 - **#303** — Make `lint.py` notice a `status.json` that lost known keys · P3 ·
   chore · 20m · origin: **loop** · goal: make a silent projection-rewrite loss
