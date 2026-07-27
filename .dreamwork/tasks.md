@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **382**
+Next id: **384**
 
 ## Open
 
@@ -141,6 +141,43 @@ Next id: **382**
   to a new check — a checker that read built output instead would be reporting on files nobody
   can regenerate · `test_every_shipped_artifact_still_satisfies_the_new_rules` excludes this
   one violation **by name**, so a new one in the same file is still caught · related: **#379**
+
+- **#382** — `plugcmd` fails on a fixed 900ms sleep, not on a 400 · P2 · guards/verification ·
+  origin: **loop** · 25m · owner: dispatched dreamer on `ccc @oc-glm52`, brief
+  `.dreamwork/docs/briefs/382-plugcmd-race.md`, owns `dev/capture/plugcmd.mjs`, port 39897
+  · found by the 04:40 full guard sweep — the only one of four reds that failed **identically in
+  three runs**, so unlike the others it is not load-flakiness
+  · **the guard's headline is wrong about its own failure.** It says *"a menu entry that 400s is
+  worse than no menu entry"*, but nothing 400s: the fixture's `watch-events.log` contains
+  `command via watch [/questions]: gh-sync: a plugin steer …`, so the POST succeeded. `.cmdmsg`
+  is simply `""` at the sample instant, and `confirmationFor` holds text ~5s before departing —
+  so `show()` had not been called yet
+  · so the instrument is a fixed `setTimeout(900)` where the code waits on a network round-trip,
+  which is the class this repo keeps finding hollow · **the open question the fix turns on**: is
+  the plugin path genuinely slower than a core kind (a product finding) or is 900ms merely tight
+  (a guard finding)? Measuring both is the brief's first step, before any change
+  · `watch.py` is off-limits to this lane — another agent holds it — so a fix that must live
+  there comes back as a report instead
+
+- **#383** — Three motion guards give different verdicts on unchanged code · P2 ·
+  guards/verification · origin: **loop** · 30m · owner: dispatched dreamer on `ccc @grok`, brief
+  `.dreamwork/docs/briefs/383-flaky-motion-guards.md`, owns `dev/capture/revieworder.mjs`,
+  `gitrow.mjs`, `burndown.mjs`, port 39895
+  · **the evidence is the disagreement, not the failure**: between the 04:40 full sweep and a
+  focused re-run with the tree unchanged, `revieworder` went FAIL → **PASS**, `gitrow` failed on
+  *opening* then on *closing*, and `burndown` went from a named assertion to *"the guard threw
+  before finishing its checks"*. A check that disagrees with itself is worse than a red one,
+  because neither answer can be believed
+  · all three sample **intermediate** frames of a transition, which is correct — `transitions.md`
+  says an end-state assertion cannot fail on a motion bug — but the hypothesis to confirm is that
+  they sample on a wall-clock schedule, so a loaded machine drops the sample outside the window.
+  If so there is one defective idiom and one fix, not three
+  · **the trap named in the brief**: widening a tolerance until the check stops failing makes it
+  hollow, which this repo treats as worse than red. `dev/capture/dreamfade.mjs` already samples
+  per-frame via rAF and is the idiom to reuse rather than author a second one
+  · the human has another agent writing KB material on testing animation in the browser; the
+  brief tells this lane to look for it once and report whether it changed the approach — free
+  signal on whether the KB earns its keep
 
 - **#381** — The single-writer rule has no delivery half · P2 · loop architecture/reliability ·
   origin: **loop** · 45m · **split out of #363, which landed the reader-facing half at
