@@ -221,6 +221,29 @@ guards port="39899":
     fi
     exit $fail
 
+# #330 — deliberately refresh the committed provenance evidence plates.
+# `just guards` runs provenance.mjs in its clean mode: it writes captures to
+# its OUT tempdir and never touches the committed path, so verifying the tree
+# no longer dirties it. The four PNGs under
+# .dreamwork/review/evidence/provenance-coverage-217/ are #217's evidence of
+# record (committed by `evidence(#217)`), so they stay in the repo — but they
+# are refreshed by a deliberate act, not by every guard run. This recipe is
+# that act: it sets DREAMWORK_PROVENANCE_EVIDENCE=1 so the guard writes both
+# its OUT and the committed path, then stages the result for review.
+# Run it when the provenance panel's visual design changes and the plates
+# should reflect the new render.
+provenance-evidence:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    OUT=$(mktemp -d)
+    trap 'rm -rf "$OUT"' EXIT
+    echo "refreshing committed provenance evidence (provenance.mjs → OUT + committed path)…"
+    DREAMWORK_PROVENANCE_EVIDENCE=1 node dev/capture/provenance.mjs "$OUT" >/dev/null
+    git add .dreamwork/review/evidence/provenance-coverage-217/
+    echo "staged refreshed plates:"
+    git status --porcelain .dreamwork/review/evidence/provenance-coverage-217/
+    echo "review with: git diff --cached .dreamwork/review/evidence/provenance-coverage-217/"
+
 # #203 — find (and with explicit flags, reap) orphaned watch.py guard servers.
 # Dry-run by default: prints each server's classification and kills nothing.
 #   - rule2 (dead-lane): cwd deleted -> the lane that started it is GONE. This

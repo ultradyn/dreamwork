@@ -38,10 +38,19 @@ import { join } from 'node:path';
 const OUT = process.argv[2];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
-/* deterministic evidence for the coordinator's visual review — the same
-   plates on every run, so a diff is a change and not the weather */
-const EVIDENCE = '.dreamwork/review/evidence/provenance-coverage-217';
-mkdirSync(EVIDENCE, { recursive: true });
+/* #330: the guard used to write its evidence plates into the COMMITTED path
+   `.dreamwork/review/evidence/provenance-coverage-217/` on every run, which
+   dirtied the tree a `just guards` was verifying — and a dirty tree is the
+   signal the worktree-cleanup contract (#316) reads to decide whether a
+   finished agent has unsaved work, so guard churn manufactured false
+   positives there. The plates are #217's evidence of record (committed
+   deliberately in `evidence(#217)`), so they stay in the repo — but a guard
+   run writes only to OUT, like every other guard. Set
+   DREAMWORK_PROVENANCE_EVIDENCE=1 to ALSO write the committed path; the
+   `just provenance-evidence` recipe does exactly that, deliberately. */
+const EVIDENCE = process.env.DREAMWORK_PROVENANCE_EVIDENCE === '1'
+  ? '.dreamwork/review/evidence/provenance-coverage-217' : null;
+if (EVIDENCE) mkdirSync(EVIDENCE, { recursive: true });
 const freePort = () => new Promise(res => {
   const s = createServer();
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
@@ -234,7 +243,7 @@ const capturePair = async (page, prefix) => {
     const panel = await (await page.$('.bd')).screenshot();
     const full = await page.screenshot();
     if (await shaderHealthy(page) && await plateIsDark(page, full)) {
-      for (const root of [OUT, EVIDENCE]) {
+      for (const root of [OUT, EVIDENCE].filter(Boolean)) {
         writeFileSync(`${root}/provenance-${prefix}-panel.png`, panel);
         writeFileSync(`${root}/provenance-${prefix}.png`, full);
       }
