@@ -14,10 +14,18 @@
 // watch server on the fixture. See dev/capture/README.md.
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39890';
 const BASE = `http://127.0.0.1:${PORT}`;
 mkdirSync(OUT, { recursive: true });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: 'phone-width (390px) horizontal-overflow on /, /questions, ' +
+          '/answers with palette closed, and / with the cmd menu open',
+  traceWindow: 'static scrollWidth measurement per route after ~0.5-0.7s ' +
+               'settle; no motion traced',
+});
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 
 const PHONE = { width: 390, height: 844 };        // iPhone 12/13/14 class
@@ -28,9 +36,7 @@ const ROUTES = [
   ['questions', '/questions'],
   ['answers',   '/answers'],
 ];
-const log = [];
-const checks = [];
-const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
+const log = notes;
 
 // Measure the document's horizontal overflow AND name the element whose right
 // edge is furthest past the viewport, so a red names the offender rather than
@@ -126,8 +132,5 @@ for (const [name, path] of ROUTES) {
   await ctx.close();
 }
 
-console.log(log.join('\n'));
-console.log('----');
-console.log(checks.join('\n'));
 await browser.close();
-if (checks.some(c => c.startsWith('FAIL'))) process.exit(1);
+finish();
