@@ -40,15 +40,16 @@ SKILL_DIR = Path(__file__).resolve().parent
 ERROR, WARN, OK = "ERROR", "WARN", "OK"
 
 DREAM_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}-[a-z0-9-]+\.md$")
-LEDGER_ID = re.compile(r"^- \*\*#(\d+)\*\*", re.M)
+LEDGER_ID = re.compile(r"^- \*\*(#\d+(?:/#\d+)*)\*\*", re.M)
 NEXT_ID = re.compile(r"^Next id: \*\*(\d+)\*\*", re.M)
 
 # ── task provenance, forward-only from the cutoff (#213) ──────────────
-# The origin rule needs a WIDER entry grammar than LEDGER_ID: combined
-# entries (`- **#250/#251**`) are entries too, and the check reads whole
-# entries, not head lines. LEDGER_ID itself is pinned identical to
-# watch.py's LEDGER_ENTRY by a test and is NOT widened — the id-collision
-# and next-id rules keep their existing grammar, this rule gets its own.
+# The origin rule reads WHOLE entries (ENTRY_HEAD/ENTRY_ID below), not head
+# lines, so combined entries (`- **#250/#251**`) are governed on either id.
+# LEDGER_ID is pinned identical to watch.py's LEDGER_ENTRY by a test and is
+# combined-aware for the same reason (#315): its bold span is ids only
+# (`#7` or `#7/#8`). Callers that counted a captured digit run must now
+# extract every id in the span — see check_tasks and check_ledger_sections.
 ORIGIN_CUTOFF = 216
 ORIGIN_VALUES = ("human", "loop", "unknown")
 ENTRY_HEAD = re.compile(r"^- \*\*([^*]+?)\*\*")
@@ -278,7 +279,10 @@ def check_tasks(dw: Path, rep: Report) -> None:
         return
 
     text = path.read_text()
-    ids = [int(m) for m in LEDGER_ID.findall(text)]
+    # LEDGER_ID captures an ids-only span (`#7` or `#7/#8`); a combined head
+    # names every id in it, so extract each id with ENTRY_ID rather than
+    # int() on the span itself, which would choke on the slash (#315).
+    ids = [int(x) for m in LEDGER_ID.findall(text) for x in ENTRY_ID.findall(m)]
     dupes = sorted({i for i in ids if ids.count(i) > 1})
     if dupes:
         rep.add(ERROR, "tasks.md", f"duplicate id(s) {dupes} — two entries claim one permanent id")
@@ -295,7 +299,7 @@ def check_tasks(dw: Path, rep: Report) -> None:
                 f"Next id is {nxt} but #{max(ids)} exists — the next task would collide",
             )
         elif not dupes:
-            rep.add(OK, "tasks.md", f"{len(ids)} entries, next id {nxt}")
+            rep.add(OK, "tasks.md", f"{len(ids)} ids, next id {nxt}")
 
     check_task_origins(text, rep)
     check_ledger_sections(text, rep)
@@ -368,16 +372,24 @@ def check_ledger_sections(text: str, rep: Report) -> None:
 
     So this walks the lines itself — a genuinely separate implementation,
     not a call into the thing under test — and disagreement is the error.
-    Two readers of one file must not diverge; the repo already pins
-    LEDGER_ID to watch's LEDGER_ENTRY for the same reason.
+    Two readers of one file must not diverge; the repo pins LEDGER_ID to
+    watch's LEDGER_ENTRY for the same reason, and both are combined-aware
+    so a head like `- **#7/#8**` counts BOTH ids in BOTH readers (#315).
     """
+    # Count open IDS, not open LINES: parse_ledger returns an id SET, and a
+    # combined head (`- **#7/#8**`) names two ids on one line. Counting lines
+    # would make this reader see 1 where parse_ledger sees 2 — the exact
+    # disagreement widening one reader alone produces (#315). LEDGER_ID
+    # captures the ids-only span; ENTRY_ID reads each id in it.
     section, mine = None, 0
     for ln in text.splitlines():
         stripped = ln.strip()
         if stripped.startswith("## "):
             section = stripped
-        elif section == "## " + "Open" and LEDGER_ID.match(ln):
-            mine += 1
+        elif section == "## " + "Open":
+            m = LEDGER_ID.match(ln)
+            if m:
+                mine += len(ENTRY_ID.findall(m.group(1)))
     if section is None:
         return  # a ledger with no headings at all is another check's problem
 
@@ -392,13 +404,13 @@ def check_ledger_sections(text: str, rep: Report) -> None:
         rep.add(
             ERROR,
             "tasks.md",
-            f"open-entry count disagrees: this linter walks {mine}, "
+            f"open-id count disagrees: this linter counts {mine}, "
             f"watch.parse_ledger sees {len(theirs)} — a section heading is "
             f"probably quoted inside an entry, which moves where the open "
             f"section is thought to end (#304)",
         )
     else:
-        rep.add(OK, "tasks.md", f"section split agrees with watch.py at {mine} open")
+        rep.add(OK, "tasks.md", f"section split agrees with watch.py at {mine} open ids")
 
 
 def check_task_origins(text: str, rep: Report) -> None:

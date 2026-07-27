@@ -7,6 +7,7 @@ passing on their own bug.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -1007,12 +1008,17 @@ class TestLedgerSectionSplit:
     def _old_parse_ledger(self, text):
         """The pre-#304 implementation, verbatim. This IS the bug."""
         import watch
+        # The narrow entry-head rule the parser held at the time, pinned
+        # locally so that widening the module-level LEDGER_ENTRY later (#315)
+        # does not rewrite history: this reconstruction must stay the bug it
+        # was, not track a fix applied elsewhere.
+        narrow_entry = re.compile(r"^- \*\*#(\d+)\*\*", re.M)
         if not text or self.OPEN not in text:
             return set(), set()
         after = text.split(self.OPEN, 1)[1].split(self.LANDED, 1)
         landed = (set(watch.LEDGER_MENTION.findall(after[1]))
                   if len(after) > 1 else set())
-        return set(watch.LEDGER_ENTRY.findall(after[0])), landed
+        return set(narrow_entry.findall(after[0])), landed
 
     def test_the_old_unanchored_split_is_caught(self, monkeypatch):
         import watch
@@ -1038,6 +1044,45 @@ class TestLedgerSectionSplit:
         openids, landed = watch.parse_ledger(self.HAZARD)
         assert openids == {"7", "8"}
         assert landed == {"5"}, "a real heading line must still end the open section"
+
+    def test_a_combined_open_head_agrees_across_both_readers(self):
+        """#315: a combined entry HEAD under Open (`- **#7/#8**`) names two
+        ids on one line. Both readers must count BOTH ids, or the section
+        cross-check fires a false #304 — which is exactly what happens if
+        either reader widens without the other (a previous agent watched
+        `test_combined_ids_all_old_are_exempt` go red proving it).
+
+        The fixture head genuinely carries two DISTINCT ids, asserted at
+        runtime by deriving both from the fixture: a literal pair is true
+        only of today's fixture, and a future edit that collapsed them to
+        one would pass vacuously. No combined head is open in the live
+        ledger today, so this guard runs only against the fixture — which
+        is the reason it exists, since a check that only ever ran against
+        today's ledger proves nothing about the case it was written for.
+        """
+        import watch
+        COMBINED_HEAD = "- **#7/#8**"
+        text = ("# Task ledger\n\nNext id: **9**\n\n" + self.OPEN + "\n\n"
+                + COMBINED_HEAD + " — a combined live one · P2 · task\n"
+                + "- **#9** — a singular live one · P3 · idea\n\n"
+                + self.LANDED + "\n\n**#5** landed (abc1234).\n")
+        assert COMBINED_HEAD in text, "fixture must hold a combined head"
+        # Runtime precondition is a property of the FIXTURE, not the pattern
+        # under test, so derive both ids straight from the head string: a
+        # literal pair is true only of today's fixture, and a future edit
+        # that collapsed them to one would pass vacuously.
+        head_ids = watch.ENTRY_ID.findall(COMBINED_HEAD)
+        assert len(head_ids) == 2 and head_ids[0] != head_ids[1], \
+            "fixture head must carry two distinct ids to be the combined case"
+        rep = lint.Report()
+        lint.check_ledger_sections(text, rep)
+        assert not ERRORS(rep, "tasks.md"), \
+            "both readers count both ids of the combined head — no #304 split"
+        # And both readers genuinely SEE the combined ids, not just agree on
+        # zero: an empty open section agrees trivially and proves nothing.
+        openids, _landed = watch.parse_ledger(text)
+        assert openids == {"7", "8", "9"}, \
+            "the combined head contributed BOTH ids to the open set"
 
 
 class TestLandedAsks:
