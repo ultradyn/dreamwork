@@ -112,6 +112,33 @@ for (const w of [1500, 1000, 720, 520]) {
 await nb.close();
 
 const uniq = a => [...new Set(a)];
+/* Frames strictly BETWEEN the two ends, with a 3% deadband so a frame that is
+   really an end does not read as travel. Same helper `reviewsplit.mjs` uses
+   and the same shape as `qsec.mjs`'s fade count — deliberately not a second
+   idiom (#311, transitions.md).
+
+   It replaces `uniq(widths).length >= 8`, which reads like the same rule and
+   is not: that threshold asserts THIS MACHINE drew eight frames inside a .85s
+   transition, which is a fact about the box. It reddened this guard on a
+   healthy commit twice on 2026-07-27 — once under a concurrent guard suite,
+   once under the machine's own load — and base `f72f730` failed it in 3 of 5
+   runs unaided. A snap has NO part-way frames at any frame rate, so that is
+   the property worth asserting, and a slow box cannot manufacture one.
+
+   The floor is ONE, deliberately rather than lazily. Measured on this trace:
+   idle, 31 frames with 5 part-way; under six added CPU burners, 14 frames with
+   2 part-way — so any floor above 1 is still a bet on the frame rate, only a
+   smaller one, and 2 was already sitting exactly on the line. One is the only
+   threshold the machine cannot move, because zero-versus-some IS the
+   distinction between a snap and a travel. Whether a travel is too FAST is a
+   different question with its own rules in transitions.md (no frame past the
+   final position, and the pacing checks); this assertion is not the place to
+   smuggle it in. */
+const between = (vals, a, b) => {
+  const lo = Math.min(a, b), hi = Math.max(a, b), eps = (hi - lo) * 0.03;
+  return vals.filter(v => v > lo + eps && v < hi - eps).length;
+};
+const span = vals => Math.abs(vals.at(-1) - vals[0]);
 const n = runs.normal, r = runs.reduced;
 const moving = f => f.filter(x => x.ghostW !== null);
 const checks = []; const ok = (nm, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${nm}`);
@@ -123,18 +150,50 @@ for (const [dir, tr] of [['onto', n.onto], ['off', n.off]]) {
   const f = tr.frames;
   ok(`${dir}: the heading SURVIVES (same nodes, none rebuilt)`,
      tr.tagged > 0 && f[f.length - 1].survivors >= 2);
-  ok(`${dir}: the column TRAVELS (many intermediate widths)`,
-     uniq(f.map(x => x.wrap)).length >= 8);
+  const ws = f.map(x => x.wrap);
+  const pls = f.map(x => x.plusLeft).filter(v => v !== null);
+  /* The precondition `between` rests on, and which the old count assertion
+     carried only implicitly: with no range there are no part-way values to
+     find, so a column that never moved would read as "no travel to check"
+     rather than failing. Derived at runtime, never a literal — the review
+     column's width is a styleguide value and this must not need editing when
+     it changes. */
+  ok(`${dir}: the column really changes width (else the travel checks are vacuous) `
+   + `(${ws[0]} -> ${ws.at(-1)}, ${span(ws).toFixed(0)}px)`,
+     span(ws) >= 40);
+  ok(`${dir}: the column TRAVELS (frames strictly part-way, at any frame rate) `
+   + `(${between(ws, ws[0], ws.at(-1))} of ${ws.length} part-way)`,
+     between(ws, ws[0], ws.at(-1)) >= 1);
   ok(`${dir}: the departing ghost never re-wraps (one width throughout)`,
      uniq(moving(f).map(x => x.ghostW)).length === 1);
   ok(`${dir}: the + is never clipped, on any frame`,
      f.every(x => x.plusLeft !== null && x.plusLeft >= 4));
-  ok(`${dir}: the + travels with the column, it does not jump`,
-     uniq(f.map(x => Math.round(x.plusLeft))).length >= 4);
+  /* Not rounded, unlike the version this replaces: rounding a per-frame trace
+     to whole pixels reports a clean sub-pixel ease as a snap, and the gutter's
+     travel is the SMALL gesture here — exactly the one the rounding trap bites
+     (transitions.md, #308). The deadband does the job rounding was doing. */
+  ok(`${dir}: the + moves at all (else its travel check is vacuous) `
+   + `(${span(pls).toFixed(1)}px)`,
+     span(pls) >= 8);
+  ok(`${dir}: the + travels with the column, it does not jump `
+   + `(${between(pls, pls[0], pls.at(-1))} of ${pls.length} part-way)`,
+     between(pls, pls[0], pls.at(-1)) >= 1);
 }
 for (const [dir, tr] of [['onto', r.onto], ['off', r.off]]) {
-  ok(`reduced-motion ${dir}: instant (at most 2 column widths)`,
-     uniq(tr.frames.map(x => x.wrap)).length <= 2);
+  /* The same trap inverted, and the more dangerous direction. `uniq(...) <= 2`
+     is satisfied by a box that sampled a REAL ramp only twice, so under load
+     this went hollow rather than red — it would have passed a reduced-motion
+     build that animated. Part-way frames are the frame-rate-free form here
+     too: instant means NONE of them, however few frames were drawn. The pair
+     with the travel check above is exact — same measure, opposite expectation.
+     (#311.) */
+  const rws = tr.frames.map(x => x.wrap);
+  ok(`reduced-motion ${dir}: the column still ends somewhere else (else vacuous) `
+   + `(${rws[0]} -> ${rws.at(-1)})`,
+     span(rws) >= 40);
+  ok(`reduced-motion ${dir}: instant — it LANDS, with no frame part-way `
+   + `(${between(rws, rws[0], rws.at(-1))} part-way of ${rws.length})`,
+     between(rws, rws[0], rws.at(-1)) === 0);
   ok(`reduced-motion ${dir}: no ghost at all`,
      tr.frames.every(x => x.ghostW === null));
 }
