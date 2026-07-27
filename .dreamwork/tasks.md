@@ -182,7 +182,7 @@ Next id: **366**
   session lands · public/WAN serving stays forbidden regardless
 
 - **#357** — A CLI warning layer that surfaces incomplete data and what is waiting ·
-  P2 · tooling/feature · origin: **human** · **human via watch 2026-07-28 01:23**, inside his
+  P1 · tooling/feature · origin: **human** · **human via watch 2026-07-28 01:23**, inside his
   #346 S4 answer: *"with these kinds of things we can have an automated warning layer in cli
   calls that raises issues where data is incomplete or whatever. Also things like unchecked
   message count, new task count, new question count, unanswered question count, unfolded-in
@@ -201,6 +201,27 @@ Next id: **366**
   · rec: one `dreamwork status`-shaped verb returning all counts as data, plus a warnings
   channel every other verb can emit on, so a human reading any command sees the same numbers
   · blocked on #346's read surface existing; the counts themselves are specifiable now
+  · **RAISED TO P1 and re-argued by him, 2026-07-28 02:33** — the same idea arrived a second
+  time, unprompted, pointing at a concrete incident rather than a hypothetical: *"428e85b shows
+  why we need tooling i think (like cli) so that there's always a little status msg tacked on
+  about that. then you will be prompted to check and can always know what is not folded in
+  etc."* · an idea he raises twice, independently, is a priority and not a nice-to-have
+  · **the incident is the specification.** His #346 ruling sat unfolded for 64 minutes and was
+  found only because a coordinator happened to open the entry while doing something else. Two
+  of his four named counts would each have caught it on the next command anyone ran
+  · **and his word "tacked on" is the design constraint, not a manner of speaking.** A count you
+  must ask for is a count nobody asks for; the value is entirely in it being **ambient** —
+  present on the output of whatever you were already doing. `lint.check_unfolded_answers`
+  (#366, `6db36f7`) is the interim half and shows the gap precisely: it catches exactly this
+  fault, and it fires only when someone chooses to run lint
+  · so the shape follows: not a `status` verb that reports counts, but a **footer every verb
+  emits**, with the verb-specific output above it · the `status`-shaped verb still earns its
+  place for the machine-readable form, but it is the secondary surface, not the primary one
+  · **one design consequence worth stating before anyone builds it**: a footer on every
+  invocation is a per-invocation cost, so each count must be cheap or the footer gets
+  suppressed and the feature dies quietly. That is the real reason these counts belong to
+  #346's store rather than beside it — an unfolded-answer count is one indexed query there and
+  a full re-parse of `questions.md` otherwise
 
 - **#358** — Head/body split so the tool-running half cannot reach the API key · P2 ·
   security architecture/research · origin: **human** · **human via watch 2026-07-28 01:26**,

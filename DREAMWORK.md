@@ -160,6 +160,19 @@ dreamwork-version: 5853e1789929
     `@glm52` resolved to opencode five times tonight and then to grok once, and
     the grok agent sat live and silent for twelve minutes with 127 bytes of log
     and zero writes.
+  - **REAFFIRMED 2026-07-28 02:33, because the coordinator drifted straight back**
+    (*"also please try to use more `ccc @glm52` subagents rather than native
+    ones"*). This is the part worth recording, not the instruction: between 01:35
+    and 02:18 the coordinator dispatched **three** native subagents while the
+    23:14 rule sat five lines above in this file. Not disagreement — the rule was
+    never re-read, because dispatching is the one action a coordinator does from
+    habit rather than from a document, and each dispatch felt like a continuation
+    of the last. So the drift is structural: **a routing rule that lives only in
+    prose is re-checked exactly as often as someone happens to re-read the prose.**
+    Until something checks it, the coordinator's own dispatch step must re-read
+    this bullet, and a native dispatch needs a stated reason for not being
+    `ccc @oc-glm52`. Agents already running when he said this may finish; nothing
+    new goes native.
 - Subagent lifecycle (2026-07-25): **prefer fresh subagents; reuse an
   existing one only if it stopped less than ~4 minutes ago.** Retire
   idle dreamers rather than leaving them parked.
