@@ -1,0 +1,97 @@
+<!--dreamwork-review-source
+title: #325 · The review artifact becomes a template · proposal
+identity: review artifact · template
+context: task #325 · one template, one builder, one stamp
+status: awaiting review
+headline: Twelve pages, five font stacks, one template.
+tag: proposal only
+sub: task #325 · 27 July 2026 · self-contained proposal, built by review_artifact.py
+skip: Skip to the decisions
+skip_href: #decision
+-->
+<!--#nav-->
+<a class="full" href="#drift">the drift, measured</a><a href="#decision">decisions</a>
+<!--#lead-->
+<p class="lead">Every review request ships an artifact, so this page is the surface his
+proposals are read on — and it reinvented itself twelve times. <code>tasks-page.html</code>
+is the one he named as good, so its stylesheet is now the template and artifacts are
+<strong>built</strong> rather than hand-rolled.</p>
+<!--#call-->
+<div class="call"><strong>Recommendation.</strong> Approve the template, the builder and the
+content-derived stamp. Existing artifacts are not migrated; they report
+<code>untemplated</code> rather than being rewritten under him.</div>
+<!--#aside-->
+<span class="big">5</span>
+<small>font stacks across 12 artifacts<br>8 page backgrounds, all "the dark one"<br>0 of them shared a source</small>
+<!--#body-->
+<section id="drift" aria-labelledby="drift-t">
+  <div class="label" id="drift-t">The drift, measured</div>
+  <p class="read">Not a taste argument. Parsed out of the twelve artifacts in
+  <code>.dreamwork/review/</code> as they stand today.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">5</span><span class="caption">distinct <code>font-family</code> declarations</span></div>
+    <div class="fact"><span class="number">3<span class="dim">/8</span></span><span class="caption">page backgrounds in <code>--bg</code>, more in raw rules</span></div>
+    <div class="fact"><span class="number">12</span><span class="caption">inline stylesheets, each authored once</span></div>
+    <div class="fact"><span class="number">0</span><span class="caption">shared a source before this task</span></div>
+  </div>
+  <div class="notice"><b>Offline-clean is now a build-time check.</b> The builder refuses to
+  write output a browser would fetch anything for — no external stylesheet, script, image,
+  font or <code>@import</code>. A link in prose stays a link.</div>
+  <div class="scroller"><table>
+  <thead><tr><th>mechanism</th><th>who remembers</th><th>drift possible?</th></tr></thead>
+  <tbody>
+    <tr><td>a documented block agents copy</td><td>every future author</td><td class="fail">this is what produced the five font stacks</td></tr>
+    <tr><td>a shared stylesheet the page links</td><td>nobody</td><td class="fail">breaks offline-clean, which is the artifact's contract</td></tr>
+    <tr class="row-accent"><td><strong>a template a tool inlines</strong></td><td><strong>the tool</strong></td><td class="pass">only by a named divergence entry</td></tr>
+  </tbody>
+  </table></div>
+</section>
+
+<section aria-labelledby="how-t">
+  <div class="label" id="how-t">How it holds</div>
+  <div class="spine">
+    <div class="spine-row"><div class="spine-key">the template</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p>Head, palette, frame, footer. Its stylesheet is
+      <code>tasks-page.html</code>'s rule for rule.</p></div></div>
+    <div class="spine-row"><div class="spine-key">the source</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p>One file per artifact under <code>review/src/</code>, so
+      iterating on the template can rebuild what it already shipped.</p></div></div>
+    <div class="spine-row"><div class="spine-key">the stamp</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p><code>v1+&lt;8 hex of the template&gt;</code>, in a
+      <code>meta</code> and in the footer. Older artifacts go <code>stale</code> by themselves.</p></div></div>
+  </div>
+  <div class="checks">
+    <div class="check"><b>planted an external chart image</b> <span>build refused</span></div>
+    <div class="check"><b>moved one token to #0b0f19</b> <span>palette check red</span></div>
+    <div class="check"><b>deleted .notice from the template</b> <span>vocabulary check red</span></div>
+    <div class="check"><b>hardcoded the digest</b> <span>staleness check red</span></div>
+  </div>
+  <div class="stages">
+    <div class="stage"><span><b>Cut the template</b> from the artifact he named, verbatim.</span></div>
+    <div class="stage"><span><b>Build, fail loud</b> on a missing or unknown slot.</span></div>
+    <div class="stage"><span><b>Stamp from bytes</b>, so iteration cannot lie.</span></div>
+  </div>
+</section>
+
+<section id="decision" aria-labelledby="dec-t">
+  <div class="label" id="dec-t">Decisions wanted — one line each</div>
+  <div class="choice"><div class="choice-grid"><span class="choice-tag">Q1</span><div>
+    <strong>Migrate the twelve existing artifacts?</strong>
+    <div class="answer"><strong>Rec: no.</strong> They are the record of what was proposed and
+    when; rebuilding them would restyle pages you have already read and ruled on.</div>
+  </div></div></div>
+  <div class="approval">Approve the template, the builder and the stamp, or name what should
+  change.</div>
+</section>
+
+<details>
+  <summary>The slot set, field by field</summary>
+  <div class="details-in">
+  <p>Required: <code>title identity headline lead body footer</code>. Optional:
+  <code>context status tag sub call aside nav skip skip_href aside_label</code>.</p>
+  <pre>python3 review_artifact.py build .dreamwork/review/src/&lt;slug&gt;.html
+python3 review_artifact.py check .dreamwork/review/*.html</pre>
+  </div>
+</details>
+<!--#footer-->
+Prepared for task #325 · 27 July 2026 · self-contained, offline-clean, no external requests.

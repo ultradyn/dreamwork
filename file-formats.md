@@ -628,6 +628,97 @@ profile, so these contracts are verified by driving the page rather than by
 parsing. If you change a key name or a field here, the guard that fails is one
 of those three.
 
+## `.dreamwork/review/src/<slug>.html` — the review artifact's source (#325)
+
+Every request for a review ships a self-contained artifact, so that page is
+the surface the loop's proposals are read on. Twelve hand-authored ones
+carried **five distinct `font-family` declarations** and eight page
+backgrounds all meaning "the dark one". `tasks-page.html` is the one he
+named as good, so its stylesheet is now a template and artifacts are
+**built**, not hand-rolled:
+
+    python3 <skill-dir>/review_artifact.py build .dreamwork/review/src/<slug>.html
+
+Template: `review-artifact.template.html` in this skill's directory, so it
+ships with the bundle and is reachable from whatever project the loop runs
+on. Builder: `review_artifact.py` beside it. It writes
+`.dreamwork/review/<slug>.html` — the source's own directory matters,
+because `watch.py`'s `list_reviews` is a non-recursive `os.listdir`
+filtered on `.html`, so a source **in `src/`** is invisible to it while one
+sitting beside the artifacts would be listed and served to him as a
+half-built page. The builder refuses a source anywhere else.
+
+The source is one file: a header comment of `key: value` scalars, then
+named blocks.
+
+```html
+<!--dreamwork-review-source
+title: #325 · The review artifact becomes a template · proposal
+identity: review artifact · template
+context: task #325 · one template, one builder, one stamp
+status: awaiting review
+headline: Twelve pages, five font stacks, one template.
+tag: proposal only
+sub: task #325 · 27 July 2026 · self-contained proposal
+skip: Skip to the decisions
+skip_href: #decision
+-->
+<!--#lead-->
+<p class="lead">The paragraph the reader starts on.</p>
+<!--#body-->
+<section aria-labelledby="crux-t">
+  <div class="label" id="crux-t">The crux</div>
+  <p class="read">…</p>
+</section>
+<!--#footer-->
+Prepared for task #325 · 27 July 2026 · offline-clean, no external requests.
+```
+
+- **Header.** Starts at byte 0 with `<!--dreamwork-review-source`, one
+  `key: value` per line, closed by `-->`. Values are single-line HTML
+  fragments (inline `<code>` is fine and is used constantly).
+- **Blocks.** `<!--#name-->` alone on a line opens a block that runs to the
+  next marker or to end of file. Content before the first marker is an
+  error, because it would otherwise vanish.
+- **Required:** `title identity headline lead body footer`. **Optional:**
+  `context status tag sub call aside nav skip skip_href aside_label` —
+  either as a header scalar or as a block, whichever suits the length.
+- **Fail loud in both directions.** A missing required slot is an error and
+  so is an unknown key: the failure mode of every template system is a typo
+  that silently drops a section, and an artifact missing its own
+  recommendation still looks finished. `skip` without `skip_href` is an
+  error too.
+- **Optional means gone, not empty.** An unset slot deletes its whole
+  region, `status:` with nothing after it counts as unset, and an aside-less
+  hero drops to `hero-grid solo` rather than holding a 240px column open.
+- `TEMPLATE_STAMP` and `hero_solo` are **derived**; a source that sets one
+  is an error rather than being quietly overridden.
+
+**The stamp is how iteration stays honest.** Each build writes
+`v<series>+<8 hex of the template file>` into a `<meta
+name="dreamwork-review-template">` and into the footer, computed from the
+template's bytes — nothing has to remember to bump it. So after the
+template changes, every artifact built before it says so:
+
+    python3 <skill-dir>/review_artifact.py check .dreamwork/review/*.html
+      current     …/#325-template.html
+      stale       …/older.html  (built from v1+0f3a11c9)
+      untemplated …/tasks-page.html
+
+`untemplated` is the third answer on purpose: the twelve artifacts that
+predate this are **not migrated**, and a check with only pass/fail would
+have to lie about one of them.
+
+**Checked by `test_review_artifact.py`, not by `lint.py`** — same
+difference in kind as the browser-side contracts above: this format is a
+source in *this* skill's directory rather than a file in a target's
+`.dreamwork/`, and the properties worth guarding are the template's
+fidelity to `tasks-page.html` (every shared CSS selector held to identical
+declarations, palette compared token by token, both parsed at runtime) and
+that a build fetches nothing. Divergence from the reference is possible but
+never silent: it costs one named entry in `TEMPLATE_ONLY`,
+`DECLARATION_DIVERGENCES` or `TOKEN_DIVERGENCES` there.
+
 ## Why this file exists rather than a paragraph in SKILL.md
 
 SKILL.md says what each file *means* and when to write it. That is the
