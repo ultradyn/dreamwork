@@ -2291,7 +2291,7 @@ Next id: **381**
 ## Recently landed
 
 - **#380** — `check_cited_shas` said nothing on four different exits, and one fired · landed
-  `PENDING` · origin: **loop** · found by a flake, not by anyone reading the code: one full-suite
+  `8d7de88` · origin: **loop** · found by a flake, not by anyone reading the code: one full-suite
   run failed `test_a_dead_cited_sha_warns`, then 25 isolated runs and a full re-run passed and no
   single other test file reproduced it — so the check had declined to run and left no row naming
   which exit it took. Its own docstring already stated the principle the code broke
