@@ -1646,6 +1646,26 @@ Next id: **388**
   a second gate, Q2 keep a partial witness marked incomplete, Q3 `200 → 202` as a non-event,
   Q4 purge and PostgreSQL not built rather than built-not-run)
 
+  · **implementation began 2026-07-28 05:50** under his G1 grant, coordinator-planned with a
+  brief per lane on disk (`.dreamwork/docs/briefs/263-lane-*.md`), which is his stated
+  requirement rather than my convention
+  · **lane A (digest) done, `@grok`, 12 minutes.** `A1` at `aad1d8d`; `A2`'s canonical helpers
+  shipped inside `A1` and its test reached master **inside my own `12f47e3`** — I swept a lane's
+  staged file into a ledger commit, because `git commit` commits the index and not the paths I
+  added. History is left as it is rather than rewritten with two lanes live in the tree; the
+  content is correct and the attribution is recorded here. The convention that was supposed to
+  prevent this is fixed in `SKILL.md`/`CLAUDE.md` and every brief, and the lesson is in
+  `lessons.md`
+  · **the reason I know is that the lane reported the loss instead of hiding it** — it explicitly
+  declined to invent a no-op `A2` commit to make its report look complete. That is the behaviour
+  the brief asks for and it is worth naming, because a lane that quietly papered over this would
+  have left a silent defect in the convention for the next fan-out to hit
+  · **`A1` verified independently by me, not folded from its report**: removed the 8-byte length
+  prefix from `length_framed`, `test_framing_boundary_cannot_be_shifted` FAILED
+  (`b'abc' != b'abc'`) and its neighbour PASSED; restored from my own snapshot, byte-identical to
+  the commit. The runtime precondition assertion is present and there is no `hashlib` in the test
+  · lane C (domain files) in flight on `@pi-glm52`; lane B's brief is written and ready to
+  dispatch (`263-lane-b-journal.md`, increments 3-6, `B2` needs A2 which is now in)
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses
