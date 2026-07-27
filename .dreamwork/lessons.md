@@ -1983,3 +1983,29 @@ this shape and convert opportunistically.)
   this as an ERROR since `b7151ec` (2026-07-25), and it splits combined heads correctly. **It sat
   there for about sixteen hours anyway** (07-26 20:23 → 07-27 12:23), which means during that
   window `lint.py` was either not run or not read. The check was never the problem.
+
+- **A check that skips an unrecognised shape is indistinguishable, in its output, from a check that
+  passed.** `continue` and "fine" print the same thing: nothing. So every parser-based check has a
+  silent third outcome besides pass and fail — *did not apply* — and that outcome is invisible at
+  exactly the moments it matters.
+  · **Measured, and it had been true for days:** `lint.check_related` enforces that a relation
+  between two ledger entries is named by both, because *"an entry is read alone"*. Its marker regex
+  requires a **bold** span and the function does `if not found: continue`. Three entries had written
+  the marker without asterisks. Those three were skipped in silence — and behind them sat **four
+  broken relations** (`#388→#383`, `#388→#386`, `#387→#361`, `#386→#383`), none of which any run had
+  ever reported. The check was working perfectly on the entries it could see (#395).
+  · **I found it only because lint rejected an edit of my own.** Nothing about the ledger looked
+  wrong; the six-warning baseline looked healthy. A check with a silent skip does not decay
+  loudly — it reports `clean` while its coverage shrinks, so the number of entries it *actually*
+  examined is the fact nobody has.
+  · **So the cheap general guard is a coverage number, not a verdict.** `check_related` already
+  prints `3 related pair(s), all reciprocal`; had it printed *"3 pairs checked, 3 entries skipped as
+  unparseable"* the hole would have been on screen for days. **A check that counts what it examined
+  cannot silently stop examining things.**
+  · **Two smaller traps found by walking into both**, and both share the shape: the failure is
+  reported somewhere other than its cause. Adjacent bold spans yield only the **first** id, so a
+  three-id relation silently becomes a one-id relation — and the error surfaces as a *reciprocity*
+  complaint about the ids it dropped, pointing away from the shape that dropped them. And the marker
+  vocabulary **cannot be quoted in prose**: naming it in an entry body lets the non-greedy `[^*]*?`
+  run to the next `**` anywhere in the entry, manufacturing phantom markers — my entry *about* this
+  bug produced five of them.
