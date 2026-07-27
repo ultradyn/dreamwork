@@ -1501,3 +1501,22 @@ this shape and convert opportunistically.)
   another checkout uses `git -C <path>` and absolute paths, never `cd`; and any
   proof whose setup can fail asserts its setup succeeded before believing its
   result. (coordinator, #362, 2026-07-28)
+- **An offset into a file you are also editing goes stale the moment you edit
+  earlier in it, and the resulting splice lands in the middle of a neighbour's
+  body where nothing reads it as damage.** Folding #229 meant one scripted pass
+  over `tasks.md`: bump the next id, cut #229, repoint three dependents, insert
+  #373 where #229 had been. The insertion index was found before the three
+  repoints, each of which added a line above it, so #373's head was welded into
+  `#230`'s body — `settings, ex- **#373** — Build topic chats…` — and because an
+  entry head must be line-anchored, #373 was not an entry at all. What caught it
+  was not lint but the increment's own before/after `parse_ledger` diff printing
+  `new: []` when it had just filed a task. Two habits: recompute every anchor
+  **after** the edits that precede it (find the landmark again, do not carry the
+  number), and make a rewrite of a structured file assert what it changed — an id
+  set before and after costs one line and fails loudly on a corrupt splice that
+  reads fine in a diff. The same pass had already welded two `questions.md`
+  entries via an `Edit` whose `old_string` spanned an entry boundary; both are the
+  one mistake, which is assuming a boundary instead of asserting it. Both were
+  free to undo only because a `cp` snapshot was taken first — that habit was
+  written down for injections, and it turns out to cover botched edits too.
+  (coordinator, #229/#373, 2026-07-28)
