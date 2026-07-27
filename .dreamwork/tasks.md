@@ -498,10 +498,6 @@ Next id: **297**
   than implying the historical unknown remainder is loop-originated;
   keep explicit coverage copy and update watch-design.md plus a red-first
   browser guard
-- **#216** — Parse first-seen origin in ledger history · P2 · task · 20m ·
-  origin: **loop** · blocked on #213 · preserve human/loop/unknown at
-  first sight; a later edit must never retroactively classify an arrival
-
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
@@ -941,6 +937,14 @@ Next id: **297**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#216** — Parse first-seen origin in ledger history · P2 · origin:
+  **loop** · landed 2026-07-27 · `task_origins.py` walks only ledger-touching
+  commits oldest-first and classifies each id once from its first leading-token
+  appearance; later edits, current markers, body refs and commit metadata cannot
+  rewrite arrival · combined/separate ids, deletions, shallow coverage and path
+  confinement are explicit · 23 red-first tests, 582 + 46 subtests, Standards +
+  Spec PASS · `e9c30ff`
 
 - **#213** — Enforce forward-only task provenance · P2 · origin:
   **loop** · landed 2026-07-27 · entries whose leading id token contains any
