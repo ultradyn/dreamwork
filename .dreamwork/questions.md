@@ -1,51 +1,6 @@
 # Questions for the human
 
 ## Open
-- **P1 · 2026-07-28 — #367, your postit flags: four decisions, and the geometry
-  refuted the literal reading of your own metaphor** Your 02:36 idea — *"pointer
-  labels at the most important parts … like those little thin postits that lawyers
-  use"*, plus next/prev, because reviews are *"sometimes quite long"*.
-
-  Decision artifact:
-  `.dreamwork/review/review-essential-marks.html`; design:
-  `.dreamwork/docs/plans/review-essential-marks.md`. Design only — nothing built,
-  no template touched, no artifact restamped.
-
-  **They are quite long: the longest is 19.6 screens** (19,582px, 6,533 words),
-  median 1,777. So the complaint is real, and the maximum is where flags pay.
-
-  **I measured before designing, and it killed three designs including yours.**
-  A list of the sections would be **22 entries** in the artifact that needs it most
-  — your five-flags analogy rules that out, and the `nav` is already that axis.
-  Tabs protruding past the page edge cannot work: the margin outside `.wrap` is
-  **16px at every viewport from 1120px down**, so the physical reading of the
-  metaphor is affordable on one monitor and nothing on a laptop. And a flag on each
-  marked block's edge would scatter, because blocks in a section run from 614px to
-  the full 1120px.
-
-  **What survives**: a mark is a **flag at a height**, anchored to the reading
-  column's right edge — which is fixed at **613.5px** and left-aligned, leaving
-  **506px of wrap already empty** beside it. Above 780px that is the tab rail;
-  below it the same marks are a compact strip under the top rail, because the slack
-  is 54px there and a tab needs 96. Next/prev walks them in document order in both,
-  so only the presentation changes.
-
-  **The thing worth your eye**: #367's own entry guessed the hard case was mobile.
-  The real cliff is **~780px** — above both existing breakpoints — so a design that
-  answered only for 390px would have looked right in review and broken in a
-  half-width window on your desktop, which is where you read these.
-
-  Four decisions, all recommended in the artifact: **M1** rail above 780 / strip
-  below · **M2** cap of five, and over it **refuses the build** rather than warning
-  · **M3** ~12-character labels, refused rather than truncated — *this is the one I
-  want your read on, not your ratification, because you are the person who reads the
-  tabs* · **M4** marks are not also `nav` entries.
-
-  `rec` takes all four. Approving authorises the source contract in
-  `file-formats.md` plus the "declares no marks &rarr; byte-identical output" check,
-  red first — not the template change, which restamps all 16 artifacts and is a
-  separate increment.
-
 - **P1 · 2026-07-28 — one word: may I run `install.py --apply`?** You said `rec`
   to #361 at 02:47, which authorised the `Load:` line and a reviewed `--print`. I
   have done both and stopped there, because writing your Claude Code config is the
@@ -327,6 +282,80 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-28 — #367, your postit flags: four decisions, and the geometry
+  refuted the literal reading of your own metaphor**
+  → answered (2026-07-28 05:35): **all four ruled, and two of them overrode the
+  rec** — which is why the artifact asked rather than assumed. **M1 rec** (rail
+  above 780px, strip below). **M2 is not 5-and-refuse**: *"soft limit at 7, hard
+  limit at 15"* — so **two** thresholds, a warning at 7 and a refusal at 15, and my
+  single hard 5 was both too tight and too blunt. **M3 rejected the premise**: not
+  a 12-character refusal but *"2 lines, smaller text, maybe up to 6 words? probably
+  need to measure. they don't have to have large text because they're already
+  visible"* — the flag's job is to mark a position, so legibility at a glance is not
+  what it is for, and a two-line tab at a smaller size holds far more than the one
+  line I had costed. **M4 rec** (marks are not `nav` entries).
+  · **and a durable preference, folded to DREAMWORK.md rather than left here**:
+  *"instruct dreamwork agents to be more concise and keep to the most important
+  topics. IGCs that only have one solution that is clearly superior don't need to be
+  answered. If that belongs anywhere, let it be an aux document."* Read against this
+  very entry: M1 and M4 were both `rec`-and-taken, so both were asks with one
+  clearly superior answer and neither should have been put to him. M2 and M3 earned
+  their place by being overridden.
+  · #367 is unblocked to implement. First increment stays as stated — the
+  source-mark contract in `file-formats.md` plus the "declares no marks &rarr;
+  byte-identical output" check, red first — and the measurement M3 asks for
+  (how many words fit two lines at a smaller size) comes before any CSS.
+ Your 02:36 idea — *"pointer
+  labels at the most important parts … like those little thin postits that lawyers
+  use"*, plus next/prev, because reviews are *"sometimes quite long"*.
+
+  Decision artifact:
+  `.dreamwork/review/review-essential-marks.html`; design:
+  `.dreamwork/docs/plans/review-essential-marks.md`. Design only — nothing built,
+  no template touched, no artifact restamped.
+
+  **They are quite long: the longest is 19.6 screens** (19,582px, 6,533 words),
+  median 1,777. So the complaint is real, and the maximum is where flags pay.
+
+  **I measured before designing, and it killed three designs including yours.**
+  A list of the sections would be **22 entries** in the artifact that needs it most
+  — your five-flags analogy rules that out, and the `nav` is already that axis.
+  Tabs protruding past the page edge cannot work: the margin outside `.wrap` is
+  **16px at every viewport from 1120px down**, so the physical reading of the
+  metaphor is affordable on one monitor and nothing on a laptop. And a flag on each
+  marked block's edge would scatter, because blocks in a section run from 614px to
+  the full 1120px.
+
+  **What survives**: a mark is a **flag at a height**, anchored to the reading
+  column's right edge — which is fixed at **613.5px** and left-aligned, leaving
+  **506px of wrap already empty** beside it. Above 780px that is the tab rail;
+  below it the same marks are a compact strip under the top rail, because the slack
+  is 54px there and a tab needs 96. Next/prev walks them in document order in both,
+  so only the presentation changes.
+
+  **The thing worth your eye**: #367's own entry guessed the hard case was mobile.
+  The real cliff is **~780px** — above both existing breakpoints — so a design that
+  answered only for 390px would have looked right in review and broken in a
+  half-width window on your desktop, which is where you read these.
+
+  Four decisions, all recommended in the artifact: **M1** rail above 780 / strip
+  below · **M2** cap of five, and over it **refuses the build** rather than warning
+  · **M3** ~12-character labels, refused rather than truncated — *this is the one I
+  want your read on, not your ratification, because you are the person who reads the
+  tabs* · **M4** marks are not also `nav` entries.
+
+  `rec` takes all four. Approving authorises the source contract in
+  `file-formats.md` plus the "declares no marks &rarr; byte-identical output" check,
+  red first — not the template change, which restamps all 16 artifacts and is a
+  separate increment.
+  - **Answer (via watch, 2026-07-28 05:35):** 1. rec 2. soft limit at 7,
+    hard limit at 15. 3. 2 lines, smaller text, maybe up to 6 words?
+    probably need to measure. they don't have to have large text because
+    they're already visible. 4. rec We can also instruct dreamwork
+    agents to be more concise and keep to the most important topics.
+    IGCs that only have one solution that is clearly superior don't need
+    to be answered. If that belongs anywhere, let it be an aux document.
 
 - **P1 · 2026-07-26 — #229/#270 topic chats v2: accept the revised
   proposal direction?**

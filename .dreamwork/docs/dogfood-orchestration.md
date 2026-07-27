@@ -126,6 +126,63 @@ explanation I had just spent an hour on elsewhere.
 So: a fresh reader beat an invested one on a DOM detail, which is an argument for
 dispatching diagnosis rather than doing it — and it cost a brief to get.
 
+## The finding that constrains the whole model: parallel lanes destroy this repo's verification
+
+Measured at 05:34, with four lanes dispatched:
+
+```
+/proc/loadavg → 125.49 102.22 75.20      nproc → 16
+51 chrome processes, 29 node processes
+```
+
+**Load 125 on 16 cores is eightfold oversubscription.** And this repo's verification
+is browser guards, many of which assert on *intermediate frames of a transition* —
+because `transitions.md` correctly says an end-state assertion cannot fail on a
+motion bug. A browser starved of CPU cannot deliver frames on schedule, so every
+one of those checks fails. Not flakily. **Deterministically.**
+
+The evidence is clean. `plugcmd`, run twice back-to-back under this load, produced
+byte-identical failure sets:
+
+```
+FAIL gh-sync EASES IN rather than blinking on (distinct part-way opacities)
+FAIL gh-sync finishes at full opacity and never overshoots on the way
+FAIL gh-sync drifts as well as fades (1 distinct transforms)
+FAIL gh-triage EASES IN rather than blinking on ...
+FAIL gh-triage finishes at full opacity and never overshoots ...
+```
+
+Those same checks **passed** at 05:05 when I ran `plugcmd` alone. Nothing in
+`watch.py` changed between — my tree's `watch.py` has been clean all night.
+
+So the earlier conclusion needs restating more precisely. I called `revieworder`,
+`gitrow` and `burndown` "load-flaky", which was right about the mechanism but
+understated it: under *variable* load they are flaky; under *sustained* load they are
+reliably red. And `plugcmd` has the same class of check, so the defect spans **at
+least four** guards, not three.
+
+**The consequence for orchestration is direct and unwelcome:** while lanes are
+running, a guard verdict means nothing. I cannot verify anything with the guards and
+run agents at the same time. Verification has to be **serialised against the lanes**,
+which removes exactly the throughput that parallelism was for — on the one axis
+(browser motion) where this repo does its most careful checking.
+
+It also means I have to re-examine the 04:40 sweep that started all this. It ran
+while a c2c peer session was live, so its four reds may themselves have been load
+artefacts rather than defects. **`plugcmd` was a genuine defect** — a wrong selector,
+found and fixed, load-independent. The other three remain unproven either way, and
+proving them now requires a quiet machine.
+
+And it is a violation of a standing instruction I should have connected sooner:
+`CLAUDE.md` says *"limit builds and tests to 2 threads to avoid overloading the
+system."* Four agent lanes each spawning a browser is that rule broken at a level the
+rule did not anticipate — I obeyed it inside each lane and broke it across them.
+
+**Revised practice**: cap concurrent lanes doing browser work at **one**; other lanes
+may run in parallel only if they need no browser (lane C, a design task, was free).
+Take any guard verdict only on a quiet machine, and record the load average beside
+the verdict so a future reader can tell a defect from a starved frame.
+
 ## Notes on the orchestrator role, written from inside it
 
 He asked for these at 05:26, an hour into coordinating rather than implementing.

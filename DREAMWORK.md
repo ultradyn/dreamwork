@@ -62,6 +62,18 @@ dreamwork-version: 5853e1789929
 
 ## Preferences & Routines
 
+- **Ask him less, and only where the answer is genuinely his** (human-set
+  2026-07-28 05:35, folding #367's answer): *"instruct dreamwork agents to be
+  more concise and keep to the most important topics. IGCs that only have one
+  solution that is clearly superior don't need to be answered. If that belongs
+  anywhere, let it be an aux document."* So a decision with **one clearly
+  superior answer is not an ask** — decide it, record the reasoning in the plan
+  or an aux document, and put only the genuinely open calls to him. Measured
+  against the entry that produced this: of #367's four decisions, **M1 and M4
+  were `rec`-and-taken** and should never have been asked, while **M2 and M3
+  were overridden** and earned their place. Two of four is the ratio to beat,
+  and the test before writing an ask is *"would I be surprised by any answer
+  other than my rec?"* — if not, it is not a question.
 - Cadence & comms: brief updates; `attn` (TTS) only for blockers,
   questions, and notable milestones. **Dreamwork decisions never use the
   harness Ask User Question tool** (human-set 2026-07-26): write the ask to
