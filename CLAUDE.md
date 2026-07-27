@@ -75,6 +75,24 @@ check depends on.** If its meaning needs two pieces of the fixture to
 differ, derive both at runtime and assert the gap — a literal tuned to
 today's fixture is a check with an expiry date nobody can see.
 
+Both rules assume the red run itself is trustworthy, and twice in two
+hours it was not: **the proof came back green while the bug was in
+place.** Not born hollow, not become hollow — the injection never
+reached the code, because the test's own scaffolding stood in front of
+it. Once a fixture built the filtered list itself instead of calling the
+function that decides it, so reverting that function changed nothing the
+test could see. Once a fake returned `""` for precisely the input that
+would have reached the branch under test, so deleting the branch changed
+nothing either. Both read as thorough unit tests. Both were structurally
+incapable of failing, and both were about the single decision they were
+named for.
+
+So: **a green red-run is a finding, never a relief.** When you reinstate
+a bug and the check passes, the check is wrong — do not conclude the code
+was fine anyway. And when a test patches, fakes or hand-builds anything,
+name the production line that would have to change for it to fail, then
+change that line and watch. If you cannot name one, there isn't one.
+
 ## Conventions
 
 - Commit each increment; stage by explicit path (more than one agent
