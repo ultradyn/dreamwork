@@ -24,9 +24,29 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **398**
+Next id: **399**
 
 ## Open
+- **#398** — a brief written after the hand-off obligation landed must carry it · P2 ·
+  lint/loop-durability · origin: **loop** · the enforcement half of **#394**, and it exists because
+  I wrote in that entry that it **could not** be checked
+  · what I got wrong there: *"a `lint.py` check that a landed-and-committed lane left a hand-off is
+  not possible (lint cannot know a lane ran)"*. True, and irrelevant — **the checkable artifact is
+  the brief**, which is a committed file whose add-commit is resolvable, and a brief that dispatches
+  a lane without the obligation *is* the defect. The unenforceable thing was never the target
+  · **the cutoff resolves from git by content, never a pinned sha** — the idiom
+  `test_review_artifact.py::_prechange_review_artifact` already uses. Measured so the lane can check
+  itself: **29 briefs, 2 mention `handoffs.md`**, the obligation landed at **`6f72b8d` 08:57**, the
+  two compliant briefs were added 09:15+ and the newest non-compliant at **06:13** — so the cutoff
+  separates them cleanly and **the check must be GREEN today**, 27 grandfathered and 2 in scope
+  · **the hollow outcome is specific and it would look like a clean pass:** a cutoff that resolves
+  to "no commit found" skips every brief and prints nothing. So the test must assert the resolved
+  commit is real *and* contains the obligation, and assert at runtime that both sides of the cutoff
+  are non-empty — a check made vacuous by everything falling on one side must say so
+  · a false positive on the live tree is the way to make this worse; a check that nags on correct
+  files gets muted
+  · related: **#394**
+
 - **#397** — `watch.py` is the loop's contention bottleneck; propose splitting it · P1 ·
   architecture/design · origin: **loop** · **the strongest result of #264's evidence half, and it
   needs his ruling before anything is built**
@@ -140,7 +160,7 @@ Next id: **398**
   · where the instruction belongs is the open question: my brief prose is not durable, so the
   candidate is `SKILL.md`'s Subagents section, beside *"All subagents report to the coordinator
   through a file"* — which is already the right paragraph and already load-bearing
-  · related: **#381**
+  · related: **#381, #398**
 
   · **LANDED (instruction), VERIFICATION PENDING** 2026-07-28 08:59 — `SKILL.md` now states the
   obligation at dispatch time with the reason: the inbox carries judgement, is prose, and is read by
