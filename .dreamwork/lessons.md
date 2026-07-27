@@ -999,3 +999,14 @@ this shape and convert opportunistically.)
   invented afterwards is churn, and the coordinator who invented it should say
   so plainly rather than let the dreamer absorb the contradiction.
   (coordinator, 2026-07-27, #305)
+- **Grepping a dream for its own phrasing does not tell you whether its lesson
+  was captured.** Dream grooming asks "are the lessons in `lessons.md`?", and
+  the fast way to answer looks like grepping the dream's distinctive lines. It
+  is wrong in the direction that loses work: distillation REWORDS, so a lesson
+  that landed as "the visible thing gets blamed for the invisible thing's bug"
+  answers zero to a grep for "the trigger he names is evidence, not a cause",
+  and the dream reads as undistilled when it is done. On 2026-07-27 that test
+  said four of six active dreams still held uncaptured lessons; reading the
+  first one showed both of its were already there, worded differently. A
+  same-phrase grep is a test for COPYING, and copying is the one thing
+  distillation is not. Read the destination. (coordinator, 2026-07-27)
