@@ -220,6 +220,35 @@ dreamwork-version: 5853e1789929
     this bullet, and a native dispatch needs a stated reason for not being
     `ccc @oc-glm52`. Agents already running when he said this may finish; nothing
     new goes native.
+  - **CURRENT, set 2026-07-28 ~05:10 — two named runners and nothing else.** His
+    words: *"I want you to try out being more of an orchestrator. You have two
+    primary subagents available to you: `ccc @grok` and `ccc @glm52`. grok is
+    multimodal (vision) but glm52 is not. your job is to use only those subagents and
+    give them tasks to do as part of your dream loop. You can have up to 4 of each
+    going at once. Primary differences: grok is much faster than glm52. depending on
+    the situation, glm52 may be more capable consistently, though. You will need to
+    experiment and get a feel for each by giving them tasks of different kinds and
+    sizes. Also please not that we are dogfooding two thigns here, firstly what are
+    hte best models and providers to use (for us), and second how does the dreamwork
+    loop work for us with you as a coordinator rather than a dreamworker yourself?"*
+    So: **`ccc @grok` and `ccc @glm52` only, up to four of each, and the coordinator
+    does not implement.** The 23:14 rule's runner name is **superseded** — he fixed
+    `ccc @glm52` mid-session on 2026-07-28 (*"note: i fixed `ccc @glm52`"*) and it has
+    since completed five lanes, so **use `@glm52`, not `@oc-glm52`**; prefer the pi
+    instance of glm5 over opencode, because opencode hangs on `/tmp`. A coordinator
+    reading the bullet above without this one would dispatch the wrong runner, which
+    is why this correction sits here rather than in a note.
+    · **Two things are being dogfooded at once and they need separate records**: which
+    runner to use for what (`.dreamwork/docs/dogfood-orchestration.md`, §"Runner
+    routing"), and whether the loop works with a coordinator who only coordinates
+    (same file, §"Notes on the orchestrator role"). He asked for notes on the second
+    explicitly, so it is a deliverable and not a byproduct.
+    · **measured routing so far, 10 lanes:** grok is much faster and is the right
+    choice when the task needs *looking* at something (it is the multimodal one — a
+    geometry or visual-quality measurement should go to it); glm52 is stronger on long
+    verification chains and produced the best single piece of work of the day, but
+    sweeps the space *around* its assigned chain less thoroughly, so pair it with a
+    coordinator perimeter audit. Neither is reliably better; route by task shape.
 - Subagent lifecycle (2026-07-25): **prefer fresh subagents; reuse an
   existing one only if it stopped less than ~4 minutes ago.** Retire
   idle dreamers rather than leaving them parked.
