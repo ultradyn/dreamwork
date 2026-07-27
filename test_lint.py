@@ -1466,3 +1466,72 @@ Next id: **9**
         dw.mkdir()
         (dw / "tasks.md").write_text(self.LEDGER.replace("SHA2", "abc1234"))
         assert not any("landed" in w for w in self.warns(t))
+
+
+class TestStatusTaskIds:
+    """#332: the loop's claim about WHICH tasks it is on, machine-readably.
+
+    `#281`'s "in progress" badge has to decide whether a given row is the one
+    the loop claims, and the prose in `task` cannot answer that — one sentence
+    routinely names several ids in different states ("folding #281's answer,
+    #326 next"). So the claim gets structured ids beside the prose.
+
+    The failure this guards is narrow and likely: a writer that puts
+    `"#281"` or `"281"` where `281` belongs. Nothing would look wrong — the
+    field is present, it is a list, it reads correctly to a human — and the
+    badge would simply never match any row, silently, which is the exact
+    class `lint` calls an ERROR.
+    """
+
+    def build(self, tmp_path, **status):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "status.json").write_text(json.dumps(status))
+        return t
+
+    def rows(self, t, level):
+        rep = lint.Report()
+        lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
+        return [d for lvl, w, d in rep.rows if lvl == level and w == "status.json"]
+
+    def test_integers_are_accepted(self, tmp_path):
+        t = self.build(tmp_path, task="on #281", current_task_ids=[281, 326])
+        assert not self.rows(t, lint.ERROR)
+
+    def test_a_stringly_typed_id_is_an_error(self, tmp_path):
+        # The whole point: this LOOKS right and reads right to a human.
+        t = self.build(tmp_path, task="on #281", current_task_ids=["#281"])
+        errs = " ".join(self.rows(t, lint.ERROR))
+        assert "current_task_ids" in errs, errs
+        assert "#281" in errs, f"the offending value must be named: {errs}"
+
+    def test_a_bare_numeric_string_is_also_an_error(self, tmp_path):
+        # `"281"` is the subtler half — it survives a careless int() and fails
+        # every `in` test against a list of ints.
+        t = self.build(tmp_path, task="t", current_task_ids=["281"])
+        assert self.rows(t, lint.ERROR)
+
+    def test_per_agent_task_ids_are_checked_too(self, tmp_path):
+        t = self.build(tmp_path, task="t",
+                       agents=[{"name": "a", "task_ids": [326]},
+                               {"name": "b", "task_ids": ["#327"]}])
+        errs = " ".join(self.rows(t, lint.ERROR))
+        assert "task_ids" in errs and "b" in errs, (
+            f"the offending AGENT must be named, not just the field: {errs}")
+
+    def test_absent_is_silent(self, tmp_path):
+        # Optional field: a loop that has not adopted it yet is not broken, and
+        # every other row of this contract degrades the same way.
+        t = self.build(tmp_path, task="t")
+        assert not [d for d in self.rows(t, lint.ERROR) + self.rows(t, lint.WARN)
+                    if "task_ids" in d]
+
+    def test_bools_do_not_sneak_through_as_ints(self, tmp_path):
+        # `isinstance(True, int)` is True in Python, so a naive check passes a
+        # bool. It is worth one line because the sibling field in_flight was
+        # ALREADY written as a bool by mistake in this very file (#327 found it
+        # rendering as `doing: true`), so a bool arriving here is not a
+        # hypothetical.
+        t = self.build(tmp_path, task="t", current_task_ids=[True])
+        assert self.rows(t, lint.ERROR)

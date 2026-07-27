@@ -588,6 +588,11 @@ STATUS_TYPES = {
     # where the object belongs, which would make every reader of it throw or
     # render nonsense — the same failure shape every other row here guards.
     "push": dict,
+    # Which tasks the loop claims, as ids rather than prose (#332). The list
+    # type is guarded here; that its ELEMENTS are integers is guarded by
+    # check_status_task_ids, because that is the mistake a writer actually
+    # makes and this table cannot see inside a list.
+    "current_task_ids": list,
 }
 
 
@@ -643,6 +648,72 @@ def check_status(dw: Path, rep: Report) -> None:
     if waiting:
         detail += f", {len(waiting)} awaiting the human"
     rep.add(OK, "status.json", detail)
+
+
+def _bad_ids(value: object) -> list[str]:
+    """The non-integer members of a task-id list, rendered for a human.
+
+    `type(v) is not int` rather than `isinstance` on purpose: `isinstance(True,
+    int)` is True in Python, so the natural spelling waves a bool through. That
+    is not a hypothetical here — the sibling field `in_flight` was written as a
+    bool by this very loop, and the dashboard rendered `doing: true` for forty
+    minutes before #327 caught it. A bool arriving in this list is the same
+    writer making the same slip one key over.
+    """
+    if not isinstance(value, list):
+        return []          # the list-ness of the field is STATUS_TYPES' job
+    return [repr(v) for v in value if type(v) is not int]
+
+
+def check_status_task_ids(dw: Path, rep: Report) -> None:
+    """#332 — the loop's claim about WHICH tasks it is on, machine-readably.
+
+    `/tasks` (#281) puts an "in progress" badge on the rows the loop claims,
+    and it has to decide per row whether this is one of them. The prose in
+    `task` cannot answer that: one sentence routinely names several ids in
+    different states ("folding #281's answer, #326 next"), so a reader
+    scraping ids out of it would badge the wrong rows. Hence
+    `current_task_ids` at the top level and `task_ids` per agent, both arrays
+    of ints.
+
+    Both are OPTIONAL, like every other field here — a loop that has not
+    adopted them yet is not broken, and the badge simply does not render. What
+    is not tolerable is a field that is PRESENT and stringly typed: `"#281"`
+    or `"281"` where `281` belongs looks right in the file, reads right to a
+    human, survives JSON validation and the type table above, and then matches
+    no row at all. Every `in` test against a list of ints quietly returns
+    False, so the badge never appears and nothing anywhere says why. That is
+    the silent-data-loss shape this file calls an ERROR, so it is one.
+    """
+    path = dw / "status.json"
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return             # check_status already reported it
+    if not isinstance(data, dict):
+        return
+
+    problems = []
+    bad = _bad_ids(data.get("current_task_ids"))
+    if bad:
+        problems.append(f"current_task_ids has non-integer member(s) {', '.join(bad)}")
+
+    agents = data.get("agents")
+    if isinstance(agents, list):
+        for a in agents:
+            if not isinstance(a, dict):
+                continue
+            bad = _bad_ids(a.get("task_ids"))
+            if bad:
+                name = a.get("name") or "<nameless>"
+                problems.append(
+                    f"agent {name}: task_ids has non-integer member(s) {', '.join(bad)}")
+
+    if problems:
+        rep.add(ERROR, "status.json", "; ".join(problems) +
+                " — ids are integers; a quoted id matches no task row, silently")
 
 
 def check_status_push(dw: Path, rep: Report) -> None:
@@ -1222,6 +1293,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_tasks(dw, rep)
     check_landed_asks(dw, watch, rep)
     check_status(dw, rep)
+    check_status_task_ids(dw, rep)
     check_status_push(dw, rep)
     check_watch_port(dw, rep)
     check_watch_tint(dw, watch, rep)
