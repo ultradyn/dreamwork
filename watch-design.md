@@ -156,7 +156,8 @@ No cards, borders-as-decoration, pills, or shadows in the reading views —
 structure comes from whitespace and dim uppercase labels (`.label`, letter-
 spaced). Reading column is `max-width:72ch`, centred; the review view is the
 one deliberate exception (`body.review` widens the column for the artifact +
-docked question). Dividers are hairlines (`--line`), not boxes.
+docked question, and **he sets the ratio between them** — see The review
+pane). Dividers are hairlines (`--line`), not boxes.
 
 ### Review artifacts
 
@@ -186,6 +187,144 @@ be sure to remember it"*):
 A decision artifact shows each option beside its alternative rather than
 only the recommendation: the human is being asked to decide, not to
 ratify.
+
+### The review pane (#305)
+
+`/review` is **one window-tall pane of two columns**, not two documents
+stacked in a scrolling page. His report, sent from `/review?p=…&q=…` while he
+was reading one: *"should be able to scroll the question alongside a review
+document, and the answer/add note input should stay glued to the bottom in
+line with the bottom of the review document… an invisible vertical bar
+between review doc and question being answered that allows dragging
+left/right… we also can extend the height of the review doc and RHS column if
+the height of the window allows."* Before it, the artifact stopped at `74vh`
+and the docked question ran on underneath it, so its answer box sat a
+thousand pixels below the fold: reading and answering were two scrolls, and
+you could not do the second while looking at the first.
+
+- **The pane is measured, not assumed.** `fitReview` writes `--rvh` from
+  `window.innerHeight` minus the pane's own `offsetTop` and the body's bottom
+  padding. `offsetTop` rather than a rect because it is **layout** and cannot
+  be read through the dissolve's transform (`transitions.md`), and it is
+  refitted from `renderChrome` as well as `setContent`, because the pane's top
+  *is* the bottom of the chrome and the chrome is written after the view.
+  The `calc(100dvh - 12rem)` in the CSS is a floor for the frames before the
+  first measurement, not the value.
+- **`min-height:26rem` is what keeps a short window honest.** Below that the
+  page starts scrolling again instead of crushing two columns into slivers.
+  Measured: a 1240px window gives a 1080px pane with the page not scrolling at
+  all; a 520px window gives the 416px floor and 56px of page scroll. The pane
+  **follows a resize** rather than being measured once at load, which is the
+  half of *"if the height of the window allows"* that a single-height
+  assertion cannot see.
+- **The gutter IS the splitter.** The 1.3rem the eye already reads as space
+  became a `role="separator"` with a value: invisible at rest, a hairline on
+  hover/focus/drag, `col-resize`, and **operable from the keyboard** —
+  arrows ±2%, shift ±8%, Home/End to the floors, Enter or double-click back
+  to 70%. A drag-only affordance is one a keyboard cannot reach, and this one
+  is invisible as well.
+- **It needs `z-index`, and the reason is not cosmetic.** An
+  answered-awaiting card hangs its accent rail `.9rem` into that gutter
+  (`.qa.awaiting`'s negative margin) and, as a positioned sibling later in
+  the DOM, wins the hit test — so without it the bar is dead to the pointer
+  in exactly the state he is in one second after answering.
+- **The floors live in CSS**, as `clamp(32ch, var(--rsplit), calc(100% -
+  26ch))`, for #108's reason: a clamp holds on every frame and at every window
+  width, where a JS re-derivation is always one frame behind the layout it is
+  correcting. 30–82% is the range in which both columns still read.
+- **Where the width lives:** `localStorage['dw.review.split']`, read by
+  `buildReview` at build time and emitted into the markup, so a fresh
+  `/review` *paints* at his width instead of correcting to it a frame later.
+  It is a preference, not shared state, and it needs no snapshot seam: the
+  tick replaces only `#qdock`, never `#reviewwrap`.
+- **The question is the scroller, not the dock**, so `answering` stays put as
+  a column head. `scrollbar-gutter:stable` keeps a live re-render from
+  re-wrapping the text when the scrollbar comes and goes.
+- **The answer box is glued to the foot of the pane**, ending on the same line
+  as the artifact. It is `position:sticky` **inside** the question's own
+  scroller rather than a second box lifted out of the card, because
+  `.qcompose` is the shared component three other surfaces render and four
+  functions address through the card (`snapshotCardState`, `setCardMode`,
+  `submitCard`, the mode group) — a copy for this one route would be a second
+  thing to keep true. The card's own `1rem` bottom margin goes with it: *"in
+  line with the bottom"* is a measurable claim, 16px is a visible miss, and a
+  sticky box parks its **border** edge on the scrollport, so a kept margin
+  would be absent while stuck and reappear as a nudge the moment the body
+  ended.
+  **And it is glued unconditionally**, which sticky alone does not give you:
+  sticky only holds a box the flow would push out of view, so a *short*
+  question left it floating mid-column — at a 1240px window the artifact ended
+  at 1200 and the box at 974. The dock card is therefore a flex column with
+  `margin-top:auto` on the compose, which resolves to zero the moment the
+  question overflows. One place his hand can learn beats a place that depends
+  on the length of the text. **The cost, stated because it is real:** flex
+  items are independent formatting contexts, so the card's internal margins no
+  longer collapse through them and the dock card runs ~20px taller than the
+  same card on `/questions`. It is a scroller, the delta is a few px per
+  section, and that is the cheaper of the two prices.
+- **Two fades, and they are not the same mechanism, because they are not
+  hiding the same thing.**
+  - At the **foot**, the *answer box* is doing the hiding, so the fade is a
+    gradient `::before` **behind the compose's own children** (`z-index:-1`
+    inside the sticky's stacking context): the live text is occluded, never
+    masked, so selection and copy are untouched. It has to be as tall as the
+    box, stop where the box stops, and get out of the way when the text ends —
+    none of which a mask over the scroller can be told about.
+  - At the **head**, the *edge of the box* is doing the hiding, and a mask
+    paints exactly that. Making the card a scroller left the first visible
+    line sliced in half directly under `answering`, which reads as a rendering
+    fault rather than as scrolled text. `--qfade` is the mask's depth, a
+    registered property so the edge **arrives** rather than blinking, and it
+    is listed in **`.qa`'s** transition rather than the dock's because a
+    `transition` shorthand on a more specific selector replaces the list
+    wholesale — declaring it on `.qdock > .qa` would silently take a card's
+    travel away on the one route that also re-groups cards. A registered
+    property's `initial-value` must be computationally independent, so it is
+    `24px`, not `1.5rem`.
+  - **Both lift where they would be lying.** `syncDockFade` reads one scroll
+    distance and sets `atend` (nothing passes under the box, so a band there
+    would dim his last line to hide nothing — *his own exception*) and `attop`
+    (nothing is above, so the question's own title stays crisp). It is read
+    from the scroll, never remembered, and called from the three places the
+    answer can change: the scroll, a re-render that replaces the card, and a
+    resize. The listener is delegated on the **capture** phase, because
+    `scroll` does not bubble and the card it watches is replaced every two
+    seconds.
+- **How far he has READ is state he owns** (#118's rule, with reading in
+  place of typing): `snapshotCardState` carries `card.scrollTop` under `read`
+  and restores it, or a question he was halfway down would snap back to its
+  first line every two seconds.
+  **And it goes back through `putScroll`, which CHECKS that it landed** —
+  `refocus`'s rule (#179) applied to the other thing a restore hands back
+  silently. A `scrollTop` assigned to a node the swap is one statement old is
+  clamped to zero (the fresh box has no overflow yet as far as the assignment
+  can see) and reports nothing in either direction; reading the value back
+  both detects that and forces the layout that fixes it. The textarea's scroll
+  restore and `restoreAskState` have had the identical latent bug since #118
+  and now go through the same helper.
+  **Stated as unguarded on purpose:** whether the clamp happens depends on
+  whether something between the swap and the restore already forced a layout,
+  so removing the retry leaves `reviewsplit.mjs` green — a check that cannot
+  fail for its stated cause would send the next reader to the wrong file. The
+  mechanism was measured directly instead: 209 assigned to a just-swapped card
+  reads back 0, and reads back 209 with the layout forced first.
+- **Narrow stacks rather than crushing.** Below 900px it is a document again:
+  one column, natural heights, the page scrolls, and the bar is `display:none`
+  so it leaves the tab order with the layout it belonged to. Nothing is glued
+  and neither fade is drawn: there is no inner scroller, so both would be
+  lying about the layout — the box is simply the end of the question again.
+  Checked at 700px and at a 390px phone, where the pane hangs 0px off the side
+  and the answer box is 358px wide in the page rather than floating over it.
+
+Motion for all of it — the keyed step travelling while the drag does not, the
+hairline arriving rather than blinking on, and both fades crossing rather than
+switching — is `transitions.md`'s.
+`dev/capture/reviewsplit.mjs` guards the pane. Every check that names a
+behaviour was shown red against a build broken in exactly the way it names —
+25 injections across the three increments. There is one exception and it is
+named in its commit: the check that the question can scroll far enough for
+*half way down* to be a middle is the guard's own anti-vacuity assertion, and
+its failure mode was observed for real rather than injected.
 
 ### Components (idioms)
 

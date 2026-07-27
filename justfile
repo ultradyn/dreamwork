@@ -68,6 +68,14 @@ lint:
 #   prominence   ordinary (OUT, PORT) on the shared server, but it visits BOTH
 #                routes in one page: #169's expand idiom belongs to every
 #                disclosure, and the four that exist live on two views.
+#   reviewsplit  ordinary (OUT, PORT), and it WRITES one /command to force a
+#                tick. It picks the LONGEST open question in the fixture on
+#                purpose: every check about scrolling the question is vacuous
+#                against one that fits its column, so the choice is derived
+#                rather than a literal that today's fixture happens to satisfy
+#                (#197's lesson). Its motion assertions are frame-rate-free
+#                where they can be — the count of frames strictly between the
+#                ends, not only the count of distinct positions.
 #   qsec         ordinary (OUT, PORT), and it WRITES — it POSTs /command to
 #                make the mtime change so it can drive a live tick over a
 #                ghost. That only touches watch-events.log, so it changes
@@ -124,7 +132,7 @@ lint:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health dashboard identity motion morph morphhold prominence qsec submitlog indicator draft subslog history plugcmd qorder revieworder serving gitrow burndown provenance answers runmode"
+    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health dashboard identity motion morph morphhold prominence qsec submitlog indicator draft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}

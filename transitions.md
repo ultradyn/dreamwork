@@ -375,6 +375,48 @@ exception; an element leaving fades rather than vanishing.
   countdown. Guard: `dev/capture/runmode.mjs` (intermediate bar widths
   under motion, ≤2 under RM, reset, event exactly-once, hierarchical
   disabled).
+- **The review split (#305) — where a DRAG is the one thing that does not
+  travel.** `/review`'s two columns are separated by an invisible bar he can
+  drag. Dragging is *continuous input*: his pointer already supplies every
+  intermediate position, and a transition on the grid would put the columns
+  behind his hand. A **keyed** step is a discrete state change and is
+  therefore exactly what this document is about, so it travels — the width
+  lives in a registered custom property (`@property --rsplit`) and `.rkeyed`
+  lends it the column's own easing (`.38s`, the dissolve's curve) for that
+  gesture only. Same rule as everywhere else, read through what the gesture
+  IS: the class is added on a key and removed on a pointer.
+
+  The bar itself appears and disappears, so it obeys this too: the hairline
+  fades in on hover/focus/drag over `.45s` and widens to 2px when focused,
+  rather than blinking on.
+
+  The two **fades at the ends of the question column** are states with two
+  ends each, so they cross rather than switch: the band over the text passing
+  under the answer box lifts over `.45s` when the body ends at the box and
+  comes back when he scrolls up, and the head of the column dissolves over the
+  same `.45s` once anything is above it (`@property --qfade`, the mask depth —
+  a plain `mask-image` swap has nothing to interpolate, which is exactly why
+  the depth is a registered property). Both are driven by one read of the
+  scroll, so the gesture that changes them is his scrolling, not a class the
+  page decides to set.
+
+  Reduced motion keeps all of it functional and drops the timing: the keyed
+  step lands in one position, the hairline appears at once, both fades reach
+  the same rest states in one step, and the drag is unchanged, because it
+  never animated.
+
+  `dev/capture/reviewsplit.mjs` asserts the middle: the count of distinct
+  intermediate widths a keyed step visits (a snap visits two) plus the count
+  of frames strictly *between* the ends, which is the frame-rate-free half —
+  a loaded SwiftShader box draws eight frames in a `.38s` step, so a raw
+  position count would red on the machine rather than on the page. Its
+  reduced-motion phase asserts ≤2 on the same gesture, which is what makes
+  the pair mean something. The fades are traced the same way, with one extra
+  trap worth knowing: a pseudo-element with `content:none` is never generated
+  and still reports `opacity:1` from `getComputedStyle`, so a band that had
+  been deleted outright read as *present and fully lit*. Ask `content` whether
+  it exists and `display` whether it is drawn — the version that asked only
+  one of them passed a page with no fade at all.
 - **Reduced-motion is a hard contract.** `prefers-reduced-motion` changes
   *timing, never function or legibility*: route swaps are instant (no ghost,
   no mist, tint/seed snap, no `warp`), the composer shows/hides at once, its

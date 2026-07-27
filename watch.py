@@ -612,9 +612,13 @@ STYLE = """<style>
   a:hover { text-decoration:underline; }
   /* a card travels to its new place in the list rather than teleporting
      there (#104/#77); the transform is set and cleared by regroupCards */
+  /* `--qfade` belongs to the review dock (#305) and is listed HERE because a
+     `transition` shorthand on a more specific selector replaces this list
+     wholesale — declaring it on `.qdock > .qa` would silently take a card's
+     travel away on the one route that also re-groups cards. */
   .qa { margin:.6rem 0 1rem;
         transition:transform .85s cubic-bezier(.32,.1,.2,1),
-                   opacity .55s ease, filter .55s ease; }
+                   opacity .55s ease, filter .55s ease, --qfade .45s ease; }
   /* a card that has left the list entirely dreams away where it stood */
   .qaghost { position:absolute; z-index:3; pointer-events:none;
     transition:opacity .7s ease, filter .7s ease, transform .7s ease; }
@@ -921,18 +925,163 @@ STYLE = """<style>
   @media (prefers-reduced-motion: reduce) {
     body.wsliding .wrap { transition:none; }
   }
-  #reviewwrap { display:grid; gap:1.3rem; align-items:start; margin-top:1rem;
-    grid-template-columns:minmax(0,1fr) minmax(24ch,34ch); }
+  /* THE SPLIT (#305), in his words while he was reading one: "should be able
+     to scroll the question alongside a review document… an invisible vertical
+     bar between review doc and question being answered that allows dragging
+     left/right… we also can extend the height of the review doc and RHS
+     column if the height of the window allows."
+
+     So the two are ONE window-tall pane rather than two documents stacked in
+     a scrolling page: the artifact fills its column, the question scrolls
+     inside its own, and neither runs off the bottom of the window. Reading
+     and answering stop being two scrolls.
+
+     `--rvh` is MEASURED (`fitReview`) rather than written as a calc, because
+     the top of this pane depends on how the chrome wrapped, which depends on
+     the window; the calc() is only the floor for the frames before the first
+     measurement lands. `min-height` is what keeps a short window honest — at
+     26rem the PAGE starts scrolling again instead of crushing both columns
+     into slivers. */
+  @property --rsplit { syntax:'<percentage>'; inherits:false;
+                       initial-value:70%; }
+  /* The question column's top fade depth, registered so it can travel. The
+     initial value has to be an absolute length: a registered property's
+     initial value must be computationally independent, so `1.5rem` would
+     make this whole rule invalid and the mask would never resolve. */
+  @property --qfade { syntax:'<length>'; inherits:false; initial-value:24px; }
+  #reviewwrap { display:grid; gap:0; align-items:stretch; margin-top:1rem;
+    grid-template-columns:clamp(32ch, var(--rsplit), calc(100% - 26ch))
+                          1.3rem minmax(0,1fr);
+    height:var(--rvh, calc(100dvh - 12rem)); min-height:26rem; }
+  /* The floors are in CSS, not in the drag handler, for #108's reason: a
+     clamp holds on EVERY frame and at every window width, where a JS
+     re-derivation is always one frame behind the layout it is correcting. */
   #reviewwrap.nodock { grid-template-columns:minmax(0,1fr); }
-  #reviewframe { width:100%; height:74vh; border:1px solid var(--border);
+  #reviewdoc { display:flex; min-width:0; min-height:0; }
+  /* border-box, because the height is now 100% of a measured pane rather
+     than a vh: a content-box height plus the hairline is 2px of page scroll
+     that reads as the pane not quite fitting. */
+  #reviewframe { flex:1; width:100%; height:100%; min-height:0;
+    box-sizing:border-box; border:1px solid var(--border);
     border-radius:var(--radius); background:var(--bg); display:block; }
   .revname { color:var(--dim); margin-left:.6rem; font-size:.8rem; }
-  .qdock { position:sticky; top:1rem; will-change:transform, filter; }
-  .qdock .label { margin-top:0; }
+  /* A DRAG is continuous input, so it needs no transition — his pointer IS
+     the motion. A keyboard step is a discrete state change and does obey
+     transitions.md, so `.rkeyed` lends the registered custom property the
+     column's own easing for exactly that gesture. */
+  #reviewwrap.rkeyed { transition:--rsplit .38s cubic-bezier(.32,.1,.2,1); }
+  /* The bar is INVISIBLE at rest and is still a control: the gutter the eye
+     already reads as space is the whole hit area, a hairline arrives on
+     hover/focus/drag rather than blinking on, and it is focusable with arrow
+     keys because a drag-only affordance is unreachable from a keyboard. */
+  /* z-index because an ANSWERED-AWAITING card hangs its accent rail .9rem
+     into this gutter (`.qa.awaiting`'s negative margin), and a positioned
+     sibling later in the DOM wins the hit test: without this the bar is dead
+     to the pointer for exactly the state he is in one second after
+     answering — a control that works until it matters. */
+  .rsplit { position:relative; z-index:2; align-self:stretch;
+    cursor:col-resize; touch-action:none; }
+  .rsplit::after { content:''; position:absolute; top:0; bottom:0; left:50%;
+    width:1px; transform:translateX(-50%); background:var(--line); opacity:0;
+    transition:opacity .45s ease, width .45s ease, background-color .45s ease; }
+  .rsplit:hover::after { opacity:1; }
+  .rsplit:focus { outline:none; }
+  /* focus and drag both widen to 2px: at 1px an indicator this tall is a
+     hair, and WCAG asks for a perimeter you can actually see. */
+  .rsplit:focus-visible::after { opacity:1; width:2px;
+                                 background:var(--accent); }
+  .rsplit.rdrag::after { opacity:1; width:2px; background:var(--border); }
+  .qdock { display:flex; flex-direction:column; min-height:0; min-width:0;
+    will-change:transform, filter; }
+  .qdock .label { margin-top:0; flex:none; }
+  /* THE QUESTION SCROLLS ALONGSIDE (#305 (a)). The card is the scroller, not
+     the dock, so `answering` stays put as a column head — it says what this
+     column IS, and a heading that scrolls away with its first paragraph makes
+     the reader ask again. `scrollbar-gutter` keeps the text from re-wrapping
+     the moment a live re-render changes the card's length. */
+  /* the card's own 1rem bottom margin goes: "in line with the bottom of the
+     review document" is a measurable claim and 16px is a visible miss. The
+     card's border edge and the iframe's now end on the same line. */
+  /* THE TOP EDGE FADES TOO, once there is anything above it. Making the card
+     a scroller cut the first visible line in half directly under `answering`,
+     and half a row of glyph-tops under a heading reads as a rendering fault
+     rather than as scrolled text. Here a mask IS the right tool — the fade
+     belongs to the edge and to nothing else, there is no box to occlude — and
+     it is the same gesture as the foot, mirrored, not a second idiom. The
+     depth is a registered property so the edge ARRIVES when he leaves the top
+     and departs when he returns (transitions.md), instead of blinking. */
+  .qdock > .qa { flex:1 1 auto; min-height:0; overflow-y:auto;
+    display:flex; flex-direction:column;
+    scrollbar-gutter:stable; margin-bottom:0;
+    -webkit-mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade));
+    mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade)); }
+  .qdock.attop > .qa { --qfade:0px; }
+  /* (b) THE INPUT IS GLUED TO THE BOTTOM, in line with the artifact's bottom
+     edge — his second ask, and the reason the first one is worth anything: a
+     question you can scroll past an answer box you cannot reach is still two
+     acts. It is `sticky` INSIDE the question's own scroller rather than a box
+     moved out of the card, because `.qcompose` is the shared component three
+     other surfaces render and four functions address through the card
+     (`snapshotCardState`, `setCardMode`, `submitCard`, the mode group). A
+     second copy on this one route would be a second thing to keep true.
+     The bottom margin goes because a sticky box parks its BORDER edge on the
+     scrollport: kept, it would be absent while stuck and reappear as a 3px
+     nudge the moment the body ended.
+
+     `margin-top:auto` (and the column flex above it) is what makes "glued"
+     unconditional. Sticky alone only holds a box the flow would push out of
+     view, so a SHORT question left the box floating mid-column with 200px of
+     dead space beneath it — at a 1240px window the artifact ended at 1200 and
+     the box at 974. He asked for it in line with the artifact's bottom edge,
+     not in line with it when the question happens to be long, and one place
+     his hand can learn beats a place that depends on the text. Cost, stated
+     because it is real: flex items are independent formatting contexts, so
+     the card's internal margins no longer collapse through them and the dock
+     card runs ~20px taller than the same card on /questions. It is a scroller
+     and the delta is a few px per section, which is the cheaper of the two. */
+  .qdock > .qa > .qcompose { position:sticky; bottom:0; z-index:1;
+    margin-top:auto;
+    margin-bottom:0; padding-bottom:.3rem; }
+  /* (c) ...and the text passing UNDER it fades out rather than running into a
+     hard edge. The band is a pseudo-element BEHIND the compose's own children
+     (`z-index:-1` inside the sticky's stacking context), so the live text is
+     OCCLUDED, never masked: selection, copy and the last line are untouched.
+     The head of the column fades with a mask and this end does not, and the
+     difference is which thing is doing the hiding — up there the edge of the
+     box is, and a mask paints exactly that; down here the ANSWER BOX is, so
+     the fade has to be as tall as the box, stop where the box stops, and get
+     out of the way when the text ends. A mask over the scroller cannot be
+     told about the box, and would dim his last line at the end. */
+  .qdock > .qa > .qcompose::before { content:''; position:absolute;
+    left:0; right:0; bottom:0; top:-2rem; z-index:-1; pointer-events:none;
+    background:linear-gradient(to bottom, transparent, var(--bg) 2rem);
+    transition:opacity .45s ease; }
+  /* ...unless the body already ends at the box — his own exception. At the
+     end of the scroll nothing passes underneath, so a band there would be
+     dimming his last line to hide nothing. It is a state with two ends, so it
+     crossfades (transitions.md) rather than switching. */
+  .qdock.atend > .qa > .qcompose::before { opacity:0; }
+  @media (prefers-reduced-motion:reduce) {
+    #reviewwrap.rkeyed { transition:none; }
+    .rsplit::after { transition:none; }
+    .qdock > .qa > .qcompose::before { transition:none; }
+  }
+  /* NARROW STACKS, it does not crush. Below 900px there is no room for two
+     readable columns, so the pane goes back to being a document: one column,
+     natural heights, the page scrolls, and the bar is gone rather than
+     present-but-useless (display:none takes it out of the tab order too). */
   @media (max-width:900px) {
-    #reviewwrap { grid-template-columns:minmax(0,1fr); }
-    .qdock { position:static; }
-    #reviewframe { height:60vh; }
+    #reviewwrap { grid-template-columns:minmax(0,1fr); height:auto;
+                  min-height:0; }
+    .rsplit { display:none; }
+    #reviewdoc { height:60vh; }
+    #reviewframe { height:100%; }
+    /* no inner scroller, so nothing is glued and nothing passes under the
+       box: both would be lying about a column that is now just a document */
+    .qdock > .qa { overflow:visible; -webkit-mask-image:none;
+                   mask-image:none; }
+    .qdock > .qa > .qcompose { position:static; }
+    .qdock > .qa > .qcompose::before { display:none; }
   }
   /* the composer: the + opener sits in the heading's left gutter; the
      panel it toggles drifts in through a soft blur (the dream language),
@@ -2385,12 +2534,160 @@ function buildReview(name, q, d) {
       dock = `<aside class="qdock" id="qdock">` +
         label('answering') + qaCard(d.questions_open[i], 'o' + i) + `</aside>`;
   }
-  return `<div id="reviewwrap"${dock ? '' : ' class="nodock"'}>` +
+  // The width he dragged is emitted INTO the markup rather than applied after
+  // paint: a route change already animates this column's outer width, and a
+  // second correction one frame later would be a visible re-lay-out of every
+  // paragraph in both columns.
+  const pct = readSplit();
+  return `<div id="reviewwrap"${dock ? '' : ' class="nodock"'}` +
+      (dock ? ` style="--rsplit:${pct.toFixed(1)}%"` : '') + `>` +
       `<div id="reviewdoc"><iframe id="reviewframe" src="${src}" ` +
       `title="review artifact" loading="lazy"></iframe></div>` +
+      (dock ? reviewSplitBar(pct) : '') +
       dock +
     `</div>`;
 }
+/* ── the review split (#305) ──────────────────────────────────────────────
+   An INVISIBLE affordance still has to be operable by everything that
+   operates a control, so the bar is a real `separator` with a value: a
+   pointer drags it, arrow keys step it, Home/End reach the floors, and
+   Enter or a double-click puts it back. A drag-only splitter is a splitter
+   the keyboard cannot see.
+
+   Where the width lives: `localStorage`, read by `buildReview` at build
+   time so a fresh /review PAINTS at his width instead of sliding to it.
+   It is a preference rather than shared state, and nothing else has to
+   carry it across a re-render — the tick replaces only `#qdock`
+   (`setLiveContent`), never `#reviewwrap`. */
+const RSPLIT_KEY = 'dw.review.split';
+/* 70/30 by default because that is where BOTH columns read: the artifacts
+   are authored around a ~1000px document and 30% of the widened column is
+   ~46ch of question, against the 34ch dock that made this task. The floors
+   are the range in which that stays true — at 82% the question is a margin
+   note for someone who is only reading, at 30% the artifact is a thumbnail. */
+const RSPLIT_MIN = 30, RSPLIT_MAX = 82, RSPLIT_DEF = 70;
+const clampSplit = v => Math.min(RSPLIT_MAX,
+  Math.max(RSPLIT_MIN, Number.isFinite(v) ? v : RSPLIT_DEF));
+function readSplit() {
+  let v = NaN;
+  try { v = parseFloat(localStorage.getItem(RSPLIT_KEY)); } catch (e) {}
+  return clampSplit(v);
+}
+const reviewSplitBar = pct =>
+  `<div id="rsplit" class="rsplit" role="separator" tabindex="0"` +
+  ` aria-orientation="vertical" aria-label="review and question widths"` +
+  ` aria-valuemin="${RSPLIT_MIN}" aria-valuemax="${RSPLIT_MAX}"` +
+  ` aria-valuenow="${Math.round(pct)}"` +
+  ` aria-valuetext="${Math.round(pct)}% review, ${100 - Math.round(pct)}% question"` +
+  ` title="drag to set the widths · arrow keys step, enter resets"` +
+  ` onpointerdown="beginSplit(event)" onkeydown="splitKey(event)"` +
+  ` ondblclick="applySplit(${RSPLIT_DEF}, true)"></div>`;
+/* the live value is the one in the DOM, not the one on disk: a drag writes
+   both, and reading back the element cannot disagree with what is rendered. */
+function curSplit() {
+  const wrap = document.getElementById('reviewwrap');
+  const v = wrap ? parseFloat(wrap.style.getPropertyValue('--rsplit')) : NaN;
+  return Number.isFinite(v) ? v : readSplit();
+}
+function applySplit(pct, keyed) {
+  const wrap = document.getElementById('reviewwrap');
+  if (!wrap) return;
+  const v = clampSplit(pct);
+  wrap.classList.toggle('rkeyed', !!keyed);
+  wrap.style.setProperty('--rsplit', v.toFixed(1) + '%');
+  const bar = document.getElementById('rsplit');
+  if (bar) {
+    bar.setAttribute('aria-valuenow', String(Math.round(v)));
+    bar.setAttribute('aria-valuetext',
+      `${Math.round(v)}% review, ${100 - Math.round(v)}% question`);
+  }
+  try { localStorage.setItem(RSPLIT_KEY, v.toFixed(1)); } catch (e) {}
+}
+function beginSplit(e) {
+  const wrap = document.getElementById('reviewwrap');
+  const bar = document.getElementById('rsplit');
+  if (!wrap || !bar || e.button !== 0) return;
+  e.preventDefault();                     // no text selection while dragging
+  /* The mapping is a RATIO measured entirely in painted space — the pointer's
+     travel over the pane's painted width — so it needs no correction for the
+     enter transform that may still be playing above it (transitions.md's
+     mid-transform rule bites when the two spaces are MIXED). The rect is
+     re-read per move because that width is itself animating while the column
+     glides. */
+  const x0 = e.clientX, pct0 = curSplit();
+  wrap.classList.remove('rkeyed');
+  bar.classList.add('rdrag');
+  try { bar.setPointerCapture(e.pointerId); } catch (err) {}
+  const move = ev => {
+    const r = wrap.getBoundingClientRect();
+    applySplit(pct0 + (ev.clientX - x0) / (r.width || 1) * 100, false);
+  };
+  const end = () => {
+    bar.classList.remove('rdrag');
+    bar.removeEventListener('pointermove', move);
+    bar.removeEventListener('pointerup', end);
+    bar.removeEventListener('pointercancel', end);
+  };
+  bar.addEventListener('pointermove', move);
+  bar.addEventListener('pointerup', end);
+  bar.addEventListener('pointercancel', end);
+}
+function splitKey(e) {
+  const step = e.shiftKey ? 8 : 2;
+  let next = null;
+  if (e.key === 'ArrowLeft') next = curSplit() - step;
+  else if (e.key === 'ArrowRight') next = curSplit() + step;
+  else if (e.key === 'Home') next = RSPLIT_MIN;
+  else if (e.key === 'End') next = RSPLIT_MAX;
+  else if (e.key === 'Enter' || e.key === ' ') next = RSPLIT_DEF;
+  else return;
+  e.preventDefault();
+  applySplit(next, true);
+}
+/* THE PANE IS AS TALL AS THE WINDOW ALLOWS (#305, his last sentence).
+   Its top is wherever the chrome ended, which depends on how the heading and
+   crumbs wrapped, so it is measured rather than assumed — and measured with
+   `offsetTop`, which is LAYOUT. `getBoundingClientRect` would be read through
+   whatever transform the dissolve is part-way through (transitions.md), and
+   this runs inside `setContent`, i.e. one frame before `.enter` is committed.
+   Nothing here animates: a window resize is not a gesture. */
+function fitReview() {
+  const wrap = document.getElementById('reviewwrap');
+  if (!wrap) return;
+  let top = 0;
+  for (let n = wrap; n; n = n.offsetParent) top += n.offsetTop;
+  // the body's own bottom padding, so the pane ends where the page ends
+  const pad = parseFloat(getComputedStyle(document.body).paddingBottom) || 0;
+  const h = Math.round(window.innerHeight - top - pad);
+  wrap.style.setProperty('--rvh', Math.max(0, h) + 'px');
+  syncDockFade();                    // a resize changes what is still below
+}
+addEventListener('resize', fitReview);
+/* IS ANYTHING STILL PASSING UNDER THE ANSWER BOX? That is the only question
+   the fade band asks, and the answer is a scroll distance, so it is read
+   rather than remembered. A card that does not overflow at all answers "no"
+   by the same arithmetic — there is nothing below, so there is nothing to
+   fade — which is the zero case his exception describes.
+
+   Called from the three places the answer can change and nowhere else: the
+   scroll itself, a re-render that replaces the card, and a resize. The
+   listener is delegated on the CAPTURE phase because `scroll` does not
+   bubble and the card it is watching is replaced every two seconds. */
+function syncDockFade() {
+  const dock = document.getElementById('qdock');
+  if (!dock) return;
+  const card = dock.querySelector(':scope > .qa');
+  if (!card) return;
+  const below = card.scrollHeight - card.clientHeight - card.scrollTop;
+  dock.classList.toggle('atend', below <= 2);
+  /* and the mirror of it at the head: nothing is above at the top, so the
+     title is crisp there and the edge only softens once he has scrolled */
+  dock.classList.toggle('attop', card.scrollTop <= 2);
+}
+addEventListener('scroll', e => {
+  const t = e.target;
+  if (t && t.nodeType === 1 && t.classList.contains('qa')) syncDockFade();
+}, true);
 /* every number on this page that can drift without a disk change is written
    HERE, once a second, as TEXT into nodes that already exist — never through
    a re-render. That was already the shape; #132 is what makes it load-bearing
@@ -3350,7 +3647,8 @@ function snapshotAskState() {
 function restoreAskState(saved) {
   if (!saved) return;
   const box = document.getElementById('askbox'); if (!box) return;
-  box.value = saved.value; box.scrollTop = saved.scroll;
+  box.value = saved.value;
+  putScroll(box, saved.scroll);          // same silent clamp as the card's
   if (saved.height) box.style.height = saved.height;
   try { box.setSelectionRange(saved.start, saved.end); } catch (e) {}
   if (saved.focus) refocus(box);
@@ -3388,6 +3686,10 @@ function setLiveContent(html) {
     if (currentDock && nextDock) currentDock.replaceWith(nextDock);
     else setContent(html);
     paintIndicators(true); ages();
+    // the fresh card may be a different length, so what is below the box is a
+    // different answer; the restore that follows this scrolls it and the
+    // delegated listener catches that.
+    syncDockFade();
     return;
   }
   setContent(html);
@@ -3425,6 +3727,9 @@ function revealNewOpenAsks() {
 }
 function setContent(html) {
   document.getElementById('view').innerHTML = html;
+  // before anything measures: the review pane's height is a measurement, and
+  // crossfade reads the dock's rect on the very next line after setContent.
+  fitReview();
   // fresh groups carry a 0-width indicator, so land it rather than let it
   // slide up out of nothing (the enter-snap rule)
   paintIndicators(true);
@@ -3459,9 +3764,14 @@ function snapshotCardState() {
     const dets = [...card.querySelectorAll('details')].map(d => d.open);
     const typed = ta && (ta.value || ta === act);
     const opened = dets.some(Boolean);
-    if (!typed && !opened) return;         // he has done nothing to this card
+    // HOW FAR HE HAS READ is his too (#305). On /review the card is itself the
+    // scroller, and the tick replaces the whole dock — so a question he had
+    // scrolled halfway through would snap back to its first line every two
+    // seconds, which is #118 with reading in place of typing.
+    const read = card.scrollTop;
+    if (!typed && !opened && !read) return; // he has done nothing to this card
     m.set(card.dataset.qid, {
-      open: dets,
+      open: dets, read,
       value: typed ? ta.value : null, mode: comp && comp.dataset.mode,
       focus: ta === act,
       start: typed ? ta.selectionStart : 0, end: typed ? ta.selectionEnd : 0,
@@ -3472,6 +3782,29 @@ function snapshotCardState() {
   });
   return m;
 }
+/* PUT A SCROLL OFFSET BACK, AND CHECK THAT IT LANDED — `refocus`'s rule
+   (#179) applied to the other thing a restore hands back silently.
+
+   A `scrollTop` assigned to a node the swap is one statement old is clamped
+   to zero: as far as the assignment can see the fresh box has no overflow
+   yet. It reports nothing in either direction, and whether it happens at all
+   depends on whether something between the swap and here already forced a
+   layout — so it is a bug with an unreliable lifetime (#198's shape), which
+   is exactly the kind a guard passes over. Reading the value back both
+   detects it and forces the layout that fixes it.
+
+   Deliberately unguarded, and said out loud rather than left implied: the
+   browser guard's tick check covers the FEATURE (his place in the question
+   survives), and it stays green with the retry removed, because on that run
+   something else had already forced the layout. A check that cannot fail for
+   its stated cause sends the next reader to the wrong file. The mechanism was
+   measured directly instead — assigning 209 to a just-swapped card reads back
+   0, and reads back 209 with the layout forced first. */
+function putScroll(el, top) {
+  if (!el || !top) return;               // re-fill only, never clear
+  el.scrollTop = top;
+  if (el.scrollTop !== top) el.scrollTop = top;   // the read above laid it out
+}
 function restoreCardState(saved) {
   if (!saved || !saved.size) return;
   document.querySelectorAll('.qa[data-qid]').forEach(card => {
@@ -3481,6 +3814,8 @@ function restoreCardState(saved) {
     // what he did to it is the addition
     const dets = [...card.querySelectorAll('details')];
     (s.open || []).forEach((o, i) => { if (o && dets[i]) dets[i].open = true; });
+    // how far he had READ into the question (#305) — see putScroll
+    putScroll(card, s.read);
     if (s.value === null) return;
     const comp = card.querySelector('.qcompose');
     const ta = comp && comp.querySelector('textarea');
@@ -3490,7 +3825,7 @@ function restoreCardState(saved) {
     // the mode is WHERE THE TEXT GOES: a re-render must never silently
     // redirect it. setCardMode declines a mode the new state cannot accept.
     setCardMode(comp, s.mode, true);
-    ta.scrollTop = s.scroll;
+    putScroll(ta, s.scroll);
     try { ta.setSelectionRange(s.start, s.end, s.dir || 'none'); } catch (e) {}
     if (s.focus) refocus(ta);
   });
@@ -4086,6 +4421,13 @@ function renderChrome(v, d, snap) {
     if (snap && !rmr) { titleEl.classList.add('dreamin'); arrived.push(titleEl); }
   }
   ages();
+  /* The review pane's top IS the bottom of this chrome, so it is refitted
+     wherever the chrome is (re)laid out — `setContent` runs BEFORE this on
+     every route change, and a crumb row that has not been written yet
+     measures ~21px short. Here rather than after the FLIP below because a
+     transform does not move `offsetTop`, and the early return above is on
+     the animation, not on the layout. */
+  fitReview();
   if (!snap || rmr) return;
   // FLIP the survivors from where they stood to where the new row puts them,
   // then release the arrivals from their snapped start state (the enter-snap
