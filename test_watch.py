@@ -2756,6 +2756,52 @@ class TestAppShell(unittest.TestCase):
             bu == 'd' and bn >= field_cap,
             f"100 days still renders as day-count: {rendered!r}")
 
+    def test_question_title_carries_age_next_to_its_date(self):
+        # #385: qtHtml is the one place a question headline gains an age, and
+        # it reuses data-ct + paintAgePair — never a second humanizer.
+        page = watch.PAGE
+        for token in ('const qtHtml =', 'class="age qage" data-ct=',
+                      'qtHtml(q.title)', '.qt .qage'):
+            self.assertIn(token, page)
+        # both open and folded titles go through it (one path, not a fork)
+        self.assertEqual(page.count('qtHtml(q.title)'), 2)
+        import json, subprocess, textwrap
+        # extract qtHtml + esc enough to render
+        start = page.index('const qtHtml =')
+        end = page.index('const qaInner =', start)
+        fn = page[start:end].rstrip()
+        script = textwrap.dedent("""\
+            const esc = t => String(t ?? '')
+              .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+              .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            %s
+            const a = qtHtml('P1 · 2026-01-01 — urgent thing');
+            const b = qtHtml('2026-06-15 — plain thing');
+            const none = qtHtml('no date in this title at all');
+            const cts = [...a.matchAll(/data-ct="([^"]+)"/g)].map(m => m[1]);
+            const ctsB = [...b.matchAll(/data-ct="([^"]+)"/g)].map(m => m[1]);
+            process.stdout.write(JSON.stringify({
+              a, b, none, cts, ctsB,
+              aHasAge: /class="age qage"/.test(a),
+              bHasAge: /class="age qage"/.test(b),
+              noneHasAge: /data-ct=/.test(none),
+              aKeepsDate: a.includes('2026-01-01'),
+              bKeepsDate: b.includes('2026-06-15'),
+            }));
+        """) % fn
+        out = subprocess.check_output(["node", "-e", script], text=True)
+        data = json.loads(out)
+        self.assertTrue(data["aHasAge"] and data["bHasAge"])
+        self.assertFalse(data["noneHasAge"])
+        self.assertTrue(data["aKeepsDate"] and data["bKeepsDate"])
+        self.assertEqual(len(data["cts"]), 1)
+        self.assertEqual(len(data["ctsB"]), 1)
+        # anti-vacuity: the two titles' timestamps differ
+        self.assertNotEqual(data["cts"][0], data["ctsB"][0],
+                            "two different title dates produced the same ct")
+        self.assertIn('2026-01-01', data["a"])
+        self.assertIn('urgent thing', data["a"])
+
     def test_age_pair_grays_only_the_pad_digit(self):
         # #385 gray zero: `05h 09m` greys two pads; `15h 42m` greys none.
         # Both directions — a rule that greys unconditionally passes any

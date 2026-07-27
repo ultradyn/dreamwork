@@ -168,6 +168,93 @@ if (dock[0] && dock[0].hasInput) {
 ok('switching to note rewrites textarea + send aria-label (#273)',
    !!(modeOk && modeOk.ok));
 
+/* ── #385: humanized age next to the date in the question headline ─────────
+   The fixture's open titles all share one date, so two ages would be equal
+   and a check that they differ would be vacuous. Plant two deliberately
+   different title dates on the TARGET (runner reset copies the fixture
+   fresh for this guard), then assert the ages differ at runtime. */
+{
+  const { readFileSync, writeFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const target = await (await fetch(`${BASE}/data.json`)).json()
+    .then(d => d.target).catch(() => null);
+  ok('#385 server answered with a target for age planting', !!target);
+  if (target) {
+    const QFILE = join(target, '.dreamwork', 'questions.md');
+    let text = readFileSync(QFILE, 'utf8');
+    // two different days inside Open — 40 days and 5 days before a fixed
+    // anchor near "today" so the ladder lands on different big units.
+    const day = 86400 * 1000;
+    const t0 = Date.now();
+    const iso = ms => {
+      const d = new Date(ms);
+      const p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    };
+    const oldDate = iso(t0 - 40 * day);
+    const youngDate = iso(t0 - 5 * day);
+    // rewrite the first two YYYY-MM-DD title dates under ## Open only
+    let n = 0;
+    text = text.replace(
+      /(## Open[\s\S]*?)(## Answered)/,
+      (whole, openSec, answered) => {
+        const next = openSec.replace(
+          /(\*\*(?:P[123] · )?)(\d{4}-\d{2}-\d{2})( — )/g,
+          (m, pre, _d, sep) => {
+            const d = n === 0 ? oldDate : (n === 1 ? youngDate : _d);
+            n += 1;
+            return `${pre}${d}${sep}`;
+          });
+        return next + answered;
+      });
+    writeFileSync(QFILE, text);
+    ok('#385 planted two distinct title dates in Open',
+       n >= 2 && oldDate !== youngDate);
+    notes.push(`#385 planted dates: old=${oldDate} young=${youngDate} (rewrote ${n})`);
+
+    await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
+    await sleep(1100); // ages() runs on setContent and once a second
+    const ages = await p.evaluate(() => {
+      const cards = [...document.querySelectorAll('.qa.open .qt')];
+      return cards.map(qt => {
+        const age = qt.querySelector('.age[data-ct], .qage[data-ct]');
+        const date = (qt.textContent.match(/\d{4}-\d{2}-\d{2}/) || [])[0] || null;
+        return {
+          date,
+          hasAge: !!age,
+          ct: age ? age.dataset.ct : null,
+          text: age ? age.textContent.trim() : null,
+          // age sits after the date in the headline, not elsewhere
+          afterDate: (() => {
+            if (!age || !date) return false;
+            const html = qt.innerHTML;
+            const di = html.indexOf(date);
+            const ai = html.indexOf('data-ct');
+            return di >= 0 && ai > di;
+          })(),
+        };
+      });
+    });
+    notes.push(`#385 ages: ${JSON.stringify(ages)}`);
+    const withAge = ages.filter(a => a.hasAge);
+    ok('#385 open question headlines carry a data-ct age next to the date',
+       withAge.length >= 2 && withAge.every(a => a.afterDate && a.text));
+    // anti-vacuity: the two ages MUST differ, derived at runtime from the
+    // planted dates — equal ages would make the rest of this check hollow.
+    if (withAge.length >= 2) {
+      const [a, b2] = withAge;
+      const gap = Math.abs(parseFloat(a.ct) - parseFloat(b2.ct));
+      ok(`#385 fixture ages differ (gap ${gap}s; dates ${a.date} vs ${b2.date})`,
+         gap > 86400 && a.text !== b2.text);
+      ok('#385 age text is the XXa YYb form (two units)',
+         withAge.every(a => /^\d{2}[a-z] \d{2}[a-z] ago$/.test(a.text)));
+    } else {
+      ok('#385 fixture ages differ (no ages to compare)', false);
+      ok('#385 age text is the XXa YYb form (no ages to compare)', false);
+    }
+  }
+}
+
 notes.push('states: open=' + open.length + ' awaiting=' + awaiting.length +
            ' folded=' + folded.length + ' dash=' + dash.length +
            ' dock=' + dock.length);

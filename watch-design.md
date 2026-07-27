@@ -2048,6 +2048,13 @@ that greys unconditionally passes any check that only looks at `05`. The
 text still updates once a second through `ages()` with no transition — the
 live ages sweep is opt-in-off by design (`transitions.md`).
 
+**Question headlines reuse the same age, next to the date already in the
+title** (#385). `qtHtml` splits an optional `P1 · ` priority, the
+`YYYY-MM-DD` date, and the rest; the age is an empty `.age.qage[data-ct]`
+filled by the standing `ages()` sweep — one formatter, not a second. No date
+in the title stays plain text. The date is day-resolution only, so `ct` is
+local midnight of that day.
+
 **The time arrives as a number and the row renders none of it.** `git_tail`
 emits `%ct`; the row is a `<span class="age" data-ct=…>` that is *empty* in
 the HTML. A page computing an age from what it displayed would be reading its

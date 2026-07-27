@@ -534,6 +534,10 @@ STYLE = """<style>
   /* #385: the pad digit of a single-figure unit is quieter than the value.
      Only the leading 0 of `05` / `09` wears this — never a genuine tens digit. */
   .age .agepad { color:var(--dimmer); }
+  /* age next to the date inside a question title — tighter than a free-standing
+     `.age` so the headline stays one phrase rather than a date, a gap, and a
+     clock. */
+  .qt .qage { margin-left:.35rem; font-size:.7rem; }
   pre { white-space:pre-wrap; color:var(--muted); margin:.4rem 0 .8rem 1ch;
         border-left:1px solid var(--line); padding-left:1ch; }
   /* ── the file view's image and binary surfaces (#336) ─────────────────
@@ -2027,6 +2031,23 @@ const qaState = (q, key) =>
    line in every state and every rule written against it keeps applying.
    Collapsed it still says which question and when it was answered, because a
    settled entry that cannot be found again has simply been hidden. */
+/* #385: the date already lives in the title (`YYYY-MM-DD — …`, optional
+   `P1 · ` prefix). Humanized age sits next to that date via the same
+   `data-ct` + `paintAgePair` path commits use — one formatter, not a second.
+   Local midnight of the title date: the file only carries a day. No date in
+   the title → plain escape, same as before. */
+const qtHtml = title => {
+  // doubled backslashes: this lives in a Python string; the emitted JS
+  // still sees a single backslash before each digit class.
+  const m = /^(P[123] · )?(\\d{4}-\\d{2}-\\d{2})( — )([\\s\\S]*)$/.exec(title || '');
+  if (!m) return esc(title);
+  const [, prio, date, sep, rest] = m;
+  const [Y, Mo, D] = date.split('-').map(Number);
+  const ct = Math.floor(new Date(Y, Mo - 1, D).getTime() / 1000);
+  return `${esc(prio || '')}${esc(date)}` +
+    `<span class="age qage" data-ct="${ct}"></span>` +
+    `${esc(sep)}${esc(rest)}`;
+};
 const qaInner = (q, key) => {
   const st = qaState(q, key);
   const body = q.body && q.body.trim() ? mdBReview(q.body.trim(), q.title) : '';
@@ -2060,10 +2081,10 @@ const qaInner = (q, key) => {
   const foot = followThread(settled, true) + answer + followThread(since, false);
   const compose = qaCompose(key, st, q.title);
   if (st === 'folded')
-    return `<details class="qfold"><summary class="qt">${esc(q.title)}` +
+    return `<details class="qfold"><summary class="qt">${qtHtml(q.title)}` +
       (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : '') +
       `</summary><div class="qbody">${body}${foot}</div>${compose}</details>`;
-  return `<div class="qbody"><div class="qt">${esc(q.title)}</div>` +
+  return `<div class="qbody"><div class="qt">${qtHtml(q.title)}</div>` +
          `${body}${foot}</div>${compose}`;
 };
 /* Two identities, deliberately. `data-qkey` ADDRESSES the entry in live data
