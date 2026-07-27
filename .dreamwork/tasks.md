@@ -24,9 +24,41 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **347**
+Next id: **349**
 
 ## Open
+
+- **#347** — A review artifact's nav breaks words mid-syllable when the header is long ·
+  P2 · review tooling/visual · origin: **loop** · found building #346's artifact by
+  looking at it · **measured, three renders**: five nav items produced `the shap e`,
+  `the sea m` and `deci sion s`; three items still produced `decisi ons`; three items
+  with a shortened `identity` and `context` rendered correctly · so the cause is not the
+  item count on its own — the nav gets the width left over after identity/context, and
+  #346's context was long enough to be ellipsised itself while still starving the nav
+  · **the defect is the failure mode, not the tightness**: a nav that has run out of
+  room should ellipsise or wrap at a space, and `deci sion s` is neither legible nor
+  something a reader can diagnose · the existing artifact (`note-reply-threading-254`)
+  has three items and a short header, so nothing had exercised the overflow before
+  · rec: fix in the frame with a word-boundary rule and a min-width that ellipsises
+  rather than breaking, so the next author cannot author their way into it — and note
+  that touching the frame stales every templated artifact (`template_stamp` digests its
+  bytes), which is one rebuild today and more later, so this is cheaper now than after
+  #325's twelve are migrated · red-prove with #346's original five-item nav restored:
+  assert no rendered nav item's text differs from its source text by an inserted break,
+  which is checkable without a screenshot
+
+- **#348** — Teach the build-time highlighter `sql`, since schema designs are what it is
+  read for · P3 · review tooling · origin: **loop** · found writing #346's design, whose
+  code blocks are `CREATE TABLE` statements · #339 supports python json bash javascript
+  html, and correctly leaves an unmarked or unsupported block plain rather than guessing
+  — so #346's schema renders as plain text, which is the designed behaviour and not a bug
+  · the case for adding it is that `.dreamwork/docs/plans/` will accumulate schema work
+  through #294/#346, and a `CREATE TABLE` block is exactly where a colour tells a reader
+  where the constraint ends · small: one `_scanner` spec plus the token classes that
+  already exist (`kw`, `str`, `num`, `com`, `typ`) — no new CSS · the existing acceptance
+  tests generalise: the round-trip must recover the source, and `test_the_supported_
+  languages_are_the_advertised_set` pins the list against the template's own prose, so
+  adding a language without documenting it fails
 
 - **#346** — Design #294's task entity schema and read-only CLI surface, the half that
   is not gated on #263 · P1 · schema/CLI design · origin: **loop** · split from #294
@@ -63,6 +95,15 @@ Next id: **347**
   tables or ship a CLI under this id — a schema that exists before #263 is ratified is a
   migration he warned twice about, and a design that exists is the thing that makes the
   gated half small
+  · **design landed `03a5996`, artifact `31be2f1`, ask `9150e33` — awaiting his ruling on
+  S1–S4.** The separability argument survived contact: the five findings are all about the
+  entity at rest and none of them touched the transition question, which is the evidence
+  that the split was real rather than convenient · the design's own §"Open questions"
+  narrowed to four, all the same question — how much of today's looseness is a feature to
+  preserve and how much is an artefact to resolve at cutover · next increment under this id
+  is the eight red-first fixtures, which can be written before any ruling because each one
+  names the production line that must change for it to fail; do not create the schema to
+  run them
 
 - **#345** — `gitrow`'s motion assertions red under load, so `just test` is not
   reliably repeatable · P2 · verification reliability · origin: **loop** · found
