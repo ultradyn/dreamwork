@@ -95,6 +95,19 @@ dreamwork-version: 5853e1789929
   have it. This is the same commitment the loop reached from the code's
   side as "nothing is dropped, only demoted" (#130), and it makes a fold
   a promise: what is inside is still there, and the summary says what.
+- **One migration, not two** (human-set twice on 2026-07-27: 21:47 on `/tasks`,
+  *"we might need to do multiple migrations unless we factor in the requirements
+  of this task into sqlite task"*; 23:11 on #289, *"we should tie future versions
+  into sqlite plan and/or redesign this to be done after sqlite"*). When a new
+  design needs durable state, its requirements are folded into the pending
+  storage migration's acceptance scope **at approval time**, and its own
+  implementation either waits for the cutover or is shaped so the cutover
+  re-points one seam. The thing to avoid is not the work, it is landing a
+  pre-migration shape that must then be migrated again — paying twice and
+  risking a second lossy conversion. Recorded because he has now said it about
+  two unrelated features, which makes it a rule rather than a preference about
+  either; the loop applies it without being asked again, and says in the fold
+  which requirements it carried across.
 - **Ask in plain terms** (human-set 2026-07-27 21:47, and it cost hours). Of
   seven design questions he answered in one go, six were "rec" — and the
   seventh got *"you'll need to explain what this means sorry."* The question
@@ -133,6 +146,20 @@ dreamwork-version: 5853e1789929
   small well-specified fixes go to `ccc @glm52`. He wants several agents in
   flight at once either way (18:50), so the routing is about which, not
   whether.
+  - **SUPERSEDED 2026-07-27 23:14 — no more native subagents; `ccc @glm52` for
+    everything.** His words: *"please do not start any more native subagents.
+    but feel free to use more ccc glm52 ones. I updated it to be more performant
+    a setup now."* So the 21:40 stakes-based split above no longer decides the
+    harness — it decides only how much specification and how much coordinator
+    verification a task gets. A high-stakes task now goes to `ccc @glm52` **with a
+    correspondingly heavier prompt** (the design contracts quoted, the red-first
+    and discriminating-red rules stated, ownership named file by file) and with
+    the coordinator re-running its proof rather than reading its report. Agents
+    already running when he said this may finish; nothing new is dispatched
+    native. **Name the runner explicitly — `@oc-glm52`, not `@glm52`** — because
+    `@glm52` resolved to opencode five times tonight and then to grok once, and
+    the grok agent sat live and silent for twelve minutes with 127 bytes of log
+    and zero writes.
 - Subagent lifecycle (2026-07-25): **prefer fresh subagents; reuse an
   existing one only if it stopped less than ~4 minutes ago.** Retire
   idle dreamers rather than leaving them parked. Exception/routine

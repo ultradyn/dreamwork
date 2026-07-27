@@ -24,9 +24,36 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **338**
+Next id: **339**
 
 ## Open
+
+- **#338** — Bundle `use-igcs` with Dreamwork, because planning depends on it ·
+  P2 · packaging/method · origin: **human** · **human via watch `add-idea`
+  2026-07-27 23:09**: *"we should bundle use-igcs with dreamwork, it's a core part
+  of planning effectively"* · the skill is real and already in use here:
+  `~/.llm-general/skills/use-igcs` — Critical Fallibilism Idea-Goal-Context
+  triples, where each (idea, goal, context) cell is a **decisive pass/fail** and
+  the answer is the single non-refuted option, explicitly instead of scoring or
+  pro/con lists · **this loop already argues in its shape without naming it**: every
+  `Rec X … **Y** refuted: …` question in `questions.md` is an IGC row, and #289's
+  own ask says *"Read-only IGC compared a sidecar index, embedded question
+  metadata, and a hybrid"* · so the task is less about acquiring a method than
+  about making the one already in use explicit, available on a fresh install, and
+  consistent · **the mechanism needs deciding and there is a real hazard**:
+  `plugin_resolver.py` resolves `ud-dreamwork-*` packages declared in
+  DREAMWORK.md's `## Plugins`, checking bundled `plugins/` first, and it
+  deliberately never scans global skill directories — so the obvious move is to
+  vendor a copy into `plugins/`, and that **forks a skill that lives in the shared
+  KB**, which then drifts silently in whichever copy is not being read · rec:
+  reference/adapter rather than copy — the loop declares the dependency and states
+  what it needs from IGC, and a vendored copy is the fallback only if a fresh
+  install genuinely cannot reach the KB · **the same instinct he stated one minute
+  earlier on #287** (*"we don't want to rewrite the skills … a generic wrapper /
+  adapter layer"*) applies here and the two should be decided together, because a
+  fork-by-vendoring answer here contradicts the adapter answer there · also fold
+  the method into DREAMWORK.md if it is confirmed as how he wants decisions argued,
+  since that is a durable preference and not a packaging detail
 
 - **#337** — `do next` should fall back to `add idea` after submitting, as
   `do now` already does · P2 · dashboard UX · origin: **human** · **human via
@@ -173,19 +200,6 @@ Next id: **338**
   guard should write to its outdir and only a deliberate `just` recipe should
   refresh the committed set · do not simply gitignore them — that would silently
   drop the evidence #217 landed
-
-- **#329** — Teach `lint.py` to report stale review artifacts · P3 · tooling ·
-  origin: **loop** · from #325's report: `review_artifact.py check` already answers
-  current / stale / untemplated per artifact and exits 1 on any stale, but nothing
-  runs it, so an artifact silently keeps an old frame after the template improves —
-  which is exactly the drift #325 exists to end, returning by a different door ·
-  have `lint.py` run `check` over a target's `.dreamwork/review/*.html` and WARN
-  (not error) on `stale`, staying silent on `untemplated` so the twelve
-  pre-existing artifacts do not become permanent noise · #325 deliberately did not
-  add this: the source format lives in this skill's directory rather than a
-  target's `.dreamwork/`, and `file-formats.md` documents it in the same "checked
-  by X, not by lint.py" idiom the browser-storage section uses — so decide first
-  whether lint is even the right home, or whether `just audit-styleguide` is
 
 - **#328** — Add `/tasks2`, the wide two-pane task triage layout · P2 · dashboard
   feature · origin: **human** · **human via watch 2026-07-27 21:47** · his answer
@@ -414,6 +428,14 @@ Next id: **338**
   for `?t=<id>`. The migration re-points #281's entry-level reader and nothing
   else, which is only true while that reader stays the sole parser — verify that
   invariant still holds at cutover rather than assuming it
+  · **#289's review-decision record folded in too (his steer, watch 2026-07-27
+  23:11 — the same "do not pay for two migrations" instruction he gave for
+  `/tasks`)**: the schema and CLI must carry, per review artifact, an explicit
+  decision enum (`pending|accepted|rejected`) with a stamp, its association to
+  exactly one owning question, and the absence of a record as a DISTINCT state
+  (`unlinked`, never `pending`) — plus the integrity rule that two questions
+  claiming one artifact with conflicting decisions is an error the store can
+  detect · #289 implements against this after cutover, not before
 
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch
@@ -428,6 +450,23 @@ Next id: **338**
   the artifact open while opening/focusing the same associated question context
   the question-driven path already uses · no filename/text inference; proposal
   + transition/RM/a11y guards before implementation
+  · **APPROVED for DESIGN ONLY with a sequencing instruction, human via watch
+  2026-07-27 23:11** (`rec`, plus *"we should tie future versions into sqlite plan
+  and/or redesign this to be done after sqlite"*) · V1 is: extend the managed
+  `questions.md` entry with one explicit record per artifact
+  (`Review (pending|accepted|rejected, stamp): path`), that record the SOLE
+  authority for both association and decision; it moves with Open→Answered,
+  survives title edits, supports several artifacts, and disappears with its
+  question · **no record means `unlinked`, never `pending`**; accepted/rejected are
+  only the explicit enum — never answer prose, filename, HTML recommendation, or
+  whether the question is folded; two questions claiming one artifact with
+  conflicting decisions is a lint ERROR; existing artifacts stay unlinked unless
+  deliberately migrated, and there is no "Approved…" text scraping · **sequencing,
+  which is the part that changes the plan**: the record requirements are folded
+  into #294's acceptance scope now, and this entry's own implementation waits for
+  #294 rather than landing a pre-migration shape that must then be migrated ·
+  authority is a written design + migration proposal ONLY — no grammar, parser,
+  lint, UI, icon, transition, artifact or deployment change
 
 - **#288** — Prevent isolated agents from killing protected live services to
   satisfy invented test premises · P0/P1 · tooling/authority incident · origin:
@@ -1309,6 +1348,25 @@ Next id: **338**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#329** — `lint.py` reports a review artifact whose frame drifted behind the
+  template · merged `8661db7` (agent commit `be1be46`, `ccc-glm52-329` on
+  `@oc-glm52`) · P3 · tooling · origin: **loop** · from #325's report ·
+  `review_artifact.py check` has answered current/stale/untemplated since #325 and
+  exits 1 on stale, but nothing RAN it, so drift returned through a different door
+  · two design calls, both about noise: **WARN never ERROR** (a stale frame is
+  legible and recoverable — the words are there, the page renders, the fix is one
+  rebuild) and **silent on `untemplated`** (the twelve unmigrated artifacts would
+  otherwise fire every run, which is the noise that hides the finding that
+  matters) · `file-formats.md` corrected in the same commit: it said *"Checked by
+  `test_review_artifact.py`, not by `lint.py`"*, the opposite of what is now true
+  · **coordinator-verified independently, not accepted**: built a real artifact
+  through the real builder, stamp-swapped a genuinely stale one, confirmed the
+  WARN named exactly it; confirmed all three silence conditions; then injected two
+  separate bugs and watched WHICH tests moved — killing stale recognition failed
+  exactly the 2 positive tests with all 7 silence tests green, and reversing the
+  untemplated decision failed 3 including the dogfood test over this repo's real
+  twelve, proving that test non-vacuous · 748 passed + 54 subtests (was 739)
 
 - **#261** — Recover reported 14:47–15:17 Web UI submissions · P0 · incident ·
   origin: **human** · completed **2026-07-26 16:21** · human confirmed use of

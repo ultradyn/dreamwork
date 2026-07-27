@@ -110,35 +110,6 @@
   authorizes an isolated implementation/review/deploy for #284. Answer `Approve
   H1`, `Approve H1 with changes: …`, `Choose H2`, or `Pause #284`.
 
-- **P1 · 2026-07-27 — #289 review status/association: keep the decision
-  record inside its owning question?** Read-only IGC compared a sidecar index,
-  embedded question metadata, and a hybrid.
-
-  Rec **V1**: extend the managed `questions.md` entry with one explicit record
-  per artifact, e.g. `Review (pending|accepted|rejected, stamp): path`. The
-  record is the sole authority for both association and decision. It moves with
-  Open→Answered, survives title edits without duplicating the title elsewhere,
-  supports several artifacts, disappears with its question, and never rewrites
-  generated HTML. `collect()` derives the reverse artifact index in memory; list
-  clicks use the current question title and can dock open or answered context.
-
-  No record means **unlinked**, never pending. `pending` plus an answer awaiting
-  loop fold may display an awaiting-fold waiting variant. Accepted/rejected are
-  only the explicit enum—not answer prose, filename, HTML recommendation, or
-  whether the question is folded. Two questions claiming the same artifact with
-  conflicting decisions is a lint error. Existing artifacts remain unlinked
-  unless deliberately migrated; no “Approved…” text scraping.
-
-  **V2** uses committed `.dreamwork/review-index.json` (refuted: duplicates
-  question title/status, needs lifecycle/GC writes, and can drift). **V3** puts
-  metadata in each HTML artifact (refuted: generated artifacts need rewriting
-  and question decisions live outside their channel).
-
-  Approval authorizes a written design and migration proposal only—no grammar,
-  parser, lint, UI, icon, transition, artifact, or deployment change. Answer
-  `Accept V1 for design`, `Accept V1 with amendments: …`, `Choose V2`, or
-  `Pause #289`.
-
 - **P0/P1 · 2026-07-26 — #288 protected-service boundary: contain
   subagent tools or isolate the dashboard identity?** Decision artifact:
   `.dreamwork/review/protected-service-boundary-288.html`; analysis:
@@ -199,6 +170,16 @@
 
   Answer `Accept A1 for specification only`, `Accept A2 with amendments: …`,
   `Choose A3; revise … and rereview`, or `Choose A4; pause the bridge`.
+  - **Note (human, via watch, 2026-07-27 23:08):** Will this be a problem
+    with the future migrations we're planning? those being like the sqlite
+    tasks conversion, standardizing the loop through a cli tool (also
+    relates to tasks), thhreaded discussions, dreamhub and making the
+    architecture more modular, etc? If not, then rec also we should call
+    the plugin ud-dreamwork-matt-pocock-skills also, we don't want to
+    rewrite the skills, not sure if the proposed design (sec 9) implies
+    that or not. but we want to like great a generic wrapper / adapter
+    layer that says how to unify them and what to change to make it
+    compatible with dreamwork.
 
 - **P0/P1 · 2026-07-26 — #260/#262/#263/#269/#274: accept the
   reviewed durable user-event contract for implementation planning?** Design:
@@ -448,6 +429,51 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-27 — #289 review status/association: keep the decision
+  record inside its owning question?**
+
+  → answered (2026-07-27 23:12): **rec = Accept V1 for design**, plus a
+  sequencing instruction: *"we should tie future versions into sqlite plan
+  and/or redesign this to be done after sqlite."* Taken as: V1's record
+  requirements are folded into #294's acceptance scope NOW (so the schema and
+  CLI serve them at cutover), and #289's own implementation sequences after
+  #294 rather than landing a pre-migration shape that then needs migrating
+  again. This is the second time he has given that instruction — the first was
+  #281 at 21:47 (*"factor in the requirements … so we do not pay for two
+  migrations"*) — so it is recorded in DREAMWORK.md as a standing rule rather
+  than applied twice by coincidence. The design authority stays exactly as his
+  ask bounded it: a written design and migration proposal, no grammar, parser,
+  lint, UI, icon, transition, artifact or deployment change. Read-only IGC compared a sidecar index,
+  embedded question metadata, and a hybrid.
+
+  Rec **V1**: extend the managed `questions.md` entry with one explicit record
+  per artifact, e.g. `Review (pending|accepted|rejected, stamp): path`. The
+  record is the sole authority for both association and decision. It moves with
+  Open→Answered, survives title edits without duplicating the title elsewhere,
+  supports several artifacts, disappears with its question, and never rewrites
+  generated HTML. `collect()` derives the reverse artifact index in memory; list
+  clicks use the current question title and can dock open or answered context.
+
+  No record means **unlinked**, never pending. `pending` plus an answer awaiting
+  loop fold may display an awaiting-fold waiting variant. Accepted/rejected are
+  only the explicit enum—not answer prose, filename, HTML recommendation, or
+  whether the question is folded. Two questions claiming the same artifact with
+  conflicting decisions is a lint error. Existing artifacts remain unlinked
+  unless deliberately migrated; no “Approved…” text scraping.
+
+  **V2** uses committed `.dreamwork/review-index.json` (refuted: duplicates
+  question title/status, needs lifecycle/GC writes, and can drift). **V3** puts
+  metadata in each HTML artifact (refuted: generated artifacts need rewriting
+  and question decisions live outside their channel).
+
+  Approval authorizes a written design and migration proposal only—no grammar,
+  parser, lint, UI, icon, transition, artifact, or deployment change. Answer
+  `Accept V1 for design`, `Accept V1 with amendments: …`, `Choose V2`, or
+  `Pause #289`.
+  - **Answer (via watch, 2026-07-27 23:11):** rec, we should tie future
+    versions into sqlite plan and/or redesign this to be done after
+    sqlite.
 
 - **P1 · 2026-07-27 — #254 note/reply conversation: use one rooted exchange
   branch rather than flat siblings or a nesting staircase?**
