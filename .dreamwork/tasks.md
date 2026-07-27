@@ -986,15 +986,6 @@ Next id: **323**
   arrives and departs") rather than animated · that leaves only the
   ARRIVAL · verify by per-frame trace, since a two-frame
   fade looks instant and passes a "did it appear" check
-- **#156** — Lint questions.md at WRITE time (PostToolUse hook) · P2 ·
-  idea · 40m · his idea, and it is the strongest version of the fix:
-  every current defence fires LATER than the mistake (lint at init and
-  in `just test`, the dashboard at read time). A hook fires in the same
-  turn, while the agent that mangled it still holds the context ·
-  `lint.py` already does the checking, so the hook is thin · **his
-  error-message spec is the deliverable**: where, what, expected, and a
-  pointer to the format · **bundle with #138** — both are Claude Code
-  hooks, ship the plugin or ship neither
 - **#152** — A dangling-parent check, deferred WITH A TRIGGER · P3 ·
   chore · 15m · (b) prose-wrap: measured, do not build — eleven long
   lines, three of them unwrappable frontmatter · (a) the ledger carries
@@ -1055,6 +1046,19 @@ Next id: **323**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#156** — Lint questions.md at WRITE time (PostToolUse hook) · P2 · landed
+  2026-07-26 · idea · 40m · origin: **human** · c51da8f, merged d7983be ·
+  delivered as `plugins/ud-dreamwork-hooks/hooks/posttooluse_ledger_lint.py`,
+  which lints `questions.md` and `tasks.md` in the same turn as the write · his
+  idea and the strongest version of the fix: every other defence fires LATER than
+  the mistake (lint at init and in `just test`, the dashboard at read time),
+  while a hook fires while the agent that mangled the file still holds the
+  context · shipped bundled with #138 exactly as the entry asked — both are
+  Claude Code hooks, ship the plugin or ship neither · opt-in by design: no
+  config until `install.py --apply`, and a DREAMWORK.md Load line is required
+  for use · **found still listed Open on a truthfulness sweep**, a day after
+  `close(#138,#156)` named it
 
 - **#314** — `audit-styleguide` asked the wrong question, so its misses were a
   mix · P3 · landed 2026-07-27 · tooling/correctness · ~40m · origin: **loop** ·
