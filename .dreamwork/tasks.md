@@ -2600,9 +2600,12 @@ Next id: **388**
   evidence either way. **The merge is kept**: verified independently at 06:00 by me — 887 tests
   pass, `lint.py` clean, and the merge touched only `dreamfade.mjs` and `watch.py`, so it was
   disjoint from the two `#263` lanes live in the tree. Not pushed
-  · **still owed: one `dreamfade` guard run on a quiet box.** Until then the departure motion is
-  unverified by the only instrument that can see it, and the peer's count is unconfirmed rather
-  than wrong
+  · **owed run discharged 06:07: `PASS dreamfade`**, and it did not need a quiet box after all.
+  It ran at load **37** and passed, which is *conclusive* rather than merely encouraging — the
+  load failure mode here is a dropped intermediate frame, so load manufactures false **reds**,
+  never false greens. So a green under load is stronger evidence than a green on an idle machine,
+  and waiting for quiet would have bought nothing. Worth remembering the next time I hold
+  something for a quiet box: **ask which direction the noise pushes the verdict first**
   · one claim of the peer's was checked and was wrong in a harmless way: it reported `dreamfade`
   was in `DEFAULT_GUARDS` "before my branch, another lane added it too". It added the line
   itself in `6ddec36` at 03:48. No collision either way — but it is the reason a peer's report

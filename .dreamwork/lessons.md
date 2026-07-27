@@ -1622,3 +1622,15 @@ this shape and convert opportunistically.)
   **a safeguard can name the right danger and the wrong mechanism, and it then reads
   as protection while providing none** — the way to tell is to reproduce the failure
   it claims to prevent, not to re-read the rule. (coordinator, #263 lane A)
+- **Before holding a verification for a quiet machine, ask which direction the
+  noise pushes the verdict.** I deferred #277's `dreamfade` guard twice waiting for
+  an idle box, on the reasonable-sounding grounds that load had already made motion
+  guards fail deterministically (125/16, byte-identical failure sets). But the
+  failure mode is a *dropped intermediate frame*, so load manufactures false
+  **reds** and cannot manufacture a false green. It passed at load 37, and that
+  green is *stronger* evidence than one from an idle machine would have been. The
+  wait bought nothing and delayed a merge's verification by an hour. The general
+  form: **noise that is asymmetric turns one of the two verdicts into proof** — a
+  green under conditions that only cause failure is conclusive, so identify the
+  asymmetry before deciding a measurement needs better conditions.
+  (coordinator, #277)
