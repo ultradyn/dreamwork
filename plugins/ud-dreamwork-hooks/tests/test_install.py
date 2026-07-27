@@ -117,3 +117,70 @@ class TestApply:
         proc = run_install("--apply", "--settings", str(settings))
         assert proc.returncode == 2
         assert settings.read_text() == before
+
+
+class TestHardlinkedSettings:
+    """#369 — his two config dirs are ONE inode, and `os.replace` splits them.
+
+    `~/.claude/settings.json` and `~/.claude-w/settings.json` are the same
+    file (both `256518042`, verified), and this session runs with
+    `CLAUDE_CONFIG_DIR=~/.claude-w` while the default target is
+    `~/.claude/settings.json`. A rename is the correct write for a file with
+    one name and the wrong write for a file with two: it rebinds the name it
+    was given to a new inode and leaves the other name on the old one. Exit
+    0, a timestamped backup, an idempotent re-run — every visible signal
+    still says it worked, and the session it was asked to protect has no
+    hooks. That is the silent class exactly, so the assertion has to be about
+    the INODE, not about the file it was asked to write.
+    """
+
+    @staticmethod
+    def _linked_pair(tmp_path: Path) -> tuple[Path, Path]:
+        primary = tmp_path / "settings.json"
+        primary.write_text(json.dumps({"env": {"KEEP": "1"}}), encoding="utf-8")
+        other = tmp_path / "settings-w.json"
+        import os
+        os.link(primary, other)
+        # The precondition IS the test: derive it, never assume the link took.
+        assert primary.stat().st_ino == other.stat().st_ino
+        assert primary.stat().st_nlink == 2
+        return primary, other
+
+    def test_apply_keeps_both_names_on_one_inode(self, tmp_path):
+        primary, other = self._linked_pair(tmp_path)
+        proc = run_install("--apply", "--settings", str(primary))
+        assert proc.returncode == 0, proc.stderr
+        assert primary.stat().st_ino == other.stat().st_ino, (
+            "the link was broken: the other config dir is still on the old inode"
+        )
+        assert primary.stat().st_nlink == 2
+
+    def test_apply_gives_the_other_name_the_hooks(self, tmp_path):
+        primary, other = self._linked_pair(tmp_path)
+        proc = run_install("--apply", "--settings", str(primary))
+        assert proc.returncode == 0, proc.stderr
+        seen = json.loads(other.read_text(encoding="utf-8"))
+        assert "hooks" in seen, "the name that was NOT written has no hooks"
+        assert set(seen["hooks"]) == {"PreCompact", "PostToolUse"}
+        assert seen["env"] == {"KEEP": "1"}, "pre-existing settings lost"
+
+    def test_apply_reports_the_link_it_preserved(self, tmp_path):
+        primary, _ = self._linked_pair(tmp_path)
+        proc = run_install("--apply", "--settings", str(primary))
+        assert proc.returncode == 0, proc.stderr
+        assert json.loads(proc.stdout)["hardlinked"] == 2, (
+            "a write that trades atomicity for the link must say so"
+        )
+
+    def test_apply_leaves_no_tmp_file_behind(self, tmp_path):
+        primary, _ = self._linked_pair(tmp_path)
+        run_install("--apply", "--settings", str(primary))
+        assert not (tmp_path / "settings.json.tmp").exists()
+
+    def test_unlinked_settings_still_report_no_hardlink(self, tmp_path):
+        settings = _settings(tmp_path)
+        settings.write_text(json.dumps({"env": {"KEEP": "1"}}), encoding="utf-8")
+        assert settings.stat().st_nlink == 1
+        proc = run_install("--apply", "--settings", str(settings))
+        assert proc.returncode == 0, proc.stderr
+        assert json.loads(proc.stdout).get("hardlinked") is None

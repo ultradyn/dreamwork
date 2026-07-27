@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -98,6 +99,42 @@ def merge(settings: dict, force: bool) -> tuple[dict, bool, list[str]]:
     return merged, changed, conflicts
 
 
+def write_settings(settings_path: Path, text: str) -> int:
+    """Write `text` to `settings_path` without breaking hardlinks to it (#369).
+
+    `os.replace` is the right write for a file with one name and the WRONG
+    write for a file with two: the rename rebinds *this* name to a new inode
+    and leaves the other name on the old one. His two config dirs are one
+    inode — `~/.claude/settings.json` and `~/.claude-w/settings.json` both
+    `256518042` — and a session running with `CLAUDE_CONFIG_DIR=~/.claude-w`
+    would have been handed hooks it could not see, while exit 0, a timestamped
+    backup and an idempotent re-run all reported success. Silent, and the
+    tempting fix (point `--settings` at the other name) only mirrors it.
+
+    Refusing instead would be safe and useless: his real config IS linked, so
+    a refusal makes `--apply` unusable on the only machine it is for. So above
+    one link this writes IN PLACE, which trades atomicity for the link — the
+    reason the caller's backup is not optional. `r+b` writes over the old
+    bytes and then truncates, so there is no window where the file is empty,
+    and the JSON is serialised before the file is opened at all.
+
+    Returns the link count observed, so the caller can report the trade.
+    """
+    data = text.encode("utf-8")
+    nlink = settings_path.stat().st_nlink if settings_path.exists() else 1
+    if nlink > 1:
+        with open(settings_path, "r+b") as fh:
+            fh.write(data)
+            fh.truncate()
+            fh.flush()
+            os.fsync(fh.fileno())
+        return nlink
+    tmp = settings_path.with_name(f"{settings_path.name}.tmp")
+    tmp.write_bytes(data)
+    tmp.replace(settings_path)
+    return nlink
+
+
 def apply(settings_path: Path, force: bool) -> tuple[int, dict]:
     base = {"settings": str(settings_path)}
     if settings_path.exists():
@@ -126,11 +163,39 @@ def apply(settings_path: Path, force: bool) -> tuple[int, dict]:
         backup.write_text(settings_path.read_text(encoding="utf-8"),
                           encoding="utf-8")
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = settings_path.with_name(f"{settings_path.name}.tmp")
-    tmp.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(settings_path)
+    nlink = write_settings(settings_path, json.dumps(merged, indent=2) + "\n")
+
+    # Read back what landed. This is the class of bug #369 belongs to — every
+    # visible signal said success while the file the session reads was
+    # untouched — so success is claimed from the file, not from the write
+    # returning.
+    try:
+        landed = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return 2, {**base, "ok": False,
+                   "error": f"wrote {settings_path} but cannot read it back: "
+                            f"{error}",
+                   "backup": str(backup) if backup else None}
+    if landed != merged:
+        return 2, {**base, "ok": False,
+                   "error": f"{settings_path} does not contain what was written",
+                   "backup": str(backup) if backup else None}
+
+    # The link count is reported from AFTER the write, not from before it. The
+    # pre-write number is a prediction and #369 is a bug about predictions
+    # being believed: a report derived from the count we intended to preserve
+    # would say `hardlinked: 2` in the exact run that split the inode.
+    after = settings_path.stat().st_nlink
+    if nlink > 1 and after != nlink:
+        return 2, {**base, "ok": False,
+                   "error": f"{settings_path} had {nlink} links and has {after} "
+                            "after writing: the other name is on the old inode "
+                            "and does not have these hooks",
+                   "backup": str(backup) if backup else None}
+
     return 0, {**base, "ok": True, "changed": True,
-               "backup": str(backup) if backup else None}
+               "backup": str(backup) if backup else None,
+               "hardlinked": after if after > 1 else None}
 
 
 def main(argv: list[str] | None = None) -> int:

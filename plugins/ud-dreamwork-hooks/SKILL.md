@@ -71,6 +71,18 @@ is a no-op. Loading this plugin never auto-applies. The two recorded acts
 are separate on purpose: the DREAMWORK.md `Load:` line is consent to use
 the plugin; `install.py --apply` is the machine-config act.
 
+**If the settings file is hardlinked, `--apply` writes in place** (#369).
+Two Claude config dirs can be one inode — `~/.claude/settings.json` and
+`~/.claude-w/settings.json` are, here — and an atomic `os.replace` would
+rebind only the name it was given, leaving the other name on the old inode
+with no hooks while every visible signal reported success. So above one
+link the write trades atomicity for the link, which is why the timestamped
+backup is taken first and its path is always reported. `--apply` then reads
+the file back, compares it to what it wrote, re-checks the link count, and
+**fails with exit 2** rather than claiming a success it cannot see. When a
+link was preserved the JSON result says `"hardlinked": <count>`, taken from
+after the write, never predicted from before it.
+
 ## Authority
 
 - Read-only against the target: hooks read `.dreamwork/` state, write
