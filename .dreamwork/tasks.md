@@ -24,9 +24,29 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **323**
+Next id: **324**
 
 ## Open
+
+- **#323** — Nothing notices when a landed task is still listed Open · P2 ·
+  tooling/correctness · ~20m · origin: **loop** · goal: the ledger must not
+  overstate what is left ← DREAMWORK.md *Nothing fails quietly* · **two found in
+  one beat**: #314 landed as `bff36ec` hours earlier and #156 as `c51da8f` a day
+  earlier, both still under `## Open` · the queue was overstating itself by two,
+  and worse, the entries that SUPERSEDED #314 (#320, #321) read as unrelated work
+  while its open entry still described the problem as live · `lint.py` already
+  cross-checks parse_ledger's open count against its own, so it catches a
+  MISCOUNT but not a task that is simply in the wrong section — nothing compares
+  the ledger against git · rec: for each open id, look for a commit subject
+  matching `close(#id)` or `merge(#id)` (the repo keeps that convention
+  rigorously) and WARN, never error — a close commit is strong evidence but not
+  proof, since #275 has both a `close` and a `merge` and is legitimately still
+  open because its ask awaits his approval, which is part of its definition of
+  done (#306) · so the check must be a prompt to look, like the styleguide audit,
+  and #275 is the fixture that keeps it honest: **a version of this check that
+  flags #275 is wrong**, and that is the precondition to assert · the sweep that
+  found these is ~30 lines and nothing in the repo runs it · touches `lint.py`
+  (held by an agent right now), so filed not started
 
 - **#322** — Allow pasting images into the command composer · P2 · dashboard
   feature · origin: **human** · **human via dashboard composer 2026-07-27
