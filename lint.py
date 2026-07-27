@@ -366,6 +366,127 @@ def check_author_tags(dw: Path, watch, rep: Report) -> None:
             )
 
 
+ANSWER_BULLET_STAMP = re.compile(r"\((?:via watch, )?(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})")
+
+
+def check_unfolded_answers(dw: Path, watch, rep: Report) -> None:
+    """#366: he answered, and the page kept asking for an hour.
+
+    His #346 ruling — the one that turned over three of four recommendations —
+    arrived at 01:23 and was still under `## Open` when it was folded at 02:27: one
+    hour and four minutes, measured, not the "two hours" a first draft of this
+    docstring claimed. For all of it the dashboard went on presenting a settled
+    question beside three genuinely open ones, which is worse than a missing check:
+    it spends the scarcest thing in the loop, his attention, on work already done.
+
+    **He named the real fix himself**, minutes after seeing the fold: *"this shows
+    why we need tooling i think (like cli) so that there's always a little status
+    msg tacked on about that. then you will be prompted to check and can always
+    know what is not folded in etc."* That is #357, and this check is only its
+    interim half — it fires when someone runs `lint.py`, whereas he wants the
+    count tacked onto every invocation, which is ambient rather than opt-in.
+
+    Nothing could have caught it. `check_questions` verifies the file PARSES,
+    `check_author_tags` verifies a tag is READABLE, and both were clean. Neither
+    asks the question this one asks: **is there an answer sitting in a section
+    reserved for the unanswered?**
+
+    TWO faults, both found in the same fold, and they need different levels:
+
+    - **An answer-tagged bullet under `## Open`** is an unfolded answer. WARN, and
+      the message carries the AGE rather than merely the fact — because there is a
+      legitimate window (his answer lands, the loop folds it on the next tick), and
+      an ERROR firing inside that window would cry wolf on correct behaviour. Age
+      is what distinguishes the window from the failure, so age is what it prints.
+      The age comes from the bullet's own timestamp against the clock, so a
+      one-minute-old answer reads differently from a two-hour-old one without
+      needing two rules.
+    - **Two answer bullets sharing one timestamp** is a duplicate delivery
+      (#274's third witness: his answer landed twice, byte-identical, and
+      `watch-events.log` carried the same `01:23:21` line twice). WARN and named
+      as #274, because the duplication happens upstream of the file write — the
+      loop can only clean it up, so refusing to commit would punish the wrong
+      party.
+
+    **Why the second is the one that could not be seen by reading**, which is why
+    a check is the only defence: `_parse_entries` lifts EVERY answer-tagged bullet
+    in `## Answered`, so both copies leave the contribution list and the rendered
+    page is correct while the file is wrong.
+
+    The tag prefixes are read from `watch.py` — never restated — for
+    `check_author_tags`'s reason: a second copy of that list is a second thing able
+    to disagree with the renderer, and renderer-disagreement is the defect class.
+    """
+    from datetime import datetime
+
+    if watch is None:
+        return
+    answer_prefixes = tuple(p for p, _ in list(watch.ANSWER_TAGS))
+    if not answer_prefixes:
+        return
+    path = dw / "questions.md"
+    if not path.exists():
+        return
+    try:
+        text = path.read_text()
+    except OSError:
+        return
+    # THE RAW SECTION, not the parsed entries — and this cost a green red-run.
+    # The first version of this check read `_parse_entries(text, "Open", False)`
+    # and looked for the tag in `body`. It reported nothing over the real
+    # two-hour-old file, because #340's fix makes an answer bullet in `## Open`
+    # a CONTRIBUTION: the raw tag is stripped, the author label carries it, and a
+    # parsed contribution cannot say whether it was an answer or a note. The
+    # reader deliberately hides the one fact this check needs. So the scan is raw
+    # — but the VOCABULARY still comes from `watch.ANSWER_TAGS`, so there is no
+    # second copy of the thing that can disagree with the renderer.
+    lines = text.split("\n")
+    try:
+        start = next(i for i, ln in enumerate(lines) if ln.strip() == "## Open")
+    except StopIteration:
+        return                      # check_questions owns a file with no sections
+    end = next((i for i in range(start + 1, len(lines))
+                if lines[i].startswith("## ")), len(lines))
+    now = datetime.now()
+    per_entry: dict[str, list[str]] = {}
+    order: list[str] = []
+    title = None
+    for ln in lines[start + 1:end]:
+        if ln.startswith("- **"):
+            title = ln[4:].strip().rstrip("*").strip()
+            continue
+        if title is None:
+            continue
+        if any(ln.strip().startswith(p) for p in answer_prefixes):
+            if title not in per_entry:
+                per_entry[title] = []
+                order.append(title)
+            m = ANSWER_BULLET_STAMP.search(ln)
+            per_entry[title].append(m.group(1) + " " + m.group(2) if m else "")
+    for title in order:
+        stamps = [s for s in per_entry[title] if s]
+        short = title[:56] + ("…" if len(title) > 56 else "")
+        age = ""
+        if stamps:
+            try:
+                oldest = min(datetime.strptime(s, "%Y-%m-%d %H:%M") for s in stamps)
+                hours = (now - oldest).total_seconds() / 3600.0
+                age = (" — answered %.0f minutes ago" % (hours * 60) if hours < 1
+                       else " — answered %.1f hours ago" % hours)
+            except ValueError:
+                pass
+        rep.add(WARN, "questions.md", (
+            f"{short} is under `## Open` and already carries his answer{age}; the "
+            f"dashboard is still asking a settled question beside the open ones — "
+            f"fold it (#366)"))
+        dupes = {s for s in stamps if stamps.count(s) > 1}
+        for s in sorted(dupes):
+            rep.add(WARN, "questions.md", (
+                f"{short} carries {stamps.count(s)} answer bullets stamped {s} — a "
+                f"duplicate delivery, and invisible once folded because every "
+                f"answer bullet is lifted out of the body (#274)"))
+
+
 def check_priorities(watch, text: str) -> list[str]:
     """Titles that LOOK prioritised and do not SORT that way (#197).
 
@@ -1834,6 +1955,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_questions(dw, watch, rep)
     check_answers(dw, watch, rep)
     check_author_tags(dw, watch, rep)
+    check_unfolded_answers(dw, watch, rep)
     check_tasks(dw, rep)
     check_landed_asks(dw, watch, rep)
     check_status(dw, rep)

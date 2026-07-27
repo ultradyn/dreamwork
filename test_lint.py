@@ -2331,3 +2331,113 @@ class TestStatusAgreesWithLedger:
         import inspect
         src = inspect.getsource(lint.run_checks)
         assert "check_status_agrees_with_ledger(dw, watch, rep)" in src
+
+
+class TestUnfoldedAnswers:
+    """#366: an answer sitting in the section reserved for the unanswered.
+
+    His #346 ruling arrived at 01:23 and was folded at 02:27 — for that hour the
+    dashboard presented a settled question beside three genuinely open ones.
+    Nothing could have caught it: `check_questions` verifies the file parses and
+    `check_author_tags` verifies a tag is readable, and both were clean.
+
+    **The first version of this check produced a GREEN RED-RUN** on the real
+    pre-fold file, which is why the production code scans the raw section rather
+    than the parsed entries: #340 makes an answer bullet under `## Open` a
+    CONTRIBUTION, so the raw tag is stripped and a parsed contribution cannot say
+    whether it was an answer or a note. The reader hides the one fact this needs.
+    """
+
+    def build(self, tmp_path, questions):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "questions.md").write_text(questions)
+        return t
+
+    def rows(self, t):
+        rep = lint.Report()
+        lint.check_unfolded_answers(t / ".dreamwork", lint.load_watch(), rep)
+        return [d for lvl, w, d in rep.rows if w == "questions.md"]
+
+    def q(self, *, bullets, stamp="2026-07-28 01:23"):
+        # The REAL tag shape: `- **Answer (via watch, 2026-07-28 01:23):**`.
+        # A first draft wrote `(via watch (2026-…)` — a doubled paren that the
+        # prefix match still accepted, so every test passed over a fixture that
+        # did not look like the file.
+        body = "".join(
+            f"  - **{b}, {stamp}):** something he said\n" for b in bullets)
+        return (
+            "# Questions\n\n## Open\n"
+            "- **P1 · 2026-07-28 — a question that is genuinely open?** prose here.\n"
+            "  - **Note (human, via watch, 2026-07-28 01:00):** a steer, not an answer\n"
+            "- **P1 · 2026-07-28 — a question he has already answered?** prose here.\n"
+            + body +
+            "\n## Answered\n\n"
+            "- **P1 · 2026-07-27 — an old one?**\n"
+            "  → answered (2026-07-27 10:00): done.\n"
+            "  - **Answer (via watch, 2026-07-27 10:00):** his words\n")
+
+    def test_an_answer_under_open_warns_and_names_the_entry(self, tmp_path):
+        t = self.build(tmp_path, self.q(bullets=["Answer (via watch"]))
+        rows = self.rows(t)
+        assert len(rows) == 1, rows
+        assert "already answered" in rows[0] and "carries his answer" in rows[0]
+        # DISCRIMINATION: the genuinely-open entry above it, and the correctly
+        # folded one in `## Answered`, must both stay silent — otherwise the check
+        # is reporting the file rather than the fault.
+        assert "genuinely open" not in rows[0], rows[0]
+        assert "an old one" not in rows[0], rows[0]
+
+    def test_a_note_is_not_an_answer(self, tmp_path):
+        t = self.build(tmp_path, self.q(bullets=["Note (human, via watch"]))
+        assert self.rows(t) == [], self.rows(t)
+
+    def test_two_answers_with_one_stamp_report_the_duplicate_too(self, tmp_path):
+        t = self.build(tmp_path, self.q(bullets=["Answer (via watch", "Answer (via watch"]))
+        rows = self.rows(t)
+        assert len(rows) == 2, rows
+        assert any("2 answer bullets stamped 2026-07-28 01:23" in d for d in rows), rows
+        assert any("#274" in d for d in rows), rows
+
+    def test_two_answers_at_different_times_are_not_a_duplicate(self, tmp_path):
+        # A follow-up answer on the same entry is legitimate; only an identical
+        # stamp is the double-delivery signature.
+        text = self.q(bullets=["Answer (via watch"]).replace(
+            "\n## Answered",
+            "  - **Answer (via watch, 2026-07-28 01:44):** and one more thing\n\n## Answered")
+        assert text.count("Answer (via watch, 2026-07-28") == 2, text.count("Answer (via watch, 2026-07-28")
+        t = self.build(tmp_path, text)
+        rows = self.rows(t)
+        assert len(rows) == 1 and "duplicate" not in rows[0], rows
+
+    def test_the_age_is_computed_from_the_bullet_not_pinned(self, tmp_path):
+        from datetime import datetime, timedelta
+        recent = (datetime.now() - timedelta(minutes=7)).strftime("%Y-%m-%d %H:%M")
+        t = self.build(tmp_path, self.q(bullets=["Answer (via watch"], stamp=recent))
+        rows = self.rows(t)
+        assert len(rows) == 1, rows
+        # Derived at runtime: a fresh answer reads in minutes, and the hours
+        # wording must NOT appear — that is what separates the legitimate
+        # fold-on-the-next-tick window from the hour-long failure.
+        assert "minutes ago" in rows[0] and "hours ago" not in rows[0], rows[0]
+
+    def test_an_unstamped_answer_bullet_still_warns(self, tmp_path):
+        text = self.q(bullets=["Answer (via watch"]).replace(
+            "Answer (via watch, 2026-07-28 01:23):", "Answer (via watch):")
+        assert "2026-07-28 01:23" not in text        # precondition: really unstamped
+        t = self.build(tmp_path, text)
+        rows = self.rows(t)
+        assert len(rows) == 1 and "ago" not in rows[0], rows
+
+    def test_only_the_open_section_is_scanned(self, tmp_path):
+        # The `## Answered` fixture entry carries an answer bullet by definition.
+        # If the section boundary were ignored, every answered entry would warn.
+        t = self.build(tmp_path, self.q(bullets=["Note (human, via watch"]))
+        assert "Answer (via watch, 2026-07-27 10:00)" in \
+            (t / ".dreamwork" / "questions.md").read_text()
+        assert self.rows(t) == [], self.rows(t)
+
+    def test_the_check_is_registered_in_run_checks(self, tmp_path):
+        import inspect
+        assert "check_unfolded_answers(dw, watch, rep)" in inspect.getsource(lint.run_checks)
