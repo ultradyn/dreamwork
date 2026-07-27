@@ -28,21 +28,6 @@ Next id: **300**
 
 ## Open
 
-- **#299** — Suppress expected peer-disconnect tracebacks at the HTTP handler
-  boundary · P2 · server reliability bug · 20m · origin: **human** · **human
-  report 14:17 with exact `/mtime` `BrokenPipeError` traceback** · a browser can
-  cancel the polling request after headers but before `_send` writes the body;
-  `ThreadingHTTPServer` then treats the expected peer departure as an unhandled
-  request exception and floods stderr even though no server invariant failed ·
-  build a deterministic red-capable handler/integration test that forces the
-  peer write failure on the real GET path; suppress only expected disconnects
-  (`BrokenPipeError`, reset/aborted connection and their exact errno forms) at a
-  boundary covering all response paths, close the connection and never retry ·
-  unrelated `OSError` and application exceptions must still escape to the
-  server error reporter; prove repeated `/mtime` cancellations leave the server
-  responsive and stderr traceback-free · no client-visible success claim after
-  disconnect and no broad `except OSError: pass`
-
 - **#298** — Explain each burndown column on hover, focus and touch · P2 ·
   Web UI feature · 25m · origin: **human** · **human via watch `add-idea`
   14:10** · inspecting a chart column should reveal the exact interval/date,
@@ -1001,6 +986,14 @@ Next id: **300**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#299** — Suppress expected peer-disconnect tracebacks at the HTTP
+  handler boundary · P2 · origin: **human** · landed 2026-07-27 · exact
+  `/mtime` BrokenPipe reproduced through the real handler red (8 failures);
+  `Handler.handle` now closes quietly only for pipe/reset/aborted departures,
+  never retries, while unrelated OS/application errors still escape · live five
+  RST-cancel poll proof, focused 5 + 8 subtests, full 587 + 54 subtests,
+  Standards + Spec PASS · deployed to :35110 PID 2367866 · `fe0351d`
 
 - **#216** — Parse first-seen origin in ledger history · P2 · origin:
   **loop** · landed 2026-07-27 · `task_origins.py` walks only ledger-touching
