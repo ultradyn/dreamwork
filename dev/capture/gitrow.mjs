@@ -119,8 +119,9 @@ const TRACE = ms => `new Promise(res => {
      innerHTML; a reference held from the first frame is DETACHED after it
      and getBoundingClientRect throws / returns zeros — the throw is what
      burndown's notes already name, and under load this guard hit it too. */
-  const seen = []; let ghost = null;
+  const seen = []; let ghost = null; let click = null;
   const t0 = performance.now();
+  let clicked = false;
   (function step() {
     const t = performance.now() - t0;
     const row = document.querySelectorAll('.git .commit[data-sha]')[1];
@@ -137,16 +138,40 @@ const TRACE = ms => `new Promise(res => {
       h: row ? row.getBoundingClientRect().height : -1,
       op: body ? +getComputedStyle(body).opacity : 1,
       ghosts: document.querySelectorAll('.qaghost').length });
-    if (t < ${ms}) requestAnimationFrame(step); else res({ seen, ghost });
+    /* THE CLICK IS DISPATCHED INSIDE THE TRACE, not as a separate Playwright
+       roundtrip. #386: gesture() used to fire p.click() after a sleep(60),
+       and under load that roundtrip's latency landed the click AFTER the
+       1500ms trace window closed — the trace captured 0px and the open read
+       as a vacuous failure. Anchoring the click to the trace's own first
+       frame removes the race for the same reason dreamfade.mjs runs its
+       action inside its evaluate.
+       The #141 contract is preserved by HIT-TESTING: a bare summary.click()
+       sails through pointer-events:none, so elementFromPoint models the real
+       pointer the original p.click() used — it skips pointer-events:none and
+       returns an overlay instead, so a summary he cannot press never toggles
+       and the open reads 0px by name rather than by luck. */
+    if (!clicked) {
+      clicked = true;
+      const summary = row && row.querySelector(':scope > summary');
+      if (!summary) {
+        click = { landed: false, why: 'no summary' };
+      } else {
+        const r = summary.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        if (hit && (summary === hit || summary.contains(hit))) {
+          summary.click();
+          click = { landed: true };
+        } else {
+          click = { landed: false, why: 'intercepted',
+                    hit: hit ? (hit.tagName + '.' + (hit.className || '')).slice(0, 60) : 'null' };
+        }
+      }
+    }
+    if (t < ${ms}) requestAnimationFrame(step); else res({ seen, ghost, click });
   })();
 })`;
 async function gesture(p, ms = 1500) {
-  const t = p.evaluate(TRACE(ms));
-  await sleep(60);
-  // a REAL pointer click: a synthetic element.click() sails straight through
-  // pointer-events:none and would pass on a summary he cannot press (#141)
-  await p.click('.git .commit[data-sha]:nth-of-type(2) > summary');
-  return await t;
+  return await p.evaluate(TRACE(ms));
 }
 const distinct = xs => new Set(xs.map(v => Math.round(v))).size;
 /* between() — frame-rate-free travel (transitions.md, dreamfade.mjs).
@@ -223,7 +248,7 @@ ok('...with a panel below them to be displaced', shape.below);
 
 // ── it opens, and the panel below TRAVELS ─────────────────────────────────
 {
-  const { seen, ghost } = await gesture(p);
+  const { seen, ghost, click } = await gesture(p);
   const t = travel(seen);
   const hs = seen.map(s => s.h);
   const hPartway = between(hs, hs[0], hs.at(-1));
@@ -232,7 +257,10 @@ ok('...with a panel below them to be displaced', shape.below);
              `positions (${t.partway} part-way); row height ${seen[0].h.toFixed(0)} -> ` +
              `${seen.at(-1).h.toFixed(0)} (${hPartway} part-way of ` +
              `${distinct(hs)} rounded); ${mid} frames part-way faded in; ` +
-             `${t.late.toFixed(1)}px to go at the end, ${t.over.toFixed(1)}px over`);
+             `${t.late.toFixed(1)}px to go at the end, ${t.over.toFixed(1)}px over; ` +
+             `click ${click ? JSON.stringify(click) : 'n/a'}`);
+  ok('opening: the click reached the summary (pointer-events / overlay gate, #141)',
+     !!click && click.landed);
   ok('opening: the panel below is displaced at all (else vacuous)', t.moved >= 60);
   // THE ASSERTION. A snap has zero frames strictly between the ends.
   ok('opening: ...and it travels there rather than teleporting', t.partway >= 1);
@@ -309,12 +337,15 @@ ok('...with a panel below them to be displaced', shape.below);
 
 // ── ...and it closes, on the page's one departure idiom ───────────────────
 {
-  const { seen, ghost } = await gesture(p);
+  const { seen, ghost, click } = await gesture(p);
   const t = travel(seen);
   notes.push(`close: below travelled ${t.moved.toFixed(0)}px over ${t.positions} ` +
              `positions (${t.partway} part-way); ${t.late.toFixed(1)}px to go, ` +
              `${t.over.toFixed(1)}px over; ` +
-             `ghost ${ghost ? JSON.stringify(ghost) : 'none'}`);
+             `ghost ${ghost ? JSON.stringify(ghost) : 'none'}; ` +
+             `click ${click ? JSON.stringify(click) : 'n/a'}`);
+  ok('closing: the click reached the summary (pointer-events / overlay gate, #141)',
+     !!click && click.landed);
   ok('closing: the panel below is displaced at all (else vacuous)', t.moved >= 60);
   ok('closing: ...and it travels there rather than teleporting', t.partway >= 1);
   ok('closing: ...and it has arrived when the travel ends', t.late <= 4);
