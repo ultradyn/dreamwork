@@ -279,28 +279,7 @@ Next id: **345**
   `watch-design.md` for its framing · **blocked on `watch.py` being free** —
   `fade326` holds it for #326 right now; this is next in line behind it
 
-- **#335** — lint should catch an open entry that declares ITSELF completed ·
-  P2 · tooling/correctness · origin: **loop** · found by tripping over #261, which
-  sat in `## Open` for a full day carrying *"completed **2026-07-26 16:21**"* in
-  its own metadata run · #323 cannot see this class: it compares the ledger
-  against git and warns when a `close(#N)`/`merge(#N)` commit is not cited, so an
-  entry closed in PROSE with no such commit is invisible to it · **the naive rule
-  is wrong and this was measured, not guessed**: grepping the 108 open entries for
-  a completion keyword near a date or sha returns FIVE hits and only ONE is real —
-  precision 1-in-5 · so the discriminator is POSITION, not vocabulary: a
-  completion marker inside the entry's **metadata clause** (the ` · `-separated
-  run immediately after the title, where `P1`, `origin:` and `owner:` live) is a
-  self-declared close; the same words deep in the prose body are not · **the four
-  false positives are the required fixtures, each a different way of being
-  legitimately open**: `#275` (*"research + design landed `4b49ecb` … ask open"* —
-  one half done, the human's ask still pending), `#283` (*"**L1 completed
-  2026-07-27 00:21**"* — a sub-stage of several), `#269` (*"LANDED `0366706`"* /
-  *"merged `e383492`"* — the acute half landed, the broader scope deliberately
-  open), and `#281` (*"(merged `9c00cd2`)"* — a sha cited for a sub-finding inside
-  an in-progress entry) · a check that flags any of those four is worse than no
-  check, because the loop learns to ignore it · assert all four stay silent AT
-  RUNTIME in the check itself, not in a comment · WARN not ERROR, same reasoning
-  as #323 · red-prove against #261's exact text restored to Open
+
 
 - **#331** — One shared notion of "an ids-only bold span", instead of a fourth
   one-separator patch · P2 · correctness/refactor · origin: **loop** · from #327's
@@ -1664,6 +1643,43 @@ Next id: **345**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#335** — lint catches an open entry that declares ITSELF completed · merged
+  `21c6224` (agent commit `be0c1b0`, `ccc-glm52-335` on `@oc-glm52`) ·
+  P2 · tooling/correctness · origin: **loop** · found by tripping over #261, which
+  sat in `## Open` for a full day carrying *"completed **2026-07-26 16:21**"* in
+  its own metadata run · #323 cannot see this class: it compares the ledger
+  against git and warns when a `close(#N)`/`merge(#N)` commit is not cited, so an
+  entry closed in PROSE with no such commit is invisible to it · **the naive rule
+  is wrong and this was measured, not guessed**: grepping the 108 open entries for
+  a completion keyword near a date or sha returns FIVE hits and only ONE is real —
+  precision 1-in-5 · so the discriminator is POSITION, not vocabulary: a
+  completion marker inside the entry's **metadata clause** (the ` · `-separated
+  run immediately after the title, where `P1`, `origin:` and `owner:` live) is a
+  self-declared close; the same words deep in the prose body are not · **the four
+  false positives are the required fixtures, each a different way of being
+  legitimately open**: `#275` (*"research + design landed `4b49ecb` … ask open"* —
+  one half done, the human's ask still pending), `#283` (*"**L1 completed
+  2026-07-27 00:21**"* — a sub-stage of several), `#269` (*"LANDED `0366706`"* /
+  *"merged `e383492`"* — the acute half landed, the broader scope deliberately
+  open), and `#281` (*"(merged `9c00cd2`)"* — a sha cited for a sub-finding inside
+  an in-progress entry) · a check that flags any of those four is worse than no
+  check, because the loop learns to ignore it · assert all four stay silent AT
+  RUNTIME in the check itself, not in a comment · WARN not ERROR, same reasoning
+  as #323 · red-prove against #261's exact text restored to Open
+  · **validation found a live second instance**: run against the real ledger rather
+  than its fixtures, the check WARNed on `#247` — open, and carrying `completed at
+  ba03c1f` in its metadata run. Folded to `## Recently landed`, after which the check
+  goes quiet. And it produced NO false positive on tonight's entries, which is the
+  harder half: the ledger has since gained long ` · ` chains and #252's own text says
+  "#158 has landed at `5c45d83`" — a completion keyword within 40 characters of a sha,
+  held silent by position, which is the whole property the task exists for
+  · **two follow-ups it reported rather than fixed**, both correctly left alone:
+  `file-formats.md` needs a section stating the metadata-clause contract (it owned only
+  `lint.py`/`test_lint.py`), and its `;`-or-over-50-characters body boundary is a
+  heuristic — sound on all 161 real entries, every failure a WARN naming the phrase, but
+  if it ever must be exact the ledger needs a real title/body separator rather than a
+  ` · ` chain that fades into prose. That is a design call and it is the coordinator's
 
 - **#247** — Harden answer-state IDs and deletion guard · **completed
   `ba03c1f`** · P2 · test/bug · origin: **loop** · missing server aid omits both
