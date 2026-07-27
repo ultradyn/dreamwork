@@ -76,7 +76,10 @@ git(['init', '-q']);
 // cut, and each of the five names the format it is here to exercise.
 const D = 86400;
 commit('off-panel: this one must not be shown', 400 * D);
-commit('chore: the hundred-day boundary, where days grow a third digit', 100 * D + 7 * 3600);
+// #385: 100 days is no longer a three-digit day count — the week rung takes
+// it (`14w 02d`). The subject still names the boundary so the assertion below
+// can find the row.
+commit('chore: the hundred-day boundary, which is now weeks not three-digit days', 100 * D + 7 * 3600);
 commit('feat: the days-and-hours row', 3 * D + 7 * 3600);
 commit('dreamwork(maintain:docs): the hours-and-minutes row, and a maintenance marker', 2 * 3600 + 14 * 60);
 commit('fix: the minutes-and-seconds row, with a deliberately very long subject that must ellipsise rather than wrap, because a wrapped row would change the panel height and #151 rests on it not doing that', 323);
@@ -180,8 +183,11 @@ ok('a maintenance commit still wears the accent', rows.some(r => r.maint));
   ok('...and a crumb, which it always did', snaps(snapped.crumb));
 }
 
-// ── #132: the format, at every boundary it has ────────────────────────────
-const AGE = /^(\d{2,})([dhm]) (\d{2})([hms]) ago$/;
+// ── #132 / #385: the format, at every boundary it has ─────────────────────
+// Exactly two digits per unit — his invariant. The old form allowed `\d{2,}`
+// on the big unit so a three-digit day count at 100 days still "passed" as
+// two units; #385 forbids that by climbing to weeks/years instead.
+const AGE = /^(\d{2})([ywdhm]) (\d{2})([wdhms]) ago$/;
 ok('every age is two units, two digits each',
    rows.length === 5 && rows.every(r => AGE.test(r.age)));
 const aged = s => (rows.find(r => new RegExp(s).test(r.sub)) || {}).age;
@@ -191,11 +197,11 @@ ok('seconds old reads `00m NNs ago`', /^00m \d{2}s ago$/.test(aged('newest row')
 ok('minutes reads `05m NNs ago`', /^05m \d{2}s ago$/.test(aged('minutes-and-seconds')));
 ok('hours reads `02h 14m ago`', aged('hours-and-minutes') === '02h 14m ago');
 ok('days reads `03d 07h ago`', aged('days-and-hours') === '03d 07h ago');
-// the shape is "two units", not "four characters": the day count widens and
-// the second unit stays at two, because a truncated day count is a WRONG
-// number rather than a narrow one
-ok('past 100 days the day count widens and the second unit does not',
-   aged('hundred-day') === '100d 07h ago');
+// #385: 100 days + 7h is 14w 02d, not 100d 07h. The live defect was the
+// three-digit day count; the discriminating check is that the day unit is
+// GONE from this row, not merely that some age string is present.
+ok('past 100 days uses weeks (two digits), not a three-digit day count (#385)',
+   aged('hundred-day') === '14w 02d ago');
 
 /* ── #132, the load-bearing half ──────────────────────────────────────────
    The age changes every second, and it does it WITHOUT the node being
