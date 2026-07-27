@@ -24,9 +24,38 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **350**
+Next id: **352**
 
 ## Open
+
+- **#351** — `/file` should highlight source, run wider, and not wrap lines · P2 ·
+  dashboard/readability · origin: **human** · **human via watch `add-idea` 2026-07-28
+  01:03**, typed from `/file?p=lint.py` — the page he was reading this session's work on:
+  *"syntax highlighting for source code files, and a bit wider of a body + no line
+  wrapping."* · three separate changes in one sentence, and they are not equally sized
+  · **the highlighter already exists and must be REUSED, not rewritten**: `#339` landed
+  build-time tokenising in `review_artifact.py` (`_scanner`/`_scan`/`highlight`, the
+  per-language specs, and `#348`'s `sql`), it emits `tok-` spans with CSS and ships no
+  script, and its round-trip is proved byte-exact through unescape/tokenise/re-escape ·
+  so `/file` wants the same tokenisers behind a shared seam rather than a second
+  implementation — two highlighters would drift, and the artifact one is the tested one
+  · **but the contexts differ in one load-bearing way**: an artifact is built once and
+  frozen, while `/file` renders on request, so tokenising per request is work repeated
+  for a result that cannot change per file version — decide caching explicitly (by path +
+  mtime, or by content digest) rather than inheriting "build-time" reasoning that no
+  longer applies · also `/file` serves ANY file, so the language comes from the extension
+  and an unknown one must render plain, per #339's never-guess rule
+  · **"no line wrapping" is a real trade, not a preference to apply blindly**: the frame
+  currently wraps (`white-space:pre-wrap`), and turning that off means horizontal scroll
+  on long lines — which is what he asked for and which interacts with the wider body he
+  asked for in the same breath. Both together suggest he wants to read code as code. Check
+  the narrow-viewport consequence before assuming it generalises, and confirm a
+  horizontally scrolling `<pre>` does not scroll the PAGE sideways (`watch-design.md`'s
+  contract: wide content scrolls inside its own container)
+  · **blocked on `watch.py` being free** — `ccc-glm52-336` holds it, and #336 is working
+  on `/file` right now, so this is adjacent enough that landing both in one pass may be
+  cheaper than two: fold it into that lane rather than racing it · #348's sql support
+  means his own schema docs would highlight too once this lands
 
 - **#349** — `lessons.md` is 117 entries and 1476 lines, and a lesson in it failed to
   prevent its own repeat · P2 · dogfood/loop reliability · origin: **loop** · found
