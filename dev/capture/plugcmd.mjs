@@ -289,15 +289,29 @@ if (HAVE && LANDED) {
   const seat = r.find(x => x.kind === 'gh-sync');
   ok('...whose title names the plugin, for the choice he made an hour ago',
      !!seat && /ud-dreamwork-github/.test(seat.title));
-  const said = await p.evaluate(`(async () => {
+  // Wait for the confirmation rather than sampling at a fixed offset, and
+  // read it from `#cmdmsg` — the node `confirmationFor` (#255) writes on a
+  // successful POST. `querySelector('.cmdmsg')` resolves to `#fmsg` (the
+  // FILE message shares the class and sits earlier in the DOM, watch.py:1562),
+  // which is always empty here; reading it returned `""` over a product that
+  // was working and kept this check red for the wrong reason. `confirmation.mjs`
+  // uses this same `cmdmsg.textContent === 'sent to the dream'` condition; the
+  // page exposes `cmdmsg` as the autoglobal for id=cmdmsg.
+  await p.evaluate(() => {
     document.getElementById('cmdtext').value = 'a plugin steer ' + Date.now();
     document.getElementById('cmdform').requestSubmit();
-    await new Promise(r => setTimeout(r, 900));
-    return document.querySelector('.cmdmsg').textContent;
-  })()`);
+  });
+  let said = '';
+  try {
+    await p.waitForFunction(
+      () => (cmdmsg.textContent || '').trim() !== '',
+      { timeout: 4000 });
+  } catch (_) { /* bounded timeout: leave said empty, the message reports it */ }
+  said = await p.evaluate(() => cmdmsg.textContent || '');
   notes.push(`sending gh-sync said ${JSON.stringify(said)}`);
-  ok('POST /command ACCEPTS a plugin kind (a menu entry that 400s is worse ' +
-     'than no menu entry)', /sent to the dream/.test(said));
+  ok('POST /command ACCEPTS a plugin kind — confirmation on #cmdmsg (saw '
+     + JSON.stringify(said) + '; a menu entry that 400s is worse than no '
+     + 'menu entry)', /sent to the dream/.test(said));
   const log = readFileSync(join(target, '.dreamwork', 'watch-events.log'), 'utf8');
   ok('...and it reaches the loop by the same transport as a core command',
      /gh-sync/.test(log));
