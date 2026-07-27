@@ -898,6 +898,34 @@ Prepared for task #325 · 27 July 2026 · offline-clean, no external requests.
   that silently drops a section, and an artifact missing its own
   recommendation still looks finished. `skip` without `skip_href` is an
   error too.
+- **A component's children carry that component's classes, or the build is
+  REFUSED** (#347-adjacent). The template styles `.fact .number` and
+  `.fact .caption` and nothing else, so `<div class="fact"><strong>122</strong>
+  <small>open ids</small></div>` renders as `122open ids` — the number running
+  straight into its caption — with no other symptom at all. `build` exited 0 and
+  `check` reported `current` while it was wrong, twice, in tonight's own
+  decision artifact. Bare text directly inside a component is the same defect.
+  Nesting inside a documented child (a `<code>` in a caption) is **not**, which
+  is why the scan parses HTML rather than matching patterns: depth is the whole
+  distinction, and a rule that forbade `<code>` in a caption is a rule someone
+  deletes. The vocabulary lives in `review_artifact.COMPONENT_CHILDREN`, which
+  has one entry on purpose — the template documents about twenty components, and
+  rules for the rest would be guessing at usage nobody has measured, which is
+  the very complaint this check exists to answer.
+- **A grid row short of a full last row WARNs and still builds.** A `.facts`
+  row wants a multiple of the column count, and a three-item row in a
+  four-column grid renders with one visibly empty track. Advisory rather than
+  fatal for two measured reasons: it is legal markup, and a fatal rule would
+  make `note-reply-threading-254.html` — an existing source, with a legitimate
+  three-fact row — unbuildable. That was found by injection, not argued: making
+  the rule fatal reddened the live-source sweep. **The column count is read
+  from the template's own stylesheet**, widest `repeat(N, …)` across media
+  queries, never written into the checker: a literal `4` is a check with an
+  invisible expiry date the first time the grid is reshaped.
+- **Both run in `build`, against the built output, and `check` is untouched.**
+  `check` answers exactly one question — which template did this come from —
+  and its non-zero exit means `stale`. Widening it would make it fail on the
+  untemplated artifacts #325 deliberately chose not to migrate.
 - **Optional means gone, not empty.** An unset slot deletes its whole
   region, `status:` with nothing after it counts as unset, and an aside-less
   hero drops to `hero-grid solo` rather than holding a 240px column open.
