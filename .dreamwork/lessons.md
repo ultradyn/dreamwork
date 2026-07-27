@@ -1371,3 +1371,18 @@ this shape and convert opportunistically.)
   change first and rebase the mechanical sweep onto it, never the reverse, because
   a conversion merged first turns the semantic diff into a conflict against code
   that no longer exists.
+
+- **`git commit -m` silently eats `**bold**` in this shell — so in this repo, always
+  `-F <file>`.** The shell is zsh, where `**` is a recursive glob; a message quoting
+  a ledger entry's `**#96 stage 1**` came out as "whose only span is  — prose", with
+  the token simply gone and no error, because the pattern matched nothing and zsh
+  dropped it. Nothing failed: the commit succeeded and read almost sensibly, which is
+  why it survives review. This is not an edge case here — every ledger entry, every
+  question title and every author tag in this project is written in `**bold**`, so a
+  commit message that quotes durable state is the NORMAL case and `-m` corrupts it.
+  Two other members of the same family had already been paid for tonight (`??` and
+  `?` in a message about a git status output, which at least errored loudly with
+  `no matches found`), and the fix is the same one every time: write the message to a
+  file and pass `-F`. The general rule, which is cheaper than remembering the
+  metacharacter list: **if a message quotes the contents of a file, it goes through a
+  file.**
