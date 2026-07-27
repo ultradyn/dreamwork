@@ -272,6 +272,68 @@ may run in parallel only if they need no browser (lane C, a design task, was fre
 Take any guard verdict only on a quiet machine, and record the load average beside
 the verdict so a future reader can tell a defect from a starved frame.
 
+## The role at five lanes — what changed when it stopped being two
+
+Written at 06:30 with five lanes live (2 grok, 2 glm52, 1 pi-glm52) after his
+06:11 "fixed `ccc @glm52`" and his standing 4+4 budget.
+
+**1 · The binding constraint is file ownership, not model capacity, and not load.**
+I could run eight. I cannot run two lanes in `watch.py`, which is 8,647 lines and
+the target of four separate open tasks. #385 is briefed, correct, and *idle* —
+queued behind #300 for no reason except that one file admits one writer. The lever
+that would raise throughput here is **#368, the modular split**, and that is now
+measurable rather than aesthetic: it is the difference between one watch.py lane
+and three.
+
+**2 · Cheap disjointness is worth engineering for.** Lane F went out the moment B2
+landed, and it was the right pick over #367 for a specific reason: **it needs no
+browser.** Two browser lanes were already holding guard ports 39891 and 39895, and
+three concurrent browser lanes is where load previously destroyed motion-guard
+verdicts. So the scheduling resource is not "a lane" — it is *which* scarce thing a
+lane consumes: `watch.py`, a guard port, or nothing. Lanes that consume nothing are
+nearly free and should be preferred when the queue allows.
+
+**3 · One route was forced by capability, and it is the first time.** #300's
+acceptance includes visual-review loops on rendered pixels and a text morph
+judgeable only from intermediate frames. `@glm52` is not multimodal, so #300 *had*
+to be grok. Until then the two were interchangeable on quality and differed only in
+speed and observability — a preference. This is a constraint, and it means the
+routing table needs a **capability** column, not just a speed one.
+
+**4 · The brief-as-file earns its cost in a way I did not anticipate.** His reason
+was reusability and reviewability. The unplanned payoff: with grok and pi writing
+zero bytes until exit, **the brief's file-ownership list is the only thing that
+makes a running lane observable.** I watch `git log` and `git status` against the
+list. Lane B was visibly through B1–B4 before it said a word. A brief that omits
+the file list produces a lane that is invisible for forty minutes.
+
+**5 · Writing five briefs cost more than writing five patches would have.** That
+is the honest accounting, and it is still correct: the briefs encode the
+verification discipline that the lanes then actually followed — 4/4 stayed inside
+ownership, and every one produced a real discriminating red. What I would not do
+again is write a brief per two-line fix. **The floor for a well-verified change is
+~18 minutes regardless of diff size**, so batching small mechanical work into one
+brief is strictly better than a lane each.
+
+**6 · The coordinator's real job turned out to be adjudication, not planning.**
+Planning was maybe a third of it. The rest: verifying a peer's merge claim (one
+detail wrong), re-running lane A's red myself, auditing lane B's tests against the
+criteria I had written, catching that my own commit had swallowed a lane's file,
+and deciding two questions he should never have been asked. **Every one of those is
+something no lane could do, because each requires seeing the whole tree at once.**
+That is the actual division of labour, and it is not the one I assumed at the start
+— I assumed I would be a planner with a fleet, and I am closer to a reviewer with
+a fleet.
+
+**7 · And the thing I got wrong twice in one hour: I trusted my own careful work.**
+The `--only` fix I had just written, verified, and propagated to eight briefs — then
+used it in a form (`--only <directory>`) that silently does nothing for untracked
+files, and shipped a commit whose message named three files it did not contain.
+Same shape as the three-for-three refutation above: **the error lands in the part I
+had just done the most work on.** The countermeasure that actually works is not more
+care; it is checking the outcome rather than the intent — `git show --stat` after a
+commit I am confident about.
+
 ## Notes on the orchestrator role, written from inside it
 
 He asked for these at 05:26, an hour into coordinating rather than implementing.
