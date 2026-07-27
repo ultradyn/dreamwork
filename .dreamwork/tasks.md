@@ -24,9 +24,56 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **357**
+Next id: **359**
 
 ## Open
+
+- **#357** — A CLI warning layer that surfaces incomplete data and what is waiting ·
+  P2 · tooling/feature · origin: **human** · **human via watch 2026-07-28 01:23**, inside his
+  #346 S4 answer: *"with these kinds of things we can have an automated warning layer in cli
+  calls that raises issues where data is incomplete or whatever. Also things like unchecked
+  message count, new task count, new question count, unanswered question count, unfolded-in
+  answer count, etc."* · two features in one sentence and they share a mechanism · **(a)
+  incompleteness warnings**: every CLI call can report the data quality it noticed —
+  entries with no `type`, no priority band, a dependency naming a task that does not exist —
+  which is what makes his S4 answer safe: an unvalidated column is fine *if* something
+  routinely tells you what is missing · **(b) waiting-counts**, and these are the loop's own
+  vital signs: unchecked messages, new tasks, new questions, unanswered questions, and
+  **unfolded-in answers** — the last one is the interesting one, because an answer that
+  arrived and was never folded is invisible today except by reading the file, and that is
+  exactly how his 23:28 batched-delivery idea (#342) fails if nobody counts it
+  · **it belongs to the store, not beside it**: these are all queries over #346's entities,
+  so they are the first real consumers of the read surface and should shape it — a count
+  that needs a full-table scan every invocation is a count that will be turned off
+  · rec: one `dreamwork status`-shaped verb returning all counts as data, plus a warnings
+  channel every other verb can emit on, so a human reading any command sees the same numbers
+  · blocked on #346's read surface existing; the counts themselves are specifiable now
+
+- **#358** — Head/body split so the tool-running half cannot reach the API key · P2 ·
+  security architecture/research · origin: **human** · **human via watch 2026-07-28 01:26**,
+  answering #288 with `rec` and then going further: *"I kind of want to experiment with a head
+  and a body part for running this stuff, like the head processes the LLM API calls and the
+  like, but then sends tool calls over a socket to the body which is running in a docker
+  container or a different box or something like that. The point is that it cannot kill the
+  head or exfiltrate the API key, it can only kill itself (or escape I suppose). Anyway maybe
+  that kind of architecture can help, but it presents a problem with like claude code and the
+  like. hmmm."* · **this is the general form of #288's specific ask** — #288 asks whether to
+  contain subagent tools or isolate the dashboard identity, and this says: put the boundary
+  between *deciding* and *doing* instead, so the credential lives on the side that never runs
+  untrusted output · the threat model is stated precisely and worth keeping in his words: the
+  body *"can only kill itself (or escape I suppose)"*
+  · **his own caveat is the hard part and should not be glossed**: *"it presents a problem
+  with like claude code and the like"* — a harness that owns both the API call and the tool
+  execution has no seam to cut, so this is either a wrapper that proxies an existing agent's
+  tool calls, or it only applies to agents we run ourselves · that fork is the first thing to
+  decide and it decides whether this is buildable here at all
+  · **it must not be confused with the run-mode work (#288/#290)**, which explicitly grants no
+  kill or sandbox authority from a mode alone · rec: a read-only IGC comparing (1) a socket
+  protocol with the body in a container, (2) a proxy that intercepts an existing harness's
+  tool calls, (3) accepting the current boundary and hardening the credential instead — each
+  judged on whether it survives his stated threat model, and on whether Claude Code can be
+  made to fit at all · **research first, no implementation**: this changes where credentials
+  live, and getting it wrong is worse than not doing it
 
 - **#354** — `/filebytes` buffers a whole file with no cap · P2 · dashboard/robustness ·
   origin: **loop** · reported by `ccc-glm52-336` as out of scope, not fixed · `read_text` caps

@@ -137,6 +137,42 @@
     enum has some advantages like easier validation. hmm. let's take the
     principled approach here that will give us the best result long term
     and avoid footguns
+  - **Follow-up (loop, 2026-07-28 01:34):** measured against real SQLite rather
+    than reasoned about, because the answer turned out to hinge on a footgun.
+    **There is no performance benefit either way** — and "enum" is not a thing
+    SQLite has: it accepts any type NAME and enforces nothing (`CREATE TABLE t (x
+    ENUM_WHATEVER)` is accepted, stores the name verbatim, and takes any value).
+    The two real options both store `TEXT` and read identically, so the choice is
+    entirely **validation versus evolvability**, and each has one footgun:
+    · **`TEXT` + `CHECK (x IN (…))`** genuinely enforces and **cannot be switched
+    off by a connection setting** — I tried, it holds. Its footgun is that a CHECK
+    cannot be altered or dropped: changing the allowed set means recreating the
+    table.
+    · **A lookup table + `REFERENCES`** enforces too, and adding a value is one
+    `INSERT` with no rebuild. Its footgun is worse and it is the one that caught me
+    while checking: **SQLite foreign keys are OFF BY DEFAULT, per connection**
+    (`PRAGMA foreign_keys` is `0`). My first test "showed" the FK accepting garbage
+    — because the pragma had not taken. Any connection that forgets it silently
+    validates nothing.
+    So the principled split, which is about whether the set is closed **by
+    definition** or merely small today: **`CHECK` for closed-by-definition sets** —
+    `state` (open|landed), `origin` (human|loop|unknown), `decision`
+    (pending|accepted|rejected); those change only if the domain changes, and
+    unbypassable is exactly what you want. **Lookup table + FK for a vocabulary
+    that grows** — `type` is that, and your own automated-warning idea wants a place
+    to hang per-type metadata anyway. The pragma then has to be set in ONE place
+    (the adapter's connection setup) with a test asserting it, which is a single
+    line and turns the footgun into a checked invariant.
+    **And it settles the Postgres half**, which matters because #263's now-approved
+    contract ships SQLite behind a PostgreSQL-portable adapter: Postgres native
+    `ENUM` can add values but not remove them and bakes in an ordering, whereas a
+    lookup table behaves **identically on both** backends. So the lookup table is
+    the portable answer as well as the evolvable one.
+    Rec: **`type` becomes a lookup table with an FK; the closed-by-definition
+    columns get CHECK; nothing gets a bare unvalidated varchar.** That is stricter
+    than your "freetext or varchar with null" and I think it is what you were
+    reaching for with *"easier validation … avoid footguns"* — but say so if you
+    want `type` left unvalidated, because that is the one place we would differ.
 
 - **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
   pre-phase on the existing card ghost?** Max directed Grok toward shader work;

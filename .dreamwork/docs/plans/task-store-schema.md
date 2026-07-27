@@ -327,7 +327,77 @@ started without his ruling, because the entries are his words.
 event model, so it is startable the moment he rules — which makes it the second
 thing after #352 that turns his "sqlite is becoming a blocker" into movement.
 
+## His 01:23 ruling, and what it adds beyond a yes
+
+**S1 — split, and model the relationships explicitly.** *"we can keep them split.
+For tasks, we should have n:n relationships for related tasks (like 250/251 i
+guess, not sure exactly what they are), and one way dependencies too. Anyway we
+should capture the shape of work that makes sense … We should design the db with
+the kind of joins we'll do in mind so that we can be performant always."*
+
+That is more than an answer: the combined entries were an **implicit** relation
+expressed by writing two ids in one title, and he is asking for it to become an
+explicit one. Two distinct shapes, and conflating them is the mistake to avoid:
+
+```sql
+CREATE TABLE related (           -- symmetric, n:n: "these are the same work"
+  a INTEGER NOT NULL REFERENCES task(id),
+  b INTEGER NOT NULL REFERENCES task(id),
+  PRIMARY KEY (a, b),
+  CHECK (a < b)                  -- store each pair ONCE; symmetry is not two rows
+);
+
+CREATE TABLE depends (           -- directed: "a cannot start until b lands"
+  task INTEGER NOT NULL REFERENCES task(id),
+  needs INTEGER NOT NULL REFERENCES task(id),
+  PRIMARY KEY (task, needs),
+  CHECK (task <> needs)
+);
+CREATE INDEX depends_by_needs ON depends(needs);   -- "what does landing b unblock?"
+```
+
+`CHECK (a < b)` is the load-bearing line in `related`: without it a symmetric
+relation is two rows that can disagree, and every reader has to remember to query
+both directions. With it, insertion normalises the pair and the join is one
+direction. `depends` deliberately has no such constraint — direction is its
+content — and carries the reverse index because the question the loop asks most is
+"what did this unblock", not "what is this waiting on".
+
+**`#250/#251` is `related`, not `depends`** — he was unsure ("not sure exactly what
+they are"), and the entry says: *"Missing-aid answer disclosures + node disconnect
+proof"*, two pieces of one landing. So the migration proposes `related` for all
+three combined entries and reports them for confirmation rather than deciding
+silently.
+
+**Designed for the joins**, per his instruction. The three the loop actually
+performs: entry-by-id (`?t=<id>`), open-list-ordered-by-priority-then-id, and
+"what does landing X unblock" — which is why `depends` is indexed on `needs` and
+not only on its primary key.
+
+**S2 — `rec`.** The four compound bands are resolved before migrating, so
+`priority` becomes a closed set.
+
+**S4 — he pushed back on free text, and the pushback was right.** His question was
+*"if we have an enum type thing, is it faster/better/more efficient? … let's take
+the principled approach … avoid footguns"*. Measured against real SQLite: there is
+**no performance difference**, SQLite has no ENUM type at all (any type name is
+accepted and enforces nothing), and both real options store `TEXT`. The choice is
+validation versus evolvability, and each option has exactly one footgun:
+
+| option | enforces | footgun |
+|---|---|---|
+| `TEXT` + `CHECK (x IN …)` | yes, and **cannot** be disabled per connection | the set is welded in — changing it means recreating the table |
+| lookup table + `REFERENCES` | yes | **SQLite foreign keys are OFF by default, per connection** — any connection missing `PRAGMA foreign_keys=ON` validates nothing |
+
+So: **`CHECK` for sets closed by definition** (`state`, `origin`, `decision`), and
+**a lookup table for a vocabulary that grows** (`type`), with the pragma set in one
+place in the adapter and a test asserting it — which converts the footgun into a
+checked invariant. It also settles the Postgres half of #263's approved contract:
+native `ENUM` can add values but not remove them and bakes in an ordering, while a
+lookup table behaves identically on both backends.
+
 ## Open questions for him
+
 
 
 Paired with a review artifact and a questions.md entry, per the standing rule.
