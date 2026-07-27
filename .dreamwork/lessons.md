@@ -1785,3 +1785,17 @@ this shape and convert opportunistically.)
   result rather than the match — and more generally, a verification chain joined by
   `&&` reports a skipped tail as a pass, so prefer `;` with per-step echoes for
   anything whose zero is a legitimate answer. (#367 lane)
+- **Dispatching a lane is `ccc … &` in a FOREGROUND harness call — never `&` inside a
+  harness-backgrounded one.** I have now made this mistake twice, so the fix is a
+  recipe rather than a caution. `ccc` blocks for the lane's whole life, so it needs a
+  `&`; but if the harness call is *also* backgrounded, the harness watches the wrapper
+  shell, which exits in milliseconds. It then reports the dispatch "completed (exit
+  code 0)" while the lane is thirty seconds old, and **no completion notification ever
+  arrives** — so a coordinator waiting to be told a lane finished waits forever, and
+  the failure looks exactly like a lane that is still working. Correct form: one
+  ordinary (non-backgrounded) Bash call containing `ccc @runner "…" > /dev/null 2>&1 &`
+  per lane, then `sleep 3` and `pgrep -af "^ccc @"` **in the same call** to prove they
+  came up. `pgrep -c "^ccc @"` returns 0 without `-f`, because the pattern matches the
+  command *name* and not its arguments — so verify with `-f` or the proof lies too.
+  Consequence when it happens: the lanes are fine, only the notification is lost, so
+  fall back to polling `pgrep` and `.dreamwork/inbox.md`.
