@@ -85,6 +85,17 @@ dreamwork-version: 5853e1789929
   have it. This is the same commitment the loop reached from the code's
   side as "nothing is dropped, only demoted" (#130), and it makes a fold
   a promise: what is inside is still there, and the summary says what.
+- Delegation routing (human-set 2026-07-27 21:40, superseding the 18:42
+  no-native-subagents hold): **native subagents are allowed again for
+  anything important or high risk; `ccc @glm52` stays the tool for easy
+  work.** The 18:42 hold was a Claude Code 5h-limit measure, not a judgement
+  about quality, and it is lifted. Route by stakes, not by habit: a visual-
+  quality change on a surface he reads, a security or authority question, or
+  anything where rework would cost more than tokens goes native (opus,
+  always passed explicitly per CLAUDE.md); mechanical sweeps, conversions and
+  small well-specified fixes go to `ccc @glm52`. He wants several agents in
+  flight at once either way (18:50), so the routing is about which, not
+  whether.
 - Subagent lifecycle (2026-07-25): **prefer fresh subagents; reuse an
   existing one only if it stopped less than ~4 minutes ago.** Retire
   idle dreamers rather than leaving them parked. Exception/routine
