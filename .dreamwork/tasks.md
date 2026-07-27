@@ -344,17 +344,6 @@ Next id: **296**
   transition + reduced-motion parity · one pipeline with #158 reflow, not a
   competing transform · blocked on #158
 
-- **#251** — Prove old answer node disconnects after deletion refresh · P2 ·
-  test · origin: **loop** · completed with #250 at `f17f307` · original
-  ElementHandle is proven connected before refresh and disconnected after;
-  evaluation errors fail closed · same-aid new survivor stays open · PASS
-- **#250** — Preserve motion for missing-aid answer disclosures · P1 · bug ·
-  origin: **loop** · completed at `f17f307` · identity-less answered details
-  use a local human-click fold reusing travel/reveal/ghost without persistence
-  key; normal open/close prove >2 intermediate card heights + following-marker
-  positions; reduced-motion function preserved · behavioral RED against old
-  `watch.py`; 440 tests, browser/lint/diff and Standards/Spec PASS · deployed
-
 - **#249** — Add dev-overlay sampling cadence controls · P2 · dev UI · 25m ·
   origin: **human** · **human via watch 14:37** · frame-time graph + other
   stats update at selectable `1s` / `10f` / `1f` cadence using the existing
@@ -987,6 +976,13 @@ Next id: **296**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#250/#251** — Missing-aid answer disclosures + node disconnect proof ·
+  P1/P2 · landed earlier at `f17f307` (ledger rescan 2026-07-27 found both
+  entries stale in Open) · identity-less answered details use a local
+  human-click fold reusing travel/reveal/ghost; original ElementHandle proven
+  connected before refresh and disconnected after; 440 tests, Standards/Spec
+  PASS, deployed
 
 - **#290** — Add a dashboard-settable main-dreamer run mode · P1 · landed
   2026-07-27 · authoritative gitignored `.dreamwork/run-mode` drives three
