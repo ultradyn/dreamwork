@@ -462,6 +462,19 @@ Next id: **392**
   the 2MB cap is the substantive half: an artifact over it is silently truncated, and a
   truncated self-contained page can render as a blank frame with no error — check whether any
   artifact is near it before deciding
+  · **measured 2026-07-28 08:02, and the answer changes the shape of this task.** Largest of the
+  18 artifacts is `threaded-topic-chats-v2.html` at **84,987 B — 4.2% of the cap**, so there is
+  **23.5x headroom** and nothing is close. Not live, and it should not be treated as urgent
+  · **but the growth vector is now demonstrated rather than hypothetical**: the second-largest
+  artifact is `367-strip-below-cliff.html` at 81,851 B, which I built **today**, and it got there
+  almost entirely from **one 40 KB base64-embedded screenshot**. Artifacts must be offline-clean,
+  so every image is inlined and costs ~1.33x its bytes. A decision artifact carrying ten
+  screenshots — which is the direction #367's own increments and any visual review are heading —
+  lands near the cap. So the honest reading is: **the cap will be reached by embedded evidence,
+  at roughly 25 screenshots' worth**, and the failure mode is a silently blank page
+  · so the priority stays P3 **today** and the trigger to raise it is measurable: re-run this
+  measurement when any artifact passes ~25% of the cap, or fold the fix in whenever `/reviewraw`
+  is being touched anyway
 
 - **#356** — Two narrow papercuts in the new `/file` image view · P3 · dashboard/polish ·
   origin: **loop** · both reported by `ccc-glm52-336` with its reasoning for not fixing them,
