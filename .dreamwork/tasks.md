@@ -3211,17 +3211,32 @@ Next id: **361**
   flake fixed by stamping `/mtime` response-body completion, the exact last
   await before the tick gate · `morph.mjs` window shrunk 1400→1200
 
-- **#138/#156** — Ship optional compaction/lint hooks plugin · P2 · landed
-  2026-07-27 · `plugins/ud-dreamwork-hooks/`, off by default, same family
-  shape as ud-dreamwork-github; both hooks re-check the DREAMWORK.md Load
-  consent line every invocation and skip silently without it · PreCompact
-  appends a bounded preservation-focus record to machine-local
-  `~/.config/dreamwork/hooks/<slug>/` (1.5s budget, always exit 0) ·
-  PostToolUse lints the ledger on questions/tasks writes under the same
-  boundary (4s timeout, ok:false on failure, exit 0) · install.py --print
-  default, --apply idempotent with timestamped backup + clobber refusal,
-  never auto-applies · red-first 27 tests, 542 + 46 subtests, Standards +
-  Spec PASS · `d7983be`
+- **#138** — Ship a PreCompact hook so the write-down is automatic · P2 · task ·
+  landed 2026-07-27 · related: **#156** · `plugins/ud-dreamwork-hooks/`, off by
+  default, same family shape as ud-dreamwork-github · appends a bounded
+  preservation-focus record to machine-local `~/.config/dreamwork/hooks/<slug>/`
+  (1.5s budget, always exit 0) and re-checks the DREAMWORK.md Load consent line
+  every invocation, skipping silently without it · a hook fires AT compaction, so
+  it guarantees the write-down and cannot buy landing time, and its stdout becomes
+  summariser instructions, so it is silent by construction · shipped in one plugin
+  with #156 exactly as this entry asked: both are Claude Code hooks, ship the
+  plugin or ship neither · install.py --print default, --apply idempotent with
+  timestamped backup + clobber refusal, never auto-applies · red-first 27 tests,
+  542 + 46 subtests, Standards + Spec PASS · `d7983be`
+  · no origin marker by contract, not by omission: #138 predates the #216 cutoff
+  and the original entry recorded none, so the honest value is absent
+
+- **#156** — Lint questions.md at WRITE time (PostToolUse hook) · P2 · idea · 40m ·
+  origin: **human** · landed 2026-07-26 · related: **#138** · delivered as
+  `plugins/ud-dreamwork-hooks/hooks/posttooluse_ledger_lint.py`, which lints
+  `questions.md` and `tasks.md` in the same turn as the write, under the same
+  consent boundary (4s timeout, ok:false on failure, exit 0) · his idea and the
+  strongest version of the fix: every other defence fires LATER than the mistake
+  (lint at init and in `just test`, the dashboard at read time), while a hook fires
+  while the agent that mangled the file still holds the context · opt-in by design:
+  no config until `install.py --apply`, and a DREAMWORK.md Load line is required
+  for use · **found still listed Open on a truthfulness sweep**, a day after
+  `close(#138,#156)` named it · `c51da8f`, merged `d7983be`
 
 - **#245** — Build `ud-dreamwork-worktrees` plugin · P1 · origin:
   **unknown** · landed earlier at
@@ -3230,12 +3245,21 @@ Next id: **361**
   publishable package under `plugins/` symlinked into Pi/agents/llm-general
   roots; bounded subagent mode + durable co-agent claims/inbox protocol
 
-- **#250/#251** — Missing-aid answer disclosures + node disconnect proof ·
-  P1/P2 · origin: **unknown** · landed earlier at `f17f307` (ledger rescan 2026-07-27 found both
-  entries stale in Open) · identity-less answered details use a local
-  human-click fold reusing travel/reveal/ghost; original ElementHandle proven
-  connected before refresh and disconnected after; 440 tests, Standards/Spec
-  PASS, deployed
+- **#250** — Preserve motion for missing-aid answer disclosures · P1 · bug ·
+  origin: **loop** · landed at `f17f307` · related: **#251** · identity-less
+  answered details use a local human-click fold reusing travel/reveal/ghost
+  without a persistence key; normal open/close prove >2 intermediate card heights
+  and following-marker positions; reduced-motion function preserved · behavioral
+  RED against the old `watch.py`; 440 tests, browser/lint/diff and Standards/Spec
+  PASS · deployed · found stale in `## Open` by the 2026-07-27 ledger rescan, a
+  day after it landed
+
+- **#251** — Prove old answer node disconnects after deletion refresh · P2 · test ·
+  origin: **loop** · landed with #250 at `f17f307` · related: **#250** · the
+  original ElementHandle is proven connected before refresh and disconnected
+  after; evaluation errors fail closed · a same-aid new survivor stays open · PASS
+  · co-delivered with #250 rather than dependent on it: this is the proof that the
+  node really goes, which is why the pair is `related` and not `depends`
 
 - **#290** — Add a dashboard-settable main-dreamer run mode · P1 · origin:
   **unknown** · landed
@@ -3253,19 +3277,29 @@ Next id: **361**
   under pytest -n 2 load; final Standards + Spec PASS · deployed PID 2583034 ·
   `b0db53d`
 
-- **#292/#293** — `/answers` Ctrl+Enter submit and visible question text ·
-  P1 · origin: **unknown** · landed 2026-07-27 · Ctrl/Cmd+Enter on the `/answers` ask textarea
-  submits exactly once durably: in-flight guard blocks rapid double-press,
-  generation invalidation on leaving the route stops a late response touching
-  a rebuilt form, failures keep the user's words · submitted text is visibly
-  readable live and after hard refresh: permanent `.dreamin` enter-pose
-  removed from open-row HTML, keyed one-shot arrival (`open:` aids over
-  title+body+ordinal, exact-title twins distinct), computed opacity/color/
-  geometry proven live and post-reload, reduced-motion parity, sabotage
-  inject proves the guard is non-vacuous · Grok-owned isolated branch
-  (`9693106` + `f3f491c` + doc-nit `b931c04`), Standards and Spec reviews
-  PASS, 506 tests + 46 subtests, answers guard ×2, merged `73ba7d8`,
-  deployed dashboard PID 1053756 serving HEAD
+- **#292** — Make Ctrl/Cmd+Enter submit `/answers` questions · P1 · UI bug ·
+  origin: **human** · **human via watch 2026-07-27 01:17** · landed 2026-07-27 ·
+  related: **#293** · exact ask: “bug (give it to grok): on the /answers page,
+  ctrl+enter does not work to submit a question to the dreamer, even though it
+  should.” · Ctrl/Cmd+Enter on the `/answers` ask textarea now submits exactly
+  once durably: an in-flight guard blocks a rapid double-press, generation
+  invalidation on leaving the route stops a late response touching a rebuilt form,
+  and failures keep the user's words · Grok-owned isolated branch, Standards and
+  Spec reviews PASS, 506 tests + 46 subtests, answers guard ×2, merged `73ba7d8`,
+  deployed
+
+- **#293** — Render submitted `/answers` question text visibly · P1 · UI bug ·
+  origin: **human** · **human via watch 2026-07-27 01:17** · landed 2026-07-27 ·
+  related: **#292** · exact ask: “bug: when a question is submitted it's meant to
+  go in the list and kind of does but the text stays invisible (though i can still
+  see my cursor change to an I beam when hovering it) also, the question text on
+  /answers stays invisible even after page refresh” · submitted text is visibly
+  readable live and after hard refresh: the permanent `.dreamin` enter-pose was
+  removed from open-row HTML, replaced by a keyed one-shot arrival (`open:` aids
+  over title+body+ordinal, so exact-title twins stay distinct); computed
+  opacity/color/geometry proven live and post-reload, reduced-motion parity, and a
+  sabotage inject proves the guard is non-vacuous · same isolated Grok worktree as
+  #292 but required its own RED · `9693106` + `f3f491c` + doc-nit `b931c04`
 
 - **#291** — Restore the command composer's 1.5s courtesy-close · P1 ·
   origin: **unknown** · landed 2026-07-27 · successful main-panel command sends again auto-dismiss

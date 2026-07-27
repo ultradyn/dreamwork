@@ -2221,3 +2221,20 @@ Next id: **9**
         import inspect
         src = inspect.getsource(lint.run_checks)
         assert "check_related_markers(dw, watch, rep)" in src
+
+    def test_the_summary_never_claims_reciprocity_alongside_an_error(self, tmp_path):
+        """Found by the FIRST live red-proof, not by the fixtures above.
+
+        Stripping #251's real marker made lint print `3 related pair(s), all
+        reciprocal` in the same run as `#250 ... does not say so back`. Every
+        fixture here asserted errors OR the OK line, never both in one run, so
+        the contradiction was invisible to all of them.
+        """
+        t = self.build(tmp_path, self.LEDGER.replace(
+            "origin: **loop** · related: **#1** · going too", "origin: **loop** · going too"))
+        rows = self.rows(t)
+        assert any("does not say so back" in d for d in rows), rows
+        # Precondition: a marker really does survive, so `claims` is non-empty and
+        # the summary line is genuinely reachable — otherwise this passes vacuously.
+        assert "related: **#2**" in (t / ".dreamwork" / "tasks.md").read_text()
+        assert not any("all reciprocal" in d for d in rows), rows

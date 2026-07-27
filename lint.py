@@ -1743,7 +1743,13 @@ def check_related_markers(dw: Path, watch, rep: Report) -> None:
                     f"#{own} is related to #{target} but #{target} does not say so "
                     f"back — an entry is read alone, so both carry the marker and "
                     f"this check is what keeps them agreeing (#353)"))
-    if claims:
+    # Only claim reciprocity when nothing above contradicted it. The first live
+    # red-proof of this check printed `3 related pair(s), all reciprocal` in the
+    # same run as `#250 is related to #251 but #251 does not say so back`, because
+    # the summary was unconditional — a reader scanning for the OK line would have
+    # been told the opposite of the truth by the check that found it.
+    if claims and not any(lvl == ERROR and w == "tasks.md" and "(#353)" in d
+                          for lvl, w, d in rep.rows):
         pairs = {tuple(sorted((a, b))) for a, named in claims.items() for b in named}
         rep.add(OK, "tasks.md", f"{len(pairs)} related pair(s), all reciprocal")
 
