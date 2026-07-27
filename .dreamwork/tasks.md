@@ -127,8 +127,23 @@ Next id: **388**
   case at mobile, and the cliff is at **~780px** — above both existing breakpoints (860, 480).
   A design answering only for 390px would have passed review and broken in a half-width window
   on his desktop
-  · blocked on his answer; the first increment is the source contract in `file-formats.md` plus
-  the "declares no marks ⇒ byte-identical output" check, red first, which touches no artifact
+  · **RULED 2026-07-28 05:35 (`0597bc6`), so this is unblocked to build.** M1 (the 780px
+  rail/strip split) and M4 (marks are not a `nav` entry) went with the rec. **M2 and M3 were
+  overridden**: the cap is **soft 7 / hard 15** — warn at seven, refuse at fifteen — not my
+  five-and-refuse; and the label is **two-line tabs at a smaller text size, up to ~6 words**,
+  not my ~12 characters with builder truncation. The tab grows to fit the label; nobody
+  truncates. The rulings are now recorded in the plan's §"What was decided", which wins over
+  the superseded paragraphs left in place around it
+  · **one measurement is owed before building M3** and it is the same class of thing that
+  refuted three designs already: a two-line tab at a smaller size is **taller and possibly
+  wider** than the tab all the geometry was measured against, and the geometry is tight — the
+  gutter outside `.wrap` is 16px at every viewport from 1120px down. Measure ~6 words at two
+  lines against that gutter first. If it does not fit somewhere, **report the measurement**;
+  do not quietly reintroduce a cap he just removed
+  · the first increment is unchanged by the rulings: the source contract in `file-formats.md`
+  plus the "declares no marks ⇒ byte-identical output" check, red first, which touches no
+  artifact — and it is the one that makes the frame change safe to ship before any artifact
+  adopts it
 
 - **#378** — One `.fact` sits outside any `.facts` grid, in a file with no source · P3 ·
   review tooling · origin: **loop** · 10m · found by #365's measurement and verified

@@ -112,16 +112,38 @@ Next/prev is movement between marks, so it is not exempt.
 - Reduced motion: the jump is the function and survives; nothing about
   *finding* the passage may depend on animation.
 
-## What must be decided before anything is built
+## What was decided — his ruling, 2026-07-28 05:35
 
-1. **The rail-plus-strip split at 780px** — or a single presentation for both,
-   accepting that one of them is worse.
-2. **Cap of five, refusing the build** — or a higher cap, or a warning.
-3. **The mark's source form**: a class on the block plus a short label. The
-   label has to be short enough for a tab (~12 characters), and who truncates —
-   the author, or the builder?
-4. **Whether marks are also a `nav` entry.** They are a different axis, so the
-   recommendation is no; the cost of being wrong is the second table of contents.
+All four were put to him as M1–M4. **Two went with the recommendation and two
+overrode it**, and the two he overrode are the two that were about *his* reading
+experience rather than about the code — which is the pattern worth noticing.
+
+1. **M1 · the rail-plus-strip split at 780px — `rec`, taken.** Build both
+   presentations; the cliff measurement stands.
+2. **M2 · the cap — OVERRIDDEN.** I proposed **five, refusing the build** above
+   it. He set **soft 7, hard 15**: a warning at 7, a refusal at 15. So the build
+   never fails on the count a careful author might legitimately reach, and the
+   forcing function moves from a refusal to a warning across a band. My "five and
+   refuse" was the tidier rule and the wrong one — a refusal at the number where
+   his judgement and mine differ makes the tool argue with him.
+3. **M3 · the label's length and who truncates — OVERRIDDEN.** I proposed a
+   **~12-character** label truncated by the builder. He set **two-line tabs at a
+   smaller text size, up to ~6 words** — so the tab grows to fit the label rather
+   than the label shrinking to fit the tab, and nobody truncates. **Measure the
+   two-line tab's width and height against the 16px gutter before building it**:
+   the whole design rests on `.read` being a fixed 613.5px with 506px of slack at
+   1280px, and a two-line tab is taller and possibly wider than the one this was
+   measured for. If ~6 words does not fit at some viewport, that is a measurement
+   to report, not a cap to quietly reintroduce.
+4. **M4 · marks are not a `nav` entry — `rec`, taken.** Different axis; no second
+   table of contents.
+
+**Superseded, kept deliberately:** the paragraphs above and in §"The design" that
+argue for five-and-refuse and a 12-character label are my superseded proposals.
+They are left in place rather than rewritten because the reasoning behind an
+overridden recommendation is the record of what he wanted differently, and
+deleting it would make the next author re-propose it. Where the two conflict,
+**this section wins.**
 
 ## What this does not touch
 
