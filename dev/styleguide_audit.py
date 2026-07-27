@@ -1,0 +1,400 @@
+#!/usr/bin/env python3
+"""#314 — the styleguide audit, re-grounded on the DIFF not the filename.
+
+THE PROBLEM (the evidence for #314)
+  `audit-styleguide` was RED half a day after #313 scoped it to a green
+  baseline, and not because anyone got sloppy. The recipe asked "did this
+  commit touch watch.py?" and demanded a watch-design.md / file-formats.md
+  entry nearby. But watch.py is one file holding the HTTP server, the git
+  and ledger parsers, AND the whole UI (#124 is the split). So the filter
+  could not tell a stylesheet change from a regex fix, and it accrued
+  failures for work it was never about until "ignore me" was the only
+  lesson a standing MISS could teach (#203's family — a check that reddens
+  for the wrong reason trains everyone to overlook the right one).
+
+  Verified by reading each commit's DIFF, not its file list:
+    NOT real misses (parser / server / git framing):
+      06eacad  parse_ledger combined-mention        (lines ~6270-6401)
+      1d089ad  ledger section anchoring             (parser regexes)
+      db1a1bc  git history NUL framing              (server)
+      e51da7e  quieting expected peer disconnects   (server)
+    REAL misses (genuine UI changes):
+      a6e98cc  review-dock a11y label + 44px send floor  (STYLE + JS consts)
+      bfa561f  title count                                (FAVICON_JS region)
+      cdb89df  /answers per-route tint + turbulence seed  (ROUTER_JS)
+
+THE FIX — filter on the DIFF, not the filename
+  watch.py's UI lives in line-bounded module constants: the triple-quoted
+  strings whose contents are served verbatim to the browser as HTML/CSS/JS.
+  Everything else in the file is server, parser, or helper. So "did this
+  commit change presentation?" IS mechanically answerable: does the commit's
+  diff touch a line inside one of those constants? UI_CONSTANTS names them;
+  the eight are the complete set of module-level triple-quoted strings in
+  watch.py today (STYLE, APP_BODY, COMPONENTS_JS, VIEWS_JS, FAVICON_JS,
+  ROUTER_JS, COMMAND_JS, SHADER_JS).
+
+  CRITICAL: the constants' boundaries are resolved AT THE COMMIT BEING
+  AUDITED, never at HEAD. Line numbers move; `git show <sha>:watch.py` is
+  that commit's own file, and the diff's new-side hunks live in the same
+  coordinate system as that file. A check that judges last week's commit
+  with today's line numbers is the "literal with an expiry date" trap this
+  repo keeps paying for (CLAUDE.md / .dreamwork/lessons.md). ast parses the
+  string literal's [lineno, end_lineno] authoritatively — including the case
+  where the closing triple-quote shares a line with content (STYLE ends with
+  `</style>` then the triple-quote, on one line), which a naive scan for a
+  lone triple-quote line gets wrong.
+
+WHY NOT THE OTHER TWO OPTIONS (so this is not re-litigated)
+  - Split watch.py (#124): the real cure, a large separate task. Not here.
+  - A blanket `Styleguide: n/a` trailer as the primary mechanism: rejected
+    (#203 established that "ask for more care" is not a fix when three
+    consecutive agents already believed they were being careful). It is kept
+    ONLY as a narrow escape hatch for a genuine judgement case the diff filter
+    calls wrong — never how an ordinary non-UI commit passes (a non-UI commit
+    passes by not touching a UI constant).
+
+WHAT IT PROVES — and still does not
+  Adjacency, not coverage: a styleguide entry NEAR the code documents it, but
+  the check cannot tell whether the doc actually describes the change. A
+  whitespace edit to watch-design.md still satisfies it. That residual is
+  accepted and stated (it was before #314 too); the prompt-to-look intent
+  (#155) survives. What #314 removes is the standing-false-positive that made
+  the prompt easy to ignore.
+
+NOT GATED in `just test` — making adjacency mandatory was always worse than
+  the status quo. This is a prompt to look, not a proof. Run it by hand:
+  `just audit-styleguide`, or over a wider range: `just audit-styleguide d1df255..HEAD`.
+"""
+
+import argparse
+import ast
+import re
+import subprocess
+import sys
+
+# The UI-bearing module constants of watch.py: the complete set of
+# module-level triple-quoted strings, served verbatim to the browser as
+# HTML/CSS/JS. Renamed or added constants should be reflected here; the test
+# suite asserts this set against watch.py at HEAD so a drift is loud, not
+# silent. Resolved per-commit (see ui_ranges), so a name absent from an old
+# revision is simply skipped.
+UI_CONSTANTS = (
+    "STYLE",
+    "APP_BODY",
+    "COMPONENTS_JS",
+    "VIEWS_JS",
+    "FAVICON_JS",
+    "ROUTER_JS",
+    "COMMAND_JS",
+    "SHADER_JS",
+)
+
+STYLEGUIDE_FILES = ("watch-design.md", "file-formats.md")
+
+# Baseline anchors, retained from #313 for continuity. The DEFAULT RANGE is
+# BASELINE_ANCHOR..HEAD: everything after the last historical miss is audited,
+# the pre-baseline burst (BASELINE_LOW..BASELINE_ANCHOR) is reported as a count
+# only and is NOT back-filled — reconstructing entries after the fact is the
+# fabrication this check exists to prevent. These are SHAs, not round numbers,
+# derived from history (d1df255 = where watch-design.md became authoritative;
+# 1d089ad = the last miss under #313's scoping). Under #314's diff filter the
+# pre-baseline count is recomputed and will differ from #313's "11" — that is
+# honest, not a regression: parser/server false positives drop out, real UI
+# misses remain.
+BASELINE_LOW = "d1df255"
+BASELINE_ANCHOR = "1d089ad"
+
+# `Styleguide: n/a` — the narrow escape hatch. A UI commit that the diff filter
+# flags but a human judges not to need an entry may carry this trailer instead.
+# It is reported loudly (EXEMPT line) so the hatch stays auditable, and it is
+# never how an ordinary non-UI commit passes.
+HATCH_RE = re.compile(r"^Styleguide:\s*n/a\s*$", re.IGNORECASE | re.MULTILINE)
+
+HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+
+def git(*args, check=True):
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True, check=check
+    )
+
+
+def commit_list(revrange):
+    out = git("log", "--format=%H%x00%h", revrange, check=False).stdout
+    pairs = []
+    for line in out.splitlines():
+        if not line:
+            continue
+        full, short = line.split("\x00", 1)
+        pairs.append((full, short))
+    return pairs
+
+
+def touched_files(sha):
+    out = git("show", "--stat", "--format=", "--name-only", sha, check=False).stdout
+    return frozenset(line for line in out.splitlines() if line.strip())
+
+
+def commit_subject(sha):
+    return git("log", "-1", "--format=%s", sha).stdout.strip()
+
+
+def commit_body(sha):
+    return git("log", "-1", "--format=%B", sha).stdout
+
+
+def has_escape_hatch(sha):
+    return bool(HATCH_RE.search(commit_body(sha)))
+
+
+def watchpy_source_at(sha):
+    r = git("show", f"{sha}:watch.py", check=False)
+    return r.stdout if r.returncode == 0 and r.stdout else None
+
+
+def ui_ranges(src):
+    """[(name, start, end)] for each UI constant present in this watch.py src.
+
+    start/end are 1-based, inclusive, spanning the triple-quoted string literal
+    (the closing line included, even when the triple-quote shares it with
+    content). ast is the authority; a text scan is the fallback if a historical revision does not
+    parse (committed watch.py does, but the audit walks history).
+    """
+    ranges = []
+    try:
+        tree = ast.parse(src)
+        for node in tree.body:
+            if not (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id in UI_CONSTANTS
+            ):
+                continue
+            val = node.value
+            if isinstance(val, ast.Constant) and isinstance(val.value, str):
+                ranges.append((node.targets[0].id, val.lineno, val.end_lineno))
+        if ranges:
+            return ranges
+    except SyntaxError:
+        pass
+    # Text fallback: open on `^NAME = """`, close on the next line holding `"""`.
+    # The UI constants' contents (CSS/JS/HTML) do not contain `"""`, so the next
+    # occurrence after the open is the close. Robust to `</style>"""` closings.
+    lines = src.splitlines()
+    for name in UI_CONSTANTS:
+        start = None
+        for i, line in enumerate(lines, 1):
+            if re.match(rf"^{re.escape(name)}\s*=\s*\"\"\"", line):
+                start = i
+                break
+        if start is None:
+            continue
+        end = None
+        for j in range(start + 1, len(lines) + 1):
+            if '"""' in lines[j - 1]:
+                end = j
+                break
+        if end is not None:
+            ranges.append((name, start, end))
+    return ranges
+
+
+def diff_new_spans(sha):
+    """New-image line spans [start, end] (1-based, inclusive) touched by this
+    commit's watch.py diff, measured in <sha>'s own watch.py (the post-image).
+    Diffed against the first parent; the root commit (no parent) and commits
+    that did not touch watch.py yield no spans. Merges diff against first
+    parent — the UI work they bring in was classified in the branch commits.
+    """
+    if git("rev-parse", "--verify", f"{sha}^", check=False).returncode != 0:
+        return []
+    r = git("diff", f"{sha}^", sha, "--", "watch.py", check=False)
+    spans = []
+    for line in r.stdout.splitlines():
+        m = HUNK_RE.match(line)
+        if not m:
+            continue
+        start = int(m.group(1))
+        length = int(m.group(2)) if m.group(2) is not None else 1
+        if length > 0:
+            spans.append((start, start + length - 1))
+    return spans
+
+
+def touched_constants(spans, ranges):
+    """Names of UI constants whose [start,end] overlaps any new-image span.
+
+    Pure on purpose so the test suite can pin it without git: a commit changes
+    presentation iff a diff hunk lands inside a UI constant. `spans` are the
+    diff's post-image line spans [(s,e)], `ranges` are [(name,start,end)] from
+    ui_ranges (same coordinate system — both describe <sha>'s own watch.py).
+    """
+    touched = []
+    for (s, e) in spans:
+        for (name, rs, re_) in ranges:
+            if s <= re_ and e >= rs and name not in touched:
+                touched.append(name)
+    return touched
+
+
+def classify_ui(sha):
+    """(is_ui, [touched constant names]) for one commit, resolved at <sha>.
+
+    A commit changes presentation iff its diff's new-image spans overlap any UI
+    constant's range in <sha>'s own watch.py. Pure deletions still overlap via
+    their surrounding context lines, so removing UI counts as touching UI.
+    """
+    src = watchpy_source_at(sha)
+    if src is None:
+        return False, []
+    ranges = ui_ranges(src)
+    spans = diff_new_spans(sha)
+    if not ranges or not spans:
+        return False, []
+    touched = touched_constants(spans, ranges)
+    return bool(touched), touched
+
+
+def classify_range(revrange, window):
+    """Classify every commit in revrange. Returns a structured result.
+
+    A watch.py commit is one whose file list includes watch.py. Among those:
+      - non-UI  : diff touches no UI constant (server/parser/helper). Passes.
+      - UI ok   : a styleguide file was touched within +-window commits.
+      - UI exempt: no styleguide entry, but carries `Styleguide: n/a`. Passes.
+      - UI miss : UI change, no entry, no hatch. FAILS the audit.
+    The styleguide-window search is bounded by the range's own commit list, so
+    a UI commit whose entry sits just outside the range can be a false miss at
+    the boundary — same limitation the pre-#314 recipe had; pass a wider range.
+    """
+    commits = commit_list(revrange)
+    ui_ok, ui_exempt, ui_miss, non_ui, untouched = [], [], [], 0, 0
+    for i, (full, short) in enumerate(commits):
+        files = touched_files(full)
+        if "watch.py" not in files:
+            untouched += 1
+            continue
+        is_ui, consts = classify_ui(full)
+        if not is_ui:
+            non_ui += 1
+            continue
+        lo = max(0, i - window)
+        hi = min(len(commits) - 1, i + window)
+        entry = None
+        for j in range(lo, hi + 1):
+            if touched_files(commits[j][0]) & frozenset(STYLEGUIDE_FILES):
+                entry = commits[j][1]
+                break
+        if entry is not None:
+            ui_ok.append((short, consts, entry))
+        elif has_escape_hatch(full):
+            ui_exempt.append((short, consts))
+        else:
+            ui_miss.append((short, consts))
+    return {
+        "commits": commits,
+        "ui_ok": ui_ok,
+        "ui_exempt": ui_exempt,
+        "ui_miss": ui_miss,
+        "non_ui": non_ui,
+        "untouched": untouched,
+    }
+
+
+def _fmt_consts(consts):
+    return ",".join(consts) if consts else "watch.py"
+
+
+def print_report(res, revrange, window, out=sys.stdout):
+    for short, consts in res["ui_miss"]:
+        subj = commit_subject(short)
+        print(f"MISS  {short} [{_fmt_consts(consts)}] {subj[:60]}", file=out)
+    for short, consts in res["ui_exempt"]:
+        subj = commit_subject(short)
+        print(f"EXEMPT {short} [{_fmt_consts(consts)}] {subj[:54]}  (Styleguide: n/a)",
+              file=out)
+
+    ui_total = len(res["ui_ok"]) + len(res["ui_exempt"]) + len(res["ui_miss"])
+    print(file=out)
+    print(
+        f"watch.py commits: {ui_total} UI "
+        f"({len(res['ui_ok'])} with a styleguide entry within {window}, "
+        f"{len(res['ui_exempt'])} exempt via Styleguide: n/a, "
+        f"{len(res['ui_miss'])} without), "
+        f"{res['non_ui']} non-UI (server/parser/helper, not subject to the audit)",
+        file=out,
+    )
+    print(
+        "(adjacency, not coverage — a nearby entry documents the change; "
+        "it cannot prove the doc describes it. See dev/styleguide_audit.py.)",
+        file=out,
+    )
+
+    # Pre-baseline visibility — silently narrowing coverage is its own
+    # dishonesty (CLAUDE.md). The count is DERIVED at runtime under this
+    # filter; a hardcoded literal would carry today's truth into next week.
+    if (
+        git("rev-parse", "--verify", "-q", BASELINE_ANCHOR, check=False).returncode == 0
+        and git("rev-parse", "--verify", "-q", BASELINE_LOW, check=False).returncode == 0
+    ):
+        pre = classify_range(f"{BASELINE_LOW}..{BASELINE_ANCHOR}", window)
+        pre_ui = len(pre["ui_ok"]) + len(pre["ui_exempt"]) + len(pre["ui_miss"])
+        print(
+            f"pre-baseline ({BASELINE_LOW}..{BASELINE_ANCHOR}): "
+            f"{pre_ui} UI watch.py commits, {len(pre['ui_miss'])} without a "
+            f"styleguide entry (not back-filled — see dev/styleguide_audit.py)",
+            file=out,
+        )
+        print(
+            f"  list them in full: just audit-styleguide {BASELINE_LOW}..HEAD",
+            file=out,
+        )
+    return len(res["ui_miss"])
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        prog="audit-styleguide",
+        description="Is a watch.py UI change documented nearby? (#314 diff filter)",
+    )
+    ap.add_argument(
+        "range",
+        nargs="?",
+        default=f"{BASELINE_ANCHOR}..HEAD",
+        help="git range to audit (default: %(default)s)",
+    )
+    ap.add_argument(
+        "--window",
+        type=int,
+        default=3,
+        help="commits either side that may hold the styleguide entry (default: %(default)s)",
+    )
+    args = ap.parse_args(argv)
+
+    # Refuse a vacuous filter up front: UI_CONSTANTS must still name the module
+    # constants present in watch.py at HEAD. If a rename lands without this set
+    # being updated, every commit would classify non-UI and the audit would go
+    # permanently green for the wrong reason — exactly the hollow-check failure
+    # mode this repo has paid for three times.
+    head_src = watchpy_source_at("HEAD")
+    if head_src:
+        present = {name for name, _, _ in ui_ranges(head_src)}
+        missing = [c for c in UI_CONSTANTS if c not in present]
+        if missing:
+            print(
+                f"audit-styleguide: UI_CONSTANTS names not found in HEAD watch.py: "
+                f"{', '.join(missing)}. A rename likely landed without updating "
+                f"dev/styleguide_audit.py — the filter would now miss UI changes "
+                f"in those constants. Fix the names and re-run.",
+                file=sys.stderr,
+            )
+            return 2
+
+    res = classify_range(args.range, args.window)
+    misses = print_report(res, args.range, args.window)
+    return 1 if misses else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
