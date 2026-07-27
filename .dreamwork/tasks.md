@@ -66,6 +66,20 @@ Next id: **393**
   · **the red must catch the offset, not the presence**: assert that an entry written at a known
   time renders an age matching that time and **not** midnight — a check that only asserts two
   entries differ passes with every age wrong by the same amount
+  · **the audit lane (`ccc @grok`, brief `.dreamwork/docs/briefs/392-adj-figure-audit.md`, report
+  `.dreamwork/docs/measurements/2026-07-28-0830-dashboard-figure-audit.md`, `d348122`) confirmed
+  this at scale**: all **38** `.qage` nodes on `/questions` use midnight timestamps, and every
+  multi-day age ends in the same `08h` — a signature that was visible on the page and that nobody
+  had read as one. 42 figures checked, 28 correct
+  · **its second finding — burndown open +1 for four buckets — is REFUTED, and the refutation is
+  worth more than the finding was.** `watch.py` was right. Three derivations (the lane's two, plus
+  my own) all matched `^- \*\*#(\d+)\*\*` and so all missed the combined head
+  `- **#138/#156**`, which `file-formats.md:244` documents. Settled by asking the **deployed**
+  `parse_ledger` what it counted: 110, agreeing with the payload. Recorded as a lesson
+  · **found beside it, and it is real:** `#156` sat under `## Open` twice at once for ~16 hours
+  (07-26 20:23 → 07-27 12:23) — 111 ids, 110 unique. `lint.check_tasks` has ERRORed on exactly
+  that since `b7151ec`, so the check was never the problem; it was not run or not read. **No new
+  task filed** — nothing to build
   · related: **#385**
 
 

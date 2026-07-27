@@ -1953,3 +1953,33 @@ this shape and convert opportunistically.)
   and withheld the means. **A brief has to be checked against itself — deliverables against
   criteria against ownership — and the coordinator is the only party who can do it, because it is
   the only party that sees all the lanes.**
+
+- **Independent routes that share an assumption are one route — and the shared assumption is
+  invisible precisely because they agree.** Three derivations of the same number agreed and all
+  three were wrong; the production code was right and was the outlier.
+  · **Measured:** an audit lane reported the dashboard's burndown as +1 too high for four
+  consecutive buckets, with "two independent routes" (awk over `git show`, and a Python regex).
+  I re-derived it a third way and got the lane's number. The payload said 110, we all said 109.
+  **The code was right.** All three routes matched `^- \*\*#(\d+)\*\*` and the ledger had one
+  **combined head** — `- **#138/#156**` — which that pattern cannot match. Three tools, one
+  assumption: *one id per bullet*. `file-formats.md:244` documents combined heads explicitly and
+  says both ledger readers count every id in them; none of the three routes had read it.
+  · **The lane named the defect in its own uncertainty note** — *"whether both counters miss the
+  same way (they agree with each other)"* — and I spent twenty minutes confirming its finding
+  before taking that sentence seriously. [[a lane's stated uncertainty is a map to the defect]]
+  fired for the third time today. **Read the uncertainty section first, not last.**
+  · **The refinement this forces on [[one value must come from outside the system]]:** outside-ness
+  is required of an *expected value*, because the code cannot be the judge of its own correctness.
+  But when routes **disagree**, the production code is legitimate *evidence about which side is
+  wrong* — asking the deployed `parse_ledger` what it counted settled in one call what three
+  independent derivations could not. Those are different uses and I had collapsed them: I avoided
+  the code for twenty minutes on a principle that did not apply.
+  · **Cheap tell, and it was on screen the whole time:** my count was 109 strict matches out of
+  **110 top-level bullets**. A count that does not equal the number of things it is counting is
+  the whole finding. **When two counts of one collection differ, count the collection.**
+  · **The unrelated real defect found beside it, which is why the neighbours rule keeps earning
+  its place:** `#156` genuinely appeared under `## Open` twice at once — in the combined head and
+  as its own entry — giving 111 ids where 110 were unique. `lint.check_tasks` has reported exactly
+  this as an ERROR since `b7151ec` (2026-07-25), and it splits combined heads correctly. **It sat
+  there for about sixteen hours anyway** (07-26 20:23 → 07-27 12:23), which means during that
+  window `lint.py` was either not run or not read. The check was never the problem.
