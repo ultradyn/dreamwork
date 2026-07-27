@@ -1686,6 +1686,72 @@ class TestCollector(unittest.TestCase):
         self.assertIsNone(watch.answered_at(''))
         self.assertIsNone(watch.answered_at(None))
 
+    def test_a_retained_answer_bullet_is_his_contribution_not_body_prose(self):
+        """#340 — his answer rendered as unattributed prose on 22 of 36 entries.
+
+        Under `## Answered` the parser runs with `lift_answer=False`, so an
+        `Answer (via watch…)` bullet matched `ANSWER_TAGS` but not `NOTE_TAGS`,
+        `note_author` returned None, and it fell through to the
+        `startswith("- ")` branch straight into `body` — rendered by `mdB` as a
+        `·` item with its raw author tag visible as text and NO `you` label. His
+        words lost their attribution while looking like loop prose (#109 made
+        that a correctness matter, not a cosmetic one).
+
+        The production line is `author = answer_by` when not lifting, in
+        `_parse_entries`. Remove it and the first two assertions fail.
+
+        The fix is deliberately NOT `lift_answer=True` here, and this test pins
+        why: `answered_at()` reads the `→ answered` head out of `body`, and two
+        call sites depend on it, so lifting would create a second place for the
+        same fact to live. The third assertion is that guard — the head must
+        still parse after the bullet is re-homed.
+        """
+        text = (
+            "## Open\n"
+            "## Answered\n"
+            "- **P1 · 2026-07-27 — a question he answered**\n"
+            "  → answered (2026-07-27 23:39): **took the rec.**\n"
+            "  - **Note (human, via watch, 2026-07-27 22:00):** thinking aloud\n"
+            "  - **Answer (via watch, 2026-07-27 23:39):** rec, ship it\n"
+            "  - **Follow-up (loop, 2026-07-27 23:41):** folded\n"
+        )
+        items = watch.parse_answered(text)
+        self.assertEqual(len(items), 1)
+        entry = items[0]
+
+        mine = [f for f in entry["follows"] if f["author"] == "human"]
+        texts = [f["text"] for f in mine]
+        self.assertIn("rec, ship it", texts,
+                      "his answer is not a contribution: %r" % (entry["follows"],))
+        # ...and it must not ALSO be sitting in the body with its raw tag.
+        for prefix, _ in watch.ANSWER_TAGS:
+            self.assertNotIn(prefix, entry["body"],
+                             "the raw answer tag is still rendered as body prose")
+        # The guard against the obvious one-argument fix: the resolution head
+        # `answered_at` reads must survive in `body`, unmoved.
+        self.assertEqual(entry["when"], "2026-07-27 23:39")
+        self.assertEqual(watch.answered_at(entry["body"]), "2026-07-27 23:39")
+
+        # Order is preserved, which is what makes the thread readable (#128):
+        # the note he wrote first, then his answer, then the loop's fold.
+        self.assertEqual([f["author"] for f in entry["follows"]],
+                         ["human", "human", "loop"])
+
+        # PRECONDITION, derived rather than pinned: the fixture must actually
+        # contain an answer bullet and a resolution head, or every assertion
+        # above passes over an entry that never exercised the branch.
+        self.assertTrue(any(p in text for p, _ in watch.ANSWER_TAGS))
+        self.assertIn("→ answered (", text)
+
+        # And Open must be UNAFFECTED: there the answer is still lifted out,
+        # because that is what distinguishes answered-awaiting-fold.
+        open_text = text.replace("## Answered", "## Zzz").replace("## Open", "## Answered").replace("## Zzz", "## Open")
+        opened = watch._parse_entries(open_text, "Open", lift_answer=True)
+        self.assertEqual(len(opened), 1)
+        self.assertEqual(opened[0]["answer"], "rec, ship it")
+        self.assertEqual([f["author"] for f in opened[0]["follows"]],
+                         ["human", "loop"])
+
     def test_sub_when_reads_the_tag_head_only(self):
         # #128: a note's stamp decides whether it reads as a reply to an
         # answer or as the thing the answer replied to, so it is parsed — and

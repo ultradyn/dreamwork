@@ -898,6 +898,16 @@ answer carries the same `you` label from the same table, derived from its tag
 no label — `answer_author` returns `None` for the same reason `note_author`
 does.
 
+**That was true on `## Open` and false on `## Answered` for as long as both
+existed (#340).** The Answered path parses with `lift_answer=False`, and an
+answer bullet matches `ANSWER_TAGS` but not `NOTE_TAGS` — so it was neither
+lifted nor recognised as a contribution, fell into the entry body, and rendered
+as a `·` item with its raw tag visible and no label at all. On **22 of 36**
+answered entries. The paragraph above was already the contract; only one of the
+two paths obeyed it, and the more-travelled one did not. Worth stating here
+rather than only in the ledger, because a styleguide claim that describes half
+the surfaces is the kind of thing a reader trusts and should be able to.
+
 **Each contribution states when it was written** (`.qts`, a step below the
 author label). Order is what carries chronology; the stamp is what settles it
 when the order is the thing in doubt. Rendered verbatim from the tag, and

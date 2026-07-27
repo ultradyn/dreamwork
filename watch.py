@@ -7244,6 +7244,21 @@ def _parse_entries(text, section, lift_answer):
         answer_by = answer_author(s)
         is_answer = lift_answer and answer_by is not None
         author = note_author(s)
+        # #340 — when the answer is NOT being lifted, it is still HIS, and a
+        # contribution is what it is. Without this it matched neither tag set,
+        # fell through to the `startswith("- ")` branch, and landed in `body`
+        # verbatim: rendered as a `·` item with its raw author tag showing as
+        # text and no `you` label, on 22 of 36 answered entries.
+        #
+        # Deliberately NOT `lift_answer=True` for `## Answered`, which is the
+        # obvious one-argument fix. `answered_at()` reads the `→ answered`
+        # resolution head out of `body`, and two of the three call sites depend
+        # on it; lifting would put the same fact in a second place that could
+        # disagree with it. Making the bullet a contribution leaves the head
+        # exactly where it is and adds no second source of the same truth.
+        if author is None and not lift_answer:
+            author = answer_by
+
         # invariant 1: this test comes FIRST and is unconditional
         if line.startswith(ENTRY_MARK) and not is_answer and author is None:
             seg, closed, rest = _entry_title_parts(line[len(ENTRY_MARK):])
