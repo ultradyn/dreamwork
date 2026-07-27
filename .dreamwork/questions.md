@@ -26,38 +26,6 @@
     need an AGENTS.md (and CLAUDE.md symlinked to it) that specify to
     always use the dreamwork cli to interact with the topic chats.
 
-- **P3 · 2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
-  Stages 1-5 shipped: the skill exists, is installed and indexed, walks
-  its own procedure, and `newerrand.py` creates a dreamstate so an
-  opening never hand-writes `questions.md`/`status.json` by hand.
-
-  **Stage 6 is the only thing left and it is deliberately gated**,
-  because it is the one part that reaches back into ud-dreamwork:
-  dreamwork's init would read PAST dreamstates, so lessons an errand
-  learned surface in the garden that spawned it. That means editing
-  `initialization.md`, a migration, and probably `file-formats.md` and
-  `lint.py` — new surface in the core loop, not in the sibling.
-
-  Rec: **yes, but later.** The value is real (an errand's lessons
-  currently die with its archive) and nothing else is blocked on it.
-  But it widens the core loop's init, and today already added a linter
-  step there. A week of using dreamtask will say more about what is
-  worth harvesting than a design conversation will now.
-
-  Answer "go" to plan it, or leave it and it stays parked.
-  - **Follow-up (loop, 2026-07-25 17:24):** submissions attached to this
-    entry at 14:34-14:35 have been REMOVED. They were never his: they are
-    verbatim guard strings — `dev/capture/regroup.mjs:67` and
-    `dev/capture/oneinput.mjs:139,153` — that reached the real
-    `questions.md` because a guard ran against the live target instead of
-    the fixture (the runner gap, fixed in 7be4a22). They were previously
-    kept on the reasoning that they were his words; they are not. He asked
-    at 17:23 whether three answers had been forgotten, and on the page
-    they were indistinguishable from his.
-    **This question is genuinely open and has never been answered.**
-  - **Answer (via watch, 2026-07-28 02:53):** rec go
-
-
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
   You said "defer publishing repo for a bit", which answers an open
   question belonging to the dreamwork instance on **x-game**
@@ -250,6 +218,55 @@
 
 
 ## Answered
+
+- **P3 · 2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
+  → answered (2026-07-28 02:53): **"rec go" — planning is authorised now.** The rec's own
+  hedge was *"yes, but later"*, and that hedge was the loop's, about timing; his word is go.
+  So #50 is unblocked for a PLAN, not for editing the core loop's init yet.
+  · **the gate was never about value, it was about surface**: stage 6 is the one part that
+  reaches back into ud-dreamwork, so it touches `initialization.md`, a migration, and probably
+  `file-formats.md` and `lint.py` — new surface in the core loop rather than in the sibling.
+  A plan can settle that shape without widening anything.
+  · **and the argument for waiting has partly expired in his favour**: the rec said a week of
+  using dreamtask would say more than a design conversation. What has accumulated since is a
+  `.dreamwork/lessons.md` this repo prunes by hand — so the harvest question now has a
+  concrete case to design against rather than a hypothetical one.
+  · one correction carried forward from this entry's own history, because it is easy to lose:
+  the submissions attached at 14:34-14:35 were **never his** — verbatim guard strings that
+  reached the live `questions.md` through the runner gap fixed in `7be4a22`. They were removed
+  on 2026-07-25 and this answer is the first real one the entry has had.
+
+  Stages 1-5 shipped: the skill exists, is installed and indexed, walks
+  its own procedure, and `newerrand.py` creates a dreamstate so an
+  opening never hand-writes `questions.md`/`status.json` by hand.
+
+  **Stage 6 is the only thing left and it is deliberately gated**,
+  because it is the one part that reaches back into ud-dreamwork:
+  dreamwork's init would read PAST dreamstates, so lessons an errand
+  learned surface in the garden that spawned it. That means editing
+  `initialization.md`, a migration, and probably `file-formats.md` and
+  `lint.py` — new surface in the core loop, not in the sibling.
+
+  Rec: **yes, but later.** The value is real (an errand's lessons
+  currently die with its archive) and nothing else is blocked on it.
+  But it widens the core loop's init, and today already added a linter
+  step there. A week of using dreamtask will say more about what is
+  worth harvesting than a design conversation will now.
+
+  Answer "go" to plan it, or leave it and it stays parked.
+  - **Follow-up (loop, 2026-07-25 17:24):** submissions attached to this
+    entry at 14:34-14:35 have been REMOVED. They were never his: they are
+    verbatim guard strings — `dev/capture/regroup.mjs:67` and
+    `dev/capture/oneinput.mjs:139,153` — that reached the real
+    `questions.md` because a guard ran against the live target instead of
+    the fixture (the runner gap, fixed in 7be4a22). They were previously
+    kept on the reasoning that they were his words; they are not. He asked
+    at 17:23 whether three answers had been forgotten, and on the page
+    they were indistinguishable from his.
+    **This question is genuinely open and has never been answered.**
+  - **Answer (via watch, 2026-07-28 02:53):** rec go
+
+
 
 - **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
   pre-phase on the existing card ghost?**

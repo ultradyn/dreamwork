@@ -2405,6 +2405,17 @@ Next id: **373**
   gated on Max · stages 1-5 are complete in the installed sibling repo;
   only the core-init widening remains, and its open question recommends
   waiting for real dreamtask use before deciding what is worth harvesting
+  · **UNBLOCKED 2026-07-28 02:53 — he answered "rec go".** The rec was *"yes, but later"* and the
+  hedge was the loop's own, about timing; his word is go. So this is authorised for a **plan**,
+  not for widening the core loop's init yet
+  · the gate was never about value but about surface: stage 6 reaches back into ud-dreamwork, so
+  it touches `initialization.md`, a migration, and probably `file-formats.md` and `lint.py` — new
+  surface in the core loop rather than in the sibling · a plan settles that shape without
+  widening anything, which is why planning is separable from doing here
+  · and the reason for waiting has partly expired in his favour: the rec argued a week of real
+  dreamtask use would teach more than a design conversation, and what has accumulated since is a
+  `lessons.md` this repo prunes **by hand** — so the harvest question now has a concrete case to
+  design against · rec: plan it against that case specifically, not against harvesting in general
 - **#80** — Pick a second dogfood target (hark or c2c) · P3 · chore · 30m ·
   **blocked**: human pick
 
