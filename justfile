@@ -126,13 +126,29 @@ lint:
 #                and a deletion, plus a shallow clone for the
 #                incomplete-coverage copy. Its load-bearing count check was
 #                shown red against the unknown-counted-as-loop sabotage.
+#   filehead     OWN TARGET + OWN EPHEMERAL PORT (#284), gitrow-shaped: the
+#                datum is a FILE at a chosen path, and the shared fixture has
+#                no path long enough to make the heading compete with the
+#                document it names. Plants a deep path, Tabs to the copy
+#                button and reads the clipboard back, and derives its overflow
+#                condition at runtime (the same text measured at
+#                `white-space:pre` against the column it must wrap inside)
+#                rather than pinning a width that today's fixture happens to
+#                exceed.
+#   fileview     OWN TARGET + OWN EPHEMERAL PORT (#252), same reason: it needs
+#                a markdown file whose exact bytes it can compare against the
+#                rendered Source pane, and a `<script>` plus an `onerror`
+#                attribute it can prove are inert AND still visible as text.
+#                Loads `?view=source` directly rather than clicking, because a
+#                switch that works only on click is the bug a click test
+#                cannot see.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit"
+    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}
