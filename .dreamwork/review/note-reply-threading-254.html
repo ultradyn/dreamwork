@@ -1,11 +1,11 @@
 <!doctype html>
-<!--Built from the dreamwork review template v1+52fc2607 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<!--Built from the dreamwork review template v1+51dc98ac (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
-<meta name="dreamwork-review-template" content="v1+52fc2607">
+<meta name="dreamwork-review-template" content="v1+51dc98ac">
 <title>#254 · One rooted exchange per question · design</title>
 <style>
 /* Offline-clean by construction: no fetches, no external fonts, no images.
@@ -35,6 +35,22 @@ a{color:var(--accent);text-underline-offset:.22em;text-decoration-thickness:1px}
 a:hover{color:var(--bright)}
 code{color:var(--lit);background:rgba(22,32,51,.72);padding:.03rem .32ch;border-radius:3px}
 pre{margin:.75rem 0;padding:.9rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.52);color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+/* syntax highlighting tokens (#339) — emitted at build time by
+   review_artifact.py as <span class="tok-…"> inside pre>code. No script in
+   the artifact; if a rule is ever lost the token takes the block's own
+   colour, so highlighting never breaks the code itself. Scoped to pre code
+   so an inline <code> snippet is never coloured by accident. */
+pre code .tok-kw{color:var(--accent)}
+pre code .tok-str{color:var(--ok)}
+pre code .tok-num{color:var(--warn)}
+pre code .tok-com{color:var(--dimmer);font-style:italic}
+pre code .tok-fn{color:var(--accent2)}
+pre code .tok-typ{color:var(--warn)}
+pre code .tok-dec{color:var(--accent)}
+pre code .tok-op{color:var(--muted)}
+pre code .tok-tag{color:var(--accent)}
+pre code .tok-attr{color:var(--accent2)}
+pre code .tok-var{color:inherit}
 strong{font-weight:inherit;color:var(--bright)}em{color:var(--lit)}
 p{margin:.62rem 0}ul,ol{margin:.55rem 0;padding-left:2.4ch}li{margin:.34rem 0}
 h1,h2,h3,h4{margin:0;font:inherit;font-weight:normal;color:var(--bright)}
@@ -410,7 +426,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   </div>
 </details>
 
-<footer>Prepared for task #254 · 27 July 2026 · design only, self-contained, offline-clean, no external requests. <span class="dimmer">· built from review template v1+52fc2607</span></footer>
+<footer>Prepared for task #254 · 27 July 2026 · design only, self-contained, offline-clean, no external requests. <span class="dimmer">· built from review template v1+51dc98ac</span></footer>
 
 </main>
 </body>
