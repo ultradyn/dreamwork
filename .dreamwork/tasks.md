@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **385**
+Next id: **386**
 
 ## Open
 
@@ -141,6 +141,35 @@ Next id: **385**
   to a new check — a checker that read built output instead would be reporting on files nobody
   can regenerate · `test_every_shipped_artifact_still_satisfies_the_new_rules` excludes this
   one violation **by name**, so a new one in the same file is still caught · related: **#379**
+
+- **#385** — Humanized age beside a question's date, in his `XXa YYb` format · P2 · dashboard/UX ·
+  origin: **human** · 25m · **human via watch `add-idea` 2026-07-28 05:41**: *"questions have the
+  date in their headline, next to that they should have humanized time in a standard XXa YYb
+  format, where a and b are units like minutes and seconds. We always show both to 2 figures
+  (prefix with gray 0 if single digit). Smallest units is seconds, then minutes, hours, days,
+  weeks, years. This is structured so that neither XX nor YY are >99 for at least 100 years."*
+  · **most of this already exists and must be reused, not re-authored**: `watch.py:1619`
+  `agePair()` renders exactly `${p2(big)}${bu} ${p2(small)}${su}`, and `p2` (1617) is
+  `padStart(2,'0')`. It is already wired to `data-ct` at 3092. So the format is built; three
+  things are missing
+  · **(a) the unit ladder stops at days, and that breaks the precise invariant he stated.**
+  `AGE_PAIRS` (1618) is `[["d",86400,"h",3600], ["h",3600,"m",60], ["m",60,"s",1]]` — no weeks,
+  no years — so `XX` passes 99 at **100 days**, roughly 3.3 months, not 100 years. Adding
+  `["y",31536000,"w",604800]` and `["w",604800,"d",86400]` restores it: years ≤ 99 covers a
+  century, weeks within a year ≤ 52, days within a week ≤ 6, hours ≤ 23, minutes and seconds ≤ 59.
+  **This is a live defect in the existing helper, not only a gap for the new caller**
+  · **(b) the gray leading zero cannot be done in `textContent`.** Line 3092 assigns
+  `el.textContent = agePair(...)`, and a text node cannot carry a `<span>`. Graying one digit
+  means `agePair` returns markup and the caller switches to `innerHTML` — which is a small
+  escaping question worth answering deliberately rather than by reflex, since every value here is
+  digits and unit letters the function itself produced
+  · **(c) the questions headline is a new caller** and needs the timestamp available to it; the
+  entries already carry a date in the title, so check whether a parseable stamp reaches the
+  client or whether one must be added
+  · **no ask goes to him on this** — per his 05:35 rule, reusing `agePair` over a second
+  humanizer is the one clearly superior answer, so it gets decided here and recorded rather than
+  put to him. The only judgement worth flagging in the eventual report is (b)
+  · blocked while `watch.py` is contested — a c2c peer holds it with #277 pending merge
 
 - **#384** — Two more guards read the wrong `.cmdmsg`, and their notes lie about it · P3 ·
   guards/honesty · origin: **loop** · 10m · found by generalising #382's cause: `watch.py` has
@@ -2316,7 +2345,7 @@ Next id: **385**
   · a discipline change is the weaker half of the same fix and needs no permission: never put
   a lint run and a `git commit` in one command — redirect lint to a file, read the exit, then
   commit. Doing that from now on regardless of his answer
-  · **landed `PENDING` — he answered `apply` at 05:38 and it ran at 05:39**, exit 0, backup
+  · **landed `6575473` — he answered `apply` at 05:38 and it ran at 05:39**, exit 0, backup
   `~/.claude/settings.json.bak-20260728T053957`
   · verified against a snapshot taken before the write rather than against the tool's own
   report: non-hook keys byte-identical, his c2c `PostToolUse` group preserved exactly, no
