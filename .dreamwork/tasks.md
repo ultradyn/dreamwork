@@ -49,7 +49,21 @@ Next id: **314**
   two ends with a deadband, not distinct rounded positions · `qorder.mjs` has
   the same shape (its own comment at :242 reasons about "one distinct
   position") and the dreamer saw it pass in small runs and fail in the full
-  suite · **the dreamer deliberately did not touch either file**: changing
+  suite · **the class is wider than frame counts, and both halves are now
+  proven on `ae2fd58`**: `morph.mjs:176-179` is the same distinct-position
+  count (`uniq(nTops)`/`uniq(nHs)` >= 6, `answer:` mode only), while
+  `dismiss.mjs:134` is the OPPOSITE sensitivity — `ops.at(-1) >= 95` asserts
+  the fade has FINISHED inside a fixed 700ms sampling window, so starving the
+  box makes it red for the reverse reason. Its two neighbours on the same trace
+  (`>= 6` opacity values, `>= 4` transforms) got EASIER under the same load,
+  because slow frames spread further apart — one trace, two assertions moving
+  in opposite directions with load, which is why "some checks passed" is not
+  evidence the run was sound · all four (`headertravel`, `regroup`, `dismiss`,
+  `morph`) failed in loaded runs and every one PASSED when re-run with fewer
+  guards in flight, so the fix must address both shapes: frames strictly
+  between the ends for the counts, and waiting on the transition's own
+  completion (`getAnimations()`/`transitionend`) rather than a fixed window for
+  the terminal states · **the dreamer deliberately did not touch either file**: changing
   another feature's guard to make your own batch green is the move that wants a
   second pair of eyes, and it was right about that · #308 is the sibling
   rounding half of this and the two should land together or in sequence
@@ -92,66 +106,6 @@ Next id: **314**
   writing a motion guard is already looking · **blocked while
   dreamer-reviewsplit owns `transitions.md`** — take it after #305 merges
 
-- **#305** — Read a review document and answer its question side by side · P1 ·
-  Web UI feature/design · ~75m, **needs splitting** · origin: **human** ·
-  **do next via watch 16:34** · sent from `/review?p=tasks-page.html` while
-  reading the #281 artifact, so the friction is first-hand and the page he was
-  on is the page to fix · **his words, kept whole:** "should be able to scroll
-  the question alongside a review document, and the answer/add note input
-  should stay glued to the bottom in line with the bottom of the review
-  document. Above that the text from answering should fade out close to the
-  answer box (unless it is at the end of the question text body). use intuition
-  and judgement to fit the webui aesthetic + remain consistent with design +
-  produce an excellent design. Additionally, there should be an invisible
-  vertical bar between review doc and question being answered that allows
-  dragging left/right to change width of review doc and question block. We also
-  can extend the height of the review doc and RHS column if the height of the
-  window allows." · six distinct asks, and the last three are separable:
-  (a) question scrolls alongside the document rather than after it,
-  (b) the answer/note input is glued to the bottom, aligned with the document's
-  bottom edge, (c) question text fades toward the input, suppressed when the
-  body already ends there, (d) an invisible draggable divider resizes the two
-  columns, (e) both columns may grow taller when the viewport allows,
-  (f) the whole thing must read as this page's own aesthetic, not a generic
-  split pane · **a correction to this entry's first reading, made before
-  starting:** the coordinator initially called the width question a gate on
-  #281 Q1 and that was wrong. Q1 asks whether **/tasks** may become two-pane;
-  this is **/review**, which `watch-design.md` already names as *the* width
-  exception and which already renders the question beside the document via
-  `buildReview(name, q, d)` and `?q=`. So this restructures an existing wide
-  page rather than creating a second exception, needs no ruling from him, and
-  the two are separable — though landing it does weaken Q1's "a second
-  exception is how one column becomes two" argument, which is worth saying
-  when he answers ·
-  the divider needs a persisted width, a keyboard-operable equivalent (a
-  drag-only affordance is not reachable), a reduced-motion story, and a
-  narrow-viewport fallback that stacks rather than shrinking both to unusable ·
-  the fade is a gradient over live text, so it must not clip the last line or
-  make copied text lossy · obey transitions.md and watch-design.md · likely
-  three increments: the two-column shell + splitter, the glued input + fade,
-  then the height/responsive behaviour · **the three-increment brief was wrong**
-  (17:19) — the feature has no working intermediate, so it lands as one; see
-  lessons.md · increment 1 committed in `.worktrees/305-review-split`
-  (`a0cc24a`, 667 insertions) and coordinator-reviewed: 25 guard checks, each
-  shown red against a build broken in the way it names, nine injections · it
-  also fixed a latent bug of its own: a scroll offset assigned to a node the
-  live-tick swap is one statement old clamps to zero and reports nothing, so
-  his typed draft's scroll position had been silently discarded on every tick
-  since #118; now a `putScroll()` that reads back and retries (#179's rule
-  applied to the other thing a restore hands back silently) · **the class was
-  audited and is contained** (17:28): `restoreReviewFrame` preserves the live
-  browsing context rather than recreating the iframe, so its `scrollTo` never
-  meets a fresh node, and the `setSelectionRange` calls are not
-  layout-dependent — no third instance, do not re-audit · **MERGED** at
-  `ae2fd58` (a real merge, two parents; all five branch commits are ancestors),
-  plus `19c6aca` removing a diff3 base marker the coordinator's own
-  conflict-marker sweep did not name · merged tree verifies at **611 pytest +
-  54 subtests, lint clean**, and both parents' `lessons.md` content was proven
-  present by set containment rather than by absence of markers · guards: the
-  two motion FAILs seen in the first run (`headertravel`, `regroup`) were
-  CONTENTION, proven by re-running the identical commit alone — see #311, which
-  carries the evidence · the dreamer was retired at 18:44, harness-confirmed
-  stopped; worktree clean apart from gitignored `__pycache__`
 
 - **#303** — Make `lint.py` notice a `status.json` that lost known keys · P3 ·
   chore · 20m · origin: **loop** · goal: make a silent projection-rewrite loss
@@ -1211,6 +1165,77 @@ Next id: **314**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#305** — Read a review document and answer its question side by side · P1 · landed 2026-07-27 ·
+  Web UI feature/design · ~75m, **needs splitting** · origin: **human** ·
+  **do next via watch 16:34** · sent from `/review?p=tasks-page.html` while
+  reading the #281 artifact, so the friction is first-hand and the page he was
+  on is the page to fix · **his words, kept whole:** "should be able to scroll
+  the question alongside a review document, and the answer/add note input
+  should stay glued to the bottom in line with the bottom of the review
+  document. Above that the text from answering should fade out close to the
+  answer box (unless it is at the end of the question text body). use intuition
+  and judgement to fit the webui aesthetic + remain consistent with design +
+  produce an excellent design. Additionally, there should be an invisible
+  vertical bar between review doc and question being answered that allows
+  dragging left/right to change width of review doc and question block. We also
+  can extend the height of the review doc and RHS column if the height of the
+  window allows." · six distinct asks, and the last three are separable:
+  (a) question scrolls alongside the document rather than after it,
+  (b) the answer/note input is glued to the bottom, aligned with the document's
+  bottom edge, (c) question text fades toward the input, suppressed when the
+  body already ends there, (d) an invisible draggable divider resizes the two
+  columns, (e) both columns may grow taller when the viewport allows,
+  (f) the whole thing must read as this page's own aesthetic, not a generic
+  split pane · **a correction to this entry's first reading, made before
+  starting:** the coordinator initially called the width question a gate on
+  #281 Q1 and that was wrong. Q1 asks whether **/tasks** may become two-pane;
+  this is **/review**, which `watch-design.md` already names as *the* width
+  exception and which already renders the question beside the document via
+  `buildReview(name, q, d)` and `?q=`. So this restructures an existing wide
+  page rather than creating a second exception, needs no ruling from him, and
+  the two are separable — though landing it does weaken Q1's "a second
+  exception is how one column becomes two" argument, which is worth saying
+  when he answers ·
+  the divider needs a persisted width, a keyboard-operable equivalent (a
+  drag-only affordance is not reachable), a reduced-motion story, and a
+  narrow-viewport fallback that stacks rather than shrinking both to unusable ·
+  the fade is a gradient over live text, so it must not clip the last line or
+  make copied text lossy · obey transitions.md and watch-design.md · likely
+  three increments: the two-column shell + splitter, the glued input + fade,
+  then the height/responsive behaviour · **the three-increment brief was wrong**
+  (17:19) — the feature has no working intermediate, so it lands as one; see
+  lessons.md · increment 1 committed in `.worktrees/305-review-split`
+  (`a0cc24a`, 667 insertions) and coordinator-reviewed: 25 guard checks, each
+  shown red against a build broken in the way it names, nine injections · it
+  also fixed a latent bug of its own: a scroll offset assigned to a node the
+  live-tick swap is one statement old clamps to zero and reports nothing, so
+  his typed draft's scroll position had been silently discarded on every tick
+  since #118; now a `putScroll()` that reads back and retries (#179's rule
+  applied to the other thing a restore hands back silently) · **the class was
+  audited and is contained** (17:28): `restoreReviewFrame` preserves the live
+  browsing context rather than recreating the iframe, so its `scrollTo` never
+  meets a fresh node, and the `setSelectionRange` calls are not
+  layout-dependent — no third instance, do not re-audit · **MERGED** at
+  `ae2fd58` (a real merge, two parents; all five branch commits are ancestors),
+  plus `19c6aca` removing a diff3 base marker the coordinator's own
+  conflict-marker sweep did not name · merged tree verifies at **611 pytest +
+  54 subtests, lint clean**, and both parents' `lessons.md` content was proven
+  present by set containment rather than by absence of markers · guards: the
+  two motion FAILs seen in the first run (`headertravel`, `regroup`) were
+  CONTENTION, proven by re-running the identical commit alone — see #311, which
+  carries the evidence · the dreamer was retired at 18:44, harness-confirmed
+  stopped; worktree clean apart from gitignored `__pycache__`
+  · **verification, stated honestly**: 611 pytest + 54 subtests, lint clean,
+  and all 40 guards pass on this commit — but NOT all in one run. The full
+  solo suite was 38/40 with `dismiss` and `morph` red; both PASS in a
+  two-guard re-run of the identical commit, exactly as `headertravel` and
+  `regroup` did after the concurrent-suite run. Four load-sensitive guards,
+  and which ones go red depends on what else the box is doing — the box sat
+  at load 40-90 (16 cores) throughout from other agents' work. `reviewsplit`
+  itself, 47 checks including the coordinator's line-406 fix, passed in every
+  run. See #311, which now carries both failure shapes and the evidence ·
+  dream archived; worktree and branch removed
 
 - **#309** — Coherence re-read of SKILL.md + initialization.md · P3 · origin:
   **loop** · landed 2026-07-27 · the recorded DREAMWORK.md routine, run by a ccc
