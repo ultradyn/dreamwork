@@ -24,9 +24,26 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **298**
+Next id: **299**
 
 ## Open
+
+- **#298** — Explain each burndown column on hover, focus and touch · P2 ·
+  Web UI feature · 25m · origin: **human** · **human via watch `add-idea`
+  14:10** · inspecting a chart column should reveal the exact interval/date,
+  open-task level, arrivals and completions that its geometry currently encodes,
+  plus source/coverage state where relevant; this is detail *about values already
+  summarised on screen*, preserving #142's more-detail rule rather than hiding a
+  second dataset in hover · one restrained chart-native inspector follows the
+  active column without obscuring neighbours, arrives/departs through the page's
+  atmospheric transition, and snaps under reduced motion · hover cannot be the
+  sole path: every column is keyboard-focusable with a useful accessible name,
+  focus shows the same inspector, and tap selects/dismisses it without breaking
+  chart scroll on mobile · red-first guard proves exact values against a
+  controlled ledger history, edge-column clamping, hover→focus parity, Escape/
+  blur/tap dismissal, intermediate arrival/departure states and reduced-motion
+  function · deterministic desktop/mobile captures + visual-review-and-fix ·
+  relates #218's filed-to-landed median but does not depend on it
 
 - **#297** — Make every dashboard disclosure travel instead of jump · P2 ·
   Web UI bug · 60m · origin: **human** · **human via watch `add-idea`
