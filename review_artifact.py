@@ -245,6 +245,181 @@ def fetch_violations(document):
     return scan.hits
 
 
+# ── the component vocabulary, enforced (#347-adjacent) ────────────────────
+#
+# The template's opening comment names the components a body may use and the
+# classes each one takes. That list is documentation FOR AN AUTHOR and nothing
+# read it, which is the same mechanism #325 exists to end: a block that asks
+# every future author to remember produces drift. It duly did — a source wrote
+# `<div class="fact"><strong>122</strong><small>open ids…</small></div>`, which
+# is plausible HTML the template styles not at all, so the number ran straight
+# into its caption as `122open ids…`. `check` said `current` and the build
+# exited 0, because neither has ever looked at the words.
+#
+# TWO FINDINGS, TWO TREATMENTS, and conflating them would produce a check that
+# is confidently wrong later:
+#
+#  1. A child of a documented component that carries none of that component's
+#     classes is an unambiguous contract violation — the template styles
+#     `.fact .number` and `.fact .caption` and nothing else, so there is no
+#     legitimate third form. That REFUSES THE BUILD, exactly as an outward
+#     fetch does.
+#  2. An item count that does not fill the grid's last row is NOT a contract
+#     violation. It is legal HTML rendering with a dead track, and the column
+#     count is a fact about the TEMPLATE's stylesheet — a file this module must
+#     be able to change. So it WARNS, and the number is READ FROM THE TEMPLATE
+#     rather than written here; a literal `4` would be a check with an
+#     invisible expiry date the first time the grid is reshaped.
+#
+# Only `.fact` is populated below. Rules for components whose real usage has not
+# been measured would be guessing, and this module's whole complaint is about
+# assertions nobody checked.
+
+COMPONENT_CHILDREN = {
+    # component class -> the classes its direct children may carry
+    "fact": ("number", "caption"),
+}
+# The container whose item count is measured, and what its items are called.
+GRID_COMPONENTS = {"facts": "fact"}
+# `.facts{…grid-template-columns:repeat(4,…)}` in the template, including the
+# narrower counts inside media queries; the widest is the one a dead track is
+# visible at. `[^}]*` cannot cross a rule boundary, so this reads declarations
+# of `.facts` itself and not of whatever follows it.
+GRID_COLUMNS_RE = r"\.%s\s*\{[^}]*grid-template-columns\s*:\s*repeat\(\s*(\d+)"
+
+# Tags that never take a closing tag, so they must not enter the depth stack.
+_VOID = frozenset(
+    "area base br col embed hr img input link meta param source track wbr".split())
+
+
+def grid_columns(template, container="facts"):
+    """The widest column count `container` declares, or None if it declares none.
+
+    Derived, never constant: the point is that reshaping the grid in the
+    template moves this without anyone remembering to. None is a real answer
+    and disables the count check rather than inventing a default — a check that
+    guesses its own premise is worse than an absent one.
+    """
+    found = re.findall(GRID_COLUMNS_RE % re.escape(container), template, re.S)
+    return max(int(n) for n in found) if found else None
+
+
+class _ComponentScan(html.parser.HTMLParser):
+    """Direct children of a documented component, and items per grid row.
+
+    HTML-aware rather than pattern-matched, because both questions are about
+    depth: a `<code>` nested inside a caption is fine and a `<strong>` sitting
+    beside one is not, and those look identical to a regex that cannot see
+    nesting. Bare text directly inside a component counts as a child for the
+    same reason it renders wrong — the styling lives on the class, so an
+    unwrapped number is the same defect as a wrongly wrapped one.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack = []        # [(tag, classes)] of currently open elements
+        self.bad = []          # (component, description) for each stray child
+        self.rows = []         # (container, item count) per closed grid row
+        self._open_rows = []   # [[container, depth, count]] still open
+
+    # -- the two questions, asked once per element regardless of self-closing --
+
+    def _enter(self, tag, attrs):
+        classes = frozenset((dict(attrs).get("class") or "").split())
+        self._check_child(tag, classes)
+        for container, item in GRID_COMPONENTS.items():
+            if container in classes:
+                self._open_rows.append([container, len(self.stack), 0])
+            if item in classes and self._open_rows:
+                self._open_rows[-1][2] += 1
+
+    def _check_child(self, tag, classes):
+        if not self.stack:
+            return
+        _, parent_classes = self.stack[-1]
+        for component, allowed in COMPONENT_CHILDREN.items():
+            if component in parent_classes and not classes.intersection(allowed):
+                self.bad.append((component, "<%s%s>" % (
+                    tag, " class=%r" % " ".join(sorted(classes)) if classes else "")))
+
+    # -- depth bookkeeping --
+
+    def handle_starttag(self, tag, attrs):
+        self._enter(tag, attrs)
+        if tag not in _VOID:
+            self.stack.append((tag, frozenset(
+                (dict(attrs).get("class") or "").split())))
+
+    def handle_startendtag(self, tag, attrs):
+        self._enter(tag, attrs)          # `<x/>` closes itself; never stacked
+
+    def handle_endtag(self, tag):
+        # Pop to the matching tag rather than assuming balance: a source with a
+        # stray `</div>` must still yield a usable reading instead of throwing.
+        while self.stack:
+            popped, _ = self.stack.pop()
+            if popped == tag:
+                break
+        self._close_rows()
+
+    def handle_data(self, data):
+        if data.strip() and self.stack:
+            _, parent_classes = self.stack[-1]
+            for component in COMPONENT_CHILDREN:
+                if component in parent_classes:
+                    self.bad.append(
+                        (component, "bare text %r" % data.strip()[:30]))
+
+    def _close_rows(self):
+        while self._open_rows and self._open_rows[-1][1] >= len(self.stack):
+            container, _, count = self._open_rows.pop()
+            self.rows.append((container, count))
+
+    def close(self):
+        super().close()
+        self.stack = []
+        self._close_rows()          # an unclosed container still gets counted
+
+
+def component_violations(document):
+    """Children of a documented component that carry none of its classes.
+
+    Fatal: the template styles the documented classes and nothing else, so this
+    renders wrong with no other symptom.
+    """
+    scan = _ComponentScan()
+    scan.feed(document)
+    scan.close()
+    return ["a `.%s` has a child that is neither %s: %s" % (
+        component,
+        " nor ".join("`.%s`" % name for name in COMPONENT_CHILDREN[component]),
+        description) for component, description in scan.bad]
+
+
+def grid_warnings(document, template):
+    """Grid rows whose item count leaves the last row short.
+
+    Advisory: the row renders, it simply shows the container's own background
+    where the missing items would be. The column count comes from `template`,
+    so this follows a reshaped grid instead of asserting yesterday's number.
+    """
+    scan = _ComponentScan()
+    scan.feed(document)
+    scan.close()
+    out = []
+    for container, count in scan.rows:
+        columns = grid_columns(template, container)
+        if not columns or not count or count % columns == 0:
+            continue
+        out.append(
+            "a `.%s` row carries %d `.%s` item(s) in a %d-column grid, so its "
+            "last row shows %d empty track(s) — the count wants a multiple of "
+            "%d (columns read from the template, not assumed)"
+            % (container, count, GRID_COMPONENTS[container], columns,
+               columns - count % columns, columns))
+    return out
+
+
 # ── syntax highlighting (build-time, #339) ────────────────────────────────
 #
 # A review artifact is a frozen record read offline, so highlighting is done
@@ -458,8 +633,15 @@ def highlight(document):
 # ── the build ─────────────────────────────────────────────────────────────
 
 
-def render(fields, template=None):
-    """Fill the template. Raises rather than writing anything questionable."""
+def render(fields, template=None, warn=None):
+    """Fill the template. Raises rather than writing anything questionable.
+
+    `warn` is called once per advisory finding — things that render, but not the
+    way the author meant. They are not errors because refusing a build over a
+    stylistic reading would make this module the arbiter of taste; they are not
+    silent because that is how the defect they describe reached twelve
+    artifacts.
+    """
     template = read_template() if template is None else template
     fields = dict(validate(dict(fields)))
     fields["TEMPLATE_STAMP"] = template_stamp(template)
@@ -519,6 +701,18 @@ def render(fields, template=None):
         raise ArtifactError(
             "output would fetch %d thing(s) — an artifact must be readable "
             "offline:\n  %s" % (len(violations), "\n  ".join(violations)))
+    # The component vocabulary (#347-adjacent). Held against the BUILT output
+    # rather than the source, so a component the template itself emits is
+    # covered too and there is one answer rather than two.
+    strays = component_violations(out)
+    if strays:
+        raise ArtifactError(
+            "output misuses %d documented component(s) — the template styles "
+            "the documented classes and nothing else, so this renders wrong "
+            "with no other symptom:\n  %s" % (len(strays), "\n  ".join(strays)))
+    if warn is not None:
+        for message in grid_warnings(out, template):
+            warn(message)
     return out
 
 
@@ -532,10 +726,10 @@ def build_path(source):
     return os.path.join(os.path.dirname(directory), name)
 
 
-def build(source, out=None, template=None):
+def build(source, out=None, template=None, warn=None):
     with open(source, encoding="utf-8") as handle:
         fields = parse_source(handle.read())
-    document = render(fields, template=template)
+    document = render(fields, template=template, warn=warn)
     out = out or build_path(source)
     tmp = out + ".tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
@@ -586,8 +780,11 @@ def main(argv=None):
             print("review_artifact: --out takes one source", file=sys.stderr)
             return 1
         for source in args.source:
+            def warn(message, source=source):
+                print("review_artifact: %s: warning: %s" % (source, message),
+                      file=sys.stderr)
             try:
-                out = build(source, out=args.out)
+                out = build(source, out=args.out, warn=warn)
             except ArtifactError as error:
                 print("review_artifact: %s: %s" % (source, error), file=sys.stderr)
                 return 1
