@@ -22,3 +22,4 @@ flagged twice.
 ## Folded
 - **#398** → folded (2026-07-28 09:31): folded into `## Recently landed` citing `9f2012a`; verification owed
 - **#392a** · landed `159917b` · 2026-07-28 09:43 · by ccc @glm52 — date-only question ages show ONE figure (paintDayAge, data-day flag); today reads "today"; timed commits keep two figures
+- **#401** · landed `f2c950e` · 2026-07-28 09:47 · by ccc @grok — research: executed id-grammar matrix (14 patterns × 17 forms); #401 silent drop reproduces; 7 silent rejects ranked
