@@ -1203,3 +1203,19 @@ this shape and convert opportunistically.)
   agent (#316, learned by destroying one); the second protects a dead one's
   output. A worktree that is clear AND dirty is the case both were written for
   and neither names.
+
+- **A background task reported "completed" is not a command that finished.** The
+  harness announced `bpn1w66nw completed (exit code 0)` while `just guards` was
+  still running — the same task id then announced completion a SECOND time when
+  it genuinely ended. In between, its log held 38 PASS of 42 and its
+  `echo exit=$?` line had never run, so the log looked like a suite that died
+  partway. Acting on that reading, the next `just guards` collided with the
+  still-live server and #203's pre-flight refused it, which then read as a
+  stale-server orphan; the reaper (correctly) declined to kill it, and the
+  actual parent turned out to be the live recipe `bash /run/user/1000/just/*/guards`.
+  **Two cheap discriminators, before concluding anything about a background
+  command: `kill -0 <recipe pid>` and whether the log's last line is a verdict
+  or just the last thing printed so far.** An empty `exit=` capture means the
+  command has not reached it, never that it exited 0. Chaining
+  `cmd > log; echo exit=$?; grep …` also hands the TASK's exit status to the
+  grep, so the summary's exit code describes the grep and not the command.
