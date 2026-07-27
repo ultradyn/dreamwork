@@ -95,6 +95,33 @@ dreamwork-version: 5853e1789929
   have it. This is the same commitment the loop reached from the code's
   side as "nothing is dropped, only demoted" (#130), and it makes a fold
   a promise: what is inside is still there, and the summary says what.
+- **Ask in plain terms** (human-set 2026-07-27 21:47, and it cost hours). Of
+  seven design questions he answered in one go, six were "rec" — and the
+  seventh got *"you'll need to explain what this means sorry."* The question
+  was written in the loop's own vocabulary, so the only one he could not answer
+  cheaply was the one asking him to learn the loop's jargon first. An ask is a
+  request for his judgement, not a comprehension test: name the thing he would
+  see or do, not the mechanism behind it, and if a term only exists inside this
+  repo it does not belong in a question. The cost is not politeness — that
+  question sat unanswered while the whole `/tasks` lane blocked on the batch it
+  was part of.
+- **The recommendation is the default, not the setting** (human-set 2026-07-27
+  21:47, generalised from *"rec, but user configurable alongside filters"*). When
+  he takes the loop's recommendation for a default, that is not a decision to
+  hardcode it — it is the starting value of a control he expects to exist. And
+  the control belongs beside the related ones he is already looking at, not in a
+  settings page of its own. Same instinct as detail being ranked rather than
+  withheld: the loop chooses the good default and still does not decide on his
+  behalf that he cannot change it.
+- **State the fact, do not hedge the claim** (human-set 2026-07-27 21:47). The
+  loop proposed labelling an in-flight task as a *claim*, to be honest that the
+  agent might have died. His answer: *"we don't need to draw attention to the
+  fact it's a claim, we can just say that it's inprog and have a little box /
+  tooltip on hover saying like 'Reported: Xm Ys ago'."* The honesty is carried
+  by the **freshness**, not by the disclaimer — a timestamp lets him judge for
+  himself, where "claimed" only tells him not to trust the page. Prefer a
+  verifiable fact behind a hover to a word that shrugs; a UI that hedges every
+  uncertain thing in prose teaches him to disbelieve all of it.
 - Delegation routing (human-set 2026-07-27 21:40, superseding the 18:42
   no-native-subagents hold): **native subagents are allowed again for
   anything important or high risk; `ccc @glm52` stays the tool for easy
