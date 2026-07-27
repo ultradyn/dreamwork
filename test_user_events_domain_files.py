@@ -169,5 +169,98 @@ class TestDomainFileLineage(unittest.TestCase):
             "self-referential")
 
 
+# A real child interpreter that drives write() straight into os._exit at the
+# named seam (crash_before_replace=True). It prints RETURNED only if write()
+# returned normally — which it must NOT, because os._exit kills first — so the
+# parent can prove the child died inside the write rather than after it.
+_CHILD_CRASH = r"""
+import sys
+sys.path.insert(0, sys.argv[2])
+from user_events import domain_files
+path = sys.argv[1]
+domain_files.write(
+    path,
+    "this is the NEXT generation's body; it must never reach the file\n",
+    generation=2, applied="receipt-crash|adapter-answer",
+    crash_before_replace=True)
+sys.stdout.write("RETURNED\n"); sys.stdout.flush()
+"""
+
+
+class TestDomainFileOneWrite(unittest.TestCase):
+    """Increment 13 (C3 onewrite): effect+marker+generation+digest in one
+    atomic durable replace, so a crash at the rename leaves the previous
+    generation intact."""
+
+    def test_kill_at_rename_leaves_the_previous_generation_intact(self):
+        # PRODUCTION LINE WHOSE DELETION FAILS THIS TEST:
+        #   the temp-then-os.replace sequence in _atomic_replace. Replace it
+        #   with a direct open(path, "w") (what watch.py's /answer did before
+        #   #370) and the crashed child truncates/corrupts the real file
+        #   instead of leaving it untouched — so post != pre and this fails.
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "questions.md")
+
+            # Seed a real first generation and snapshot its bytes BEFORE the
+            # run. The comparison is against THIS captured value, never a
+            # recomputed expectation — an end-state-only assertion cannot fail
+            # on a crash-window bug, which is precisely why this test exists.
+            domain_files.write(path, _BODY, generation=1,
+                               applied="seed|adapter-answer")
+            pre = open(path, "rb").read()
+            self.assertGreater(
+                len(pre), 100,
+                "precondition: the seeded file is non-trivial, so a truncation "
+                "or partial write is observable rather than indistinguishable "
+                "from the seed")
+            self.assertTrue(
+                domain_files.validate(pre.decode("utf-8")),
+                "precondition: the seed is a valid managed file")
+
+            # A real child process crashes at the seam. Bounded wait; the child
+            # is dead afterwards so reading its stdout hits EOF at once.
+            proc = subprocess.Popen(
+                [sys.executable, "-c", _CHILD_CRASH, path, REPO_ROOT],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            proc.wait(timeout=15.0)
+            out = proc.stdout.read()
+            self.assertNotIn(
+                "RETURNED", out,
+                "the child must have died inside write() at the seam, not "
+                "returned normally")
+
+            # The crash must leave the PREVIOUS generation byte-identical.
+            post = open(path, "rb").read()
+            self.assertEqual(
+                post, pre,
+                "a crash between the temp fsync and the rename must leave the "
+                "previous generation byte-identical to its pre-state")
+
+            # The temp is ACCOUNTED FOR. It is not gone (os._exit bypasses the
+            # cleanup), so it must be provably ignorable: an orphaned hidden
+            # .tmp in the same directory, never the managed path, and the next
+            # write still lands correctly. (The store's read path reads <path>,
+            # never <path>.*.tmp, and mkstemp mints unique names, so a later
+            # write cannot collide with it.)
+            base = os.path.basename(path)
+            leftover = [f for f in os.listdir(d) if f != base]
+            self.assertTrue(
+                any(f.endswith(".tmp") for f in leftover),
+                "precondition: the child reached the seam — it fsynced a temp "
+                "before dying, which is what proves the crash was between fsync "
+                "and replace rather than earlier")
+            self.assertFalse(
+                any(f == base for f in leftover),
+                "no leftover may sit at the managed path")
+
+            # The orphan is ignorable in the way that matters: a subsequent
+            # normal write lands a correct, validating new generation.
+            domain_files.write(path, "after the crash, a clean recovery\n",
+                               generation=3, applied="recv-1|adapter-answer")
+            self.assertTrue(
+                domain_files.validate(open(path, encoding="utf-8").read()),
+                "a leftover orphan temp must not stop a later write validating")
+
+
 if __name__ == "__main__":
     unittest.main()

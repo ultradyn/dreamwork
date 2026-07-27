@@ -30,6 +30,7 @@ import fcntl
 import hashlib
 import os
 import re
+import tempfile
 import time
 
 
@@ -234,3 +235,76 @@ def validate(text):
     if md is None:
         return False
     return md["body_digest"] == compute_digest(text)
+
+
+# ---------------------------------------------------------------------------
+# One write — effect, marker, generation and digest land in a single atomic
+# durable replace under the lock, or none of them do (design law 5).
+#
+# The durable shape is temp-in-same-directory + fsync + os.replace +
+# fsync-parent — the same shape watch.py's atomic_write_text already uses for
+# /ask. The difference is that here it is guarded by the cross-process lock and
+# carries the lineage above, so a crash in the window between the temp fsync and
+# the rename can never half-write the real file. The crash test drives a child
+# straight into os._exit at that seam.
+# ---------------------------------------------------------------------------
+
+def _atomic_replace(path, text, *, crash_before_replace=False):
+    """Durably replace ``path`` with ``text`` via temp + fsync + os.replace.
+
+    ``crash_before_replace`` is the NAMED SEAM for the crash test: after the
+    temp is written and fsynced but before os.replace, the calling process
+    ``os._exit``s. Because the rename never ran the real file is byte-identical
+    to its pre-state and only an orphaned temp is left behind — which is the
+    whole point of temp-then-rename over a direct truncate-write.
+    """
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(path) + ".",
+                               suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        # ---- named kill seam: temp is durable on disk, the real file is
+        # ---- untouched. os._exit here terminates the process without running
+        # ---- the except clause below, so the orphan temp is left on disk and
+        # ---- os.replace never runs.
+        if crash_before_replace:
+            os._exit(0)
+        os.replace(tmp, path)
+        # Best-effort durability of the rename itself; a directory-fsync error
+        # is never fatal (and never a reason to retry, which would duplicate).
+        try:
+            dfd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+        except OSError:
+            pass
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def write(path, body, *, generation, applied,
+          crash_before_replace=False, timeout=10.0):
+    """Write one managed generation atomically: lock, assemble, durable replace.
+
+    ``body`` is the human-visible effect; ``applied`` is the last-application
+    identity (receipt | adapter | application reference) that serves as the
+    receipt marker. Effect, marker, generation and digest all land in the one
+    ``_atomic_replace`` call, under the cross-process lock held across the
+    whole read-to-write span.
+
+    ``crash_before_replace`` is forwarded to ``_atomic_replace`` for the crash
+    test only; production callers never set it.
+    """
+    with DomainFileLock(path, timeout=timeout):
+        text = build_managed_text(body, generation, applied)
+        _atomic_replace(path, text, crash_before_replace=crash_before_replace)
