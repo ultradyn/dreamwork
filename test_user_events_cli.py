@@ -74,6 +74,65 @@ def seed_journal(path: Path, n: int, *, body: bytes | None = None) -> list:
 
 
 # ---------------------------------------------------------------------------
+# F2 — show is the only exact-bytes path; truncation reports what it dropped
+# ---------------------------------------------------------------------------
+
+
+def test_truncation_reports_the_original_length_and_digest(module, tmp_path):
+    db = tmp_path / "journal.sqlite3"
+    body = b"x" * 200
+    max_bytes = 50
+    # Precondition, derived at runtime: the payload must exceed --max-bytes,
+    # else "truncation reports original length" is never exercised.
+    assert len(body) > max_bytes
+    (res,) = seed_journal(db, 1, body=body)
+    expected_digest = res.request_digest
+
+    buf = io.StringIO()
+    code = module.main(
+        ["show", res.receipt_id, "--journal", str(db), "--target", str(tmp_path),
+         "--max-bytes", str(max_bytes)],
+        out=buf,
+    )
+    assert code == module.EX_OK
+    rec = json.loads(buf.getvalue())
+
+    assert rec["truncated"] is True
+    # The two named metadata fields (F2 red line: the truncation-metadata emit).
+    assert "original_length" in rec, "truncation omitted original_length"
+    assert rec["original_length"] == len(body), "original_length must be the full payload"
+    assert rec["digest"] == expected_digest, "truncation must report the request digest"
+    # The shown payload is bounded.
+    assert len(rec["payload"].encode("utf-8", "replace")) <= max_bytes
+
+
+def test_show_untruncated_carries_the_payload_and_stable_id(module, tmp_path):
+    db = tmp_path / "journal.sqlite3"
+    body = b'{"text":"a short answer"}'
+    (res,) = seed_journal(db, 1, body=body)
+    buf = io.StringIO()
+    code = module.main(
+        ["show", res.receipt_id, "--journal", str(db), "--target", str(tmp_path),
+         "--max-bytes", "4096"],
+        out=buf,
+    )
+    assert code == module.EX_OK
+    rec = json.loads(buf.getvalue())
+    assert rec["truncated"] is False
+    assert rec["payload"].encode("utf-8") == body
+    assert rec["id"] == res.receipt_id
+
+
+def test_show_unknown_receipt_is_noinput(module, tmp_path):
+    db = tmp_path / "journal.sqlite3"
+    seed_journal(db, 1)
+    assert module.main(
+        ["show", "never-existed", "--journal", str(db), "--target", str(tmp_path)],
+        out=io.StringIO(),
+    ) == 66  # EX_NOINPUT
+
+
+# ---------------------------------------------------------------------------
 # F1 — list is a bounded projection with stable exit codes
 # ---------------------------------------------------------------------------
 

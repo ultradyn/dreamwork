@@ -40,7 +40,7 @@ EX_USAGE = 64
 EX_NOINPUT = 66
 EX_SOFTWARE = 70
 
-COMMANDS = ("list",)
+COMMANDS = ("list", "show")
 _HELP = __doc__
 
 
@@ -135,6 +135,62 @@ def _resolve_journal(args) -> str:
     return str(Path(args.target) / ".dreamwork" / "user-events.sqlite3")
 
 
+def _as_int(value) -> int:
+    """Parse an int, or return -1 (no receipt has a negative sequence)."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return -1
+
+
+def cmd_show(args, ctx, out):
+    """The only exact-bytes path. Truncation reports original length + digest.
+
+    ``--max-bytes`` bounds what is shown; when the payload exceeds it, the
+    response says so by carrying the ORIGINAL length and the request digest, so
+    a reader knows exactly what was elided and can re-fetch or verify later.
+    """
+    conn = _open_ro(ctx.journal)
+    try:
+        row = conn.execute(
+            "SELECT receipt_id, sequence, endpoint, received_at, request_digest, "
+            "content_type, exact_payload_bytes, payload_size, state "
+            "FROM receipts WHERE receipt_id = ? OR sequence = ?",
+            (args.receipt, _as_int(args.receipt)),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise _CliError(EX_NOINPUT, f"no receipt matching {args.receipt!r}")
+    body = bytes(row["exact_payload_bytes"])
+    original_length = int(row["payload_size"])
+    digest = row["request_digest"]
+    max_bytes = args.max_bytes
+    rec = {
+        "id": row["receipt_id"],
+        "sequence": row["sequence"],
+        "endpoint": row["endpoint"],
+        "state": row["state"],
+        "content_type": row["content_type"],
+        "max_bytes": max_bytes,
+    }
+    if len(body) > max_bytes:
+        # --- F2 red line: the truncation-metadata emit ---
+        # Deleting these two fields is the red: the test asserts both are
+        # present and correct when the payload exceeds --max-bytes, so a
+        # silent elision (truncated with no record of what was dropped) fails.
+        rec["truncated"] = True
+        rec["original_length"] = original_length
+        rec["digest"] = digest
+        rec["payload"] = body[:max_bytes].decode("utf-8", errors="replace")
+    else:
+        rec["truncated"] = False
+        rec["original_length"] = len(body)
+        rec["payload"] = body.decode("utf-8", errors="replace")
+    out.write(json.dumps(rec) + "\n")
+    return EX_OK
+
+
 def _print_top_help(out) -> None:
     out.write(_HELP)
     if not _HELP.endswith("\n"):
@@ -153,6 +209,10 @@ def _command_parser(command: str) -> argparse.ArgumentParser:
         p.add_argument("--status", help="comma-separated receipt states to filter")
         p.add_argument("--after", type=int, help="only receipts newer than N seconds ago")
         p.add_argument("--limit", type=int, default=20, help="max rows (default 20)")
+    elif command == "show":
+        p.add_argument("receipt", help="receipt id or sequence number")
+        p.add_argument("--max-bytes", type=int, default=4096, dest="max_bytes",
+                       help="bound on exact bytes shown (default 4096)")
     return p
 
 
@@ -188,6 +248,8 @@ def main(argv=None, out=None) -> int:
     try:
         if command == "list":
             return cmd_list(args, ctx, out)
+        if command == "show":
+            return cmd_show(args, ctx, out)
         return EX_USAGE  # unreachable while COMMANDS lists only implemented cmds
     except _CliError as e:
         print(e.message, file=sys.stderr)
