@@ -115,6 +115,14 @@ dreamwork-version: 5853e1789929
   · **disjointness must cover the environment, not only files.** The loop's stated
   invariant is disjoint *files*; CPU, guard ports and the wall clock are shared, so
   a lane that consumes one is scheduled against the lanes that *measure* it.
+  · **the general form, after a third instance 2026-07-28 09:31: "write X" is not
+  "commit X", and in a shared tree an uncommitted file is one `git checkout` from
+  gone.** The dream-file case below was the first two; the third was the `#394`
+  hand-off line — the lane appended it and left it unstaged, which is precisely
+  what the prompt said to do. **So every file a brief asks for appears in its
+  commit paths, not only in its instructions.** The tell is an instruction phrased
+  as an act of writing (`cat >>`, "append", "write up") with no path list beside
+  it.
   · **and the brief must name the dream file among the paths to COMMIT**, not only
   among the things to write (2026-07-28 07:10): two lanes wrote a dream exactly as
   asked and both exited leaving it **untracked**, because every commit instruction

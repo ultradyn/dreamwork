@@ -261,7 +261,9 @@ way, not to watch harder.
 
 **A subagent that LANDS a commit writes two things, not one** (#394): its
 report to the inbox, and one line to `.dreamwork/handoffs.md`'s
-`## Pending`. Say so in its brief — that is a dispatch-time obligation, not
+`## Pending` — **which it must also commit**, named among its paths, because
+"write this" is not "commit this" and the first lane asked for a hand-off
+appended it and left it unstaged, exactly as instructed. Say so in its brief — that is a dispatch-time obligation, not
 something a lane can be expected to infer. The two are not redundant
 because they are read by different things at different times: the inbox
 carries judgement and is read by a coordinator, in prose, once; the
