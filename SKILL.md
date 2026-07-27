@@ -275,6 +275,16 @@ use it, so `## Pending` sat empty while two lanes landed. **A channel
 nobody writes fails the same way as a channel nobody reads, and looks just
 as finished.**
 
+**Put it in the dispatch prompt, not the relay** — measured, not assumed.
+The first attempt relayed this obligation to three in-flight lanes; the one
+that landed did not write a line and its report never mentions the relay. A
+lane reads its brief and its prompt exactly once and reliably; it re-reads
+the relay only *between increments*, and whether its task even has more
+than one increment is decided by the lane, after dispatch, invisibly. So
+**sort every steer by "what if this is never read": if the answer is "the
+deliverable is incomplete", it belongs in the prompt.** The relay is for
+refinements that are safe to miss — a ratification, a sharpened edge case.
+
 **Steering an agent takes two acts: write, then wake.** The inbox is
 durable but not delivered — a dreamer reads it *between increments*, so
 one that has gone idle never sees it, and a batch written two minutes
