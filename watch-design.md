@@ -2081,6 +2081,16 @@ arrival is the same statement at the other end: `.git .commit.dreamin` starts
 above and smaller (`.dreamin` still supplies the snap) and settles down into
 its row.
 
+**The departure has two beats** (#277): the question-card ghost dissolves in
+place for `180ms` (`.pregone`: blur `0→8px`, opacity `1→.8`, `≤2px` drift)
+before `.gone` sends it away, so it reads as "dissolve then leave" rather
+than "mush then snap". `.gone`'s blur is `8px` (matching `.pregone`'s peak),
+so the corpse never gets crisper as it leaves. The commits panel skips
+`.pregone` and keeps its original `6px` blur via `.commit.gone` — its gesture
+is the grow-and-fall, and a `2px` upward drift would fight the `14px` fall.
+The whole motion contract lives in `transitions.md` (*The departure has two
+beats*); reduced motion never creates a ghost at all.
+
 **The guard asserts the SIGN**, in `motion.mjs`. Counting that the row moved,
 or that a ghost existed, passes on exactly the version he complained about —
 the same trap as measuring that the wisp changed rather than how.

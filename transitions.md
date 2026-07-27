@@ -326,6 +326,37 @@ exception; an element leaving fades rather than vanishing.
   "nothing that moves sits below the toggle", and that rule was checkably
   false about the questions section for the whole life of #141; it is no
   truer about these. Do not read their silence as a decision.
+- **The departure has two beats** (#277). A leaving element should dissolve
+  *in place first*, then leave — not blur and travel at the same moment,
+  which reads as "mush then snap" because the thing is already moving by the
+  time it starts dissolving. The single `.gone` class (blur + opacity +
+  travel, all on one `.7s` transition) started all three together, so the
+  dissolve and the departure were one undifferentiated leg. The fix is a
+  `.pregone` phase on the same single ghost: blur `0 → 8px`, opacity
+  `1 → .8`, at most `2px` upward drift, over `180ms` on its own shorter
+  transition; then `.gone` sends it away on the `.7s` that was always there.
+  Removing `.pregone` restores `.qaghost`'s `.7s`, and the browser retargets
+  from the dissolve's mid-values to `.gone`'s targets, so the two beats chain
+  continuously without a seam. `.gone`'s blur matches `.pregone`'s peak
+  (`8px`), so the corpse never un-blurs as it leaves — it dissolves, then
+  departs at the same softness. Total lifetime stays under `1.1s`.
+
+  The data/DOM commit and the survivor FLIP stay **immediate** — the corpse
+  dreamfades while the live list is already correct, exactly as before. v1
+  applies to question/answer rows, nested thread bodies, and section folds;
+  the commits panel **skips** `.pregone`, because its gesture is the
+  grow-and-fall, and the phase's `2px` upward drift would fight the `14px`
+  downward fall its neighbours are travelling. Under reduced motion the
+  ghost never exists at all (`regroupCards` and `foldDetailsLocal` gate the
+  whole departure on `rmr`), so the phase is simply unreachable.
+
+  The guard is `dev/capture/dreamfade.mjs`. Its load-bearing assertions are
+  **phase separation**: `.pregone` must appear before `.gone` (class
+  membership), blur must reach ≥5px before opacity drops below 0.4
+  (dissolve-first ordering), and blur must not decrease during departure
+  (`.gone`'s blur matches `.pregone`'s peak — the corpse does not un-blur as
+  it leaves). Reduced motion is traced on the same gesture and asserts no
+  ghost is ever created.
 - **The dream dissolve** (route change). The outgoing view becomes a
   `.ghost` (z-index above `#view`) that liquifies into a swirling mist and
   lifts up and toward the viewer as it fades — dissolving *in front*. The
