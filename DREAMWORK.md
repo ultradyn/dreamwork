@@ -37,6 +37,16 @@ dreamwork-version: 5853e1789929
 
 - Small verified increments are the error-catching mechanism.
 - Ideas are never lost.
+- **His typed words are never lost either** (human-set 2026-07-27 21:35:
+  *"we must have persistence and never lose work on an autoreload of a
+  page"*). Stated about one box, but it is a property of the whole UI: any
+  field he can type into keeps what he typed across a reload, a re-render
+  and a route change, and a draft is cleared only on a **durable success** —
+  never on close, blur, or a rejected send, because those are exactly the
+  moments he most needs it back. He said it after losing answers on the page
+  he uses to answer the loop's questions, which had stalled the loop's own
+  largest open decision for hours; so this is not politeness about
+  convenience, it is the channel the loop depends on.
 - Know what the human wants so we make what the human needs.
 - Reflection over momentum.
 - The loop should feel like a colleague pottering productively — not
