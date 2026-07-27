@@ -95,8 +95,14 @@ change that line and watch. If you cannot name one, there isn't one.
 
 ## Conventions
 
-- Commit each increment; stage by explicit path (more than one agent
-  commits in this tree).
+- Commit each increment with **`git commit --only <paths> -m …`**. More
+  than one agent commits in this tree, and `git add <path>` alone does
+  **not** protect you: `git commit` commits the whole index, so anything
+  a concurrent agent had staged lands in your commit under your message.
+  That happened at `12f47e3`, which carries a lane's test file inside a
+  ledger commit. Avoiding `git add -A` does not help — the sweep is
+  invisible in your own command. `--only` is the fix and it is verified:
+  it commits just those paths and leaves the rest of the index staged.
 - A commit that changes what an existing install must do says so in a git
   trailer: `Migration:`, `Feature:`, `Needs: config|consent`.
 - Files the loop writes and a tool parses have their shape stated in

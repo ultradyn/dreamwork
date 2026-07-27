@@ -1608,3 +1608,17 @@ this shape and convert opportunistically.)
   was pre-existing — which is exactly what should have happened. Consequence for
   dispatch: a two-line fix does not earn a lane of its own. Batch small mechanical
   fixes into one brief, or do them inline. (coordinator, #384)
+- **`git commit` commits the index, not the paths you added — so "stage by
+  explicit path" does not stop you burying a concurrent agent's work.** This repo's
+  convention existed precisely to prevent that, named `git add -A` as the hazard,
+  and was **wrong about the mechanism**: with a lane's test file already staged,
+  `git add .dreamwork/tasks.md && git commit -m "file(#387): …"` produced a
+  two-file commit carrying `test_user_events_digest.py` inside a ledger commit
+  (`12f47e3`). Nothing in my own command hinted at it, and I only found out because
+  the lane reported the loss honestly instead of inventing a commit of its own.
+  Measured both ways in a scratch repo: with a peer's file staged, `git add mine &&
+  git commit` gives a two-file commit; **`git commit --only mine`** gives a
+  one-file commit and leaves the peer's file still staged. The general shape:
+  **a safeguard can name the right danger and the wrong mechanism, and it then reads
+  as protection while providing none** — the way to tell is to reproduce the failure
+  it claims to prevent, not to re-read the rule. (coordinator, #263 lane A)

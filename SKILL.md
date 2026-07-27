@@ -182,9 +182,17 @@ increments — the coordinator's own, or several dreamers' — only ever
 touch disjoint files, so there is never a split brain over the same
 files. The `parallelize` command is the explicit fan-out of this same
 rule; the coordinator itself still works one inline increment at a
-time. Disjoint files also means disjoint staging: while anyone else
-holds the tree, commit by explicit path — `git add -A` sweeps up their
-half-finished work and buries it in your increment.
+time. Disjoint files also means disjoint staging, and **`git add <path>`
+is not enough — `git commit` commits the INDEX, not the paths you
+added**, so a file another agent had already staged rides along in your
+increment even though you never named it. Avoiding `git add -A` does not
+prevent this; nothing about your own command hints at it. While anyone
+else holds the tree, commit with **`git commit --only <paths> -m …`**,
+which commits exactly those paths and leaves the rest of the index
+staged and untouched. Measured, because the plausible version of this
+rule is the wrong one: with a peer's file staged, `git add mine &&
+git commit` produced a two-file commit; `git commit --only mine`
+produced a one-file commit and left the peer's still staged.
 
 When disjointness can't be arranged — the work overlaps owned files, or
 the change is large or risky — dispatch the dreamer in a worktree (the
