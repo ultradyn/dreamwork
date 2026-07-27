@@ -615,3 +615,99 @@ correct-looking feature over an untouched bug. **The design-first order was load
 and I had already reasoned my way to it once and forgotten.** That is an argument for
 reading the briefs directory before writing a brief, which is now cheap and which I did not
 do.
+
+## The orchestrator's actual leverage is the numbered list, not the prose
+
+This is the sharpest thing I have learned about the role and it cost a live defect on his
+dashboard to learn.
+
+`#385`'s brief asked the right question. In prose, in the gaps section, it said: *"The
+questions headline is a new caller. Check whether a parseable timestamp reaches the client
+for those entries, or whether one has to be added; if it has to be added, that is a
+`watch.py` server-side change and it is in scope."* I wrote that sentence because I had
+anticipated exactly the failure that then happened.
+
+Its acceptance criteria asked that the headline **show** an age, and that a fixture's two
+entries have ages that **differ**. Both held. The guard was green. I re-ran the lane's
+discriminating red myself and it was a good red.
+
+Fifteen minutes after I deployed it, the page showed a 24-minute-old question as
+**`08h 17m ago`** — `data-ct` resolves to midnight, because a `questions.md` headline
+carries a date and no time. The lane never answered the prose question, and nothing
+required it to.
+
+> **The lane optimises against the criteria. Prose is where I explain; the numbered list is
+> where I bind.** Anything I actually need is a criterion or it is decoration.
+
+I had been treating the two as interchangeable — a well-argued brief with a thin criteria
+list felt like a strong brief, because *I* had done the thinking. But the thinking is only
+transmitted through the part that gets checked. Every brief I have written this session has
+a gaps-and-traps section far richer than its criteria list, so this is not one brief's bug.
+
+**Second-order, and worse:** the criterion I was proudest of is the weak one. "Assert the
+fixture's two values differ" is in nearly every brief I wrote today, and it guards against
+a *vacuous* check, never a *wrong* one. Two ages can differ by two days and both be wrong
+by eight hours. The general form is in `lessons.md`: a check comparing outputs to each
+other cannot find a systematic error — **one value must come from outside the system.**
+
+## The one verification a lane structurally cannot do, and it is mine
+
+Thirteen lanes, ten guard runs, a clean `lint.py`, and five independent coordinator
+re-runs all passed over an eight-hour error that was visible in a single screenshot of the
+deployed page.
+
+That is not thirteen failures of diligence. It is structural: **`just guards` copies
+`dev/capture/fixture` to a temp target**, so every lane's verification runs against
+synthetic data by construction. It has to — fixtures are what make guards deterministic.
+The consequence is that no lane has ever looked at the real page with the real ledger, the
+real question file, and the real clock.
+
+> **The coordinator's unique instrument is the deployed artifact with real data.** Not
+> better judgement, not more context — *access to the only environment nobody else can
+> reach.* Deploying and then looking is a verification step, not a delivery step.
+
+I had been treating `just deploy` as the last thing I do for *him*. It is also the first
+thing I do for *me*, and it found in one screenshot what the entire check suite could not.
+
+## Nobody reviews the coordinator
+
+Found in the same twenty minutes, and it is the structural counterpart of the above.
+
+I dumped every numeric field the dashboard renders and two were wrong — both in
+`.dreamwork/status.json`, which **I** am the sole writer of. `current_task_ids` named
+`[263, 385, 389]`, all three closed hours earlier; `deployed` named pid `1067667` at rev
+`9dbc487`, a process that no longer existed. Both render on his page. `lint.py`'s queue-sum
+check caught the count drift; nothing caught the other two, because nothing else knows what
+is true.
+
+The asymmetry is worth stating plainly:
+
+> **I verify thirteen lanes. Nobody verifies me.** The ledger and `status.json` have a
+> single writer *on purpose* — that is the right design, and it is exactly why the
+> single writer's output is the only output in the system with no reviewer.
+
+So the coordinator owes itself the discipline it imposes: derive the numbers from the source
+rather than from memory, and re-derive rather than carry forward. I had been carrying
+`current_task_ids` forward across ticks by editing the interesting fields and leaving the
+rest, which is precisely how a field becomes a lie nobody notices. Recomputing the queue
+count from `## Open` at every write costs one line and catches it.
+
+The third instance in the same window: I recorded my own measurement as *"filed at 08:03"*
+in the ledger, in a lesson, and in a brief. `git log -S` on the headline says **07:54**. The
+defect was identical either way, but I had put an unmeasured number in the durable record
+three times over while penalising lanes for exactly that — and the exact tool that
+corrected it, an 18ms pickaxe, was one command away.
+
+## Runner routing, updated
+
+New this batch: the first task routed to `ccc @grok` **for vision specifically** rather than
+for speed — the dashboard figure audit (`392-adj-figure-audit`), where half the deliverable
+is reading rendered numbers as he would and screenshotting anything implausible. Previous
+grok routings were speed-motivated and its multimodality was incidental. Worth scoring
+separately when it reports, because "grok is faster" and "grok can see" are different
+reasons to pick it and I have only ever tested the first.
+
+Standing shape, unchanged by this batch: `glm52` for work whose difficulty is *judgement*
+under a trap (a format decision, a not-weaker argument, a coupling nothing announces);
+`grok` for work whose difficulty is *volume* (a design sweep, a measurement pass, a
+mechanical transform) and now for anything needing eyes.
