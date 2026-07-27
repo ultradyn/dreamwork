@@ -56,19 +56,39 @@ const openTrace=await page.evaluate(()=>new Promise(res=>{
   const frames=[];
   const t0=performance.now();
   det.querySelector('summary').click();
+  // #296: the travel must ARM a height transition. travelCard arms it
+  // synchronously inside the click handler, so this is observable at once;
+  // without it the node snaps and the >2-distinct evidence goes vacuous.
+  const armed=det.style.height!==''&&/height/.test(det.style.transition);
   (function step(){
     const r=det.getBoundingClientRect(), m=mark.getBoundingClientRect();
     frames.push({t:Math.round(performance.now()-t0), h:Math.round(r.height),
       top:Math.round(m.top), open:!!det.open});
     if(performance.now()-t0<1000) requestAnimationFrame(step);
-    else res({frames, open:!!det.open, h0:frames[0]?.h, hEnd:frames.at(-1)?.h});
+    else res({frames, open:!!det.open, h0:frames[0]?.h, hEnd:frames.at(-1)?.h, armed});
   })();
 }));
 const oH=new Set((openTrace.frames||[]).map(f=>f.h));
 const oTops=new Set((openTrace.frames||[]).map(f=>f.top));
 ok('#250 missing-aid opens (normal)', !!openTrace.open);
+ok('#250 open travel arms a height transition', !!openTrace.armed);
 ok('#250 open visits >2 distinct details heights', oH.size>2);
 ok('#250 open visits >2 distinct marker tops', oTops.size>2);
+/* #296: the close click must not race the OPEN travel's cleanup. travelCard
+   holds inline height/overflow/transition on the node until CARD_MS+150
+   (1000ms) after the open click — the same moment this trace would start.
+   Under event-loop load the cleanup fires LATE: foldDetailsLocal then
+   measures `now` against the stale inline height, was.height===now.height,
+   no transition is armed, and the node SNAPS when the delayed cleanup clears
+   the inline height — exactly 2 distinct heights and marker tops, the load
+   flake this guard showed. Wait for the real premise (prior travel fully
+   settled), never a fixed delay. */
+await page.waitForFunction(()=>{
+  const det=[...document.querySelectorAll('.aq.answered')].find(e=>
+    (e.querySelector('summary')?.textContent||'').includes('Missing aid toggle'));
+  return det && det.style.height==='' && det.style.overflow==='' &&
+    det.style.transition==='';
+},null,{timeout:5000});
 // Close path
 const closeTrace=await page.evaluate(()=>new Promise(res=>{
   const det=[...document.querySelectorAll('.aq.answered')].find(e=>
@@ -78,17 +98,19 @@ const closeTrace=await page.evaluate(()=>new Promise(res=>{
   const frames=[];
   const t0=performance.now();
   det.querySelector('summary').click();
+  const armed=det.style.height!==''&&/height/.test(det.style.transition);
   (function step(){
     const r=det.getBoundingClientRect(), m=mark.getBoundingClientRect();
     frames.push({t:Math.round(performance.now()-t0), h:Math.round(r.height),
       top:Math.round(m.top), open:!!det.open});
     if(performance.now()-t0<1000) requestAnimationFrame(step);
-    else res({frames, open:!!det.open});
+    else res({frames, open:!!det.open, armed});
   })();
 }));
 const cH=new Set((closeTrace.frames||[]).map(f=>f.h));
 const cTops=new Set((closeTrace.frames||[]).map(f=>f.top));
 ok('#250 missing-aid closes (normal)', !closeTrace.open);
+ok('#250 close travel arms a height transition', !!closeTrace.armed);
 ok('#250 close visits >2 distinct details heights', cH.size>2);
 ok('#250 close visits >2 distinct marker tops', cTops.size>2);
 // Reduced motion: function only (immediate), no motion requirement
@@ -130,7 +152,15 @@ ok('multiline markdown meaning survives',pageText.includes('not a section')&&pag
 writeFileSync(ansPath, seedTwoDup('first loop answer.','second loop answer.'));
 await page.waitForFunction(()=>document.querySelectorAll('.aq.answered').length===2,null,{timeout:5000});
 const det=page.locator('.aq.answered').first(), neighbour=page.locator('.aq.answered').nth(1);
-async function traceToggle(name){const p=[await neighbour.evaluate(e=>e.getBoundingClientRect().top)];await det.locator('summary').click();for(let i=0;i<30;i++){p.push(await neighbour.evaluate(e=>e.getBoundingClientRect().top));await page.waitForTimeout(30)}const end=p.at(-1),start=p[0],lo=Math.min(start,end)-1,hi=Math.max(start,end)+1;ok(name+' visits intermediate geometry',new Set(p.map(x=>Math.round(x))).size>3);ok(name+' has no overshoot',p.every(x=>x>=lo&&x<=hi));}
+async function traceToggle(name){
+  /* #296: same settle premise as the missing-aid close — a click that lands
+     while the PREVIOUS traceToggle's travel still holds inline styles
+     measures a stale rect, arms nothing, and snaps, starving the
+     intermediate-geometry evidence under load. */
+  const detH=await det.elementHandle();
+  await page.waitForFunction(e=>e&&e.style.height===''&&e.style.overflow===''&&e.style.transition==='',detH,{timeout:5000});
+  await detH.dispose();
+  const p=[await neighbour.evaluate(e=>e.getBoundingClientRect().top)];await det.locator('summary').click();for(let i=0;i<30;i++){p.push(await neighbour.evaluate(e=>e.getBoundingClientRect().top));await page.waitForTimeout(30)}const end=p.at(-1),start=p[0],lo=Math.min(start,end)-1,hi=Math.max(start,end)+1;ok(name+' visits intermediate geometry',new Set(p.map(x=>Math.round(x))).size>3);ok(name+' has no overshoot',p.every(x=>x>=lo&&x<=hi));}
 await traceToggle('answered disclosure open'); await traceToggle('answered disclosure close');
 
 /* ── #238: open answered disclosure survives a real tick ───────────────────
@@ -221,8 +251,43 @@ ok('#238 closed peer stays closed after reorder', reorder.closedPeer);
 // Deletion: open the second body; delete the first body from disk.
 // #247/#251: non-vacuous — ElementHandle for the *original* open node must
 // detach (isConnected===false). Fresh-node isConnected alone is not proof.
+/* #296 handshake: the wait here USED to be count===2, which was already true
+   from the reorder phase's swapped pair — it passed BEFORE the client's /mtime
+   tick consumed this writeFileSync, so the tick's innerHTML render was still
+   pending and landed between elementHandle() and the isConnected check,
+   detaching the node under load ('#251 original node starts connected').
+   Bind the real premise instead: the render that consumed THIS write has
+   COMPLETED, after which no refresh can be pending (no writes outstanding;
+   ticks are sequential). Renders are logged by wrapping the page's own
+   setLiveContent, keyed by the mtime the consuming tick read — a stale-labeled
+   tick whose /data.json fetch happened to carry our content cannot satisfy
+   it, and the content-order predicate belts the render's payload. */
+await page.evaluate(()=>{
+  window.__dwRenders=[];
+  const orig=setLiveContent;
+  setLiveContent=function(html){
+    const r=orig(html);
+    window.__dwRenders.push({t:performance.now(), m:lastMtime});
+    return r;
+  };
+});
 writeFileSync(ansPath, seedTwoDup('first loop answer.','second loop answer.'));
-await page.waitForFunction(()=>document.querySelectorAll('.aq.answered').length===2,null,{timeout:5000});
+const settled251=await page.evaluate(()=>new Promise(async res=>{
+  const t0=Date.now();
+  const m=parseMtime(await (await fetch('/mtime')).text()).mtime;
+  const orderOk=()=>{
+    const b=[...document.querySelectorAll('.aq.answered')]
+      .map(e=>e.querySelector('.aqbody')?.textContent||'');
+    return b.length===2 && b[0].includes('first loop answer') &&
+      b[1].includes('second loop answer');
+  };
+  (function poll(){
+    if(window.__dwRenders.some(r=>r.m===m) && orderOk()){res(true);return;}
+    if(Date.now()-t0>9000){res(false);return;}   // fails closed, named below
+    setTimeout(poll,50);
+  })();
+}));
+ok('#251 refresh for the fixture write settled before handle', settled251);
 await page.evaluate(()=>[...document.querySelectorAll('.aq.answered')].forEach(d=>{d.open=false;}));
 const openSecond=page.locator('.aq.answered').filter({hasText:'second loop answer'}).first();
 await openSecond.locator('summary').click();
