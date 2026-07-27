@@ -23,13 +23,26 @@ const errs = []; p.on('pageerror', e => errs.push(String(e)));
 // assertion below still reads through the same probe at the same depth, and
 // `.qt` is still the question line in all three states — the folded one just
 // happens to be a <summary>.
+//
+// `.qbody` is looked THROUGH, not at (#326). It is the review dock's
+// scrollport and generates no box anywhere else, so it is not part of a card's
+// shape — but it IS a DOM level, and a `:scope >` probe would stop at it and
+// report the title and the answer tag missing from every unfolded card. `kids`
+// flattens it away, so `order` still lists what it listed before the wrapper
+// existed and the two surfaces are still compared piece for piece. It also
+// differs BY STATE (a folded entry's title is the summary and cannot be inside
+// it), which is exactly why the flatten is the right shape here: the probe
+// asks what the card contains, not how it is nested.
 const SHAPE = `(card) => { const root = card.querySelector(':scope > .qfold') || card;
+ const kids = [...root.children].flatMap(c =>
+   c.classList.contains('qbody') ? [...c.children] : [c]);
+ const kid = sel => kids.find(c => c.matches(sel)) || null;
  return {
   cls: card.className,
   key: card.dataset.qkey || null,
   folded: root !== card,
-  hasTitle: !!root.querySelector(':scope > .qt'),
-  titleTag: (root.querySelector(':scope > .qt') || {}).tagName || null,
+  hasTitle: !!kid('.qt'),
+  titleTag: (kid('.qt') || {}).tagName || null,
   hasInput: !!root.querySelector(':scope > .qcompose .qfield textarea'),
   inputId: (root.querySelector(':scope > .qcompose textarea') || {}).id || null,
   // #273: accessible name + 44px send floor (dock and every card share qaCompose)
@@ -41,9 +54,9 @@ const SHAPE = `(card) => { const root = card.querySelector(':scope > .qfold') ||
     return b ? b.getBoundingClientRect().height : 0; })(),
   modes: [...root.querySelectorAll(':scope > .qcompose .qmode')]
            .map(b => b.dataset.mode),
-  hasAnsTag: !!root.querySelector(':scope > .anstag'),
+  hasAnsTag: !!kid('.anstag'),
   when: (root.querySelector('.qwhen') || {}).textContent || null,
-  order: [...root.children].map(c => c.className || c.tagName.toLowerCase())
+  order: kids.map(c => c.className || c.tagName.toLowerCase())
 }; }`;
 
 await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(900);
