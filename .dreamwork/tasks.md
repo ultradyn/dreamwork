@@ -79,7 +79,18 @@ Next id: **308**
   fallible truth — simplest candidate is the git-tracked handoff/doc trail
   rather than a new sidecar file, and status.json is gitignored, so decide that
   before implementing · check by reddening on a key removal, not on a schema
-  list that would need updating with every new field
+  list that would need updating with every new field · **the git-tracked route
+  is refuted (2026-07-27 17:15)**: the only git-tracked description of this
+  file is `file-formats.md`'s field table, and (a) it does not name
+  `retired_today`, so it would have missed the exact incident that filed this,
+  and (b) treating it as required would red-flag every fresh target, whose
+  status.json is nearly empty by design — the same cry-wolf failure #306 was
+  measured against · that leaves two live options, both needing a call: a
+  gitignored `.status-keys` memo beside the gitignored file it describes (costs
+  `lint.py` its read-only character — it writes nothing today), or a small
+  merge-writer so a wholesale rewrite has to be deliberate, which is the
+  *remove the opportunity* answer but adds a module and does not detect a
+  coordinator who never calls it
 
 - **#301** — Teach the ledger patterns to see combined entry heads · P2 · bug ·
   25m · origin: **loop** · found by `dreamer-taskspage` during the #281 design
