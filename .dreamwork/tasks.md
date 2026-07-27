@@ -2736,11 +2736,25 @@ Next id: **400**
   · the check itself: **`3 brief(s) in scope after hand-off obligation, 27 grandfathered`** on the
   live tree, matching the split I measured before dispatch, and carrying the coverage number in the
   idiom `#395` established an hour earlier
-  · **VERIFICATION OWED, and deliberately not claimed:** the discriminating red — making the
-  cutoff resolution return nothing, which must fail **loudly** rather than grandfather every brief —
-  needs an injection into `lint.py`, and **that lane is still running and owns it.** Per the lesson
-  filed twenty minutes ago, an injection is a write and gets the same ownership analysis as any
-  other. So the fold records the landing; it does not assert the check is sound
+  · **VERIFIED 09:36, once the lane exited and released `lint.py`** — the fold above deliberately
+  did not claim this, because an injection is a write and the owner was still running. The
+  discriminating red is the strongest form available: replacing the cutoff phrase with one absent
+  from `SKILL.md` makes `lint` **ERROR** rather than grandfather everything, and the message states
+  the consequence out loud — *"could not resolve the hand-off obligation cutoff from SKILL.md
+  content … **every brief would have been left unchecked**; a reworded phrase or missing history is a
+  loud failure, never a silent pass"*. Two tests fail
+  (`test_the_cutoff_is_resolved_from_content_not_a_pinned_sha`,
+  `test_the_live_tree_is_green_with_coverage_numbers`) while **7 neighbours pass**
+  · **my first injection of that red was invalid and I nearly believed it:** I replaced the regex's
+  group 1, which for a parenthesised multi-line constant is just `(`, leaving a file that would not
+  parse — so pytest reported a collection `IndentationError`, which is *not* a red. Restored,
+  re-injected properly, `ast.parse`-checked before believing the second result. **A broken injection
+  and a discriminating red look similar in a tail of output and mean opposite things**
+  · the lane's own caveat is a good one and I am not acting on it: a prose phrase is load-bearing, so
+  if rewording becomes frequent the stabler target is a never-reworded marker comment in `SKILL.md`.
+  Noted rather than pre-empted — and my own `SKILL.md` edit ten minutes later did touch that
+  paragraph and left the phrase's occurrence count unchanged, so `git log -S` still resolves to
+  `6f72b8d`. Verified by lint staying green, not assumed
   · related: **#394**
 - **#396** — an inline `data-mark` puts its flag outside the reading column and clips past the page
   edge · origin: **loop** · closed 2026-07-28 09:26 · `7902818`
