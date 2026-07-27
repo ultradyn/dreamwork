@@ -24,9 +24,24 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **322**
+Next id: **323**
 
 ## Open
+
+- **#322** — Allow pasting images into the command composer · P2 · dashboard
+  feature · origin: **human** · **human via dashboard composer 2026-07-27
+  21:20** (verbatim: *"add-idea: allow pasting images to command composer"*) ·
+  captured from `watch-events.log`, which is the only place that command exists ·
+  he typed it while on `/review?p=tasks-page.html` — the #281 design questions —
+  so it is an aside, not an answer to them · **open design questions, none
+  decided**: where a pasted image GOES (a file under `.dreamwork/`, and if so
+  whether it is committed or gitignored), what the composer shows once one is
+  attached, how it reaches the loop (a path in the events line? a sidecar?),
+  size and type limits, and whether the same affordance belongs on the review
+  dock and the answer box or only here · note the events log is a single
+  best-effort LINE per command, so an image cannot ride in it and this needs a
+  durable sidecar the loop reads — that constraint shapes the whole design ·
+  touches `watch.py` (held by an agent right now), so filed not started
 
 
 - **#319** — Guard servers should bind port 0 and let the OS assign · P2 ·
