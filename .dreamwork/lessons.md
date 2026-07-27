@@ -1886,3 +1886,20 @@ this shape and convert opportunistically.)
   see it. That check was outside the fixing lane's remit (it was forbidden the full
   sweep), so it is the coordinator's, and it is the whole difference between "restored
   #169" and "restored #169 and confirmed #277 never needed the trade".
+- **When two lanes need the same file, the answer is sequencing or a worktree — never "check
+  `git diff` before you commit". That is a mitigation dressed as an invariant, and I nearly
+  shipped one.** Writing #354 increment 1's brief I found it needed `watch.py`, which #381's
+  lane also needs for a small dashboard line. Rather than sequence them I wrote a note
+  calling the overlap *"deliberate"*, split the file by region (the request path versus the
+  page), and told the lane to stop if it saw changes that were not its own. Every part of
+  that is wrong in the same way: **`git commit --only watch.py` still sweeps in a concurrent
+  lane's uncommitted work in that file** — `--only` isolates *paths*, not *hunks*, which is
+  precisely the gap it does not close — and the party asked to notice is the one least able
+  to, because unfamiliar diff in a file it is actively editing reads as its own work. The
+  disjointness invariant exists because **a check that depends on a lane's vigilance is not
+  an invariant**; the two mechanisms that hold by construction are running the lanes in
+  sequence and giving one a worktree. Region-splitting a file is the seductive version
+  because it *sounds* like disjointness and produces the same sentence in a brief. **Test for
+  it: if the guarantee has the word "should notice" or "check before" in it, it is a
+  mitigation.** Sequencing cost me nothing here — #381's brief already orders the dashboard
+  piece last, so the file may never be contended at all.
