@@ -5943,7 +5943,7 @@ BURN_OK = "ok"
 BURN_NONE = "no ledger"    # this project keeps no versioned task ledger
 BURN_ERROR = "error"       # git failed; explicitly NOT "no history"
 
-_LEDGER_SNAPS = {}         # rev -> (open ids, landed ids, entry origins)
+_LEDGER_SNAPS = {}         # (rev, tree-relative path) -> parsed snapshot
 _LEDGER_CACHE = {}         # (target, head) -> the whole answer
 
 
@@ -6072,17 +6072,22 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
     first_sight = {}
     latest = set()
     for rev, ct in revs:
-        if rev not in _LEDGER_SNAPS:
+        # A commit identifies a TREE, not one chosen blob in it. Two targets
+        # nested in the same repository can have distinct ledgers at the same
+        # rev, so the immutable memo key must carry the tree-relative path;
+        # rev alone makes whichever dashboard ticks first poison the other.
+        snap_key = (rev, rel)
+        if snap_key not in _LEDGER_SNAPS:
             try:
                 text = g("-C", top, "show", "%s:%s" % (rev, rel))
                 o, done = parse_ledger(text)
-                _LEDGER_SNAPS[rev] = (o, done, entry_origins(text))
+                _LEDGER_SNAPS[snap_key] = (o, done, entry_origins(text))
             except (OSError, subprocess.SubprocessError):
                 # one unreadable revision is a hole, not a failure of the
                 # series — skip it and keep the rest rather than reporting
                 # the whole history as absent
                 continue
-        o, done, eorigins = _LEDGER_SNAPS[rev]
+        o, done, eorigins = _LEDGER_SNAPS[snap_key]
         for i in o | done:
             arrived.setdefault(i, ct)
         for i in done:

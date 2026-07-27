@@ -833,11 +833,27 @@ class TestCollector(unittest.TestCase):
                            check=True, capture_output=True)
             subprocess.run(["git", "-C", d, "commit", "-q", "-m", "both"],
                            env=base, check=True, capture_output=True)
-            p = watch.ledger_stats(os.path.join(d, "sub"))["provenance"]
-            self.assertEqual(p["loop"], 1)
-            self.assertEqual(p["human"], 0,
-                             "the nested target read the repo root's ledger")
-            self.assertEqual(p["total"], 1)
+            # Query BOTH targets in one process. Their one shared commit sha
+            # identifies two different blobs, so a per-revision memo keyed on
+            # sha alone makes whichever target ticks first poison the other.
+            root = watch.ledger_stats(d)["provenance"]
+            nested = watch.ledger_stats(os.path.join(d, "sub"))["provenance"]
+            self.assertEqual(root, {"human": 1, "loop": 0, "unknown": 0,
+                                    "total": 1, "history_complete": True})
+            self.assertEqual(nested, {"human": 0, "loop": 1, "unknown": 0,
+                                      "total": 1, "history_complete": True},
+                             "root-first memo poisoned the nested ledger")
+
+            # And prove order independence, not merely one lucky order.
+            watch._LEDGER_SNAPS.clear()
+            watch._LEDGER_CACHE.clear()
+            nested = watch.ledger_stats(os.path.join(d, "sub"))["provenance"]
+            root = watch.ledger_stats(d)["provenance"]
+            self.assertEqual(nested["loop"], 1)
+            self.assertEqual(nested["human"], 0)
+            self.assertEqual(root["human"], 1,
+                             "nested-first memo poisoned the root ledger")
+            self.assertEqual(root["loop"], 0)
         watch._LEDGER_SNAPS.clear()
         watch._LEDGER_CACHE.clear()
 
