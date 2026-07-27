@@ -199,6 +199,52 @@ const normaliseCaptureChrome = page => page.evaluate(() => {
   const target = document.querySelector('.crumb[data-k="target"]');
   if (target) target.textContent = '/fixture/provenance/target';
 });
+const shaderHealthy = page => page.evaluate(async () => {
+  const cv = document.getElementById('dreambg');
+  const gl = cv && cv.getContext('webgl');
+  const before = window.dreambg && window.dreambg.frames;
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  return getComputedStyle(document.body).backgroundColor === 'rgb(11, 15, 25)' &&
+    gl && !gl.isContextLost() && window.dreambg &&
+    window.dreambg.frames > before;
+});
+const plateIsDark = (page, png) => page.evaluate(async b64 => {
+  const image = new Image();
+  image.src = 'data:image/png;base64,' + b64;
+  await image.decode();
+  const cv = document.createElement('canvas');
+  cv.width = image.width; cv.height = image.height;
+  const g = cv.getContext('2d'); g.drawImage(image, 0, 0);
+  const points = [[5,5], [image.width - 6,5], [5,image.height - 6],
+                  [image.width - 6,image.height - 6]];
+  const luma = points.map(([x,y]) => {
+    const p = g.getImageData(x,y,1,1).data;
+    return (p[0] + p[1] + p[2]) / 3;
+  });
+  return luma.every(v => v < 80);
+}, png.toString('base64'));
+const capturePair = async (page, prefix) => {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (!await shaderHealthy(page)) {
+      await page.reload({ waitUntil:'networkidle' });
+      await ready(page, 'historical unknown');
+      continue;
+    }
+    await normaliseCaptureChrome(page);
+    const panel = await (await page.$('.bd')).screenshot();
+    const full = await page.screenshot();
+    if (await shaderHealthy(page) && await plateIsDark(page, full)) {
+      for (const root of [OUT, EVIDENCE]) {
+        writeFileSync(`${root}/provenance-${prefix}-panel.png`, panel);
+        writeFileSync(`${root}/provenance-${prefix}.png`, full);
+      }
+      return;
+    }
+    await page.reload({ waitUntil:'networkidle' });
+    await ready(page, 'historical unknown');
+  }
+  throw new Error(`${prefix} capture never reached a dark, live shader frame`);
+};
 
 // ── desktop: 1440x1000 ────────────────────────────────────────────────────
 const p = await br.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -261,12 +307,7 @@ ok('no horizontal overflow at 1440px, and the legend is not clipped',
 
 /* the plates. Element shots of the panel for the datum itself, page shots
    for the composition it lives in. */
-await normaliseCaptureChrome(p);
-const bd = await p.$('.bd');
-await bd.screenshot({ path: `${OUT}/provenance-desktop-panel.png` });
-await bd.screenshot({ path: `${EVIDENCE}/provenance-desktop-panel.png` });
-await p.screenshot({ path: `${OUT}/provenance-desktop.png` });
-await p.screenshot({ path: `${EVIDENCE}/provenance-desktop.png` });
+await capturePair(p, 'desktop');
 await p.close();
 
 // ── mobile: 390x844 ───────────────────────────────────────────────────────
@@ -289,12 +330,7 @@ await p.close();
   ok('mobile: the segments keep their proportions',
      rm.segPcts.every(x => x >= 0) &&
      Math.abs(rm.segPcts[1] - 0.6) < 0.02);
-  await normaliseCaptureChrome(mp);
-  const mbd = await mp.$('.bd');
-  await mbd.screenshot({ path: `${OUT}/provenance-mobile-panel.png` });
-  await mbd.screenshot({ path: `${EVIDENCE}/provenance-mobile-panel.png` });
-  await mp.screenshot({ path: `${OUT}/provenance-mobile.png` });
-  await mp.screenshot({ path: `${EVIDENCE}/provenance-mobile.png` });
+  await capturePair(mp, 'mobile');
   await mp.close();
 }
 
