@@ -52,17 +52,6 @@ Next id: **335**
   runtime, in the check, with `**#96 stage 1**` as the fixture · red-prove the
   net-12 case against the real ledger before and after
 
-- **#332** — `/tasks` needs structured task ids in `status.json` · P2 ·
-  contract/data · origin: **loop** · from #327: `#281`'s "in progress" badge cannot
-  be honest without knowing WHICH ids the loop claims, and prose in `task` is not a
-  substitute because one sentence routinely names several ids in different states
-  · add `current_task_ids` (array of ints, top level) and per-agent `task_ids`
-  (array of ints), documented in `file-formats.md`'s status.json table with the
-  wording drafted in the plan's §10 · #327 could not make the change because
-  `file-formats.md` was held by another agent at the time; it is free now ·
-  `dreamhub.py` republishes status, so check both readers · this is a dependency of
-  #281's badge, not of the whole page
-
 - **#333** — `states.mjs` is the SIXTH holder of the forbidden count idiom, and
   unconverted · **P2** (raised from P3) · correctness · origin: **loop** · #327
   filed this as a docs-wording slip; measuring it made it a real one · the count
@@ -1223,6 +1212,23 @@ Next id: **335**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#332** — `status.json` says WHICH tasks the loop claims, as integers ·
+  closed `d05d442` · P2 · contract/data · origin: **loop** · from #327 · added
+  `current_task_ids` (top level) and per-agent `task_ids`, both arrays of ints, so
+  #281's "in progress" badge can decide PER ROW — prose in `task` cannot answer
+  that, because one sentence routinely names several ids in different states · the
+  increment's real content is `lint.py`'s `check_status_task_ids`: a quoted
+  `"#281"` is worse than an absent field, since it is present, is a list, passes
+  `STATUS_TYPES`, reads right to a human, and matches no row at all — silently ·
+  `type(v) is not int` rather than `isinstance`, because `isinstance(True, int)` is
+  True and the sibling `in_flight` was ALREADY written as a bool by this loop
+  (#327 found the dashboard rendering `doing: true`) · red DISCRIMINATED (four
+  positive cases red, integers-accepted and absent-silent green), then re-proved by
+  injecting quoted ids into a copy of the REAL status.json · **both readers
+  checked**: `dreamhub.py` projects a fixed per-agent subset and renders no task
+  rows, so it needs neither field and was deliberately left unwidened · the
+  renderer half stays with #281
 
 - **#327** — the /tasks plan re-verified against the tree it will be built on ·
   merged `a2f4d82` · origin: **human** · **human via watch 2026-07-27 21:47** · his
