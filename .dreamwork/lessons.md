@@ -949,3 +949,17 @@ this shape and convert opportunistically.)
   estimated `last_tick` four minutes in the future — the difference is that
   someone had written a check for that one.)
   (coordinator, 2026-07-27, #281 handover)
+- **A file whose sections are found by `split()` on a raw string can be
+  re-sectioned by its own prose.** Writing #301 — an entry *about* a ledger
+  parser bug — quoted the literal `##`-marker in its body, and
+  `parse_ledger`'s unanchored `split("## Open",1)[1].split("## Recently
+  landed",1)` split there instead of at the heading: the ledger read as 2 open
+  / 187 landed rather than 105 / 84, so every derived number on the dashboard
+  was wrong while that text sat on disk. `lint.py` called the file clean the
+  whole time, because it counts entries with `ledger_entries`, which never
+  splits on sections — the check nearest the damage was structurally unable to
+  see it. Caught only by re-reading the file back through the REAL parser
+  after the write, which is the habit the repo already has a rule for and the
+  reason it has one. Anchor structural markers to line starts, and be
+  suspicious of any format where documenting the format can break it.
+  (coordinator, 2026-07-27, #304)

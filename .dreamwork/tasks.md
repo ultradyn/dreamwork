@@ -24,9 +24,33 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **304**
+Next id: **305**
 
 ## Open
+
+- **#304** — Anchor the ledger section split to line starts · P2 · bug · 20m ·
+  origin: **loop** · goal: stop an entry's prose from silently redefining where
+  the ledger's sections begin ← DREAMWORK.md *Nothing fails quietly* ·
+  **demonstrated live, twice, by this coordinator at 16:30 and again at 16:34**:
+  `parse_ledger` locates the two sections by unanchored `str.split` on their
+  heading text, so any entry body that quotes a heading verbatim becomes the
+  split point. Writing #301 — a task *about* a ledger parser bug — quoted one,
+  and the ledger read as **2 open / 187 landed** instead of 105 / 84. Rewriting
+  that entry fixed it; then this very entry quoted both while describing the
+  defect and it read **1 / 189**. Every derived number (burndown arrivals,
+  completions, open level, queue depth) was wrong for as long as either text
+  sat on disk · **`lint.py` reported CLEAN throughout both breakages**, because
+  it counts entries via `ledger_entries`, which never splits on sections — the
+  check nearest the damage cannot see it · latent before me and still latent:
+  one entry further down already quotes a heading inline and is harmless only
+  because it falls *after* the real one; identical text above it would break
+  everything · fix: anchor both splits to line starts, measured immune (two
+  unanchored matches versus one anchored) · red-first by planting an indented
+  heading quote in a fixture entry, watching the split move, then watching lint
+  refuse it — both halves, because the parser fix alone leaves the next reader
+  with no signal · **note for whoever implements this:** until it lands, an
+  entry cannot safely quote a section heading, which is why this one describes
+  them instead of naming them
 
 - **#303** — Make `lint.py` notice a `status.json` that lost known keys · P3 ·
   chore · 20m · origin: **loop** · goal: make a silent projection-rewrite loss
@@ -49,16 +73,16 @@ Next id: **304**
   (`LEDGER_ENTRY` = `^- \*\*#(\d+)\*\*`, `LEDGER_MENTION` = `\*\*#(\d+)\*\*`),
   so a combined head like `- **#138/#156**` matches *neither* — verified
   directly against both regexes · **live consequence, measured:** the three
-  combined heads all sit under `## Recently landed` (#138/#156, #250/#251,
+  combined heads all sit in the recently-landed section (#138/#156, #250/#251,
   #292/#293), and `parse_ledger` reports #138, #250, #251, #292 and #293 as
   neither open nor landed, so `ledger_series` never records their completion
   and the burndown under-counts landings · **the dreamer's own numbers did not
   reproduce**: it reported 123 vs 118 ids and "arrival, completion and open
-  level all wrong right now"; within `## Open` the two readers agree exactly
+  level all wrong right now"; within the open section the two readers agree
   (103 = 103, no combined head is currently open), so the defect is confined to
   the landed section — file the narrow truth, not the alarming version ·
-  **hypothesis, not established:** that these ids were never singular under
-  `## Recently landed` earlier in history (series `landed` = 83 equals the
+  **hypothesis, not established:** that these ids were never singular in the
+  recently-landed section earlier in history (series `landed` = 83 equals the
   current file's mention count, which is consistent with it but does not prove
   it) — the red-first test settles it · also groom the inconsistency it
   surfaced: #156 has an open entry head while appearing in a landed combined
@@ -541,14 +565,6 @@ Next id: **304**
   records style source/version; offline-clean always; absent/broken plugin
   falls back loudly to project file, never undocumented agent taste · connect
   to #225/#229/#235 + initialization/file-formats
-
-- **#238** — Preserve `/answers` UI state across data refresh · P1 · bug ·
-  20m · origin: **human** · **do next via watch 14:16** · open answered
-  disclosures close after `data.json` refresh; diagnose with requested c2c
-  helper `grok-sugar-vesi-x6tv` and red-first browser guard · preserve every
-  human-controlled `/answers` state through keyed snapshot/restore, smoothly
-  and on the same logical record despite duplicate titles/reorder/deletion ·
-  obey transitions.md · in progress
 
 - **#237** — `[Opus5]` JSON-character rain on data refresh · P2 · idea ·
   origin: **human** · **human via watch 14:13** · on each `data.json`
@@ -1058,6 +1074,26 @@ Next id: **304**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#238** — Preserve `/answers` UI state across data refresh · P1 ·
+  origin: **human** · landed 2026-07-26, **closed 2026-07-27** · open answered
+  disclosures survive a real `data.json` tick through the existing data-keep
+  snapshot/restore seam, keyed on a content-derived record identity (title,
+  resolution stamp, body, follow-ups, exact-twin ordinal) rather than index or
+  title, so reorder or deletion of another entry cannot reopen the wrong record;
+  answer identities are stripped from departure ghosts so stale clones cannot
+  poison later snapshots · `be27c8f`
+  · **closed late, and deliberately on re-verified evidence rather than on the
+  commit message**: the work landed 2026-07-26 red-first (open state lost on an
+  unrelated refresh, stuck at the old index after reorder, lost after deleting
+  another record) but the entry was left reading `in progress` across a
+  coordinator handover. Rather than trust either the stale mark or the commit's
+  own claim, this coordinator checked that the guard which passed actually
+  covers *this* acceptance — `dev/capture/answers.mjs` carries named #238
+  phases for reorder, not-stuck-on-index-0, closed-peer preservation and
+  deletion — and that it went green in this session's own full sweep
+  (596 + 54 subtests, 39/39 guards, 0 failures at `0d1e337`). A guard named
+  `answers` passing is not the same fact as the check for this bug passing.
 
 - **#217** — Render honest provenance coverage · P2 · origin: **loop** ·
   landed 2026-07-27 · burndown now names first-sight human/loop/historical
