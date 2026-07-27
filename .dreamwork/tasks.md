@@ -791,15 +791,18 @@ Next id: **297**
   cadences by design (status 5-15s, PR much slower, CI slower still and
   only when a PR exists and is not draft) · PR/CI go through
   `ud-dreamwork-github`, which already owns `gh`
-- **#172** — Heading row: repo identity, and where invariants sit ·
-  P3 · idea · 25m · his layout principle is the firm half and it
-  generalises — **anchor what is INVARIANT to an edge, not to a
-  variable-width neighbour**: the page title varies per route, the repo
-  name never does, so hard-right it and it stops being shoved about by a
-  change unrelated to it. Worth a `watch-design.md` rule, since #110
-  animates travel and anything that need not move should not · the name
-  ("dreamwork watch") is OPEN and his — and #153 independently dropped
-  the app name from the tab title, so put the two to him together ·
+- **#172** — Put project identity prominently in the title section · P1 ·
+  implementation · 25m · **human via watch `do-next` 14:01** · show the
+  target project name (`ud-dreamwork` here) in a materially more prominent
+  position within the visible title section; queued immediately after #217
+  because both modify the dashboard shell/CSS · keep the earlier invariant
+  principle: **anchor what is invariant to an edge, not to a variable-width
+  neighbour** — the route title varies while repo identity does not, so the
+  identity must not be shoved about by unrelated route changes · document the
+  rule in `watch-design.md`; deterministic desktop/mobile captures and
+  visual-review-and-fix convergence required · do not infer first-sight
+  provenance from this later human priority update (#216) · #153's browser-tab
+  title remains related but does not broaden this visible-title increment ·
   **read his references first**: `grok-build`, `codename-thin` at
   `ssh://x-game:src/codename-thin`, on another machine
 - **#171** — Ascii vignette at the screen edge, from the loop's own
