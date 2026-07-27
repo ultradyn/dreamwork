@@ -2038,3 +2038,33 @@ this shape and convert opportunistically.)
   The hole is coverage, not logic — the same shape as [[a check that skips an unrecognised shape]],
   reached from the other direction: there the check could not parse the input, here the input was
   never in the fixture. **Both look like a passing check and neither is a check of the thing.**
+
+- **The way to get the coordinator's own account reviewed is to commission it — and it works the
+  first time you try it.** An hour after noting *"I verify every lane; nobody verifies me"* as a
+  structural gap, I dispatched a lane whose brief said, in effect: *this document is my account,
+  written from inside the session by the party most invested in believing the fan-out went well.
+  Read it, cite it, and **check** it. Where `git log` disagrees, `git log` wins and you say so.
+  Finding it wrong is one of the more valuable things you could do here.* It found two errors in
+  one pass.
+  · **What it found, and both were load-bearing.** (1) *"Thirteen lanes"* conflated cumulative
+  dispatches with concurrency: the real figures are ~17 dispatched and **peak concurrency 5**. So
+  every claim of the form *"thirteen lanes and no check caught X"* was really *"five concurrent at
+  most, seventeen over four hours"* — a materially weaker version of the experiment than the one I
+  was describing. (2) The `git commit --only` **same-file hunk sweep I had written into six briefs
+  as an observed incident has no instance**; the one index sweep was a plain `git commit`, which is
+  `--only`'s *absence*. True as mechanism, presented as observation.
+  · **The mechanism of error 1 is the transferable half: a number updated from memory across
+  sections is not a measurement.** My tally drifted *nine* (06:56) → *ten* (07:15) → *thirteen*, and
+  it drifted because it lived **only in prose** — three appearances in a document, zero in any
+  record. So: **any figure that recurs gets exactly one place that holds it, and prose cites that
+  place.** `status.json` is that place here and I was not using it for this.
+  · **Why commissioning beats resolving to be careful**, which is what I would otherwise have
+  written down: the errors were invisible *from inside*. I had re-read that document while adding to
+  it and the drift never registered, because each increment was locally consistent with the one
+  before. The reviewer needs a different vantage, not more diligence — and the cheapest different
+  vantage is `git log` in someone else's hands.
+  · **Make it a criterion, not an invitation.** The brief did not merely permit disagreement; it
+  made *"if your counts disagree with that document, the disagreement is a finding and you must
+  report it"* a numbered acceptance criterion, and named the two hollow outcomes (a concurrency
+  survey; restating the document). Compare the general permission at the bottom of every brief,
+  which produces refutations only when a lane trips over one. [[the numbered list is where I bind]].

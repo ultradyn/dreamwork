@@ -24,9 +24,33 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **397**
+Next id: **398**
 
 ## Open
+- **#397** — `watch.py` is the loop's contention bottleneck; propose splitting it · P1 ·
+  architecture/design · origin: **loop** · **the strongest result of #264's evidence half, and it
+  needs his ruling before anything is built**
+  · **the finding, measured:** across the whole fan-out there were **zero concurrent-write
+  instances** — no two lanes ever wrote the same record — so locks, CAS, leases, SQLite and
+  per-record spools *"would have prevented zero of the actual damage"*. What did cause damage was
+  shared CPU, a shared working tree, a shared registry, and **one overloaded single-writer file**.
+  The evidence points at **modularity, not a concurrency mechanism**
+  · **`watch.py` is that file, and the cost is now countable rather than felt:** six tasks queued
+  behind it today, and this session serialised three dispatches on it (`#354` inc 1, `#392`, the
+  `#381` dashboard line) purely because the disjointness invariant makes one file one lane
+  · **this is a big swing and therefore his call, not the loop's.** The scope gate rejects big
+  feature swings; a split of the dashboard's single module is exactly that, and it would touch every
+  guard and every test. So this task is **design and ask only** — no code. Per the standing rule
+  it ships a **review artifact** with the questions.md entry that asks
+  · what the design must answer: what the seams actually are (request routing vs page rendering vs
+  the `.dreamwork/` readers vs the collectors), which of them is cheap and which is entangled, how
+  the guards' single-server assumption survives, and **what it costs to do nothing** — because six
+  queued tasks is a real number and "leave it" is a legitimate answer he may prefer
+  · the honest counter-argument, which the design must state rather than bury: a split multiplies
+  the registry-coupling failure (`#396`, `markrail`, the artifact staleness warnings all came from
+  one lane's new file reddening others), and that class **did** cause damage today
+  · related: **#264**
+
 - **#396** — an **inline** `data-mark` puts its flag outside the reading column and clips past the
   page edge · P1 · review-artifact/geometry · origin: **loop** · found by **probing #367 increment
   2a's stated caveat**, and it is the case beside the one the lane flagged
@@ -1833,6 +1857,7 @@ Next id: **397**
   than proven; two incidents predate the fan-out window
   · **the broad research half remains open** — the primitive comparison and the #294 migration
   script, cutover and rollback. This task answered the evidence question, not that one
+  · related: **#397**
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent

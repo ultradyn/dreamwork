@@ -18,6 +18,14 @@ pytest:
 lint:
     python3 lint.py
 
+# the derived halves of status.json, recomputed from the ledger and from live
+# `ccc @` processes rather than from a coordinator's memory. `lint.py` reports
+# the queue drift; this fixes it, and also catches `current_task_ids` still
+# naming a lane that has exited — which lint cannot see and which renders.
+# `--check` exits 1 without writing, for use before a commit.
+status-sync *args:
+    python3 status_sync.py {{args}}
+
 # the structural half — real browser, real server, real DOM. Only scripts
 # that exit non-zero belong here; the rest of dev/capture/ prints for a
 # human and gates nothing. A guard joins this list when its feature lands.
