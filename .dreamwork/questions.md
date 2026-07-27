@@ -488,6 +488,55 @@
     exclusion: this development checkout must not treat ordinary new local
     commits as an installed-release upgrade on every tick.
 
+- **P2 · 2026-07-27 — #275 public Dreamhub auth: six calls, and the first one
+  rewrites the rest.** You asked for this via answer at 17:48. The artifact is
+  `.dreamwork/review/hub-public-auth.html` (open it from the dashboard's review
+  list); the design is `.dreamwork/docs/plans/hub-public-auth.md`, landed
+  design-only at `4b49ecb`. Public/WAN serving stays forbidden until you rule —
+  nothing was implemented, no bind address or flag was touched.
+
+  **The research corrected the premise.** shoo.dev is not a tunnel or expose
+  tool: it is a hosted Google-OAuth PKCE broker returning an ES256-signed
+  id_token, so identity is Google-only. Its GitHub repo returns **404** (I
+  re-checked: still 404), the site says "SUPER EARLY WIP", and no security
+  review or threat model exists — so its server is unauditable. And this hub is
+  stdlib-only Python, which cannot verify ES256 in-process; that needs
+  third-party `cryptography`.
+
+  **The recommendation:** keep the hub read-only and loopback-bound behind a
+  mature authenticating reverse proxy (Cloudflare Access or Tailscale Funnel
+  first) that owns TLS, identity and session, with your allowlist at the proxy
+  and a redacted `/summary.json` replacing `/data.json` — which today serves
+  DREAMWORK.md, questions.md and lessons.md in full and is unfit to expose.
+  shoo fits later as an optional IdP *behind* the proxy, not as the boundary.
+
+  The six questions, as the dreamer wrote them:
+
+  1. **Public or private remote?** Is the real goal public access (any browser,
+     anywhere, with auth) or private remote access (your devices only)? If the
+     latter, Tailscale/WireGuard is strictly safer and "public" is not needed.
+     This single answer rewrites the rest of the design.
+  2. **Is one reverse-proxy component acceptable** (Cloudflare Access,
+     Tailscale Funnel, or Caddy), given it keeps the hub itself stdlib-only and
+     adds no auth code? If the hub itself must do auth, the design changes
+     substantially and shoo-direct or a hosted IdP re-enters scope.
+  3. **Read-only, or read+write?** The design recommends read-only publicly,
+     writes staying loopback/trusted-LAN. Confirm, or name which write routes
+     you want exposed and under what extra guard.
+  4. **Which identity provider**, and are you willing to depend on a Google
+     account? shoo is Google-only and pre-release; CF Access / Tailscale /
+     oauth2-proxy also support GitHub, email OTP, SAML.
+  5. **May a redacted `/summary.json` be designed and shipped** as a separate
+     task before any public serve is enabled?
+  6. **Who besides you should ever reach this hub?** Defines the allowlist and
+     whether multi-identity is worth any complexity.
+
+  Not confident about, and flagged in the doc rather than smoothed over: CF
+  Access free-tier current limits, Caddy `forward_auth` exact current semantics,
+  and shoo-as-custom-OIDC-behind-CF-Access (plausible via shoo's OIDC
+  discovery, not verified end to end).
+
+
 ## Answered
 
 - **P1 · 2026-07-27 — #290 main-dreamer run modes: accept the local

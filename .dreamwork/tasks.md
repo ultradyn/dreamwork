@@ -389,12 +389,6 @@ Next id: **314**
   header/query avoidance, CSRF/Origin interplay, logs/redaction, revocation and
   migration before implementation · blocked on #233 base LAN mode
 
-- **#275** — Research public Dreamhub authentication informed by shoo.dev · P2 ·
-  security research/design · origin: **human** · **human via answer 17:48** ·
-  evaluate shoo.dev's actual primary-source auth/deployment model and alternatives
-  for public Dreamhub; define identity, TLS, session/cookie, CSRF, authorization,
-  secrets, reverse proxy and threat model · public/WAN support remains forbidden
-  until a reviewed design is approved
 
 - **#274** — Make duplicate Web UI submissions idempotent end to end · P0/P1 ·
   bug · origin: **loop** · witnesses: at 17:48 one #233 action produced two
@@ -1138,6 +1132,29 @@ Next id: **314**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#275** — Research public Dreamhub authentication informed by shoo.dev · P2 · landed 2026-07-27 ·
+  security research/design · origin: **human** · **human via answer 17:48** ·
+  evaluate shoo.dev's actual primary-source auth/deployment model and alternatives
+  for public Dreamhub; define identity, TLS, session/cookie, CSRF, authorization,
+  secrets, reverse proxy and threat model · public/WAN support remains forbidden
+  until a reviewed design is approved
+  · research + design landed `4b49ecb` (ccc-glm52-275, worktree removed); ask open
+  in questions.md with `.dreamwork/review/hub-public-auth.html` · **the premise was
+  corrected by the research**: shoo.dev is not a tunnel/expose tool but a hosted
+  Google-OAuth PKCE broker returning an ES256 id_token, so identity is Google-only ·
+  its GitHub repo returns 404 (coordinator re-checked independently: still 404), the
+  site says "SUPER EARLY WIP", and no security review or threat model exists, so the
+  server is unauditable · and this hub is stdlib-only Python, which cannot verify
+  ES256 in-process — coordinator confirmed `cryptography` 49.0.0 is the third-party
+  path · recommendation: read-only loopback hub behind a mature authenticating
+  reverse proxy owning TLS/identity/session, allowlist at the proxy, and a redacted
+  `/summary.json` replacing `/data.json`, which today serves DREAMWORK.md,
+  questions.md and lessons.md in full · shoo fits later as an optional IdP BEHIND
+  the proxy, never as the boundary · artifact verified offline-clean by the
+  coordinator, not on report: zero external resource loads, 6 citation links, no
+  `@import` or outward `url()` · public/WAN serving REMAINS FORBIDDEN until he rules
+  on the six questions; nothing was implemented and no bind address or flag moved
 
 - **#312** — The command palette lets a phone scroll the whole page sideways ·
   P2 · Web UI bug · ~30m · origin: **loop** · found by dreamer-reviewsplit
