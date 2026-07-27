@@ -195,5 +195,39 @@ class TestCliUsage(unittest.TestCase):
         self.assertIn("usage", result.stderr.lower())
 
 
+class TestCommandLineIsScannable(unittest.TestCase):
+    """A dispatched agent's argv CONTAINS ITS WHOLE PROMPT. (#316 follow-up.)
+
+    Found by running the merged tool against a live worktree: one `ccc` agent
+    printed thousands of characters across many lines, so the "one line per
+    process, cwd beneath it" format stopped existing and neither the second
+    process nor the do-not-remove verdict was visible. The report has to stay
+    readable by the operator who is about to delete something.
+    """
+
+    def test_a_prompt_sized_command_line_stays_one_short_line(self):
+        prompt = "You are a dreamer subagent\n" * 400
+        cmd = f"ccc @glm52 -y --timeout-secs 2100 {prompt}"
+        # Preconditions: without BOTH of these the assertions below are vacuous
+        # — a short cmdline is not abridged, and a single-line one cannot show
+        # that newlines are collapsed.
+        self.assertGreater(len(cmd), _mod._CMD_WIDTH * 5,
+                           "fixture must be far longer than the width, else nothing is cut")
+        self.assertIn("\n", cmd, "fixture must be multi-line, else the collapse is untested")
+
+        shown, cut = _mod._one_line(cmd)
+        self.assertTrue(cut, "a prompt-sized command line must report as abridged")
+        self.assertNotIn("\n", shown, "it must collapse to ONE line or the format breaks")
+        self.assertLessEqual(len(shown), _mod._CMD_WIDTH + 40,
+                             "and stay near the width, not merely lose its newlines")
+        self.assertIn("ccc @glm52", shown, "the recognisable head must survive")
+        self.assertIn("chars", shown, "and it must say how much was withheld")
+
+    def test_a_short_command_line_is_left_exactly_alone(self):
+        shown, cut = _mod._one_line("sleep 600")
+        self.assertEqual(shown, "sleep 600")
+        self.assertFalse(cut, "nothing was cut, so nothing may claim it was")
+
+
 if __name__ == "__main__":
     unittest.main()

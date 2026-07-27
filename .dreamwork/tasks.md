@@ -62,27 +62,6 @@ Next id: **320**
   it fires as a silent miscount, not an error · red-prove it by filing a
   combined open head in a fixture and watching both readers miss it
 
-- **#316** — Removing a worktree cannot ask whether anyone is still in it · P2 ·
-  tooling/safety · ~30m · origin: **loop** · goal: a destructive step should not
-  depend on the operator's belief about liveness ← DREAMWORK.md *Nothing fails
-  quietly* · found the hard way at 20:00 today: the coordinator concluded an
-  agent had exited because `ps | grep opencode` showed only one, removed its
-  worktree with `--force`, and the agent was alive — it had committed
-  `dev/capture/dismiss.mjs` two minutes earlier and was still running · **the
-  commit survived because it was a commit**; anything uncommitted after 19:58
-  did not, silently, and `--force` is exactly the flag that skips the question ·
-  **the grep could not have worked**: a `ccc` agent's visible process is a `zsh
-  -c` wrapper, so the process name never contains `opencode` · the mechanical
-  test that does work needs no judgement and is the same shape as #203's
-  deleted-cwd rule: **does any live process have this worktree as its `cwd`** ·
-  `plugins/ud-dreamwork-worktrees/` already exists and is where this belongs ·
-  rec: refuse removal when a process is cwd'd inside, naming pid and command
-  line; require an explicit override that says what it is overriding; and
-  `--force` must not imply it · red-prove by starting a shell cwd'd in a scratch
-  worktree and confirming removal refuses, then that it proceeds once the shell
-  exits
-
-  · **out with ccc-glm52-316** in `.worktrees/316-wtsafe` (owns `plugins/ud-dreamwork-worktrees/` only, no guard port) · briefed NOT to share the `/proc/<pid>/cwd` primitive with #203's reaper mid-flight; one primitive with two callers is the consolidation once both land
 - **#275** — Research public Dreamhub authentication informed by shoo.dev · P2 ·
   security research/design · origin: **human** · **human via answer 17:48** ·
   evaluate shoo.dev's actual primary-source auth/deployment model and alternatives
@@ -1105,6 +1084,43 @@ Next id: **320**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#316** — Removing a worktree cannot ask whether anyone is still in it · P2 · landed 2026-07-27 ·
+  tooling/safety · ~30m · origin: **loop** · goal: a destructive step should not
+  depend on the operator's belief about liveness ← DREAMWORK.md *Nothing fails
+  quietly* · found the hard way at 20:00 today: the coordinator concluded an
+  agent had exited because `ps | grep opencode` showed only one, removed its
+  worktree with `--force`, and the agent was alive — it had committed
+  `dev/capture/dismiss.mjs` two minutes earlier and was still running · **the
+  commit survived because it was a commit**; anything uncommitted after 19:58
+  did not, silently, and `--force` is exactly the flag that skips the question ·
+  **the grep could not have worked**: a `ccc` agent's visible process is a `zsh
+  -c` wrapper, so the process name never contains `opencode` · the mechanical
+  test that does work needs no judgement and is the same shape as #203's
+  deleted-cwd rule: **does any live process have this worktree as its `cwd`** ·
+  `plugins/ud-dreamwork-worktrees/` already exists and is where this belongs ·
+  rec: refuse removal when a process is cwd'd inside, naming pid and command
+  line; require an explicit override that says what it is overriding; and
+  `--force` must not imply it · red-prove by starting a shell cwd'd in a scratch
+  worktree and confirming removal refuses, then that it proceeds once the shell
+  exits
+
+  · **out with ccc-glm52-316** in `.worktrees/316-wtsafe` (owns `plugins/ud-dreamwork-worktrees/` only, no guard port) · briefed NOT to share the `/proc/<pid>/cwd` primitive with #203's reaper mid-flight; one primitive with two callers is the consolidation once both land
+  · landed `2865f07` (ccc-glm52-316) + coordinator fix · the lifecycle contract
+  now asks the PROCESS question before it classifies file state, which is the
+  ordering the incident turned on: every existing step was followed, the tree was
+  correctly classified disposable-only, and the checklist blessed the removal ·
+  verified against the live tree rather than on report — six processes found with
+  a do-not-remove verdict and exit 1, clear and exit 0 for an unoccupied dir ·
+  **and that live run found a defect the unit tests could not**: a dispatched
+  agent's argv CONTAINS ITS WHOLE PROMPT, so one `ccc` process printed thousands
+  of characters across many lines and the "one line per process" format stopped
+  existing — neither the second process nor the verdict was visible on screen. A
+  report that the operator cannot read is not a safeguard, and it is invisible to
+  a test that only asserts the right pids were found. Command lines now collapse
+  to one abridged line naming how much was withheld (`+6511 chars`), the pid is
+  never abridged, and the full text is one command away · red-proved by reverting
+  to the raw print
 
 - **#318** — `TITLE_ROUTE` has #302's omission, so `/answers` never says where
   it is · P3 · landed 2026-07-27 · correctness · ~15m · origin: **loop** · found by ccc-glm52-302

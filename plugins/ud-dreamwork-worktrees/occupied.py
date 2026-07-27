@@ -63,6 +63,30 @@ def _readlink_cwd(pid: int) -> str | None:
         return None
 
 
+_CMD_WIDTH = 140
+
+
+def _one_line(cmd: str):
+    """One scannable line, and whether anything was cut.
+
+    A command line is not a short string here. The processes this tool exists
+    to find are dispatched agents, and an agent's argv CONTAINS ITS WHOLE
+    PROMPT — thousands of characters, with newlines. Printed raw, one process
+    filled the terminal and the "one line per process, cwd beneath it" format
+    stopped existing: the reader could not see the second process at all, let
+    alone the verdict at the bottom. So the newline collapse is not cosmetic,
+    it is what keeps the report a report.
+
+    The pid is the actionable field and it is never abridged; the command line
+    only has to be enough to recognise. The full text stays one command away
+    and the caller is told so.
+    """
+    flat = " ".join(cmd.split())
+    if len(flat) <= _CMD_WIDTH:
+        return flat, False
+    return f"{flat[:_CMD_WIDTH]}… (+{len(flat) - _CMD_WIDTH} chars)", True
+
+
 def _read_cmdline(pid: int) -> str:
     """Full command line for a pid, falling back to ``comm`` if empty.
 
@@ -146,9 +170,17 @@ def format_report(target: str, found: list[dict]) -> str:
     live = [d for d in found if d["state"] == "live"]
     stranded = [d for d in found if d["state"] == "stranded"]
     lines = [f"{len(found)} process(es) in {resolved}:"]
+    truncated = False
     for d in found:
-        lines.append(f"  pid {d['pid']:<7} [{d['state']}] {d['cmdline']}")
+        shown, cut = _one_line(d["cmdline"])
+        truncated = truncated or cut
+        lines.append(f"  pid {d['pid']:<7} [{d['state']}] {shown}")
         lines.append(f"             cwd: {d['cwd']}")
+    if truncated:
+        lines.append(
+            "        (command lines abridged; full text: "
+            "tr '\\0' ' ' < /proc/<pid>/cmdline)"
+        )
     if live:
         lines.append(
             "do not remove: live process(es) above are still in this tree "
