@@ -1190,3 +1190,16 @@ this shape and convert opportunistically.)
   test that patches anything, ask which line of production code would have to
   change for this to fail — then change it and watch.** Red-first catches this
   and nothing else does; it is why the rule is a rule and not a preference.
+
+- **An agent can finish the work and die before committing it, and that looks
+  identical to an agent that produced nothing.** ccc-glm52-192 built
+  `report.mjs`, converted three guards, ran its crash proofs — and exited in the
+  breath before `git commit`. `occupied.py` correctly reported the worktree
+  CLEAR and `git log master..HEAD` was empty, so both liveness and commit
+  history said "nothing here". The work was sitting in the working tree.
+  **So the two checks before writing an agent off are not one check:** ask
+  whether anyone is still in there (`occupied.py`), and ask whether anything is
+  in there (`git status --porcelain`, including `??`). The first protects a live
+  agent (#316, learned by destroying one); the second protects a dead one's
+  output. A worktree that is clear AND dirty is the case both were written for
+  and neither names.

@@ -24,9 +24,26 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **324**
+Next id: **325**
 
 ## Open
+
+- **#324** — Convert the remaining 15 tail-printing guards to the shared
+  reporter · P3 · chore · ~40m · origin: **loop** · goal: a crash must never
+  read as a clean sheet ← DREAMWORK.md *Nothing fails quietly* · #192 landed
+  `dev/capture/report.mjs` and converted three (`status`, `hfit`,
+  `pushhealth`); this is the mechanical remainder: `headertravel reflow qacard
+  docktarget noteprop oneinput regroup popbg typing wisp states confirmation
+  thread health answers` · **this is now a sweep and not a rate problem**, which
+  is the whole reason #192 built a module first — a new guard inherits the
+  sentinel by importing it, so this list can only shrink · each conversion is
+  the same four steps (import `makeReporter`, `declare({drives, traceWindow})`,
+  drop the tail print, call `finish()` at the end) and each needs its own crash
+  injection: **the checks accumulated before the throw must survive**, which is
+  the property, and a conversion that changes a guard's normal verdict is a bug
+  in the conversion · `declare` throws on a missing/empty half, so a converted
+  guard cannot silently omit its coverage · cheap to parallelise across agents by
+  file, since the guards do not import each other
 
 - **#323** — Nothing notices when a landed task is still listed Open · P2 ·
   tooling/correctness · ~20m · origin: **loop** · goal: the ledger must not
@@ -772,39 +789,7 @@ Next id: **324**
   PARENT target's `.dreamwork/`, reusing a surface that already has his
   attention · inherited by dreamhub stage 2 or dreamtask stage 6,
   whichever is planned first — say so in that plan or it parks twice
-- **#192** — Fourteen guards print from a tail handler, so a crash reads
-  as a clean sheet · P2 · chore · 30m · surveyed by dreamer-rows at my
-  request and then NOT FILED by me; found in dream grooming, one archive
-  from being lost · **the gate holds** — `just guards` branches on exit
-  code — what lies is the EYEBALL: run one directly, scan for FAIL, and a
-  crash looks clean · that is how three of its own fault injections read
-  as "proves nothing" · 11 in the gating list, 5 outside; `popbg` NOT
-  surveyed · rec: fix the PATTERN via a shared reporter, not fourteen
-  files — **pairs with #148**, since the shared runner is where the
-  shared reporter lives · waits for dev/capture/ to be free · **the
-  runner should also carry the coverage declaration**: every guard states
-  which of his routes and gestures it drives — AND ITS TRACE WINDOW. Both
-  matter and the second is the subtler: `regroup.mjs` drove the real UI
-  correctly and was still green over #191 for a day, because it traced
-  5.2s past a 1.6s `holdRerenderUntil` and the tick's own regroup supplied
-  the motion it was asserting. A guard that watches long enough will see
-  SOMETHING produce the result it wants · **a count is not
-  evidence** — a `grep -c` in a compound command reported 6 FAILs where
-  the full output held 14, the server having been swapped beneath it; the
-  runner reports from full output, never from a count (qsec 19:03) ·
-  **and it owns absence-first** (folded 2026-07-27 from the input-safety
-  dream, which flagged it for here and was one archive from losing it):
-  three guards in one batch, run against a build without the feature under
-  test, each waited 30s for a selector that would never appear and then
-  reported *"the guard threw"* — a message that says nothing about the
-  page and points at the guard. A guard asserts its SUBJECT EXISTS first,
-  so absence is one FAIL with a sentence; `history.mjs` does this and its
-  red run costs 3.4s instead of 30. The shared reporter is where that
-  stops being fourteen separate remembering-to-do-its
-  · **re-measured 2026-07-27 20:40 and the count is GROWING, which is the real argument.** 17 of the 39 gating guards lack the `finished` sentinel, not the 14 surveyed: `headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states confirmation thread status health answers hfit` — and `answers` and `hfit` did not exist when the survey ran. So this is not a backlog of fourteen files to fix once; **every new guard is written without it**, because there is nothing to inherit it from. A one-time sweep would be stale within a day, which is the case for the shared reporter stated as a rate rather than a count
-  · **and it does NOT have to wait for #148.** This entry says the shared reporter lives in the shared runner and so waits for it; measured, that dependency is not real. The runner is the `justfile` recipe; the reporter is a MODULE the guards import. No guard in `dev/capture/` imports a sibling today (checked: zero relative imports across 49 files), but ESM relative imports work in these scripts as they stand — they already import playwright by path. So `dev/capture/``report.mjs` can land now, guards adopt it one at a time, and #148's runner adopts it later instead of blocking it. **Unblocked: `dev/capture/` being free is the only precondition**, and the reporter must carry all four obligations this entry names — the crash sentinel, absence-first, report-from-full-output-never-a-count, and the coverage plus trace-window declaration
-  · **the mechanism, measured precisely, because the first attempt to classify it used a proxy and got it wrong.** All 17 are ONE class: they print their checks at the TAIL of the script, so a crash prints no checks at all — not a list of PASSes. The 22 that carry `finished` print from an exit handler and append *FAIL the guard threw before finishing its checks*, which is the target pattern. So "reads as a clean sheet" is true of what a **FAIL-grep** sees (nothing matches, therefore clean), not of what full output shows — full output shows a stack trace and no `----` block, which is honest. That distinction decides the fix: the guards do not need their PASS accumulation changed, they need the print MOVED into an exit handler with the sentinel
-  · **and the way the wrong classification happened is the warning for whoever does this**: `grep -q "process.on('exit'"` looked like it measured "prints from an exit handler" and measured "has an exit handler". `health.mjs` matched and its handler is `stopAll` — server CLEANUP, with the printing at the tail like the other sixteen. It reported 1 vs 16 where the truth is 0 vs 17. A proxy that correlates with the property is not the property, and here it inverted the headline finding
+
 - **#189** — World-space anchoring silently collapses on native
   Wayland · P2 · bug · 35m · `screenX`/`screenY` return **0** on native
   Wayland by protocol, so #74's world space becomes "both windows at the
@@ -1066,6 +1051,29 @@ Next id: **324**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#192** — Guards printed from a tail handler, so a crash read as a clean
+  sheet · P2 · landed 2026-07-27 · chore · ~35m · origin: **loop** · goal: a
+  crash must never read as a clean sheet ← DREAMWORK.md *Nothing fails quietly* ·
+  9fcbcda, merged 5e95884 · `dev/capture/report.mjs` + three adopters · **landed
+  as the entry's own rec asked — the PATTERN via a shared reporter, not fourteen
+  files** — because the count was 17 of 39 eighteen minutes before it was
+  re-measured as 18 of 40: `pushhealth` landed twenty minutes earlier without the
+  sentinel, since there was nothing to inherit it from. A sweep would have been
+  stale within a day; the remainder is #324 and can now only shrink · all four
+  obligations are structural, not remembered: the exit-handler sentinel, absence-
+  first `present()`, no count offered at all (so a guard cannot report one), and
+  `declare({drives, traceWindow})` which THROWS on a missing half · **the
+  dependency on #148 was measured and was not real** — that runner is the justfile
+  recipe, this is a module the guards import · **committed by the coordinator on
+  behalf of ccc-glm52-192, which finished and exited before committing**; reviewed
+  and re-verified from scratch rather than accepted from its report · crash proof,
+  re-run independently: unconverted printed `FAIL guard threw:` and **0** feature
+  checks, converted printed **14 PASS** plus `FAIL the guard threw before
+  finishing its checks` · **and it corrected its own task's measurement**: 17 of
+  the 18 print NOTHING on a crash (the true clean-sheet class) and `pushhealth` is
+  the lone variant — an `uncaughtException` handler makes it loud about the crash
+  and silent about the 14 checks it had already proven
 
 - **#156** — Lint questions.md at WRITE time (PostToolUse hook) · P2 · landed
   2026-07-26 · idea · 40m · origin: **human** · c51da8f, merged d7983be ·
