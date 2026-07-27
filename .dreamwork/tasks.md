@@ -24,9 +24,35 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **400**
+Next id: **401**
 
 ## Open
+- **#400** — `lessons.md` has outgrown being read, and the briefs that tell lanes to read it are
+  cargo cult · P2 · loop/memory · origin: **loop** · found by **measuring receipt instead of
+  assuming it**, the same instrument that caught the relay
+  · **the file is 2,143 lines and 157 entries.** Every brief lists it under *"Read, do not edit"*.
+  No lane can read that meaningfully, and the evidence says none does
+  · **measured, and the confound is the finding.** Phrases that appear in **both** my briefs and
+  lane reports prove nothing — the lane is echoing the brief. So compare the two: `"neighbour"` is
+  in **20 briefs** and **51 report lines**; `"outside the system"` is in **4 briefs** and **0 report
+  lines**. `lessons.md` itself is named **4** times across ~15 reports. **The lessons that reach a
+  lane are the ones I hand-copy into its brief**, and nothing else does
+  · **which means the mechanism is working — just not the one I thought.** `lessons.md` is the
+  *coordinator's* memory: I accumulate, then select 4-6 relevant ones into each brief's "rules that
+  matter most here". That is a good design and it is worth naming as the design rather than
+  discovering it again. What is wrong is the vestigial *"read `lessons.md`"* line, which implies a
+  lane will find the relevant lesson on its own
+  · **it bears on a stated DREAMWORK.md goal** — *"the loop's memory survives anything that ends a
+  session; what it knew, it still knows"*. Survival is not the failing half; **retrieval** is
+  · rec, and deliberately small: **stop listing `lessons.md` as lane reading**, and keep doing what
+  already works. If more is wanted, a short "start here" index of the load-bearing entries beats
+  restructuring 157 of them — but measure whether the index gets read before growing it, because
+  that is the mistake this entry is about
+  · **do not prune to fix this.** I checked: few of today's entries have graduated into checks —
+  they are principles, not rules with enforcers — so pruning would cost memory without buying
+  readability
+  · related: **#394**
+
 - **#399** — any bare bolded id in a landed entry marks that task landed, so **7 open tasks are
   reported as landed** · P1 · ledger-parser/correctness · origin: **loop** · found because a lint
   WARN told me to fold **his unanswered question**
@@ -147,7 +173,7 @@ Next id: **400**
   · where the instruction belongs is the open question: my brief prose is not durable, so the
   candidate is `SKILL.md`'s Subagents section, beside *"All subagents report to the coordinator
   through a file"* — which is already the right paragraph and already load-bearing
-  · related: **#381, #398**
+  · related: **#381, #398, #400**
 
   · **LANDED (instruction), VERIFICATION PENDING** 2026-07-28 08:59 — `SKILL.md` now states the
   obligation at dispatch time with the reason: the inbox carries judgement, is prose, and is read by

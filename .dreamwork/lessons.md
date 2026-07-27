@@ -2141,3 +2141,19 @@ this shape and convert opportunistically.)
   root** and injure a copy. If a check cannot be pointed at a different root, that is itself a
   finding — a check untestable without mutating live state has a design problem, which is more
   interesting than the red it was blocking.
+
+- **Grep proves the injection's text landed; it does not prove the file still loads. A broken
+  injection and a discriminating red look alike in a tail of output and mean opposite things.**
+  · **Measured, and I nearly believed it:** injecting a dead cutoff phrase into `lint.py` for
+  `#398`'s red, I replaced the regex's group 1 — which for a parenthesised multi-line constant is
+  just `(` — leaving a file that would not parse. `pytest` reported `IndentationError` during
+  **collection**. Two lines of red output, the test I was targeting named nowhere, and it would have
+  read as "something failed, good". A collection error is not a test failure: **zero tests ran**, so
+  the run says nothing about the code at all.
+  · The existing rule *"grep for your injection to confirm it reached the code"* is necessary and
+  insufficient — the text was there. The one extra check costs nothing: **`python3 -c "import ast;
+  ast.parse(open(f).read())"` before believing any result**, or for a non-Python target, whatever
+  loads it.
+  · The general shape, which is the reason to keep this: **verify the run exercised the code, not
+  merely that it was unhappy.** A red whose message does not name the test you were targeting is
+  not yet evidence.
