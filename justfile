@@ -140,6 +140,22 @@ guards port="39899":
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     cp -r dev/capture/fixture "$OUT/target"
+    # #203 pre-flight: NAME the holder before we bind, instead of only saying
+    # the port is busy after the fact. Our python exits "address in use" if the
+    # port is taken, and the readiness probe below would then grade whatever
+    # ALREADY holds the port — exactly how a stale fixture server answered a
+    # probe and reported feature bugs for 20 minutes. ss -tlnp gives the pid
+    # for same-user listeners; we read the full cmdline + cwd from /proc so the
+    # operator knows exactly what to go look at (and `just reap` cleans it up).
+    _holder_line=$(ss -tlnp 2>/dev/null | grep -E ":{{port}}\b" | grep -oE 'pid=[0-9]+' | head -1)
+    if [ -n "$_holder_line" ]; then
+      _hp=${_holder_line#pid=}
+      echo "guards: :{{port}} already held by pid $_hp:"
+      echo "        $(tr '\0' ' ' < /proc/$_hp/cmdline 2>/dev/null)"
+      echo "        cwd: $(readlink /proc/$_hp/cwd 2>/dev/null)"
+      echo "        (a stale server on a guard port is the #203 trap — inspect/clean: just reap)"
+      exit 1
+    fi
     python3 watch.py --target "$OUT/target" --port {{port}} >"$OUT/server.log" 2>&1 &
     SRV=$!
     trap 'kill $SRV 2>/dev/null; rm -rf "$OUT"' EXIT
@@ -204,6 +220,24 @@ guards port="39899":
       echo "guards: playwright not resolvable — the structural half did NOT run"
     fi
     exit $fail
+
+# #203 — find (and with explicit flags, reap) orphaned watch.py guard servers.
+# Dry-run by default: prints each server's classification and kills nothing.
+#   - rule2 (dead-lane): cwd deleted -> the lane that started it is GONE. This
+#     is the ONLY class that may be killed, and only with --kill plus a target.
+#   - rule1 (stale):     old elapsed -> reported for a human, never killed.
+# Killing needs a second flag: --pid PID (one) or --all-dead --yes (sweep).
+# The recipe is a thin pass-through so the classifier and its safety live in
+# ONE place (dev/reaper.py) and the test pins them there.
+#
+# examples:
+#   just reap                         # dry-run, all watch.py servers
+#   just reap --range 39880-39899     # dry-run, focus a port range
+#   just reap --kill --pid 12345      # reap one dead-lane pid
+#   just reap --kill --all-dead       # REFUSES; prints targets + never-kill env
+#   just reap --kill --all-dead --yes # reap every dead-lane (rule2) server
+reap *ARGS:
+    python3 dev/reaper.py {{ARGS}}
 
 # edit-and-see, for whoever is CHANGING the page. Deliberately not the
 # persisted port: that one belongs to the deployed instance the human is
