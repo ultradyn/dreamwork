@@ -179,25 +179,6 @@ Next id: **381**
   and the third case — #264 — was silenced properly by citing its sha. The mechanism works;
   the habit around it did not
 
-- **#362** — Nothing compared status.json's queue with the ledger, so it drifted · P2 ·
-  tooling/reliability · origin: **loop** · 20m · found by dreamer-264-boundary while measuring
-  for #264, and the numbers are the argument: `queue` summed to **115** while `parse_ledger`
-  read **123** open, and `current_task_ids` was `[]` while three agents named their `task_ids`
-  · both restate what `tasks.md` already knows, and `lessons.md` (#306) says to assume that
-  two files holding two halves of one fact have already drifted — they had, in both fields, and
-  eight tasks of drift accumulated across one night of hand-maintained edits with nothing
-  measuring it · the second one is a live bug beyond the drift: `file-formats.md` says `/tasks`
-  badges rows from `current_task_ids`, and `check_status_task_ids` validates member *types* so
-  `[]` lints clean — #281 would have shipped badging nothing
-  · **LANDED `<pending>`** — `lint.check_status_agrees_with_ledger`, WARN on both, contract in
-  `file-formats.md`, red-proved first against the real drift as it actually stood (both WARNs
-  fired; restoring only the queue half isolated one) and then with five discriminating
-  fixture injections · **WARN not ERROR is deliberate**: this file is a best-effort projection
-  the loop is told must never block a tick, so a momentary lag mid-increment is truthful and
-  crying red on it would punish the honesty the file exists for
-  · the drift itself was hand-fixed at 02:06 before the check landed, which is why the red
-  proof had to reconstruct it from the recorded values rather than observe it
-
 - **#361** — Turn on the ledger-lint hook we built and never switched on · P1 ·
   dogfood/reliability · origin: **loop** · 15m · **the evidence is two incidents tonight, four
   hours apart, both mine**: a `tasks.md` write introduced a lint ERROR and the commit went
@@ -2281,6 +2262,25 @@ Next id: **381**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#362** — Nothing compared status.json's queue with the ledger, so it drifted · P2 ·
+  tooling/reliability · origin: **loop** · 20m · found by dreamer-264-boundary while measuring
+  for #264, and the numbers are the argument: `queue` summed to **115** while `parse_ledger`
+  read **123** open, and `current_task_ids` was `[]` while three agents named their `task_ids`
+  · both restate what `tasks.md` already knows, and `lessons.md` (#306) says to assume that
+  two files holding two halves of one fact have already drifted — they had, in both fields, and
+  eight tasks of drift accumulated across one night of hand-maintained edits with nothing
+  measuring it · the second one is a live bug beyond the drift: `file-formats.md` says `/tasks`
+  badges rows from `current_task_ids`, and `check_status_task_ids` validates member *types* so
+  `[]` lints clean — #281 would have shipped badging nothing
+  · landed `4ce04e0` — `lint.check_status_agrees_with_ledger`, WARN on both, contract in
+  `file-formats.md`, red-proved first against the real drift as it actually stood (both WARNs
+  fired; restoring only the queue half isolated one) and then with five discriminating
+  fixture injections · **WARN not ERROR is deliberate**: this file is a best-effort projection
+  the loop is told must never block a tick, so a momentary lag mid-increment is truthful and
+  crying red on it would punish the honesty the file exists for
+  · the drift itself was hand-fixed at 02:06 before the check landed, which is why the red
+  proof had to reconstruct it from the recorded values rather than observe it
 
 - **#379** — A refusal no longer swallows the advisory it had already computed · landed
   `12d17ad` · origin: **loop** · `render` raised on the component violation before
