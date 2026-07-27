@@ -21,6 +21,7 @@
 ## Cleanup
 
 - [ ] **Process check first** — `occupied.py <worktree>`; if it names a live process, stop (`--force` does not answer this)
+- [ ] **Was the agent native?** Then `clear` proves nothing — it owns no cwd here. Check file mtimes and that its completion actually arrived, or you commit over an agent still writing
 - [ ] Inspect untracked + ignored
 - [ ] Non-obvious artifacts: decision recorded; move before remove
 - [ ] No force remove without Max

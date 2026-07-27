@@ -23,6 +23,19 @@ looking and structurally incapable of being right. This reads the
 kernel's own record of where each process actually is, which is the one
 source that cannot lie about it.
 
+**What it cannot see, stated where the claim is made:** a *native*
+subagent of the harness. It runs no process of its own with a cwd in the
+tree, so there is nothing for this to read and the answer is `clear` no
+matter how hard it is working. That is not a defect to fix here — the
+primitive is cwd, and a native agent has none — but it is a trap, because
+`clear` plus a dirty tree is also the exact signature of the documented
+died-before-committing case, whose remedy is to commit the tree. Do that
+to a live native agent and you commit on top of an agent still writing.
+On 2026-07-27 that sequence was begun and stopped one step short by file
+mtimes. For a native agent the instruments are its mtimes and whether its
+completion has actually arrived; this tool answers for process-backed
+agents (`ccc`, shells, servers) and should not be asked about the others.
+
 /proc races are normal. A pid can vanish between listing `/proc` and
 reading its cwd; such a pid is treated as "not found", never as an error.
 A cwd that cannot be read (another user's process) is skipped the same
@@ -166,7 +179,12 @@ def format_report(target: str, found: list[dict]) -> str:
     resolved = os.path.realpath(target)
     if not found:
         return (f"clear: no process has {resolved}\n"
-                f"        (or anything under it) as cwd")
+                f"        (or anything under it) as cwd\n"
+                f"        NOT an all-clear for a NATIVE subagent: it owns no\n"
+                f"        process with a cwd here, so a working one reads\n"
+                f"        exactly like this. Before acting on 'clear' plus a\n"
+                f"        dirty tree, check file mtimes and whether its\n"
+                f"        completion has actually arrived.")
     live = [d for d in found if d["state"] == "live"]
     stranded = [d for d in found if d["state"] == "stranded"]
     lines = [f"{len(found)} process(es) in {resolved}:"]

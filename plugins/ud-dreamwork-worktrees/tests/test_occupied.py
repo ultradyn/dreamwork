@@ -162,6 +162,34 @@ class TestOccupiedLiveProcess(_ScratchWorktreeCase):
         self.assertEqual(clear.returncode, 0, clear.stdout + clear.stderr)
         self.assertIn("clear", clear.stdout)
 
+    def test_clear_names_the_kind_of_agent_it_cannot_see(self):
+        """A bare "clear" invites the one inference this tool cannot support.
+
+        The check answers for process-backed agents, because that is all
+        ``/proc`` cwd can answer for. A *native* subagent of the harness has
+        no process of its own with a cwd in the tree, so this tool reports
+        ``clear`` for one that is working at full tilt. Combined with a dirty
+        tree that reads exactly like the documented died-before-committing
+        case, and the recorded remedy for that case is to commit the tree —
+        which, for a live native agent, means committing on top of an agent
+        still writing. That very sequence was started here on 2026-07-27 and
+        stopped by file mtimes, one step short.
+
+        So the caveat belongs in the output, where the decision is made, not
+        only in a lesson file the reader has no reason to open. Asserting the
+        blind spot is *named* is the cheapest durable form of that.
+        """
+        clear = self._run_occupied(str(self.wt))
+        self.assertEqual(clear.returncode, 0, clear.stdout + clear.stderr)
+        out = clear.stdout.lower()
+        self.assertIn("native", out,
+                      "clear output must name the agent kind it cannot see")
+        # And it must not stop at naming it: a reader told only that the tool
+        # is blind still has no next move. Require the discriminator too.
+        self.assertTrue("mtime" in out or "modification time" in out,
+                        "clear output must point at what DOES answer for a "
+                        f"native agent, got:\n{clear.stdout}")
+
 
 class TestOccupiedStrandedProcess(_ScratchWorktreeCase):
     def test_reports_stranded_after_directory_deleted(self):

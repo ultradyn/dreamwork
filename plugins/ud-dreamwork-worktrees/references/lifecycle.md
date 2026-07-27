@@ -65,6 +65,19 @@ commit. Do not build a fix that relies on that luck.)
    the tool, which is why a grep over `ps` could not have worked. A cwd
    reading `…/N-slug (deleted)` means the directory is already gone and a
    process is stranded in it; note it, it cannot be saved.
+
+   **Exit `0` is not an all-clear for a native subagent.** It owns no
+   process with a cwd in the tree, so this check reports `clear` for one
+   working at full tilt — and `clear` plus a dirty tree is *also* the
+   signature of the died-before-committing case whose remedy is to commit
+   that tree. Commit over a live native agent and you bury the increment
+   it is still writing, which is the failure this whole step exists to
+   prevent, arrived at through the tool meant to prevent it. On
+   2026-07-27 that was begun and stopped one step short. So: if the agent
+   you are cleaning up after was native, `clear` tells you nothing — read
+   the working tree's **file mtimes** and confirm its completion has
+   actually arrived before touching anything. This check answers for
+   process-backed agents only.
 2. `git worktree list`
 3. Worktree `git status -sb`
 4. Inspect **untracked and ignored** scratch (`git status --ignored`).

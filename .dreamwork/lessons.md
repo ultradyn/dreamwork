@@ -1219,3 +1219,19 @@ this shape and convert opportunistically.)
   command has not reached it, never that it exited 0. Chaining
   `cmd > log; echo exit=$?; grep …` also hands the TASK's exit status to the
   grep, so the summary's exit code describes the grep and not the command.
+
+- **Match the liveness instrument to the agent KIND.** `occupied.py` reads
+  `/proc/<pid>/cwd`, so it answers for process-backed agents (`ccc`, shells,
+  servers) and reports **`clear` for a native subagent working at full tilt** —
+  a native agent owns no process with a cwd in the tree, so there is nothing to
+  read. The trap is that `clear` plus a dirty tree is *also* the exact signature
+  of the died-before-committing case recorded a lesson above, and that case's
+  remedy is **commit the tree** — which, applied to a live native agent, buries
+  the increment it is still writing. That sequence was started here on
+  2026-07-27 against `tmpl325` and stopped one step short by `stat`: three files
+  written in the previous 70 seconds. **For a native agent the instruments are
+  file mtimes and whether its completion notification actually arrived.** The
+  caveat now prints in `occupied.py`'s own `clear` output, is asserted by
+  `test_clear_names_the_kind_of_agent_it_cannot_see`, and is in `lifecycle.md`
+  step 1 and the checklist — because a warning that lives only here is read by
+  nobody standing at the decision.
