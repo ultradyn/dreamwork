@@ -64,6 +64,17 @@ bug, watch it fail, then fix it. Checks here have a documented habit of
 passing over the thing they were written for — `.dreamwork/lessons.md`
 keeps the running list of how.
 
+That rule is a one-time act, and it only catches a check born hollow. It
+cannot catch one that *becomes* hollow, because the red run happened
+commits ago and nobody re-runs it: a directory grew, a second fetcher
+appeared, a fixture gained a third question and two numbers that had to
+differ met. Three such were found in a single batch, two of them
+invisible in the guard output entirely. So the companion rule, and it
+costs one line each time: **assert in the check the precondition the
+check depends on.** If its meaning needs two pieces of the fixture to
+differ, derive both at runtime and assert the gap — a literal tuned to
+today's fixture is a check with an expiry date nobody can see.
+
 ## Conventions
 
 - Commit each increment; stage by explicit path (more than one agent
