@@ -4403,7 +4403,7 @@ function dreamAway(wrap, node, rect, clipTop) {
       node.classList.add('gone');
     }, 180);
   }
-  setTimeout(() => node.remove(), 1000);
+  setTimeout(() => node.remove(), 1050);
 }
 /* the same departure idiom for a subtree that has just left the layout but is
    still in the DOM — a `<details>` that closed. It has no box any more, so the
