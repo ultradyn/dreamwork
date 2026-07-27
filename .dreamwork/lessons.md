@@ -2094,3 +2094,26 @@ this shape and convert opportunistically.)
   unconsumed line, and the relay has nothing — so a missed steer is silent at both ends. **Verify
   what READS a thing, and note that "it was written" and "a report shows evidence of receipt" are
   different observations.**
+
+- **Extend "a lane's stated uncertainty is a map to the defect" to what a lane says about the
+  LOOP, not just about its own work. I had a rule for the second and none for the first, and it
+  cost two hours.**
+  · **Measured:** `#381`'s lane, asked whether its design would also fix coordinator→lane steering,
+  answered: *"the relay is itself a write-then-hope channel: the coordinator writes a steer, a lane
+  that has gone idle never reads it, and nothing wakes it — the same class of problem one layer
+  up."* It named the mechanism, named the fix, and I had explicitly told it to enjoy the irony and
+  not act on it. I read it, recorded it as an observation, **and then wrote four more relays over
+  the next two hours**, including one carrying a mandatory obligation that was never performed.
+  · **The asymmetry is the finding.** When a lane says *"I am not confident about X in my own
+  work"* this repo now treats that as a lead and probes it — three real defects came from exactly
+  that today (#389, #390, #396). When a lane says *"the machinery you are steering me with has this
+  flaw"*, there was no habit at all, and the claim is **cheaper to test** than most: `#395`'s
+  report needed one `grep` to show the relay was never read.
+  · **Why it is easy to miss and it is not about attention.** A claim about a lane's own work
+  arrives as a caveat under a heading I read looking for problems. A claim about the loop arrives
+  as *commentary* — often as a pleasantry, in a section I invited — and it reads as insight rather
+  than as a bug report. **The framing that makes it land: if a lane's sentence would be a P2 had I
+  written it in the ledger, treat it as one.** *"The relay is a write-then-hope channel with no
+  wake"* is a P2 in my own voice.
+  · So the operational addition is one line at report-reading time: **after folding a lane's
+  findings about the task, re-read whatever it said about the loop and ask what would falsify it.**
