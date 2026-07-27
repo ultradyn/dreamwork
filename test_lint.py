@@ -185,6 +185,160 @@ class TestLedger:
         assert levels(rep, "tasks.md") == [lint.OK]
 
 
+class TestTaskOrigin:
+    """#213 — forward-only provenance, enforced from the #216 cutoff.
+
+    From the cutoff onward, who filed a task is a fact recorded at filing
+    time; before it, the fact was never written down and must NOT be
+    reconstructed by guessing. So the rule looks only forward: an entry
+    naming any id >= 216 carries exactly one `origin: **human**` /
+    `**loop**` / `**unknown**`, and older entries are not checked at all.
+    `unknown` is a first-class truthful value, never a failure.
+    """
+
+    def ledger(self, *entries):
+        body = "\n\n".join(entries)
+        return f"# Task ledger\n\nNext id: **300**\n\n## Open\n\n{body}\n"
+
+    def run_l(self, tmp_path, text):
+        return run(target(fresh(tmp_path), **{"tasks.md": text}))
+
+    def origin_rows(self, rep):
+        return [d for _, w, d in rep.rows if w == "tasks.md"]
+
+    def test_a_new_task_without_origin_is_an_error(self, tmp_path):
+        text = self.ledger("- **#216** — a new task · P2 · task · 20m")
+        rep = self.run_l(tmp_path, text)
+        assert ERRORS(rep, "tasks.md")
+        detail = next(d for d in self.origin_rows(rep) if "#216" in d)
+        # The message names the task AND the accepted vocabulary — "origin
+        # is wrong" reads as nonsense to someone who never heard the rule.
+        assert "origin: **human**" in detail
+        assert "origin: **loop**" in detail
+        assert "origin: **unknown**" in detail
+
+    def test_each_valid_value_is_accepted(self, tmp_path):
+        for value in ("human", "loop", "unknown"):
+            text = self.ledger(
+                f"- **#216** — a new task · P2 · task · 20m · origin: **{value}**")
+            rep = self.run_l(tmp_path, text)
+            assert not ERRORS(rep, "tasks.md"), value
+
+    def test_explicit_unknown_is_truthful_coverage_not_a_failure(self, tmp_path):
+        # The migration value: a post-cutoff task whose origin was never
+        # recorded says unknown rather than being guessed.
+        text = self.ledger(
+            "- **#250** — landed before the contract existed · P1 · landed\n"
+            "  2026-07-27 · origin: **unknown** · did the thing")
+        rep = self.run_l(tmp_path, text)
+        assert not ERRORS(rep, "tasks.md")
+
+    def test_an_unmarked_old_task_is_accepted(self, tmp_path):
+        # Historical entries stay unmarked: absent reads as historical
+        # unknown, and nobody backfills a guess.
+        text = self.ledger("- **#100** — an old task · P2 · idea · 30m")
+        rep = self.run_l(tmp_path, text)
+        assert not ERRORS(rep, "tasks.md")
+
+    def test_the_cutoff_boundary_is_exact(self, tmp_path):
+        # 215 is history, 216 is the first governed id — same file, so the
+        # boundary itself is what is exercised, not two separate ledgers.
+        text = self.ledger(
+            "- **#215** — the last ungoverned task · P2 · task",
+            "- **#216** — the first governed task · P2 · task")
+        rep = self.run_l(tmp_path, text)
+        assert ERRORS(rep, "tasks.md")
+        detail = next(d for d in self.origin_rows(rep) if lint.ERROR and "#216" in d)
+        assert "#215" not in detail
+
+    def test_an_invalid_value_is_an_error_naming_the_vocabulary(self, tmp_path):
+        text = self.ledger("- **#216** — a task · P2 · origin: **bot**")
+        rep = self.run_l(tmp_path, text)
+        assert ERRORS(rep, "tasks.md")
+        detail = next(d for d in self.origin_rows(rep) if "#216" in d)
+        assert "bot" in detail and "human" in detail and "loop" in detail
+
+    def test_the_wrong_case_is_an_error(self, tmp_path):
+        # The vocabulary is lowercase; `Human` is a marker-shaped claim the
+        # reader would have to interpret, and interpreting is guessing.
+        text = self.ledger("- **#216** — a task · P2 · origin: **Human**")
+        assert ERRORS(self.run_l(tmp_path, text), "tasks.md")
+
+    def test_two_markers_on_one_entry_is_an_error(self, tmp_path):
+        # Exactly one: a second marker makes the first unreadable as fact.
+        text = self.ledger(
+            "- **#216** — a task · P2 · origin: **human** · origin: **loop**")
+        rep = self.run_l(tmp_path, text)
+        assert ERRORS(rep, "tasks.md")
+
+    def test_a_duplicate_of_the_same_marker_is_still_an_error(self, tmp_path):
+        text = self.ledger(
+            "- **#216** — a task · P2 · origin: **unknown** · origin: **unknown**")
+        assert ERRORS(self.run_l(tmp_path, text), "tasks.md")
+
+    def test_combined_ids_require_origin_when_any_id_is_new(self, tmp_path):
+        # The enforcement key is every numeric id in the leading token:
+        # #250/#251 are both governed, so the combined entry is governed.
+        text = self.ledger(
+            "- **#250/#251** — a combined landing · P1/P2 · landed 2026-07-27")
+        assert ERRORS(rep := self.run_l(tmp_path, text), "tasks.md")
+        assert "#250" in next(d for d in self.origin_rows(rep) if "#250" in d)
+
+    def test_combined_ids_all_old_are_exempt(self, tmp_path):
+        # #138/#156 landed as a combined summary; both predate the cutoff,
+        # so the entry stays unmarked and is never demanded a marker.
+        text = self.ledger(
+            "- **#138/#156** — an old combined landing · P2 · landed 2026-07-27")
+        assert not ERRORS(rep := self.run_l(tmp_path, text), "tasks.md")
+
+    def test_a_body_cross_reference_is_not_the_entrys_id(self, tmp_path):
+        # `blocked on #264` in the body does not make an old entry governed;
+        # only the leading bold token numbers the entry. The inverse hole —
+        # absorbing body ids — would demand markers on most of history.
+        text = self.ledger(
+            "- **#100** — an old task · P2 · task · blocked on #264, relates #299")
+        assert not ERRORS(self.run_l(tmp_path, text), "tasks.md")
+
+    def test_a_marker_may_hard_wrap_like_the_real_entries(self, tmp_path):
+        # #288 and #252 wrap `origin:` onto the next line; the linter joins
+        # the entry's lines before reading, as the title rule already does.
+        text = self.ledger(
+            "- **#288** — a task with a long title that wraps · P0/P1 · origin:\n"
+            "  **loop** · the body continues here")
+        assert not ERRORS(self.run_l(tmp_path, text), "tasks.md")
+
+    def test_a_marker_on_a_later_continuation_line_is_found(self, tmp_path):
+        text = self.ledger(
+            "- **#216** — a task · P2 · task · 20m ·\n"
+            "  origin: **loop** · blocked on #213")
+        assert not ERRORS(self.run_l(tmp_path, text), "tasks.md")
+
+    def test_prose_after_an_entry_is_not_part_of_it(self, tmp_path):
+        # Recently landed holds column-0 prose summaries after the last
+        # entry; an `origin:` claim in them must not charge the entry above.
+        text = (
+            "# Task ledger\n\nNext id: **300**\n\n## Open\n\n"
+            "- **#216** — a governed task · P2 · task · origin: **loop**\n"
+            "\n## Recently landed\n\n"
+            "- **#215** — an old landing · P2 · landed 2026-07-26\n"
+            "\n**#214** a prose summary mentioning origin: **bot** in passing.\n")
+        assert not ERRORS(self.run_l(tmp_path, text), "tasks.md")
+
+    def test_a_marker_shaped_non_value_on_a_new_entry_is_invalid(self, tmp_path):
+        # `origin: **human|loop**` is neither value; on a governed entry it
+        # is an invalid claim, not a missing one.
+        text = self.ledger("- **#216** — a task · P2 · origin: **human|loop**")
+        assert ERRORS(self.run_l(tmp_path, text), "tasks.md")
+
+    def test_a_quoted_spec_line_in_an_old_entry_is_prose(self, tmp_path):
+        # #213's own entry quotes `origin: **human|loop**` as its spec.
+        # Pre-cutoff entries are not checked at all, so the quote stays.
+        text = self.ledger(
+            "- **#213** — the provenance task · P2 · record `origin: **human|loop**`\n"
+            "  on every task from cutoff #216 onward")
+        assert not ERRORS(self.run_l(tmp_path, text), "tasks.md")
+
+
 class TestStatusIsAnInterface:
     """Two readers as of #96 (watch.py and dreamhub.py), so a wrong TYPE is
     the failure worth catching — an absent field reads as unknown, but a

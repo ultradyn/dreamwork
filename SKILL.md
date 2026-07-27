@@ -269,8 +269,12 @@ results, no ceremony.
   a restart (`bl`) it *is* the backend, and there is no extra file. On a
   session-scoped backend (the native tools) it is
   `.dreamwork/tasks.md`: open tasks only, one line each (id, title,
-  priority/type/size, owner or blocked-on, pointer to any plan), plus
-  the next id to hand out. Either way ids are permanent and never
+  priority/type/size, origin, owner or blocked-on, pointer to any
+  plan), plus the next id to hand out. From #216 every entry records
+  who filed it — `origin: **human**` or `origin: **loop**`, with
+  `**unknown**` reserved for what predates the convention; history is
+  never guessed, the contract is in `file-formats.md`, and `lint.py`
+  refuses a governed entry without exactly one marker. Either way ids are permanent and never
   reused, and everything that refers to a task — commits, docs,
   questions, dreams — uses them; a session-scoped backend's own numbers
   are local plumbing. The file version is rewritten as part of the

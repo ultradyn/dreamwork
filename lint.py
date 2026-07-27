@@ -43,6 +43,46 @@ DREAM_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}-[a-z0-9-]+\.md$")
 LEDGER_ID = re.compile(r"^- \*\*#(\d+)\*\*", re.M)
 NEXT_ID = re.compile(r"^Next id: \*\*(\d+)\*\*", re.M)
 
+# ── task provenance, forward-only from the cutoff (#213) ──────────────
+# The origin rule needs a WIDER entry grammar than LEDGER_ID: combined
+# entries (`- **#250/#251**`) are entries too, and the check reads whole
+# entries, not head lines. LEDGER_ID itself is pinned identical to
+# watch.py's LEDGER_ENTRY by a test and is NOT widened — the id-collision
+# and next-id rules keep their existing grammar, this rule gets its own.
+ORIGIN_CUTOFF = 216
+ORIGIN_VALUES = ("human", "loop", "unknown")
+ENTRY_HEAD = re.compile(r"^- \*\*([^*]+?)\*\*")
+ENTRY_ID = re.compile(r"#(\d+)")
+# An origin claim is `origin: **value**`; the entry's lines are joined
+# before matching, so a hard-wrapped marker (`origin:` ending a line, the
+# value opening the next — #288 and #252 both do this) still reads.
+ORIGIN_MARK = re.compile(r"origin:\s*\*\*\s*([^*]+?)\s*\*\*")
+
+
+def ledger_entries(text: str) -> list[tuple[list[int], str]]:
+    """Each ledger entry as (its ids, its full text).
+
+    An entry is a list item opening `- **#…**`; its text is that line plus
+    the following blank or indented lines. A line at column 0 that does not
+    open an entry ENDS it — the prose summaries under Recently landed are
+    not entries and never join one. Only the leading bold token numbers the
+    entry: combined entries list every id (`- **#138/#156**`), while a
+    `#264` in the body is a cross-reference, not the entry's number.
+    """
+    entries: list[tuple[list[int], list[str]]] = []
+    cur: tuple[list[int], list[str]] | None = None
+    for ln in text.split("\n"):
+        m = ENTRY_HEAD.match(ln)
+        if m:
+            ids = [int(x) for x in ENTRY_ID.findall(m.group(1))]
+            cur = (ids, [ln])
+            entries.append(cur)
+        elif cur is not None and (not ln.strip() or ln[0] in " \t"):
+            cur[1].append(ln)
+        else:
+            cur = None
+    return [(ids, "\n".join(lines)) for ids, lines in entries]
+
 
 def load_watch():
     """Import watch.py for its parsers.
@@ -256,6 +296,59 @@ def check_tasks(dw: Path, rep: Report) -> None:
             )
         elif not dupes:
             rep.add(OK, "tasks.md", f"{len(ids)} entries, next id {nxt}")
+
+    check_task_origins(text, rep)
+
+
+def check_task_origins(text: str, rep: Report) -> None:
+    """Forward-only provenance (#213), enforced from the #216 cutoff.
+
+    From the cutoff onward, who filed a task is a fact the ledger records
+    at filing time; before it, that fact was never written down and MUST
+    NOT be reconstructed by guessing. So the rule looks only forward: an
+    entry naming any id >= 216 in its leading token carries exactly one
+    `origin: **human**` / `**loop**` / `**unknown**`. Entries whose ids
+    all predate the cutoff are not checked at all — an old entry quoting
+    the convention in its prose (#213's own entry does) is prose, not a
+    marker.
+
+    `unknown` is a first-class value, not a failure: it is the truthful
+    origin of every post-cutoff task filed before this contract existed.
+    """
+    vocab = "origin: **human**, origin: **loop** or origin: **unknown**"
+    checked = errors = 0
+    for ids, body in ledger_entries(text):
+        if not ids or max(ids) < ORIGIN_CUTOFF:
+            continue
+        checked += 1
+        name = "/".join(f"#{i}" for i in ids)
+        marks = [v.strip() for v in ORIGIN_MARK.findall(body)]
+        if not marks:
+            errors += 1
+            rep.add(
+                ERROR,
+                "tasks.md",
+                f"{name} has no origin — tasks from #{ORIGIN_CUTOFF} onward "
+                f"record exactly one of {vocab} (`unknown` when it was never recorded)",
+            )
+        elif len(marks) > 1:
+            errors += 1
+            rep.add(
+                ERROR,
+                "tasks.md",
+                f"{name} has {len(marks)} origin markers ({', '.join(marks)}) — "
+                f"exactly one is the claim; two is none",
+            )
+        elif marks[0] not in ORIGIN_VALUES:
+            errors += 1
+            rep.add(
+                ERROR,
+                "tasks.md",
+                f"{name} origin is **{marks[0]}** — the vocabulary is "
+                f"human/loop/unknown, lowercase: exactly one of {vocab}",
+            )
+    if checked and not errors:
+        rep.add(OK, "tasks.md", f"origin recorded on all {checked} entries from #{ORIGIN_CUTOFF} onward")
 
 
 # status.json has two readers now (watch.py and dreamhub.py), which makes it
