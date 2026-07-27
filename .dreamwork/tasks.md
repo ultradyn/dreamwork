@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **374**
+Next id: **376**
 
 ## Open
 
@@ -1977,6 +1977,38 @@ Next id: **374**
   back to inline · blocked on #373's lifecycle design (was #229, decided
   2026-07-28 02:56)
 
+- **#374** — `esc()` does not escape the double quote, and three attributes take a
+  URL parameter · P2 · security/bug · 30m · origin: **loop** · found by the
+  fileview dreamer, out of its scope, and the escape defect re-verified here by
+  reading: `watch.py:1489` is `esc = t => { d.textContent = t; return d.innerHTML }`
+  — serialising *text* content, so `&`, `<` and `>` are escaped and `"` is not,
+  because the HTML serialiser only escapes quotes inside attribute values · three
+  attributes interpolate it: `watch.py:1527-1528` build
+  `aria-label="pop out ${esc(label)}"`, `data-pipurl="${esc(url)}"` and
+  `data-piplabel="${esc(label)}"` · reachable: `watch.py:4737` passes
+  `v.param` — the route parameter from `/file?p=…` — as `label`, so a `"` in the
+  query string closes the attribute early. `<` and `>` are still escaped so no new
+  tag can be opened, but `onfocus=` on that same button is enough, and the button
+  is focusable by definition · `url` is `encodeURIComponent`'d at the call sites and
+  is the one of the three that is currently safe · the exposure today is a crafted
+  link the human opens against his own dashboard, which is small; under #233's
+  trusted-LAN mode it becomes any device on the LAN, which is not · fix is probably
+  an `escA()` for attribute position rather than widening `esc()`, so text position
+  keeps producing readable `"` · red-first: the proof is a `p` containing `"` and an
+  assertion about the parsed DOM's attribute set, not about the HTML string, since
+  the string looks plausible either way · related: **#375**
+- **#375** — Focus is indistinguishable from hover on `.pipbtn`, and the fallback
+  ring computes to near-black · P3 · bug/a11y · 20m · origin: **loop** · found by
+  the fileview dreamer, out of its scope · `.pipbtn:hover, .pipbtn:focus-visible {
+  color: var(--accent) }` gives both states one appearance, so a keyboard user
+  cannot tell where focus is when the pointer happens to rest nearby, and the UA
+  fallback ring on this page computes to `rgb(16,16,16)` against a dark surface —
+  effectively invisible · this is the same shape as the `.fcopy` bug that dreamer
+  fixed in the same increment, which is why it is worth a sweep of the page's focus
+  states rather than a single-selector patch: the pair-selector idiom is likely
+  copied elsewhere · `watch-design.md` should end up stating the focus-vs-hover
+  contract once, so the next component inherits it instead of re-deciding · related:
+  **#374**
 - **#373** — Build topic chats v2 on the accepted R1 direction · P1 · feature ·
   origin: **human** · **answered via watch 2026-07-28 02:56**: *"rec, after cli and
   sqlite"* · succeeds **#229**, which closed as decided the same minute — R1 is the
