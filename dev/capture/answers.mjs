@@ -3,19 +3,29 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { makeReporter } from './report.mjs';
 const OUT=process.argv[2], PORT=+(process.argv[3]||39890);
-const checks=[]; const ok=(n,c)=>checks.push(`${c?'PASS':'FAIL'} ${n}`);
+const { ok, declare, finish, checks, notes, errs } = makeReporter();
+declare({
+  drives: '/answers end to end: #askbox expose + ask submit + live tick survival, ' +
+          '#247 answerRecord attrs, #250 missing-aid disclosure travel, #238 open ' +
+          'survives quiet/reorder/delete ticks, #292 Ctrl+Enter + inflight lifecycle, ' +
+          '#293 arrival + reduced motion',
+  traceWindow: '1000ms rAF traces of disclosure height/marker-top for #250 travel; ' +
+               '2200ms arrival opacity trace; 5200ms polls for tick-driven reorders; ' +
+               'settle waits keyed on real premises not fixed delays',
+});
 const target=join(dirname(OUT),'target');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const ansPath=join(target,'.dreamwork','answers.md');
 const seedTwoDup=(a,b)=>`# Questions for the dreamer\n\n## Open\n\n## Answered\n\n- **Duplicate?** → answered (2026-07-26): ${a}\n\n- **Duplicate?** → answered (2026-07-26): ${b}\n`;
 const br=await chromium.launch({args:['--use-gl=swiftshader']});
-const page=await br.newPage({viewport:{width:1100,height:800}}); const errs=[];
+const page=await br.newPage({viewport:{width:1100,height:800}});
 page.on('pageerror',e=>errs.push(String(e))); page.on('console',m=>{if(m.type()==='error'&&!m.text().includes('Failed to load resource')) errs.push(m.text())});
 await page.goto(`http://127.0.0.1:${PORT}/answers`);
 const exposed=await page.locator('#askbox').waitFor({state:'visible',timeout:5000}).then(()=>true).catch(()=>false);
 ok('answers route exposes #askbox',exposed);
-if(!exposed){console.log(checks.join('\n'));await br.close();process.exit(1)}
+if(!exposed){await br.close();finish();process.exit(1)}
 ok('route title',await page.locator('#chrome .htitle').textContent()==='answers');
 ok('missing channel is calm',await page.locator('.aq').count()===0);
 /* #247: live answerRecord render — missing aid omits BOTH attrs; present keeps both.
@@ -354,7 +364,7 @@ await page.waitForFunction(()=>document.querySelectorAll('.aq.answered').length=
 await page.route('**/ask',r=>r.fulfill({status:409,body:'refused'})); await page.locator('#askbox').fill('Keep these exact words'); await page.locator('#askform button').click(); await page.waitForFunction(()=>document.querySelector('#askmsg')?.textContent.includes('kept'));
 ok('failed ask keeps words',await page.locator('#askbox').inputValue()==='Keep these exact words');
 ok('failed ask explains outcome',(await page.locator('#askmsg').textContent()).includes('kept'));
-ok('page-owned errors',errs.length===0); if(errs.length) console.error(errs.join('\n'));
+ok('page-owned errors',errs.length===0);
 
 /* #292 — Ctrl/Cmd+Enter must submit the /answers ask form (composer + card
    already do). Real keyboard, one durable submit, no duplicate. */
@@ -622,4 +632,4 @@ ok('#293 reduced motion open arrival snaps (≤2 opacity positions)',
    rmArr.ok&&new Set(rmOps).size<=2);
 ok('#293 reduced motion open arrival ends fully visible',
    rmArr.ok&&rmArr.final&&rmArr.final.op>=95&&!rmArr.final.dreamin);
-await br.close(); console.log(checks.join('\n')); if(checks.some(x=>x.startsWith('FAIL'))) process.exit(1);
+await br.close(); finish();
