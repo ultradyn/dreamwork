@@ -1037,7 +1037,6 @@ this shape and convert opportunistically.)
   A green run after an injection is two indistinguishable states until you look:
   a check that cannot fail, and a break that never happened.
   (dreamer-panels via #142, distilled by the coordinator 2026-07-27)
-||||||| f72f730
 - **A claim that X is being *held* somewhere cannot be checked by reading X.**
   `position:sticky` shifts a box in LAYOUT, so `offsetTop` and
   `getBoundingClientRect()` on a glued box already contain the offset and
@@ -1058,3 +1057,32 @@ this shape and convert opportunistically.)
   `scrollHeight - clientHeight` and compute the position from it, and assert
   the range is big enough for the middle to be a middle.
   (dreamer-reviewsplit, 2026-07-27, #305)
+- **A hand-rolled conflict-marker sweep is an enumeration, and a missing member
+  of the set reports clean.** Resolving #305's `lessons.md` conflict, the
+  coordinator grepped `^(<<<<<<<|=======|>>>>>>>)`, got "none", and committed a
+  file still carrying `||||||| f72f730` on line 1040 — the diff3 base marker,
+  the one form the pattern did not name. It survived precisely because
+  `merge.conflictStyle` was diff3 and the base region was EMPTY (both sides
+  were pure appends), so deleting `=======` left the base marker adjacent to
+  real content and it read as prose. Use `git diff --cached --check`, which
+  knows all four forms and exits 2; and for a merge, the check that actually
+  matters is not "no markers" but "both parents' content survived" — set
+  containment of each parent's lines against the merged file, which takes four
+  lines of Python and cannot be fooled by a form you forgot.
+  (coordinator, 2026-07-27, #305)
+- **A quiet dreamer with a clean tree can be mid-run.** At 18:25 this
+  coordinator concluded dreamer-reviewsplit's batch was over from four signals,
+  every one of them real: 21 minutes without a commit, a clean worktree, a dream
+  file written (which dreamers write when finishing), and three unanswered
+  inbox messages. On that conclusion it killed the dreamer's `--autoreload` dev
+  server and a second server it read as a guard orphan — and the dreamer had a
+  LIVE `just guards` run, discoverable in one command: its server's parent was
+  `bash /run/user/1000/just/just-*/guards` with cwd in its worktree. All four
+  signals are ALSO what a dreamer looks like while a guard suite runs: guards
+  commit nothing, touch nothing tracked, and occupy it for minutes at a time
+  during which it reads no inbox. Silence and a clean tree describe the work
+  not landing; they say nothing about whether it stopped. Before acting on
+  "it is done", walk the process tree — `ps -o ppid= -p <pid>` up to init on
+  anything holding a guard port. Same shape as #203's orphan rule: age and
+  idleness prove nothing, provenance proves it.
+  (coordinator, 2026-07-27, #305)
