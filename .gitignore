@@ -17,6 +17,15 @@ __pycache__/
 # portable project default (unlike watch-tint). Migration
 # 2026-07-27-01-run-mode.md tells targets the same.
 .dreamwork/run-mode
+# The coordinator inbox: every line points at a report under /tmp, so the file
+# is worthless the moment the session ends — all 8 of today's entries name
+# paths that will not exist tomorrow. Same argument that ignores status.json
+# and run-mode: it describes a running process, so committing it would be a lie
+# as it landed. It was merely UNTRACKED until 2026-07-27, which is worse than
+# either choice: it showed as `??` in every `git status`, and that is exactly
+# the output used to decide whether a finished agent's worktree still holds
+# unsaved work.
+.dreamwork/inbox.md
 # The same two files one directory down: a guard that drives the composer or
 # answers a question for real makes the server write into the FROZEN fixture.
 # The write is correct behaviour being exercised; the patterns above are

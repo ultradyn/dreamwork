@@ -24,9 +24,24 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **330**
+Next id: **331**
 
 ## Open
+
+- **#330** — A guard run should not dirty the tree it is verifying · P3 ·
+  tooling/dogfood friction · origin: **loop** · running `just guards` rewrites the
+  four committed evidence PNGs under
+  `.dreamwork/review/evidence/provenance-coverage-217/` (byte-different every
+  run: 248500 vs 248101 for the same screenshot), so verifying leaves four
+  modified files behind · that is not merely untidy: a dirty tree is the signal
+  the worktree-cleanup contract reads to decide whether a finished agent has
+  unsaved work, and #316's own procedure keys off `git status --porcelain`, so
+  guard churn adds false positives to the check that protects other agents' work
+  · decide whether the captures belong in the repo at all (they are #217's
+  evidence of record, which is an argument for keeping them) or whether the
+  guard should write to its outdir and only a deliberate `just` recipe should
+  refresh the committed set · do not simply gitignore them — that would silently
+  drop the evidence #217 landed
 
 - **#329** — Teach `lint.py` to report stale review artifacts · P3 · tooling ·
   origin: **loop** · from #325's report: `review_artifact.py check` already answers
