@@ -382,7 +382,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 
       <div class="annot"><b>01</b><span>Two lines. Every field is <strong>whole or absent</strong> — no truncated description, because a preview that might be complete is worse than one that obviously is not (<code>#106</code>).</span></div>
       <div class="annot"><b>02</b><span>Priority is <strong>luminance</strong>, not colour. The accent is spent on exactly one thing on this page: the <strong>in progress</strong> rail. The <em>Reported:</em> box spends no second colour — the age qualifies the accent rather than competing with it.</span></div>
-      <div class="annot"><b>03</b><span>A landed blocker is <em>said</em>, never silently unblocked. The cross-check is <strong>three-way</strong>: landed · still open · <em>state unknown</em> — because twelve genuinely-landed ids (#106 among them) are in neither reader set today, and calling those “not in this ledger” would be a wrong claim on the page.</span></div>
+      <div class="annot"><b>03</b><span>A landed blocker is <em>said</em>, never silently unblocked. The cross-check is <strong>three-way</strong>: landed · still open · <em>state unknown</em> — because nineteen genuinely-landed ids (#106 among them) are in neither reader set today, and calling those “not in this ledger” would be a wrong claim on the page.</span></div>
     </div>
   </div>
 
@@ -474,9 +474,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <code>#326</code> and describes the last as <em>queued behind</em> the first, while <code>current_task</code>
   adds <code>#327</code> and <code>coordinator_next</code> adds <code>#281</code>. An “is #N mentioned”
   test therefore marks <strong>five</strong> tasks in progress and at least one of them falsely — the same
-  defect as regexing an owner column into existence. And <code>agents[].in_flight</code>, documented as
-  <em>“one line: what it is doing right now”</em>, is written as <code>true</code>. So the badge reads a
-  structured id list or the ledger's own <code>· in progress</code> token, and shows nothing otherwise.</div>
+  defect as regexing an owner column into existence. And <code>agents[].in_flight</code> cannot rescue it: it
+  holds exactly the promised <em>“one line: what it is doing right now”</em>, but a line about the work is not a
+  reference to a task — of three live agents, <strong>two name no id at all</strong> and the third names
+  <code>#281</code> while its actual task is <code>#327</code>. So the badge reads a structured id list or the
+  ledger's own <code>· in progress</code> token, and shows nothing otherwise.</div>
 </section>
 
 <section aria-labelledby="motion-t">
@@ -611,24 +613,21 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <code>/answers</code>' missing dissolve signature went with <code>#302</code>. And the hovercard task is
   <code>#282</code>, not <code>#213</code> — already corrected in the ledger.</div>
 
-  <div class="notice"><b>The landed reader misses SPACE-joined bold id spans.</b>
-  <code>LEDGER_COMBINED_MENTION</code> matches ids joined by <code>/</code>, but the compacted roll-up under
-  <code>## Recently landed</code> also writes <code>**#121 #123**</code>, <code>**#104 #77**</code>,
-  <code>**#109 #116**</code>, <code>**#107 #108 #110**</code>, <code>**#102 #106**</code> and
-  <code>**#96 stage 1**</code>. Measured: <strong>#77, #96, #102, #104, #106, #107, #108, #109, #110, #116,
-  #121 and #123 are in neither reader set</strong> — twelve landed tasks the current file cannot classify. It is
-  the same class of bug <code>#301</code>/<code>#315</code> just fixed, one separator over, and it is a live
-  under-count on the burndown today. It is also why this page's blocker cross-check is three-way.</div>
+  <div class="notice"><b>The landed reader sees only <code>/</code>-joined id spans — filed as <code>#331</code>.</b>
+  <code>LEDGER_COMBINED_MENTION</code> matches ids joined by <code>/</code> and only by <code>/</code>, but
+  grooming's compacted roll-up under <code>## Recently landed</code> also writes space-joined spans —
+  <code>**#121 #123**</code>, <code>**#104 #77**</code>, <code>**#109 #116**</code>,
+  <code>**#107 #108 #110**</code>, <code>**#102 #106**</code>, <code>**#141 #149**</code>,
+  <code>**#132 #151 #154**</code> — and one <code>+</code>-joined, <code>**#157 + #222 + #223**</code>.
+  Measured: <strong>nineteen ids are in neither reader set</strong>, and not one of them was in a landed set at
+  any of the ledger's 295 revisions, so walking history does not recover them either — closing the gap moves
+  the ever-landed total from <strong>117 to 136</strong>. Same class of bug as <code>#301</code>/<code>#315</code>,
+  one separator over, and a live under-count on the burndown today. It is also why this page's blocker
+  cross-check is three-way. The fix is one shared definition of an ids-only span, not a third regex — and
+  <code>**#96 stage 1**</code> has to stay inert, which is why <code>#96</code> is not among the nineteen.</div>
 
-  <div class="notice"><b><code>agents[].in_flight</code> is documented as prose and written as a bool.</b>
-  <code>file-formats.md</code> calls it <em>“one line: what it is doing right now”</em> and
-  <em>“the one subfield with two readers … load-bearing”</em>; the live <code>status.json</code> writes
-  <code>true</code>, and the renderer passes it through <code>String(...)</code> — so the deployed agent glance
-  currently reads <strong><code>doing: true</code></strong>. Either the writer or the contract is wrong, and
-  both readers trust the documented shape.</div>
-
-  <div class="notice"><b><code>status.json</code> has no structured way to name a task.</b> Which is what an
-  honest <strong>in progress</strong> badge needs. Requested addition, worded for the contract table:
+  <div class="notice"><b><code>status.json</code> has no structured way to name a task — filed as
+  <code>#332</code>.</b> Which is what an honest <strong>in progress</strong> badge needs. Requested addition, worded for the contract table:
   <code>current_task_ids</code> (array of ints, top level) and <code>task_ids</code> (array of ints, per agent)
   — <em>“the task ids this names, as integers; prose in <code>task</code> is not a substitute, because one
   sentence routinely names several ids in different states.”</em> Until it exists, the badge comes from the
