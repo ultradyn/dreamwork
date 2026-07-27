@@ -20,10 +20,12 @@ the CSS comparison would pass vacuously against two empty parses, so the parse
 counts are floors, not decoration.
 """
 import html
+import hashlib
 import os
 import re
 import subprocess
 import sys
+import types
 
 import pytest
 
@@ -1058,3 +1060,194 @@ def test_the_refuted_candidates_are_not_rules():
             f"`.{guessed}` was measured across the built artifacts and does NOT "
             f"have a closed child set; see the comment above SPINE_ROW for the "
             f"counts. A rule here would refuse files that ship.")
+
+
+# ── essential marks (#367, increment 1) ───────────────────────────────────
+#
+# His idea: "those little thin postits that lawyers use to indicate key points
+# and where you need to sign." A mark is a FLAGGED PASSAGE —
+# `data-mark="<label>"` on an element inside the body — and it is a different
+# axis from `nav` (structure). Increment 1 is the SAFETY NET, deliberately:
+# parse, cap, require an id, and render NOTHING. A source that declares no mark
+# must come out byte-for-byte the same as before (apart from the derived
+# stamp), which is what lets the frame gain this machinery before any artifact
+# uses it. No tabs, no CSS, no next/prev — those are later increments.
+#
+# VOCABULARY: review_artifact.parse_source already calls its <!--#name--> block
+# markers "marks". Those are unrelated; these are *essential marks*, and the
+# code and these tests say `essential_marks` / `labels` to avoid the collision.
+
+
+# The no-marks render, stamp-normalised, captured BEFORE this increment touched
+# review_artifact.py (2026-07-28, rendered through review_artifact.py at the
+# pre-change HEAD). The byte-identity test re-derives the pre-change output from
+# git and confirms this constant matches it, so it cannot have been recomputed
+# with the new code — the exact hollow-green trap criterion 3 exists for.
+_NO_MARKS_RENDER_DIGEST = (
+    "0eb232e800467837a3500ed7c98f450f2f799c7dc00aa759f53531cadda36af6")
+_STAMP_NORMALISE_RE = re.compile(r"v\d+\+[0-9a-f]{8}")
+
+
+def _normalise_stamp(document):
+    """Blank the derived template stamp so a frame edit does not masquerade as
+    a content change. Everything else must be byte-identical."""
+    return _STAMP_NORMALISE_RE.sub("v<N>+<stamp>", document)
+
+
+def _prechange_review_artifact():
+    """The committed review_artifact.py from BEFORE essential-marks landed.
+
+    Resolved by CONTENT, not a pinned SHA: the newest commit whose
+    review_artifact.py lacks the essential-marks constant, so it survives a
+    rebase that rewrites the SHA. Returns (module, ref) or (None, None) when no
+    pre-change copy is reachable in git (then the frozen digest is the
+    evidence). Used only to PROVE the frozen digest was captured honestly."""
+    try:
+        shas = subprocess.check_output(
+            ["git", "log", "--format=%H", "--", "review_artifact.py"],
+            cwd=HERE, stderr=subprocess.STDOUT).decode().split()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None, None
+    for sha in shas:
+        try:
+            blob = subprocess.check_output(
+                ["git", "show", "%s:review_artifact.py" % sha], cwd=HERE).decode()
+        except subprocess.CalledProcessError:
+            continue
+        if "MARKS_WARN_AT" not in blob:            # predates essential marks
+            mod = types.ModuleType("review_artifact_prechange")
+            mod.__file__ = "<git:%s:review_artifact.py>" % sha
+            exec(compile(blob, mod.__file__, "exec"), mod.__dict__)
+            return mod, sha
+    return None, None
+
+
+def _body_with_marks(n):
+    """SOURCE's body plus `n` flagged sections, each carrying a stable id."""
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += "\n" + "".join(
+        '<section id="m%d" data-mark="mark %d"><p>essential %d</p></section>'
+        % (i, i, i) for i in range(n))
+    return fields
+
+
+def test_a_source_with_no_marks_renders_byte_identically_apart_from_the_stamp(template):
+    """The whole point of increment 1: the frame gains the mark machinery and
+    NOTHING ELSE changes.
+
+    The expected side is INDEPENDENT of the code under test. The trap this
+    exists for is recomputing both sides with the new code, which makes them
+    move together and the check prove nothing (it has produced two false greens
+    in this repo). So: the frozen digest was captured from the pre-change
+    builder, and the test re-runs that pre-change builder out of git to PROVE
+    the digest is honest, then compares the new builder against it.
+
+    Production line that must change for this to FAIL on a regression: any new
+    code path in render() that touches `out` (or the fields it fills from) when
+    `essential_marks` returns an empty list — a tab, a class, a script, a
+    wrapper. The check passes while those paths stay inert for a no-marks body.
+    """
+    # Precondition, derived not assumed: the fixture genuinely declares no
+    # mark, or this assertion is vacuous.
+    assert "data-mark" not in ra.parse_source(SOURCE)["body"]
+    now = _normalise_stamp(ra.render(ra.parse_source(SOURCE), template=template))
+    assert hashlib.sha256(now.encode()).hexdigest() == _NO_MARKS_RENDER_DIGEST, (
+        "a no-marks source no longer renders byte-identically — the marks "
+        "machinery altered output it must leave untouched")
+    # Honesty proof: the frozen digest really IS the pre-change render. The
+    # pre-change builder is checked out of git and re-run; if it disagrees, the
+    # frozen constant was stale or fabricated rather than captured beforehand.
+    old, ref = _prechange_review_artifact()
+    if old is not None:
+        assert not hasattr(old, "essential_marks"), (
+            "resolved ref %s already carries essential marks — the resolver "
+            "picked the wrong commit, so the comparison would be new-vs-new "
+            "and prove nothing" % ref)
+        pre = _normalise_stamp(
+            old.render(old.parse_source(SOURCE), template=template))
+        assert hashlib.sha256(pre.encode()).hexdigest() == _NO_MARKS_RENDER_DIGEST, (
+            "the frozen digest no longer matches the pre-change builder at %s "
+            "— re-capture it after an intentional template change" % ref)
+
+
+def test_marks_are_collected_in_document_order():
+    """Document order is mark order — there is no explicit index to keep in
+    sync. Break the collection (sort it, or gather via an unordered scan) and
+    this fails: the labels are chosen so their document order is NOT their
+    alphabetical order, so a sorted collection disagrees.
+
+    Production line: the collection in `essential_marks()` — the HTMLParser
+    visits start tags in document order, and the labels list must preserve that
+    (do not sort)."""
+    body = ('<section id="z" data-mark="zulu last"><p>z</p></section>'
+            '<section id="a" data-mark="alpha first"><p>a</p></section>'
+            '<section id="m" data-mark="mike middle"><p>m</p></section>')
+    labels, no_id = ra.essential_marks(body)
+    assert labels == ["zulu last", "alpha first", "mike middle"], labels
+    # Precondition that makes this about ORDER rather than mere presence: a
+    # sorted collection would pass the assertion above iff the input were
+    # already alphabetical. It is deliberately not.
+    assert labels != sorted(labels), \
+        "labels are alphabetical — the order check cannot detect a sort"
+    assert no_id == [], "every flagged element here has an id; precondition"
+
+
+def test_eight_marks_warn_and_fifteen_refuse(template):
+    """The caps from his 2026-07-28 05:35 ruling (he overrode a five-and-refuse
+    proposal): WARN at 8 or more through the advisory channel, REFUSE at 15 or
+    more. The band between is deliberate.
+
+    The boundaries are DERIVED from the constants, not hand-written — but each
+    is asserted from BOTH sides, so a threshold set to 1 (or 99) fails one half
+    or the other. Production lines: MARKS_WARN_AT and MARKS_REFUSE_AT and their
+    comparisons in render()."""
+    n_below_warn = ra.MARKS_WARN_AT - 1      # 7: must NOT warn
+    n_at_warn = ra.MARKS_WARN_AT             # 8: must warn
+    n_below_refuse = ra.MARKS_REFUSE_AT - 1  # 14: warns, must NOT refuse
+    n_at_refuse = ra.MARKS_REFUSE_AT         # 15: must refuse
+    # Precondition: the two caps are distinct bands, or the test is vacuous.
+    assert ra.MARKS_REFUSE_AT > ra.MARKS_WARN_AT > 1
+
+    def mark_warnings(warned):
+        return [w for w in warned if "essential marks" in w]
+
+    # 7 marks: silent
+    warned = []
+    ra.render(_body_with_marks(n_below_warn), template=template, warn=warned.append)
+    assert mark_warnings(warned) == [], warned
+
+    # 8 marks: warns, still builds
+    warned = []
+    built = ra.render(_body_with_marks(n_at_warn), template=template, warn=warned.append)
+    assert len(built) > 12000 and len(mark_warnings(warned)) == 1, warned
+
+    # 14 marks: warns but does NOT refuse
+    warned = []
+    ra.render(_body_with_marks(n_below_refuse), template=template, warn=warned.append)
+    assert mark_warnings(warned), "14 marks should still warn"
+
+    # 15 marks: refuses
+    with pytest.raises(ra.ArtifactError, match="hard cap"):
+        ra.render(_body_with_marks(n_at_refuse), template=template,
+                  warn=lambda m: None)
+
+
+def test_a_mark_without_an_id_is_refused(template):
+    """A mark on an element with no stable id breaks next/prev — the builder
+    must refuse rather than invent one. Break the id check (drop the no-id
+    refusal) and this passes while shipping an unaddressable mark.
+
+    Production line: the `if marks_no_id: raise ArtifactError(...)` in render(),
+    fed by `_EssentialMarkScan` recording an element whose `data-mark` carries
+    no `id`."""
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += '\n<section data-mark="the cliff"><p>no id here</p></section>'
+    with pytest.raises(ra.ArtifactError, match="no stable id"):
+        ra.render(fields, template=template)
+    # Precondition: the refusal is about the missing id, not the mark itself —
+    # the same mark on an element that DOES carry an id builds fine. (render
+    # copies fields internally, so the original body is intact to amend.)
+    fields["body"] = fields["body"].replace(
+        '<section data-mark="the cliff">',
+        '<section id="cliff" data-mark="the cliff">')
+    ra.render(fields, template=template)

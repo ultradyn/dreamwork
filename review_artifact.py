@@ -657,6 +657,78 @@ def highlight(document):
     return _PRE_CODE_RE.sub(rewrite, document)
 
 
+# ── essential marks (#367) ────────────────────────────────────────────────
+#
+# His idea, and his analogy decides the design: "those little thin postits
+# that lawyers use to indicate key points and where you need to sign." A
+# lawyer's flag marks WHERE YOU MUST ACT, so a mark is a different axis from
+# `nav` (structure) — conflating them produces a second table of contents,
+# which is not what he asked for.
+#
+# VOCABULARY: `parse_source` already calls its `<!--#name-->` BLOCK markers
+# "marks" (a local in that function). Those are unrelated. This section is
+# about *essential marks* — flagged passages — and uses `essential_marks` /
+# `labels` throughout so the two never collide.
+#
+# The source syntax is `data-mark="<label>"` ON the element it flags, so the
+# flag cannot drift from the passage it points at. Document order is mark
+# order (no explicit index to keep in sync), and a mark on an element with no
+# stable `id` is REFUSED — next/prev has to land on it, and the builder
+# invents nothing. The caps are his 2026-07-28 05:35 ruling (he overrode a
+# five-and-refuse proposal): WARN across a band, REFUSE only at wallpaper.
+#
+# Increment 1 parses and caps only — it renders nothing. A source that
+# declares no `data-mark` must render byte-identically apart from the stamp,
+# which is the safety net that lets the frame gain this machinery before any
+# artifact uses it.
+MARKS_WARN_AT = 8        # soft cap 7: warn at 8 or more (advisory, via `warn`)
+MARKS_REFUSE_AT = 15     # hard cap 15: refuse — fifteen flags is wallpaper
+
+
+class _EssentialMarkScan(html.parser.HTMLParser):
+    """Collect `data-mark` labels in document order; flag those with no id.
+
+    A mark is a `data-mark="<label>"` attribute on any element. Document order
+    is mark order, and the parser visits start tags in document order, so the
+    collected list needs no separate sort. A mark whose element carries no
+    stable `id` is recorded separately — next/prev cannot land on it, and the
+    builder assigns nothing implicitly.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.labels = []     # mark labels, in document order
+        self.no_id = []      # labels whose element had no stable id
+
+    def _see(self, attrs):
+        table = dict(attrs)
+        label = table.get("data-mark")
+        if label is None:            # `data-mark` with no value is not a mark
+            return
+        self.labels.append(label)
+        if not str(table.get("id", "")).strip():
+            self.no_id.append(label)
+
+    def handle_starttag(self, tag, attrs):
+        self._see(attrs)
+
+    def handle_startendtag(self, tag, attrs):
+        self._see(attrs)
+
+
+def essential_marks(document):
+    """Essential mark labels in document order, and the subset with no id.
+
+    Returns ``(labels, no_id)``, both in document order. A mark is the presence
+    of a `data-mark` attribute with a value; the label is what the tab will
+    read. Increment 1 parses and caps; it renders nothing yet.
+    """
+    scan = _EssentialMarkScan()
+    scan.feed(document)
+    scan.close()
+    return scan.labels, scan.no_id
+
+
 # ── the build ─────────────────────────────────────────────────────────────
 
 
@@ -723,6 +795,11 @@ def render(fields, template=None, warn=None):
     # marked code blocks. Runs after slot fill (so it sees authored code) and
     # before the fetch check (so its spans are held to the offline contract).
     out = highlight(out)
+    # #367 — essential marks: parse, cap, and require a stable id. Parsed from
+    # the source's BODY (the contract: a mark flags a passage inside body), so
+    # this READS `fields["body"]` and never touches `out` — which is the whole
+    # reason a no-marks source renders byte-identically apart from the stamp.
+    labels, marks_no_id = essential_marks(fields["body"])
     # #379 — advisories are emitted BEFORE any refusal, so a source with two
     # faults reports both on one run. This used to sit below both `raise`s, which
     # meant an author whose source had a component violation and a short grid row
@@ -733,6 +810,26 @@ def render(fields, template=None, warn=None):
     if warn is not None:
         for message in grid_warnings(out, template):
             warn(message)
+        if len(labels) >= MARKS_WARN_AT:
+            warn(
+                "essential marks: %d declared (warn at %d or more, refuse at "
+                "%d) — fifteen flags is wallpaper, and the point was that a "
+                "few help; prune to the passages you would have him read first"
+                % (len(labels), MARKS_WARN_AT, MARKS_REFUSE_AT))
+    # A mark with no stable id breaks next/prev — the builder must refuse
+    # rather than invent one (#367).
+    if marks_no_id:
+        raise ArtifactError(
+            "essential mark(s) sit on element(s) with no stable id, so "
+            "next/prev cannot land on them — give each flagged element a real "
+            "id (the builder assigns nothing implicitly): %s"
+            % ", ".join(repr(label) for label in marks_no_id))
+    if len(labels) >= MARKS_REFUSE_AT:
+        raise ArtifactError(
+            "essential marks: %d declared, the hard cap is %d — fifteen flags "
+            "is wallpaper, and the whole point was that a few help. Prune to "
+            "the passages you would have him read first"
+            % (len(labels), MARKS_REFUSE_AT))
     violations = fetch_violations(out)
     if violations:
         raise ArtifactError(
