@@ -496,6 +496,7 @@ running still has to appear in the hub. Writers should provide the core:
 | `awaiting_human` | array of strings | **non-empty means the human is the bottleneck.** The one field a reader must never bury (#130, #141) |
 | `last_tick`, `last_commit` | string | freshness; a stale `last_tick` is how a stalled loop is spotted |
 | `deploy`, `monitors`, `coordinator_next` | strings / arrays | recovery notes for whoever picks the loop up after a compaction |
+| `push` | object: `at`, `channel`, `ok`, `detail` | **the loop's push-channel health** (#190). The loop writes one on every attempt, success or failure. `at` is ISO8601 with offset, from the system clock (never memory — the page renders it as an age); `channel` names what carried the push (`attn`, `PushNotification`, …); `ok` is a strict bool the renderer branches on; `detail` is the short reason a human acts on (the 403, the credit message). **Three states are distinguishable from the data:** no `push` key (never tried), `ok:true` (last landed), `ok:false` (last failed) — and only the last earns pixels. `ok:false` is a truthful runtime claim, not a broken file, so it lints clean; only a wrong TYPE is an error. Subfields are a menu like the top level (#310): the loop may grow the object, and nothing here rejects an unlisted key |
 
 The file is **gitignored ephemera** and stays that way. It describes a
 running process, so a committed one would be a lie the moment it landed;

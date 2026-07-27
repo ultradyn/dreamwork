@@ -404,6 +404,105 @@ class TestStatusIsAnInterface:
         assert ERRORS(rep, "status.json")
 
 
+class TestStatusPush:
+    """#190 — `push` is how the dashboard learns the loop's channel to him is
+    dead. The data has three distinguishable states (never tried / landed /
+    failed) and lint's job is the SHAPE: a malformed `push` is a writer bug,
+    and a writer bug here is exactly the silent class this file exists for —
+    the loop believed it reported a fault and the dashboard rendered nothing.
+
+    Lint must not treat a FAILED push (`ok:false`) as an error: that is a
+    truthful runtime claim, not a broken file. Only a wrong TYPE is broken.
+    The "three states are distinguishable" assertion lives in the browser
+    guard (it is a property of the render); here we assert lint accepts all
+    three shapes and rejects only malformed ones.
+    """
+
+    PUSH_OK = json.dumps({"push": {
+        "at": "2026-07-27T20:17:00+10:00",
+        "channel": "attn",
+        "ok": True,
+        "detail": "delivered",
+    }})
+    PUSH_FAIL = json.dumps({"push": {
+        "at": "2026-07-27T20:17:00+10:00",
+        "channel": "attn",
+        "ok": False,
+        "detail": "403 — out of credits or need a Grok subscription",
+    }})
+
+    def test_absent_push_is_clean(self, tmp_path):
+        # never tried is one of the three states and lints as valid.
+        rep = run(target(tmp_path, **{"status.json": '{"task": "x"}'}))
+        assert levels(rep, "status.json") == [lint.OK]
+
+    def test_a_successful_push_is_clean(self, tmp_path):
+        rep = run(target(tmp_path, **{"status.json": self.PUSH_OK}))
+        assert levels(rep, "status.json") == [lint.OK]
+
+    def test_a_failed_push_is_NOT_an_error(self, tmp_path):
+        # ok:false is a truthful runtime claim, not a broken file. Lint crying
+        # red on it would punish the loop for reporting the very fault this
+        # field exists to surface.
+        rep = run(target(tmp_path, **{"status.json": self.PUSH_FAIL}))
+        assert levels(rep, "status.json") == [lint.OK]
+
+    def test_push_that_is_not_an_object_is_an_error(self, tmp_path):
+        rep = run(target(tmp_path, **{"status.json": '{"push": "down"}'}))
+        assert ERRORS(rep, "status.json")
+
+    def test_push_ok_must_be_bool(self, tmp_path):
+        # the renderer branches on `p.ok === false` (strict), so a string
+        # "false" would never trip the fault branch and the failure would be
+        # silent again — the exact class this check exists for.
+        bad = json.dumps({"push": {"at": "x", "channel": "attn",
+                                   "ok": "no", "detail": "y"}})
+        rep = run(target(tmp_path, **{"status.json": bad}))
+        assert ERRORS(rep, "status.json")
+        # check_status adds an OK row first, so find the ERROR row specifically
+        # — `next(...)` on the OK row was how this test passed while reading
+        # the wrong line.
+        err = next(d for lvl, w, d in rep.rows
+                   if w == "status.json" and lvl == lint.ERROR)
+        assert "ok" in err
+
+    def test_push_channel_and_detail_must_be_strings(self, tmp_path):
+        bad = json.dumps({"push": {"at": "x", "channel": 403,
+                                   "ok": False, "detail": 7}})
+        rep = run(target(tmp_path, **{"status.json": bad}))
+        assert ERRORS(rep, "status.json")
+
+    def test_push_at_must_be_a_string(self, tmp_path):
+        bad = json.dumps({"push": {"at": 1234567890, "channel": "attn",
+                                   "ok": False, "detail": "y"}})
+        rep = run(target(tmp_path, **{"status.json": bad}))
+        assert ERRORS(rep, "status.json")
+
+    def test_push_at_in_the_future_is_an_error(self, tmp_path):
+        # the dashboard's thesis is liveness, so a push timestamp must come
+        # from the clock, never from memory — same bias and same rule as
+        # `last_tick`. A future `at` would make "failed 4m ago" lie.
+        from datetime import datetime, timedelta
+        ahead = (datetime.now() + timedelta(minutes=20)).isoformat(timespec="minutes")
+        bad = json.dumps({"push": {"at": ahead, "channel": "attn",
+                                   "ok": False, "detail": "y"}})
+        rep = run(target(tmp_path, **{"status.json": bad}))
+        assert ERRORS(rep, "status.json")
+        err = next(d for lvl, w, d in rep.rows
+                   if w == "status.json" and lvl == lint.ERROR)
+        assert "FUTURE" in err
+
+    def test_unknown_keys_inside_push_are_not_an_error(self, tmp_path):
+        # status.json's key list is a MENU not a whitelist (#310), and the
+        # rule descends into `push` too: the loop may grow the object, and a
+        # check that rejected unknown subfields would red the first addition.
+        blob = json.dumps({"push": {"at": "x", "channel": "attn",
+                                    "ok": True, "detail": "y",
+                                    "retries": 3, "fallback": "PushNotification"}})
+        rep = run(target(tmp_path, **{"status.json": blob}))
+        assert levels(rep, "status.json") == [lint.OK]
+
+
 class TestWatchPort:
     def test_a_sane_port_is_ok(self, tmp_path):
         rep = run(target(tmp_path, **{"watch-port": "35110\n"}))

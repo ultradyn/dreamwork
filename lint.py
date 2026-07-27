@@ -465,6 +465,12 @@ STATUS_TYPES = {
     "awaiting_human": list,
     "last_tick": str,
     "last_commit": str,
+    # `push` is the loop's report on its own channel to the human (#190). It is
+    # a nested object whose shape check_status_push validates below; the
+    # top-level type guard here catches a writer that put a string or list
+    # where the object belongs, which would make every reader of it throw or
+    # render nonsense — the same failure shape every other row here guards.
+    "push": dict,
 }
 
 
@@ -520,6 +526,71 @@ def check_status(dw: Path, rep: Report) -> None:
     if waiting:
         detail += f", {len(waiting)} awaiting the human"
     rep.add(OK, "status.json", detail)
+
+
+def check_status_push(dw: Path, rep: Report) -> None:
+    """#190 — the loop's push-channel health, as written into status.json.
+
+    `attn` died with a 403 for an entire afternoon and nothing made the loop
+    notice: it reported progress into a transcript the human was not reading
+    while the channel it believed had escalated sat refused. The dashboard is
+    the only surface left that can say so, and `status.json`'s `push` object
+    is how it learns. So a `push` the dashboard cannot read is exactly the
+    silent class this file exists for — the loop thinks it reported a fault
+    and the page renders nothing.
+
+    Three states are distinguishable from the DATA, and lint must accept all
+    three: no `push` key (never tried), `ok:true` (last landed), `ok:false`
+    (last failed). A failed push is a TRUTHFUL runtime claim, not a broken
+    file, so it lints clean — crying red on it would punish the loop for
+    reporting the very fault this field exists to surface. Only a wrong TYPE
+    is a writer bug worth catching.
+
+    The `at` stamp follows the same clock rule as `last_tick`: a dashboard
+    whose thesis is liveness must not render an invented time, and two agents
+    have already written future timestamps by estimating elapsed time. A
+    future `at` makes "failed 4m ago" a lie.
+
+    Unknown subfields are tolerated — `status.json`'s key list is a MENU not a
+    whitelist (#310), and that rule descends into `push`: the loop may grow
+    the object (a fallback channel, a retry count), and a check that rejected
+    the first addition would red the day it shipped.
+    """
+    path = dw / "status.json"
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return  # check_status already reported it
+    if not isinstance(data, dict):
+        return
+    p = data.get("push")
+    if p is None or not isinstance(p, dict):
+        return  # absent is one of the three states; a non-dict is caught by STATUS_TYPES
+
+    want = {"at": str, "channel": str, "ok": bool, "detail": str}
+    wrong = [
+        f"push.{k} is {type(p[k]).__name__}, want {t.__name__}"
+        for k, t in want.items()
+        if k in p and not isinstance(p[k], t)
+    ]
+    if wrong:
+        rep.add(ERROR, "status.json", "; ".join(wrong) +
+                " — the dashboard cannot read the push-channel state")
+        return
+
+    at = p.get("at")
+    if isinstance(at, str):
+        skew = _future_skew(at)
+        if skew is not None and skew > 60:
+            rep.add(
+                ERROR,
+                "status.json",
+                f"push.at is {int(skew // 60)}min in the FUTURE — read the clock, "
+                f"do not estimate; a wrong `at` makes 'failed Nm ago' a lie",
+            )
+            return
 
 
 STATUS_KEYS_HEADER = (
@@ -1034,6 +1105,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_tasks(dw, rep)
     check_landed_asks(dw, watch, rep)
     check_status(dw, rep)
+    check_status_push(dw, rep)
     check_watch_port(dw, rep)
     check_watch_tint(dw, watch, rep)
     check_run_mode(dw, watch, rep)

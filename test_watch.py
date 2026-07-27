@@ -2232,6 +2232,21 @@ class TestAppShell(unittest.TestCase):
         # belongs on the field, and the parse only picks the branch.
         self.assertIn('if (s.last_tick)\n    facts.push(isNaN(t)', watch.PAGE)
 
+    def test_status_panel_renders_push_fault_strictly_and_quiets_the_rest(self):
+        # #190 — the loop's push channel to the human can die (attn 403 for an
+        # afternoon) and only the dashboard can say so. Three states must be
+        # distinguishable from the data: never tried (no `push` key), last
+        # succeeded (ok:true), last failed (ok:false). Only ok:false renders.
+        # The branch is STRICT (=== false): a missing or malformed ok — which
+        # lint catches at the writer — must never read as a fault, and lint's
+        # own test pushes a string "no" to prove the strictness is load-bearing
+        # on both sides. And `push` is in ST_GLANCE so it is rendered here
+        # rather than folded into "the rest" (which would double-handle it and
+        # bury the fault behind a click).
+        self.assertIn('p.ok === false', watch.PAGE)
+        self.assertIn("class=\"stpush\"", watch.PAGE)
+        self.assertIn("'push'", watch.PAGE)  # in ST_GLANCE
+
     def test_page_has_dream_transition_wiring(self):
         # Static guard: the dissolve mist (SVG turbulence/displacement) and
         # the shader stir (warp uniform + pulseWarp handle) must stay wired
