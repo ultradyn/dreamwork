@@ -68,17 +68,6 @@ Next id: **314**
   second pair of eyes, and it was right about that · #308 is the sibling
   rounding half of this and the two should land together or in sequence
 
-- **#312** — The command palette lets a phone scroll the whole page sideways ·
-  P2 · Web UI bug · ~30m · origin: **loop** · found by dreamer-reviewsplit
-  while scoping #305's responsive checks, and deliberately left out of scope so
-  #305's suite was not gated on someone else's bug · at a 390px viewport the
-  page overflows **122px horizontally on EVERY route**, dashboard included, and
-  the overflowing element is `.cmdmenu` · this is shipped behaviour on the
-  deployed dashboard, not a regression from #305 · `watch-design.md`'s
-  responsive contract says the body must never scroll horizontally, so the
-  styleguide already forbids it and no ruling is needed · wants a guard at
-  390px that asserts `documentElement.scrollWidth <= clientWidth` on each
-  route, which would also catch the next one
 
 - **#313** — `just audit-styleguide` is red for everybody on 10 historical
   commits · P3 · chore/tooling · ~30m · origin: **loop** · the recipe enforces
@@ -1128,6 +1117,37 @@ Next id: **314**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#312** — The command palette lets a phone scroll the whole page sideways ·
+  P2 · Web UI bug · ~30m · origin: **loop** · found by dreamer-reviewsplit
+  while scoping #305's responsive checks, and deliberately left out of scope so
+  #305's suite was not gated on someone else's bug · at a 390px viewport the
+  page overflows **122px horizontally on EVERY route**, dashboard included, and
+  the overflowing element is `.cmdmenu` · this is shipped behaviour on the
+  deployed dashboard, not a regression from #305 · `watch-design.md`'s
+  responsive contract says the body must never scroll horizontally, so the
+  styleguide already forbids it and no ruling is needed · wants a guard at
+  390px that asserts `documentElement.scrollWidth <= clientWidth` on each
+  route, which would also catch the next one
+  · fixed in `65e9d1e`, merged `c0d6071` · **the root cause was subtler than the
+  filing**: the menu overflowed while SHUT, because `visibility:hidden` is not
+  `display:none` — the box stays laid out and keeps counting toward
+  `documentElement.scrollWidth` on every route, palette open or closed. That is why
+  it shipped: nothing looked wrong · `.cmdmenu` now anchors to the ⋯'s right edge
+  and opens leftward, clamped by `max-width:calc(100vw - 2rem)` · the reveal is
+  provably untouched: that gesture is `translateY(-6px)` + opacity + blur, purely
+  vertical, so a horizontal anchor change cannot reach it · guard
+  `dev/capture/hfit.mjs`, red-proven by reverting the fix — all three routes fail at
+  exactly 122px naming `#cmdmenu`, plus 109px menu-open, while its precondition
+  checks stayed green, so the red was the contract failing and not a hollow guard ·
+  it asserts the palette exists and the menu is POPULATED before measuring, because
+  "no overflow" is otherwise satisfied by an absent subject · **written by a ccc
+  glm-5.2 subagent that was KILLED before committing or reporting**; work recovered
+  uncommitted from the worktree and validated by the coordinator before landing, and
+  its transcript was lost to a `| tail -40` in the dispatch — see lessons.md ·
+  620 pytest, lint clean, hfit PASS on master · noted, not filed: the menu's own
+  reveal has no motion guard (`cmdcap.mjs` does not reference it), which is
+  pre-existing and was not #312's to fix
 
 - **#303** — Make `lint.py` notice a `status.json` that lost known keys · P3 · landed 2026-07-27 ·
   chore · 20m · origin: **loop** · goal: make a silent projection-rewrite loss

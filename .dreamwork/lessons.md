@@ -1099,3 +1099,18 @@ this shape and convert opportunistically.)
   check the precondition the check depends on" (CLAUDE.md) with the failure one
   level out: the precondition was asserted, and nothing was listening.
   (coordinator, 2026-07-27, #308)
+- **Piping a dispatched agent's stdout through `tail` destroys the whole log if
+  it dies.** #312's ccc subagent was launched with `... | tail -40` so the
+  coordinator would get a tidy summary. `tail` buffers until its input closes,
+  so the task output file sat at 0 bytes for twelve minutes, and when the agent
+  was killed the entire transcript went with it — no report, no error, no clue
+  why it died, and four modified files sitting uncommitted in the worktree. The
+  work was recoverable only because a worktree is a directory on disk. This is
+  the existing rule (*every subagent reports through a FILE, because a final
+  message is a channel nobody reads back*) applied one level lower: the
+  TRANSPORT needs a file too. Redirect to a log with `> log 2>&1` and `tail` the
+  file when you want to look; never make the pipe the only copy. Corollary for
+  diagnosis: while an agent is alive, the state of its worktree is a better
+  liveness signal than its stdout, and `git status --porcelain` there costs
+  nothing.
+  (coordinator, 2026-07-27, #312)
