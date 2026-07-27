@@ -1311,3 +1311,16 @@ this shape and convert opportunistically.)
   replacement** — the wrapper is not the process doing the work, and the same fact
   is already recorded in the other direction (a ccc agent's visible process is a
   shell wrapper, so `ps | grep opencode` can never find it).
+
+- **A stand-down MESSAGE is not a retirement mechanism; `TaskStop` is.** `tmpl325`
+  was sent an explicit "stand down, your batch is complete, nothing further
+  needed" after its work merged and its worktree was removed — and then reported
+  itself idle-and-available **twice**, sixteen minutes apart. It had nowhere to
+  work and nothing to do, and it was still alive. SKILL.md already says retiring
+  is done when the harness says it terminated, not when the agent says so, and
+  notes it happened twice in one day; this is the third, and the first where a
+  courteous stand-down message was mistaken for the act. **The symptom is
+  repeated idle notifications from an agent whose work has landed** — and that is
+  a reliable signal, because an agent that has actually exited cannot send one.
+  `TaskStop({task_id: "<name>"})` is the act; send the message for the agent's
+  benefit if you like, then stop it.
