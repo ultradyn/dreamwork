@@ -803,7 +803,8 @@ codec, the `aria-live` count line, `/` and Escape handling.
       sweep, `just audit-styleguide`, `git diff --check`.
 - [ ] Commit, merge, deploy `watch.py`, verify with `deployed.py`.
 - [ ] Coordinator updates `.dreamwork/tasks.md` and `status.json`; file the
-      three §10 findings as tasks.
+      two §10 bugs as tasks (the third finding is a brief correction, not a
+      task).
 
 ---
 
@@ -851,7 +852,7 @@ recorded contracts. A one-line answer unblocks each.
    turns a read-only page into a steering surface, and that is your call to
    make deliberately rather than mine to fold into a list page.
 
-7. **The three §10 findings** — `parse_ledger`'s blindness to combined
+7. **The two §10 bugs** — `parse_ledger`'s blindness to combined
    entries (a live wrong number on the burndown), and `/answers`' missing
    dissolve signature. *Rec: file both now; the combined-entry one is a P2 bug
    rather than a polish item, because the burndown is on the dashboard and is
