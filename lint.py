@@ -1909,6 +1909,216 @@ def check_placeholder_citations(dw: Path, rep: Report) -> None:
         )
 
 
+# ── brief hand-off obligation (#398) ──────────────────────────────────
+# Distinctive phrase from the SKILL.md paragraph that introduced the
+# dispatch-time hand-off obligation (#394). Resolved via `git log -S`, never a
+# pinned sha — same content-resolution idiom as
+# test_review_artifact._prechange_review_artifact. **Pick is load-bearing:** a
+# reword that removes this phrase makes `git log -S` return nothing; the check
+# must then ERROR loudly rather than grandfather every brief in silence.
+# Chosen because it opens the obligation paragraph, appears once in history,
+# and is unlikely to be restated elsewhere by accident.
+HANDOFF_OBLIGATION_PHRASE = (
+    "A subagent that LANDS a commit writes two things, not one"
+)
+
+
+def resolve_handoff_obligation_cutoff(root: Path) -> str | None:
+    """The commit that introduced the hand-off dispatch obligation into SKILL.md.
+
+    Content-resolved (`git log -S` on HANDOFF_OBLIGATION_PHRASE), never a
+    pinned sha. Returns a full 40-char sha, or None when history has no hit —
+    and None is the hollow outcome the third test refuses to treat as a pass.
+    When multiple commits touch the count, the oldest (introduction) wins.
+    """
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(root), "log", "-S", HANDOFF_OBLIGATION_PHRASE,
+             "--format=%H", "--", "SKILL.md"],
+            stderr=subprocess.DEVNULL, text=True, timeout=30,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return None
+    shas = out.split()
+    if not shas:
+        return None
+    return shas[-1]  # git log is newest-first; last is the introduction
+
+
+def brief_add_commit(root: Path, rel_path: str) -> str | None:
+    """The commit that first added `rel_path`, or None if untracked / never committed."""
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(root), "log", "--diff-filter=A", "-1",
+             "--format=%H", "--", rel_path],
+            stderr=subprocess.DEVNULL, text=True, timeout=20,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return None
+    sha = out.strip()
+    return sha or None
+
+
+def commit_unix_time(root: Path, sha: str) -> int | None:
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(root), "log", "-1", "--format=%ct", sha],
+            stderr=subprocess.DEVNULL, text=True, timeout=10,
+        )
+        return int(out.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError, ValueError):
+        return None
+
+
+def classify_brief_handoff_scope(root: Path) -> dict:
+    """Split committed briefs by whether their add-commit is after the obligation.
+
+    Returns ``{cutoff, in_scope, grandfathered, skipped, missing}`` where
+    ``in_scope`` / ``grandfathered`` / ``skipped`` are lists of brief basenames
+    and ``missing`` is the in-scope basenames that lack `.dreamwork/handoffs.md`.
+    Used by the check and by the precondition assertions in its tests so a
+    vacuous split (everything on one side) fails loudly.
+    """
+    empty: dict = {
+        "cutoff": None, "in_scope": [], "grandfathered": [],
+        "skipped": [], "missing": [],
+    }
+    briefs_dir = root / ".dreamwork" / "docs" / "briefs"
+    if not briefs_dir.is_dir():
+        return empty
+    cutoff = resolve_handoff_obligation_cutoff(root)
+    if not cutoff:
+        return empty
+    cutoff_t = commit_unix_time(root, cutoff)
+    if cutoff_t is None:
+        return empty
+    out = {
+        "cutoff": cutoff, "in_scope": [], "grandfathered": [],
+        "skipped": [], "missing": [],
+    }
+    for path in sorted(briefs_dir.glob("*.md")):
+        rel = str(path.relative_to(root))
+        add = brief_add_commit(root, rel)
+        if not add:
+            # Untracked / never committed: the state a brief is in WHILE it is
+            # being written. lint runs mid-increment constantly; flagging a
+            # half-written file is how a check gets muted. Skip, do not scope.
+            out["skipped"].append(path.name)
+            continue
+        add_t = commit_unix_time(root, add)
+        if add_t is None:
+            out["skipped"].append(path.name)
+            continue
+        # "Newer than" is strict: same commit as the cutoff is grandfathered
+        # (the brief was not written *after* the obligation landed).
+        if add_t <= cutoff_t:
+            out["grandfathered"].append(path.name)
+            continue
+        out["in_scope"].append(path.name)
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            out["missing"].append(path.name)
+            continue
+        # Substring match on the full path form the obligation uses. Crude:
+        # a brief that says "do not touch `.dreamwork/handoffs.md`" still
+        # passes. Intent parsing would false-positive on correct briefs, and a
+        # false positive mutes the check — the failure that matters. Err loose.
+        if ".dreamwork/handoffs.md" not in text:
+            out["missing"].append(path.name)
+    return out
+
+
+def check_brief_handoff_obligation(dw: Path, rep: Report) -> None:
+    """A brief written after the hand-off obligation must carry it (#398).
+
+    `#381` built the channel; `#394` put the producer obligation into SKILL.md
+    and the dispatch prompt. Neither was checkable until the *brief* became
+    the thing: a committed file whose add-commit is resolvable. A brief that
+    dispatches a lane without mentioning `.dreamwork/handoffs.md` is the
+    defect, and a coordinator habit with no check decays silently.
+
+    Cutoff is content-resolved from SKILL.md (HANDOFF_OBLIGATION_PHRASE), never
+    a pinned sha. The hollow outcome this refuses: cutoff resolves to nothing
+    and every brief is skipped, looking identical to a clean pass. That is an
+    ERROR naming the phrase, not silence.
+
+    Decisions baked in (both have a defensible wrong answer — see the brief):
+
+    1. **Untracked briefs are skipped**, not in scope. lint runs mid-write;
+       nagging an unfinished brief mutes the check.
+    2. **Mention = substring `.dreamwork/handoffs.md`.** Loose on purpose:
+       parsing "do not touch" is over-engineering that false-positives.
+
+    Coverage number on the OK line (idiom #395): how many briefs were in scope
+    and how many grandfathered, so a check that stops examining things cannot
+    look the same as one that examined them all.
+    """
+    root = dw.parent
+    briefs_dir = dw / "docs" / "briefs"
+    if not briefs_dir.is_dir():
+        return
+    briefs = list(briefs_dir.glob("*.md"))
+    if not briefs:
+        return
+    # Only govern a tree that has the skill text this obligation lives in.
+    # A foreign dreamwork target with a briefs/ dir but no SKILL.md is not
+    # this contract's subject.
+    if not (root / "SKILL.md").exists():
+        return
+
+    cutoff = resolve_handoff_obligation_cutoff(root)
+    if not cutoff:
+        # THE hollow outcome, made loud: without a cutoff every brief would be
+        # skipped and the check would print nothing. ERROR, not silent OK.
+        rep.add(
+            ERROR, "briefs",
+            "could not resolve the hand-off obligation cutoff from SKILL.md "
+            f"content (phrase {HANDOFF_OBLIGATION_PHRASE!r}) — every brief "
+            "would have been left unchecked; a reworded phrase or missing "
+            "history is a loud failure, never a silent pass (#398)",
+        )
+        return
+
+    # The resolved commit must actually carry the obligation. A -S hit on a
+    # removal or a wrong path would otherwise grandfather everything.
+    try:
+        blob = subprocess.check_output(
+            ["git", "-C", str(root), "show", f"{cutoff}:SKILL.md"],
+            stderr=subprocess.DEVNULL, text=True, timeout=20,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        blob = ""
+    if HANDOFF_OBLIGATION_PHRASE not in blob:
+        rep.add(
+            ERROR, "briefs",
+            f"cutoff `{cutoff[:7]}` resolved from content but does not contain "
+            f"the obligation phrase — content resolution picked the wrong "
+            f"commit, so every brief would be mis-scoped (#398)",
+        )
+        return
+
+    scope = classify_brief_handoff_scope(root)
+    for name in scope["missing"]:
+        rep.add(
+            ERROR, "briefs",
+            f"{name} was added after the hand-off obligation landed and does "
+            f"not mention `.dreamwork/handoffs.md` — a brief that dispatches "
+            f"a lane without the obligation is the defect (#398)",
+        )
+    # Coverage always, when anything was examined. OK only when clean: an OK
+    # next to ERRORs would tell a reader scanning for the OK line the opposite
+    # of the truth (the #353 related-pair trap).
+    n_in = len(scope["in_scope"])
+    n_gf = len(scope["grandfathered"])
+    if (n_in or n_gf) and not scope["missing"]:
+        rep.add(
+            OK, "briefs",
+            f"{n_in} brief(s) in scope after hand-off obligation, "
+            f"{n_gf} grandfathered (#398)",
+        )
+
+
 def check_handoffs(dw: Path, watch, rep: Report) -> None:
     """The delivery half of the single-writer rule (#381).
 
@@ -2307,6 +2517,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_cited_shas(dw, rep)
     check_placeholder_citations(dw, rep)
     check_handoffs(dw, watch, rep)
+    check_brief_handoff_obligation(dw, rep)
     check_related_markers(dw, watch, rep)
     check_status_keys(dw, rep)
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are

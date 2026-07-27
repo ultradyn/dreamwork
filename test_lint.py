@@ -3121,3 +3121,234 @@ class TestGuardsRegistered:
         detail = next(d for lvl, w, d in rep.rows
                       if w == "justfile" and lvl == lint.OK)
         assert str(len(names)) in detail, detail
+
+
+class TestBriefHandoffObligation:
+    """#398: a brief written after the hand-off obligation must carry it.
+
+    The obligation landed in SKILL.md (#394). A coordinator habit with no check
+    decays silently; the thing that IS checkable is the brief — a committed file
+    whose add-commit is resolvable. Cutoff is content-resolved, never pinned.
+
+    Production lines named per test (what must change for it to fail):
+    - flagged: the `if ".dreamwork/handoffs.md" not in text` branch in
+      classify_brief_handoff_scope / the ERROR add in check_brief_handoff_obligation
+    - grandfathered: the `if add_t <= cutoff_t` branch that skips pre-obligation
+      briefs
+    - cutoff content: resolve_handoff_obligation_cutoff + the phrase constant +
+      the post-resolve "phrase in blob" guard that refuses a hollow no-cutoff
+    """
+
+    PHRASE = lint.HANDOFF_OBLIGATION_PHRASE
+
+    def _git_repo(self, tmp_path):
+        """A real git repo: the check reads real git log -S / --diff-filter=A."""
+        import subprocess
+        t = fresh(tmp_path)
+
+        def git(*a, check=True):
+            return subprocess.run(
+                ["git", "-C", str(t), *a],
+                capture_output=True, text=True, check=check)
+
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        return t, git
+
+    def test_a_brief_added_after_the_obligation_without_it_is_flagged(self, tmp_path):
+        """Production line: the missing-mention ERROR in
+        check_brief_handoff_obligation — a post-cutoff brief whose body lacks
+        `.dreamwork/handoffs.md` must be named by basename.
+        """
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "obligation lands")
+        # Ensure the brief's commit is strictly newer than the cutoff (same
+        # second is possible on a fast FS and would grandfather it).
+        time.sleep(1.1)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        (briefs / "999-no-handoff.md").write_text(
+            "# Brief\n\nDo the work. No hand-off line required, wrongly.\n",
+            encoding="utf-8")
+        git("add", ".dreamwork/docs/briefs/999-no-handoff.md")
+        git("commit", "-qm", "brief after obligation, missing mention")
+
+        # Precondition, derived: the brief really is after the cutoff.
+        scope = lint.classify_brief_handoff_scope(t)
+        assert "999-no-handoff.md" in scope["in_scope"], scope
+        assert "999-no-handoff.md" in scope["missing"], scope
+
+        rep = lint.Report()
+        lint.check_brief_handoff_obligation(t / ".dreamwork", rep)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "briefs"]
+        assert len(errors) == 1, rep.render()
+        assert "999-no-handoff.md" in errors[0], errors[0]
+        assert ".dreamwork/handoffs.md" in errors[0], errors[0]
+
+    def test_a_brief_added_before_the_obligation_is_grandfathered(self, tmp_path):
+        """Production line: the `add_t <= cutoff_t` grandfather branch in
+        classify_brief_handoff_scope — a pre-obligation brief without the
+        mention must stay silent.
+        """
+        import time
+        t, git = self._git_repo(tmp_path)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        (briefs / "100-old.md").write_text(
+            "# Brief\n\nPre-obligation, no handoffs path.\n", encoding="utf-8")
+        # SKILL.md exists so the check runs, but without the phrase yet.
+        (t / "SKILL.md").write_text("# skill\n\nno obligation yet\n",
+                                    encoding="utf-8")
+        git("add", "SKILL.md", ".dreamwork/docs/briefs/100-old.md")
+        git("commit", "-qm", "brief before obligation")
+        time.sleep(1.1)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "obligation lands later")
+
+        scope = lint.classify_brief_handoff_scope(t)
+        assert "100-old.md" in scope["grandfathered"], scope
+        assert "100-old.md" not in scope["in_scope"], scope
+        assert scope["missing"] == [], scope
+
+        rep = lint.Report()
+        lint.check_brief_handoff_obligation(t / ".dreamwork", rep)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "briefs"]
+        assert errors == [], rep.render()
+
+    def test_the_cutoff_is_resolved_from_content_not_a_pinned_sha(self):
+        """Production line: resolve_handoff_obligation_cutoff +
+        HANDOFF_OBLIGATION_PHRASE + the post-resolve 'phrase in blob' guard.
+
+        THE criterion that matters most: if cutoff resolution breaks (phrase
+        reworded, -S returns nothing), this must fail LOUDLY rather than the
+        check silently grandfathering everything. Asserts:
+        - resolved cutoff is a real 40-char commit
+        - that commit's SKILL.md actually contains the obligation phrase
+        - the sha is not pinned as a literal in lint.py
+        - precondition: live tree has at least one brief in scope AND at least
+          one grandfathered (a vacuous split would make the check meaningless)
+        """
+        import subprocess
+        root = lint.SKILL_DIR
+        cutoff = lint.resolve_handoff_obligation_cutoff(root)
+        assert cutoff is not None, (
+            "cutoff resolved to nothing — the hollow outcome that would skip "
+            "every brief and look like a clean pass")
+        assert re.fullmatch(r"[0-9a-f]{40}", cutoff), cutoff
+
+        src = Path(lint.__file__).read_text(encoding="utf-8")
+        # Content resolution, not a pinned sha: neither the full nor a short
+        # form of today's measured introduction may be hardcoded as the cutoff.
+        assert cutoff not in src, (
+            "cutoff sha is pinned in lint.py — resolution must be by content")
+        assert "6f72b8d" not in src, (
+            "measured introduction sha is pinned in lint.py — use content")
+
+        blob = subprocess.check_output(
+            ["git", "-C", str(root), "show", f"{cutoff}:SKILL.md"],
+            text=True)
+        assert self.PHRASE in blob, (
+            f"resolved cutoff {cutoff[:7]} does not contain the obligation "
+            f"phrase — content resolution picked the wrong commit, which is "
+            f"how the check would grandfather everything in silence")
+
+        # Precondition the check's meaning depends on: briefs on BOTH sides of
+        # the cutoff. Derived at runtime — a literal tuned to today's 27/3
+        # split is a check with an invisible expiry date.
+        scope = lint.classify_brief_handoff_scope(root)
+        assert scope["cutoff"] == cutoff
+        assert len(scope["in_scope"]) > 0, (
+            "no brief is in scope — the check is vacuous; every brief fell "
+            f"before the cutoff. scope={scope}")
+        assert len(scope["grandfathered"]) > 0, (
+            "no brief is grandfathered — the check is vacuous; every brief "
+            f"fell after the cutoff. scope={scope}")
+        # And the live tree is clean: in-scope briefs all mention the path.
+        assert scope["missing"] == [], (
+            f"live in-scope brief(s) lack the mention: {scope['missing']}")
+
+    def test_the_live_tree_is_green_with_coverage_numbers(self):
+        """Criterion 4 + coverage (#395): live tree exits clean; OK names counts."""
+        root = lint.SKILL_DIR
+        scope = lint.classify_brief_handoff_scope(root)
+        assert scope["in_scope"] and scope["grandfathered"], scope
+        rep = lint.Report()
+        lint.check_brief_handoff_obligation(root / ".dreamwork", rep)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "briefs"]
+        assert errors == [], rep.render()
+        oks = [d for lvl, w, d in rep.rows if lvl == lint.OK and w == "briefs"]
+        assert len(oks) == 1, rep.render()
+        assert f"{len(scope['in_scope'])} brief(s) in scope" in oks[0], oks[0]
+        assert f"{len(scope['grandfathered'])} grandfathered" in oks[0], oks[0]
+
+    def test_an_untracked_brief_is_skipped(self, tmp_path):
+        """Decision 1: untracked = mid-write; skip, do not flag."""
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "obligation")
+        time.sleep(1.1)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        (briefs / "998-wip.md").write_text(
+            "# WIP brief, never committed\n", encoding="utf-8")
+        # No git add — untracked.
+        scope = lint.classify_brief_handoff_scope(t)
+        assert "998-wip.md" in scope["skipped"], scope
+        assert "998-wip.md" not in scope["in_scope"], scope
+        rep = lint.Report()
+        lint.check_brief_handoff_obligation(t / ".dreamwork", rep)
+        assert not any(w == "briefs" and lvl == lint.ERROR
+                       for lvl, w, d in rep.rows), rep.render()
+
+    def test_a_post_cutoff_brief_with_the_mention_is_clean(self, tmp_path):
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "obligation")
+        time.sleep(1.1)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        (briefs / "997-ok.md").write_text(
+            "# Brief\n\nAlso append one line to `.dreamwork/handoffs.md`.\n",
+            encoding="utf-8")
+        git("add", ".dreamwork/docs/briefs/997-ok.md")
+        git("commit", "-qm", "compliant brief")
+        scope = lint.classify_brief_handoff_scope(t)
+        assert "997-ok.md" in scope["in_scope"], scope
+        assert scope["missing"] == [], scope
+        rep = lint.Report()
+        lint.check_brief_handoff_obligation(t / ".dreamwork", rep)
+        assert not any(lvl == lint.ERROR and w == "briefs"
+                       for lvl, w, d in rep.rows), rep.render()
+        oks = [d for lvl, w, d in rep.rows if lvl == lint.OK and w == "briefs"]
+        assert oks and "1 brief(s) in scope" in oks[0], rep.render()
+
+    def test_the_check_is_registered_in_run_checks(self):
+        import inspect
+        assert "check_brief_handoff_obligation(dw, rep)" in \
+            inspect.getsource(lint.run_checks)
+
+    def test_no_skill_md_is_silent(self, tmp_path):
+        """A foreign dreamwork target with briefs but no SKILL.md is not governed."""
+        t = fresh(tmp_path)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        (briefs / "1.md").write_text("x\n", encoding="utf-8")
+        rep = lint.Report()
+        lint.check_brief_handoff_obligation(t / ".dreamwork", rep)
+        assert rep.rows == [], rep.render()
