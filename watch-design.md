@@ -144,10 +144,11 @@ purpose: the page's only loud colour said "this is happening", so a failure
 rendered in it read as activity — and the one thing that must never read as
 activity is the human's channel to the loop having stopped working. Its uses
 are enumerable and must stay that way: a `questions.md` the reader cannot see,
-and a send the server refused. Both are the same fact — the channel failed and
-no number on the page would have said so. Nothing that is merely *important*
-gets it; if a third use appears, the question to ask is whether it is really
-this one.
+a send the server refused, code this page is not actually running (`#140`), and
+a push channel that cannot reach him (`#190`). All are the same fact — the
+channel failed and no number on the page would have said so. Nothing that is
+merely *important* gets it; if a further use appears, the question to ask is
+whether it is really this one.
 
 ### Type & geometry
 
@@ -1366,6 +1367,59 @@ computed `color` comes back as `rgb(…)`, so comparing the two matches nothing
 and "the accent is used nowhere else" passes on a page painted entirely in it.
 Resolve the token through a throwaway element. It was shown red by deliberately
 accenting the agent names.
+
+**The push channel, down — the master fault, rendered first (#190).** `attn`
+died with a 403 ("out of credits or need a Grok subscription") for an
+afternoon and nothing made the loop notice: it reported progress into a
+transcript he was not reading while the channel it believed had escalated sat
+refused. The channel for reporting a broken channel WAS the broken channel, so
+the dashboard is the only surface left that can say so. `status.json` gains a
+`push` object (`{at, channel, ok, detail}`), and the status panel renders its
+failure at the top — before `awaiting_human`, because a loop that cannot push
+cannot deliver that list either, which is what makes the push fault the
+context for everything under it.
+
+**THREE STATES, distinguishable from the data, and only one earns pixels.**
+No `push` key means the loop has never tried (a fresh target); `ok:true` means
+the last push landed; `ok:false` means the last one failed. The first two are
+QUIET — a channel that is fine deserves no pixels, and a page that greeted
+every healthy target with a push-fault rail would train him to ignore the one
+that matters (the same credibility argument as `questions_health`'s calm
+states). Only `ok:false` renders, and the branch is **strict** (`p.ok ===
+false`): a missing or malformed `ok` — which `lint.py` catches at the writer —
+must never read as a fault, and "absent key means fine" is the trap the task
+named, because then a loop that never even tried looks identical to one whose
+pushes all land. The renderer is quiet for both non-fault states *because the
+data lets it tell them apart*, not because it cannot.
+
+**The copy names the channel and the reason, because the remedy is his.**
+"push channel down" alone sends him hunting; the 403 and the credit message
+are the actionable part, since the fix is billing rather than re-auth (a loop
+that had acted on the first 403 diagnosis — "re-auth" — would have burned his
+time on the wrong thing). So the fault line carries `push channel down ·
+failed <age> ago` (the age rides the standing `.age[data-at]` idiom — a thing
+that *happened* renders "Xm ago", clock-derived like `last_tick`), and the
+body states plainly: *the loop cannot reach you — its last push (`attn`) came
+back: <detail>. pushes land nowhere until this clears; the remedy is likely
+yours (billing or re-auth), not the loop's. this dashboard keeps working
+either way.* It wears `--warn` on a rail, the idiom `.qhealth.unreadable`
+already owns — a member of that class, not a new one.
+
+**It does not move.** The status panel is re-rendered through `innerHTML` on
+every tick, so nothing inside it is a "survivor that travelled" or a
+disclosure that changed layout — the two things `transitions.md` licenses to
+animate. The push fault appears when the data says so and disappears when it
+clears, exactly as `.stneed` and `.qhealth` do: a data-driven fact the loop
+reports, not a gesture the page initiates. The motion rule's "nothing else
+animates" is what makes that consistent rather than a gap.
+
+`dev/capture/pushhealth.mjs` holds all three states at once — each easy to get
+right alone and the failure always that one swallowed another — and its
+load-bearing half is the anti-vacuity precondition: it asserts the three DATA
+shapes genuinely differ (absent lacks the key, `ok` holds `true`, `ok` holds
+`false`) *before* it asserts any render, so a check that read "nothing
+rendered" in all three cases would fail at the data line rather than pass over
+the feature. The same idiom as `health.mjs`'s exemption check, one surface up.
 
 ### The burndown
 

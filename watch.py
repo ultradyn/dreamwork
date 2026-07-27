@@ -757,13 +757,23 @@ STYLE = """<style>
      nothing else on the page would have said so */
   .qerr { color:var(--warn); font-size:.7rem; margin-top:.35rem;
     max-width:56ch; }
-  /* the status panel (#130): three facts and a fold, never a JSON dump.
-     Colour is by SIGNIFICANCE, not by JSON type — the accent is spent on the
-     one thing here that is waiting on HIM, and everything else rides the text
-     ramp: what is happening brightest, what it serves under it, the liveness
-     facts dim, the fold dimmer. */
-  #status .stneed { border-left:2px solid var(--accent); padding-left:.8rem;
-    margin:.2rem 0 .7rem; }
+   /* the status panel (#130): three facts and a fold, never a JSON dump.
+      Colour is by SIGNIFICANCE, not by JSON type — the accent is spent on the
+      one thing here that is waiting on HIM, and everything else rides the text
+      ramp: what is happening brightest, what it serves under it, the liveness
+      facts dim, the fold dimmer. */
+   /* the push channel down (#190): the loop cannot reach him. The same fact
+      as `.qhealth.unreadable` one surface over — the channel to him failed
+      and no number on the page would have said so — so it reuses that idiom
+      verbatim: `--warn` and the rail. See watch-design.md's tokens: `--warn`
+      is enumerable, and this is a member of that class, not a new one. */
+   #status .stpush { border-left:2px solid var(--warn); padding-left:.8rem;
+     margin:.2rem 0 .7rem; }
+   #status .stpushhead { color:var(--warn); text-transform:uppercase;
+     letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
+   #status .stpushbody { color:var(--lit); }
+   #status .stneed { border-left:2px solid var(--accent); padding-left:.8rem;
+     margin:.2rem 0 .7rem; }
   #status .stneedhead { color:var(--accent); text-transform:uppercase;
     letter-spacing:.07em; font-size:.65rem; margin-bottom:.2rem; }
   #status .stneedrow { color:var(--lit); margin:.15rem 0; }
@@ -2033,7 +2043,7 @@ const stField = (k, v) =>
   `<span class="stvals">` +
   stLines(v).map(l => `<div class="stval">${mdInline(l)}</div>`).join('') +
   `</span></div>`;
-const ST_GLANCE = ['awaiting_human', 'task', 'goal', 'agents', 'queue',
+const ST_GLANCE = ['awaiting_human', 'push', 'task', 'goal', 'agents', 'queue',
                    'last_tick', 'last_commit'];
 const ST_AGENT_GLANCE = ['name', 'in_flight'];
 function statusBlock(s) {
@@ -2041,7 +2051,44 @@ function statusBlock(s) {
   const arr = v => Array.isArray(v) ? v : (v == null ? [] : [v]);
   const agents = arr(s.agents).filter(a => a && typeof a === 'object');
   let h = `<div id="status">` + label('status');
-  // 1. does anything need HIM. First, and the one accented thing here.
+  // 0. can the loop reach him at all. A push that failed is the master fault
+  //    here — it contextualises everything under it: an `awaiting_human` list
+  //    the loop cannot deliver, a task he will never be pinged about. It goes
+  //    first, in the page's one BROKEN colour, naming the channel and the
+  //    reason because the remedy is his and "push down" alone sends him
+  //    hunting (the 403 and the credit message are the actionable part).
+  //
+  //    QUIET BY CONSTRUCTION for the two non-fault states, and that is the
+  //    half that keeps this credible: no `push` key means the loop has not
+  //    tried (a fresh target), and ok:true means the last one landed. Only
+  //    ok:false earns pixels. The branch is strict (`=== false`) so a missing
+  //    or malformed ok — which lint catches at the writer — never reads as a
+  //    fault, and a channel that is fine deserves no pixels. The three states
+  //    are distinguishable from the DATA (absent / true / false), not from
+  //    the render: a loop that never tried must NOT look identical to one
+  //    whose pushes all land, and the browser guard asserts all three.
+  const p = s.push;
+  if (p && typeof p === 'object' && p.ok === false) {
+    const ch = p.channel ? esc(String(p.channel)) : 'the channel';
+    const why = p.detail ? esc(String(p.detail)) : 'no reason given';
+    const at = p.at ? Date.parse(p.at) : NaN;
+    // `data-at` (not data-mt/data-ct): a thing that HAPPENED renders "Xm ago",
+    //    grammar rather than format (see ages()) — the sweep fills the span
+    //    with "Xm ago" itself, so no appended "ago" here and a space before
+    //    it so "failed" and the age do not run together. NaN falls back to
+    //    verbatim, the same rule as last_tick.
+    const when = isNaN(at)
+      ? (p.at ? esc(String(p.at)) : '')
+      : `failed <span class="age" data-at="${at / 1000}"></span>`;
+    h += `<div class="stpush">` +
+      `<div class="stpushhead">push channel down` +
+      (when ? ` · ${when}` : '') + `</div>` +
+      `<div class="stpushbody">the loop cannot reach you — its last push (` +
+      ch + `) came back: ` + why + `. pushes land nowhere until this clears; ` +
+      `the remedy is likely yours (billing or re-auth), not the loop's. ` +
+      `this dashboard keeps working either way.</div></div>`;
+  }
+  // 1. does anyone need HIM. First, and the one accented thing here.
   const need = arr(s.awaiting_human);
   if (need.length)
     h += `<div class="stneed">` +
