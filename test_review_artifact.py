@@ -638,6 +638,52 @@ def test_stripping_emitted_spans_recovers_the_source_with_entities_intact():
             "  wanted: %r\n  got:    %r" % (language, src, code))
 
 
+def test_emitted_token_text_is_html_escaped():
+    """The re-escape is load-bearing and NOTHING reached it (found validating #339).
+
+    `_highlight_inner` unescapes the block, tokenises the real code, then
+    re-escapes each token. Replacing `escaped = html.escape(text, quote=False)`
+    with `escaped = text` left the whole suite green — raw markup straight into
+    the artifact, undetected. Both adjacent tests look like they cover it and
+    neither can:
+
+    - the round-trip test calls `html.unescape` on the output before comparing,
+      so a raw `<` and an escaped `&lt;` are the same string to it;
+    - the offline-clean test asserts `"<script" not in out`, which is the right
+      assertion over a sample that contains no `<script` to leak.
+
+    So this asserts the property directly: strip the tags the highlighter is
+    allowed to emit, and NO markup character may remain in what is left.
+
+    The production line that must change for this to fail:
+    `escaped = html.escape(text, quote=False)` in `_highlight_inner`.
+    """
+    src = 'x = "<script>alert(1)</script>"  # a <b>&</b> comment\n'
+    inner = html.escape(src, quote=False)
+    block = '<pre><code class="language-python">%s</code></pre>' % inner
+    out = ra.highlight(block)
+    assert "tok-" in out, "fixture stopped exercising the highlighter"
+
+    # Precondition, derived rather than assumed: an entity must land INSIDE a
+    # token span, or the escape under test was never reached and this is
+    # vacuous. This is the assertion the two tests above are missing.
+    spans = re.findall(r'<span class="tok-[^"]*">(.*?)</span>', out, re.S)
+    assert spans, "no token spans emitted"
+    assert any("&" in s for s in spans), (
+        "no entity landed inside a token span, so the re-escape was never "
+        "exercised — strengthen the sample, do not trust this test")
+
+    residue = re.sub(r"</?(?:pre|code|span)(?:\s[^>]*)?>", "", out)
+    for char in "<>":
+        assert char not in residue, (
+            "unescaped %r survived into the artifact body: %r" % (char, residue))
+    bare = re.search(r"&(?!(?:amp|lt|gt|quot|apos|#\d+|#[xX][0-9a-fA-F]+);)",
+                     residue)
+    assert bare is None, (
+        "a bare & survived into the artifact body at %d: %r"
+        % (bare.start(), residue))
+
+
 def test_rebuilding_a_stale_artifact_with_the_new_template_clears_it(template):
     """The consequence #339 must handle: editing the frame makes every built
     artifact stale, and rebuilding from source clears it. Proved on the
