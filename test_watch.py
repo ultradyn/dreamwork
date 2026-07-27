@@ -2916,6 +2916,38 @@ class TestAppShell(unittest.TestCase):
             self.assertEqual(h["x-content-type-options"], "nosniff")
             self.assertEqual(served, blob)
 
+    def test_no_scriptable_type_can_reach_the_inline_mime_table(self):
+        """The gap the #336 agent found in its own red proof, closed (coordinator).
+
+        Its report was honest about a green red-run: flipping `INLINE_IMAGE_EXTS`
+        to include 'svg' did NOT make the behavioural test below fail, because
+        `detect_file_kind` also requires matching magic bytes and svg has no
+        signature. That layering is a feature, not a bug — but it means the
+        behavioural test cannot fail on an allowlist-only widening, so nothing at
+        all would.
+
+        The realistic accident is not the three-table sabotage a saboteur makes;
+        it is a reader adding 'svg' to `INLINE_IMAGE_EXTS` and `_INLINE_IMAGE_MIME`
+        — two structures declared four lines apart — and not thinking about magic.
+        This fails on that, at the MIME table, which is the layer that decides what
+        a browser is TOLD the bytes are.
+
+        Production lines: `_INLINE_IMAGE_MIME`'s membership (first assertion) and
+        `INLINE_IMAGE_EXTS`'s (second). Add 'svg' to either and this fails while
+        every other file-view test stays green.
+        """
+        for name in ("a.svg", "a.html", "a.htm", "a.xml", "a.js", "a.pdf"):
+            assert watch.inline_image_mime(name) == "application/octet-stream", (
+                "%s can be served inline with a browser-honoured type" % name)
+        for ext in ("svg", "html", "htm", "xml", "js"):
+            assert ext not in watch.INLINE_IMAGE_EXTS, (
+                "%r is in the inline allowlist; inline SVG/HTML is stored XSS "
+                "against this origin" % ext)
+        # Precondition: the table must still contain the rasters it is for, or
+        # both loops above pass over an empty allowlist and mean nothing.
+        assert watch.inline_image_mime("a.png") == "image/png"
+        assert "png" in watch.INLINE_IMAGE_EXTS
+
     def test_fileview_inline_allowlist_is_raster_only(self):
         # PROOF 3 — the security decision, tested as BEHAVIOUR. SVG and HTML
         # in the tree must NEVER be served inline as image/svg+xml or
