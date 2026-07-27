@@ -141,6 +141,22 @@ Next id: **359**
   · **do not start without his ruling on S1/S2/S4** — the entries are his words, and S2 in
   particular may carry meaning a single band cannot (*"urgent, not yet certain which"*), which
   only he can say · **blocked on that ruling**, not on any code
+  · **UNBLOCKED — he ruled at 01:23 (S1 split, S2 rec) and the scope CHANGED**, so read
+  this before starting: the type-classification item is **out**. His S4 answer plus the
+  measured SQLite facts settled `type` as a lookup table with an FK rather than a closed
+  set welded into the schema, so nothing needs classifying by hand — a new type is one
+  INSERT. That removes the open-ended item and leaves only bounded ones
+  · **what remains: 3 combined entries and 4 compound bands.** The 6 bandless entries are
+  his call and were not ruled on — leave them unless he says otherwise, since an absent
+  band already means P2 by contract and writing one changes meaning
+  · **and the split is not just a split**: S1 asks for the relation to become explicit, so
+  each combined entry becomes two tasks PLUS a `related` row (symmetric, n:n) — not a
+  `depends` row. `#250/#251` is *"Missing-aid answer disclosures + node disconnect proof"*,
+  two pieces of one landing, which is `related`. Propose and report the classification for
+  all three rather than deciding silently; he said he was unsure what they were
+  · in the Markdown there is no `related` table yet, so the split entries must carry the
+  relation in prose the migration can read — decide that shape with #346, or the
+  normalisation destroys the only record of which two tasks were one piece of work
 
 - **#352** — Standardize the duplicated ledger parsing before the store migration ·
   P1 · refactor/prerequisite · origin: **human** · **human via watch 2026-07-28 01:05**,
