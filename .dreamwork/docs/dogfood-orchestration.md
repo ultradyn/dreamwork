@@ -498,3 +498,86 @@ The comparison is available because both exist in this tree right now:
 task and the subagents' tasks are not comparable work. The clean experiment is to
 give a peer and a subagent the *same* brief with the same criterion, and that has
 not been run.
+
+## Ten lanes, seven refutations — and a fourth error class that is about me
+
+Updated 07:15, after #367 increment 1 (`ccc @glm52`, `dbcbcc5`).
+
+#367 refuted a claim in two of my own documents: the plan and the ledger entry both
+said the soft cap produces **"a warning at 7"**, while `file-formats.md`, the brief's
+criterion, and the code all say seven is *allowed* and the warning starts at 8. The
+lane spotted the disagreement, followed the two that agreed, and reported it. It was
+right, and a cap of 7 that warns at 7 is a cap of 6.
+
+That does not fit any of the three classes above, so it is a fourth:
+
+4. **A paraphrase of the human's ruling that lost a boundary.** He said *"soft 7, hard
+   15"*. Recording that as "a warning at 7" reads as faithful and is off by one. The
+   damage is not the typo — it is that **his words are the authority, and a paraphrase
+   inherits that authority while no longer being his words.** A builder reading the
+   plan would have implemented a cap he never set, and could have cited the plan for
+   it. Countermeasure, now applied: quote the ruling verbatim and put the derived
+   boundary *beside* it as visibly derived (`soft 7 → MARKS_WARN_AT = 8`), so a reader
+   can check the arithmetic instead of trusting the prose. Two documents restating one
+   ruling in their own words is the same single-source failure `lint.py` exists to
+   catch in file formats; his rulings deserve the same discipline.
+
+## The highest-yield thing I did as coordinator, and it took five minutes
+
+**A lane's stated uncertainty is a map to the defect, not a question to answer.**
+
+#367's report ended with an honest flag: `data-mark` with no value is treated as
+not-a-mark rather than refused, the contract is silent on it, *tell me if you'd rather
+it refuse*. That is exactly the disclosure I want from a lane. My instinct was to rule
+on it and move on.
+
+Instead I probed the area around it — four inputs through the real parser — and the
+valueless form it asked about was **correct**, while the case one step over was the
+bug: `data-mark=""` and `data-mark="   "` are collected as marks with unreadable
+labels, untested. Filed as #389.
+
+Two things generalise:
+
+- **The lane audited the case it noticed and stopped.** It did not enumerate the
+  neighbours of its own edge case. That is not carelessness — it is the natural shape
+  of attention, and it is *cheap for a coordinator to fix* because the coordinator
+  arrives with no investment in the design. Concrete brief change: *"when you find an
+  edge case worth flagging, enumerate its neighbours before reporting — the flagged
+  case is usually fine and the one beside it usually is not."*
+- **The economics favour coordinator auditing far more than I expected.** The lane
+  spent ~30 minutes building well. My audit was five minutes and produced a filed
+  defect plus a contract sharpening. Verification of a *finished, reported* increment
+  is the cheapest work available to a coordinator, because the lane has already paid
+  the cost of understanding — and unlike re-running its reds, probing the *boundary of
+  its uncertainty* is work it structurally could not do for itself.
+
+Against which: the independent red-run I owed on the same lane (recompute the frozen
+byte-identity baseline from a ref I picked by hand, then inject the realistic
+regression) **confirmed the lane exactly** and found nothing. That is now the pattern
+across ten lanes: **re-running a lane's own reds almost always confirms it; probing
+what the lane said it was unsure about almost always finds something.** If coordinator
+attention is the scarce resource, it should be spent on the second, and the first
+should be sampled rather than exhaustive.
+
+One caveat I should not lose: the re-runs are cheap *because* they almost always
+confirm, and their value is not the finding rate — it is that they keep the reports
+honest. A lane that knew its reds were never re-checked is a different lane. Sampling
+is the right adjustment; abandoning them is not.
+
+## Runner notes from this batch
+
+- **`ccc @glm52` on a verification-heavy increment: the best work of the day.** It
+  exceeded its criterion rather than meeting it — I asked it to *state in its report*
+  how it obtained the pre-change baseline; it instead made the baseline's honesty
+  **machine-checked**, resolving the pre-change ref by content so a rebase cannot
+  quietly turn the proof into a no-op. That is a lane improving the instruction it was
+  given, which is the strongest signal I have seen from any runner.
+- **It still missed the adjacent case** (above). So: excellent depth on the assigned
+  chain, weaker sweep of the space around it. That maps cleanly onto how to use it —
+  give it the hard verification chain, and do the perimeter audit myself.
+- **The human fixed `ccc @glm52` mid-session** and it has since completed four lanes.
+  The earlier "use opencode instead" routing note is spent and has been removed from
+  `status.json`.
+- **grok drew the geometry measurement** for #367 increment 2 specifically because it
+  is multimodal: the task needs someone to look at whether a two-line tab still reads
+  as a postit, and no number answers that.

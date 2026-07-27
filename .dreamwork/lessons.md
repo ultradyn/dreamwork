@@ -1799,3 +1799,33 @@ this shape and convert opportunistically.)
   command *name* and not its arguments — so verify with `-f` or the proof lies too.
   Consequence when it happens: the lanes are fine, only the notification is lost, so
   fall back to polling `pgrep` and `.dreamwork/inbox.md`.
+- **A lane's stated uncertainty is a map to the defect, not a question to answer.**
+  #367 increment 1 ended its report with an honest flag: a valueless `data-mark` is
+  ignored rather than refused, the contract is silent, *tell me if you'd rather it
+  refuse*. The tempting move is to rule on it. I probed the area around it instead —
+  four inputs through the real parser — and **the case it asked about was correct
+  while the case one step over was the bug**: `data-mark=""` and `data-mark="   "`
+  were collected as marks with unreadable labels, untested (#389). This is not
+  carelessness in the lane; it is the shape of attention. A builder audits the case it
+  *noticed*. Enumerating that case's neighbours is cheap for whoever arrives with no
+  investment in the design, and structurally hard for whoever wrote it. Two
+  consequences: brief lanes to **enumerate the neighbours of any edge case they flag**
+  before reporting; and as a reviewer, spend attention on the boundary of a report's
+  stated uncertainty rather than on re-running its reds — across ten lanes here,
+  re-running a lane's reds almost always confirms it, and probing what it said it was
+  unsure about almost always finds something. (Sample the re-runs rather than dropping
+  them: they are cheap *because* they confirm, and their value is keeping reports
+  honest, not their finding rate.)
+- **Quote the human's ruling verbatim and show the derived boundary as derived —
+  a paraphrase inherits his authority while no longer being his words.** He ruled
+  *"soft 7, hard 15"* on #367's cap. Two of my documents recorded that as "a warning at
+  7", which reads as faithful and is off by one: a cap of 7 that warns *at* 7 is a cap
+  of 6, and the code correctly has `MARKS_WARN_AT = 8`. The #367 builder caught the
+  disagreement because `file-formats.md` and its brief agreed with each other against
+  the plan. The damage was never the typo — it is that a builder could have
+  implemented a cap he never set **and cited my plan for it**. So: keep his words in
+  quotes, and put the derived constant beside them visibly derived (`soft 7 →
+  MARKS_WARN_AT = 8`) so a reader checks arithmetic instead of trusting prose. Two
+  documents restating one ruling in their own words is the same single-source failure
+  `lint.py` enforces against for file formats; his rulings deserve that discipline
+  more, not less. (#367)
