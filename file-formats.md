@@ -1138,15 +1138,15 @@ list, so it cannot drift from the passage it points at:
   reads as a rendering bug and is not one.
   **Closed by #389** (`b79f339`, `e0a3356`): the valueless form is ignored, `""` and
   whitespace-only are refused with the offending element named, and all three are tested.
-  **One known limit, measured rather than assumed:** the refusal is `str.strip()`-based, so
-  it catches every `Zs` space — U+00A0, U+2003, U+3000 all refuse — but **not U+200B
-  zero-width space**, which is category `Cf` and therefore not whitespace to `.strip()`. A
-  label of only zero-width spaces is accepted and renders a blank tab. That is a real if
-  absurd authoring case; #389's builder matched this clause's literal "whitespace-only"
-  rather than widening unasked, which was right. **Closing it belongs to whoever next owns
-  `review_artifact.py`** — the rule that matches the words above is "no character outside
-  Unicode categories `Z*` and `C*`", and the discriminating test is that the **valueless**
-  form must still be ignored.
+  **Closed for zero-width too by #367 increment 2a:** the refusal is no longer
+  `str.strip()`-based — it is "no character outside Unicode categories `Z*` and `C*`",
+  so it catches every `Zs` space (U+00A0, U+2003, U+3000) AND `Cf`/`Cc` (U+200B
+  zero-width space, control chars) that `.strip()` did not see. A label of only
+  zero-width spaces would render a blank tab, which matters more once tabs are
+  rendered. The **valueless** `data-mark` is still ignored: the `label is None`
+  carve-out sits before the readable-text check, so widening `.strip()` to the
+  category rule cannot swallow it (the two #389 guards — `valueless` and the
+  id-less valueless element — are what hold that discrimination).
 
 **The count, per his ruling of 2026-07-28 05:35** — he overrode the loop's
 proposal of five-and-refuse:
@@ -1171,17 +1171,25 @@ truncation:
   at two lines against that gutter. **If it does not fit somewhere, report the
   measurement** — do not quietly reintroduce the cap he just removed.
 
-**The safety property that makes this shippable, and the first thing to build.**
-All sixteen existing artifacts declare no marks. So:
+**The safety property that makes this shippable.** All the existing artifacts
+declare no marks. So:
 
-> **A source that declares no `data-mark` must render output that differs from
-> today's only in `TEMPLATE_STAMP`.**
+> **A source that declares no `data-mark` renders no rail, tab or control, and
+> its body is byte-identical to the pre-change builder's.**
 
-The stamp necessarily changes, because `template_stamp()` digests the template's
-bytes and the template is what gains the mark machinery. Everything else must be
-byte-identical. That is the check to write **red first**, before any tab exists: it
-is what lets the frame change land while no artifact uses it, and it is the
-difference between a frame change and a sixteen-file rewrite.
+Increment 1 held the stronger whole-document byte-identity ("differs from
+today's only in `TEMPLATE_STAMP`") and it was the right net while the frame
+gained only inert machinery. Increment 2a — which adds the rail's CSS to the
+template — **retires it deliberately**: a no-marks artifact legitimately gains
+`<style>` rules it does not use, so a whole-document digest can no longer hold
+(and the two obvious fixes — deleting the check, or re-capturing the digest —
+are both wrong; the first opens the frame to drift, the second breaks the
+companion that re-runs the pre-change builder out of git). The check is replaced
+by the true property above: no mark chrome in the output, and the BODY
+byte-identical to the pre-change builder's (cross-checked against it out of
+git). The frame's CSS is held to `tasks-page.html` by the fidelity tests and
+staleness by the stamp tests, so nothing the retired check stopped catching was
+unguarded.
 
 ## Why this file exists rather than a paragraph in SKILL.md
 
