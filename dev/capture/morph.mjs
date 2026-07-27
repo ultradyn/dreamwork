@@ -133,6 +133,17 @@ async function phase(mode, reduced) {
 }
 
 const uniq = a => [...new Set(a)];
+/* Frames strictly BETWEEN the two ends, 3% deadband — the frame-rate-free
+   form of "it travelled". A snap has none of these at any frame rate, so the
+   floor is ONE and the assertion is not a bet on how many frames this box
+   drew. Same helper `reviewsplit.mjs`/`headertravel.mjs`/`regroup.mjs` use;
+   deliberately not a second idiom (#311, transitions.md "Checking a
+   transition"). */
+const between = (vals, a, b) => {
+  const lo = Math.min(a, b), hi = Math.max(a, b), eps = (hi - lo) * 0.03;
+  return vals.filter(v => v > lo + eps && v < hi - eps).length;
+};
+const span = vals => Math.abs(vals.at(-1) - vals[0]);
 const tops = (f, who) => f.filter(x => x[who]).map(x => x[who].top);
 const heights = (f, who) => f.filter(x => x[who]).map(x => x[who].h);
 
@@ -161,29 +172,43 @@ for (const mode of ['answer', 'note']) {
 
   /* Vacuity first, and it is not ceremony: EVERY assertion below is about how
      the neighbour got somewhere, so a run where it never went anywhere would
-     satisfy none of them for the wrong reason. */
+     satisfy none of them for the wrong reason. `span` is the frame-rate-free
+     form of the old `uniq(nHs).length > 1` ("the height changed"), which was
+     already a vacuity and is now stated as a displacement so it cannot read a
+     one-frame sample as no-change. */
   ok(`${mode}: the send changes the card's height, so the neighbour has ` +
-     `somewhere to go (else every check below is vacuous)`,
-     uniq(nHs).length > 1 && Math.abs(net) >= 8);
+      `somewhere to go (else every check below is vacuous) ` +
+      `(${nHs[0]} -> ${nHs.at(-1)}, ${span(nHs).toFixed(0)}px; neighbour ${net}px)`,
+     span(nHs) >= 8 && Math.abs(net) >= 8);
   ok(`${mode}: the card node is never replaced across the window — so this ` +
-     `measures the MORPH and not a tick`,
-     n.frames.every(x => x.sameNode));
-  /* THE check. Two distinct positions is a teleport; that is exactly what was
-     measured on the bug (744 -> 791, no transform, across 354 frames). Outcome
-     rather than mechanism, per states.mjs: a card carried by the animated
-     height of the card above it travels perfectly with no transform of its own,
-     and demanding one would forbid the better motion. */
-  ok(`${mode}: the neighbour TRAVELS to its new place rather than jumping`,
-     uniq(nTops).length >= 6);
-  ok(`${mode}: ...and the card's own height travels with it`,
-     uniq(nHs).length >= 6);
+      `measures the MORPH and not a tick`,
+      n.frames.every(x => x.sameNode));
+  /* THE check. `uniq(nTops).length >= 6` / `uniq(nHs).length >= 6` were claims
+     about how many frames this box drew inside the morph hold, not about the
+     motion — the `answer:` mode of this guard reddened on a healthy commit on
+     2026-07-27 and passed when re-run with fewer guards in flight. The
+     frame-rate-free form is the frames strictly part-way; a teleport has none
+     at any frame rate. Outcome rather than mechanism, per states.mjs: a card
+     carried by the animated height of the card above it travels perfectly
+     with no transform of its own. (#311.) */
+  ok(`${mode}: the neighbour TRAVELS to its new place rather than jumping `
+   + `(${between(nTops, nTops[0], nTops.at(-1))} of ${nTops.length} part-way)`,
+     between(nTops, nTops[0], nTops.at(-1)) >= 1);
+  ok(`${mode}: ...and the card's own height travels with it `
+   + `(${between(nHs, nHs[0], nHs.at(-1))} of ${nHs.length} part-way)`,
+     between(nHs, nHs[0], nHs.at(-1)) >= 1);
   /* reduced motion changes timing, never function: the same regrouping
-     happens, in discrete steps. */
+     happens, instantly. The old ratio `uniq(rTops) * 3 <= uniq(nTops)` tied
+     the reduced contract to the normal frame count, so under load the normal
+     side dropped and the check tightened over a reduced build that was
+     perfectly instant — the hollow direction. Instant means zero part-way
+     frames, however few were drawn. (#311.) */
   const rTops = tops(r.frames, 'neighbour');
-  ok(`${mode}: reduced motion lands it instead, in discrete steps`,
-     uniq(rTops).length * 3 <= uniq(nTops).length);
+  ok(`${mode}: reduced motion lands it instantly, no frame part-way `
+   + `(${between(rTops, rTops[0], rTops.at(-1))} of ${rTops.length})`,
+     span(rTops) >= 8 && between(rTops, rTops[0], rTops.at(-1)) === 0);
   ok(`${mode}: ...and still ends up in the same place`,
-     Math.abs((rTops.at(-1) - rTops[0]) - net) <= 2);
+      Math.abs((rTops.at(-1) - rTops[0]) - net) <= 2);
 }
 
 ok('no page errors', errs.length === 0);
