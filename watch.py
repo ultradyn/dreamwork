@@ -775,6 +775,7 @@ STYLE = """<style>
   .qa.folded .qt { color:var(--muted); font-weight:inherit; }
   .qa.folded .qt:hover { color:var(--lit); }
   .qa.folded .qfold { margin:0; }
+  .peek { margin:0; }
   .qa.folded .qfold > * { color:var(--dim); }
   .qa.folded .qfold > summary { color:var(--muted); }
   /* ...and when he opens one, the whole card steps up (#169): a settled entry
@@ -1550,7 +1551,7 @@ const pipBtn = (url, label) =>
   ` navigate" aria-label="pop out ${esc(label)}" data-pipurl="${esc(url)}"` +
   ` data-piplabel="${esc(label)}">${PIP_SVG}</button>`;
 const expand = (s, inner, cls='') =>
-  `<details><summary class="${cls}">${s}</summary>${inner}</details>`;
+  `<details class="peek"><summary class="${cls}">${s}</summary>${inner}</details>`;
 /* Backticked references become links only when the destination is known.
    `github.com/…` is an external URL; target files come from the collector's
    closed set. Everything else stays code — a broken link is a false promise. */
@@ -4762,6 +4763,17 @@ addEventListener('click', e => {
   // clipped to the line the summary still fills, exactly as a folding card
   // clips to the title it keeps
   else dreamAway(document.querySelector('.wrap'), corpse, was, now.height);
+});
+/* Plain read peeks — dreams, .md files, status overflow (#277 reusable).
+   These were native <details> toggles with no animation: closing one snapped
+   the body away. They now go through the same foldDetailsLocal path as the
+   keyed-list fallback (#250), so the body departs on the mist idiom and
+   everything below travels rather than jumping. reduced-motion: native toggle. */
+addEventListener('click', e => {
+  const sum = e.target.closest && e.target.closest('.peek > summary');
+  if (!sum || rmr) return;
+  e.preventDefault();
+  foldDetailsLocal(sum.parentElement);
 });
 addEventListener('resize', () => paintIndicators(true));
 /* ── the persistent chrome (#110) ─────────────────────────────────────────
