@@ -198,8 +198,14 @@ def test_template_rules_match_the_reference_rule_for_rule(template, reference):
         key: sorted(ours[key] ^ theirs[key])
         for key in shared
         if ours[key] != theirs[key] and key[1] not in DECLARATION_DIVERGENCES}
-    assert not differing, \
-        "template rules drifted from tasks-page.html: %r" % differing
+    assert not differing, (
+        "template rules drifted from tasks-page.html: %r\n\n"
+        "If you just fixed a shared selector in review-artifact.template.html, "
+        "the other half of the pair is .dreamwork/review/tasks-page.html — the "
+        "hand-rolled reference the template was cut from. It is untemplated and "
+        "never rebuilt, so the coupling is manual and this test is the only thing "
+        "that tells you about it. Make the identical edit there, or add the "
+        "selector to DECLARATION_DIVERGENCES with a reason." % differing)
 
 
 def test_template_adds_nothing_undeclared(template, reference):
