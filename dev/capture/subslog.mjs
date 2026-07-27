@@ -149,7 +149,7 @@ const OFFTEXT = 'a command into a dead socket ' + process.pid;
     document.getElementById('cmdform').requestSubmit();
     await new Promise(r => setTimeout(r, 700));
     window.fetch = real;
-    const m = document.querySelector('.cmdmsg');
+    const m = document.querySelector('#cmdmsg');
     return m && m.textContent;
   })()`);
   const r = ((await all()) || []).find(x => x.text === OFFTEXT);

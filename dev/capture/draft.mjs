@@ -156,8 +156,8 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
     document.getElementById('cmdform').requestSubmit();
     await new Promise(r => setTimeout(r, 400));
     window.fetch = real;
-    return document.querySelector('.cmdmsg') &&
-           document.querySelector('.cmdmsg').textContent;
+    return document.querySelector('#cmdmsg') &&
+           document.querySelector('#cmdmsg').textContent;
   })()`);
   const after = await boxAfterReload();
   notes.push(`after a rejected send (msg ${JSON.stringify(status)}): ` +
