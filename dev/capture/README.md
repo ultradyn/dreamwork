@@ -126,6 +126,15 @@ than once:
   is how it found the chart collapsing to its 2px rules after every
   animation. It also states, in its own header, the one thing it does NOT
   check and why. Builds its own git target.
+- `provenance` — who filed each task, by first sight (#217): the burndown's
+  human / loop / historical-unknown coverage, where unknown is drawn as
+  itself and never rolled into loop. Plants a ledger history whose truthful
+  answer is known — including an entry marked human an hour AFTER it
+  arrived, which must stay unknown forever — and asserts the exact counts,
+  the denominator copy, the segment geometry, the hatch, the aria-label,
+  no accent and no motion, at 1440x1000 and 390x844, plus the shallow
+  clone's named incompleteness. Shown red against the
+  unknown-counted-as-loop sabotage. Builds its own git targets.
 - `gitrow` — a commit row expands (#166), and does it on the page's own
   gesture. Three of its checks are for contracts the row INHERITED by
   becoming a `<details>` and that no end-state check can fail on: the FLIP
@@ -145,8 +154,9 @@ than once:
   would have cost.
 
 Four of those build their own target and take an ephemeral port, ignoring
-the one they are handed: `health`, `dashboard`, `identity`, `motion`. The
-justfile's `guards` recipe says which shape each is and why.
+the one they are handed: `health`, `dashboard`, `identity`, `motion`.
+`gitrow`, `serving`, `burndown` and `provenance` do the same —
+the justfile's `guards` recipe says which shape each is and why.
 
 ## Captures (not gated)
 

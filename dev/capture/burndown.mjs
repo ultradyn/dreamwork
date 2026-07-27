@@ -125,6 +125,9 @@ const READ = `(() => {
     present: true,
     head: (bd.querySelector('.bdhead') || {}).textContent || '',
     note: (bd.querySelector('.bdnote') || {}).textContent || '',
+    provline: (bd.querySelector('.provline') || {}).textContent || '',
+    provsrc: [...bd.querySelectorAll('.provsrc')].map(s => s.textContent.trim()),
+    provsegs: bd.querySelectorAll('.provseg').length,
     none: !!bd.querySelector('.bdnone'),
     bars: bars.length, cols: cols.length,
     series: [...new Set(bars.map(b => b.dataset.series))].sort(),
@@ -160,9 +163,16 @@ ok('a column names its bucket and all three numbers',
    r0.titles.every(t => /arrived · \d+ landed · \d+ open$/.test(t || '')));
 ok('the panel spends no accent — nothing in it is waiting on him',
    r0.accentUsed === false);
-ok('...and it says what it CANNOT say, with its own coverage',
-   /\bsourced 0\/4\b/.test(r0.head) &&
-   /cannot split his steers from the loop's own ideas/.test(r0.note));
+/* the provenance coverage is #217's datum and provenance.mjs owns its
+   deep checks; what belongs HERE is the property this fixture exists in:
+   every planted entry is unmarked, so the honest split is ALL historical
+   unknown and none of it loop's — the exact lie #217 was filed against
+   would read `loop 9`. Nine ids were planted as entries. */
+ok('...and its provenance is honest about the unknown remainder: every ' +
+   'planted entry is unmarked, so none of the nine is the loop\'s',
+   /human 0 · loop 0 · historical unknown 9/.test(r0.provline.trim()) &&
+   r0.provsegs === 3 &&
+   r0.provsrc.some(s => /9 first sightings in recorded git history/.test(s)));
 
 /* ── the motion ───────────────────────────────────────────────────────────
    Traced per frame and bounded to the interaction. `regroupBars` runs on a

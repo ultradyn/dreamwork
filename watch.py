@@ -559,6 +559,35 @@ STYLE = """<style>
             font-size:.65rem; margin-top:.3rem; }
   .bdnote, .bdnone { color:var(--dimmer); font-size:.7rem; max-width:66ch;
                      margin:.45rem 0 0; }
+  /* the provenance coverage (#217): who filed each task, by FIRST SIGHT —
+     three counts and a denominator, with the historical unknown drawn as
+     itself and never folded into loop. THE ACCENT IS NOT SPENT (the
+     panel's rule, #142), and colour never carries the split alone:
+     human/loop are solid at two ramp steps and unknown is a HATCH — a
+     pattern, so it survives every tint and every colour-vision — while
+     the legend, the per-segment titles and the aria-label state the same
+     facts in words. NO MOTION: a live tick commits its DOM instantly
+     (transitions.md), so no part of this declares a transition, and
+     reduced-motion parity is the identical settled visual. The
+     count-carrying lines may never wrap — the panel's height is constant
+     within each complete/incomplete state, which is the premise the bars'
+     motion rests on — so they ellipsis like the head does, and their full
+     text rides the aria-label/title. */
+  .bdprov { margin:.45rem 0 0; }
+  .provbar { display:flex; height:3px; gap:1px; margin-bottom:.35rem; }
+  .provseg { height:100%; flex:var(--share) 1 0; }
+  .provseg.phuman { background:var(--lit); }
+  .provseg.ploop { background:var(--muted); }
+  .provseg.punknown { background:repeating-linear-gradient(45deg,
+                        var(--dimmer) 0 1px, transparent 1px 4px); }
+  .provline { font-size:.7rem; color:var(--dim);
+              white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .provline .phuman { color:var(--lit); }
+  .provline .ploop { color:var(--muted); }
+  .provline .punknown { color:var(--dimmer);
+                        border-bottom:1px dotted var(--dimmer); }
+  .provsrc { color:var(--dimmer); font-size:.7rem; margin-top:.15rem;
+             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .gserve { color:var(--dim); font-size:.7rem; margin:-.15rem 0 .55rem;
             max-width:60ch; }
   .gserve.unknown { color:var(--dimmer); }
@@ -2105,6 +2134,48 @@ const bstamp = (t, step) => {
 const bdbar = (b, k, cls, max) =>
   `<div class="bdbar ${cls}" data-bk="${b.t0}" data-series="${k}"` +
   ` style="height:${max ? Math.round((b[k] / max) * 100) : 0}%"></div>`;
+/* the provenance coverage (#217). THREE COUNTS AND A DENOMINATOR, read
+   from the ledger's first sightings (#216): who filed each task at its
+   ARRIVAL, which no later edit can reclassify. The historical unknown is
+   drawn as itself — the absence of a claim — and is never added to loop
+   or implied to be the loop's. The copy names what the denominator IS
+   (committed first sightings in recorded git history), which is also the
+   scope: an entry still uncommitted in the working tree is not a
+   historical arrival and appears nowhere here. */
+function provBlock(p) {
+  if (!p) return '';
+  const total = p.total || 0;
+  if (!total)
+    return `<div class="bdnote">no first sightings in recorded git history ` +
+           `yet</div>`;
+  const rows = [['human', p.human, 'phuman'], ['loop', p.loop, 'ploop'],
+                ['historical unknown', p.unknown, 'punknown']];
+  const incomplete = p.history_complete === false;
+  /* the aria-label is the WHOLE datum in words: the bar is a picture of
+     this sentence, and the sentence is what a screen reader gets. */
+  const aria = `task provenance: ${rows.map(([n, c]) => `${n} ${c}`).join(', ')}` +
+    ` — ${total} first sightings in recorded git history` +
+    (incomplete ? ', coverage is incomplete (shallow clone)' : '');
+  return `<div class="bdprov">` +
+    `<div class="provbar" role="img" aria-label="${esc(aria)}">` +
+    rows.map(([n, c, cls]) =>
+      /* Flex distributes the exact remaining track after the two gaps, so
+         independently rounded percentages cannot leave a false empty sliver.
+         A real but tiny cohort stays visible; zero remains truly absent. */
+      `<div class="provseg ${cls}" style="--share:${c};min-width:${c ? 2 : 0}px" ` +
+      `title="${esc(n)} ${c}" aria-hidden="true"></div>`).join('') +
+    `</div>` +
+    `<div class="provline" title="${esc(rows.map(([n, c]) => `${n} ${c}`).join(' · '))}">` +
+    rows.map(([n, c, cls]) =>
+      `<span class="${cls}">${esc(n)} ${c}</span>`).join(' · ') +
+    `</div>` +
+    `<div class="provsrc">${total} first sightings in recorded git ` +
+    `history</div>` +
+    (incomplete
+      ? `<div class="provsrc">shallow clone — first sightings before its ` +
+        `boundary are invisible, so coverage is incomplete</div>` : '') +
+    `</div>`;
+}
 function burnPanel(d) {
   const s = (d && d.burndown) || null;
   if (!s || !s.state) return '';
@@ -2127,8 +2198,7 @@ function burnPanel(d) {
   let h = label('burndown') + `<div class="bd">` +
     `<div class="bdhead"><span class="bdnum">${s.open}</span> open · ` +
     `${s.arrived} arrived · ${s.landed} landed · ` +
-    `${BURN_STEP_NAME[s.step] || 'bucketed'} · sourced ${s.marked}/${s.entries}` +
-    `</div>` +
+    `${BURN_STEP_NAME[s.step] || 'bucketed'}</div>` +
     `<div class="bdtrack bdnet">` +
       bs.map(b => col(b) + bdbar(b, 'open', 'bdlevel', levelMax) + `</div>`)
         .join('') + `</div>` +
@@ -2141,22 +2211,14 @@ function burnPanel(d) {
     `<div class="bdaxis"><span>${esc(bstamp(s.from, s.step))}</span>` +
       `<span>arrivals above · landed below</span>` +
       `<span>${esc(bstamp(s.to, s.step))}</span></div>`;
-  /* WHAT IT CANNOT SAY, said out loud. The most telling split would be
-     human- against loop-initiated, and the ledger cannot support it: the
-     `**human` stamp is on a MINORITY of entries, so a chart drawn from it
-     would be mostly one bar wide and would be read as fact. Reporting the
-     coverage is the honest version, and it is also the thing that would
-     make someone add the field.
-
-     THE COUNTS LIVE IN THE HEAD AND THE PROSE HERE IS CONSTANT, which is
-     not a phrasing preference: this text wraps, and "0 of 4" becoming
-     "0 of 14" pushed it onto a fourth line and grew the panel by 14px — so
-     a bar easing over 850ms sat above four panels that had already jumped.
-     Measured, by the guard, on the first version of this panel. The head is
-     one ellipsised line for the same reason a commit row is (#151). */
-  h += `<div class="bdnote">most entries do not record where they came from` +
-       ` — see the count above — so this cannot split his steers from the` +
-       ` loop's own ideas, only count them together</div>`;
+  /* WHO FILED EACH TASK, said honestly (#217). The old panel reported its
+     own coverage (`sourced N/M`) because the ledger could not answer the
+     question; #216 made the answer readable from first sightings, so the
+     panel now draws the split WITH its unknown remainder visible. The
+     block is constant-height for the same reason the head is one
+     ellipsised line: numbers that change must never move the panels below
+     while the bars are travelling. */
+  h += provBlock(s.provenance);
   return h + `</div>`;
 }
 function buildDashboard(d) {
@@ -5859,11 +5921,18 @@ LEDGER_ENTRY = re.compile(r"^- \*\*#(\d+)\*\*", re.M)
 # ...and in `## Recently landed` an id is named inline, in prose, so the
 # entry-head shape does not apply there.
 LEDGER_MENTION = re.compile(r"\*\*#(\d+)\*\*")
-# A human steer is stamped `· **human 17:45**` by the coordinator. It is the
-# only provenance mark the ledger has, and it is on a MINORITY of entries —
-# which is why the panel reports its own coverage instead of drawing a split
-# (see `burndown` in watch-design.md).
-LEDGER_HUMAN = re.compile(r"\*\*human\b")
+# A human steer is stamped `· **human 17:45**` by the coordinator on some
+# entries. Provenance is NOT read from the working tree: a task's origin is
+# a fact about its ARRIVAL, so it is classified from the FIRST snapshot in
+# which its id appears (#216), inside the same walk the series below makes.
+# The first-sight grammar is lint.py's (#213), VERBATIM, and a test asserts
+# the copies stay identical — the one-copy rule LEDGER_ENTRY already states.
+ENTRY_HEAD = re.compile(r"^- \*\*([^*]+?)\*\*")
+ENTRY_ID = re.compile(r"#(\d+)")
+ORIGIN_MARK = re.compile(r"origin:\s*\*\*\s*([^*]+?)\s*\*\*")
+# `human` and `loop` are claims about who filed the task; everything else —
+# no marker, several, an out-of-vocabulary value — fails closed to unknown.
+KNOWN_ORIGINS = ("human", "loop")
 # The bucket ladder: the smallest step that keeps the chart under this many
 # columns. A fixed step would give one column on a young ledger and four
 # hundred on an old one.
@@ -5874,8 +5943,44 @@ BURN_OK = "ok"
 BURN_NONE = "no ledger"    # this project keeps no versioned task ledger
 BURN_ERROR = "error"       # git failed; explicitly NOT "no history"
 
-_LEDGER_SNAPS = {}         # rev -> (open ids, landed ids); history is immutable
+_LEDGER_SNAPS = {}         # (rev, tree-relative path) -> parsed snapshot
 _LEDGER_CACHE = {}         # (target, head) -> the whole answer
+
+
+def ledger_entries(text):
+    """lint.py's ledger_entries, VERBATIM (a test pins the two identical):
+    each ledger entry as (its ids, its full text). Only the leading bold
+    token numbers an entry — combined entries list every id, while a `#N`
+    in a body is a cross-reference — and landed prose is never an entry.
+    """
+    entries, cur = [], None
+    for ln in text.split("\n"):
+        m = ENTRY_HEAD.match(ln)
+        if m:
+            ids = [int(x) for x in ENTRY_ID.findall(m.group(1))]
+            cur = (ids, [ln])
+            entries.append(cur)
+        elif cur is not None and (not ln.strip() or ln[0] in " \t"):
+            cur[1].append(ln)
+        else:
+            cur = None
+    return [(ids, "\n".join(lines)) for ids, lines in entries]
+
+
+def entry_origins(text):
+    """(ids, origin) per entry in one ledger snapshot, fail-closed.
+
+    Exactly one marker whose value is human or loop is a claim; anything
+    else is unknown — the truthful value, never a guess (#216's rule, and
+    task_origins.py's `_classify` value for value).
+    """
+    out = []
+    for ids, body in ledger_entries(text):
+        marks = [v.strip() for v in ORIGIN_MARK.findall(body)]
+        origin = marks[0] if len(marks) == 1 and marks[0] in KNOWN_ORIGINS \
+            else "unknown"
+        out.append((ids, origin))
+    return out
 
 
 def parse_ledger(text):
@@ -5911,8 +6016,7 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
     would lose a completion every time the coordinator tidies.
     """
     out = {"state": None, "note": None, "buckets": [], "step": 0,
-           "open": 0, "arrived": 0, "landed": 0, "from": 0, "to": 0,
-           "marked": 0, "entries": 0}
+           "open": 0, "arrived": 0, "landed": 0, "from": 0, "to": 0}
 
     def g(*args):
         res = subprocess.run(
@@ -5924,7 +6028,21 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
         return res.stdout.decode("utf-8", "replace")
 
     try:
-        log = g("log", "--format=%H %ct", "--reverse", "--", path).split("\n")
+        # The ledger's pathspec is resolved against the repository TOP
+        # LEVEL, not blindly against the target: a target nested inside a
+        # larger repo must read its OWN ledger's history — `git -C sub log
+        # -- .dreamwork/tasks.md` would otherwise walk the parent repo and
+        # read the repo ROOT's ledger, silently (#217). The history walk
+        # itself runs from the top level, because a pathspec is relative
+        # to the directory git is invoked in.
+        top = g("rev-parse", "--show-toplevel").strip()
+        rel = os.path.relpath(os.path.join(target, path), top)
+        rel = rel.replace(os.sep, "/")
+        # A shallow clone cannot see first sightings before its boundary;
+        # the panel names that rather than claiming full coverage (#216).
+        complete = g("rev-parse", "--is-shallow-repository").strip() != "true"
+        log = g("-C", top, "log", "--format=%H %ct", "--reverse", "--",
+                rel).split("\n")
     except (OSError, subprocess.SubprocessError) as exc:
         # not a checkout is ordinary; a checkout whose git failed is not
         if os.path.exists(os.path.join(target, ".git")):
@@ -5951,21 +6069,37 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
         return out
 
     arrived, landed, opencount = {}, {}, {}
+    first_sight = {}
     latest = set()
     for rev, ct in revs:
-        if rev not in _LEDGER_SNAPS:
+        # A commit identifies a TREE, not one chosen blob in it. Two targets
+        # nested in the same repository can have distinct ledgers at the same
+        # rev, so the immutable memo key must carry the tree-relative path;
+        # rev alone makes whichever dashboard ticks first poison the other.
+        snap_key = (rev, rel)
+        if snap_key not in _LEDGER_SNAPS:
             try:
-                _LEDGER_SNAPS[rev] = parse_ledger(g("show", "%s:%s" % (rev, path)))
+                text = g("-C", top, "show", "%s:%s" % (rev, rel))
+                o, done = parse_ledger(text)
+                _LEDGER_SNAPS[snap_key] = (o, done, entry_origins(text))
             except (OSError, subprocess.SubprocessError):
                 # one unreadable revision is a hole, not a failure of the
                 # series — skip it and keep the rest rather than reporting
                 # the whole history as absent
                 continue
-        o, done = _LEDGER_SNAPS[rev]
+        o, done, eorigins = _LEDGER_SNAPS[snap_key]
         for i in o | done:
             arrived.setdefault(i, ct)
         for i in done:
             landed.setdefault(i, ct)
+        # An id's origin is read from the FIRST snapshot where it appears
+        # and never revisited: a marker added later is documentation, not
+        # time travel (#216). Unknown is the absence of a claim and is
+        # never rolled into loop (#217).
+        for ids, origin in eorigins:
+            for i in ids:
+                if i not in first_sight:
+                    first_sight[i] = origin
         opencount[ct] = len(o)
         latest = o
 
@@ -6001,17 +6135,29 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
     out["from"] = first
     out["to"] = last
     out.pop("from_", None)
+    # Who filed each task, by first sight (#216), drawn honestly (#217):
+    # three counts and a denominator, never a split that folds the unknown
+    # remainder into loop. The denominator is COMMITTED first sightings —
+    # an uncommitted entry in the working tree is not a historical arrival.
+    prov = {"human": 0, "loop": 0, "unknown": 0}
+    for origin in first_sight.values():
+        prov[origin] += 1
+    prov["total"] = len(first_sight)
+    prov["history_complete"] = complete
+    out["provenance"] = prov
     return out
 
 
 def ledger_stats(target):
-    """`ledger_series`, cached on HEAD, plus the provenance coverage read
-    from the working tree.
+    """`ledger_series`, cached on HEAD.
 
     Cached because the walk is one `git show` per ledger commit — 139 today,
     and it only ever grows. Per-revision parses are memoised globally on the
     commit sha as well, because history is immutable, so a NEW head costs
-    only the commits that are new.
+    only the commits that are new. The cache key is the truthful one for a
+    repository-history answer: the target (which fixes the ledger's path
+    inside its repo, #217) and its HEAD — a tick with an unmoved HEAD
+    reuses the answer, a new commit recomputes it.
     """
     try:
         head = subprocess.run(
@@ -6022,39 +6168,8 @@ def ledger_stats(target):
     key = (os.path.abspath(target), head)
     if key not in _LEDGER_CACHE:
         _LEDGER_CACHE.clear()
-        r = ledger_series(target)
-        text = read_text(os.path.join(target, LEDGER_PATH)) or ""
-        # Coverage, not a split. `**human` marks a minority of entries, so a
-        # human-vs-loop chart drawn from it would be mostly one bar wide and
-        # would read as fact. The panel says how much of the ledger can
-        # answer the question instead — a reader that cannot see something
-        # must not render identically to there being nothing to see (#136).
-        lines = [ln for ln in text.split("\n") if LEDGER_ENTRY.match(ln)]
-        r["entries"] = len(lines)
-        r["marked"] = sum(1 for ln in _entry_blocks(text)
-                          if LEDGER_HUMAN.search(ln))
-        _LEDGER_CACHE[key] = r
+        _LEDGER_CACHE[key] = ledger_series(target)
     return _LEDGER_CACHE[key]
-
-
-def _entry_blocks(text):
-    """Each ledger entry as one string — its head line plus its continuation
-    lines. The marker sits anywhere inside an entry, and matching it per LINE
-    would count an entry whose head happens to be short as unmarked."""
-    if not text or "## Open" not in text:
-        return []
-    body = text.split("## Open", 1)[1].split("## Recently landed", 1)[0]
-    blocks, cur = [], None
-    for line in body.split("\n"):
-        if LEDGER_ENTRY.match(line):
-            if cur is not None:
-                blocks.append(cur)
-            cur = line
-        elif cur is not None:
-            cur += "\n" + line
-    if cur is not None:
-        blocks.append(cur)
-    return blocks
 
 
 """Who wrote a note (#109).
