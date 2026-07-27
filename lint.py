@@ -513,6 +513,86 @@ def check_status(dw: Path, rep: Report) -> None:
     rep.add(OK, "status.json", detail)
 
 
+STATUS_KEYS_HEADER = (
+    "# Top-level `status.json` keys this target has been seen to carry (#303).\n"
+    "# APPEND-ONLY, and deliberately so: see lint.py's check_status_keys.\n"
+    "# A key you meant to retire is removed by editing THIS file, by hand.\n"
+)
+
+
+def check_status_keys(dw: Path, rep: Report) -> None:
+    """Notice a `status.json` that lost keys it used to carry.
+
+    A coordinator's wholesale rewrite dropped `retired_today` — fifteen prior
+    lanes' retirements — and lint called the result clean, because a projection
+    missing a key is indistinguishable from one that never had it. So the
+    "used to carry" half has to live somewhere, and #303 refuted the
+    git-tracked route: the only tracked description of this file is
+    `file-formats.md`'s field table, which does not name `retired_today` (it
+    would have missed the very incident that filed this) and which, treated as
+    required, would red-flag every fresh target whose status.json is nearly
+    empty by design.
+
+    So the memo is a gitignored sidecar beside the gitignored file it
+    describes, and it costs `lint.py` its read-only character — the one real
+    price, paid deliberately.
+
+    **It is append-only, and that is the load-bearing part.** The obvious
+    implementation records the current key set each run, which means the first
+    run after a bad rewrite adopts the REDUCED set as the new baseline and the
+    loss is invisible from the second run on. That yields exactly one warning,
+    in the same run as the mistake, and then silence — worse than no check,
+    because it looks like a check. Union-only means a lost key keeps warning
+    until a human edits the memo, which is the only act that should be able to
+    say "yes, that key is gone on purpose".
+    """
+    path, memo_path = dw / "status.json", dw / ".status-keys"
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return  # check_status already reported it; do not learn from a broken file
+    if not isinstance(data, dict):
+        return
+    current = set(data)
+
+    remembered: set[str] = set()
+    if memo_path.exists():
+        try:
+            remembered = {
+                ln.strip()
+                for ln in memo_path.read_text().splitlines()
+                if ln.strip() and not ln.lstrip().startswith("#")
+            }
+        except OSError as exc:
+            rep.add(WARN, ".status-keys", f"unreadable ({exc.strerror}) — cannot tell if a key was lost")
+            return
+
+    lost = sorted(remembered - current)
+
+    union = remembered | current
+    if union != remembered:
+        try:
+            memo_path.write_text(STATUS_KEYS_HEADER + "".join(f"{k}\n" for k in sorted(union)))
+        except OSError as exc:
+            # Never fail the loop over a memo, but never claim to be watching
+            # something we could not record either.
+            rep.add(WARN, ".status-keys", f"could not record {len(union - remembered)} new key(s): {exc.strerror}")
+            return
+
+    if lost:
+        rep.add(
+            WARN,
+            "status.json",
+            f"lost {len(lost)} key(s) it used to carry: {', '.join(lost)} — a wholesale "
+            f"rewrite drops what it does not restate; if deliberate, delete them from "
+            f"`.dreamwork/.status-keys`",
+        )
+    else:
+        rep.add(OK, ".status-keys", f"{len(union)} known key(s), none lost")
+
+
 def _future_skew(stamp: str):
     """Seconds by which `stamp` is ahead of now, or None if unparseable.
 
@@ -954,6 +1034,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_dreamwork_frontmatter(dw, rep)
     check_dreams(dw, rep)
     check_doc_map_plans(dw, rep)
+    check_status_keys(dw, rep)
 
 
 def main(argv: list[str] | None = None) -> int:

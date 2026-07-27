@@ -1058,3 +1058,118 @@ class TestDocMapPlans:
         rep = lint.Report()
         lint.check_doc_map_plans(lint.SKILL_DIR / ".dreamwork", rep)
         assert not [d for l, w, d in rep.rows if l == lint.WARN], rep.render()
+
+
+class TestStatusKeys:
+    """`status.json` losing a key it used to carry (#303).
+
+    The incident: a wholesale rewrite dropped `retired_today` and lint called
+    the result clean, because a projection missing a key is indistinguishable
+    from one that never had it.
+    """
+
+    def build(self, tmp_path: Path, **keys) -> Path:
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "status.json").write_text(json.dumps(keys or {"task": "t"}))
+        return dw
+
+    def rewrite(self, dw: Path, **keys) -> None:
+        (dw / "status.json").write_text(json.dumps(keys))
+
+    def run(self, dw: Path):
+        rep = lint.Report()
+        lint.check_status_keys(dw, rep)
+        return rep
+
+    def losses(self, dw: Path):
+        return [d for l, w, d in self.run(dw).rows if l == lint.WARN and w == "status.json"]
+
+    def memo(self, dw: Path) -> set:
+        return {
+            ln.strip()
+            for ln in (dw / ".status-keys").read_text().splitlines()
+            if ln.strip() and not ln.startswith("#")
+        }
+
+    def test_a_fresh_target_is_learned_not_flagged(self, tmp_path):
+        # The cry-wolf failure #306 was measured against: a new target's
+        # status.json is nearly empty by design and must not go red for it.
+        dw = self.build(tmp_path, task="t", goal="g")
+        assert self.losses(dw) == []
+        assert self.memo(dw) == {"task", "goal"}
+
+    def test_the_real_incident_goes_red(self, tmp_path):
+        dw = self.build(tmp_path, task="t", goal="g", retired_today=["a", "b"])
+        assert self.losses(dw) == []          # learn first
+        self.rewrite(dw, task="t", goal="g")  # the wholesale rewrite
+        (warn,) = self.losses(dw)
+        assert "retired_today" in warn
+
+    def test_it_keeps_warning_rather_than_absorbing_the_loss(self, tmp_path):
+        """The design decision, and the one a plain implementation fails.
+
+        Re-recording the current key set each run makes the FIRST run after a
+        bad rewrite adopt the reduced set as its baseline: one warning, then
+        silence. A check that goes quiet about a live loss is indistinguishable
+        from one that found nothing, so the memo never shrinks by itself.
+        """
+        dw = self.build(tmp_path, task="t", retired_today=["a"])
+        self.losses(dw)
+        self.rewrite(dw, task="t")
+        assert self.losses(dw), "the run that sees the loss must warn"
+        assert self.losses(dw), "and so must the NEXT one — the memo must not absorb it"
+        assert self.losses(dw), "and every one after that"
+        assert "retired_today" in self.memo(dw)
+
+    def test_a_human_edit_is_what_accepts_a_retirement(self, tmp_path):
+        dw = self.build(tmp_path, task="t", retired_today=["a"])
+        self.losses(dw)
+        self.rewrite(dw, task="t")
+        assert self.losses(dw)
+        keys = self.memo(dw) - {"retired_today"}
+        (dw / ".status-keys").write_text("".join(f"{k}\n" for k in sorted(keys)))
+        assert self.losses(dw) == []
+
+    def test_a_new_key_is_added_without_complaint(self, tmp_path):
+        dw = self.build(tmp_path, task="t")
+        self.losses(dw)
+        self.rewrite(dw, task="t", brand_new="x")
+        assert self.losses(dw) == []
+        assert self.memo(dw) == {"task", "brand_new"}
+
+    def test_every_lost_key_is_named_not_just_counted(self, tmp_path):
+        # "lost 3 keys" sends the reader to diff a gitignored file against
+        # nothing. The names are the whole value of the warning.
+        dw = self.build(tmp_path, a=1, b=2, c=3, d=4)
+        self.losses(dw)
+        self.rewrite(dw, a=1)
+        (warn,) = self.losses(dw)
+        assert all(k in warn for k in ("b", "c", "d"))
+
+    def test_absent_status_json_writes_no_memo(self, tmp_path):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        assert self.run(dw).rows == []
+        assert not (dw / ".status-keys").exists()
+
+    def test_broken_status_json_does_not_teach_the_memo(self, tmp_path):
+        # check_status already ERRORs on it; learning an empty key set from a
+        # half-written file would erase the baseline this check exists to hold.
+        dw = self.build(tmp_path, task="t", retired_today=["a"])
+        self.losses(dw)
+        before = self.memo(dw)
+        (dw / "status.json").write_text("{not json")
+        assert self.run(dw).rows == []
+        assert self.memo(dw) == before
+
+    def test_it_is_wired_into_run_checks(self, tmp_path):
+        # A check absent from the one list is a check whose tests cannot fail.
+        dw = self.build(tmp_path, task="t", retired_today=["a"])
+        lint.run_checks(dw, lint.load_watch(), lint.Report())
+        self.rewrite(dw, task="t")
+        rep = lint.Report()
+        lint.run_checks(dw, lint.load_watch(), rep)
+        assert any("retired_today" in d for l, _, d in rep.rows if l == lint.WARN)

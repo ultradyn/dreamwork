@@ -1,5 +1,9 @@
 __pycache__/
 .dreamwork/status.json
+# lint.py's append-only memo of the keys status.json has carried (#303) —
+# gitignored because the file it describes is, and because it is a record of
+# one target's history, not a schema anyone else should inherit.
+.dreamwork/.status-keys
 # derived at plugin resolution; which plugins resolve is a property
 # of the machine, so a committed copy would be another target's truth
 .dreamwork/plugin-commands.json
@@ -21,6 +25,10 @@ __pycache__/
 dev/capture/fixture/.dreamwork/watch-events.log
 dev/capture/fixture/.dreamwork/submissions.log
 dev/capture/fixture/.dreamwork/run-mode
+# lint.py's memo of which status.json keys this target has carried (#303).
+# It describes a gitignored file and is per-target by construction, so
+# committing it would import one machine's key set as another's baseline.
+dev/capture/fixture/.dreamwork/.status-keys
 
 # worktrees for isolated dreamer spikes
 .worktrees/

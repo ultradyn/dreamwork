@@ -501,6 +501,34 @@ The file is **gitignored ephemera** and stays that way. It describes a
 running process, so a committed one would be a lie the moment it landed;
 that is also why there is no history to compute stats from (#142).
 
+## `.dreamwork/.status-keys` — the only file `lint.py` writes (#303)
+
+One key per line, sorted, `#` comment lines and blanks ignored on read.
+It records which top-level `status.json` keys **this target has been seen
+to carry**, and it exists because a projection missing a key is
+indistinguishable from one that never had it: a coordinator's wholesale
+rewrite dropped `retired_today` — fifteen lanes' retirements — and lint
+called the result clean.
+
+Three properties, each load-bearing:
+
+- **Gitignored**, beside the gitignored file it describes. The tracked
+  alternative was tried and refuted: `file-formats.md`'s field table above
+  does not name `retired_today`, so it would have missed the exact incident
+  that filed this, and treating it as required would red-flag every fresh
+  target whose status.json is nearly empty by design.
+- **Append-only.** Union of keys ever seen, never auto-shrunk. The obvious
+  implementation re-records the current set each run, which makes the first
+  run after a bad rewrite adopt the reduced set as its baseline — one
+  warning, in the same run as the mistake, then silence. A check that goes
+  quiet about a live loss looks exactly like a check that found nothing.
+- **A human edit is the only way to accept a retirement.** Deleting the
+  line is the deliberate act; nothing the loop does can.
+
+This is the one place `lint.py` writes, and that cost is real — it was
+read-only until #303. It is paid here and nowhere else: a write failure
+WARNs rather than raising, so a read-only checkout still lints.
+
 ## `.dreamwork/docs/doc-map.md` — the one row that is a list (#307)
 
 Every row in the doc map names a file, so the row cannot drift from what
