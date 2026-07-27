@@ -2068,3 +2068,29 @@ this shape and convert opportunistically.)
   report it"* a numbered acceptance criterion, and named the two hollow outcomes (a concurrency
   survey; restating the document). Compare the general permission at the bottom of every brief,
   which produces refutations only when a lane trips over one. [[the numbered list is where I bind]].
+
+- **The relay reaches a lane that has increments left and misses one that runs straight through —
+  and the coordinator cannot tell which it dispatched. So anything mandatory belongs in the dispatch
+  prompt; the relay is only for refinements it is safe to miss.**
+  · **Measured, both directions.** `#389`'s lane read its relay and said so — its report carries
+  *"Bonus red (relay's second direction)"* and a section *"Relay (#389) neighbours — measured and
+  decided"*. `#395`'s lane did not: its relay was written at 08:59, four minutes into a ~15-minute
+  run, and its report mentions the relay **zero** times and did the thing the relay asked for **not
+  at all**. Same mechanism, same instruction in every brief to *"re-read it between increments"*,
+  opposite outcomes.
+  · **The discriminator is the lane's own shape, not the timing.** A lane that treats its task as
+  one increment never reaches a boundary and so never re-reads — and whether a task decomposes into
+  increments is decided *by the lane*, after dispatch, invisibly. So relay delivery is not
+  unreliable in a way a coordinator can plan around; it is unreliable in a way a coordinator cannot
+  even observe without checking each report for evidence of receipt.
+  · **What I got wrong, concretely:** I put a *ratification* in `#367`'s relay (fine — it confirmed
+  something the lane had already done, so missing it was harmless) and then put a *new obligation*
+  in `#395`'s (write a hand-off line). The second is the wrong channel for a mandatory thing, and it
+  simply did not happen. **Sort by "what if this is never read": if the answer is "the deliverable is
+  incomplete", it is not relay material.**
+  · **This is `#381`'s bug one layer up, exactly as its lane said** while being told not to act on it:
+  *"the coordinator writes a steer, a lane that has gone idle never reads it, and nothing wakes
+  it."* The difference is that the ledger's hand-off channel now has a **check** that notices an
+  unconsumed line, and the relay has nothing — so a missed steer is silent at both ends. **Verify
+  what READS a thing, and note that "it was written" and "a report shows evidence of receipt" are
+  different observations.**

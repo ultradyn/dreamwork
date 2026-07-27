@@ -187,6 +187,21 @@ Next id: **398**
   future dispatch prompt carries the line, and that is a coordinator habit with no enforcement.
   A `lint.py` check that a landed-and-committed lane left a hand-off is not possible (lint cannot
   know a lane ran); what *is* checkable is the condition `#381` already checks
+  · **VERIFIED NEGATIVE 2026-07-28 09:12, which is the result I predicted and it settles the
+  design.** `#395` landed `301f195` and exited having written **no hand-off line**; its report
+  mentions the relay **zero** times. So the instruction did not reach it. Per the annotation above
+  I do not read this as "the instruction is wrong" — I read it as **"the relay was the wrong
+  channel"**, which is what that annotation said the silent case would mean
+  · **and the control exists, which makes it a measurement rather than a guess:** `#389`'s lane
+  *did* read its relay and reported on it by name. So relays are read by lanes with increments left
+  and missed by lanes that run straight through — a property of the lane's own decomposition, which
+  is chosen after dispatch and is invisible to me. Recorded as a lesson
+  · **so the fix moves: every dispatch prompt carries the hand-off line.** `SKILL.md` already states
+  the obligation; what it must also say — and now does not — is that the obligation goes in the
+  *prompt*, because a lane reads its brief and prompt exactly once and reliably. That is a one-line
+  amendment and it is the remaining work on this task
+  · `#396` is still in flight with the same relay-delivered obligation, so it is a second trial of
+  the same negative; do not treat its silence as new information
 - **#392** — the humanized question age is measured from midnight, so it is wrong by up to a
   day · P2 · dashboard/correctness · origin: **loop** · found by coordinator **looking at the
   deployed page** after redeploying, not by any check
