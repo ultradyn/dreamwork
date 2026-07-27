@@ -1695,8 +1695,16 @@ Next id: **389**
   result *kind* — which is the specific trap the plan named, since a deleted `SELECT` comparison
   raises `IntegrityError` and a count-only assertion would "fail" for the wrong reason
   · `B5`-`B8` were out of batch and correctly not started
-  · lane C (domain files) still in flight on `@pi-glm52`; lane F (CLI) dispatched 06:22 on
-  `@glm52` once `B2` existed
+  · **lane C (domain files) DONE, `@pi-glm52`, ~45 minutes** — `C1` `3f1a6af`, `C2` `8c1bb60`,
+  `C3` `b5555e4`, plus `4a773e2`. 3/3 green, all criteria HOLD, and it explicitly noted seeing
+  concurrent-lane dirt in the tree and not staging it — which is the ownership rule working
+  · **`C3` verified independently by me, and the red is the most legible in the batch**: I
+  replaced temp-then-`os.replace` with the direct `open(path, "w")` that `watch.py:8462` does
+  today, and `test_kill_at_rename_leaves_the_previous_generation_intact` failed with
+  `b'' != b'the quick brown fox…'` — **the file was emptied**, with 2 neighbours green. That is
+  exactly what a crash mid-write does to `questions.md` or `answers.md` right now, which is the
+  whole reason this increment exists. Restored byte-identical
+  · lane B second batch (`B5`-`B8`) dispatched 06:36; lane F (CLI) 06:22; `#367` increment 1 06:41
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses
