@@ -31,8 +31,12 @@
      - the width and how far he had READ both survive the live tick, which
        replaces the whole dock every two seconds (#118's rule, applied to the
        two pieces of state this feature invents).
+     - the pane takes the HEIGHT THE WINDOW GIVES IT, which is a relationship
+       and needs two windows plus a resize to show: 1240px grows the pane, a
+       resize moves it, and 520px stops at the floor and lets the page scroll.
      - a narrow window STACKS rather than crushing: one column, no bar in the
-       tab order, and the question is not trapped in an inner scroller.
+       tab order, the question is not trapped in an inner scroller, and on a
+       390px phone nothing in the pane hangs off the side.
 
    usage: node reviewsplit.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
@@ -109,6 +113,16 @@ const GEO = `(() => {
     scroll: card ? { top: card.scrollTop, client: card.clientHeight,
                      full: card.scrollHeight } : null,
     pageOver: document.documentElement.scrollHeight - window.innerHeight,
+    /* how far anything IN THE PANE hangs off the right of the window. Scoped
+       to the pane on purpose: the command palette overflows by 122px at 390px
+       on every route including the dashboard, so a page-wide assertion here
+       would gate the whole suite on somebody else's bug, in #305's name. */
+    paneOverX: (() => { const W = document.documentElement.clientWidth;
+      let over = 0;
+      for (const el of document.querySelectorAll('#reviewwrap, #reviewwrap *'))
+        over = Math.max(over, el.getBoundingClientRect().right - W);
+      return Math.round(over); })(),
+    innerH: window.innerHeight,
     valuenow: bar ? bar.getAttribute('aria-valuenow') : null,
     role: bar ? bar.getAttribute('role') : null,
     tabindex: bar ? bar.getAttribute('tabindex') : null,
@@ -358,6 +372,11 @@ function travel(seen) {
   // the invisible bar is not invisible to focus: it shows a hairline, and
   // that hairline ARRIVES rather than blinking on.
   await p.evaluate(`document.querySelector('.rsplit').blur()`);
+  // and take the POINTER off it too. The bar follows the pointer during a
+  // drag, so at the end of the drag above the cursor is sitting on the bar and
+  // `:hover` is lit — "at rest" that still reads the hairline as visible, and
+  // whether it does depends on a few pixels of layout, which is a flake.
+  await p.mouse.move(12, 12);
   await sleep(600);
   const hair = `(() => getComputedStyle(document.querySelector('.rsplit'),
      '::after').opacity)()`;
@@ -458,6 +477,46 @@ await c1.close();
   await ctx.close();
 }
 
+/* ── (e) the pane takes the height the window gives it ─────────────────────
+   "We also can extend the height of the review doc and RHS column if the
+   height of the window allows." Two windows, because the claim is a
+   RELATIONSHIP between the window and the pane: one height cannot show that
+   the pane follows, and 74vh passes any single-height assertion you write. */
+{
+  const { ctx, p: tp } = await open({ viewport: { width: 1280, height: 1240 } });
+  const g = await tp.evaluate(GEO);
+  say(`tall (1240px): doc ${g.doc?.w}x${g.doc?.h} ending ${g.doc?.b}, ` +
+      `dock ends ${g.dock?.b}, box ends ${g.compose?.b}, ` +
+      `page overflow ${g.pageOver}`);
+  ok('a taller window gives a taller pane, not a taller page',
+     g.doc.h > 1000 && g.pageOver <= 1 && g.doc.b >= g.innerH - 60);
+  ok('...with both columns still ending together and the box on that line',
+     Math.abs(g.dock.b - g.doc.b) <= 1 &&
+     Math.abs(g.compose.b - g.frame.b) <= 1);
+
+  // and it FOLLOWS the window, rather than being measured once at load
+  await tp.setViewportSize({ width: 1280, height: 700 });
+  await sleep(500);
+  const r = await tp.evaluate(GEO);
+  say(`resized to 700px: doc ends ${r.doc?.b} of ${r.innerH}, ` +
+      `box ends ${r.compose?.b}, page overflow ${r.pageOver}`);
+  ok('the pane follows the window when it is resized',
+     r.doc.b <= r.innerH && r.doc.b >= r.innerH - 60 && r.pageOver <= 1 &&
+     Math.abs(r.compose.b - r.frame.b) <= 1);
+  await ctx.close();
+}
+{
+  // ...and the floor is the other half of "if the height allows": below it the
+  // PAGE scrolls again, rather than two columns becoming slivers.
+  const { ctx, p: sp } = await open({ viewport: { width: 1280, height: 520 } });
+  const g = await sp.evaluate(GEO);
+  say(`short (520px): doc ${g.doc?.h} tall, page overflow ${g.pageOver}`);
+  ok('a short window stops at the 26rem floor and lets the PAGE scroll ' +
+     'instead of crushing both columns', Math.abs(g.doc.h - 416) <= 2 &&
+     g.pageOver > 0);
+  await ctx.close();
+}
+
 /* ── narrow stacks, it does not crush ──────────────────────────────────── */
 {
   const { ctx, p: np } = await open({ viewport: { width: 700, height: 900 } });
@@ -476,6 +535,24 @@ await c1.close();
      'over it', g.sticky === 'static' && !g.band.shown);
   ok('narrow: and the head of the question is not dimmed', g.masked === false);
   await np.screenshot({ path: `${OUT}/reviewsplit-narrow.png` });
+  await ctx.close();
+}
+{
+  // a phone, where 32ch + 26ch of floors could not both fit if the split were
+  // still on: nothing may hang off the side, and the answer box must be
+  // reachable by scrolling the PAGE, which is what stacking is for.
+  const { ctx, p: pp } = await open({ viewport: { width: 390, height: 844 } });
+  const g = await pp.evaluate(GEO);
+  say(`phone (390px): doc ${g.doc?.w}x${g.doc?.h}, dock ${g.dock?.w} at ` +
+      `y=${g.dock?.t}, box ${g.compose?.w} wide, ` +
+      `page scrolls ${g.pageOver} down, pane hangs ${g.paneOverX} off the side`);
+  ok('phone: no part of the pane hangs off the side of the window',
+     g.paneOverX <= 1);
+  ok('phone: the artifact and the question are both full width',
+     g.doc.w > 300 && g.dock.w > 300 && g.dock.t > g.doc.b - 2);
+  ok('phone: the answer box is in the page rather than floating over it',
+     g.sticky === 'static' && g.compose.w > 280);
+  await pp.screenshot({ path: `${OUT}/reviewsplit-phone.png`, fullPage: true });
   await ctx.close();
 }
 

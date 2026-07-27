@@ -212,6 +212,11 @@ you could not do the second while looking at the first.
   first measurement, not the value.
 - **`min-height:26rem` is what keeps a short window honest.** Below that the
   page starts scrolling again instead of crushing two columns into slivers.
+  Measured: a 1240px window gives a 1080px pane with the page not scrolling at
+  all; a 520px window gives the 416px floor and 56px of page scroll. The pane
+  **follows a resize** rather than being measured once at load, which is the
+  half of *"if the height of the window allows"* that a single-height
+  assertion cannot see.
 - **The gutter IS the splitter.** The 1.3rem the eye already reads as space
   became a `role="separator"` with a value: invisible at rest, a hairline on
   hover/focus/drag, `col-resize`, and **operable from the keyboard** —
@@ -246,6 +251,17 @@ you could not do the second while looking at the first.
   sticky box parks its **border** edge on the scrollport, so a kept margin
   would be absent while stuck and reappear as a nudge the moment the body
   ended.
+  **And it is glued unconditionally**, which sticky alone does not give you:
+  sticky only holds a box the flow would push out of view, so a *short*
+  question left it floating mid-column — at a 1240px window the artifact ended
+  at 1200 and the box at 974. The dock card is therefore a flex column with
+  `margin-top:auto` on the compose, which resolves to zero the moment the
+  question overflows. One place his hand can learn beats a place that depends
+  on the length of the text. **The cost, stated because it is real:** flex
+  items are independent formatting contexts, so the card's internal margins no
+  longer collapse through them and the dock card runs ~20px taller than the
+  same card on `/questions`. It is a scroller, the delta is a few px per
+  section, and that is the cheaper of the two prices.
 - **Two fades, and they are not the same mechanism, because they are not
   hiding the same thing.**
   - At the **foot**, the *answer box* is doing the hiding, so the fade is a
@@ -297,6 +313,8 @@ you could not do the second while looking at the first.
   so it leaves the tab order with the layout it belonged to. Nothing is glued
   and neither fade is drawn: there is no inner scroller, so both would be
   lying about the layout — the box is simply the end of the question again.
+  Checked at 700px and at a 390px phone, where the pane hangs 0px off the side
+  and the answer box is 358px wide in the page rather than floating over it.
 
 Motion for all of it — the keyed step travelling while the drag does not, the
 hairline arriving rather than blinking on, and both fades crossing rather than

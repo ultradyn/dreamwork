@@ -1011,6 +1011,7 @@ STYLE = """<style>
      depth is a registered property so the edge ARRIVES when he leaves the top
      and departs when he returns (transitions.md), instead of blinking. */
   .qdock > .qa { flex:1 1 auto; min-height:0; overflow-y:auto;
+    display:flex; flex-direction:column;
     scrollbar-gutter:stable; margin-bottom:0;
     -webkit-mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade));
     mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade)); }
@@ -1025,8 +1026,21 @@ STYLE = """<style>
      second copy on this one route would be a second thing to keep true.
      The bottom margin goes because a sticky box parks its BORDER edge on the
      scrollport: kept, it would be absent while stuck and reappear as a 3px
-     nudge the moment the body ended. */
+     nudge the moment the body ended.
+
+     `margin-top:auto` (and the column flex above it) is what makes "glued"
+     unconditional. Sticky alone only holds a box the flow would push out of
+     view, so a SHORT question left the box floating mid-column with 200px of
+     dead space beneath it — at a 1240px window the artifact ended at 1200 and
+     the box at 974. He asked for it in line with the artifact's bottom edge,
+     not in line with it when the question happens to be long, and one place
+     his hand can learn beats a place that depends on the text. Cost, stated
+     because it is real: flex items are independent formatting contexts, so
+     the card's internal margins no longer collapse through them and the dock
+     card runs ~20px taller than the same card on /questions. It is a scroller
+     and the delta is a few px per section, which is the cheaper of the two. */
   .qdock > .qa > .qcompose { position:sticky; bottom:0; z-index:1;
+    margin-top:auto;
     margin-bottom:0; padding-bottom:.3rem; }
   /* (c) ...and the text passing UNDER it fades out rather than running into a
      hard edge. The band is a pseudo-element BEHIND the compose's own children
