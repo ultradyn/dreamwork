@@ -2283,7 +2283,7 @@ Next id: **381**
 ## Recently landed
 
 - **#379** — A refusal no longer swallows the advisory it had already computed · landed
-  `PENDING` · origin: **loop** · `render` raised on the component violation before
+  `12d17ad` · origin: **loop** · `render` raised on the component violation before
   `grid_warnings` ran, so a source with both faults showed the error, and the author fixed it,
   rebuilt, and only then learned about the dead grid track
   · **the entry's own rec was to collect warnings before raising rather than reorder the
