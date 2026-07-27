@@ -24,9 +24,45 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **346**
+Next id: **347**
 
 ## Open
+
+- **#346** — Design #294's task entity schema and read-only CLI surface, the half that
+  is not gated on #263 · P1 · schema/CLI design · origin: **loop** · split from #294
+  2026-07-28 00:26 while acting on his `do-next` steer (*"we need to start working on
+  the sqlite db and cli next. it feels like it's becoming a blocker"*), because the
+  honest answer to that steer was neither "blocked, wait" nor "start it all"
+  · **the separability argument, which is the whole justification and must be
+  attacked before this is built**: the gated question is #264's — *"decide whether it
+  shares #263's journal or uses a task-state outbox, but never dual-write two fallible
+  truths"* — and that is a question about how a **transition** becomes durable. The
+  columns describing a task at rest do not vary with the answer: a journal-sourced
+  materialised view and an outbox-sourced table expose the same entity. So this task
+  covers only (a) the entity schema, (b) the read-only CLI verbs over it, (c) the
+  migration script's **parse and report** half, and explicitly **not** any write verb,
+  claim, lease, CAS, history table, or cutover
+  · **acceptance is already enumerated** — do not re-derive it, it is the folded read
+  requirements in #294: per entry `id`, `title`, priority band, `type`, origin marker
+  (`human|loop|unknown`, exactly one — `lint.py` already enforces that on the Markdown
+  and the schema must not weaken it), owner / blocked-on, dependency ids, `open|landed`
+  state, and #281's rendered free-text tail; set-level filtering (open-only **with a
+  landed count**), sort by priority-then-id AND by a user-chosen key, single-entry fetch
+  by id for `?t=<id>`; plus #289's per-artifact decision enum `pending|accepted|rejected`
+  with a stamp and one owning question, where **absence of a record is a distinct
+  `unlinked` state and never `pending`**, and two questions claiming one artifact with
+  conflicting decisions is detectable as an error
+  · **the invariant to verify rather than assume** (#294 says so and it is the one that
+  bites): the migration re-points #281's entry-level reader *and nothing else* only while
+  that reader is the sole parser. `watch.py:6599` `ledger_entries` is documented as
+  lint.py's copy **VERBATIM, with a test pinning the two identical** — so there are
+  already two call sites of one shape, and the schema work must establish which of them
+  is the seam before claiming a single reader
+  · deliverable is a design doc under `.dreamwork/docs/plans/`, paired with a review
+  artifact and a questions entry per the standing review rule · rec: do NOT create
+  tables or ship a CLI under this id — a schema that exists before #263 is ratified is a
+  migration he warned twice about, and a design that exists is the thing that makes the
+  gated half small
 
 - **#345** — `gitrow`'s motion assertions red under load, so `just test` is not
   reliably repeatable · P2 · verification reliability · origin: **loop** · found
@@ -577,7 +613,24 @@ Next id: **346**
   whose design is finished, reviewed and PASS and waits only on E1–E4. The chain is
   `#294` ← `#264` ← `#263`, so starting here without that answer means designing
   the schema against an unsettled event model — the exact double-migration he has
-  warned about twice tonight · so the loop's response to the steer is to ask, which
+  warned about twice tonight
+  · **the gate is sharper than "unsettled design", and the distinction changes what
+  can start** (checked 2026-07-28 00:26, against the doc rather than from memory):
+  `user-event-journal.md:4` states its own status as *"human approval required; no
+  implementation authority"*, and its `## Approval gate` says approval *"accepts this
+  contract and authorises a separate red-first implementation plan"*. So the design is
+  not missing and not in doubt — it is **unratified**. That is not the same failure as
+  #252's stale blocker, which was a blocker that had already been cleared; this one is
+  real and only he can clear it
+  · **and it gates less than the entry claimed**: the transition half of this task (how
+  a grab/status/priority/complete becomes durable history, journal-vs-outbox, leases and
+  CAS) is squarely #264's gated question, but the **task entity schema and the read-only
+  CLI surface are orthogonal to it** — the columns that carry id, title, priority band,
+  type, origin marker, owner/blocked-on, dependency ids, open|landed and #281's
+  free-text tail are the same set whether transitions arrive from #263's journal or from
+  a task-state outbox, because the read surface is what a materialised view exposes
+  either way. Split out as **#346**, which is startable now; that also shrinks the
+  post-approval half rather than racing it · so the loop's response to the steer is to ask, which
   he invited: the E1 ask has been **restated in plain terms** as a threaded
   follow-up (questions.md, 23:36), because the original was written in the loop's
   vocabulary and that is why it has sat unanswered · it also offers him the
