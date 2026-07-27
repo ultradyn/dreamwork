@@ -1520,3 +1520,22 @@ this shape and convert opportunistically.)
   free to undo only because a `cp` snapshot was taken first — that habit was
   written down for injections, and it turns out to cover botched edits too.
   (coordinator, #229/#373, 2026-07-28)
+- **The same `st_ino` does not mean hardlinked, and the difference decides whether
+  an atomic rename strands anything.** #369 was filed, diagnosed, fixed and
+  committed on the claim that `~/.claude/settings.json` and
+  `~/.claude-w/settings.json` are two hardlinks to one inode, because both stat as
+  `256518042`. They are not: `st_nlink` is **1** and `~/.claude` is a *symlink to*
+  `~/.claude-w` — one file reached by two paths. Under a directory symlink
+  `os.replace` strands nothing, so the silent failure the task was written about
+  could not have happened on this machine, and `--apply` was safe against the
+  default path all along. The inode was measured; the relationship was inferred
+  from it, and inferred wrongly, in a ledger entry that then read as measured for
+  four hours. Two habits: when two paths share an inode, print `st_nlink` and
+  `os.path.islink` on **every component** before naming the relationship — one
+  command, and it is the command that distinguishes the two mechanisms; and when a
+  premise is a filesystem fact, re-measure it at fix time rather than trusting the
+  entry, because the entry recorded your inference, not your observation. The fix
+  itself survives on its own merits (a hardlinked config is a real hazard, and the
+  readback plus post-write link check turns a silent class into exit 2), which is
+  exactly why the wrong premise could have gone unnoticed: the code was right for
+  a reason that was not the stated one. (coordinator, #369, 2026-07-28)

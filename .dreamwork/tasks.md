@@ -77,27 +77,6 @@ Next id: **376**
   · **blocked on `watch.py` being free** — dreamer-284-252 holds it. This is the first thing to
   land when it does
 
-- **#369** — `install.py --apply` would break the hardlink and protect the wrong session ·
-  P1 · plugin bug/silent failure · origin: **loop** · 20m · **found by the pre-apply check his
-  #361 rec required, which is the only reason it was found at all** · `~/.claude/settings.json`
-  and `~/.claude-w/settings.json` are **the same inode** (verified: both `256518042`), and this
-  Claude session runs with `CLAUDE_CONFIG_DIR=/home/xertrov/.claude-w` while `install.py`'s
-  default target is `~/.claude/settings.json`
-  · **the defect is the write mode, not the path**: `install.py:129-131` writes a `.tmp` and
-  calls `tmp.replace(settings_path)`. That rename is atomic and correct in isolation — and it
-  **breaks the hardlink**, leaving the other name on the old inode. So `--apply` against the
-  default would report success, write a timestamped backup, be idempotent on re-run, and the
-  session it was asked to protect would still have no hooks. Applying to `--settings
-  ~/.claude-w/settings.json` mirrors the same failure onto the other name
-  · this is the silent class exactly: every visible signal says it worked
-  · rec: `install.py` reads `st_nlink` before writing and, when it is >1, either refuses with
-  the reason or writes in place and re-establishes the link afterwards — with a red-first test
-  that hardlinks two temp settings files, applies, and asserts BOTH names still resolve to one
-  inode carrying the hooks · until then **`--apply` is not run**, which is also where his grant
-  stops: he authorised the Load line and reviewing `--print`
-  · **not just this plugin's problem**: anything that rewrites his config by atomic replace has
-  the same hazard, and the two config dirs being hardlinked is invisible to every one of them
-
 - **#368** — Break the large Python files into a modular, testable codebase · P2 ·
   refactor/architecture · origin: **human** · **human via watch `add-idea` 2026-07-28 02:46**:
   *"after the cli, we should refactor the large python files into a proper modular codebase

@@ -71,17 +71,26 @@ is a no-op. Loading this plugin never auto-applies. The two recorded acts
 are separate on purpose: the DREAMWORK.md `Load:` line is consent to use
 the plugin; `install.py --apply` is the machine-config act.
 
-**If the settings file is hardlinked, `--apply` writes in place** (#369).
-Two Claude config dirs can be one inode — `~/.claude/settings.json` and
-`~/.claude-w/settings.json` are, here — and an atomic `os.replace` would
-rebind only the name it was given, leaving the other name on the old inode
-with no hooks while every visible signal reported success. So above one
-link the write trades atomicity for the link, which is why the timestamped
-backup is taken first and its path is always reported. `--apply` then reads
-the file back, compares it to what it wrote, re-checks the link count, and
-**fails with exit 2** rather than claiming a success it cannot see. When a
-link was preserved the JSON result says `"hardlinked": <count>`, taken from
-after the write, never predicted from before it.
+**If the settings file is hardlinked, `--apply` writes in place** (#369). An
+atomic `os.replace` rebinds only the name it is given and leaves any other
+name on the old inode with the old bytes, while exit 0, a timestamped backup
+and an idempotent re-run all report success. So above one link the write
+trades atomicity for the link, which is why the backup is taken first and its
+path is always reported.
+
+Either way `--apply` then reads the file back, compares it to what it wrote,
+re-stats the link count, and **fails with exit 2** naming the counts rather
+than claiming a success it cannot see. When a link was preserved the JSON
+result says `"hardlinked": <count>`, taken from **after** the write, never
+predicted from before it.
+
+**On this machine that path is not taken, and the reason is worth stating**
+because it was measured wrong once: `~/.claude/settings.json` and
+`~/.claude-w/settings.json` do share one inode (`256518042`), but
+`st_nlink` is **1** — `~/.claude` is a *symlink* to `~/.claude-w`, so there
+is one file reached by two paths, not two links to one file. Same inode does
+not mean hardlinked, and the difference decides whether a rename strands
+anything. Under a directory symlink it strands nothing.
 
 ## Authority
 
