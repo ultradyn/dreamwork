@@ -65,8 +65,29 @@ Next id: **314**
   completion (`getAnimations()`/`transitionend`) rather than a fixed window for
   the terminal states · **the dreamer deliberately did not touch either file**: changing
   another feature's guard to make your own batch green is the move that wants a
-  second pair of eyes, and it was right about that · #308 is the sibling
-  rounding half of this and the two should land together or in sequence
+  second pair of eyes, and it was right about that · #308 landed the doc half:
+  `transitions.md` now splits the part-way rule from the count rule and names
+  all three faces as *a motion check must not encode a property of the machine*
+  · **increment 1 landed `4ebb011` — `headertravel.mjs`, the reference the rest
+  follow.** Both count assertions became part-way counts on `reviewsplit`'s
+  `between()` helper, and **the floor is 1, from measurement not taste**: idle
+  31 frames / 5 part-way, under six added CPU burners 14 frames / 2 part-way, so
+  a floor of 2 sat exactly on the line and anything above 1 is still a bet on
+  the frame rate · it also converted the REDUCED-MOTION mirror, which is the
+  more dangerous half — `uniq(...) <= 2` is satisfied by a box that sampled a
+  real ramp twice, so under load it went HOLLOW rather than red and would have
+  passed a reduced-motion build that animated · red-proven with
+  `transition:none` injected: all four travel checks at 0 part-way of 20/33
+  frames while both new vacuity preconditions stayed green at 415px and
+  175.6px, so the red was the contract and not an absent subject · **scope is
+  wider than this entry was filed for**: `qsec.mjs:170` (`t.positions >= 8`)
+  and `:172` (`distinct(heights) >= 8`) are two more instances — qsec uses the
+  part-way idiom for its FADE only (`mid >= 3`) and is half converted · the
+  remaining four (regroup, morph, dismiss, qsec) are out with ccc-glm52-311 in
+  `.worktrees/311-guards`, holding exclusive guard rights on 39891 · the
+  standing risk on the delegated half is that this task LOOSENS assertions, so
+  a red proof per guard is the only thing between it and quietly disabling four
+  guards — briefed as such · #308 is the sibling rounding half and has landed
 
 
 - **#313** — `just audit-styleguide` is red for everybody on 10 historical
