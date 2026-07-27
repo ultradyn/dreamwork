@@ -271,14 +271,34 @@ def fetch_violations(document):
 #     rather than written here; a literal `4` would be a check with an
 #     invisible expiry date the first time the grid is reshaped.
 #
-# Only `.fact` is populated below. Rules for components whose real usage has not
-# been measured would be guessing, and this module's whole complaint is about
-# assertions nobody checked.
+# A component earns a rule by MEASUREMENT, never by looking like it should have
+# one: rules for usage nobody counted would be guessing, and this module's whole
+# complaint is about assertions nobody checked. `.fact` was the only entry until
+# #365 counted every component across all 16 built artifacts; that count added
+# two and refused three, including both of the two the task had named in
+# advance. The counts and the refusals are recorded beside the dict, because the
+# next person will reach for the same guesses.
 
 COMPONENT_CHILDREN = {
     # component class -> the classes its direct children may carry
     "fact": ("number", "caption"),
+    # #365's two additions, and they are the ones the MEASUREMENT supported
+    # rather than the ones the task guessed. Counted across all 16 built
+    # artifacts with this module's own depth-aware scan: `.spine-row` appears 25
+    # times in 4 files and carries exactly `.spine-key`, `.spine-rail` and
+    # `.spine-body` in all 25; `.spine-rail` carries exactly `.spine-dot` in all
+    # 25. Unanimous and closed, which is what a rule here requires.
+    "spine-row": ("spine-key", "spine-rail", "spine-body"),
+    "spine-rail": ("spine-dot",),
 }
+# DELIBERATELY ABSENT, because measuring refuted them (#365 named both as the
+# obvious next candidates): `.summary-line` has 37 uses across 5 files in THREE
+# different idioms — bare `<span>`s in two files, `.key` + `<span>` in one,
+# `.key` + `<div>` in two — so a rule would refuse three of the five. `.choice`
+# and `.answer` are prose containers: 47 uses across 12 files, `.choice-grid` in
+# four of them and inline `<b>`/`<code>/`<strong>`/`<em>` in the rest. A rule
+# there would refuse most of the corpus. The guess and the measurement
+# disagreed, which is the reason the task said measure first.
 # The container whose item count is measured, and what its items are called.
 GRID_COMPONENTS = {"facts": "fact"}
 # `.facts{…grid-template-columns:repeat(4,…)}` in the template, including the
@@ -390,10 +410,17 @@ def component_violations(document):
     scan = _ComponentScan()
     scan.feed(document)
     scan.close()
-    return ["a `.%s` has a child that is neither %s: %s" % (
-        component,
-        " nor ".join("`.%s`" % name for name in COMPONENT_CHILDREN[component]),
-        description) for component, description in scan.bad]
+    out = []
+    for component, description in scan.bad:
+        allowed = COMPONENT_CHILDREN[component]
+        # "is neither `.spine-dot`" is what a `nor`-join produces for a
+        # single-child component, and #365 added the first one. An author reading
+        # a broken sentence wonders whether the tool is broken too.
+        names = " nor ".join("`.%s`" % name for name in allowed)
+        out.append("a `.%s` has a child that is %s %s: %s" % (
+            component, "neither" if len(allowed) > 1 else "not", names,
+            description))
+    return out
 
 
 def grid_warnings(document, template):

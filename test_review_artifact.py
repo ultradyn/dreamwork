@@ -940,3 +940,87 @@ def test_sql_is_tokenised_in_both_cases_and_comments_win_over_operators():
     coms = [text for cls, text in spans if cls == "com"]
     assert coms == ["-- id is not the entry"], (
         "`--` did not win over the operator class; got comments %r" % coms)
+
+
+# ── the two rules the measurement supports, and the two it refuses (#365) ──
+#
+# `COMPONENT_CHILDREN` held one entry because rules for the rest would have been
+# guessing, and #365 said measure real usage first. Measured across all 16 built
+# artifacts with the same depth-aware parser the check uses:
+#
+#   .spine-row     25 uses, 4 files — spine-key 25, spine-rail 25, spine-body 25
+#   .spine-rail    25 uses, 4 files — spine-dot 25
+#   .summary-line  37 uses, 5 files — THREE idioms: bare <span> (2 files),
+#                  .key + <span> (1), .key + <div> (2)
+#   .choice        47 uses, 12 files — .choice-grid in 4, and inline
+#                  <b>/<code>/<strong>/<em> prose in the other 8
+#
+# So the first two are unanimous and closed, and the two #365 NAMED as the
+# obvious next candidates are refuted by the measurement: a `.summary-line` rule
+# would refuse three of the five files that use it, and a `.choice` rule would
+# refuse eight of twelve. That refutation is the point of measuring, and it is
+# asserted below so nobody re-adds them from the entry's guess.
+
+SPINE_ROW = ('<div class="spine-row"><div class="spine-key">k</div>'
+             '<div class="spine-rail"><div class="spine-dot"></div></div>'
+             '<div class="spine-body"><p>body</p></div></div>')
+
+
+def test_a_stray_child_of_a_spine_row_refuses_the_build(template):
+    """Break by removing `spine-row` from COMPONENT_CHILDREN — nothing else in
+    this file can fail on that."""
+    fields = _with_facts(SPINE_ROW)
+    ra.render(fields, template=template)        # precondition: the good row builds
+    bad = _with_facts(SPINE_ROW.replace('<div class="spine-key">k</div>',
+                                        '<div class="spinekey">k</div>'))
+    with pytest.raises(ra.ArtifactError, match=r"misuses .* documented component"):
+        ra.render(bad, template=template)
+    assert ra.component_violations(
+        '<div class="spine-row"><div class="spinekey">k</div></div>') == [
+        "a `.spine-row` has a child that is neither `.spine-key` nor "
+        "`.spine-rail` nor `.spine-body`: <div class='spinekey'>"]
+
+
+def test_a_stray_child_of_a_spine_rail_refuses_the_build(template):
+    """Break by removing `spine-rail` from COMPONENT_CHILDREN."""
+    assert ra.component_violations(
+        '<div class="spine-rail"><span class="dot"></span></div>') == [
+        "a `.spine-rail` has a child that is not `.spine-dot`: "
+        "<span class='dot'>"]
+    assert ra.component_violations(
+        '<div class="spine-rail"><div class="spine-dot"></div></div>') == []
+
+
+def test_every_shipped_artifact_still_satisfies_the_new_rules():
+    """The rules are derived from these files, so this cannot be assumed: it is
+    the assertion that the derivation was done on the real corpus and not on a
+    remembered shape. Break by adding a rule the artifacts do not obey.
+    """
+    import pathlib
+    built = sorted(pathlib.Path(".dreamwork/review").glob("*.html"))
+    assert len(built) >= 15, f"only {len(built)} artifacts — the corpus moved"
+    offenders = {}
+    for f in built:
+        # `.fact` in the one sourceless artifact is a KNOWN pre-existing
+        # violation (#365): protected-service-boundary-288.html has an
+        # `.eyebrow` and a bare `<div>` inside a `.fact`, it has no source, so
+        # `build` never sees it. Excluded by NAME so it cannot mask a new one.
+        bad = [v for v in ra.component_violations(f.read_text(encoding="utf-8"))
+               if not (f.name == "protected-service-boundary-288.html"
+                       and "`.fact`" in v)]
+        if bad:
+            offenders[f.name] = bad
+    assert not offenders, offenders
+
+
+def test_the_refuted_candidates_are_not_rules():
+    """#365 named `.summary-line` and `.choice`/`.answer` as the obvious next
+    candidates and the measurement refuted all three. Adding one would refuse
+    artifacts that ship today, so this test exists to make that regression
+    loud rather than to protect an opinion — it asserts the corpus, not taste.
+    """
+    for guessed in ("summary-line", "choice", "answer"):
+        assert guessed not in ra.COMPONENT_CHILDREN, (
+            f"`.{guessed}` was measured across the built artifacts and does NOT "
+            f"have a closed child set; see the comment above SPINE_ROW for the "
+            f"counts. A rule here would refuse files that ship.")
