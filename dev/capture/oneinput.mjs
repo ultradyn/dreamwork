@@ -11,10 +11,21 @@
    Writes to the target it is pointed at, so point it at a scratch copy.
    usage: node oneinput.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
+
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: '/questions in two contexts (normal + reduced-motion): field+send ' +
+          'geometry on one open card, mode-button ghost/outline styling, the ' +
+          'indicator LANDS then SLIDES, and real /comment + /answer POSTs routed ' +
+          'by the mode',
+  traceWindow: 'two 700ms rAF indicator traces (land + slide) per context; ' +
+               '350-600ms settles around each click/submit; motion sampled per frame',
+});
 
 // per-frame trace of one card's indicator while something happens to it
 const TRACE = act => `((act, ms) => new Promise(res => {
@@ -32,7 +43,6 @@ const TRACE = act => `((act, ms) => new Promise(res => {
 }))(${JSON.stringify(act)}, 700)`;
 
 const uniq = a => [...new Set(a)];
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 
 for (const reduced of [false, true]) {
   const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
@@ -47,8 +57,12 @@ for (const reduced of [false, true]) {
   // this script ANSWERS things, so it needs a target's worth of open cards;
   // say so rather than crashing three checks later on a null
   const open = await p.evaluate(() => document.querySelectorAll('.qa.open').length);
-  if (!open) { console.log('FAIL fixture has no open question — reset the ' +
-    'scratch target from the live questions.md and re-run'); process.exit(1); }
+  if (!open) {
+    ok('fixture has an open question to drive (else every check below is vacuous)', false);
+    notes.push('fixture has no open question — reset the scratch target from the ' +
+               'live questions.md and re-run');
+    await br.close(); finish(); process.exit(1);
+  }
 
   if (!reduced) {
     // geometry: field + send button are one object
@@ -108,7 +122,7 @@ for (const reduced of [false, true]) {
     ok('exactly one text input per card', geo.inputs === 1);
     ok('send sits flush: no gap, full field height, at the field edge',
        geo.gap === 0 && geo.spansField && geo.flushRight);
-    console.log(`field insets: textarea top/bottom/left = ` +
+    notes.push(`field insets: textarea top/bottom/left = ` +
                 `${geo.taInset.join('/')}px, button gap ${geo.gap}px, ` +
                 `textarea margin ${geo.taMargin}`);
     ok('and the TEXTAREA fills it too — one object, not two different insets',
@@ -171,5 +185,4 @@ for (const reduced of [false, true]) {
   await br.close();
 }
 
-console.log(checks.join('\n'));
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+finish();

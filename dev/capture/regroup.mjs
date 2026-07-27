@@ -18,10 +18,20 @@
    Writes to the target it is pointed at, so point it at a scratch copy.
    usage: node regroup.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
+
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: '/questions in two contexts (normal + reduced-motion), answering the ' +
+          'first open question through the real UI (answer mode + qsend) and ' +
+          'tracing every card across the tick that regroups them',
+  traceWindow: 'a 5200ms rAF trace per context spanning the 2s tick poll; the card ' +
+               'must change state and the trace must outlast the regroup',
+});
 
 /* Answer the FIRST open question, then trace every card's position per frame
    until well past the tick that regroups them. The tick polls /mtime every
@@ -81,7 +91,6 @@ const between = (vals, a, b) => {
   return vals.filter(v => v > lo + eps && v < hi - eps).length;
 };
 const span = vals => Math.abs(vals.at(-1) - vals[0]);
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 const runs = {};
 
 for (const reduced of [false, true]) {
@@ -93,9 +102,11 @@ for (const reduced of [false, true]) {
   await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(1000);
   const openCount = await p.evaluate(() => document.querySelectorAll('.qa.open').length);
   if (!openCount) {
-    console.log('FAIL fixture has no open question — reset the scratch ' +
-                'target from the live questions.md and re-run');
-    process.exit(1);
+    ok('fixture has an open question to answer (else the travel checks are vacuous)',
+       false);
+    notes.push('fixture has no open question — reset the scratch target from the ' +
+               'live questions.md and re-run');
+    await br.close(); finish(); process.exit(1);
   }
   const r = await p.evaluate(TRACE);
   if (!reduced) await p.screenshot({ path: `${OUT}/after-regroup.png`, fullPage: true });
@@ -190,12 +201,12 @@ ok('reduced motion: no card is ever FLIPped',
      between(rNps, rNps[0], rNps.at(-1)) === 0);
 }
 
-console.log('target positions  : ' + JSON.stringify(uniq(tops(n.frames))));
-console.log('neighbour positions: ' + JSON.stringify(uniq(nTops(n.frames))));
-console.log('regroup landed at frame ' + landedAt(n.frames) +
-            ', motion settled at frame ' + settledAt(n.frames));
-console.log('reduced target/neighbour: ' + JSON.stringify(uniq(tops(r.frames))) +
-            ' / ' + JSON.stringify(uniq(nTops(r.frames))));
-if (n.errs.length || r.errs.length) console.log('errors: ' + n.errs.concat(r.errs).join(' | '));
-console.log('----'); console.log(checks.join('\n'));
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+notes.push('target positions  : ' + JSON.stringify(uniq(tops(n.frames))));
+notes.push('neighbour positions: ' + JSON.stringify(uniq(nTops(n.frames))));
+notes.push('regroup landed at frame ' + landedAt(n.frames) +
+           ', motion settled at frame ' + settledAt(n.frames));
+notes.push('reduced target/neighbour: ' + JSON.stringify(uniq(tops(r.frames))) +
+           ' / ' + JSON.stringify(uniq(nTops(r.frames))));
+if (n.errs.length || r.errs.length)
+  notes.push('errors: ' + n.errs.concat(r.errs).join(' | '));
+finish();
