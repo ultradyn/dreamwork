@@ -1405,3 +1405,31 @@ this shape and convert opportunistically.)
   run the tool's parser on it before committing — and change one character to confirm
   the check discriminates.** The format doc tells you what the shape is; only the
   parser tells you whether what you wrote is that shape.
+
+- **A hand-rolled scan over `tasks.md` has now lost twice to per-id set membership — stop
+  writing them.** Validating #335's new check, the coordinator measured twice that #247 was
+  not under `## Open` and was wrong both times: once a regex requiring `- **#247** — ` that
+  the real entry did not match, once a section comparison that reported the wrong side of a
+  heading. On the strength of those two readings the check looked like it had a false
+  positive, and a correct check nearly got sent back. `watch.py`'s own `parse_ledger` settled
+  it in one line by returning 247 in the open-id set — and #247 had indeed been sitting open
+  while declaring `completed at ba03c1f`, the #261 bug class, invisible to every other check
+  because there is no `close(#247)` commit for `check_landed_still_open` to cite. The same
+  failure had already happened hours earlier on #331, where an ad-hoc `\*\*([^*]+)\*\*` scan
+  claimed 9 missing ids and per-id membership showed all 19 missing. The lesson written then
+  said to test ids directly; it was not followed, which is the actual finding here. So,
+  operationally: **when the question is "is this id in this section", import the reader the
+  rest of the system uses and ask it.** A second regex over the same file is not a second
+  opinion — it is one more thing that can be wrong in the same way, and it carries the
+  authority of a measurement while having none of the standing.
+
+- **`cd` persists between tool calls, so a worktree dispatch silently redirects every later
+  write into that agent's tree.** Right after `cd .worktrees/339-highlight && ccc …`, an
+  append meant for the main checkout's `.dreamwork/lessons.md` landed in the RUNNING agent's
+  copy — a file it did not own and had no reason to see modified. The tell was `lint.py`
+  reporting `status.json absent`, which is impossible in the main checkout and normal in a
+  worktree; without that row the edit would have been invisible until the agent's diff looked
+  strange. Reverted with `git -C <worktree> checkout --` before it could reach a commit. The
+  rule: **after any `cd`, write with absolute paths, or `cd` back in the same command.** The
+  repo already insists on staging by explicit path because several agents share the tree;
+  this is the same hazard one level up — the path you did not state is chosen for you.
