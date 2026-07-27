@@ -9,6 +9,7 @@ This module is new files only; nothing wires it into watch.py yet.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sqlite3
 import uuid
@@ -21,6 +22,7 @@ from user_events.digest import (
     canonical_media_type,
     canonical_method,
     canonical_route,
+    length_framed,
     request_digest,
 )
 
@@ -58,10 +60,58 @@ class ReceiveResult:
     revision: Optional[int]
     exact_payload_bytes: Optional[bytes] = None
 
+
+@dataclass(frozen=True)
+class ChainVerifyResult:
+    """Outcome of verify_chain. On failure, failed_ordinal names the break."""
+
+    ok: bool
+    through_ordinal: int
+    head_hash: Optional[str] = None
+    failed_ordinal: Optional[int] = None
+
+
+def _h0(journal_id: str) -> str:
+    """H_0 = SHA-256(journal_id || schema_version)."""
+    material = f"{journal_id}{SCHEMA_VERSION}".encode("utf-8")
+    return hashlib.sha256(material).hexdigest()
+
+
+def _hash_event(prev_hash: str, canonical_payload: bytes) -> str:
+    """H_i = SHA-256(domain_tag || H_(i-1) || length_framed(canonical_event_i)).
+
+    The prev_hash term is load-bearing (B3 red): without it the chain stops
+    linking and an earlier-event mutation no longer moves the head.
+    """
+    # length_framed of the already-assembled event payload (one part) matches
+    # the design's length_framed(canonical_event_i) for a single blob form.
+    framed = length_framed(canonical_payload)
+    # --- B3 red line: prev_hash term in the hash input ---
+    material = DOMAIN_TAG + prev_hash.encode("ascii") + framed
+    return hashlib.sha256(material).hexdigest()
+
+
+def _canonical_receipt_created(
+    receipt_id: str,
+    client_action_id: str,
+    digest: str,
+    body: bytes,
+) -> bytes:
+    """Canonical bytes for a receipt.created journal event (not the H_i formula)."""
+    return length_framed(
+        "receipt.created",
+        receipt_id,
+        client_action_id,
+        digest,
+        body,
+    )
+
 SCHEMA_VERSION = 1
 # Bounded busy timeout in milliseconds. The durability boundary claims a
 # finite wait, not "wait forever".
 BUSY_TIMEOUT_MS = 5_000
+# Domain tag for the hash chain. Constant across a schema_version.
+DOMAIN_TAG = b"ud-dreamwork.user-events.v1"
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -213,6 +263,111 @@ class Journal:
     def receipt_count(self) -> int:
         return int(self.conn.execute("SELECT COUNT(*) FROM receipts").fetchone()[0])
 
+    def head_ordinal(self) -> int:
+        row = self.conn.execute(
+            "SELECT COALESCE(MAX(event_ordinal), 0) FROM events"
+        ).fetchone()
+        return int(row[0])
+
+    def head_hash(self) -> str:
+        """Hash at the high-water ordinal, or H_0 when the chain is empty."""
+        row = self.conn.execute(
+            "SELECT event_hash FROM events ORDER BY event_ordinal DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return _h0(self.journal_id)
+        return row[0]
+
+    def _append_event(
+        self,
+        *,
+        event_kind: str,
+        receipt_id: Optional[str],
+        at: str,
+        canonical_payload: bytes,
+    ) -> int:
+        """Append one chained event inside the caller's open transaction.
+
+        Returns the new event_ordinal.
+        """
+        prev_ordinal = self.head_ordinal()
+        if prev_ordinal == 0:
+            prev = _h0(self.journal_id)
+        else:
+            prev = self.conn.execute(
+                "SELECT event_hash FROM events WHERE event_ordinal = ?",
+                (prev_ordinal,),
+            ).fetchone()[0]
+        ordinal = prev_ordinal + 1
+        event_hash = _hash_event(prev, canonical_payload)
+        self.conn.execute(
+            """
+            INSERT INTO events (
+                event_ordinal, event_kind, receipt_id, at,
+                prev_hash, event_hash, canonical_payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ordinal,
+                event_kind,
+                receipt_id,
+                at,
+                prev,
+                event_hash,
+                canonical_payload,
+            ),
+        )
+        return ordinal
+
+    def verify_chain(self, through_ordinal: Optional[int] = None) -> ChainVerifyResult:
+        """Recompute H_1..H_n and name the first ordinal that does not match.
+
+        Must not trust stored event_hash without recomputing from prev + payload.
+        """
+        high = self.head_ordinal()
+        if through_ordinal is None:
+            through_ordinal = high
+        if through_ordinal < 0:
+            raise ValueError("through_ordinal must be >= 0")
+        if through_ordinal > high:
+            return ChainVerifyResult(
+                ok=False,
+                through_ordinal=through_ordinal,
+                failed_ordinal=high + 1 if high < through_ordinal else through_ordinal,
+            )
+        if through_ordinal == 0:
+            return ChainVerifyResult(
+                ok=True, through_ordinal=0, head_hash=_h0(self.journal_id)
+            )
+
+        prev = _h0(self.journal_id)
+        head = prev
+        for ordinal in range(1, through_ordinal + 1):
+            row = self.conn.execute(
+                "SELECT prev_hash, event_hash, canonical_payload FROM events "
+                "WHERE event_ordinal = ?",
+                (ordinal,),
+            ).fetchone()
+            if row is None:
+                return ChainVerifyResult(
+                    ok=False,
+                    through_ordinal=through_ordinal,
+                    failed_ordinal=ordinal,
+                )
+            # Recompute; naming the ordinal on mismatch is what property (c) asserts.
+            expected = _hash_event(prev, bytes(row["canonical_payload"]))
+            if row["prev_hash"] != prev or row["event_hash"] != expected:
+                return ChainVerifyResult(
+                    ok=False,
+                    through_ordinal=through_ordinal,
+                    failed_ordinal=ordinal,
+                )
+            prev = expected
+            head = expected
+        return ChainVerifyResult(
+            ok=True, through_ordinal=through_ordinal, head_hash=head
+        )
+
     def receive(self, envelope: Envelope) -> ReceiveResult:
         """Idempotent receive: absent→insert, equal digest→replay, else conflict.
 
@@ -267,12 +422,21 @@ class Journal:
                     exact_payload_bytes=bytes(existing["exact_payload_bytes"]),
                 )
 
-            # absent → insert one receipt in state received
-            receipt_id = str(uuid.uuid4())
+            # absent → insert one receipt in state received.
+            # receipt_id is deterministic from client_action_id so the same
+            # logical sequence in two journals yields the same chain head
+            # (property a); uuid4 would make every head differ for free.
+            receipt_id = str(
+                uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"ud-dreamwork.receipt:{envelope.client_action_id}",
+                )
+            )
             seq_row = self.conn.execute(
                 "SELECT COALESCE(MAX(sequence), 0) + 1 FROM receipts"
             ).fetchone()
             sequence = int(seq_row[0])
+            # received_at is not in the chain canonical form; wall clock is fine.
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
             self.conn.execute(
                 """
@@ -307,6 +471,16 @@ class Journal:
                 ) VALUES (?, ?, ?, '', 'received', 1)
                 """,
                 (str(uuid.uuid4()), receipt_id, now),
+            )
+            # Chain append in the same transaction as the receipt (B3).
+            canonical = _canonical_receipt_created(
+                receipt_id, envelope.client_action_id, digest, body
+            )
+            self._append_event(
+                event_kind="receipt.created",
+                receipt_id=receipt_id,
+                at=now,
+                canonical_payload=canonical,
             )
             self.conn.execute("COMMIT")
             return ReceiveResult(
