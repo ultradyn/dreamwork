@@ -1743,3 +1743,20 @@ this shape and convert opportunistically.)
   0px way, and a settled row cannot be mid-arrival. **When both a transitional and a
   settled case fail the same way, suspect the instrument's timing, not the page.**
   (#386 lane, recorded by coordinator)
+- **Where a check compares against a captured value, make the capture's honesty
+  MACHINE-CHECKED rather than documented — and resolve it by content, not by a pinned
+  sha.** My #367 criterion asked the lane to *state in its report* how it obtained the
+  pre-change render, because the trap is recomputing both sides with the new code so
+  they move together (the shape behind two false greens here). The lane did better
+  than the criterion: `test_a_source_with_no_marks_renders_byte_identically_apart_from_the_stamp`
+  compares against a frozen digest **and then proves that digest honest** by checking
+  the pre-change builder out of git, re-running it, and asserting agreement — with a
+  guard that the resolved ref does **not** already contain the new constant, since
+  otherwise the comparison would be new-vs-new and prove nothing. It resolves that ref
+  by **content** (newest commit whose `review_artifact.py` lacks `MARKS_WARN_AT`), so a
+  rebase that rewrites shas cannot quietly turn the proof into a no-op. Verified
+  independently: it lands on `12d17ad`, which carries neither `MARKS_WARN_AT` nor
+  `essential_marks`. **The general upgrade: a prose claim in a report protects the
+  first reader; an assertion protects every future one.** Prefer having the test
+  re-derive its own baseline over asking an author to promise they captured it right.
+  (#367 lane, recorded by coordinator)
