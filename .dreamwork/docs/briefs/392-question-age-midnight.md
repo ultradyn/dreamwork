@@ -70,7 +70,8 @@ and `just audit-styleguide` measures whether that happened.
 ## Acceptance criteria — binary, and I will check each one
 
 1. **Files touched, and only these:** `watch.py`, `test_watch.py`, `file-formats.md`,
-   `watch-design.md`, `lint.py`, `test_lint.py`. `git status --porcelain` shows nothing
+   `watch-design.md`, `lint.py`, `test_lint.py`, `justfile`, and **at most one new**
+   `dev/capture/*.mjs`. `git status --porcelain` shows nothing
    else. **`git diff --stat .dreamwork/tasks.md .dreamwork/questions.md review_artifact.py`
    is empty.**
 2. **`python3 -m pytest test_watch.py test_lint.py -q -p no:randomly` exits 0**, with at
@@ -110,7 +111,18 @@ and `just audit-styleguide` measures whether that happened.
    them** — a format change that silently drops an entry it cannot parse is the worst
    available outcome, because `watch.py` renders an unparseable file as "nothing to answer".
    Assert the count, and say what it was before and after.
-9. **Your guard port is `39894`.** Run guards as
+9. **If your date-only rendering changes what appears on the page, it needs a guard, and
+   the `justfile` is granted for exactly that reason.** A new `dev/capture/<name>.mjs` only
+   counts as a guard once it is in `DEFAULT_GUARDS` in the `justfile` — a lane this morning
+   was required to write a guard and granted neither file that registers one, so it had to
+   choose between looking incomplete and breaking the ownership invariant. **You have both
+   halves. Do not touch `lint.NOT_GUARDS`** — that is for files in `dev/capture/` which are
+   not guards at all, and it lives in `lint.py`, which you also hold, so the temptation is
+   real and it is the wrong half.
+   **If the change is invisible** (the age string differs, nothing appears or moves), say so
+   and write no guard. `transitions.md` governs appearing/disappearing/changing and has no
+   exceptions, but a string whose text differs is not a transition.
+10. **Your guard port is `39894`.** Run guards as
    `DREAMWORK_GUARDS="<name>" DREAMWORK_HUB_GUARDS="" just guards 39894` — **never** the
    full sweep and never the default port; other lanes hold 39893, 39896 and 39897.
    **Load matters for a verdict:** these guards fail by dropping intermediate frames, so
@@ -161,6 +173,9 @@ authority this brief did not give.
 if the format change implies rewriting existing entries, **report it and I will make the
 edit**, because that file is the human's channel and I am its writer), `transitions.md`,
 `.dreamwork/lessons.md`, `justfile`, `dev/capture/*.mjs`.
+
+**Yours if needed:** `justfile` (guard registration only — the `DEFAULT_GUARDS` line),
+at most one new `dev/capture/*.mjs`.
 
 **Never touch:** `.dreamwork/tasks.md`, `.dreamwork/questions.md`, `.dreamwork/status.json`,
 `.dreamwork/inbox.md` (except the single append below), `review_artifact.py`,
