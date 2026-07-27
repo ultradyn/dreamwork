@@ -13,6 +13,11 @@ __pycache__/
 # history — and it holds whatever he typed, so it is the last file that should
 # ever be pushed anywhere.
 .dreamwork/submissions.log
+# Durable user-event journal (#263). Machine-local per target; holds exact
+# payload bytes. WAL and SHM sidecars share the prefix.
+.dreamwork/user-events.sqlite3
+.dreamwork/user-events.sqlite3-wal
+.dreamwork/user-events.sqlite3-shm
 # main-dreamer pace for this host (#290) — operational posture, not a
 # portable project default (unlike watch-tint). Migration
 # 2026-07-27-01-run-mode.md tells targets the same.
