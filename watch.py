@@ -1702,31 +1702,56 @@ const agePair = ct => {
   const p = ageParts(ct);
   return `${p2(p.big)}${p.bu} ${p2(p.small)}${p.su}`;
 };
-/* Write the pair into a live `.age` node. A single-digit unit is prefixed
-   with a gray 0 (`05h 09m`); a two-digit unit is left alone (`15h 42m`).
-   Built with DOM nodes rather than innerHTML — every character is a digit
-   or unit letter we produced, but textContent cannot carry the pad span,
-   and inventing a second parser for a four-token string would be a second
+/* The pad digit of a single-figure unit is quieter than the value (#385):
+   only the leading 0 of `05` / `09` wears `.agepad` — never a genuine tens
+   digit. Shared by the two-figure and one-figure painters so the grey rule
+   stays one path, not two that can drift apart. */
+const pushFig = (frag, n) => {
+  if (n < 10) {
+    const pad = document.createElement('span');
+    pad.className = 'agepad';
+    pad.textContent = '0';
+    frag.append(pad, String(n));
+  } else {
+    frag.append(p2(n));
+  }
+};
+/* Write the pair into a live `.age` node — `05m 23s`, `02h 14m`. Built with
+   DOM nodes rather than innerHTML — every character is a digit or unit
+   letter we produced, but textContent cannot carry the pad span, and
+   inventing a second parser for a four-token string would be a second
    formatter. No transition: ages() rewrites once a second as pure text
    update (transitions.md — the live mtime tick / ages sweep commits
    immediately; a digit flip is not a layout change). */
 const paintAgePair = (el, ct, suffix) => {
   const p = ageParts(ct);
   const frag = document.createDocumentFragment();
-  const pushP2 = n => {
-    if (n < 10) {
-      const pad = document.createElement('span');
-      pad.className = 'agepad';
-      pad.textContent = '0';
-      frag.append(pad, String(n));
-    } else {
-      frag.append(p2(n));
-    }
-  };
-  pushP2(p.big);
+  pushFig(frag, p.big);
   frag.append(p.bu, ' ');
-  pushP2(p.small);
+  pushFig(frag, p.small);
   frag.append(p.su, suffix || '');
+  el.replaceChildren(frag);
+};
+/* #392a: a date-only entry shows ONE figure, because the number of figures
+   is the precision. A question title carries a day and no time, so the `ct`
+   `qtHtml` builds is local midnight of that day — two figures would claim a
+   sub-day time the file does not hold (a 24-minute-old entry reading
+   `08h 17m ago`, every multi-day age ending in the same hour figure). So
+   three days reads `03d ago` beside a timed commit's `03d 07h ago`: the
+   MISSING second figure is the signal, read against the timed entries
+   beside it. Reuses ageParts + the same greyed pad digit, so it is #385's
+   idiom with the second figure removed rather than a second humanizer.
+   An entry dated TODAY (under a day old) reads as the word `today` — `0d`
+   is honest but reads as a broken zero for something filed this morning,
+   and the word is the one honest thing day-only data supports. See
+   watch-design.md (#392a). */
+const paintDayAge = (el, ct) => {
+  const s = Math.max(0, Math.floor(Date.now()/1000 - ct));
+  if (s < 86400) { el.replaceChildren('today'); return; }   // same calendar day
+  const p = ageParts(ct);
+  const frag = document.createDocumentFragment();
+  pushFig(frag, p.big);
+  frag.append(p.bu, ' ago');
   el.replaceChildren(frag);
 };
 /* components: every section on every watch page renders through these */
@@ -2042,7 +2067,10 @@ const qaState = (q, key) =>
    `P1 · ` prefix). Humanized age sits next to that date via the same
    `data-ct` + `paintAgePair` path commits use — one formatter, not a second.
    Local midnight of the title date: the file only carries a day. No date in
-   the title → plain escape, same as before. */
+   the title → plain escape, same as before.
+   #392a: the title date is DAY-precision (no time), so the span carries
+   `data-day="1"` and ages() routes it to `paintDayAge` — one figure, not
+   two. The flag is the precision of the input, read by the dispatch. */
 const qtHtml = title => {
   // doubled backslashes: this lives in a Python string; the emitted JS
   // still sees a single backslash before each digit class.
@@ -2052,7 +2080,7 @@ const qtHtml = title => {
   const [Y, Mo, D] = date.split('-').map(Number);
   const ct = Math.floor(new Date(Y, Mo - 1, D).getTime() / 1000);
   return `${esc(prio || '')}${esc(date)}` +
-    `<span class="age qage" data-ct="${ct}"></span>` +
+    `<span class="age qage" data-ct="${ct}" data-day="1"></span>` +
     `${esc(sep)}${esc(rest)}`;
 };
 const qaInner = (q, key) => {
@@ -3219,8 +3247,17 @@ addEventListener('scroll', e => {
 function ages() {
   document.querySelectorAll('.age[data-mt]').forEach(el =>
     el.textContent = ageStr(parseFloat(el.dataset.mt)) + ' old');
-  document.querySelectorAll('.age[data-ct]').forEach(el =>
-    paintAgePair(el, parseFloat(el.dataset.ct), ' ago'));
+  /* #392a: a `.age[data-ct]` node is TWO figures (timed — a commit's real
+     timestamp) UNLESS it carries `data-day="1"`, which marks it DAY-precision
+     (a question title's date-only midnight). One figure when we know only the
+     day; two when we know the time. The number of figures IS the precision. */
+  document.querySelectorAll('.age[data-ct]').forEach(el => {
+    if (el.dataset.day === '1') {
+      paintDayAge(el, parseFloat(el.dataset.ct));
+    } else {
+      paintAgePair(el, parseFloat(el.dataset.ct), ' ago');
+    }
+  });
   /* a third flavour, and the difference is grammar rather than format (#165):
      a FILE is `5m old`, a thing he DID is `5m ago`. Commit resolution
      (`data-ct`) is two padded units and far too wide for a 38ch panel, so the

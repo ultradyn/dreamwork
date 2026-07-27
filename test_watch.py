@@ -2932,6 +2932,207 @@ class TestAppShell(unittest.TestCase):
             f"days-only ladder at 100d must show day count ≥ 100; "
             f"got {rendered_d!r}")
 
+    # ── #392a: a date-only question must stop claiming a sub-day figure ────
+    # The age a question title claims must match the precision of its data.
+    # A headline carries a DATE and no TIME, so `qtHtml`'s `ct` is local
+    # midnight of that day; #385 rendered two figures off it anyway, so a
+    # 24-minute-old entry read `08h 17m ago` (an eight-hour lie). The number
+    # of figures is now the precision: date-only → one figure; timed → two.
+    #
+    # These tests drive the REAL `ages()` dispatch (extracted from PAGE) in a
+    # minimal mock DOM, so a dispatch that routes date-only/timed to the wrong
+    # painter is caught here rather than hidden behind a parallel
+    # implementation. The expected strings come from offsets chosen by hand,
+    # never from agePair/ageParts — that is the check #385 never had.
+
+    def _ages_pieces(self):
+        """Pull the production formatters, qtHtml and ages() out of PAGE.
+
+        `ages()` is sliced to its column-0 close brace; its body carries no
+        column-0 `}` of its own (every inner close is indented), so the slice
+        is the whole function. The formatters live between `p2` and the
+        `/* components` marker — the same range `_age_pair_js_block` uses."""
+        page = watch.PAGE
+        blk_start = page.index('const p2 = n =>')
+        blk_end = page.index('/* components: every section', blk_start)
+        block = page[blk_start:blk_end].rstrip()
+        self.assertIn('const paintDayAge =', block)   # #392a one-figure painter
+        self.assertIn('const pushFig =', block)       # shared greyed-pad path
+        q_start = page.index('const qtHtml = title =>')
+        q_end = page.index('const qaInner =', q_start)
+        qthtml = page[q_start:q_end].rstrip()
+        a_start = page.index('function ages() {')
+        ages_fn = page[a_start:page.index('\n}', a_start) + 2]
+        self.assertIn('paintDayAge', ages_fn)
+        self.assertIn('paintAgePair', ages_fn)
+        return block, qthtml, ages_fn
+
+    def _qt_html(self, title):
+        """Run the production `qtHtml` in node; return the emitted HTML."""
+        import json, subprocess, textwrap
+        block, qthtml, _ = self._ages_pieces()
+        esc = ("const esc = t => String(t ?? '').replace(/&/g,'&amp;')"
+               ".replace(/</g,'&lt;').replace(/>/g,'&gt;')"
+               ".replace(/\"/g,'&quot;');")
+        script = (esc + '\n' + qthtml + '\n' +
+                  f'process.stdout.write(qtHtml({json.dumps(title)}));')
+        return subprocess.check_output(["node", "-e", script], text=True)
+
+    def _qt_ct(self, title):
+        """The local-midnight `ct` the production `qtHtml` computes (node)."""
+        import re
+        m = re.search(r'data-ct="([^"]+)"', self._qt_html(title))
+        self.assertIsNotNone(m, f"qtHtml emitted no data-ct for {title!r}")
+        return int(m.group(1))
+
+    def _render_via_ages(self, spans, now):
+        """Run the production `ages()` against `spans` at fixed epoch `now`.
+
+        Each span is a dict: `{title:...}` (a date-only question title —
+        `qtHtml` marks it `data-day="1"`) or `{ct:<secs>}` (a TIMED node with
+        no `data-day`, i.e. a commit). Only the DOM scaffolding is mocked;
+        the dispatch, the painters and qtHtml are all production code."""
+        import json, subprocess, textwrap
+        block, qthtml, ages_fn = self._ages_pieces()
+        esc = ("const esc = t => String(t ?? '').replace(/&/g,'&amp;')"
+               ".replace(/</g,'&lt;').replace(/>/g,'&gt;')"
+               ".replace(/\"/g,'&quot;');")
+        script = textwrap.dedent("""\
+            const ageStr = () => '';
+            __BLOCK__
+            __ESC__
+            __QTHTML__
+            const applyTitle=()=>{}, applyFavicon=()=>{}, applyTint=()=>{};
+            let fetchedAt = 0;
+            const NOW = __NOW__;
+            Date.now = () => NOW*1000;
+            function makeSpan(dataset){ return { dataset, _k:null,
+              replaceChildren(f){ this._k=(f&&f.nodes)?f.nodes:(f==null?[]:[f]); },
+              get textContent(){ return (this._k||[]).map(k=>
+                (typeof k==='string'||typeof k==='number')?String(k)
+                :(k&&k.textContent!=null?k.textContent:'')).join(''); } }; }
+            function spanFromTitle(title){ const h=qtHtml(title);
+              const ct=h.match(/data-ct="([^"]+)"/)[1];
+              const dm=h.match(/data-day="([^"]+)"/);
+              const ds={ct}; if(dm) ds.day=dm[1]; return makeSpan(ds); }
+            let ACTIVE = __SPANS__.map(d => 'title' in d
+              ? spanFromTitle(d.title) : makeSpan({ct:String(d.ct)}));
+            const document={
+              querySelectorAll(sel){ return sel==='.age[data-ct]'?ACTIVE:[]; },
+              getElementById(){return null;},
+              createElement(){return {className:'',textContent:''};},
+              createDocumentFragment(){return {nodes:[],
+                append(...xs){for(const x of xs)this.nodes.push(x);}}; } };
+            __AGES__
+            ages();
+            process.stdout.write(JSON.stringify(ACTIVE.map(e=>e.textContent)));
+        """).replace('__BLOCK__', block).replace('__ESC__', esc)\
+            .replace('__QTHTML__', qthtml).replace('__AGES__', ages_fn)\
+            .replace('__NOW__', str(int(now)))\
+            .replace('__SPANS__', json.dumps(spans))
+        return json.loads(subprocess.check_output(["node", "-e", script],
+                                                  text=True))
+
+    def test_a_date_only_question_shows_one_figure_not_two(self):
+        # CRITERION 3 — assert the PRECISION of the input at runtime, not a
+        # literal date. The fixture is a REAL open question, and the no-time
+        # precondition is DERIVED from it (parsed, then asserted) before any
+        # rendering is claimed. The rendering is then checked for ONE figure.
+        # #385's check asked only that two fixture ages DIFFER; they differed
+        # by two days and were both wrong by eight hours, so an output-to-
+        # output comparison cannot find a systematic error — this asserts the
+        # input precision and the figure count directly.
+        import datetime, re
+        text = open('.dreamwork/questions.md', encoding='utf-8').read()
+        qs = watch.parse_open_questions(text)
+        # an open entry whose date is NOT today, so it renders a day figure
+        today = datetime.date.today().isoformat()
+        q = next(x for x in qs
+                 if not x['title'].startswith('P2 · ' + today)
+                 and re.search(r'\d{4}-\d{2}-\d{2}', x['title']))
+        title = q['title']
+        # ── RUNTIME PRECONDITION: the fixture genuinely carries NO TIME ──
+        dm = re.search(r'(\d{4}-\d{2}-\d{2})', title)
+        self.assertIsNotNone(dm, "fixture title carries no date")
+        date = dm.group(1)
+        self.assertRegex(date, r'^\d{4}-\d{2}-\d{2}$',
+                         "title date is not day-precision")
+        self.assertNotRegex(title, r'\d{2}:\d{2}|T\d',
+                            "title carries a time — fixture is no longer "
+                            "date-only, the precondition has expired")
+        # ── RENDER via the real ages() dispatch ──
+        # now is 3d 08h past the title's midnight (both derived in node via
+        # qtHtml, so timezone is consistent end to end). 3 full days is MY
+        # chosen offset; the rendered figure is checked against its shape and
+        # against that choice, never against agePair's output.
+        ct = self._qt_ct(title)
+        now = ct + 3 * 86400 + 8 * 3600
+        [rendered] = self._render_via_ages([{'title': title}], now)
+        # ── ONE figure: the missing second figure IS the precision signal ──
+        self.assertRegex(rendered, r'^\d{2}[ymdwh] ago$',
+                         f"a date-only age must be ONE figure; got {rendered!r}")
+        self.assertNotRegex(rendered, r'\d{2}[ymdwh] \d{2}[ymdwh]',
+                            f"a date-only age claimed a sub-day figure the "
+                            f"data does not hold: {rendered!r}")
+        # the value (3) comes from MY 3-day offset, not from agePair
+        self.assertEqual(rendered, '03d ago')
+
+    def test_a_timed_timestamp_still_shows_two_figures(self):
+        # CRITERION 4 — a TIMED node (a commit's real timestamp, no data-day)
+        # keeps TWO figures. The expected value comes from OUTSIDE the code:
+        # the offset is 14 hours 3 minutes (chosen by hand) and the rendered
+        # string `14h 03m ago` is asserted against that choice — not against
+        # anything watch.py computes. This is the half #385 got right; it must
+        # not collapse to one figure when date-only learned to drop a figure.
+        now = 2_000_000_000                         # fixed epoch seconds
+        offset = 14 * 3600 + 3 * 60                 # 14h 03m — MY choice
+        [rendered] = self._render_via_ages([{'ct': now - offset}], now)
+        self.assertEqual(
+            rendered, '14h 03m ago',
+            f"a 14h03m-old timed entry must read `14h 03m ago` (two figures); "
+            f"got {rendered!r}")
+        self.assertRegex(rendered, r'^\d{2}h \d{2}m ago$',
+                         f"timed age must keep two figures; got {rendered!r}")
+
+    def test_an_entry_dated_today_does_not_read_as_stale(self):
+        # #392a — the one case that is mine to decide, and the one he sees
+        # most: an entry dated TODAY. `0d ago` reads as a broken zero for
+        # something filed this morning, and `0d 0Xh`/`0Xh` would claim a time
+        # the day-only data cannot support. The one honest thing day-only
+        # data supports is the word itself: `today`. A deliberate, singular
+        # break from the figure grammar — see watch-design.md (#392a).
+        title = 'P1 · 2026-07-28 — filed this morning'
+        ct = self._qt_ct(title)                     # local midnight (node)
+        now = ct + 5 * 3600                          # 05:00 the same day
+        # RUNTIME PRECONDITION: the entry really is "today" (same calendar
+        # day, under 24h old) — derived from ct and now, not a literal.
+        self.assertLess(now - ct, 86400,
+                        "fixture is not 'today' relative to the fixed now")
+        [rendered] = self._render_via_ages([{'title': title}], now)
+        self.assertEqual(
+            rendered, 'today',
+            f"an entry dated today must read `today`, never a figure the "
+            f"day-only data cannot support; got {rendered!r}")
+
+    def test_all_open_questions_still_render_after_the_age_change(self):
+        # CRITERION 8 — a display change that drops an entry it cannot
+        # classify is the worst outcome: watch.py renders an unreadable file
+        # as "nothing to answer". The age work is cosmetic (text in a span),
+        # but assert the open count is unchanged and every open title still
+        # produces an age node through the real qtHtml — none falls through
+        # to the date-less plain-text branch or is dropped.
+        text = open('.dreamwork/questions.md', encoding='utf-8').read()
+        qs = watch.parse_open_questions(text)
+        self.assertGreaterEqual(len(qs), 3,
+                                "expected the three known open questions")
+        # every open title carries a date, so every one gains a .age qage span
+        for q in qs:
+            self.assertIn('class="age qage" data-ct=',
+                          self._qt_html(q['title']),
+                          f"a title lost its age span: {q['title']!r}")
+        # the page still renders the whole open list, unfiltered by age/date
+        self.assertIn('questions_open.map', watch.PAGE)
+
     def test_commits_panel_is_five_near_the_top_and_regroups_on_a_new_sha(self):
         # #151. Three claims, and the third is the one worth guarding.
         self.assertEqual(watch.GIT_ROWS, 5)

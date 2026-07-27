@@ -2107,8 +2107,9 @@ be the most recent 5 commits. whne a new commit is made, the bottom one should
 dreamlike fade away, the new top one should dreamlike fade in, and the other 4
 should gently slide down one. should come together nice and smoothly."*
 
-**The age is two units, two digits each** — `05m 23s ago`, `02h 14m ago`,
-`03d 07h ago`, `02w 03d ago`, `01y 14w ago` (#385). Two edges are decided
+**A TIMED age is two units, two digits each** — `05m 23s ago`, `02h 14m ago`,
+`03d 07h ago`, `02w 03d ago`, `01y 14w ago` (#385). A DATE-ONLY age is ONE
+figure (#392a, below — the number of figures is the precision). Two edges are decided
 rather than fallen into: under a minute it still reads as two units
 (`00m 12s ago`), so the column never changes width and a seconds-old commit
 is exactly the case he is watching; and the ladder runs seconds → minutes →
@@ -2120,18 +2121,47 @@ can show 52 weeks, which is still two figures.
 
 **A single-digit unit is prefixed with a gray 0** (#385) — `05h 09m` greys
 both leading zeros; `15h 42m` greys none. The pad is a `.agepad` span at
-`--dimmer` inside the already-dim `.age`, built by `paintAgePair` with DOM
-nodes (not `innerHTML`). The discriminating half is the second case: a rule
-that greys unconditionally passes any check that only looks at `05`. The
-text still updates once a second through `ages()` with no transition — the
-live ages sweep is opt-in-off by design (`transitions.md`).
-
+`--dimmer` inside the already-dim `.age`, built by the shared `pushFig` (one
+grey-rule path used by `paintAgePair` and `paintDayAge`, so the two-figure
+and one-figure painters cannot drift apart). The discriminating half is the
+second case: a rule that greys unconditionally passes any check that only
+looks at `05`. The text still updates once a second through `ages()` with no
+transition — the live ages sweep is opt-in-off by design (`transitions.md`).
 **Question headlines reuse the same age, next to the date already in the
 title** (#385). `qtHtml` splits an optional `P1 · ` priority, the
 `YYYY-MM-DD` date, and the rest; the age is an empty `.age.qage[data-ct]`
-filled by the standing `ages()` sweep — one formatter, not a second. No date
-in the title stays plain text. The date is day-resolution only, so `ct` is
-local midnight of that day.
+filled by the standing `ages()` sweep. No date in the title stays plain text.
+The date is day-resolution only, so `ct` is local midnight of that day.
+
+**The number of figures IS the precision, and that is a deliberate departure
+from #385's always-two-figures grammar** (#392a). A question title carries a
+DAY and no TIME, so its midnight `ct` cannot honestly produce the hour figure
+#385 wrote beside it: measured on the deployed dashboard, a question that
+landed at 07:54 rendered `08h 17m ago` at 08:18 — midnight to the second, an
+eight-hour lie about a 24-minute-old entry. The error was LARGEST for the
+newest entries (exactly the ones where *how long has this been waiting* is
+the question) and invisible on old ones (`02d 08h` for a three-day-old
+question is believable), which is why it sat unnoticed. So a date-only title
+now renders ONE figure — `03d ago` beside a timed commit's `03d 07h ago` —
+and the MISSING second figure is the signal, read against the timed entries
+beside it. `qtHtml` marks the span `data-day="1"` (the precision of the
+input) and `ages()` routes it to `paintDayAge`, which is `paintAgePair` with
+the second figure removed: the same `ageParts` ladder and the same greyed
+`.agepad` pad digit, never a second humanizer. No tilde, tooltip, badge or
+new glyph — the grammar itself encodes it. (Putting a time INTO the format is
+#392b, blocked on another lane holding `file-formats.md`; this half removes
+the whole user-visible error from the data the page already has.)
+
+**An entry dated TODAY reads as the word `today`** (#392a) — the one case the
+human sees most and the one a figure gets most wrong. `0d ago` reads as a
+broken zero for something filed this morning, and `0d 0Xh` would repeat the
+very claim a day-only date cannot support. `today` is a singular, deliberate
+break from the figure grammar — the one honest thing day-only data can say
+about the day it is in — and it is the whole of the special-casing: under a
+day old (`s < 86400`, i.e. the same calendar day as the midnight `ct`)
+`paintDayAge` writes the word and returns. A future-dated entry (clock skew)
+clamps to `today` too, which is #385's existing `Math.max(0, …)` negative
+clamp, unchanged.
 
 **The time arrives as a number and the row renders none of it.** `git_tail`
 emits `%ct`; the row is a `<span class="age" data-ct=…>` that is *empty* in
