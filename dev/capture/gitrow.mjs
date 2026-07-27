@@ -115,22 +115,26 @@ const BASE = `http://127.0.0.1:${PORT}`;
    itself — looked for afterwards it is a departure that did happen reported
    as one that did not. */
 const TRACE = ms => `new Promise(res => {
-  const row = document.querySelectorAll('.git .commit[data-sha]')[1];
-  const panel = document.querySelector('.git');
-  const below = panel.nextElementSibling;
-  const body = row.querySelector('.gdetail');
+  /* RE-QUERY PER FRAME. A live tick replaces the dashboard through
+     innerHTML; a reference held from the first frame is DETACHED after it
+     and getBoundingClientRect throws / returns zeros — the throw is what
+     burndown's notes already name, and under load this guard hit it too. */
   const seen = []; let ghost = null;
   const t0 = performance.now();
   (function step() {
     const t = performance.now() - t0;
+    const row = document.querySelectorAll('.git .commit[data-sha]')[1];
+    const panel = document.querySelector('.git');
+    const below = panel && panel.nextElementSibling;
+    const body = row && row.querySelector('.gdetail');
     const g = document.querySelector('.qaghost');
     if (g && !ghost) ghost = {
       sha: g.getAttribute('data-sha'), keep: g.getAttribute('data-keep'),
       inner: g.querySelectorAll('[data-qid],[data-qkey],[data-sha],[data-keep]').length,
       h: g.getBoundingClientRect().height };
     seen.push({ t,
-      below: below.getBoundingClientRect().top + window.scrollY,
-      h: row.getBoundingClientRect().height,
+      below: below ? below.getBoundingClientRect().top + window.scrollY : -1,
+      h: row ? row.getBoundingClientRect().height : -1,
       op: body ? +getComputedStyle(body).opacity : 1,
       ghosts: document.querySelectorAll('.qaghost').length });
     if (t < ${ms}) requestAnimationFrame(step); else res({ seen, ghost });
@@ -145,6 +149,15 @@ async function gesture(p, ms = 1500) {
   return await t;
 }
 const distinct = xs => new Set(xs.map(v => Math.round(v))).size;
+/* between() — frame-rate-free travel (transitions.md, dreamfade.mjs).
+   `positions >= 8` was a load meter: under 8 CPU burners this guard went
+   0/5 while isolation was 4/5. Zero-versus-some part-way frames is the
+   snap/travel distinction; the vacuity half is the moved-span floor. */
+function between(frames, first, last) {
+  const lo = Math.min(first, last), hi = Math.max(first, last);
+  const pad = Math.max(0.03, (hi - lo) * 0.03);
+  return frames.filter(v => v > lo + pad && v < hi - pad).length;
+}
 const at = (seen, ms) => seen.reduce((a, b) =>
   Math.abs(b.t - ms) < Math.abs(a.t - ms) ? b : a);
 function travel(seen) {
@@ -154,6 +167,7 @@ function travel(seen) {
   const t0 = i0 < 0 ? 0 : seen[i0].t;
   const dir = Math.sign(final - from);
   return { moved: Math.abs(final - from), positions: distinct(tops),
+           partway: between(tops, from, final),
            late: Math.abs(at(seen, t0 + 950).below - final),
            over: Math.max(0, ...tops.map(v => dir * (v - final))) };
 }
@@ -211,18 +225,20 @@ ok('...with a panel below them to be displaced', shape.below);
 {
   const { seen, ghost } = await gesture(p);
   const t = travel(seen);
+  const hs = seen.map(s => s.h);
+  const hPartway = between(hs, hs[0], hs.at(-1));
   const mid = seen.filter(s => s.op > 0.02 && s.op < 0.98).length;
   notes.push(`open: below travelled ${t.moved.toFixed(0)}px over ${t.positions} ` +
-             `positions; row height ${seen[0].h.toFixed(0)} -> ` +
-             `${seen.at(-1).h.toFixed(0)} over ${distinct(seen.map(s => s.h))} ` +
-             `positions; ${mid} frames part-way faded in; ` +
+             `positions (${t.partway} part-way); row height ${seen[0].h.toFixed(0)} -> ` +
+             `${seen.at(-1).h.toFixed(0)} (${hPartway} part-way of ` +
+             `${distinct(hs)} rounded); ${mid} frames part-way faded in; ` +
              `${t.late.toFixed(1)}px to go at the end, ${t.over.toFixed(1)}px over`);
   ok('opening: the panel below is displaced at all (else vacuous)', t.moved >= 60);
-  // THE ASSERTION. A snap visits two positions and passes every other check.
-  ok('opening: ...and it travels there rather than teleporting', t.positions >= 8);
+  // THE ASSERTION. A snap has zero frames strictly between the ends.
+  ok('opening: ...and it travels there rather than teleporting', t.partway >= 1);
   ok('opening: the row itself grows continuously rather than in one step',
-     distinct(seen.map(s => s.h)) >= 8);
-  ok('opening: the revealed body eases in rather than blinking on', mid >= 3);
+     hPartway >= 1);
+  ok('opening: the revealed body eases in rather than blinking on', mid >= 1);
   /* the FLIP-window contract, stated as the two things a mis-measured travel
      does. 4px each: a clean ease lands within ~1.5px, and the failure both
      describe is `details[open]`'s 2 x .5rem — 16px. Nothing to tune between. */
@@ -296,10 +312,11 @@ ok('...with a panel below them to be displaced', shape.below);
   const { seen, ghost } = await gesture(p);
   const t = travel(seen);
   notes.push(`close: below travelled ${t.moved.toFixed(0)}px over ${t.positions} ` +
-             `positions; ${t.late.toFixed(1)}px to go, ${t.over.toFixed(1)}px over; ` +
+             `positions (${t.partway} part-way); ${t.late.toFixed(1)}px to go, ` +
+             `${t.over.toFixed(1)}px over; ` +
              `ghost ${ghost ? JSON.stringify(ghost) : 'none'}`);
   ok('closing: the panel below is displaced at all (else vacuous)', t.moved >= 60);
-  ok('closing: ...and it travels there rather than teleporting', t.positions >= 8);
+  ok('closing: ...and it travels there rather than teleporting', t.partway >= 1);
   ok('closing: ...and it has arrived when the travel ends', t.late <= 4);
   ok('closing: ...having never gone past where it ends up', t.over <= 4);
   ok('closing: the leaving body dreams away rather than being cut off',
@@ -326,13 +343,15 @@ await p.screenshot({ path: `${OUT}/gitrow.png`, fullPage: false });
   const open = await gesture(rp, 800);
   const close = await gesture(rp, 800);
   const o = open.seen.map(s => s.below), c = close.seen.map(s => s.below);
-  notes.push(`reduced: open ${distinct(o)} positions, close ${distinct(c)}, ` +
+  const oMid = between(o, o[0], o.at(-1)), cMid = between(c, c[0], c.at(-1));
+  notes.push(`reduced: open ${distinct(o)} positions (${oMid} part-way), ` +
+             `close ${distinct(c)} (${cMid} part-way), ` +
              `ghosts ${open.ghost || close.ghost ? 'yes' : 'none'}`);
   ok('reduced motion: the row still opens and shuts (function is intact)',
      Math.abs(o.at(-1) - o[0]) >= 60 && Math.abs(c.at(-1) - c[0]) >= 60 &&
      await rp.evaluate(`document.querySelectorAll('.git .commit[open]').length === 0`));
   ok('reduced motion: ...instantly, in one step each way',
-     distinct(o) <= 2 && distinct(c) <= 2);
+     oMid === 0 && cMid === 0);
   ok('reduced motion: and nothing is ghosted', !open.ghost && !close.ghost);
   await rp.screenshot({ path: `${OUT}/gitrow-reduced.png`, fullPage: false });
   await ctx.close();

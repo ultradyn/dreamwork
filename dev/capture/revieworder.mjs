@@ -26,6 +26,15 @@ const line = await new Promise((resolve, reject) => { let s=''; srv.stdout.on('d
 const base = `http://127.0.0.1:${line}`;
 const checks=[]; const ok=(n,c)=>checks.push(`${c?'PASS':'FAIL'} ${n}`);
 const EPS = .75;
+/* between() — the frame-rate-free form (transitions.md, dreamfade.mjs).
+   A count of distinct Y positions is a fact about how many frames this
+   machine drew under load, not about whether the row passed through the
+   middle. Zero-versus-some is the snap/travel distinction. */
+function between(frames, first, last) {
+  const lo = Math.min(first, last), hi = Math.max(first, last);
+  const pad = Math.max(0.03, (hi - lo) * 0.03);
+  return frames.filter(v => v > lo + pad && v < hi - pad).length;
+}
 async function run(reduced, sabotage='none') {
   const br = await chromium.launch({args:['--use-gl=swiftshader']});
   try {
@@ -149,16 +158,24 @@ async function run(reduced, sabotage='none') {
       const last=natural.find(x=>x.key===old.key);
       const observed=frames.map(f=>f.find(x=>x.key===old.key)?.top).filter(Number.isFinite);
       const tops=[old.top,...observed];
-      const distinct=new Set(tops.map(y=>Math.round(y*4)/4)).size;
+      const partway=between(tops, old.top, last.top);
       const lo=Math.min(old.top,last.top)-EPS, hi=Math.max(old.top,last.top)+EPS;
-      return {key:old.key, distinct, bounded:tops.every(y=>y>=lo&&y<=hi), endpoints:Math.abs(tops[0]-old.top)<=EPS && Math.abs(tops.at(-1)-last.top)<=EPS};
+      return {key:old.key, partway, span:Math.abs(last.top-old.top),
+              bounded:tops.every(y=>y>=lo&&y<=hi),
+              endpoints:Math.abs(tops[0]-old.top)<=EPS && Math.abs(tops.at(-1)-last.top)<=EPS};
     });
-    const pass=keyed&&intended&&causal&&rows.length===2&&motions.every(m=>reduced ? m.distinct<=3&&m.endpoints : m.distinct>=8&&m.bounded&&m.endpoints);
+    // Vacuity: span floor is a pixel distance of the fixture layout (literal
+    // well below the measured reorder). Part-way is zero-vs-some, not a count.
+    const pass=keyed&&intended&&causal&&rows.length===2&&motions.every(m=>
+      reduced ? m.partway===0&&m.endpoints
+              : m.span>2&&m.partway>=1&&m.bounded&&m.endpoints);
     if (sabotage!=='none') return pass;
     ok(`${reduced?'reduced':'normal'}: expected setData causally precedes first changed ${result.firstChanged.source}`, causal);
     ok(`${reduced?'reduced':'normal'}: stable keyed review rows exist`, keyed);
     ok(`${reduced?'reduced':'normal'}: settled DOM equals exact filesystem order`, intended);
-    for (const m of motions) ok(`${reduced?'reduced':'normal'}: ${m.key} ${reduced?'reorders instantly without transition':'travels through intermediate Y positions without overshoot'}`, reduced ? m.distinct<=3&&m.endpoints : m.distinct>=8&&m.bounded&&m.endpoints);
+    for (const m of motions) ok(`${reduced?'reduced':'normal'}: ${m.key} ${reduced?'reorders instantly without transition':'travels through intermediate Y positions without overshoot'}`,
+      reduced ? m.partway===0&&m.endpoints
+              : m.span>2&&m.partway>=1&&m.bounded&&m.endpoints);
     return pass;
   } finally { await br.close(); }
 }

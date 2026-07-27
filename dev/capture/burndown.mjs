@@ -44,7 +44,17 @@ const freePort = () => new Promise(res => {
 });
 const PORT = await freePort();
 
-const { ok, declare, finish, notes, errs } = makeReporter();
+const { ok, declare, finish, checks, notes, errs } = makeReporter();
+/* Say WHAT threw — the shared sentinel only says "threw before finishing",
+   which hid a TypeError under load (after.head undefined when .bd was
+   briefly absent). Capture into errs (always printed) and rename the FAIL. */
+const nameThrow = (kind, e) => {
+  const msg = e && e.stack ? e.stack : String(e);
+  errs.push(`${kind}: ${msg}`);
+  checks.push(`FAIL the guard threw before finishing its checks: ${String(e)}`);
+};
+process.on('uncaughtException', e => nameThrow('uncaughtException', e));
+process.on('unhandledRejection', e => nameThrow('unhandledRejection', e));
 /* #334: this guard used to hand-roll its checks/ok/exit handler — the very
    reporter #324's sweep made structural. #281's plan cites burndown as the
    guard-writing precedent, so leaving the old idiom here pointed new work at
@@ -153,8 +163,13 @@ const READ = `(() => {
 
 const r0 = await p.evaluate(READ);
 notes.push(`panel: ${JSON.stringify({ ...r0, titles: r0.titles && r0.titles.length })}`);
+const panelOk = !!(r0.present && !r0.none);
 ok('the dashboard has a burndown panel (else everything here is vacuous)',
-   r0.present && !r0.none);
+   panelOk);
+// Absence-first: when the panel is missing, field reads (provline.trim) threw
+// TypeError and the crash sentinel hid it under "threw before finishing".
+// Soften every field access; skip motion when the subject never arrived.
+if (panelOk) {
 // the column count follows the clock (the chart runs to NOW, not to the
 // last commit), so it is asserted as a relationship rather than a literal —
 // a literal tuned to today is a check with an expiry date nobody can see
@@ -166,9 +181,9 @@ ok('...with one column per bucket and three series in each',
 // `open` is the last snapshot's open set (4), not the arrival count (9) —
 // telling those two apart is the entire point of drawing both.
 ok('the head states the three totals it is a picture of',
-   /\b4 open · 9 arrived · 5 landed · hourly\b/.test(r0.head));
+   /\b4 open · 9 arrived · 5 landed · hourly\b/.test(r0.head || ''));
 ok('...and a completion GROOMED out of the landed section still counts ' +
-   '(#1, #2 and #3 were pruned)', /\b5 landed\b/.test(r0.head));
+   '(#1, #2 and #3 were pruned)', /\b5 landed\b/.test(r0.head || ''));
 ok('a column names its bucket and all three numbers',
    !!r0.titles && r0.titles.length === r0.cols &&
    r0.titles.every(t => /arrived · \d+ landed · \d+ open$/.test(t || '')));
@@ -181,9 +196,12 @@ ok('the panel spends no accent — nothing in it is waiting on him',
    would read `loop 9`. Nine ids were planted as entries. */
 ok('...and its provenance is honest about the unknown remainder: every ' +
    'planted entry is unmarked, so none of the nine is the loop\'s',
-   /human 0 · loop 0 · historical unknown 9/.test(r0.provline.trim()) &&
+   /human 0 · loop 0 · historical unknown 9/.test((r0.provline || '').trim()) &&
    r0.provsegs === 3 &&
-   r0.provsrc.some(s => /9 first sightings in recorded git history/.test(s)));
+   (r0.provsrc || []).some(s => /9 first sightings in recorded git history/.test(s)));
+} else {
+  notes.push('panel absent after load — static field checks and motion skipped');
+}
 
 /* ── the motion ───────────────────────────────────────────────────────────
    Traced per frame and bounded to the interaction. `regroupBars` runs on a
@@ -224,6 +242,14 @@ const TRACE = ms => `new Promise(res => {
    found was its own. The travel is also made LARGE below, so the assertion
    does not depend on this resolution being generous. */
 const distinct = xs => new Set(xs.map(v => Math.round(v * 10))).size;
+/* between() — frame-rate-free travel (transitions.md, dreamfade.mjs).
+   `positions >= 8` reddened under load with 3–7 distinct heights that still
+   travelled; zero-versus-some part-way is the snap/travel distinction. */
+function between(frames, first, last) {
+  const lo = Math.min(first, last), hi = Math.max(first, last);
+  const pad = Math.max(0.03, (hi - lo) * 0.03);
+  return frames.filter(v => v > lo + pad && v < hi - pad).length;
+}
 /* the bar that moved MOST across the window, and how it got there. Named by
    key, never by index: three series share a bucket and two bars share a
    column, so a bucket alone is not an identity. */
@@ -234,7 +260,8 @@ function busiest({ seen, watched }) {
     if (hs.length < 5) continue;
     const moved = Math.abs(hs.at(-1) - hs[0]);
     if (!best || moved > best.moved)
-      best = { k, moved, positions: distinct(hs), hs };
+      best = { k, moved, positions: distinct(hs),
+               partway: between(hs, hs[0], hs.at(-1)), hs };
   }
   return best;
 }
@@ -253,7 +280,7 @@ async function ledgerLands(page, ms = 1500) {
   return await t;
 }
 
-{
+if (panelOk) {
   // the panel BEFORE, so the change is real rather than assumed
   const before = await p.evaluate(READ);
   const tr = await ledgerLands(p, 4200);       // one poll (2s) plus the travel
@@ -261,19 +288,19 @@ async function ledgerLands(page, ms = 1500) {
   const after = await p.evaluate(READ);
   const panelHs = distinct(tr.seen.map(s => s.panelH));
   const belows = distinct(tr.seen.map(s => s.below));
-  notes.push(`ledger lands: head "${before.head.trim()}" -> ` +
-             `"${after.head.trim()}"; busiest bar ${b ? b.k : 'none'} moved ` +
+  notes.push(`ledger lands: head "${(before.head || '').trim()}" -> ` +
+             `"${(after.head || '').trim()}"; busiest bar ${b ? b.k : 'none'} moved ` +
              `${b ? b.moved.toFixed(1) : 0}px over ${b ? b.positions : 0} ` +
-             `distinct heights; panel height values ` +
+             `distinct heights (${b ? b.partway : 0} part-way); panel height values ` +
              `${JSON.stringify([...new Set(tr.seen.map(s => Math.round(s.panelH)))])}; ` +
              `panel-below values ` +
              `${JSON.stringify([...new Set(tr.seen.map(s => Math.round(s.below)))])}`);
   ok('a ledger commit really changed the panel (else the rest is vacuous)',
-     before.head !== after.head && /\b19 arrived\b/.test(after.head));
+     before.head !== after.head && /\b19 arrived\b/.test(after.head || ''));
   ok('...and a bar whose value changed is displaced at all', !!b && b.moved >= 8);
-  // THE ASSERTION. A snap visits two heights and passes every end-state check.
+  // THE ASSERTION. A snap has zero frames strictly between the ends.
   ok('...and it TRAVELS to its new height rather than snapping',
-     !!b && b.positions >= 8);
+     !!b && b.partway >= 1);
   /* THE PREMISE, measured rather than asserted in prose. Bar motion needs no
      FLIP over the panels below only because the panel's own height is a
      constant — every track height is fixed in CSS. If that ever stops being
@@ -319,7 +346,7 @@ async function ledgerLands(page, ms = 1500) {
    the collapse bug above, by measuring the bars at 2px before the tick it
    was nominally about. The page is made to re-render by a /command, which
    appends to watch-events.log — watched, and rendering nothing. */
-{
+if (panelOk) {
   // CARD_MS + 150 is when regroupBars clears its inline heights; tracing
   // before that measures the previous phase's animation and blames the tick
   await sleep(1400);
@@ -351,8 +378,8 @@ async function ledgerLands(page, ms = 1500) {
      await p.evaluate(`document.querySelectorAll('.bd .bdbar').length > 0`));
   ok('...and disturbs no bar: they arrive with the layout, at their height',
      moved.every(m => m <= 1));
+  await p.screenshot({ path: `${OUT}/burndown.png`, fullPage: false });
 }
-await p.screenshot({ path: `${OUT}/burndown.png`, fullPage: false });
 
 // ── reduced motion: timing changes, function does not ─────────────────────
 {
@@ -373,11 +400,12 @@ await p.screenshot({ path: `${OUT}/burndown.png`, fullPage: false });
   notes.push(`reduced served: ${JSON.stringify(
     { ...served.burndown, buckets: (served.burndown.buckets || []).length })}`);
   const b = busiest(tr);
-  notes.push(`reduced: head "${before.head.trim()}" -> "${after.head.trim()}"; ` +
-             `busiest ${b ? b.k : 'none'} took ${b ? b.positions : 0} heights`);
+  notes.push(`reduced: head "${(before.head || '').trim()}" -> "${(after.head || '').trim()}"; ` +
+             `busiest ${b ? b.k : 'none'} took ${b ? b.positions : 0} heights ` +
+             `(${b ? b.partway : 0} part-way)`);
   ok('reduced motion: the numbers still arrive (function is intact)',
-     before.head !== after.head && /\b21 arrived\b/.test(after.head));
-  ok('reduced motion: ...in one step, with no travel', !!b && b.positions <= 2);
+     before.head !== after.head && /\b21 arrived\b/.test(after.head || ''));
+  ok('reduced motion: ...in one step, with no travel', !!b && b.partway === 0);
   await rp.screenshot({ path: `${OUT}/burndown-reduced.png`, fullPage: false });
   await ctx.close();
 }
