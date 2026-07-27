@@ -29,8 +29,21 @@ a travel.
 So, for anything in this document:
 
 - **An end-state check cannot fail on a motion bug, and neither can "did
-  it move".** Assert the count of *distinct intermediate positions* — a
-  teleport has two, a travel has dozens.
+  it move".** Assert that the frames you captured are *part-way* — a
+  teleport has none between its ends, a travel has most of them there.
+  Prefer `between(frames, first, last)` with a small deadband, as
+  `reviewsplit.mjs:145` and `qsec.mjs` do.
+- **…but never assert an absolute COUNT of distinct positions.** It reads
+  as the same rule and it is not: `uniq(positions).length >= 8` says "this
+  machine rendered eight frames in 850ms", which is a fact about the box,
+  not about the motion. Four guards here encode it (`headertravel` >= 8
+  widths; `regroup`, `morph` >= 6 positions) and all four went red on a
+  commit that was fine — twice, for two different amounts of load — then
+  passed when re-run with fewer guards in flight. Base `f72f730` failed
+  the threshold in 3 of 5 runs on its own. A part-way *fraction* survives
+  a slow box because a teleport has zero part-way frames however few you
+  sample; a minimum count cannot. (#311, measured 2026-07-27 at load 40-90
+  on 16 cores.)
 - **Bound the trace window to the interaction.** A guard that watches
   long enough will see a later tick supply the movement it was asserting;
   one traced 5.2s across a 1.6s hold and was green over a real teleport
@@ -67,6 +80,35 @@ So, for anything in this document:
   trust it (break the value by hand, force one re-render, watch it come
   back) — especially against the frozen fixture, where nothing
   re-renders and a sloppy window passes by luck. (dreamer-qsec, #198.)
+- **Do not round a per-frame trace.** Rounding to whole pixels reported a
+  clean 2.1px ease as a snap — an instrument bug that presents as a feature
+  bug, and the guard whose gesture is *small* is the one it bites. The
+  idiom is live: `reviewsplit.mjs`'s `distinct()` rounds, and it is only
+  safe there because its travel assertions require >=60px of movement.
+  Either keep the raw values or state the minimum travel the rounding
+  tolerates. (#308, found in #142's dream at one archive from being lost.)
+- **Do not assert a terminal state inside a fixed sampling window.** It is
+  the mirror image of the count trap and it fails for the opposite reason:
+  `dismiss.mjs:134` asserts `ops.at(-1) >= 95`, i.e. "the fade finished
+  within 700ms of sampling", so a slow box closes the window mid-fade and
+  the check reddens over a perfect animation. Wait on the transition's own
+  completion (`getAnimations()`, `transitionend`) and *then* assert.
+  **The sharpest evidence that a loaded run cannot be partly trusted comes
+  from this one trace:** while `ops.at(-1) >= 95` went red, its two
+  neighbours on the same frames — `>= 6` distinct opacities and `>= 4`
+  distinct transforms — got *easier*, because slow frames spread further
+  apart. Two assertions over one trace, moving in opposite directions with
+  load. So "the other checks on that trace passed" is never evidence the
+  run was sound. (#311, 2026-07-27.)
+- **The three above are one mistake with three faces: a motion check must
+  not encode a property of the machine.** Frame count, pixel rounding and
+  elapsed-time windows are all facts about the box, and each one turns a
+  guard into a load meter that reports its findings as feature bugs. The
+  timing-free forms already in this list — no frame past the final
+  position, frames strictly part-way, wait for completion — are the same
+  instinct applied three ways. When a motion guard goes red, the first
+  question is which of these it encodes, and the second is what else the
+  box was doing.
 - **Show the check RED on the current behaviour before trusting it.**
 - **Verify reduced-motion too** — it is a hard contract below, and it is
   the half nobody looks at.
