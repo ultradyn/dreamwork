@@ -134,6 +134,16 @@ lint:
 #                fades rather than being covered by a painted band, and the
 #                middle of its three claims cannot be written against the DOM
 #                at all. Also unregistered from the day it was written.
+#   dreamfade    ordinary (OUT, PORT) on the shared server, and it is a PER-FRAME
+#                guard because the claim is an ORDER, not an end state (#277):
+#                the ghost must dissolve in place BEFORE it travels, and both
+#                end states are identical either way. It samples the ghost's
+#                computed filter/opacity/transform each frame and asserts
+#                .pregone appears, appears BEFORE .gone, that blur rises past
+#                5px inside the dissolve, and that blur never DECREASES during
+#                departure — the last one exists because the first version of
+#                this let the corpse un-blur by 2px as it left, which a
+#                `blur >= 5px` assertion passes over.
 #   artifactwrap ordinary (OUT, PORT) on the shared server, and it BUILDS its
 #                fixture through review_artifact.py so the real template and the
 #                real builder are what get measured — the bug it guards (#347)
@@ -166,7 +176,7 @@ lint:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview fileimg qfade artifactwrap"
+    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview fileimg qfade artifactwrap dreamfade"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}
