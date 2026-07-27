@@ -24,9 +24,54 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **402**
+Next id: **404**
 
 ## Open
+- **#402** — `status.json`'s `dreamers` array has no stated shape, and the tool that reads it goes
+  stale in the one direction that costs parallelism · P2 · loop-tooling/durability · origin:
+  **loop** · found by using it: registering a new lane crashed the tool and revealed three more
+  · **it went stale, measured.** `#396` and `#398` had **landed** and were still listed as owning
+  `review_artifact.py`, `file-formats.md`, `dev/capture/fixture/**`, `lint.py` and `test_lint.py`.
+  `status_sync.py` recomputes `queue` and `current_task_ids` from live `pgrep` but **never touches
+  `dreamers`**, so ownership only ever accumulates
+  · **the direction of the error is the whole problem.** A stale entry says a free file is *owned*,
+  so the coordinator declines a dispatch it could have made. I reasoned `dev/capture/fixture` was
+  free from *memory* of `#396` landing; the file said otherwise, and had I trusted the file I would
+  have skipped the dispatch. `#264` measured file contention as the **binding constraint** on how
+  much runs at once — this is that constraint, manufactured
+  · **it crashed on a mixed-type id.** Existing entries carry `"task": 396` (int); writing
+  `"task": "401"` made `sorted()` raise `TypeError: '<' not supported between instances of 'str'
+  and 'int'` and `just status-sync` exited 1. **Loud, so not the worst kind** — but it stops the
+  whole sync, and the drift it exists to prevent resumes silently from there
+  · **and a fourth `#401` instance:** a **sub-id cannot be represented at all**. The live lane is
+  `#392a`; the int field can only hold `392`. Same class — the tooling's id vocabulary is narrower
+  than the loop's
+  · **the root cause is a missing contract, and it is this repo's own stated rule.** `grep dreamers
+  file-formats.md` returns **nothing**, yet `dreamers` is written by the loop and parsed by **two**
+  tools (`status_sync.py`, and `watch.py` renders it). The rule is that such a file's shape is
+  stated there and checked by `lint.py`, in the same commit. Absent that, the int/str question had
+  no answer to get wrong
+  · **a fifth thing, and it bears on what he asked me to find out:** the pre-existing entries carry
+  **no `agent` field**, so `status.json` does not record *which model* owns a lane. He asked which
+  models and providers work best for us; the runtime record cannot answer it
+  · deliverables, and therefore ownership: `status_sync.py` (prune `dreamers` by the same live-pgrep
+  test it already applies to `current_task_ids`; accept both id types or normalise), `file-formats.md`
+  (the `dreamers` row), `lint.py` + `test_lint.py` (the check that row implies), `test_status_sync.py`
+  if one exists — check
+  · **the red is available without an injection**: reinstate a landed lane's entry and assert the
+  prune drops it. Assert the precondition too — that at least one entry is live and one is dead,
+  derived at runtime, or the test is vacuous the day nothing is running
+  · related: **#401, #264, #403**
+
+- **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
+  P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
+  · the existing row is for root-level `.dreamwork/docs/research-*.md` — a **different** location.
+  The directory has never been mapped, so `lint.check_doc_map_plans` has a sibling that was never
+  written: `plans/` is enumerated and checked, `research/` is neither
+  · smallest useful version is one row. Whether it should **enumerate** like the plans row (and so
+  gain a check) is the real question — 11 files is enough that a stale enumeration is a cost
+  · related: **#402**
+
 - **#401** — a sub-id hand-off is invisible to **every** reader: the parser drops it, the
   malformed-validator cannot see it, and the correlation would not match it either · **P1** ·
   handoffs-parser/correctness · origin: **loop** · found by asking what the grammar accepts of the
@@ -63,7 +108,7 @@ Next id: **402**
   `lint.py`, `test_lint.py`, and `file-formats.md`, whose hand-off row states the shape
   · **the red is free and it is about to write itself** — `#392a`'s own hand-off line will be in
   the file. Do not ask it to change; fold that line by hand and keep it as the fixture
-  · related: **#381, #399, #395**
+  · related: **#381, #399, #395, #402**
 
 - **#400** — `lessons.md` has outgrown being read, and the briefs that tell lanes to read it are
   cargo cult · P2 · loop/memory · origin: **loop** · found by **measuring receipt instead of
@@ -1950,7 +1995,7 @@ Next id: **402**
   than proven; two incidents predate the fan-out window
   · **the broad research half remains open** — the primitive comparison and the #294 migration
   script, cutover and rollback. This task answered the evidence question, not that one
-  · related: **#397**
+  · related: **#397, #402**
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
