@@ -1182,7 +1182,7 @@ def test_marks_are_collected_in_document_order():
     body = ('<section id="z" data-mark="zulu last"><p>z</p></section>'
             '<section id="a" data-mark="alpha first"><p>a</p></section>'
             '<section id="m" data-mark="mike middle"><p>m</p></section>')
-    labels, no_id = ra.essential_marks(body)
+    labels, no_id, blanks = ra.essential_marks(body)
     assert labels == ["zulu last", "alpha first", "mike middle"], labels
     # Precondition that makes this about ORDER rather than mere presence: a
     # sorted collection would pass the assertion above iff the input were
@@ -1190,6 +1190,62 @@ def test_marks_are_collected_in_document_order():
     assert labels != sorted(labels), \
         "labels are alphabetical — the order check cannot detect a sort"
     assert no_id == [], "every flagged element here has an id; precondition"
+    assert blanks == [], "no blank labels here; precondition"
+
+
+@pytest.mark.parametrize("attr, outcome", [
+    ("data-mark", "ignored"),          # valueless (boolean form): not a mark
+    ('data-mark=""', "refused"),       # empty label: authoring mistake
+    ('data-mark="   "', "refused"),    # whitespace-only: authoring mistake
+    ('data-mark="real"', "kept"),      # ordinary label: a mark
+], ids=["valueless", "empty", "whitespace", "real"])
+def test_a_mark_label_must_carry_readable_text(template, attr, outcome):
+    """A mark is defined by its label — all four rows of #389's table.
+
+    A valueless `data-mark` (the boolean-attribute form) is NOT a mark and is
+    ignored; `data-mark=""` and a whitespace-only label reach the renderer and
+    would render a blank tab, so they are REFUSED; an ordinary label is kept.
+    Asserted at BOTH levels — `essential_marks` (where valueless yields no
+    label while empty is recorded as a blank) and `render` (where the refusal
+    bites, and valueless must still build).
+
+    The trap this exists for, and why the valueless row is the discriminating
+    half: a refusal written as a single falsy check (`if not label.strip()`,
+    with no carve-out for valueless) refuses the valueless case too, because
+    HTMLParser hands valueless as `None` and empty as `""` and a check that
+    cannot tell them apart cannot keep one ignored while refusing the other.
+    A test that only checked `""` would pass under that bug; the valueless row
+    is what makes it fail.
+
+    Production lines: `_EssentialMarkScan._see` — `label is None` returns
+    BEFORE `not label.strip()` ever sees it (the carve-out a falsy check
+    drops), and `render()` raises on the collected `blanks` list after the
+    advisory channel.
+    """
+    element = '<section id="m" %s><p>the passage</p></section>' % attr
+
+    # essential_marks is where the split lives: valueless yields no label and
+    # no blank; empty/whitespace yield a blank and no label; real yields a label.
+    labels, no_id, blanks = ra.essential_marks(element)
+    if outcome == "ignored":
+        assert labels == [] and blanks == [], (labels, blanks)
+    elif outcome == "refused":
+        assert blanks, "a blank label went undetected for %r" % attr
+    else:  # kept
+        assert labels == ["real"], labels
+        assert blanks == []
+
+    # render() is where the refusal bites — and where valueless must build.
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += "\n" + element
+    if outcome == "refused":
+        with pytest.raises(ra.ArtifactError, match="readable text") as caught:
+            ra.render(fields, template=template)
+        # findable: the message names WHERE the blank mark is (its element id
+        # here), because "a mark has an empty label" is not actionable alone.
+        assert 'id="m"' in str(caught.value), caught.value
+    else:
+        ra.render(fields, template=template)
 
 
 def test_eight_marks_warn_and_fifteen_refuse(template):

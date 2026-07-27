@@ -685,25 +685,65 @@ MARKS_WARN_AT = 8        # soft cap 7: warn at 8 or more (advisory, via `warn`)
 MARKS_REFUSE_AT = 15     # hard cap 15: refuse — fifteen flags is wallpaper
 
 
+# Sentinel for "the data-mark attribute is absent entirely", which
+# `dict(attrs).get("data-mark")` cannot tell from a valueless `data-mark`
+# (both surface as a missing key → None). HTMLParser reports a valueless
+# attribute as `("data-mark", None)` — present in the attrs list with value
+# None — so `get("data-mark", _ABSENT)` returns _ABSENT only when the
+# attribute is truly absent, and None when it is present but valueless. The
+# distinction is load-bearing: an absent attribute is every other element in
+# the body, while a valueless one is a flag with no label. Verified, not
+# assumed: see test_a_mark_label_must_carry_readable_text.
+_ABSENT = object()
+
+
 class _EssentialMarkScan(html.parser.HTMLParser):
-    """Collect `data-mark` labels in document order; flag those with no id.
+    """Collect `data-mark` labels in document order; flag blanks and no-id.
 
     A mark is a `data-mark="<label>"` attribute on any element. Document order
     is mark order, and the parser visits start tags in document order, so the
-    collected list needs no separate sort. A mark whose element carries no
-    stable `id` is recorded separately — next/prev cannot land on it, and the
-    builder assigns nothing implicitly.
+    collected list needs no separate sort.
+
+    Three shapes the parser must tell apart, and the split is the whole of
+    #389. HTMLParser hands a valueless `data-mark` (the boolean-attribute form)
+    as `None` and `data-mark=""` as `""` — verified, not assumed. An element
+    with NO data-mark attribute is the common case (every paragraph, every
+    section) and is skipped via the _ABSENT sentinel; conflating it with
+    valueless would make a falsy refusal crash on the first plain element in
+    the body. A valueless `data-mark` is present-but-None and is NOT a mark —
+    ignored. `""` and a whitespace-only label ARE marks the author botched,
+    recorded in `empty` for the builder to refuse (a blank tab reads as a
+    rendering bug and is not one).
+    The natural one-line refusal — `if not label.strip()` with no carve-out for
+    valueless — collapses the `label is None` early return below, so a
+    valueless `data-mark` (None) reaches `.strip()` and crashes where it ought
+    to have been ignored. That collapsed guard is the discrimination the #389
+    red-proof exists to catch. A mark whose element carries no stable `id` is
+    recorded in `no_id` — next/prev cannot land on it, and the builder assigns
+    nothing implicitly.
     """
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.labels = []     # mark labels, in document order
         self.no_id = []      # labels whose element had no stable id
+        self.empty = []      # where-descriptions for blank-label marks
+        self._seen = 0       # count of data-mark attrs carrying a value
 
     def _see(self, attrs):
         table = dict(attrs)
-        label = table.get("data-mark")
-        if label is None:            # `data-mark` with no value is not a mark
+        label = table.get("data-mark", _ABSENT)
+        if label is _ABSENT:         # element carries no data-mark attribute
+            return
+        self._seen += 1
+        if label is None:            # valueless `data-mark`: not a mark, ignored
+            return
+        if not label.strip():        # `data-mark=""` / whitespace-only: refused
+            element_id = table.get("id")
+            if element_id:
+                self.empty.append('id="%s"' % element_id)
+            else:
+                self.empty.append("mark #%d" % self._seen)
             return
         self.labels.append(label)
         if not str(table.get("id", "")).strip():
@@ -717,16 +757,20 @@ class _EssentialMarkScan(html.parser.HTMLParser):
 
 
 def essential_marks(document):
-    """Essential mark labels in document order, and the subset with no id.
+    """Essential mark labels in document order, plus blanks and the no-id set.
 
-    Returns ``(labels, no_id)``, both in document order. A mark is the presence
-    of a `data-mark` attribute with a value; the label is what the tab will
-    read. Increment 1 parses and caps; it renders nothing yet.
+    Returns ``(labels, no_id, empty)``, all in document order. A mark is a
+    `data-mark` attribute carrying a VALUE; the label is what the tab will
+    read. A valueless `data-mark` (the boolean-attribute form) is not a mark
+    and is ignored. An empty or whitespace-only label is a mark the author
+    botched — recorded in `empty` for the builder to refuse, because it would
+    render a blank tab. Increment 1 parses, caps and validates; it renders
+    nothing yet.
     """
     scan = _EssentialMarkScan()
     scan.feed(document)
     scan.close()
-    return scan.labels, scan.no_id
+    return scan.labels, scan.no_id, scan.empty
 
 
 # ── the build ─────────────────────────────────────────────────────────────
@@ -799,7 +843,7 @@ def render(fields, template=None, warn=None):
     # the source's BODY (the contract: a mark flags a passage inside body), so
     # this READS `fields["body"]` and never touches `out` — which is the whole
     # reason a no-marks source renders byte-identically apart from the stamp.
-    labels, marks_no_id = essential_marks(fields["body"])
+    labels, marks_no_id, blanks = essential_marks(fields["body"])
     # #379 — advisories are emitted BEFORE any refusal, so a source with two
     # faults reports both on one run. This used to sit below both `raise`s, which
     # meant an author whose source had a component violation and a short grid row
@@ -816,6 +860,19 @@ def render(fields, template=None, warn=None):
                 "%d) — fifteen flags is wallpaper, and the point was that a "
                 "few help; prune to the passages you would have him read first"
                 % (len(labels), MARKS_WARN_AT, MARKS_REFUSE_AT))
+    # A blank label would render an empty tab — a blank postit that reads as a
+    # rendering bug and is not one. The builder refuses and names WHERE, because
+    # "a mark has an empty label" in a fifty-mark document is not actionable
+    # (#389). This refusal is also where the valueless/empty split is enforced:
+    # a valueless `data-mark` never reaches here (the parser ignores it as
+    # None), while `data-mark=""` and whitespace-only do, as recorded strings.
+    if blanks:
+        raise ArtifactError(
+            "essential mark(s) carry no readable text, so the tab would "
+            "render blank — give each a real label (a valueless data-mark is "
+            "not a mark and is ignored, but data-mark=\"\" and whitespace-only "
+            "are authoring mistakes the builder refuses): %s"
+            % ", ".join(blanks))
     # A mark with no stable id breaks next/prev — the builder must refuse
     # rather than invent one (#367).
     if marks_no_id:
