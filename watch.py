@@ -878,7 +878,12 @@ STYLE = """<style>
              height:100vh; }
   #devbox { position:fixed; top:.6rem; right:.8rem; z-index:10;
             color:var(--dimmer); font-size:.7rem; text-align:right; }
-  #devbox canvas { display:block; margin-top:.25rem; opacity:.55; }
+  /* the sparkline is narrower than the readout text beside it, so the
+     box is text-width and the canvas parks at its LEFT edge by default —
+     a gap to the wall. margin-left:auto absorbs the slack and pins the
+     graph's right edge to the text's right edge (the wall side). */
+  #devbox canvas { display:block; margin-top:.25rem; margin-left:auto;
+                    opacity:.55; }
   #layerhint { position:fixed; bottom:1rem; right:1rem; z-index:10;
     color:var(--accent); background:rgba(17,24,39,.82);
     border:1px solid var(--line); border-radius:var(--radius);
@@ -6039,8 +6044,16 @@ function mountDreambg(win, cv, opts) {
       }
       prevMs = ms;
       dts.push(cpuMs); if (dts.length > 120) dts.shift();
-      if (ms - fpsT >= 1000) {
-        fpsEl.textContent = fpsN + ' fps';
+      drawSpark();
+      if (!fpsT) fpsT = ms;            // anchor the first window, else a
+                                       // slow first paint reports a bogus
+                                       // rate (count over a long elapsed)
+      if (ms - fpsT >= 100) {
+        // fps over the elapsed window, scaled to a per-second rate: the
+        // window shrunk from 1s to 100ms for a livelier readout, so the
+        // raw count would show "6 fps" at 60 real fps.
+        const elapsed = ms - fpsT;
+        fpsEl.textContent = Math.round(fpsN * 1000 / elapsed) + ' fps';
         // measured work per frame: real GPU time when the timer is live,
         // else CPU-side draw (JS + GL submission — understates true GPU).
         const useGpu = gts.length > 0, work = useGpu ? gts : dts;
@@ -6050,7 +6063,6 @@ function mountDreambg(win, cv, opts) {
         ftEl.textContent =
           avgOf(fts).toFixed(1) + 'ms avg · ' +
           Math.max(0, ...fts).toFixed(1) + 'ms worst';
-        drawSpark();
         fpsN = 0; fpsT = ms;
       }
     }

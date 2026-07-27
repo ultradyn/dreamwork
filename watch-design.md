@@ -102,7 +102,14 @@ carries a `+` command opener (steer the loop without a chat turn).
 - **`--dev`**: fps, measured per-frame draw time (CPU stopwatch around
   `draw()`; true GPU time via `EXT_disjoint_timer_query_webgl2` when the
   context exposes it), inter-frame avg/worst, and a 120-frame sparkline
-  overlay — on every view, zero cost when off.
+  overlay — on every view, zero cost when off. The three text readouts
+  refresh on a **100ms window** (fps scaled to a per-second rate from the
+  window's count/elapsed, so a 60fps tab still reads ~60 rather than the
+  raw 100ms count); the **sparkline paints every frame**, so it reflects
+  the latest sample immediately. The graph hugs the right-hand wall — the
+  canvas is narrower than the readout text beside it, so `margin-left:auto`
+  pins its right edge to the text's right edge rather than parking at the
+  box's left.
 
 ## Design contract (per web-artisan-core, minimalized)
 
