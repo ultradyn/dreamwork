@@ -24,9 +24,44 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **399**
+Next id: **400**
 
 ## Open
+- **#399** — any bare bolded id in a landed entry marks that task landed, so **7 open tasks are
+  reported as landed** · P1 · ledger-parser/correctness · origin: **loop** · found because a lint
+  WARN told me to fold **his unanswered question**
+  · `watch._landed_ids` (`:7648`) takes every **ids-only bold span** anywhere in `## Recently
+  landed`. Its docstring states the intent — *"`**#96 stage 1**` (a prose reference) does not land
+  #96"* — and that exclusion only works when prose puts **words inside the bold**. **This ledger's
+  natural voice is `filed as **#392**`**, a bare bolded id, which lands it
+  · **measured: `parse_ledger` returns 7 ids in BOTH sets** — `353, 367, 378, 387, 392, 393, 394`.
+  Each traced to its source: `#367` from `· related: **#367**`; `#393`/`#394` from *"gaps filed
+  rather than absorbed: **#393** … and **#394**"*; `#353` and `#392` from `filed as **#N**`
+  · **the first half is a direct tension between two checks, and obeying one corrupts the other.**
+  `lint.check_related_markers` **requires** a landed entry to name its open counterpart —
+  *"an entry is read alone"* — and `_landed_ids` then reads that very marker as a landing. So the
+  more correctly the ledger is cross-referenced, the more open tasks are reported landed. Neither
+  check is wrong alone; they share an input and disagree about what a bold id means
+  · **consequence 1, which is how I found it and is the reason this is P1:** `lint` WARNed *"open
+  ask names only landed task(s) #367 — fold the ask, or reopen the task"*. `#367` is **under
+  `## Open`**, and its ask is the **strip-below-the-cliff question he has not answered**. The check
+  instructed me to close an open question of his. A coordinator following lint would lose it
+  · **consequence 2, and it closes an audit item that was left uncertain:** the dashboard audit
+  (`d348122`) reported *"burndown arrived/landed per-bucket series not reproduced by open-id set
+  diffs … uncertain, not filed as a hard bug"*. An inflated landed set is exactly that symptom.
+  **The audit's honest non-finding was this bug** — treat it as corroboration, and re-derive the
+  series once this is fixed rather than assuming
+  · **rec:** a landing is claimed by an entry **HEAD**, the way `_open_ids` already works — not by a
+  mention anywhere in the body. `_open_ids` reads `LEDGER_ENTRY` heads and is not affected, which is
+  both the proof the shape works and the fix's model. If body mentions must keep meaning something,
+  they need a distinct vocabulary, and that is a `file-formats.md` change
+  · **red-first note:** the red is free and needs no fixture — assert `parse_ledger` returns
+  **disjoint** sets on the **live** ledger. That assertion fails today with those 7 ids and no
+  synthetic input at all. Derive the overlap at runtime; do not pin the list of 7, because it grows
+  every time the ledger is cross-referenced correctly
+  · blocked: `watch.py` is held by **#392a**
+  · related: **#392**
+
 - **#398** — a brief written after the hand-off obligation landed must carry it · P2 ·
   lint/loop-durability · origin: **loop** · the enforcement half of **#394**, and it exists because
   I wrote in that entry that it **could not** be checked
@@ -211,7 +246,7 @@ Next id: **399**
   (07-26 20:23 → 07-27 12:23) — 111 ids, 110 unique. `lint.check_tasks` has ERRORed on exactly
   that since `b7151ec`, so the check was never the problem; it was not run or not read. **No new
   task filed** — nothing to build
-  · related: **#385**
+  · related: **#385, #399**
 
 
   · **SPLIT 2026-07-28 09:14, because the half that stops the wrongness needs none of the held

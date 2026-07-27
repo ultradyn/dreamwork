@@ -512,17 +512,38 @@ therefore mandatory, and the disagreement it invites is exactly what
 `lint.check_related_markers` removes: reciprocity is cheap to enforce and
 impossible to remember.
 
-It **ERRORs**, unlike the citation check above, because there is no legacy to
-grandfather: the live ledger has zero `related:` markers at the time of writing,
-so strictness breaks nothing and the first marker written is checked the day it
-is written. The five errors:
+It **ERRORs**, unlike the citation check above, because there was no legacy to
+grandfather: the live ledger had zero markers when the check was written, so
+strictness broke nothing and the first marker written was checked the day it was
+written. That sentence is kept in the past tense deliberately — the ledger now
+carries **19 reciprocal pairs**, and the reason the rule could be strict from
+day one is worth keeping even though the condition that made it easy is gone.
+The **six** errors:
 
 - more than one marker on an entry (two claims about one relation is none);
 - the wrong case — `Related:` is a claim a reader would have to interpret;
 - a value naming no `#N` at all;
 - an id that is not in the ledger (a relation pointing at nothing is worse
   than none);
-- an entry naming itself.
+- an entry naming itself;
+- **present but unparseable** — the field is there and the bold span is not
+  (#395). This one was added last and it is the reason the list is worth
+  reading: the check used to `continue` past such an entry, and *skipping* and
+  *passing* print the same thing, which is nothing. Three entries had written
+  the marker without asterisks and were skipped in silence, hiding four broken
+  relations that no run had ever reported. **The error names the shape**, not a
+  downstream reciprocity symptom about claims the check never saw, because the
+  reciprocity message points away from the cause.
+
+Two shapes that look right and are not, both found by walking into them:
+**two adjacent bold spans** (`**#7**, **#8**`) yield only the **first** id, so
+the list must live inside **one** span — `**#7, #8**`; and the vocabulary
+**cannot be quoted in prose** inside an entry, because the value pattern runs
+forward to the next `**` anywhere in that entry and manufactures a phantom
+marker. The check anchors the field to line-start or a `·` separator for exactly
+that reason. A clean run now prints how many entries it **skipped as
+unparseable** alongside the pair count, so the coverage cannot shrink in
+silence.
 
 **The marker may hard-wrap**, like `origin:`, because the loop writes at ~72
 columns; the check joins each entry's lines before reading it. A bare `#N` in a
