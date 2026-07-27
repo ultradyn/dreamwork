@@ -110,13 +110,21 @@ lint:
 #                so the tick brings a real data change. Two of its checks are
 #                about the premise the panel's motion rests on (the panel
 #                height never changes) rather than about the motion itself.
+#   provenance   OWN TARGETS + OWN EPHEMERAL PORTS (#217), same shape as
+#                burndown and for the same reason: the datum is a property
+#                of a repository's ledger HISTORY. Plants a human filing, a
+#                loop filing, an unmarked entry marked human LATER (first
+#                sight is final, so it must stay unknown), a combined entry
+#                and a deletion, plus a shallow clone for the
+#                incomplete-coverage copy. Its load-bearing count check was
+#                shown red against the unknown-counted-as-loop sabotage.
 #   hub contract dreamhub's, in dev/hub/, and (OUT) only — their input is N
 #                targets plus a registry, and they pick ephemeral ports, so
 #                they need no plumbing here and cannot fight the server above.
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health dashboard identity motion morph morphhold prominence qsec submitlog indicator draft subslog history plugcmd qorder revieworder serving gitrow burndown answers runmode"
+    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health dashboard identity motion morph morphhold prominence qsec submitlog indicator draft subslog history plugcmd qorder revieworder serving gitrow burndown provenance answers runmode"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}

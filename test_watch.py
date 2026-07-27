@@ -545,39 +545,254 @@ class TestCollector(unittest.TestCase):
             watch._LEDGER_SNAPS.clear()
             watch._LEDGER_CACHE.clear()
 
-    def test_ledger_provenance_is_reported_as_coverage_not_drawn(self):
-        # The most telling split would be human- against loop-initiated, and
-        # the ledger cannot support it: `**human` is on a MINORITY of
-        # entries. Reporting coverage is the honest version; drawing a chart
-        # from it would be read as fact. The marker sits anywhere INSIDE an
-        # entry, so it is matched per BLOCK — matched per line, an entry
-        # whose head is short reads as unmarked.
-        text = ("## Open\n\n"
-                "- **#1** — one · P2 · idea · **human 17:45** · his words\n"
-                "- **#2** — two · P2 · task\n"
-                "  more of two, and this line carries the **human 09:00**\n"
-                "  stamp on a continuation rather than the head\n"
-                "- **#3** — three · P3 · chore\n\n"
-                "## Recently landed\n\n**#0** and this **human** must not "
-                "count, it is not open\n")
-        # Driven through `ledger_stats`, not through `_entry_blocks`: the
-        # first version of this test called the helper directly, so the whole
-        # per-line/per-block distinction it names was unreachable from it and
-        # it stayed green when `ledger_stats` was switched to matching per
-        # line. A check has to exercise the path it is about.
+    LED217 = "# Task ledger\n\nNext id: **99**\n\n## Open\n\n"
+
+    def test_first_sight_grammar_has_exactly_one_copy(self):
+        # #217 reads the ledger's first sightings with #213/#216's grammar,
+        # so "what counts as an entry and what counts as an origin claim"
+        # must be ONE rule. watch.py is a single file by design (the deploy
+        # snapshot depends on it) and cannot import lint, so it holds a
+        # VERBATIM copy — pinned here, the same way LEDGER_ENTRY is.
+        import lint
+        self.assertEqual(watch.ENTRY_HEAD.pattern, lint.ENTRY_HEAD.pattern)
+        self.assertEqual(watch.ENTRY_ID.pattern, lint.ENTRY_ID.pattern)
+        self.assertEqual(watch.ORIGIN_MARK.pattern, lint.ORIGIN_MARK.pattern)
+        self.assertEqual(watch.ENTRY_HEAD.flags, lint.ENTRY_HEAD.flags)
+        self.assertEqual(watch.ORIGIN_MARK.flags, lint.ORIGIN_MARK.flags)
+        self.assertEqual(set(watch.KNOWN_ORIGINS),
+                         set(lint.ORIGIN_VALUES) - {"unknown"})
+        # and the entry walker itself agrees on a hostile input, not only
+        # on the patterns: a wrapped marker, a combined entry, a body
+        # cross-reference and landed prose all parse identically
+        hostile = (
+            "## Open\n\n"
+            "- **#250/#251** — combined · P2 · task · origin:\n"
+            "  **loop** · wrapped marker\n"
+            "- **#252** — body mentions #250 in passing · origin: **human**\n"
+            "\n## Recently landed\n\n**#9** landed prose, not an entry.\n")
+        self.assertEqual(watch.ledger_entries(hostile),
+                         lint.ledger_entries(hostile))
+
+    def test_ledger_provenance_counts_first_sightings_exactly(self):
+        # #217. The panel draws three counts — human, loop, historical
+        # unknown — and unknown must NEVER be rolled into loop: the unknown
+        # remainder is the absence of a claim, not evidence of one.
+        T = 1784900000
         watch._LEDGER_SNAPS.clear()
         watch._LEDGER_CACHE.clear()
         with tempfile.TemporaryDirectory() as d:
-            self._ledger_repo(d, [(text, 1784900000)])
-            r = watch.ledger_stats(d)
-            self.assertEqual(r["entries"], 3)
-            self.assertEqual(r["marked"], 2)
-            # and the coverage is a MINORITY, which is the whole reason the
-            # panel reports it instead of drawing it — assert the gap, or
-            # this stops meaning anything the day the ledger fills in
-            self.assertLess(r["marked"], r["entries"])
+            self._ledger_repo(d, [
+                (self.LED217 +
+                 "- **#1** — his · P2 · task · origin: **human**\n"
+                 "- **#2** — the loop's · P2 · task · origin: **loop**\n"
+                 "- **#3** — filed before markers existed · P2 · task\n", T),
+            ])
+            p = watch.ledger_stats(d)["provenance"]
+            self.assertEqual(p["human"], 1)
+            self.assertEqual(p["loop"], 1)
+            self.assertEqual(p["unknown"], 1)
+            self.assertEqual(p["total"], 3)
+            self.assertEqual(p["human"] + p["loop"] + p["unknown"],
+                             p["total"])
+            self.assertTrue(p["history_complete"])
         watch._LEDGER_SNAPS.clear()
         watch._LEDGER_CACHE.clear()
+
+    def test_ledger_provenance_first_sight_is_final(self):
+        # SABOTAGE-PROVEN shape (task_origins.py's pair, one surface over):
+        # a marker added LATER is documentation, not time travel. A reader
+        # of the current snapshot reports human here; the first-sight walk
+        # must keep this id unknown forever.
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [
+                (self.LED217 + "- **#1** — unmarked at filing · P2 · task\n", T),
+                (self.LED217 + "- **#1** — unmarked at filing · P2 · task · "
+                               "origin: **human**\n", T + 3600),
+            ])
+            p = watch.ledger_stats(d)["provenance"]
+            self.assertEqual(p["unknown"], 1)
+            self.assertEqual(p["human"], 0)
+            self.assertEqual(p["loop"], 0)
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+
+    def test_ledger_provenance_combined_entries_and_deletions(self):
+        # A combined entry classifies every id in its head token; a task
+        # groomed OUT of the ledger keeps its first sight, because first
+        # sight already happened and grooming cannot un-happen it.
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [
+                (self.LED217 + "- **#1** — doomed · P2 · task · "
+                               "origin: **human**\n", T),
+                (self.LED217 + "- **#2/#3** — combined · P2 · task · "
+                               "origin: **loop**\n", T + 3600),
+            ])
+            p = watch.ledger_stats(d)["provenance"]
+            self.assertEqual(p["human"], 1)   # #1, though deleted
+            self.assertEqual(p["loop"], 2)    # #2 and #3 from one entry
+            self.assertEqual(p["unknown"], 0)
+            self.assertEqual(p["total"], 3)
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+
+    def test_ledger_provenance_uncommitted_entries_are_not_counted(self):
+        # The denominator is COMMITTED first sightings. A brand-new entry
+        # sitting uncommitted in the working tree is not a historical
+        # arrival and must not inflate any of the three counts.
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [
+                (self.LED217 + "- **#1** — committed · P2 · task · "
+                               "origin: **loop**\n", T),
+            ])
+            with open(os.path.join(d, ".dreamwork", "tasks.md"), "a") as f:
+                f.write("- **#2** — fresh and uncommitted · origin: **human**\n")
+            p = watch.ledger_stats(d)["provenance"]
+            self.assertEqual(p["total"], 1)
+            self.assertEqual(p["human"], 0)
+            self.assertEqual(p["loop"], 1)
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+
+    def test_ledger_provenance_cache_refreshes_only_on_a_new_head(self):
+        # The walk is one `git show` per ledger commit and only ever grows,
+        # so the answer is cached on a truthful repository-history key — the
+        # target and its HEAD — and a repeated tick must not recompute it.
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [
+                (self.LED217 + "- **#1** — one · P2 · task · origin: **human**\n",
+                 T),
+            ])
+            first = watch.ledger_stats(d)
+            self.assertIs(watch.ledger_stats(d), first,
+                          "a warm tick must reuse the cached answer")
+            self._ledger_repo(d, [
+                (self.LED217 + "- **#1** — one · P2 · task · origin: **human**\n"
+                               "- **#2** — two · P2 · task · origin: **loop**\n",
+                 T + 3600),
+            ])
+            second = watch.ledger_stats(d)
+            self.assertIsNot(second, first, "HEAD moved — the answer must too")
+            self.assertEqual(second["provenance"]["loop"], 1)
+            self.assertEqual(second["provenance"]["total"], 2)
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+
+    def test_ledger_provenance_reads_the_nested_targets_own_ledger(self):
+        # The ledger path is resolved against the repository TOP LEVEL, not
+        # blindly against the target: a target nested inside a larger repo
+        # must read its OWN `.dreamwork/tasks.md` history, never the repo
+        # root's. The two ledgers here classify disjointly, so a leak across
+        # the boundary cannot pass as a correct answer.
+        import subprocess
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+        with tempfile.TemporaryDirectory() as d:
+            base = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x",
+                        GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@x")
+            subprocess.run(["git", "-C", d, "init", "-q"], env=base,
+                           check=True, capture_output=True)
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            os.makedirs(os.path.join(d, "sub", ".dreamwork"))
+            with open(os.path.join(d, ".dreamwork", "tasks.md"), "w") as f:
+                f.write(self.LED217 +
+                        "- **#1** — the ROOT ledger's · origin: **human**\n")
+            with open(os.path.join(d, "sub", ".dreamwork", "tasks.md"), "w") as f:
+                f.write(self.LED217 +
+                        "- **#7** — the NESTED ledger's · origin: **loop**\n")
+            subprocess.run(["git", "-C", d, "add", "."], env=base,
+                           check=True, capture_output=True)
+            subprocess.run(["git", "-C", d, "commit", "-q", "-m", "both"],
+                           env=base, check=True, capture_output=True)
+            p = watch.ledger_stats(os.path.join(d, "sub"))["provenance"]
+            self.assertEqual(p["loop"], 1)
+            self.assertEqual(p["human"], 0,
+                             "the nested target read the repo root's ledger")
+            self.assertEqual(p["total"], 1)
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+
+    def test_ledger_provenance_names_incomplete_coverage(self):
+        # A shallow clone cannot see first sightings before its boundary;
+        # claiming full coverage there would be a lie, so the flag goes
+        # false and the page names the incompleteness (#216's contract).
+        import subprocess
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "src")
+            self._ledger_repo(src, [
+                (self.LED217 + "- **#1** — old · P2 · task\n", T),
+                (self.LED217 + "- **#1** — old · P2 · task\n"
+                               "- **#2** — new · P2 · task · origin: **loop**\n",
+                 T + 3600),
+            ])
+            dst = os.path.join(d, "shallow")
+            subprocess.run(["git", "clone", "-q", "--depth", "1",
+                            "file://" + src, dst],
+                           check=True, capture_output=True)
+            p = watch.ledger_stats(dst)["provenance"]
+            self.assertFalse(p["history_complete"])
+        watch._LEDGER_SNAPS.clear()
+        watch._LEDGER_CACHE.clear()
+
+    def test_ledger_provenance_degrades_explicitly_when_there_is_nothing(self):
+        # Non-git targets and repos with no ledger history are ordinary
+        # states: the burndown says WHICH nothing, and no provenance block
+        # is emitted to contradict it — never a crash, never a silent zero.
+        watch._LEDGER_CACHE.clear()
+        with tempfile.TemporaryDirectory() as d:
+            r = watch.ledger_stats(d)
+            self.assertEqual(r["state"], watch.BURN_NONE)
+            self.assertNotIn("provenance", r)
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [("no entries anywhere\n", 1784900000)])
+            r = watch.ledger_stats(d)
+            self.assertEqual(r["state"], watch.BURN_NONE)
+            self.assertNotIn("provenance", r)
+        watch._LEDGER_CACHE.clear()
+
+    def test_ledger_provenance_render_is_escaped_and_exposes_its_copy(self):
+        # The block's text and its aria-label are the accessibility story —
+        # colour alone never carries the split — so the copy is asserted on
+        # the page's own source: every string interpolated into an attribute
+        # goes through esc(), the denominator names its source, and the
+        # incomplete state is named, not implied.
+        page = watch.PAGE
+        self.assertIn('role="img" aria-label="${esc(aria)}"', page)
+        self.assertIn("first sightings in recorded git history", page)
+        self.assertIn("historical unknown", page)
+        self.assertIn("coverage is incomplete", page)
+        self.assertIn("title=\"${esc(n)} ${c}\"", page)
+        # the panel's height is the premise the bars' motion rests on, so
+        # the count-carrying lines may never wrap
+        self.assertRegex(page, r"\.provline\s*\{[^}]*white-space:nowrap")
+        self.assertRegex(page, r"\.provsrc\s*\{[^}]*white-space:nowrap")
+        # the accent is not spent here — nothing in this panel waits on him.
+        # Scoped to the provenance rules: the panel's OTHER rules are #142's
+        m = re.search(r"(\.bdprov\s*\{.*?\n  \})", page, re.S)
+        self.assertIsNotNone(m, "no .bdprov rule in the page's STYLE")
+        prov_css = page[m.start():m.start() + 1200]
+        self.assertNotIn("--accent", prov_css)
+        # unknown is visually distinct WITHOUT colour: the hatch is a
+        # pattern, so it survives every tint and every colour-vision
+        self.assertIn("repeating-linear-gradient", prov_css)
+        # and there is deliberately NO motion on this datum: a live tick
+        # commits its DOM instantly (transitions.md), so no transition may
+        # be declared on any of its parts
+        self.assertNotIn("transition", prov_css)
 
     def test_live_data_assignments_go_through_one_seam(self):
         # `ensureData` consumes mtime as it fetches, so reactive hooks wired

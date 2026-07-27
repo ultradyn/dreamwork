@@ -1268,18 +1268,50 @@ the two patterns stay identical.** One rule, one copy: the linter learned
 that today (3073055) by holding a wider copy of the priority-marker rule than
 the parser and blessing three typos.
 
-**It reports its own provenance COVERAGE rather than drawing a split.** The
-most telling number would be human- against loop-initiated, and the ledger
-cannot support it — the `**human` stamp is on a minority of entries, so a
-chart drawn from it would be mostly one bar wide and would be read as fact.
-The head says `sourced 0/4` and the note says what that makes impossible.
-It is also the thing most likely to make someone add the field.
+**Who filed each task, by first sight (#217).** The panel used to report
+its own provenance COVERAGE (`sourced 0/4`) instead of drawing the split,
+because the only marker it could read — the `**human` stamp on the current
+file — sat on a minority of entries, and a chart drawn from it would have
+been mostly one bar wide and read as fact. #216 made the real answer
+readable: a task's origin is a fact about its ARRIVAL, classified from the
+first committed snapshot where its id appears and never revisited. So the
+split is drawn now — as three counts, `human · loop · historical unknown`,
+under the axis — and the shape of the drawing is the honesty:
 
-**The head is one ellipsised line and the note is CONSTANT prose**, and that
-is not a phrasing preference. The note used to carry the counts, and
-`0 of 4` becoming `0 of 14` pushed it onto a fourth line and grew the panel
-by 14px — so a bar easing over 850ms sat above four panels that had already
-jumped. The head ellipsises for the reason a commit row does (#151).
+- **The unknown remainder is drawn as itself, never folded into loop.** It
+  is the third segment and the third legend key, labelled `historical
+  unknown`, because that is what it is: entries filed before the marker
+  existed, whose arrival says nothing about who filed them. Adding them to
+  the loop's count is the exact lie the task was filed against, and the
+  guard (`dev/capture/provenance.mjs`) was shown red against precisely that
+  sabotage before it was trusted.
+- **Colour never carries the split alone.** Human and loop are solid at two
+  text-ramp steps; unknown is a HATCH — a pattern, not a shade — so the
+  distinction survives every project tint and every colour-vision. The
+  legend states the same three counts in words (each key wearing its
+  segment's ramp step), every segment states its count on hover, and the
+  bar's `role="img"` aria-label is the whole datum in one sentence. The
+  accent is not spent: the panel's rule (#142) is that nothing in it waits
+  on him.
+- **The copy names the denominator and the scope**: `N first sightings in
+  recorded git history`. Committed sightings — an entry sitting uncommitted
+  in the working tree is not a historical arrival and appears nowhere in
+  the datum. A shallow clone cannot see first sightings before its
+  boundary, and says so (`coverage is incomplete`, on its own line and in
+  the aria-label) rather than claiming full coverage.
+
+**The count-carrying lines may never wrap**, which is the ellipsised-head
+rule (#151) one element down: the note that used to carry counts grew the
+panel by 14px when `0 of 4` became `0 of 14`, so a bar easing over 850ms
+sat above four panels that had already jumped. The legend and the
+denominator line are one line each, `nowrap` + ellipsis, short enough to
+never clip at 390px at any realistic count; the full text rides the
+aria-label either way. The incomplete-coverage line is constant prose.
+
+**No motion, on purpose.** A live tick commits its DOM instantly
+(transitions.md), and nothing about this datum is a layout change anyone
+initiated — so no part of it declares a transition, and reduced-motion
+parity is the identical settled visual rather than a second path.
 
 **Every height in the chart is fixed**, which is the premise the motion rests
 on: fresh data changes bars and never moves the page, so the bars may animate
@@ -1308,10 +1340,22 @@ found it; reading did not.
 ever growing — so it is cached on HEAD, and the per-revision parse is
 memoised on the commit sha because history is immutable: a new HEAD costs
 only the commits that are new (measured: 0.26s cold, 0.007s for a new head,
-0.0014s warm). Every git call carries `--no-optional-locks`, asserted by a
-test rather than remembered. One consequence of caching on HEAD alone: the
-chart's right-hand edge is the moment the answer was computed, so it goes
-stale until HEAD moves — which is right for a chart about ledger history.
+0.0014s warm). The provenance counts ride the SAME walk — each memoised
+revision also carries its entries' first-sight classifications, so the
+datum costs no second pass over history (#217). Every git call carries
+`--no-optional-locks`, asserted by a test rather than remembered. One
+consequence of caching on HEAD alone: the chart's right-hand edge is the
+moment the answer was computed, so it goes stale until HEAD moves — which
+is right for a chart about ledger history.
+
+**The ledger's pathspec is resolved against the repository's TOP LEVEL**
+(#217), and the walk runs from there: a target nested inside a larger repo
+must read its own `.dreamwork/tasks.md` history, and `git -C sub log --
+.dreamwork/tasks.md` would otherwise walk the parent repo and read the repo
+ROOT's ledger — silently. The first-sight grammar (`ENTRY_HEAD`, `ENTRY_ID`,
+`ORIGIN_MARK`, the entry walker) is lint.py's #213 grammar held VERBATIM —
+watch.py is one file by design and cannot import it — and a test pins the
+two identical, the one-copy rule `LEDGER_ENTRY` already states.
 
 **Both kinds of nothing say so, inside the same `.bd` box.** A project that
 is not a git checkout, and one that keeps no versioned ledger, are ordinary
