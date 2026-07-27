@@ -24,9 +24,39 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **345**
+Next id: **346**
 
 ## Open
+
+- **#345** — `gitrow`'s motion assertions red under load, so `just test` is not
+  reliably repeatable · P2 · verification reliability · origin: **loop** · found
+  validating #326 · `gitrow.mjs:222-223` assert `t.positions >= 8` — a count of
+  distinct sampled positions during the row's opening — so under CPU contention the
+  sampler observes fewer rAF frames and the guard reds on code that is correct
+  · **measured, not suspected**: red inside a full `just test` running alongside two
+  `ccc` agents and the human's own work; **PASS alone on a quiet machine, same
+  commit**, and the identical `closing` assertion at `:302` passed even in the red run
+  · this is **already documented as expected** at the justfile's head — *"The browser
+  half is intentionally serial; run it on a reasonably idle machine. Its motion checks
+  sample rAF geometry and heavy contention can produce honest 'not enough frames'
+  reds"* — which is exactly why it is worth a task rather than a shrug: a known
+  false-red teaches the reader to discount reds, and `just test` is the whole of
+  verification here (there is no CI). The next honest red in that guard will be read
+  as contention and merged past
+  · **do not simply lower the threshold** — 8 positions is what distinguishes travel
+  from a teleport, and weakening it removes the only thing the check does. The
+  directions worth exploring: assert on the geometry's SHAPE (monotone progress
+  between first and last sample) rather than on a sample count, which is
+  frame-rate-independent; or have the sampler report the frames it actually got and
+  SKIP with a stated reason below a floor, so the output says "could not measure"
+  instead of "did not move" — an unmeasurable check reporting failure is the same
+  quiet-wrong-state this repo keeps paying for
+  · **whichever way it goes, red-prove it against a real teleport**, because the
+  failure mode of any fix here is a check that stops catching the bug it was written
+  for — and `transitions.md` opens by saying an end-state assertion cannot fail on a
+  motion bug · audit the other rAF-sampling guards for the same shape while in there
+  (`motion`, `morph`, `morphhold`, `headertravel` are candidates); report, do not
+  widen scope
 
 - **#344** — A per-row control on `/tasks` that points the loop at that task · P2 ·
   feature · origin: **human** · **human via watch 2026-07-27 23:39**, answering
@@ -373,58 +403,9 @@ Next id: **345**
   blocked on #281 landing first (its reader, URL contract and row rendering are
   the parts `/tasks2` composes)
 
-- **#326** — The answer box sits on a black band instead of the text fading ·
-  **P1** · **next-up** · bug/visual · ~30m · origin: **human** · **human via chat
-  with a screenshot 2026-07-27 21:40** (verbatim: *"the black stuff around the
-  answer box to emulate the fade thing is ugly. the text itself should fade, not
-  be covered by fake fade. and the buttons and text box shouldn't have anything
-  behind them (should look like it did before)"*) · **located exactly**:
-  `watch.py` ~1065-1069, `.qdock > .qa > .qcompose::before`, introduced by
-  `4e5ea01` as #305 (c) · it is an absolutely-positioned band from `top:-2rem` to
-  `bottom:0` at `z-index:-1` carrying
-  `linear-gradient(to bottom, transparent, var(--bg) 2rem)` — so it fades over its
-  first 2rem and then runs **solid `var(--bg)` for the whole height of the compose
-  box**. That is both halves of his complaint in one rule: the 2rem OCCLUDES the
-  live text instead of fading it, and the solid remainder is the panel behind the
-  textarea and buttons · **two asks, and they are separable**: (1) nothing behind
-  the box/buttons — that is deleting the band, and it restores the pre-#305 look
-  he asked for; (2) the text itself fades — that is a mask on the scrolling text ·
-  **the structural catch that makes (2) more than a one-liner, and the reason
-  #305's author chose the band**: `.qcompose` is `position:sticky` INSIDE `.qa`,
-  so a mask on `.qa` fades the ANSWER BOX along with the text. The author's stated
-  objection ("a mask over the scroller cannot be told about the box, and would dim
-  his last line at the end") is only half right — the `atend` state already
-  detects the body ending at the box and is what currently zeroes the band's
-  opacity, so the last-line problem is already solved machinery; the box-fading
-  problem is the real one · rec: give the question body its own element inside the
-  scroller and mask THAT, leaving `.qcompose` unmasked — it matches his words
-  ("the text itself should fade") and it is the same mirrored gesture as the top
-  edge, which already masks correctly via `--qfade` · **do not author a second
-  idiom**: the top edge's registered-property fade is the reference, the bottom is
-  it mirrored, and `transitions.md` governs the arrive/depart of the edge · the
-  `@media (max-width:900px)` block and the reduced-motion block both reference the
-  band and must be updated in step, or the narrow layout keeps a rule for an
-  element that no longer exists · **watch.py is held by ccc-glm52-269 (the P0
-  draft-loss fix)**, so this starts when that releases; he has authorised native
-  subagents again for important work, and this is a visual-quality change on the
-  surface he reads proposals on
 
-- **#324** — Convert the remaining 15 tail-printing guards to the shared
-  reporter · P3 · chore · ~40m · origin: **loop** · goal: a crash must never
-  read as a clean sheet ← DREAMWORK.md *Nothing fails quietly* · #192 landed
-  `dev/capture/report.mjs` and converted three (`status`, `hfit`,
-  `pushhealth`); this is the mechanical remainder: `headertravel reflow qacard
-  docktarget noteprop oneinput regroup popbg typing wisp states confirmation
-  thread health answers` · **this is now a sweep and not a rate problem**, which
-  is the whole reason #192 built a module first — a new guard inherits the
-  sentinel by importing it, so this list can only shrink · each conversion is
-  the same four steps (import `makeReporter`, `declare({drives, traceWindow})`,
-  drop the tail print, call `finish()` at the end) and each needs its own crash
-  injection: **the checks accumulated before the throw must survive**, which is
-  the property, and a conversion that changes a guard's normal verdict is a bug
-  in the conversion · `declare` throws on a missing/empty half, so a converted
-  guard cannot silently omit its coverage · cheap to parallelise across agents by
-  file, since the guards do not import each other
+
+
 
 - **#322** — Allow pasting images into the command composer · P2 · dashboard
   feature · origin: **human** · **human via dashboard composer 2026-07-27
@@ -1643,6 +1624,86 @@ Next id: **345**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#326** — The answer box sits on a black band instead of the text fading ·
+  **P1** · **next-up** · bug/visual · ~30m · origin: **human** · **human via chat
+  with a screenshot 2026-07-27 21:40** (verbatim: *"the black stuff around the
+  answer box to emulate the fade thing is ugly. the text itself should fade, not
+  be covered by fake fade. and the buttons and text box shouldn't have anything
+  behind them (should look like it did before)"*) · **located exactly**:
+  `watch.py` ~1065-1069, `.qdock > .qa > .qcompose::before`, introduced by
+  `4e5ea01` as #305 (c) · it is an absolutely-positioned band from `top:-2rem` to
+  `bottom:0` at `z-index:-1` carrying
+  `linear-gradient(to bottom, transparent, var(--bg) 2rem)` — so it fades over its
+  first 2rem and then runs **solid `var(--bg)` for the whole height of the compose
+  box**. That is both halves of his complaint in one rule: the 2rem OCCLUDES the
+  live text instead of fading it, and the solid remainder is the panel behind the
+  textarea and buttons · **two asks, and they are separable**: (1) nothing behind
+  the box/buttons — that is deleting the band, and it restores the pre-#305 look
+  he asked for; (2) the text itself fades — that is a mask on the scrolling text ·
+  **the structural catch that makes (2) more than a one-liner, and the reason
+  #305's author chose the band**: `.qcompose` is `position:sticky` INSIDE `.qa`,
+  so a mask on `.qa` fades the ANSWER BOX along with the text. The author's stated
+  objection ("a mask over the scroller cannot be told about the box, and would dim
+  his last line at the end") is only half right — the `atend` state already
+  detects the body ending at the box and is what currently zeroes the band's
+  opacity, so the last-line problem is already solved machinery; the box-fading
+  problem is the real one · rec: give the question body its own element inside the
+  scroller and mask THAT, leaving `.qcompose` unmasked — it matches his words
+  ("the text itself should fade") and it is the same mirrored gesture as the top
+  edge, which already masks correctly via `--qfade` · **do not author a second
+  idiom**: the top edge's registered-property fade is the reference, the bottom is
+  it mirrored, and `transitions.md` governs the arrive/depart of the edge · the
+  `@media (max-width:900px)` block and the reduced-motion block both reference the
+  band and must be updated in step, or the narrow layout keeps a rule for an
+  element that no longer exists · **watch.py is held by ccc-glm52-269 (the P0
+  draft-loss fix)**, so this starts when that releases; he has authorised native
+  subagents again for important work, and this is a visual-quality change on the
+  surface he reads proposals on
+  · **merged `7cdfc61`** (agent `fade326`, 5 commits `97c6a87..894e341`) · the question's
+  BODY scrolls, not the whole card: `.qbody` wraps it and is `display:contents`
+  everywhere else, so no box means no mask and no scrollport, which is what the narrow
+  layout wanted back · `--qfoot` joins `--qfade` because the two ends lift on different
+  states and one property could not hold both
+  · **its three GREEN red-runs are documented in `qfade.mjs` where the next agent will
+  read them**, each naming what the check could not see: the band is painted inside
+  `opacity:.82` so `--bg` never reached the framebuffer and a 'no pixel may be --bg'
+  guard could not fail at any wording; a `.qbody`-named override in the guard itself
+  stood in front of the injection; and a mean over the region diluted the effect to
+  1.2% and 11.9% inside tolerance. `pair()` now opens with 'never compare their means'
+  and asserts worst-row ratios with runtime preconditions
+  · **one guard red in the full run and it was NOT this branch**: `gitrow`'s two motion
+  assertions, which sample rAF frames. It references none of the four things #326
+  changed, its identical `closing` assertion passed in the same run, the justfile
+  documents contention reds at its head, and `gitrow` alone on a quiet machine PASSES.
+  Filed as #345
+
+- **#324** — Convert the remaining 15 tail-printing guards to the shared
+  reporter · P3 · chore · ~40m · origin: **loop** · goal: a crash must never
+  read as a clean sheet ← DREAMWORK.md *Nothing fails quietly* · #192 landed
+  `dev/capture/report.mjs` and converted three (`status`, `hfit`,
+  `pushhealth`); this is the mechanical remainder: `headertravel reflow qacard
+  docktarget noteprop oneinput regroup popbg typing wisp states confirmation
+  thread health answers` · **this is now a sweep and not a rate problem**, which
+  is the whole reason #192 built a module first — a new guard inherits the
+  sentinel by importing it, so this list can only shrink · each conversion is
+  the same four steps (import `makeReporter`, `declare({drives, traceWindow})`,
+  drop the tail print, call `finish()` at the end) and each needs its own crash
+  injection: **the checks accumulated before the throw must survive**, which is
+  the property, and a conversion that changes a guard's normal verdict is a bug
+  in the conversion · `declare` throws on a missing/empty half, so a converted
+  guard cannot silently omit its coverage · cheap to parallelise across agents by
+  file, since the guards do not import each other
+  · **merged `7c44d28`** (agent `ccc-glm52-324` on `@oc-glm52`, 6 commits
+  `d306b10..6e55d0c`) · all 15 remaining tail-printing guards converted, none skipped,
+  374 PASS 0 FAIL, and each proved by its OWN crash injection — checks recorded before
+  the throw now print with a sentinel FAIL where the same throw printed nothing
+  · **the overlap with #326 was `qacard.mjs`, not `reviewsplit.mjs`** as assumed at
+  dispatch; #324 never touched reviewsplit. Merge order still mattered, for a different
+  file. `git merge-tree` reported no conflict and the `qacard`, `reviewsplit` and
+  `qfade` guards were re-run against the MERGED tree anyway — all three PASS — because
+  a clean textual merge of output plumbing onto a rewritten probe proves nothing about
+  behaviour
 
 - **#335** — lint catches an open entry that declares ITSELF completed · merged
   `21c6224` (agent commit `be0c1b0`, `ccc-glm52-335` on `@oc-glm52`) ·
