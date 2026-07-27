@@ -110,6 +110,24 @@ and **that floor, not the model, is what sets the price of a small task.**
 Consequence for how I dispatch: a two-line fix is not cheap enough to be worth a
 lane of its own. Batch small mechanical fixes into one brief, or do them inline.
 
+**Observability, corrected 05:58.** I had recorded this as a grok trait. It is
+not: `@pi-glm52` also writes **zero bytes until exit** — its run directory holds a
+0-byte `transcript.txt` for the whole run and gains `output.txt` only at the end.
+**`@oc-glm52` (opencode) is the only one of the three that streams**, 22KB at nine
+minutes. So the axis is the *runner*, not the model, and the practical consequence
+is that with grok or pi the only mid-run signal is the filesystem: `git log`,
+`git status`, and the files the brief says it owns. Which is enough — lane A's A1
+commit was visible to me seven minutes in — but it means **the brief must name the
+files, or the lane is invisible while it runs.** That is a second, unplanned reason
+the ownership section earns its place.
+
+**And one dispatch mistake worth recording, because it cost me a notification:**
+backgrounding `ccc … &` *inside* a harness call that is itself backgrounded makes
+the harness see its own command exit immediately, so the task reports "completed"
+in seconds and no notification arrives when the real work finishes. Lane A ran
+detached and I had to poll it. Let the harness own the backgrounding; do not
+double it.
+
 **Both models scored the same on the two criteria that matter** (primary and
 red-proof), across four lanes. On this evidence I cannot distinguish them on
 quality, and I should stop trying to: the difference that showed up repeatedly was
