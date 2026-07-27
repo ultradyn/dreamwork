@@ -31,7 +31,9 @@ app shell, pytest, one Playwright guard with its own planted git target.
   build step.
 - **Read-only.** `/tasks` adds no POST seam. The composer's `+` is already in
   every heading, and `do-now`/`add-idea` already exist; a row-level write is a
-  new authority surface and is deliberately out of scope (open question 6).
+  new authority surface and is **out of scope by his ruling** — he asked what
+  it would mean rather than approving it, and it has been re-asked as its own
+  question (ruling 6). No increment below adds one.
 - Every appear/disappear/expand/collapse/reorder/route change obeys
   `transitions.md` and **reuses an existing idiom** — no new mechanism.
 - Every field the page renders is *parsed*, *derived* or **unknown**; an
@@ -57,7 +59,7 @@ Defended against the three alternatives, because `#282` will hardcode it and
 `#133` may later prefix it:
 
 - **`/tasks/281` (path segment)** — rejected. The server allowlist is an exact
-  `parsed.path in (…)` membership test (watch.py ~7292). A path segment turns
+  `parsed.path in (…)` membership test (`watch.py:7766` — `("/", "/questions", "/answers", "/file", "/review")`). A path segment turns
   that into prefix matching, which is a change in *kind* to the one place that
   decides what this server will serve, and it lands in the same seam `#133`
   will rewrite. Query params keep the allowlist exact and get the prefix for
@@ -171,52 +173,118 @@ ledger_index(target)    → {tasks, health, note, history_complete}
   hostile input with no repository at all.
 - `ledger_history` does **not** add a walk. `ledger_series` already builds
   `arrived`, `landed` and `first_sight` per id and discards them at the end
-  (which `#218` names in its own entry). It returns them instead, memoised on
-  the same immutable `(rev, path)` snapshot key, and additionally keeps each
-  entry's **title** per snapshot so a pruned task still has one. Cost: one
-  extra dict per revision, ~1MB at today's 139 ledger commits, no extra
-  `git show`.
+  (which `#218` names in its own entry) — `watch.py:6545-6578`. It returns them
+  instead, memoised on the same immutable `(rev, rel)` snapshot key
+  (`watch.py:6553`, which carries the tree-relative path for #217's reason and
+  not the rev alone), and additionally keeps each entry's **title** per
+  snapshot so a pruned task still has one. Cost: one extra dict per revision,
+  at **288** ledger commits today and growing, and **no extra `git show`** —
+  the walk already reads every snapshot's text.
+  The memo tuple is `(open_ids, landed_ids, entry_origins)` today
+  (`watch.py:6558`); §Task 2 extends it, and `_LEDGER_SNAPS` is keyed on an
+  immutable commit so an extended tuple invalidates nothing.
 - `ledger_index` is the merge, cached on HEAD exactly as `ledger_stats` is,
   and it is **the swap point** (§8).
 
-**The grammar is `ledger_entries`, not a copy of it.** That function is pinned
-byte-identical between `watch.py` and `lint.py` by a test, and it is the only
-reader that gets combined entries right. Building on `LEDGER_ENTRY`
-(`^- \*\*#(\d+)\*\*`) instead would silently drop `- **#250/#251**`,
-`- **#292/#293**` and `- **#138/#156**` — which is a bug that exists today in
-`parse_ledger` and is filed rather than fixed here (§10).
+**The grammar is `ledger_entries`, not a copy of it** — and the *reason* has
+changed since this was written, which matters because the old reason is now
+false and an implementer who checks it will conclude the rule is optional.
+
+`#301` and `#315` widened the narrow readers. `LEDGER_ENTRY` is now
+`^- \*\*(#\d+(?:/#\d+)*)\*\*` (`watch.py:6317`) — an **ids-only** bold span,
+so it matches `- **#250/#251**` and `- **#292/#293**` and no longer drops
+combined heads. So *"`LEDGER_ENTRY` cannot see a combined entry"* is **no
+longer true** and is not the argument.
+
+The argument that is still true is a different one, and it is the one §9.1
+case 9 is about: `ledger_entries` walks `ENTRY_HEAD`
+(`^- \*\*([^*]+?)\*\*`, `watch.py:6367`), which is **wider** than
+`LEDGER_ENTRY`. An entry whose leading bold token is *not* a bare id span —
+`- **#7 stage 1** — …`, or a head with no digits at all — is still an entry
+under `ledger_entries` (it yields `ids: []`), and would **vanish entirely**
+under `LEDGER_ENTRY`. Vanishing is the failure this page cannot have: §3 lists
+such an entry as `unknown` precisely because it exists. Zero of today's 148
+entries take that shape, which is exactly why building on the narrow pattern
+would look correct for as long as nobody wrote one.
+
+What is pinned, stated precisely because the two guarantees are not the same
+strength: `watch.LEDGER_ENTRY.pattern == lint.LEDGER_ID.pattern` and the same
+for `ENTRY_HEAD`/`ENTRY_ID`/`ORIGIN_MARK`
+(`test_watch.py:483`, `test_watch.py:840`) — **byte-identical patterns**. The
+`ledger_entries` *function* is pinned by **output agreement on one hostile
+fixture** (`test_watch.py:862-864`), not by byte-identity. That is enough to
+catch a widening applied to one copy and not the other; it is not a proof the
+two bodies are the same.
 
 ### 2.2 The record, field by field
 
-Coverage figures are measured against today's ledger (104 open entries, 17
-landed, 121 total).
+**Coverage figures are re-measured at `16ef2e2`, 2026-07-27** — the ledger is
+**148 entries** (106 open, 42 landed), 172KB of Markdown, **288 commits** of
+history, **238 ids** ever named, of which **151 have a current entry**.
+
+The `today` column is a **measurement with a date, not a constant**, and the
+first pass of these figures aged out inside a day: the ledger was 121 entries
+when this plan was written and the landed section held 17. So no check may
+assert one of these numbers as a literal — §9.1's checks derive every count
+they compare (the ceiling assertion in §4.1 is the one deliberate exception,
+and it is a ceiling rather than a value).
+
+Figures below are counted with the shapes this section states, at `16ef2e2`;
+the implementation's own parse may land a few either way, and where it does the
+implementation's number is the true one.
 
 | field | source | rule | today |
 |---|---|---|---|
-| `ids` | leading bold token, via `ledger_entries` | every numeric id in it; a `#N` in the body is a cross-reference and numbers nothing | 121/121 |
-| `id` | first id in `ids` | the display id; all of `ids` address the record | 121/121 |
-| `section` | which `##` heading it sits under | `open` \| `landed`; an entry before any heading is `unknown` | 121/121 |
-| `title` | after the em dash, up to the first ` · ` | never truncated; if there is no ` · ` the whole remainder is the title | 121/121 |
-| `annotation` | a leading balanced `[…]` before the title | lifted out so the title is the title; **unbalanced → no annotation** and the text stays in the title (fail toward keeping his words) | 9/121 |
-| `priority_raw` | a chain token matching `P[0-3](/P[0-3])*`, **or** a bolded `**P2**` adjacent to the title | rendered verbatim, compounds included | 103/104 open (the 104th is #99's bolded form) |
+| `ids` | leading bold token, via `ledger_entries` | every numeric id in it; a `#N` in the body is a cross-reference and numbers nothing | 148/148 |
+| `id` | first id in `ids` | the display id; all of `ids` address the record | 148/148 |
+| `section` | which `##` heading it sits under | `open` \| `landed`; an entry before any heading is `unknown` | 148/148 (106 open, 42 landed) |
+| `title` | after the em dash, up to the first ` · ` | never truncated; if there is no ` · ` the whole remainder is the title | 148/148 |
+| `annotation` | a leading balanced `[…]` before the title | lifted out so the title is the title; **unbalanced → no annotation** and the text stays in the title (fail toward keeping his words) | 9/148 |
+| `priority_raw` | a chain token matching `P[0-3](/P[0-3])*`, **or** a bolded `**P2**` adjacent to the title | rendered verbatim, compounds included | 106/106 open — 102 as a chain token, **4 only in the bolded form**, so the bolded branch is not an edge case for one entry |
 | `priority_band` | derived | the first recognised band in a compound (`P0/P1` → P0 — the entry is claiming at least P0). **Absent → P2**, the same middle-band rule as `questions.md`, and `priority_raw: null` so the page can say *unmarked* rather than implying an explicit P2 | all |
-| `kind` | the chain token after the priority | free prose (`idea`, `Web UI bug`, `storage/tooling migration`) — recorded, never normalised into a closed set the ledger does not have | ~100/104 |
-| `effort_raw` | a chain token that reads as a size | verbatim (`20m`, `several increments`, `2 parts`, `later`) | 65/104 parse to minutes; the rest keep prose |
-| `effort_min` | derived from `effort_raw` | only `^\d+\s*(m\|min\|h\|hr)$`. **`4-5 increments` yields no number** — a digit-anywhere regex would report 4 minutes | 65/104 |
-| `origin` | `entry_origins`' rule, verbatim | exactly one marker in `human`/`loop` is a claim; none, several, or wrong case → `unknown` | 53/104 open |
+| `kind` | the chain token after the priority | free prose (`idea`, `Web UI bug`, `storage/tooling migration`) — recorded, never normalised into a closed set the ledger does not have | 106/106 open carry a token after the priority |
+| `effort_raw` | a chain token that reads as a size | verbatim (`20m`, `several increments`, `2 parts`, `later`) | 64/106 parse to minutes; the rest keep prose |
+| `effort_min` | derived from `effort_raw` | only `^\d+\s*(m\|min\|h\|hr)$`. **`4-5 increments` yields no number** — a digit-anywhere regex would report 4 minutes | 64/106 |
+| `origin` | `entry_origins`' rule, verbatim | exactly one marker in `human`/`loop` is a claim; none, several, or wrong case → `unknown` | 59/106 open |
 | `origin_first_sight` | git | the arrival classification (`#216`); first sight is final and never revisited | history-wide |
-| `arrival_raw` | a `**human …**` / `**loop …**` stamp in the chain | verbatim, including the channel (`via watch \`add-idea\` 14:37`) | 59/104 |
+| `arrival_raw` | a `**human …**` / `**loop …**` stamp in the chain | verbatim, including the channel (`via watch \`add-idea\` 14:37`) | 52/106 |
 | `arrival_when` | parsed out of `arrival_raw` | `YYYY-MM-DD` and/or `HH:MM`. **A time with no date stays a time** — no date is invented from the file's context | subset of the above |
 | `first_commit` / `first_seen` | git | the first committed snapshot naming the id. **The only trustworthy filed-date** | history-wide |
-| `landed_at` | git | the first snapshot naming the id under `## Recently landed`. Survives grooming, which the text claim does not | 82 ids |
-| `landed_claim` | `landed <date>` in the entry text | the ledger's own claim. Shown **only** when git is unavailable, labelled as the ledger's claim | 17/17 landed |
-| `sha` | a trailing `` `<7-12 hex>` `` | the landing commit the entry names; plain text, **not a link** (`#157`'s rule: a path/rev from an old commit may not resolve, and a link that 404s promises something) | 15/17 landed |
-| `blocked_on` | `blocked on …` up to the next ` · ` | every `#N` in that span (`blocked on #264 design and relevant #263 cutover decisions` → `[264, 263]`) | 19/104 |
-| `blocked_note` | the same span, verbatim | because some blockers are prose, not ids (`blocked on user-event model #263`) | 19/104 |
+| `landed_at` | git | the first snapshot naming the id under `## Recently landed`. Survives grooming, which the text claim does not | 114 ids |
+| `landed_claim` | `landed <date>` in the entry text | the ledger's own claim. Shown **only** when git is unavailable, labelled as the ledger's claim | 34/42 landed entries |
+| `sha` | a trailing `` `<7-12 hex>` `` | the landing commit the entry names; plain text, **not a link** (`#157`'s rule: a path/rev from an old commit may not resolve, and a link that 404s promises something) | 34/42 landed entries |
+| `blocked_on` | `blocked on …` up to the next ` · ` | every `#N` in that span (`blocked on #264 design and relevant #263 cutover decisions` → `[264, 263]`) | 21/106 |
+| `blocked_note` | the same span, verbatim | because some blockers are prose, not ids (`blocked on user-event model #263`) | 21/106 |
 | `refs` | every other `#N` in the entry | cross-references, for the detail view's "mentions" | all |
 | `description` | the remaining chain tokens | reflowed through `mdB`; **the whole thing, never a preview** | all |
 | `raw` | the entry verbatim | **only on the single-record response**, never in the list payload (§4.3) | all |
-| `present` | `false` for a git-only (pruned) id | with `title` from the last snapshot that held it | 0 today |
+| `present` | `false` for a git-only (pruned) id | with `title` from the last snapshot that held it | **87 today** — the common case, not a hypothetical |
+
+**`present: false` is the case this plan most under-weighted, and the number
+is the argument.** It was recorded as *0 today*, which made the whole pruned-id
+path read as speculative machinery for a future grooming. Measured at
+`16ef2e2`: git history has named **238 ids**; **151** have a current entry; so
+**87 ids — 37% of every task this ledger has ever had — have no entry in the
+file at all.**
+
+The shape that produces them is documented and deliberate. Grooming compacts
+`## Recently landed` into **column-0 prose roll-ups**, and
+`file-formats.md:262-264` states outright that *"the column-0 prose summaries
+under Recently landed are not entries and never join one."* So a landed task's
+entry is replaced by a sentence naming it, and `ledger_entries` — correctly —
+sees no entry.
+
+Three consequences, each of which changes an implementation decision:
+
+- **The list is built from the UNION of ids**, `ledger_tasks(text)` ∪
+  `ledger_history(target)`, never from the file alone. §9.1 case 11 already
+  says so and is now the check that covers 87 records rather than zero.
+- **The snapshot title in `ledger_history` is load-bearing, not a nicety.** It
+  is the only title 87 records have. §Task 2 must not be trimmed to skip it.
+- **These records are in the list payload**, and the open-only default filter
+  hides them. Excluding them from the payload instead would make the `landed`
+  filter lie by 87 rows — a filter that silently under-reports is worse than a
+  larger body, and the body cost is §4.3's problem to state, not to hide.
 
 ### 2.3 What is NOT detectable, stated plainly
 
@@ -348,16 +416,31 @@ wrong:
 ### 4.1 Client-side, and where that stops being true
 
 **Decision: filtering, search and sort run on the client**, over the
-route-scoped payload. 121 records is a sub-millisecond scan; a server round
-trip per keystroke would add a new endpoint shape, break the deep-link model
-(the URL would no longer be sufficient state), and buy nothing measurable.
+route-scoped payload. A few hundred records is a sub-millisecond scan; a
+server round trip per keystroke would add a new endpoint shape, break the
+deep-link model (the URL would no longer be sufficient state), and buy nothing
+measurable.
 
 **And it does not scale forever, so the ceiling is named rather than
-discovered:** at ~600 entries or a `/tasksdata` list body over ~512KB,
-whichever comes first, search moves behind `#294`'s query API. The
-implementation asserts the current size in a pytest so the ceiling arrives as
-a red light rather than as a slow page. (Today's ledger is 103KB of Markdown;
-the list payload measures **139KB**, see §4.3.)
+discovered:** at **~600 records or a `/tasksdata` list body over ~512KB**,
+whichever comes first, search moves behind `#294`'s query API.
+
+**The denominator is records, not entries, and that changed the headroom.**
+The record count is 148 entries **plus 87 pruned ids = 238 records** (§2.2),
+and it is **monotonic**: grooming converts an entry into a pruned record
+rather than removing it, so this number never falls. At 238 of 600 the
+headroom is under 3×, where against entries alone it read as 4×.
+
+**How the ceiling is asserted, because the obvious form is a check with an
+expiry date:** the pytest measures the **real serialised body** of
+`/tasksdata` against a planted ledger *and* against the repository's own, and
+asserts `len(body) < CEILING`. It must not assert today's size — that is a
+literal tuned to today's fixture, the trap `CLAUDE.md` names — and it must
+derive and **print** the current size so the number in the output is today's.
+The ceiling is the one constant here, and it is a constant on purpose.
+
+*(Both figures the earlier draft quoted — 103KB of Markdown, a 139KB payload —
+were measured at `c1f5aaa` and are stale: the ledger is now 172KB. See §4.3.)*
 
 ### 4.2 The controls
 
@@ -394,17 +477,26 @@ the list payload measures **139KB**, see §4.3.)
 New GET `/tasksdata`, allowlisted beside `/filedata`:
 
 - `/tasksdata` → `{generated, health, note, history_complete, tasks:[…]}`,
-  **without `raw`**. Measured on today's ledger: **139KB** without it,
-  **226KB** with — `raw` is 63% of the body for a field only the detail view
-  reads.
+  **without `raw`**. `raw` is the entry verbatim and `description` is nearly
+  all of the same bytes, so carrying both roughly **doubles** the list body
+  for a field only the detail view reads. The earlier draft's figures (139KB
+  without, 226KB with, *"63% of the body"*) were measured at `c1f5aaa` and are
+  doubly wrong now: the ledger has grown 67% since, and 87KB of 226KB is 38%
+  of that body — 63% was the size of `raw` **relative to the body without
+  it**, which is not what the sentence said. **Both numbers are to be
+  re-measured in §Task 3 against the real serialised body**, printed by the
+  test, and neither is to be quoted here as a constant.
 - `/tasksdata?t=281` → `{task: {…, raw}}` or `{task: null}`.
 
-**It is a route-scoped fetch, not a `/data.json` field.** `/data.json` is
-already 374KB (measured) and is re-fetched every ~2s on every open window;
-adding the parsed ledger to it would put 139KB of task text on the wire every
-two seconds for the benefit of one route. `/filedata` is the standing precedent
-for exactly this. The client caches it and invalidates on a changed `/mtime`,
-so liveness is unchanged and the cost is paid only where it buys something.
+**It is a route-scoped fetch, not a `/data.json` field.** `/data.json`
+measures **456,842 bytes at `16ef2e2`** (up from 374KB when this was written)
+and is re-fetched every ~2s on every open window; adding the parsed ledger to
+it would put the whole task text on the wire every two seconds for the benefit
+of one route. Its own composition says why it must not grow: `files` is 184KB
+of it (`lessons.md` 90KB, `questions.md` 85KB), `dreams_archive` 132KB,
+`answered_entries` 55KB. `/filedata` is the standing precedent for exactly
+this. The client caches it and invalidates on a changed `/mtime`, so liveness
+is unchanged and the cost is paid only where it buys something.
 
 `#282`'s hovercards fetch `/tasksdata?t=N` for one record and cache it — which
 is why the single-record shape exists at all.
@@ -745,20 +837,58 @@ who owns the port first.
 
 ## 10 · Found while designing this — out of scope, worth filing
 
-- **`parse_ledger` cannot see combined entries.** `LEDGER_ENTRY`
-  (`^- \*\*#(\d+)\*\*`) requires `**` immediately after the digits, so
-  `- **#138/#156**`, `- **#250/#251**` and `- **#292/#293**` match nothing.
-  Measured: `ledger_entries` finds 123 ids where `parse_ledger` finds 118, and
-  the burndown's arrival, completion and open-level series are wrong by that
-  much. `entry_origins` (built on `ledger_entries`) is already right, so the
-  two readers disagree about the same file.
-- **`TINT` and `SEED` have no `answers` entry**, so `/answers` silently
-  inherits the dashboard's atmosphere (`TINT[name] || 0`) while
-  `transitions.md` states that each destination has its own turbulence seed
-  and tint.
-- The dispatch brief for this batch numbered the hovercard task `#213`; it is
+**The two findings this section opened with have both been fixed** by tasks
+that landed after it was written, and they are recorded as resolved rather than
+deleted, because a plan whose "known bugs" list has silently emptied gives the
+next reader no way to tell fixed from forgotten:
+
+- ~~`parse_ledger` cannot see combined entries.~~ **Fixed by `#301` (landed
+  mentions) and `#315` (open heads).** `LEDGER_ENTRY` is now
+  `^- \*\*(#\d+(?:/#\d+)*)\*\*` (`watch.py:6317`) and `parse_ledger` reads both
+  sections combined-aware through `_open_ids`/`_landed_ids`
+  (`watch.py:6448-6473`). `lint.py`'s `LEDGER_ID` and `check_ledger_sections`
+  widened in the same lockstep (`lint.py:43`, `:285`, `:382-392`). Verified:
+  `- **#138/#156**`, `- **#250/#251**` and `- **#292/#293**` all parse today.
+  §2.1 states the argument that replaced this one.
+- ~~`TINT` and `SEED` have no `answers` entry.~~ **Fixed by `#302`
+  (`cdb89df`).** `/answers` now carries `TINT.answers = 0.08` and
+  `SEED.answers = 29` (`watch.py:3086`, `:3090`). Re-checked for this page: the
+  proposed `TINT.tasks = -0.30` / `SEED.tasks = 13` still collide with nothing
+  — tints are `0, 0.14, 0.08, -0.14, 0.22` and seeds `7, 23, 29, 41, 61`.
+- The dispatch brief for that batch numbered the hovercard task `#213`; it is
   **`#282`**. `#213` is the landed forward-only origin-marker contract, which
-  this design consumes rather than blocks.
+  this design consumes rather than blocks. (Already corrected in `#281`'s
+  ledger entry.)
+
+**And three new findings, all measured, all out of this plan's scope:**
+
+- **The landed reader misses SPACE-joined bold id spans.**
+  `LEDGER_COMBINED_MENTION` (`watch.py:6340`) is `\*\*(#\d+(?:/#\d+)*)\*\*` —
+  ids joined by `/`. The compacted roll-up under `## Recently landed` also
+  writes `**#121 #123**`, `**#104 #77**`, `**#109 #116**`,
+  `**#107 #108 #110**`, `**#102 #106**` and `**#96 stage 1**`. Measured at
+  `16ef2e2`: **#77, #96, #102, #104, #106, #107, #108, #109, #110, #116, #121
+  and #123 are in neither `parse_ledger` set** — twelve landed tasks the
+  current file's readers cannot classify at all. This is the same class of bug
+  `#301`/`#315` just fixed, one separator over, and it is why §3's blocker
+  cross-check is three-way rather than two. It is a live under-count on the
+  burndown's completion series today.
+- **`agents[].in_flight` is documented as prose and written as a bool.**
+  `file-formats.md:494` says *"one line: what it is doing right now"* and calls
+  it *"the one subfield with two readers … load-bearing"*; the live
+  `status.json` writes `"in_flight": true`, and `watch.py:2105` renders it
+  through `mdInline(String(a.in_flight || '—'))` — so the deployed agent glance
+  currently reads **`doing: true`**. Either the writer or the contract is
+  wrong; both readers (`watch.py`, `dreamhub.py:342`) trust the documented
+  shape.
+- **`status.json` has no structured way to say which task an agent is on**,
+  which is what §2.3 needs for an honest `in progress` badge. Required change,
+  stated exactly so the coordinator can land it in `file-formats.md`'s
+  status.json table: add `current_task_ids` (array of ints, top level) and
+  `task_ids` (array of ints, per agent) — *"the task ids this names, as
+  integers; prose in `task` is not a substitute, because one sentence routinely
+  names several ids in different states"*. Until it exists the page shows
+  `in progress` from the ledger's own `· in progress` token only.
 
 ---
 
