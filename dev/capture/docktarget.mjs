@@ -9,16 +9,29 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { makeReporter } from './report.mjs';
 
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 mkdirSync(OUT, { recursive: true });
 
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: '/review docked on one open question, note + answer each intercepted ' +
+          'at their own endpoint, then a P1 planted ahead of it in questions.md',
+  traceWindow: 'two dock pages held across a 7s waitForFunction for the tick that ' +
+               'replaces lexical data; no motion traced',
+});
+
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader'] });
 const initial = await (await fetch(`${BASE}/data.json`)).json();
 const original = initial.questions_open[0];
 const review = initial.reviews[0];
-if (!original || !review) throw new Error('fixture needs an open question and review');
+if (!original || !review) {
+  ok('fixture provides an open question and a review', false);
+  notes.push('fixture needs an open question and review');
+  await browser.close(); finish(); process.exit(1);
+}
 const url = `${BASE}/review?p=${encodeURIComponent(review.name)}` +
             `&q=${encodeURIComponent(original.title)}`;
 
@@ -48,8 +61,6 @@ const injected = '- **P1 · 2026-07-26 — injected reorder sentinel.**\n' +
                  '  Exists only inside the #266 fixture run.\n\n';
 writeFileSync(questions, source.replace('## Open\n\n', `## Open\n\n${injected}`));
 
-const checks = [];
-const ok = (name, value) => checks.push(`${value ? 'PASS' : 'FAIL'} ${name}`);
 for (const phase of phases) {
   const { mode, page, errors, shownBefore } = phase;
   // Wait for tick() to replace lexical `data`; a server-side reorder alone is
@@ -72,11 +83,9 @@ for (const phase of phases) {
      posted?.question === original.title);
   ok(`${mode}: request carries exact text`,
      (mode === 'note' ? posted?.comment : posted?.answer) === text);
-  console.log(`${mode}: original=${JSON.stringify(original.title)}`);
-  console.log(`${mode}: posted=${JSON.stringify(posted?.question || null)}`);
+  notes.push(`${mode}: original=${JSON.stringify(original.title)}`);
+  notes.push(`${mode}: posted=${JSON.stringify(posted?.question || null)}`);
 }
 
-console.log('----');
-console.log(checks.join('\n'));
 await browser.close();
-process.exit(checks.some(line => line.startsWith('FAIL')) ? 1 : 0);
+finish();

@@ -5,10 +5,19 @@
    what a shared component buys and what a fork would quietly lose.
    usage: node qacard.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
+
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: '/questions (all three states), the dashboard, and /review dock — ' +
+          'one .qa card shape compared structurally across all four surfaces',
+  traceWindow: 'static reads after ~0.9s settle per route, plus one #273 mode ' +
+               'switch on /questions; no motion traced',
+});
 
 const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const p = await b.newPage({ viewport: { width: 1100, height: 950 } });
@@ -100,9 +109,7 @@ const sameShape = (a, b2) => JSON.stringify(a.order) === JSON.stringify(b2.order
   a.hasTitle === b2.hasTitle && a.hasInput === b2.hasInput &&
   JSON.stringify(a.modes) === JSON.stringify(b2.modes) && a.cls === b2.cls;
 
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
-ok('no page errors', errs.length === 0);
-ok('all three states present on /questions',
+ok('no page errors', errs.length === 0);ok('all three states present on /questions',
    open.length > 0 && awaiting.length > 0 && folded.length > 0);
 ok('every card is a .qa with a data-qkey', qs.every(c => c.key));
 ok('every card carries ONE input, keyed to itself (#103)',
@@ -148,11 +155,9 @@ if (dock[0] && dock[0].hasInput) {
 ok('switching to note rewrites textarea + send aria-label (#273)',
    !!(modeOk && modeOk.ok));
 
-console.log('states: open=' + open.length + ' awaiting=' + awaiting.length +
-            ' folded=' + folded.length + ' dash=' + dash.length +
-            ' dock=' + dock.length);
-if (dock[0]) console.log('dock: ' + JSON.stringify(dock[0]));
-if (errs.length) console.log('errors: ' + errs.join(' | '));
-console.log('----'); console.log(checks.join('\n'));
+notes.push('states: open=' + open.length + ' awaiting=' + awaiting.length +
+           ' folded=' + folded.length + ' dash=' + dash.length +
+           ' dock=' + dock.length);
+if (dock[0]) notes.push('dock: ' + JSON.stringify(dock[0]));
 await b.close();
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+finish();
