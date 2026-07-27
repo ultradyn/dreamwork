@@ -17,7 +17,7 @@
                 sameNode assertion fails.
      RELEASE  — the gate must also open EARLY: probing continues past the
                 hold, and the release must measure ~MORPH_HOLD_MS after the
-                hold was set — inside [1200, 1450]. Against the old 1600ms
+                hold was set — inside [1200, 1600). Against the old 1600ms
                 hold this is RED with a measured release at ~1600-1650ms:
                 the old value really did hold too long (the visible pause
                 the human asked about in .dreamwork/answers.md). The forced
@@ -30,6 +30,22 @@
    which is most of the window being measured. tick() is page-global
    (qsec.mjs's pattern), so the 2s poll's phase never enters the budget
    either — a hold measurement that depends on poll luck is not one.
+
+   And probes are classified by when their tick DECIDED, never by when they
+   were scheduled: tick()'s gate samples `Date.now() >= holdRerenderUntil`
+   right after its /mtime fetch resolves AND its body is read — and under
+   load (pytest -n 2 on the same machine) EACH of those hops stretches, so
+   a probe that STARTS at 1100ms can legitimately DECIDE at 1300ms, and a
+   correct 1250ms release can MEASURE past 1600ms once /data.json + setData
+   are included. Both flaked in practice, and so did timestamping the fetch
+   resolution alone (the .text() hop then crossed the deadline behind the
+   stamp and the gate legitimately passed). So the guard wraps window.fetch
+   and timestamps each /mtime response's text() completion — the last await
+   before the gate's own Date.now(), after which only synchronous work
+   remains: a probe is inside the hold iff its tick's decision preceded
+   holdWall (5ms epsilon), and the release is the FIRST decision at/after
+   it, independent of render latency and of whether the driven tick or the
+   2s poll landed it.
 
    The note path (sendComment) shares the constant and gets the same race;
    the reduced-motion phase proves the RM path — no flip, no travel, the
@@ -99,9 +115,10 @@ const BASE = `http://127.0.0.1:${PORT}`;
    ever holds the two endpoints; the glide lives in the interpolation.
 
    Returns: holdAt (page ms from click when the hold was set), probes
-   (every driven tick: ms-after-hold-set, gone), releaseAt (ms after the
-   hold was set when the re-render landed), frames (the rAF sample), and
-   whether the forced /command write landed. */
+   (every driven tick: scheduled ms, DECIDED ms, inside-hold, gone),
+   releaseAt (ms after the hold was set of the gate's first passing
+   decision), ends (every gate decision, ms after hold-set), frames (the
+   rAF sample), and whether the forced /command write landed. */
 const RACE = (mode, probeFrom, probeCap) => `((probeFrom, probeCap) =>
   (async () => {
     const cards = () => [...document.querySelectorAll('.qa[data-qid]')];
@@ -135,6 +152,23 @@ const RACE = (mode, probeFrom, probeCap) => `((probeFrom, probeCap) =>
     const HOLD = typeof MORPH_HOLD_MS === 'number' ? MORPH_HOLD_MS : 1600;
     const holdSetAt = holdWall - HOLD;   // wall-clock of the POST resolving
     const gone = () => !document.querySelector('.qa[data-mh=probe]');
+    /* decision-time instrumentation, per the header: timestamp each /mtime
+       response's text() completion — the last await before the gate's
+       Date.now() sample, so this IS the decision clock (sub-ms). The fetch
+       resolution alone is NOT: reading the body is a second await that
+       load stretches across the deadline behind the stamp. */
+    const mtimeEnds = [];
+    const realFetch = window.fetch.bind(window);
+    window.fetch = (...a) => realFetch(...a).then(r => {
+      if (String(a[0]).includes('/mtime')) {
+        const realText = r.text.bind(r);
+        r.text = () => realText().then(t => {
+          mtimeEnds.push(Date.now());
+          return t;
+        });
+      }
+      return r;
+    });
     /* the forced half of the race, 400ms into the hold: an /mtime change
        that is inside the OLD 1600ms window and outside the new one, made
        the sanctioned way (qsec.mjs's pattern — a real /command write,
@@ -150,15 +184,39 @@ const RACE = (mode, probeFrom, probeCap) => `((probeFrom, probeCap) =>
     while (Date.now() - holdSetAt < probeCap) {
       const msAfterHold = Date.now() - holdSetAt;
       if (msAfterHold >= probeFrom) {
+        const before = mtimeEnds.length;
         await tick();                    // page-global, per qsec.mjs
         const g = gone();
-        probes.push({ ms: Math.round(msAfterHold), gone: g });
-        if (g) { releaseAt = Math.round(Date.now() - holdSetAt); break; }
+        /* this probe's decision: the latest /mtime text() end since we
+           drove it (a concurrent 2s-poll tick may add one too — the max is
+           still a decision that preceded the look). A probe is INSIDE the
+           hold iff that decision preceded the deadline (5ms epsilon for
+           the synchronous parseMtime + Date.now() that follow the stamp);
+           a tick load stretched across it is the release it legitimately
+           is, not a violation. */
+        const ends = mtimeEnds.slice(before);
+        const decided = ends.length ? Math.max(...ends) : Date.now();
+        probes.push({ ms: Math.round(msAfterHold),
+                      decided: Math.round(decided - holdSetAt),
+                      inside: decided < holdWall - 5, gone: g });
+        if (g) {
+          /* the gate's FIRST pass, whichever tick landed it: the first
+             decision at/after the deadline (same epsilon) */
+          const first = mtimeEnds.find(e => e >= holdWall - 5);
+          releaseAt = Math.round((first === undefined ? decided : first)
+                                 - holdSetAt);
+          break;
+        }
       }
       await new Promise(r => setTimeout(r, 60));
     }
     sampling = false;
-    return { holdAt, holdMs: HOLD, forced, probes, releaseAt, frames };
+    window.fetch = realFetch;
+    /* the decision trace IS the evidence for the classification above, so
+       it ships in the notes: every gate decision, and each probe stamped
+       with the decision it observed rather than its scheduled instant */
+    return { holdAt, holdMs: HOLD, forced, probes, releaseAt, frames,
+             ends: mtimeEnds.map(e => Math.round(e - holdSetAt)) };
   })())(${probeFrom}, ${probeCap})`;
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
@@ -189,35 +247,46 @@ for (const [mode, reduced] of [['answer', false], ['note', false],
     continue;
   }
   const gl = glide(r.frames);
-  const heldProbes = r.probes.filter(x => x.ms < 1200);
+  const heldProbes = r.probes.filter(x => x.inside);
+  const heldMax = heldProbes.length
+    ? Math.max(...heldProbes.map(x => x.decided)) : 'none';
   notes.push(`${tag}: hold set ${r.holdAt}ms after click, forced=${r.forced}, ` +
-             `release=${r.releaseAt}ms after hold-set, ` +
+             `release=${r.releaseAt}ms after hold-set (gate decision), ` +
              `probes=${r.probes.length} held=${heldProbes.length} ` +
-             `frames=${r.frames.length} glide=${gl}`);
+             `heldMaxDecided=${heldMax}ms frames=${r.frames.length} glide=${gl}`);
+  notes.push(`${tag} decisions=${JSON.stringify(r.ends)} ` +
+             `probes=${JSON.stringify(r.probes)}`);
   ok(`${tag}: the forced-mtime race is real (the /command write landed ` +
      `400ms into the hold)`, r.forced === true);
   /* BLOCK — the invariant under test on every build. Three legs, because
      probe COUNT is load-dependent (a driven tick() costs 200-400ms under
-     load, so only a couple fit before release) while the proof is not:
-     the per-frame sample is dense at any frame rate, and `releaseAt >=
-     1200` below proves nothing got through before the constant. Red-proven
-     against a 100ms hold. */
+     load, so only a couple may fit inside the hold) while the proof is
+     not: classification is by DECISION time (the tick's /mtime text()
+     end — the gate's own clock), so a tick that load stretches across the
+     deadline is counted as the release it legitimately is rather than a
+     hold violation; the per-frame sample is dense at any frame rate; and
+     `releaseAt >= 1200` below proves nothing got through before the
+     constant. Red-proven against a 100ms hold. */
   ok(`${tag}: driven ticks inside the hold never replace the card, though `
      + 'the mtime change is pending',
      heldProbes.length >= 1 && heldProbes.every(x => !x.gone));
   ok(`${tag}: ...and the per-frame sample agrees — the node survives every `
      + 'frame of the window, not just the probed instants',
      r.frames.filter(f => f.t < r.holdAt + 1200).every(f => f.sameNode));
-  /* RELEASE — the discriminator. The gate opens when Date.now() reaches
-     hold-set + HOLD, so the measured release cannot precede ~1250 and —
-     the point of the task — must land BEFORE 1600, the moment the old
-     value would have unlocked. RED on the old 1600ms hold: its release
-     measures >= 1600 here by construction of the gate. */
+  /* RELEASE — the discriminator. releaseAt is the FIRST gate decision at
+     or after holdWall (5ms epsilon), so it cannot precede ~1250 by
+     construction of the gate and — the point of the task — must land
+     BEFORE 1600, the moment the old value would have unlocked. Measuring
+     the decision rather than the observed re-render keeps /data.json +
+     setData latency out of the budget (they added 200-400ms under load
+     and pushed a correct release past the bound). RED on the old 1600ms
+     hold: its first passing decision is >= 1600 here by construction of
+     the gate. */
   ok(`${tag}: the re-render releases EARLY — ~1250ms after hold-set, ` +
      'in [1200, 1600) (the old 1600ms hold cannot pass this)',
      r.releaseAt !== null && r.releaseAt >= 1200 && r.releaseAt < 1600);
-  ok(`${tag}: the node was never replaced BEFORE that release — the early ' +
-     'release did not come from interrupting the morph`,
+  ok(`${tag}: the node was never replaced BEFORE that release — the early `
+     + 'release did not come from interrupting the morph',
      r.frames.filter(f => r.releaseAt === null ||
                           f.t < r.holdAt + r.releaseAt - 100)
              .every(f => f.sameNode));
