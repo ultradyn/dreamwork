@@ -501,6 +501,32 @@ The file is **gitignored ephemera** and stays that way. It describes a
 running process, so a committed one would be a lie the moment it landed;
 that is also why there is no history to compute stats from (#142).
 
+## `.dreamwork/docs/doc-map.md` — the one row that is a list (#307)
+
+Every row in the doc map names a file, so the row cannot drift from what
+it describes. One row names a **directory** and then enumerates its
+contents in prose, and that one goes stale by itself: on 2026-07-27 it
+listed 8 plans while `plans/` held 14, so six plans existed that a reader
+of the map had no way to learn about. Nobody parses prose, so nobody
+noticed.
+
+The enumeration stays — detail is ranked, never withheld, and a map whose
+answer is "run `ls`" has stopped being a map — which makes it a shape
+rather than a sentence:
+
+    | `.dreamwork/docs/plans/` | Active feature plans, alphabetical (a, b, c) | … |
+
+- The row starts `` | `.dreamwork/docs/plans/` | `` at the start of a line.
+- Somewhere in its description cell is a parenthesised, comma-separated
+  list of plan **stems** — filename without `.md`.
+- That set equals the set of `*.md` stems in `.dreamwork/docs/plans/`.
+
+`lint.py`'s `check_doc_map_plans` WARNs in both directions: a stem on disk
+and not in the row is undiscoverable, and a stem in the row with no file
+is a typo or a plan that landed and was pruned from the directory but not
+from the prose. Alphabetical order is stated in the row so an addition has
+one obvious place to go.
+
 ## Browser-side storage — not files, still contracts
 
 Two of his things live in the browser rather than under `.dreamwork/`: a

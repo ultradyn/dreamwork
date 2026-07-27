@@ -1002,3 +1002,59 @@ class TestLandedAsks:
         rep = lint.Report()
         lint.check_landed_asks(lint.SKILL_DIR / ".dreamwork", lint.load_watch(), rep)
         assert not [d for l, w, d in rep.rows if l == lint.WARN], rep.render()
+
+
+class TestDocMapPlans:
+    """The row that enumerates a directory, and so drifts on its own."""
+
+    ROW = "| `.dreamwork/docs/plans/` | Active feature plans ({}) | Prune |\n"
+
+    def build(self, tmp_path: Path, listed: str, on_disk: list[str]) -> Path:
+        t = fresh(tmp_path)
+        docs = t / ".dreamwork" / "docs"
+        (docs / "plans").mkdir(parents=True)
+        for name in on_disk:
+            (docs / "plans" / f"{name}.md").write_text("# a plan\n")
+        (docs / "doc-map.md").write_text("# Doc map\n\n| Doc | Covers | Cur |\n|---|---|---|\n" + self.ROW.format(listed))
+        return t
+
+    def warns(self, t: Path):
+        rep = lint.Report()
+        lint.check_doc_map_plans(t / ".dreamwork", rep)
+        return [d for l, w, d in rep.rows if l == lint.WARN and w == "doc-map.md"]
+
+    def test_the_field_drift_goes_red(self, tmp_path):
+        # The live shape on 2026-07-27: the row listed 8, the directory held 14.
+        t = self.build(tmp_path, "alpha, beta", ["alpha", "beta", "gamma", "delta"])
+        (warn,) = self.warns(t)
+        assert "omits 2" in warn and "delta, gamma" in warn, "named, and in a stable order"
+
+    def test_a_name_with_no_file_is_named_too(self, tmp_path):
+        t = self.build(tmp_path, "alpha, ghost", ["alpha"])
+        (warn,) = self.warns(t)
+        assert "no file" in warn and "ghost" in warn
+
+    def test_both_directions_are_reported_together(self, tmp_path):
+        t = self.build(tmp_path, "ghost", ["alpha"])
+        assert len(self.warns(t)) == 2, "one fix must not hide the other"
+
+    def test_a_matching_row_is_quiet(self, tmp_path):
+        t = self.build(tmp_path, "alpha, beta", ["beta", "alpha"])
+        assert self.warns(t) == []
+
+    def test_a_missing_row_is_not_silence(self, tmp_path):
+        t = fresh(tmp_path)
+        (t / ".dreamwork" / "docs" / "plans").mkdir(parents=True)
+        (t / ".dreamwork" / "docs" / "doc-map.md").write_text("# Doc map\n\nno table\n")
+        assert "unmapped" in self.warns(t)[0]
+
+    def test_no_docs_dir_is_not_a_finding(self, tmp_path):
+        # Most targets have no plans/ at all; the check must not nag them.
+        t = fresh(tmp_path)
+        (t / ".dreamwork").mkdir()
+        assert self.warns(t) == []
+
+    def test_this_repo_maps_its_own_plans(self):
+        rep = lint.Report()
+        lint.check_doc_map_plans(lint.SKILL_DIR / ".dreamwork", rep)
+        assert not [d for l, w, d in rep.rows if l == lint.WARN], rep.render()

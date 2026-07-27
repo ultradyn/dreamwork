@@ -872,6 +872,65 @@ def check_dreams(dw: Path, rep: Report) -> None:
         rep.add(OK, "dreams/", f"{len(names)} named correctly")
 
 
+DOC_MAP_PLANS_ROW = re.compile(r"^\|\s*`\.dreamwork/docs/plans/`\s*\|(.*)$", re.M)
+
+
+def check_doc_map_plans(dw: Path, rep: Report) -> None:
+    """The doc map's plans row enumerates the plans, so it goes stale on its own.
+
+    Every other row in `doc-map.md` describes a file whose name is in the row,
+    so the row cannot drift from the thing it names. This one describes a
+    DIRECTORY and then lists its contents in prose — a shape that is wrong the
+    next time anyone adds a plan, and wrong silently, because nothing reads it
+    but a human who has no way to know the list is short. It listed 8 of 14 on
+    2026-07-27; six plans existed that a reader of the map could not learn
+    existed.
+
+    Keeping the enumeration is deliberate rather than deleting it — "detail is
+    ranked, never withheld" (DREAMWORK.md), and a map whose answer is `ls` has
+    stopped being a map. So the list stays and this makes it checkable, which
+    is the trade the repo makes everywhere else: a fact worth stating is a fact
+    worth a reader.
+
+    WARN both ways. A plan on disk but not in the row is undiscoverable; a name
+    in the row with no file is either a typo or a plan that landed and was
+    pruned from the directory but not the prose — the row's own rule says to
+    prune, and this is what noticing looks like.
+    """
+    path, plans = dw / "docs" / "doc-map.md", dw / "docs" / "plans"
+    if not path.exists() or not plans.is_dir():
+        return
+    m = DOC_MAP_PLANS_ROW.search(path.read_text())
+    if not m:
+        rep.add(WARN, "doc-map.md", "no `.dreamwork/docs/plans/` row — the plans are unmapped")
+        return
+    listed = set()
+    for paren in re.findall(r"\(([^()]*)\)", m.group(1)):
+        listed |= {n.strip() for n in paren.split(",") if n.strip()}
+    if not listed:
+        rep.add(WARN, "doc-map.md", "plans row names no plans — it used to enumerate them")
+        return
+
+    on_disk = {p.stem for p in plans.glob("*.md")}
+    missing, phantom = sorted(on_disk - listed), sorted(listed - on_disk)
+    if missing:
+        rep.add(
+            WARN,
+            "doc-map.md",
+            f"plans row omits {len(missing)} plan(s) that exist: {', '.join(missing)}"
+            " — a reader of the map cannot learn they are there",
+        )
+    if phantom:
+        rep.add(
+            WARN,
+            "doc-map.md",
+            f"plans row names {len(phantom)} plan(s) with no file: {', '.join(phantom)}"
+            " — landed and pruned, or a typo",
+        )
+    if not missing and not phantom:
+        rep.add(OK, "doc-map.md", f"plans row matches {len(on_disk)} on disk")
+
+
 def run_checks(dw: Path, watch, rep: Report) -> None:
     """Every check, in one place, because a SECOND copy of this list drifted.
 
@@ -894,6 +953,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_skill_version(dw, rep)
     check_dreamwork_frontmatter(dw, rep)
     check_dreams(dw, rep)
+    check_doc_map_plans(dw, rep)
 
 
 def main(argv: list[str] | None = None) -> int:

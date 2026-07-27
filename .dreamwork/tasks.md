@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **307**
+Next id: **308**
 
 ## Open
 
@@ -1089,6 +1089,14 @@ Next id: **307**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#307** — Make the doc map's plans row checkable · P3 · origin: **loop** ·
+  landed 2026-07-27 · the map's one row that enumerates a *directory* had
+  drifted to 8 of 14 plans, silently, because nothing reads prose — six plan
+  docs a reader of the map could not learn existed · kept the enumeration
+  (detail is ranked, never withheld) and made it a shape: `check_doc_map_plans`
+  WARNs both ways, stem-on-disk-not-listed and listed-with-no-file, contract in
+  `file-formats.md` · **red first on the live drift**, not on a fixture
 
 - **#306** — Notice an open question whose subject has already landed · P2 ·
   origin: **loop** · landed 2026-07-27 · `check_landed_asks` warns when an open
