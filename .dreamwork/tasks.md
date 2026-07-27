@@ -1033,35 +1033,6 @@ Next id: **389**
   `/summary.json`, Q6 the allowlist. Q4's identity provider question is now #359's, since
   the self-hosted half has no IdP at all under his direction
 
-- **#300** — Let run-mode descriptions liquefy through one shared popover · P2
-  · **IN PROGRESS 2026-07-28 06:13** — he re-raised it himself as `do-next` at 06:07:
-  *"run mode button group needs a nice description that shows when any of the buttons are
-  hovered. see the original task for a more."* Dispatched to `ccc @grok` with brief
-  `.dreamwork/docs/briefs/300-runmode-popover.md`, sole holder of `watch.py`, port 39891
-  · **routed to grok specifically because this one needs vision** — the acceptance includes
-  visual review loops on rendered pixels and a text morph only judgeable from intermediate
-  frames, and `@glm52` is not multimodal. That is the first time the model choice here has
-  been forced by a capability rather than a preference
-  · the entry below is the requirements document; `ca12a3c` only captured it
-  · Web UI feature · 35m · origin: **human** · **human via watch `add-idea`
-  14:37** · hovering a run-mode button should explain that mode; all buttons
-  share one geometrically stable description surface so moving between them
-  morphs/liquefies the words in place rather than spawning unrelated tooltips ·
-  copy is sourced from the actual hierarchical/park/hot behavioural contract,
-  including what continues, stops and commits, never marketing shorthand that
-  can contradict runtime semantics · keyboard focus shows the same description
-  and `aria-describedby` exposes it; touch/focus parity must not add a surprise
-  second tap or interfere with #290's 10-second arm/reset/cancel/cross-tab rules ·
-  first arrival and final departure reuse the atmospheric blur/drift idiom;
-  button→button swaps keep the shell fixed while old text dissolves and new text
-  resolves, with several causal intermediate opacity/blur states rather than a
-  frame-zero replacement; reduced-motion swaps text instantly with identical
-  meaning/function · Escape/pointer-leave/blur dismissal has no mode side effect
-  and popover geometry clamps on desktop/mobile without obscuring the countdown ·
-  red-first real-route guard + deterministic captures; multiple interleaved
-  vision/geometry visual-review-and-fix loops until both PASS · depends on
-  landed #290 and must keep its exactly-once POST/event guards green
-
 - **#298** — Explain each burndown column on hover, focus and touch · P2 ·
   Web UI feature · 25m · origin: **human** · **human via watch `add-idea`
   14:10** · inspecting a chart column should reveal the exact interval/date,
@@ -2400,6 +2371,60 @@ Next id: **389**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#300** — Let run-mode descriptions liquefy through one shared popover · P2
+  · **IN PROGRESS 2026-07-28 06:13** — he re-raised it himself as `do-next` at 06:07:
+  *"run mode button group needs a nice description that shows when any of the buttons are
+  hovered. see the original task for a more."* Dispatched to `ccc @grok` with brief
+  `.dreamwork/docs/briefs/300-runmode-popover.md`, sole holder of `watch.py`, port 39891
+  · **routed to grok specifically because this one needs vision** — the acceptance includes
+  visual review loops on rendered pixels and a text morph only judgeable from intermediate
+  frames, and `@glm52` is not multimodal. That is the first time the model choice here has
+  been forced by a capability rather than a preference
+  · the entry below is the requirements document; `ca12a3c` only captured it
+  · Web UI feature · 35m · origin: **human** · **human via watch `add-idea`
+  14:37** · hovering a run-mode button should explain that mode; all buttons
+  share one geometrically stable description surface so moving between them
+  morphs/liquefies the words in place rather than spawning unrelated tooltips ·
+  copy is sourced from the actual hierarchical/park/hot behavioural contract,
+  including what continues, stops and commits, never marketing shorthand that
+  can contradict runtime semantics · keyboard focus shows the same description
+  and `aria-describedby` exposes it; touch/focus parity must not add a surprise
+  second tap or interfere with #290's 10-second arm/reset/cancel/cross-tab rules ·
+  first arrival and final departure reuse the atmospheric blur/drift idiom;
+  button→button swaps keep the shell fixed while old text dissolves and new text
+  resolves, with several causal intermediate opacity/blur states rather than a
+  frame-zero replacement; reduced-motion swaps text instantly with identical
+  meaning/function · Escape/pointer-leave/blur dismissal has no mode side effect
+  and popover geometry clamps on desktop/mobile without obscuring the countdown ·
+  red-first real-route guard + deterministic captures; multiple interleaved
+  vision/geometry visual-review-and-fix loops until both PASS · depends on
+  landed #290 and must keep its exactly-once POST/event guards green
+
+  · **closed `97c4fac` + `a6959cf`** — one geometrically stable `#rundesc` under the chips, copy
+  traced to the behavioural contract, morph via rAF + `between()`, reduced-motion parity with
+  identical text and `aria-describedby`, and a 642-line `rundesc` guard registered in
+  `DEFAULT_GUARDS` with `transitions.md` and `watch-design.md` updated in the same commit
+  · **the lane found that MY acceptance criterion was unsound, which is the most valuable thing
+  produced in this batch.** I had specified: prove hover has zero side effects by counting
+  `/run-mode` POSTs, `watch-events.log` lines and the run-mode file's bytes across a hover sweep.
+  That reads as thorough and **cannot work** — #290's arm deliberately stays silent for **ten
+  seconds**, so a hover calling `pickRunMode` lights the arm UI, writes pending `localStorage` and
+  starts the countdown while every signal I named stays quiet. Its first red-run of that check
+  came back **green with the bug in place**, and it applied the rule rather than the instruction
+  · fix: assert what flips at **selection** rather than at commit — `#runcount` must not read
+  `arms in`, and `dw:run-mode-pending:` keys must be unchanged — with the durable signals kept as
+  necessary but not sufficient. Dream: `.dreamwork/dreams/2026-07-28-0645-arm-silent-for-ten-seconds.md`
+  · **verified independently by me, and the result discriminates exactly right**: I injected
+  `pickRunMode(mode)` into `showRunDesc`, and the guard failed on **precisely the two assertions
+  the lane added** — `FAIL hover sweep did not start an arm countdown (runcount empty of arms-in)`
+  and `FAIL hover sweep left run-mode pending localStorage unchanged` — while the POST, events-log
+  and file assertions **I** had specified stayed green. So my criterion was demonstrably blind to
+  this bug and the extension is what catches it. Restored byte-identical; `PASS rundesc` after
+  · criterion 7 is the one gap: the full `just test` sweep was not run end-to-end because other
+  lanes held guard ports. `rundesc` is green twice isolated, `lint.py` clean, `test_watch.py::TestRunMode`
+  10/10, and I have since run the whole pytest half at 910 passed — so the untested remainder is
+  the guard sweep, not the code
 
 - **#386** — `gitrow` opens 0px under load: the gesture does not run, and the motion check
   correctly says nothing moved · P3 · guards/reliability · origin: **loop** · 15m ·
