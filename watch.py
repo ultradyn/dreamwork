@@ -5921,6 +5921,26 @@ LEDGER_ENTRY = re.compile(r"^- \*\*#(\d+)\*\*", re.M)
 # ...and in `## Recently landed` an id is named inline, in prose, so the
 # entry-head shape does not apply there.
 LEDGER_MENTION = re.compile(r"\*\*#(\d+)\*\*")
+# A SECTION is opened by a heading LINE and by nothing else (#304). These were
+# once located with an unanchored `text.split("## Open", 1)`, which let any
+# entry whose PROSE quoted a heading become the split point — and that is not
+# adversarial input: it happened twice within ten minutes while writing ledger
+# entries about this very parser, the second time in the entry that filed the
+# bug. The ledger read 2 open / 187 landed against a true 105 / 84, every
+# derived number on the deployed dashboard was wrong, and `lint.py` called the
+# file clean throughout, because it counts entries without splitting sections
+# at all. Anchored, an entry can say `## Open` as freely as it says anything
+# else. Strip-equality matches lint.py's own `heads` rule, so the two readers
+# cannot disagree about where a section begins.
+LEDGER_SEC_OPEN = re.compile(r"^[ \t]*## Open[ \t]*$", re.M)
+LEDGER_SEC_LANDED = re.compile(r"^[ \t]*## Recently landed[ \t]*$", re.M)
+
+
+def _ledger_section(text, pattern):
+    """`(before, after)` around the first heading LINE matching `pattern`,
+    or `None` when the file has no such heading."""
+    m = pattern.search(text)
+    return (text[:m.start()], text[m.end():]) if m else None
 # A human steer is stamped `· **human 17:45**` by the coordinator on some
 # entries. Provenance is NOT read from the working tree: a task's origin is
 # a fact about its ARRIVAL, so it is classified from the FIRST snapshot in
@@ -5992,11 +6012,15 @@ def parse_ledger(text):
     — which would render as "the loop has completed nothing", the exact shape
     of failure #136 is about.
     """
-    if not text or "## Open" not in text:
+    if not text:
         return set(), set()
-    after = text.split("## Open", 1)[1].split("## Recently landed", 1)
-    landed = set(LEDGER_MENTION.findall(after[1])) if len(after) > 1 else set()
-    return set(LEDGER_ENTRY.findall(after[0])), landed
+    opened = _ledger_section(text, LEDGER_SEC_OPEN)
+    if opened is None:
+        return set(), set()
+    split = _ledger_section(opened[1], LEDGER_SEC_LANDED)
+    open_text, landed_text = split if split else (opened[1], "")
+    return (set(LEDGER_ENTRY.findall(open_text)),
+            set(LEDGER_MENTION.findall(landed_text)))
 
 
 def _burn_step(span):

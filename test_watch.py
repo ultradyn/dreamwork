@@ -511,6 +511,45 @@ class TestCollector(unittest.TestCase):
         self.assertEqual(watch.parse_ledger(""), (set(), set()))
         self.assertEqual(watch.parse_ledger("no sections here"), (set(), set()))
 
+    def test_an_entry_quoting_a_section_heading_cannot_move_the_split(self):
+        """#304: the sections are STRUCTURE, so only a heading LINE names one.
+
+        `parse_ledger` used to locate both sections with an unanchored
+        `str.split` on the heading text, so an entry body that quoted a
+        heading became the split point. This is not hypothetical and it is
+        not adversarial input: it happened twice in ten minutes while
+        writing ledger entries ABOUT this very parser, and the second time
+        was the entry that filed the bug. The whole ledger misread — 2 open
+        / 187 landed against a true 105 / 84 — and every number derived from
+        it on the deployed dashboard was wrong, silently, with `lint.py`
+        reporting the file clean throughout.
+
+        Both directions matter. A quote ABOVE the real landed heading steals
+        the split (the open section is truncated to nothing); a quote in the
+        open section at all must be inert.
+        """
+        # Built by concatenation so THIS FILE never contains the literal
+        # heading sequences either — the same trap one layer up.
+        OPEN, LANDED = "## " + "Open", "## " + "Recently landed"
+        text = ("# Task ledger\n\nNext id: **9**\n\n" + OPEN + "\n\n"
+                "- **#7** — a live one · P2 · task\n"
+                "  · quoting `" + LANDED + "` and `" + OPEN + "` in prose,\n"
+                "    exactly as an entry describing this parser must\n"
+                "- **#8** — another · P3 · idea\n\n"
+                + LANDED + "\n\n"
+                "**#5** did a thing (abc1234). **#6** did another (def5678).\n")
+        openids, landed = watch.parse_ledger(text)
+        # RED before the fix: openids == set() and landed swallowed #7/#8,
+        # because the split landed inside #7's body.
+        self.assertEqual(openids, {"7", "8"},
+                         "an entry's prose re-sectioned the ledger")
+        self.assertEqual(landed, {"5", "6"},
+                         "landed set polluted by open-section entries")
+        # And the heading must still be found when it is a real line, so the
+        # anchor cannot have been achieved by simply failing to match.
+        self.assertEqual(watch.parse_ledger(text.replace(LANDED + "\n\n", ""))[1],
+                         set(), "no landed section should mean no landed ids")
+
     def _ledger_repo(self, d, snapshots):
         """Commit each `(text, when)` as .dreamwork/tasks.md. Returns the run
         helper so a caller can keep going."""

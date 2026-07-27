@@ -298,6 +298,53 @@ def check_tasks(dw: Path, rep: Report) -> None:
             rep.add(OK, "tasks.md", f"{len(ids)} entries, next id {nxt}")
 
     check_task_origins(text, rep)
+    check_ledger_sections(text, rep)
+
+
+def check_ledger_sections(text: str, rep: Report) -> None:
+    """#304: a SECOND, independent reader of where the open section is.
+
+    `watch.parse_ledger` finds the sections to tell the dashboard how many
+    tasks are open and which have landed. It used to locate them with an
+    unanchored `str.split` on the heading text, so an entry whose PROSE
+    quoted a heading silently became the split point — the ledger read
+    2 open / 187 landed against a true 105 / 84, and every number derived
+    from it was wrong. Nothing noticed, including this linter, which counts
+    entries without splitting sections at all.
+
+    So this walks the lines itself — a genuinely separate implementation,
+    not a call into the thing under test — and disagreement is the error.
+    Two readers of one file must not diverge; the repo already pins
+    LEDGER_ID to watch's LEDGER_ENTRY for the same reason.
+    """
+    section, mine = None, 0
+    for ln in text.splitlines():
+        stripped = ln.strip()
+        if stripped.startswith("## "):
+            section = stripped
+        elif section == "## " + "Open" and LEDGER_ID.match(ln):
+            mine += 1
+    if section is None:
+        return  # a ledger with no headings at all is another check's problem
+
+    try:
+        import watch
+    except Exception:
+        rep.add(WARN, "tasks.md", "watch.py unimportable — section split unverified")
+        return
+
+    theirs, _landed = watch.parse_ledger(text)
+    if len(theirs) != mine:
+        rep.add(
+            ERROR,
+            "tasks.md",
+            f"open-entry count disagrees: this linter walks {mine}, "
+            f"watch.parse_ledger sees {len(theirs)} — a section heading is "
+            f"probably quoted inside an entry, which moves where the open "
+            f"section is thought to end (#304)",
+        )
+    else:
+        rep.add(OK, "tasks.md", f"section split agrees with watch.py at {mine} open")
 
 
 def check_task_origins(text: str, rep: Report) -> None:

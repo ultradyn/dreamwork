@@ -28,30 +28,6 @@ Next id: **305**
 
 ## Open
 
-- **#304** — Anchor the ledger section split to line starts · P2 · bug · 20m ·
-  origin: **loop** · goal: stop an entry's prose from silently redefining where
-  the ledger's sections begin ← DREAMWORK.md *Nothing fails quietly* ·
-  **demonstrated live, twice, by this coordinator at 16:30 and again at 16:34**:
-  `parse_ledger` locates the two sections by unanchored `str.split` on their
-  heading text, so any entry body that quotes a heading verbatim becomes the
-  split point. Writing #301 — a task *about* a ledger parser bug — quoted one,
-  and the ledger read as **2 open / 187 landed** instead of 105 / 84. Rewriting
-  that entry fixed it; then this very entry quoted both while describing the
-  defect and it read **1 / 189**. Every derived number (burndown arrivals,
-  completions, open level, queue depth) was wrong for as long as either text
-  sat on disk · **`lint.py` reported CLEAN throughout both breakages**, because
-  it counts entries via `ledger_entries`, which never splits on sections — the
-  check nearest the damage cannot see it · latent before me and still latent:
-  one entry further down already quotes a heading inline and is harmless only
-  because it falls *after* the real one; identical text above it would break
-  everything · fix: anchor both splits to line starts, measured immune (two
-  unanchored matches versus one anchored) · red-first by planting an indented
-  heading quote in a fixture entry, watching the split move, then watching lint
-  refuse it — both halves, because the parser fix alone leaves the next reader
-  with no signal · **note for whoever implements this:** until it lands, an
-  entry cannot safely quote a section heading, which is why this one describes
-  them instead of naming them
-
 - **#303** — Make `lint.py` notice a `status.json` that lost known keys · P3 ·
   chore · 20m · origin: **loop** · goal: make a silent projection-rewrite loss
   loud ← DREAMWORK.md *Nothing fails quietly* · this coordinator's wholesale
@@ -1074,6 +1050,29 @@ Next id: **305**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#304** — Anchor the ledger section split to line starts · P2 ·
+  origin: **loop** · landed 2026-07-27 · a section is now opened by a heading
+  LINE and nothing else, so an entry may quote a heading in its prose as freely
+  as it quotes anything else · `parse_ledger` previously located both sections
+  with an unanchored `str.split` on the heading text, which this coordinator
+  tripped TWICE in ten minutes while writing entries about this very parser —
+  the ledger read 2 open / 187 landed against a true 105 / 84, every derived
+  number on the deployed dashboard was wrong, and `lint.py` called the file
+  clean throughout because it counts entries without splitting sections at all ·
+  fixed with strip-equality line anchors matching `lint.py`'s own heading rule,
+  so the two readers cannot disagree about where a section begins · **and the
+  check, because the parser fix alone leaves the next reader with no signal**:
+  `check_ledger_sections` walks the lines independently and errors when its
+  open-entry count disagrees with `watch.parse_ledger`, naming both numbers ·
+  red-first both halves — the parser check failed with #8 vanishing into a
+  moved split, and the linter check was proven by reintroducing the OLD
+  ALGORITHM verbatim and watching it redden (a regression guard has to be shown
+  failing on the regression, so the test monkeypatches the bug back rather than
+  asserting a hand-written number) · questions.md and answers.md were checked
+  and are immune: `_parse_entries` already walks lines · 600 passed + 54
+  subtests, lint clean with the new agreement line at 106 open, burndown +
+  provenance + qorder guards PASS
 
 - **#238** — Preserve `/answers` UI state across data refresh · P1 ·
   origin: **human** · landed 2026-07-26, **closed 2026-07-27** · open answered

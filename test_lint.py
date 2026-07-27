@@ -878,3 +878,66 @@ class TestPriorityMarkers:
         src = inspect.getsource(lint.check_priorities)
         assert "watch.title_priority" in src, \
             "the band must come from watch.py, never from a copy in here"
+
+
+class TestLedgerSectionSplit:
+    """#304: two independent readers must agree on where the open section is.
+
+    `watch.parse_ledger` once located the sections with an unanchored
+    `str.split` on the heading text, so an entry whose PROSE quoted a heading
+    became the split point. The ledger read 2 open / 187 landed against a true
+    105 / 84 and every derived number on the dashboard was wrong — while this
+    linter reported the file clean, because it counts entries without
+    splitting sections at all. The check exists to make that divergence loud,
+    so the test reintroduces the OLD ALGORITHM rather than asserting on a
+    hand-written number: a guard for a regression has to be shown failing on
+    the regression.
+    """
+
+    # Never write the literal heading sequences in this file either — the same
+    # trap one layer up, and a test file is read by the same eyes.
+    OPEN = "## " + "Open"
+    LANDED = "## " + "Recently landed"
+
+    HAZARD = (
+        "# Task ledger\n\nNext id: **9**\n\n" + OPEN + "\n\n"
+        "- **#7** — a live one · P2 · task\n"
+        "  · prose quoting `" + LANDED + "` while describing the parser\n"
+        "- **#8** — another · P3 · idea\n\n"
+        + LANDED + "\n\n**#5** landed (abc1234).\n"
+    )
+
+    def _old_parse_ledger(self, text):
+        """The pre-#304 implementation, verbatim. This IS the bug."""
+        import watch
+        if not text or self.OPEN not in text:
+            return set(), set()
+        after = text.split(self.OPEN, 1)[1].split(self.LANDED, 1)
+        landed = (set(watch.LEDGER_MENTION.findall(after[1]))
+                  if len(after) > 1 else set())
+        return set(watch.LEDGER_ENTRY.findall(after[0])), landed
+
+    def test_the_old_unanchored_split_is_caught(self, monkeypatch):
+        import watch
+        monkeypatch.setattr(watch, "parse_ledger", self._old_parse_ledger)
+        rep = lint.Report()
+        lint.check_ledger_sections(self.HAZARD, rep)
+        assert ERRORS(rep, "tasks.md"), "a moved section split must go red"
+        detail = next(d for _, w, d in rep.rows if w == "tasks.md")
+        assert "1" in detail and "2" in detail, \
+            "must report BOTH counts, so the reader can see which one is wrong"
+        assert "#304" in detail, "must name the task that explains the failure"
+
+    def test_the_anchored_split_agrees(self):
+        rep = lint.Report()
+        lint.check_ledger_sections(self.HAZARD, rep)
+        assert not ERRORS(rep, "tasks.md"), \
+            "an entry may quote a heading in prose; only a heading LINE counts"
+        assert levels(rep, "tasks.md") == [lint.OK]
+
+    def test_a_heading_line_still_opens_a_section(self):
+        """The anchor must not have been achieved by matching nothing."""
+        import watch
+        openids, landed = watch.parse_ledger(self.HAZARD)
+        assert openids == {"7", "8"}
+        assert landed == {"5"}, "a real heading line must still end the open section"
