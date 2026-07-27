@@ -24,9 +24,37 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **318**
+Next id: **320**
 
 ## Open
+
+- **#318** — `TITLE_ROUTE` has #302's omission, so `/answers` never says where
+  it is · P3 · correctness · ~15m · origin: **loop** · found by ccc-glm52-302
+  while landing #302, out of its scope and correctly left alone · `TITLE_ROUTE`
+  (watch.py ~3076) has no `answers` entry, and the consumer falls back with
+  `(TITLE_ROUTE[v.name] || TITLE_ROUTE.dashboard)(v.param)` — so the tab title on
+  `/answers` renders the dashboard's route word · **the title is the only part of
+  this dashboard that exists while the tab is backgrounded**, which #153 is
+  entirely about, so a route that cannot name itself there is worse than it
+  sounds · the check generalises from #302's: derive the route set from
+  `routeOf`, diff against `TITLE_ROUTE`'s keys, assert presence and not a literal
+  title string · red-prove by removing the entry again · same class as #302 and
+  #314 — a per-route table gaining a route without its entry
+
+- **#319** — Guard servers should bind port 0 and let the OS assign · P2 ·
+  tooling · ~40m · origin: **loop** · goal: remove a failure class rather than
+  clean up after it ← DREAMWORK.md *Nothing fails quietly* · #203's own
+  recommendation, and the better fix: the reaper cleans up orphans, port 0
+  means there is no fixed port for an orphan to squat and no readiness probe can
+  ever grade somebody else's server · deliberately deferred out of #203 because
+  it needs `watch.py` to report the port it actually got and another agent held
+  that file · **the reaper stays** either way — it handles servers already
+  running and the SIGKILLed-lane class — so this is not a replacement · needs:
+  `watch.py` reporting the assigned port (it already persists
+  `.dreamwork/watch-port`, so the mechanism exists), the `guards` recipe reading
+  it instead of passing one, and the guards themselves taking the port they are
+  given, which they already do · check that a run with no port argument still
+  reaches its own server and not another
 
 
 - **#315** — A combined entry HEAD under `## Open` is invisible to both ledger
@@ -122,17 +150,6 @@ Next id: **318**
   the check — #313 already established that a permanently red check is the one
   outcome unavailable
 
-- **#302** — Give `/answers` its own tint and turbulence seed · P3 · chore ·
-  10m · origin: **loop** · found by `dreamer-taskspage` during the #281 design
-  batch · `TINT` and `SEED` have no `answers` entry, so the route silently
-  inherits the dashboard's atmosphere via `TINT[name] || 0` while
-  `transitions.md` states every destination has its own seed and tint · small,
-  but the page is quietly outside a stated contract, and the same omission is
-  what #281 must not repeat for `/tasks` (its proposal already names
-  `TINT.tasks`/`SEED.tasks`) · check by reddening on the missing entry, not on
-  the rendered colour
-
-  · **out with ccc-glm52-302** in `.worktrees/302-tint` (owns `watch.py` + `test_watch.py`, port 39895); unblocked by #301's merge
 - **#300** — Let run-mode descriptions liquefy through one shared popover · P2
   · Web UI feature · 35m · origin: **human** · **human via watch `add-idea`
   14:37** · hovering a run-mode button should explain that mode; all buttons
@@ -688,40 +705,6 @@ Next id: **318**
   "no size below which this stops applying"; rec: apply #196's
   section-fold shape to ONE and see if it falls out cheaply before
   deciding all four · after #199
-- **#203** — Guard servers are not reaped · P2 · bug · 25m · found 17:40
-  when a dreamer went quiet: FOUR orphaned watch.py servers in the guard
-  ranges, one up **4.5 hours** serving `dev/capture/fixture` — the most
-  confusing possible answer for a readiness probe · exactly what
-  `parallel-architecture.md` predicted in writing and what cost
-  dreamer-identity 20 minutes · **three consecutive agents believed they
-  had cleaned up**, so do NOT fix by asking for more care · rec: bind
-  port 0 and let the OS assign (removes the class), probe for something
-  only THIS server serves, reap in a trap/finally, log what was started
-  and killed · belongs with #148 + #192 in the shared runner · **a guard
-  red only under LOAD is worse than plainly wrong** — the first re-run
-  exonerates it and teaches everyone to re-run; if the runner ever
-  retries, it must SAY it retried (qsec 18:17, prominence at 7ac4f02:
-  the trace armed on the click, so it measured its own input latency) ·
-  **~21:05**: panels found 39899 held, moved to 39893, and later NAMED
-  the holder (pid 2331175, `watch.py --target /tmp/... --port 39899`,
-  minutes old — legitimate, not an orphan) · the discrimination rule
-  that fell out: TARGET PATH + ELAPSED together are the evidence — a
-  /tmp target minutes old is somebody working; the same command on a
-  repo target hours old is the orphan class · when a held port is
-  found, capture `ss -tlnp` and name pid+command in the report ·
-  **a mechanical discriminator that needs no judgement** (2026-07-27
-  17:44): `readlink /proc/<pid>/cwd` ending in ` (deleted)` means the
-  lane that started it is gone, full stop — target-path-plus-elapsed
-  still needs a human to weigh "is 20 hours long", and this does not.
-  Found by it and reaped: pid 1652343, `watch.py --target
-  dev/capture/fixture --port 39951`, up 21h, cwd
-  `/tmp/pi-agent-9f527dd0-…(deleted)` — the outgoing pi lane's, and the
-  exact fixture-server hazard above · **two more still up**, both /tmp
-  targets that still exist so the deleted-cwd test does not fire: 897036
-  (`/tmp/a250/target`, 26h) and 3408270 (`/tmp/revieworder-green/target`,
-  20h) · left running deliberately — reaping them is a judgement call and
-  the reaper should make it, not a coordinator doing it by hand
-  · **out with ccc-glm52-203** in `.worktrees/203-reaper` (owns `justfile` + new files under `dev/`, port 39894) · scoped deliberately: the port-0 half needs `watch.py`, which another agent holds, so the reaper lands first and port 0 follows
 - **#201** — Stream and control an agent's TUI in the browser via herdr ·
   P2 · idea · several increments · **human 17:27** · substrate EXISTS and
   is documented: `~/.llm-general/ai-coding/herdr/` verified against 0.7.4
@@ -858,6 +841,7 @@ Next id: **318**
   push left, fall back, name the channel that carried it — an unnoticed
   failed push is worse than none, because the loop then believes it
   escalated · **still his**: the xAI credential needs a re-auth
+  · **CONFIRMED with a cause, 2026-07-27 20:17**: `attn` exits 403 — "You have run out of credits or need a Grok subscription" — so the loop's only push channel to him is a paid quota that ran out, which is a failure that recurs on its own schedule and that no change here prevents · this is the entry's thesis demonstrated rather than argued: the loop could not tell him, and the dashboard is the only surface that can · raises the value of the dashboard-side half of this task specifically, over any retry or fallback in the sender
 - **#189** — World-space anchoring silently collapses on native
   Wayland · P2 · bug · 35m · `screenX`/`screenY` return **0** on native
   Wayland by protocol, so #74's world space becomes "both windows at the
@@ -1128,6 +1112,78 @@ Next id: **318**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#302** — Give `/answers` its own tint and turbulence seed · P3 · landed 2026-07-27 · chore ·
+  10m · origin: **loop** · found by `dreamer-taskspage` during the #281 design
+  batch · `TINT` and `SEED` have no `answers` entry, so the route silently
+  inherits the dashboard's atmosphere via `TINT[name] || 0` while
+  `transitions.md` states every destination has its own seed and tint · small,
+  but the page is quietly outside a stated contract, and the same omission is
+  what #281 must not repeat for `/tasks` (its proposal already names
+  `TINT.tasks`/`SEED.tasks`) · check by reddening on the missing entry, not on
+  the rendered colour
+
+  · **out with ccc-glm52-302** in `.worktrees/302-tint` (owns `watch.py` + `test_watch.py`, port 39895); unblocked by #301's merge
+  · landed `f0f4e2a`-merge (ccc-glm52-302) · TINT 0.08 / SEED 29, reasoned not
+  filled: the warm dialogue family beside `/questions` (+0.14) but quieter,
+  because the loop's asks block the loop and must pull him while the human's
+  asks are a surface he is already writing into — the pair reads as a gradient ·
+  the check asserts entry PRESENCE and derives the destination set from `routeOf`
+  itself, so a route added tomorrow is caught without restating the list; a hue
+  assertion would pin today's palette · red-proved on each table independently
+  with a runtime plural-routes precondition · **`TITLE_ROUTE` has the identical
+  omission** — see #318
+
+
+- **#203** — Guard servers are not reaped · P2 · landed 2026-07-27 · bug · 25m · found 17:40
+  when a dreamer went quiet: FOUR orphaned watch.py servers in the guard
+  ranges, one up **4.5 hours** serving `dev/capture/fixture` — the most
+  confusing possible answer for a readiness probe · exactly what
+  `parallel-architecture.md` predicted in writing and what cost
+  dreamer-identity 20 minutes · **three consecutive agents believed they
+  had cleaned up**, so do NOT fix by asking for more care · rec: bind
+  port 0 and let the OS assign (removes the class), probe for something
+  only THIS server serves, reap in a trap/finally, log what was started
+  and killed · belongs with #148 + #192 in the shared runner · **a guard
+  red only under LOAD is worse than plainly wrong** — the first re-run
+  exonerates it and teaches everyone to re-run; if the runner ever
+  retries, it must SAY it retried (qsec 18:17, prominence at 7ac4f02:
+  the trace armed on the click, so it measured its own input latency) ·
+  **~21:05**: panels found 39899 held, moved to 39893, and later NAMED
+  the holder (pid 2331175, `watch.py --target /tmp/... --port 39899`,
+  minutes old — legitimate, not an orphan) · the discrimination rule
+  that fell out: TARGET PATH + ELAPSED together are the evidence — a
+  /tmp target minutes old is somebody working; the same command on a
+  repo target hours old is the orphan class · when a held port is
+  found, capture `ss -tlnp` and name pid+command in the report ·
+  **a mechanical discriminator that needs no judgement** (2026-07-27
+  17:44): `readlink /proc/<pid>/cwd` ending in ` (deleted)` means the
+  lane that started it is gone, full stop — target-path-plus-elapsed
+  still needs a human to weigh "is 20 hours long", and this does not.
+  Found by it and reaped: pid 1652343, `watch.py --target
+  dev/capture/fixture --port 39951`, up 21h, cwd
+  `/tmp/pi-agent-9f527dd0-…(deleted)` — the outgoing pi lane's, and the
+  exact fixture-server hazard above · **two more still up**, both /tmp
+  targets that still exist so the deleted-cwd test does not fire: 897036
+  (`/tmp/a250/target`, 26h) and 3408270 (`/tmp/revieworder-green/target`,
+  20h) · left running deliberately — reaping them is a judgement call and
+  the reaper should make it, not a coordinator doing it by hand
+  · **out with ccc-glm52-203** in `.worktrees/203-reaper` (owns `justfile` + new files under `dev/`, port 39894) · scoped deliberately: the port-0 half needs `watch.py`, which another agent holds, so the reaper lands first and port 0 follows
+  · **reaper landed** `485717c` + coordinator fix `a0354ad` · the first
+  deliverable was confirmed rather than assumed: `just guards` already traps and
+  kills its own server, and a trap CANNOT be the fix because SIGKILL is handled
+  in kernelspace and bypasses the handler — so the orphans are hand-started
+  servers and survivors of SIGKILLed lanes · rule 2 (deleted cwd) outranks rule 1
+  (old target) on purpose, so the kill decision never depends on a tunable
+  threshold; rule 1 reports and can never kill; only SIGTERM; `--all-dead`
+  refuses without `--yes` · **it reaped two pids it was told to spare** and
+  reported that first, unprompted — both lanes had gone deleted between dispatch
+  and its run, so they were mechanically dead-lane rather than the judgement
+  calls the brief described; the deployed dashboard, dev server and forum
+  instance were verified untouched and alive · the coordinator then found the
+  hole its own note pointed at: `is_deployed` was printed and never consulted,
+  so a deployed dashboard with a deleted cwd was sweepable — red-proved and
+  closed · **the port-0 half remains open**, see #319
 
 - **#317** — `qorder.mjs` is the fifth instance of the frame-count assertion ·
   P2 · guard craft · ~20m · origin: **loop** · goal: a guard must not go red for

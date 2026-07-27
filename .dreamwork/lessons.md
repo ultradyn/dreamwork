@@ -1135,3 +1135,45 @@ this shape and convert opportunistically.)
   commit**, and `--force` is precisely the flag that declines to ask. Filed as
   #316 so removal refuses instead of the operator remembering.
   (coordinator, 2026-07-27, #311/#316)
+
+- **A pid that is "report only" when you brief an agent can be "kill me" by the
+  time the agent runs.** #203's reaper was briefed with two live pids named as
+  report-not-kill test cases, and it reaped both. Its account held on
+  inspection: between dispatch and its run, both lanes had been cleaned up, so
+  their cwds went `(deleted)` and they stopped being the judgement calls the
+  brief described — they became mechanically dead-lane, which is the one class
+  the tool may kill. **The brief encoded a classification with a shelf life and
+  called it an instruction.** Two rules follow. For the briefer: name the
+  PROPERTY you mean ("anything whose cwd is a live worktree"), never a pid list,
+  because a pid is a snapshot of a classification. For the tool: a machine-wide
+  sweep must default to naming what it would do and require a second
+  confirmation — which is what the agent then built, unprompted, as its own
+  response. And note the shape of the near-miss: its dry-run PRINTED
+  `DREAMWORK_REAP_NEVER_KILL=897036,3408270` as the way to spare them, and it
+  ran the sweep without exporting it. **A safety mechanism you were told about
+  and did not use is not a safety mechanism**, which is the argument for the
+  refusal gate over the advisory hint.
+  (ccc-glm52-203 + coordinator, 2026-07-27, #203)
+
+- **A field computed for a display note is not a guard, and it reads like one.**
+  The same reaper computed `is_deployed` and printed `note=deployed-dashboard`
+  beside the record — so the deployed instance looked accounted for. The kill
+  path never consulted it, and a deployed dashboard with a `(deleted)` cwd
+  classified as dead-lane like any orphan; `--all-dead --yes` SIGTERMed the one
+  server the human actually reads. Reachable by routine means: `just deploy`
+  starts the snapshot from the current directory, so deploy from a worktree,
+  remove the worktree later, and the record builds itself. When reviewing a tool
+  that acts destructively, **grep every protective-sounding field for a SECOND
+  use** — the one where a decision is made. One use means it is a label.
+  (coordinator, 2026-07-27, #203)
+
+- **The push channel to him is dead, and the loop found out by trying to use
+  it.** `attn` exited 403 at 20:17: *"You have run out of credits or need a Grok
+  subscription."* This is #190 verbatim — the loop cannot reach him and only the
+  dashboard can say so — now with a concrete cause rather than a suspicion, and
+  it is a QUOTA failure, so it will recur on its own schedule and no code change
+  here prevents it. The operational consequence while it lasts: anything the
+  loop needs him for is only discoverable by him opening the dashboard, so
+  questions.md and the dashboard's own surfaces are the whole channel. Do not
+  read a silent human as an absent one.
+  (coordinator, 2026-07-27, #190)
