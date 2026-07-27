@@ -1714,3 +1714,19 @@ this shape and convert opportunistically.)
   matters in a way "assertion failed" never would. Worth choosing injections for
   this property: the one that produces a legible catastrophe teaches more than the
   one that produces a boolean. (coordinator, #263 lane C)
+- **Defence-in-depth and a discriminating red are in direct tension: where two
+  mechanisms each prevent the bug, deleting one proves nothing.** The #263 plan named
+  `UNIQUE(client_action_id)` as the red line for "two processes, one UUID, one
+  receipt". Removing it leaves the suite **green** — verified by the lane and again
+  independently — because `BEGIN IMMEDIATE` plus the SELECT-before-insert already
+  serialise the writers, so the second process replays and never reaches the
+  constraint. The lane did not stop at the finding: it probed the mechanism, and
+  `DEFERRED` + no `UNIQUE` does give `database is locked`, so the concurrency is real
+  and `UNIQUE` merely is not the line carrying it. **This was the second wrong red
+  line in one plan** — `B1`'s assumed a pragma differing from the platform default —
+  and both share a shape: **a plan written before the code names the mechanism the
+  author imagines will carry the property, not the one that ends up carrying it.**
+  Two consequences. Keep the redundant layer (it is not wasted) but stop claiming it
+  is tested; and when a red comes back green, the question is not "is the code fine"
+  but **"which layer is actually holding this up?"** — answering that is what turns a
+  hollow check into a correct one. (coordinator + lane B2, #263)

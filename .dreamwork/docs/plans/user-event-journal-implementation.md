@@ -425,7 +425,24 @@ increment is the test plus whatever the test finds.
 `multiprocessing` children (separate interpreters), a barrier, both call
 `receive()` with the same UUID and bytes; assert exactly one insert and two
 `202`-shaped results with one receipt id.
-*Red line:* the `UNIQUE(client_action_id)` constraint in the schema.
+*Red line:* ~~the `UNIQUE(client_action_id)` constraint in the schema.~~
+**WRONG, and lane B2 found it by obeying it** (amended 2026-07-28, `5f729dc`):
+removing `UNIQUE` leaves the whole suite **green**, because `BEGIN IMMEDIATE` plus
+`B2`'s SELECT-before-insert already serialise the writers — the second process
+*replays* and never reaches the constraint. Verified twice: by the lane, and
+independently by the coordinator (12 passed with `UNIQUE` deleted). The lane also
+probed the mechanism rather than guessing at it: `DEFERRED` + no `UNIQUE` gives
+`database is locked` under `busy_timeout`, so the concurrency is real and `UNIQUE`
+simply is not the line that carries it. **The load-bearing lines today are
+`BEGIN IMMEDIATE` and the SELECT-before-insert**; `UNIQUE` is defence-in-depth and
+is retained as such. To make this increment's red discriminating, either name those
+two as co-reds, or switch `receive()` to insert-first so `UNIQUE` becomes the
+concurrent backstop it was assumed to be.
+**This is the second red line in this plan that named a mechanism which was not the
+load-bearing one** (see `B1`). The general trap: **where two mechanisms each prevent
+the bug, deleting one proves nothing — defence-in-depth and a discriminating red are
+in direct tension**, and a plan written before the code cannot see which layer will
+end up carrying the property.
 *Must not fake:* **threads are not processes.** The existing code's only mutual
 exclusion is a `threading.Lock` (`watch.py:8026`), and a threaded version of
 this test passes with no database constraint at all — which is precisely #262's
