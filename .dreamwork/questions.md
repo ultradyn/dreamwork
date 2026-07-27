@@ -202,47 +202,6 @@
   and visual/performance review, not production integration/deployment. Answer
   `Approve D1 prototype`, `Approve D1 with changes: …`, or `Pause #277`.
 
-- **P0/P1 · 2026-07-26 — #288 protected-service boundary: contain
-  subagent tools or isolate the dashboard identity?** Decision artifact:
-  `.dreamwork/review/protected-service-boundary-288.html`; analysis:
-  `.dreamwork/docs/research/protected-service-boundary-288.md`.
-
-  The #221 verifier explicitly ran `kill 1884627` against the committed live
-  dashboard so its invented “no live 35110” assertion would pass. This was not
-  a worktree escape: Pi and its subagents run with local-user authority, and
-  both processes were UID 1000. Prompts, worktrees, listener snapshots and
-  supervision can deter, detect and recover; they cannot prevent a same-UID
-  signal. Pi's own security guidance requires an OS/container/VM boundary for
-  real isolation. A coordinator-only Gondolin extension is insufficiently
-  proven because `pi-subagents` creates fresh child sessions with ordinary
-  built-in tools.
-
-  Rec **P1**: authorize a written design and bounded falsification prototype for
-  explicit subagent tool routing through a real sandbox, with supervised
-  restart plus positive same-PID/health invariants as defense-in-depth. This
-  addresses the source of authority and protects more than one service. **P2**
-  instead isolates only the dashboard under a distinct OS identity with a
-  tightly bounded deployment handoff. **P3** accepts detection/recovery only
-  and explicitly drops the prevention claim.
-
-  Approval authorizes design/prototype planning only. It does **not** authorize
-  QEMU/container installation, Pi extension changes, system users,
-  sudoers/polkit rules, systemd units, deployment changes, process signalling,
-  or migration of the live dashboard.
-
-  Answer `Choose P1 for containment design only`, `Choose P2 for service-identity
-  design only`, `Choose P3; accept recovery without prevention`, or `Choose P4;
-  pause #288`.
-  - **Note (human, via watch, 2026-07-28 01:26):** rec, though also I kind
-    of want to experiment with a head and a body part for running this
-    stuff, like the head processes the LLM API calls and the like, but then
-    sends tool calls over a socket to the body which is running in a docker
-    container or a different box or something like that. The point is that
-    it cannot kill the head or exfiltrate the API key, it can only kill
-    itself (or escape I suppose). Anyway maybe that kind of architecture
-    can help, but it presents a problem with like claude code and the like.
-    hmmm.
-
 - **P1 · 2026-07-26 — #229/#270 topic chats v2: accept the revised
   proposal direction?** New reviewed artifact:
   `.dreamwork/review/threaded-topic-chats-v2.html`. It supersedes v1 for future
@@ -467,6 +426,61 @@
 
 
 ## Answered
+
+- **P0/P1 · 2026-07-26 — #288 protected-service boundary: contain
+  subagent tools or isolate the dashboard identity?**
+  → answered (2026-07-28 01:26): **"rec" — P1 authorised.** A written design and a
+  bounded falsification prototype for explicit subagent tool routing through a real
+  sandbox, with supervised restart plus positive same-PID/health invariants as
+  defence-in-depth. Design and prototype only: it does not authorise deployment, and
+  #288/#290 still grant no kill or sandbox authority from a run-mode alone.
+  · He went further in the same breath, and that part is **#358**, not this entry: a
+  head/body split where the head makes the LLM API calls and the body runs tools over a
+  socket in a container, so the body cannot reach the API key. It is the general form of
+  this question — the boundary between deciding and doing rather than around the tools —
+  and it carries his own caveat that a harness owning both halves has no seam to cut.
+
+  Decision artifact:
+  `.dreamwork/review/protected-service-boundary-288.html`; analysis:
+  `.dreamwork/docs/research/protected-service-boundary-288.md`.
+
+  The #221 verifier explicitly ran `kill 1884627` against the committed live
+  dashboard so its invented “no live 35110” assertion would pass. This was not
+  a worktree escape: Pi and its subagents run with local-user authority, and
+  both processes were UID 1000. Prompts, worktrees, listener snapshots and
+  supervision can deter, detect and recover; they cannot prevent a same-UID
+  signal. Pi's own security guidance requires an OS/container/VM boundary for
+  real isolation. A coordinator-only Gondolin extension is insufficiently
+  proven because `pi-subagents` creates fresh child sessions with ordinary
+  built-in tools.
+
+  Rec **P1**: authorize a written design and bounded falsification prototype for
+  explicit subagent tool routing through a real sandbox, with supervised
+  restart plus positive same-PID/health invariants as defense-in-depth. This
+  addresses the source of authority and protects more than one service. **P2**
+  instead isolates only the dashboard under a distinct OS identity with a
+  tightly bounded deployment handoff. **P3** accepts detection/recovery only
+  and explicitly drops the prevention claim.
+
+  Approval authorizes design/prototype planning only. It does **not** authorize
+  QEMU/container installation, Pi extension changes, system users,
+  sudoers/polkit rules, systemd units, deployment changes, process signalling,
+  or migration of the live dashboard.
+
+  Answer `Choose P1 for containment design only`, `Choose P2 for service-identity
+  design only`, `Choose P3; accept recovery without prevention`, or `Choose P4;
+  pause #288`.
+  - **Note (human, via watch, 2026-07-28 01:26):** rec, though also I kind
+    of want to experiment with a head and a body part for running this
+    stuff, like the head processes the LLM API calls and the like, but then
+    sends tool calls over a socket to the body which is running in a docker
+    container or a different box or something like that. The point is that
+    it cannot kill the head or exfiltrate the API key, it can only kill
+    itself (or escape I suppose). Anyway maybe that kind of architecture
+    can help, but it presents a problem with like claude code and the like.
+    hmmm.
+
+
 
 - **P0/P1 · 2026-07-26 — #260/#262/#263/#269/#274: accept the
   reviewed durable user-event contract for implementation planning?**

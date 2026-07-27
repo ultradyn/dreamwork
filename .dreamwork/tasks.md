@@ -894,6 +894,18 @@ Next id: **359**
   reviewed P1–P4 artifact/question live; Rec P1 designs explicit subagent tool
   containment plus supervised recovery · blocked on dashboard direction; no
   host, service, sandbox, privilege or deployment change authorized
+  · **APPROVED — `"rec"` via watch 2026-07-28 01:26: P1 authorised.** A written design
+  and a bounded falsification prototype for explicit subagent tool routing through a real
+  sandbox, with supervised restart plus positive same-PID/health invariants as
+  defence-in-depth · **design and prototype only** — no deployment, and #290's run-mode
+  still grants no kill or sandbox authority on its own
+  · **he went further in the same message and that part is #358**: a head/body split where
+  the head makes the LLM API calls and the body runs tools over a socket in a container, so
+  the body *"cannot kill the head or exfiltrate the API key, it can only kill itself (or
+  escape I suppose)"* · that is the general form of this question — the boundary between
+  deciding and doing rather than around the tools — and it should be read alongside this
+  design rather than after it, because if the head/body fork is buildable it changes what
+  the sandbox here needs to contain
 
 - **#287** — Design a Matt Pocock skills bridge plugin for Dreamwork · P1 ·
   plugin/research/design · origin: **human** · **human via coordinator
