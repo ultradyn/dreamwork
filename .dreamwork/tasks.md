@@ -24,9 +24,38 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **343**
+Next id: **344**
 
 ## Open
+
+- **#343** — lint must reject an unrecognised author tag in questions.md and
+  answers.md · **P1** · reliability · origin: **loop** · a threaded bullet whose
+  prefix is not in `NOTE_TAGS` or `ANSWER_TAGS` (`watch.py:6770`, `:6810`) is not a
+  contribution: it falls into the entry **body** and renders with its raw tag showing
+  and no author label — the #340 defect, reachable by a one-word typo
+  · **evidence is a live near-miss, not a hypothetical**: the coordinator wrote
+  `- **Note (loop, …)` on the P0 #263 question that gates five lanes, an hour after
+  writing a merge message explaining that `Answer (loop, …)` was the #254 bug for
+  precisely this reason. Knowing the failure by name did not prevent it, which is the
+  argument for a check rather than another line of documentation
+  · **and lint currently passes over it**: measured — with the bad tag in place
+  `python3 lint.py` reported `clean (0 warning(s))` and `questions.md 14 open, 31
+  answered`, because it counts entries and never inspects an author tag. So the only
+  thing standing between a mistyped tag and his words vanishing from the page is
+  whether the agent voluntarily ran the parser
+  · the tags are asymmetric by channel, which is what makes the typo natural: the
+  human's is `Note (human, via watch, …)`, the loop's is `Follow-up (loop, …)`, and
+  `Note (loop, …)` reads perfectly reasonable while matching nothing
+  · **the check must consume `NOTE_TAGS`/`ANSWER_TAGS` from `watch.py`, never restate
+  them** — a second copy of the tag list is a second thing able to disagree with the
+  renderer, and the whole defect class is renderer-disagreement · WARN vs ERROR is a
+  judgement call: ERROR is defensible because there is no legitimate reason to write
+  a tag the renderer does not know, and a silent drop of his words is the loudest
+  thing in `DREAMWORK.md`'s "nothing fails quietly"
+  · red-prove by the discrimination that found it: correct tag → parses as one
+  contribution with `author='loop'`; change one word → **zero contributions and the
+  raw tag in the body**. Assert both halves in one run, and derive them from the real
+  tag tuples so the test cannot pass on a stale literal
 
 - **#342** — Delivery mode for dashboard commands: batched vs instant, and a read
   cursor so polling is possible at all · P2 · design + reliability ·

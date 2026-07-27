@@ -1386,3 +1386,22 @@ this shape and convert opportunistically.)
   file and pass `-F`. The general rule, which is cheaper than remembering the
   metacharacter list: **if a message quotes the contents of a file, it goes through a
   file.**
+
+- **The human's note tag and the loop's note tag are spelled differently, and writing
+  the wrong one deletes your words from the page in silence.** The human's is
+  `- **Note (human, via watch, …)`; the loop's is `- **Follow-up (loop, …)` —
+  asymmetric names for the same act, and `Note (loop, …)` is in neither `NOTE_TAGS`
+  nor `ANSWER_TAGS` (`watch.py:6770`, `:6810`). The coordinator wrote `Note (loop, …)`
+  on the P0 question gating five lanes, *in the same hour* it had written a merge
+  message explaining that `Answer (loop, …)` was the #254 bug for exactly this reason.
+  Knowing the failure mode by name did not prevent committing it. What caught it was
+  running the parser: `_parse_entries(txt, "Open", True)` returned the correct tag as
+  one contribution with `author='loop'`, and the wrong tag as **zero contributions with
+  the raw tag leaked into the entry body** — the #340 defect, self-inflicted. Two
+  things follow. **`lint.py` did not notice**: it reported `clean (0 warnings), 14 open`
+  with the bad tag in place, because it counts entries and never validates an author
+  tag, so the only signal was voluntary (#343 files this). And the general rule, which
+  is cheaper than memorising four tag spellings: **when writing a file a tool parses,
+  run the tool's parser on it before committing — and change one character to confirm
+  the check discriminates.** The format doc tells you what the shape is; only the
+  parser tells you whether what you wrote is that shape.
