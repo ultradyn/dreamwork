@@ -28,17 +28,6 @@ Next id: **378**
 
 ## Open
 
-- **#372** — The review template squeezes tables at mobile instead of scrolling them · P2 ·
-  review tooling/visual · origin: **loop** · 15m · reported by dreamer-263-plan · `.scroller` is
-  `overflow-x:auto` but the table inside carries no `min-width`, so at 390px it shrinks until
-  words break inside cells rather than the container scrolling · measured: the shipped
-  `task-transition-boundary.html` has **18** mid-word breaks at 390px, and folding a 3-column
-  table to 2 took a different artifact from 18 to **5** — so the container is not doing the job
-  it exists for · it is a template change, so it batches with #347, #364 and #367 · rec: a
-  `min-width` on the table so `.scroller` actually scrolls, and the word-`Range` instrument from
-  #347's correction as the check, since a break inside a cell is invisible to any end-state
-  assertion
-
 - **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
   reliability bug · origin: **loop** · 15m · found by dreamer-263-plan, coordinator verified:
   `watch.py:8387` does `body = self.rfile.read(min(nbytes, MAX_BODY))` and **never compares
@@ -54,28 +43,6 @@ Next id: **378**
   so this entry waits on it rather than guessing
   · filed separately because #263's lane E may wait behind a second gate and this should not
   · blocked on `watch.py` being free, and on #263 Q2 for the discard-vs-mark decision
-
-- **#370** — `/answer` and `/comment` truncate `questions.md` in place · **P0** ·
-  durability bug · origin: **loop** · 20m · **next-up** · found by dreamer-263-plan while
-  measuring seams, coordinator verified in the source rather than on report · `watch.py:8462`
-  and `:8496` write his answers and comments with `with open(qpath, "w"): f.write(new_text)` —
-  truncate in place, no temp file, no rename, no `fsync` · **thirty lines earlier, `/ask` writes
-  `answers.md` through `atomic_write_text`** (`:8433`), and that function already does temp +
-  `fsync` + `os.replace` + parent `fsync`. So the fix is one call and the correct pattern is
-  already in the module
-  · **why P0 rather than a tidy-up**: the truncation happens before the write, so a crash, a
-  full disk or a killed process between the two loses **the entire `questions.md`** — every open
-  question, every answered one, every thread — and it happens on precisely the two routes that
-  carry *his words*. `#262` established that his words must be durably witnessed before a 200;
-  this is the same principle failing one layer down, in the file itself
-  · and the exposure is not theoretical tonight: **his answers arrived twice each on four
-  occasions** (#274), so these routes fire more often than once per intent, doubling the window
-  · rec: swap both to `atomic_write_text` · red-first is available without mocking durability:
-  assert the two call sites use it (the production line is the `open(...)` call), and separately
-  that a `questions.md` survives a write interrupted between truncate and flush — inducible by
-  filling the parent directory or by `chmod` on the temp path, not by patching `os.fsync`
-  · **blocked on `watch.py` being free** — dreamer-284-252 holds it. This is the first thing to
-  land when it does
 
 - **#368** — Break the large Python files into a modular, testable codebase · P2 ·
   refactor/architecture · origin: **human** · **human via watch `add-idea` 2026-07-28 02:46**:
@@ -161,43 +128,6 @@ Next id: **378**
   a component is now refused, because the rule is *every direct child carries a documented
   class* rather than a tag blocklist. No existing file does it, and the strict form is what
   catches the real defect without a maintained exemption list
-
-- **#364** — The #346 artifact still asks four questions he has already answered · P2 ·
-  docs/accuracy · origin: **loop** · 15m · `.dreamwork/review/src/task-store-schema.html` is
-  the page he opens from the dashboard to rule on the task store, and it has been overtaken by
-  his own 01:23 ruling and by the work done since · stale in four places, measured: the
-  intro still frames the four decisions as open (line 22); the normalisation table still says
-  `resolve compound bands · 4` when three of them deliberately stay and the fourth was a
-  concatenation artefact (125); the S2 block still poses the question rather than stating the
-  answer (146-147); and the `priority + priority_rank` pair (85) is superseded by a closed band
-  column plus `priority_uncertain`, which is the shape that actually preserves *"urgent, not
-  yet certain which"* without a compound value
-  · **the design doc is already correct** — `task-store-schema.md` carries the S1/S2/S4
-  rulings and tonight's S2 resolution — so this is a one-way sync into the artifact, not a
-  decision · **cannot start yet**: a dreamer is live on that exact source file fixing two
-  render defects, so this waits for that merge rather than racing it · after the merge, verify
-  by looking at the rendered pixels, not the diff — `review_artifact.py check` reports
-  `current` on a page whose text is wrong
-  · **the general problem is worth naming even though this instance is cheap**: an artifact is
-  a snapshot of a question, and the moment he answers it the page he answered from becomes a
-  false record of the state. Nothing checks that. `check_review_artifacts` verifies the
-  template stamp, which is bytes, not truth
-  · **SCOPE INVERTED, and the reason matters more than the task.** The premise above — sync
-  the artifact's content forward — is **wrong**, and folding his answer is what showed it. The
-  #346 ask is now under `## Answered`, so that artifact is **the record of what he was asked**.
-  Rewriting it to state the answer would destroy the only evidence of the question he actually
-  ruled on, which is strictly worse than being out of date. An artifact paired with an answered
-  question is history and stays as authored
-  · so the work is **not** a content sync but a **marker**: an artifact whose question has been
-  answered should say so on its face and point at the design that superseded it, so a reader
-  arriving from the dashboard's review list knows within one glance that they are reading a
-  snapshot rather than the current shape. `task-transition-boundary.html` is the only source
-  that currently says anything of the kind, so there is one instance of an idiom and no contract
-  · the check that would make it hold: an artifact whose paired questions.md entry sits under
-  `## Answered` must carry that marker. That is derivable today — the entry names its artifact
-  path — and it is red immediately against the answered artifacts that carry nothing
-  · **not urgent and deliberately not started**: it needs the marker's visual form decided
-  against `watch-design.md` and the artifact frame, and touching the frame stales all 15
 
 - **#363** — lint's landed-but-open WARN cannot tell a forgotten fold from a live lane · P3 ·
   tooling/honesty · origin: **loop** · 10m · reported by dreamer-264-boundary as report-only ·
@@ -599,66 +529,6 @@ Next id: **378**
   · **do not implement before asking him** — this changes a durable record he reads, and
   the cheap wrong answer (aggressive pruning) destroys evidence that is the point of the
   file
-
-- **#347** — A review artifact's nav breaks words mid-syllable when the header is long ·
-  P2 · review tooling/visual · origin: **loop** · found building #346's artifact by
-  looking at it · **measured, three renders**: five nav items produced `the shap e`,
-  `the sea m` and `deci sion s`; three items still produced `decisi ons`; three items
-  with a shortened `identity` and `context` rendered correctly · so the cause is not the
-  item count on its own — the nav gets the width left over after identity/context, and
-  #346's context was long enough to be ellipsised itself while still starving the nav
-  · **the defect is the failure mode, not the tightness**: a nav that has run out of
-  room should ellipsise or wrap at a space, and `deci sion s` is neither legible nor
-  something a reader can diagnose · the existing artifact (`note-reply-threading-254`)
-  has three items and a short header, so nothing had exercised the overflow before
-  · rec: fix in the frame with a word-boundary rule and a min-width that ellipsises
-  rather than breaking, so the next author cannot author their way into it — and note
-  that touching the frame stales every templated artifact (`template_stamp` digests its
-  bytes), which is one rebuild today and more later, so this is cheaper now than after
-  #325's twelve are migrated · red-prove with #346's original five-item nav restored:
-  assert no rendered nav item's text differs from its source text by an inserted break,
-  which is checkable without a screenshot
-  · **DIAGNOSED PRECISELY, dreamer-264-boundary 2026-07-28 02:35, coordinator verified**: it
-  is **one missing declaration**. `.topactions a` (`review-artifact.template.html:120`) has
-  `display:inline-flex;align-items:center;min-height:44px;padding;border;border-radius` and
-  **no `white-space:nowrap`** — while `.identity b`, `.identity span`, `.status`, `.framebar b`
-  and `.sgbtn` all carry it. The nav anchor is the single interactive text element in the top
-  rail without it, so **any** two-word label breaks no matter how correctly the source is
-  authored
-  · **that settles where the fix goes and where it does NOT.** It is a template defect, not a
-  source defect, so no source-level lint can reach it — the only thing a source check could do
-  is forbid multi-word labels, which treats the symptom and constrains every future author for
-  the sake of a missing CSS line. The sibling work that landed tonight
-  (`review_artifact.component_violations`, `40a1d71`) is the source-level half and is
-  deliberately not this
-  · **and the guard belongs in `dev/capture/`, not in `review_artifact.py`** — structurally,
-  not by preference: that module is stdlib-only and renders nothing, so `getClientRects()` is
-  unavailable to it even in principle, and pytest here has no browser either · spec, from the
-  dreamer and worth keeping because it arrives already red: build a fixture source whose nav
-  carries a deliberately long multi-word label, serve it through the existing `(OUT, PORT)`
-  contract at `/reviewraw` rather than inventing a second one, load it at three widths, and
-  assert `scrollWidth === clientWidth` on the document · adopt `report.mjs` (#324/#334's idiom)
-  rather than hand-rolling an exit handler
-  · **CORRECTION 2026-07-28 02:52 — the `getClientRects().length === 1` half of that spec is
-  HOLLOW, and it was recorded here an hour ago.** `.topactions a` is `display:inline-flex`
-  (verified in the template), so the anchor stays **one box** while its text wraps *inside* it.
-  dreamer-263-plan hit exactly this: the instrument reported `1` for all four of its nav labels
-  while all four were visibly broken — "measur/ed", "sequen/ce", "fixtur/es", "decisi/ons"
-  · so for an hour this entry told whoever fixed #347 to ship a green check over a broken page,
-  which is the precise failure mode `CLAUDE.md` warns about and it got into the ledger anyway,
-  from a report the coordinator had already verified in its *other* claim
-  · **the instrument that works**: a `Range` over each **word** in the label, flagging any word
-  whose rects exceed one — and skipping words containing `-` or `/`, because breaking at a
-  hyphen or a slash is correct typography for paths and compounds
-  · **and its own first red-proof came back GREEN**: rewriting the labels through the DOM did
-  not reproduce the wrap, because the test's scaffolding stood in front of it. The discriminating
-  red came from rebuilding the original nav **from source** into a throwaway artifact —
-  `textRects` 1→2 on all four while `boxRects` stayed 1. Whoever builds this guard must inject
-  through the source, not the DOM
-  · **blocked on `dev/capture/` being free** — dreamer-284-252 holds it. The one-declaration
-  template fix should land in the same commit as the guard, since touching the frame rebuilds
-  all 15 artifacts and wants to happen once
-
 
 - **#346** — Design #294's task entity schema and read-only CLI surface, the half that
   is not gated on #263 · P1 · schema/CLI design · origin: **loop** · split from #294
@@ -1479,15 +1349,6 @@ Next id: **378**
   prototype proves a worthwhile second shader and #228 shared settings lands ·
   **#279 did not clear this gate**: deterministic technical base, visual FAIL
 
-
-- **#277** — Let departing UI elements blur and liquify before they travel · P2 ·
-  visual/motion idea · origin: **human** · **human via watch 17:49** · elements
-  about to disappear or move (for example a question moving into Answered) begin
-  a brief dissolve/dreamfade before the actual layout travel · design as a phase
-  inside the existing transition/state matrix, not a second animation system;
-  immediate data commit remains; do not double-ghost route/card departures;
-  normal motion needs bounded intermediate blur/position evidence, no overshoot
-  or snap, settled crispness; reduced motion preserves function with no blur/travel
 
 - **#276** — Add simple bearer-token authentication for LAN clients · P2 ·
   security design/feature · origin: **human** · **human via answer 17:48** ·
@@ -2407,6 +2268,83 @@ Next id: **378**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#370** — `/answer` and `/comment` truncate `questions.md` in place ·
+  **closed `ea9d7d9`** · P0 · durability bug · origin: **loop** · both routes opened his
+  questions file in plain write mode, and truncation happens at open — so anything stopping
+  the write before the flush left the file holding half the new text, on the two routes that
+  carry his words · `atomic_write_text` (temp + `fsync` + `os.replace` + parent `fsync`) had
+  been thirty lines above them the whole time, in use by `/ask`
+  · **the proof induces a real failure instead of mocking durability**, which is what the
+  design's own "kill at named seams" rule requires: `RLIMIT_FSIZE` set just above the file's
+  current length makes the longer post-answer write fail partway through a real `write(2)`.
+  `SIGXFSZ` must be ignored first or its default action kills the runner and reports as a
+  crash rather than a red
+  · discriminating red on both routes: the file came back holding truncated NEW content
+  ending in the payload's own padding instead of the original, and the handler thread died so
+  the connection dropped with no response · the transport error is swallowed in the test
+  helper on purpose, so the red says *"his questions file was damaged"* and not
+  *"RemoteDisconnected"* · the cap is derived from the fixture's length plus the append size,
+  never pinned · `file-formats.md` states the durability contract in the same commit
+  · **one self-inflicted red**: the explanatory comment quoted the construct the check greps
+  for, so the check found the explanation of the bug. Third time prose naming a parsed token
+  has tripped its own checker
+
+- **#277** — Let departing UI elements blur and liquify before they travel ·
+  **closed `1e3ce1b`** · P2 · visual/motion · origin: **human** · **human via watch 17:49**,
+  D1 approved 2026-07-28 02:51 · built by his grok peer in a worktree (`458a4d0`, `a98e940`,
+  `bd077e8`) · `.pregone` is a 180ms dissolve on the single existing ghost — blur 0→8px,
+  opacity 1→0.8, 2px drift — then `.gone` departs as before; commits skip the phase because
+  their gesture is grow-and-fall and 2px up would fight 14px down
+  · **the visual gate was the deliverable and the peer correctly declined to claim it**;
+  coordinator pixel/geometry review: handoff continuous across the class swap (blur
+  7.976→7.995, opacity .801→.800, drift −1.994→−1.999), drift peaks at exactly −2.0px, corpse
+  gone at 1082ms against the 1.1s bound, reduced motion satisfied **structurally** — no ghost
+  is created at all, so the phase cannot run
+  · that review found what 13 mechanical checks could not: `.pregone` peaked at `blur(8px)`
+  while `.gone` declared `blur(6px)`, so **the corpse un-blurred as it left**, getting crisper
+  while departing — a partial reversal of the dissolve, invisible to a `blur ≥ 5px` assertion
+  because 6 > 5 throughout. Fixed by raising `.gone` to 8px and pinning `.commit.gone` to the
+  6px it already inherited, on the selector that already overrode transform: no new class, and
+  the commit gesture computes identically · guard gained a 14th assertion that blur must not
+  decrease during departure · **an ORDER cannot be checked by an end state**, which is why
+  `dreamfade.mjs` is per-frame: both end states are identical either way
+
+- **#347** — A review artifact's nav breaks words mid-syllable when the header is long ·
+  **closed `405092f`** · P2 · review tooling/visual · origin: **loop** · one missing
+  declaration: `.topactions a` had no `white-space:nowrap` while every sibling in the top rail
+  carried it · fixed in the frame with nowrap plus an ellipsising min-width, so the next author
+  cannot author their way back in
+  · **its own spec was hollow for an hour and this is the lesson worth keeping**:
+  `getClientRects().length === 1` on that anchor cannot see the bug, because `inline-flex`
+  keeps the box ONE rect while the text wraps inside it — it reported `1` for four visibly
+  broken labels. The instrument that discriminates is a `Range` over each WORD, skipping words
+  containing `-` or `/` where a break is correct typography
+  · and the first red-proof of that instrument came back GREEN, because rewriting labels
+  through the DOM does not reproduce the wrap — the scaffolding stands in front of the bug.
+  The discriminating red comes from rebuilding the nav FROM SOURCE
+  · `dev/capture/artifactwrap.mjs` builds its fixture through `review_artifact.py`, so the real
+  template and builder are what get measured · related: **#372**
+
+- **#372** — The review template squeezes tables at mobile instead of scrolling them ·
+  **closed `405092f`** · P2 · review tooling/visual · origin: **loop** · `.scroller` was
+  `overflow-x:auto` around a table with no `min-width`, so it shrank until words broke inside
+  cells and the container never scrolled — the one job it existed for · fixed with
+  `min-width:max-content`
+  · measured on the shipped `task-transition-boundary.html` at 390px: **16 → 0** mid-word cell
+  breaks, and the scroller went from `358 = 358` (not scrolling at all) to `3976 vs 358`
+  · checked with #347's word-`Range` instrument, because a break inside a cell is invisible to
+  any end-state assertion · related: **#347**
+
+- **#364** — The #346 artifact still asks four questions he has already answered ·
+  **closed `405092f`** · P2 · docs/accuracy · origin: **loop** · the page he opens to rule on
+  the task store had been overtaken by his own 01:23 ruling, stale in four measured places ·
+  a one-way sync from `task-store-schema.md`, which was already correct — no decision was made
+  in the artifact · verified in the rendered pixels rather than the diff, because
+  `review_artifact.py check` reports `current` on a page whose text is wrong
+  · **the general problem outlives this instance**: an artifact is a snapshot of a question,
+  and the moment he answers it the page he answered from becomes a false record. Nothing
+  checks that
 
 - **#284** — De-emphasise directory paths in file-view headings · **closed `197feef`** ·
   P2 · UI polish · origin: **human** · **human via watch 18:33**, approved 23:46 (`rec H1`)
