@@ -1342,6 +1342,36 @@ Next id: **362**
   on its own tick, a dreamer is assigned files, a task is unblocked by another landing. So
   sharing the journal means events with no `receipt_id`, and not sharing it means proving
   single-truth across two stores. That asymmetry is what decides his question
+  · **DESIGN LANDED `914648c` (merged; design only, ask open)** —
+  `.dreamwork/docs/plans/task-transition-boundary.md` + artifact
+  `.dreamwork/review/task-transition-boundary.html` · **the answer is neither of his two
+  named options**, and the reasoning is the part worth keeping: *"never dual-write two
+  fallible truths"* forbids storing one fact twice, not storing two facts. *"He asked for
+  this at 14:11"* and *"the loop started #264 at 01:47"* are different facts, neither derived
+  from the other, and their whole relationship is a foreign key — both of his options assume
+  they are one fact
+  · **the shape**: a task transition is one row appended to its own append-only `task_event`
+  log, in the SAME SQLite file as #263's journal, in the SAME transaction as the CAS that
+  moves `task_state` · burndown and the dashboard status section become **queries** over that
+  log, so neither can be stale · one materialised row in the whole design, and only because a
+  claim needs something to CAS against
+  · the governing rule that keeps it small: **a materialised row exists only where a WRITER
+  must CAS against it; everything a READER wants is a query** · consequence worth noting —
+  `blocked` becomes derived from the dependency graph plus a small `gate` table, so landing a
+  blocker writes no unblock event at all and blocked can never drift
+  · the crux HELD and the dreamer strengthened it: `Transition.receipt_id` carries no `?`
+  while nine siblings do (coordinator re-read `user-event-journal.md:101-103` — confirmed),
+  and separately **zero task state is mutated at HTTP time today** — `_handle_command` writes
+  one events-log line and nothing else, so a `do now:` becomes a task only when an LLM reads
+  that log on a later tick, one-to-many and judgement-laden. No transaction could contain both
+  the `202` and that
+  · coordinator re-ran two more of its measurements independently: a cross-database
+  `REFERENCES` is a **syntax error** in SQLite (`near ".": syntax error`), so the
+  `task_event.receipt_id` constraint can only exist in one file; and `sqlite3` appears in no
+  `.py` in the repo, so the one-file choice is free now and expensive later
+  · **blocked on his ruling** on four questions (T1 the boundary, T2 status.json losing its
+  task-derived fields, T3 must burndown survive a fresh clone, T4 any consumer outside the
+  dashboard) · T3 is the one that could still move the shape
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
