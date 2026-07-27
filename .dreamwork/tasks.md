@@ -51,6 +51,29 @@ Next id: **398**
   one lane's new file reddening others), and that class **did** cause damage today
   · related: **#264**
 
+  · **MEASURED 2026-07-28 09:08, and it reframes the task — do not start from "split the module".**
+  `watch.py` is **9,479 lines**, of which **7,142 (75%) sit inside triple-quoted blocks**: the
+  dashboard's HTML, CSS and JS embedded as Python string literals. One function, `server_class`
+  (`:262`), is **6,798 lines** — 72% of the file. The next largest is `make_handler` at 436. So the
+  Python is roughly **2,300 lines across 82 top-level defs**, which is not obviously a module-split
+  problem at all
+  · **so the candidate cheap seam is extracting the client assets, not partitioning the Python.**
+  That is a different and much smaller change, and it addresses the contention `#264` measured
+  directly: today a lane editing CSS and a lane editing the request path collide on one file
+  because the CSS *is* in that file. Three of this session's serialised dispatches were exactly
+  that shape
+  · **what the design must cost out, because these are real and I have not resolved them:** the
+  artifact and the dashboard are **offline-clean by contract** — everything inlined — so the server
+  would have to inline the assets at serve time, which is easy; **but `just deploy` snapshots
+  `watch.py` alone** into `~/.cache/dreamwork/deployed/`, and a file that no longer contains its own
+  client would deploy broken. `just guards` copies a fixture target and imports `watch.py` directly.
+  Both are load-bearing and both assume one file
+  · **and the counter-argument stands and gets stronger:** extraction multiplies the
+  registry-coupling class — a new file in a checked directory reddening other lanes' baselines —
+  which is the class that actually caused damage today (`markrail`, the artifact staleness warnings)
+  · **the honest framing for him, then, is not "should we split watch.py"** but *"75% of the
+  dashboard's source is a web app living in Python strings; is extracting it worth breaking the
+  one-file deploy?"* That is a question he can answer; the other one is not
 - **#396** — an **inline** `data-mark` puts its flag outside the reading column and clips past the
   page edge · P1 · review-artifact/geometry · origin: **loop** · found by **probing #367 increment
   2a's stated caveat**, and it is the case beside the one the lane flagged
