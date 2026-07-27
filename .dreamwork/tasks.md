@@ -24,9 +24,40 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **404**
+Next id: **405**
 
 ## Open
+- **#404** — for a same-tree lane, `git log` is a strictly more reliable landing channel than
+  `handoffs.md`, and the tick reads the weaker one first · P2 · loop/design · origin: **loop** ·
+  found by **noticing I had already run the experiment** — I learned of two landings from `git log`
+  while looking for something else, and only then checked the hand-off file, which was empty
+  · **the evidence, unplanned and therefore worth more:** `#392a` (`159917b`) and `#397` (`1b508b0`)
+  both landed. I discovered both from `git log --oneline`. `handoffs.md`'s `## Pending` named
+  neither — it still held only `#398`'s line
+  · **the obligation was in the dispatch prompt**, not a relay — the fix `#398` exists to enforce
+  and which was measured working once. So prompt-placement is **not sufficient**; compliance
+  varies by lane. The count is **provisional and deliberately not recorded yet**: both lanes were
+  still alive when this was filed and may write their lines before exiting. Confirm on exit, then
+  amend this entry — a compliance number taken while the lane is running is a measurement of the
+  wrong moment
+  · **the structural point does not depend on that count.** A lane **cannot land work without
+  committing**, and this repo's commit convention already puts the id in the subject
+  (`fix(#392a):`, `design(#397):`, `docs(#401):`). So the id is in git **by construction**, whereas
+  the hand-off line is an extra act a lane must remember. One channel cannot be forgotten; the
+  other is a habit. `#381` built the habit
+  · **which narrows what `handoffs.md` is actually for** — landings `git log` cannot attribute: a
+  different machine, a different repo, or work that is not a commit. That is a real set and the
+  file should stay. But `SKILL.md`'s tick reads the file and does **not** mention deriving landings
+  from git, so the tick's **primary** route is the weaker one. That ordering is the defect
+  · rec: keep `handoffs.md` for the foreign case; add a git-derived landing sweep to the tick as
+  the primary route (ids in subjects since the last fold, correlated against `## Open`), and demote
+  the file to supplementary. `lint.check_landed_still_open` already does adjacent correlation —
+  **read it before designing, it may already be most of this**
+  · **the trap to avoid, and it is this repo's own recurring one:** a git sweep that finds nothing
+  prints the same as one that ran wrong. Whatever gets built reports **how many commits it
+  examined**, not just what it found
+  · related: **#381, #398, #394**
+
 - **#402** — `status.json`'s `dreamers` array has no stated shape, and the tool that reads it goes
   stale in the one direction that costs parallelism · P2 · loop-tooling/durability · origin:
   **loop** · found by using it: registering a new lane crashed the tool and revealed three more
@@ -256,7 +287,7 @@ Next id: **404**
   · where the instruction belongs is the open question: my brief prose is not durable, so the
   candidate is `SKILL.md`'s Subagents section, beside *"All subagents report to the coordinator
   through a file"* — which is already the right paragraph and already load-bearing
-  · related: **#381, #398, #400**
+  · related: **#381, #398, #400, #404**
 
   · **LANDED (instruction), VERIFICATION PENDING** 2026-07-28 08:59 — `SKILL.md` now states the
   obligation at dispatch time with the reason: the inbox carries judgement, is prose, and is read by
@@ -2864,7 +2895,7 @@ Next id: **404**
   Noted rather than pre-empted — and my own `SKILL.md` edit ten minutes later did touch that
   paragraph and left the phrase's occurrence count unchanged, so `git log -S` still resolves to
   `6f72b8d`. Verified by lint staying green, not assumed
-  · related: **#394**
+  · related: **#394, #404**
 - **#396** — an inline `data-mark` puts its flag outside the reading column and clips past the page
   edge · origin: **loop** · closed 2026-07-28 09:26 · `7902818`
   · `ccc @glm52`, brief `.dreamwork/docs/briefs/396-inline-mark-refusal.md`. Refused at **build
@@ -2941,7 +2972,7 @@ Next id: **404**
   · the lane also observed, without acting on it, that **the relay is the same bug one layer up** —
   coordinator writes a steer, an idle lane never reads it, nothing wakes it. Same shape, same fix.
   Recorded in `.dreamwork/dreams/2026-07-28-0838-the-nag-that-gets-muted.md`
-  · related: **#393, #394, #363, #401**
+  · related: **#393, #394, #363, #401, #404**
 
 - **#390** — a fresh domain's first answer creates its file · origin: **loop** · closed
   2026-07-28 08:06 · `fa65bce`
