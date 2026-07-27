@@ -245,6 +245,182 @@ def fetch_violations(document):
     return scan.hits
 
 
+# ── syntax highlighting (build-time, #339) ────────────────────────────────
+#
+# A review artifact is a frozen record read offline, so highlighting is done
+# once at BUILD time, not on every read: this emits <span class="tok-…"> into
+# marked <pre><code class="language-…"> blocks and ships only the CSS for those
+# classes in the template. No script in the artifact, no runtime cost, and a
+# token class whose CSS is ever lost degrades to the block's own colour —
+# never to broken code.
+#
+# Never guess the language. Only a block that DECLARES its language is coloured;
+# an unmarked block, or one whose language is not supported below, is left
+# byte-identical. A misdetected language colours code wrongly, which is worse
+# than leaving it plain.
+#
+# Each language is a flat, leftmost-match scanner: an ordered list of
+# (class, pattern) plus a trailing anonymous `.` fallback that guarantees the
+# scan covers every byte — so the concatenation of every emitted token is
+# exactly the source, which is the round-trip property the tests hold. The
+# order is the precedence (comments and strings before keywords, keywords
+# before identifiers). The set is deliberately small and honest — five
+# languages cover what review artifacts actually carry; this is not a
+# general-purpose highlighter.
+
+
+def _scanner(spec):
+    """Compile an ordered (class, pattern) spec into (master, names).
+
+    A trailing anonymous `.` is appended so a single .match always advances:
+    without it, a pattern gap would either loop forever or silently drop a
+    character, and the latter is the bug the round-trip check exists to catch.
+    """
+    parts, names = [], []
+    for name, pattern in spec:
+        parts.append("(?P<g%d>%s)" % (len(names), pattern))
+        names.append(name)
+    parts.append("(?P<g%d>.)" % len(names))   # fallback: any one char
+    names.append(None)
+    return re.compile("|".join(parts), re.S), names
+
+
+def _scan(master, names, src):
+    """(class, text) left-to-right, covering every char of src."""
+    out, pos = [], 0
+    end = len(src)
+    while pos < end:
+        m = master.match(src, pos)
+        out.append((names[m.lastindex - 1], m.group()))
+        pos = m.end()
+    return out
+
+
+# _PY: triple-quoted strings first (so they are not split into line tokens),
+# then decorators (the @ is also an operator, so dec must precede op), then
+# keywords before builtins before call-names before bare identifiers.
+_PY = [
+    ("com", r"#[^\n]*"),
+    ("str", r"[rbfuRBFU]{0,2}(?:\"\"\"[\s\S]*?\"\"\"|'''[\s\S]*?'''"
+            r"|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*')"),
+    ("dec", r"@[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*"),
+    ("kw", r"\b(?:def|class|return|if|elif|else|for|while|break|continue|"
+           r"pass|raise|try|except|finally|with|as|import|from|global|"
+           r"nonlocal|lambda|yield|del|assert|in|is|not|and|or|await|"
+           r"async|match|case)\b"),
+    ("typ", r"\b(?:True|False|None|self|cls|int|str|float|bool|list|dict|"
+            r"set|tuple|bytes|range|type|object|frozenset|Exception|"
+            r"ValueError|KeyError|AttributeError|TypeError)\b"),
+    ("num", r"\b(?:0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+|"
+            r"\d+\.?\d*(?:[eE][+-]?\d+)?)\b"),
+    ("fn", r"\b[A-Za-z_]\w*(?=\s*\()"),
+    ("op", r"[-+*/%=<>!&|^~@:;,.(){}\[\]]+|->"),
+    ("var", r"[A-Za-z_]\w*"),
+]
+
+_JSON = [
+    ("str", r"\"(?:\\.|[^\"\\\n])*\""),
+    ("num", r"-?\d+\.?\d*(?:[eE][+-]?\d+)?"),
+    ("kw", r"\b(?:true|false|null)\b"),
+    ("op", r"[{}\[\]:,]"),
+]
+
+_BASH = [
+    ("com", r"#[^\n]*"),
+    ("str", r"\"(?:\\.|[^\"\\\n])*\"|'[^']*'"),
+    ("var", r"\$\{?[A-Za-z_]\w*\}?|\$\("),
+    ("kw", r"\b(?:if|then|elif|else|fi|for|in|do|done|while|until|case|"
+           r"esac|function|return|local|export|unset|set|shift|break|"
+           r"continue|exit|echo|printf|read|cd|test|source|true|false)\b"),
+    ("num", r"\b\d+\b"),
+    ("op", r"\|\||&&|[|&;()<>]+"),
+]
+
+_JS = [
+    ("com", r"//[^\n]*|/\*[\s\S]*?\*/"),
+    ("str", r"`(?:\\.|[^`\\])*`|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'"),
+    ("kw", r"\b(?:var|let|const|function|return|if|else|for|while|do|break|"
+           r"continue|switch|case|default|try|catch|finally|throw|new|class|"
+           r"extends|super|this|typeof|instanceof|in|of|void|delete|yield|"
+           r"await|async|import|export|from|as|null|undefined|true|false)\b"),
+    ("num", r"\b\d+\.?\d*(?:[eE][+-]?\d+)?\b"),
+    ("fn", r"\b[A-Za-z_$][\w$]*(?=\s*\()"),
+    ("op", r"[-+*/%=<>!&|^~?:;,.(){}\[\]]+|=>"),
+    ("var", r"[A-Za-z_$][\w$]*"),
+]
+
+# _HTML: a tag's name and its attribute names are coloured; text nodes and
+# entities are not (they take the block's own colour). The tag pattern's
+# lookahead requires what follows the name to be whitespace, `/` or `>`, so a
+# bare `<` in text never starts a tag token.
+_HTML = [
+    ("com", r"<!--[\s\S]*?-->"),
+    ("str", r"\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'"),
+    ("tag", r"</?[A-Za-z][\w-]*(?=[\s>/])"),
+    ("attr", r"\b[A-Za-z_][\w-]*(?=\s*=)"),
+    ("op", r"</+>|[<>=]"),
+]
+
+_TOKENIZERS = {
+    "python": _scanner(_PY),
+    "json": _scanner(_JSON),
+    "bash": _scanner(_BASH),
+    "javascript": _scanner(_JS),
+    "html": _scanner(_HTML),
+}
+SUPPORTED_LANGUAGES = frozenset(_TOKENIZERS)
+
+_PRE_CODE_RE = re.compile(
+    r'<pre><code(?P<attrs>[^>]*)>(?P<inner>.*?)</code></pre>', re.S)
+_CLASS_ATTR_RE = re.compile(r'class\s*=\s*"([^"]*)"')
+_LANG_RE = re.compile(r"\blanguage-([A-Za-z_][-\w]*)")
+
+
+def _highlight_inner(inner_html, language):
+    """Tokenise the (HTML-escaped) inner of one <code> block; return it wrapped
+    in <span class="tok-…">, or None if the language is not supported (caller
+    leaves that block untouched). Raises if a scan ever fails to cover every
+    byte — partial markup that drops code is worse than no markup."""
+    tokenizer = _TOKENIZERS.get(language)
+    if tokenizer is None:
+        return None
+    master, names = tokenizer
+    src = html.unescape(inner_html)        # the real code, entities resolved
+    tokens = _scan(master, names, src)
+    if "".join(text for _, text in tokens) != src:
+        raise ArtifactError(
+            "highlighter for %r did not cover every character — refusing to "
+            "emit partial markup" % language)
+    out = []
+    for cls, text in tokens:
+        escaped = html.escape(text, quote=False)
+        if cls is None:
+            out.append(escaped)
+        else:
+            out.append('<span class="tok-%s">%s</span>' % (cls, escaped))
+    return "".join(out)
+
+
+def highlight(document):
+    """Colour every <pre><code class="language-…"> block whose language is
+    supported. A block with no language marker, or one whose language is not
+    supported, is returned byte-identical. Ships only spans; the CSS lives in
+    the template."""
+    def rewrite(match):
+        attrs, inner = match.group("attrs"), match.group("inner")
+        cls_match = _CLASS_ATTR_RE.search(attrs)
+        if not cls_match:
+            return match.group(0)
+        lang_match = _LANG_RE.search(cls_match.group(1))
+        if not lang_match:
+            return match.group(0)
+        coloured = _highlight_inner(inner, lang_match.group(1))
+        if coloured is None:
+            return match.group(0)
+        return '<pre><code%s>%s</code></pre>' % (attrs, coloured)
+    return _PRE_CODE_RE.sub(rewrite, document)
+
+
 # ── the build ─────────────────────────────────────────────────────────────
 
 
@@ -300,6 +476,10 @@ def render(fields, template=None):
         r"<!--/?\?[a-z_]+-->", out)
     if left:
         raise ArtifactError("output still carries template markers: %r" % (left[:4],))
+    # #339 — build-time syntax highlighting: emits <span class="tok-…"> into
+    # marked code blocks. Runs after slot fill (so it sees authored code) and
+    # before the fetch check (so its spans are held to the offline contract).
+    out = highlight(out)
     violations = fetch_violations(out)
     if violations:
         raise ArtifactError(

@@ -45,6 +45,10 @@ needs to invent a second one:
   details/summary   the long tail; its expand transition is transitions.md's
                     idiom, inherited verbatim — do not author a second one
   .quiet .dim .dimmer .read  tone and measure
+  code blocks        <pre><code class="language-python">…</code></pre> is
+                     tokenised at BUILD time (#339) into tok- spans; supported
+                     languages: python json bash javascript html. A block with
+                     no language-… marker is left plain on purpose — never guessed
 
 Offline-clean is a build-time check, not a hope: review_artifact.py refuses to
 write output that fetches anything (no external stylesheet, script, image, font
@@ -85,6 +89,22 @@ a{color:var(--accent);text-underline-offset:.22em;text-decoration-thickness:1px}
 a:hover{color:var(--bright)}
 code{color:var(--lit);background:rgba(22,32,51,.72);padding:.03rem .32ch;border-radius:3px}
 pre{margin:.75rem 0;padding:.9rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.52);color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+/* syntax highlighting tokens (#339) — emitted at build time by
+   review_artifact.py as <span class="tok-…"> inside pre>code. No script in
+   the artifact; if a rule is ever lost the token takes the block's own
+   colour, so highlighting never breaks the code itself. Scoped to pre code
+   so an inline <code> snippet is never coloured by accident. */
+pre code .tok-kw{color:var(--accent)}
+pre code .tok-str{color:var(--ok)}
+pre code .tok-num{color:var(--warn)}
+pre code .tok-com{color:var(--dimmer);font-style:italic}
+pre code .tok-fn{color:var(--accent2)}
+pre code .tok-typ{color:var(--warn)}
+pre code .tok-dec{color:var(--accent)}
+pre code .tok-op{color:var(--muted)}
+pre code .tok-tag{color:var(--accent)}
+pre code .tok-attr{color:var(--accent2)}
+pre code .tok-var{color:inherit}
 strong{font-weight:inherit;color:var(--bright)}em{color:var(--lit)}
 p{margin:.62rem 0}ul,ol{margin:.55rem 0;padding-left:2.4ch}li{margin:.34rem 0}
 h1,h2,h3,h4{margin:0;font:inherit;font-weight:normal;color:var(--bright)}
