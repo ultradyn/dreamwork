@@ -89,8 +89,14 @@ Next id: **299**
   verifies the database before cutover, and has explicit rollback · on successful
   verified cutover, preserve the old ledger as `tasks.md.deprecated` with YAML
   frontmatter declaring deprecation and pointing to canonical task-access and
-  recovery instructions; never delete it automatically · mixed-version/writer
-  freeze, replay/idempotency, Git history/provenance import, dashboard consumers,
+  recovery instructions; never delete it automatically · **human via watch
+  `add-idea` 14:11:** every task grab/status/priority/complete transition must
+  automatically maintain the dashboard's burndown history and live status
+  projection through the canonical transaction/outbox — no agent hand-editing
+  `status.json`, no Git-HEAD lag, and no second derived truth; expose bounded
+  snapshot/time-series APIs with crash-safe replay and prove the chart + status
+  section update after real task commands · mixed-version/writer freeze,
+  replay/idempotency, Git history/provenance import, dashboard consumers,
   lint/file-formats/doc-map/compaction and failure recovery are acceptance scope ·
   blocked on #264 design and relevant #263 cutover decisions
 
@@ -286,8 +292,12 @@ Next id: **299**
   mutation; design the #294 migration script/import verification, mixed-writer
   cutover, rollback, preserved `tasks.md.deprecated` YAML notice and recovery
   instructions · cover stale recovery, multi-process same-target servers,
-  worktrees/c2c, compaction, cross-machine/git boundaries and migration · blocked
-  on user-event model #263
+  worktrees/c2c, compaction, cross-machine/git boundaries and migration ·
+  **human via watch 14:11:** explicitly design the single transactional
+  task-transition history/materialised-view boundary that keeps burndown and the
+  live dashboard status section current as the dreamer works; decide whether it
+  shares #263's journal or uses a task-state outbox, but never dual-write two
+  fallible truths · blocked on user-event model #263
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
