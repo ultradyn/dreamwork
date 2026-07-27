@@ -487,7 +487,13 @@ Next id: **335**
   affordance is re-asked as its own question and is NOT in this scope · the
   entry-level reader is the ONE seam: `/tasks` must never parse the ledger
   Markdown itself, because that constraint is exactly what keeps #294 a
-  one-function re-point rather than a second migration · blocked-behind: #327's
+  one-function re-point rather than a second migration · **the one hazard measured, not
+  theorised** (merged `9c00cd2`): `ledger_entries` yields ids as `int` and
+  `parse_ledger` yields them as `str`, so the obvious composition — is this
+  entry's id in the open set? — is `False` for every id and renders **154 of 154
+  rows `unknown`** with every reader working correctly, nothing thrown and
+  nothing logged · `ledger_index` normalises ONCE at the seam, to `int`, because
+  that is what `?t=<id>` parses to; the plan's §9.1 case 22 holds it · blocked-behind: #327's
   drift re-review lands first, since #301/#315 moved the readers this depends on
   · in progress
 
