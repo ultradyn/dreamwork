@@ -75,13 +75,41 @@ WHY NOT THE OTHER TWO OPTIONS (so this is not re-litigated)
   version of those tests built the relevant-commit list itself and stayed
   green when the unit was reverted — a check outside the decision it named.
 
+#321 — CLOSING A MISS AFTER ITS WINDOW SHUTS
+  Adjacency has no path from red to green once the window closes: a miss is
+  permanent, and the only remedies are the two this check exists to prevent
+  (back-fill a doc entry, or advance the baseline again — #313 did that and
+  reddened in half a day). Three visits to that wall was the evidence.
+
+  `cdb89df` was the case, and it was documented all along: `watch-design.md`
+  names #302 explicitly in its per-route-tables contract line. That entry
+  lives in `34131c7`, itself a UI commit, and #320's blocker rule makes a UI
+  commit's entry its own — right in general, wrong for an entry documenting
+  TWO changes. Rather than weaken the blocker, the audit now reads a second,
+  stronger signal (documented_by_id): a styleguide entry that NAMES a task id
+  documents that task's commits, at any distance.
+
+  It falls out of a convention the repo already keeps — every subject is
+  `type(#id): …` — so it needs no new file, no new trailer, and nothing
+  remembered at commit time, which is what killed the hatch as a general
+  remedy. Credits are reported LOUDLY (a DOC-BY-ID line, as EXEMPT is) so the
+  softer signal stays visible and countable, never a silent pass.
+
+  It is a stronger claim than adjacency and it was measured for hollowness
+  rather than argued: over the pre-baseline it credits 7 commits and leaves 4
+  MISSES standing, including `a6e98cc` (#273) and `bfa561f` (#181) — the two
+  verified BY READING as genuinely undocumented. Its four #290 credits are one
+  feature documented once in `2f0e7ea`, which added 86 lines and a whole
+  run-mode section. That is the shape it exists for.
+
 WHAT IT PROVES — and still does not
-  Adjacency, not coverage: a styleguide entry NEAR the code documents it, but
-  the check cannot tell whether the doc actually describes the change. A
-  whitespace edit to watch-design.md still satisfies it. That residual is
-  accepted and stated (it was before #314 too); the prompt-to-look intent
-  (#155) survives. What #314 removes is the standing-false-positive that made
-  the prompt easy to ignore.
+  Mostly adjacency, not coverage: a styleguide entry NEAR the code documents
+  it, but the check cannot tell whether the doc describes the change. A
+  whitespace edit to watch-design.md still satisfies that half. The DOC-BY-ID
+  half is genuinely coverage — the doc names the task — but it cannot tell a
+  substantive entry from a passing mention of the number. Both residuals are
+  accepted and stated (the first was true before #314 too); the
+  prompt-to-look intent (#155) survives, which is why nothing here is silent.
 
 NOT GATED in `just test` — making adjacency mandatory was always worse than
   the status quo. This is a prompt to look, not a proof. Run it by hand:
@@ -323,6 +351,70 @@ def window_positions(commits, files_of):
     return {i: p for p, i in enumerate(rel)}, rel
 
 
+TASK_ID_RE = re.compile(r"#(\d+)")
+
+
+def styleguide_added_text(sha):
+    """The lines a commit ADDS to a styleguide file, as one string.
+
+    Added only — a removed or context line is not this commit documenting
+    anything. Restricted to the styleguide files so a task id mentioned in
+    `watch.py`'s own comments cannot vouch for the code beside it.
+    """
+    out = git("show", "--format=", "-U0", sha, "--", *STYLEGUIDE_FILES,
+              check=False).stdout
+    return added_lines(out)
+
+
+def added_lines(diff_text):
+    """The `+` lines of a diff, minus the `+++` file header.
+
+    Separate and pure so the "added only" rule is checkable without git. The
+    `+++` exclusion is load-bearing rather than cosmetic: that header carries
+    the FILE PATH, and this repo's styleguide paths do not contain a `#`, but
+    a diff header for a renamed or oddly-named file could — and then the
+    header itself would vouch for a task nobody documented.
+    """
+    return "\n".join(
+        ln for ln in diff_text.splitlines()
+        if ln.startswith("+") and not ln.startswith("+++")
+    )
+
+
+def documented_by_id(sha, commits, files_of):
+    """(short sha, id) of a commit whose styleguide entry NAMES sha's task.
+
+    The one place this audit can offer coverage rather than adjacency, and it
+    falls out of a convention the repo already keeps: every commit subject is
+    `type(#id): …`, and a styleguide entry that discusses task #N says "#N".
+    So when `watch-design.md` gains a line naming #302, that line documents
+    #302's commits — the doc states what it covers, and nobody has to be
+    near anything.
+
+    This exists because adjacency alone has no way to close a miss after its
+    window shuts (#321): `cdb89df` (`fix(#302)`) is documented by `34131c7`,
+    whose added styleguide lines name #302 — but `34131c7` is itself a UI
+    commit, and #320's blocker rule correctly makes a UI commit's entry its
+    own. That rule has no exception for an entry documenting TWO changes,
+    which is what this reads instead of weakening it.
+
+    Deliberately NOT distance-bounded: the evidence is the doc naming the
+    task, and a window would only add a way for real evidence to expire.
+    Bounded by the audited range, which is the natural limit.
+    """
+    ids = TASK_ID_RE.findall(commit_subject(sha))
+    if not ids:
+        return None
+    for full, short in commits:
+        if not (files_of(full) & frozenset(STYLEGUIDE_FILES)):
+            continue
+        added = styleguide_added_text(full)
+        for i in ids:
+            if f"#{i}" in added:
+                return short, i
+    return None
+
+
 def nearest_entry(p, rel, window, has_entry, is_ui_at):
     """Short sha of the styleguide entry creditable to relevant-position ``p``.
 
@@ -399,7 +491,8 @@ def classify_range(revrange, window):
         return ui_of(commits[i][0])[0]
 
     pos_of, rel = window_positions(commits, files_of)
-    ui_ok, ui_exempt, ui_miss, non_ui, untouched = [], [], [], 0, 0
+    ui_ok, ui_by_id, ui_exempt, ui_miss = [], [], [], []
+    non_ui, untouched = 0, 0
     for i, (full, short) in enumerate(commits):
         files = files_of(full)
         if "watch.py" not in files:
@@ -413,6 +506,10 @@ def classify_range(revrange, window):
         entry = commits[rel[q]][1] if found else None
         if entry is not None:
             ui_ok.append((short, consts, entry))
+            continue
+        by_id = documented_by_id(full, commits, files_of)
+        if by_id is not None:
+            ui_by_id.append((short, consts, by_id[0], by_id[1]))
         elif has_escape_hatch(full):
             ui_exempt.append((short, consts))
         else:
@@ -421,6 +518,7 @@ def classify_range(revrange, window):
         "commits": commits,
         "relevant": rel,
         "ui_ok": ui_ok,
+        "ui_by_id": ui_by_id,
         "ui_exempt": ui_exempt,
         "ui_miss": ui_miss,
         "non_ui": non_ui,
@@ -436,17 +534,23 @@ def print_report(res, revrange, window, out=sys.stdout):
     for short, consts in res["ui_miss"]:
         subj = commit_subject(short)
         print(f"MISS  {short} [{_fmt_consts(consts)}] {subj[:60]}", file=out)
+    for short, consts, by, tid in res["ui_by_id"]:
+        subj = commit_subject(short)
+        print(f"DOC-BY-ID {short} [{_fmt_consts(consts)}] {subj[:44]}"
+              f"  (#{tid} named in {by})", file=out)
     for short, consts in res["ui_exempt"]:
         subj = commit_subject(short)
         print(f"EXEMPT {short} [{_fmt_consts(consts)}] {subj[:54]}  (Styleguide: n/a)",
               file=out)
 
-    ui_total = len(res["ui_ok"]) + len(res["ui_exempt"]) + len(res["ui_miss"])
+    ui_total = (len(res["ui_ok"]) + len(res["ui_by_id"])
+                + len(res["ui_exempt"]) + len(res["ui_miss"]))
     print(file=out)
     print(
         f"watch.py commits: {ui_total} UI "
         f"({len(res['ui_ok'])} with a styleguide entry within {window} "
         f"relevant commits, "
+        f"{len(res['ui_by_id'])} documented by task id named in the doc, "
         f"{len(res['ui_exempt'])} exempt via Styleguide: n/a, "
         f"{len(res['ui_miss'])} without), "
         f"{res['non_ui']} non-UI (server/parser/helper, not subject to the audit)",
@@ -460,8 +564,9 @@ def print_report(res, revrange, window, out=sys.stdout):
         file=out,
     )
     print(
-        "(adjacency, not coverage — a nearby entry documents the change; "
-        "it cannot prove the doc describes it. See dev/styleguide_audit.py.)",
+        "(a nearby entry is adjacency, not coverage — it cannot prove the doc "
+        "describes the change; DOC-BY-ID is coverage but cannot tell a real "
+        "entry from a passing mention. See dev/styleguide_audit.py.)",
         file=out,
     )
 

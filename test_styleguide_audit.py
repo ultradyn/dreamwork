@@ -269,3 +269,97 @@ def test_window_is_still_finite_in_relevant_commits():
     assert a.nearest_entry(0, rel, 3, has_entry, is_ui)[0], (
         "an entry 3 relevant commits away should be inside window=3"
     )
+
+
+# ─── documented_by_id: coverage, not adjacency (#321) ───────────────────────
+
+def test_added_lines_keeps_plus_lines_and_drops_the_file_header():
+    diff = "\n".join([
+        "--- a/watch-design.md",
+        "+++ b/watch-design.md",       # carries a path — must NOT be evidence
+        "@@ -1,0 +1,2 @@",
+        "+the /answers atmosphere (#302) gets its own hue",
+        "-a removed line mentioning #999",
+        " a context line mentioning #998",
+    ])
+    got = a.added_lines(diff)
+    assert "#302" in got
+    assert "#999" not in got, "a REMOVED line documented nothing"
+    assert "#998" not in got, "a CONTEXT line documented nothing"
+    assert "+++" not in got, "the diff's own file header is not documentation"
+
+
+def _by_id(subject, diffs, non_styleguide=()):
+    """Run documented_by_id over a synthetic history.
+
+    `diffs` maps a commit's full sha -> the text it added. Shas listed in
+    `non_styleguide` touch `watch.py` instead of a styleguide file, and
+    CRITICALLY their diff text is still returned by the patched
+    styleguide_added_text — so the only thing that can reject them is the
+    file filter under test.
+
+    That detail is the test, not scaffolding. The first version made the fake
+    return "" for those commits, which meant deleting the file filter
+    entirely left the test GREEN: it was asserting a property of the patch.
+    Same failure as the #320 fixture, two hours apart, so it is written down.
+    """
+    commits = [(k, k) for k in diffs]
+    files = {
+        k: frozenset({"watch.py"} if k in non_styleguide else {"watch-design.md"})
+        for k in diffs
+    }
+    real_subject, real_added = a.commit_subject, a.styleguide_added_text
+    a.commit_subject = lambda sha: subject
+    a.styleguide_added_text = lambda sha: diffs.get(sha) or ""
+    try:
+        return a.documented_by_id("target", commits, lambda f: files[f])
+    finally:
+        a.commit_subject, a.styleguide_added_text = real_subject, real_added
+
+
+def test_a_styleguide_entry_naming_the_task_documents_it_at_any_distance():
+    # The #321 case: cdb89df is fix(#302) and 34131c7's added styleguide lines
+    # name #302. No adjacency at all — the doc states what it covers.
+    got = _by_id("fix(#302): /answers gets its own tint", {
+        "far": "the /answers atmosphere (#302) gets its own hue and seed",
+    })
+    assert got == ("far", "302"), got
+
+
+def test_an_id_named_only_outside_a_styleguide_file_documents_nothing():
+    # A task id in watch.py's own comments must not vouch for the code beside
+    # it — otherwise every commit documents itself by mentioning its number.
+    # The diff text DOES name #302; only the file filter may reject it.
+    got = _by_id(
+        "fix(#302): /answers gets its own tint",
+        {"other": "# see #302 for why this tint exists"},
+        non_styleguide=("other",),
+    )
+    assert got is None, (
+        "an id named in watch.py's own diff was credited as documentation"
+    )
+
+
+def test_a_different_task_id_in_the_doc_does_not_vouch():
+    got = _by_id("fix(#302): /answers gets its own tint", {
+        "far": "the /review dock (#273) grows a send floor",
+    })
+    assert got is None, got
+
+
+def test_a_subject_with_no_task_id_gets_no_credit():
+    # Nothing to match on, so it must fall through to MISS rather than match
+    # everything. `fix(watch): …` commits exist in this history.
+    got = _by_id("fix(watch): harden answers channel contracts", {
+        "far": "some styleguide prose mentioning #231",
+    })
+    assert got is None, got
+
+
+def test_any_id_of_a_combined_subject_can_carry_the_credit():
+    # Real shape in this history: `fix(#157,#222,#223): …` is documented by an
+    # entry naming only #157.
+    got = _by_id("fix(#157,#222,#223): link only reachable destinations", {
+        "far": "links point only where the page can go (#157)",
+    })
+    assert got == ("far", "157"), got
