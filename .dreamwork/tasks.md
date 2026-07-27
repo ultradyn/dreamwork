@@ -405,7 +405,7 @@ Next id: **325**
   #263/#269 · replay/concurrent same-ID fixture asserts one receipt/application;
   new ID with same text remains a distinct intentional action
 
-- **#269** — Make every Web UI text draft durable and cross-tab coherent · P1 ·
+- **#269** — Make every Web UI text draft durable and cross-tab coherent · **P0** · **next-up** ·
   client reliability/module · origin: **human** · **human via watch 16:45** ·
   composer, answer/note boxes, future chat inputs and every later user text field
   get a stable logical input ID; autosave content before submission to one
@@ -414,6 +414,26 @@ Next id: **325**
   behave as one box · define ownership/conflict/clear-on-durable-receipt rules,
   privacy/retention and migration from composer localStorage · expose one deep
   module that future inputs must consume · design alongside #263 receipt boundary
+  · **ESCALATED to P0 and marked next-up by him, 2026-07-27 21:35 via the
+  dashboard composer** (verbatim: *"do-next: draft answers to questions on
+  review pages can be lost. please have a subagent look at this asap. we must
+  have persistence and never lose work on an autoreload of a page."*) — he is
+  losing typed work on the page he uses to answer the loop, which is the likely
+  reason #281's seven design calls have gone unanswered for hours · **the acute
+  fix is out with ccc-glm52-269** (`.worktrees/269-draft`, port 39894, owns
+  `watch.py`, `test_watch.py`, `watch-design.md` and a new
+  `dev/capture/reviewdraft.mjs`), scoped to the per-question answer box as the
+  FIRST CONSUMER of this module rather than the whole IndexedDB store · **the
+  measured state**: the command composer already has the wanted mechanism
+  (`watch.py` ~5062-5095 — `dw:draft:<target>` in localStorage, saved on input,
+  cleared ONLY on a successful send, `try/catch` around every storage call, live
+  box outranks storage per #118) but it is hardcoded to the single element
+  `#cmdtext` and keys only by target, so it cannot serve N boxes; `qi${key}`
+  (1700), `askbox` (2514) and `ptext` (4835) have nothing · **two loss modes, and
+  the second is the one he reported**: a full reload, which restore-on-load
+  fixes, and the LIVE RE-RENDER, where the textarea is replaced by a new node and
+  no reload ever happens — his word "autoreload" points at the second, and a fix
+  verified only against F5 leaves it untouched
 
 - **#265** — Add a research command to the composer · P2 · command design ·
   origin: **human** · **human via watch 16:05** · hidden/menu command for
