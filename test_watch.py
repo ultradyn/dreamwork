@@ -451,6 +451,38 @@ class TestCollector(unittest.TestCase):
             self.assertIsNone(data["status"])       # no status.json
             self.assertEqual(data["git"], [])       # not a git repo
 
+    def test_the_dashboard_shows_pending_handoffs(self):
+        # #381: a foreign session that lands work appends to handoffs.md; the
+        # dashboard surfaces the pending count in the status panel so a
+        # coordinator who skipped a tick still notices. The page reads the
+        # FILE (a real reader), never a mirror of status.json — which is the
+        # loop's own claim, not a report of landed work.
+        # 1. the page wires the field into the status panel and surfaces it.
+        self.assertIn("statusBlock(d.status, d.pending_handoffs)", watch.PAGE)
+        self.assertIn("hand-off", watch.PAGE)
+        # 2. collect() reads pending hand-offs from the file, hiding folded ones.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            dw = os.path.join(d, ".dreamwork")
+            with open(os.path.join(dw, "handoffs.md"), "w") as f:
+                f.write(
+                    "# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed `abc1234` · 2026-07-28 14:30 · by "
+                    "dreamer-5 — the fix\n"
+                    "- **#6** · landed `def5678` · 2026-07-28 14:31 · by "
+                    "dreamer-6 — the fix 2\n\n"
+                    "## Folded\n\n"
+                    "- **#6** → folded (2026-07-28 14:35): moved to Recently "
+                    "landed as `ghi9012`\n")
+            data = watch.collect(d)
+            ids = [h["id"] for h in data["pending_handoffs"]]
+            self.assertEqual(ids, ["5"])  # #6 is folded -> consumed -> hidden
+            self.assertEqual(data["pending_handoffs"][0]["sha"], "abc1234")
+        # 3. absent file -> empty (a fresh target has none), not a crash.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            self.assertEqual(watch.collect(d)["pending_handoffs"], [])
+
     def test_git_tail_carries_a_machine_readable_time(self):
         # #132: the row's age ticks every second, so the TIME has to arrive as
         # a number. A page deriving it from what it displayed would be reading

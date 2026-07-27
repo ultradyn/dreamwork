@@ -2365,8 +2365,9 @@ const stField = (k, v) =>
 const ST_GLANCE = ['awaiting_human', 'push', 'task', 'goal', 'agents', 'queue',
                    'last_tick', 'last_commit'];
 const ST_AGENT_GLANCE = ['name', 'in_flight'];
-function statusBlock(s) {
+function statusBlock(s, handoffs) {
   if (!s || typeof s !== 'object') return '';
+  const hands = Array.isArray(handoffs) ? handoffs : [];
   const arr = v => Array.isArray(v) ? v : (v == null ? [] : [v]);
   const agents = arr(s.agents).filter(a => a && typeof a === 'object');
   let h = `<div id="status">` + label('status');
@@ -2430,6 +2431,13 @@ function statusBlock(s) {
   const facts = [];
   if (s.queue) facts.push(esc(`${s.queue.in_progress || 0} in flight · ` +
                               `${s.queue.pending || 0} pending`));
+  // hand-offs awaiting a fold (#381): a count + the ids, inside the facts row
+  // rather than a second appearing block, so it reuses the status panel's one
+  // tick-driven treatment and authors no second motion idiom. A coordinator
+  // looking at this page constantly notices it even if a tick was skipped.
+  if (hands.length)
+    facts.push(esc(`${hands.length} hand-off${hands.length > 1 ? 's' : ''} to fold: ` +
+                   hands.map(h => '#' + h.id).join(', ')));
   const t = s.last_tick ? Date.parse(s.last_tick) : NaN;
   // no space before the span: `.age` carries its own left margin, and a
   // literal one on top of it reads as a typo.
@@ -2773,7 +2781,7 @@ function buildDashboard(d) {
   // rather than an errand. Above `status` because both are about the loop
   // and this one is the longer view of it.
   h += burnPanel(d);
-  h += statusBlock(d.status);
+  h += statusBlock(d.status, d.pending_handoffs);
   h += runModePicker(d);   // loop control, after status, before preference
   h += tintPicker(d);      // last, and dim: a preference, not status
   return h + `</div>`;
@@ -7646,6 +7654,67 @@ def _landed_ids(text):
     return ids
 
 
+# ── hand-offs: the delivery half of the single-writer rule (#381) ──────
+# A foreign session that lands work it does not own the ledger for appends a
+# line under `## Pending`; the coordinator folds it and appends `→ folded`
+# under `## Folded`. Nothing moves; correlation is by id. This parser is the
+# ONE definition of the shape — lint imports it rather than keeping a second
+# copy, for the reason every other shared reader does (#137: two copies drift).
+# `·` is U+00B7; the grammar is `·`-separated on purpose.
+HANDOFF_PENDING_RE = re.compile(
+    r"^-\s+\*\*#(\d+)\*\*\s*·\s*landed\s+`([^`\n]+)`\s*·\s*.+?\s*·\s*by\s+(.+?)\s*$")
+HANDOFF_FOLDED_RE = re.compile(r"^-\s+\*\*#(\d+)\*\*\s*→\s*folded\s*\(([^)]+)\)")
+HANDOFF_BARE_RE = re.compile(r"^-\s+\*\*#(\d+)\*\*")
+
+
+def parse_handoffs(text):
+    """`(pending, folded_ids, malformed)` from `.dreamwork/handoffs.md`.
+
+    `pending` is a list of `(id, sha, claimer)` triples (ids as strings, no `#`,
+    matching `parse_ledger`'s shape); `folded_ids` is the set of ids a fold
+    record names; `malformed` is `(id, line)` for Pending entry heads the
+    grammar does not recognise (format validation, which only lint acts on).
+    Sections match literally — `## Pending` and `## Folded` — the way `## Open`
+    does, because a loose match is how a full file renders as zero.
+    """
+    pending, folded_ids, malformed = [], set(), []
+    section = None
+    for ln in (text or "").splitlines():
+        s = ln.strip()
+        if s == "## Pending":
+            section = "P"; continue
+        if s == "## Folded":
+            section = "F"; continue
+        if s.startswith("## "):
+            section = None; continue
+        if section == "P":
+            m = HANDOFF_PENDING_RE.match(ln)
+            if m:
+                pending.append((m.group(1), m.group(2).strip(), m.group(3).strip()))
+            elif HANDOFF_BARE_RE.match(ln):
+                malformed.append((HANDOFF_BARE_RE.match(ln).group(1), ln))
+        elif section == "F":
+            m = HANDOFF_FOLDED_RE.match(ln)
+            if m:
+                folded_ids.add(m.group(1))
+    return pending, folded_ids, malformed
+
+
+def pending_handoff_records(text):
+    """The hand-offs awaiting a fold, as the dashboard renders them (#381).
+
+    Parsed once from the file the coordinator's tick and lint also read — never
+    a mirror of `status.json`, which is the loop's own live claim. Inferring
+    liveness from surviving artefacts is the wrong answer #363 proved, so the
+    dashboard reads what was WRITTEN, not what a process claims. A pending
+    hand-off is one whose id has no fold record. Returns `[]` when the file is
+    absent or empty, the way a fresh target is.
+    """
+    pending, folded_ids, _malformed = parse_handoffs(text)
+    return [{"id": nid, "sha": sha, "claimer": claimer}
+            for nid, sha, claimer in pending if nid not in folded_ids]
+
+
 def _burn_step(span):
     for s in BURN_STEPS:
         if span <= 0 or span / s <= BURN_COLUMNS:
@@ -8592,6 +8661,12 @@ def collect(target):
         "answers_answered": a_answered,
         "answers_health": answers_health(
             answers, len(a_open) + len(a_answered)),
+        # hand-offs awaiting a fold (#381): read straight from the file the
+        # coordinator's tick and lint read — a real reader, never a mirror of
+        # status.json (which is the loop's own live claim, not a foreign
+        # session's report of landed work).
+        "pending_handoffs": pending_handoff_records(
+            read_text(os.path.join(dw, "handoffs.md"))),
         "status": _safe_json(read_text(os.path.join(dw, "status.json"))),
         "git": git_tail(target),
         # which revision this process is running (#140), so a stale page

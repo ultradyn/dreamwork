@@ -2149,6 +2149,184 @@ Next id: **9**
             inspect.getsource(lint.run_checks)
 
 
+class TestHandoffs:
+    """#381's delivery half: a landing the ledger writer has not folded yet.
+
+    The same night's other incident-class. #334 merged at `ecc1f44` and sat
+    open for an hour while a coordinator overrode lint's WARN from memory
+    three times; #362 carried ``LANDED `<pending>` `` under `## Open` until it
+    was found BY ACCIDENT while selecting an unrelated task. In both, a foreign
+    session landed work and the ledger's single writer never heard — the
+    report died in the landing session. `.dreamwork/handoffs.md` is the
+    channel; this check makes an unfolded one visible to whoever runs lint.
+
+    **WHY WARN AND NOT ERROR**, for the same measured reason as the placeholder
+    check: a freshly-landed hand-off is *supposed* to sit pending for the one
+    tick before the coordinator folds it. Erroring would cry wolf on correct
+    behaviour and the coordinator would learn to mute it — and a muted check is
+    worse than none. The WARN is the nudge that makes the fold happen.
+
+    **THE CONSUMED MARKER IS THE ONE LINE THIS CHECK CARES ABOUT.** A folded
+    hand-off is silent, always — even if its task is still open. That is the
+    load-bearing choice: a check that nags after you have complied gets muted,
+    and the fold record is the coordinator's "I have seen this". The
+    discriminating red makes the marker ignored and watches a folded hand-off
+    get flagged forever; the test for it deliberately uses an OPEN task, because
+    a landed one would mask an ignored marker (the delivery signal requires
+    open) and the bug would read as green.
+    """
+
+    # Ids stay below 216 so the origin rule (a separate check, not exercised
+    # here because we call check_handoffs directly) does not govern them.
+    LEDGER = ("# Tasks\n\nNext id: **7**\n\n## Open\n\n"
+              "- **#5** — a task still open\n\n"
+              "## Recently landed\n\n"
+              "- **#6** — done\n")
+
+    def _run(self, tmp_path, ledger, handoffs):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(ledger)
+        (dw / "handoffs.md").write_text(handoffs)
+        rep = lint.Report()
+        lint.check_handoffs(dw, lint.load_watch(), rep)
+        return rep
+
+    def _warns(self, tmp_path, ledger, handoffs):
+        rep = self._run(tmp_path, ledger, handoffs)
+        return [d for lvl, w, d in rep.rows if w == "handoffs.md" and lvl == lint.WARN]
+
+    def test_a_handoff_naming_a_landed_task_that_is_still_open_is_flagged(self, tmp_path):
+        # THE precondition the check depends on, derived at runtime not a literal.
+        watch = lint.load_watch()
+        open_ids, _ = watch.parse_ledger(self.LEDGER)
+        assert "5" in open_ids, "precondition: #5 is really under ## Open"
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed `abc1234` · 2026-07-28 14:30 · by "
+                    "dreamer-5 — the fix\n\n## Folded\n")
+        warns = self._warns(tmp_path, self.LEDGER, handoffs)
+        assert len(warns) == 1, warns
+        assert warns[0].startswith("#5 "), warns[0]
+        assert "still under `## Open`" in warns[0]
+
+    def test_a_consumed_handoff_is_not_flagged_again(self, tmp_path):
+        # THE red the brief cares about. #5 is OPEN, and the hand-off carries a
+        # fold record — so it is consumed and must stay silent even though the
+        # task is still open. The task being open is what makes this bind to the
+        # consumed marker: a landed task would mask an ignored marker (the
+        # delivery signal requires open), so a landed-task fixture could not
+        # detect the "flagged forever" bug. Precondition asserted at runtime.
+        watch = lint.load_watch()
+        open_ids, _ = watch.parse_ledger(self.LEDGER)
+        assert "5" in open_ids, "precondition: #5 is really under ## Open"
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed `abc1234` · 2026-07-28 14:30 · by "
+                    "dreamer-5 — the fix\n\n## Folded\n\n"
+                    "- **#5** → folded (2026-07-28 14:35): moved to Recently "
+                    "landed as `def5678`\n")
+        assert self._warns(tmp_path, self.LEDGER, handoffs) == []
+
+    def test_a_handoff_whose_task_already_landed_is_silent(self, tmp_path):
+        # Pending (not folded) but the task is already landed: the work is done,
+        # the fold record is just missing bookkeeping — not the hour-costing case.
+        watch = lint.load_watch()
+        open_ids, _ = watch.parse_ledger(self.LEDGER)
+        assert "6" not in open_ids, "precondition: #6 is really landed"
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#6** · landed `abc1234` · 2026-07-28 14:30 · by "
+                    "dreamer-6 — the fix\n\n## Folded\n")
+        assert self._warns(tmp_path, self.LEDGER, handoffs) == []
+
+    def test_a_missing_file_is_silent(self, tmp_path):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(self.LEDGER)
+        rep = lint.Report()
+        lint.check_handoffs(dw, lint.load_watch(), rep)
+        assert rep.rows == [], rep.render()
+
+    def test_a_malformed_pending_entry_is_named(self, tmp_path):
+        # A Pending entry head missing the required sha + claimer is a garbled
+        # append; the check names the line so the writer fixes it.
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** this line does not follow the grammar\n\n## Folded\n")
+        warns = self._warns(tmp_path, self.LEDGER, handoffs)
+        assert any("#5" in w and "grammar" in w for w in warns), warns
+
+    def test_it_flags_a_handoff_for_a_real_open_id_in_the_live_ledger(self, tmp_path):
+        """Red-proved against a REAL condition, not a fixture invented to fail.
+
+        Reads the live ledger, picks a genuinely-open id at runtime, writes the
+        hand-off a landing session would write, and asserts the check flags it.
+        The precondition — the id really is under `## Open` in the live file —
+        is derived at runtime, so the test cannot pass over an id that is no
+        longer open. Robust to the ledger changing under it.
+        """
+        live = (Path(lint.__file__).parent / ".dreamwork" / "tasks.md").read_text()
+        watch = lint.load_watch()
+        open_ids, _ = watch.parse_ledger(live)
+        assert open_ids, "precondition: the live ledger has open ids"
+        nid = sorted(open_ids, key=int)[0]
+        assert nid in open_ids, "precondition: the chosen id is really open"
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    f"- **#{nid}** · landed `abc1234` · 2026-07-28 14:30 · by "
+                    f"dreamer-x — the fix\n\n## Folded\n")
+        warns = self._warns(tmp_path, live, handoffs)
+        assert len(warns) == 1, warns
+        assert warns[0].startswith(f"#{nid} "), warns
+
+    def test_it_would_have_surfaced_362_in_the_revision_that_hid_it(self, tmp_path):
+        """The real case, not a fixture: `tasks.md` as it stood at `4ce04e0`,
+        where #362 sat under `## Open` carrying ``LANDED `<pending>` ``.
+
+        A hand-off for #362 is what a landing session WOULD have written; this
+        check would have surfaced the stuck-open state rather than leaving it
+        for accident. The precondition — #362 really is under `## Open` in that
+        revision — is asserted first, so the test fails loudly if history no
+        longer carries it. The direct model is check_placeholder_citations's
+        proof against the same revision.
+        """
+        import subprocess
+        got = subprocess.run(
+            ["git", "-C", str(Path(lint.__file__).parent),
+             "show", "4ce04e0:.dreamwork/tasks.md"],
+            capture_output=True, text=True)
+        if got.returncode != 0:
+            pytest.skip("history not present (zip install); the live-ledger "
+                        "and fixture tests still cover it")
+        watch = lint.load_watch()
+        open_ids, _ = watch.parse_ledger(got.stdout)
+        assert "362" in open_ids, \
+            "#362 is no longer under ## Open at 4ce04e0 — this test no longer proves anything"
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(got.stdout)
+        (dw / "handoffs.md").write_text(
+            "# Hand-offs\n\n## Pending\n\n"
+            "- **#362** · landed `abc1234` · 2026-07-28 04:50 · by dreamer-362 "
+            "— the check landed\n\n## Folded\n")
+        rep = lint.Report()
+        lint.check_handoffs(dw, watch, rep)
+        handoff_rows = [d for lvl, w, d in rep.rows if w == "handoffs.md"]
+        assert len(handoff_rows) == 1, rep.render()
+        assert handoff_rows[0].startswith("#362 "), handoff_rows[0]
+        assert "still under `## Open`" in handoff_rows[0]
+
+    def test_the_live_repo_handoffs_file_is_silent(self):
+        """Dogfood: the seeded (empty) hand-offs file lints clean."""
+        dw = Path(lint.__file__).parent / ".dreamwork"
+        rep = lint.Report()
+        lint.check_handoffs(dw, lint.load_watch(), rep)
+        assert rep.rows == [], rep.render()
+
+    def test_the_check_is_registered_in_run_checks(self):
+        import inspect
+        assert "check_handoffs(dw, watch, rep)" in inspect.getsource(lint.run_checks)
+
+
 class TestCitedShas:
     """#350: a ledger entry that cites a commit which does not exist.
 

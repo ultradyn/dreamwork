@@ -1909,6 +1909,79 @@ def check_placeholder_citations(dw: Path, rep: Report) -> None:
         )
 
 
+def check_handoffs(dw: Path, watch, rep: Report) -> None:
+    """The delivery half of the single-writer rule (#381).
+
+    A foreign session that lands work it does not own the ledger for appends a
+    line to `.dreamwork/handoffs.md` under `## Pending`; the coordinator folds
+    it and appends a `→ folded` line under `## Folded`. The file is the
+    channel, and THIS check is what makes an unfolded one visible to whoever
+    runs lint — without it, the entry sits done-but-open until someone happens
+    to look, which is the hour #334 and #362 cost.
+
+    One WARN, and the consumed marker is the sole thing that silences it:
+
+    - **a hand-off names `#N` as landed but `#N` is still under `## Open`.**
+      The delivery signal; the whole point. WARN, never ERROR: a freshly-landed
+      hand-off is *supposed* to sit pending for the one tick before the
+      coordinator folds it, so erroring would cry wolf on correct behaviour.
+
+    A consumed hand-off (Folded names its id) is **silent, always** — even if
+    the task is still under `## Open`. That is the load-bearing choice and the
+    reason the fold record exists: a check that nags after you have complied
+    gets muted, and a muted check is worse than none. The fold record is the
+    coordinator's "I have seen this", and once it lands the hand-off stops
+    counting, by design. So the consumed marker is the one line whose removal
+    redds `test_a_consumed_handoff_is_not_flagged_again`.
+
+    The id sets come from `watch.parse_ledger` — the real parser, never a
+    second copy, for `check_author_tags`'s reason. Missing file or empty
+    sections: silent, the way a fresh target is.
+    """
+    path = dw / "handoffs.md"
+    if not path.exists():
+        return
+    try:
+        text = path.read_text()
+    except OSError:
+        return
+    if watch is None:
+        return  # the parser lives in watch; without it this check cannot run
+    pending, folded_ids, malformed = watch.parse_handoffs(text)
+
+    # Format: a Pending entry head that does not carry the required sha + claimer
+    # is a garbled append — named so the writer fixes the line rather than the
+    # check learning to skip it. (A folded one is consumed, so leave it be.)
+    for nid, line in malformed:
+        if nid in folded_ids:
+            continue
+        rep.add(
+            WARN, "handoffs.md",
+            f"#{nid} has a Pending entry the grammar does not recognise "
+            f"(needs `· landed \\`<sha>\\` · … · by <claimer>`): {line!r} (#381)")
+
+    ledger_path = dw / "tasks.md"
+    if not ledger_path.exists():
+        return
+    try:
+        open_ids, _landed_ids = watch.parse_ledger(ledger_path.read_text())
+    except Exception:
+        return  # a mid-edit ledger is not a hand-off problem
+
+    # THE delivery signal: pending (not folded) and still open. The
+    # `if nid in folded_ids: continue` is the consumed marker — the one line
+    # that stops a complied hand-off being nagged forever.
+    for nid, sha, claimer in pending:
+        if nid in folded_ids:
+            continue
+        if nid in open_ids:
+            rep.add(
+                WARN, "handoffs.md",
+                f"#{nid} is named as landed in a hand-off (by {claimer}, sha "
+                f"`{sha}`) but is still under `## Open` — fold it into the "
+                f"ledger and append a `→ folded` line (#381)")
+
+
 def check_cited_shas(dw: Path, rep: Report) -> None:
     """A ledger entry that cites a commit which does not exist (#350).
 
@@ -2171,6 +2244,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_review_artifacts(dw, rep)
     check_cited_shas(dw, rep)
     check_placeholder_citations(dw, rep)
+    check_handoffs(dw, watch, rep)
     check_related_markers(dw, watch, rep)
     check_status_keys(dw, rep)
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are

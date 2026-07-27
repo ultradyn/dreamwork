@@ -243,6 +243,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 |---|---|---|---|
 | `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | One `- **#N**` entry per task; a combined head `- **#N/#M**` is a single entry naming every id in its ids-only bold span, and both ledger readers (`watch.parse_ledger`, `lint.check_ledger_sections`) count every id — so `#7/#8` is two ids in one entry, not one. `Next id: **N**` in the header. Ids are **permanent**, so a duplicate is unrecoverable and `Next id` must exceed every id present. Origin is recorded forward-only from #216 — the section below | `lint.py` |
 | `.dreamwork/status.json` | `watch.py`'s status reader; **`dreamhub.py`** | Valid JSON, and now an interface — see below | `lint.py` |
+| `.dreamwork/handoffs.md` | the coordinator's tick; `watch.py`'s status panel; `lint.py` | Append-only. Literal `## Pending` / `## Folded` headings. One line per landing under Pending (`- **#N** · landed \`<sha>\` · <ts> · by <claimer> — what`); one `→ folded (ts):` line per fold under Folded. Nothing moves; correlation by `#N` | `lint.py` |
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
 | `.dreamwork/run-mode` | `watch.py` dashboard + the coordinator/main dreamer on tick and via `watch-events.log` | One line: one name from `watch.py`'s `RUN_MODES` (`lackadaisical`, `hot`, `assisted`). Absent/unknown → `lackadaisical`. Machine-local, **gitignored** — operational posture, not a portable project default. `status.json` may mirror it later but never owns it | `lint.py` |
@@ -410,6 +411,80 @@ a sha* flags four things on the live ledger and none is a placeholder
 (`questions.md`, `dev/capture/report.mjs`, `dither: "lsb-ign-v1"`, and a run of
 prose). Precision 0-in-4, so the closure is the discrimination, and those four
 tokens are pinned in the tests so nobody re-widens it to catch them.
+
+## `.dreamwork/handoffs.md` — the delivery half of the single-writer rule (#381)
+
+The ledger has **exactly one writer** (the coordinator), which is correct —
+durable shared state wants a single writer or the next fan-out races it. The
+gap this file closes is the other half: a foreign session that lands work it
+does not own the ledger for previously had **no way to tell the writer**.
+Its report died in its own session and the entry sat done-but-open until
+someone happened to look. That cost an hour twice (#334, #362). This file is
+the channel; `SKILL.md`'s tick step is the reader that consumes it; `lint.py`
+is the check that surfaces an unfolded one to whoever runs it.
+
+**Shape: append-only, never a rewrite.** The convention it follows is
+`questions.md`/`answers.md`'s — literal `## ` section headings, a
+`- **…**` entry head, and a `→ resolved (ts):`-style prefix for the
+fold record — with one load-bearing difference: **nothing ever moves between
+sections.** `## Pending` and `## Folded` each grow only by append. That is
+the property the dreamer inbox has and a move-based shape would not: two
+foreign sessions landing work at the same moment both append, and neither
+can clobber the other's line. A rewrite that moved a Pending entry into
+Folded would race a peer's append and lose it — exactly the lost-update the
+single-writer rule exists to prevent, reopened one layer down.
+
+```markdown
+## Pending
+
+- **#362** · landed `ecc1f44` · 2026-07-28 01:39 · by dreamer-362 — the
+  placeholder-citation check, red-proved against 4ce04e0
+
+## Folded
+
+- **#362** → folded (2026-07-28 02:05): moved to Recently landed as `49c3c04`
+```
+
+A **Pending** entry is one line and must state four things — the task id,
+the **sha** that landed, **who** is claiming it (`by <claimer>`), and a
+one-line `— what landed`. A **Folded** entry is the consumption marker: one
+line naming the id and a `→ folded (ts):` note saying where it landed in the
+ledger. Correlation is by id: a Pending entry is **consumed** iff a Folded
+entry names the same `#N`, so a folded hand-off is never flagged again. The
+fold record is appended in the same increment as the ledger move (the
+coordinator's only act on this file besides reading), so a hand-off marked
+folded while its task is still under `## Open` is a stale record, not a
+normal state — and `lint.check_handoffs` WARNs on exactly that.
+
+`lint.check_handoffs` reads `watch.parse_ledger` for the open/landed id sets
+(the real parser, never a second copy) and WARNs on the one condition that
+cost the hour:
+
+- **a hand-off names `#N` as landed but `#N` is still under `## Open`** —
+  the delivery signal, the whole point of the file. WARN, never ERROR: a
+  freshly-landed hand-off is *supposed* to sit pending for the one tick
+  before the coordinator folds it, so erroring would cry wolf on correct
+  behaviour. The WARN is the nudge that makes the fold happen, carried by
+  the writer remembering before and by nothing now.
+
+A consumed hand-off (Folded names its id) is **silent, always** — even if
+its task is still under `## Open`. That is the load-bearing choice and the
+reason the fold record exists: a check that nags after you have complied
+gets muted, and a muted check is worse than none. The fold record is the
+coordinator's "I have seen this", and once it lands the hand-off stops
+counting, by design. A hand-off whose task is already landed is silent too.
+Missing file or empty sections: silent — a fresh target has none. The section headings are literal `## Pending` and
+`## Folded`, matched exactly like `## Open`/`## Answered`, because a reader
+that matches loosely is how a file full of entries renders as zero.
+
+The dashboard surfaces the pending count in the status panel, reading this
+file directly through `watch.collect` — a real reader, **not** a mirror of
+`status.json`. `status.json` is a live process describing itself and the
+loop's own claim; a hand-off is a foreign session's report of work the
+ledger writer has not folded yet, and inferring liveness from surviving
+artefacts is the wrong answer #363 proved by building it (#381). The
+dashboard reads the file; the coordinator's tick reads the file; lint reads
+the file. Three readers, one writer-append-each, no inference.
 
 ## `.dreamwork/tasks.md` — `related:`, the relation that used to be a slash (#353)
 
