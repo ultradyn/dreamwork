@@ -19,6 +19,7 @@ Every assertion that depends on a fixture property asserts that property too:
 the CSS comparison would pass vacuously against two empty parses, so the parse
 counts are floors, not decoration.
 """
+import html
 import os
 import re
 import subprocess
@@ -40,6 +41,20 @@ TEMPLATE_ONLY = {
 }
 DECLARATION_DIVERGENCES = set()   # selectors allowed to differ. Empty today.
 TOKEN_DIVERGENCES = set()         # `--name` allowed to differ. Empty today.
+
+# #339 — token classes emitted at BUILD time by review_artifact.py.highlight().
+# tasks-page.html predates highlighting, so every token selector is template-
+# only by construction. Naming them here keeps test_template_adds_nothing_undeclared
+# honest about what the template legitimately carries beyond the reference, and
+# the companion test below holds this set and the template's set to the same
+# shape so a dropped rule does not pass silently as "merely unstyled".
+HIGHLIGHT_TOKENS = (
+    "pre code .tok-kw", "pre code .tok-str", "pre code .tok-num",
+    "pre code .tok-com", "pre code .tok-fn", "pre code .tok-typ",
+    "pre code .tok-dec", "pre code .tok-op", "pre code .tok-tag",
+    "pre code .tok-attr", "pre code .tok-var",
+)
+TEMPLATE_ONLY |= set(HIGHLIGHT_TOKENS)
 
 # A body may use these without inventing anything, so the template must carry
 # them. Without this, a fidelity failure could be "fixed" by deleting the rule.
@@ -491,3 +506,193 @@ def test_module_runs_as_a_script():
                            "version"], capture_output=True, text=True, cwd="/")
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == ra.template_stamp(ra.read_template())
+
+
+# ── syntax highlighting (#339) ────────────────────────────────────────────
+#
+# Build-time tokenising, not a runtime highlighter: review_artifact.py emits
+# <span class="tok-…"> into marked <pre><code class="language-…"> blocks when
+# the artifact is built, and the template ships only the CSS for those
+# classes. No script in the artifact (offline-clean), no work repeated at
+# read time on a frozen record, and if the CSS is ever lost the code degrades
+# to plain readable text.
+#
+# The rules these checks enforce, and why each is the failure it names:
+#
+#   DISCRIMINATE   only a block that DECLARES its language is coloured; an
+#                  unmarked block is byte-identical. Asserted in one run on
+#                  one document so the check cannot pass by forgetting one.
+#   ROUND-TRIP     stripping the emitted spans and un-escaping recovers the
+#                  original source, entities included. This is the one that
+#                  catches a highlighter that tokenises escaped text and
+#                  splits &lt; across tokens, re-escaping the &.
+#   OFFLINE        highlighting adds no script, no remote URL, no @import.
+#   PROVENANCE     editing the frame makes every built artifact stale, and
+#                  rebuilding from source is what clears it.
+
+
+# A code sample chosen to exercise what goes wrong: a keyword, a comment, a
+# string, operators that are HTML entities when escaped (< > &), and a newline.
+PY_SAMPLE = (
+    "def greet(name):\n"
+    "    # a < b means less, & means bitwise-and\n"
+    "    return 'hi' if name else '<anonymous>'\n"
+)
+
+
+def _first_code_inner(doc, wrapper='class="language-python">'):
+    """The text between the first <code …> opening and its </code></pre>."""
+    at = doc.index(wrapper) + len(wrapper)
+    return doc[at:doc.index("</code></pre>", at)]
+
+
+def test_a_marked_block_gains_spans_and_an_unmarked_block_does_not(template):
+    """The discriminating core of #339: in ONE document the block that
+    declares its language is coloured and the block that does not is left
+    alone. Both halves are asserted in the same run, and the contrast
+    (spans present vs absent) is derived at runtime."""
+    marked = '<pre><code class="language-python">%s</code></pre>' % PY_SAMPLE
+    bare = '<pre><code>%s</code></pre>' % PY_SAMPLE      # no language at all
+    plain = '<pre>%s</pre>' % PY_SAMPLE                  # not even a <code>
+    # Precondition: the sample actually exercises the highlighter, or "no
+    # spans" could pass because nothing was there to colour.
+    assert "def " in PY_SAMPLE and "<" in PY_SAMPLE, \
+        "sample is not exercising keyword + entity at once"
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += "\n" + marked + "\n" + bare + "\n" + plain
+    built = ra.render(fields, template=template)
+
+    # the marked block gained token spans inside its <code>
+    marked_inner = _first_code_inner(built)
+    marked_count = len(re.findall(r'<span class="tok-', marked_inner))
+    assert marked_count >= 3, \
+        "marked python block gained no token markup: %r" % marked_inner[:140]
+
+    # the two unmarked kinds are byte-identical to the input — located in the
+    # built output, because "did it survive" is the claim
+    assert bare in built, "an unmarked <pre><code> block was altered"
+    assert plain in built, "a plain <pre> block (no <code>) was altered"
+
+    # the bare block's inner has NO spans: derived from the located block, not
+    # a literal. A check that only asserted "marked has spans" would pass while
+    # silently colouring the bare one too — the contrast is the assertion.
+    where = built.index(bare)
+    bare_inner = built[where + len("<pre><code>"):
+                       where + len("<pre><code>") + len(PY_SAMPLE)]
+    bare_count = bare_inner.count("<span")
+    assert bare_count == 0, \
+        "unmarked block gained %d span(s) — the gate is not discriminating: %r" \
+        % (bare_count, bare_inner[:140])
+
+
+def test_highlighting_introduces_no_network_dependency():
+    """Offline-clean is the artifact's contract with a laptop on a plane.
+    Highlighting ships only spans + CSS, so it must add no script, no remote
+    URL, no external @import. Samples carry no URLs, so absence == introduced."""
+    doc = (
+        '<pre><code class="language-python">x = 1  # one\n</code></pre>'
+        '<pre><code class="language-json">{"n": 1}\n</code></pre>'
+        '<pre><code class="language-bash">echo hi\n</code></pre>'
+        '<pre><code class="language-javascript">var x = 1\n</code></pre>'
+        '<pre><code class="language-html">&lt;p class="a"&gt;hi&lt;/p&gt;</code></pre>'
+    )
+    out = ra.highlight(doc)
+    assert "tok-" in out, "fixture stopped exercising the highlighter"
+    for needle in ("<script", "https://", "http://", "@import",
+                   "<link", "<iframe", "src="):
+        assert needle not in out, \
+            "highlighter introduced %r into the output" % needle
+    assert ra.fetch_violations(out) == []
+
+
+def test_stripping_emitted_spans_recovers_the_source_with_entities_intact():
+    """The round-trip proof. Feed each language source that contains <, >, &
+    and whitespace; strip every span; un-escape; assert the original source is
+    recovered exactly. A highlighter that tokenises the escaped text and
+    splits &lt; across tokens would re-escape the & and fail here."""
+    samples = {
+        "python": 'def f(a, b):\n    # a < b means "less"\n    return a & b\n',
+        "json": '{"prompt": "x < 1 & y > 2", "n": 3}\n',
+        "bash": 'echo "$HOME < $PWD"\n# redirect & log\n',
+        "javascript": 'var s = "a < b && c > d";\n',
+        "html": '<p class="x">hello & goodbye</p>\n',
+    }
+    for language, src in samples.items():
+        # Precondition: each sample must carry an entity-producing char, or the
+        # round-trip proves nothing about entity handling for that language.
+        assert any(c in src for c in "<>&"), \
+            "%s sample has no entity char — round-trip is vacuous" % language
+        inner = html.escape(src, quote=False)
+        block = '<pre><code class="language-%s">%s</code></pre>' % (language, inner)
+        out = ra.highlight(block)
+        assert "tok-" in out, "%s block was not highlighted" % language
+        stripped = re.sub(r'<span class="tok-[^"]*">', "", out)
+        stripped = stripped.replace("</span>", "")
+        recovered = html.unescape(stripped)
+        wrapper = '<pre><code class="language-%s">' % language
+        assert recovered.startswith(wrapper), \
+            "%s: wrapper lost in round-trip" % language
+        code = recovered[len(wrapper):].rsplit("</code></pre>", 1)[0]
+        assert code == src, (
+            "%s round-trip did not recover the source — entities were mangled.\n"
+            "  wanted: %r\n  got:    %r" % (language, src, code))
+
+
+def test_rebuilding_a_stale_artifact_with_the_new_template_clears_it(template):
+    """The consequence #339 must handle: editing the frame makes every built
+    artifact stale, and rebuilding from source clears it. Proved on the
+    classify() verdict — staleness is a stamp question, not byte-equality."""
+    built = ra.render(ra.parse_source(SOURCE), template=template)
+    assert ra.classify(built, template=template) == "current"
+    edited = template.replace("no artifact\nneeds", "no artifact needs", 1)
+    assert edited != template, "the edit did not land — fixture text moved"
+    assert ra.template_stamp(edited) != ra.template_stamp(template), \
+        "the frame edit did not change the stamp — staleness not exercised"
+    assert ra.classify(built, template=edited) == "stale", \
+        "the frame edit did not make the older build stale"
+    rebuilt = ra.render(ra.parse_source(SOURCE), template=edited)
+    assert ra.classify(rebuilt, template=edited) == "current", \
+        "rebuilding did not clear the staleness"
+
+
+def test_an_unsupported_language_marker_is_left_byte_identical():
+    block = '<pre><code class="language-rust">fn main() {}</code></pre>'
+    assert ra.highlight(block) == block, \
+        "highlighter touched a block for a language it does not support"
+
+
+def test_a_code_block_without_a_language_class_is_left_byte_identical():
+    block = '<pre><code>def f(): pass</code></pre>'
+    assert ra.highlight(block) == block, \
+        "highlighter touched a block with no language class"
+
+
+def test_the_language_marker_is_found_among_other_classes():
+    block = '<pre><code class="hljs language-python foo">x = 1</code></pre>'
+    out = ra.highlight(block)
+    assert "tok-" in out, "language-X was not found when not the first class"
+
+
+def test_the_code_wrapper_and_language_class_are_preserved():
+    block = '<pre><code class="language-python">x = 1</code></pre>'
+    out = ra.highlight(block)
+    assert out.startswith('<pre><code class="language-python">'), \
+        "the wrapper or language class was altered"
+    assert out.endswith("</code></pre>")
+
+
+def test_the_template_styles_every_token_class(template):
+    """A span the highlighter emits with no matching rule degrades to plain
+    text — acceptable, but silent drift. This holds the set the highlighter
+    emits and the set the template styles to the same shape."""
+    styled = {sel for (_ctx, sel) in css_rules(style_of(template))}
+    for token in HIGHLIGHT_TOKENS:
+        assert token in styled, \
+            "template dropped a token style the highlighter emits: %r" % token
+
+
+def test_the_supported_languages_are_the_advertised_set():
+    """Scope discipline (#339): a small, honest set, named here so adding one
+    is a deliberate act rather than silent scope growth."""
+    assert ra.SUPPORTED_LANGUAGES == frozenset(
+        {"python", "json", "bash", "javascript", "html"})
