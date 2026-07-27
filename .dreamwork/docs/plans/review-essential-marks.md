@@ -1,8 +1,19 @@
 # #367 — pointer flags to a review's essentials
 
-Status: **design, not authorised to build.** Its decisions go to the human as a
-questions.md ask with an artifact; this file is the reasoning behind that ask so
-the artifact can be short.
+Status: **ruled and building.** He answered M1–M4 on 2026-07-28 05:35 (see §"What was
+decided", which wins over the superseded proposals left in place around it), and
+**increment 1 landed at `dbcbcc5`** — the parser, the caps and the no-id refusal, with
+no visible change and no artifact rebuilt. Increment 2 (the rail, the strip, the tab,
+next/prev) is **gated on one owed measurement**, in flight as of 07:12: a two-line tab
+at ~6 words is taller and possibly wider than every number below, all of which were
+measured against a one-line tab. See §"Before increment 2 touches the template" for a
+coupling that will otherwise be discovered by a red test.
+
+Everything above §"What was decided" is the *original* design reasoning, written before
+his ruling. It is kept because the measurements in it are still the load-bearing facts,
+but where it and the ruling disagree — the cap, and the label length — **the ruling
+wins**. In particular §"The design" still says "the cap is five, and it refuses the
+build", which he overrode.
 
 His words, typed from inside `/review?p=task-store-schema.html` at 02:36:
 
@@ -193,3 +204,33 @@ to batch with — one restamp, accepted deliberately.
   (recommended no — the cost of being wrong is the second table of contents).
 - **Safety first check**: with no marks declared, the frame must render byte-
   identically, which is what makes this shippable before any artifact adopts it.
+
+## Before increment 2 touches the template — a coupling that is invisible until it reddens
+
+**A CSS fix to a selector the template SHARES with `.dreamwork/review/tasks-page.html`
+must be made in both files, or `just test` goes red.**
+
+`test_template_rules_match_the_reference_rule_for_rule` holds every selector shared
+between `review-artifact.template.html` and `tasks-page.html` to identical
+declarations, and `DECLARATION_DIVERGENCES` — the one documented door for a deliberate
+difference — is **empty**. `tasks-page.html` is the hand-rolled artifact the template
+was cut from (the human's named "good one"); it is **untemplated and never rebuilt**,
+so the coupling is manual and nothing announces it until the test fails.
+
+The #347/#372/#364 frame batch hit this and paid for it: `white-space:nowrap` on
+`.topactions a` and `min-width:max-content` on `table` each had to be applied twice.
+Its brief's ownership list named the template and "the built `.dreamwork/review/*.html`"
+but not `tasks-page.html`, because "built" is arguable for a file that is not.
+
+**So increment 2, which adds tab CSS, needs `tasks-page.html` in its ownership list
+from the start** — and if a new tab selector is genuinely *not* wanted on the
+reference, the honest route is a `DECLARATION_DIVERGENCES` entry with a reason, not a
+silent divergence. Two further notes for whoever writes that brief:
+
+- The tab is **new** CSS, so it is only coupled if its selectors collide with existing
+  shared ones. Check before assuming either way: a wholly new `.mark`-family selector
+  may be uncoupled, in which case say so rather than editing the reference for nothing.
+- The test's failure message does not currently name `tasks-page.html` as the other
+  half. **Improving that message belongs to increment 2**, since it will be the second
+  batch to learn the same thing the hard way, and `test_review_artifact.py` is the
+  right place for it. (It is owned by #389 as of 07:12, so it is not editable today.)
