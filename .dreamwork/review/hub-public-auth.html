@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en-au"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#275 · Public Dreamhub authentication</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0b0f19; --panel:#111827; --panel2:#151d2e; --line:#273247;
+  --text:#d1d5db; --bright:#f3f4f6; --lit:#e5e7eb; --muted:#9ca3af; --dim:#7c8798; --dimmer:#525c70;
+  --accent:#a5b4fc;   /* indigo — live / actionable / the recommendation */
+  --warn:#fcd34d;     /* amber — BROKEN rather than live (maturity gaps, traps) */
+  --bad:#fda4af;      /* rejects */
+  --ok:#86efac;       /* passes / preserves */
+  --ink:#0a0a0a;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  padding:2.5rem 1rem 5rem;
+  background:
+    radial-gradient(ellipse at 50% -14rem, rgba(99,102,241,.10), transparent 38rem),
+    var(--bg);
+  color:var(--text);
+  font:.82rem/1.7 ui-monospace,'JetBrains Mono',SFMono-Regular,Menlo,Consolas,monospace;
+}
+.wrap{max-width:900px;margin:auto}
+.read{max-width:72ch}
+h1,h2,h3{font:inherit;color:var(--bright);font-weight:normal;margin:0}
+h1{font-size:1.05rem}
+h2{font-size:.95rem;margin:2rem 0 .7rem}
+h3{font-size:.8rem;color:var(--lit);margin:1.1rem 0 .35rem}
+.sub,.label{color:var(--dim)}
+.sub{margin:.2rem 0 1.6rem}
+.label{text-transform:uppercase;letter-spacing:.08em;font-size:.7rem;margin:1.8rem 0 .5rem;color:var(--dimmer)}
+.lead{color:var(--lit);font-size:.88rem}
+p{margin:.5rem 0}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(165,180,252,.3)}
+a:hover{border-bottom-color:var(--accent)}
+code{background:var(--panel);color:var(--lit);padding:0 .35ch;border-radius:2px;font-size:.78rem}
+.notice{
+  border-left:2px solid var(--warn);padding:.55rem 1.2ch;margin:1.1rem 0;
+  background:linear-gradient(90deg,rgba(252,211,77,.07),transparent);
+}
+.notice b{color:var(--warn);font-weight:normal}
+.gate{border-color:var(--bad)}
+.gate b{color:var(--bad)}
+.decision{
+  border-left:2px solid var(--accent);padding:.55rem 1.3ch;margin:1.1rem 0;
+  background:linear-gradient(90deg,rgba(165,180,252,.07),transparent);
+}
+.decision b{color:var(--accent);font-weight:normal}
+ul,ol{padding-left:1.4rem;margin:.4rem 0}
+li{margin:.25rem 0}
+li::marker{color:var(--dimmer)}
+.rows{border-bottom:1px solid var(--line)}
+.row{
+  display:grid;grid-template-columns:13ch minmax(0,1fr);gap:1.2ch;
+  border-top:1px solid var(--line);padding:.55rem 0;
+}
+.row .k{color:var(--dim);text-transform:uppercase;font-size:.7rem;letter-spacing:.06em;padding-top:.1rem}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.4rem}
+.opt{border-top:1px solid var(--line);padding:.75rem 0}
+.opt strong{font-weight:normal;color:var(--bright)}
+.opt .v{font-size:.72rem;color:var(--dim)}
+.opt.rec strong{color:var(--accent)}
+.verdict{font-size:.72rem;margin-top:.3rem}
+.pass{color:var(--ok)} .fail{color:var(--bad)} .warn{color:var(--warn)}
+table{width:100%;border-collapse:collapse;margin:.6rem 0;font-size:.76rem}
+th,td{text-align:left;padding:.5rem .6ch;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);text-transform:uppercase;font-size:.68rem;letter-spacing:.06em;font-weight:normal}
+td code{font-size:.74rem}
+.qlist{counter-reset:q}
+.qlist .q{
+  border-top:1px solid var(--line);padding:.7rem 0;counter-increment:q;
+}
+.qlist .q::before{
+  content:counter(q);color:var(--accent);margin-right:.8ch;font-weight:bold;
+}
+.sources{font-size:.74rem;color:var(--dim)}
+.sources li{margin:.15rem 0}
+.src-miss{color:var(--warn)}
+footer{margin-top:2.4rem;border-top:1px solid var(--line);padding-top:1rem;color:var(--dimmer);font-size:.74rem}
+/* architecture diagram — inline SVG, token palette, no external anything */
+.diagram{margin:1rem 0;border:1px solid var(--line);background:linear-gradient(145deg,#0e1422,#0a0e18);border-radius:4px;padding:1rem}
+.diagram svg{display:block;width:100%;height:auto;max-width:680px;margin:auto}
+.tleft{color:var(--dim);font-size:.7rem;margin-top:.4rem}
+@media(max-width:650px){
+  body{padding:1.5rem .8rem 4rem}
+  .grid2{grid-template-columns:1fr}
+  .row{grid-template-columns:1fr;gap:.15rem}
+  .row .k{padding-top:0}
+}
+@media print{
+  :root{color-scheme:light;
+    --bg:#fff;--panel:#f6f6f6;--panel2:#f0f0f0;--line:#999;
+    --text:#111;--bright:#000;--lit:#111;--muted:#333;--dim:#444;--dimmer:#555;
+    --accent:#1e40af;--warn:#7c4a03;--bad:#991b1b;--ok:#166534;
+  }
+  body{background:#fff}
+  a{color:#1e40af}
+  .diagram{background:#fff}
+}
+</style></head><body><main class="wrap">
+
+<header class="read">
+<h1>Who is trusted on the public internet?</h1>
+<div class="sub">decision review · task #275 · design &amp; research only — public/WAN stays forbidden until a design is approved</div>
+<p class="lead">A public Dreamhub holds the operator's typed words, repository contents and an autonomous coding loop's working state — and, if any write route were exposed, remote control of that loop. Today <code>127.0.0.1</code> is the authorisation model. Going public removes that boundary, so this artifact defines what has to replace it before a single bind address changes.</p>
+<div class="notice gate"><b>NO IMPLEMENTATION.</b> This is prose plus a threat model. It changes no <code>.py</code> file, no bind/listen logic, adds no dependency, and defines no flag that could be switched on. Public/WAN support is forbidden until the human approves a reviewed design.</div>
+</header>
+
+<section class="read">
+<div class="label">Current posture — why loopback is the auth model</div>
+<p><code>dreamhub.py</code> binds <code>127.0.0.1</code> by construction and is read-only; <code>watch.py</code> is loopback by default with an explicitly <em>unauthenticated</em> trusted-LAN mode (#233) whose Host+Origin checks are rebinding/CSRF safeguards, <strong>not client auth</strong>. Three load-bearing facts shape any public design:</p>
+<ul>
+<li><strong>The hub serves data that is fine over localhost and dangerous over a link.</strong> <code>/data.json</code> "carries the full text of <code>DREAMWORK.md</code>, <code>questions.md</code> and <code>lessons.md</code>… exactly what stops being fine over a link" (<code>dreamhub-design.md</code>).</li>
+<li><strong>It can display the human's typed words and repository contents</strong> — questions, answers, notes, dreams, the task queue, agent ownership, the <code>/file</code> viewer. This is the privacy ceiling.</li>
+<li><strong><code>watch.py</code> has six write routes</strong> (<code>/answer</code>, <code>/ask</code>, <code>/comment</code>, <code>/command</code>, <code>/tint</code>, <code>/run-mode</code>) that the loop reads back and acts on. Publicly exposing writes is <em>remote steering of an autonomous agent</em> — the take-over class task #288 already proved is real.</li>
+</ul>
+</section>
+
+<section class="read">
+<div class="label">Threat model — who the actual adversary is</div>
+<div class="rows">
+<div class="row"><div class="k">assets</div><div>The human's typed words (highest sensitivity); private repo contents via <code>/file</code>; task queue, agent state, dream transcripts; and <strong>write authority over the loop</strong> if any write route is exposed.</div></div>
+<div class="row"><div class="k">drive-by</div><div>Internet scanners &amp; credential-stuffers probe any public HTTP service within minutes. "Nobody knows the URL" is not a control.</div></div>
+<div class="row"><div class="k">cross-site</div><div>CSRF/XSS driving the operator's logged-in browser. CSRF on a write route is the high-value target; read routes leak via XS-Read if SameSite is wrong.</div></div>
+<div class="row"><div class="k">targeted</div><div>Someone who knows the operator/project, wanting <em>read</em> of private data or <em>write/steer</em> of the loop. The latter is the take-over case a design must refuse to enable.</div></div>
+<div class="row"><div class="k">token theft</div><div>XSS, log leakage, stolen device. The session is the live authority; its lifetime and revocation matter.</div></div>
+<div class="row"><div class="k">the IdP itself</div><div>A compromised or rogue identity provider that can mint assertions for attacker accounts — a trust root <em>until an operator allowlist sits in front of it</em>.</div></div>
+<div class="row"><div class="k">trust roots</div><div>TLS CA chain · the IdP's signing key · <strong>an operator-managed authorisation allowlist</strong>. Authentication ("a valid Google account") is never authorisation ("the operator's Google account").</div></div>
+</div>
+</section>
+
+<section class="read">
+<div class="label">shoo.dev — what its primary sources actually say</div>
+<p>Read from shoo's own docs, not hearsay. Shoo is <strong>"a minimal auth broker for Google sign-in"</strong> — a hosted PKCE OAuth intermediary, <em>not</em> a tunnel and <em>not</em> an authorisation system.</p>
+<table>
+<thead><tr><th>Claim</th><th>From shoo's own docs</th></tr></thead>
+<tbody>
+<tr><td>flow</td><td>Browser → <code>shoo.dev/authorize</code> → Google → shoo signs an ES256 <code>id_token</code> → app <code>POST /token</code>s code+verifier. PKCE S256 mandatory.</td></tr>
+<tr><td>identity</td><td><code>pairwise_sub = HMAC-SHA256(server_secret, google_sub + client_id)</code> — domain-scoped, stable per (account, origin), non-reversible. <strong>Google-only.</strong></td></tr>
+<tr><td>client_id</td><td>Auto-derived from redirect origin (<code>origin:https://your.app</code>). No registration.</td></tr>
+<tr><td>tokens</td><td>ES256 (P-256), <code>kid</code> rotation, JWKS at <code>/.well-known/jwks.json</code>, OIDC discovery present. <code>iss=https://shoo.dev</code>, <code>aud=origin:{your_origin}</code>.</td></tr>
+<tr><td>verify</td><td><strong>"Never trust unverified client-side claims for authorization decisions."</strong> Server must verify signature, issuer, audience, exp, JWKS.</td></tr>
+<tr><td>sees</td><td>Google <code>sub</code>; optional PII only on request+consent; nonces/codes/IP for abuse; signed <code>shoo_session</code> cookie. Operator entity = <strong>ping.gg</strong>.</td></tr>
+</tbody>
+</table>
+<div class="notice"><b>Maturity — read before depending on it.</b> Every shoo page carries <em>"SUPER EARLY WIP — USE AT YOUR OWN RISK"</em>. The GitHub link is <code>github.com/pingdotgg/shoo</code> with a <em>"COMING SOON"</em> badge; fetching it returns <strong>HTTP 404</strong> (2026-07-27). The "Open source" claim is <strong>not yet verifiable</strong>; the server implementation is unauditable today. No published security review, threat model, uptime or SLA.</div>
+</section>
+
+<section class="read">
+<div class="label">Three hard constraints that shape any design</div>
+<div class="rows">
+<div class="row"><div class="k">C1 · stdlib</div><div>The hub is pure-stdlib Python, single-file, no build step. <strong>Python's stdlib cannot verify an ES256/RSA signature</strong> — only <code>cryptography</code> (third-party) can. Verified directly: <code>hashlib</code>/<code>hmac</code> are symmetric-only, <code>ssl</code> exposes no general verify. So shoo's tokens cannot be verified <em>in the hub</em> without breaking stdlib-only, shelling to <code>openssl</code>, or a hand-rolled P-256 footgun.</div></div>
+<div class="row"><div class="k">C2 · data</div><td></td><div><code>/data.json</code> leaks full <code>DREAMWORK.md</code>/<code>questions.md</code>/<code>lessons.md</code> today. A redacted <code>/summary.json</code> must ship before any public serve.</div></div>
+<div class="row"><div class="k">C3 · writes</div><div>Write routes are steering. A read-only public surface is a defensible increment; read+write public is a different, larger, dangerous thing and should not be assumed.</div></div>
+</div>
+<p class="tleft">C1 is the single most load-bearing finding for the recommendation: <strong>shoo integrated directly into the hub breaks the architecture</strong>, because verifying its ES256 tokens in-process is impossible on stdlib alone.</p>
+</section>
+
+<section class="read">
+<div class="label">Options, with real trade-offs</div>
+<div class="grid2">
+<article class="opt">
+<strong class="fail">A · shoo integrated directly into the hub</strong>
+<p>Hub gains <code>/auth/shoo</code> (PKCE + JWKS ES256 verify), sets a session cookie, gates routes on a <code>pairwise_sub</code> allowlist.</p>
+<p class="verdict fail">✗ breaks C1 (needs <code>cryptography</code>/PyJWT or a hand-rolled footgun) · ✗ maturity (WIP, repo 404, unauditable) · ✗ Google-only · ✗ trust-concentrates on ping.gg as <em>sole</em> boundary</p>
+<p class="v">Right identity primitive, wrong sole boundary — today.</p>
+</article>
+<article class="opt rec">
+<strong>B · reverse-proxy auth boundary, hub stays loopback ★ recommended shape</strong>
+<p>A mature TLS-terminating, authenticating proxy fronts the hub. The hub keeps binding <code>127.0.0.1</code>, accepts only the proxy's signed header, gains <strong>zero auth code</strong>.</p>
+<p class="verdict pass">✓ preserves C1 · ✓ TLS handled by proxy · ✓ identity/authorisation at the edge · ✓ mature &amp; audited · shoo can be the IdP <em>behind</em> it later</p>
+<p class="v">B1 Cloudflare Access (Zero Trust, free tier) · B2 Tailscale Funnel+ACL · B3 Caddy/nginx + oauth2-proxy.</p>
+</article>
+<article class="opt">
+<strong>C · private overlay — not actually public</strong>
+<p>Tailscale/WireGuard, no Funnel. The network <em>is</em> the boundary; no app-layer auth or TLS needed.</p>
+<p class="verdict pass">✓ safest · ✓ zero public surface · but requires a client on every device · ✗ not "public"</p>
+<p class="v">If the real need is "me, on my devices, away from my desk", C is strictly safer than B.</p>
+</article>
+<article class="opt">
+<strong>D · SSH tunnel / bastion</strong>
+<p><code>ssh -L</code> to a bastion; already used for remote projects.</p>
+<p class="verdict warn">~ familiar, strong transport · ✗ awkward on mobile, impossible in a borrowed browser</p>
+<p class="v">Reasonable fallback, not the design.</p>
+</article>
+</div>
+<div class="label">Explicitly rejected</div>
+<ul>
+<li><strong>E1 · bearer token as the sole public boundary</strong> (the #276 LAN design extended to WAN) — tokens leak into logs/referrers/history; revocation manual; non-starter without TLS. #276's scope, not #275's.</li>
+<li><strong>E2 · mTLS client certs</strong> — strongest transport auth, but provisioning certs on phones is painful enough to break the "check from my phone" use case.</li>
+<li><strong>E3 · hand-rolled P-256 ECDSA verifier</strong> — would technically keep stdlib-only at the cost of a security-critical primitive written by an agent. Named as a trap, not a plan.</li>
+<li><strong>E4 · "any valid IdP token = authorised"</strong> — authentication ≠ authorisation. Every option still needs the operator allowlist.</li>
+</ul>
+</section>
+
+<section class="read">
+<div class="label">Recommended shape (B) — architecture</div>
+<div class="diagram" role="img" aria-label="Architecture: operator's browser reaches a public reverse proxy over HTTPS; the proxy authenticates via an identity provider and forwards only a signed identity header to the hub, which stays bound to loopback. Shoo is shown as an optional future identity provider behind the proxy, not the sole boundary.">
+<svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace, monospace" font-size="11">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7c8798"/>
+    </marker>
+  </defs>
+  <!-- operator -->
+  <g>
+    <rect x="14" y="90" width="120" height="60" rx="3" fill="none" stroke="#273247"/>
+    <text x="74" y="115" text-anchor="middle" fill="#f3f4f6">operator</text>
+    <text x="74" y="132" text-anchor="middle" fill="#9ca3af">browser / phone</text>
+  </g>
+  <!-- arrow 1 -->
+  <line x1="138" y1="120" x2="218" y2="120" stroke="#a5b4fc" stroke-width="1.4" marker-end="url(#arr)"/>
+  <text x="178" y="112" text-anchor="middle" fill="#a5b4fc">HTTPS</text>
+  <!-- proxy -->
+  <g>
+    <rect x="222" y="70" width="180" height="100" rx="3" fill="#151d2e" stroke="#a5b4fc"/>
+    <text x="312" y="92" text-anchor="middle" fill="#a5b4fc">reverse proxy</text>
+    <text x="312" y="108" text-anchor="middle" fill="#d1d5db">terminates TLS</text>
+    <text x="312" y="124" text-anchor="middle" fill="#d1d5db">enforces identity</text>
+    <text x="312" y="140" text-anchor="middle" fill="#d1d5db">owns the session</text>
+    <text x="312" y="158" text-anchor="middle" fill="#7c8798" font-size="9.5">CF Access · Tailscale · Caddy</text>
+  </g>
+  <!-- arrow 2 (signed header only) -->
+  <line x1="404" y1="120" x2="470" y2="120" stroke="#a5b4fc" stroke-width="1.4" marker-end="url(#arr)"/>
+  <text x="437" y="112" text-anchor="middle" fill="#a5b4fc">signed header</text>
+  <text x="437" y="134" text-anchor="middle" fill="#7c8798" font-size="9.5">loopback only</text>
+  <!-- hub -->
+  <g>
+    <rect x="474" y="80" width="184" height="80" rx="3" fill="none" stroke="#273247"/>
+    <text x="566" y="104" text-anchor="middle" fill="#f3f4f6">dreamhub / watch</text>
+    <text x="566" y="121" text-anchor="middle" fill="#d1d5db">binds 127.0.0.1</text>
+    <text x="566" y="138" text-anchor="middle" fill="#d1d5db">read-only, stdlib</text>
+    <text x="566" y="153" text-anchor="middle" fill="#7c8798" font-size="9.5">zero auth code</text>
+  </g>
+  <!-- IdP row -->
+  <g>
+    <rect x="222" y="194" width="120" height="36" rx="3" fill="none" stroke="#273247" stroke-dasharray="3 3"/>
+    <text x="282" y="210" text-anchor="middle" fill="#9ca3af">IdP</text>
+    <text x="282" y="224" text-anchor="middle" fill="#7c8798" font-size="9.5">Google · GitHub · …</text>
+  </g>
+  <line x1="312" y1="172" x2="312" y2="192" stroke="#7c8798" stroke-width="1" marker-end="url(#arr)"/>
+  <!-- shoo (optional, dashed) -->
+  <g>
+    <rect x="356" y="194" width="120" height="36" rx="3" fill="none" stroke="#fcd34d" stroke-dasharray="3 3"/>
+    <text x="416" y="210" text-anchor="middle" fill="#fcd34d">shoo (optional)</text>
+    <text x="416" y="224" text-anchor="middle" fill="#7c8798" font-size="9.5">future IdP, not sole gate</text>
+  </g>
+  <line x1="360" y1="172" x2="400" y2="192" stroke="#7c8798" stroke-width="1" marker-end="url(#arr)" stroke-dasharray="3 3"/>
+</svg>
+</div>
+<p class="tleft">The one invariant a bug breaks: the hub must stay loopback-only <em>even behind the proxy</em>, and the proxy must overwrite (never trust client-supplied) auth headers. Shoo appears here as an <em>optional future IdP behind the proxy</em> — not as the boundary itself.</p>
+</section>
+
+<section class="read">
+<div class="label">Per-axis definition — recommended shape (B)</div>
+<table>
+<thead><tr><th>Axis</th><th>Design</th></tr></thead>
+<tbody>
+<tr><td>identity</td><td>Decided at the proxy (Google / GitHub / email OTP / tailnet). The hub never sees a password. Operator maintains a fixed allowlist of one or two identities who may read.</td></tr>
+<tr><td>TLS</td><td>Terminated by the proxy (CF edge / Tailscale / Caddy auto-LE). Hub speaks plain HTTP on loopback to the proxy only.</td></tr>
+<tr><td>session / cookie</td><td>Proxy issues and owns the session (<code>CF_Authorization</code> / Tailscale / oauth2-proxy). Hub sees only the trusted forwarded identity header per request — stateless about sessions.</td></tr>
+<tr><td>CSRF</td><td>Keep the existing Host + same-origin Origin check on POST (#233). With the public surface read-only, the CSRF surface shrinks to whatever writes are later exposed; those should add a custom-header/double-submit token if they ever ship.</td></tr>
+<tr><td>authorization</td><td><strong>Read-only publicly; writes stay loopback/trusted-LAN</strong> (C3). Hub maps forwarded identity → <code>{read, denied}</code>. The allowlist of who-may-read lives in the proxy's policy, not hub code.</td></tr>
+<tr><td>secrets</td><td>Minimal. Hub holds no IdP secrets (proxy does). The allowlist is a public list of identifiers, not a secret. TLS keys live with the proxy. If shoo is used later, its verifier keys are JWKS-fetched (public) — no shared secret crosses into the hub.</td></tr>
+<tr><td>reverse proxy</td><td>Hub binds <code>127.0.0.1</code> only; proxy is the sole public listener and overwrites the identity header. Origin never directly reachable.</td></tr>
+<tr><td>data exposure</td><td>Ship a redacted <code>/summary.json</code> (or restrict <code>/data.json</code>) before public serve is enabled, per C2.</td></tr>
+</tbody>
+</table>
+</section>
+
+<section class="read">
+<div class="label">Recommendation</div>
+<div class="decision"><b>Rec B.</b> A read-only, loopback-bound hub fronted by a mature authenticating reverse proxy (Cloudflare Access or Tailscale Funnel first) that owns TLS, identity and the session, with the operator's authorisation allowlist at the proxy. Ship a redacted <code>/summary.json</code>. Serve no write route publicly.</div>
+<p>Two-sentence version for the coordinator's report: a public Dreamhub should be a read-only, loopback-bound hub behind a mature authenticating reverse proxy that owns TLS, identity and the session; shoo.dev is an interesting Google-only identity primitive but is too early-stage, too trust-concentrating, and — because the stdlib-only hub cannot verify its ES256 tokens in-process — the wrong sole boundary for an agent control plane.</p>
+</section>
+
+<section class="read">
+<div class="label">Open questions for the human — verbatim, for the coordinator to file</div>
+<ol class="qlist">
+<li class="q"><strong>Public or private remote?</strong> Is the real goal public access (any browser, anywhere, with auth) or private remote access (your devices only)? If the latter, Tailscale/WireGuard (option C) is strictly safer and "public" is not needed. This single answer rewrites the rest of the design.</li>
+<li class="q"><strong>Is one reverse-proxy component acceptable?</strong> Cloudflare Access, Tailscale Funnel, or Caddy — given it keeps the hub itself stdlib-only and adds no auth code? If the hub itself must do auth, the design changes substantially and shoo-direct or a hosted IdP re-enters scope.</li>
+<li class="q"><strong>Read-only, or read+write?</strong> This design recommends read-only publicly. Confirm, or name which write routes you would want exposed and under what extra guard.</li>
+<li class="q"><strong>Identity provider choice.</strong> Shoo is Google-only and pre-release; CF Access / Tailscale / oauth2-proxy support Google, GitHub, email OTP, SAML, etc. Which IdP(s), and are you willing to depend on a Google account?</li>
+<li class="q"><strong>May a redacted <code>/summary.json</code> be designed and shipped</strong> (separate task) <strong>before any public serve is enabled?</strong> Current <code>/data.json</code> leaks full <code>DREAMWORK.md</code>/<code>questions.md</code>/<code>lessons.md</code> and is unfit for public exposure as-is.</li>
+<li class="q"><strong>Who, besides you, should ever reach this hub?</strong> Defines the authorisation allowlist and whether multi-identity is worth any complexity.</li>
+</ol>
+</section>
+
+<section class="read">
+<div class="label">Primary sources reached (cited in the plan)</div>
+<ul class="sources">
+<li><a href="https://shoo.dev/">https://shoo.dev/</a> — landing ("Auth in 2 LOC", "SUPER EARLY WIP", GitHub "COMING SOON")</li>
+<li><a href="https://docs.shoo.dev/docs">https://docs.shoo.dev/docs</a> — Introduction ("minimal auth broker for Google sign-in")</li>
+<li><a href="https://docs.shoo.dev/docs/how-it-works">how-it-works</a> — PKCE flow, <code>pairwise_sub</code>, auto-<code>client_id</code>, ES256/JWKS, endpoints</li>
+<li><a href="https://docs.shoo.dev/docs/server-verification">server-verification</a> — mandatory server-side JWT verification</li>
+<li><a href="https://shoo.dev/privacy">https://shoo.dev/privacy</a> — data shoo sees; operator = ping.gg</li>
+<li class="src-miss"><a href="https://github.com/pingdotgg/shoo">https://github.com/pingdotgg/shoo</a> — <strong>HTTP 404</strong> (repo not public as of 2026-07-27, matching "COMING SOON")</li>
+</ul>
+<div class="label">Sources I could NOT reach (stated, not filled with generalities)</div>
+<ul class="sources">
+<li class="src-miss">Shoo's source code (repo 404) — server implementation is unauditable from primary sources; behaviour above is from shoo's own docs, not readable code.</li>
+<li class="src-miss">Any shoo security review / threat model / uptime / SLA — none found.</li>
+<li class="src-miss">GitHub's repo metadata API — rate-limited (HTTP 403) on the unauthenticated call.</li>
+<li class="src-miss">The operator's IdP preference — no primary source; that is open question 4.</li>
+</ul>
+</section>
+
+<footer>
+Decision review for task #275. Design &amp; research only — no implementation, no bind/listen change, no dependency, no flag. Public/WAN support remains forbidden until the human approves a reviewed design. Full prose design at <code>.dreamwork/docs/plans/hub-public-auth.md</code>. Open questions are for the coordinator to file into <code>questions.md</code>; this subagent does not write there.
+</footer>
+
+</main></body></html>
