@@ -268,9 +268,16 @@ results, no ceremony.
   this skill means by the word. On a backend whose list and ids survive
   a restart (`bl`) it *is* the backend, and there is no extra file. On a
   session-scoped backend (the native tools) it is
-  `.dreamwork/tasks.md`: open tasks only, one line each (id, title,
-  priority/type/size, origin, owner or blocked-on, pointer to any
-  plan), plus the next id to hand out. From #216 every entry records
+  `.dreamwork/tasks.md`: a literal `## Open` section, one entry each (id,
+  title, priority/type/size, origin, owner or blocked-on, pointer to any
+  plan), plus the next id to hand out — **and a literal `## Recently
+  landed` section below it**, which is not optional bookkeeping. Both
+  headings are matched verbatim: `watch.parse_ledger` returns the open
+  and landed id sets from them, `lint.py` ERRORs when its own line-walk
+  disagrees about where the split is (#304), the burndown's completions
+  come from the landed section's git history, and #306's stale-ask check
+  reads the landed set. A coordinator that trimmed the file to open
+  tasks would break all four, quietly. From #216 every entry records
   who filed it — `origin: **human**` or `origin: **loop**`, with
   `**unknown**` reserved for what predates the convention; history is
   never guessed, the contract is in `file-formats.md`, and `lint.py`
@@ -363,6 +370,13 @@ results, no ceremony.
   name). It states its chain when it starts — see the scope gate. One
   line, never a document; a chain that needs a paragraph is a sign the
   work does not belong to it.
+- Every entry records `origin` at the moment it is filed —
+  `**human**` when he asked, `**loop**` when we thought of it (contract:
+  `file-formats.md`; `lint.py` ERRORs on a governed entry without exactly
+  one marker). It is the one required field that the selection list below
+  does not carry, because it is provenance rather than something triage
+  reads — which is why filing from the Commands section alone used to mint
+  an entry that failed lint on the next increment.
 - The ledger carries what selection and triage read: `priority` (P1-P3),
   `type` (idea | task | bug | experiment | chore), `size` (estimated
   minutes), `feasibility` (note from triage), the next-up mark (set by

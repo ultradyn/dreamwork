@@ -29,15 +29,6 @@ Next id: **311**
 ## Open
 
 
-- **#309** — Coherence re-read of SKILL.md + initialization.md · P3 · chore ·
-  30m · origin: **loop** · goal: keep the skill's own instructions coherent ←
-  DREAMWORK.md *Routines* ("after structural edits, do a full coherence
-  re-read of SKILL.md + initialization.md — this is the project's test suite")
-  · the routine is recorded and has not run since several structural edits
-  landed (#290 run-mode, #216 origin markers, the worktrees plugin, #304's
-  parser fix) · read-only audit, findings only — the coordinator applies, since
-  it is the single writer for the skill's own contracts · dispatched to a ccc
-  glm-5.2 subagent 2026-07-27 18:07 · in progress
 
 - **#308** — Record the whole-pixel rounding trap in `transitions.md` · P3 ·
   chore · 10m · origin: **loop** · goal: a motion guard should not be able to
@@ -1164,6 +1155,24 @@ Next id: **311**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#309** — Coherence re-read of SKILL.md + initialization.md · P3 · origin:
+  **loop** · landed 2026-07-27 · the recorded DREAMWORK.md routine, run by a ccc
+  glm-5.2 subagent in a worktree and validated line by line before anything was
+  applied · **one real contract bug**: SKILL.md said the ledger is "open tasks
+  only" while `## Recently landed` is load-bearing — `parse_ledger` returns both
+  id sets from it, #304's `check_ledger_sections` ERRORs on a split disagreement,
+  the burndown's completions come from its git history, and #306's stale-ask
+  check reads the landed set. A coordinator following SKILL.md literally would
+  have broken all four quietly, and the phrase predates the checks that made it
+  costly · **one internal contradiction**: the field list a filer actually reads
+  omitted `origin`, the one field `lint.py` ERRORs on, so filing from the
+  Commands section alone minted an entry that failed lint next increment · both
+  fixed; the growth note (the Subagents steering block is the candidate for the
+  next lean pass) is recorded, not acted on · everything else checked out —
+  #290, #216, #304, #307 and the worktrees plugin are coherent across all four
+  files, the 11-step init lists match, and no named file/tool/flag is stale ·
+  audit at `.dreamwork/review/evidence/309-skill-coherence-audit.md`
 
 - **#310** — Audit `dreamhub.py` against `dreamhub-design.md` for drift · P3 ·
   origin: **loop** · landed 2026-07-27 · a ccc glm-5.2 subagent in a worktree,
