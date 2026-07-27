@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **381**
+Next id: **382**
 
 ## Open
 
@@ -142,42 +142,27 @@ Next id: **381**
   can regenerate · `test_every_shipped_artifact_still_satisfies_the_new_rules` excludes this
   one violation **by name**, so a new one in the same file is still caught · related: **#379**
 
-- **#363** — lint's landed-but-open WARN cannot tell a forgotten fold from a live lane · P3 ·
-  tooling/honesty · origin: **loop** · 10m · reported by dreamer-264-boundary as report-only ·
-  `check_landed_still_open` says an entry under Open has a close/merge commit and asks the
-  reader to fold it or cite the sha — but tonight the same message fired for `#334`, which is
-  another session's *live* lane mid-flight, and for `#264` an hour after its design merged
-  while its ask is legitimately open. Both are correct behaviour and neither is a forgotten
-  fold · **the gap is in what a reader can conclude**: the message reads as an accusation, so
-  a coordinator sweeping lint output must go and check each one by hand, which is the cost the
-  check exists to remove · rec: name the discriminator the check already has access to —
-  whether `status.json` says an agent owns that task id, or whether the entry was modified
-  more recently than the commit — and soften the wording when it does. Small, and it should
-  stay a WARN either way
-  · **REC WITHDRAWN 2026-07-28 02:46, by trying to build it.** The discriminator would have
-  been **wrong**, and the way it fails is the finding: #334's work merged at `ecc1f44` **01:39**,
-  so from that minute the WARN was correct and the entry was a forgotten fold. Its worktree
-  survived for another hour. A liveness signal — a worktree naming the id, or `status.json`
-  saying an agent owns it — would therefore have printed *"another lane is mid-flight"* for a
-  full hour after that stopped being true, which is worse than the blunt message: a
-  softened WARN is one nobody re-checks
-  · **and the check was never the problem.** It fired correctly all three times. What went
-  wrong is that a coordinator overrode it **from memory** — "that is another session's lane" —
-  three times across four hours, and was right only the first time. A cleverer message cannot
-  fix a reader who is already sure
-  · **so the real gap is upstream and it is a hole in the single-writer rule.** Another session
-  landed #334 and correctly did not touch `tasks.md`, because the ledger has one writer. Its
-  work therefore sat done-but-open with **nothing at all telling that writer it had landed** —
-  the report went into its own session, not here. The single-writer rule has no delivery half
-  · rec, replacing the withdrawn one: **treat this WARN as authoritative and never override it
-  from memory** — check git, which takes one command — and give the single-writer rule a
-  delivery half so a foreign session's landing arrives rather than waiting to be noticed.
-  `#357`'s ambient counts are one end of that; the other is that a session which lands work it
-  cannot fold should leave a line in `.dreamwork/inbox.md`, which is already the channel
-  everything else reports through
-  · **both forgotten folds tonight were found by a check, not by a person** (#330 and #334),
-  and the third case — #264 — was silenced properly by citing its sha. The mechanism works;
-  the habit around it did not
+- **#381** — The single-writer rule has no delivery half · P2 · loop architecture/reliability ·
+  origin: **loop** · 45m · **split out of #363, which landed the reader-facing half at
+  `PENDING`** · the ledger has exactly one writer, correctly, so a foreign session that lands
+  work must not touch `tasks.md` — and today it has no way to tell the writer either. Its report
+  goes into its own session. The entry therefore sits done-but-open with nothing anywhere saying
+  it landed, until someone happens to look
+  · **it has now cost something twice, measurably.** #334 merged at `ecc1f44` 01:39 and sat open
+  for an hour while a coordinator overrode lint's WARN from memory three times. And #362 sat
+  under Open carrying the literal text `LANDED <pending>` until 04:50, when it was found *by
+  accident* while selecting an unrelated task — no check saw it, because a placeholder is not hex
+  and `check_cited_shas` only reads hex
+  · **why the obvious fix is wrong**, and #363 proved it by building it: a liveness signal (a
+  worktree naming the id, `status.json` claiming it) would have reported "another lane is
+  mid-flight" for the entire hour AFTER #334 stopped being live. Inferring liveness from
+  surviving artefacts is what produced the wrong answer in the first place
+  · rec: delivery, not inference. A session that lands work it does not own the ledger for
+  **writes a hand-off** the ledger's writer reads on its next tick — the same shape as the
+  dreamer inbox, which has never lost one, and pointedly not a status mirror. `#357`'s ambient
+  counts are the other end of the same gap
+  · a cheap partial worth doing first regardless: `check_cited_shas` should notice a landing
+  citation that is a **placeholder rather than a sha**, which is the shape #362 wore for hours
 
 - **#361** — Turn on the ledger-lint hook we built and never switched on · P1 ·
   dogfood/reliability · origin: **loop** · 15m · **the evidence is two incidents tonight, four
@@ -2262,6 +2247,51 @@ Next id: **381**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#363** — lint's landed-but-open WARN cannot tell a forgotten fold from a live lane · P3 ·
+  tooling/honesty · origin: **loop** · 10m · reported by dreamer-264-boundary as report-only ·
+  `check_landed_still_open` says an entry under Open has a close/merge commit and asks the
+  reader to fold it or cite the sha — but tonight the same message fired for `#334`, which is
+  another session's *live* lane mid-flight, and for `#264` an hour after its design merged
+  while its ask is legitimately open. Both are correct behaviour and neither is a forgotten
+  fold · **the gap is in what a reader can conclude**: the message reads as an accusation, so
+  a coordinator sweeping lint output must go and check each one by hand, which is the cost the
+  check exists to remove · rec: name the discriminator the check already has access to —
+  whether `status.json` says an agent owns that task id, or whether the entry was modified
+  more recently than the commit — and soften the wording when it does. Small, and it should
+  stay a WARN either way
+  · **REC WITHDRAWN 2026-07-28 02:46, by trying to build it.** The discriminator would have
+  been **wrong**, and the way it fails is the finding: #334's work merged at `ecc1f44` **01:39**,
+  so from that minute the WARN was correct and the entry was a forgotten fold. Its worktree
+  survived for another hour. A liveness signal — a worktree naming the id, or `status.json`
+  saying an agent owns it — would therefore have printed *"another lane is mid-flight"* for a
+  full hour after that stopped being true, which is worse than the blunt message: a
+  softened WARN is one nobody re-checks
+  · **and the check was never the problem.** It fired correctly all three times. What went
+  wrong is that a coordinator overrode it **from memory** — "that is another session's lane" —
+  three times across four hours, and was right only the first time. A cleverer message cannot
+  fix a reader who is already sure
+  · **so the real gap is upstream and it is a hole in the single-writer rule.** Another session
+  landed #334 and correctly did not touch `tasks.md`, because the ledger has one writer. Its
+  work therefore sat done-but-open with **nothing at all telling that writer it had landed** —
+  the report went into its own session, not here. The single-writer rule has no delivery half
+  · rec, replacing the withdrawn one: **treat this WARN as authoritative and never override it
+  from memory** — check git, which takes one command — and give the single-writer rule a
+  delivery half so a foreign session's landing arrives rather than waiting to be noticed.
+  `#357`'s ambient counts are one end of that; the other is that a session which lands work it
+  cannot fold should leave a line in `.dreamwork/inbox.md`, which is already the channel
+  everything else reports through
+  · **both forgotten folds tonight were found by a check, not by a person** (#330 and #334),
+  and the third case — #264 — was silenced properly by citing its sha. The mechanism works;
+  the habit around it did not
+  · **LANDED the reader-facing half `PENDING`**: the WARN now carries `%cI` and `%cr` from the
+  same `git log` it already ran, so it reads *"#334 (`755b497` 2026-07-28 01:39, 3 hours ago) is
+  under `## Open` …"*. Deliberately NOT a softening — the entry withdrew that — it is the one
+  command the rec told the reader to run, run for them, so an override from memory has to be made
+  against a printed age. Red first; the test derives the expected stamp from `git log` rather than
+  writing a literal, and asserts the sha survives so the age is added evidence and not a swap
+  · **the delivery half is split out as #381** and is the larger, real gap
+
 
 - **#362** — Nothing compared status.json's queue with the ledger, so it drifted · P2 ·
   tooling/reliability · origin: **loop** · 20m · found by dreamer-264-boundary while measuring

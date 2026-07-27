@@ -1428,6 +1428,41 @@ Next id: **9**
         lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
         return [d for lvl, w, d in rep.rows if lvl == lint.WARN and w == "tasks.md"]
 
+    def test_the_warning_carries_when_it_landed_not_only_the_sha(self, tmp_path):
+        """#363: this check fired correctly three times and a coordinator
+        overrode it FROM MEMORY — "that is another session's live lane" — three
+        times across four hours, and was right only the first time. #334's work
+        had merged at 01:39 and the override went on for an hour after that.
+
+        Softening the message was tried and explicitly WITHDRAWN in the entry: a
+        softened WARN is one nobody re-checks. The replacement rec asks the
+        reader to "check git, which takes one command" — so the check runs that
+        command itself and prints the answer. Overriding from memory then has to
+        be done against a printed timestamp and an age, which is a much harder
+        thing to do by accident.
+
+        The production line is the `%cI`/`%cr` fields in the `git log --format`
+        and the clause built from them. Drop them and this fails while every
+        other row in this class still passes.
+        """
+        import subprocess
+        t, sha2 = self.build(tmp_path)
+        # Derived from git rather than written here, so the assertion cannot
+        # drift from what the tool will actually report.
+        when = subprocess.run(
+            ["git", "-C", str(t), "log", "-1", "--format=%cI",
+             "--grep", "close(#1)"],
+            capture_output=True, text=True, check=True).stdout.strip()
+        assert when, "precondition: the close(#1) commit must be findable by git"
+        stamp = when[:16].replace("T", " ")
+        mine = [d for d in self.warns(t) if d.startswith("#1 (")]
+        assert len(mine) == 1, mine
+        assert stamp in mine[0], (stamp, mine[0])
+        assert re.search(r"\d+ (second|minute|hour|day|week|month|year)s? ago",
+                         mine[0]), mine[0]
+        # And the sha is still there: the age is added evidence, not a swap.
+        assert "`" in mine[0]
+
     def flagged(self, t):
         """The ids this check actually flagged, not a substring search.
 

@@ -596,10 +596,25 @@ def check_landed_still_open(dw: Path, text: str, rep: Report) -> None:
     A target that is not a git repository is skipped in silence. The loop runs
     on projects that may not be under git at all, and "cannot check" must not
     render as "nothing to fix".
+
+    **#363 — the message carries WHEN, because the reader was the failure mode.**
+    This check fired correctly three times in one night and a coordinator
+    overrode it from memory each time — *"that is another session's live lane"* —
+    and was right only the first. #334's work had merged at 01:39; the override
+    continued for an hour past that, and its worktree surviving is what made the
+    wrong answer feel true. Softening the wording was proposed and then withdrawn
+    by trying to build it: a liveness signal would have printed "another lane is
+    mid-flight" for that whole hour, which is worse than a blunt message, and a
+    softened WARN is one nobody re-checks. What the entry asks for instead is
+    that the reader "check git, which takes one command" — so the check runs the
+    command and prints the answer. An override now has to be made against a
+    timestamp and an age rather than against a bare sha.
     """
+    # `\x1f` rather than a space, because `%cr` is itself spaced ("3 hours ago")
+    # and a space-split would have to know how many fields to expect.
     try:
         out = subprocess.run(
-            ["git", "-C", str(dw.parent), "log", "--format=%h %s"],
+            ["git", "-C", str(dw.parent), "log", "--format=%h\x1f%cI\x1f%cr\x1f%s"],
             capture_output=True, text=True, timeout=20,
         )
     except (OSError, subprocess.SubprocessError):
@@ -607,17 +622,20 @@ def check_landed_still_open(dw: Path, text: str, rep: Report) -> None:
     if out.returncode != 0:
         return  # not a repo, or no commits yet: nothing to compare against
 
-    # id -> the short shas of its close/merge commits. The trailing class stops
-    # `close(#31)` from answering for #3, which a bare prefix match would.
-    closed: dict[int, list[str]] = {}
+    # id -> [(sha, when, ago)] for its close/merge commits. The trailing class
+    # stops `close(#31)` from answering for #3, which a bare prefix match would.
+    closed: dict[int, list[tuple[str, str, str]]] = {}
     for line in out.stdout.splitlines():
-        parts = line.split(" ", 1)
-        if len(parts) != 2:
+        parts = line.split("\x1f")
+        if len(parts) != 4:
             continue
-        sha, subject = parts
+        sha, iso, ago, subject = parts
         m = CLOSE_SUBJECT.match(subject)
         if m:
-            closed.setdefault(int(m.group(1)), []).append(sha)
+            # `%cI` is `2026-07-28T01:39:02+10:00`; the minute is as precise as
+            # this needs to be and the timezone is noise for a local reader.
+            closed.setdefault(int(m.group(1)), []).append(
+                (sha, iso[:16].replace("T", " "), ago))
     if not closed:
         return
 
@@ -641,13 +659,18 @@ def check_landed_still_open(dw: Path, text: str, rep: Report) -> None:
     acknowledged = 0
     for ids, body in ledger_entries(open_text):
         for tid in ids:
-            shas = closed.get(tid)
-            if not shas:
+            landings = closed.get(tid)
+            if not landings:
                 continue
-            if any(s in body for s in shas):
+            if any(sha in body for sha, _, _ in landings):
                 acknowledged += 1       # a deliberate partial: it cites its commit
             else:
-                stale.append(f"#{tid} ({', '.join(shas)})")
+                # #363: the AGE is the part that argues. The evidence goes in the
+                # message so the reader does not have to run `git log` to weigh
+                # it — see the docstring for why that is the whole fix.
+                evidence = ", ".join(
+                    f"`{sha}` {when}, {ago}" for sha, when, ago in landings)
+                stale.append(f"#{tid} ({evidence})")
     for name in stale:
         rep.add(
             WARN,
