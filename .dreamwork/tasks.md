@@ -1675,7 +1675,24 @@ Next id: **389**
   `b'' != b'the quick brown fox…'` — **the file was emptied**, with 2 neighbours green. That is
   exactly what a crash mid-write does to `questions.md` or `answers.md` right now, which is the
   whole reason this increment exists. Restored byte-identical
-  · lane B second batch (`B5`-`B8`) dispatched 06:36; lane F (CLI) 06:22; `#367` increment 1 06:41
+  · **lane F (CLI) DONE, `@glm52`, ~35 minutes, 4/4** — `F1` `9263a42`, `F2` `e84ca0c`,
+  `F3` `312daeb`, `F4` `4c918b2`. Two new files only (`ud-dw-user-events`,
+  `test_user_events_cli.py`), 10 tests, and every acceptance criterion holds
+  · **it produced two reds for `F4`, and the second is the one I care about.** My criterion 6
+  said the coverage test must **fail loudly** if its parse of the design document finds zero
+  semantics, rather than passing having checked nothing — the `lessons.md:1447` shape. The lane
+  proved both halves: removing a `HEALTH_ROWS` entry fails by naming the missing semantic, **and**
+  breaking the parser to zero fails on the floor
+  · **verified independently by me**: I broke the bullet match to `"- NEVER-MATCHES "` and got
+  `AssertionError: parse found only 0 failure semantics — the coverage check would be vacuous; the
+  parser is broken or the section moved` / `assert 0 >= 5`, with its neighbour green. Restored
+  byte-identical, 10 passed. So the check cannot go quiet, which is the failure mode that has cost
+  this repo the most
+  · nice detail in `F3`: widening `_write_authorized` to `return True` fails the read-only test
+  **without** breaking the read commands, because they route through `READ_COMMANDS` upstream of
+  the guard — so the red is specific to the property under test rather than collateral
+  · lane B second batch (`B5`-`B8`) dispatched 06:36; `#367` increment 1 06:41; `#385` 06:55 once
+  `watch.py` was free and verified
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses
