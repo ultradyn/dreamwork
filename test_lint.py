@@ -1956,3 +1956,139 @@ class TestAuthorTags:
     def test_missing_files_are_silent(self, tmp_path):
         t = target(tmp_path, **{"tasks.md": "# Tasks\n\nNext id: **1**\n"})
         assert self._tag_warns(run(t)) == []
+
+
+class TestCitedShas:
+    """#350: a ledger entry that cites a commit which does not exist.
+
+    Found by self-review, not by anyone noticing. #302's entry cited
+    `f0f4e2a`-merge while the work is at `08cd931` — almost certainly the
+    worktree branch's sha, unreachable once merged. That matters beyond
+    tidiness: `check_landed_still_open` reads a cited commit as the entry's
+    evidence that it is deliberately still open, so a dead citation is silent
+    in both directions.
+
+    The two false-positive cases below are not hypothetical. Each killed a
+    looser rule measured against the live ledger, and each is pinned here so
+    the rule cannot quietly loosen back:
+
+    - a pure-digit token: 6 real ones (`1246815`, `251691418`) are PIDs that
+      happen to be valid hex;
+    - an alias beside a NEIGHBOURING citation: `fade326` is a c2c peer alias of
+      seven hex digits, and a "keyword within 40 characters" rule flags it
+      because the keyword belongs to the sha before it.
+    """
+
+    def build(self, tmp_path, ledger):
+        import subprocess
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+
+        def git(*a):
+            return subprocess.run(["git", "-C", str(t), *a],
+                                  capture_output=True, text=True, check=True)
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        (t / "f").write_text("1")
+        git("add", "f")
+        git("commit", "-qm", "a real commit")
+        live = git("rev-parse", "HEAD").stdout.strip()[:7]
+        (dw / "tasks.md").write_text(ledger.replace("LIVE", live))
+        return t, live
+
+    def rows(self, t, level=None):
+        rep = lint.Report()
+        lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
+        return [d for lvl, w, d in rep.rows
+                if w == "tasks.md" and "cite" in d
+                and (level is None or lvl == level)]
+
+    LEDGER = """# Tasks
+
+Next id: **9**
+
+## Open
+
+- **#1** — a task · P2 · origin: **loop** · still going
+
+## Recently landed
+
+- **#2** — cites a live commit · landed `LIVE` · origin: **loop**
+"""
+
+    def test_a_dead_cited_sha_warns(self, tmp_path):
+        t, live = self.build(tmp_path, self.LEDGER.replace(
+            "landed `LIVE`", "landed `LIVE` and also merged `beefca7`"))
+        warns = self.rows(t, lint.WARN)
+        assert len(warns) == 1, warns
+        assert "beefca7" in warns[0]
+        # Precondition: the LIVE sha in the same entry must NOT be flagged, or
+        # the check is flagging everything rather than discriminating.
+        assert live not in warns[0]
+
+    def test_a_live_cited_sha_is_reported_ok_and_never_warned(self, tmp_path):
+        t, live = self.build(tmp_path, self.LEDGER)
+        assert self.rows(t, lint.WARN) == []
+        oks = self.rows(t, lint.OK)
+        assert len(oks) == 1 and "resolve" in oks[0]
+
+    def test_a_pure_digit_token_is_a_pid_not_a_sha(self, tmp_path):
+        """`1246815` is valid hex and is a PID. Six of them are in the live
+        ledger. The production line: the `re.search(r"[a-f]", token)` filter."""
+        ledger = self.LEDGER.replace(
+            "still going",
+            "every snapshot saw PID `1246815`, reparented, and it landed `1246815`")
+        t, live = self.build(tmp_path, ledger)
+        warns = self.rows(t, lint.WARN)
+        assert warns == [], "a pure-digit PID was read as a commit: %r" % warns
+
+    def test_an_alias_beside_a_neighbouring_citation_is_not_flagged(self, tmp_path):
+        """The case that killed keyword-proximity. `fade326` is an agent alias;
+        the nearby keyword introduces the sha BEFORE it.
+
+        The production line is `CITED_SHA` requiring the keyword to immediately
+        introduce the token. Widen it back to a 40-character window and this
+        fails while the others still pass.
+        """
+        ledger = self.LEDGER.replace(
+            "still going",
+            "· **merged `LIVE`** (agent `fade326`, its own worktree)")
+        t, live = self.build(tmp_path, ledger)
+        warns = self.rows(t, lint.WARN)
+        assert warns == [], "an agent alias was read as a commit: %r" % warns
+
+    def test_a_bare_backticked_sha_with_no_keyword_is_not_a_citation(self, tmp_path):
+        """Deliberate scope: a reference is not a claim about a landing, and
+        widening to bare tokens reintroduces the alias false positive."""
+        ledger = self.LEDGER.replace("still going", "see `abcdef1` for context")
+        t, live = self.build(tmp_path, ledger)
+        assert self.rows(t, lint.WARN) == []
+
+    def test_every_sha_missing_says_nothing(self, tmp_path):
+        """A fresh clone or the wrong target is not a ledger full of errors.
+
+        The production line is the `len(dead) == len(shas)` guard; delete it and
+        this fails while `test_a_dead_cited_sha_warns` still passes, because
+        that fixture has one live sha alongside the dead one.
+        """
+        ledger = self.LEDGER.replace("landed `LIVE`", "landed `f0f4e2a`")
+        t, live = self.build(tmp_path, ledger)
+        assert self.rows(t) == []
+
+    def test_a_target_that_is_not_a_git_repo_is_silent(self, tmp_path):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(
+            self.LEDGER.replace("landed `LIVE`", "landed `f0f4e2a`"))
+        assert self.rows(t) == []
+
+    def test_the_check_is_registered_in_run_checks(self):
+        """Every row above comes through `run_checks`, which is the single list
+        `main()` also calls — so a check absent from it cannot be tested at all.
+        This asserts the wiring directly rather than trusting that."""
+        import inspect
+        src = inspect.getsource(lint.run_checks)
+        assert "check_cited_shas(dw, rep)" in src

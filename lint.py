@@ -1553,6 +1553,94 @@ def check_review_artifacts(dw: Path, rep: Report) -> None:
     # unhappy) — degrade silently rather than claim all is well.
 
 
+CITED_SHA = re.compile(
+    r"(?:landed|merged?|closed?|commit|fixed|reverted|sha)\**\s*(?:at|in|as)?\s*\**\s*"
+    r"`([0-9a-f]{7,40})`", re.I)
+
+
+def check_cited_shas(dw: Path, rep: Report) -> None:
+    """A ledger entry that cites a commit which does not exist (#350).
+
+    `check_landed_still_open` treats a cited commit as the entry's evidence that
+    it is deliberately still open, and every fold writes one. Nothing checked
+    that the sha RESOLVES — and a dead citation is silent in both directions: the
+    reader following it finds nothing, and the check that reads citations cannot
+    tell a wrong sha from an honest one.
+
+    Found by self-review, not by anyone noticing: #302's entry cited
+    `f0f4e2a`-merge while the work is actually at `08cd931`. Almost certainly the
+    worktree branch's sha, unreachable after the merge — which is the general
+    hazard, because the sha an agent reports is from the tree it worked in.
+
+    THE DISCRIMINATION, measured on the live ledger rather than assumed, because
+    two looser rules were tried first and both were wrong:
+
+    - *every backticked 7-40 hex token* flags 94, of which 6 are pure-digit PIDs
+      (`1246815`, `251691418`) that are valid hex. Requiring at least one `a-f`
+      removes all six.
+    - *a landing keyword within 40 characters* still flags `fade326` — a c2c peer
+      alias that happens to be seven hex digits — because the keyword 40 chars
+      back belongs to a NEIGHBOURING sha (``merged `7cdfc61`** (agent `fade326``).
+      Proximity cannot tell which token a keyword introduces.
+    - *the keyword immediately introduces the token* flags 37 citations, of which
+      exactly 1 is dead: the real one. `fade326` is excluded in both its contexts.
+
+    So precision is 1-in-1 and it catches the only instance in 237 entries. It
+    deliberately does not read a bare `· `abc1234` ·` with no keyword: those are
+    references, not claims about a landing, and widening to them reintroduces the
+    alias false positive.
+
+    **WARNs, never ERRORs**, following `check_landed_still_open`: a wrong sha is
+    recoverable and the entry's words are still true. Skipped in silence when the
+    target is not a git repository — "cannot check" must not read as "nothing to
+    fix".
+    """
+    path = dw / "tasks.md"
+    if not path.exists():
+        return
+    try:
+        text = path.read_text()
+    except OSError:
+        return
+    shas = []
+    for match in CITED_SHA.finditer(text):
+        token = match.group(1)
+        # Pure-digit tokens are PIDs and counts that happen to be valid hex.
+        if re.search(r"[a-f]", token) and token not in shas:
+            shas.append(token)
+    if not shas:
+        return
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(dw.parent), "cat-file", "--batch-check"],
+            input="".join("%s^{commit}\n" % s for s in shas),
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+    if proc.returncode != 0 and not proc.stdout:
+        return          # not a repo, or git unusable: say nothing
+    dead = []
+    for sha, line in zip(shas, proc.stdout.splitlines()):
+        if "missing" in line or "ambiguous" in line:
+            dead.append(sha)
+    if len(dead) == len(shas):
+        # Every single one missing means we are almost certainly not looking at
+        # the repository these shas came from (a fresh clone, a different
+        # target), not that the ledger is entirely wrong.
+        return
+    for sha in dead:
+        rep.add(
+            WARN,
+            "tasks.md",
+            f"cites commit `{sha}` as a landing, but git has no such commit — a "
+            f"worktree sha is unreachable once the branch is merged or rebased, "
+            f"so cite the sha on the branch you merged INTO (#350)",
+        )
+    if not dead:
+        rep.add(OK, "tasks.md", f"{len(shas)} cited commit(s) all resolve")
+
+
 def run_checks(dw: Path, watch, rep: Report) -> None:
     """Every check, in one place, because a SECOND copy of this list drifted.
 
@@ -1580,6 +1668,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_dreams(dw, rep)
     check_doc_map_plans(dw, rep)
     check_review_artifacts(dw, rep)
+    check_cited_shas(dw, rep)
     check_status_keys(dw, rep)
 
 

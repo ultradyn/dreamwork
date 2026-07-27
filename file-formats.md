@@ -335,6 +335,43 @@ Do not reach for a prose keyword instead. It was tried and it is wrong:
 (`#301 fixed the LANDED half`), so a keyword rule flags the stale case for
 the wrong reason and cannot separate it from a deliberate partial.
 
+## `.dreamwork/tasks.md` — a cited commit must resolve (#350)
+
+The section above makes a cited commit load-bearing: an entry that stays open
+after a landing proves it is deliberate by naming its sha. So the sha itself is
+now parsed, and `lint.check_cited_shas` WARNs when one does not exist.
+
+A **citation** is a landing keyword immediately introducing a backticked
+7-40-character hex token, optionally through markup and an `at`/`in`/`as`:
+
+```text
+· landed `08cd931` ·            · **merged `7cdfc61`** ·
+· **closed `d22fb09`** ·        · landed at `5c43a8f` ·
+```
+
+A bare `` · `abcdef1` · `` with no keyword is a **reference, not a citation**,
+and is deliberately not checked.
+
+**Cite the sha on the branch you merged INTO.** The hazard this exists for: an
+agent reports the sha from its own worktree, and that commit is unreachable once
+the branch is merged or rebased. `#302`'s entry cited `f0f4e2a` while the work
+is at `08cd931`, and nothing noticed for a day — the citation is silent in both
+directions, because a reader following it finds nothing and the check that reads
+citations cannot tell a wrong sha from an honest one.
+
+Two looser rules were tried and both are wrong, measured on the live ledger:
+
+- **every backticked hex token** flags 94, of which 6 are pure-digit PIDs
+  (`1246815`, `251691418`) that are valid hex. Requiring at least one `a-f`
+  removes all six.
+- **a landing keyword within 40 characters** still flags `fade326`, a c2c peer
+  alias of seven hex digits, because the nearby keyword introduces the sha
+  *before* it (``merged `7cdfc61`** (agent `fade326``). Proximity cannot tell
+  which token a keyword belongs to.
+
+If **every** cited sha is missing, the check says nothing: that is a fresh clone
+or the wrong target, not a ledger that is entirely wrong.
+
 ## `.dreamwork/tasks.md` — an open entry that declares ITSELF completed (#335)
 
 The section above catches the case where *git* says a task landed. This one

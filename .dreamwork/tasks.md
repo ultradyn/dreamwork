@@ -1681,6 +1681,27 @@ Next id: **350**
 
 ## Recently landed
 
+- **#350** — lint refuses a ledger citation whose commit does not exist ·
+  **closed this commit** · P2 · reliability · origin: **loop** · found by the maintenance
+  rotation's self-review, not by anyone noticing · **#323 made a cited sha load-bearing**:
+  an entry that stays open after a landing proves the choice is deliberate by naming its
+  commit, and every fold writes one — but nothing checked that the sha RESOLVES, so a dead
+  citation is silent in both directions (a reader following it finds nothing, and
+  `check_landed_still_open` cannot tell a wrong sha from an honest one)
+  · **the live instance**: `#302` cited `f0f4e2a`-merge while the work is at `08cd931` —
+  the worktree branch's sha, unreachable after the merge. That is the general hazard, since
+  the sha an agent reports is from the tree it worked in, so the rule is **cite the sha on
+  the branch you merged INTO**
+  · **two looser rules were measured and both are wrong**, which is why the discrimination
+  is the design: every backticked hex token flags 94, of which 6 are pure-digit PIDs
+  (`1246815`, `251691418`) that are valid hex; a landing keyword within 40 characters still
+  flags `fade326`, a c2c peer ALIAS of seven hex digits, because the nearby keyword
+  introduces the sha *before* it. Requiring the keyword to immediately introduce the token
+  gives 37 citations, 1 dead, precision 1-in-1 across 237 entries
+  · WARNs and never ERRORs, silent on a non-repo target, and silent when EVERY sha is
+  missing (a fresh clone is not a ledger that is entirely wrong) · shape in
+  `file-formats.md`, four discriminating red proofs each failing a different subset
+
 - **#348** — Teach the build-time highlighter `sql`, since schema designs are what it is
   read for · **closed `d22fb09`** · P3 · review tooling · origin: **loop** · found writing #346's design, whose
   code blocks are `CREATE TABLE` statements · #339 supports python json bash javascript
@@ -2234,7 +2255,7 @@ Next id: **350**
   the rendered colour
 
   · **out with ccc-glm52-302** in `.worktrees/302-tint` (owns `watch.py` + `test_watch.py`, port 39895); unblocked by #301's merge
-  · landed `f0f4e2a`-merge (ccc-glm52-302) · TINT 0.08 / SEED 29, reasoned not
+  · landed `08cd931`-merge (ccc-glm52-302) · TINT 0.08 / SEED 29, reasoned not
   filled: the warm dialogue family beside `/questions` (+0.14) but quieter,
   because the loop's asks block the loop and must pull him while the human's
   asks are a surface he is already writing into — the pair reads as a gradient ·
