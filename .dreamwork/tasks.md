@@ -725,7 +725,19 @@ Next id: **308**
   that fell out: TARGET PATH + ELAPSED together are the evidence — a
   /tmp target minutes old is somebody working; the same command on a
   repo target hours old is the orphan class · when a held port is
-  found, capture `ss -tlnp` and name pid+command in the report
+  found, capture `ss -tlnp` and name pid+command in the report ·
+  **a mechanical discriminator that needs no judgement** (2026-07-27
+  17:44): `readlink /proc/<pid>/cwd` ending in ` (deleted)` means the
+  lane that started it is gone, full stop — target-path-plus-elapsed
+  still needs a human to weigh "is 20 hours long", and this does not.
+  Found by it and reaped: pid 1652343, `watch.py --target
+  dev/capture/fixture --port 39951`, up 21h, cwd
+  `/tmp/pi-agent-9f527dd0-…(deleted)` — the outgoing pi lane's, and the
+  exact fixture-server hazard above · **two more still up**, both /tmp
+  targets that still exist so the deleted-cwd test does not fire: 897036
+  (`/tmp/a250/target`, 26h) and 3408270 (`/tmp/revieworder-green/target`,
+  20h) · left running deliberately — reaping them is a judgement call and
+  the reaper should make it, not a coordinator doing it by hand
 - **#201** — Stream and control an agent's TUI in the browser via herdr ·
   P2 · idea · several increments · **human 17:27** · substrate EXISTS and
   is documented: `~/.llm-general/ai-coding/herdr/` verified against 0.7.4
