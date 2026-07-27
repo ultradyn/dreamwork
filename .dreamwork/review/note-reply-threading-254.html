@@ -1,0 +1,417 @@
+<!doctype html>
+<!--Built from the dreamwork review template v1+52fc2607 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
+<meta name="dreamwork-review-template" content="v1+52fc2607">
+<title>#254 · One rooted exchange per question · design</title>
+<style>
+/* Offline-clean by construction: no fetches, no external fonts, no images.
+   Tokens are watch.py's, value for value, because this is read inside the
+   dashboard's own iframe. */
+:root{
+  color-scheme:dark;
+  --bg:#090d16;--bg2:#0c1220;--panel:#111827;--panel2:#162033;
+  --line:#1f2937;--border:#334155;--text:#cbd5e1;--bright:#f4f7fb;
+  --lit:#e5e7eb;--muted:#98a3b5;--dim:#697589;--dimmer:#4b5568;
+  --accent:#a5b4fc;--accent2:#7dd3fc;--ok:#86efac;--warn:#fcd34d;
+  --bad:#fda4af;--ink:#050810;--radius:5px;
+  --ease:cubic-bezier(.32,.1,.2,1);--measure:78ch
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--dimmer) transparent}
+*::selection{background:rgba(165,180,252,.24);color:var(--bright)}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--dimmer);border-radius:4px}
+html{background:var(--bg);scroll-padding-top:5.5rem}
+body{margin:0;background:
+  radial-gradient(ellipse 68rem 34rem at 46% -14rem,rgba(99,102,241,.13),transparent 68%),
+  radial-gradient(ellipse 34rem 24rem at 92% 12%,rgba(14,165,233,.045),transparent 70%),
+  linear-gradient(180deg,var(--bg),#0a0f19 55%,var(--bg));
+  color:var(--text);font-family:ui-monospace,"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  font-size:.82rem;line-height:1.7;overflow-wrap:anywhere}
+a{color:var(--accent);text-underline-offset:.22em;text-decoration-thickness:1px}
+a:hover{color:var(--bright)}
+code{color:var(--lit);background:rgba(22,32,51,.72);padding:.03rem .32ch;border-radius:3px}
+pre{margin:.75rem 0;padding:.9rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.52);color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+strong{font-weight:inherit;color:var(--bright)}em{color:var(--lit)}
+p{margin:.62rem 0}ul,ol{margin:.55rem 0;padding-left:2.4ch}li{margin:.34rem 0}
+h1,h2,h3,h4{margin:0;font:inherit;font-weight:normal;color:var(--bright)}
+h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit);margin-top:1.4rem}
+.wrap{width:min(calc(100% - 2rem),1120px);margin:0 auto}.read{max-width:var(--measure)}
+.skip{position:fixed;z-index:99;top:.6rem;left:.6rem;transform:translateY(-180%);display:inline-flex;align-items:center;min-height:44px;padding:.6rem 1ch;background:var(--bright);color:var(--ink);border-radius:var(--radius);text-decoration:none}
+.skip:focus{transform:none;transition:transform .35s var(--ease)}
+.toprail{position:sticky;top:0;z-index:20;background:rgba(9,13,22,.91);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
+.toprail-in{width:min(calc(100% - 2rem),1120px);min-height:58px;margin:auto;display:flex;align-items:center;gap:1rem;justify-content:space-between}
+.identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius)}
+.status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
+main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
+.label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
+.quiet{color:var(--muted)}.dim{color:var(--dim)}.dimmer{color:var(--dimmer)}
+.kicker{display:flex;gap:1ch;align-items:baseline;flex-wrap:wrap}.proposal{color:var(--warn)}
+.sub{color:var(--dim);margin:.25rem 0 1.7rem}
+.lead{font-size:.9rem;line-height:1.78;color:var(--lit);max-width:76ch}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(240px,.45fr);gap:2.5rem;align-items:end}
+/* The one rule this template adds to the artifact it was cut from, and the
+   only entry in test_review_artifact.py's TEMPLATE_ONLY: tasks-page.html
+   always carries an aside, a template has to render without one. */
+.hero-grid.solo{grid-template-columns:minmax(0,1fr)}
+.version-mark{border-left:1px solid var(--accent);padding:.2rem 0 .2rem 1.25rem}
+.version-mark .big{display:block;color:var(--bright);font-size:2.4rem;line-height:1;letter-spacing:-.07em}
+.version-mark small{color:var(--dim)}
+.call{margin:1.2rem 0;padding:1rem 1.2ch;background:linear-gradient(90deg,rgba(165,180,252,.09),transparent);border-left:2px solid var(--accent);max-width:84ch}
+.notice{margin:1rem 0;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--warn);color:var(--muted);max-width:84ch}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:1.1rem 0}
+.fact{background:var(--bg2);padding:.95rem}.fact .number{display:block;color:var(--bright);font-size:1.3rem;line-height:1.1}.fact .caption{display:block;color:var(--dim);margin-top:.3rem;font-size:.72rem}
+table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem}
+th,td{text-align:left;vertical-align:top;padding:.62rem .72ch;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-size:.66rem;text-transform:uppercase;letter-spacing:.065em;font-weight:normal}
+td:first-child{color:var(--lit)}.pass{color:var(--ok)}.unknown{color:var(--warn)}.fail{color:var(--bad)}
+.row-accent td{background:rgba(165,180,252,.045)}
+.scroller{overflow-x:auto}
+.summary-line{display:grid;grid-template-columns:17ch minmax(0,1fr);gap:1.5ch;padding:.5rem 0;border-top:1px solid var(--line)}
+.summary-line:last-child{border-bottom:1px solid var(--line)}
+.key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.68rem}
+.deltas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line)}
+.delta{display:grid;grid-template-columns:3.2ch minmax(0,1fr);gap:1ch;padding:.8rem 1rem .8rem 0;border-bottom:1px solid var(--line)}
+.delta b{color:var(--accent);font-weight:normal}.delta span{color:var(--muted)}
+figure{margin:1rem 0 1.7rem}.figscroll{overflow-x:auto}
+svg{display:block;height:auto}svg text{font-family:ui-monospace,"JetBrains Mono",monospace}
+figcaption{color:var(--dim);font-size:.72rem;margin-top:.4rem}
+
+/* ── the drawn page ───────────────────────────────────────────────────── */
+.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem;align-items:start}
+.frame{border:1px solid var(--border);background:rgba(9,13,22,.8);min-width:0;box-shadow:0 22px 60px rgba(0,0,0,.19)}
+.framebar{display:flex;align-items:center;flex-wrap:wrap;gap:0 1ch;min-height:42px;padding:.35rem 1ch;border-bottom:1px solid var(--line);color:var(--dim);font-size:.72rem}
+.framebar b{font-weight:normal;color:var(--lit);white-space:nowrap}
+.framebody{padding:.9rem 1.1ch}
+.mockhead{display:flex;align-items:center;gap:1ch;margin-bottom:.2rem}
+.opener{color:var(--accent)}
+.mocktitle{color:var(--bright)}
+.crumbs{color:var(--dim);font-size:.72rem;margin-bottom:1rem}
+.ctl{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.2rem 0 .7rem}
+.searchbox{flex:1;min-width:15ch;display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.searchbox span{padding:.3rem .8ch;color:var(--lit)}
+.searchbox i{font-style:normal;color:var(--dimmer);padding:.3rem .8ch;margin-left:auto}
+.sgroup{display:inline-flex;border:1px solid transparent;gap:.15rem}
+.sgbtn{padding:.22rem .7ch;color:var(--dim);border:1px solid transparent;border-radius:var(--radius);white-space:nowrap}
+.sgbtn.on{color:var(--lit);border-color:var(--border)}
+.countline{color:var(--dim);font-size:.72rem;border-bottom:1px solid var(--line);padding-bottom:.5rem;margin-bottom:.2rem}
+.countline b{color:var(--lit);font-weight:normal}
+.tk{display:block;padding:.5rem 0 .52rem;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.tk-1{display:flex;gap:1ch;align-items:baseline}
+.tkid{color:var(--dim);font-weight:normal;flex:none}
+.tkt{color:var(--text);min-width:0;flex:1}
+.tkp{flex:none;color:var(--dim);font-size:.72rem}
+.tkp.p01{color:var(--bright)}.tkp.p2{color:var(--text)}.tkp.p3{color:var(--dim)}
+.tk-2{display:block;color:var(--dim);font-size:.7rem;padding-left:5.5ch}
+.tk.claimed{border-left:2px solid var(--accent);padding-left:.9ch;margin-left:-1.1ch}
+.tk.claimed .tkt{color:var(--bright)}
+.tk.claimed .tk-2 em{color:var(--accent);font-style:normal}
+.tk.blocked .tkt{color:var(--muted)}
+.tk.landed .tkt,.tk.landed .tkid{color:var(--dim)}.tk.landed .tk-2{color:var(--dimmer)}
+.tk.unknownstate .tkt{color:var(--muted)}
+.tk.unknownstate .tk-2 em{color:var(--warn);font-style:normal}
+.tk-2 .stale{color:var(--warn);font-style:normal}
+.hilite{background:rgba(165,180,252,.16);color:var(--bright)}
+.warnline{border-left:2px solid var(--warn);padding:.45rem 0 .45rem 1ch;color:var(--muted);margin:.5rem 0}
+.warnline b{color:var(--warn);font-weight:normal}
+.calmline{color:var(--dim);padding:.45rem 0}
+.detgrid{display:grid;grid-template-columns:13ch minmax(0,1fr);gap:.05rem 1.3ch;font-size:.75rem}
+.detgrid dt{color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-size:.66rem;padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd{margin:0;color:var(--text);padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd em{font-style:normal;color:var(--dim)}
+.mockbody{color:var(--muted);font-size:.75rem;margin-top:1rem;border-top:1px solid var(--line);padding-top:.7rem}
+.peek{color:var(--dim);font-size:.72rem;border-top:1px solid var(--line);margin-top:.8rem;padding-top:.55rem}
+.annot{display:grid;grid-template-columns:3.5ch minmax(0,1fr);gap:.7ch;font-size:.72rem;color:var(--muted);margin:.45rem 0}
+.annot b{color:var(--accent2);font-weight:normal}
+
+/* ── prose furniture ──────────────────────────────────────────────────── */
+.spine{margin:1.4rem 0}
+.spine-row{display:grid;grid-template-columns:15ch 2.4rem minmax(0,1fr);align-items:stretch;min-height:88px}
+.spine-key{padding:.85rem 1rem .85rem 0;color:var(--lit);text-align:right}
+.spine-rail{position:relative}
+.spine-rail::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border)}
+.spine-row:first-child .spine-rail::before{top:50%}
+.spine-row:last-child .spine-rail::before{bottom:50%}
+.spine-dot{position:absolute;z-index:1;left:50%;top:1.15rem;width:9px;height:9px;transform:translateX(-50%);border-radius:50%;background:var(--bg);border:1px solid var(--accent);box-shadow:0 0 0 5px var(--bg)}
+.spine-body{padding:.7rem 0 .85rem 1rem;border-top:1px solid var(--line)}
+.spine-body p{color:var(--muted);margin:.2rem 0;max-width:var(--measure)}
+.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1.6rem}
+.check{padding:.55rem 0;border-top:1px solid var(--line)}
+.check b{font-weight:normal;color:var(--bad)}.check span{color:var(--ok)}
+.stages{counter-reset:stage}
+.stage{counter-increment:stage;display:grid;grid-template-columns:3.4ch minmax(0,1fr);gap:1ch;padding:.68rem 0;border-top:1px solid var(--line)}
+.stage::before{content:counter(stage,decimal-leading-zero);color:var(--accent)}
+.stage b{color:var(--lit);font-weight:normal}.stage span{color:var(--muted)}
+details{border-top:1px solid var(--line);margin:.65rem 0}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;min-height:44px;padding:.6rem 0;color:var(--muted);outline:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+ ";color:var(--dim);white-space:pre}
+details[open]>summary{color:var(--lit);padding-top:1rem}
+details[open]>summary::before{content:"\2212 "}
+.details-in{padding:0 0 1rem 1.5ch;color:var(--muted)}
+details::details-content{block-size:0;opacity:0;filter:blur(3px);overflow:hidden;transition:block-size .72s var(--ease),opacity .45s ease,filter .45s ease;transition-behavior:allow-discrete}
+details[open]::details-content{block-size:auto;opacity:1;filter:none}
+@starting-style{details[open]::details-content{block-size:0;opacity:0;filter:blur(3px)}}
+#decision{scroll-margin-top:4.75rem}
+.choice{padding:1rem 0;border-top:1px solid var(--line)}
+.choice:last-of-type{border-bottom:1px solid var(--line)}
+.choice-grid{display:grid;grid-template-columns:4.5ch minmax(0,1fr);gap:1ch}
+.choice-grid>div{max-width:var(--measure)}
+.choice-tag{color:var(--accent);font-size:1rem}
+.answer{margin-top:.4rem;color:var(--lit)}
+.approval{padding:1rem;background:linear-gradient(90deg,rgba(165,180,252,.1),transparent);color:var(--lit);margin-top:1.2rem}
+footer{margin-top:3.5rem;padding:1.2rem 0 2rem;border-top:1px solid var(--line);color:var(--dimmer)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+@media(max-width:860px){
+  .hero-grid,.frames,.deltas,.checks{grid-template-columns:1fr}
+  .facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .version-mark{border-left:0;border-top:1px solid var(--line);padding:.7rem 0 0;display:flex;align-items:baseline;gap:1rem}
+  .version-mark .big{flex:none;font-size:1.4rem;letter-spacing:-.04em}
+  .identity span{display:none}.topactions .full{display:none}
+  .spine-row{grid-template-columns:9ch 1.8rem minmax(0,1fr)}.spine-key{font-size:.72rem;padding-right:.4rem}
+  .summary-line{grid-template-columns:1fr;gap:.05rem}
+  .detgrid{grid-template-columns:1fr}.detgrid dd{border-top:0;padding-top:0}
+}
+@media(max-width:480px){
+  body{font-size:.79rem}.facts{grid-template-columns:1fr}
+  .tk-2{padding-left:0}.choice-grid{grid-template-columns:3.4ch minmax(0,1fr)}
+  .topactions .status{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;transition-delay:0s!important;filter:none!important}
+  .skip:focus{transition:none}
+}
+@media print{
+  :root{color-scheme:light;--bg:#fff;--bg2:#fff;--panel:#f4f4f5;--panel2:#fff;--line:#bbb;--border:#777;--text:#111;--bright:#000;--lit:#111;--muted:#333;--dim:#444;--dimmer:#555;--accent:#273fa2;--accent2:#075985;--ok:#166534;--warn:#7c4a03;--bad:#991b1b}
+  body{background:#fff}.toprail{position:static;background:#fff;backdrop-filter:none}.topactions{display:none}
+  .frame{box-shadow:none}details::details-content{block-size:auto;opacity:1;filter:none}
+  .frame,.call,.notice,.choice{break-inside:avoid}a{color:#111;text-decoration:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#decision">Skip to the decisions</a>
+<nav class="toprail" aria-label="Artifact navigation">
+  <div class="toprail-in">
+    <div class="identity"><b>question thread · rooted exchange</b><span>task #254 · N1 as approved 23:03 · design only</span></div>
+    <div class="topactions"><span class="status">awaiting review</span><a class="full" href="#rule">the rule</a><a href="#evidence">what the screenshot shows</a><a href="#decision">decisions</a></div>
+  </div>
+</nav>
+
+<main class="wrap" id="top">
+
+<header>
+  <div class="hero-grid">
+    <div>
+      <div class="kicker"><h1>A reply should look like a reply. Once.</h1><span class="proposal">design only — no code</span></div>
+      <div class="sub">task #254 · 27 July 2026 · written spec, built by review_artifact.py</div>
+      <p class="lead">N1, as you approved it at 23:03, written as a decision procedure so an
+      implementer decides nothing: the <strong>resolution is the root</strong>, and later notes and
+      replies render as <strong>one flat branch at a single inset depth</strong> beneath it. Preserving
+      order, author and stamp; never a staircase. This page is the spec's summary — the spec is
+      <code>.dreamwork/docs/plans/note-reply-threading-254.md</code>.</p>
+      <div class="call"><strong>Recommendation.</strong> Approve the rule and D1–D7 as written —
+      <em>and</em> let follow-up 1 ride along with it. N1 on its own does <strong>not</strong> change
+      the card you reported: that entry has no <code>Answer</code>, so your own tie-breaker keeps it
+      flat. Overruling <strong>D1</strong> is the one line that changes that, and §Cost says what it
+      costs.</div>
+    </div>
+    <div class="version-mark" aria-label="At a glance">
+      <span class="big">1</span>
+      <small>inset depth, no matter how long the exchange<br>0 new components — <code>.thread</code>'s rail already is it<br>2 defects on the one screenshot</small>
+    </div>
+  </div>
+</header>
+
+<section id="evidence" aria-labelledby="ev-t">
+  <div class="label" id="ev-t">What the screenshot actually shows</div>
+  <p class="read">Read against the live <code>questions.md</code> and against
+  <code>_parse_entries</code> directly, the evidence carries <strong>two separate
+  defects</strong> on one card — and only one of them is #254.</p>
+  <div class="scroller"><table>
+  <thead><tr><th>what you saw</th><th>mechanism</th><th>does N1 fix it?</th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td><strong>a note and a reply as similar siblings</strong></td><td>both are <code>.follow</code> rows in one <code>.threadin</code>; they differ by a dim label and one step of luminance</td><td class="pass">yes — this is the task</td></tr>
+    <tr><td><strong>the 14:48 reply sitting above the 14:47 note it answers</strong></td><td>its tag was <code>Answer (loop, …)</code> — in <em>neither</em> <code>NOTE_TAGS</code> nor <code>ANSWER_TAGS</code>, so it was never a contribution: it fell into the <strong>body</strong> and rendered as a <code>·</code> item with its raw tag as text</td><td class="fail">no — a tag-recognition bug, since repaired in the file</td></tr>
+  </tbody>
+  </table></div>
+  <div class="notice"><b>So N1 shipped alone leaves that card unchanged.</b> It has no
+  <code>Answer</code> — only <code>Note (human, 14:47)</code> and
+  <code>Follow-up (loop, 14:48)</code> — so step 3 applies and "keep it top-level rather than
+  guessing" is your own rule holding. Your ruling stands and the spec implements it; the ask is
+  that follow-up 1 be part of the same outcome, not a nice-to-have.</div>
+</section>
+
+<section id="rule" aria-labelledby="rule-t">
+  <div class="label" id="rule-t">The rule — three steps, and it decides everything</div>
+  <p class="read"><code>qaBranch(q) → [lead, root, branch]</code>. <b>lead</b> is discussion
+  that led to the root and keeps today's treatment, collapse and all. <b>branch</b> is one flat
+  list at one depth. <b>Never a tree.</b></p>
+  <div class="spine">
+    <div class="spine-row"><div class="spine-key">1 · a resolution</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p>Root is the answer. <code>lead = follows[0:answer_at]</code>,
+      <code>branch = follows[answer_at:]</code>. <b>Needs no new signal</b> —
+      <code>answer_at</code> is the positional cut #128 already records.</p></div></div>
+    <div class="spine-row"><div class="spine-key">2 · an explicit reply</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p>Root is the contribution just above the first
+      <code>Reply (loop, …)</code>; if that reply is first, there is nothing to reply to and it
+      stays <b>flat</b>. <b>This step needs a tag that does not exist yet.</b></p></div></div>
+    <div class="spine-row"><div class="spine-key">3 · otherwise</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p><b>Flat.</b> Your tie-breaker, and it generalises:
+      <strong>prefer flat over wrongly-attached</strong>. A flat render under-claims; a wrong
+      branch makes a false claim about who answered whom.</p></div></div>
+  </div>
+  <div class="notice"><b>Never derive attachment from timestamps.</b> File order is the
+  chronology. A stamp comparison is a second mechanism able to disagree with the first — and it
+  would disagree exactly on the entries whose stamps are missing or hand-edited. Stamps render;
+  they never decide structure.</div>
+  <div class="scroller"><table>
+  <thead><tr><th>case</th><th>result</th></tr></thead>
+  <tbody>
+    <tr><td>Answer arriving <em>after</em> a note</td><td>that note is <code>lead</code>, above the root — #128's cut, unchanged</td></tr>
+    <tr><td><strong>two Answers</strong></td><td>root is the <strong>last</strong>. Inherited, not chosen: the parser overwrites <code>cur["answer"]</code>, so the first answer's <em>text is already gone</em></td></tr>
+    <tr><td><strong>a note with no Answer anywhere</strong></td><td><strong>flat</strong> — your tie-breaker. This is your screenshot</td></tr>
+    <tr><td>a <code>Reply</code> with nothing above it</td><td>flat; no root invented from the body</td></tr>
+    <tr><td>interleaved notes and replies after a root</td><td>all join <strong>one</strong> branch, in file order, at <strong>one</strong> depth</td></tr>
+    <tr><td>a root with nothing after it</td><td>no branch container at all — an empty rail claims content that is not there</td></tr>
+    <tr><td>you edited an earlier entry</td><td>recomputed from scratch: the rule is a pure function of file order and tags, keeps no state, gives no contribution an identity</td></tr>
+    <tr><td>an unrecognised tag</td><td>not a contribution — body prose. Say so in the code, because that is what the screenshot shows</td></tr>
+  </tbody>
+  </table></div>
+</section>
+
+<section aria-labelledby="sig-t">
+  <div class="label" id="sig-t">Signals — and the one that does not exist</div>
+  <div class="facts">
+    <div class="fact"><span class="number">0</span><span class="caption">new signals step 1 needs</span></div>
+    <div class="fact"><span class="number">2</span><span class="caption">tags step 2 needs and the file has neither</span></div>
+    <div class="fact"><span class="number">15<span class="dim">/29</span></span><span class="caption">answered entries showing your answer as raw body prose</span></div>
+  </div>
+  <div class="notice"><b><code>Reply (loop, …)</code> is not a recognised tag, and there is no
+  loop-authored resolution tag at all.</b> <code>Answer (via watch, …)</code> is <em>yours</em> —
+  written by <code>POST /answer</code> and nothing else. So "the loop Answer becomes the root"
+  has no referent in the file for a question the loop replied to and you never answered. Step 2
+  is therefore unimplementable inside a design-only grant; it is scoped as a follow-up rather
+  than quietly assumed.</div>
+</section>
+
+<section aria-labelledby="look-t">
+  <div class="label" id="look-t">What it looks like, and what it announces</div>
+  <div class="stages">
+    <div class="stage"><span><b>No new component.</b> <code>.thread</code>'s 1px <code>--line</code> rail and <code>1ch</code> inset <em>are</em> the one depth. A second container would be a second answer to a question the page already answered.</span></div>
+    <div class="stage"><span><b>The rail starts at the root's bottom edge</b>, so the connection is drawn rather than implied. Rows keep <code>you</code>/<code>loop</code>, the stamp, and the luminance split. No accent — that is for live, actionable things.</span></div>
+    <div class="stage"><span><b>The branch never collapses.</b> It is where a note you just wrote lands. Only the segment a resolution has already answered may fold.</span></div>
+    <div class="stage"><span><b>Narrow: keep the rail, drop the padding.</b> The cost is ~1ch <em>once</em>, not per turn — which is the whole reason N1 caps the depth.</span></div>
+  </div>
+  <div class="notice"><b>Nesting is announced, not merely drawn.</b> The exchange becomes one
+  <code>&lt;ul&gt;</code>; the branch is a nested <code>&lt;ul&gt;</code> <em>inside the root's
+  own <code>&lt;li&gt;</code></em>. A sibling <code>&lt;ul&gt;</code> looks identical and reads
+  flat — which is exactly the check that catches it. The composer stays <strong>outside</strong>
+  the branch: one input per card, and a box inside a branch promises "reply to this turn", which
+  <code>/comment</code> cannot keep.</div>
+</section>
+
+<section aria-labelledby="mo-t">
+  <div class="label" id="mo-t">Motion — nothing new is authored</div>
+  <p class="read">Every case already has a cell in <code>transitions.md</code>'s state matrix,
+  so the design names the existing gesture rather than inventing a second one.</p>
+  <div class="scroller"><table>
+  <thead><tr><th>what happens</th><th>existing idiom it reuses</th></tr></thead>
+  <tbody>
+    <tr><td>a note lands in a branch</td><td><em>"same card, a note lands"</em> — lifts from the box, card grows, same seam, same regroup</td></tr>
+    <tr><td>a branch appears for the first time</td><td>the unfold reveal: <code>.qreveal</code> + <code>.dreamin</code> — snap the start state, reflow, then ease</td></tr>
+    <tr><td>a branch empties</td><td><code>dreamAway</code>, clipped below the line the survivor still fills</td></tr>
+    <tr><td>a note moves from lead into branch</td><td><em>"same state, moved"</em> — it <b>slides</b>; it survived, so it travels rather than re-entering</td></tr>
+    <tr class="row-accent"><td><strong>reduced motion</strong></td><td><strong>same DOM, same computed inset, no travel, no ghost.</strong> Only the frames differ — a different layout would be a second design</td></tr>
+  </tbody>
+  </table></div>
+</section>
+
+<section aria-labelledby="proof-t">
+  <div class="label" id="proof-t">How it would be proven</div>
+  <p class="read">Five frozen fixtures — <b>rooted</b>, <b>no root</b>, <b>two answers</b>,
+  <b>root with no branch</b>, <b>unrecognised tag</b> — and eight checks, each naming the
+  production line that reddens it.</p>
+  <div class="checks">
+    <div class="check"><b>replace the cut with 0</b> <span>lead empties → red</span></div>
+    <div class="check"><b>delete the "no resolution" null test</b> <span>everything becomes a reply → red</span></div>
+    <div class="check"><b>make the container recurse</b> <span>a second inset appears → red</span></div>
+    <div class="check"><b>move the nested ul to a sibling</b> <span>identical pixels, flat announcement → red</span></div>
+  </div>
+  <div class="notice"><b>Two of these would have been hollow, and the spec says so.</b> "No
+  branch" is satisfied by "no contributions" unless the fixture's contribution count is asserted
+  at runtime. And the two-answer check <em>cannot</em> distinguish "rooted at the last answer"
+  from "the first answer never existed", because the parser discards it first — so the check
+  records what it does not prove instead of being believed as the thing it proxies. A motion
+  check asserts a <em>part-way</em> frame over a ≤1400ms window and that the node was never
+  replaced, so a later tick cannot supply the result. At least one guard drives the
+  <strong>dashboard</strong>, not just <code>/questions</code>.</div>
+</section>
+
+<section id="decision" aria-labelledby="dec-t">
+  <div class="label" id="dec-t">Decisions wanted — one line each</div>
+  <div class="choice"><div class="choice-grid"><span class="choice-tag">D1</span><div>
+    <strong>Is a root a resolution only — never merely the first loop contribution?</strong>
+    <div class="answer"><strong>Rec: yes, as written.</strong> Promoting a
+    <code>Follow-up</code> is inference from adjacency, which is what N2 was rejected for, and it
+    <em>inverts</em> on the common shape where the loop asks a clarifying question and you answer
+    it: the loop's question becomes the root and your answer a reply to it.
+    <b>Cost of yes:</b> your screenshot's card stays flat until follow-up 1 lands.
+    <b>Overrule this one line</b> and it is fixed at the price of that inversion.</div>
+  </div></div></div>
+  <div class="choice"><div class="choice-grid"><span class="choice-tag">D2</span><div>
+    <strong>At most one branch per question?</strong>
+    <div class="answer"><strong>Rec: yes.</strong> It is what keeps the rule a procedure rather
+    than a tree walk, and the only reading of "a single inset depth" that survives a long
+    exchange.</div>
+  </div></div></div>
+  <div class="choice"><div class="choice-grid"><span class="choice-tag">D3</span><div>
+    <strong><code>## Answered</code>: flat, or threaded?</strong>
+    <div class="answer"><strong>Rec: flat.</strong> There the resolution head sits at the
+    <em>start of the body</em> — positionally before every sub-bullet, while temporally it may
+    follow several. Rooting at it attaches every pre-fold note as a reply to the resolution, which
+    is a wrong attachment; the alternative is a timestamp cut, which the rule forbids.</div>
+  </div></div></div>
+  <div class="choice"><div class="choice-grid"><span class="choice-tag">D4–D7</span><div>
+    <strong>The smaller four.</strong>
+    <div class="answer"><b>D4</b> a resolution outranks an explicit reply tag, so the two
+    mechanisms can never disagree. <b>D5</b> real <code>&lt;ul&gt;</code>/<code>&lt;li&gt;</code>
+    nesting, not ARIA on divs. <b>D6</b> narrow keeps the rail and drops the padding.
+    <b>D7</b> an empty branch emits no container. <strong>Rec: all four as written.</strong></div>
+  </div></div></div>
+  <div class="approval">Approve the rule and D1–D7, or name the one line to change. Follow-up 1
+  is the one I would ask you to green-light alongside it.</div>
+</section>
+
+<details>
+  <summary>Found while reading — reported, not fixed</summary>
+  <div class="details-in">
+  <p><b>1 · Two-answer data loss.</b> <code>_parse_entries</code> overwrites
+  <code>cur["answer"]</code>, so on an entry with two <code>Answer (via watch, …)</code> bullets
+  the earlier answer's words are gone from <em>every</em> surface. The live
+  <code>questions.md</code> has such an entry.</p>
+  <p><b>2 · <code>## Answered</code> shows your answer as raw body prose.</b>
+  <code>lift_answer</code> is <code>False</code> there, so a retained
+  <code>- **Answer (via watch, …):**</code> bullet falls into the body and renders as a
+  <code>·</code> item with its tag visible and <b>no <code>you</code> label</b> — measured, 15 of
+  29 live answered entries. That is the screenshot's defect on the more-travelled path, and #109
+  makes it a correctness bug rather than a cosmetic one.</p>
+  <p><b>3 · Doc drift.</b> <code>_parse_entries</code>'s docstring says an Answer sub-bullet is
+  never an entry "even un-indented". True only when <code>lift_answer=True</code>; in
+  <code>## Answered</code> it is the indentation that saves it.</p>
+  <p><b>Deferred by design:</b> per-turn reply targets and true nesting (rejected by N1 —
+  recorded so nobody re-proposes it as an improvement); threading in
+  <code>## Answered</code>; and anything touching <code>watch.py</code>,
+  <code>lint.py</code>, <code>file-formats.md</code> or a guard.</p>
+  </div>
+</details>
+
+<footer>Prepared for task #254 · 27 July 2026 · design only, self-contained, offline-clean, no external requests. <span class="dimmer">· built from review template v1+52fc2607</span></footer>
+
+</main>
+</body>
+</html>
