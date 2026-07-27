@@ -2187,3 +2187,52 @@ this shape and convert opportunistically.)
   `sha256sum a b | wc -l` must be 2, or `test -f` each side first. Never suppress stderr on a
   command whose failure mode is a missing operand.
 
+- **"Inherit these numbers, do not re-derive them" is how the coordinator's arithmetic error
+  becomes three lanes' premise.** · I wrote, in `#397`'s brief *and* its dispatch prompt, that
+  `server_class` (`watch.py:262`) is **6,798 lines, 72% of the file** — presented as measured, with
+  an explicit instruction not to re-derive it because the measurement was *done*. It is **10
+  lines**. The lane checked anyway, said so, and `ast` confirms it: largest top-level def is
+  `make_handler` at **434**, and the 6,756 lines I had attributed to `server_class` are **8
+  module-level string constants** sitting between it and the next `def`.
+  · **The mechanism, which is the reusable part:** I had measured function size as the span from one
+  `^def ` to the next, so every module-level statement in between was billed to the preceding
+  function. **For anything structural, use `ast`, not a line-oriented regex** — `ast` cannot
+  mis-attribute a span because it parses the nesting the regex is guessing at.
+  · The instruction was well-motivated: re-deriving costs a lane real minutes, and this repo's
+  briefs are better for carrying measurements. But **"do not re-derive" removes the only check on
+  the number**, so it must be spent deliberately: say which figures are load-bearing and MUST be
+  re-derived, and let the cheap ones be inherited. Here the load-bearing figure was the one I got
+  wrong, and the only thing that saved the plan was a *separate* instruction to ground every claim
+  in line numbers.
+  · **Corollary worth its own line: a lane that contradicts the brief's own premise is doing the
+  job.** Read the contradiction before the conclusion.
+
+- **When three of four agents deviate from an instruction and the three that deviated are the ones
+  that got it right, the instruction is wrong.** · Every brief here says of `handoffs.md`: *append
+  only with `cat >>`, never rewrite.* `## Pending` is **not the last section**, so an EOF append
+  lands inside `## Folded`. The one lane that obeyed literally produced the defect; the three that
+  inserted before `## Folded` — a rewrite, which the instruction forbids — produced the correct
+  result. **Compliance selects against the outcome the obligation exists to secure** (`#406`).
+  · The diagnostic is cheap and I did not run it for months: **before blaming the agents, execute
+  your own instruction literally and see where it lands.** A shell one-liner would have shown this
+  the first day.
+  · And the sections turned out to be **redundant** — the two line shapes are self-distinguishing
+  and correlation is by id — so the constraint that broke the append was buying nothing. **When an
+  instruction and a format fight, check whether the format's structure is load-bearing at all**
+  before rewording the instruction.
+
+- **A conflict resolved by declining never reaches the branch that would have resolved it
+  differently.** · The whole session's binding constraint was file contention on `watch.py`:
+  a shelved increment, three serialised dispatches, two tasks blocked right now, a hand-maintained
+  ownership list, and a **459-line design document** commissioned to relieve it. `CLAUDE.md` states
+  worktrees as the standing preference and `SKILL.md` says explicitly that when disjointness cannot
+  be arranged, the dreamer goes in a worktree *and the invariant then holds by construction*.
+  **Every lane ran in the shared tree, and nothing consulted either rule** (`#405`).
+  · Not a knowledge failure — both documents were read at init. A **control-flow** failure: the
+  coordinator checks ownership, finds a conflict, and treats it as *do not dispatch*. The queue
+  branch resolves the conflict, so the worktree branch is never evaluated. **A rule that only
+  applies after a decision the code makes earlier is unreachable, however well documented.**
+  · The general check: for each documented fallback, ask **what has to fail for this branch to be
+  taken** — and then whether anything upstream quietly succeeds instead. A fallback nobody reaches
+  looks identical to one nobody needs.
+

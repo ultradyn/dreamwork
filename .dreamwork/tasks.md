@@ -24,9 +24,76 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **405**
+Next id: **407**
 
 ## Open
+- **#405** — the loop has been managing file contention by hand all session when his standing
+  convention already removes it: **worktrees** · **P1** · loop/parallelism · origin: **loop** ·
+  found because **#397's plan named it as the cheaper alternative to the thing #397 was asked to
+  design** — the lane routed around its own brief and was right to
+  · **the whole session's binding constraint is one that was already solved on paper.** `CLAUDE.md`
+  states worktrees under `.worktrees/` as the preference for features and executing plans.
+  `SKILL.md` is more specific still: *"When disjointness can't be arranged — the work overlaps owned
+  files … dispatch the dreamer in a worktree: the invariant then holds by construction."* **Every
+  lane this session ran in the shared tree.** Nothing consulted either rule at dispatch time
+  · **what that cost, counted:** `#354` inc1 was **shelved** (`a6c0732`) purely because `#300`,
+  `#385` and `#391` held `watch.py`; three dispatches serialised on that one file; `#392b` and
+  `#399` are blocked on it **right now**; and `#402` exists because I hand-maintain the ownership
+  list that only matters in a shared tree
+  · **and it produced a 459-line design document.** `#397` asked whether to extract 6,756 lines of
+  client into real files, and its own answer was *"the throughput win is captured more cheaply by a
+  worktree"*. So the loop commissioned an architecture study for a problem the human had already
+  ruled on, in writing, in the file the loop reads at init
+  · **why it did not get used, which is the actually interesting question:** the coordinator tracks
+  ownership in `status.json` and treats a conflict as *"do not dispatch"* rather than *"dispatch
+  differently"*. That is a **selection** habit, and it never reaches the worktree branch because
+  the conflict is resolved (by declining) before the branch is considered. Nothing is broken —
+  a step is simply missing from the dispatch decision
+  · rec: at dispatch, a file conflict routes to a **worktree**, not to a queue. Make it the
+  documented default in `SKILL.md`'s subagent section, then measure whether the next batch actually
+  takes the branch — *"the loop optimises against the criteria"*, and an unmeasured default is a
+  preference nobody reads (**#400**)
+  · **the two costs `SKILL.md` already names, which stay real:** duplicated build state (no
+  compiled toolchain here, so cheap), and cleanup — never force-remove without
+  `git status --porcelain --ignored` first, because untracked lane scratch is exactly what lives in
+  a lane's worktree
+  · **one thing to check before adopting, not after:** a lane in a worktree cannot see the parent's
+  uncommitted state, and several guards resolve paths from `__file__` or copy the tree to a temp
+  target. Verify `just guards` and `just deploy` behave in a worktree **before** a batch depends on
+  it. `#397`'s plan already found `deploy` snapshots by `git show rev:`, which is worktree-safe
+  · related: **#397, #264, #402, #400**
+
+- **#406** — `handoffs.md` instructs an append that **structurally cannot** put the line where it
+  is required · **P1** · handoffs/format · origin: **loop** · found by watching a live lane obey
+  the instruction literally, then confirmed twice more independently
+  · **the instruction every brief and dispatch prompt carries is** *append only with `cat >>`, never
+  rewrite* — **and `## Pending` is not the last section.** `cat >>` writes at end-of-file, which is
+  **inside `## Folded`**. A lane that obeys exactly puts its landing in the wrong section
+  · **three independent confirmations, none of them planned.** `#392a`'s line sits after `## Folded`
+  in the file right now. The `#401` audit lane hit the same thing, reported it under *"not confident
+  about"* — *"whether `cat >>` alone can ever place a line under Pending while `## Folded` sits
+  below"* — and then **committed a fix for its own line** (`75e6139`). And its matrix ranks the live
+  `#392a` case as its **second** silent reject, reached independently of mine
+  · **triple-invisible, measured.** A Pending-shaped line inside `## Folded` matches neither
+  `HANDOFF_FOLDED_RE` (wrong shape) nor `pending` (wrong section) — and the `malformed` fallback
+  **only runs inside section P**, so it is not reported either. Same end state as **#401** by an
+  entirely different route
+  · **the inversion is the finding: the lanes that got it right DISOBEYED me.** Three of four
+  inserted before `## Folded` — a rewrite, which the instruction forbids. **Compliance with the
+  instruction produces the defect**, so the obligation's own wording selects against the outcome it
+  exists to secure
+  · **and the sections turn out to be redundant.** The two line shapes are already
+  self-distinguishing — `· landed \`sha\`` versus `→ folded (ts):` — and correlation is by id, which
+  is stated in the file's own header. `parse_handoffs` uses the headings only to pick which regex to
+  apply, a choice the line itself already determines
+  · rec, smallest first: **move `## Folded` above `## Pending`** so an EOF append lands correctly and
+  the instruction becomes true. Better but larger: **drop the sections**, parse by line shape, and
+  let append-only mean what it says. Either way the `malformed` fallback must run **outside** any
+  section so a misplaced line is loud
+  · **the red is in the tree and needs no injection** — `#392a`'s misfiled line is the fixture. Do
+  not tidy it away before the check exists
+  · related: **#381, #401, #404**
+
 - **#404** — for a same-tree lane, `git log` is a strictly more reliable landing channel than
   `handoffs.md`, and the tick reads the weaker one first · P2 · loop/design · origin: **loop** ·
   found by **noticing I had already run the experiment** — I learned of two landings from `git log`
@@ -56,7 +123,7 @@ Next id: **405**
   · **the trap to avoid, and it is this repo's own recurring one:** a git sweep that finds nothing
   prints the same as one that ran wrong. Whatever gets built reports **how many commits it
   examined**, not just what it found
-  · related: **#381, #398, #394**
+  · related: **#381, #398, #394, #406**
 
 - **#402** — `status.json`'s `dreamers` array has no stated shape, and the tool that reads it goes
   stale in the one direction that costs parallelism · P2 · loop-tooling/durability · origin:
@@ -92,7 +159,7 @@ Next id: **405**
   · **the red is available without an injection**: reinstate a landed lane's entry and assert the
   prune drops it. Assert the precondition too — that at least one entry is live and one is dead,
   derived at runtime, or the test is vacuous the day nothing is running
-  · related: **#401, #264, #403**
+  · related: **#401, #264, #403, #405**
 
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
   P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
@@ -139,7 +206,24 @@ Next id: **405**
   `lint.py`, `test_lint.py`, and `file-formats.md`, whose hand-off row states the shape
   · **the red is free and it is about to write itself** — `#392a`'s own hand-off line will be in
   the file. Do not ask it to change; fold that line by hand and keep it as the fixture
-  · related: **#381, #399, #395, #402**
+  · related: **#381, #399, #395, #402, #406**
+  · **audit half LANDED** `f2c950e` (2026-07-28 09:48, `ccc @grok`, brief
+  `.dreamwork/docs/briefs/401-id-grammar-audit.md`) →
+  `.dreamwork/docs/research/2026-07-28-task-id-grammar-audit.md`. **14** id-touching sites × **17**
+  forms derived from the repo, every cell **executed** against the real modules (harness in §3,
+  re-runnable). **7 silent rejects.** This entry's measurement **reproduces exactly**. The fix half
+  stays open and still needs `watch.py`
+  · **the audit found a THIRD form of the defect that is worse than a drop, and it is new here:**
+  `ENTRY_ID` **strips the letter**, so `#392a` parses as **`392`** — a *silently wrong* id rather
+  than a missing one. So the same sub-id is invisible in one reader and **misattributed to its
+  parent** in another; `related: **#392a**` would bind a relation to `#392`, and a landed-section
+  mention of `#392a` would land `#392`. A drop is detectable by a coverage count; this is not
+  · **the form the brief did not name**, found as required: `comma_list_one_bold`
+  (`related: **#381, #399, #395**`) — the dominant `related:` shape, and it **works**
+  · not reached, stated: the full 18×38 cell dump, `dreamhub.py`'s scope, and fixture-level lint
+  reds. The multi-bold `related:` case is classified LOUD from source reading rather than a captured
+  WARN — **treat that one cell as unverified**
+
 
 - **#400** — `lessons.md` has outgrown being read, and the briefs that tell lanes to read it are
   cargo cult · P2 · loop/memory · origin: **loop** · found by **measuring receipt instead of
@@ -165,7 +249,7 @@ Next id: **405**
   · **do not prune to fix this.** I checked: few of today's entries have graduated into checks —
   they are principles, not rules with enforcers — so pruning would cost memory without buying
   readability
-  · related: **#394**
+  · related: **#394, #405**
 
 - **#399** — any bare bolded id in a landed entry marks that task landed, so **7 open tasks are
   reported as landed** · P1 · ledger-parser/correctness · origin: **loop** · found because a lint
@@ -208,53 +292,7 @@ Next id: **405**
   · blocked: `watch.py` is held by **#392a**
   · related: **#392, #401**
 
-- **#397** — `watch.py` is the loop's contention bottleneck; propose splitting it · P1 ·
-  architecture/design · origin: **loop** · **the strongest result of #264's evidence half, and it
-  needs his ruling before anything is built**
-  · **the finding, measured:** across the whole fan-out there were **zero concurrent-write
-  instances** — no two lanes ever wrote the same record — so locks, CAS, leases, SQLite and
-  per-record spools *"would have prevented zero of the actual damage"*. What did cause damage was
-  shared CPU, a shared working tree, a shared registry, and **one overloaded single-writer file**.
-  The evidence points at **modularity, not a concurrency mechanism**
-  · **`watch.py` is that file, and the cost is now countable rather than felt:** six tasks queued
-  behind it today, and this session serialised three dispatches on it (`#354` inc 1, `#392`, the
-  `#381` dashboard line) purely because the disjointness invariant makes one file one lane
-  · **this is a big swing and therefore his call, not the loop's.** The scope gate rejects big
-  feature swings; a split of the dashboard's single module is exactly that, and it would touch every
-  guard and every test. So this task is **design and ask only** — no code. Per the standing rule
-  it ships a **review artifact** with the questions.md entry that asks
-  · what the design must answer: what the seams actually are (request routing vs page rendering vs
-  the `.dreamwork/` readers vs the collectors), which of them is cheap and which is entangled, how
-  the guards' single-server assumption survives, and **what it costs to do nothing** — because six
-  queued tasks is a real number and "leave it" is a legitimate answer he may prefer
-  · the honest counter-argument, which the design must state rather than bury: a split multiplies
-  the registry-coupling failure (`#396`, `markrail`, the artifact staleness warnings all came from
-  one lane's new file reddening others), and that class **did** cause damage today
-  · related: **#264**
 
-  · **MEASURED 2026-07-28 09:08, and it reframes the task — do not start from "split the module".**
-  `watch.py` is **9,479 lines**, of which **7,142 (75%) sit inside triple-quoted blocks**: the
-  dashboard's HTML, CSS and JS embedded as Python string literals. One function, `server_class`
-  (`:262`), is **6,798 lines** — 72% of the file. The next largest is `make_handler` at 436. So the
-  Python is roughly **2,300 lines across 82 top-level defs**, which is not obviously a module-split
-  problem at all
-  · **so the candidate cheap seam is extracting the client assets, not partitioning the Python.**
-  That is a different and much smaller change, and it addresses the contention `#264` measured
-  directly: today a lane editing CSS and a lane editing the request path collide on one file
-  because the CSS *is* in that file. Three of this session's serialised dispatches were exactly
-  that shape
-  · **what the design must cost out, because these are real and I have not resolved them:** the
-  artifact and the dashboard are **offline-clean by contract** — everything inlined — so the server
-  would have to inline the assets at serve time, which is easy; **but `just deploy` snapshots
-  `watch.py` alone** into `~/.cache/dreamwork/deployed/`, and a file that no longer contains its own
-  client would deploy broken. `just guards` copies a fixture target and imports `watch.py` directly.
-  Both are load-bearing and both assume one file
-  · **and the counter-argument stands and gets stronger:** extraction multiplies the
-  registry-coupling class — a new file in a checked directory reddening other lanes' baselines —
-  which is the class that actually caused damage today (`markrail`, the artifact staleness warnings)
-  · **the honest framing for him, then, is not "should we split watch.py"** but *"75% of the
-  dashboard's source is a web app living in Python strings; is extracting it worth breaking the
-  one-file deploy?"* That is a question he can answer; the other one is not
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
   dashboard/transitions · origin: **loop** · from **#381's own caveat**, probed rather than accepted
   · `#381` surfaced pending hand-offs by adding a span to the existing `stfacts` row, which is the
@@ -2026,7 +2064,7 @@ Next id: **405**
   than proven; two incidents predate the fan-out window
   · **the broad research half remains open** — the primitive comparison and the #294 migration
   script, cutover and rollback. This task answered the evidence question, not that one
-  · related: **#397, #402**
+  · related: **#397, #402, #405**
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
@@ -2861,6 +2899,44 @@ Next id: **405**
   **blocked**: human pick
 
 ## Recently landed
+- **#397** — `watch.py` is the loop's contention bottleneck; propose splitting it · origin: **loop** ·
+  closed 2026-07-28 09:52 · `1b508b0`
+  · `ccc @glm52`, brief `.dreamwork/docs/briefs/397-client-extraction-design.md`, plan
+  `.dreamwork/docs/plans/watch-client-extraction.md` (459 lines). **Folded from a hand-off** — the
+  channel's second fold and its first with a lane that complied ~15 min *after* committing, which
+  is why a compliance count taken at commit time measures the wrong moment (**#404**)
+  · **the recommendation is do-not-extract and the loop is accepting it, deliberately without
+  asking him.** Doing nothing needs no authorisation; building would. Accepting a
+  do-nothing recommendation is the conservative direction and the scope gate's own default, so no
+  review artifact and no `questions.md` entry ship — he has three unanswered questions already and
+  a fourth that resolves itself is a cost, not a courtesy. **The plan is mechanically ready if he
+  ever wants it**, and that is recorded here rather than lost
+  · **why do-not-extract, in the plan's own terms:** the mechanics are *cheap* — interpolation
+  count **1** (`/*DEV*/false` at `COMPONENTS_JS:1658`, swapped once at `:8989`); the 8 `json.dumps`
+  values are a concatenated preamble, not interpolated into the assets. What kills it is that
+  extraction **does not unblock the queue's hardest items** (`#331`, `#352` are Python parser work
+  needing `#368`'s separate split), it **multiplies the registry-coupling class that caused today's
+  actual damage** while file contention corrupted nothing, and **the throughput win is captured
+  more cheaply by a worktree** — see **#405**, which is the plan's own alternative and his standing
+  convention
+  · **it refuted my measurement and I verified the refutation.** I told two lane prompts that
+  `server_class` (`:262`) was **6,798 lines, 72% of the file**, as a number to *inherit rather than
+  re-derive*. It is **10 lines** (`:262-:271`). Confirmed by `ast`: the largest top-level def is
+  `make_handler` at **434** (`:9025`), and the client lives in **8 module-level string constants**
+  totalling **6,756** lines (`ROUTER_JS` 2293, `STYLE` 1253, `VIEWS_JS` 1108, `COMMAND_JS` 716,
+  `COMPONENTS_JS` 646, `SHADER_JS` 522, `FAVICON_JS` 149, `APP_BODY` 69). The ~75% conclusion
+  survives; the attribution did not
+  · **four breaks named concretely, which is what made this a plan rather than an opinion:**
+  `just deploy` **breaks** (snapshots `watch.py` alone → blank page) and must become a directory
+  snapshot; the `serving` guard **breaks** (needs one `cpSync`); `--autoreload` **regresses** (it
+  watches only `__file__` mtime, so asset edits stop hot-reloading unless the watcher gains the 8
+  paths); the styleguide audit needs re-pointing. Main `just guards` survives if `watch.py` resolves
+  `client/` by `__file__`
+  · **CSS-only is a false economy** — 3 of 4 client parties this session touched JS. All 8 or none
+  · six tasks genuinely queue on `watch.py`: **#352, #351, #337, #331, #322, #295**; `#319` also
+  needs it. Cost is **throughput**, not correctness
+  · related: **#264, #405**
+
 - **#398** — a brief written after the hand-off obligation landed must carry it · origin: **loop** ·
   closed 2026-07-28 09:31 · `9f2012a`
   · `ccc @grok`, brief `.dreamwork/docs/briefs/398-brief-handoff-check.md`. **Folded from a
@@ -2972,7 +3048,7 @@ Next id: **405**
   · the lane also observed, without acting on it, that **the relay is the same bug one layer up** —
   coordinator writes a steer, an idle lane never reads it, nothing wakes it. Same shape, same fix.
   Recorded in `.dreamwork/dreams/2026-07-28-0838-the-nag-that-gets-muted.md`
-  · related: **#393, #394, #363, #401, #404**
+  · related: **#393, #394, #363, #401, #404, #406**
 
 - **#390** — a fresh domain's first answer creates its file · origin: **loop** · closed
   2026-07-28 08:06 · `fa65bce`
