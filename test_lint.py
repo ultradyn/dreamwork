@@ -1535,3 +1535,149 @@ class TestStatusTaskIds:
         # hypothetical.
         t = self.build(tmp_path, task="t", current_task_ids=[True])
         assert self.rows(t, lint.ERROR)
+
+
+class TestReviewArtifacts:
+    """#329 — lint WARNs when a built review artifact's frame is stale.
+
+    `review_artifact.py check` already answered current/stale/untemplated, but
+    nothing ran it; an artifact silently kept an old frame after the template
+    improved. These tests wire that answer into the per-target lint pass.
+
+    Every classification case is driven through the REAL builder (`ra.render`
+    against the real template) and the REAL subprocess (`review_artifact.py
+    check` is spawned by `run_checks`). Faking check's output would test the
+    fake: the stale/current distinction is exactly what is under test, so it
+    must come from the real tool reading real bytes off disk.
+    """
+
+    # A minimal but valid source — every required slot present, parsed by the
+    # real `parse_source`, so `ra.render` produces a genuinely current artifact.
+    SOURCE = """<!--dreamwork-review-source
+title: #329 · lint catches a stale frame · test
+identity: test artifact
+headline: One line.
+status: test
+lead: the lead
+footer: the footer
+-->
+<!--#body-->
+<section><p>the body</p></section>
+"""
+
+    def _doc(self):
+        import review_artifact as ra
+        return ra.render(ra.parse_source(self.SOURCE))
+
+    def _stale_doc(self):
+        # A real build with the current stamp swapped for a bogus one — exactly
+        # how `test_cli_check_reports_and_exits_nonzero_on_stale` makes a stale
+        # artifact in test_review_artifact.py. The assert is the precondition
+        # the swap depends on: if the build stopped carrying the stamp, the
+        # replace would change nothing and "stale" would prove nothing.
+        import review_artifact as ra
+        doc = self._doc()
+        stamp = ra.template_stamp(ra.read_template())
+        assert stamp in doc, "fixture precondition: the build carries the stamp"
+        return doc.replace(stamp, "v1+00000000")
+
+    def _target(self, tmp_path, **artifacts):
+        """A target whose .dreamwork/review/ holds the named built artifacts."""
+        t = fresh(tmp_path)
+        review = t / ".dreamwork" / "review"
+        review.mkdir(parents=True)
+        for name, content in artifacts.items():
+            (review / name).write_text(content)
+        return t
+
+    def _run(self, t):
+        rep = lint.Report()
+        lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
+        return rep
+
+    def _warns(self, t):
+        return [d for lvl, w, d in self._run(t).rows
+                if lvl == lint.WARN and w == "review/"]
+
+    def test_a_stale_artifact_warns(self, tmp_path):
+        t = self._target(tmp_path, **{"stale.html": self._stale_doc()})
+        rows = self._warns(t)
+        assert rows, "a stale frame must be reported"
+        assert "stale.html" in rows[0], "must name the file"
+        assert "stale" in rows[0], "must say why"
+        assert "rebuild" in rows[0].lower(), "must name the fix"
+
+    def test_a_current_artifact_does_not_warn(self, tmp_path):
+        t = self._target(tmp_path, **{"current.html": self._doc()})
+        assert self._warns(t) == [], "a current frame is not a finding"
+        rep = self._run(t)
+        assert any(lvl == lint.OK and w == "review/" for lvl, w, _ in rep.rows), \
+            "and it confirms it checked, so absence of a row is not silence by crash"
+
+    def test_an_untemplated_artifact_is_silent(self, tmp_path):
+        # The twelve pre-existing artifacts predate the template; warning on
+        # each every run is noise everyone learns to ignore. `untemplated` is a
+        # third answer and lint honours it by saying nothing about it.
+        t = self._target(
+            tmp_path, **{"old.html": "<html><body>pre-template</body></html>"})
+        assert self._warns(t) == []
+        assert not self._run(t).failed
+
+    def test_stale_and_untemplated_warn_only_the_stale(self, tmp_path):
+        # Discrimination: untemplated must not dilute the stale signal, and a
+        # mixed directory must still surface the one that matters.
+        t = self._target(
+            tmp_path,
+            **{"stale.html": self._stale_doc(),
+               "old.html": "<html><body>pre-template</body></html>"})
+        rows = self._warns(t)
+        assert len(rows) == 1, "exactly the stale one — untemplated stays silent"
+        assert "stale.html" in rows[0]
+
+    def test_no_review_dir_is_silent(self, tmp_path):
+        # Most targets have no review artifacts at all; a row on each would be
+        # the noise that hides the one that matters.
+        t = fresh(tmp_path)
+        (t / ".dreamwork").mkdir()
+        assert [r for r in self._run(t).rows if r[1] == "review/"] == []
+
+    def test_an_empty_review_dir_is_silent(self, tmp_path):
+        t = fresh(tmp_path)
+        (t / ".dreamwork" / "review").mkdir(parents=True)
+        assert [r for r in self._run(t).rows if r[1] == "review/"] == []
+
+    def test_a_file_under_src_is_not_checked(self, tmp_path):
+        # watch.py's `list_reviews` is non-recursive, so anything under `src/`
+        # is invisible to the dashboard. Lint must match — or a stale file
+        # dropped in src/ would warn as if it were served. A STALE artifact is
+        # planted there on purpose: an untemplated one would stay silent either
+        # way, so only the stale case discriminates recursive from not.
+        t = fresh(tmp_path)
+        review = t / ".dreamwork" / "review"
+        (review / "src").mkdir(parents=True)
+        (review / "src" / "stale.html").write_text(self._stale_doc())
+        assert self._warns(t) == [], "src/ is not where artifacts are served from"
+
+    def test_review_artifact_missing_degrades_silently(self, tmp_path, monkeypatch):
+        # If review_artifact.py is gone or python is missing, "cannot check"
+        # must not crash the lint pass and must not read as "nothing to fix" —
+        # it simply says nothing, the way a non-repo target stays quiet under
+        # check_landed_still_open.
+        import subprocess
+        t = self._target(tmp_path, **{"current.html": self._doc()})
+
+        def boom(*args, **kwargs):
+            raise FileNotFoundError("script gone")
+        monkeypatch.setattr(subprocess, "run", boom)
+        rep = self._run(t)
+        assert [r for r in rep.rows if r[1] == "review/"] == []
+        assert not rep.failed
+
+    def test_this_repo_introduces_no_stale_artifacts(self):
+        # Dogfood: the skill's own .dreamwork/review/ holds the twelve
+        # pre-existing artifacts, all untemplated. They must stay silent — and
+        # any artifact built from the template must stay current, or this very
+        # repo's lint pass would warn on itself every run.
+        rep = lint.Report()
+        lint.check_review_artifacts(lint.SKILL_DIR / ".dreamwork", rep)
+        assert not [d for l, w, d in rep.rows if l == lint.WARN], rep.render()

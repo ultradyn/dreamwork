@@ -1279,6 +1279,81 @@ def check_doc_map_plans(dw: Path, rep: Report) -> None:
         rep.add(OK, "doc-map.md", f"plans row matches {len(on_disk)} on disk")
 
 
+def check_review_artifacts(dw: Path, rep: Report) -> None:
+    """#329 — review artifacts whose frame has drifted behind the template.
+
+    `review_artifact.py check` already answers current / stale / untemplated
+    per artifact and exits 1 on any stale, but nothing ran it — so an artifact
+    silently kept an old frame after the template improved, which is exactly
+    the drift #325 exists to end, returning by a different door. This wires
+    that answer into the per-target lint pass.
+
+    **WARN on stale, never ERROR.** A stale frame is legible and recoverable:
+    the words are still there, the page still renders, and the fix is one
+    rebuild. ERROR is reserved here for what a reader cannot see at all, and a
+    stale frame is not that. Same call `check_landed_still_open` makes for a
+    task git says landed: strong evidence worth a prompt to look, not a gate.
+
+    **Silent on `untemplated`.** The artifacts that predate the template are
+    deliberately not migrated (#325), and a check that WARNs on each of them
+    every run is noise everyone learns to ignore — which is the failure that
+    hides the one that matters. `untemplated` is a third answer on purpose, and
+    lint honours that by saying nothing about it.
+
+    **Degrades silently** when the pieces are absent, following the idiom
+    `check_landed_still_open` set for a non-repo target: no `.dreamwork/review/`
+    directory, no `.html` in it, `review_artifact.py` missing or unrunnable, or
+    a non-zero exit with no stale verdict parsed all return without a row.
+    "Cannot check" must not read as "nothing to fix".
+
+    Shells out to the real CLI rather than importing, the same move
+    `check_landed_still_open` makes for git — and two traps come with that
+    interface, both learned the hard way: `check` takes FILES, not a directory
+    (it exits 1 on a directory, correctly), and it exits 1 on ANY stale, which
+    is the signal this reads rather than treats as a crash. The non-recursive
+    glob matches `watch.py`'s `list_reviews`, so a source in `src/` is
+    invisible to this check (and to the dashboard) while a built artifact is not.
+    """
+    review_dir = dw / "review"
+    if not review_dir.is_dir():
+        return
+    files = sorted(review_dir.glob("*.html"))
+    if not files:
+        return
+    try:
+        out = subprocess.run(
+            [sys.executable, str(SKILL_DIR / "review_artifact.py"),
+             "check", *[str(f) for f in files]],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return  # script/python missing, or it hung: cannot check, say nothing
+
+    # `check` prints one line per file: `  <verdict> <path>`, with a
+    # `  (built from <stamp>)` suffix on stale ones. Only stale is a finding.
+    stale: list[tuple[str, str]] = []
+    for line in out.stdout.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) < 2 or parts[0] != "stale":
+            continue
+        m = re.match(r"(.+?)\s+\(built from\s+(.+?)\)\s*$", parts[1])
+        stale.append((m.group(1), m.group(2)) if m else (parts[1], "?"))
+
+    if stale:
+        for path, stamp in stale:
+            rep.add(
+                WARN,
+                "review/",
+                f"{Path(path).name} is stale (built from {stamp}) — rebuild it "
+                f"from its source under `.dreamwork/review/src/` so the frame "
+                f"tracks the current template (`review_artifact.py build`) (#329)",
+            )
+    elif out.returncode == 0:
+        rep.add(OK, "review/", f"{len(files)} artifact(s), none stale")
+    # else: non-zero exit with no stale verdict (a read error, or check itself
+    # unhappy) — degrade silently rather than claim all is well.
+
+
 def run_checks(dw: Path, watch, rep: Report) -> None:
     """Every check, in one place, because a SECOND copy of this list drifted.
 
@@ -1304,6 +1379,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_dreamwork_frontmatter(dw, rep)
     check_dreams(dw, rep)
     check_doc_map_plans(dw, rep)
+    check_review_artifacts(dw, rep)
     check_status_keys(dw, rep)
 
 

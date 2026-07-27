@@ -739,15 +739,23 @@ template changes, every artifact built before it says so:
 predate this are **not migrated**, and a check with only pass/fail would
 have to lie about one of them.
 
-**Checked by `test_review_artifact.py`, not by `lint.py`** — same
-difference in kind as the browser-side contracts above: this format is a
-source in *this* skill's directory rather than a file in a target's
-`.dreamwork/`, and the properties worth guarding are the template's
-fidelity to `tasks-page.html` (every shared CSS selector held to identical
-declarations, palette compared token by token, both parsed at runtime) and
-that a build fetches nothing. Divergence from the reference is possible but
-never silent: it costs one named entry in `TEMPLATE_ONLY`,
-`DECLARATION_DIVERGENCES` or `TOKEN_DIVERGENCES` there.
+**Checked two ways now (#329).** `lint.py` (`check_review_artifacts`) runs
+`review_artifact.py check` over a target's `.dreamwork/review/*.html` and
+**WARNs on `stale`** — so once the template improves, every artifact built
+before it warns until it is rebuilt, which is the drift #325 exists to end, no
+longer returning by a different door. It stays **silent on `untemplated`**: the
+twelve artifacts that predate the template are not migrated, and a WARN on each
+of them every run is noise everyone learns to ignore. Absent `.dreamwork/review/`,
+no `.html` in it, or `review_artifact.py` missing/unrunnable all degrade
+silently — "cannot check" must not read as "nothing to fix", the same rule
+`check_landed_still_open` follows for a non-repo target.
+
+The source and template fidelity — every shared CSS selector held to identical
+declarations, palette compared token by token, both parsed at runtime, and that
+a build fetches nothing — stays checked by `test_review_artifact.py`, because
+those are properties of *this skill's* files rather than a target's. Divergence
+from the reference is possible but never silent: it costs one named entry in
+`TEMPLATE_ONLY`, `DECLARATION_DIVERGENCES` or `TOKEN_DIVERGENCES` there.
 
 ## Why this file exists rather than a paragraph in SKILL.md
 
