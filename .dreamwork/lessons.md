@@ -1730,3 +1730,16 @@ this shape and convert opportunistically.)
   is tested; and when a red comes back green, the question is not "is the code fine"
   but **"which layer is actually holding this up?"** — answering that is what turns a
   hollow check into a correct one. (coordinator + lane B2, #263)
+- **A guard that decouples its action from its trace has a race by construction, and
+  this repo has now paid for it twice.** `#386`'s `gitrow` did
+  `p.evaluate(TRACE(ms))` — starting a bounded trace window — then dispatched the
+  click as a *separate* Playwright roundtrip. Under load the roundtrip's latency put
+  the click outside the window, so the trace honestly recorded 0px and the guard read
+  as "nothing moved". The fix, and the idiom to reuse, is `dreamfade.mjs`'s: **dispatch
+  the action INSIDE the trace evaluate**, so action and observation share one browser
+  roundtrip and no amount of transport latency can separate them. The tell that
+  distinguishes this from a real motion bug: the *settled* case fails identically —
+  `#386`'s CLOSE gesture, on a row open through several roundtrips, failed the same
+  0px way, and a settled row cannot be mid-arrival. **When both a transitional and a
+  settled case fail the same way, suspect the instrument's timing, not the page.**
+  (#386 lane, recorded by coordinator)

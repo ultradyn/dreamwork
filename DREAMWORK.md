@@ -102,6 +102,13 @@ dreamwork-version: 5853e1789929
   · **disjointness must cover the environment, not only files.** The loop's stated
   invariant is disjoint *files*; CPU, guard ports and the wall clock are shared, so
   a lane that consumes one is scheduled against the lanes that *measure* it.
+  · **and the brief must name the dream file among the paths to COMMIT**, not only
+  among the things to write (2026-07-28 07:10): two lanes wrote a dream exactly as
+  asked and both exited leaving it **untracked**, because every commit instruction
+  named their code and tests. Untracked scratch is one `git add -A` or one worktree
+  cleanup from gone, and one of the two carried a pattern claim — that this repo has
+  now twice paid for a guard decoupling its click from its trace — which existed
+  nowhere else.
 - Cadence & comms: brief updates; `attn` (TTS) only for blockers,
   questions, and notable milestones. **Dreamwork decisions never use the
   harness Ask User Question tool** (human-set 2026-07-26): write the ask to
