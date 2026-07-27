@@ -498,7 +498,7 @@ were measured at `c1f5aaa` and are stale: the ledger is now 172KB. See §4.3.)*
   rows of results, which is the point at which the controls stop serving the
   list. Any later facet is a value inside an existing group, not a new one.
 - **The count line is always present** and names the denominator:
-  `38 of 104 open · 17 landed`. It is an `aria-live="polite"` region, which is
+  `38 of 106 open · 113 landed`. It is an `aria-live="polite"` region, which is
   the screen-reader equivalent of watching rows travel (§7).
 
 ### 4.3 The payload
@@ -655,7 +655,7 @@ the same empty list:
 |---|---|---|
 | `missing` | no `.dreamwork/tasks.md` | one dim line. A target that keeps no ledger has not failed at anything |
 | `unreadable` | content, and `ledger_entries` sees no entries | **the fault** — `--warn`, the rail, the line count, the path as a `/file` link |
-| `no match` | the ledger is fine, the filter matches nothing | `nothing matches "xyz" · 104 tasks in the ledger` and a one-click clear. **Never collapsed into "no tasks"** |
+| `no match` | the ledger is fine, the filter matches nothing | `nothing matches "xyz" · 238 tasks in the ledger` (the denominator derived, never a literal) and a one-click clear. **Never collapsed into "no tasks"** |
 
 ---
 
@@ -723,9 +723,13 @@ lifted above the dissolve so it reads as *that row travelled* rather than
 
 ### 6.4 Disclosures
 
-The detail's raw-entry peek uses `foldDetailsLocal` — height travel +
-`revealBody` arrival + `dreamAway` departure, the section-fold pieces, with
-`box-sizing:border-box` while the height animates. It does **not** get a
+The detail's raw-entry peek uses `foldDetailsLocal` (`watch.py:4302`) — height
+travel through `travelCard` + `revealBody` arrival + `dreamAway` departure at
+the rect it occupied, the section-fold pieces, and it takes the reduced-motion
+branch (`if (rmr) { det.open = !det.open; return; }`) for free.
+`box-sizing:border-box` while the height animates comes from `travelCard`
+itself (`watch.py:~3998`), so it is inherited rather than restated — do not set
+it a second time here. It does **not** get a
 `data-keep` list key it cannot honestly own; it opts into the fold snapshot
 with `data-keep="task:281:raw"`, which is content-addressed by the id, so open
 survives the tick and cannot re-open the wrong record.
@@ -744,19 +748,37 @@ skin, and a stuck one leaves rows invisible and still clickable).
 
 ## 7 · Accessibility and input parity
 
-- **Semantics.** `<ol>` labelled `open tasks · 38 of 104`; one `<li>` per
+- **Semantics.** `<ol>` labelled `open tasks · 38 of 106`; one `<li>` per
   record; the row is a block `<a href="/tasks?t=281">` whose accessible name is
   the whole row. Facet tokens carry visually-hidden prefixes only where the
   bare value is ambiguous (`filed 2026-07-26`, `origin human`).
 - **The count line is `aria-live="polite"`.** A sighted reader watches rows
-  travel; a screen-reader user hears `38 of 104 open`. Without it, filtering
+  travel; a screen-reader user hears `38 of 106 open`. Without it, filtering
   is a silent event, which is the same class of failure as a fold that hides
   something in flight.
 - **Keyboard.** Rows are links, so Tab/Enter/middle-click/new-tab work with no
-  JS (modified clicks already fall through `isInternal`). `/` focuses the
-  search box and is **ignored inside text fields** — the same rule the shader
-  hotkey already obeys. `Escape` in the search box clears the filter (and
-  replaces the URL). No modal keymap is invented.
+  JS (modified clicks already fall through `isInternal`). `Escape` in the
+  search box clears the filter (and replaces the URL). No modal keymap is
+  invented.
+
+  **`/` is the page's first bare single-key global hotkey, and the draft
+  under-stated that.** It cited *"the same rule the shader hotkey already
+  obeys"*, and there is no shader hotkey: the main document's only keydown
+  handlers today are `Escape` for the command palette (`watch.py:5409`) and
+  Ctrl/Cmd+Enter to submit from a text field (`watch.py:5415`). The one bare
+  single-key handler in the tree is the **debug layer switcher's `l`**, and it
+  lives in a popout (`watch.py:5840`) rather than on the main document. Its
+  guard is the idiom to copy verbatim, comment included — *"never hijack a
+  keystroke aimed at a text field"*:
+
+  ```js
+  if (e.target.closest && e.target.closest('input, textarea, select')) return;
+  ```
+
+  Being the first of its kind is the reason phase J is not optional: a bare
+  letter or symbol bound at the document is one keystroke away from eating a
+  character out of the composer, which is the class of loss `#269` is open on
+  right now.
 - **Focus management, which the page has never had to do before.** After *his*
   navigation to a detail, focus moves to the detail's title block
   (`tabindex="-1"`), so the new subject is announced; after Back, focus returns
