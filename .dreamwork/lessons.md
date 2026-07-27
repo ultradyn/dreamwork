@@ -1652,3 +1652,27 @@ this shape and convert opportunistically.)
   generalise: **a durability setting that happens to match the platform default is
   untested by construction**, and a written red line is a hypothesis about the
   platform, so it earns the same scepticism as the code. (coordinator + lane B, #263)
+- **Disjoint files are not disjoint environments, and the loop's invariant only
+  covers files.** Five lanes were dispatched with provably disjoint file ownership,
+  which is the invariant this skill states. Load then hit **139 on 16 cores**, and
+  the cause was not contention — it was **#386's brief, which told it to
+  characterise a flake "under moderate load (3 busyloops)"**. It was doing exactly
+  what I asked. But #300 was concurrently measuring per-frame motion timing in the
+  same tree, and load is the one thing that makes those measurements lie. So two
+  lanes that could not possibly touch the same byte were still interfering, through
+  the machine. **A lane that deliberately consumes a shared resource — CPU, a port,
+  the wall clock — must be scheduled against the lanes that measure it, not merely
+  against the lanes that edit the same files.** The scheduling resource is whatever
+  is scarce, and CPU is scarce whenever anything timing-sensitive is being verified.
+  (coordinator, #300/#386)
+- **A one-shot dispatch has no steering channel, and that is a design gap in the
+  brief, not a property of the runner.** When I found the load conflict above, there
+  was nothing I could do about it: `ccc` lanes report to `.dreamwork/inbox.md` on
+  exit and read nothing while running, so a coordinator who spots a problem
+  mid-flight can only watch. The skill already knows the fix for dreamers —
+  `relay.py` writes to a subagent inbox, and "steering an agent takes two acts:
+  write, then wake" — but a brief that never names an inbox to read leaves the
+  coordinator mute for the lane's whole life. **Every brief for a lane longer than a
+  few minutes should name a file the lane checks between increments**, precisely
+  because the thing worth saying mid-flight is usually something neither party could
+  have known at dispatch. (coordinator, #300/#386)
