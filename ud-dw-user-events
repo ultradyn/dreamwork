@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""ud-dw-user-events — bounded projection over the durable user-event journal.
+
+The only human/LLM-facing surface on the journal (design
+.dreamwork/docs/plans/user-event-journal.md §"Bounded CLI"). ``list``/``show``/
+``health`` are bounded read-only projections that never touch a managed domain
+file; only ``replay``/``purge`` may cause a domain effect.
+
+Stable exit codes (asserted by test_user_events_cli.py):
+
+    0   EX_OK         success
+    64  EX_USAGE      unknown command / bad arguments
+    66  EX_NOINPUT    journal not found / receipt not found
+    70  EX_SOFTWARE   internal error
+
+Reads the journal schema directly. Lane B owns ``user_events/sqlite.py`` and
+does not yet expose ``list()``/``get()``; the CLI's read queries live here until
+it does, and that coupling is reported. Never edit ``user_events/`` — two lanes
+in one module is the split brain this repo's ownership rule exists to prevent.
+
+Usage: ud-dw-user-events <command> [options]
+  list   --status <s,s> --after <sec> --limit <n>   bounded receipt projection
+  show   <receipt> --max-bytes <n>                   the only exact-bytes path
+  health                                            recovery path per failure semantic
+  replay --limit <n>                                the only command that may mutate
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+
+# --- Stable exit codes (documented above; asserted by the test) ---
+EX_OK = 0
+EX_USAGE = 64
+EX_NOINPUT = 66
+EX_SOFTWARE = 70
+
+COMMANDS = ("list",)
+_HELP = __doc__
+
+
+class _CliError(Exception):
+    """An expected failure with a stable exit code; caught by main()."""
+
+    def __init__(self, exit_code: int, message: str):
+        super().__init__(message)
+        self.exit_code = exit_code
+        self.message = message
+
+
+def _open_ro(journal_path):
+    """Open the journal read-only.
+
+    ``PRAGMA query_only=ON`` refuses every write on this handle, so a read
+    command physically cannot mutate the journal — the read-only property is
+    enforced by SQLite, not by a convention a later edit could forget.
+    """
+    p = Path(journal_path)
+    if not p.is_file():
+        raise _CliError(EX_NOINPUT, f"journal not found: {p}")
+    try:
+        conn = sqlite3.connect(str(p))
+    except sqlite3.Error as e:
+        raise _CliError(EX_SOFTWARE, f"cannot open journal: {e}")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA query_only=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
+
+
+def cmd_list(args, ctx, out):
+    """Bounded projection of receipts as JSONL (or a simple table)."""
+    conn = _open_ro(ctx.journal)
+    where = []
+    params: list = []
+    if args.status:
+        statuses = [s.strip() for s in args.status.split(",") if s.strip()]
+        if statuses:
+            where.append("state IN (%s)" % ",".join("?" for _ in statuses))
+            params.extend(statuses)
+    if args.after:
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(seconds=args.after)
+        ).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        where.append("received_at > ?")
+        params.append(cutoff)
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    # --- F1 red line: the LIMIT ? bind bounds the projection. ---
+    # A test that only checks field presence passes with this deleted, so the
+    # bounded test asserts the ROW COUNT against a fixture derived at runtime
+    # and asserted to exceed the limit.
+    sql = (
+        "SELECT receipt_id, sequence, endpoint, received_at, request_digest, "
+        "state, payload_size FROM receipts"
+        + where_sql
+        + " ORDER BY sequence DESC LIMIT ?"
+    )
+    params.append(args.limit)
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+    if ctx.format == "table":
+        cols = ("sequence", "state", "endpoint", "time", "digest", "payload_size")
+        out.write("\t".join(cols) + "\n")
+        for r in rows:
+            out.write("\t".join([
+                str(r["sequence"]), str(r["state"]), str(r["endpoint"]),
+                str(r["received_at"]), str(r["request_digest"]),
+                str(r["payload_size"]),
+            ]) + "\n")
+        return EX_OK
+    for r in rows:
+        rec = {
+            "id": r["receipt_id"],
+            "sequence": r["sequence"],
+            "endpoint": r["endpoint"],
+            "time": r["received_at"],
+            "digest": r["request_digest"],
+            "state": r["state"],
+            "payload_size": r["payload_size"],
+        }
+        out.write(json.dumps(rec) + "\n")
+    return EX_OK
+
+
+def _resolve_journal(args) -> str:
+    if getattr(args, "journal", None):
+        return args.journal
+    return str(Path(args.target) / ".dreamwork" / "user-events.sqlite3")
+
+
+def _print_top_help(out) -> None:
+    out.write(_HELP)
+    if not _HELP.endswith("\n"):
+        out.write("\n")
+
+
+def _command_parser(command: str) -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog=f"ud-dw-user-events {command}", add_help=True
+    )
+    p.add_argument("--journal", default=None,
+                   help="journal db path (default: <target>/.dreamwork/user-events.sqlite3)")
+    p.add_argument("--target", default=".", help="managed-domain target dir")
+    p.add_argument("--format", choices=("jsonl", "table"), default="jsonl")
+    if command == "list":
+        p.add_argument("--status", help="comma-separated receipt states to filter")
+        p.add_argument("--after", type=int, help="only receipts newer than N seconds ago")
+        p.add_argument("--limit", type=int, default=20, help="max rows (default 20)")
+    return p
+
+
+def main(argv=None, out=None) -> int:
+    """Dispatch one command. Returns a stable exit code; never raises SystemExit."""
+    if argv is None:
+        argv = sys.argv[1:]
+    if out is None:
+        out = sys.stdout
+    if not argv:
+        _print_top_help(out)
+        return EX_USAGE
+    if argv[0] in ("-h", "--help", "help"):
+        _print_top_help(out)
+        return EX_OK
+    command, rest = argv[0], argv[1:]
+    if command not in COMMANDS:
+        print(
+            f"ud-dw-user-events: unknown command {command!r}\n"
+            f"commands: {', '.join(COMMANDS)}",
+            file=sys.stderr,
+        )
+        return EX_USAGE
+    parser = _command_parser(command)
+    try:
+        args = parser.parse_args(rest)
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else EX_USAGE
+        return EX_OK if code == 0 else EX_USAGE
+    ctx = SimpleNamespace(
+        journal=_resolve_journal(args), target=args.target, format=args.format
+    )
+    try:
+        if command == "list":
+            return cmd_list(args, ctx, out)
+        return EX_USAGE  # unreachable while COMMANDS lists only implemented cmds
+    except _CliError as e:
+        print(e.message, file=sys.stderr)
+        return e.exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
