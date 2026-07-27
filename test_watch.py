@@ -894,6 +894,12 @@ class TestCollector(unittest.TestCase):
         self.assertIn("historical unknown", page)
         self.assertIn("coverage is incomplete", page)
         self.assertIn("title=\"${esc(n)} ${c}\"", page)
+        self.assertIn('class="provline" title="${esc(', page)
+        # Exact flex weights fill the track without independently-rounded
+        # percentage slivers; nonzero tiny cohorts remain visible, while
+        # zero remains truly absent.
+        self.assertIn("flex:var(--share) 1 0", page)
+        self.assertIn("min-width:${c ? 2 : 0}px", page)
         # the panel's height is the premise the bars' motion rests on, so
         # the count-carrying lines may never wrap
         self.assertRegex(page, r"\.provline\s*\{[^}]*white-space:nowrap")

@@ -569,12 +569,13 @@ STYLE = """<style>
      facts in words. NO MOTION: a live tick commits its DOM instantly
      (transitions.md), so no part of this declares a transition, and
      reduced-motion parity is the identical settled visual. The
-     count-carrying lines may never wrap — the panel's constant height is
-     the premise the bars' motion rests on — so they ellipsis like the
-     head does, and the full text rides the aria-label. */
+     count-carrying lines may never wrap — the panel's height is constant
+     within each complete/incomplete state, which is the premise the bars'
+     motion rests on — so they ellipsis like the head does, and their full
+     text rides the aria-label/title. */
   .bdprov { margin:.45rem 0 0; }
   .provbar { display:flex; height:3px; gap:1px; margin-bottom:.35rem; }
-  .provseg { height:100%; }
+  .provseg { height:100%; flex:var(--share) 1 0; }
   .provseg.phuman { background:var(--lit); }
   .provseg.ploop { background:var(--muted); }
   .provseg.punknown { background:repeating-linear-gradient(45deg,
@@ -2149,7 +2150,6 @@ function provBlock(p) {
            `yet</div>`;
   const rows = [['human', p.human, 'phuman'], ['loop', p.loop, 'ploop'],
                 ['historical unknown', p.unknown, 'punknown']];
-  const pct = n => Math.round((n / total) * 1000) / 10;
   const incomplete = p.history_complete === false;
   /* the aria-label is the WHOLE datum in words: the bar is a picture of
      this sentence, and the sentence is what a screen reader gets. */
@@ -2159,10 +2159,13 @@ function provBlock(p) {
   return `<div class="bdprov">` +
     `<div class="provbar" role="img" aria-label="${esc(aria)}">` +
     rows.map(([n, c, cls]) =>
-      `<div class="provseg ${cls}" style="width:${pct(c)}%" ` +
+      /* Flex distributes the exact remaining track after the two gaps, so
+         independently rounded percentages cannot leave a false empty sliver.
+         A real but tiny cohort stays visible; zero remains truly absent. */
+      `<div class="provseg ${cls}" style="--share:${c};min-width:${c ? 2 : 0}px" ` +
       `title="${esc(n)} ${c}" aria-hidden="true"></div>`).join('') +
     `</div>` +
-    `<div class="provline">` +
+    `<div class="provline" title="${esc(rows.map(([n, c]) => `${n} ${c}`).join(' · '))}">` +
     rows.map(([n, c, cls]) =>
       `<span class="${cls}">${esc(n)} ${c}</span>`).join(' · ') +
     `</div>` +

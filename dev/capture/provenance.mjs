@@ -92,8 +92,13 @@ commit(HEAD_OF +
 const SERVERS = [];
 const startServer = async (target) => {
   const port = await freePort();
-  const srv = spawn('python3', ['watch.py', '--target', target, '--port', String(port)],
-                    { stdio: 'ignore' });
+  /* Pin the server's right-edge clock as well as the browser's Date.now.
+     ledger_series extends its final bucket to time.time(); without this seam
+     the screenshot's right label drifted with wall time even though every Git
+     timestamp was fixed — evidence that changes by waiting is not deterministic. */
+  const boot = `import sys, watch\nwatch.time.time = lambda: ${T0 + 8000}\nwatch.main(sys.argv[1:])`;
+  const srv = spawn('python3', ['-c', boot, '--target', target,
+                               '--port', String(port)], { stdio: 'ignore' });
   /* a live child holds the event loop open, so every server is killed
      before finishing (the exit handler is only the backstop) — the first
      version of this guard hung at the end over exactly this */
@@ -185,6 +190,15 @@ const ready = async (page, legendBit) => {
   }, legendBit, { timeout: 15000 });
   await page.evaluate('document.fonts.ready');
 };
+/* OUT is deliberately caller-owned and usually a fresh temp path. It is a
+   useful server-isolation premise, but not visual data: normalise only the
+   target crumb before capture so two equivalent runs do not differ by `a`
+   versus `b` in `/tmp/prov-a/target`. The real target/path was already proven
+   through /data.json and the provenance assertions above. */
+const normaliseCaptureChrome = page => page.evaluate(() => {
+  const target = document.querySelector('.crumb[data-k="target"]');
+  if (target) target.textContent = '/fixture/provenance/target';
+});
 
 // ── desktop: 1440x1000 ────────────────────────────────────────────────────
 const p = await br.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -247,6 +261,7 @@ ok('no horizontal overflow at 1440px, and the legend is not clipped',
 
 /* the plates. Element shots of the panel for the datum itself, page shots
    for the composition it lives in. */
+await normaliseCaptureChrome(p);
 const bd = await p.$('.bd');
 await bd.screenshot({ path: `${OUT}/provenance-desktop-panel.png` });
 await bd.screenshot({ path: `${EVIDENCE}/provenance-desktop-panel.png` });
@@ -274,6 +289,7 @@ await p.close();
   ok('mobile: the segments keep their proportions',
      rm.segPcts.every(x => x >= 0) &&
      Math.abs(rm.segPcts[1] - 0.6) < 0.02);
+  await normaliseCaptureChrome(mp);
   const mbd = await mp.$('.bd');
   await mbd.screenshot({ path: `${OUT}/provenance-mobile-panel.png` });
   await mbd.screenshot({ path: `${EVIDENCE}/provenance-mobile-panel.png` });
