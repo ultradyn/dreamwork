@@ -15,12 +15,18 @@
    same source text is measured twice in the same column, once through preB
    (the old <pre>) and once through mdB. The <pre> must score materially
    worse or the metric is not reading what it claims to.
+
+   And the #158 tail: `/file` branches on WHAT the file is. A .md reflows
+   through the same mdB; a source file stays verbatim; and hostile markup
+   inside a rendered .md is escaped text, never honoured HTML — this route
+   serves arbitrary repo content.
    usage: node reflow.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
+import { mkdirSync, writeFileSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
+import { join } from 'node:path';
 
 // group a range's rects into line boxes, then lines-used vs lines-needed
 const MEASURE = `(sel, root) => {
@@ -127,11 +133,47 @@ await sleep(400);
 const dm = await p.evaluate(`(${MEASURE})('.md p, .md .mdli, .follow')`);
 await p.screenshot({ path: `${OUT}/dashboard-reflowed.png`, fullPage: true });
 
+/* #158: the two halves the frozen fixture cannot hold. A SOURCE file must
+   stay verbatim, and a markdown file carrying hostile markup must render
+   inert — so both are planted into the shared fixture COPY (the runner
+   resets it before every guard, and no guard ever runs against a real
+   repo; the target sits beside OUT by the runner's own layout). */
+writeFileSync(join(OUT, '..', 'target', 'fixture-src.py'),
+  '# a comment, not a heading\n\n\ndef f():\n    return 1  # code stays code\n');
+writeFileSync(join(OUT, '..', 'target', 'fixture-hostile.md'),
+  '# Title\n\n<script>alert(1)</script>\n\n' +
+  '<img src=x onerror="alert(2)">\n\n<iframe src="//evil"></iframe>\n\n' +
+  'some **bold** prose\n');
+
 await p.goto(`${BASE}/file?p=DREAMWORK.md`, { waitUntil: 'networkidle' }); await sleep(600);
-const raw = await p.evaluate(() => ({
-  pres: document.querySelectorAll('#filebody pre').length,
-  mds: document.querySelectorAll('#filebody .md').length,
+const md = await p.evaluate(() => ({
+  md: document.querySelectorAll('#filebody > .md').length,
+  pre: document.querySelectorAll('#filebody > pre').length,
+  heads: document.querySelectorAll('#filebody .mdh').length,
 }));
+
+await p.goto(`${BASE}/file?p=fixture-src.py`, { waitUntil: 'networkidle' }); await sleep(600);
+const src = await p.evaluate(() => ({
+  md: document.querySelectorAll('#filebody > .md').length,
+  pre: document.querySelectorAll('#filebody > pre').length,
+  verbatim: (document.querySelector('#filebody > pre') || {}).textContent || '',
+}));
+
+// a dialog can only fire if injected markup was HONOURED; listen before load
+let dialog = null;
+p.on('dialog', d => { dialog = d.message; d.dismiss(); });
+await p.goto(`${BASE}/file?p=fixture-hostile.md`, { waitUntil: 'networkidle' }); await sleep(600);
+const hostile = await p.evaluate(() => ({
+  scripts: document.querySelectorAll('#filebody script').length,
+  iframes: document.querySelectorAll('#filebody iframe').length,
+  imgs: document.querySelectorAll('#filebody img').length,
+  handlers: [...document.querySelectorAll('#filebody *')]
+    .filter(e => [...e.attributes].some(a => /^on/i.test(a.name))).length,
+  // the attack is still THERE — as visible, escaped text
+  shown: (document.getElementById('filebody') || {}).innerText || '',
+  bold: (document.querySelector('#filebody strong') || {}).textContent || null,
+}));
+await p.screenshot({ path: `${OUT}/file-md.png`, fullPage: true });
 
 const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 ok('no page errors', errs.length === 0);
@@ -183,7 +225,17 @@ ok('bullets survive, wrapped lines joined, nesting kept',
    nest.lis[1] === '1:deeper bullet');
 ok('a blank line still breaks a paragraph', nest.paras === 2);
 ok('a fence stays verbatim', nest.fence === 'code  kept');
-ok('/file stays verbatim in a <pre>', raw.pres === 1 && raw.mds === 0);
+ok('/file reflows .md through mdB (#158)',
+   md.md === 1 && md.pre === 0 && md.heads > 0);
+ok('/file keeps source verbatim in a <pre>',
+   src.md === 0 && src.pre === 1 &&
+   src.verbatim.includes('# a comment, not a heading\n\n\ndef f():'));
+ok('hostile markup at /file renders inert: no script/iframe/img nodes, no handlers, no dialog',
+   hostile.scripts === 0 && hostile.iframes === 0 && hostile.imgs === 0 &&
+   hostile.handlers === 0 && dialog === null);
+ok('hostile markup shows as escaped text while prose still renders',
+   hostile.shown.includes('<script>alert(1)</script>') &&
+   hostile.bold === 'bold');
 
 console.log('questions: ' + JSON.stringify(qm));
 console.log('dashboard: ' + JSON.stringify(dm));

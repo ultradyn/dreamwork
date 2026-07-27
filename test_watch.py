@@ -1912,8 +1912,16 @@ class TestAppShell(unittest.TestCase):
                       'expand(n, mdB(d.files[n]))', 'mdInline(txt)'):
             self.assertIn(token, watch.PAGE)
         # #158: /file branches on kind — .md (and kin) through mdB; else pre.
+        # The branch is by EXTENSION, never content sniff, and the escape is
+        # ordered FIRST: every inline transform (linkify included) runs on
+        # already-escaped text, and fences escape too — so hostile markup in
+        # a rendered .md is visible text, never honoured HTML. The browser
+        # half of that statement is the reflow guard's hostile-file checks.
         for token in ('function isMarkdownFile', 'function buildFile',
                       'isMarkdownFile(param)', 'mdB(text)',
+                      "endsWith('.md')", "endsWith('.markdown')",
+                      "endsWith('.mdx')",
+                      'mdSpans(linkify(esc(t)))', '${esc(b.text)}',
                       '`<pre>${esc(text)}</pre>`'):
             self.assertIn(token, watch.PAGE)
         # status.json was in that list until #130 and is not any more. It is
