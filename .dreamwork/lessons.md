@@ -929,3 +929,10 @@ this shape and convert opportunistically.)
   observability (sudo, auditd, new packages), re-read the evidence the
   current instruments already captured — the argv+parent line was there the
   whole time. (systems, 2026-07-27, #283)
+- **Describe the incompleteness you can detect, not every incompleteness that
+  exists.** #216 initially documented `history_complete:false` for shallow
+  *or partial* clones, but the implementation can detect Git's shallow
+  boundary only; partial clones may lazy-fetch the required blobs and report
+  complete. The conservative runtime behaviour was right and the broader
+  prose was not — narrow the claim to the observable contract rather than
+  implying a detector that does not exist. (dreamer, 2026-07-27, #216)
