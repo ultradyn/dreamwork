@@ -149,6 +149,16 @@ function addUrgent() {
   const at = text.indexOf('## Answered');
   writeFileSync(QFILE, text.slice(0, at) + NEWQ + text.slice(at));
 }
+/* Frames strictly BETWEEN the two ends, 3% deadband — the frame-rate-free form
+   of "it travelled", and the one idiom this repo uses for it (`reviewsplit.mjs`
+   first, then `headertravel`, `regroup`, `morph`, `qsec`, `dismiss`). A snap has
+   none of these at any frame rate, so the floor is ONE; see transitions.md
+   "Checking a transition" for why a bigger count or a fraction is still a bet on
+   the frame rate. (#317.) */
+const between = (vals, a, b) => {
+  const lo = Math.min(a, b), hi = Math.max(a, b), eps = (hi - lo) * 0.03;
+  return vals.filter(v => v > lo + eps && v < hi - eps).length;
+};
 /* Which survivors HAD to move, and how many distinct positions each visited.
 
    ONE HELPER FOR BOTH THE ANIMATED AND THE REDUCED RUN, because the two
@@ -170,6 +180,8 @@ function movedIn(seen, grew) {
     if (Math.abs(last - tops[0]) < 4) continue;   // it did not have to move
     out.push({ id: id.slice(0, 24),
                steps: [...new Set(tops.map(v => Math.round(v)))].length,
+               partway: between(tops, tops[0], last),
+               frames: tops.length,
                from: Math.round(tops[0]), to: Math.round(last),
                // the timing-free form: nothing goes PAST the end
                past: tops.some(v => v > last + 1.5) });
@@ -207,8 +219,15 @@ if (HAVE) {
     ok('the cards below the arrival actually had to move (else this measures ' +
        'a page where nothing happened)', moved.length > 0);
     // A TELEPORT VISITS TWO POSITIONS AND PASSES EVERY END-STATE CHECK.
-    ok('...and each of them TRAVELLED there rather than jumping',
-       moved.length > 0 && moved.every(m => m.steps >= 6));
+    // `steps >= 6` said that and also said "this box drew six frames in the
+    // 900ms window", which is why this guard passed in small runs and failed
+    // in the full suite (#311's evidence, #317's fix). The part-way count is
+    // the same distinction without the frame-rate claim; the vacuity this
+    // needs is already upstream — movedIn drops any card that travelled less
+    // than 4px, and `moved.length > 0` above asserts one survived that filter.
+    ok('...and each of them TRAVELLED there rather than jumping ' +
+       `(${moved.map(m => `${m.partway}/${m.frames}`).join(' ')} part-way)`,
+       moved.length > 0 && moved.every(m => m.partway >= 1));
     // not anchored to a clock: "arrived by t=950" works at 20px and fails at
     // 1246px, where it reports the guard's own latency (transitions.md)
     ok('...and none of them went past where it ended up',
@@ -242,8 +261,17 @@ if (HAVE) {
     // where the cards never moved at all — which is what "one distinct
     // position" also describes.
     ok('...and cards below it still had to move', moved.length > 0);
-    ok('...and each is PLACED rather than travelling',
-       moved.length > 0 && moved.every(m => m.steps <= 3));
+    // `steps <= 3` was the HOLLOW direction of the same mistake: a box that
+    // sampled a real ramp only three times satisfied it, so under load this
+    // would have passed a reduced-motion build that animated. Instant means NO
+    // frame part-way, however many were drawn — the same measure as the travel
+    // check above with the opposite expectation. Measured before choosing zero
+    // rather than after: 51 frames, 2 distinct positions, 0 part-way, so no
+    // layout intermediate lands inside the window and a strict zero is the
+    // contract and not a coincidence. (#317.)
+    ok('...and each is PLACED rather than travelling ' +
+       `(${moved.map(m => `${m.partway}/${m.frames}`).join(' ')} part-way)`,
+       moved.length > 0 && moved.every(m => m.partway === 0));
   }
   await rp.close();
 }

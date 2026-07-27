@@ -24,9 +24,10 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **317**
+Next id: **318**
 
 ## Open
+
 
 - **#315** — A combined entry HEAD under `## Open` is invisible to both ledger
   readers, and they must widen together · P2 · correctness · ~30m · origin:
@@ -1127,6 +1128,35 @@ Next id: **317**
 
 ## Recently landed
 
+- **#317** — `qorder.mjs` is the fifth instance of the frame-count assertion ·
+  P2 · guard craft · ~20m · origin: **loop** · goal: a guard must not go red for
+  a reason unrelated to the thing it names ← DREAMWORK.md *Nothing fails
+  quietly* · #311 converted four guards and named this one in its evidence
+  without converting it: `qorder.mjs:242` counts distinct positions and its own
+  comment reasons about "one distinct position", and dreamer-reviewsplit
+  observed it PASS in small runs and FAIL in the full suite — the signature of a
+  threshold that is really a frame-rate claim · **this entry exists because the
+  close-out note on #311 pointed at #316, which is the worktree-liveness task
+  and has nothing to do with it** — an incorrect cross-reference is how a named
+  finding goes missing, so it gets its own id · the conversion is now
+  mechanical: `between(vals, first, last) >= 1` with a runtime-derived,
+  printed span beside a constant pixel floor, per `transitions.md` "Checking a
+  transition" and the four landed examples · red-prove with `transition:none`
+  injected and confirm the vacuity precondition stays green in that same run
+  · landed: both assertions converted, animated `steps >= 6` -> `partway >= 1`
+  and reduced `steps <= 3` -> `partway === 0` · the vacuity precondition was
+  already upstream and did not need adding — `movedIn` drops any card that
+  travelled under 4px and `moved.length > 0` asserts one survived that filter,
+  which is why this file needed no new span check · **the reduced threshold was
+  measured before it was chosen, not after**: 51 frames, 2 distinct positions,
+  0 part-way, so a strict zero is the contract rather than a coincidence — had
+  a layout intermediate landed inside the [first, last] window, zero would
+  false-red on correct reduced-motion behaviour · red-proved with a
+  `transition:none` style tag injected **into the guard, not into `watch.py`**,
+  because another agent holds that file: 0 of 15 part-way fails the travel
+  check while the vacuity stays green at 161px and both the past-the-end and
+  reduced checks stay green · green three consecutive times
+
 - **#311** — Two motion guards assert a frame COUNT the box cannot supply · P2 · landed 2026-07-27 ·
   guard craft · ~40m · origin: **loop** · goal: a guard must not go red for a
   reason unrelated to the thing it names ← DREAMWORK.md *Nothing fails quietly* ·
@@ -1202,7 +1232,7 @@ Next id: **317**
   vacuity floors as "derived at runtime" when the derived part is the printed
   measurement and the floor is a deliberate constant — a pixel span is a
   property of the fixture's layout, not of the box · `qorder.mjs:242` was named
-  in this entry as the same shape and is NOT converted; see #316
+  in this entry as the same shape and is NOT converted; see #317
 
 
 - **#301** — Teach the ledger patterns to see combined entry heads · P2 · landed 2026-07-27 · bug ·
