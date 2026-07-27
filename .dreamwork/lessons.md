@@ -1690,3 +1690,27 @@ this shape and convert opportunistically.)
   worker with a deadline), and a coordinator seeing implausible load should check
   parentage before concluding contention. Killing only the reparented cohort
   restored the machine without corrupting the live measurement. (coordinator, #386)
+- **A deferred-commit control makes the durable write a LATE signal, so a
+  side-effect check that samples only durable state cannot see the damage it was
+  written to catch.** My #300 acceptance criterion said: count `/run-mode` POSTs,
+  `watch-events.log` lines and the run-mode file's bytes across a hover sweep, and
+  assert them unchanged. Sound-looking, and **unsound**: #290's arm deliberately
+  does not POST for **ten seconds**, so a hover that calls `pickRunMode` lights the
+  arm UI, writes pending `localStorage` and starts the countdown while every signal
+  I named stays silent. The lane's first red-run of that check came back **green
+  with the bug in place**, and it applied the rule instead of the instruction. The
+  fix is to assert the signals that flip at **selection** rather than at commit —
+  `#runcount` must not read `arms in`, and `dw:run-mode-pending:` keys must be
+  unchanged — with the durable signals kept as necessary-but-not-sufficient.
+  Generalises to every arm, confirm, and debounce-to-write control: **sample the
+  pending surface, or you only observe the world ten seconds later, which is also
+  after the damage is done.** (coordinator + #300 lane, #300/#290)
+- **The strongest red is one whose failure names the real-world consequence.**
+  Lane C's `C3` red — replacing temp-then-`os.replace` with the direct
+  `open(path, "w")` that `watch.py:8462` does today — did not merely fail an
+  assertion: it printed `b'' != b'the quick brown fox…'`. The file was **emptied**.
+  That is exactly what a crash mid-write does to `questions.md` or `answers.md`
+  right now, and reading the diff of that failure tells you why the increment
+  matters in a way "assertion failed" never would. Worth choosing injections for
+  this property: the one that produces a legible catastrophe teaches more than the
+  one that produces a boolean. (coordinator, #263 lane C)
