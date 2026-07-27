@@ -3074,6 +3074,7 @@ const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61 };
    `<title>` stands; a target with no status.json gets no liveness word; an
    unparseable `last_tick` gets none either, on `note_author`'s rule. */
 const TITLE_ROUTE = { dashboard: () => '', questions: () => 'questions',
+                      answers: () => 'answers',
                       file: p => p || 'file',
                       review: p => 'review ' + (p || '') };
 /* two missed heartbeats (4.75m each) — one late beat is a busy machine, two

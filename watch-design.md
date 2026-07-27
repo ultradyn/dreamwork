@@ -394,8 +394,14 @@ onto a different body. Distinct bodies keep stable aids across deletion of a
 peer (the browser guard asserts preAid, marker replacement, and same-aid on
 the survivor).
 
-Add a view by adding a builder + a `routeOf`/`TINT`/`SEED`
-entry, not new chrome.
+Add a view by adding a builder + a `routeOf`/`TINT`/`SEED`/`TITLE_ROUTE`
+entry, not new chrome. **All three per-route tables, and the check is the
+reason the list is exhaustive here**: `/answers` shipped missing its `TINT`
+and `SEED` entries (#302) and then its `TITLE_ROUTE` entry (#318), because
+each table's fallback is silent — a missing tint inherits the dashboard's hue,
+a missing title inherits its empty route word. `test_watch.py` now derives the
+destination set from `routeOf` and diffs all three, so a fourth table added
+here must be added there too or the omission is invisible again.
 
 **`expand` is structure; HOW it moves is `transitions.md`'s, not this
 file's.** A `<details>` that changes the page's layout travels: the card's own

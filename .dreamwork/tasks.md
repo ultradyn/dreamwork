@@ -28,19 +28,6 @@ Next id: **320**
 
 ## Open
 
-- **#318** — `TITLE_ROUTE` has #302's omission, so `/answers` never says where
-  it is · P3 · correctness · ~15m · origin: **loop** · found by ccc-glm52-302
-  while landing #302, out of its scope and correctly left alone · `TITLE_ROUTE`
-  (watch.py ~3076) has no `answers` entry, and the consumer falls back with
-  `(TITLE_ROUTE[v.name] || TITLE_ROUTE.dashboard)(v.param)` — so the tab title on
-  `/answers` renders the dashboard's route word · **the title is the only part of
-  this dashboard that exists while the tab is backgrounded**, which #153 is
-  entirely about, so a route that cannot name itself there is worse than it
-  sounds · the check generalises from #302's: derive the route set from
-  `routeOf`, diff against `TITLE_ROUTE`'s keys, assert presence and not a literal
-  title string · red-prove by removing the entry again · same class as #302 and
-  #314 — a per-route table gaining a route without its entry
-
 - **#319** — Guard servers should bind port 0 and let the OS assign · P2 ·
   tooling · ~40m · origin: **loop** · goal: remove a failure class rather than
   clean up after it ← DREAMWORK.md *Nothing fails quietly* · #203's own
@@ -1112,6 +1099,31 @@ Next id: **320**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#318** — `TITLE_ROUTE` has #302's omission, so `/answers` never says where
+  it is · P3 · landed 2026-07-27 · correctness · ~15m · origin: **loop** · found by ccc-glm52-302
+  while landing #302, out of its scope and correctly left alone · `TITLE_ROUTE`
+  (watch.py ~3076) has no `answers` entry, and the consumer falls back with
+  `(TITLE_ROUTE[v.name] || TITLE_ROUTE.dashboard)(v.param)` — so the tab title on
+  `/answers` renders the dashboard's route word · **the title is the only part of
+  this dashboard that exists while the tab is backgrounded**, which #153 is
+  entirely about, so a route that cannot name itself there is worse than it
+  sounds · the check generalises from #302's: derive the route set from
+  `routeOf`, diff against `TITLE_ROUTE`'s keys, assert presence and not a literal
+  title string · red-prove by removing the entry again · same class as #302 and
+  #314 — a per-route table gaining a route without its entry
+  · landed: `answers: () => 'answers'` added, and the CHECK generalised rather
+  than duplicated — #302's test now derives the destination set from `routeOf`
+  and diffs all THREE per-route tables, so the class is covered instead of the
+  two tables it was written for · **red-proved on the real defect with no
+  injection at all**, which is the strongest form available: the test was written
+  first and failed with `{'answers'} is not false ... never says where it is` ·
+  confirmed in a real browser afterwards, which is the user-visible half the unit
+  test cannot see: `/answers` titled `(3) dreamwork/target · stalled` — byte
+  identical to `/` — and now titles `… · answers` · `watch-design.md` updated in
+  the same commit, and its contract line now says why the list of tables is
+  exhaustive: each table's fallback is silent, so a fourth table added there must
+  be added to the check or the next omission is invisible too
 
 - **#302** — Give `/answers` its own tint and turbulence seed · P3 · landed 2026-07-27 · chore ·
   10m · origin: **loop** · found by `dreamer-taskspage` during the #281 design

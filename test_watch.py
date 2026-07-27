@@ -2268,7 +2268,7 @@ class TestAppShell(unittest.TestCase):
                       '/reviewraw', 'linkifyReview'):
             self.assertIn(token, watch.PAGE)
 
-    def test_every_route_has_its_own_tint_and_seed(self):
+    def test_every_route_has_its_own_atmosphere_and_title(self):
         # #302: the contract (watch-design.md: "Add a view by adding a builder
         # + a routeOf/TINT/SEED entry"; transitions.md: every destination has
         # its own seed and tint) is that each destination carries its own
@@ -2320,6 +2320,22 @@ class TestAppShell(unittest.TestCase):
             missing_seed,
             "routes with no SEED entry (inherit the dashboard's swirl via "
             "SEED[view.name] != null ? ... : 7): %s" % sorted(missing_seed))
+
+        # #318: TITLE_ROUTE is the third per-route table and had the identical
+        # omission, which is why this check covers the CLASS rather than the two
+        # tables it was written for. Its fallback is
+        # `(TITLE_ROUTE[v.name] || TITLE_ROUTE.dashboard)(v.param)`, and the
+        # dashboard's entry returns '' — so a route without one does not get a
+        # wrong title, it gets NO route word, and the tab reads as the
+        # dashboard. That matters more than it sounds: per #153 the title is the
+        # only part of this page that exists while the tab is backgrounded,
+        # which is most of its life.
+        missing_title = routes - table_keys("TITLE_ROUTE")
+        self.assertFalse(
+            missing_title,
+            "routes with no TITLE_ROUTE entry (the tab falls back to the "
+            "dashboard's empty route word and never says where it is): %s"
+            % sorted(missing_title))
 
     def test_qa_compose_has_accessible_name_and_send_floor(self):
         # #273: placeholder is not a name; dock/cards need aria-label that
