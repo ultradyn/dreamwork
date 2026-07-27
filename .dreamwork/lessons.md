@@ -1010,3 +1010,16 @@ this shape and convert opportunistically.)
   first one showed both of its were already there, worded differently. A
   same-phrase grep is a test for COPYING, and copying is the one thing
   distillation is not. Read the destination. (coordinator, 2026-07-27)
+- **A wrong value that something else routinely overwrites is not a transient —
+  it is a permanent bug with a short, unreliable lifetime.** #198 was briefed
+  as "the end state is correct, so just bound the window", and the end state is
+  not correct: nothing autocorrects. What healed it was `setContent` repainting
+  every group on the next view re-render, which his live dashboard happens to
+  do every couple of seconds. So the bug was permanent and the laundering was
+  incidental — and on the FIXTURE, which cannot re-render on its own, a guard
+  written to the "transient" story would have passed by luck. Two consequences:
+  when something looks self-correcting, find the thing that corrects it and ask
+  whether it always runs; and never let "it fixes itself" downgrade a bug's
+  severity, because the repair is somebody else's side effect and it will be
+  refactored by someone who does not know it is load-bearing.
+  (dreamer-qsec via #198, distilled by the coordinator 2026-07-27)

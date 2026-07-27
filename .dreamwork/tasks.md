@@ -847,7 +847,16 @@ Next id: **308**
   SOMETHING produce the result it wants · **a count is not
   evidence** — a `grep -c` in a compound command reported 6 FAILs where
   the full output held 14, the server having been swapped beneath it; the
-  runner reports from full output, never from a count (qsec 19:03)
+  runner reports from full output, never from a count (qsec 19:03) ·
+  **and it owns absence-first** (folded 2026-07-27 from the input-safety
+  dream, which flagged it for here and was one archive from losing it):
+  three guards in one batch, run against a build without the feature under
+  test, each waited 30s for a selector that would never appear and then
+  reported *"the guard threw"* — a message that says nothing about the
+  page and points at the guard. A guard asserts its SUBJECT EXISTS first,
+  so absence is one FAIL with a sentence; `history.mjs` does this and its
+  red run costs 3.4s instead of 30. The shared reporter is where that
+  stops being fourteen separate remembering-to-do-its
 - **#190** — The loop's push channel to him is dead, and only the
   dashboard can say so · P1 · bug · 20m · `attn` returns **403, OAuth2
   token could not be validated** (grok/xAI), confirmed twice at 16:20 ·
