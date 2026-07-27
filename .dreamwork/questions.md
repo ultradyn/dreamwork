@@ -2,6 +2,12 @@
 
 ## Open
 
+- **P2 · 2026-07-27 — #252 Markdown `/file` modes: one quiet Rendered/Source switch in the file heading?** #158 already made `.md`/`.markdown`/`.mdx` reflow safely through the existing escape-first `mdB` pipeline while source files stay verbatim. #252 adds the explicit exact-bytes path and mode transition the human requested.
+
+  Rec **M1**: for Markdown only, place a compact two-position **Rendered / Source** segmented switch beside the path heading. Rendered is the default; Source shows the exact escaped bytes in the existing `<pre>` and is deep-linkable with `?view=source` so copy/share preserves intent. Changing mode dissolves the body with the page's small atmospheric blur/fade gesture, keeps the heading/control fixed, restores the same scroll ratio where possible, and reduced-motion swaps instantly. Internal Markdown links reuse confined `/file` routing; external links remain explicit external anchors; raw HTML is always inert. Source is never syntax-rewritten, so exact copy remains trustworthy. Mobile keeps the same two labels in one row rather than hiding either mode.
+
+  **M2** is a side-by-side rendered/source split (refuted: halves the reading column, poor on mobile, and makes exact/source secondary controls harder to understand). **M3** keeps Source as default with Rendered opt-in (refuted: contradicts the human's explicit default-rendered brief and #158's now-landed line). Approval authorises an isolated red-first implementation, deterministic desktop/mobile captures, and interleaved vision + geometry review; not deployment. Answer `Accept M1`, `Accept M1 with amendments: …`, or `Pause #252`.
+
 - **P2 · 2026-07-27 — #295 shader dithering: replace the temporal white-noise
   LSB dither with static screen-space IGN?** Grok's read-only map found the
   composite pass **already dithers** — `col += (hash(gl_FragCoord.xy+t)-0.5)/255`
