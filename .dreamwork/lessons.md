@@ -1903,3 +1903,30 @@ this shape and convert opportunistically.)
   it: if the guarantee has the word "should notice" or "check before" in it, it is a
   mitigation.** Sequencing cost me nothing here — #381's brief already orders the dashboard
   piece last, so the file may never be contended at all.
+
+- **"Assert the two values differ" guards against a vacuous check, not a wrong one — and I have
+  been writing it into briefs all session as though it did both.** The instruction is real and it
+  has earned its place: a fixture whose two ages are equal cannot tell a working age display from
+  one that prints a constant, and this repo has paid for exactly that. But it proves the output
+  *varies with the input*, which is strictly weaker than the output being *right*. **Two values
+  can differ and both be wrong by the same offset**, and a differ-check is blind to every error of
+  that shape — every fixed offset, every unit error, every wrong epoch.
+  · **Measured, not reasoned:** #385's criterion 4 asked that the questions headline show an age
+  and that a fixture's two ages differ. Both held; the guard was green; I re-ran its discriminating
+  red myself and it was a good one. Fifteen minutes later the deployed page showed my
+  fourteen-minute-old question as **`08h 17m ago`**, because `data-ct` resolves to **midnight** of
+  the entry's date. The two fixture ages differed by two days and were both wrong by eight hours,
+  and nothing in the check could see it (#392).
+  · **The tell is that the criterion never names a number the code does not already produce.**
+  "These two differ" is computed from the output; "an entry written at 08:03 renders 14m, not 8h"
+  is computed from the *input* and compared against the output. Only the second can catch an
+  offset. **A check that only compares outputs to each other cannot find a systematic error — one
+  value must come from outside the system.**
+  · **And it is the coordinator's failure, not the lane's.** The brief asked the right question —
+  *"check whether a parseable timestamp reaches the client, or whether one has to be added"* — and
+  then wrote acceptance criteria satisfiable without answering it. A question in the prose and a
+  criterion in the list are not the same instrument: **the lane optimises against the criteria, so
+  anything I actually need must be a criterion.** Prose is where I explain; the numbered list is
+  where I bind.
+  · **Found by looking at the deployed page, which no check does.** Ten guards, a lint pass and a
+  re-run red all agreed. The eight-hour error was visible in one screenshot.
