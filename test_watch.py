@@ -2615,9 +2615,10 @@ class TestAppShell(unittest.TestCase):
         # innerHTML swap, or it re-runs the regroup (#113) and re-carries his
         # typing (#118) once a second forever.
         for token in ('const agePair =', 'const AGE_PAIRS =', 'const gitRow =',
-                      # written as text into nodes that already exist...
+                      'const paintAgePair =', 'const ageParts =',
+                      # written into nodes that already exist...
                       "querySelectorAll('.age[data-ct]')",
-                      "el.textContent = agePair(",
+                      "paintAgePair(el, parseFloat(el.dataset.ct), ' ago')",
                       # ...on the standing per-second sweep, and re-run after
                       # every render so a fresh row is filled before it paints
                       'setInterval(ages, 1000)', 'ages();'):
@@ -2754,6 +2755,62 @@ class TestAppShell(unittest.TestCase):
         self.assertFalse(
             bu == 'd' and bn >= field_cap,
             f"100 days still renders as day-count: {rendered!r}")
+
+    def test_age_pair_grays_only_the_pad_digit(self):
+        # #385 gray zero: `05h 09m` greys two pads; `15h 42m` greys none.
+        # Both directions — a rule that greys unconditionally passes any
+        # check that only looks at the first. Production lines under test:
+        # paintAgePair's `n < 10` branch and ages()' paintAgePair call.
+        import json, subprocess, textwrap
+        block = self._age_pair_js_block()
+        self.assertIn("className = 'agepad'", block)
+        self.assertIn('.age .agepad', watch.PAGE)
+        script = textwrap.dedent("""\
+            // minimal DOM sufficient for paintAgePair — not a browser.
+            function frag() {
+              return { nodes: [], append(...xs) {
+                for (const x of xs) this.nodes.push(x);
+              }};
+            }
+            const document = {
+              createDocumentFragment: frag,
+              createElement: () => ({ className: '', textContent: '' }),
+            };
+            %s
+            const NOW = 2000000000;
+            Date.now = () => NOW * 1000;
+            function paint(age) {
+              const el = { kids: null,
+                replaceChildren(f) { this.kids = f.nodes; } };
+              paintAgePair(el, NOW - age, '');
+              const pads = el.kids.filter(k => k && k.className === 'agepad')
+                                 .length;
+              const text = el.kids.map(k =>
+                (typeof k === 'string' || typeof k === 'number') ? String(k)
+                : (k && k.textContent != null ? k.textContent : '')).join('');
+              return { pads, text, plain: agePair(NOW - age) };
+            }
+            // 5h 9m → 05h 09m: two pads. 15h 42m: none.
+            const single = paint(5*3600 + 9*60);
+            const double = paint(15*3600 + 42*60);
+            // anti-vacuity: the two ages really differ, and plain forms
+            // really are the padded shapes under test.
+            if (single.plain === double.plain)
+              throw new Error('fixture ages collided: ' + single.plain);
+            process.stdout.write(JSON.stringify({ single, double }));
+        """) % block
+        out = subprocess.check_output(["node", "-e", script], text=True)
+        data = json.loads(out)
+        self.assertEqual(data["single"]["plain"], "05h 09m")
+        self.assertEqual(data["double"]["plain"], "15h 42m")
+        self.assertEqual(
+            data["single"]["pads"], 2,
+            f"05h 09m must grey two pads; got {data['single']}")
+        self.assertEqual(
+            data["double"]["pads"], 0,
+            f"15h 42m must grey none; got {data['double']}")
+        self.assertEqual(data["single"]["text"], "05h 09m")
+        self.assertEqual(data["double"]["text"], "15h 42m")
 
     def test_age_pair_without_year_rung_breaks_the_invariant(self):
         # #385 discriminating red for the ladder. Production line under

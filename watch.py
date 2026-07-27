@@ -531,6 +531,9 @@ STYLE = """<style>
   summary::before { content:"+ "; color:var(--dim); }
   details[open] > summary::before { content:"- "; }
   .age { color:var(--dim); margin-left:.5rem; }
+  /* #385: the pad digit of a single-figure unit is quieter than the value.
+     Only the leading 0 of `05` / `09` wears this — never a genuine tens digit. */
+  .age .agepad { color:var(--dimmer); }
   pre { white-space:pre-wrap; color:var(--muted); margin:.4rem 0 .8rem 1ch;
         border-left:1px solid var(--line); padding-left:1ch; }
   /* ── the file view's image and binary surfaces (#336) ─────────────────
@@ -1675,12 +1678,45 @@ const AGE_PAIRS = [
   ["h", 3600, "m", 60],
   ["m", 60, "s", 1],
 ];
-const agePair = ct => {
+/* {big, bu, small, su} — shared by the plain string form and the painted
+   form so there is still one pair-selection path (#385). */
+const ageParts = ct => {
   const s = Math.max(0, Math.floor(Date.now()/1000 - ct));
   for (const [bu, bd, su, sd] of AGE_PAIRS)
     if (s >= bd)
-      return `${p2(Math.floor(s/bd))}${bu} ${p2(Math.floor((s % bd)/sd))}${su}`;
-  return `00m ${p2(s)}s`;
+      return {big: Math.floor(s/bd), bu, small: Math.floor((s % bd)/sd), su};
+  return {big: 0, bu: 'm', small: s, su: 's'};
+};
+const agePair = ct => {
+  const p = ageParts(ct);
+  return `${p2(p.big)}${p.bu} ${p2(p.small)}${p.su}`;
+};
+/* Write the pair into a live `.age` node. A single-digit unit is prefixed
+   with a gray 0 (`05h 09m`); a two-digit unit is left alone (`15h 42m`).
+   Built with DOM nodes rather than innerHTML — every character is a digit
+   or unit letter we produced, but textContent cannot carry the pad span,
+   and inventing a second parser for a four-token string would be a second
+   formatter. No transition: ages() rewrites once a second as pure text
+   update (transitions.md — the live mtime tick / ages sweep commits
+   immediately; a digit flip is not a layout change). */
+const paintAgePair = (el, ct, suffix) => {
+  const p = ageParts(ct);
+  const frag = document.createDocumentFragment();
+  const pushP2 = n => {
+    if (n < 10) {
+      const pad = document.createElement('span');
+      pad.className = 'agepad';
+      pad.textContent = '0';
+      frag.append(pad, String(n));
+    } else {
+      frag.append(p2(n));
+    }
+  };
+  pushP2(p.big);
+  frag.append(p.bu, ' ');
+  pushP2(p.small);
+  frag.append(p.su, suffix || '');
+  el.replaceChildren(frag);
 };
 /* components: every section on every watch page renders through these */
 const label = t => `<div class="label">${t}</div>`;
@@ -3148,7 +3184,7 @@ function ages() {
   document.querySelectorAll('.age[data-mt]').forEach(el =>
     el.textContent = ageStr(parseFloat(el.dataset.mt)) + ' old');
   document.querySelectorAll('.age[data-ct]').forEach(el =>
-    el.textContent = agePair(parseFloat(el.dataset.ct)) + ' ago');
+    paintAgePair(el, parseFloat(el.dataset.ct), ' ago'));
   /* a third flavour, and the difference is grammar rather than format (#165):
      a FILE is `5m old`, a thing he DID is `5m ago`. Commit resolution
      (`data-ct`) is two padded units and far too wide for a 38ch panel, so the

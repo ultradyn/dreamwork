@@ -2040,6 +2040,14 @@ passed 99 at 100 days, which broke the format he designed. Year length is
 365 days (not 52 weeks = 364); weeks are 7 days. The remainder after a year
 can show 52 weeks, which is still two figures.
 
+**A single-digit unit is prefixed with a gray 0** (#385) — `05h 09m` greys
+both leading zeros; `15h 42m` greys none. The pad is a `.agepad` span at
+`--dimmer` inside the already-dim `.age`, built by `paintAgePair` with DOM
+nodes (not `innerHTML`). The discriminating half is the second case: a rule
+that greys unconditionally passes any check that only looks at `05`. The
+text still updates once a second through `ages()` with no transition — the
+live ages sweep is opt-in-off by design (`transitions.md`).
+
 **The time arrives as a number and the row renders none of it.** `git_tail`
 emits `%ct`; the row is a `<span class="age" data-ct=…>` that is *empty* in
 the HTML. A page computing an age from what it displayed would be reading its
