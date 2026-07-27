@@ -60,6 +60,17 @@ dreamwork-version: 5853e1789929
 - Subagent models (2026-07-26): use `codex-pooler/gpt-5.6-sol` with
   `thinking: low` by default; planning subagents use the same model with
   `thinking: xhigh` (the executable registry form of `pooler/gpt-5.6-xhigh`).
+  **This line is harness-specific and names the pi registry** (scoped
+  2026-07-27, when a Claude Code coordinator took this target over and found
+  the two rules in conflict). Those model ids do not exist in Claude Code, and
+  his global CLAUDE.md is explicit for that harness: *"Claude Code Agent tool
+  and Claude Code workflows: use opus for all tasks. Never sonnet/haiku/other
+  models — rework cost dwarfs token savings. Always pass the model
+  explicitly."* So: in pi, the registry ids above; in Claude Code, opus,
+  passed explicitly, every time. Recorded rather than silently resolved
+  because a coordinator reading only this file would dispatch a model that
+  does not exist, and one reading only CLAUDE.md would think this line was
+  stale — it is neither, it is scoped.
 - Autonomy: commit each increment (the skill folder is its own git repo).
   Push and deploy as needed (authorized 2026-07-26); neither needs a
   separate confirmation. **Commit messages are descriptive** (human-set
