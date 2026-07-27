@@ -1930,3 +1930,26 @@ this shape and convert opportunistically.)
   where I bind.
   · **Found by looking at the deployed page, which no check does.** Ten guards, a lint pass and a
   re-run red all agreed. The eight-hour error was visible in one screenshot.
+
+- **Derive a lane's ownership list from its deliverables, not from the files that obviously
+  contain the work — a brief that requires a new artifact must also grant whatever *registers*
+  that artifact.** Otherwise the lane gets two options and both are bad: leave a check warning and
+  look incomplete, or edit a file the brief did not grant and break the disjointness invariant.
+  · **Measured:** #367 increment 2a's brief required "one new `dev/capture/*.mjs`" and granted the
+  seven files the visible change lives in. It did not grant the `justfile`. But a new guard only
+  counts as a guard once it is in `DEFAULT_GUARDS` (`justfile`) or explicitly excused in
+  `lint.NOT_GUARDS` (`lint.py`) — and `lint.py` was held by another lane. The lane appended
+  `markrail` to `DEFAULT_GUARDS`, which was correct, unavoidable, and outside its list. I ratified
+  it by relay. **Nothing collided only because no other lane needed the `justfile` — that was luck,
+  not design.**
+  · **The generative question, which takes one pass over the criteria:** for each deliverable, what
+  else must change for it to *count*? A new guard needs registering. A new file in a
+  registry-checked directory needs a registry row. A new format needs its `file-formats.md` entry.
+  A visible change needs `watch-design.md`. Every one of those is a second file, and every one of
+  them is a file some other lane may hold — which is when the sequencing decision has to be made,
+  at dispatch, not discovered by the lane at minute thirty.
+  · This is the same failure as [[the numbered list is where I bind]] seen from the other side:
+  there I put a requirement in prose and no criterion; here I put a requirement in the criteria
+  and withheld the means. **A brief has to be checked against itself — deliverables against
+  criteria against ownership — and the coordinator is the only party who can do it, because it is
+  the only party that sees all the lanes.**
