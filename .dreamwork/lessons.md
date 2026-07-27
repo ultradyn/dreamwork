@@ -1829,3 +1829,18 @@ this shape and convert opportunistically.)
   documents restating one ruling in their own words is the same single-source failure
   `lint.py` enforces against for file formats; his rulings deserve that discipline
   more, not less. (#367)
+- **A new file in a registry-checked directory reddens every OTHER lane's baseline until
+  it is registered — so a lane can be handed a red `just test` it did not cause and
+  cannot fix.** #367's measurement lane added `dev/capture/marktab-geometry.mjs`, which
+  `lint.py`'s `check_guards_registered` correctly flags as a guard that gates nothing.
+  That flag is a `test_lint.py` failure, so **lane D's `just test` went red on a file in
+  a directory lane D was forbidden to touch.** Lane D handled it right — named it
+  pre-existing, attributed it, did not chase it — but it burned attention and it could
+  as easily have been read as its own breakage. Two consequences: when dispatching a
+  lane that will create a file in a directory something enumerates (guards, plugins,
+  fixtures, migrations), **either register it in the same commit or tell the lane to**,
+  and put the registration in its acceptance criteria; and when two lanes run
+  concurrently, a brief's stated baseline test count is a **fact with a short shelf
+  life** — say "take the count from the tree, not from this brief". Disjoint file
+  ownership does not give disjoint test suites, which is the same lesson as disjoint
+  files not giving disjoint environments, arriving through a different door.

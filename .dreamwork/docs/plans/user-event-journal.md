@@ -388,7 +388,11 @@ fixtures kill at named seams rather than mocking away durability.
 
 - `user_events/journal.py`: backend-neutral records/service and state laws.
 - `user_events/sqlite.py`: SQLite implementation and migrations.
-- `user_events/application.py`: registry, lease executor, ternary reconciliation.
+- `user_events/apply.py`: registry, lease executor, ternary reconciliation.
+  (**This design said `application.py`; the built module is `apply.py`.** Lane D's brief
+  named `apply.py` and the lane correctly followed the brief as operative, then flagged
+  the divergence. Renamed here rather than in code, because the code is what imports
+  resolve against and a doc is what drifts. Landed `6cd9f95`.)
 - `user_events/domain_files.py`: mandatory cross-process lock, parse/preimage,
   atomic durable replace; sole supported writer after version-gated cutover.
 - endpoint adapters: only their own domain format and marker/search scope.

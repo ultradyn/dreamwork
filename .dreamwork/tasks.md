@@ -24,9 +24,33 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **390**
+Next id: **391**
 
 ## Open
+
+- **#390** — `reconcile` raises `FileNotFoundError` on a domain that has no file yet · P2 ·
+  reliability gap · origin: **loop** · found by #263 lane D, **reported rather than absorbed**,
+  and it is the neighbour-enumeration instruction paying for itself the same hour it was sent
+  · lane D's `reconcile` calls `_read_locked(path)` (a plain `open`). On a **never-created**
+  domain file that raises instead of proving `NOT_APPLIED` and creating it — so a brand-new
+  domain, one with no prior generation, is not handled at all
+  · **why it matters:** every domain starts in exactly this state exactly once, so this is not
+  an edge case, it is the **first** case. The journal's whole promise is that an answer reaches
+  its file exactly once even if the server dies mid-write; on a fresh install the first answer
+  hits an unhandled exception
+  · the lane verified the neighbouring behaviour is deliberate rather than accidental:
+  `prove_applied("")` on an empty file and on a plain non-managed file both return `UNKNOWN`
+  via `parse_metadata → None → guard`, which is fail-closed per law 8. **That is a decision.**
+  This one is not — it is a missing branch
+  · rec: `reconcile` treats an absent file as `NOT_APPLIED` with generation 0 and creates it
+  through the store's durable-replace, so the create path and the update path share one proof.
+  Do **not** special-case it earlier than the proof — the proof is where exactly-once is won
+  · **the red is cheap and must be discriminating:** delete the absent-file branch and the
+  first-answer-on-a-fresh-domain test must fail. The neighbour to keep green is the empty-file
+  case, which must stay `UNKNOWN` — a branch that treats "absent" and "empty" alike would pass
+  a test that only checks absent, and those two are genuinely different (one has no bytes, one
+  has bytes that do not parse)
+  · blocked on nothing; `user_events/apply.py` is free as of `6cd9f95`
 
 - **#389** — an essential mark with an empty or whitespace-only label is accepted · P3 ·
   correctness/authoring · origin: **loop** · found by coordinator while auditing #367
