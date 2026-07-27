@@ -42,7 +42,7 @@ shape:
     {
       "repo": "<abs path>",
       "path": ".dreamwork/tasks.md",
-      "history_complete": true,          // false on a shallow/partial clone
+      "history_complete": true,          // false on a shallow clone
       "history_note": null,              // why, when incomplete
       "tasks": [
         {"id": 300, "origin": "human", "first_commit": "<sha>",
@@ -151,8 +151,8 @@ def task_origins(repo, path: str = DEFAULT_PATH) -> dict:
                 continue
     revs.sort(key=lambda rc: rc[1])  # stable: ties keep commit order
 
-    # A shallow or partial clone cannot see first sight for anything filed
-    # before its boundary; say so instead of claiming full coverage.
+    # A shallow clone cannot see first sight for anything filed before its
+    # boundary; say so instead of claiming full coverage.
     complete = _git(repo, "rev-parse", "--is-shallow-repository").strip() != "true"
     note = None
     if not complete:

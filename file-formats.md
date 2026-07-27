@@ -314,7 +314,7 @@ get wrong:
   `ORIGIN_MARK`), not re-copied — a second copy of one rule is how the
   priority check drifted. A malformed snapshot fails closed to `unknown`
   for its affected entry and never crashes the walk.
-- **A shallow or partial clone reports `history_complete: false`** with a
+- **A shallow clone reports `history_complete: false`** with a
   `history_note`, rather than silently describing a later edit as the
   arrival.
 
