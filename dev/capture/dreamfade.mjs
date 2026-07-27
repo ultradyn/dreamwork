@@ -59,10 +59,12 @@ const openAct = qid => `(async () => {
     document.querySelector('.qa[data-qid="${qid}"] .qfold > summary').click();
   })()`;
 
-/* Trace the ghost's computed opacity, blur, transform, and class membership
-   per frame while the fold happens. The ghost lives ~1s and removes itself,
-   so it must be sampled per frame — looked for afterwards it is a departure
-   that did happen reported as one that did not (gitrow.mjs's lesson). */
+/* Trace the ghost's computed opacity and transform per frame, plus the SVG
+   mist filter's displacement/blur attributes (driven per-frame from rAF in
+   dreamAway). The filter nodes are shared (#departMist), so there's one set
+   of attrs per ghost — fine, since only one ghost exists at a time. The ghost
+   lives ~1s and removes itself, so it must be sampled per frame — looked for
+   afterwards it is a departure that did happen reported as one that did not. */
 const TRACE = (act, ms) => `((act, ms) => new Promise(res => {
   const frames = []; let removedAt = -1;
   const t0 = performance.now();
@@ -78,8 +80,12 @@ const TRACE = (act, ms) => `((act, ms) => new Promise(res => {
         const m = tr.match(/matrix(?:3d)?\\(([^)]+)\\)/);
         if (m) { const v = m[1].split(',').map(Number); ty = v.length === 16 ? v[13] : v[5]; }
       }
-      const blur = parseFloat(cs.filter.match(/blur\\(([0-9.]+)px\\)/)?.[1] ?? '0');
-      frames.push({ t, op: parseFloat(cs.opacity), blur, ty,
+      // the blur now lives in the SVG mist filter, not CSS filter:blur()
+      const dm = document.querySelector('#departMist feDisplacementMap');
+      const bl = document.querySelector('#departMist feGaussianBlur');
+      const blur = bl ? parseFloat(bl.getAttribute('stdDeviation') || '0') : 0;
+      const disp = dm ? parseFloat(dm.getAttribute('scale') || '0') : 0;
+      frames.push({ t, op: parseFloat(cs.opacity), blur, disp, ty,
                     pre: g.classList.contains('pregone'),
                     gone: g.classList.contains('gone') });
     } else if (frames.length > 0 && removedAt < 0) removedAt = t;
@@ -136,6 +142,7 @@ for (const reduced of [false, true]) {
 
   const ops = frames.map(f => f.op);
   const blurs = frames.map(f => f.blur);
+  const disps = frames.map(f => f.disp);
   const tys = frames.map(f => f.ty);
   const hadPregone = frames.some(f => f.pre);
   const hadGone = frames.some(f => f.gone);
@@ -143,6 +150,7 @@ for (const reduced of [false, true]) {
   const firstGone = frames.findIndex(f => f.gone);
   notes.push(`${tag}: ${frames.length} ghost frames; op ${ops[0].toFixed(3)}→` +
              `${ops.at(-1).toFixed(3)}; blur max ${Math.max(...blurs).toFixed(1)}px; ` +
+             `disp max ${Math.max(...disps).toFixed(1)}px; ` +
              `pregone@${firstPregone} gone@${firstGone}; ` +
              `removed ${removedAt < 0 ? 'never' : removedAt.toFixed(0) + 'ms'}`);
 
@@ -160,36 +168,33 @@ for (const reduced of [false, true]) {
   // The dissolve takes opacity 1→.8 (.pregone's target); the departure takes
   // it to 0 (.gone). A frame in the plateau is opacity between 0.6 and 0.95
   // — clearly past 1 (started dissolving), clearly above 0 (has not left).
-  // between() on the full opacity range counts frames strictly inside; a
-  // single-beat departure that skips the plateau has zero such frames.
   const leftStart = ops.some(o => o < 0.95);
   const plateau = ops.filter(o => o > 0.6 && o < 0.95).length;
   ok(`${tag}: the ghost leaves full opacity (precondition)`, leftStart);
   ok(`${tag}: opacity visits the dissolve plateau (0.6–0.95) on the way down`,
      plateau >= 1);
 
-  // ── blur rises during the dissolve, before the departure ────────────────
-  // .pregone takes blur 0→8px; .gone takes it to 8px (raised from 6px to
-  // match pregone — the corpse must not UN-blur as it leaves). So blur must
-  // reach ≥5px before opacity drops below 0.4 (the departure zone).
+  // ── the mist (SVG displacement + blur) rises before the departure ───────
+  // The #departMist filter grows displacement 0→14 and blur 0→4.5 over the
+  // whole departure. Both must be clearly rising (>2) before opacity drops
+  // below 0.4 (the departure zone), so the ghost hazes before it leaves.
   const depIdx = ops.findIndex(o => o < 0.4);
+  const dispBefore = depIdx > 0 ? Math.max(...disps.slice(0, depIdx)) : 0;
   const blurBefore = depIdx > 0 ? Math.max(...blurs.slice(0, depIdx)) : 0;
-  ok(`${tag}: blur rises to ≥5px before the departure zone (dissolve-first)`,
-     depIdx < 0 || blurBefore >= 5);
+  ok(`${tag}: mist displacement rises to ≥3px before the departure zone ` +
+     `(dissolve-first)`, depIdx < 0 || dispBefore >= 3);
+  ok(`${tag}: mist blur rises to ≥1px before the departure zone`,
+     depIdx < 0 || blurBefore >= 1);
 
-  // ── blur must NOT decrease during departure (no un-blur) ────────────────
-  // The dissolve's peak (pregone, ~8px) must be <= the departure's blur
-  // (.gone, 8px). If .gone's blur were lower than .pregone's, the corpse
-  // would get crisper as it leaves — a partial reversal of the dissolve.
-  // Found by coordinator pixel review; the existing >= 5px check passes
-  // over it because 6px > 5px throughout. Assert the blur is non-decreasing:
-  // the max blur in the departure half >= max blur in the dissolve half.
+  // ── the mist must NOT decrease during departure (no un-mist) ────────────
+  // The envelope is smoothstep, which is monotonic — displacement and blur
+  // only grow. If either decreased, the envelope broke.
   const mid = Math.floor(frames.length / 2);
-  const blurFirstHalf = Math.max(...blurs.slice(0, mid));
-  const blurSecondHalf = Math.max(...blurs.slice(mid));
-  ok(`${tag}: blur does not decrease during departure (no un-blur: ` +
-     `${blurSecondHalf.toFixed(1)}px late >= ${blurFirstHalf.toFixed(1)}px early)`,
-     blurSecondHalf >= blurFirstHalf - 0.5);
+  const dispFirst = Math.max(...disps.slice(0, mid));
+  const dispSecond = Math.max(...disps.slice(mid));
+  ok(`${tag}: mist displacement does not decrease during departure ` +
+     `(${dispSecond.toFixed(1)}px late >= ${dispFirst.toFixed(1)}px early)`,
+     dispSecond >= dispFirst - 0.5);
 
   // ── the drift sign: question-card ghosts rise (#174), never fall ────────
   ok(`${tag}: the ghost drifts UP (question-card sign, #174), never down`,
