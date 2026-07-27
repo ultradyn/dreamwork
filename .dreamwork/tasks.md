@@ -161,7 +161,7 @@ Next id: **382**
   **writes a hand-off** the ledger's writer reads on its next tick — the same shape as the
   dreamer inbox, which has never lost one, and pointedly not a status mirror. `#357`'s ambient
   counts are the other end of the same gap
-  · **the cheap partial LANDED `PENDING`**: `lint.check_placeholder_citations` WARNs on a landing
+  · **the cheap partial landed `49c3c04`**: `lint.check_placeholder_citations` WARNs on a landing
   citation that is an unfilled slot, contract in `file-formats.md`. WARN and not ERROR for a real
   reason — a commit cannot cite its own sha, so the slot is honest for exactly one commit and
   erroring would block the commit doing the work; the WARN exists for the follow-up
