@@ -1691,8 +1691,28 @@ Next id: **389**
   · nice detail in `F3`: widening `_write_authorized` to `return True` fails the read-only test
   **without** breaking the read commands, because they route through `READ_COMMANDS` upstream of
   the guard — so the red is specific to the property under test rather than collateral
-  · lane B second batch (`B5`-`B8`) dispatched 06:36; `#367` increment 1 06:41; `#385` 06:55 once
-  `watch.py` was free and verified
+  · **lane B second batch DONE, `@grok`, ~25 minutes, all four** — `B7` `5f729dc`, `B5` `bc731cf`,
+  `B6` `30947d7`, `B8` `fec80be`. 12/12 green in its file, and it took the priority order it was
+  given (`B7` first)
+  · **`B7`'s red came back GREEN, and that is the finding of the batch.** Removing
+  `UNIQUE(client_action_id)` left the whole suite passing. **I reproduced it: 12 passed with the
+  constraint deleted.** `BEGIN IMMEDIATE` plus `B2`'s SELECT-before-insert already serialise the
+  writers, so the second process *replays* and never reaches the constraint. The lane proved it
+  was not merely threaded — spawn context, `len({pids}) == 2` and `os.getpid() not in pids`
+  asserted at runtime — and then **probed the mechanism instead of guessing**: `DEFERRED` with no
+  `UNIQUE` gives `database is locked`, so the concurrency is real and `UNIQUE` is simply not the
+  line carrying it. Plan row amended, `UNIQUE` retained as defence-in-depth without the claim that
+  it is tested
+  · **that is the second wrong red line in my own plan** (after `B1`'s pragma) and they share a
+  shape: a plan written before the code names the mechanism its author imagines will carry the
+  property, not the one that does. Lesson recorded — defence-in-depth and a discriminating red are
+  in direct tension, and when a red comes back green the question is *"which layer is holding this
+  up?"* rather than *"is the code fine?"*
+  · `B5` honoured the no-clock-patch rule with a real 1s lease and a measured `elapsed > lease` via
+  `time.monotonic()`; `B8`'s meta-test derives contract names from `inspect.signature` and asserts
+  the product, so there is no hand-copied list to drift
+  · **so lanes A, B, C and F of his G1 grant are complete.** Lane D (the adapters) dispatched 07:00
+  now that `B5` and `C3` — its blockers — are both in. `#367` increment 1 and `#385` also in flight
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses
