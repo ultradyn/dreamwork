@@ -14,10 +14,20 @@
    reduced motion (where all of it must be instant).
    usage: node headertravel.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
+
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: '/questions navigated onto and off /review in two contexts (normal + ' +
+          'reduced-motion), tracing the heading survivors, column width, + opener ' +
+          'and ghost per rAF; plus the + opener at rest across 4 widths x 4 routes',
+  traceWindow: 'two 1500ms rAF traces per navigation direction per context, plus ' +
+               'static reads after ~0.5s settle per width x route; motion sampled per frame',
+});
 
 /* Tag the live heading nodes before navigating. If they are still tagged
    afterwards they are literally the same elements — which is what "the
@@ -141,7 +151,6 @@ const between = (vals, a, b) => {
 const span = vals => Math.abs(vals.at(-1) - vals[0]);
 const n = runs.normal, r = runs.reduced;
 const moving = f => f.filter(x => x.ghostW !== null);
-const checks = []; const ok = (nm, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${nm}`);
 
 ok('no page errors', n.errs.length === 0 && r.errs.length === 0);
 ok('both navigations actually fired',
@@ -207,13 +216,13 @@ ok('the + is fully visible with a gap, every route x every width',
 ok('the + shares the heading text\'s centreline, every route x every width',
    edges.every(e => Math.abs(e.dc) <= 0.5));
 
-console.log('onto : ' + JSON.stringify(n.onto.frames.filter((_, i) => i % 8 === 0)));
-console.log('off  : ' + JSON.stringify(n.off.frames.filter((_, i) => i % 8 === 0)));
-console.log('reduced onto widths: ' + JSON.stringify(uniq(r.onto.frames.map(x => x.wrap))));
-console.log('min + left, onto/off: ' +
+notes.push('onto : ' + JSON.stringify(n.onto.frames.filter((_, i) => i % 8 === 0)));
+notes.push('off  : ' + JSON.stringify(n.off.frames.filter((_, i) => i % 8 === 0)));
+notes.push('reduced onto widths: ' + JSON.stringify(uniq(r.onto.frames.map(x => x.wrap))));
+notes.push('min + left, onto/off: ' +
   Math.min(...n.onto.frames.map(x => x.plusLeft)) + ' / ' +
   Math.min(...n.off.frames.map(x => x.plusLeft)));
-console.log('opener at rest: ' + JSON.stringify(edges));
-if (n.errs.length || r.errs.length) console.log('errors: ' + n.errs.concat(r.errs).join(' | '));
-console.log('----'); console.log(checks.join('\n'));
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+notes.push('opener at rest: ' + JSON.stringify(edges));
+if (n.errs.length || r.errs.length)
+  notes.push('errors: ' + n.errs.concat(r.errs).join(' | '));
+finish();
