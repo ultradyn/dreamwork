@@ -28,34 +28,6 @@ Next id: **322**
 
 ## Open
 
-- **#321** — The styleguide audit has no honest way to close a miss once the
-  window shuts · P2 · tooling · ~25m · origin: **loop** · goal: a check must have
-  a path from red to green that is not "move the goalposts" ← DREAMWORK.md
-  *Nothing fails quietly* · **third time at this exact wall**: #313 advanced the
-  baseline to go green and reddened in half a day, #314 re-grounded the filter on
-  the diff, #320 fixed the window's unit — and `cdb89df` is STILL red, because a
-  miss is PERMANENT once its window closes and the only remedies are ones the
-  loop has correctly forbidden itself (back-fill a doc entry, or advance the
-  baseline again) · **and `cdb89df` is documented.** `watch-design.md` lines
-  398-402 name #302 explicitly, in the contract line about all three per-route
-  tables; the styleguide documents that contract and deliberately does NOT
-  enumerate tint values, so there is nothing further to write. The entry exists;
-  the audit cannot see it · **the precise limitation, so this is not re-derived**:
-  that entry lives in `34131c7`, which is itself a UI commit, and #320's blocker
-  rule makes a UI commit's entry its own — correct in general (it is what stops
-  one stray touch vouching for a whole burst, and without it the pre-baseline
-  reports 0 misses instead of 11) but wrong here, because `34131c7`'s entry
-  genuinely documents TWO changes: its own and #302's · so the audit cannot
-  represent a combined entry · **the `Styleguide: n/a` hatch is the right tool and
-  cannot be applied**: it is a commit trailer, so it only works if you knew at
-  commit time, and a miss found later has no closure at all · rec: a small
-  TRACKED remediation file mapping `<missed sha> -> <documenting sha>`, which the
-  audit reads and reports LOUDLY (a REMEDIATED line, as EXEMPT already is) so
-  every use stays visible and countable — never a silent pass · **the visibility
-  is the whole safeguard**, since this lets the loop close its own misses; a
-  mechanism that hid them would be #313 again with extra steps · red-prove that a
-  remediation pointing at a commit which does NOT touch a styleguide file is
-  REJECTED, or the file becomes a way to wave anything through
 
 - **#319** — Guard servers should bind port 0 and let the OS assign · P2 ·
   tooling · ~40m · origin: **loop** · goal: remove a failure class rather than
@@ -1093,6 +1065,27 @@ Next id: **322**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#321** — The styleguide audit had no honest way to close a miss once the
+  window shut · P2 · landed 2026-07-27 · tooling · ~30m · origin: **loop** ·
+  goal: a check must have a path from red to green that is not "move the
+  goalposts" ← DREAMWORK.md *Nothing fails quietly* · 89d6991 · **the mechanism
+  is NOT the one this entry proposed.** It asked for a tracked remediation file
+  mapping `<missed sha> -> <documenting sha>`; measuring first found a better
+  signal already present in history: `34131c7`'s added `watch-design.md` lines
+  literally name `#302`, and `cdb89df`'s subject is `fix(#302)`. So **a styleguide
+  entry that NAMES a task id documents that task's commits, at any distance** —
+  falling out of the `type(#id):` convention the repo already keeps, needing no
+  new file, no trailer, and nothing remembered at commit time (which is what
+  ruled the `Styleguide: n/a` hatch out as a general remedy). The doc stating
+  what it covers is better evidence than a mapping file asserting it · credits
+  print as loud DOC-BY-ID lines, never a silent pass · **measured for hollowness
+  rather than argued**: over the pre-baseline it credits 7 and leaves 4 MISSES
+  standing, including `a6e98cc` (#273) and `bfa561f` (#181), the two verified by
+  reading as genuinely undocumented; its four #290 credits are one feature
+  documented once in `2f0e7ea` (86 lines, a whole run-mode section), spot-checked
+  not assumed · three red proofs, one per rule · `just audit-styleguide` exits 0
+  for the first time since #313
 
 - **#320** — The styleguide audit's window counted commit rate, not documentation
   adjacency · P2 · landed 2026-07-27 · tooling/correctness · ~35m · origin:

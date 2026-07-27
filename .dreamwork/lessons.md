@@ -1177,3 +1177,16 @@ this shape and convert opportunistically.)
   questions.md and the dashboard's own surfaces are the whole channel. Do not
   read a silent human as an absent one.
   (coordinator, 2026-07-27, #190)
+
+- **A test that fakes the code's dependency can end up asserting a property of
+  the fake.** Twice in two hours, both times on a red proof that came back
+  GREEN. (a) #320's fixture built the relevant-commit list itself instead of
+  calling `window_positions`, so reverting the window's UNIT — the single
+  decision the test was named for — changed nothing it could see. (b) #321's
+  fake `styleguide_added_text` returned `""` for non-styleguide commits, so
+  deleting the styleguide-file filter changed nothing either; the input could
+  not reach the branch under test. Both read as thorough unit tests and both
+  were structurally incapable of failing. **The tell is cheap: after writing a
+  test that patches anything, ask which line of production code would have to
+  change for this to fail — then change it and watch.** Red-first catches this
+  and nothing else does; it is why the rule is a rule and not a preference.
