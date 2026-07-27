@@ -204,7 +204,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 
 | File | Read by | Contract | Checked |
 |---|---|---|---|
-| `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | One `- **#N**` entry per task; `Next id: **N**` in the header. Ids are **permanent**, so a duplicate is unrecoverable and `Next id` must exceed every id present | `lint.py` |
+| `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | One `- **#N**` entry per task; `Next id: **N**` in the header. Ids are **permanent**, so a duplicate is unrecoverable and `Next id` must exceed every id present. Origin is recorded forward-only from #216 — the section below | `lint.py` |
 | `.dreamwork/status.json` | `watch.py`'s status reader; **`dreamhub.py`** | Valid JSON, and now an interface — see below | `lint.py` |
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
@@ -218,6 +218,66 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `DREAMWORK.md` | the loop, the wizard, the scope gate | Section headings are load-bearing — the scope gate and the goal chain both address them by name | prose only |
 | `~/.cache/agent-comms/<target>/coord-inbox.md` | the coordinator's tail monitor | Append-only, one report per line, prefixed `[agent-name]`. Machine-local, never committed | prose only |
 | `~/.cache/agent-comms/<target>/<agent>-inbox.md` | that subagent, **between increments** | Append-only. Write it with `relay.py` — body from stdin so it cannot be shell-expanded, stamp from the clock so it cannot be invented | prose only |
+
+## `.dreamwork/tasks.md` — origin, forward-only from #216 (#213)
+
+Who filed a task is a fact. Before this contract the ledger almost never
+wrote it down, and a fact that was never written cannot be reconstructed
+later without guessing — so the rule looks only forward, and the past
+stays honestly unknown rather than retroactively classified.
+
+**Every entry whose leading `- **#…**` token names any id >= 216 carries
+exactly one origin marker** in its `·`-separated metadata chain:
+
+```
+origin: **human**      filed on the human's steer
+origin: **loop**       filed by the loop itself
+origin: **unknown**    never recorded — the truthful value for anything
+                       filed before the convention existed
+```
+
+`unknown` is a first-class value, not a failure and not a gap to tidy:
+it is the only honest mark for post-cutoff ids that predate this
+contract, and writing it is a statement, not an omission.
+
+The load-bearing decisions, each of which a narrower reading would get
+wrong:
+
+- **The enforcement key is every numeric id in the entry's leading bold
+  token; the rule fires when ANY of them is >= 216** (equivalently, when
+  the highest is). Combined entries are therefore governed on either id:
+  `- **#250/#251**` and `- **#292/#293**` carry a marker (`unknown` —
+  they landed before the convention), while `- **#138/#156**` predates
+  the cutoff on both ids and stays unmarked. A combined landed summary
+  written after the cutoff about pre-cutoff tasks is NOT retroactively
+  governed by the writing date — only by the ids it numbers.
+- **A `#N` in the body is a cross-reference, never the entry's number.**
+  `blocked on #264` must not govern the entry that contains it, or most
+  of history would suddenly owe a marker.
+- **Entries whose ids are all < 216 are not checked at all.** Historical
+  tasks may omit origin (absent reads as historical unknown), and a
+  pre-cutoff entry quoting the convention in its prose — #213's own
+  entry quotes `origin: **human|loop**` as its spec — is prose, not a
+  marker. Forward-only means the linter does not even look.
+- **An entry is a list item opening `- **#…**` plus its indented
+  continuation lines.** The column-0 prose summaries under Recently
+  landed are not entries and never join one.
+- **The marker may hard-wrap** — `origin:` ending a line, the value
+  opening the next — because the loop writes at ~72 columns; the linter
+  joins the entry's lines before reading, the same allowance the
+  questions.md title rule makes. #288 and #252 both wrap this way.
+
+`lint.py` (`check_task_origins`, inside `check_tasks`) errors on a
+governed entry with no marker, a marker whose value is outside the three
+(wrong case included — `**Human**` is a claim a reader would have to
+interpret, and interpreting is guessing), or more than one marker (two
+claims is none). The error names the entry and the vocabulary, because
+"origin is wrong" reads as nonsense to someone who never met the rule.
+
+Deliberately NOT here: parsing origin from first sight in git history
+(#216) and rendering human/loop/unknown coverage on the dashboard (#217)
+are their own increments. This one is the contract and its enforcement;
+#216 and #217 build on a ledger that already tells the truth.
 
 ## What stays unguarded, and why
 

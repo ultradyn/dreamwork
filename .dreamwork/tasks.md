@@ -18,6 +18,12 @@ steers are never gated. A convention that fires on everything gets
 written on nothing; narrowed here to match the gate that actually asks
 for it.
 
+**Origin is recorded, never reconstructed.** Every entry from #216 onward
+carries exactly one `origin: **human**`, `origin: **loop**`, or
+`origin: **unknown**` in its metadata chain — `unknown` is the truthful
+value for anything filed before the convention existed. Older entries
+stay unmarked; history is not guessed. Contract: `file-formats.md`.
+
 Next id: **297**
 
 ## Open
@@ -943,7 +949,8 @@ Next id: **297**
 
 ## Recently landed
 
-- **#296** — Stabilise answers guard premises under load · P1 · landed
+- **#296** — Stabilise answers guard premises under load · P1 · origin:
+  **unknown** · landed
   2026-07-27 · guard-only fix for two root-caused races: #250 close now
   waits for the previous travel's concrete inline-style cleanup then proves
   the new close armed; #251 binds its original ElementHandle premise to the
@@ -963,7 +970,8 @@ Next id: **297**
   hostile-markup inertness and source-verbatim checks, each red-proved
   against a reintroduced break; pytest tokens extended (542 + 46 green)
 
-- **#234** — Minimise the answer-morph rerender hold · P2 · landed
+- **#234** — Minimise the answer-morph rerender hold · P2 · origin:
+  **unknown** · landed
   2026-07-27 · `Date.now() + 1600` replaced by named `MORPH_HOLD_MS = 1250`,
   derived from the measured critical path (flipDock's 1150ms transform is
   the longest visible leg + 100ms slack; the 850ms card travel, its 1000ms
@@ -988,20 +996,22 @@ Next id: **297**
   never auto-applies · red-first 27 tests, 542 + 46 subtests, Standards +
   Spec PASS · `d7983be`
 
-- **#245** — Build `ud-dreamwork-worktrees` plugin · P1 · landed earlier at
+- **#245** — Build `ud-dreamwork-worktrees` plugin · P1 · origin:
+  **unknown** · landed earlier at
   `8af7dc3` (ledger rescan 2026-07-27 found the entry stale in Open) ·
   red-first 11→22 contract tests, two independent Standards/Spec reviews,
   publishable package under `plugins/` symlinked into Pi/agents/llm-general
   roots; bounded subagent mode + durable co-agent claims/inbox protocol
 
 - **#250/#251** — Missing-aid answer disclosures + node disconnect proof ·
-  P1/P2 · landed earlier at `f17f307` (ledger rescan 2026-07-27 found both
+  P1/P2 · origin: **unknown** · landed earlier at `f17f307` (ledger rescan 2026-07-27 found both
   entries stale in Open) · identity-less answered details use a local
   human-click fold reusing travel/reveal/ghost; original ElementHandle proven
   connected before refresh and disconnected after; 440 tests, Standards/Spec
   PASS, deployed
 
-- **#290** — Add a dashboard-settable main-dreamer run mode · P1 · landed
+- **#290** — Add a dashboard-settable main-dreamer run mode · P1 · origin:
+  **unknown** · landed
   2026-07-27 · authoritative gitignored `.dreamwork/run-mode` drives three
   selectable modes (lackadaisical / hot / assisted) with hierarchical kept
   visibly planned-disabled behind #264/#288 · server validates, atomically
@@ -1017,7 +1027,7 @@ Next id: **297**
   `b0db53d`
 
 - **#292/#293** — `/answers` Ctrl+Enter submit and visible question text ·
-  P1 · landed 2026-07-27 · Ctrl/Cmd+Enter on the `/answers` ask textarea
+  P1 · origin: **unknown** · landed 2026-07-27 · Ctrl/Cmd+Enter on the `/answers` ask textarea
   submits exactly once durably: in-flight guard blocks rapid double-press,
   generation invalidation on leaving the route stops a late response touching
   a rebuilt form, failures keep the user's words · submitted text is visibly
@@ -1031,7 +1041,7 @@ Next id: **297**
   deployed dashboard PID 1053756 serving HEAD
 
 - **#291** — Restore the command composer's 1.5s courtesy-close · P1 ·
-  landed 2026-07-27 · successful main-panel command sends again auto-dismiss
+  origin: **unknown** · landed 2026-07-27 · successful main-panel command sends again auto-dismiss
   after 1425ms unless input resumes during/after POST; the ~5s confirmation
   remains independent while typing keeps the panel open; manual/context close
   remains destructive · explicitly opened command popouts are persistent and
@@ -1040,7 +1050,7 @@ Next id: **297**
   confirmation guards, lint/diff clean; Standards + Spec PASS · `26c4bee`
 
 - **#268** — Hide Dreamwork-only plugins from ordinary skill discovery · P1 ·
-  landed/migrated 2026-07-27 · active loops parse only exact bounded
+  origin: **unknown** · landed/migrated 2026-07-27 · active loops parse only exact bounded
   `DREAMWORK.md` Load declarations and resolve bundled/sibling/explicit packages
   deterministically, reading emitted `SKILL.md` files directly · migration first
   inventories every alias/source across recursive global/project/configured Pi
@@ -1051,7 +1061,7 @@ Next id: **297**
   Standards + Spec PASS; 67 focused, 504 tests + 46 subtests · `ac4d57a`
 
 - **#255** — Make composer confirmation self-dismiss reliably · P1 · UI bug ·
-  landed 2026-07-26 · one document-scoped `confirmationFor` controller serves
+  origin: **unknown** · landed 2026-07-26 · one document-scoped `confirmationFor` controller serves
   main and popout: atmospheric arrival, ~5s readable hold, atmospheric
   departure/clear; reduced motion keeps timing and snaps visuals · typing
   cancels only panel courtesy-close; close/route/pagehide hard-clean timers,
@@ -1062,7 +1072,7 @@ Next id: **297**
   PASS, Standards + Spec PASS, 459 tests + 46 subtests · `74837df`
 
 - **#221** — Sort dashboard reviews by exact filesystem datetime · P2 ·
-  implementation · landed 2026-07-26 · newest exact `st_mtime_ns` first;
+  implementation · origin: **unknown** · landed 2026-07-26 · newest exact `st_mtime_ns` first;
   filename ascending only on exact nanosecond ties; displayed age derives from
   the same stat result; disappearing TOCTOU entries are skipped while other
   stat errors surface · stable keyed review rows travel through the existing
@@ -1074,7 +1084,7 @@ Next id: **297**
   `b9159db` · separate #288 authority incident remains open
 
 - **#279** — Prototype a Jupiter-like higher-fluid-dynamics storm shader · P1 ·
-  visual experiment/design · completed 2026-07-26 as an honest **failed
+  visual experiment/design · origin: **unknown** · completed 2026-07-26 as an honest **failed
   prototype** · all seven supplied references inspected; three standalone
   variants built without touching production · first evidence pass FAILed blank
   capture/telemetry race/submerged geometry; deterministic static pipeline,
@@ -1086,7 +1096,7 @@ Next id: **297**
   branch `prototype/279-jovian-final`, tip `a1c180c`
 
 - **#271** — Rerender review docks on cross-browser data ticks · P1 · bug ·
-  completed 2026-07-26 · diagnosis:
+  origin: **unknown** · completed 2026-07-26 · diagnosis:
   `.dreamwork/docs/research/cross-browser-note-propagation-271.md` · current-view
   tick rerender now refreshes remote notes without stale-navigation overwrite;
   preserves live iframe URL/scroll, stable question target, draft/selection/
