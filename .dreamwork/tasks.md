@@ -241,7 +241,17 @@ Next id: **301**
   task detail URL, honest open/landed/blocked/unknown states, search/filter/sort,
   origin/date/priority/type/owner/dependencies, deep links and responsive/a11y
   interactions · ledger remains authority; no duplicate task database · requires
-  self-contained proposal before implementation and coordinates with #213/#216
+  self-contained proposal before implementation and coordinates with #213/#216 ·
+  **human via chat 15:41 (Max's first steer to this coordinator):** make this the
+  current lane ahead of the inherited do-next #172 · obey transitions.md and
+  watch-design.md · owner: `dreamer-taskspage` holds the DESIGN phase only, in
+  `.worktrees/281-tasks-page`, owning just
+  `.dreamwork/docs/plans/tasks-page.md` + `.dreamwork/review/tasks-page.html` ·
+  crux established by the coordinator: every existing ledger reader is id-set
+  level (`parse_ledger`, `entry_origins`, `ledger_entries`), so this needs a new
+  entry-level reader as ONE deep module, fail-closed to `unknown` exactly as
+  `entry_origins` is, and that reader is both #213's blocking contract and the
+  seam #294 later re-points at SQLite · in progress
 
 - **#280** — Design selectable preserved background shaders · P2 · visual/settings
   design · origin: **human** · **human via watch 18:12** · keep the current
