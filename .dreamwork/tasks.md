@@ -1199,7 +1199,8 @@ Next id: **330**
 ## Recently landed
 
 - **#325** — the review artifact is a template with a builder · landed `2365cb0`,
-  merged `HEADSHA` · his 21:38 ask · the shape was decided by measurement: the
+  merged `e798e07` · origin: **human** · **human via watch 2026-07-27 21:38** ·
+  the shape was decided by measurement: the
   drift across twelve artifacts is entirely in the stylesheet (five font stacks,
   eight page backgrounds, twelve inline stylesheets, zero shared source) while the
   section markup is consistent — so template-owns-the-frame /
