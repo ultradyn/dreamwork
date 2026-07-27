@@ -18,14 +18,23 @@
    nothing in the design uses (#00ff88). Everything the dock paints is then
    measurable against it:
 
-     - a BAND paints `var(--bg)`, the page's near-black. It is the only way to
-       emulate a fade, and it is the one colour that may not appear.
-     - a MASK paints nothing: it makes the glyphs translucent, so every
-       non-glyph pixel stays exactly the plate colour and the glyph pixels
-       become blends of glyph-toward-plate.
+     - a MASK paints nothing at all. It makes glyphs translucent, so every
+       pixel where the card draws nothing stays EXACTLY the plate.
+     - a BAND, or a scrim, or a blur, or anything else painted between the box
+       and the page, cannot leave the plate exactly the plate.
 
-   That distinction is the whole guard, and it holds for any selector, any
-   element, and any z-index.
+   So the assertion is "still the plate", and that distinction holds for any
+   selector, any element, any z-index and any opacity.
+
+   IT MATTERS THAT IT IS "STILL THE PLATE" AND NOT "NEVER `--bg`", and this is
+   the guard's own documented green red-run: the first version asserted that no
+   pixel behind the box was within 8/255 of `var(--bg)` — the colour a band's
+   gradient interpolates to — and it PASSED with #305 (c)'s band reinstated
+   verbatim. The band was painting; the card it sits in is `.qa.awaiting`,
+   which carries `opacity:.82`, so the band composited to rgb(9,58,44) instead
+   of rgb(11,15,25) and the comparison missed it by a mile. Naming the colour
+   the offender paints is a guess about the offender. Naming the colour that
+   must survive is a fact about the requirement.
 
    Both of the other two claims fall out of the same plate: the strip above the
    box is where the text fades, so its ink profile must FALL toward the box and
@@ -59,17 +68,28 @@ declare({
 });
 
 const PLATE = [0, 255, 136];          // #00ff88 — in no token, in no gradient
-/* The page background a band would paint, read out of the page's own token
-   rather than written here: `--bg` is what #305's gradient interpolated to, and
-   a literal would be a check with an expiry date the moment the theme moves. */
-const READ_BG = `(() => {
-  const c = getComputedStyle(document.documentElement)
-              .getPropertyValue('--bg').trim();
-  const d = document.createElement('div');
-  d.style.color = c; document.body.appendChild(d);
-  const rgb = getComputedStyle(d).color.match(/[0-9.]+/g).map(Number);
+/* ...and it must BE in no token, or "still the plate" would be satisfiable by
+   something the design paints. Asserted against the page's own variables rather
+   than trusted, because a palette change is exactly the kind of thing that
+   would rot this quietly. */
+const PLATE_IS_ALIEN = `(() => {
+  const cs = getComputedStyle(document.documentElement);
+  const d = document.createElement('div'); document.body.appendChild(d);
+  const rgb = c => { d.style.color = ''; d.style.color = c;
+    const m = getComputedStyle(d).color.match(/[0-9.]+/g);
+    return m ? m.slice(0, 3).map(Number) : null; };
+  const hits = [];
+  for (const name of ['--bg', '--fg', '--dim', '--dimmer', '--muted', '--lit',
+                      '--bright', '--accent', '--warn', '--border', '--line',
+                      '--panel']) {
+    const v = cs.getPropertyValue(name).trim();
+    if (!v) continue;
+    const c = rgb(v);
+    if (c && Math.abs(c[0]) <= 24 && Math.abs(c[1] - 255) <= 24 &&
+        Math.abs(c[2] - 136) <= 24) hits.push(name + '=' + v);
+  }
   d.remove();
-  return rgb.slice(0, 3);
+  return hits;
 })()`;
 /* Hide the shader and flood the page with the plate colour. `!important` on the
    canvas because the shader is positioned chrome, and on the wrap/body because
@@ -145,23 +165,38 @@ const REGIONS = `(() => {
    every pixel is the same pixel, and the ratio is the mask's whole effect.
    It is also what makes this assertion able to fail on a BAND, which the
    ratio between two scroll positions could not: switch a mask off and a band
-   still covers the text, so nothing would change. */
+   still covers the text, so nothing would change.
+
+   It switches off EVERY mask in the dock, not `.qbody`'s. Named the narrow way
+   it had its own green red-run: with the fade moved back onto `.qa` — the
+   scroller-that-contains-the-box trap this guard exists to catch — an inline
+   override on `.qbody` left the offending mask in place in both plates, so the
+   answer box measured identically dimmed twice and the check passed. The
+   question this comparison asks is "what does masking do here", and the answer
+   must not depend on which element the author chose. */
 const MASK = on => `(() => {
-  const b = document.querySelector('#qdock .qa > .qbody');
-  b.style.webkitMaskImage = ${on} ? '' : 'none';
-  b.style.maskImage = ${on} ? '' : 'none';
-  return getComputedStyle(b).maskImage;
+  const id = 'qfade-nomask';
+  const had = document.getElementById(id);
+  if (${on}) { if (had) had.remove(); }
+  else if (!had) {
+    const s = document.createElement('style'); s.id = id;
+    s.textContent = '#qdock, #qdock *{-webkit-mask-image:none!important;' +
+      'mask-image:none!important}';
+    document.head.appendChild(s);
+  }
+  return getComputedStyle(
+    document.querySelector('#qdock .qa > .qbody')).maskImage;
 })()`;
 
 /* Read the plate back. Runs in the page with the screenshot as a data URL —
    the same idiom popbg.mjs and identity.mjs use for pixel evidence.
-     bg     — pixels within 8/255 of `--bg` on all three channels: what a band
-              paints and a mask cannot.
-     ink    — mean distance from the plate, per row, so a fade is a falling
-              profile rather than a single number.
+     painted — pixels that are NOT the plate any more (8/255 per channel): a
+               glyph, or anything drawn between the box and the page.
+     ink     — mean distance from the plate, per row, so a fade can be read as
+               a profile rather than as a single number.
    `skip` is the descendant rects, so the box's own field and buttons are not
    mistaken for something painted behind them. */
-const MEASURE = async ([url, region, skip, bg]) => {
+const MEASURE = async ([url, region, skip, plate]) => {
   const img = await new Promise(r => {
     const i = new Image(); i.onload = () => r(i); i.src = url; });
   const cv = document.createElement('canvas');
@@ -170,9 +205,7 @@ const MEASURE = async ([url, region, skip, bg]) => {
   const x0 = Math.round(region.x), y0 = Math.round(region.y);
   const w = Math.round(region.w), h = Math.round(region.h);
   const d = g.getImageData(x0, y0, w, h).data;
-  const near = (i, c) => Math.abs(d[i] - c[0]) <= 8 &&
-    Math.abs(d[i+1] - c[1]) <= 8 && Math.abs(d[i+2] - c[2]) <= 8;
-  const rows = []; let bgpx = 0, sampled = 0, worst = null;
+  const rows = []; let painted = 0, sampled = 0, worst = null;
   for (let y = 0; y < h; y++) {
     let ink = 0, n = 0;
     for (let x = 0; x < w; x++) {
@@ -181,15 +214,35 @@ const MEASURE = async ([url, region, skip, bg]) => {
         continue;
       const i = (y * w + x) * 4;
       n++; sampled++;
-      // distance from the plate, summed over the channels the plate is not
-      ink += Math.abs(d[i] - 0) + Math.abs(d[i+2] - 136);
-      if (near(i, bg)) { bgpx++; if (!worst) worst = { px, py,
+      const off = Math.max(Math.abs(d[i] - plate[0]), Math.abs(d[i+1] - plate[1]),
+                           Math.abs(d[i+2] - plate[2]));
+      // distance from the plate, over the two channels it is extreme in, so a
+      // half-faded glyph reads as half the ink of a lit one
+      ink += Math.abs(d[i] - plate[0]) + Math.abs(d[i+2] - plate[2]);
+      if (off > 8) { painted++; if (!worst) worst = { px, py,
         rgb: [d[i], d[i+1], d[i+2]] }; }
     }
     rows.push({ y: y0 + y, ink: n ? +(ink / n).toFixed(1) : null, n });
   }
-  return { rows, bgpx, sampled, worst };
+  return { rows, painted, sampled, worst };
 };
+
+/* PAIR TWO PLATES ROW BY ROW, and never compare their means. Both places this
+   guard asks "did the mask change anything here" had a documented green
+   red-run against a mean: the box's mean moved 1.2% when the fade was moved
+   back onto `.qa` and dimmed its bottom 24px (57.41 -> 56.7), and the
+   end-of-question strip's mean moved 11.9% with the foot fade jammed on
+   (12.37 -> 10.9). Both were under any tolerance worth having, because a fade
+   is a local effect and a mean over the whole region dilutes it by exactly the
+   ratio of the region to the fade. Rows with no ink are dropped: a ratio into
+   the thread's blank padding is a division into nothing. */
+const pair = (lit, bare, floor = 3) => {
+  const rows = lit.rows.map((x, i) => ({ y: x.y, on: x.ink, off: bare.rows[i].ink }))
+                       .filter(x => x.off > floor);
+  return { rows, worst: rows.reduce((a, x) => x.on / x.off < a.on / a.off ? x : a),
+           lowest: rows.at(-1) };
+};
+const pct = x => (x.on / x.off).toFixed(2);
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const open = async (q, opts = {}) => {
@@ -211,19 +264,20 @@ const scrollTo = async (p, to) => {
   }, to);
   await sleep(700);          // the .45s fades have settled by here
 };
-const plate = async (p, region, skip, bg, file) => {
+const read = async (p, region, skip, file) => {
   const shot = await p.screenshot(file ? { path: `${OUT}/${file}` } : {});
   return p.evaluate(MEASURE, ['data:image/png;base64,' + shot.toString('base64'),
-                              region, skip, bg]);
+                              region, skip, PLATE]);
 };
 
 const { ctx: c1, p } = await open(qs[0]);
 if (!(await present(p, '#qdock .qa > .qbody', "the docked question's scroller"))) {
   await br.close(); finish(); process.exit(0);
 }
-const BG = await p.evaluate(READ_BG);
-say(`the page's --bg is rgb(${BG}); the plate under the dock is ` +
-    `rgb(${PLATE}) with the shader hidden`);
+const alien = await p.evaluate(PLATE_IS_ALIEN);
+say(`the plate under the dock is rgb(${PLATE}) with the shader hidden`);
+ok('the plate is a colour the design never paints (else "still the plate" ' +
+   'is satisfiable by the page itself)', alien.length === 0);
 
 /* ── half way down: text passes the box, and the box has nothing behind it ── */
 {
@@ -238,20 +292,21 @@ say(`the page's --bg is rgb(${BG}); the plate under the dock is ` +
   ok('...and half way down is not the end (else the foot fade is switched off ' +
      'and the plate below proves nothing)', r.atend === false && r.foot > 0);
 
-  const box = await plate(p, r.box, r.kids, BG, 'qfade-half.png');
-  say(`behind the answer box: ${box.bgpx} of ${box.sampled} sampled pixels are ` +
-      `--bg` + (box.worst ? `, first at ${box.worst.px},${box.worst.py} = ` +
+  const box = await read(p, r.box, r.kids, 'qfade-half.png');
+  say(`behind the answer box: ${box.painted} of ${box.sampled} sampled pixels ` +
+      `are no longer the plate` +
+      (box.worst ? `, first at ${box.worst.px},${box.worst.py} = ` +
       `rgb(${box.worst.rgb})` : '') +
       ` (skipping what paints: ${r.skipped.join(', ')})`);
   // the region has to BE there: if the composer's children covered all of it
   // the count would be zero and the assertion below would pass over anything.
   ok('the answer box has a footprint of its own to look behind ' +
      '(else the check below is vacuous)', box.sampled > 2000);
-  // THE ASSERTION HE WOULD MAKE. Not "there is no ::before" — any band, of any
-  // selector, has to paint --bg over the plate to emulate a fade, and this is
-  // the only colour the box's own footprint may not be.
-  ok('nothing opaque is painted between the answer box and the page',
-     box.bgpx === 0);
+  // THE ASSERTION HE WOULD MAKE. Not "there is no ::before": that would pass
+  // the next band under a different selector. The box's own footprint is
+  // still, exactly, the page behind it — which nothing painted there can be.
+  ok('nothing is painted between the answer box and the page',
+     box.painted === 0);
   /* ...AND THE BOX IS NOT DIMMED EITHER — the other half of "nothing behind
      them", and the trap the obvious fix falls into: move the fade to a mask
      over a scroller that still CONTAINS the box and the box fades with the
@@ -260,23 +315,26 @@ say(`the page's --bg is rgb(${BG}); the plate under the dock is ` +
      difference at all inside the compose box, children included. */
   {
     const whole = { ...r.box, w: r.box.w, h: r.box.h };
-    const lit = await plate(p, whole, null, BG);
+    const lit = await read(p, whole, null);
     await p.evaluate(MASK(false));
-    const bare = await plate(p, whole, null, BG);
+    const bare = await read(p, whole, null);
     await p.evaluate(MASK(true));
-    const ink = m => +(m.rows.reduce((s, x) => s + x.ink, 0) / m.rows.length)
-                       .toFixed(2);
-    say(`the answer box itself, ink with the mask vs without it: ` +
-        `${ink(lit)}/${ink(bare)}`);
-    ok('the box has ink of its own to dim (else the check below is vacuous)',
-       ink(bare) > 5);
-    ok('...and the fade does not touch the box: the mask changes nothing ' +
-       'inside it', Math.abs(ink(lit) - ink(bare)) <= 0.02 * ink(bare));
+    // per row, never on the mean over the box — see `pair`
+    const { rows, worst, lowest } = pair(lit, bare);
+    say(`the answer box itself, ink with the mask vs without it, worst row ` +
+        `${worst.y}: ${worst.on}/${worst.off} = ${pct(worst)}; lowest inked ` +
+        `row ${lowest.y}, ${(r.box.b - lowest.y).toFixed(1)}px above the box's ` +
+        `bottom edge`);
+    ok('the box has ink of its own to dim, down to its bottom edge where a ' +
+       'foot fade would land (else the check below is vacuous)',
+       rows.length >= 10 && r.box.b - lowest.y <= 12);
+    ok('...and the fade does not touch the box: no row of it loses ink to ' +
+       'the mask', worst.on / worst.off >= 0.9);
   }
 
-  const on = await plate(p, r.strip, null, BG);
+  const on = await read(p, r.strip, null);
   await p.evaluate(MASK(false));
-  const off = await plate(p, r.strip, null, BG, 'qfade-half-nomask.png');
+  const off = await read(p, r.strip, null, 'qfade-half-nomask.png');
   await p.evaluate(MASK(true));
   const last = rows => rows.at(-1).ink;
   const ratio = (a, b) => b > 0 ? +(a / b).toFixed(2) : null;
@@ -285,7 +343,8 @@ say(`the page's --bg is rgb(${BG}); the plate under the dock is ` +
       `the mask vs without it: ` +
       rows.filter((_, i) => i % 8 === 0 || i === rows.length - 1)
           .map(x => `${x.y}:${x.on}/${x.off}`).join(' ') +
-      `; ${on.bgpx} --bg pixels with the mask on`);
+      `; ${on.sampled - on.painted} of ${on.sampled} pixels in it are still ` +
+      `exactly the plate with the mask on`);
   // the precondition, derived: with the mask off there IS text in this strip,
   // and there is text on its very last row — without which a ratio at the edge
   // is a division into nothing.
@@ -304,9 +363,13 @@ say(`the page's --bg is rgb(${BG}); the plate under the dock is ` +
     ok('...and it is a gradient rather than a cut — the top of the strip keeps ' +
        'most of its ink', ratio(above.on, above.off) >= 0.6);
   }
-  // and it fades by going TRANSLUCENT, not by being covered: a band would make
-  // this strip --bg between the glyphs.
-  ok('...by going translucent rather than being covered over', on.bgpx === 0);
+  /* ...and it fades by going TRANSLUCENT rather than being covered: between
+     the glyphs the page is still the page. A band covers the whole strip, so
+     it leaves none of it. The floor is a fraction rather than zero because
+     glyphs legitimately paint here — it is the one region of this guard where
+     they do — and it is printed beside the assertion so a drift is visible. */
+  ok('...by going translucent rather than being covered over',
+     (on.sampled - on.painted) / on.sampled >= 0.4);
 }
 
 /* ── at the end: his own exception, and the last line is untouched ───────── */
@@ -323,22 +386,30 @@ say(`the page's --bg is rgb(${BG}); the plate under the dock is ` +
      thread's own padding and are blank whatever the fade is doing, which is
      how the first version of this check read a perfectly undimmed last line as
      dimmed (peak ink 0.8 over rows that hold no glyphs). */
-  const on = await plate(p, r.strip, null, BG, 'qfade-end.png');
+  const on = await read(p, r.strip, null, 'qfade-end.png');
   await p.evaluate(MASK(false));
-  const off = await plate(p, r.strip, null, BG);
+  const off = await read(p, r.strip, null);
   await p.evaluate(MASK(true));
-  const ink = rs => +(rs.reduce((s, x) => s + x.ink, 0) / rs.length).toFixed(2);
-  say(`at the end, his last line with the mask vs without it: ` +
-      `${ink(on.rows)}/${ink(off.rows)} mean ink over ${r.strip.h}px, ` +
-      `${on.bgpx} --bg pixels`);
-  ok('there is text in the strip at the end (else the comparison is vacuous)',
-     ink(off.rows) > 1);
-  ok('the fade has lifted off his last line: the mask changes nothing there',
-     Math.abs(ink(on.rows) - ink(off.rows)) <= 0.2 * ink(off.rows));
-  ok('...and nothing is painted over it either', on.bgpx === 0);
-  const box = await plate(p, r.box, r.kids, BG);
+  const { rows, worst, lowest } = pair(on, off);
+  say(`at the end, the strip's inked rows with the mask vs without it: worst ` +
+      `row ${worst.y}: ${worst.on}/${worst.off} = ${pct(worst)}; lowest inked ` +
+      `row ${lowest.y}, ${(r.strip.y + r.strip.h - lowest.y).toFixed(1)}px above ` +
+      `the scroller's edge; ${on.sampled - on.painted} of ${on.sampled} pixels ` +
+      `still the plate`);
+  // the rows have to reach the EDGE, or a fade jammed on there would land where
+  // nothing is measured. (The strip's own last rows are the thread's padding
+  // and hold no glyphs — which is how the first version of this check read a
+  // perfectly undimmed last line as dimmed, at peak ink 0.8.)
+  ok('his last line reaches the scroller\'s edge, where a fade would land ' +
+     '(else the comparison is vacuous)',
+     rows.length >= 5 && (r.strip.y + r.strip.h) - lowest.y <= 14);
+  ok('the fade has lifted off his last line: no row of it loses ink to the mask',
+     worst.on / worst.off >= 0.9);
+  ok('...and nothing is painted over it either',
+     (on.sampled - on.painted) / on.sampled >= 0.4);
+  const box = await read(p, r.box, r.kids);
   ok('...and the box still has nothing behind it at the end',
-     box.sampled > 2000 && box.bgpx === 0);
+     box.sampled > 2000 && box.painted === 0);
   ok('...and is still on the artifact\'s bottom line',
      Math.abs(r.composeBottom - r.artifactBottom) <= 1);
 }
@@ -359,8 +430,9 @@ await c1.close();
   ok('a short question still ends with its box on the artifact\'s bottom line ' +
      '(#305 (b): 200px of dead space without it)',
      Math.abs(r.composeBottom - r.artifactBottom) <= 1);
-  const box = await plate(sp, r.box, r.kids, BG, 'qfade-short.png');
-  ok('...with nothing painted behind it', box.sampled > 2000 && box.bgpx === 0);
+  const box = await read(sp, r.box, r.kids, 'qfade-short.png');
+  ok('...with nothing painted behind it',
+     box.sampled > 2000 && box.painted === 0);
   await ctx.close();
 }
 
@@ -395,9 +467,9 @@ await c1.close();
   ok('reduced motion: both fades still reach the same rest states ' +
      '(function, not timing)',
      mid.fade > 0 && mid.foot > 0 && end.foot === 0);
-  const box = await plate(rp, end.box, end.kids, BG);
+  const box = await read(rp, end.box, end.kids);
   ok('reduced motion: ...and still nothing behind the box',
-     box.sampled > 2000 && box.bgpx === 0);
+     box.sampled > 2000 && box.painted === 0);
   await ctx.close();
 }
 
