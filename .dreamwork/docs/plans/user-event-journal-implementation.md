@@ -1,10 +1,37 @@
 # Durable user-event journal — red-first implementation plan
 
 **Tasks:** #263 (the plan only) · consumers #260, #262, #269, #274 · adjacent #264, #294, #287, #289, #342, #346
-**Status:** plan; **no implementation authority**. See §"What this plan does not authorise" — it is the boundary of the approval that produced this document, not a formality.
+**Status:** **lanes A–D and F authorised** 2026-07-28 05:43 (`8c5c9cf`). Lanes **E** (the HTTP cutover) and **H** (the version gate) remain unauthorised behind a second gate, to be opened once A–D are proved. §"What this plan does not authorise" still binds everything it names.
 **Date:** 2026-07-28
 **Input:** [`user-event-journal.md`](user-event-journal.md), approved `"rec"` via watch 2026-07-28 01:27 — contract only. Its §"Red-first acceptance fixtures" is this plan's acceptance set; nothing here invents a different one.
 **Adjacent:** [`task-transition-boundary.md`](task-transition-boundary.md) (#264, ask open) built on that contract. Its conclusions are treated as context; §"Where this plan touches #264" says where the two meet and this plan contradicts none of them.
+
+---
+
+## His rulings, 2026-07-28 05:43 — answered `rec` to all four
+
+The questions.md entry that asked these is now under `## Answered`. Recorded here
+because this is the document an implementer reads.
+
+| call | ruling | consequence for this plan |
+|---|---|---|
+| **G1 · scope of authority** | granted as recommended | increments **1–19** (lanes A–D) and **26–29** (lane F) may be built. Increments **20–25** (lane E) and **34–35** (lane H) may **not** — they need a second gate. Lane G (30–33) was not part of G1 and stays unauthorised. |
+| **Q2 · amend law 2** | **yes** | landed in the design: `user-event-journal.md` §"Receive and idempotency" law 2 now requires a partial witness marked incomplete. §Amendments below is history. Increment 20 implements it — **behind the second gate.** |
+| **Q3 · `200 → 202`** | **yes, a non-event** | the 15 assertions pinning the literal `200` move with the cutover. Lane E only. |
+| **Q4 · purge and PostgreSQL** | **not built** | fixtures **18** and the PostgreSQL half of **19** stay `UNPLACEABLE` in the fixture map and no test is written for them. Increment 10 leaves the contract suite *ready* for a second backend and stops. **Not** built-and-skipped: a permanently-skipped test misrepresents coverage. |
+
+**One consequence of G1 that is easy to miss:** lane D (16–19) is authorised but
+cannot start cold — `D1` needs `B5` and `C3`. And the scheduling constraint is not
+the dependency graph but the tree: lanes E and G both live inside the one
+8,647-line `watch.py`, so they are a single lane in practice. That is an argument
+for #368 (the modular split) landing before the second gate opens.
+
+**A note for whoever implements a lane:** the brief is a file, not a prompt
+(human-set, same answer). Lanes A and C were dispatched with
+`.dreamwork/docs/briefs/263-lane-a-digest.md` and `263-lane-c-domain-files.md`,
+which carry numbered binary acceptance criteria and point back at the per-increment
+rows here rather than restating them. Follow that shape; do not copy the spec into
+the brief, or the two will drift.
 
 ---
 
@@ -827,7 +854,12 @@ partial witness, explicitly marked incomplete, so tightening receipt semantics
 never reduces recoverability for a client without a durable attempt store* (the
 CLI/`curl` path, which increments 30–33 do not cover).
 
-This needs his ruling because it amends an approved contract, and because the
+**Ruled `rec` (approved) 2026-07-28 05:43, and now landed in the design** at
+`user-event-journal.md` §"Receive and idempotency" law 2 — so this section is
+history, not a pending ask. Increment 20 implements the witness; the paragraph
+below records why the alternative was rejected.
+
+This needed his ruling because it amends an approved contract, and because the
 alternative — reordering lane G ahead of increment 20 — protects browsers only
 and leaves the same hole for every other client.
 

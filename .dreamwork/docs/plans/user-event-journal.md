@@ -75,7 +75,17 @@ Order is load-bearing:
 
 1. Validate authority and the registered transport envelope before body read.
 2. Read one complete bounded body. Interrupted/over-limit bodies remain client
-   attempts; do not claim receipt or drain an unbounded socket.
+   attempts; do not claim receipt or drain an unbounded socket. **The server still
+   keeps its own non-authoritative witness of what arrived, explicitly marked
+   incomplete** (amended 2026-07-28, approved by the human at 05:43; proposed in
+   `user-event-journal-implementation.md` §Amendments). Without this, tightening
+   receipt semantics would *reduce* recoverability for every client that has no
+   durable attempt store of its own — the CLI and `curl` paths, which the browser
+   increments do not cover. Today the server witnesses an interrupted body
+   *badly*: `watch.py:8387` reads `min(nbytes, MAX_BODY)` and never compares the
+   result to `nbytes`, so a short read is appended as though complete (#371). A
+   witness marked incomplete is strictly better than that, and refusing to witness
+   at all is strictly worse.
 3. Compute digest and durably commit receipt plus `received` transition.
 4. Best-effort append `submissions.log`; failure records `shadow_failed` health
    but cannot invalidate receipt.
