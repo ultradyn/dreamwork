@@ -2157,3 +2157,33 @@ this shape and convert opportunistically.)
   · The general shape, which is the reason to keep this: **verify the run exercised the code, not
   merely that it was unhappy.** A red whose message does not name the test you were targeting is
   not yet evidence.
+
+- **The fallback that exists to catch an unrecognised shape usually shares the pattern that makes
+  the shape unrecognised — so the one class it was built for is the one class it cannot report.**
+  · **Measured in production code, not in a check (`#401`).** `watch.parse_handoffs` has two
+  patterns: `HANDOFF_PENDING_RE` for a well-formed hand-off, and `HANDOFF_BARE_RE` whose stated job
+  is *"a Pending entry head the grammar does not recognise"* — a real, deliberate, well-documented
+  validator. Both are `#(\d+)`. So `- **#392a** · landed …` matches neither, falls through both
+  branches, and yields `pending=[]`, `malformed=[]`. **The file reads exactly like an empty one**,
+  and `#381`'s entire premise is that a landing here cannot be lost.
+  · The generalisation, which is the reason to keep this: **a validator written as "anything the
+  parser did not accept" is only as wide as the vocabulary its author had in mind.** Ours recognised
+  numeric ids, so it could see a garbled *sha* or a missing *claimer* — every axis except the one it
+  shared with the parser. **Vary the axis the fallback and the parser have in common**, and check
+  that the fallback still fires. If it does not, the shape is invisible rather than reported.
+  · Sibling to *independent-routes-share-an-assumption*, and worse in one way: two disagreeing
+  routes at least produce a discrepancy. A parser and its own fallback produce **silence**, which
+  is the output of a healthy file.
+
+- **`sha256sum <missing> <present> 2>/dev/null` prints one line and I read the one line as a
+  match.** · Comparing the deployed dashboard against the tree this tick, I ran
+  `sha256sum ~/.cache/dreamwork/deployed/watch.py watch.py 2>/dev/null`, got a single hash back
+  under a heading I had written as *"deployed sha vs tree"*, and moved on. The deployed file is
+  named **`ud-dreamwork-watch.py`** — `<project>-watch.py`, not `watch.py` — so the first argument
+  did not exist and my own `2>/dev/null` deleted the only evidence of that.
+  · **The output of "compared, identical" and "compared nothing" is one line either way.** The
+  same shape as the two above and the third instance today: absence rendering as success.
+  · Cheap fix, and it is the same fix every time: **make the comparison state its own arity** —
+  `sha256sum a b | wc -l` must be 2, or `test -f` each side first. Never suppress stderr on a
+  command whose failure mode is a missing operand.
+

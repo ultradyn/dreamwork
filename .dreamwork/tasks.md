@@ -24,9 +24,47 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **401**
+Next id: **402**
 
 ## Open
+- **#401** — a sub-id hand-off is invisible to **every** reader: the parser drops it, the
+  malformed-validator cannot see it, and the correlation would not match it either · **P1** ·
+  handoffs-parser/correctness · origin: **loop** · found by asking what the grammar accepts of the
+  id vocabulary the ledger actually uses — the same question that found **#399** and **#395**
+  · **live right now, and I caused it.** `#392a`'s brief instructs its lane, verbatim, to append
+  `- **#392a** · landed …`. All three patterns at `watch.py:7706-7709` are `#(\d+)`, so **measured
+  on the real grammar**: a `#392a` line yields `pending=[]`, `malformed=[]` — it is not rendered,
+  and it is not reported as garbled. It reads exactly like an empty file
+  · **the same run drops `- **#367/#392**`**, the ledger's own documented combined-id head form
+  · **`malformed` is the validator built for precisely this and it structurally cannot fire.**
+  Its stated job is *"a Pending entry head the grammar does not recognise"*, but `HANDOFF_BARE_RE`
+  is `#(\d+)` too — so a head neither pattern recognises falls through **both** branches. The
+  fallback that exists to catch an unknown shape shares the assumption that makes the shape
+  unknown. This is the recurring class, now found in production code rather than in a check
+  · **and a second, independent reason it stays quiet:** lint's delivery WARN fires only when the
+  id is in `open_ids`. `#392a` is **not a ledger head** — `grep` finds zero `- **#392a**` in
+  `tasks.md`; the head is `#392`. So even a parser that accepted the id would correlate it against
+  nothing. Two readers, one shared assumption — *ids are the ledger's numeric heads* — and it is
+  invisible because they agree
+  · **this defeats `#381`'s whole purpose, silently.** Its premise is that a landing cannot be lost
+  because the file is append-only; the line does land as text. What is lost is every **reader** of
+  it, which is the half `#381` was built to add. The only thing standing between this and a
+  repeat of `#334`/`#362` is the coordinator reading the file by eye each tick, which is exactly
+  what `#381` existed to stop relying on
+  · **the policy question is real and I have not ruled:** should the grammar **accept** sub-ids and
+  combined ids (mapping `392a → 392` for correlation), or should a hand-off be **required** to name
+  a ledger head, with anything else a loud WARN? The second is smaller and arguably more correct —
+  the ledger head is what gets folded
+  · **but one change is needed either way, and it is the load-bearing one:** `HANDOFF_BARE_RE` must
+  match **any** bolded-id entry head, so an id shape the grammar rejects becomes a WARN rather than
+  silence. Do that first; the policy choice is decidable afterwards and independent
+  · **blocked on `watch.py`** (held by `#392a`), and `lint.py` imports the parser rather than
+  copying it, so the fix is one place. Whoever takes it gets `watch.py`, `test_watch.py`,
+  `lint.py`, `test_lint.py`, and `file-formats.md`, whose hand-off row states the shape
+  · **the red is free and it is about to write itself** — `#392a`'s own hand-off line will be in
+  the file. Do not ask it to change; fold that line by hand and keep it as the fixture
+  · related: **#381, #399, #395**
+
 - **#400** — `lessons.md` has outgrown being read, and the briefs that tell lanes to read it are
   cargo cult · P2 · loop/memory · origin: **loop** · found by **measuring receipt instead of
   assuming it**, the same instrument that caught the relay
@@ -92,7 +130,7 @@ Next id: **401**
   synthetic input at all. Derive the overlap at runtime; do not pin the list of 7, because it grows
   every time the ledger is cross-referenced correctly
   · blocked: `watch.py` is held by **#392a**
-  · related: **#392**
+  · related: **#392, #401**
 
 - **#397** — `watch.py` is the loop's contention bottleneck; propose splitting it · P1 ·
   architecture/design · origin: **loop** · **the strongest result of #264's evidence half, and it
@@ -2833,7 +2871,7 @@ Next id: **401**
   is accepted. Both fine
   · its spec note, which I will apply when `file-formats.md` frees: line 516 still says the ledger has
   zero relation markers, which is stale prose
-  · related: **#353**
+  · related: **#353, #401**
 - **#381** — the single-writer rule has no delivery half · origin: **loop** · closed
   2026-07-28 08:42 · `38b541c` `f09a1ba` `374c044`
   · `ccc @glm52`, brief `.dreamwork/docs/briefs/381-handoff-delivery.md`. `.dreamwork/handoffs.md`
@@ -2858,7 +2896,7 @@ Next id: **401**
   · the lane also observed, without acting on it, that **the relay is the same bug one layer up** —
   coordinator writes a steer, an idle lane never reads it, nothing wakes it. Same shape, same fix.
   Recorded in `.dreamwork/dreams/2026-07-28-0838-the-nag-that-gets-muted.md`
-  · related: **#393, #394, #363**
+  · related: **#393, #394, #363, #401**
 
 - **#390** — a fresh domain's first answer creates its file · origin: **loop** · closed
   2026-07-28 08:06 · `fa65bce`
