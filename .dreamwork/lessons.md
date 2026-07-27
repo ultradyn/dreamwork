@@ -1114,3 +1114,24 @@ this shape and convert opportunistically.)
   liveness signal than its stdout, and `git status --porcelain` there costs
   nothing.
   (coordinator, 2026-07-27, #312)
+
+- **"No process matches the tool's name" is not a liveness test, and the
+  destructive step must not be the one that asks.** At 19:53 the coordinator
+  ran `ps | grep -E "opencode"`, saw one match, and concluded a second ccc
+  agent had exited. At 19:58 that agent committed. At 20:00 the coordinator
+  removed its worktree with `--force`. **The grep could not have found it**: a
+  `ccc` agent's visible process is a `zsh -c` wrapper, so its command line
+  never contains the tool's name — the check had no chance of being right and
+  looked authoritative anyway. Four other signals agreed with the wrong answer
+  (quiet log, three merged commits, a clean tree, a finished-looking final
+  entry) because every one of them also describes an agent mid-increment; this
+  is the second time in one session that agreement among weak signals stood in
+  for one strong one. **The mechanical test needs no judgement: does any live
+  process have that directory as its `cwd`** (`readlink /proc/<pid>/cwd`) —
+  the same discriminator #203 uses in the opposite direction to find a server
+  whose lane is *gone*. The stranded agent's own cwd read
+  `…/311-guards (deleted)`, which is how the mistake was finally noticed. Cost
+  here was small only by luck: the dismiss work survived **because it was a
+  commit**, and `--force` is precisely the flag that declines to ask. Filed as
+  #316 so removal refuses instead of the operator remembering.
+  (coordinator, 2026-07-27, #311/#316)

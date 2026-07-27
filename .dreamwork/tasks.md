@@ -24,9 +24,47 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **315**
+Next id: **317**
 
 ## Open
+
+- **#315** — A combined entry HEAD under `## Open` is invisible to both ledger
+  readers, and they must widen together · P2 · correctness · ~30m · origin:
+  **loop** · goal: the ledger's own readers must not disagree about what it says
+  ← DREAMWORK.md *Nothing fails quietly* · #301 fixed the LANDED half; a
+  combined head (`- **#7/#8**`) is still read by the narrow `LEDGER_ENTRY`, so
+  parse_ledger reports neither id · **the reason this is its own task and not an
+  oversight**: `lint.check_ledger_sections` cross-checks parse_ledger's open
+  count against lint's own count, which uses `LEDGER_ID` — pinned identical to
+  `LEDGER_ENTRY` by `test_ledger_entry_rule_has_exactly_one_copy` — so widening
+  either reader alone makes the two DISAGREE on any ledger holding a combined
+  open entry, which the delegated agent proved by watching
+  `test_combined_ids_all_old_are_exempt` go red · so `LEDGER_ENTRY`, `LEDGER_ID`
+  and `check_ledger_sections` widen in ONE commit or not at all · **no combined
+  head is open today** (103 = 103 measured), so there is no live defect — this
+  is a latent one that fires the first time someone files a combined entry, and
+  it fires as a silent miscount, not an error · red-prove it by filing a
+  combined open head in a fixture and watching both readers miss it
+
+- **#316** — Removing a worktree cannot ask whether anyone is still in it · P2 ·
+  tooling/safety · ~30m · origin: **loop** · goal: a destructive step should not
+  depend on the operator's belief about liveness ← DREAMWORK.md *Nothing fails
+  quietly* · found the hard way at 20:00 today: the coordinator concluded an
+  agent had exited because `ps | grep opencode` showed only one, removed its
+  worktree with `--force`, and the agent was alive — it had committed
+  `dev/capture/dismiss.mjs` two minutes earlier and was still running · **the
+  commit survived because it was a commit**; anything uncommitted after 19:58
+  did not, silently, and `--force` is exactly the flag that skips the question ·
+  **the grep could not have worked**: a `ccc` agent's visible process is a `zsh
+  -c` wrapper, so the process name never contains `opencode` · the mechanical
+  test that does work needs no judgement and is the same shape as #203's
+  deleted-cwd rule: **does any live process have this worktree as its `cwd`** ·
+  `plugins/ud-dreamwork-worktrees/` already exists and is where this belongs ·
+  rec: refuse removal when a process is cwd'd inside, naming pid and command
+  line; require an explicit override that says what it is overriding; and
+  `--force` must not imply it · red-prove by starting a shell cwd'd in a scratch
+  worktree and confirming removal refuses, then that it proceeds once the shell
+  exits
 
 - **#275** — Research public Dreamhub authentication informed by shoo.dev · P2 ·
   security research/design · origin: **human** · **human via answer 17:48** ·
@@ -82,92 +120,6 @@ Next id: **315**
   the check — #313 already established that a permanently red check is the one
   outcome unavailable
 
-- **#311** — Two motion guards assert a frame COUNT the box cannot supply · P2 ·
-  guard craft · ~40m · origin: **loop** · goal: a guard must not go red for a
-  reason unrelated to the thing it names ← DREAMWORK.md *Nothing fails quietly* ·
-  `headertravel.mjs:127` asserts `uniq(f.map(x => x.wrap)).length >= 8` and
-  `regroup.mjs:107` asserts `uniq(tops(n.frames)).length >= 6` — counts of
-  distinct rounded positions sampled across a .85s transition, so the threshold
-  is really "this machine rendered at least N frames" · **proven contended, not
-  inferred**: the same commit (`ae2fd58`) failed `headertravel` in a run
-  concurrent with a second guard suite (load 53.8, 35 chrome) and PASSED it
-  alone minutes later, with `regroup` failing the same way in the same
-  contended run · dreamer-reviewsplit A/B'd it five alternating pairs on base
-  `f72f730` vs its own HEAD: BASE saw 5, 6, 8, 8, 9 distinct widths — so base
-  itself fails three of five — and HEAD saw 5, 6, 6, 6, 7, i.e. #305 costs
-  about two rAF frames (a window-tall iframe rasters more than a 74vh one) and
-  tips a check already sitting one frame from red · the column TRAVELS in every
-  run, 3 to 7 frames part-way, which is the frame-rate-free half of the same
-  question · fix is the idiom `lessons.md` already prescribes and `qsec.mjs` +
-  `reviewsplit.mjs:145` already implement — count frames strictly BETWEEN the
-  two ends with a deadband, not distinct rounded positions · `qorder.mjs` has
-  the same shape (its own comment at :242 reasons about "one distinct
-  position") and the dreamer saw it pass in small runs and fail in the full
-  suite · **the class is wider than frame counts, and both halves are now
-  proven on `ae2fd58`**: `morph.mjs:176-179` is the same distinct-position
-  count (`uniq(nTops)`/`uniq(nHs)` >= 6, `answer:` mode only), while
-  `dismiss.mjs:134` is the OPPOSITE sensitivity — `ops.at(-1) >= 95` asserts
-  the fade has FINISHED inside a fixed 700ms sampling window, so starving the
-  box makes it red for the reverse reason. Its two neighbours on the same trace
-  (`>= 6` opacity values, `>= 4` transforms) got EASIER under the same load,
-  because slow frames spread further apart — one trace, two assertions moving
-  in opposite directions with load, which is why "some checks passed" is not
-  evidence the run was sound · all four (`headertravel`, `regroup`, `dismiss`,
-  `morph`) failed in loaded runs and every one PASSED when re-run with fewer
-  guards in flight, so the fix must address both shapes: frames strictly
-  between the ends for the counts, and waiting on the transition's own
-  completion (`getAnimations()`/`transitionend`) rather than a fixed window for
-  the terminal states · **the dreamer deliberately did not touch either file**: changing
-  another feature's guard to make your own batch green is the move that wants a
-  second pair of eyes, and it was right about that · #308 landed the doc half:
-  `transitions.md` now splits the part-way rule from the count rule and names
-  all three faces as *a motion check must not encode a property of the machine*
-  · **increment 1 landed `4ebb011` — `headertravel.mjs`, the reference the rest
-  follow.** Both count assertions became part-way counts on `reviewsplit`'s
-  `between()` helper, and **the floor is 1, from measurement not taste**: idle
-  31 frames / 5 part-way, under six added CPU burners 14 frames / 2 part-way, so
-  a floor of 2 sat exactly on the line and anything above 1 is still a bet on
-  the frame rate · it also converted the REDUCED-MOTION mirror, which is the
-  more dangerous half — `uniq(...) <= 2` is satisfied by a box that sampled a
-  real ramp twice, so under load it went HOLLOW rather than red and would have
-  passed a reduced-motion build that animated · red-proven with
-  `transition:none` injected: all four travel checks at 0 part-way of 20/33
-  frames while both new vacuity preconditions stayed green at 415px and
-  175.6px, so the red was the contract and not an absent subject · **scope is
-  wider than this entry was filed for**: `qsec.mjs:170` (`t.positions >= 8`)
-  and `:172` (`distinct(heights) >= 8`) are two more instances — qsec uses the
-  part-way idiom for its FADE only (`mid >= 3`) and is half converted · the
-  remaining four (regroup, morph, dismiss, qsec) are out with ccc-glm52-311 in
-  `.worktrees/311-guards`, holding exclusive guard rights on 39891 · the
-  standing risk on the delegated half is that this task LOOSENS assertions, so
-  a red proof per guard is the only thing between it and quietly disabling four
-  guards — briefed as such · #308 is the sibling rounding half and has landed
-
-
-
-- **#301** — Teach the ledger patterns to see combined entry heads · P2 · bug ·
-  25m · origin: **loop** · found by `dreamer-taskspage` during the #281 design
-  batch, then re-measured by the coordinator, which narrowed the claim ·
-  **proven:** both patterns require `**` immediately after the digits
-  (`LEDGER_ENTRY` = `^- \*\*#(\d+)\*\*`, `LEDGER_MENTION` = `\*\*#(\d+)\*\*`),
-  so a combined head like `- **#138/#156**` matches *neither* — verified
-  directly against both regexes · **live consequence, measured:** the three
-  combined heads all sit in the recently-landed section (#138/#156, #250/#251,
-  #292/#293), and `parse_ledger` reports #138, #250, #251, #292 and #293 as
-  neither open nor landed, so `ledger_series` never records their completion
-  and the burndown under-counts landings · **the dreamer's own numbers did not
-  reproduce**: it reported 123 vs 118 ids and "arrival, completion and open
-  level all wrong right now"; within the open section the two readers agree
-  (103 = 103, no combined head is currently open), so the defect is confined to
-  the landed section — file the narrow truth, not the alarming version ·
-  **hypothesis, not established:** that these ids were never singular in the
-  recently-landed section earlier in history (series `landed` = 83 equals the
-  current file's mention count, which is consistent with it but does not prove
-  it) — the red-first test settles it · also groom the inconsistency it
-  surfaced: #156 has an open entry head while appearing in a landed combined
-  entry · fix in the shared pattern so `lint.py` and `watch.py` cannot diverge
-  (a test pins `ledger_entries` verbatim-identical between them)
-
 - **#302** — Give `/answers` its own tint and turbulence seed · P3 · chore ·
   10m · origin: **loop** · found by `dreamer-taskspage` during the #281 design
   batch · `TINT` and `SEED` have no `answers` entry, so the route silently
@@ -178,6 +130,7 @@ Next id: **315**
   `TINT.tasks`/`SEED.tasks`) · check by reddening on the missing entry, not on
   the rendered colour
 
+  · **out with ccc-glm52-302** in `.worktrees/302-tint` (owns `watch.py` + `test_watch.py`, port 39895); unblocked by #301's merge
 - **#300** — Let run-mode descriptions liquefy through one shared popover · P2
   · Web UI feature · 35m · origin: **human** · **human via watch `add-idea`
   14:37** · hovering a run-mode button should explain that mode; all buttons
@@ -766,6 +719,7 @@ Next id: **315**
   (`/tmp/a250/target`, 26h) and 3408270 (`/tmp/revieworder-green/target`,
   20h) · left running deliberately — reaping them is a judgement call and
   the reaper should make it, not a coordinator doing it by hand
+  · **out with ccc-glm52-203** in `.worktrees/203-reaper` (owns `justfile` + new files under `dev/`, port 39894) · scoped deliberately: the port-0 half needs `watch.py`, which another agent holds, so the reaper lands first and port 0 follows
 - **#201** — Stream and control an agent's TUI in the browser via herdr ·
   P2 · idea · several increments · **human 17:27** · substrate EXISTS and
   is documented: `~/.llm-general/ai-coding/herdr/` verified against 0.7.4
@@ -1172,6 +1126,114 @@ Next id: **315**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#311** — Two motion guards assert a frame COUNT the box cannot supply · P2 · landed 2026-07-27 ·
+  guard craft · ~40m · origin: **loop** · goal: a guard must not go red for a
+  reason unrelated to the thing it names ← DREAMWORK.md *Nothing fails quietly* ·
+  `headertravel.mjs:127` asserts `uniq(f.map(x => x.wrap)).length >= 8` and
+  `regroup.mjs:107` asserts `uniq(tops(n.frames)).length >= 6` — counts of
+  distinct rounded positions sampled across a .85s transition, so the threshold
+  is really "this machine rendered at least N frames" · **proven contended, not
+  inferred**: the same commit (`ae2fd58`) failed `headertravel` in a run
+  concurrent with a second guard suite (load 53.8, 35 chrome) and PASSED it
+  alone minutes later, with `regroup` failing the same way in the same
+  contended run · dreamer-reviewsplit A/B'd it five alternating pairs on base
+  `f72f730` vs its own HEAD: BASE saw 5, 6, 8, 8, 9 distinct widths — so base
+  itself fails three of five — and HEAD saw 5, 6, 6, 6, 7, i.e. #305 costs
+  about two rAF frames (a window-tall iframe rasters more than a 74vh one) and
+  tips a check already sitting one frame from red · the column TRAVELS in every
+  run, 3 to 7 frames part-way, which is the frame-rate-free half of the same
+  question · fix is the idiom `lessons.md` already prescribes and `qsec.mjs` +
+  `reviewsplit.mjs:145` already implement — count frames strictly BETWEEN the
+  two ends with a deadband, not distinct rounded positions · `qorder.mjs` has
+  the same shape (its own comment at :242 reasons about "one distinct
+  position") and the dreamer saw it pass in small runs and fail in the full
+  suite · **the class is wider than frame counts, and both halves are now
+  proven on `ae2fd58`**: `morph.mjs:176-179` is the same distinct-position
+  count (`uniq(nTops)`/`uniq(nHs)` >= 6, `answer:` mode only), while
+  `dismiss.mjs:134` is the OPPOSITE sensitivity — `ops.at(-1) >= 95` asserts
+  the fade has FINISHED inside a fixed 700ms sampling window, so starving the
+  box makes it red for the reverse reason. Its two neighbours on the same trace
+  (`>= 6` opacity values, `>= 4` transforms) got EASIER under the same load,
+  because slow frames spread further apart — one trace, two assertions moving
+  in opposite directions with load, which is why "some checks passed" is not
+  evidence the run was sound · all four (`headertravel`, `regroup`, `dismiss`,
+  `morph`) failed in loaded runs and every one PASSED when re-run with fewer
+  guards in flight, so the fix must address both shapes: frames strictly
+  between the ends for the counts, and waiting on the transition's own
+  completion (`getAnimations()`/`transitionend`) rather than a fixed window for
+  the terminal states · **the dreamer deliberately did not touch either file**: changing
+  another feature's guard to make your own batch green is the move that wants a
+  second pair of eyes, and it was right about that · #308 landed the doc half:
+  `transitions.md` now splits the part-way rule from the count rule and names
+  all three faces as *a motion check must not encode a property of the machine*
+  · **increment 1 landed `4ebb011` — `headertravel.mjs`, the reference the rest
+  follow.** Both count assertions became part-way counts on `reviewsplit`'s
+  `between()` helper, and **the floor is 1, from measurement not taste**: idle
+  31 frames / 5 part-way, under six added CPU burners 14 frames / 2 part-way, so
+  a floor of 2 sat exactly on the line and anything above 1 is still a bet on
+  the frame rate · it also converted the REDUCED-MOTION mirror, which is the
+  more dangerous half — `uniq(...) <= 2` is satisfied by a box that sampled a
+  real ramp twice, so under load it went HOLLOW rather than red and would have
+  passed a reduced-motion build that animated · red-proven with
+  `transition:none` injected: all four travel checks at 0 part-way of 20/33
+  frames while both new vacuity preconditions stayed green at 415px and
+  175.6px, so the red was the contract and not an absent subject · **scope is
+  wider than this entry was filed for**: `qsec.mjs:170` (`t.positions >= 8`)
+  and `:172` (`distinct(heights) >= 8`) are two more instances — qsec uses the
+  part-way idiom for its FADE only (`mid >= 3`) and is half converted · the
+  remaining four (regroup, morph, dismiss, qsec) are out with ccc-glm52-311 in
+  `.worktrees/311-guards`, holding exclusive guard rights on 39891 · the
+  standing risk on the delegated half is that this task LOOSENS assertions, so
+  a red proof per guard is the only thing between it and quietly disabling four
+  guards — briefed as such · #308 is the sibling rounding half and has landed
+  · **ALL FOUR CONVERTED AND MERGED.** increment 1 `4ebb011` (headertravel,
+  the reference), then `2275ef9` merged regroup/morph/qsec and `e09f226` merged
+  dismiss — each with its own red proof carrying real numbers, coordinator
+  reviewed every diff and re-ran all four green on master · dismiss's proof is
+  the one worth keeping: a `transition:none` injection catches its two count
+  checks at 0 of 2 part-way while the terminal check stays green (an instant
+  settle IS settled), so its red needed a SECOND injection — the fade stalled
+  at 60% — and only then did "ends fully lit" fail at a settled 60/100 AFTER
+  the wait, which is the proof the wait reached a real settled state rather
+  than a window cut-off · `e041b9c` corrected two things in `transitions.md`:
+  qsec is no longer the half-converted file to avoid, and the never-a-literal
+  rule now says which literals it means, because three commits described their
+  vacuity floors as "derived at runtime" when the derived part is the printed
+  measurement and the floor is a deliberate constant — a pixel span is a
+  property of the fixture's layout, not of the box · `qorder.mjs:242` was named
+  in this entry as the same shape and is NOT converted; see #316
+
+
+- **#301** — Teach the ledger patterns to see combined entry heads · P2 · landed 2026-07-27 · bug ·
+  25m · origin: **loop** · found by `dreamer-taskspage` during the #281 design
+  batch, then re-measured by the coordinator, which narrowed the claim ·
+  **proven:** both patterns require `**` immediately after the digits
+  (`LEDGER_ENTRY` = `^- \*\*#(\d+)\*\*`, `LEDGER_MENTION` = `\*\*#(\d+)\*\*`),
+  so a combined head like `- **#138/#156**` matches *neither* — verified
+  directly against both regexes · **live consequence, measured:** the three
+  combined heads all sit in the recently-landed section (#138/#156, #250/#251,
+  #292/#293), and `parse_ledger` reports #138, #250, #251, #292 and #293 as
+  neither open nor landed, so `ledger_series` never records their completion
+  and the burndown under-counts landings · **the dreamer's own numbers did not
+  reproduce**: it reported 123 vs 118 ids and "arrival, completion and open
+  level all wrong right now"; within the open section the two readers agree
+  (103 = 103, no combined head is currently open), so the defect is confined to
+  the landed section — file the narrow truth, not the alarming version ·
+  **hypothesis, not established:** that these ids were never singular in the
+  recently-landed section earlier in history (series `landed` = 83 equals the
+  current file's mention count, which is consistent with it but does not prove
+  it) — the red-first test settles it · also groom the inconsistency it
+  surfaced: #156 has an open entry head while appearing in a landed combined
+  entry · fix in the shared pattern so `lint.py` and `watch.py` cannot diverge
+  (a test pins `ledger_entries` verbatim-identical between them)
+  · **landed half merged `1f25243`** (ccc-glm52-301) · a new ids-only bold
+  pattern reads every id in a combined mention; live landed set 94 -> 100, and
+  the six ids in `**#138/#156**`, `**#250/#251**`, `**#292/#293**` all land ·
+  the over-match guard was the load-bearing part and the coordinator
+  re-verified it rather than taking the report: a first wider attempt landed
+  #96 from the prose span `**#96 stage 1**` · the agent declined the OPEN half
+  and was right to — see #315
 
 - **#313** — `just audit-styleguide` is red for everybody on 10 historical
   commits · P3 · landed 2026-07-27 · chore/tooling · ~30m · origin: **loop** · the recipe enforces
