@@ -315,10 +315,26 @@ you could not do the second while looking at the first.
     would dim his last line to hide nothing — *his own exception*) and `attop`
     (nothing is above, so the question's own title stays crisp). It is read
     from the scroll, never remembered, and called from the three places the
-    answer can change: the scroll, a re-render that replaces the card, and a
-    resize. The listener is delegated on the **capture** phase, because
-    `scroll` does not bubble and the element it watches is replaced every two
-    seconds.
+    answer can change: the scroll, a resize, and a re-render — the last of
+    those from the tick, **after** the restore that puts the scroll back, not
+    from inside the swap, because one line earlier that scroll is still 0 and
+    the answer would be about a question he is not looking at. The listener is
+    delegated on the **capture** phase, because `scroll` does not bubble and
+    the element it watches is replaced every two seconds.
+  - **A poll is not a gesture, so the state rides across the swap.** The dock
+    is replaced wholesale every two seconds and the server's markup carries
+    neither class, so a fresh dock resolved the full `24px` first and eased to
+    its real value one style pass later: **both edges of a question he was only
+    reading dimmed and lifted, every tick.** The classes are therefore copied
+    onto the incoming `#qdock` before it is swapped in — the same rule as the
+    scroll position and the half-typed draft, which is that a re-render carries
+    what the human's state was rather than starting from the server's default.
+    Content that *grew* is the one case where the carried answer is wrong, and
+    `syncDockFade` corrects it after the restore: that one IS a change, and it
+    moves. Guarded by tracing both depths across a real tick at three scroll
+    positions (`reviewsplit.mjs`), with the tick's own swap measured — the live
+    scroller is marked beforehand and its absence afterwards is what proves the
+    dock was replaced at all.
 - **How far he has READ is state he owns** (#118's rule, with reading in
   place of typing): `snapshotCardState` carries the scroller's `scrollTop`
   under `read` and restores it, or a question he was halfway down would snap

@@ -309,6 +309,77 @@ ok('...and by enough that HALF way down is neither end (else the fade ' +
      back.qfoot >= 12);
 }
 
+/* ── a POLL is not a gesture (#326) ───────────────────────────────────────
+   The dashboard replaces this whole dock every two seconds, and the depths
+   above TRANSITION — so a fresh dock that arrives without the state classes
+   resolves 24px first and eases to its real value a style pass later. What
+   that looked like: both edges of a question he was only READING dimmed and
+   lifted, twice a second-and-a-half, forever. Motion with nothing behind it
+   is the one thing transitions.md forbids outright, so the assertion is that
+   the depth holds ONE value across a tick that really did swap the dock.
+   The companion fact — that these depths can still move at all — is the
+   (c) block above, which fails first if the transition is ever deleted. */
+{
+  const range = xs => Math.max(...xs) - Math.min(...xs);
+  const settled = {};
+  // three positions because each one asks a different question of the swap:
+  // at the top the head is lifted and the foot is down, half way down BOTH are
+  // down, and at the end the foot is lifted — and the last of those is the only
+  // one where the pre-restore scroll (0) disagrees with where he actually is.
+  for (const [where, to] of [['at the top', 0], ['half way down', HALF],
+                             ['at the end', 'end']]) {
+    await p.evaluate(scrollQ(to));
+    await sleep(700);
+    const before = await p.evaluate(GEO);
+    // The swap is the thing under test and it leaves no trace of its own, so
+    // mark the live scroller and let its ABSENCE report that the tick ran.
+    // Without this the whole block reads green against a page that never
+    // polled — which is exactly what a broken trigger looks like.
+    await p.evaluate(`document.querySelector('.qdock > .qa > .qbody')
+      .dataset.pollmark = '1'`);
+    const th = p.evaluate(TRACEV(QFADE, 3200));
+    const tf = p.evaluate(TRACEV(QFOOT, 3200));
+    await sleep(80);
+    // the real trigger: the tick re-renders when /mtime differs from what it
+    // last saw. Nothing else is faked — buildCurrent, setLiveContent, the
+    // restores and syncDockFade all run as they do on a loop write.
+    await p.evaluate(`lastMtime = 'poll-' + Math.random()`);
+    const head = await th, foot = await tf;
+    await sleep(300);
+    const after = await p.evaluate(GEO);
+    const swapped = await p.evaluate(`!document
+      .querySelector('.qdock > .qa > .qbody').dataset.pollmark`);
+    say(`poll ${where}: dock replaced=${swapped}; --qfade ${before.qfade} -> ` +
+        `${after.qfade} over ${distinct(head)} value(s) ` +
+        `(range ${range(head).toFixed(2)}px, ${head.length} frames); --qfoot ` +
+        `${before.qfoot} -> ${after.qfoot} over ${distinct(foot)} value(s) ` +
+        `(range ${range(foot).toFixed(2)}px); scroll ${before.scroll.top} -> ` +
+        `${after.scroll.top}`);
+    ok(`the tick really did replace the dock ${where} ` +
+       `(else this check is vacuous)`, swapped === true);
+    // at the top one depth is lifted and the other is down, so the pair
+    // covers both directions: a 0 that must stay 0 and a 24 that must stay 24.
+    ok(`a poll does not move the head fade ${where}`,
+       distinct(head) === 1 && range(head) <= 0.5 &&
+       Math.abs(after.qfade - before.qfade) <= 0.5);
+    ok(`a poll does not move the foot fade ${where}`,
+       distinct(foot) === 1 && range(foot) <= 0.5 &&
+       Math.abs(after.qfoot - before.qfoot) <= 0.5);
+    ok(`...and he is still reading the same line afterwards ${where}`,
+       Math.abs(after.scroll.top - before.scroll.top) <= 2);
+    settled[where] = before;
+  }
+  // "held still" is only worth anything where there was something to hold: the
+  // three positions between them pinned each depth both DOWN and LIFTED, which
+  // is derived here rather than assumed of a fixture that may change length.
+  ok('across the three positions each depth was pinned once down and once ' +
+     'lifted, so "did not move" is a fade holding, not a fade absent',
+     settled['half way down'].qfade >= 12 &&
+     settled['half way down'].qfoot >= 12 &&
+     settled['at the top'].qfade <= 0.5 &&
+     settled['at the end'].qfoot <= 0.5);
+}
+
 /* ── the bar drags, in the direction it is dragged ─────────────────────── */
 {
   const g0 = await p.evaluate(GEO);

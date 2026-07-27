@@ -2779,7 +2779,8 @@ function qaScroller(card) {
    fade — which is the zero case his exception describes.
 
    Called from the three places the answer can change and nowhere else: the
-   scroll itself, a re-render that replaces the card, and a resize. The
+   scroll itself, a resize, and a re-render — the last of those from the tick
+   AFTER the scroll it reads has been put back, not from inside the swap. The
    listener is delegated on the CAPTURE phase because `scroll` does not
    bubble and the card it is watching is replaced every two seconds. */
 function syncDockFade() {
@@ -3885,13 +3886,22 @@ function setLiveContent(html) {
     parsed.innerHTML = html;
     const currentDock = document.getElementById('qdock');
     const nextDock = parsed.content.querySelector('#qdock');
-    if (currentDock && nextDock) currentDock.replaceWith(nextDock);
-    else setContent(html);
+    if (currentDock && nextDock) {
+      // THE FADE STATE RIDES ACROSS THE SWAP, like the scroll and the draft
+      // do (#326). The depths TRANSITION, so they are only ever allowed to
+      // move on a gesture — and a poll is not one. The server's markup carries
+      // neither class, so a fresh dock resolves the full 24px first and lands
+      // on its real value one style pass later: for half a second after every
+      // tick, both edges of a question he is only reading dimmed and lifted.
+      // The scroll position is restored below, so the state that was true
+      // before this swap is the state that is true after it; syncDockFade
+      // still runs once that restore has happened and corrects the one case
+      // where it is not — content that grew, which IS a change and does move.
+      for (const c of ['attop', 'atend'])
+        nextDock.classList.toggle(c, currentDock.classList.contains(c));
+      currentDock.replaceWith(nextDock);
+    } else setContent(html);
     paintIndicators(true); ages();
-    // the fresh card may be a different length, so what is below the box is a
-    // different answer; the restore that follows this scrolls it and the
-    // delegated listener catches that.
-    syncDockFade();
     // the new #qdock is a fresh node, so a half-typed answer is gone unless a
     // draft is put back into it — the review-dock reload loss he reported (#269).
     restoreAnswerDrafts();
@@ -4924,6 +4934,16 @@ async function tick() {
       // the card first re-filled the box and silently dropped the focus.
       restoreFolds(folds);
       restoreCardState(kept);
+      // AFTER the restore, never before it (#326). What is above and below the
+      // docked question is a fact about its scroll position, and one line
+      // earlier that position is still 0 — so syncing there answers for a
+      // question scrolled to the top and then leans on the scroll steps
+      // running before the next style pass to correct it before anything is
+      // painted. That happens to hold, which is why no guard here fails on
+      // the other order; stating the precondition costs less than the
+      // reasoning does, and the fades are a transition, so the day it stops
+      // holding it is visible motion rather than a wrong number.
+      syncDockFade();
       restoreAskState(askKept);
       regroupCards(before);
       regroupCards(reviewBefore, null, REVIEW_LIST);
