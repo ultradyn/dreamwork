@@ -298,55 +298,6 @@ Next id: **392**
   writer that caused both incidents. Recorded here rather than left as an intention
   · related: #361
 
-- **#385** — Humanized age beside a question's date, in his `XXa YYb` format · P2 · dashboard/UX ·
-  origin: **human** · 25m · **human via watch `add-idea` 2026-07-28 05:41**: *"questions have the
-  date in their headline, next to that they should have humanized time in a standard XXa YYb
-  format, where a and b are units like minutes and seconds. We always show both to 2 figures
-  (prefix with gray 0 if single digit). Smallest units is seconds, then minutes, hours, days,
-  weeks, years. This is structured so that neither XX nor YY are >99 for at least 100 years."*
-  · **most of this already exists and must be reused, not re-authored**: `watch.py:1619`
-  `agePair()` renders exactly `${p2(big)}${bu} ${p2(small)}${su}`, and `p2` (1617) is
-  `padStart(2,'0')`. It is already wired to `data-ct` at 3092. So the format is built; three
-  things are missing
-  · **(a) the unit ladder stops at days, and that breaks the precise invariant he stated.**
-  `AGE_PAIRS` (1618) is `[["d",86400,"h",3600], ["h",3600,"m",60], ["m",60,"s",1]]` — no weeks,
-  no years — so `XX` passes 99 at **100 days**, roughly 3.3 months, not 100 years. Adding
-  `["y",31536000,"w",604800]` and `["w",604800,"d",86400]` restores it: years ≤ 99 covers a
-  century, weeks within a year ≤ 52, days within a week ≤ 6, hours ≤ 23, minutes and seconds ≤ 59.
-  **This is a live defect in the existing helper, not only a gap for the new caller**
-  · **(b) the gray leading zero cannot be done in `textContent`.** Line 3092 assigns
-  `el.textContent = agePair(...)`, and a text node cannot carry a `<span>`. Graying one digit
-  means `agePair` returns markup and the caller switches to `innerHTML` — which is a small
-  escaping question worth answering deliberately rather than by reflex, since every value here is
-  digits and unit letters the function itself produced
-  · **(c) the questions headline is a new caller** and needs the timestamp available to it; the
-  entries already carry a date in the title, so check whether a parseable stamp reaches the
-  client or whether one must be added
-  · **no ask goes to him on this** — per his 05:35 rule, reusing `agePair` over a second
-  humanizer is the one clearly superior answer, so it gets decided here and recorded rather than
-  put to him. The only judgement worth flagging in the eventual report is (b)
-  · **briefed and queued** (`.dreamwork/docs/briefs/385-humanized-age.md`), waiting on the one
-  `watch.py` slot, which #300 holds from 06:13. The peer that had it released it when #277
-  merged; the constraint now is simply that one file admits one lane
-
-- **#382** — `plugcmd` fails on a fixed 900ms sleep, not on a 400 · P2 · guards/verification ·
-  origin: **loop** · 25m · owner: dispatched dreamer on `ccc @oc-glm52`, brief
-  `.dreamwork/docs/briefs/382-plugcmd-race.md`, owns `dev/capture/plugcmd.mjs`, port 39897
-  · found by the 04:40 full guard sweep — the only one of four reds that failed **identically in
-  three runs**, so unlike the others it is not load-flakiness
-  · **the guard's headline is wrong about its own failure.** It says *"a menu entry that 400s is
-  worse than no menu entry"*, but nothing 400s: the fixture's `watch-events.log` contains
-  `command via watch [/questions]: gh-sync: a plugin steer …`, so the POST succeeded. `.cmdmsg`
-  is simply `""` at the sample instant, and `confirmationFor` holds text ~5s before departing —
-  so `show()` had not been called yet
-  · so the instrument is a fixed `setTimeout(900)` where the code waits on a network round-trip,
-  which is the class this repo keeps finding hollow · **the open question the fix turns on**: is
-  the plugin path genuinely slower than a core kind (a product finding) or is 900ms merely tight
-  (a guard finding)? Measuring both is the brief's first step, before any change
-  · `watch.py` is off-limits to this lane — another agent holds it — so a fix that must live
-  there comes back as a report instead
-  · related: **#384**
-
 - **#381** — The single-writer rule has no delivery half · P2 · loop architecture/reliability ·
   origin: **loop** · 45m · **split out of #363, which landed the reader-facing half at
   `28ac5ac`** · the ledger has exactly one writer, correctly, so a foreign session that lands
@@ -2501,6 +2452,37 @@ Next id: **392**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#385** — humanized `XXa YYb` age beside a question's date · origin: **human** · closed
+  2026-07-28 08:02 · `e1926b4` `8dc448c` `0dd136e` `aabe9fb`
+  · `ccc @grok`, brief `.dreamwork/docs/briefs/385-humanized-age.md`. **All three gaps closed:**
+  `AGE_PAIRS` now runs years → weeks → days → hours → minutes → seconds (it stopped at days, so
+  `XX` passed 99 at **100 days** — about 3.3 months, not the century he specified); the pad digit
+  of a single-figure unit is greyed; and the questions headline carries the age beside the date.
+  Year length 365d, named in the source so the choice is not silent. Negative deltas clamp to 0,
+  so a future timestamp from clock skew cannot render `-1d`
+  · **coordinator re-ran the ladder red**: removing the year rung fails
+  `test_age_pair_fields_stay_under_100_for_a_century` **by showing** `field w=100 at age
+  60480000s → '100w 00d'` — a three-digit field, not merely by naming the missing rung, which is
+  the discriminating form. Its century length derives from the table's year rung when present and
+  from the named `365 * 86400` expression when absent, so the check still probes a century under
+  its own injection. Snapshot-restored; 32 age tests pass
+  · **one correction to my own brief:** criterion 2 predicted the failure would show *a day count*
+  above 99. With the week rung present it shows a **week** count. The lane's test is right and my
+  arithmetic was not
+  · **its one open item became #391 and was a real regression.** It reported eleven guards failing
+  at load 121 as probable flakes and honestly said it had not re-run quietly. Ten do pass quietly;
+  `prominence` did not, and it was #277's doing. Closed at `9e27c6e`
+
+- **#382** — `plugcmd` failed on a selector, not a race · origin: **loop** · closed 2026-07-28 ·
+  `a6d66b0`, dream `aca4c37`
+  · the guard read `#fmsg` where it meant `#cmdmsg`, so a page behaving perfectly reported a
+  timing race. **The lane refuted the coordinator's own diagnosis** — my brief asserted a fixed
+  900ms timing race — and its dream records the transferable half: the hollow-check pattern
+  recurs in the *diagnosis*, not only in the check
+  · related: **#384** — the same misread node turned out to be asserted on by `subslog`, which is
+  why the two entries reference each other and why condensing this one dropped a marker `lint.py`
+  then caught
 
 - **#391** — prominence air restored · origin: **loop** · closed 2026-07-28 07:57 · `9e27c6e`
   · `ccc @grok`, brief `.dreamwork/docs/briefs/391-prominence-air.md`. **Cause: `22f9884`
