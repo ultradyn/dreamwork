@@ -28,12 +28,18 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 import { mkdirSync, writeFileSync, rmSync, cpSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = +(process.argv[3] || 39887);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
-const notes = [];
+const { ok, declare, finish, checks, notes, errs } = makeReporter();
+declare({
+  drives: 'four scratch targets (unreadable / empty / missing / leak) each on its ' +
+          'own port, read on /questions and /, plus a server-side 409 on /answer and ' +
+          'a client-side refused-write injected through route.fulfill',
+  traceWindow: 'static reads after ~1.1s settle per target per route; no motion traced',
+});
 
 const SKELETON = '# Questions for the human\n\n## Open\n\n## Answered\n';
 // content the reader cannot see. Not a contrived string: this is the shape
@@ -73,7 +79,7 @@ process.on('exit', stopAll);
 await sleep(2500);
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
-const errs = [];
+
 
 /* what he can actually READ, plus whether the warn colour is on screen. The
    colour is resolved through a throwaway element: `--accent`/`--warn` off
@@ -235,8 +241,4 @@ ok('EXEMPTION CHECK: one line of prose in a blessed skeleton is still a fault',
 ok('no page errors', errs.length === 0);
 await br.close();
 stopAll();
-
-console.log(notes.join('\n'));
-console.log('----');
-console.log(checks.join('\n'));
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+finish();

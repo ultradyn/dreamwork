@@ -10,9 +10,17 @@
    node confirmation.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
+import { makeReporter } from './report.mjs';
 const OUT=process.argv[2], PORT=process.argv[3]||'39887';
 const BASE=`http://127.0.0.1:${PORT}`; mkdirSync(OUT,{recursive:true});
-const checks=[],notes=[],errs=[]; const ok=(n,c)=>checks.push(`${c?'PASS':'FAIL'} ${n}`);
+const { ok, declare, finish, checks, notes, errs } = makeReporter();
+declare({
+  drives: '/questions composer confirmation lifecycle across main (typing during ' +
+          'a delayed POST), close-during-POST, fallback listener cleanup, the ' +
+          'popout form, and reduced-motion — five phases in fresh contexts',
+  traceWindow: '6800ms / 5800ms rAF traces of cmdmsg opacity+transform+text through ' +
+               'the ~5s hold and atmospheric departure; 5600ms + 5800ms settle waits',
+});
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const br=await chromium.launch({args:['--use-gl=swiftshader','--enable-webgl']});
 async function page(reduced=false){const c=await br.newContext({viewport:{width:1200,height:900},reducedMotion:reduced?'reduce':'no-preference'});const p=await c.newPage();p.on('pageerror',e=>errs.push(String(e)));await p.goto(`${BASE}/questions`,{waitUntil:'networkidle'});await p.click('#cmdplus');await p.waitForFunction(()=>cmdpalette.classList.contains('open'));await sleep(250);return {c,p};}
@@ -111,4 +119,4 @@ const trace=ms=>`((ms)=>new Promise(res=>{const m=cmdmsg,p=cmdpalette,seen=[],t0
  ok('reduced success clears on schedule',seen.at(-1).text==='');await c.close();
 }
 ok('no page errors',errs.length===0);await br.close();
-console.log(notes.join('\n'));console.log('----');console.log(checks.join('\n'));process.exit(checks.some(c=>c.startsWith('FAIL'))?1:0);
+finish();

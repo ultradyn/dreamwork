@@ -27,14 +27,22 @@
    Writes to the target it is pointed at, so point it at a scratch copy.
    usage: node states.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
 
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: '/questions in two contexts (normal + reduced-motion), driving three ' +
+          'state-matrix cells: unfold a folded entry, fold it back, and a live ' +
+          '/comment tick that grows an open card under the cursor',
+  traceWindow: 'three rAF traces per context (1600ms for each fold, 5200ms for the ' +
+               'tick-grow); every card geometry + FLIP signature sampled per frame',
+});
+
 const uniq = a => [...new Set(a)];
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
-const notes = [];
 
 /* Trace every card's geometry and its FLIP signatures per frame, while `act`
    happens. `act` runs in the page and may be async. */
@@ -80,7 +88,10 @@ for (const reduced of [false, true]) {
     open: (document.querySelector('.qa.open[data-qid]') || {dataset:{}}).dataset.qid,
   }));
   if (!ids.folded || !ids.open) {
-    console.log('FAIL fixture needs a folded and an open entry'); process.exit(1);
+    ok(`${tag}: fixture has a folded and an open entry (else the matrix is vacuous)`,
+       false);
+    notes.push('fixture needs a folded and an open entry');
+    await br.close(); finish(); process.exit(1);
   }
 
   // ── cell: nobody → the human is reading it (he unfolds it) ──────────────
@@ -174,7 +185,4 @@ for (const reduced of [false, true]) {
   await br.close();
 }
 
-console.log(notes.join('\n'));
-console.log('----');
-console.log(checks.join('\n'));
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+finish();

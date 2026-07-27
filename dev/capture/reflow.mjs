@@ -22,11 +22,21 @@
    serves arbitrary repo content.
    usage: node reflow.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync, writeFileSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
 import { join } from 'node:path';
+
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: '/questions, /, and /file?p= for .md / .py / hostile markup — A/B of ' +
+          'preB vs mdB over a 380/460/545px width sweep, plus nesting and inline ' +
+          'rendering on known input, plus link classification',
+  traceWindow: 'static reads after ~0.6-0.9s settle per route; hostile-markup ' +
+               'dialog listener armed before load; no motion traced',
+});
 
 // group a range's rects into line boxes, then lines-used vs lines-needed
 const MEASURE = `(sel, root) => {
@@ -175,7 +185,6 @@ const hostile = await p.evaluate(() => ({
 }));
 await p.screenshot({ path: `${OUT}/file-md.png`, fullPage: true });
 
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 ok('no page errors', errs.length === 0);
 // the decisive pair: same words, same column, both renderers
 ok('A/B: reflow never costs more lines than the <pre>, at any width',
@@ -237,12 +246,11 @@ ok('hostile markup shows as escaped text while prose still renders',
    hostile.shown.includes('<script>alert(1)</script>') &&
    hostile.bold === 'bold');
 
-console.log('questions: ' + JSON.stringify(qm));
-console.log('dashboard: ' + JSON.stringify(dm));
-console.log("A/B sweep (same text, both renderers): " + JSON.stringify(ab));
-console.log('nesting: ' + JSON.stringify(nest));
-console.log('inline: ' + JSON.stringify(inline, null, 1));
-if (errs.length) console.log('errors: ' + errs.join(' | '));
-console.log('----'); console.log(checks.join('\n'));
+notes.push('questions: ' + JSON.stringify(qm));
+notes.push('dashboard: ' + JSON.stringify(dm));
+notes.push("A/B sweep (same text, both renderers): " + JSON.stringify(ab));
+notes.push('nesting: ' + JSON.stringify(nest));
+notes.push('inline: ' + JSON.stringify(inline, null, 1));
+if (errs.length) notes.push('errors: ' + errs.join(' | '));
 await b.close();
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+finish();

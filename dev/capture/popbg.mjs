@@ -3,11 +3,19 @@
 // and that the field matches the main window when the two are at the same
 // screen position (the world-space anchoring contract from #74).
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 import { mkdirSync } from 'node:fs';
 mkdirSync(OUT, { recursive: true });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const { ok, declare, finish, notes } = makeReporter();
+declare({
+  drives: '/ with the command popout opened, comparing the main and popout ' +
+          'shader canvases at the same screen position with the clock frozen',
+  traceWindow: 'two 400ms settles after popout load and after stripping non-canvas ' +
+               'children; one 500ms frame-advance sample; no motion traced',
+});
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const ctx = await browser.newContext({ viewport: { width: 1100, height: 820 } });
 // freeze the shader's wall-clock phase so two non-simultaneous captures are
@@ -23,7 +31,11 @@ await page.click('#cmdplus');
 await sleep(600);
 await page.click('#cmdpop');
 const pop = await popP;
-if (!pop) { console.log('NO POPUP CAPTURED (Document PiP path?)'); await browser.close(); process.exit(1); }
+if (!pop) {
+  ok('popup window captured (Document PiP path would skip this)', false);
+  notes.push('NO POPUP CAPTURED (Document PiP path?)');
+  await browser.close(); finish(); process.exit(1);
+}
 await pop.waitForLoadState('domcontentloaded').catch(() => {});
 await sleep(1400);
 
@@ -45,9 +57,9 @@ const f = p => p.evaluate(() => {
   const g = cv.getContext('webgl', { preserveDrawingBuffer: false });
   return 0;   // frames tally is only exposed on the main window handle
 });
-console.log('MAIN  ', JSON.stringify(await probe(page)));
-console.log('POPOUT', JSON.stringify(await probe(pop)));
-console.log('main frames advancing:', await page.evaluate(async () => {
+notes.push('MAIN  ' + JSON.stringify(await probe(page)));
+notes.push('POPOUT' + JSON.stringify(await probe(pop)));
+notes.push('main frames advancing: ' + await page.evaluate(async () => {
   const a = window.dreambg.frames;
   await new Promise(r => setTimeout(r, 500));
   return window.dreambg.frames - a;
@@ -85,12 +97,12 @@ const seam = await cmpPage.evaluate(async ([da, db]) => {
 }, ['data:image/png;base64,' + mainPlate.toString('base64'),
     'data:image/png;base64,' + popPlate.toString('base64')]);
 await ctx2.close();
-console.log('SEAM main vs popout:', JSON.stringify(seam),
-  seam.maxDiff <= 2 && seam.spread > 5
-    ? 'PASS — identical field across the two documents'
-    : 'FAIL');
+notes.push('SEAM main vs popout: ' + JSON.stringify(seam));
+ok('identical shader field across main and popout (world-space contract) ' +
+   'and the plate has detail (not identically blank)',
+   seam.maxDiff <= 2 && seam.spread > 5);
 // pixel evidence: the popout canvas must not be a flat fill
-console.log('POPOUT pixel spread:', JSON.stringify(await pop.evaluate(() => {
+notes.push('POPOUT pixel spread: ' + JSON.stringify(await pop.evaluate(() => {
   const cv = document.getElementById('dreambg');
   const g = cv.getContext('webgl');
   const px = new Uint8Array(cv.width * cv.height * 4);
@@ -103,3 +115,4 @@ console.log('POPOUT pixel spread:', JSON.stringify(await pop.evaluate(() => {
   return { samples: n, min: mn, max: mx, spread: [mx[0]-mn[0], mx[1]-mn[1], mx[2]-mn[2]] };
 })));
 await browser.close();
+finish();

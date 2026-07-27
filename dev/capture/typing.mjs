@@ -21,15 +21,24 @@
    Writes to the target it is pointed at, so point it at a scratch copy.
    usage: node typing.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
 
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: '/questions across two chromium contexts (normal + reduced-motion), ' +
+          'typing into an open card while POSTing /command then /comment to ' +
+          'force a real tick, plus opening a folded entry across a tick',
+  traceWindow: 'two 5200ms rAF traces per context watching the textarea node ' +
+               'identity and mode indicator; the tick must replace the node',
+});
+
 const TEXT = 'half a thought, still being written';
 const BACK = 5;                       // caret parked this far from the end
 const uniq = a => [...new Set(a)];
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 
 /* Run one tick while watching a single card, and report what survived it.
    `poke` is the write that makes the tick real; the rAF trace spans the
@@ -100,8 +109,9 @@ for (const reduced of [false, true]) {
   const qids = await p.evaluate(() =>
     [...document.querySelectorAll('.qa.open[data-qid]')].map(e => e.dataset.qid));
   if (qids.length < 2) {
-    console.log('FAIL fixture needs two open questions — reset the scratch target');
-    process.exit(1);
+    ok('fixture has two open questions for the two-context tick', false);
+    notes.push('fixture needs two open questions — reset the scratch target');
+    await br.close(); finish(); process.exit(1);
   }
   const [mine, other] = qids;
   const otherTitle = decodeURIComponent(other);
@@ -129,7 +139,11 @@ for (const reduced of [false, true]) {
     const c = document.querySelector('.qa.folded[data-qid]');
     return c ? c.dataset.qid : null;
   });
-  if (!fqid) { console.log('FAIL fixture has no folded entry'); process.exit(1); }
+  if (!fqid) {
+    ok(`${tag}: fixture has a folded entry to open across a tick`, false);
+    notes.push('fixture has no folded entry');
+    await br.close(); finish(); process.exit(1);
+  }
   await p.click(`.qa[data-qid="${fqid}"] .qfold > summary`);
   await sleep(250);
   const f = await p.evaluate(`(async (qid) => {
@@ -157,5 +171,4 @@ for (const reduced of [false, true]) {
   await br.close();
 }
 
-console.log(checks.join('\n'));
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+finish();

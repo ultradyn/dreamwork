@@ -32,14 +32,22 @@
    long enough to be a thread) and one after (which must stay inline).
    usage: node thread.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
 
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: '/questions in two contexts (normal + reduced-motion), probing an ' +
+          'awaiting-fold thread (chronology, authorship symmetry, collapsed-by-default), ' +
+          'expanding it through the shared fold-motion gesture, and collapsing again',
+  traceWindow: 'two 1800ms rAF traces per context across the expand and the ' +
+               'collapse, sampling every card top + height + ghost/reveal counts',
+});
+
 const uniq = a => [...new Set(a)];
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
-const notes = [];
 
 /* the awaiting card, described by what is on screen. A note is addressed by a
    phrase from its own text, never by position — position is the thing under
@@ -114,7 +122,11 @@ for (const reduced of [false, true]) {
   const tag = reduced ? 'reduced-motion' : 'normal';
 
   const before = await p.evaluate(PROBE);
-  if (!before) { console.log('FAIL fixture needs an awaiting-fold entry'); process.exit(1); }
+  if (!before) {
+    ok(`${tag}: fixture has an awaiting-fold thread to probe`, false);
+    notes.push('fixture needs an awaiting-fold entry');
+    await br.close(); finish(); process.exit(1);
+  }
   const [pre1, pre2, post] = before.rows;
   notes.push(`${tag}: answer top=${before.answer && before.answer.top}` +
              ` who=${before.answerWho} | ` +
@@ -198,7 +210,4 @@ for (const reduced of [false, true]) {
   await br.close();
 }
 
-console.log(notes.join('\n'));
-console.log('----');
-console.log(checks.join('\n'));
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+finish();

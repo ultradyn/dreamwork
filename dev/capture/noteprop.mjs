@@ -4,10 +4,17 @@
    usage: node noteprop.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39951';
 const BASE = `http://127.0.0.1:${PORT}`;
 mkdirSync(OUT, { recursive: true });
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: 'two chromium.launch() processes against /questions and /review, A ' +
+          'posting /comment while B (normal + reduced-motion) observes #qdock',
+  traceWindow: 'observers poll lastMtime then waitForFunction a 3s sees() window ' +
+               'after A writes; 100ms settle; no motion traced',
+});
 const marker = `cross-browser note ${process.pid}`;
 
 // Separate launch calls are the invariant under test: A writes, B observes.
@@ -110,8 +117,7 @@ async function checkPreservedReviewState(page, seeded, phase) {
 await checkPreservedReviewState(review, seeded, 'normal motion');
 await checkPreservedReviewState(reduced, reducedSeeded, 'reduced motion');
 ok('no page errors', errors.length === 0);
-console.log(checks.join('\n'));
-if (checks.some(x => x.startsWith('FAIL'))) process.exitCode = 1;
+finish();
 } finally {
   await Promise.allSettled([browserA?.close(), browserB?.close()]);
 }
