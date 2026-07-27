@@ -24,9 +24,45 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **326**
+Next id: **327**
 
 ## Open
+
+- **#326** — The answer box sits on a black band instead of the text fading ·
+  **P1** · **next-up** · bug/visual · ~30m · origin: **human** · **human via chat
+  with a screenshot 2026-07-27 21:40** (verbatim: *"the black stuff around the
+  answer box to emulate the fade thing is ugly. the text itself should fade, not
+  be covered by fake fade. and the buttons and text box shouldn't have anything
+  behind them (should look like it did before)"*) · **located exactly**:
+  `watch.py` ~1065-1069, `.qdock > .qa > .qcompose::before`, introduced by
+  `4e5ea01` as #305 (c) · it is an absolutely-positioned band from `top:-2rem` to
+  `bottom:0` at `z-index:-1` carrying
+  `linear-gradient(to bottom, transparent, var(--bg) 2rem)` — so it fades over its
+  first 2rem and then runs **solid `var(--bg)` for the whole height of the compose
+  box**. That is both halves of his complaint in one rule: the 2rem OCCLUDES the
+  live text instead of fading it, and the solid remainder is the panel behind the
+  textarea and buttons · **two asks, and they are separable**: (1) nothing behind
+  the box/buttons — that is deleting the band, and it restores the pre-#305 look
+  he asked for; (2) the text itself fades — that is a mask on the scrolling text ·
+  **the structural catch that makes (2) more than a one-liner, and the reason
+  #305's author chose the band**: `.qcompose` is `position:sticky` INSIDE `.qa`,
+  so a mask on `.qa` fades the ANSWER BOX along with the text. The author's stated
+  objection ("a mask over the scroller cannot be told about the box, and would dim
+  his last line at the end") is only half right — the `atend` state already
+  detects the body ending at the box and is what currently zeroes the band's
+  opacity, so the last-line problem is already solved machinery; the box-fading
+  problem is the real one · rec: give the question body its own element inside the
+  scroller and mask THAT, leaving `.qcompose` unmasked — it matches his words
+  ("the text itself should fade") and it is the same mirrored gesture as the top
+  edge, which already masks correctly via `--qfade` · **do not author a second
+  idiom**: the top edge's registered-property fade is the reference, the bottom is
+  it mirrored, and `transitions.md` governs the arrive/depart of the edge · the
+  `@media (max-width:900px)` block and the reduced-motion block both reference the
+  band and must be updated in step, or the narrow layout keeps a rule for an
+  element that no longer exists · **watch.py is held by ccc-glm52-269 (the P0
+  draft-loss fix)**, so this starts when that releases; he has authorised native
+  subagents again for important work, and this is a visual-quality change on the
+  surface he reads proposals on
 
 - **#325** — Make the review artifact a template, not twelve hand-rolled pages ·
   **P1** · **next-up** · tooling/design · ~40m · origin: **human** · **human via
