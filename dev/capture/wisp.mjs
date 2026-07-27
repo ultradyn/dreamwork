@@ -19,13 +19,21 @@
 
    usage: node wisp.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { makeReporter } from './report.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
 
-const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
-const notes = [];
+const { ok, declare, finish, checks, notes } = makeReporter();
+declare({
+  drives: '/questions in two contexts (normal + reduced-motion), sampling the ' +
+          'awaiting-fold .anstag rail and label every rAF for 6.4s, reading the ' +
+          'qbreathe/qwisp keyframes out of the live stylesheet, and an A/B of ' +
+          'frame timings with animations killed',
+  traceWindow: 'one 6.4s rAF sample per context (~one full breath) plus a 200-frame ' +
+               'p50/p95 frame-time A/B; motion is the subject, sampled not asserted at ends',
+});
 
 // sample the wisp's two channels every frame for a full cycle and a bit
 const SAMPLE = `(ms => new Promise(res => {
@@ -96,7 +104,11 @@ for (const reduced of [false, true]) {
   const tag = reduced ? 'reduced-motion' : 'normal';
 
   const s = await p.evaluate(SAMPLE);
-  if (!s) { console.log('FAIL fixture has no awaiting-fold entry'); process.exit(1); }
+  if (!s) {
+    ok(`${tag}: fixture has an awaiting-fold entry to sample`, false);
+    notes.push('fixture has no awaiting-fold entry');
+    await br.close(); finish(); process.exit(1);
+  }
   const R = envelope(s.rail), D = envelope(s.drift);
   notes.push(`${tag}: rail span=${span(s.rail).toFixed(2)} rev=${R.rev}` +
              ` down=${R.down.toFixed(2)} | drift span=${span(s.drift).toFixed(1)}px` +
@@ -182,7 +194,4 @@ for (const reduced of [false, true]) {
   await br.close();
 }
 
-console.log(notes.join('\n'));
-console.log('----');
-console.log(checks.join('\n'));
-process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);
+finish();
