@@ -1676,3 +1676,17 @@ this shape and convert opportunistically.)
   few minutes should name a file the lane checks between increments**, precisely
   because the thing worth saying mid-flight is usually something neither party could
   have known at dispatch. (coordinator, #300/#386)
+- **A load generator that orphans its workers turns a bounded measurement into an
+  unbounded CPU leak, and it compounds silently across rounds.** #386's brief asked
+  it to characterise a flake "under moderate load (3 busyloops)". Correct ask. But
+  each round's `/tmp/busyloop.py` workers were **reparented to `systemd --user`
+  (ppid 1092) when their shell exited** and kept spinning: two dead cohorts, six
+  processes, up to 18 minutes each, ~5 cores burned for no measurement at all. Load
+  read **161 on 16 cores**, of which only four processes belonged to anything live.
+  Diagnosing it needs ppid, not `pcpu` — the orphans are indistinguishable from the
+  real ones by CPU alone, and identical in `ps` output except for their parent.
+  **So: a brief that asks for generated load must also require the generator be
+  reaped** (a `try/finally`, a process group killed on exit, or a self-terminating
+  worker with a deadline), and a coordinator seeing implausible load should check
+  parentage before concluding contention. Killing only the reparented cohort
+  restored the machine without corrupting the live measurement. (coordinator, #386)
