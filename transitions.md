@@ -32,16 +32,35 @@ So, for anything in this document:
   it move".** Assert that some captured frame is *part-way* between the
   two ends — a snap has none there, at any frame rate. The helper is
   `between(vals, first, last)` with a ~3% deadband so a frame that really
-  is an end does not read as travel: `headertravel.mjs` and
-  `reviewsplit.mjs:145` have it, and `qsec.mjs:157` uses the same shape
-  **for its fade only** — the rest of that file still counts positions
-  and is half-converted, so copy the helper, not the file (#311).
+  is an end does not read as travel: `reviewsplit.mjs:145` is where it
+  started and `headertravel.mjs`, `regroup.mjs`, `morph.mjs` and
+  `qsec.mjs` now all carry it verbatim. Copy the helper, not a file —
+  it is deliberately one idiom, and the reason is that `qsec` spent a
+  day holding both (the fade converted, the travel beside it still
+  counting positions) and read as if that were a considered distinction
+  rather than an unfinished job (#311).
+- **A part-way count needs a vacuity precondition beside it, and that
+  one IS a literal.** `between(...) >= 1` passes on a 2px twitch, so
+  assert the span first — and the span's floor is a pixel distance,
+  which is a property of the fixture's layout and not of the box, so a
+  literal well below the measured value is exactly right there. This
+  is the one place the never-a-literal rule does **not** apply, and
+  saying so costs a line because three commits described their floors
+  as "derived at runtime, never literals" when what is derived is the
+  *measurement they print* and the floor is a deliberate constant. Both
+  halves matter: derive and print the real span so the number in the
+  output is today's, and keep the floor a constant so it fails when the
+  subject stops moving.
 - **…but never assert an absolute COUNT of distinct positions.** It reads
   as the same rule and it is not: `uniq(positions).length >= 8` says "this
   machine rendered eight frames in 850ms", which is a fact about the box,
   not about the motion. Five guards encoded it — `headertravel` (>= 8
-  widths, now converted), `regroup` and `morph` (>= 6 positions), and
-  `qsec` twice (>= 8 positions, >= 8 heights) — and they went red on a
+  widths), `regroup` and `morph` (>= 6 positions), and `qsec` twice
+  (>= 8 positions, >= 8 heights), **all five now converted** — and
+  `dismiss` holds two more on one trace with the terminal-state shape
+  below, which is why "some checks passed" is not evidence a loaded run
+  was sound: its neighbours got EASIER as frames spread apart while the
+  terminal one got harder. They went red on a
   commit that was fine, twice, for two different amounts of load, then
   passed when re-run with fewer guards in flight. Base `f72f730` failed
   the threshold in 3 of 5 runs on its own.
