@@ -369,15 +369,6 @@ Next id: **296**
   ownership · no manufactured busywork, cross-repo/external authority,
   collisions or model-gate bypass; diagnose first unless ownership explicit;
   coordinator validates every result · active durable routine
-- **#245** — Build `ud-dreamwork-worktrees` plugin · P1 · plugin · origin:
-  **human** · **do next via watch 14:33** · completed at `8af7dc3` after
-  red-first 11→22 contract tests and two independent Standards/Spec reviews ·
-  publishable source package under `plugins/`; symlinked into Pi, agents and
-  llm-general skill roots; loaded by explicit human request · bounded
-  subagent mode + same-host durable co-agent claims/inbox protocol; machine-local
-  runtime state, status projection, disjoint ownership, receipt/review,
-  scratch-safe cleanup and cross-host boundary all documented · PASS
-
 - **#244** — Define repository-browser visibility policy · P2 · design ·
   25m · origin: **human** · **human via watch 14:29** · decide tracked,
   untracked, dotfile, ignored, generated/vendor/cache, symlink and binary
@@ -976,6 +967,12 @@ Next id: **296**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#245** — Build `ud-dreamwork-worktrees` plugin · P1 · landed earlier at
+  `8af7dc3` (ledger rescan 2026-07-27 found the entry stale in Open) ·
+  red-first 11→22 contract tests, two independent Standards/Spec reviews,
+  publishable package under `plugins/` symlinked into Pi/agents/llm-general
+  roots; bounded subagent mode + durable co-agent claims/inbox protocol
 
 - **#250/#251** — Missing-aid answer disclosures + node disconnect proof ·
   P1/P2 · landed earlier at `f17f307` (ledger rescan 2026-07-27 found both
