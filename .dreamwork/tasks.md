@@ -24,9 +24,33 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **361**
+Next id: **362**
 
 ## Open
+
+- **#361** — Turn on the ledger-lint hook we built and never switched on · P1 ·
+  dogfood/reliability · origin: **loop** · 15m · **the evidence is two incidents tonight, four
+  hours apart, both mine**: a `tasks.md` write introduced a lint ERROR and the commit went
+  through anyway, because the lint run and the `git commit` were in the same shell command and
+  the error scrolled past above the commit's own output. Once it was a next-id mismatch, once
+  it was prose quoting the origin marker literally so lint counted two markers. Both were
+  caught on the NEXT lint run and both needed an amend
+  · **the fix already exists, shipped, tested, and switched off.** #138/#156 delivered
+  `plugins/ud-dreamwork-hooks/hooks/posttooluse_ledger_lint.py`, which lints `questions.md` and
+  `tasks.md` **in the same turn as the write** — before the commit, while the agent that
+  mangled the file still holds the context. That is precisely the window both incidents fell
+  through. Measured: it is referenced in neither `~/.claude/settings.json` nor
+  `~/.claude-w/settings.json`, and DREAMWORK.md carries Load lines for
+  `ud-dreamwork-worktrees` and `ud-dreamwork-github` but not for the hooks plugin
+  · **it needs his consent and cannot be self-granted**, which is the whole reason it is off:
+  #138's entry set a scope gate because the plugin writes to his Claude Code config, and the
+  plugin's own design requires a DREAMWORK.md Load line before either hook does anything
+  · rec: he adds the Load line, then `python3 plugins/ud-dreamwork-hooks/install.py --print`
+  is reviewed before `--apply` (idempotent, timestamped backup, refuses to clobber) · asked in
+  questions.md · **blocked on that consent**, not on any code
+  · a discipline change is the weaker half of the same fix and needs no permission: never put
+  a lint run and a `git commit` in one command — redirect lint to a file, read the exit, then
+  commit. Doing that from now on regardless of his answer
 
 - **#359** — A hosted Dreamhub as a paid service, agents registering against it · P2 ·
   product/architecture · origin: **human** · **human via watch 2026-07-28 01:39**, splitting

@@ -1,6 +1,41 @@
 # Questions for the human
 
 ## Open
+- **P1 · 2026-07-28 — #361: may I switch on the ledger-lint hook we built in
+  #138/#156 and never turned on?** One line from you, then a reviewed install.
+  No artifact — it is a consent question, not a design.
+
+  **The evidence is two of my own mistakes tonight, four hours apart.** I wrote
+  `tasks.md`, introduced a lint ERROR, and committed anyway — because the lint
+  run and the `git commit` were in one shell command and the error scrolled past
+  above the commit's own output. Once a next-id mismatch, once prose that quoted
+  the origin marker literally so lint counted two markers on one entry. Both
+  needed an amend, and both were caught only by the *next* lint run.
+
+  **The fix already exists and is switched off.** #138/#156 shipped
+  `plugins/ud-dreamwork-hooks/hooks/posttooluse_ledger_lint.py`, which lints
+  `questions.md` and `tasks.md` **in the same turn as the write** — before any
+  commit, while the agent that mangled the file still has the context. That is
+  exactly the window both incidents fell through. It is measurably off: not
+  referenced in `~/.claude/settings.json` or `~/.claude-w/settings.json`, and
+  DREAMWORK.md has Load lines for `ud-dreamwork-worktrees` and
+  `ud-dreamwork-github` but none for the hooks plugin.
+
+  It is off because #138's entry put a scope gate on it — the plugin writes to
+  your Claude Code config — and the plugin's own design refuses to act without a
+  DREAMWORK.md Load line. So it cannot be self-granted, correctly.
+
+  Rec: **add the Load line**; I then show you `install.py --print` before
+  anything is applied (`--apply` is idempotent, takes a timestamped backup, and
+  refuses to clobber). Note it is Claude Code-specific, so it protects this
+  session and any other Claude lane, not pi or ccc agents.
+
+  The weaker half of the fix needs no permission and I am doing it regardless:
+  never put a lint run and a `git commit` in one command again.
+
+  Answer `rec`, `rec but show me install.py --print first` (the same thing,
+  said explicitly), or `Pause #361`.
+
 - **P1 · 2026-07-28 — #346 task-store schema: approve the entity shape and
   four decisions (S1-S4)?** Decision artifact:
   `.dreamwork/review/task-store-schema.html`; full design:
