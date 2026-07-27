@@ -134,6 +134,16 @@ lint:
 #                fades rather than being covered by a painted band, and the
 #                middle of its three claims cannot be written against the DOM
 #                at all. Also unregistered from the day it was written.
+#   artifactwrap ordinary (OUT, PORT) on the shared server, and it BUILDS its
+#                fixture through review_artifact.py so the real template and the
+#                real builder are what get measured — the bug it guards (#347)
+#                does not reproduce when the labels are rewritten through the
+#                DOM, because the scaffolding stands in front of it. Its
+#                instrument is a `Range` over each WORD, not
+#                `getClientRects()` on the box: `.topactions a` is
+#                `inline-flex`, so the box stays one rect while the text wraps
+#                inside it, and the box-level check reported 1 for four
+#                visibly-broken labels.
 #   filehead     OWN TARGET + OWN EPHEMERAL PORT (#284), gitrow-shaped: the
 #                datum is a FILE at a chosen path, and the shared fixture has
 #                no path long enough to make the heading compete with the
@@ -156,7 +166,7 @@ lint:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview fileimg qfade"
+    DEFAULT_GUARDS="headertravel reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview fileimg qfade artifactwrap"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}
