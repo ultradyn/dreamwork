@@ -3430,6 +3430,229 @@ class TestAppShell(unittest.TestCase):
             self.assertEqual(len(served), len(big))
             self.assertEqual(h["content-type"], "image/png")
 
+    # ── #354: /filebytes streams; never materialises the body ─────────────
+    # Headers-only checks cannot tell read-all-then-slice from real streaming:
+    # both produce byte-identical bodies and the same Content-Length. The
+    # load-bearing proof observes per-read return sizes at the body open.
+
+    class _ReadSizeProbe:
+        """File wrapper that logs every read() return length.
+
+        Installed on the fixture path only. detect_file_kind's 32-byte magic
+        probe appears in the log (small, always ≤ CHUNK) and is not filtered
+        out — a whole-file read is distinguished by returning more than
+        FILEBYTES_CHUNK bytes in a single call, which magic never does.
+        """
+        def __init__(self, real, log):
+            self._real = real
+            self._log = log
+
+        def read(self, size=-1):
+            data = self._real.read(size)
+            self._log.append({"req": size, "got": len(data)})
+            return data
+
+        def __enter__(self):
+            self._real.__enter__()
+            return self
+
+        def __exit__(self, *a):
+            return self._real.__exit__(*a)
+
+        def close(self):
+            return self._real.close()
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    def _track_fixture_reads(self, fixture_path, reads):
+        """Patch builtins.open so rb opens of `fixture_path` are probed."""
+        import builtins
+        path_real = os.path.realpath(fixture_path)
+        real_open = builtins.open
+
+        def probe_open(file, mode="r", *args, **kwargs):
+            f = real_open(file, mode, *args, **kwargs)
+            try:
+                if (isinstance(mode, str) and "r" in mode and "b" in mode
+                        and os.path.realpath(file) == path_real):
+                    return self._ReadSizeProbe(f, reads)
+            except OSError:
+                pass
+            return f
+
+        return unittest.mock.patch("builtins.open", probe_open)
+
+    def test_a_plain_get_never_reads_the_whole_file_at_once(self):
+        """#354 A2 — body path never issues one whole-file read.
+
+        Production lines that must break for red:
+          - Handler._send_bytes body strategy (was `data = read_bytes(full)`)
+          - read_bytes's unbounded `return f.read()` if reattached
+
+        Restoring either form of whole-file materialisation makes a single
+        read return the full 512 KiB and this fails. A hollow implementation
+        that reads everything then writes 64 KiB pieces is caught the same
+        way — the write loop is invisible to the HTTP body, but the read
+        log is not.
+        """
+        CHUNK = watch.FILEBYTES_CHUNK
+        FILE_SIZE = 512 * 1024
+        # Precondition the check depends on: file larger than one chunk, or
+        # a whole-file read is indistinguishable from a single chunk read.
+        self.assertGreater(FILE_SIZE, CHUNK,
+                           "fixture must exceed one chunk or max-read is vacuous")
+        self.assertEqual(CHUNK, 65536)
+
+        with tempfile.TemporaryDirectory() as d:
+            target = make_target(d)
+            # Binary head so kind=binary (attachment path); body is payload.
+            blob = b"\x00\x01" + b"p" * (FILE_SIZE - 2)
+            path = os.path.join(target, "stream.bin")
+            with open(path, "wb") as f:
+                f.write(blob)
+            self.assertEqual(os.path.getsize(path), FILE_SIZE)
+
+            reads = []
+            base = self._serve(target)
+            with self._track_fixture_reads(path, reads):
+                status, served, h = self._get_bytes(
+                    base + "/filebytes?p=stream.bin")
+            self.assertEqual(status, 200)
+            self.assertEqual(served, blob)
+            self.assertEqual(int(h["content-length"]), FILE_SIZE)
+
+            self.assertTrue(reads, "instrumentation saw no reads; seam missed")
+            got_sizes = [r["got"] for r in reads if r["got"] > 0]
+            self.assertTrue(got_sizes, "no positive-length reads recorded")
+            largest = max(got_sizes)
+            # The property under test — report this number, not "it works".
+            self.assertLessEqual(
+                largest, CHUNK,
+                "largest single read was %d on a %d-byte file; a whole-file "
+                "or oversize read means the body is still being materialised"
+                % (largest, FILE_SIZE))
+            # Total payload bytes observed across reads covers the file
+            # (magic probe re-reads the head on a second open; allow that).
+            total_got = sum(r["got"] for r in reads)
+            self.assertGreaterEqual(total_got, FILE_SIZE)
+
+            # Neighbours of the chunk boundary — same property, same seam.
+            for label, n in (
+                ("zero-byte", 0),
+                ("exactly-one-chunk", CHUNK),
+                ("one-over-a-chunk", CHUNK + 1),
+            ):
+                with self.subTest(neighbour=label, n=n):
+                    nb = ((b"\x00\x01" + b"n" * (n - 2)) if n >= 2
+                          else b"\x00" * n)
+                    npath = os.path.join(target, "n-%s.bin" % label)
+                    with open(npath, "wb") as f:
+                        f.write(nb)
+                    nreads = []
+                    with self._track_fixture_reads(npath, nreads):
+                        st, body, _ = self._get_bytes(
+                            base + "/filebytes?p=" + os.path.basename(npath))
+                    self.assertEqual(st, 200)
+                    self.assertEqual(body, nb)
+                    if n == 0:
+                        # No positive body read required; empty is fine.
+                        pos = [r["got"] for r in nreads if r["got"] > 0]
+                        self.assertTrue(all(g <= CHUNK for g in pos))
+                    else:
+                        pos = [r["got"] for r in nreads if r["got"] > 0]
+                        self.assertTrue(pos)
+                        self.assertLessEqual(max(pos), CHUNK)
+                        self.assertGreaterEqual(sum(r["got"] for r in nreads),
+                                                n)
+
+            # Sparse large file (plan A3): logical size ≫ disk, still no
+            # whole-file read. Reuses the plan's truncate idiom — NOT
+            # RLIMIT_FSIZE (that one is for write failures, #370).
+            sparse_size = 32 * 1024 * 1024  # 32 MiB logical; suite-friendly
+            spath = os.path.join(target, "huge.bin")
+            with open(spath, "wb") as f:
+                f.write(b"\x00\x01")
+                f.truncate(sparse_size)
+            st_stat = os.stat(spath)
+            self.assertEqual(st_stat.st_size, sparse_size)
+            disk = st_stat.st_blocks * 512
+            self.assertLess(
+                disk, sparse_size // 8,
+                "fixture is not sparse (disk=%d, logical=%d); refuse to "
+                "pretend a full allocation is the large-file condition"
+                % (disk, sparse_size))
+            sreads = []
+            with self._track_fixture_reads(spath, sreads):
+                st, body, hdr = self._get_bytes(
+                    base + "/filebytes?p=huge.bin")
+            self.assertEqual(st, 200)
+            self.assertEqual(int(hdr["content-length"]), sparse_size)
+            self.assertEqual(len(body), sparse_size)
+            spos = [r["got"] for r in sreads if r["got"] > 0]
+            self.assertTrue(spos)
+            self.assertLessEqual(max(spos), CHUNK)
+
+    def test_content_length_comes_from_stat_not_from_reading(self):
+        """#354 — Content-Length is the stat size, set before the body is read.
+
+        Production line: `_send_bytes` Content-Length source (was
+        `str(len(data))` after `read_bytes`). Red: restore
+        `data = read_bytes(full)` + `Content-Length: len(data)` — then by
+        the time end_headers runs the whole body has already been read, and
+        the order assertion below fails. Also fails if getsize is never
+        consulted for the body path.
+        """
+        FILE_SIZE = 100_000
+        with tempfile.TemporaryDirectory() as d:
+            target = make_target(d)
+            blob = b"\x00BIN" + b"c" * (FILE_SIZE - 4)
+            path = os.path.join(target, "sized.bin")
+            with open(path, "wb") as f:
+                f.write(blob)
+            size = os.path.getsize(path)
+            self.assertEqual(size, FILE_SIZE)
+
+            reads = []
+            bytes_at_end_headers = []
+            real_eh = http.server.BaseHTTPRequestHandler.end_headers
+            real_getsize = os.path.getsize
+            getsize_hits = []
+
+            def spy_eh(handler_self):
+                bytes_at_end_headers.append(sum(r["got"] for r in reads))
+                return real_eh(handler_self)
+
+            def spy_getsize(p):
+                try:
+                    getsize_hits.append(os.path.realpath(p))
+                except OSError:
+                    getsize_hits.append(p)
+                return real_getsize(p)
+
+            base = self._serve(target)
+            with self._track_fixture_reads(path, reads), \
+                    unittest.mock.patch.object(
+                        http.server.BaseHTTPRequestHandler,
+                        "end_headers", spy_eh), \
+                    unittest.mock.patch("os.path.getsize", spy_getsize):
+                status, served, h = self._get_bytes(
+                    base + "/filebytes?p=sized.bin")
+            self.assertEqual(status, 200)
+            self.assertEqual(h["content-length"], str(size))
+            self.assertEqual(served, blob)
+            self.assertIn(os.path.realpath(path), getsize_hits,
+                          "Content-Length path never called getsize")
+            self.assertTrue(bytes_at_end_headers,
+                            "end_headers never observed")
+            # When headers closed, the body must not already be in memory.
+            # Magic probe may have read 32 bytes; the whole file must not.
+            self.assertLess(
+                bytes_at_end_headers[0], size,
+                "by end_headers the fixture had already been fully read "
+                "(%d bytes) — Content-Length was derived from a materialised "
+                "body, not from stat" % bytes_at_end_headers[0])
+
     def test_review_serves_shell_reviewraw_serves_artifact(self):
         with tempfile.TemporaryDirectory() as d:
             make_target(d)

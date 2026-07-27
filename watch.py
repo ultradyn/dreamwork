@@ -7113,16 +7113,21 @@ def read_text(path, limit=200_000):
 
 
 def read_bytes(path):
-    # The byte mirror of read_text, for /filebytes (#336). No cap: the only
-    # inline case is the raster allowlist below, evidence PNGs are ~150KB, and
-    # a cap on a byte stream would corrupt the image rather than truncate
-    # readable text. The endpoint is confined to the target root, so a file
-    # large enough to matter here is something a dreamer put in the tree.
+    # Legacy whole-file reader. /filebytes no longer calls this (#354): a
+    # 1GB target file used to become a 1GB resident `bytes` here. Kept only
+    # as an explicit footgun — do not reattach it to a serving path. Prefer
+    # stat + open + FILEBYTES_CHUNK reads (see Handler._send_bytes).
     try:
         with open(path, "rb") as f:
             return f.read()
     except OSError:
         return None
+
+
+# #354: /filebytes streams with a fixed read buffer. Peak memory is this
+# constant, not the file size. An <img src="/filebytes…"> sends no Range
+# header, so chunked streaming — not 206 — is what stops the 1GB buffer.
+FILEBYTES_CHUNK = 65536
 
 
 # ── #336: serving an image rather than its bytes as mojibake ──────────────
@@ -9030,33 +9035,55 @@ def make_handler(target, dev=False, authority=None):
             self.wfile.write(data)
 
         def _send_bytes(self, full, rel, *, inline):
-            """Serve `full` as raw bytes (#336).
+            """Serve `full` as raw bytes (#336), streamed (#354).
 
             `inline=True` serves the allowlisted raster MIME; `inline=False`
             serves application/octet-stream + attachment disposition. Both
             carry X-Content-Type-Options: nosniff — the latter because
             `nosniff` is what makes a browser honour the octet-stream
             disposition over a sniffed guess. `full` is already behind
-            resolve_confined; a None or missing file is a 404."""
+            resolve_confined; a None or missing file is a 404.
+
+            Body production is stat + open + a FILEBYTES_CHUNK read/write
+            loop. Content-Length comes from the stat size, never from
+            materialising the file. Peak process memory for the body is one
+            chunk, not one file — required because the common client is an
+            <img> that issues a full GET with no Range header."""
             if not full:
                 self.send_error(404); return
-            data = read_bytes(full)
-            if data is None:
+            try:
+                size = os.path.getsize(full)
+                body = open(full, "rb")
+            except OSError:
                 self.send_error(404); return
-            self.send_response(200)
-            if inline:
-                ctype = inline_image_mime(full)
-                disp = "inline"
-            else:
-                ctype = "application/octet-stream"
-                disp = f"attachment; filename=\"{safe_attachment_filename(rel)}\""
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Content-Disposition", disp)
-            self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Cache-Control", "private, max-age=0, must-revalidate")
-            self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.send_response(200)
+                if inline:
+                    ctype = inline_image_mime(full)
+                    disp = "inline"
+                else:
+                    ctype = "application/octet-stream"
+                    disp = (
+                        f"attachment; filename="
+                        f"\"{safe_attachment_filename(rel)}\"")
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(size))
+                self.send_header("Content-Disposition", disp)
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header(
+                    "Cache-Control", "private, max-age=0, must-revalidate")
+                self.end_headers()
+                # Mid-stream disconnect is #299's Handler.handle quieting
+                # BrokenPipeError / ConnectionResetError around the whole
+                # request — a looped write raises the same OSError class as
+                # the old single write, so no second disconnect path.
+                while True:
+                    chunk = body.read(FILEBYTES_CHUNK)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            finally:
+                body.close()
 
         def do_GET(self):
             # Authority gates every path before it can disclose target state.
