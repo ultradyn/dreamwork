@@ -374,8 +374,38 @@ performs: entry-by-id (`?t=<id>`), open-list-ordered-by-priority-then-id, and
 "what does landing X unblock" — which is why `depends` is indexed on `needs` and
 not only on its primary key.
 
-**S2 — `rec`.** The four compound bands are resolved before migrating, so
-`priority` becomes a closed set.
+**S2 — `rec`, and acting on it split the four in two.** The caveat attached to
+the rec was *"if any of the four still says something, say so and it stays"*, and
+carrying it out found that the four are not one problem:
+
+- **The `P1/P2` was never ambiguity.** It is `#250`'s P1 and `#251`'s P2
+  concatenated by whoever combined those two entries into one title. Splitting
+  the entry (S1, landed `9fec0bf`) resolved it with no judgement at all, and both
+  original values were recoverable from git rather than reconstructed.
+- **The three `P0/P1`s all still say something**, which is precisely what the
+  caveat protects. `#288` is a security boundary, `#274` and `#263` sit on the
+  durability path of his own words; in each the band means *at least P1, possibly
+  the very top, not yet certain which*. Overwriting that with a single value
+  would delete a real judgement about his own priorities, so **they stay.**
+
+**And the schema does not have to be loose to hold them**, which was the only
+reason to resolve them at all. A compound *value* is what makes `priority` an open
+set; the *uncertainty* it expresses is one bit:
+
+```sql
+priority TEXT NOT NULL REFERENCES priority_band(band),   -- closed: P0..P3
+priority_uncertain INTEGER NOT NULL DEFAULT 0 CHECK (priority_uncertain IN (0,1))
+```
+
+`P0/P1` becomes `priority = 'P1', priority_uncertain = 1` — a strict band with the
+"could be higher" preserved beside it, orderable and groupable, no compound value
+anywhere. Read direction matters and is stated once: the band recorded is the
+**lower urgency** of the pair, because that is the one the ledger's own prose
+supports without inventing a promotion he never made. Rendering the flag is a
+`/tasks` concern and not decided here.
+
+So the answer to S2 as asked — resolve them so `priority` closes — is **yes**, and
+it needed no edit to any of the three entries.
 
 **S4 — he pushed back on free text, and the pushback was right.** His question was
 *"if we have an enum type thing, is it faster/better/more efficient? … let's take

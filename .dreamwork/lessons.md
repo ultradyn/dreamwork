@@ -1487,3 +1487,17 @@ this shape and convert opportunistically.)
   branch can fail; it says nothing about what the check *says* when two branches
   fire together. So when a check has a summary row, write one test that makes a
   finding fire and asserts the summary is ABSENT. (coordinator, #353, 2026-07-28)
+- **A shell's working directory persists across calls, so one `cd` into a worktree
+  silently redirects every later verification into the wrong checkout — and it
+  fails as a missing file, not as a wrong answer.** A coordinator `cd`'d into
+  `.worktrees/264-transition-boundary` to inspect a dreamer's tree, never came
+  back, and forty minutes later ran a red-proof there: the snapshot `cp` failed
+  because that checkout has no `status.json` (it is gitignored), the injection
+  never landed, and the "restore" `cp` failed too. Both errors were one line each
+  above a lint run that then reported `absent — written on the first tick`, which
+  reads exactly like a clean result if you are looking for the WARN you expected.
+  It was luck that the failure mode was a stale `cp` rather than an edit applied
+  to the wrong copy of the file. Two habits, both cheap: a coordinator inspecting
+  another checkout uses `git -C <path>` and absolute paths, never `cd`; and any
+  proof whose setup can fail asserts its setup succeeded before believing its
+  result. (coordinator, #362, 2026-07-28)

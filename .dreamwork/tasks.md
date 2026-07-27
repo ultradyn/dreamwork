@@ -280,10 +280,24 @@ Next id: **364**
   governed ids marked unknown when nothing was ever actually unknown (repaired; lint's origin
   coverage moved 127 → 129) · and **the `P1/P2` band was never ambiguity at all**: it is
   #250's P1 and #251's P2 concatenated, so the split resolved it for free
-  · **what remains is smaller than it looked**: only **three** genuine compound bands, all
+  · **what remained was smaller than it looked**: only **three** genuine compound bands, all
   `P0/P1` on single-id entries — #288, #274, #263. Those are the ones S2's caveat was written
   for (*"if any of the four still says something, say so and it stays"*), and the fourth turned
   out to be a mechanical artefact rather than a judgement call
+  · **CLOSED, and the three bands STAY.** Each of them still says something: #288 is a
+  security boundary, #274 and #263 sit on the durability path of his own words, and in each the
+  band means *at least P1, possibly the very top, not yet certain which*. Overwriting that with
+  one value would delete a real judgement he made about his own priorities, which is exactly
+  what the caveat exists to prevent — so no entry was edited
+  · **and the schema does not need to be loose to hold them**, which was S2's only real
+  objective: a compound *value* is what opens the set, but the *uncertainty* is one bit. A
+  closed band column plus `priority_uncertain` (0/1) records `P0/P1` as band P1 with
+  "could be higher" beside it — orderable, groupable, no compound value anywhere. The band
+  recorded is the LOWER urgency of the pair, because that is what the prose supports without
+  inventing a promotion he never made. Written into `task-store-schema.md` under S2
+  · so S2 answers **yes** — `priority` closes — with zero edits to his entries, and #353 is
+  complete: 3 combined entries split, the relation contracted and checked, 4 compound bands
+  accounted for, the 6 bandless entries deliberately left as his call
 
 - **#352** — Standardize the duplicated ledger parsing before the store migration ·
   P1 · refactor/prerequisite · origin: **human** · **human via watch 2026-07-28 01:05**,
