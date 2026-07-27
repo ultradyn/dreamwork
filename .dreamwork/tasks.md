@@ -576,6 +576,25 @@ Next id: **345**
   and settled screenshots until vision and geometry both PASS · coordinate with
   #278 shader performance and #280 shader registry design; do not couple it to
   #277 departing-element dreamfade
+  · **APPROVED WITH AMENDMENTS, human via watch 2026-07-27 23:45**: *"hmm yeah we
+  can try that. Keep both so that we can toggle. perhaps also add bayer too. We may
+  want to consider creating a settings page where we can have a button group for
+  these 3 options under a gfx settings section."* · so IGN at 1/255 in the final
+  composite is the **default**, and the two refuted options come back as
+  selectable: temporal white noise (today's behaviour) and **Bayer**, which the
+  review had not proposed at all · the refutations stand as reasons IGN is the
+  default, never as reasons he cannot choose otherwise
+  · **one dither seam with the mode as a parameter, not three code paths** — three
+  implementations would drift, and a difference between them that only shows in a
+  debug layer is a difference he cannot see and would never report
+  · **the gfx settings section belongs to #228, not to a new settings surface** ·
+  he asked at 12:49 that settings persist and stay identical across tabs and
+  separate browsers, so a gfx panel with its own storage is precisely the second
+  truth that breaks that promise · the capability record becomes the SELECTED mode
+  rather than a fixed `dither: "lsb-ign-v1"` string, since a fixed string cannot
+  describe a toggle
+  · authorises red-first implementation in an isolated worktree plus the visual
+  gate; **not deployment**
 
 - **#294** — Migrate the durable task ledger to SQLite and a tool/CLI API · P1 ·
   storage/tooling migration · origin: **human** · **human via `/answers`
@@ -758,6 +777,25 @@ Next id: **345**
   copyable path, breadcrumbs/deep links, narrow-layout wrapping, contrast and
   screen-reader meaning · follow existing atmospheric transitions/RM; coordinate
   with #281/#282 task/file navigation rather than inventing another header model
+  · **APPROVED, human via watch 2026-07-27 23:46 (`rec H1`)**: basename as a bright
+  semantic heading on its own primary line, exact parent path beneath it as subdued
+  selectable metadata with a real keyboard- and focus-visible copy button that
+  copies the FULL path, associated with the heading for screen readers · copy
+  success and failure use the page's existing polite-confirmation idiom; reduced
+  motion snaps visuals but keeps the message's timing and function · long paths
+  wrap anywhere in the column and are **never** ellipsised or reordered — a path
+  that lies about its own segments is worse than one that takes two lines · reuse
+  the existing keyed route transition rather than animating path text on its own
+  (`transitions.md`)
+  · H2's clickable breadcrumbs stay refuted **until real directory routes exist**,
+  which makes them a follow-up of #243/#244, not of this · H3 refuted: long paths
+  steal the primary line and destabilise the 520px geometry
+  · **this approval is broader than tonight's others — implementation, review AND
+  deploy** · red-first evidence must prove luminance hierarchy, the exact clipboard
+  bytes, semantic heading/description/button labels, 520px no-overflow geometry,
+  and both normal route travel and reduced-motion settling
+  · the constraint is ownership, not authority: `watch.py` is held by the #326
+  agent until that merges
 
 - **#283** — Diagnose recurring orphaned Git index locks and dead attribution
   watcher · P1 · tooling/system reliability · origin: **loop** · blocked the
@@ -1113,12 +1151,6 @@ Next id: **345**
   and perf guard required · blocked on #245 and #228
 
 
-- **#247** — Harden answer-state IDs and deletion guard · P2 · test/bug ·
-  origin: **loop** · completed at `ba03c1f` · missing server aid omits both
-  persistence/FLIP attributes; exact-content twin ordinal limit documented;
-  deletion guard strengthened · 439 tests, lint, focused answers browser and
-  independent Standards/Spec PASS · pushed/deployed · late review follow-ups
-  #250/#251 correct the unkeyed click-motion gap and true old-node proof
 - **#246** — Keep Grok usefully occupied when work is available · P2 · routine
   · origin: **human** · **human via watch 14:33** · proactively assign
   `grok-sugar-vesi-x6tv` unblocked small/medium in-repo work with disjoint
@@ -1632,6 +1664,24 @@ Next id: **345**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#247** — Harden answer-state IDs and deletion guard · **completed
+  `ba03c1f`** · P2 · test/bug · origin: **loop** · missing server aid omits both
+  persistence/FLIP attributes; exact-content twin ordinal limit documented;
+  deletion guard strengthened · 439 tests, lint, focused answers browser and
+  independent Standards/Spec PASS · pushed/deployed · late review follow-ups
+  #250/#251 correct the unkeyed click-motion gap and true old-node proof
+  · **moved here 23:47 by #335's new check, which is the first thing to notice
+  it.** The entry had sat under `## Open` carrying `completed at ba03c1f` in its
+  own metadata run — the #261 bug class exactly, and #261 was a P0 that sat a
+  full day the same way. Nothing else could see it: `check_landed_still_open`
+  compares the ledger against git and there is no `close(#247)` commit to cite,
+  so it was structurally invisible until position became the discriminator
+  · **the coordinator twice measured that this entry was NOT in `## Open` and was
+  twice wrong**, nearly rejecting a correct check on the strength of its own
+  ad-hoc regexes; `watch.py`'s `parse_ledger` settled it by returning 247 in the
+  open-id set. That is the second time tonight a hand-rolled scan over this file
+  disagreed with per-id set membership and lost — see `lessons.md`
 
 - **#329** — `lint.py` reports a review artifact whose frame drifted behind the
   template · merged `8661db7` (agent commit `be1be46`, `ccc-glm52-329` on

@@ -1,36 +1,6 @@
 # Questions for the human
 
 ## Open
-- **P2 · 2026-07-27 — #295 shader dithering: replace the temporal white-noise
-  LSB dither with static screen-space IGN?** Grok's read-only map found the
-  composite pass **already dithers** — `col += (hash(gl_FragCoord.xy+t)-0.5)/255`
-  — but the time seed makes it shimmer/grainy while ±½ LSB white noise is too
-  weak and wrong-shaped to fully break 8-bit banding on the dark soft ramps
-  (vignette corners, glow shoulders, hue-tinted near-black plates).
-
-  Rec **D1**: static interleaved gradient noise, amplitude 1/255, screen-space
-  `gl_FragCoord`, luminance-shared (same scalar added to RGB), applied in the
-  final composite only, after hue/vignette, skipped on debug layers
-  (`mode != 0`). No `t` anywhere in the seed: freeze-frame dual-draw must be
-  pixel-identical; normal motion advects the field under a fixed pattern.
-  Bayer 8×8 is the documented fallback if IGN looks wrong on SwiftShader;
-  blue-noise texture is deferred to a v2 only if visual review fails D1.
-
-  Guard shape (RED-capable): temporal stability (sabotage reintroducing `+t`
-  fails), crop-zoom banding metric on a known soft-ramp ROI with an amp=0
-  control proving the metric is non-vacuous, DPR sweep (desktop/mobile,
-  scale 1/2), text-contrast sample under the 72ch column, no new passes/FBOs
-  (≤~5 ALU, within the #278 budget), and the standing detailed
-  visual-review-and-fix loop (vision + geometry) before merge. Not coupled to
-  #277 ghosts; no FBO/WORLD_SCALE changes; #280 registry later records
-  `dither: "lsb-ign-v1"` as a capability.
-
-  **D2** keeps temporal white noise (refuted: shimmer). **D3** goes straight to
-  blue-noise textures (refuted for v1: asset + sampling cost, #279 overreach
-  risk). Approval authorizes red-first implementation in an isolated worktree
-  plus the visual gate — not deployment. Answer `Accept D1`, `Accept D1 with
-  amendments: …`, `Bayer instead`, or `Pause #295`.
-
 - **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
   pre-phase on the existing card ghost?** Max directed Grok toward shader work;
   read-only review mapped the actual transition matrix. Route departures already
@@ -58,28 +28,6 @@
   repeats #279's craft risk). Approval authorizes only the isolated D1 prototype
   and visual/performance review, not production integration/deployment. Answer
   `Approve D1 prototype`, `Approve D1 with changes: …`, or `Pause #277`.
-
-- **P2 · 2026-07-27 — #284 file heading: accept the two-line basename/path
-  lockup?** Exceptional-quality read-only design review compared three layouts.
-
-  Rec **H1**: on `/file`, make the basename a bright semantic heading on its own
-  primary line; place the exact parent path beneath it as subdued, selectable
-  metadata with a real keyboard/focus-visible copy button that copies the full
-  path. Associate the path with the heading for screen readers. Copy success or
-  failure uses the existing atmospheric polite-confirmation idiom; reduced motion
-  snaps visuals but keeps message timing/function. Long paths wrap anywhere
-  inside the column; never ellipsise or reorder segments. Reuse the existing
-  keyed route transition rather than animating path text independently.
-
-  **H2** makes parent segments clickable breadcrumbs (refuted until real
-  directory routes exist). **H3** keeps parent path inline after the basename
-  (refuted: long paths steal the primary line and destabilise 520px geometry).
-
-  Red-first evidence will prove luminance hierarchy, exact clipboard bytes,
-  semantic heading/description/button labels, 520px no-overflow geometry, plus
-  normal intermediate route travel and reduced-motion settling. Approval
-  authorizes an isolated implementation/review/deploy for #284. Answer `Approve
-  H1`, `Approve H1 with changes: …`, `Choose H2`, or `Pause #284`.
 
 - **P0/P1 · 2026-07-26 — #288 protected-service boundary: contain
   subagent tools or isolate the dashboard identity?** Decision artifact:
@@ -417,6 +365,117 @@
 
 
 ## Answered
+
+- **P2 · 2026-07-27 — #295 shader dithering: replace the temporal white-noise
+  LSB dither with static screen-space IGN?**
+
+  → answered (2026-07-27 23:45): **Accept D1, amended — keep all three and let
+  him toggle.** His words: *"hmm yeah we can try that. Keep both so that we can
+  toggle. perhaps also add bayer too. We may want to consider creating a settings
+  page where we can have a button group for these 3 options under a gfx settings
+  section."* So static screen-space IGN at amplitude 1/255 in the final composite is
+  accepted as the **default**, and the two options the review had refuted are
+  reinstated as selectable rather than deleted: temporal white noise (today's
+  behaviour, refuted for shimmer) and Bayer (which D1 had not proposed at all). The
+  refutations stand as reasons IGN is the default; they were never reasons he cannot
+  choose otherwise.
+
+  **This is the third time today he has turned a chosen default into a control** —
+  #281's filters at 21:47, #342's delivery mode at 23:28, and this — which is why
+  *"the recommendation is the default, not the setting"* is in DREAMWORK.md and why
+  the loop should now stop needing to be told. Two consequences folded onto the
+  ledger rather than left here. The three modes must share **one** dither seam with
+  the mode as a parameter, not three code paths, since a debug-only difference
+  between them is a difference he cannot see and would not report. And the gfx
+  settings section belongs to **#228**, the existing unify-dashboard-settings task,
+  not to a second settings surface built beside it — he asked at 12:49 that settings
+  persist and stay identical across tabs and browsers, and a gfx panel with its own
+  storage is exactly the second truth that breaks.
+
+  Authorises a red-first implementation in an isolated worktree plus the visual
+  gate; not deployment. The capability record becomes the selected mode rather than
+  the fixed `dither: "lsb-ign-v1"` string, since a fixed string cannot describe a
+  toggle.
+
+  Grok's read-only map found the
+  composite pass **already dithers** — `col += (hash(gl_FragCoord.xy+t)-0.5)/255`
+  — but the time seed makes it shimmer/grainy while ±½ LSB white noise is too
+  weak and wrong-shaped to fully break 8-bit banding on the dark soft ramps
+  (vignette corners, glow shoulders, hue-tinted near-black plates).
+
+  Rec **D1**: static interleaved gradient noise, amplitude 1/255, screen-space
+  `gl_FragCoord`, luminance-shared (same scalar added to RGB), applied in the
+  final composite only, after hue/vignette, skipped on debug layers
+  (`mode != 0`). No `t` anywhere in the seed: freeze-frame dual-draw must be
+  pixel-identical; normal motion advects the field under a fixed pattern.
+  Bayer 8×8 is the documented fallback if IGN looks wrong on SwiftShader;
+  blue-noise texture is deferred to a v2 only if visual review fails D1.
+
+  Guard shape (RED-capable): temporal stability (sabotage reintroducing `+t`
+  fails), crop-zoom banding metric on a known soft-ramp ROI with an amp=0
+  control proving the metric is non-vacuous, DPR sweep (desktop/mobile,
+  scale 1/2), text-contrast sample under the 72ch column, no new passes/FBOs
+  (≤~5 ALU, within the #278 budget), and the standing detailed
+  visual-review-and-fix loop (vision + geometry) before merge. Not coupled to
+  #277 ghosts; no FBO/WORLD_SCALE changes; #280 registry later records
+  `dither: "lsb-ign-v1"` as a capability.
+
+  **D2** keeps temporal white noise (refuted: shimmer). **D3** goes straight to
+  blue-noise textures (refuted for v1: asset + sampling cost, #279 overreach
+  risk). Approval authorizes red-first implementation in an isolated worktree
+  plus the visual gate — not deployment. Answer `Accept D1`, `Accept D1 with
+  amendments: …`, `Bayer instead`, or `Pause #295`.
+  - **Answer (via watch, 2026-07-27 23:45):** hmm yeah we can try that.
+    Keep both so that we can toggle. perhaps also add bayer too. We may
+    want to consider creating a settings page where we can have a button
+    group for these 3 options under a gfx settings section.
+
+- **P2 · 2026-07-27 — #284 file heading: accept the two-line basename/path
+  lockup?**
+
+  → answered (2026-07-27 23:46): **Approve H1 — `rec H1`, the two-line
+  basename/path lockup.** The basename becomes a bright semantic heading on its own
+  primary line; the exact parent path sits beneath it as subdued, selectable
+  metadata with a real keyboard- and focus-visible copy button that copies the full
+  path, associated with the heading for screen readers. Copy success and failure use
+  the page's existing polite-confirmation idiom; reduced motion snaps the visuals but
+  keeps the message's timing and function. Long paths wrap anywhere inside the column
+  and are **never** ellipsised or reordered — a path that lies about its own segments
+  is worse than one that takes two lines. The existing keyed route transition is
+  reused rather than animating path text on its own, per `transitions.md`.
+
+  H2 (clickable breadcrumb segments) stays refuted until real directory routes exist,
+  so it is a follow-up of `#243`/`#244` rather than of this. H3 stays refuted because
+  long paths steal the primary line and destabilise the 520px geometry.
+
+  This approval is broader than the others tonight — it authorises implementation,
+  review **and deploy** for #284. Red-first evidence must prove luminance hierarchy,
+  the exact clipboard bytes, the semantic heading/description/button labels, 520px
+  no-overflow geometry, and both normal route travel and reduced-motion settling. The
+  practical constraint is ownership, not authority: this is `watch.py`, held by the
+  #326 agent until that merges.
+
+  Exceptional-quality read-only design review compared three layouts.
+
+  Rec **H1**: on `/file`, make the basename a bright semantic heading on its own
+  primary line; place the exact parent path beneath it as subdued, selectable
+  metadata with a real keyboard/focus-visible copy button that copies the full
+  path. Associate the path with the heading for screen readers. Copy success or
+  failure uses the existing atmospheric polite-confirmation idiom; reduced motion
+  snaps visuals but keeps message timing/function. Long paths wrap anywhere
+  inside the column; never ellipsise or reorder segments. Reuse the existing
+  keyed route transition rather than animating path text independently.
+
+  **H2** makes parent segments clickable breadcrumbs (refuted until real
+  directory routes exist). **H3** keeps parent path inline after the basename
+  (refuted: long paths steal the primary line and destabilise 520px geometry).
+
+  Red-first evidence will prove luminance hierarchy, exact clipboard bytes,
+  semantic heading/description/button labels, 520px no-overflow geometry, plus
+  normal intermediate route travel and reduced-motion settling. Approval
+  authorizes an isolated implementation/review/deploy for #284. Answer `Approve
+  H1`, `Approve H1 with changes: …`, `Choose H2`, or `Pause #284`.
+  - **Answer (via watch, 2026-07-27 23:46):** rec H1
 
 - **P1 · 2026-07-27 — #254: the design you just approved will not change the card
   you complained about. Which way do you want it?**
