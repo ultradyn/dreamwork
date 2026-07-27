@@ -28,14 +28,6 @@ Next id: **311**
 
 ## Open
 
-- **#310** — Audit `dreamhub.py` against `dreamhub-design.md` for drift · P3 ·
-  chore · 30m · origin: **loop** · goal: the hub's standing design stays
-  single-source ← DREAMWORK.md *Durable over ephemeral* · docs-freshness
-  rotation, and the hub is the one surface whose design doc was written before
-  most of its code · the doc names exact `status.json` fields, watch-port,
-  `/mtime` and `/data.json` contracts, so drift here is checkable rather than a
-  matter of taste · read-only audit, findings only — the coordinator applies
-  · dispatched to a ccc glm-5.2 subagent 2026-07-27 18:07 · in progress
 
 - **#309** — Coherence re-read of SKILL.md + initialization.md · P3 · chore ·
   30m · origin: **loop** · goal: keep the skill's own instructions coherent ←
@@ -578,11 +570,7 @@ Next id: **311**
   slower; persist/sync under #228 project settings · transitions/reduced-motion
   and perf guard required · blocked on #245 and #228
 
-- **#248** — Decide whether answers records need persisted IDs · P3 · design ·
-  20m · origin: **loop** · late #238 review · exact-content twins cannot
-  retain distinct identity through reorder without a durable file-format id;
-  evaluate whether real workflows justify migration rather than solving a
-  semantically invisible distinction by default
+
 - **#247** — Harden answer-state IDs and deletion guard · P2 · test/bug ·
   origin: **loop** · completed at `ba03c1f` · missing server aid omits both
   persistence/FLIP attributes; exact-content twin ordinal limit documented;
@@ -1176,6 +1164,38 @@ Next id: **311**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#310** — Audit `dreamhub.py` against `dreamhub-design.md` for drift · P3 ·
+  origin: **loop** · landed 2026-07-27 · a ccc glm-5.2 subagent in a worktree,
+  five findings all validated by the coordinator against the cited lines before
+  anything was applied · all five were the DOC being wrong, not the code: the
+  hub renders `agents[].owns` while the writer's contract omitted it; "not yet
+  wired into `just test`" had been false since #134 (`09e3397`) while
+  `dev/hub/README.md` already assumed the wiring; `agents[].in_flight` has TWO
+  readers and was in neither doc; `deployed.py` is path-loaded and was named as
+  a dependency nowhere, with `just deploy` snapshotting `watch.py` only; and one
+  guard was credited with covering four contracts it covers two of · **one claim
+  of its own corrected on review**: it read `kind`/`awaiting_result` as
+  consumed by nothing, but `watch.py` folds every unnamed agent key into "the
+  rest" deliberately — *"Whatever is LEFT, not a second known list"* — so the
+  field list is a menu, not a whitelist, and that is now stated where someone
+  would otherwise prune it · audit kept at
+  `.dreamwork/review/evidence/310-hub-drift-audit.md`
+
+- **#248** — Decide whether answers records need persisted IDs · P3 · design ·
+  origin: **loop** · landed 2026-07-27 (`1fc4bc7`) · **ruling: defer, with a
+  trigger** · a ccc glm-5.2 subagent measured rather than speculated — 0 Open,
+  6 Answered, 0 exact-content twin pairs, matching `lint.py`'s own count — and
+  found the decisive fact: reordering two byte-identical entries is a no-op on
+  the file, so the "identity lost through reorder" the entry worried about has
+  no observable consequence, because the records ARE the same identity by every
+  field the schema treats as meaning · the only identity consumer, #238's
+  open-state restore, already fails closed (#247), so the wrong outcome a
+  durable id would prevent does not occur · revisit on: a human-reported
+  collapse where he cares which twin survived, a workflow treating same-day
+  same-text entries as intentionally distinct (#229 is the candidate), or a
+  second aid consumer that is not fail-closed · analysis at
+  `.dreamwork/docs/answer-record-ids.md`
 
 - **#307** — Make the doc map's plans row checkable · P3 · origin: **loop** ·
   landed 2026-07-27 · the map's one row that enumerates a *directory* had

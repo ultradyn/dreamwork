@@ -68,7 +68,12 @@ The trade, bounded: *duplicate trivia (a `read_text`, an age formatter), never
 duplicate an interpreter (a parser, a counter, a classifier).*
 
 `dreamhub.py` stays one stdlib file so `just deploy`'s snapshot pattern
-applies to it unchanged.
+applies to it unchanged — with one caveat that line used to hide (#310):
+`just deploy` snapshots **`watch.py` only**, and the hub path-loads
+`deployed.py` from its own directory (`_load_deployed`). A hub copied
+somewhere alone still serves; it silently loses every `.stale` line, which
+is the one signal that feature exists to show. It degrades, it does not
+crash — but "applies unchanged" means the page, not the feature.
 
 ## What the hub depends on
 
@@ -86,6 +91,7 @@ appear as a row.
 | `goal` | `/hub.json` only | omitted |
 | `awaiting_human` | **the accented line above the task** | omitted |
 | `agents[].name`, `agents[].owns` | "N out: name (owns)" | a nameless agent renders as `?`; a non-list `owns` renders as none |
+| `agents[].in_flight` | `/hub.json` only — republished verbatim | omitted. **Also read by `watch.py`**, which promotes it into the agent glance line (`ST_AGENT_GLANCE`), so it has two readers and is the one agent subfield a writer should treat as load-bearing (#310) |
 | `queue.pending` | "N pending" | omitted |
 | `last_commit` | `/hub.json` only | omitted |
 
@@ -119,8 +125,12 @@ of `DREAMWORK.md`, `questions.md` and `lessons.md`. That is fine on a
 change-triggered fetch over localhost and is exactly what stops being fine
 over a link, which is why a light `/summary.json` is noted for stage 3.
 
-`dev/hub/contract.mjs` is the guard that holds all four of these to account
-against a real `watch.py`.
+`dev/hub/contract.mjs` holds the **live half** of these to account against a
+real `watch.py` — the `/mtime` key shape, `/data.json`'s `open_questions`, and
+that the hub follows a change. The disk half (`status.json` fields,
+`watch-port`) is covered by `test_dreamhub.py`'s `TestProbeDisk`, not by the
+browser guard. Naming one guard for all four read as coverage this file does
+not have (#310).
 
 ## State — one home per fact
 
@@ -200,9 +210,11 @@ Two halves, because neither can see what the other sees.
 - `node dev/hub/contract.mjs <OUT> [<PORT>]` — a real `watch.py` over a copied
   fixture, asserting the hub agrees with it and follows a change.
 
-See `dev/hub/README.md`. **Not yet wired into `just test`** — that line
-belongs to the justfile's owner and is #134. Until it lands, a green
-`just test` does not cover the hub.
+See `dev/hub/README.md`. **Wired into `just test`** since #134 (`09e3397`):
+the `guards` recipe runs `$HUB_GUARDS` (`justfile:130`, `:183`), so a green
+`just test` does cover the hub. This paragraph claimed the opposite for as
+long as it was false, and `dev/hub/README.md` already assumed the wiring —
+two records of one fact, disagreeing (#310).
 
 Every check in all three was shown failing on the bug it claims to catch
 before it was trusted. Two checks passed on their own bug the first time and
