@@ -1,0 +1,705 @@
+{
+  "how": {
+    "tabFont": ".marktab { font-size: .66rem; line-height: 1.25; padding: .28em .55em }",
+    "bodyFont": "body { font-size: .82rem } (artifact default)",
+    "widthMethod": "Binary search minimum width where a Range over the full label yields ≤2 distinct line tops; floor is the widest single word (no hyphenation). Height is getBoundingClientRect of that laid-out tab.",
+    "pageMethod": "getBoundingClientRect on .wrap and first .read at each viewport via Playwright file:// load of a /tmp copy of review-essential-marks.html.",
+    "collisionMethod": "Place two identical two-line tabs stacked; min top-to-top gap = measured tab height. Compare to real section-top gaps and densest block-top gaps in this artifact."
+  },
+  "labels": {
+    "worst6": "reproducibility measurement against wrap geometry slack",
+    "ruling6": "two-line tabs at smaller text size",
+    "author6": "flags mark a height not structure",
+    "hisAsk6": "pointer labels at the most important",
+    "short": "the cliff",
+    "one": "ask",
+    "absurd": "this label is deliberately absurdly long so the measurement script must report a much wider tab than any six-word case and prove it is measuring the tab not a fixed container width"
+  },
+  "labelMetrics": {
+    "worst6": {
+      "label": "reproducibility measurement against wrap geometry slack",
+      "width": 180,
+      "height": 32.3125,
+      "lines": 2,
+      "singleLineWidth": 353.84375,
+      "singleLineHeight": 19.109375,
+      "wordFloor": 104.9375,
+      "fontSizePx": 10.56,
+      "bodyFontSizePx": 13.12,
+      "fontGapPx": 2.5599999999999987,
+      "wordCount": 6
+    },
+    "ruling6": {
+      "label": "two-line tabs at smaller text size",
+      "width": 117.40625,
+      "height": 32.3125,
+      "lines": 2,
+      "singleLineWidth": 223.171875,
+      "singleLineHeight": 19.109375,
+      "wordFloor": 61.375,
+      "fontSizePx": 10.56,
+      "bodyFontSizePx": 13.12,
+      "fontGapPx": 2.5599999999999987,
+      "wordCount": 6
+    },
+    "author6": {
+      "label": "flags mark a height not structure",
+      "width": 129.921875,
+      "height": 32.3125,
+      "lines": 2,
+      "singleLineWidth": 216.953125,
+      "singleLineHeight": 19.109375,
+      "wordFloor": 67.609375,
+      "fontSizePx": 10.56,
+      "bodyFontSizePx": 13.12,
+      "fontGapPx": 2.5599999999999987,
+      "wordCount": 6
+    },
+    "hisAsk6": {
+      "label": "pointer labels at the most important",
+      "width": 123.78125,
+      "height": 32.3125,
+      "lines": 2,
+      "singleLineWidth": 235.609375,
+      "singleLineHeight": 19.109375,
+      "wordFloor": 67.609375,
+      "fontSizePx": 10.56,
+      "bodyFontSizePx": 13.12,
+      "fontGapPx": 2.5599999999999987,
+      "wordCount": 6
+    },
+    "short": {
+      "label": "the cliff",
+      "width": 43.421875,
+      "height": 32.3125,
+      "lines": 2,
+      "singleLineWidth": 67.609375,
+      "singleLineHeight": 19.109375,
+      "wordFloor": 42.71875,
+      "fontSizePx": 10.56,
+      "bodyFontSizePx": 13.12,
+      "fontGapPx": 2.5599999999999987,
+      "wordCount": 2
+    },
+    "one": {
+      "label": "ask",
+      "width": 31.25,
+      "height": 19.109375,
+      "lines": 1,
+      "singleLineWidth": 30.265625,
+      "singleLineHeight": 19.109375,
+      "wordFloor": 30.265625,
+      "fontSizePx": 10.56,
+      "bodyFontSizePx": 13.12,
+      "fontGapPx": 2.5599999999999987,
+      "wordCount": 1
+    },
+    "absurd": {
+      "label": "this label is deliberately absurdly long so the measurement script must report a much wider tab than any six-word case and prove it is measuring the tab not a fixed container width",
+      "width": 578.03125,
+      "height": 32.3125,
+      "lines": 2,
+      "singleLineWidth": 1131.65625,
+      "singleLineHeight": 19.109375,
+      "wordFloor": 86.265625,
+      "fontSizePx": 10.56,
+      "bodyFontSizePx": 13.12,
+      "fontGapPx": 2.5599999999999987,
+      "wordCount": 32
+    }
+  },
+  "viewports": [
+    {
+      "viewport": 1280,
+      "wrapW": 1120,
+      "readW": 613.5,
+      "slackRightOfRead": 506.5,
+      "outsideGutter": 80,
+      "tabWidth": 180,
+      "tabHeight": 32.3,
+      "remainingInWrap": 322.5,
+      "pastWrap": false,
+      "pastPage": false,
+      "railVisible": true,
+      "stripVisible": false,
+      "stripHeight": null,
+      "stripTotalPillsWidth": null,
+      "stripOverflowsWrap": null,
+      "verdict": "fits inside .wrap; 322.5px slack remains after tab",
+      "collisions": [
+        {
+          "a": "geometry",
+          "b": "shape",
+          "aLabel": "reproducibility measurement against wrap geometry slack",
+          "bLabel": "two-line tabs at smaller text size",
+          "gapPx": 706.734375,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 739.046875
+        },
+        {
+          "a": "shape",
+          "b": "decision",
+          "aLabel": "two-line tabs at smaller text size",
+          "bLabel": "flags mark a height not structure",
+          "gapPx": 1783.5625,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 1815.875
+        }
+      ]
+    },
+    {
+      "viewport": 1120,
+      "wrapW": 1088,
+      "readW": 613.5,
+      "slackRightOfRead": 474.5,
+      "outsideGutter": 16,
+      "tabWidth": 180,
+      "tabHeight": 32.3,
+      "remainingInWrap": 290.5,
+      "pastWrap": false,
+      "pastPage": false,
+      "railVisible": true,
+      "stripVisible": false,
+      "stripHeight": null,
+      "stripTotalPillsWidth": null,
+      "stripOverflowsWrap": null,
+      "verdict": "fits inside .wrap; 290.5px slack remains after tab",
+      "collisions": [
+        {
+          "a": "geometry",
+          "b": "shape",
+          "aLabel": "reproducibility measurement against wrap geometry slack",
+          "bLabel": "two-line tabs at smaller text size",
+          "gapPx": 706.734375,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 739.046875
+        },
+        {
+          "a": "shape",
+          "b": "decision",
+          "aLabel": "two-line tabs at smaller text size",
+          "bLabel": "flags mark a height not structure",
+          "gapPx": 1781.8125,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 1814.125
+        }
+      ]
+    },
+    {
+      "viewport": 960,
+      "wrapW": 928,
+      "readW": 613.5,
+      "slackRightOfRead": 314.5,
+      "outsideGutter": 16,
+      "tabWidth": 180,
+      "tabHeight": 32.3,
+      "remainingInWrap": 130.5,
+      "pastWrap": false,
+      "pastPage": false,
+      "railVisible": true,
+      "stripVisible": false,
+      "stripHeight": null,
+      "stripTotalPillsWidth": null,
+      "stripOverflowsWrap": null,
+      "verdict": "fits inside .wrap; 130.5px slack remains after tab",
+      "collisions": [
+        {
+          "a": "geometry",
+          "b": "shape",
+          "aLabel": "reproducibility measurement against wrap geometry slack",
+          "bLabel": "two-line tabs at smaller text size",
+          "gapPx": 706.734375,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 739.046875
+        },
+        {
+          "a": "shape",
+          "b": "decision",
+          "aLabel": "two-line tabs at smaller text size",
+          "bLabel": "flags mark a height not structure",
+          "gapPx": 1751.09375,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 1783.40625
+        }
+      ]
+    },
+    {
+      "viewport": 860,
+      "wrapW": 828,
+      "readW": 613.5,
+      "slackRightOfRead": 214.5,
+      "outsideGutter": 16,
+      "tabWidth": 180,
+      "tabHeight": 32.3,
+      "remainingInWrap": 30.5,
+      "pastWrap": false,
+      "pastPage": false,
+      "railVisible": true,
+      "stripVisible": false,
+      "stripHeight": null,
+      "stripTotalPillsWidth": null,
+      "stripOverflowsWrap": null,
+      "verdict": "fits inside .wrap; 30.5px slack remains after tab",
+      "collisions": [
+        {
+          "a": "geometry",
+          "b": "shape",
+          "aLabel": "reproducibility measurement against wrap geometry slack",
+          "bLabel": "two-line tabs at smaller text size",
+          "gapPx": 765.78125,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 798.09375
+        },
+        {
+          "a": "shape",
+          "b": "decision",
+          "aLabel": "two-line tabs at smaller text size",
+          "bLabel": "flags mark a height not structure",
+          "gapPx": 2695.40625,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 2727.71875
+        }
+      ]
+    },
+    {
+      "viewport": 840,
+      "wrapW": 808,
+      "readW": 613.5,
+      "slackRightOfRead": 194.5,
+      "outsideGutter": 16,
+      "tabWidth": 180,
+      "tabHeight": 32.3,
+      "remainingInWrap": 10.5,
+      "pastWrap": false,
+      "pastPage": false,
+      "railVisible": true,
+      "stripVisible": false,
+      "stripHeight": null,
+      "stripTotalPillsWidth": null,
+      "stripOverflowsWrap": null,
+      "verdict": "fits inside .wrap; 10.5px slack remains after tab",
+      "collisions": [
+        {
+          "a": "geometry",
+          "b": "shape",
+          "aLabel": "reproducibility measurement against wrap geometry slack",
+          "bLabel": "two-line tabs at smaller text size",
+          "gapPx": 785.34375,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 817.65625
+        },
+        {
+          "a": "shape",
+          "b": "decision",
+          "aLabel": "two-line tabs at smaller text size",
+          "bLabel": "flags mark a height not structure",
+          "gapPx": 2709.203125,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 2741.515625
+        }
+      ]
+    },
+    {
+      "viewport": 830,
+      "wrapW": 798,
+      "readW": 613.5,
+      "slackRightOfRead": 184.5,
+      "outsideGutter": 16,
+      "tabWidth": 180,
+      "tabHeight": 32.3,
+      "remainingInWrap": 0.5,
+      "pastWrap": false,
+      "pastPage": false,
+      "railVisible": true,
+      "stripVisible": false,
+      "stripHeight": null,
+      "stripTotalPillsWidth": null,
+      "stripOverflowsWrap": null,
+      "verdict": "fits inside .wrap; 0.5px slack remains after tab",
+      "collisions": [
+        {
+          "a": "geometry",
+          "b": "shape",
+          "aLabel": "reproducibility measurement against wrap geometry slack",
+          "bLabel": "two-line tabs at smaller text size",
+          "gapPx": 785.34375,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 817.65625
+        },
+        {
+          "a": "shape",
+          "b": "decision",
+          "aLabel": "two-line tabs at smaller text size",
+          "bLabel": "flags mark a height not structure",
+          "gapPx": 2696.546875,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 2728.859375
+        }
+      ]
+    },
+    {
+      "viewport": 820,
+      "wrapW": 788,
+      "readW": 613.5,
+      "slackRightOfRead": 174.5,
+      "outsideGutter": 16,
+      "tabWidth": 180,
+      "tabHeight": 32.3,
+      "remainingInWrap": -9.5,
+      "pastWrap": true,
+      "pastPage": false,
+      "railVisible": true,
+      "stripVisible": false,
+      "stripHeight": null,
+      "stripTotalPillsWidth": null,
+      "stripOverflowsWrap": null,
+      "verdict": "fits in page but NOT inside .wrap (overflows wrap by 9.5px; outside gutter 16px)",
+      "collisions": [
+        {
+          "a": "geometry",
+          "b": "shape",
+          "aLabel": "reproducibility measurement against wrap geometry slack",
+          "bLabel": "two-line tabs at smaller text size",
+          "gapPx": 785.34375,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 817.65625
+        },
+        {
+          "a": "shape",
+          "b": "decision",
+          "aLabel": "two-line tabs at smaller text size",
+          "bLabel": "flags mark a height not structure",
+          "gapPx": 2683.890625,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 2716.203125
+        }
+      ]
+    },
+    {
+      "viewport": 810,
+      "wrapW": 778,
+      "readW": 613.5,
+      "slackRightOfRead": 164.5,
+      "outsideGutter": 16,
+      "tabWidth": 180,
+      "tabHeight": 32.3,
+      "remainingInWrap": -19.5,
+      "pastWrap": true,
+      "pastPage": true,
+      "railVisible": true,
+      "stripVisible": false,
+      "stripHeight": null,
+      "stripTotalPillsWidth": null,
+      "stripOverflowsWrap": null,
+      "verdict": "DOES NOT FIT: tab protrudes past page edge",
+      "collisions": [
+        {
+          "a": "geometry",
+          "b": "shape",
+          "aLabel": "reproducibility measurement against wrap geometry slack",
+          "bLabel": "two-line tabs at smaller text size",
+          "gapPx": 785.34375,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 817.65625
+        },
+        {
+          "a": "shape",
+          "b": "decision",
+          "aLabel": "two-line tabs at smaller text size",
+          "bLabel": "flags mark a height not structure",
+          "gapPx": 2671.21875,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 2703.53125
+        }
+      ]
+    },
+    {
+      "viewport": 780,
+      "wrapW": 748,
+      "readW": 613.5,
+      "slackRightOfRead": 134.5,
+      "outsideGutter": 16,
+      "tabWidth": 180,
+      "tabHeight": 32.3,
+      "remainingInWrap": -49.5,
+      "pastWrap": true,
+      "pastPage": true,
+      "railVisible": true,
+      "stripVisible": false,
+      "stripHeight": null,
+      "stripTotalPillsWidth": null,
+      "stripOverflowsWrap": null,
+      "verdict": "DOES NOT FIT: tab protrudes past page edge",
+      "collisions": [
+        {
+          "a": "geometry",
+          "b": "shape",
+          "aLabel": "reproducibility measurement against wrap geometry slack",
+          "bLabel": "two-line tabs at smaller text size",
+          "gapPx": 804.90625,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 837.21875
+        },
+        {
+          "a": "shape",
+          "b": "decision",
+          "aLabel": "two-line tabs at smaller text size",
+          "bLabel": "flags mark a height not structure",
+          "gapPx": 2633.25,
+          "overlaps": false,
+          "aHeight": 32.3125,
+          "bHeight": 32.3125,
+          "anchorGapPx": 2665.5625
+        }
+      ]
+    },
+    {
+      "viewport": 700,
+      "wrapW": 668,
+      "readW": 613.5,
+      "slackRightOfRead": 54.5,
+      "outsideGutter": 16,
+      "tabWidth": 0,
+      "tabHeight": 0,
+      "remainingInWrap": 50.5,
+      "pastWrap": false,
+      "pastPage": false,
+      "railVisible": false,
+      "stripVisible": true,
+      "stripHeight": 61.3,
+      "stripTotalPillsWidth": 427.3,
+      "stripOverflowsWrap": false,
+      "verdict": "STRIP mode: pills fit wrap row (wrap may still feel tight)",
+      "collisions": [
+        {
+          "a": "geometry",
+          "b": "shape",
+          "aLabel": "reproducibility measurement against wrap geometry slack",
+          "bLabel": "two-line tabs at smaller text size",
+          "gapPx": 0,
+          "overlaps": false,
+          "aHeight": 0,
+          "bHeight": 0,
+          "anchorGapPx": 0
+        },
+        {
+          "a": "shape",
+          "b": "decision",
+          "aLabel": "two-line tabs at smaller text size",
+          "bLabel": "flags mark a height not structure",
+          "gapPx": 0,
+          "overlaps": false,
+          "aHeight": 0,
+          "bHeight": 0,
+          "anchorGapPx": 0
+        }
+      ]
+    },
+    {
+      "viewport": 480,
+      "wrapW": 448,
+      "readW": 448,
+      "slackRightOfRead": 0,
+      "outsideGutter": 16,
+      "tabWidth": 0,
+      "tabHeight": 0,
+      "remainingInWrap": -4,
+      "pastWrap": true,
+      "pastPage": false,
+      "railVisible": false,
+      "stripVisible": true,
+      "stripHeight": 87.3,
+      "stripTotalPillsWidth": 427.3,
+      "stripOverflowsWrap": true,
+      "verdict": "STRIP mode: pills overflow wrap (see strip numbers)",
+      "collisions": [
+        {
+          "a": "geometry",
+          "b": "shape",
+          "aLabel": "reproducibility measurement against wrap geometry slack",
+          "bLabel": "two-line tabs at smaller text size",
+          "gapPx": 0,
+          "overlaps": false,
+          "aHeight": 0,
+          "bHeight": 0,
+          "anchorGapPx": 0
+        },
+        {
+          "a": "shape",
+          "b": "decision",
+          "aLabel": "two-line tabs at smaller text size",
+          "bLabel": "flags mark a height not structure",
+          "gapPx": 0,
+          "overlaps": false,
+          "aHeight": 0,
+          "bHeight": 0,
+          "anchorGapPx": 0
+        }
+      ]
+    }
+  ],
+  "collision": {
+    "tabHeight": 32.3125,
+    "minVerticalGapBeforeOverlapPx": 32.3125,
+    "measuredGapWhenStackedExactly": 0,
+    "measuredGapWhenSeparatedBy1px": 1,
+    "sectionGaps": [
+      {
+        "a": "long",
+        "b": "findings",
+        "gapBetweenTopsPx": 328.6875,
+        "wouldOverlapIfTabsAtTops": false
+      },
+      {
+        "a": "findings",
+        "b": "geometry",
+        "gapBetweenTopsPx": 400.640625,
+        "wouldOverlapIfTabsAtTops": false
+      },
+      {
+        "a": "geometry",
+        "b": "shape",
+        "gapBetweenTopsPx": 739.046875,
+        "wouldOverlapIfTabsAtTops": false
+      },
+      {
+        "a": "shape",
+        "b": "source",
+        "gapBetweenTopsPx": 928.609375,
+        "wouldOverlapIfTabsAtTops": false
+      },
+      {
+        "a": "source",
+        "b": "motion",
+        "gapBetweenTopsPx": 523.234375,
+        "wouldOverlapIfTabsAtTops": false
+      },
+      {
+        "a": "motion",
+        "b": "decision",
+        "gapBetweenTopsPx": 364.03125,
+        "wouldOverlapIfTabsAtTops": false
+      },
+      {
+        "a": "decision",
+        "b": "next",
+        "gapBetweenTopsPx": 601.109375,
+        "wouldOverlapIfTabsAtTops": false
+      }
+    ],
+    "densestBlockPair": {
+      "a": "section#long",
+      "b": "p.read",
+      "gapPx": 29.15625
+    },
+    "densestBlockGapPx": 29.15625,
+    "collisionPossibleInThisDoc": true
+  },
+  "absurdSanity": {
+    "worst6Width": 180,
+    "absurdWidth": 578.03125,
+    "delta": 398.03125,
+    "moved": true,
+    "note": "If moved is false, the script is measuring a container, not the tab."
+  },
+  "doesNotFitThreshold": {
+    "width": "remainingInWrap < 0 at a viewport where the rail is the intended presentation, OR tabRight > viewport (past page edge). For worst6 (~183px) that is past-wrap below ~835px and past-page below ~815px.",
+    "height": "densest real mark-site gap in a document < tabHeight, so two adjacent marks overlap.",
+    "strip": "two-line pills + nav force multi-row strip or overflow .wrap with no truncation allowed — measured at soft-cap 7 with worst6."
+  },
+  "stripStress": {
+    "worst6": {
+      "3": {
+        "n": 3,
+        "wrapW": 668,
+        "rows": 1,
+        "height": 66.9375,
+        "pillW": 180,
+        "pillH": 66.9375,
+        "multiRow": false
+      },
+      "5": {
+        "n": 5,
+        "wrapW": 668,
+        "rows": 2,
+        "height": 140.265625,
+        "pillW": 180,
+        "pillH": 66.9375,
+        "multiRow": true
+      },
+      "7": {
+        "n": 7,
+        "wrapW": 668,
+        "rows": 3,
+        "height": 213.59375,
+        "pillW": 180,
+        "pillH": 66.9375,
+        "multiRow": true
+      }
+    },
+    "ruling6": {
+      "3": {
+        "n": 3,
+        "wrapW": 668,
+        "rows": 1,
+        "height": 66.9375,
+        "pillW": 117.40625,
+        "pillH": 66.9375,
+        "multiRow": false
+      },
+      "5": {
+        "n": 5,
+        "wrapW": 668,
+        "rows": 2,
+        "height": 95.640625,
+        "pillW": 117.40625,
+        "pillH": 66.9375,
+        "multiRow": true
+      },
+      "7": {
+        "n": 7,
+        "wrapW": 668,
+        "rows": 2,
+        "height": 140.265625,
+        "pillW": 117.40625,
+        "pillH": 66.9375,
+        "multiRow": true
+      }
+    }
+  },
+  "railCliffForWorst6": 820
+}
