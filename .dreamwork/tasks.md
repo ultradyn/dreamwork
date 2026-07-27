@@ -24,9 +24,35 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **325**
+Next id: **326**
 
 ## Open
+
+- **#325** — Make the review artifact a template, not twelve hand-rolled pages ·
+  **P1** · **next-up** · tooling/design · ~40m · origin: **human** · **human via
+  dashboard composer 2026-07-27 21:38** (verbatim: *"do-next: the tasks page
+  review page is nice and a good example. We should save it as a template so we
+  can include it in the bundle and also so we can iterate on it and perfect it as
+  a template."*) · so `tasks-page.html` is the reference he likes — **read it
+  first and let it define the target**, do not design a new look · **the drift is
+  measured, and it is the argument**: 12 artifacts in `.dreamwork/review/`, each
+  with its own inline `<style>`, carrying **5 distinct `font-family`
+  declarations** and at least 8 different page backgrounds (`#070a12`, `#080c14`,
+  `#0b0f19`, `#0b1220`, `#0d1422` … all meaning "the dark one") · every review
+  request ships an artifact (his standing rule, 2026-07-25), so this is not
+  cosmetic — it is the surface he reads loop proposals on, and it currently
+  reinvents itself every time · **the hard constraint**: artifacts must stay
+  SELF-CONTAINED and offline-clean (inline everything — styles, charts, math), so
+  the template cannot become a shared stylesheet the pages link to; it has to be
+  a source the generator inlines · **open design calls, none decided**: where the
+  template lives (this skill's directory, so it ships with the bundle), whether it
+  is a file a tool fills or a documented block agents copy, how an artifact
+  declares which template version it was built from, and whether existing
+  artifacts get migrated or only new ones adopt it · rec: a template plus a tiny
+  renderer, because "a documented block agents copy" is the mechanism #203 ruled
+  out — it asks every future author to remember, and the drift above is what that
+  produces · also worth checking: `watch.py` lists and serves these, so the
+  template must not break that listing
 
 - **#324** — Convert the remaining 15 tail-printing guards to the shared
   reporter · P3 · chore · ~40m · origin: **loop** · goal: a crash must never
