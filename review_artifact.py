@@ -361,12 +361,46 @@ _HTML = [
     ("op", r"</+>|[<>=]"),
 ]
 
+# SQL is CASE-INSENSITIVE and both cases are real: schema designs here write
+# `CREATE TABLE` and prose writes `select`. The scoped `(?i:…)` flag is used
+# rather than compiling the master pattern with re.IGNORECASE, because that
+# flag would apply to every OTHER language's spec too — and `_PY`'s
+# `("typ", r"\b(?:True|False|None|…)")` must not start matching `none`.
+#
+# Order is load-bearing twice: `com` precedes `op` because `--` opens a comment
+# while `-` is also an operator character, and `kw`/`typ` precede `var` because
+# every keyword also matches a bare identifier.
+_SQL = [
+    ("com", r"--[^\n]*|/\*[\s\S]*?\*/"),
+    ("str", r"'(?:''|[^'])*'"),
+    ("kw", r"\b(?i:create|table|index|view|trigger|temporary|if|primary|key|"
+           r"foreign|references|not|null|unique|check|default|constraint|"
+           r"autoincrement|select|insert|update|delete|into|values|set|from|"
+           r"where|group|by|having|order|limit|offset|join|left|right|inner|"
+           r"outer|cross|natural|using|on|as|and|or|in|is|like|glob|between|"
+           r"exists|case|when|then|else|end|begin|commit|rollback|savepoint|"
+           r"transaction|drop|alter|rename|add|column|distinct|union|intersect|"
+           r"except|all|asc|desc|pragma|with|recursive|collate|conflict|"
+           r"replace|abort|ignore|deferrable|initially|immediate|deferred|"
+           r"cascade|restrict|action|generated|always|stored|virtual|"
+           r"returning|explain|analyze|vacuum|attach|detach|cast|nulls|first|"
+           r"last|window|over|partition|filter|do|nothing|of|for|each|row)\b"),
+    ("typ", r"\b(?i:integer|int|bigint|smallint|tinyint|text|varchar|char|"
+            r"clob|blob|real|double|precision|float|numeric|decimal|boolean|"
+            r"date|datetime|timestamp|time|json|uuid)\b"),
+    ("num", r"\b(?:0[xX][0-9a-fA-F]+|\d+\.?\d*(?:[eE][+-]?\d+)?)\b"),
+    ("fn", r"\b[A-Za-z_]\w*(?=\s*\()"),
+    ("op", r"->>|->|\|\||[-+*/%=<>!,.;:(){}\[\]]+"),
+    ("var", r"[A-Za-z_]\w*"),
+]
+
 _TOKENIZERS = {
     "python": _scanner(_PY),
     "json": _scanner(_JSON),
     "bash": _scanner(_BASH),
     "javascript": _scanner(_JS),
     "html": _scanner(_HTML),
+    "sql": _scanner(_SQL),
 }
 SUPPORTED_LANGUAGES = frozenset(_TOKENIZERS)
 

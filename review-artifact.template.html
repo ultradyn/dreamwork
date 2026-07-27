@@ -47,8 +47,10 @@ needs to invent a second one:
   .quiet .dim .dimmer .read  tone and measure
   code blocks        <pre><code class="language-python">…</code></pre> is
                      tokenised at BUILD time (#339) into tok- spans; supported
-                     languages: python json bash javascript html. A block with
-                     no language-… marker is left plain on purpose — never guessed
+                     languages: python json bash javascript html sql. A block
+                     with no language-… marker is left plain on purpose — never
+                     guessed. sql (#348) is matched case-insensitively, since
+                     schema work here writes CREATE TABLE and prose writes select
 
 Offline-clean is a build-time check, not a hope: review_artifact.py refuses to
 write output that fetches anything (no external stylesheet, script, image, font

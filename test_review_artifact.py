@@ -737,8 +737,59 @@ def test_the_template_styles_every_token_class(template):
             "template dropped a token style the highlighter emits: %r" % token
 
 
-def test_the_supported_languages_are_the_advertised_set():
+def test_the_supported_languages_are_the_advertised_set(template):
     """Scope discipline (#339): a small, honest set, named here so adding one
-    is a deliberate act rather than silent scope growth."""
+    is a deliberate act rather than silent scope growth.
+
+    Strengthened for #348. The literal below is the deliberate act; the second
+    assertion is what makes it more than bookkeeping — the template's own
+    authoring comment advertises the list to whoever writes the next artifact,
+    and a language supported in code but unadvertised is invisible, while one
+    advertised but unsupported renders plain with no explanation. Derived from
+    the template text at runtime rather than pinned, so the two cannot drift.
+    """
     assert ra.SUPPORTED_LANGUAGES == frozenset(
-        {"python", "json", "bash", "javascript", "html"})
+        {"python", "json", "bash", "javascript", "html", "sql"})
+    advertised = re.search(r"supported\s+languages:\s*([a-z\s]+?)\.", template)
+    assert advertised, "the template no longer advertises a language list"
+    assert set(advertised.group(1).split()) == set(ra.SUPPORTED_LANGUAGES), \
+        "the template's advertised list and SUPPORTED_LANGUAGES disagree"
+
+
+def test_sql_is_tokenised_in_both_cases_and_comments_win_over_operators():
+    """#348 — SQL is case-insensitive and both cases are real here: schema
+    designs write `CREATE TABLE`, prose writes `select`.
+
+    Two hazards this pins, each with the production line that must change:
+
+    - `(?i:…)` on the sql keyword/type patterns. Remove the flag and the
+      lowercase half stops colouring.
+    - `--` is a comment, and `("op", …)`'s character class also contains `-`.
+      The ordered alternation puts `com` first. Move `op` above `com` in
+      `_SQL` and the comment becomes two operators.
+    """
+    upper = 'CREATE TABLE entry (id INTEGER PRIMARY KEY NOT NULL);'
+    lower = 'create table entry (id integer primary key not null);'
+    got = {}
+    for label, src in (("upper", upper), ("lower", lower)):
+        out = ra.highlight(
+            '<pre><code class="language-sql">%s</code></pre>'
+            % html.escape(src, quote=False))
+        got[label] = {
+            cls for cls, _ in re.findall(
+                r'<span class="tok-([^"]*)">(.*?)</span>', out, re.S)}
+    assert "kw" in got["upper"] and "typ" in got["upper"]
+    # The precondition that makes this test about case at all:
+    assert upper.lower() == lower, "the two samples are not the same statement"
+    assert got["upper"] == got["lower"], (
+        "case changed which token classes were produced: %r vs %r"
+        % (got["upper"], got["lower"]))
+
+    commented = "-- id is not the entry\nselect 1;"
+    out = ra.highlight(
+        '<pre><code class="language-sql">%s</code></pre>'
+        % html.escape(commented, quote=False))
+    spans = re.findall(r'<span class="tok-([^"]*)">(.*?)</span>', out, re.S)
+    coms = [text for cls, text in spans if cls == "com"]
+    assert coms == ["-- id is not the entry"], (
+        "`--` did not win over the operator class; got comments %r" % coms)
