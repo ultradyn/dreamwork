@@ -68,8 +68,23 @@ Next id: **366**
   · **the general problem is worth naming even though this instance is cheap**: an artifact is
   a snapshot of a question, and the moment he answers it the page he answered from becomes a
   false record of the state. Nothing checks that. `check_review_artifacts` verifies the
-  template stamp, which is bytes, not truth. If this recurs, the check to want is whether an
-  artifact whose paired questions.md entry has moved to Answered was rebuilt after the answer
+  template stamp, which is bytes, not truth
+  · **SCOPE INVERTED, and the reason matters more than the task.** The premise above — sync
+  the artifact's content forward — is **wrong**, and folding his answer is what showed it. The
+  #346 ask is now under `## Answered`, so that artifact is **the record of what he was asked**.
+  Rewriting it to state the answer would destroy the only evidence of the question he actually
+  ruled on, which is strictly worse than being out of date. An artifact paired with an answered
+  question is history and stays as authored
+  · so the work is **not** a content sync but a **marker**: an artifact whose question has been
+  answered should say so on its face and point at the design that superseded it, so a reader
+  arriving from the dashboard's review list knows within one glance that they are reading a
+  snapshot rather than the current shape. `task-transition-boundary.html` is the only source
+  that currently says anything of the kind, so there is one instance of an idiom and no contract
+  · the check that would make it hold: an artifact whose paired questions.md entry sits under
+  `## Answered` must carry that marker. That is derivable today — the entry names its artifact
+  path — and it is red immediately against the answered artifacts that carry nothing
+  · **not urgent and deliberately not started**: it needs the marker's visual form decided
+  against `watch-design.md` and the artifact frame, and touching the frame stales all 15
 
 - **#363** — lint's landed-but-open WARN cannot tell a forgotten fold from a live lane · P3 ·
   tooling/honesty · origin: **loop** · 10m · reported by dreamer-264-boundary as report-only ·
@@ -1368,6 +1383,21 @@ Next id: **366**
   client UUID before send, receipt dedupe and idempotent application belong to
   #263/#269 · replay/concurrent same-ID fixture asserts one receipt/application;
   new ID with same text remains a distinct intentional action
+  · **THIRD WITNESS, 2026-07-28 01:23, and this one is the most useful of the three**: his
+  #346 answer — the ruling that turned over three of four recommendations — landed in
+  `questions.md` as **two byte-identical `Answer` bullets** (verified line-by-line, not eyeballed:
+  the twelve-line blocks compared equal), and `watch-events.log` carries the matching
+  `01:23:21 answer` line **twice** with the same second. So the duplication is upstream of the
+  file write, and both copies reached durable state
+  · **why it is the useful witness: it stayed invisible for two hours.** The earlier two were
+  noticed within minutes because they doubled something short. This one doubled a long ruling
+  inside an entry nobody re-read, and it was found only while folding — so the duplicate is
+  not merely untidy, it is **undetectable by reading**. Nothing counts answer bullets per entry,
+  which is exactly the gap #357's waiting-counts would close from the other end
+  · one copy was removed as part of the fold and none of his words were lost · the fold also
+  showed the doubling is harmless to the RENDERER but not to the record: `_parse_entries` lifts
+  every answer-tagged bullet in `## Answered`, so both copies vanished from the contribution
+  list and the page looked correct with the file wrong — the silent shape this task exists for
 
 - **#269** — Make every Web UI text draft durable and cross-tab coherent · P1 ·
   client reliability/module · origin: **human** · **human via watch 16:45** ·

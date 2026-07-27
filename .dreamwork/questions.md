@@ -105,179 +105,6 @@
   Answer `rec`, `rec but show me install.py --print first` (the same thing,
   said explicitly), or `Pause #361`.
 
-- **P1 · 2026-07-28 — #346 task-store schema: approve the entity shape and
-  four decisions (S1-S4)?** Decision artifact:
-  `.dreamwork/review/task-store-schema.html`; full design:
-  `.dreamwork/docs/plans/task-store-schema.md`. You said at 23:33 that the sqlite
-  db and cli are becoming a blocker and invited a question — this is it, plus the
-  half of #294 that turns out not to need your #263 answer at all.
-
-  **First, the gate is not what #294 said it was.** That entry claimed starting
-  would mean designing against an *unsettled* event model. Read against the
-  document, `user-event-journal.md:4` says *"human approval required; no
-  implementation authority"* and its approval gate authorises *"a separate
-  red-first implementation plan"*. So #263's model is designed, reviewed and PASS
-  — it is **unratified**, which only you can change. What #264 gates is one
-  question: does a task transition share #263's journal or use a task-state
-  outbox? That is about how a **transition** becomes durable, and the columns
-  describing a task **at rest** are identical either way. So the entity schema and
-  its read surface are separable, and #346 is that half.
-
-  **Five measurements against your live ledger, each breaking a schema that looks
-  obviously right.** All five came from `watch.ledger_entries`/`parse_ledger`, not
-  a fresh regex — a fresh regex was tried first and reported 10 open entries
-  instead of 111, because `text.index('## Open')` matched a prose mention of the
-  heading in the file's own preamble. (1) An entry is not a task id: `#138/#156`,
-  `#250/#251`, `#292/#293` are one body under two permanent ids. (2) The count
-  that would catch that agrees **by accident** today — open entries 111, open ids
-  111, because all three combined entries happen to be landed. (3) Priority is not
-  a closed set: `P0/P1`x3, `P1/P2`x1, and 6 entries with no band. (4) Origin has
-  four states, because 60 entries have no marker at all and 8 say `unknown`
-  explicitly, and your own contract makes those different facts. (5) The
-  dot-separated fields are not positional, so `type` cannot be parsed by index —
-  reading "the field after the band" yields 65 values including
-  `landed 2026-07-27`.
-
-  **It also settles the invariant #294 told us to verify rather than assume, and
-  the answer is that it is already false.** `ledger_entries` has two
-  implementations (lint's and watch's — same logic, different source), three
-  callers (`lint.py`, `watch.py`, `task_origins.py`), pinned by one behavioural
-  fixture at `test_watch.py:863`. Re-pointing `watch.py` alone at cutover would
-  leave the other two parsing a file that cutover renames to
-  `tasks.md.deprecated`.
-
-  Rec **S1 keep** combined entries via an entry/task split (**refuted: split the
-  three and forbid new ones** — simpler forever, but it edits three of your
-  existing entries and combining was deliberate). Rec **S2 compound bands stay
-  legal** (**refuted: resolve each to one band when touched** — `P0/P1` says
-  something one band cannot, and a derived rank sorts it correctly without editing
-  your words). Rec **S3 leave the 60 unmarked origins NULL** (**refuted: backfill
-  to `unknown`** — that asserts an audit that never happened, and destroys exactly
-  the distinction your #289 `unlinked`-vs-`pending` rule protects). Rec **S4 keep
-  `type` free text with NULL for unreadable** (**refuted: freeze the ~10 real
-  values** — closing the set requires classifying all 237 entries correctly, and
-  finding 5 says that cannot be done).
-
-  Approval accepts the entity shape, the read-only verbs, and whichever recs you
-  do not overrule. It authorises **no** table, migration, CLI or cutover — those
-  wait on #263 E1 like the rest of #294. Answer `rec`, `rec except S<n>: ...`, or
-  `Pause #346`.
-  - **Note (human, via watch, 2026-07-28 01:05):** with the cli btw, we
-    should consider writing it in something other than python. We ideally
-    want a small (fast to load) portable binary + quick to recompile. It
-    should also support extensions kind of like how git does, eg
-    `git-thingy` can be run `git thingy`. that way we can have python
-    modules (or go or rust or ocaml) also before we work on this proper we
-    should standardize the current python parsing so we fix the duplicate
-    code issues and such now in case it matters as we migrate and things.
-  - **Follow-up (loop, 2026-07-28 01:08):** all three folded. (c) is filed as
-    **#352** and treated as the prerequisite you called it — the duplication is
-    already measured, so it is not a research task: `ledger_entries` has two
-    implementations (`lint.py` and `watch.py:6599`, whose docstring claims it is
-    lint's *"VERBATIM"* while the source differs), three callers (`lint.py`,
-    `watch.py`, `task_origins.py`), and one behavioural fixture pinning them
-    (`test_watch.py:863`, a single hostile input). Rec is one module all three
-    import, so the pin stops needing to exist. (a) and (b): the design doc's CLI
-    section now says the language is undecided rather than quietly Python, and
-    records that git-style `dreamwork-thingy` dispatch is what makes a compiled
-    core affordable — an extension in any language becomes a sibling executable
-    instead of a plugin API to design. The read verbs and the entity they read are
-    language-independent and stand. **Still open for you: S1–S4**, which this note
-    does not answer.
-  - **Note (human, via watch, 2026-07-28 01:13):** oh one thought is that
-    we can make the shape as restrictive as we want before migrating
-    because we won't need the python / plaintext versions for much longer.
-    not sure if that helps us.
-  - **Follow-up (loop, 2026-07-28 01:20):** it helps a lot more than "not sure" —
-    it **inverts three of the four recs**, and the artifact and design doc are
-    rebuilt to say so. Every refutation I wrote for S1, S2 and S4 was the same
-    sentence in different clothes: *"that edits three of your existing entries"*.
-    If the plaintext is on its way out, that is a one-time cost set against
-    looseness the schema carries forever and every consumer handles forever. So the
-    plan is now **normalise the Markdown first, then let the schema be strict**, and
-    it is bounded: **3** combined entries to split, **4** compound bands to resolve,
-    **6** entries with no band, and the tail of the 66 distinct values sitting where
-    `type` should be. Filed as **#353**, and it needs no #263 answer — so with #352
-    it is the second thing that turns "sqlite is a blocker" into movement.
-    **S3 is withdrawn, and not because of your note: finding 4 was WRONG.** I
-    reported 60 unmarked origins against 8 `unknown` and read the split as
-    audited-vs-untouched. It is **50 and 12**, every unmarked entry's id is below
-    216, so absence is just your contract's forward-only cutoff and is derivable
-    from the id — there was never a distinction to preserve. The scan tested
-    `'origin: **' in body`, which misses a marker wrapped as `origin:\n  **loop**`;
-    `lint.py` contradicted it and lint was right. I re-measured the other four
-    wrap-tolerantly and they all stand. **The one cost worth your attention**:
-    normalising means bulk edits to the loop's own memory, and a fold script damaged
-    `questions.md` earlier tonight — so #353 carries its own guards and does not
-    start without your ruling, because the entries are your words.
-  - **Answer (via watch, 2026-07-28 01:23):** S1: we can keep them
-    split. For tasks, we should have n:n relationships for related tasks
-    (like 250/251 i guess, not sure exactly what they are), and one way
-    dependencies too. Anyway we should capture the shape of work that
-    makes sense, and if the split makes sense we should keep it. We
-    should design the db with the kind of joins we'll do in mind so that
-    we can be performant always. S2: rec S4: probs freetext or varchar,
-    with null. with these kinds of things we can have an automated
-    warning layer in cli calls that raises issues where data is
-    incomplete or whatever. Also things like unchecked message count,
-    new task count, new question count, unanswered question count,
-    unfolded-in answer count, etc.
-  - **Answer (via watch, 2026-07-28 01:23):** S1: we can keep them
-    split. For tasks, we should have n:n relationships for related tasks
-    (like 250/251 i guess, not sure exactly what they are), and one way
-    dependencies too. Anyway we should capture the shape of work that
-    makes sense, and if the split makes sense we should keep it. We
-    should design the db with the kind of joins we'll do in mind so that
-    we can be performant always. S2: rec S4: probs freetext or varchar,
-    with null. with these kinds of things we can have an automated
-    warning layer in cli calls that raises issues where data is
-    incomplete or whatever. Also things like unchecked message count,
-    new task count, new question count, unanswered question count,
-    unfolded-in answer count, etc.
-  - **Note (human, via watch, 2026-07-28 01:25):** oh now i'm not so sure
-    about the free text -- what is the real benefit? if we have an enum
-    type thing, is it faster/better/more efficient/etc? if not, then
-    varchar or whatever it is that is just as fast but not as restrictive.
-    enum has some advantages like easier validation. hmm. let's take the
-    principled approach here that will give us the best result long term
-    and avoid footguns
-  - **Follow-up (loop, 2026-07-28 01:34):** measured against real SQLite rather
-    than reasoned about, because the answer turned out to hinge on a footgun.
-    **There is no performance benefit either way** — and "enum" is not a thing
-    SQLite has: it accepts any type NAME and enforces nothing (`CREATE TABLE t (x
-    ENUM_WHATEVER)` is accepted, stores the name verbatim, and takes any value).
-    The two real options both store `TEXT` and read identically, so the choice is
-    entirely **validation versus evolvability**, and each has one footgun:
-    · **`TEXT` + `CHECK (x IN (…))`** genuinely enforces and **cannot be switched
-    off by a connection setting** — I tried, it holds. Its footgun is that a CHECK
-    cannot be altered or dropped: changing the allowed set means recreating the
-    table.
-    · **A lookup table + `REFERENCES`** enforces too, and adding a value is one
-    `INSERT` with no rebuild. Its footgun is worse and it is the one that caught me
-    while checking: **SQLite foreign keys are OFF BY DEFAULT, per connection**
-    (`PRAGMA foreign_keys` is `0`). My first test "showed" the FK accepting garbage
-    — because the pragma had not taken. Any connection that forgets it silently
-    validates nothing.
-    So the principled split, which is about whether the set is closed **by
-    definition** or merely small today: **`CHECK` for closed-by-definition sets** —
-    `state` (open|landed), `origin` (human|loop|unknown), `decision`
-    (pending|accepted|rejected); those change only if the domain changes, and
-    unbypassable is exactly what you want. **Lookup table + FK for a vocabulary
-    that grows** — `type` is that, and your own automated-warning idea wants a place
-    to hang per-type metadata anyway. The pragma then has to be set in ONE place
-    (the adapter's connection setup) with a test asserting it, which is a single
-    line and turns the footgun into a checked invariant.
-    **And it settles the Postgres half**, which matters because #263's now-approved
-    contract ships SQLite behind a PostgreSQL-portable adapter: Postgres native
-    `ENUM` can add values but not remove them and bakes in an ordering, whereas a
-    lookup table behaves **identically on both** backends. So the lookup table is
-    the portable answer as well as the evolvable one.
-    Rec: **`type` becomes a lookup table with an FK; the closed-by-definition
-    columns get CHECK; nothing gets a bare unvalidated varchar.** That is stricter
-    than your "freetext or varchar with null" and I think it is what you were
-    reaching for with *"easier validation … avoid footguns"* — but say so if you
-    want `type` left unvalidated, because that is the one place we would differ.
-
 - **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
   pre-phase on the existing card ghost?** Max directed Grok toward shader work;
   read-only review mapped the actual transition matrix. Route departures already
@@ -566,6 +393,212 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-28 — #346 task-store schema: approve the entity shape and
+  four decisions (S1-S4)?**
+  → answered (2026-07-28 01:23): **S1 split, S2 rec, S4 inverted by your own
+  pushback — and three of the four recs turned over.** You said *"we can keep them
+  split. For tasks, we should have n:n relationships for related tasks (like 250/251 i
+  guess, not sure exactly what they are), and one way dependencies too … We should
+  design the db with the kind of joins we'll do in mind so that we can be performant
+  always."* That was more than a yes: the combined entries were an IMPLICIT relation
+  written as a slash in a title, and you asked for it to become explicit — symmetric
+  n:n for "same work", directed for "cannot start until".
+  · **What landed on it.** The three combined entries are six (`9fec0bf`), and history
+  wrote them: every original survives in git with its own title, band, type and origin,
+  so nothing was reconstructed. All three pairs are the symmetric relation and none is a
+  dependency, for one uniform reason — each was co-delivered, never sequenced. Your
+  uncertainty about 250/251 is answered: #251 is the proof that #250's node really goes.
+  The prose form of the relation is contracted in `file-formats.md` and checked by
+  `lint.py` (`638b32a`), which ERRORs on a one-sided pair — because SQLite stores the
+  pair once and cannot disagree with itself, while prose has to duplicate it.
+  · **S2, with your caveat honoured.** Three of the four compound bands still say
+  something one band cannot, so they stay unedited; the fourth was never ambiguity at
+  all — it was #250's P1 and #251's P2 concatenated. And the schema still closes: the
+  uncertainty is one bit beside a strict band, not a compound value.
+  · **S4: your 01:25 pushback was right and it inverted the rec.** You asked *"if we
+  have an enum type thing, is it faster/better/more efficient? … let's take the
+  principled approach … avoid footguns"*. Measured against real SQLite rather than
+  reasoned: there is **no performance difference**, SQLite has **no ENUM type at all**
+  (any type name is accepted and enforces nothing), and both real options store TEXT.
+  So it is validation versus evolvability, one footgun each — a CHECK constraint cannot
+  be altered or dropped without rebuilding the table, and a lookup table's foreign keys
+  are **off by default per connection**. Resolved to the lookup table plus REFERENCES,
+  with the FK pragma asserted rather than assumed.
+  · **S3 was withdrawn before you had to rule on it**, because the finding it rested on
+  was wrong: a scan had missed line-wrapped markers. Real numbers are 50 unmarked
+  entries, every one below id 216, so absence is the contract's forward-only cutoff and
+  is derivable — nothing to preserve.
+  · Your two other notes in the same breath became **#352** (standardise the duplicated
+  parsing first — you called it the prerequisite and it is) and **#357** (a CLI warning
+  layer plus the waiting-counts). The CLI-as-small-binary steer is successor work, not
+  this ask.
+  · **Your answer arrived in this file TWICE, byte-identical**, which is a live instance
+  of #274 and is recorded there as evidence. One copy was removed in the fold; nothing
+  of your words was lost.
+  · Approval covered the entity shape and read verbs only. No table, migration, CLI or
+  cutover was authorised, and none was built.
+
+  Decision artifact:
+  `.dreamwork/review/task-store-schema.html`; full design:
+  `.dreamwork/docs/plans/task-store-schema.md`. You said at 23:33 that the sqlite
+  db and cli are becoming a blocker and invited a question — this is it, plus the
+  half of #294 that turns out not to need your #263 answer at all.
+
+  **First, the gate is not what #294 said it was.** That entry claimed starting
+  would mean designing against an *unsettled* event model. Read against the
+  document, `user-event-journal.md:4` says *"human approval required; no
+  implementation authority"* and its approval gate authorises *"a separate
+  red-first implementation plan"*. So #263's model is designed, reviewed and PASS
+  — it is **unratified**, which only you can change. What #264 gates is one
+  question: does a task transition share #263's journal or use a task-state
+  outbox? That is about how a **transition** becomes durable, and the columns
+  describing a task **at rest** are identical either way. So the entity schema and
+  its read surface are separable, and #346 is that half.
+
+  **Five measurements against your live ledger, each breaking a schema that looks
+  obviously right.** All five came from `watch.ledger_entries`/`parse_ledger`, not
+  a fresh regex — a fresh regex was tried first and reported 10 open entries
+  instead of 111, because `text.index('## Open')` matched a prose mention of the
+  heading in the file's own preamble. (1) An entry is not a task id: `#138/#156`,
+  `#250/#251`, `#292/#293` are one body under two permanent ids. (2) The count
+  that would catch that agrees **by accident** today — open entries 111, open ids
+  111, because all three combined entries happen to be landed. (3) Priority is not
+  a closed set: `P0/P1`x3, `P1/P2`x1, and 6 entries with no band. (4) Origin has
+  four states, because 60 entries have no marker at all and 8 say `unknown`
+  explicitly, and your own contract makes those different facts. (5) The
+  dot-separated fields are not positional, so `type` cannot be parsed by index —
+  reading "the field after the band" yields 65 values including
+  `landed 2026-07-27`.
+
+  **It also settles the invariant #294 told us to verify rather than assume, and
+  the answer is that it is already false.** `ledger_entries` has two
+  implementations (lint's and watch's — same logic, different source), three
+  callers (`lint.py`, `watch.py`, `task_origins.py`), pinned by one behavioural
+  fixture at `test_watch.py:863`. Re-pointing `watch.py` alone at cutover would
+  leave the other two parsing a file that cutover renames to
+  `tasks.md.deprecated`.
+
+  Rec **S1 keep** combined entries via an entry/task split (**refuted: split the
+  three and forbid new ones** — simpler forever, but it edits three of your
+  existing entries and combining was deliberate). Rec **S2 compound bands stay
+  legal** (**refuted: resolve each to one band when touched** — `P0/P1` says
+  something one band cannot, and a derived rank sorts it correctly without editing
+  your words). Rec **S3 leave the 60 unmarked origins NULL** (**refuted: backfill
+  to `unknown`** — that asserts an audit that never happened, and destroys exactly
+  the distinction your #289 `unlinked`-vs-`pending` rule protects). Rec **S4 keep
+  `type` free text with NULL for unreadable** (**refuted: freeze the ~10 real
+  values** — closing the set requires classifying all 237 entries correctly, and
+  finding 5 says that cannot be done).
+
+  Approval accepts the entity shape, the read-only verbs, and whichever recs you
+  do not overrule. It authorises **no** table, migration, CLI or cutover — those
+  wait on #263 E1 like the rest of #294. Answer `rec`, `rec except S<n>: ...`, or
+  `Pause #346`.
+  - **Note (human, via watch, 2026-07-28 01:05):** with the cli btw, we
+    should consider writing it in something other than python. We ideally
+    want a small (fast to load) portable binary + quick to recompile. It
+    should also support extensions kind of like how git does, eg
+    `git-thingy` can be run `git thingy`. that way we can have python
+    modules (or go or rust or ocaml) also before we work on this proper we
+    should standardize the current python parsing so we fix the duplicate
+    code issues and such now in case it matters as we migrate and things.
+  - **Follow-up (loop, 2026-07-28 01:08):** all three folded. (c) is filed as
+    **#352** and treated as the prerequisite you called it — the duplication is
+    already measured, so it is not a research task: `ledger_entries` has two
+    implementations (`lint.py` and `watch.py:6599`, whose docstring claims it is
+    lint's *"VERBATIM"* while the source differs), three callers (`lint.py`,
+    `watch.py`, `task_origins.py`), and one behavioural fixture pinning them
+    (`test_watch.py:863`, a single hostile input). Rec is one module all three
+    import, so the pin stops needing to exist. (a) and (b): the design doc's CLI
+    section now says the language is undecided rather than quietly Python, and
+    records that git-style `dreamwork-thingy` dispatch is what makes a compiled
+    core affordable — an extension in any language becomes a sibling executable
+    instead of a plugin API to design. The read verbs and the entity they read are
+    language-independent and stand. **Still open for you: S1–S4**, which this note
+    does not answer.
+  - **Note (human, via watch, 2026-07-28 01:13):** oh one thought is that
+    we can make the shape as restrictive as we want before migrating
+    because we won't need the python / plaintext versions for much longer.
+    not sure if that helps us.
+  - **Follow-up (loop, 2026-07-28 01:20):** it helps a lot more than "not sure" —
+    it **inverts three of the four recs**, and the artifact and design doc are
+    rebuilt to say so. Every refutation I wrote for S1, S2 and S4 was the same
+    sentence in different clothes: *"that edits three of your existing entries"*.
+    If the plaintext is on its way out, that is a one-time cost set against
+    looseness the schema carries forever and every consumer handles forever. So the
+    plan is now **normalise the Markdown first, then let the schema be strict**, and
+    it is bounded: **3** combined entries to split, **4** compound bands to resolve,
+    **6** entries with no band, and the tail of the 66 distinct values sitting where
+    `type` should be. Filed as **#353**, and it needs no #263 answer — so with #352
+    it is the second thing that turns "sqlite is a blocker" into movement.
+    **S3 is withdrawn, and not because of your note: finding 4 was WRONG.** I
+    reported 60 unmarked origins against 8 `unknown` and read the split as
+    audited-vs-untouched. It is **50 and 12**, every unmarked entry's id is below
+    216, so absence is just your contract's forward-only cutoff and is derivable
+    from the id — there was never a distinction to preserve. The scan tested
+    `'origin: **' in body`, which misses a marker wrapped as `origin:\n  **loop**`;
+    `lint.py` contradicted it and lint was right. I re-measured the other four
+    wrap-tolerantly and they all stand. **The one cost worth your attention**:
+    normalising means bulk edits to the loop's own memory, and a fold script damaged
+    `questions.md` earlier tonight — so #353 carries its own guards and does not
+    start without your ruling, because the entries are your words.
+  - **Answer (via watch, 2026-07-28 01:23):** S1: we can keep them
+    split. For tasks, we should have n:n relationships for related tasks
+    (like 250/251 i guess, not sure exactly what they are), and one way
+    dependencies too. Anyway we should capture the shape of work that
+    makes sense, and if the split makes sense we should keep it. We
+    should design the db with the kind of joins we'll do in mind so that
+    we can be performant always. S2: rec S4: probs freetext or varchar,
+    with null. with these kinds of things we can have an automated
+    warning layer in cli calls that raises issues where data is
+    incomplete or whatever. Also things like unchecked message count,
+    new task count, new question count, unanswered question count,
+    unfolded-in answer count, etc.
+  - **Note (human, via watch, 2026-07-28 01:25):** oh now i'm not so sure
+    about the free text -- what is the real benefit? if we have an enum
+    type thing, is it faster/better/more efficient/etc? if not, then
+    varchar or whatever it is that is just as fast but not as restrictive.
+    enum has some advantages like easier validation. hmm. let's take the
+    principled approach here that will give us the best result long term
+    and avoid footguns
+  - **Follow-up (loop, 2026-07-28 01:34):** measured against real SQLite rather
+    than reasoned about, because the answer turned out to hinge on a footgun.
+    **There is no performance benefit either way** — and "enum" is not a thing
+    SQLite has: it accepts any type NAME and enforces nothing (`CREATE TABLE t (x
+    ENUM_WHATEVER)` is accepted, stores the name verbatim, and takes any value).
+    The two real options both store `TEXT` and read identically, so the choice is
+    entirely **validation versus evolvability**, and each has one footgun:
+    · **`TEXT` + `CHECK (x IN (…))`** genuinely enforces and **cannot be switched
+    off by a connection setting** — I tried, it holds. Its footgun is that a CHECK
+    cannot be altered or dropped: changing the allowed set means recreating the
+    table.
+    · **A lookup table + `REFERENCES`** enforces too, and adding a value is one
+    `INSERT` with no rebuild. Its footgun is worse and it is the one that caught me
+    while checking: **SQLite foreign keys are OFF BY DEFAULT, per connection**
+    (`PRAGMA foreign_keys` is `0`). My first test "showed" the FK accepting garbage
+    — because the pragma had not taken. Any connection that forgets it silently
+    validates nothing.
+    So the principled split, which is about whether the set is closed **by
+    definition** or merely small today: **`CHECK` for closed-by-definition sets** —
+    `state` (open|landed), `origin` (human|loop|unknown), `decision`
+    (pending|accepted|rejected); those change only if the domain changes, and
+    unbypassable is exactly what you want. **Lookup table + FK for a vocabulary
+    that grows** — `type` is that, and your own automated-warning idea wants a place
+    to hang per-type metadata anyway. The pragma then has to be set in ONE place
+    (the adapter's connection setup) with a test asserting it, which is a single
+    line and turns the footgun into a checked invariant.
+    **And it settles the Postgres half**, which matters because #263's now-approved
+    contract ships SQLite behind a PostgreSQL-portable adapter: Postgres native
+    `ENUM` can add values but not remove them and bakes in an ordering, whereas a
+    lookup table behaves **identically on both** backends. So the lookup table is
+    the portable answer as well as the evolvable one.
+    Rec: **`type` becomes a lookup table with an FK; the closed-by-definition
+    columns get CHECK; nothing gets a bare unvalidated varchar.** That is stricter
+    than your "freetext or varchar with null" and I think it is what you were
+    reaching for with *"easier validation … avoid footguns"* — but say so if you
+    want `type` left unvalidated, because that is the one place we would differ.
+
 
 - **P0/P1 · 2026-07-26 — #288 protected-service boundary: contain
   subagent tools or isolate the dashboard identity?**
