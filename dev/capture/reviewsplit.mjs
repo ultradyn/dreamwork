@@ -21,6 +21,10 @@
      - the text passing UNDER it fades out, the head of the column dissolves
        once anything is above it, and both lift where his exception says they
        should. Each is a state with two ends, so each is traced part-way.
+       #326 made them one mechanism — a mask on the question's body, at both
+       edges — so what is traced is the two DEPTHS. Whether the fade is a fade
+       or a painted band is a question about pixels and belongs to
+       `qfade.mjs`; this guard owns the middle of the gesture.
      - the bar DRAGS, and the check asserts the SIGN (#174: "it moved" is
        satisfied by exactly backwards) plus conservation — what one column
        gains the other loses.
@@ -81,37 +85,49 @@ const GEO = `(() => {
              b:+b.bottom.toFixed(1), w:+b.width.toFixed(1), h:+b.height.toFixed(1) }; };
   const doc = q('#reviewdoc'), bar = q('.rsplit'), dock = q('#qdock');
   const card = q('.qdock > .qa'), frame = q('#reviewframe');
+  /* THE SCROLLER IS THE QUESTION'S BODY, not the card (#326): the card holds
+     the answer box too, and a scrollport that holds the box cannot fade its
+     text at the box without fading the box. */
+  const body = q('.qdock > .qa > .qbody');
   const comp = q('#qdock .qcompose');
   return {
     doc: r(doc), bar: r(bar), dock: r(dock), card: r(card), frame: r(frame),
     compose: r(comp),
     docW: doc ? doc.offsetWidth : 0, dockW: dock ? dock.offsetWidth : 0,
     barShown: !!(bar && bar.checkVisibility()),
-    /* increment 2. flowEnd is where the question's content ACTUALLY ends on
-       screen. The answer box is the last thing in that content, so if the box
-       is painted well above this line it is being held there — which is the
-       only reading of "stays glued" that a box merely happening to be last
-       cannot pass. NOT comp.offsetTop: a sticky box is shifted in LAYOUT, so
-       offsetTop already contains the offset and reports the box exactly where
-       it is painted, every time, glued or not. */
-    flowEnd: card ? card.getBoundingClientRect().top + card.scrollHeight
-                    - card.scrollTop : null,
+    /* increment 2. flowEnd is where the question's TEXT would end on screen if
+       the scroller could show all of it. If it runs on past the scroller's own
+       bottom edge while the box is still on the artifact's bottom line, the box
+       is being held there — which is the only reading of "stays glued" that a
+       box merely happening to be last cannot pass.
+       Since #326 the box is no longer inside the scroller, so the comparison is
+       against the scroller's edge rather than against the box's own bottom: it
+       is glued by construction now, and this is the check that the construction
+       is doing something — a card that fits needs no holding at all, and the
+       SHORT question is where that reading is tested (qfade.mjs). */
+    flowEnd: body ? body.getBoundingClientRect().top + body.scrollHeight
+                    - body.scrollTop : null,
+    scrollerEnd: body ? +body.getBoundingClientRect().bottom.toFixed(1) : null,
     sticky: comp ? getComputedStyle(comp).position : null,
-    /* made and shown are two different questions and the guard needs both:
-       a pseudo-element with no content is never generated but still reports
-       opacity 1 and a real top, so "is there a band" has to be asked of
-       content, while the narrow rule that switches it off does so with
-       display. Asking only one of them passed a page with no band. */
-    band: comp ? (b => ({ opacity: +b.opacity, top: b.top, image: b.backgroundImage,
-                          made: b.content !== 'none', shown: b.display !== 'none' }))(
-                   getComputedStyle(comp, '::before')) : null,
-    qfade: card ? parseFloat(getComputedStyle(card)
+    /* THE FADES ARE ONE MASK ON ONE ELEMENT (#326), so "is it drawn" is asked
+       of the element that carries it: display:contents — its value on every
+       route but this one — generates no box, and a mask on a box that does not
+       exist is not drawn. 'boxes' is that question, and it is the reason the
+       narrow rule needs no override per fade.
+       #305's version asked a pseudo-element's content AND its display, because
+       a content:none pseudo is never generated and still reports opacity 1;
+       that trap left with the band. (No backticks in here: this whole probe is
+       a template literal.) */
+    qfade: body ? parseFloat(getComputedStyle(body)
                              .getPropertyValue('--qfade')) : null,
-    masked: card ? getComputedStyle(card).maskImage !== 'none' : null,
+    qfoot: body ? parseFloat(getComputedStyle(body)
+                             .getPropertyValue('--qfoot')) : null,
+    masked: body ? getComputedStyle(body).maskImage !== 'none' : null,
+    boxes: body ? body.getClientRects().length : null,
     atend: dock ? dock.classList.contains('atend') : null,
     attop: dock ? dock.classList.contains('attop') : null,
-    scroll: card ? { top: card.scrollTop, client: card.clientHeight,
-                     full: card.scrollHeight } : null,
+    scroll: body ? { top: body.scrollTop, client: body.clientHeight,
+                     full: body.scrollHeight } : null,
     pageOver: document.documentElement.scrollHeight - window.innerHeight,
     /* how far anything IN THE PANE hangs off the right of the window. Scoped
        to the pane on purpose: the command palette overflows by 122px at 390px
@@ -149,19 +165,19 @@ const between = (seen, a, b) => {
   const lo = Math.min(a, b), hi = Math.max(a, b), eps = (hi - lo) * 0.03;
   return seen.filter(v => v > lo + eps && v < hi - eps).length;
 };
-const BAND = `getComputedStyle(document.querySelector('#qdock .qcompose'),
-  '::before').opacity`;
-const QFADE = `parseFloat(getComputedStyle(
-  document.querySelector('.qdock > .qa')).getPropertyValue('--qfade'))`;
+const DEPTH = which => `parseFloat(getComputedStyle(
+  document.querySelector('.qdock > .qa > .qbody'))
+    .getPropertyValue('--${which}'))`;
+const QFADE = DEPTH('qfade'), QFOOT = DEPTH('qfoot');
 const scrollQ = to => `(() => { const c =
-  document.querySelector('.qdock > .qa');
+  document.querySelector('.qdock > .qa > .qbody');
   c.scrollTop = ${to === 'end' ? 'c.scrollHeight' : to}; })()`;
 /* How far this question can scroll, read per page rather than assumed. A
    fixed 220 silently became "scrolled to the very end" the moment the card
    grew 16px taller, which turned three fade checks green-for-the-wrong-reason
    and two red — the middle of the range has to be computed from the range. */
 const scrollMax = pg => pg.evaluate(`(() => { const c =
-  document.querySelector('.qdock > .qa');
+  document.querySelector('.qdock > .qa > .qbody');
   return c.scrollHeight - c.clientHeight; })()`);
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
@@ -177,7 +193,7 @@ const open = async (opts = {}) => {
   await p.goto(URL_, { waitUntil: 'networkidle' });
   // absence costs one line, not a 30s Playwright timeout that reads as "the
   // guard threw" and names nothing
-  await p.waitForSelector('.qdock > .qa', { timeout: 10000 })
+  await p.waitForSelector('.qdock > .qa > .qbody', { timeout: 10000 })
     .catch(() => ok('the review route rendered a docked question at all', false));
   await sleep(700);
   return { ctx, p };
@@ -226,15 +242,17 @@ ok('...and by enough that HALF way down is neither end (else the fade ' +
 
   /* ── (b) the answer box is GLUED to the foot of the pane ──────────────── */
   say(`glued: box ${after.compose.t}..${after.compose.b}, artifact ends ` +
-      `${after.frame.b}, the question's text ends at ${after.flowEnd} ` +
-      `(position:${after.sticky})`);
+      `${after.frame.b}, the scroller ends ${after.scrollerEnd}, the ` +
+      `question's text runs to ${after.flowEnd} (position:${after.sticky})`);
   ok('the answer box ends in line with the bottom of the review document',
      Math.abs(after.compose.b - after.frame.b) <= 1);
   // "in line with the bottom" is also satisfied by a box that just happens to
   // be the last thing in a card that fits. This is the reading that is not:
   // there is still text below the fold, and the box is held above it.
   ok('...and it is GLUED there rather than merely last — the question runs ' +
-     'on below it', after.flowEnd > after.compose.b + 40);
+     'on below the fold while the box stays on the artifact\'s line',
+     after.flowEnd > after.scrollerEnd + 40 &&
+     Math.abs(after.compose.b - after.frame.b) <= 1);
 }
 
 /* ── (c) the question fades out into the box, unless it ends there ───────── */
@@ -260,27 +278,26 @@ ok('...and by enough that HALF way down is neither end (else the fade ' +
   ok('...and that edge ARRIVES rather than blinking on',
      between(head, head[0], head.at(-1)) >= 2);
 
-  say(`foot band while text passes under: opacity ${mid.band.opacity}, ` +
-      `reaching ${mid.band.top} above the box, made=${mid.band.made}, ` +
-      `atend=${mid.atend}, ${mid.band.image}`);
+  say(`foot fade while text passes under: --qfoot ${mid.qfoot}px, ` +
+      `atend=${mid.atend}, mask drawn=${mid.masked}`);
   ok('text passing under the answer box fades out into it',
-     mid.band.made && mid.band.shown && mid.band.opacity >= 0.9 &&
-     parseFloat(mid.band.top) <= -20 && /gradient/.test(mid.band.image));
+     mid.masked === true && mid.qfoot >= 12 && mid.atend === false);
 
   // ...unless the body ends at the box — his own exception, and a state with
-  // two ends, so it crossfades rather than switching (transitions.md).
-  const tf = p.evaluate(TRACEV(BAND, 800));
+  // two ends, so it crosses rather than switching (transitions.md).
+  const tf = p.evaluate(TRACEV(QFOOT, 800));
   await sleep(60);
   await p.evaluate(scrollQ('end'));
   const foot = await tf;
   await sleep(400);
   const end = await p.evaluate(GEO);
-  say(`at the end of the question: atend=${end.atend}, band ` +
-      `${mid.band.opacity} -> ${end.band.opacity} over ` +
-      `${between(foot, 1, 0)} of ${foot.length} part-way frames`);
+  say(`at the end of the question: atend=${end.atend}, --qfoot ` +
+      `${mid.qfoot} -> ${end.qfoot} over ` +
+      `${between(foot, foot[0], foot.at(-1))} of ${foot.length} part-way frames`);
   ok('at the end of the question the fade lifts off his last line',
-     end.atend === true && end.band.opacity <= 0.05);
-  ok('...having faded away rather than switched off', between(foot, 1, 0) >= 2);
+     end.atend === true && end.qfoot <= 0.5);
+  ok('...having faded away rather than switched off',
+     between(foot, foot[0], foot.at(-1)) >= 2);
   ok('...and the box is still glued to the foot of the pane',
      Math.abs(end.compose.b - end.frame.b) <= 2);
 
@@ -289,7 +306,7 @@ ok('...and by enough that HALF way down is neither end (else the fade ' +
   await sleep(700);
   const back = await p.evaluate(GEO);
   ok('scrolling back up brings the fade back', back.atend === false &&
-     back.band.opacity >= 0.9);
+     back.qfoot >= 12);
 }
 
 /* ── the bar drags, in the direction it is dragged ─────────────────────── */
@@ -433,7 +450,8 @@ function travel(seen) {
       body: JSON.stringify({ kind: 'add-idea', text: 'reviewsplit guard tick' }) });
     await tick();
     const fresh = document.querySelector('.qdock > .qa');
-    return { replaced: fresh !== card, top: fresh ? fresh.scrollTop : -1 };
+    const body = fresh && fresh.querySelector(':scope > .qbody');
+    return { replaced: fresh !== card, top: body ? body.scrollTop : -1 };
   })()`);
   const after = await p.evaluate(GEO);
   say(`tick: dock node replaced=${r.replaced}; card scroll ` +
@@ -473,19 +491,20 @@ await c1.close();
   await sleep(60);
   await rp.evaluate(scrollQ(rhalf));
   const head = await th;
-  const tf = rp.evaluate(TRACEV(BAND, 500));
+  const tf = rp.evaluate(TRACEV(QFOOT, 500));
   await sleep(60);
   await rp.evaluate(scrollQ('end'));
   const foot = await tf;
   await sleep(300);
   const g = await rp.evaluate(GEO);
-  say(`reduced: head fade over ${distinct(head)} values, foot band over ` +
-      `${distinct(foot.map(v => v * 100))}, ending atend=${g.atend} ` +
-      `band=${g.band.opacity} qfade=${g.qfade}`);
+  say(`reduced: head fade over ${distinct(head)} values, foot fade over ` +
+      `${distinct(foot)}, ending atend=${g.atend} --qfoot=${g.qfoot} ` +
+      `--qfade=${g.qfade}`);
   ok('reduced motion: the fades still say the same thing at rest',
-     g.atend === true && g.band.opacity <= 0.05 && g.qfade >= 12);
+     g.atend === true && g.qfoot <= 0.5 && g.qfade >= 12);
   ok('reduced motion: ...arriving in one step, both of them',
-     between(head, head[0], head.at(-1)) === 0 && between(foot, 1, 0) === 0);
+     between(head, head[0], head.at(-1)) === 0 &&
+     between(foot, foot[0], foot.at(-1)) === 0);
   await ctx.close();
 }
 
@@ -543,9 +562,12 @@ await c1.close();
      g.scroll.full <= g.scroll.client + 1 && g.pageOver > 0);
   // nothing is glued to a column that is now just a document, and nothing
   // passes under the box, so both fades would be lying about the layout
+  // ONE question answers both: the wrapper generates no box, so it is neither
+  // a scrollport nor a masked element, and the box is simply the last thing in
+  // a card that runs its natural height (#326).
   ok('narrow: the answer box sits at the end of the question, not glued ' +
-     'over it', g.sticky === 'static' && !g.band.shown);
-  ok('narrow: and the head of the question is not dimmed', g.masked === false);
+     'over it', g.sticky === 'static' && g.boxes === 0);
+  ok('narrow: and neither end of the question is dimmed', g.boxes === 0);
   await np.screenshot({ path: `${OUT}/reviewsplit-narrow.png` });
   await ctx.close();
 }
