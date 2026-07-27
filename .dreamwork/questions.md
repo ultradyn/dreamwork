@@ -142,90 +142,6 @@
   design only`, `Choose P3; accept recovery without prevention`, or `Choose P4;
   pause #288`.
 
-- **P1 · 2026-07-26 — #287 Matt Pocock skills bridge: accept the thin
-  protocol/profile-adapter direction?** Cited research and coordinator/Grok
-  iteration: `.dreamwork/docs/research/matt-pocock-skills-bridge-287.md`.
-
-  Rec **A1**: accept revised Approach A′ and authorize writing the formal plugin
-  specification only. `ud-dreamwork-matt-skills` adapts selected Dreamwork
-  increments to Matt’s domain/grill/TDD/review/handoff norms while Dreamwork keeps
-  the sole task queue, dashboard ask channel, scope/authority gates, worktree
-  ownership, and compaction truth. It performs no tracker polling, creates no
-  ready-agent queue/command or handoff authority, never auto-fires user-only
-  skills, and remains useful without GitHub or `.scratch`.
-
-  Defaults resolved from existing contracts: narrated process profile is normal;
-  genuinely model-invocable installed skills may run when applicable; user-only
-  commands require the human; one active grill serializes only its own
-  `questions.md` chain; the chain is durable truth and any machine-local state is
-  rebuildable; capabilities are detected and incompatibilities warned without
-  exact-SHA lockout; `writing-great-skills` is author/review-time guidance, not a
-  per-tick context tax. Observed friction does **not** yet justify new core
-  runtime hooks—only clearer plugin documentation unless red evidence emerges.
-
-  Approval does **not** authorize implementation, loading the plugin, running
-  `setup-matt-pocock-skills`, editing CONTEXT/CLAUDE/AGENTS files, external
-  tracker actions, or core Dreamwork changes. It authorizes a committed written
-  spec for a second human review before planning/implementation.
-
-  Answer `Accept A1 for specification only`, `Accept A2 with amendments: …`,
-  `Choose A3; revise … and rereview`, or `Choose A4; pause the bridge`.
-  - **Note (human, via watch, 2026-07-27 23:08):** Will this be a problem
-    with the future migrations we're planning? those being like the sqlite
-    tasks conversion, standardizing the loop through a cli tool (also
-    relates to tasks), thhreaded discussions, dreamhub and making the
-    architecture more modular, etc? If not, then rec also we should call
-    the plugin ud-dreamwork-matt-pocock-skills also, we don't want to
-    rewrite the skills, not sure if the proposed design (sec 9) implies
-    that or not. but we want to like great a generic wrapper / adapter
-    layer that says how to unify them and what to change to make it
-    compatible with dreamwork.
-  - **Follow-up (loop, 2026-07-27 23:16):** Short answer: **no, it should not
-    collide with those migrations — but only because of three constraints, and
-    they are cheap now and expensive later.** Taking your question first, then
-    your two amendments.
-  - **Follow-up (loop, 2026-07-27 23:16):** **1. SQLite tasks + the CLI (#294).**
-    The bridge never owns the queue — it produces *candidates*, exactly as
-    `ud-dreamwork-github` does with forge issues, and `tasks.md` stays
-    coordinator-owned. The one real hazard is that if the spec is written against
-    `tasks.md` **the file**, the bridge becomes a second parser that #294 then has
-    to migrate — the very thing you told me to avoid twice tonight. So the
-    constraint is: the bridge reads and writes tasks **only** through the
-    tool/CLI seam (`dreamwork tasks list|get|grab|cycle`), never by parsing
-    Markdown, from the first line of the spec. That makes the SQLite cutover
-    invisible to it instead of a second conversion.
-  - **Follow-up (loop, 2026-07-27 23:16):** **2. Threaded discussions (#254).**
-    A "grill" is a question-and-answer chain and it lives in `questions.md`,
-    which is the file #254 is about to give a rooted reply structure. Constraint:
-    grill turns use the **existing** author-tag grammar and `human_block()` — no
-    invented chain format. A bespoke sub-bullet shape would break the parser and
-    #254's rooted-exchange rule at the same time, and it would break them
-    silently, which is the failure mode this project cares most about. If a grill
-    genuinely needs a new tag, that is a `file-formats.md` change reviewed on its
-    own, not a side effect of the bridge.
-  - **Follow-up (loop, 2026-07-27 23:16):** **3. Dreamhub and modularity.** Low
-    risk, and already handled by a default you approved: any machine-local bridge
-    state is rebuildable, and the durable truth is the `questions.md` chain. The
-    constraint is just that the bridge adds no per-target state the hub must
-    learn to read — otherwise "more modular" turns into one more thing every
-    reader needs to know about.
-  - **Follow-up (loop, 2026-07-27 23:16):** **Your amendments, both accepted.**
-    The plugin is renamed **`ud-dreamwork-matt-pocock-skills`**. And on rewriting:
-    §9 does not imply it — it says *adapt* Matt's suite to Dreamwork's grain,
-    keeps most suite skills user-invoked, and reads CONTEXT/ADRs rather than
-    replacing DREAMWORK.md. But it never states the prohibition outright, which
-    is exactly how a later agent "adapts" by editing upstream. So the spec will
-    say it plainly: the upstream skills are **not modified**, the bridge is a
-    wrapper that maps his vocabulary onto ours, and *"what to change to make it
-    compatible"* becomes a **written** compatibility note — a documented list of
-    the gaps, not a set of edits anyone makes.
-  - **Follow-up (loop, 2026-07-27 23:16):** Nothing here needs another decision
-    from you unless you disagree with one of the three constraints. They are
-    folded into #287's ledger entry so the spec is written against them. Say the
-    word if you would rather the bridge wait until after the SQLite cutover
-    entirely — it does not need to, given constraint 1, but that is your call and
-    it is a one-word answer.
-
 - **P0/P1 · 2026-07-26 — #260/#262/#263/#269/#274: accept the
   reviewed durable user-event contract for implementation planning?** Design:
   `.dreamwork/docs/plans/user-event-journal.md`; narrow crash proof:
@@ -474,6 +390,105 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-26 — #287 Matt Pocock skills bridge: accept the thin
+  protocol/profile-adapter direction?**
+
+  → answered (2026-07-27 23:18): **LGTM, and it waits for SQLite.** He took the
+  option the loop's follow-up offered — *"let's wait till after sqlite so we
+  don't have to rework anything"* — so #287 is APPROVED in direction, with both
+  amendments (renamed `ud-dreamwork-matt-pocock-skills`; adapter layer plus a
+  written compatibility note, never edits to the upstream skills) and the three
+  constraints from the follow-up, and it is now **blocked on #294's cutover —
+  the specification included.** Note for whoever picks this up: the loop's own
+  answer was that constraint 1 (touch tasks only through the CLI seam) makes the
+  cutover invisible, so the spec COULD have been written now; he chose to wait
+  anyway, and that is the standing decision, not a misunderstanding to correct.
+  This is the THIRD time today he has sequenced work behind the migration
+  (#281 21:47, #289 23:11, this), which is why the rule is now in DREAMWORK.md. Cited research and coordinator/Grok
+  iteration: `.dreamwork/docs/research/matt-pocock-skills-bridge-287.md`.
+
+  Rec **A1**: accept revised Approach A′ and authorize writing the formal plugin
+  specification only. `ud-dreamwork-matt-skills` adapts selected Dreamwork
+  increments to Matt’s domain/grill/TDD/review/handoff norms while Dreamwork keeps
+  the sole task queue, dashboard ask channel, scope/authority gates, worktree
+  ownership, and compaction truth. It performs no tracker polling, creates no
+  ready-agent queue/command or handoff authority, never auto-fires user-only
+  skills, and remains useful without GitHub or `.scratch`.
+
+  Defaults resolved from existing contracts: narrated process profile is normal;
+  genuinely model-invocable installed skills may run when applicable; user-only
+  commands require the human; one active grill serializes only its own
+  `questions.md` chain; the chain is durable truth and any machine-local state is
+  rebuildable; capabilities are detected and incompatibilities warned without
+  exact-SHA lockout; `writing-great-skills` is author/review-time guidance, not a
+  per-tick context tax. Observed friction does **not** yet justify new core
+  runtime hooks—only clearer plugin documentation unless red evidence emerges.
+
+  Approval does **not** authorize implementation, loading the plugin, running
+  `setup-matt-pocock-skills`, editing CONTEXT/CLAUDE/AGENTS files, external
+  tracker actions, or core Dreamwork changes. It authorizes a committed written
+  spec for a second human review before planning/implementation.
+
+  Answer `Accept A1 for specification only`, `Accept A2 with amendments: …`,
+  `Choose A3; revise … and rereview`, or `Choose A4; pause the bridge`.
+  - **Note (human, via watch, 2026-07-27 23:08):** Will this be a problem
+    with the future migrations we're planning? those being like the sqlite
+    tasks conversion, standardizing the loop through a cli tool (also
+    relates to tasks), thhreaded discussions, dreamhub and making the
+    architecture more modular, etc? If not, then rec also we should call
+    the plugin ud-dreamwork-matt-pocock-skills also, we don't want to
+    rewrite the skills, not sure if the proposed design (sec 9) implies
+    that or not. but we want to like great a generic wrapper / adapter
+    layer that says how to unify them and what to change to make it
+    compatible with dreamwork.
+  - **Follow-up (loop, 2026-07-27 23:16):** Short answer: **no, it should not
+    collide with those migrations — but only because of three constraints, and
+    they are cheap now and expensive later.** Taking your question first, then
+    your two amendments.
+  - **Follow-up (loop, 2026-07-27 23:16):** **1. SQLite tasks + the CLI (#294).**
+    The bridge never owns the queue — it produces *candidates*, exactly as
+    `ud-dreamwork-github` does with forge issues, and `tasks.md` stays
+    coordinator-owned. The one real hazard is that if the spec is written against
+    `tasks.md` **the file**, the bridge becomes a second parser that #294 then has
+    to migrate — the very thing you told me to avoid twice tonight. So the
+    constraint is: the bridge reads and writes tasks **only** through the
+    tool/CLI seam (`dreamwork tasks list|get|grab|cycle`), never by parsing
+    Markdown, from the first line of the spec. That makes the SQLite cutover
+    invisible to it instead of a second conversion.
+  - **Follow-up (loop, 2026-07-27 23:16):** **2. Threaded discussions (#254).**
+    A "grill" is a question-and-answer chain and it lives in `questions.md`,
+    which is the file #254 is about to give a rooted reply structure. Constraint:
+    grill turns use the **existing** author-tag grammar and `human_block()` — no
+    invented chain format. A bespoke sub-bullet shape would break the parser and
+    #254's rooted-exchange rule at the same time, and it would break them
+    silently, which is the failure mode this project cares most about. If a grill
+    genuinely needs a new tag, that is a `file-formats.md` change reviewed on its
+    own, not a side effect of the bridge.
+  - **Follow-up (loop, 2026-07-27 23:16):** **3. Dreamhub and modularity.** Low
+    risk, and already handled by a default you approved: any machine-local bridge
+    state is rebuildable, and the durable truth is the `questions.md` chain. The
+    constraint is just that the bridge adds no per-target state the hub must
+    learn to read — otherwise "more modular" turns into one more thing every
+    reader needs to know about.
+  - **Follow-up (loop, 2026-07-27 23:16):** **Your amendments, both accepted.**
+    The plugin is renamed **`ud-dreamwork-matt-pocock-skills`**. And on rewriting:
+    §9 does not imply it — it says *adapt* Matt's suite to Dreamwork's grain,
+    keeps most suite skills user-invoked, and reads CONTEXT/ADRs rather than
+    replacing DREAMWORK.md. But it never states the prohibition outright, which
+    is exactly how a later agent "adapts" by editing upstream. So the spec will
+    say it plainly: the upstream skills are **not modified**, the bridge is a
+    wrapper that maps his vocabulary onto ours, and *"what to change to make it
+    compatible"* becomes a **written** compatibility note — a documented list of
+    the gaps, not a set of edits anyone makes.
+  - **Follow-up (loop, 2026-07-27 23:16):** Nothing here needs another decision
+    from you unless you disagree with one of the three constraints. They are
+    folded into #287's ledger entry so the spec is written against them. Say the
+    word if you would rather the bridge wait until after the SQLite cutover
+    entirely — it does not need to, given constraint 1, but that is your call and
+    it is a one-word answer.
+  - **Answer (via watch, 2026-07-27 23:17):** okay LGTM, but yeah let's
+    wait till after sqlite so we don't have to rework anything.
 
 - **P1 · 2026-07-27 — #289 review status/association: keep the decision
   record inside its owning question?**

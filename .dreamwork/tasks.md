@@ -521,6 +521,13 @@ Next id: **339**
   gaps, not edits anyone makes · authority remains specification only: no
   implementation, no loading the plugin, no `setup-matt-pocock-skills`, no
   CONTEXT/CLAUDE/AGENTS edits, no tracker actions, no core changes
+  · **BLOCKED ON #294's CUTOVER, including the specification** (human via watch
+  2026-07-27 23:17: *"okay LGTM, but yeah let's wait till after sqlite so we don't
+  have to rework anything"*) · the direction and both amendments are approved and
+  the three constraints above stand; what changed is only WHEN · the loop had
+  answered that constraint 1 makes the cutover invisible so the spec could be
+  written now — he chose to wait regardless, and that is the standing decision,
+  not a misunderstanding for a later agent to correct
 
 - **#286** — Preserve intentional paragraph breaks in rendered question notes
   and answers · P2 · rendering/data-integrity bug · origin: **human** · **human
