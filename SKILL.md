@@ -250,6 +250,22 @@ silently swallowed deliverables here. Dreamers append to the coordinator
 inbox and have never lost one; the fix is to dispatch utilities the same
 way, not to watch harder.
 
+**A subagent that LANDS a commit writes two things, not one** (#394): its
+report to the inbox, and one line to `.dreamwork/handoffs.md`'s
+`## Pending`. Say so in its brief — that is a dispatch-time obligation, not
+something a lane can be expected to infer. The two are not redundant
+because they are read by different things at different times: the inbox
+carries judgement and is read by a coordinator, in prose, once; the
+hand-off carries the id and the sha and is read by `lint.py` and the
+dashboard, forever. So an inbox report is durable only while a coordinator
+is alive to act on it — and the case the hand-off exists for is exactly the
+other one, where the work landed and nobody folded it (`#334` sat an hour,
+`#362` was found by accident). The channel and both its readers were built
+by `#381` and verified; what was missing was anyone telling a producer to
+use it, so `## Pending` sat empty while two lanes landed. **A channel
+nobody writes fails the same way as a channel nobody reads, and looks just
+as finished.**
+
 **Steering an agent takes two acts: write, then wake.** The inbox is
 durable but not delivered — a dreamer reads it *between increments*, so
 one that has gone idle never sees it, and a batch written two minutes
