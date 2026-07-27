@@ -1433,3 +1433,33 @@ this shape and convert opportunistically.)
   rule: **after any `cd`, write with absolute paths, or `cd` back in the same command.** The
   repo already insists on staging by explicit path because several agents share the tree;
   this is the same hazard one level up — the path you did not state is chosen for you.
+
+- **A check with a deliberately silent third verdict cannot be read as reassurance about the
+  change that produced it.** #339 edited `review-artifact.template.html`, and `template_stamp()`
+  digests the frame's bytes precisely so that every templated artifact goes stale. The agent
+  rebuilt exactly one of thirteen. `lint.py` said `review/ 13 artifact(s), none stale` — and
+  that row is *true* and *useless* here, because `check_review_artifacts` is silent on
+  `untemplated` by design (#325 never migrated the old artifacts, and a WARN per run on each
+  would be the noise that hides the row that matters). Twelve untemplated + one rebuilt and
+  twelve un-rebuilt + one untouched produce the same sentence. The per-file
+  `review_artifact.py check` distinguishes them in one command, and it did: 12 `untemplated`,
+  1 `current`, so the single rebuild was provably the complete set. The rule: **when a check
+  reports a count and suppresses a state, a change that moves things INTO the suppressed
+  state makes its summary row unreadable — ask the underlying tool per item instead.** The
+  generalisation is worse than it looks, because the row reads as coverage: `13 artifact(s)`
+  invites the reader to believe thirteen things were checked.
+
+- **A test can carry the right assertion over a fixture that cannot trigger it, and that reads
+  as coverage.** Validating #339, replacing the single line `escaped = html.escape(text,
+  quote=False)` with `escaped = text` — raw markup emitted straight into a built artifact —
+  left all 758 tests green. `test_highlighting_introduces_no_network_dependency` asserts
+  `"<script" not in out`, which is exactly the assertion that should have caught it, over five
+  samples containing no `<script`. Its neighbour round-trip test calls `html.unescape` on the
+  output before comparing, so a raw `<` and an escaped `&lt;` are the same string by the time
+  it asserts. Both are careful, well-documented tests about the right property. This is the
+  sibling of the known "the fake returned `''` for exactly the input that would reach the
+  branch": there the scaffolding blocked the injection, here the *sample* did. So when
+  red-proving, do not only ask "did a test fail" — ask **which** test, and if the one you
+  expected stayed green, its fixture is the bug. Three injections were run here to establish
+  the suite discriminates at all; two failed small distinct subsets, and the third failing
+  nothing is what found this.
