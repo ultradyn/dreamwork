@@ -24,9 +24,55 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **342**
+Next id: **343**
 
 ## Open
+
+- **#342** — Delivery mode for dashboard commands: batched vs instant, and a read
+  cursor so polling is possible at all · P2 · design + reliability ·
+  origin: **human** · **human via watch 2026-07-27 23:28** (typed on the #229/#270
+  topic-chats v2 review): *"mode toggle for delivery method: either we deliver like we
+  do now (instantly, pushed straight to agent), or we could have a queued delivery
+  method where the agent gets all the updates at once at the start of the queue.
+  Batched delivery … will be more efficient probably, but it won't be as responsive
+  unless the agent is mostly doing orchestration. This probably depends on the cli
+  update so there's a consistent way for the agent to like get any new messages for it
+  (note: this should be part of the agent's loop \*always\* in any case, as their might
+  be low urgency stuff that we don't want to interrupt the agent for). In fact, things
+  like add task should not interrupt the agent, but 'do now' should. So there's maybe
+  some sensible defaults, too. However, things like answers/notes to questions/reviews,
+  that is something where we need the toggle to know how to handle properly. This
+  should also help with the agent being overwhelmed or forgetting to process some
+  things."*
+  · **his premise verified**: `kind` reaches the log as nothing but a string prefix
+  (`watch.py:7807`, `f"command via watch…: {kind}{body}"`), so no consumer
+  differentiates urgency — an `add-idea` wakes the coordinator exactly as hard as a
+  `do-now` today, which is the interruption cost he is describing
+  · **the load-bearing half is not the toggle, it is the cursor, and it is missing.**
+  The skill already instructs the loop to check `watch-events.log`'s mtime each tick,
+  so a poll-based backstop is *specified* — but mtime says only that the file changed,
+  and **there is no cursor, offset or seen-marker anywhere** (`.dreamwork/` has none;
+  `file-formats.md` states none). So a polling loop cannot tell which lines are new: it
+  must hold that in session memory, which is precisely what compaction destroys, on a
+  log already 57KB. Batched delivery is therefore not merely unimplemented, it is
+  currently *unimplementable* — and so is the "always part of the agent's loop"
+  guarantee he attaches to both modes
+  · that also names the failure this fixes rather than adds to: the command channel is
+  **push-only and not durable** — his `do now:` exists only as a line in this file, the
+  write is best-effort, and a resumed or compacted session with no tail monitor armed
+  loses it with no error on any surface. A cursor converts delivery from
+  monitor-dependent to read-dependent, which is the same "nothing fails quietly"
+  commitment applied to the one channel that still can
+  · sensible defaults he stated: `add task`/`add idea` do not interrupt, `do now` does;
+  answers and notes on questions/reviews are the genuinely ambiguous class and are what
+  the toggle is *for* — do not quietly pick for him there
+  · scope note: the toggle half depends on **#294**'s CLI (his own "depends on the cli
+  update", and the same CLI-only seam he set for `#229`/`#287`), so it waits. The
+  cursor half does **not** depend on the CLI and is worth landing first — it is what
+  makes the documented mtime check honest. **One migration, not two**: a cursor is
+  durable state, so its shape folds into the sqlite migration's scope at approval time
+  rather than landing as a file that must then be converted
+  · blocked on #294 for the toggle; cursor half unblocked
 
 - **#340** — His answer renders as raw prose in `## Answered`, tag showing, on more
   than half of them · **P1** · UI correctness · origin: **loop** · from #254's design
@@ -905,16 +951,6 @@ Next id: **342**
   responsive layout, atmospheric transition + reduced-motion · evidence:
   `.dreamwork/review/evidence/review-note-reply-unclear.png` · separate from
   broader #253 research · queued after active #250/#251
-- **#253** — Add contextual review annotations and attached discussions · P2 ·
-  approved design/implementation · origin: **human** · **approved via watch
-  18:35** · preserve static style-isolated iframe; narrow versioned `postMessage`
-  selection bridge; parent validates quote/context and owns mutable side rail ·
-  anchors combine artifact hash, heading path, paragraph ordinal and normalised
-  quote/context; ambiguous edits become explicit orphans · chats attach to whole
-  artifact/selection and remain globally visible at `/chat`; main dreamer first,
-  explicit worker promotion only, preserving transcript/attachment history ·
-  typed task/update requests mint normal human-origin tasks · coordinate storage
-  and transcript contract with revised #270/#229 before red-first UI increments
   · **APPROVED for WRITTEN DESIGN ONLY, human via watch 2026-07-27 23:03**
   (`rec` = Accept N1) · N1 is: the loop **Answer** becomes the root response to
   the question, and later human Notes plus loop Replies render as one connected
@@ -929,6 +965,38 @@ Next id: **342**
   implementation is a separate ask afterwards · stated here rather than left in
   the answered question, because an approval whose scope lives only in
   questions.md is one the next agent reads as broader than it is
+  · **this block was misfiled onto #253 by `b3ab88a` and moved here 23:33.** The
+  commit subject said `steering(#254)` and its body reasoned only about #254, but
+  the hunk landed inside #253's bullet — so #254 read as unapproved while #253,
+  whose own line says *"approved design/implementation"*, carried a contradictory
+  design-only limit it was never given. Recorded rather than silently corrected
+  because the commit that made the mistake was the one arguing that a misplaced
+  approval is read wrong by the next agent
+  · **design LANDED `5b813f1`** (spec
+  `.dreamwork/docs/plans/note-reply-threading-254.md`, artifact
+  `.dreamwork/review/note-reply-threading-254.html`) — the entry stays open on
+  purpose, cited here the way #269 and #275 do, because the grant covered the
+  written design only and implementation is a separate ask
+  · **and the design as approved does not fix the card he filed this about**:
+  verified — that question has no `Answer` bullet, N1 roots the branch at his
+  Answer, so his own tie-breaker leaves the note flat, exactly as it renders
+  today · a second defect in the same card explains the screenshot and is already
+  repaired in the file (the loop had written `Answer (loop, …)`, a tag in neither
+  `NOTE_TAGS` nor `ANSWER_TAGS`, so it was never a contribution) · so
+  implementation is gated on his **R1/R2/R3** answer now open in questions.md,
+  not merely on scheduling · spec records seven open decisions as D1–D7, and its
+  own proof plan names two checks that would be hollow — see #340 and #341 for
+  the two out-of-scope findings it produced
+- **#253** — Add contextual review annotations and attached discussions · P2 ·
+  approved design/implementation · origin: **human** · **approved via watch
+  18:35** · preserve static style-isolated iframe; narrow versioned `postMessage`
+  selection bridge; parent validates quote/context and owns mutable side rail ·
+  anchors combine artifact hash, heading path, paragraph ordinal and normalised
+  quote/context; ambiguous edits become explicit orphans · chats attach to whole
+  artifact/selection and remain globally visible at `/chat`; main dreamer first,
+  explicit worker promotion only, preserving transcript/attachment history ·
+  typed task/update requests mint normal human-origin tasks · coordinate storage
+  and transcript contract with revised #270/#229 before red-first UI increments
 
 - **#252** — Render Markdown files on `/file` · P2 · feature · 25m · origin:
   **human** · **human via watch 15:17** · `.md` paths default to rendered
