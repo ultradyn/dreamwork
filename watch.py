@@ -11,6 +11,7 @@ settings to their documented files; all other routes read.
 """
 
 import argparse
+import errno
 import hashlib
 import http.server
 import ipaddress
@@ -7214,10 +7215,35 @@ def command_line(kind, text, source=""):
     return f"command via watch{from_hint(source)}: {kind}{body}"
 
 
+def _expected_disconnect(exc):
+    """Exactly the peer-departure errors a cancelled poll can raise (#299):
+    the browser went away mid-response, which is expected client behaviour.
+    Everything else must stay loud in socketserver's error reporting."""
+    return isinstance(exc, (BrokenPipeError, ConnectionResetError,
+                            ConnectionAbortedError)) or (
+        isinstance(exc, OSError) and exc.errno in (
+            errno.EPIPE, errno.ECONNRESET, errno.ECONNABORTED))
+
+
 def make_handler(target, dev=False, authority=None):
     page = PAGE.replace("/*DEV*/false", "true") if dev else PAGE
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        def handle(self):
+            # #299: a client that cancels its poll (usually /mtime) after we
+            # committed to a response breaks the pipe under any write —
+            # headers, body or error page. The peer is gone: no one to report
+            # to, nothing to retry, and the next poll reconnects, so quiet
+            # exactly that class and close. Any other error still escapes to
+            # socketserver's traceback. (finish needs no wrapper: stdlib
+            # already swallows socket.error on the final flush.)
+            try:
+                super().handle()
+            except OSError as exc:
+                if not _expected_disconnect(exc):
+                    raise
+                self.close_connection = True
+
         def _authority(self):
             if authority is not None:
                 return authority

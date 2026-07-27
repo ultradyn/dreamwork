@@ -24,9 +24,65 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **297**
+Next id: **301**
 
 ## Open
+
+- **#300** — Let run-mode descriptions liquefy through one shared popover · P2
+  · Web UI feature · 35m · origin: **human** · **human via watch `add-idea`
+  14:37** · hovering a run-mode button should explain that mode; all buttons
+  share one geometrically stable description surface so moving between them
+  morphs/liquefies the words in place rather than spawning unrelated tooltips ·
+  copy is sourced from the actual hierarchical/park/hot behavioural contract,
+  including what continues, stops and commits, never marketing shorthand that
+  can contradict runtime semantics · keyboard focus shows the same description
+  and `aria-describedby` exposes it; touch/focus parity must not add a surprise
+  second tap or interfere with #290's 10-second arm/reset/cancel/cross-tab rules ·
+  first arrival and final departure reuse the atmospheric blur/drift idiom;
+  button→button swaps keep the shell fixed while old text dissolves and new text
+  resolves, with several causal intermediate opacity/blur states rather than a
+  frame-zero replacement; reduced-motion swaps text instantly with identical
+  meaning/function · Escape/pointer-leave/blur dismissal has no mode side effect
+  and popover geometry clamps on desktop/mobile without obscuring the countdown ·
+  red-first real-route guard + deterministic captures; multiple interleaved
+  vision/geometry visual-review-and-fix loops until both PASS · depends on
+  landed #290 and must keep its exactly-once POST/event guards green
+
+- **#298** — Explain each burndown column on hover, focus and touch · P2 ·
+  Web UI feature · 25m · origin: **human** · **human via watch `add-idea`
+  14:10** · inspecting a chart column should reveal the exact interval/date,
+  open-task level, arrivals and completions that its geometry currently encodes,
+  plus source/coverage state where relevant; this is detail *about values already
+  summarised on screen*, preserving #142's more-detail rule rather than hiding a
+  second dataset in hover · one restrained chart-native inspector follows the
+  active column without obscuring neighbours, arrives/departs through the page's
+  atmospheric transition, and snaps under reduced motion · hover cannot be the
+  sole path: every column is keyboard-focusable with a useful accessible name,
+  focus shows the same inspector, and tap selects/dismisses it without breaking
+  chart scroll on mobile · red-first guard proves exact values against a
+  controlled ledger history, edge-column clamping, hover→focus parity, Escape/
+  blur/tap dismissal, intermediate arrival/departure states and reduced-motion
+  function · deterministic desktop/mobile captures + visual-review-and-fix ·
+  relates #218's filed-to-landed median but does not depend on it
+
+- **#297** — Make every dashboard disclosure travel instead of jump · P2 ·
+  Web UI bug · 60m · origin: **human** · **human via watch `add-idea`
+  14:09 (duplicate delivery recorded once)** · expanding/collapsing git rows,
+  dream filenames and miscellaneous dashboard details currently changes their
+  own or neighbouring positions abruptly; inventory every disclosure surface
+  and either keep its anchor geometrically stable or carry all surviving
+  elements through one smooth atmospheric fold/travel · the human's "anything
+  that could move should have CSS for smooth transitions" states the visible
+  outcome, not permission for a global `transition: all`: reuse the established
+  `travelCard`/`foldDetailsLocal`/FLIP + body arrival/departure idiom so layout
+  geometry is actually interpolated and reduced-motion keeps function while
+  snapping · red-first guards must drive every real disclosure family, bound
+  each trace to its click, count distinct intermediate positions, prove no
+  overshoot/snap at settlement, and cover reduced motion · `transitions.md`
+  already calls the plain `expand()` peeks (dreams, archive, Markdown files,
+  status overflow) unexamined; include commit rows and any other discovered
+  native `<details>` rather than fixing only the reported examples · relates
+  #169, which adds expanded-state prominence but does not replace continuity
 
 - **#295** — Add subtle dithering to background shaders · P2 · visual/shader
   quality · origin: **human** · **human via chat 2026-07-27 01:47** · add a
@@ -53,8 +109,14 @@ Next id: **297**
   verifies the database before cutover, and has explicit rollback · on successful
   verified cutover, preserve the old ledger as `tasks.md.deprecated` with YAML
   frontmatter declaring deprecation and pointing to canonical task-access and
-  recovery instructions; never delete it automatically · mixed-version/writer
-  freeze, replay/idempotency, Git history/provenance import, dashboard consumers,
+  recovery instructions; never delete it automatically · **human via watch
+  `add-idea` 14:11:** every task grab/status/priority/complete transition must
+  automatically maintain the dashboard's burndown history and live status
+  projection through the canonical transaction/outbox — no agent hand-editing
+  `status.json`, no Git-HEAD lag, and no second derived truth; expose bounded
+  snapshot/time-series APIs with crash-safe replay and prove the chart + status
+  section update after real task commands · mixed-version/writer freeze,
+  replay/idempotency, Git history/provenance import, dashboard consumers,
   lint/file-formats/doc-map/compaction and failure recovery are acceptance scope ·
   blocked on #264 design and relevant #263 cutover decisions
 
@@ -250,8 +312,12 @@ Next id: **297**
   mutation; design the #294 migration script/import verification, mixed-writer
   cutover, rollback, preserved `tasks.md.deprecated` YAML notice and recovery
   instructions · cover stale recovery, multi-process same-target servers,
-  worktrees/c2c, compaction, cross-machine/git boundaries and migration · blocked
-  on user-event model #263
+  worktrees/c2c, compaction, cross-machine/git boundaries and migration ·
+  **human via watch 14:11:** explicitly design the single transactional
+  task-transition history/materialised-view boundary that keeps burndown and the
+  live dashboard status section current as the dreamer works; decide whether it
+  shares #263's journal or uses a task-state outbox, but never dual-write two
+  fallible truths · blocked on user-event model #263
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
@@ -791,15 +857,18 @@ Next id: **297**
   cadences by design (status 5-15s, PR much slower, CI slower still and
   only when a PR exists and is not draft) · PR/CI go through
   `ud-dreamwork-github`, which already owns `gh`
-- **#172** — Heading row: repo identity, and where invariants sit ·
-  P3 · idea · 25m · his layout principle is the firm half and it
-  generalises — **anchor what is INVARIANT to an edge, not to a
-  variable-width neighbour**: the page title varies per route, the repo
-  name never does, so hard-right it and it stops being shoved about by a
-  change unrelated to it. Worth a `watch-design.md` rule, since #110
-  animates travel and anything that need not move should not · the name
-  ("dreamwork watch") is OPEN and his — and #153 independently dropped
-  the app name from the tab title, so put the two to him together ·
+- **#172** — Put project identity prominently in the title section · P1 ·
+  implementation · 25m · **human via watch `do-next` 14:01** · show the
+  target project name (`ud-dreamwork` here) in a materially more prominent
+  position within the visible title section; queued immediately after #217
+  because both modify the dashboard shell/CSS · keep the earlier invariant
+  principle: **anchor what is invariant to an edge, not to a variable-width
+  neighbour** — the route title varies while repo identity does not, so the
+  identity must not be shoved about by unrelated route changes · document the
+  rule in `watch-design.md`; deterministic desktop/mobile captures and
+  visual-review-and-fix convergence required · do not infer first-sight
+  provenance from this later human priority update (#216) · #153's browser-tab
+  title remains related but does not broaden this visible-title increment ·
   **read his references first**: `grok-build`, `codename-thin` at
   `ssh://x-game:src/codename-thin`, on another machine
 - **#171** — Ascii vignette at the screen edge, from the loop's own
@@ -937,6 +1006,14 @@ Next id: **297**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#299** — Suppress expected peer-disconnect tracebacks at the HTTP
+  handler boundary · P2 · origin: **human** · landed 2026-07-27 · exact
+  `/mtime` BrokenPipe reproduced through the real handler red (8 failures);
+  `Handler.handle` now closes quietly only for pipe/reset/aborted departures,
+  never retries, while unrelated OS/application errors still escape · live five
+  RST-cancel poll proof, focused 5 + 8 subtests, full 587 + 54 subtests,
+  Standards + Spec PASS · deployed to :35110 PID 2367866 · `fe0351d`
 
 - **#216** — Parse first-seen origin in ledger history · P2 · origin:
   **loop** · landed 2026-07-27 · `task_origins.py` walks only ledger-touching

@@ -2,12 +2,15 @@
 """Unit tests for watch.py's data collector. Run: python3 test_watch.py"""
 
 import contextlib
+import errno
 import http.server
 import inspect
 import io
 import json
 import os
 import re
+import socket
+import struct
 import tempfile
 import threading
 import time
@@ -207,6 +210,121 @@ class TestRequestAuthorityHTTP(unittest.TestCase):
             rows = [json.loads(line) for line in handle]
         self.assertEqual([row["req"]["text"] for row in rows],
                          ["trusted LAN words", "CLI words"])
+
+
+class FakeConnection:
+    """Just enough socket for StreamRequestHandler.setup: the request bytes
+    in one direction, and a `sendall` that accepts `fail_after` writes then
+    raises `exc` — a peer that leaves after the headers but before the body
+    (#299). (wbufsize == 0, so BaseHTTPRequestHandler writes via sendall.)"""
+
+    def __init__(self, request_bytes, exc, fail_after=1):
+        self._rfile = io.BytesIO(request_bytes)
+        self.exc = exc
+        self.fail_after = fail_after
+        self.writes = []
+
+    def makefile(self, mode, _bufsize=-1):
+        assert "r" in mode
+        return self._rfile
+
+    def sendall(self, data):
+        self.writes.append(data)
+        if len(self.writes) > self.fail_after:
+            raise self.exc
+
+
+class TestPeerDisconnect(unittest.TestCase):
+    """#299: a browser cancelling a poll mid-response is expected client
+    behaviour. It must not escape `handle` into socketserver's traceback
+    printer — and every unrelated error still must."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.target = make_target(self.tmp.name)
+        self.authority = watch.RequestAuthority(["127.0.0.1"], 9)
+        self.handler_cls = watch.make_handler(self.target,
+                                              authority=self.authority)
+
+    def run_request(self, exc, path="/mtime", fail_after=1):
+        # StreamRequestHandler.__init__ runs setup/handle/finish, so an
+        # exception escaping the exchange surfaces right here.
+        request = FakeConnection(
+            f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1:9\r\n\r\n".encode(),
+            exc, fail_after=fail_after)
+        handler = self.handler_cls(request, ("127.0.0.1", 43210),
+                                   unittest.mock.Mock())
+        return handler, request
+
+    def test_cancelled_mtime_poll_is_quiet_and_closes(self):
+        handler, conn = self.run_request(
+            BrokenPipeError(errno.EPIPE, "Broken pipe"))  # must not raise
+        self.assertTrue(handler.close_connection)
+        self.assertIn(b"text/plain", conn.writes[0])   # real _send ran
+        self.assertEqual(len(conn.writes), 2)          # headers, body
+
+    def test_each_expected_disconnect_error_is_quiet(self):
+        cases = [
+            BrokenPipeError(errno.EPIPE, "Broken pipe"),
+            ConnectionResetError(errno.ECONNRESET, "reset"),
+            ConnectionAbortedError(errno.ECONNABORTED, "aborted"),
+        ]
+        for nr in (errno.EPIPE, errno.ECONNRESET, errno.ECONNABORTED):
+            plain = OSError("peer gone")
+            plain.errno = nr       # plain OSError carrying the exact errno
+            cases.append(plain)
+        for exc in cases:
+            with self.subTest(exc=repr(exc)):
+                self.run_request(exc)
+
+    def test_disconnect_during_error_response_is_quiet(self):
+        # 404 path: the very first (headers) write meets the departed peer.
+        self.run_request(BrokenPipeError(errno.EPIPE, "Broken pipe"),
+                         path="/nope", fail_after=0)    # must not raise
+
+    def test_unrelated_errors_still_escape(self):
+        for exc in (OSError(errno.ENOENT, "No such file or directory"),
+                    RuntimeError("boom")):
+            with self.subTest(exc=repr(exc)):
+                with self.assertRaises(type(exc)):
+                    self.run_request(exc)
+
+
+class TestPeerDisconnectLive(unittest.TestCase):
+    """The real server keeps serving across peers that RST mid-poll (#299)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.target = make_target(self.tmp.name)
+        probe = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+        self.port = probe.server_address[1]
+        probe.server_close()
+        authority = watch.RequestAuthority(["127.0.0.1"], self.port)
+        self.server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", self.port),
+            watch.make_handler(self.target, authority=authority))
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+
+    def test_repeated_cancelled_polls_leave_the_server_responsive(self):
+        host = f"127.0.0.1:{self.port}"
+        request = f"GET /mtime HTTP/1.1\r\nHost: {host}\r\n\r\n".encode()
+        for _ in range(5):
+            with socket.create_connection(("127.0.0.1", self.port),
+                                          timeout=5) as sock:
+                sock.sendall(request)
+                # RST, not FIN: the peer is gone before any response lands.
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                                struct.pack("ii", 1, 0))
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/mtime",
+                                     headers={"Host": host})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            self.assertTrue(response.read().strip())
 
 
 class TestLANCLI(unittest.TestCase):
