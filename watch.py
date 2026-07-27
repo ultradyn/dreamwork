@@ -1263,9 +1263,16 @@ STYLE = """<style>
   .cmdmore:hover .cmdmorebtn, .cmdmore:focus-within .cmdmorebtn {
     color:var(--accent); }
   /* no gap between icon and menu: the pointer must be able to travel from one
-     to the other without ever leaving .cmdmore, or the menu closes en route */
-  .cmdmenu { position:absolute; z-index:31; top:100%; left:0;
-    width:max(32ch,100%); padding:.3rem;
+     to the other without ever leaving .cmdmore, or the menu closes en route.
+     The menu is anchored to the ⋯'s RIGHT edge and grows left, because the ⋯
+     sits at the right end of the kinds row: a left-anchored menu grew right
+     past the viewport and — a `visibility:hidden` box is still LAID OUT, not
+     `display:none` — pushed a 122px horizontal scrollbar at phone width on
+     every route, palette open or shut (#312). `right:0` keeps it in bounds;
+     the clamp holds the preferred 32ch wherever it fits and never lets the
+     left edge cross the body's padding at any width. */
+  .cmdmenu { position:absolute; z-index:31; top:100%; right:0;
+    width:max(32ch,100%); max-width:calc(100vw - 2rem); padding:.3rem;
     background:rgba(11,15,25,.97); border:1px solid var(--border);
     border-radius:8px; box-shadow:0 14px 44px rgba(0,0,0,.55);
     backdrop-filter:blur(7px);

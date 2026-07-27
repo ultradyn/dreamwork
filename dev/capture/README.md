@@ -152,6 +152,13 @@ than once:
   eases in and dreams away, reduced motion does neither, and the ghost holds
   no address — driven over a real tick, because that is what the address
   would have cost.
+- `hfit` — no route scrolls the page sideways at phone width (#312). The
+  command menu lives in the persistent chrome and a `visibility:hidden` box
+  is still laid out, so a hidden `.cmdmenu` anchored at the ⋯ pushed a 122px
+  horizontal scrollbar at 390px on every route. At 390px it asserts
+  `documentElement.scrollWidth <= clientWidth` on each route (palette closed)
+  and on the dashboard with the menu open, and it asserts the palette and a
+  populated menu exist first — the check must not pass over an absent subject.
 
 Four of those build their own target and take an ephemeral port, ignoring
 the one they are handed: `health`, `dashboard`, `identity`, `motion`.
