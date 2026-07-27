@@ -1760,3 +1760,20 @@ this shape and convert opportunistically.)
   first reader; an assertion protects every future one.** Prefer having the test
   re-derive its own baseline over asking an author to promise they captured it right.
   (#367 lane, recorded by coordinator)
+- **A property that is a PERMISSION rather than a behaviour has no behavioural red,
+  so assert it structurally and keep the behavioural check as the regression net.**
+  Lane F's `F3` had to prove "only `replay` may cause a domain effect". The natural
+  test snapshots the managed files, runs `list`/`show`/`health`, and asserts
+  byte-identical — and it **cannot be red**, because read commands do not write
+  anyway: *"doesn't write"* and *"is forbidden to write"* produce identical file
+  bytes. The lane's first attempt at a red (route every command through the write
+  path) broke `F1`'s list test too, because list's success **is** the thing the guard
+  classifies, so it was not discriminating either. What made it discriminate: dispatch
+  the permitted commands by membership in `READ_COMMANDS` **upstream** of the guard, so
+  widening the guard to `return True` cannot reach them — and then assert the
+  classification itself, `{c for c in COMMANDS if _write_authorized(c)} == {"replay",
+  "purge"}`. **The two checks earn different places: the structural assertion is the
+  discriminating red, the behavioural snapshot is the net that catches the next person
+  who accidentally makes a read command write** (a cache, a log, an mtime touch).
+  Distinct from "assert the outcome, not the mechanism" — this is about properties that
+  are facts of the dispatch table rather than of any run. (#263 lane F)
