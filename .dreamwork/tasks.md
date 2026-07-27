@@ -24,9 +24,30 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **365**
+Next id: **366**
 
 ## Open
+
+- **#365** — The component check guards one component out of about twenty · P3 ·
+  review tooling · origin: **loop** · 20m · reported by dreamer-264-boundary as report-only,
+  and its restraint was right: `review_artifact.COMPONENT_CHILDREN` has exactly one entry
+  (`.fact`) because rules for the others would be guessing at usage nobody has measured —
+  which is the same complaint the check itself answers · **so the work is measurement first,
+  rules second**: for each candidate component, count its real usage across all 15 artifacts
+  and only then write the rule the measurement supports · the two obvious next candidates are
+  named because they appear in every recent artifact: `.summary-line` (two `<span>`s) and
+  `.choice`/`.answer` · two adjacent findings from the same lane, both cheap and neither
+  urgent: `protected-service-boundary-288.html` carries **one `.fact` with zero `.facts`
+  containers** (verified independently: `containers=0 facts=1`), so it gets the padding and
+  background with no grid around it — invisible to a source-level check because it is one of
+  the untemplated dozen with no source at all, and it belongs on whatever eventually migrates
+  them · and a fatal violation short-circuits before the grid warning, so a file with both
+  faults shows the error on one run and the warning on the next: correct priority, worth
+  knowing so it is not read later as a bug
+  · one real constraint to record rather than let someone discover: `<br>` as a direct child of
+  a component is now refused, because the rule is *every direct child carries a documented
+  class* rather than a tag blocklist. No existing file does it, and the strict form is what
+  catches the real defect without a maintained exemption list
 
 - **#364** — The #346 artifact still asks four questions he has already answered · P2 ·
   docs/accuracy · origin: **loop** · 15m · `.dreamwork/review/src/task-store-schema.html` is
@@ -424,6 +445,31 @@ Next id: **365**
   #325's twelve are migrated · red-prove with #346's original five-item nav restored:
   assert no rendered nav item's text differs from its source text by an inserted break,
   which is checkable without a screenshot
+  · **DIAGNOSED PRECISELY, dreamer-264-boundary 2026-07-28 02:35, coordinator verified**: it
+  is **one missing declaration**. `.topactions a` (`review-artifact.template.html:120`) has
+  `display:inline-flex;align-items:center;min-height:44px;padding;border;border-radius` and
+  **no `white-space:nowrap`** — while `.identity b`, `.identity span`, `.status`, `.framebar b`
+  and `.sgbtn` all carry it. The nav anchor is the single interactive text element in the top
+  rail without it, so **any** two-word label breaks no matter how correctly the source is
+  authored
+  · **that settles where the fix goes and where it does NOT.** It is a template defect, not a
+  source defect, so no source-level lint can reach it — the only thing a source check could do
+  is forbid multi-word labels, which treats the symptom and constrains every future author for
+  the sake of a missing CSS line. The sibling work that landed tonight
+  (`review_artifact.component_violations`, `40a1d71`) is the source-level half and is
+  deliberately not this
+  · **and the guard belongs in `dev/capture/`, not in `review_artifact.py`** — structurally,
+  not by preference: that module is stdlib-only and renders nothing, so `getClientRects()` is
+  unavailable to it even in principle, and pytest here has no browser either · spec, from the
+  dreamer and worth keeping because it arrives already red: build a fixture source whose nav
+  carries a deliberately long multi-word label, serve it through the existing `(OUT, PORT)`
+  contract at `/reviewraw` rather than inventing a second one, load it at three widths, and
+  assert on every **visible** nav anchor that `getClientRects().length === 1` (a mid-word break
+  gives 2) plus `scrollWidth === clientWidth` on the document · adopt `report.mjs` (#324/#334's
+  idiom) rather than hand-rolling an exit handler
+  · **blocked on `dev/capture/` being free** — dreamer-284-252 holds it. The one-declaration
+  template fix should land in the same commit as the guard, since touching the frame rebuilds
+  all 15 artifacts and wants to happen once
 
 
 - **#346** — Design #294's task entity schema and read-only CLI surface, the half that
