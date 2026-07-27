@@ -711,3 +711,55 @@ Standing shape, unchanged by this batch: `glm52` for work whose difficulty is *j
 under a trap (a format decision, a not-weaker argument, a coupling nothing announces);
 `grok` for work whose difficulty is *volume* (a design sweep, a measurement pass, a
 mechanical transform) and now for anything needing eyes.
+
+## Correction: this document was wrong about its own central number
+
+I asked the `#264` evidence lane to check this document against `git log` rather than restate
+it, and said that finding it wrong would be one of the more valuable things it could do. It
+did, twice.
+
+**1. "Thirteen lanes" conflated cumulative dispatches with concurrency, and this document's
+tally drifts.** The lane traced it: *"nine"* at 06:56 → *"ten"* at 07:15 → *"thirteen"* in the
+sections above. Git does not label lanes, so the honest figures are **~17 lane-instances
+dispatched** across the session (**~12** counting `#263`'s sub-lanes as one) and **peak
+concurrency 5**, at 06:30 — a number this document itself records and which I then wrote past.
+
+The correction matters beyond tidiness, because **every claim above of the form "thirteen
+lanes and nothing caught X" is really "five concurrent at most, seventeen over four hours"**.
+Sequential lanes sharing a tree are a *much* weaker version of the experiment `#264` asks
+about than five simultaneous ones, and I had been quietly claiming the stronger version. The
+structural findings survive — a fixture-based guard still cannot see the real page — but the
+*scale* evidence is thinner than I wrote.
+
+The mechanism of the error is worth more than the error: I was updating a running count from
+memory, one section at a time, with no single place holding it. **A number that appears in
+prose three times and in a record zero times is not a measurement.**
+
+**2. The `git commit --only` warning I put in six briefs is not evidenced.** I have been
+writing that `--only` *"would still sweep in a concurrent lane's uncommitted work in the same
+file"* and attaching *"that happened in this tree today"*. The lane looked: **no instance
+found.** The one index sweep, `12f47e3`, was a plain `git commit` — that is `--only`'s
+**absence**, not its failure. The hunk-level claim is true as *mechanism* (`--only` isolates
+paths, and a path is not a hunk) but I presented a deduction as an observation. Two things
+did happen and I should have cited those instead: a bare `git commit` burying a staged file,
+and `--only <directory>` silently skipping untracked files (`d77630e`, `c036540`, three
+briefs left uncommitted).
+
+## The result that most changes what to build, and it kills an option
+
+The lane's answer to *"what does the evidence rule out?"* is the most useful sentence produced
+about `#264` today:
+
+> **Record-level concurrency primitives — locks, CAS, leases, SQLite, per-record spools —
+> would have prevented zero of the actual damage, because no two lanes ever wrote the same
+> record.**
+
+Zero concurrent-write instances across every writer and 121 commits in the window. The
+single-writer ledger and the append-only inbox both held **by construction**. What actually
+caused damage was shared **CPU** (load-starved guards producing deterministic false reds),
+a shared **working tree** (dirty-file pollution and one index sweep), a shared **registry**
+(one lane's new file reddening others' baselines), and **one overloaded single-writer file**.
+
+So the evidence points at **modularity, not a concurrency mechanism** — and it names the
+file: `watch.py`, with six tasks queued behind it. That is a conclusion I would not have
+reached from inside the fan-out, because from here the problem *feels* like contention.
