@@ -1016,6 +1016,73 @@ those are properties of *this skill's* files rather than a target's. Divergence
 from the reference is possible but never silent: it costs one named entry in
 `TEMPLATE_ONLY`, `DECLARATION_DIVERGENCES` or `TOKEN_DIVERGENCES` there.
 
+## `.dreamwork/review/src/<slug>.html` — essential marks (#367)
+
+His idea, and his analogy decides the design: *"those little thin postits that
+lawyers use to indicate key points and where you need to sign."* A lawyer's flag
+marks **where you must act**; it is not a table of contents. So marks are a
+different axis from `nav`, which is structure — conflating them produces a second
+table of contents, which is not what he asked for.
+
+**Written before the implementation, deliberately**, because the builder and the
+guard both read this and a shape invented twice is a shape that drifts.
+
+**The word "mark" is already taken in this file's own vocabulary** and the
+collision is worth naming before it costs someone an hour: `parse_source` calls
+its `<!--#name-->` **block markers** "marks" in the code. Those are unrelated.
+This section is about *essential marks* — flagged passages — and the source
+syntax below deliberately does not reuse the `<!--#…-->` form.
+
+**Source form.** A mark is declared **on the block it flags**, not in a separate
+list, so it cannot drift from the passage it points at:
+
+```html
+<section aria-labelledby="crux-t" data-mark="the cliff">
+```
+
+- **`data-mark="<label>"`** on any element inside `body`. The label is what the
+  tab reads.
+- **Document order is mark order.** There is no explicit index, because an index
+  is a second thing to keep in sync and the reading order is the order he wants
+  to walk them in.
+- **A mark on an element with no stable id is an error** — next/prev must be able
+  to land on it, so the builder assigns nothing implicitly and refuses instead.
+
+**The count, per his ruling of 2026-07-28 05:35** — he overrode the loop's
+proposal of five-and-refuse:
+
+- **Soft cap 7:** the builder **warns** at 8 or more, through the existing `warn`
+  advisory channel (the one that reports "documented component" findings), not by
+  refusing.
+- **Hard cap 15:** the builder **refuses**. Fifteen flags is wallpaper, and his
+  whole point was that five help and fifty do not.
+- The band between them is deliberate: a refusal at the number where his judgement
+  and the loop's differ makes the tool argue with him.
+
+**The label, per the same ruling** — he overrode a ~12-character cap with builder
+truncation:
+
+- **Up to ~6 words**, rendered as a **two-line tab at a smaller text size**. The
+  tab grows to fit the label; **nobody truncates.**
+- **A measurement is owed before this is built**, and it is the same class of thing
+  that already refuted three designs for this feature: a two-line tab is taller and
+  possibly wider than the tab the geometry was measured against, and the gutter
+  outside `.wrap` is **16px at every viewport from 1120px down**. Measure ~6 words
+  at two lines against that gutter. **If it does not fit somewhere, report the
+  measurement** — do not quietly reintroduce the cap he just removed.
+
+**The safety property that makes this shippable, and the first thing to build.**
+All sixteen existing artifacts declare no marks. So:
+
+> **A source that declares no `data-mark` must render output that differs from
+> today's only in `TEMPLATE_STAMP`.**
+
+The stamp necessarily changes, because `template_stamp()` digests the template's
+bytes and the template is what gains the mark machinery. Everything else must be
+byte-identical. That is the check to write **red first**, before any tab exists: it
+is what lets the frame change land while no artifact uses it, and it is the
+difference between a frame change and a sixteen-file rewrite.
+
 ## Why this file exists rather than a paragraph in SKILL.md
 
 SKILL.md says what each file *means* and when to write it. That is the
