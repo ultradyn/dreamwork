@@ -1275,8 +1275,17 @@ Next id: **361**
   this waited on is settled and its own question is now answerable: journal-vs-outbox for task
   transitions, *"but never dual-write two fallible truths"* · the approval covers the
   CONTRACT, not #263's implementation, so this design may depend on the journal's shape but
-  must not assume the journal exists yet · **next-up**: it is the only thing between the
-  approval and #294, and #294 is his stated blocker
+  must not assume the journal exists yet · it is the only thing between the approval and
+  #294, and #294 is his stated blocker
+  · **IN PROGRESS 2026-07-28 01:47** (next-up mark cleared on start) — dreamer-264-boundary in
+  `.worktrees/264-transition-boundary`, owning only `.dreamwork/docs/plans/task-transition-boundary.md`
+  and its review artifact source · scoped to his 14:11 amendment alone, not the whole research
+  brief: the journal-vs-outbox decision and the materialised-view boundary, design and ask only
+  · the crux handed to it, to verify rather than accept: #263's `Transition` record is the
+  **receipt's** lifecycle, but **most task transitions have no receipt** — the loop starts a task
+  on its own tick, a dreamer is assigned files, a task is unblocked by another landing. So
+  sharing the journal means events with no `receipt_id`, and not sharing it means proving
+  single-truth across two stores. That asymmetry is what decides his question
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
