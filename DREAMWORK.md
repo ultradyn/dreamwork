@@ -89,6 +89,19 @@ dreamwork-version: 5853e1789929
   writes the brief itself.
   · he asked for `xdg-open` on the briefs for #263 specifically, after
   dispatch — a one-off review, not a standing routine.
+  · **and a brief must name a steering channel**, learned by not having one
+  (2026-07-28 06:45): five lanes were dispatched with provably disjoint files, load
+  hit 139 on 16 cores because one lane's brief correctly told it to generate load
+  while another was measuring per-frame motion, and **I could not tell either of
+  them.** A `ccc` lane reports on exit and reads nothing while running. So every
+  brief for a lane longer than a few minutes names a file the lane **re-reads
+  between increments** — the skill's `relay.py` writes it, and its rule is that
+  steering takes two acts, write then wake. The thing worth saying mid-flight is
+  usually something neither party could have known at dispatch, which is exactly
+  why the channel has to exist before it is needed.
+  · **disjointness must cover the environment, not only files.** The loop's stated
+  invariant is disjoint *files*; CPU, guard ports and the wall clock are shared, so
+  a lane that consumes one is scheduled against the lanes that *measure* it.
 - Cadence & comms: brief updates; `attn` (TTS) only for blockers,
   questions, and notable milestones. **Dreamwork decisions never use the
   harness Ask User Question tool** (human-set 2026-07-26): write the ask to
