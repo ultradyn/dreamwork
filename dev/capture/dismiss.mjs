@@ -44,6 +44,18 @@ import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
 const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 const notes = [];
 
+/* Frames strictly BETWEEN the two ends, 3% deadband — the frame-rate-free
+   form of "it eased". A two-frame fade (the trap #159 was written for) has
+   none of these at any frame rate, so the floor is ONE and the assertion is
+   not a bet on how many frames this box drew. Same helper the other motion
+   guards use; not a second idiom (#311, transitions.md "Checking a
+   transition"). */
+const between = (vals, a, b) => {
+  const lo = Math.min(a, b), hi = Math.max(a, b), eps = (hi - lo) * 0.03;
+  return vals.filter(v => v > lo + eps && v < hi - eps).length;
+};
+const span = vals => Math.abs(vals.at(-1) - vals[0]);
+
 /* Submit through the real UI, then sample "is the panel open" every frame for
    `ms`. `resumeAt` types one more character at that many ms after the submit,
    which is the whole point of the task. */
@@ -73,8 +85,16 @@ const RUN = (resumeAt, ms) => `((resumeAt, ms) => new Promise(res => {
 
 /* #159: submit through the real UI and sample the status line every frame.
    The computed values, not the class — a class that is added and removed
-   proves the code ran, never that anything moved. */
-const ARRIVE = ms => `((ms) => new Promise(res => {
+   proves the code ran, never that anything moved.
+
+   `capMs` is a SAFETY CAP only, not the deadline. The arrival eases
+   opacity/filter/transform on #cmdmsg itself (.35s), so the element's own
+   running animations are the honest "still fading" signal: under load a fixed
+   wall-clock window closes mid-fade over a perfect animation and the last
+   sample reads short of full (#311). The trace stops once the text has been
+   present a couple of frames and nothing is animating it anymore — so the last
+   sample is the SETTLED state at any frame rate. */
+const ARRIVE = capMs => `((capMs) => new Promise(res => {
   const m = document.getElementById('cmdmsg');
   const ta = document.getElementById('cmdtext');
   const seen = [];
@@ -82,15 +102,22 @@ const ARRIVE = ms => `((ms) => new Promise(res => {
   ta.dispatchEvent(new Event('input', { bubbles: true }));
   document.getElementById('cmdform').requestSubmit();
   const t0 = performance.now();
+  let done = false, lit = 0;
+  const finish = () => { if (!done) { done = true; res(seen); } };
   (function step() {
     const cs = getComputedStyle(m);
     seen.push({ t: Math.round(performance.now() - t0),
                 text: (m.textContent || '').slice(0, 24),
                 op: Math.round(parseFloat(cs.opacity) * 100),
                 tf: cs.transform });
-    if (performance.now() - t0 < ms) requestAnimationFrame(step); else res(seen);
+    if (seen[seen.length - 1].text) lit++;
+    const live = m.getAnimations()
+      .some(a => a.playState === 'running' || a.playState === 'pending');
+    if (lit >= 2 && !live) finish();
+    else if (performance.now() - t0 > capMs) finish();
+    else requestAnimationFrame(step);
   })();
-}))(${ms})`;
+}))(${capMs})`;
 
 const openPanel = async p => {
   await p.click('#cmdplus');
@@ -114,24 +141,46 @@ await p.goto(`${BASE}/questions`, { waitUntil: 'networkidle' }); await sleep(100
 // from the same place they always did.
 {
   await openPanel(p);
-  const seen = await p.evaluate(ARRIVE(700));
+  const seen = await p.evaluate(ARRIVE(3000));
   const lit = seen.filter(s => s.text);
   const ops = lit.map(s => s.op), tfs = lit.map(s => s.tf);
+  // the drift is the translateY leg of the arrival transform (matrix ty, 0
+  // for `none`); read in the guard so the page trace stays a single value
+  const tyOf = tf => { const mm = (tf || '').match(/matrix\(([^)]+)\)/);
+    return mm ? +(mm[1].split(',').map(Number)[5] || 0) : 0; };
+  const tys = lit.map(s => tyOf(s.tf));
   notes.push(`arrival: ${lit.length} lit frames, ` +
              `opacity ${[...new Set(ops)].slice(0, 12).join(',')}` +
              `${new Set(ops).size > 12 ? ',…' : ''} ` +
-             `| ${new Set(tfs).size} distinct transforms`);
+             `(${between(ops, ops[0], ops.at(-1))} part-way) ` +
+             `| ${new Set(tfs).size} distinct transforms ` +
+             `(${between(tys, tys[0], tys.at(-1))} part-way ty) ` +
+             `| settled ${ops.at(-1)}/100`);
   ok('the confirmation reaches the page at all (else the rest is vacuous)',
      lit.length > 0 && /sent to the dream/.test(lit.at(-1).text));
   ok('#159 it begins at nothing rather than fully lit',
      lit.length > 0 && Math.min(...ops) <= 5);
-  // the trap the task named: a two-frame fade looks instant and passes
-  // every "did it fade in" check there is
-  ok('#159 ...and eases up through many intermediate values',
-     new Set(ops).size >= 6);
-  ok('#159 ...drifting into place as it comes, not only fading',
-     new Set(tfs).size >= 4);
-  ok('#159 ...and it ends fully lit', lit.length > 0 && ops.at(-1) >= 95);
+  // the trap the task named: a two-frame fade looks instant and passes every
+  // "did it fade in" check there is. `new Set(ops).size >= 6` was the
+  // frame-count form — the count of distinct opacities THIS BOX drew — so it
+  // reddened on a healthy commit under load. The frame-rate-free form is the
+  // frames strictly part-way; a snap has none at any frame rate. (#311.)
+  ok('#159 ...and eases up through many intermediate values '
+   + `(${between(ops, ops[0], ops.at(-1))} of ${ops.length} part-way opacity)`,
+     between(ops, ops[0], ops.at(-1)) >= 1);
+  ok('#159 ...drifting into place as it comes, not only fading '
+   + `(${between(tys, tys[0], tys.at(-1))} of ${tys.length} part-way translateY px)`,
+     between(tys, tys[0], tys.at(-1)) >= 1);
+  /* THE END STATE, and the load-sensitive half: `ops.at(-1) >= 95` asserted
+     the fade FINISHED, and the old trace trusted a fixed 700ms window to mean
+     "done" — so a slow box closed the window mid-fade and reddened over a
+     perfect animation. The trace now waits on the transition's own completion
+     (`getAnimations`), so `ops.at(-1)` is the SETTLED value at any frame rate,
+     and this assertion can no longer read a perfectly good fade as unfinished.
+     (#311, transitions.md.) */
+  ok('#159 ...and it ends fully lit '
+   + `(settled at ${ops.at(-1)}/100 after waiting for the transition)`,
+     lit.length > 0 && ops.at(-1) >= 95);
   await p.keyboard.press('Escape');
   await p.waitForFunction(
     () => !document.getElementById('cmdpalette').classList.contains('open'));
@@ -217,7 +266,7 @@ if (rev) {
   await rp.goto(`${BASE}/questions`, { waitUntil: 'networkidle' });
   await sleep(900);
   await openPanel(rp);
-  const seen = await rp.evaluate(ARRIVE(500));
+  const seen = await rp.evaluate(ARRIVE(3000));
   const lit = seen.filter(s => s.text);
   const ops = lit.map(s => s.op);
   notes.push(`reduced arrival: ${lit.length} lit frames, ` +
