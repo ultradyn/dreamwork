@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **376**
+Next id: **377**
 
 ## Open
 
@@ -1976,6 +1976,27 @@ Next id: **376**
   keeps producing readable `"` · red-first: the proof is a `p` containing `"` and an
   assertion about the parsed DOM's attribute set, not about the HTML string, since
   the string looks plausible either way · related: **#375**
+- **#376** — A guard given one argument treats the port as its output directory · P2 ·
+  dogfood/tooling · origin: **loop** · 20m · **found by two empty directories named
+  `39898` and `39899` sitting in the repo root**, created 2026-07-25 09:46 and removed
+  today · every guard opens `const OUT = process.argv[2], PORT = process.argv[3] ||
+  '<default>'` and then `mkdirSync(OUT, {recursive:true})`, so `node draft.mjs 39898`
+  — a port passed where the outdir belongs, which is the natural one-argument mistake
+  — creates a directory *named after the port* in the cwd and then screenshots into
+  it · **measured: 52 guards read `argv[2]` and 0 of them validate it** (`grep -l
+  'process.argv\[2\]' dev/capture/*.mjs | wc -l` → 52; no guard tests it, names a
+  usage string on failure, or rejects a digits-only value) · the zero-argument case
+  is loud (`mkdirSync(undefined)` throws), which is why only this shape survived
+  · the damage is small and the signal is bad: the junk is named like a port, in a
+  repo where ports are meaningful and two ranges are reserved, so it reads as a
+  server artifact rather than a typo — and it sat for three days without anyone
+  asking what made it · rec: one shared `outdir(argv)` helper in `dev/capture/` that
+  refuses a missing or all-digits `argv[2]` with the usage line, and every guard
+  calls it — a sweep, not 52 decisions · **blocked on `dev/capture/` being free**:
+  dreamer-284-252 holds it and a ccc lane is adding one file there, and a 52-file
+  sweep would conflict with both · red-first is easy and worth doing properly: run a
+  guard with a single port-shaped argument and assert no directory by that name
+  appears
 - **#375** — Focus is indistinguishable from hover on `.pipbtn`, and the fallback
   ring computes to near-black · P3 · bug/a11y · 20m · origin: **loop** · found by
   the fileview dreamer, out of its scope · `.pipbtn:hover, .pipbtn:focus-visible {
