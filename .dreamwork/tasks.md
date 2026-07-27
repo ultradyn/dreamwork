@@ -24,9 +24,44 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **340**
+Next id: **342**
 
 ## Open
+
+- **#340** — His answer renders as raw prose in `## Answered`, tag showing, on more
+  than half of them · **P1** · UI correctness · origin: **loop** · from #254's design
+  agent, verified independently by the coordinator · in `## Answered` the parser runs
+  with `lift_answer=False`, so a retained `- **Answer (via watch, …):**` sub-bullet
+  falls into the entry **body** and `mdB` renders it as a `·` item with its raw author
+  tag visible as text and **no `you` label** — his words lose their attribution on the
+  page while looking like loop prose · **measured on the live file at `0f9d753`: 17 of
+  31 answered entries** (~55%), where the agent reported 15 of 29 before tonight's four
+  folds — same defect, count moves with the file, so the check must derive it at
+  runtime and never pin a literal · this is the SAME visual defect as the screenshot he
+  filed #254 about, on the more-travelled path, and #109 already made mis-attributed
+  authorship a correctness matter rather than a cosmetic one · the fix is reportedly one
+  `lift_answer` argument, which is exactly why it must not be done blind: `## Answered`
+  also carries the `→ answered` resolution head that `answered_at()` reads, so lifting
+  the bullet must not create a second thing able to disagree with it · red-prove with a
+  real answered entry and assert at runtime that the `you` label appears AND that the
+  raw tag does not
+
+- **#341** — Two answers on one OPEN entry silently keep only the last · P2 ·
+  reliability · origin: **loop** · from #254's design agent · `_parse_entries`
+  overwrites `cur["answer"]` and resets `answer_at`, so a second
+  `Answer (via watch, …)` bullet on an entry in `## Open` discards the first
+  answer's words from every surface · **coordinator correction, and it changes the
+  priority**: the witness the report cited (the two byte-identical `rec` bullets at
+  18:48) is in `## Answered`, where retaining both is DOCUMENTED behaviour and the
+  `→ answered` head carries the resolution — so that entry is not evidence of loss ·
+  measured at `0f9d753`: **0 open entries currently have two answers**, so the defect
+  is **latent, not active** · it stays P2 rather than being dropped because #274 is the
+  thing that reaches it: duplicate delivery is what puts two byte-identical answer
+  bullets on one entry, it has been witnessed twice (17:48 and 18:48:53), and on an
+  OPEN entry the second would overwrite the first · so #341 and #274 are one story and
+  should be fixed with a shared fixture · red-prove by constructing the open-entry case
+  the live file does not contain, and assert the precondition that both answers differ
+  in text, or the check cannot tell overwriting from idempotence
 
 - **#339** — Syntax highlighting for code blocks in the review-artifact template ·
   P2 · review tooling/visual · origin: **human** · **human via watch `add-idea`
@@ -1005,6 +1040,19 @@ Next id: **340**
   R1–R4 dashboard answer** · proposal approval is not implementation authority;
   implementation remains gated on #263 prove-applied, WorkerAdapter proof, #239
   and consumption of landed #266 plus #269/#271
+  · **human via watch 2026-07-27 23:24**: *"we should use the cli only to interact
+  with topic chats. Whatever directory they are in, we need an AGENTS.md (and
+  CLAUDE.md symlinked to it) that specify to always use the dreamwork cli to
+  interact with the topic chats."* · so chat storage is reached ONLY through the
+  `dreamwork` CLI — no agent reads or writes those files directly — and the
+  prohibition is **enforced where it is discoverable**, by an `AGENTS.md` in the
+  storage directory with `CLAUDE.md` symlinked to it, so an agent that wanders in
+  meets the rule instead of having to have been told · **this is the same seam he
+  approved for #287** (touch tasks only through the CLI, never the file) now stated
+  as a general pattern, and it is the reason #294's CLI is a dependency of this
+  rather than a parallel effort · the guard-by-documentation half is cheap and worth
+  copying: a directory that explains how to touch it survives agents who never read
+  the plan
 
 - **#228** — Unify project dashboard settings · P2 · idea · 30m ·
   origin: **human** · implication of **human via watch 12:49**: all

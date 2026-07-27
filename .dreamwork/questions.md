@@ -2,6 +2,45 @@
 
 ## Open
 
+- **P1 · 2026-07-27 — #254: the design you just approved will not change the card
+  you complained about. Which way do you want it?** Artifact:
+  `.dreamwork/review/note-reply-threading-254.html`; spec:
+  `.dreamwork/docs/plans/note-reply-threading-254.md`.
+
+  You approved N1 at 23:03 and it is written up as approved. But the agent that wrote
+  it checked its own design against your actual screenshot and found it does nothing
+  there — and it is right. Verified.
+
+  Why: N1 roots the branch at **your Answer**, and that question has no Answer at
+  all. It has a note from you and a reply from the loop. Your own tie-breaker
+  ("if no root exists, keep the note top-level rather than guessing") then says:
+  leave it flat. Which is exactly how it looks today.
+
+  There was a second, separate bug in that card, and it is already fixed: the loop had
+  written its reply with a tag (`Answer (loop, …)`) that the parser does not recognise,
+  so it was not treated as a reply at all — it fell into the question's body and
+  rendered above the note it was answering. That one is repaired in the file.
+
+  So the remaining question is what should happen when **the loop replies to something
+  and you never answer it** — which is the common shape, and the shape of your
+  screenshot.
+
+  Rec **R1: add a loop resolution tag.** Today `Answer (via watch, …)` is *yours* — the
+  page writes it when you answer, and there is no equivalent the loop can write. Give
+  the loop one, and N1 works on your card unchanged, because now there is a root to
+  hang the branch from. Costs one recognised tag in `file-formats.md`.
+
+  **R2: let a loop reply become the root when you have not answered.** One line, fixes
+  your card immediately — but it inverts on the very common case where the loop asks
+  *you* a clarifying question and you answer it: the loop's question becomes the root
+  and your answer becomes a reply underneath it, which reads backwards.
+
+  **R3: ship N1 as-is and accept that this card stays flat.** Honest, and the threading
+  still helps every question that does have an answer — but the thing you reported is
+  not fixed.
+
+  Answer `R1` (rec), `R2`, `R3`, or say what you would rather see.
+
 - **P2 · 2026-07-27 — #281 Q6, asked again in plain terms: should a task row on
   `/tasks` carry a button that points the loop at that task?** You said *"you'll
   need to explain what this means sorry"* — fair, the original asked in the
@@ -190,6 +229,10 @@
 
   Answer `Accept R1 as proposal direction only`, `Accept R2 with amendments:
   …`, `Choose R3; rework … and show …`, or `Choose R4; pause topic chats`.
+  - **Note (human, via watch, 2026-07-27 23:24):** we should use the cli
+    only to interact with topic chats. Whatever directory they are in, we
+    need an AGENTS.md (and CLAUDE.md symlinked to it) that specify to
+    always use the dreamwork cli to interact with the topic chats.
 
 - **P3 · 2026-07-25 — ud-dreamtask stage 6 (harvest): go, or leave it?**
   Stages 1-5 shipped: the skill exists, is installed and indexed, walks
