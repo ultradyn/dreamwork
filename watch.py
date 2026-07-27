@@ -663,6 +663,17 @@ STYLE = """<style>
   /* a card that has left the list entirely dreams away where it stood */
   .qaghost { position:absolute; z-index:3; pointer-events:none;
     transition:opacity .7s ease, filter .7s ease, transform .7s ease; }
+  /* the departure has two beats (#277): dissolve in place first, then leave.
+     Without this phase blur and travel begin together — the element is already
+     moving by the time it starts dissolving, so it reads as "mush then snap"
+     rather than "dissolve then leave". pregone softens the ghost where it
+     stands (blurs, dims, barely drifts) before .gone sends it away. The
+     shorter transition on this class is load-bearing: it overrides .qaghost's
+     .7s so the dissolve is its own fast beat, and when .pregone is removed the
+                     .7s returns for the departure. Commits skip this phase (line below). */
+  .qaghost.pregone {
+    transition:opacity .18s ease, filter .18s ease, transform .18s ease;
+    opacity:.8; filter:blur(8px); transform:translateY(-2px); }
   .qaghost.gone { opacity:0; filter:blur(6px); transform:translateY(-10px); }
   /* ...but WHICH WAY it dreams away follows the list it is leaving (#174).
      A question card's neighbours travel UP to close the gap it left, so a
@@ -4377,7 +4388,21 @@ function dreamAway(wrap, node, rect, clipTop) {
   if (clipTop > 0) node.style.clipPath = `inset(${Math.round(clipTop)}px 0 0 0)`;
   wrap.appendChild(node);
   void node.offsetWidth;
-  node.classList.add('gone');
+  // Two beats (#277): dissolve in place first (.pregone, 180ms), then leave
+  // (.gone, 700ms). Removing .pregone restores .qaghost's .7s transition for
+  // the departure leg, and the browser retargets from the dissolve's mid-values
+  // to .gone's targets — so the two beats chain continuously. Commits are
+  // excluded: their gesture is the grow-and-fall (line 677), not a standing
+  // dissolve, and pregone's 2px upward drift would fight the 14px fall.
+  if (node.classList.contains('commit')) {
+    node.classList.add('gone');
+  } else {
+    node.classList.add('pregone');
+    setTimeout(() => {
+      node.classList.remove('pregone');
+      node.classList.add('gone');
+    }, 180);
+  }
   setTimeout(() => node.remove(), 1000);
 }
 /* the same departure idiom for a subtree that has just left the layout but is
