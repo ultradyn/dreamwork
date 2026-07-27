@@ -2822,6 +2822,10 @@ async function sendAnswer(key) {
   // confirming a write that did not happen is the one thing worse than the
   // 409 itself (#136)
   if (!res || !res.ok) { qaFail(card, res ? res.status : 0); return; }
+  // the one moment it is safe to forget (#163's rule, one surface over): the
+  // answer landed, so its draft must not survive to reappear as a thought he
+  // already sent. A failed send returns above and keeps it.
+  dwDraft.clear(q.title);
   if (!card) return;
   holdRerenderUntil = Date.now() + MORPH_HOLD_MS;   // see ROUTER_JS
   // the morph IS the confirmation: the box reshapes into the answered state,
@@ -2862,6 +2866,10 @@ async function sendComment(key) {
   const res = await postComment(entry.title, val,
                                 key[0] === 'o' ? 'Open' : 'Answered');
   if (!res || !res.ok) { qaFail(card, res ? res.status : 0); return; }
+  // a note is a successful send too, and the box clears for the next one — so
+  // its draft clears with it, or the next re-render would restore the just-sent
+  // note into the empty box he meant to clear (#269, #163's rule).
+  dwDraft.clear(entry.title);
   holdRerenderUntil = Date.now() + MORPH_HOLD_MS;
   if (!card) { el.value = ''; return; }
   // #191, the same as an answer: the note lands INSIDE the card, so the card
@@ -3708,6 +3716,83 @@ function restoreAskState(saved) {
   try { box.setSelectionRange(saved.start, saved.end); } catch (e) {}
   if (saved.focus) refocus(box);
 }
+/* ── his drafted answer survives a RELOAD too (#269, acute) ──────────────
+   #118's snapshot carries a half-typed answer across a tick re-render in
+   MEMORY; it cannot carry it across a reload, and a reload is what `tick`
+   performs on him the moment the server's generation bumps (a restart, a
+   redeploy, an edit under --autoreload). He reported exactly that loss: a
+   draft gone "on an autoreload of a page", on the very review dock he
+   answers the loop from. The composer has its own store for the same
+   shape of loss (#163); this is the answer box's equivalent, by the SAME
+   rules, verbatim, so there is one policy for a half-typed thought and
+   not a second one:
+
+     - save on every `input`, no debounce (a debounce is a window in which
+       his words are lost, which is the thing this exists to prevent);
+     - restore after every render that creates the box, never only at load
+       (a restore that fires only on load leaves it empty after the next
+       re-render — the report, restated);
+     - clear on DURABLE SUCCESS only (close, blur and a rejected POST keep
+       it, which are the moments he most needs it back);
+     - a live box outranks storage (#118: what he is in the middle of
+       outranks anything stored);
+     - every storage call is wrapped, because private mode, a full quota
+       and a disabled origin all throw, and none is a reason he cannot
+       answer.
+
+   KEYED BY THE QUESTION'S TITLE — its `data-qid` identity, which is stable
+   across a re-render (the title is a property of the question, not its
+   position), across a re-sort (the title follows the question), and across
+   the re-index between sections that answering performs (`o3` becomes
+   `a0`, but the title is unchanged). The positional key (`o0`) is none of
+   those, which is why the card already carries `data-qid` separately from
+   `data-qkey` (#77/#266). Partitioned by `data.target` for the same reason
+   the composer is: two checkouts can share a basename and a draft surfacing
+   under the wrong loop is worse than a lost one. This is the seed of #269's
+   project-partitioned store; the per-question key shape is its first
+   consumer, not a throwaway. */
+const dwDraft = (() => {
+  const tgt = () => (typeof data !== 'undefined' && data && data.target) || '';
+  const key = id => { const t = tgt(); return t && id ? 'dw:adraft:' + t + ':' + id : ''; };
+  function save(id, value) {
+    const k = key(id); if (!k) return;
+    try {
+      if (value) localStorage.setItem(k, JSON.stringify({ t: value }));
+      else localStorage.removeItem(k);
+    } catch (e) { /* storage unavailable; the live box is unaffected */ }
+  }
+  function restore(id, el) {
+    const k = key(id);
+    if (!k || !el || el.value) return;   // a live box outranks storage (#118)
+    let d = null;
+    try { d = JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) {}
+    if (!d || typeof d.t !== 'string' || !d.t) return;
+    el.value = d.t;
+  }
+  function clear(id) {
+    const k = key(id); if (!k) return;
+    try { localStorage.removeItem(k); } catch (e) {}
+  }
+  return { save, restore, clear };
+})();
+/* Put a drafted answer back into every box a render just created. Runs AFTER
+   the in-memory snapshot (`restoreCardState`) has had its say, so the more
+   recent live state wins and storage is the backstop — which is the whole
+   point: #118 carries text across a tick, this carries it across the reload
+   #118 cannot. A box the snapshot already filled is a live box, and storage
+   does not overwrite it (dwDraft.restore's `el.value` guard). Called from
+   every DOM commit that recreates cards — `setContent` and the review-dock
+   `replaceWith` — not only at load, because a box that reappears on a tick
+   needs its draft back just as much as one that reappears on a reload. */
+function restoreAnswerDrafts() {
+  document.querySelectorAll('.qa[data-qid]').forEach(card => {
+    let title = null;
+    try { title = decodeURIComponent(card.dataset.qid); } catch (e) { return; }
+    if (!title) return;
+    const ta = card.querySelector('textarea[id^="qi"]');
+    if (ta) dwDraft.restore(title, ta);
+  });
+}
 function snapshotReviewFrame() {
   const frame = document.getElementById('reviewframe');
   if (!frame) return null;
@@ -3745,6 +3830,9 @@ function setLiveContent(html) {
     // different answer; the restore that follows this scrolls it and the
     // delegated listener catches that.
     syncDockFade();
+    // the new #qdock is a fresh node, so a half-typed answer is gone unless a
+    // draft is put back into it — the review-dock reload loss he reported (#269).
+    restoreAnswerDrafts();
     return;
   }
   setContent(html);
@@ -3793,6 +3881,12 @@ function setContent(html) {
   // #290: innerHTML destroys the arm bar nodes; resume shared pending (or
   // re-sync the committed selection) without inventing a new deadline.
   syncRunModeFromData();
+  // every navigate and every non-review tick commits through here, so this is
+  // the one place that puts a drafted answer back after the box is recreated —
+  // the in-memory snapshot does the same for a tick, but only storage survives
+  // the reload he reported (#269). Runs before paint, so the text is part of
+  // the first frame rather than arriving into an empty box.
+  restoreAnswerDrafts();
 }
 /* ── what the human did to a card survives a tick (#118, #111) ────────────
    The tick re-renders the question list through `innerHTML`, so every card
@@ -4263,6 +4357,22 @@ addEventListener('click', e => {
   e.preventDefault();
   // membership is fixed here, so the indicator slides rather than lands
   setCardMode(btn.closest('.qcompose'), btn.dataset.mode, false);
+});
+/* save a drafted answer as he types (#269 acute). Delegated on `document`
+   because the box is recreated by every re-render — a listener bound to the
+   node would die with it. Keyed by `data-qid` (the question's title identity),
+   resolved against the live card so the draft never lands under the wrong
+   question, and written through `dwDraft` so the composer's rules apply
+   verbatim: no debounce, wrapped storage, and a value of '' removes the key
+   (deleting his words is his act, unlike a close or a failed send). */
+addEventListener('input', e => {
+  const t = e.target;
+  if (!t || t.tagName !== 'TEXTAREA' || !/^qi[oa]\\d+$/.test(t.id)) return;
+  const card = t.closest('.qa[data-qid]');
+  if (!card || !card.dataset.qid) return;
+  let title = null;
+  try { title = decodeURIComponent(card.dataset.qid); } catch (er) { return; }
+  if (title) dwDraft.save(title, t.value);
 });
 /* opening or closing a disclosure INSIDE a card HIMSELF — the folded entry
    (#111) or its settled follow-up thread (#128) — is the same moment as the

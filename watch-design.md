@@ -56,7 +56,10 @@ carries a `+` command opener (steer the loop without a chat turn).
   the active view in place (no transition), including a `/review` question
   dock. The tick uses the router's `buildCurrent` seam rather than a partial
   route list; card drafts, selection, resize, scroll and focus ride the
-  existing stable-`data-qid` snapshot, while the artifact iframe browsing
+  existing stable-`data-qid` snapshot (in-memory, so it carries a draft
+  across a tick but not a reload — a `dw:adraft:` `localStorage` backstop
+  carries it across the reload instead, see "The answer box's half-typed
+  draft" below), while the artifact iframe browsing
   context stays mounted at its current URL and scroll. Dashboard review
   artifacts are ordered by filesystem mtime newest-first, with ascending
   filename as the deterministic exact-mtime tie-break. The displayed
@@ -1986,6 +1989,43 @@ restored" would dilute the only place he looks for a send confirmation.
 `dev/capture/draft.mjs` guards both directions — a check for "it survives"
 alone passes on a page that never forgets, and "it is cleared" alone passes on
 a page that never saves.
+
+**The answer box's half-typed draft survives a reload too** (#269, acute). The
+composer's store is one surface; the per-question answer box on the review dock
+is where he actually answers the loop, and it had only #118's IN-MEMORY snapshot
+— which carries a half-typed answer across a tick re-render but drops it on a
+reload, exactly the loss he reported ("never lose work on an autoreload of a
+page"). The reload is the one `tick` performs on him the moment the server's
+generation bumps (a restart, a redeploy, an edit under `--autoreload`), so it
+strikes mid-thought. `dwDraft` is the answer box's equivalent of the composer's
+store, by the *same* rules verbatim — save on `input` with no debounce, restore
+after every render that recreates the box (not only at load), clear on durable
+success only, a live box outranks storage, and every storage call is wrapped —
+so there is one policy for a half-typed thought, not two. It is the seed of
+#269's project-partitioned store rather than a throwaway: the first consumer.
+
+Keyed by the question's **title** — its `data-qid` identity, stable across a
+re-render (the title is a property of the question, not its position), a re-sort
+(it follows the question) and the re-index between sections that answering
+performs (`o3`→`a0`, title unchanged), where the positional key (`o0`) is none
+of those, which is why the card already carries `data-qid` separately from
+`data-qkey` (#77/#266). Partitioned by `data.target` for the same reason the
+composer is. The store runs *after* the in-memory snapshot has had its say, so
+the snapshot (the more recent live state) wins and storage is the backstop —
+which is the whole point: #118 carries text across a tick, `dw:adraft:` carries
+it across the reload #118 cannot. It restores silently and before paint, so the
+text is part of the first frame rather than arriving into an empty box (no new
+gesture — it is the same silent restore as the composer and as #118).
+
+The diagnosis mattered and is recorded for the agent that generalises this: the
+report named the *live re-render* as the probable cause, but reproducing both
+modes showed the tick was already covered by #118 and the **reload** was the
+real loss — a fix verified only against the tick would have left his reported
+bug untouched. `dev/capture/reviewdraft.mjs` drives *both* modes, proves the
+box was genuinely recreated (the textarea is tagged before the re-render and
+the guard asserts the tag is gone after, so a re-render that never happened
+cannot make the check pass over the bug), asserts the partition key at runtime
+from both `data.target` and `data-qid`, and checks the contract both ways.
 
 **Every submission is witnessed by the client too** (#175). #199 gave the
 *server* a verbatim record of everything it received; this is the witness for
