@@ -2117,3 +2117,27 @@ this shape and convert opportunistically.)
   wake"* is a P2 in my own voice.
   · So the operational addition is one line at report-reading time: **after folding a lane's
   findings about the task, re-read whatever it said about the loop and ask what would falsify it.**
+
+- **A red-proof injection is a write, and it needs the same ownership analysis as any other
+  write. I applied that rule to my own injections all session and never once to a lane's.**
+  · **Measured, as a near-miss:** `#398`'s brief told its lane to prove the red by *"removing the
+  `handoffs.md` mention from a brief added after the cutoff"*. There were exactly **two** briefs on
+  the new side of that cutoff, and **both belonged to lanes running at that moment** (`#397`,
+  `#392a`). So the instruction was not merely risky — it was **guaranteed** to write into a live
+  lane's brief. I watched `397-client-extraction-design.md` change to
+  `.dreamwork/NOT_THE_HANDOFF` and back. The lane restored it correctly; had `#397` re-read its
+  brief in that window it would have been told to append to a file that does not exist.
+  · **Why I missed it, and it is structural rather than careless:** I treat an injection as
+  *ephemeral* — snapshot, injure, restore — so it never entered the ownership column of the brief.
+  Every injection **I** performed today went into a file I had first checked was unheld
+  (`watch.py`, `lint.py`, `review_artifact.py`, the template). The reasoning was there; it simply
+  never crossed from my own actions into the instructions I write for others.
+  · **So the ownership list must cover what a red TOUCHES, not only what the deliverable
+  changes** — the same shape as [[an ownership list comes from the deliverables]], one step further
+  out: there the brief withheld a file the deliverable needed; here it silently required a file the
+  *verification* needed. **Both are answered by one pass: for each criterion, what does satisfying
+  it write to?**
+  · **And the better instruction is cheap and strictly stronger:** point the check at a **temp
+  root** and injure a copy. If a check cannot be pointed at a different root, that is itself a
+  finding — a check untestable without mutating live state has a design problem, which is more
+  interesting than the red it was blocking.
