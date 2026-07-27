@@ -2268,6 +2268,59 @@ class TestAppShell(unittest.TestCase):
                       '/reviewraw', 'linkifyReview'):
             self.assertIn(token, watch.PAGE)
 
+    def test_every_route_has_its_own_tint_and_seed(self):
+        # #302: the contract (watch-design.md: "Add a view by adding a builder
+        # + a routeOf/TINT/SEED entry"; transitions.md: every destination has
+        # its own seed and tint) is that each destination carries its own
+        # atmosphere entry. A route missing from either table silently
+        # inherits the dashboard's via `TINT[name] || 0` and
+        # `SEED[view.name] != null ? ... : 7`, so the page sits outside a
+        # stated contract and nothing on screen says so.
+        #
+        # This asserts the CONTRACT (entry presence), NOT a rendered colour:
+        # a colour assertion pins today's palette and expires the next time
+        # someone tunes a value — the exact "check with an expiry date" the
+        # repo rules out. The set of destinations is read from `routeOf`
+        # itself, the one place watch.py enumerates what counts as a page,
+        # so a route added tomorrow is caught without restating the list
+        # beside the tables. routeOf and the TINT/SEED tables are co-located
+        # in ROUTER_JS and key off the same `name`, which is what makes the
+        # pairing honest.
+        router = watch.ROUTER_JS
+        m = re.search(r"function routeOf\(loc\)\s*\{(.*?)\n\}", router, re.S)
+        self.assertIsNotNone(m, "routeOf not found in ROUTER_JS")
+        routes = set(re.findall(r"name:\s*'(\w+)'", m.group(1)))
+        # Precondition the check depends on (transitions.md's own rule, and
+        # the repo's standing guard discipline): a loop over zero routes
+        # passes forever, and a one-route "set" is the tables restated.
+        # Plural is the floor that keeps this check able to fail.
+        self.assertGreaterEqual(
+            len(routes), 2,
+            "routeOf yielded fewer than 2 destinations; the checks below "
+            "would be vacuous — did the routeOf parse break?")
+
+        def table_keys(table):
+            tm = re.search(r"const %s\s*=\s*\{([^}]*)\}" % table, router)
+            self.assertIsNotNone(tm, "%s table not found in ROUTER_JS" % table)
+            keys = set(re.findall(r"(\w+)\s*:", tm.group(1)))
+            self.assertGreaterEqual(
+                len(keys), 1,
+                "%s table parsed empty — regex broke on the table?" % table)
+            return keys
+
+        tint = table_keys("TINT")
+        seed = table_keys("SEED")
+        missing_tint = routes - tint
+        missing_seed = routes - seed
+        self.assertFalse(
+            missing_tint,
+            "routes with no TINT entry (inherit the dashboard's hue via "
+            "TINT[name] || 0): %s" % sorted(missing_tint))
+        self.assertFalse(
+            missing_seed,
+            "routes with no SEED entry (inherit the dashboard's swirl via "
+            "SEED[view.name] != null ? ... : 7): %s" % sorted(missing_seed))
+
     def test_qa_compose_has_accessible_name_and_send_floor(self):
         # #273: placeholder is not a name; dock/cards need aria-label that
         # tracks mode, and the send control must meet the 44px target floor.

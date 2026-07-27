@@ -3036,11 +3036,11 @@ const parseMtime = raw => {
 let view = { name: null, param: null, q: null };
 let fileCache = { param: null, text: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
-const TINT = { dashboard: 0.0, questions: 0.14, file: -0.14, review: 0.22 };
+const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22 };
 /* per-route dissolve signature: each destination swirls from its own
    turbulence seed, so arriving somewhere has a consistent feel (pairs with
    the per-route tint). Distinct small integers give distinct fields. */
-const SEED = { dashboard: 7, questions: 23, file: 41, review: 61 };
+const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61 };
 /* ── the tab title (#153) ─────────────────────────────────────────────────
    The title is the ONLY part of this dashboard that exists while the tab is
    backgrounded, which is most of its life — so it answers the page's whole
