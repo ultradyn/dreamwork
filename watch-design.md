@@ -199,6 +199,81 @@ A decision artifact shows each option beside its alternative rather than
 only the recommendation: the human is being asked to decide, not to
 ratify.
 
+### Essential marks — the flag rail (#367)
+
+His idea, typed from a twenty-screen review: *"pointer labels at the most
+important parts. like the absolute essentials. then i could have a next/prev
+button too. something like those little thin postits that lawyers use to
+indicate key points and where you need to sign… (Sometimes they are quite
+long)."* A lawyer's flag marks **where you must act**, at the height of the
+clause — so a mark is a different axis from `nav` (structure), and merging the
+two produces the second table of contents he did not ask for.
+
+**A flag is a child of its passage, not a decoration on a box.** Blocks in a
+section run from `.read` (614px) to the full wrap (1120px), so a flag pinned to
+its block's right edge would sit in a different place for every kind of
+passage. It anchors instead to the **reading column's right edge**, at its
+passage's top — which is free in both axes without any script: the flag is a
+child of the marked element (the positioning ancestor, `.is-marked`), so `top:0`
+is the passage's own top, and `left:calc(var(--measure) + .4ch)` is the column's
+edge. The artifact is offline-clean (no script ever), so the rail is BUILT into
+the HTML at build time by `review_artifact.py`, not positioned at read time.
+
+**The flag's outer box inherits the body font on purpose.** `--measure` is
+`78ch`, and `ch` resolves against the element that uses it — so a single-element
+flag at `.66rem` would place itself at the **tab's** narrower column, not the
+reading column's. `.marktab` (outer, body font) carries the `left`; `.markflag`
+(inner, `.66rem`) is the visible postit. Two elements is the price of one honest
+column.
+
+**Two lines, grow-to-fit, nobody truncates** (his 2026-07-28 05:35 ruling,
+which overrode a one-line ~12-character builder-truncated flag). A ~6-word label
+fills `.markflag`'s `max-width` and wraps to two lines; the worst case measures
+~184×32px (`.dreamwork/docs/measurements/367-two-line-tab-geometry.md`).
+
+**Above the cliff, the rail; below it, nothing.** The worst-case flag fits
+inside `.wrap` down to ~830px (measured), so the rail shows at/above the
+existing **860px** breakpoint — reused rather than inventing a seam, with ~26px
+of margin to spare. Below it the whole rail is `display:none`: absent, not a
+broken flag, and not a strip. The strip below the cliff is increment 2b and his
+call (at his soft cap of 7 marks it needs 3 rows / ~214px of chrome on a narrow
+screen, and "shrink it" is not available once truncation is gone), so a
+provisional strip is the thing that ships and then gets argued with — this
+renders nothing rather than guess.
+
+**"Current" is `:target`; next/prev are real fragment links.** No script means
+no scroll-spy: the current passage is the one navigated to (`:target`), and the
+flag's opacity lifts to full when its passage is targeted (the page's own
+state-change transition, `.45s`, instant under reduced motion). Next/prev live
+inside the current flag's `.marknav` and walk the marks in document order as
+plain `#id` links — so the arrows read as a single control that follows the
+current mark, are keyboard-operable, and work offline. Each marked host carries
+`tabindex="-1"` so fragment navigation announces the passage to a screen reader.
+
+**Next/prev lands SETTLED, not as a journey.** A long-range smooth scroll is
+already refuted (the #229 v2 review's 1.5s one failed the gate); the template
+declares no `scroll-behavior`, so fragment navigation is an instant jump — the
+function, which reduced motion keeps. `dev/capture/markrail.mjs` proves it
+traced part-way: an instant jump visits no frame between its ends, a smooth one
+fills the window. The red is `html{scroll-behavior:smooth}`.
+
+**Two marks closer than a tab height are the renderer's problem, not the
+author's.** The densest real pair (a section and its first marked `.read`) sits
+~29px apart against a ~32px tab; the builder cannot know pixel gaps (the
+artifact is script-free), so it staggers a flag **nested** inside another marked
+element — the honest structural proxy for "right next to" — and the template
+offsets a staggered flag down rather than sideways (a sideways push would
+overflow the wrap below ~1120px). The guard re-proves no two flags overlap in
+pixels.
+
+`dev/capture/markrail.mjs` guards the rail: the worst-case flag fits inside
+`.wrap` at the cliff and never clips the page edge; it anchors at the column;
+next/prev lands settled (normal and reduced); the arrival's state change
+travels; below the cliff nothing renders; flags are focusable and the current
+passage is announced; the close pair does not overlap. It builds its own
+artifact through the real builder and loads it via `file://`, like
+`marktab-geometry.mjs` — the rail is a property of the artifact, not the server.
+
 ### The review pane (#305)
 
 `/review` is **one window-tall pane of two columns**, not two documents

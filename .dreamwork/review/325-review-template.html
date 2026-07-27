@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
 <meta name="dreamwork-review-template" content="v1+95ee67a8">
-<title>#346 · Task store schema · what the ledger actually contains</title>
+<title>#325 · The review artifact becomes a template · proposal</title>
 <style>
 /* Offline-clean by construction: no fetches, no external fonts, no images.
    Tokens are watch.py's, value for value, because this is read inside the
@@ -248,11 +248,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 </style>
 </head>
 <body>
-<a class="skip" href="#decisions">Skip to the decisions</a>
+<a class="skip" href="#decision">Skip to the decisions</a>
 <nav class="toprail" aria-label="Artifact navigation">
   <div class="toprail-in">
-    <div class="identity"><b>sqlite migration</b><span>task #346 · design only</span></div>
-    <div class="topactions"><span class="status">awaiting review</span><a class="full" href="#findings">findings</a><a href="#shape">shape</a><a href="#decisions">decisions</a></div>
+    <div class="identity"><b>review artifact · template</b><span>task #325 · one template, one builder, one stamp</span></div>
+    <div class="topactions"><span class="status">awaiting review</span><a class="full" href="#drift">the drift, measured</a><a href="#decision">decisions</a></div>
   </div>
 </nav>
 
@@ -261,178 +261,94 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 <header>
   <div class="hero-grid">
     <div>
-      <div class="kicker"><h1>Five things in your ledger that break the obvious schema.</h1><span class="proposal">design only — nothing is built</span></div>
-      <div class="sub">task #346 · 28 July 2026 · four decisions, S1 to S4</div>
-      <p class="lead">You said the sqlite db and cli are becoming a blocker, and invited a
-      question. This is the answer in two parts: <strong>the part that is genuinely gated is
-      smaller than #294 claimed</strong>, and the part that is not gated is designed here — the
-      task entity, its read-only CLI, and the migration's report half. Nothing is built. The full
-      design is <code>.dreamwork/docs/plans/task-store-schema.md</code>.</p>
-      <div class="call"><strong>Ruled 01:23 — the four decisions are answered.</strong> S1 splits the
-      combined entries; S2 closes <code>priority</code> via a closed band plus <code>priority_uncertain</code>
-      (the three <code>P0/P1</code> stay, deliberately); S3 is withdrawn; S4 closes <code>type</code> via a
-      lookup table. What remains is <strong>#263 E1</strong>, the only thing standing between this
-      design and the rest of #294. E1 is not a design question: the design is finished and PASS.</div>
+      <div class="kicker"><h1>Twelve pages, five font stacks, one template.</h1><span class="proposal">proposal only</span></div>
+      <div class="sub">task #325 · 27 July 2026 · self-contained proposal, built by review_artifact.py</div>
+      <p class="lead">Every review request ships an artifact, so this page is the surface his
+      proposals are read on — and it reinvented itself twelve times. <code>tasks-page.html</code>
+      is the one he named as good, so its stylesheet is now the template and artifacts are
+      <strong>built</strong> rather than hand-rolled.</p>
+      <div class="call"><strong>Recommendation.</strong> Approve the template, the builder and the
+      content-derived stamp. Existing artifacts are not migrated; they report
+      <code>untemplated</code> rather than being rewritten under him.</div>
     </div>
     <div class="version-mark" aria-label="At a glance">
       <span class="big">5</span>
-      <small>findings, each breaking a schema that looks right<br>111 open ids measured through the real reader<br>0 tables created under this id</small>
+      <small>font stacks across 12 artifacts<br>8 page backgrounds, all "the dark one"<br>0 of them shared a source</small>
     </div>
   </div>
 </header>
 
-<section id="why" aria-labelledby="why-t">
-  <div class="label" id="why-t">Why this half can start without your #263 answer</div>
-  <p class="read">#294's own entry said starting would mean designing "against an unsettled
-  event model". Read against the document rather than from memory, that is not the state.
-  <code>user-event-journal.md:4</code> says <em>"human approval required; no implementation
-  authority"</em>, and its approval gate authorises <em>"a separate red-first implementation
-  plan"</em>. The model is designed, reviewed and PASS. It is <strong>unratified</strong>.</p>
-  <p>What #264 gates is one question: <em>does a task transition share #263's journal or use
-  a task-state outbox?</em> That is about how a <strong>transition</strong> becomes durable.
-  The columns describing a task <strong>at rest</strong> are the same either way — a
-  journal-sourced materialised view and an outbox-sourced table expose one entity. So the
-  entity and its read surface are separable, and doing them now makes the gated half smaller
-  rather than racing it.</p>
-  <div class="notice"><strong>Out of scope here, deliberately:</strong> every write verb,
-  <code>grab</code>, claims, leases, CAS, the history table, the burndown projection, cutover
-  — and creating the schema at all. A schema that exists before #263 is ratified is the double
-  migration you have warned about twice.</div>
-</section>
-
-<section id="findings" aria-labelledby="f-t">
-  <div class="label" id="f-t">The five findings, measured against the live ledger</div>
-  <p class="read">Every number below comes from <code>watch.ledger_entries</code> and
-  <code>watch.parse_ledger</code> — the readers the system already uses. A fresh regex was
-  tried first and was wrong: <code>text.index('## Open')</code> matched a prose mention of the
-  heading in the file's own preamble and reported <strong>10</strong> open entries instead of
-  <strong>111</strong>. Third time tonight a hand-rolled scan of this file has produced a
-  confident wrong number, so the doc records it.</p>
-  <div class="scroller"><table>
-  <thead><tr><th>what is in there</th><th>measured</th><th>what it breaks</th></tr></thead>
-  <tbody>
-    <tr class="row-accent"><td><strong>An entry is not a task id</strong> — one body, two permanent ids</td><td><code>#138/#156</code>, <code>#250/#251</code>, <code>#292/#293</code> — 3 entries</td><td class="fail"><code>task(id PRIMARY KEY, body)</code> must duplicate a body you state once, or drop an id</td></tr>
-    <tr><td><strong>The count that would catch that agrees by accident</strong></td><td>open entries 111, open ids 111 — all three combined entries are landed</td><td class="fail">a check pinning them equal passes today, survives its own red-proof, and starts lying the day a combined entry opens</td></tr>
-    <tr><td><strong>Priority is not a closed set</strong></td><td>P2×88, P3×35, P1×30, P0×2, <strong>P0/P1×3</strong>, <strong>P1/P2×1</strong>, none×6</td><td class="fail">an enum with NOT NULL rejects 11 real entries; <code>#99</code> also carries its band in a different position</td></tr>
-    <tr><td><strong>Origin — this one was WRONG and is corrected</strong></td><td><strong>50</strong> unmarked (not 60) and <strong>12</strong> explicit <code>unknown</code> (not 8); every unmarked entry's id is <strong>below 216</strong></td><td class="unknown">nothing — absence is the contract's forward-only cutoff and is <em>derivable from the id</em>, so the schema can be strict. <strong>S3 is withdrawn.</strong></td></tr>
-    <tr><td><strong>The dot-separated fields are not positional</strong></td><td>reading "the field after the band" as type yields <strong>65</strong> values, incl. <code>landed 2026-07-27</code> and <code>origin: **loop**</code></td><td class="fail">any positional parse mis-assigns <code>type</code>; the real set is ~10 values</td></tr>
-  </tbody>
-  </table></div>
-  <div class="notice"><strong>Finding 4 was wrong, and how it was wrong is worth more than
-  the numbers.</strong> The first version claimed four states across 60 unmarked entries and
-  read the split as <em>audited</em> versus <em>never touched</em> — a distinction the contract
-  does not make. The scan tested <code>'origin: **' in body</code>, which misses every marker
-  that wraps across a line as <code>origin:\n  **loop**</code>. <code>lint.py</code> disagreed
-  with it and lint was right. The lesson: <strong>a measurement that contradicts an existing
-  check is a reason to doubt the measurement first.</strong> The other four findings were
-  re-measured wrap-tolerantly and all stand.</div>
-</section>
-
-<section id="shape" aria-labelledby="s-t">
-  <div class="label" id="s-t">The shape that survives all five</div>
-  <p>Entry and identity separate — finding 1's only honest answer. Per-entry attributes live
-  on the entry; <code>task</code> is permanent identity pointing at it, so
-  <code>#138</code> and <code>#156</code> share one body that cannot disagree with itself.</p>
-  <pre><code>entry(entry_id PK, state open|landed, title, body verbatim,
-      priority band(P0-P3), priority_uncertain flag, type NULL, origin NULL, source_line)
-task (id PK, entry_id -&gt; entry, ordinal)</code></pre>
-  <div class="summary-line"><span>priority + priority_uncertain</span><span>a closed band column (<code>P0</code>&ndash;<code>P3</code>) plus a flag for &ldquo;could be higher&rdquo;, so <code>P0/P1</code> is band <code>P1</code> with the flag set &mdash; orderable, groupable, no compound value</span></div>
-  <div class="summary-line"><span>type NULL</span><span>populated only from unambiguous forms; the migration <em>reports</em> what it could not read. #339's ruling: a misdetected value is worse than none</span></div>
-  <div class="summary-line"><span>origin</span><span>three values, and NULL only for entries whose greatest leading id is below 216 — an asserted invariant, not preserved looseness</span></div>
-  <div class="summary-line"><span>dependency edges</span><span>not parsed from prose. Today's blocked-on is free text; each stored edge keeps the exact substring it was read from, and every unparsed phrase is listed for you rather than guessed into a graph</span></div>
-  <div class="summary-line"><span>review_decision</span><span><code>artifact</code> as PRIMARY KEY <em>is</em> the "exactly one owning question" rule, so a conflicting second claim is refused at write time. <code>unlinked</code> is deliberately not a value — it is the absence of a row</span></div>
-  <p class="quiet">Read verbs only: <code>tasks list</code> (open-only carries the landed
-  count), <code>tasks get &lt;id&gt;</code>, <code>tasks count</code>, <code>reviews
-  list|get</code>. No write verb exists under this id in any form, including a dry-run one.</p>
-</section>
-
-<section id="seam" aria-labelledby="sm-t">
-  <div class="label" id="sm-t">The invariant #294 said to verify — it is already false</div>
-  <p class="read">#294 says the migration "re-points #281's entry-level reader and nothing
-  else, which is only true while that reader stays the sole parser". It is not the sole parser
-  now, and this was worth measuring before cutover rather than at it.</p>
+<section id="drift" aria-labelledby="drift-t">
+  <div class="label" id="drift-t">The drift, measured</div>
+  <p class="read">Not a taste argument. Parsed out of the twelve artifacts in
+  <code>.dreamwork/review/</code> as they stand today.</p>
   <div class="facts">
-    <div class="fact"><span class="number">1</span><span class="caption">parser #294's plan assumed there was — <em>"the sole parser"</em>, the invariant it told us to verify rather than trust</span></div>
-    <div class="fact"><span class="number">2</span><span class="caption">implementations of <code>ledger_entries</code> — lint's and watch's. Identical logic; the source differs (watch's drops the annotations), so a source-equality check would fail on a behaving pair</span></div>
-    <div class="fact"><span class="number">3</span><span class="caption">callers: <code>lint.py</code>, <code>watch.py</code>, <code>task_origins.py</code></span></div>
-    <div class="fact"><span class="number">1</span><span class="caption">fixture pinning the two, at <code>test_watch.py:863</code> — behavioural, which is the better kind, and weaker than it reads</span></div>
+    <div class="fact"><span class="number">5</span><span class="caption">distinct <code>font-family</code> declarations</span></div>
+    <div class="fact"><span class="number">3<span class="dim">/8</span></span><span class="caption">page backgrounds in <code>--bg</code>, more in raw rules</span></div>
+    <div class="fact"><span class="number">12</span><span class="caption">inline stylesheets, each authored once</span></div>
+    <div class="fact"><span class="number">0</span><span class="caption">shared a source before this task</span></div>
   </div>
-  <p>The consequence is concrete: re-pointing <code>watch.py</code> alone leaves
-  <code>lint.py</code> and <code>task_origins.py</code> parsing a file that cutover renames to
-  <code>tasks.md.deprecated</code> — so lint would quietly become a checker of history. Either
-  the store's reader becomes the single implementation all three call, or that is accepted
-  explicitly.</p>
-</section>
-
-<section id="decisions" aria-labelledby="d-t">
-  <div class="label" id="d-t">The four decisions</div>
-  <p class="read">All four were the same question — <strong>how much of today's looseness is
-  a feature to preserve?</strong> — and your 01:13 note inverts the answer. Because the
-  plaintext is transitional, the sole objection behind S1, S2 and S4 was <em>"that edits your
-  existing entries"</em>: a one-time cost, weighed against looseness the schema would carry
-  forever and every consumer would handle forever. So the recs below are <strong>revised to
-  normalise the Markdown first, then let the schema be strict</strong>. S3 is withdrawn
-  outright, for a different reason: finding 4 was wrong.</p>
+  <div class="notice"><b>Offline-clean is now a build-time check.</b> The builder refuses to
+  write output a browser would fetch anything for — no external stylesheet, script, image,
+  font or <code>@import</code>. A link in prose stays a link.</div>
   <div class="scroller"><table>
-  <thead><tr><th>normalise first</th><th>how many entries</th><th>what the schema gains</th></tr></thead>
+  <thead><tr><th>mechanism</th><th>who remembers</th><th>drift possible?</th></tr></thead>
   <tbody>
-    <tr class="row-accent"><td>split the combined entries</td><td>3</td><td class="pass"><code>task(id PRIMARY KEY)</code> — one table fewer, and no join for any consumer</td></tr>
-    <tr><td>close compound bands in the schema</td><td>3 stay (the <code>P1/P2</code> was a split artefact)</td><td class="pass"><code>priority</code> is a closed band; <code>priority_uncertain</code> holds &ldquo;could be higher&rdquo; with no compound value</td></tr>
-    <tr><td>entries with no band</td><td>6</td><td class="pass">band NOT NULL, or a deliberate NULL you chose</td></tr>
-    <tr><td>classify unreadable <code>type</code></td><td>the tail of 66 distinct values</td><td class="pass"><code>type</code> becomes a closed set</td></tr>
+    <tr><td>a documented block agents copy</td><td>every future author</td><td class="fail">this is what produced the five font stacks</td></tr>
+    <tr><td>a shared stylesheet the page links</td><td>nobody</td><td class="fail">breaks offline-clean, which is the artifact's contract</td></tr>
+    <tr class="row-accent"><td><strong>a template a tool inlines</strong></td><td><strong>the tool</strong></td><td class="pass">only by a named divergence entry</td></tr>
   </tbody>
   </table></div>
-  <div class="notice"><strong>The one real cost, because it is not nothing.</strong>
-  Normalising means bulk edits to the loop's own durable memory, and a fold script damaged
-  <code>questions.md</code> earlier tonight by dropping a newline after a heading. So it gets
-  its own task and its own guards — parse with the real reader before and after, assert the
-  counts move only where a split is intended, diff every body for unintended edits — and it
-  does not start without your ruling, because the entries are your words. It needs no #263
-  answer, so with #352 it is the second thing that turns "sqlite is a blocker" into
-  movement.</div>
-
-  <div class="choice"><strong>S1 · Combined entries.</strong> Split
-  <code>#138/#156</code>, <code>#250/#251</code>, <code>#292/#293</code> into single-id
-  entries before migrating and forbid new ones? Or keep them behind an entry/task split?
-  <div class="answer"><strong>Rec REVISED to split</strong> on your note. The original rec was
-  keep, and its only argument was that splitting edits three of your entries — spent, if the
-  plaintext is on its way out. Splitting removes a table and a join permanently.</div></div>
-
-  <div class="choice"><strong>S2 · Compound bands.</strong> Resolve the four
-  (<code>P0/P1</code>&times;3, <code>P1/P2</code>&times;1) so <code>priority</code> is a closed
-  enum, or keep them legal?
-  <div class="answer"><strong>Ruled: priority closes, and the bands stay.</strong> The three
-  <code>P0/P1</code> each still mean something (&ldquo;at least P1, possibly the very top, not yet
-  certain which&rdquo;), so they stay &mdash; but the schema needs no compound value: a closed band
-  column plus <code>priority_uncertain</code> holds &ldquo;could be higher&rdquo;. The
-  <code>P1/P2</code> was never ambiguity &mdash; it was <code>#250</code>&rsquo;s P1 and
-  <code>#251</code>&rsquo;s P2 concatenated, and the split resolved it.</div></div>
-
-  <div class="choice"><strong>S3 · Origin. <span class="dim">Withdrawn — nothing to
-  decide.</span></strong> It rested on finding 4, which was wrong.
-  <div class="answer">There are 50 unmarked entries, not 60; every one has an id below 216; so
-  absence is your contract's forward-only cutoff, derivable from the id, and not a distinction
-  anything needs to preserve. The schema asserts the invariant instead.</div></div>
-
-  <div class="choice"><strong>S4 · Is <code>type</code> a closed set?</strong> Close it at
-  cutover (the ~10 real values), classifying the unreadable ones by hand first? Or free text
-  with NULL?
-  <div class="answer"><strong>Rec REVISED to close it.</strong> The refutation was that the
-  migration cannot classify 172 entries correctly — and it does not have to, if they are
-  normalised by hand first, with anything genuinely ambiguous left explicitly NULL rather than
-  guessed.</div></div>
 </section>
 
-<section id="next" aria-labelledby="n-t">
-  <div class="label" id="n-t">What approval means, and what it does not</div>
-  <div class="approval">Approving accepts the entity shape, the read verbs, and the four recs
-  you do not overrule. It <strong>does not</strong> authorise creating a table, writing a
-  migration, shipping a CLI, or any cutover — those wait on #263 E1 like the rest of #294.
-  The next increment under this id is the eight red-first fixtures, each of which names the
-  production line that must change for it to fail.</div>
+<section aria-labelledby="how-t">
+  <div class="label" id="how-t">How it holds</div>
+  <div class="spine">
+    <div class="spine-row"><div class="spine-key">the template</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p>Head, palette, frame, footer. Its stylesheet is
+      <code>tasks-page.html</code>'s rule for rule.</p></div></div>
+    <div class="spine-row"><div class="spine-key">the source</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p>One file per artifact under <code>review/src/</code>, so
+      iterating on the template can rebuild what it already shipped.</p></div></div>
+    <div class="spine-row"><div class="spine-key">the stamp</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body"><p><code>v1+&lt;8 hex of the template&gt;</code>, in a
+      <code>meta</code> and in the footer. Older artifacts go <code>stale</code> by themselves.</p></div></div>
+  </div>
+  <div class="checks">
+    <div class="check"><b>planted an external chart image</b> <span>build refused</span></div>
+    <div class="check"><b>moved one token to #0b0f19</b> <span>palette check red</span></div>
+    <div class="check"><b>deleted .notice from the template</b> <span>vocabulary check red</span></div>
+    <div class="check"><b>hardcoded the digest</b> <span>staleness check red</span></div>
+  </div>
+  <div class="stages">
+    <div class="stage"><span><b>Cut the template</b> from the artifact he named, verbatim.</span></div>
+    <div class="stage"><span><b>Build, fail loud</b> on a missing or unknown slot.</span></div>
+    <div class="stage"><span><b>Stamp from bytes</b>, so iteration cannot lie.</span></div>
+  </div>
 </section>
 
-<footer>task #346 · design only · <code>.dreamwork/docs/plans/task-store-schema.md</code> <span class="dimmer">· built from review template v1+95ee67a8</span></footer>
+<section id="decision" aria-labelledby="dec-t">
+  <div class="label" id="dec-t">Decisions wanted — one line each</div>
+  <div class="choice"><div class="choice-grid"><span class="choice-tag">Q1</span><div>
+    <strong>Migrate the twelve existing artifacts?</strong>
+    <div class="answer"><strong>Rec: no.</strong> They are the record of what was proposed and
+    when; rebuilding them would restyle pages you have already read and ruled on.</div>
+  </div></div></div>
+  <div class="approval">Approve the template, the builder and the stamp, or name what should
+  change.</div>
+</section>
+
+<details>
+  <summary>The slot set, field by field</summary>
+  <div class="details-in">
+  <p>Required: <code>title identity headline lead body footer</code>. Optional:
+  <code>context status tag sub call aside nav skip skip_href aside_label</code>.</p>
+  <pre>python3 review_artifact.py build .dreamwork/review/src/&lt;slug&gt;.html
+python3 review_artifact.py check .dreamwork/review/*.html</pre>
+  </div>
+</details>
+
+<footer>Prepared for task #325 · 27 July 2026 · self-contained, offline-clean, no external requests. <span class="dimmer">· built from review template v1+95ee67a8</span></footer>
 
 </main>
 </body>

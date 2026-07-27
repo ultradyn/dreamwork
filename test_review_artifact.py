@@ -20,7 +20,6 @@ the CSS comparison would pass vacuously against two empty parses, so the parse
 counts are floors, not decoration.
 """
 import html
-import hashlib
 import os
 import re
 import subprocess
@@ -57,6 +56,20 @@ HIGHLIGHT_TOKENS = (
     "pre code .tok-attr", "pre code .tok-var",
 )
 TEMPLATE_ONLY |= set(HIGHLIGHT_TOKENS)
+
+# #367 — the essential-marks rail. Every selector here is NEW CSS the template
+# carries beyond its hand-rolled reference (tasks-page.html predates marks and
+# has no flag rules at all), so none of them collide with a shared selector and
+# the reference is not edited for the rail. Asserted by computing the set at
+# runtime below rather than trusting this list: if the template grows a mark
+# selector this omits, test_template_adds_nothing_undeclared reddens.
+MARK_RAIL_TOKENS = (
+    ".is-marked", ".marktab", ".is-marked:target .marktab", ".markflag",
+    ".markflag:hover", ".marknav", ".is-marked:target .marknav",
+    ".marknav a", ".marknav a:hover", ".marknav a:focus-visible",
+    ".marktab[data-stagger]",
+)
+TEMPLATE_ONLY |= set(MARK_RAIL_TOKENS)
 
 # A body may use these without inventing anything, so the template must carry
 # them. Without this, a fidelity failure could be "fixed" by deleting the rule.
@@ -1078,20 +1091,40 @@ def test_the_refuted_candidates_are_not_rules():
 # code and these tests say `essential_marks` / `labels` to avoid the collision.
 
 
-# The no-marks render, stamp-normalised, captured BEFORE this increment touched
-# review_artifact.py (2026-07-28, rendered through review_artifact.py at the
-# pre-change HEAD). The byte-identity test re-derives the pre-change output from
-# git and confirms this constant matches it, so it cannot have been recomputed
-# with the new code — the exact hollow-green trap criterion 3 exists for.
-_NO_MARKS_RENDER_DIGEST = (
-    "0eb232e800467837a3500ed7c98f450f2f799c7dc00aa759f53531cadda36af6")
+# The no-marks BODY, stamp-normalised, is the property increment 2a retires the
+# byte-identity digest for. Adding the rail's CSS to the template LEGITIMATELY
+# changes a no-marks artifact (it gains <style> rules it does not use), so a
+# whole-document digest can no longer hold — and the two obvious fixes are both
+# wrong (deleting the check opens the frame to silent drift; re-capturing the
+# digest breaks the companion that re-runs the pre-change builder out of git).
+# The true property is narrower and stronger where it matters: a no-marks BODY
+# is unchanged, and the output carries no rail/tab/control ELEMENT. The frame's
+# CSS is held to tasks-page.html by the fidelity tests above; staleness by the
+# stamp tests below. So this check catches the thing the digest existed for —
+# the body being altered, or chrome leaking into a no-marks page — without
+# false-failing on the CSS the template is supposed to gain.
 _STAMP_NORMALISE_RE = re.compile(r"v\d+\+[0-9a-f]{8}")
 
 
 def _normalise_stamp(document):
     """Blank the derived template stamp so a frame edit does not masquerade as
-    a content change. Everything else must be byte-identical."""
+    a content change."""
     return _STAMP_NORMALISE_RE.sub("v<N>+<stamp>", document)
+
+
+def _body_region(document):
+    """The authored body, isolated from the frame.
+
+    The body slot lands between `</header>` and `<footer`; everything outside
+    that span is template-derived (head, toprail, header, footer, the stamp).
+    Comparing this region across builders answers "did the body change" without
+    being moved by frame CSS the template is allowed to gain.
+    """
+    start = document.find("</header>")
+    end = document.find("<footer")
+    if start < 0 or end < 0 or end < start:
+        return document      # a degenerate build: return the whole thing
+    return document[start:end]
 
 
 def _prechange_review_artifact():
@@ -1100,8 +1133,9 @@ def _prechange_review_artifact():
     Resolved by CONTENT, not a pinned SHA: the newest commit whose
     review_artifact.py lacks the essential-marks constant, so it survives a
     rebase that rewrites the SHA. Returns (module, ref) or (None, None) when no
-    pre-change copy is reachable in git (then the frozen digest is the
-    evidence). Used only to PROVE the frozen digest was captured honestly."""
+    pre-change copy is reachable in git. Used to PROVE the no-marks body this
+    check asserts is the genuinely pre-change body, not one recomputed with the
+    new code."""
     try:
         shas = subprocess.check_output(
             ["git", "log", "--format=%H", "--", "review_artifact.py"],
@@ -1131,43 +1165,61 @@ def _body_with_marks(n):
     return fields
 
 
-def test_a_source_with_no_marks_renders_byte_identically_apart_from_the_stamp(template):
-    """The whole point of increment 1: the frame gains the mark machinery and
-    NOTHING ELSE changes.
+def test_a_no_marks_artifact_renders_no_rail_tab_or_controls(template):
+    """The property increment 1's byte-identity digest existed to enforce,
+    stated for the increment that retires it: a source with no marks gains no
+    rail, no tab, no next/prev — and its BODY is unchanged from the pre-change
+    builder.
 
-    The expected side is INDEPENDENT of the code under test. The trap this
-    exists for is recomputing both sides with the new code, which makes them
-    move together and the check prove nothing (it has produced two false greens
-    in this repo). So: the frozen digest was captured from the pre-change
-    builder, and the test re-runs that pre-change builder out of git to PROVE
-    the digest is honest, then compares the new builder against it.
+    Two wrong fixes for the digest trap this replaces (criterion 3 of the
+    brief), and why this is not weaker than either:
 
-    Production line that must change for this to FAIL on a regression: any new
-    code path in render() that touches `out` (or the fields it fills from) when
-    `essential_marks` returns an empty list — a tab, a class, a script, a
-    wrapper. The check passes while those paths stay inert for a no-marks body.
+    - Deleting the digest opens the frame to silent drift. This check still
+      holds the body: a build that injected chrome into a no-marks page, or that
+      rewrote the body's bytes, reddens here.
+    - Re-capturing the digest breaks the companion below (it re-runs the
+      pre-change builder and would no longer match). This check keeps that
+      companion honest, because it compares the new builder's BODY to the
+      pre-change builder's BODY rather than to a re-captured whole-document
+      constant.
+
+    The frame's CSS is allowed to change (that is the point of the increment)
+    and is held to tasks-page.html by the fidelity tests; staleness is held by
+    the stamp tests. So nothing this check stops checking was unguarded.
+
+    Production line that must change for this to FAIL on a regression:
+    `if labels: out = inject_mark_rail(out)` in render() — any code that adds an
+    element to `out` for a no-marks body, or that rewrites the body's bytes.
     """
     # Precondition, derived not assumed: the fixture genuinely declares no
     # mark, or this assertion is vacuous.
     assert "data-mark" not in ra.parse_source(SOURCE)["body"]
-    now = _normalise_stamp(ra.render(ra.parse_source(SOURCE), template=template))
-    assert hashlib.sha256(now.encode()).hexdigest() == _NO_MARKS_RENDER_DIGEST, (
-        "a no-marks source no longer renders byte-identically — the marks "
-        "machinery altered output it must leave untouched")
-    # Honesty proof: the frozen digest really IS the pre-change render. The
-    # pre-change builder is checked out of git and re-run; if it disagrees, the
-    # frozen constant was stale or fabricated rather than captured beforehand.
+    new = ra.render(ra.parse_source(SOURCE), template=template)
+    # No rail/tab/control ELEMENT anywhere (these signatures are the injected
+    # markup, not the CSS rules — `.marktab` in <style> is fine and expected).
+    for needle in ("data-mid=", 'class="marktab"', 'class="is-marked"',
+                   'class="markflag"', 'class="marknav"'):
+        assert needle not in new, (
+            "a no-marks artifact gained mark chrome %r — the rail rendered "
+            "where it must be absent" % needle)
+    # Honesty proof: the no-marks BODY is byte-identical to the pre-change
+    # builder's body. The pre-change builder is checked out of git and re-run;
+    # if it disagrees, the comparison was new-vs-new and proves nothing. Both
+    # sides render against THIS template (the current one), so the only
+    # difference can be code that touches the body — which is exactly the
+    # regression the digest existed to catch.
     old, ref = _prechange_review_artifact()
     if old is not None:
         assert not hasattr(old, "essential_marks"), (
             "resolved ref %s already carries essential marks — the resolver "
             "picked the wrong commit, so the comparison would be new-vs-new "
             "and prove nothing" % ref)
-        pre = _normalise_stamp(
+        pre = _body_region(
             old.render(old.parse_source(SOURCE), template=template))
-        assert hashlib.sha256(pre.encode()).hexdigest() == _NO_MARKS_RENDER_DIGEST, (
-            "the frozen digest no longer matches the pre-change builder at %s "
-            "— re-capture it after an intentional template change" % ref)
+        assert pre == _body_region(new), (
+            "a no-marks body no longer matches the pre-change builder at %s — "
+            "the marks machinery altered body bytes it must leave untouched"
+            % ref)
 
 
 def test_marks_are_collected_in_document_order():
@@ -1345,3 +1397,213 @@ def test_a_mark_without_an_id_is_refused(template):
         '<section data-mark="the cliff">',
         '<section id="cliff" data-mark="the cliff">')
     ra.render(fields, template=template)
+
+
+# ── the visible rail (#367 increment 2a) ──────────────────────────────────
+#
+# The rail is CSS-only (the artifact is offline-clean, no script), so the
+# boundary it shows at is a media query and the flag's width is a CSS value —
+# both read FROM the template at runtime rather than re-stated here, so a
+# reshaped flag or a moved cliff moves the check with it. The pixel truth (the
+# flag actually fits at the cliff, flags never overlap) is the browser guard's
+# job; these tests hold the structural properties the guard depends on.
+
+# `.read` is `max-width:var(--measure)` = 78ch, which resolves to a FIXED
+# 613.5px at the body font (.82rem, root 16px — the template sets no html
+# font-size, so this is stable). Measured in
+# .dreamwork/docs/measurements/367-two-line-tab-geometry.md and re-proven in
+# pixels by dev/capture/markrail.mjs. This constant is the reading column's
+# width, NOT the flag's: it tracks `.read`, and the guard catches drift.
+_READ_COLUMN_PX = 613.5
+
+
+def _cliff_px(template):
+    """The viewport at/above which the rail shows, read from the template via
+    the same css_rules parser the fidelity tests use. The cliff is the
+    `@media(max-width:…)` block whose `.marktab` declares `display:none`; the
+    rail shows above that value. Returns None when no such rule exists."""
+    for (context, selector), decls in css_rules(style_of(template)).items():
+        if selector != ".marktab" or not context.startswith("@media"):
+            continue
+        if not any(d.startswith("display:none") for d in decls):
+            continue
+        match = re.search(r"max-width\s*:\s*([0-9.]+)\s*px", context)
+        if match:
+            return float(match.group(1)) + 0.02
+    return None
+
+
+def _flag_maxwidth_px(template):
+    """The worst-case flag width in px, read from `.markflag`'s max-width
+    (rem → px at root 16). A ~6-word label fills it (measured). None if absent."""
+    rules = css_rules(style_of(template))
+    for decls in rules.get(("", ".markflag"), frozenset()):
+        match = re.match(r"max-width\s*:\s*([0-9.]+)rem", decls)
+        if match:
+            return float(match.group(1)) * 16
+    return None
+
+
+def test_the_worst_case_tab_fits_inside_the_wrap_at_the_switch_boundary(template):
+    """The cliff is where the rail shows, and the worst-case flag must fit
+    inside `.wrap` there. Derived from the template at runtime — the cliff from
+    its media query, the flag's width from `.markflag`'s `max-width` — so a
+    reshaped flag or a moved cliff moves the arithmetic with it, and the
+    literal here is the reading column (`.read`), not the flag.
+
+    `.wrap` is `min(calc(100% - 2rem), 1120px)`, so at viewport V its width is
+    `min(V - 32, 1120)`. The flag sits in the slack right of `.read`, a `4px`
+    gap off the column's edge (the `.4ch` in the template). The worst-case
+    two-line flag is its `max-width` (a ~6-word label fills it: measured).
+
+    Production line: the `@media(max-width:…) .marktab{display:none}` rule
+    (move the cliff below where the flag fits and this reddens), or
+    `.markflag`'s `max-width` (widen the flag past the slack), or
+    `.read`/`--measure` (narrow the column and the slack shrinks). The browser
+    guard re-proves all three in pixels.
+    """
+    cliff = _cliff_px(template)
+    assert cliff is not None, \
+        "the template no longer hides .marktab below a max-width cliff — the " \
+        "switch boundary this test reads is gone, not merely its value"
+    flag_px = _flag_maxwidth_px(template)
+    assert flag_px is not None, \
+        ".markflag no longer declares a max-width — the worst-case flag width " \
+        "this test reads is gone"
+    gap_px = 4                                  # the .4ch off the column edge
+    # At the cliff, .wrap is clamped by (100% - 2rem) until 1120 + 32 = 1152.
+    wrap_px = min(cliff - 32, 1120)
+    slack = wrap_px - _READ_COLUMN_PX - gap_px - flag_px
+    assert slack >= 0, (
+        "the worst-case flag (%.1fpx) does not fit inside .wrap at the cliff "
+        "(%.0fpx): wrap %.0f − read %.1f − gap %d − flag %.1f = %.1fpx. Move "
+        "the cliff up or narrow .markflag's max-width." % (
+            flag_px, cliff, wrap_px, _READ_COLUMN_PX, gap_px, flag_px, slack))
+
+
+def test_two_marks_closer_than_a_tab_height_do_not_overlap(template):
+    """Two flags closer than a tab is tall (the measured densest pair: a
+    section and its first marked child, ~29px against a ~32px tab) must not
+    overlap. The builder cannot know pixel gaps (the artifact is script-free),
+    so it staggers a flag NESTED inside another marked element — the honest
+    structural proxy for "right next to" — and the template's CSS offsets a
+    staggered flag down. The browser guard re-proves no two flags overlap in
+    pixels on a built artifact.
+
+    Production line: the `stagger = any(m for _, m in self._stack)` line in
+    `_MarkInjectScan` (drop the nesting detection and the child keeps
+    `data-mid="1"` with no `data-stagger`), or the `.marktab[data-stagger]`
+    rule in the template (drop the offset and a staggered flag sits flush).
+    """
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += ('\n<section id="parent" data-mark="parent flag">'
+                       '<p class="read" id="child" data-mark="child flag">'
+                       'a passage close to its parent</p></section>')
+    built = ra.render(fields, template=template)
+    # Precondition, derived not assumed: both flags were planted, and the child
+    # really is nested in the parent (the structural signal for "close"). If the
+    # fixture stopped nesting, the stagger check below would be vacuous.
+    assert built.count('class="marktab"') == 2, "two flags were not planted"
+    parent_tab = built[built.index('data-mid="0"'):built.index('data-mid="1"')]
+    child_tab = built[built.index('data-mid="1"'):]
+    assert "data-stagger" not in parent_tab, \
+        "the outer flag was staggered — stagger must mean nested-in-a-flag"
+    assert "data-stagger" in child_tab, (
+        "the nested flag was not staggered — two flags a tab-height apart would "
+        "read as one chrome mass. The nesting detection in _MarkInjectScan "
+        "stopped marking a flag whose ancestor carries a mark.")
+    # And the template actually offsets a staggered flag, or the attribute is
+    # decorative. The offset is a downward margin so the flag still anchors at
+    # the reading column edge (a horizontal push would overflow the wrap below
+    # ~1120px, measured).
+    assert re.search(r"\.marktab\[data-stagger\]\s*\{[^}]*margin-top",
+                     template), \
+        "the template dropped the .marktab[data-stagger] offset — the stagger " \
+        "attribute no longer moves the flag"
+
+
+def test_marks_are_focusable_and_announce_the_current_one(template):
+    """The flags are navigation, not edge art: each is a real focusable link,
+    next/prev is reachable and labelled, and the current passage is announced.
+    There is no script (the artifact is offline-clean), so "current" is
+    `:target` — the passage navigated to — and the marked host carries
+    `tabindex="-1"` so a screen reader announces it when fragment navigation
+    lands there.
+
+    Production line: `_mark_tab_html` (the flag link, the nav links and their
+    aria-labels all come from it), and `_augment_open_tag` (the host's
+    `tabindex="-1"`)."""
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += ('\n<section id="m1" data-mark="the cliff"><p>one</p></section>'
+                       '\n<section id="m2" data-mark="second finding"><p>two</p></section>'
+                       '\n<section id="m3" data-mark="third mark"><p>three</p></section>')
+    built = ra.render(fields, template=template)
+    # Each flag is a real link to its own passage (focusable, keyboard-operable).
+    flags = re.findall(r'<a class="markflag" href="#([^"]+)" aria-label="([^"]+)">',
+                       built)
+    assert [fid for fid, _ in flags] == ["m1", "m2", "m3"], flags
+    # Every flag's aria-label names it as a mark and carries its position, so a
+    # screen reader announces "essential mark N of M: …" rather than bare text.
+    assert all("essential mark" in label and " of 3" in label for _, label in flags), \
+        "a flag's aria-label stopped announcing its position: %r" % (flags,)
+    # Next/prev are reachable, labelled links — and only the middle flag carries
+    # both (the rail walks the list in document order).
+    assert re.search(r'<a class="markprev" href="#m1"[^>]*aria-label="previous essential',
+                     built), "prev control missing or unlabelled"
+    assert re.search(r'<a class="marknext" href="#m3"[^>]*aria-label="next essential',
+                     built), "next control missing or unlabelled"
+    # The marked hosts are focusable (tabindex="-1") so fragment navigation
+    # announces the current passage: this is the "announce the current one" half.
+    hosts = re.findall(r'<section id="(m[123])"[^>]*>', built)
+    assert len(hosts) == 3, hosts
+    for hid in hosts:
+        host_tag = re.search(r'<section id="%s"[^>]*>' % hid, built).group(0)
+        assert 'tabindex="-1"' in host_tag, (
+            "marked host %s is not focusable — the current passage cannot be "
+            "announced on fragment navigation" % hid)
+
+
+def test_the_rail_renders_nothing_below_the_cliff(template):
+    """Below the cliff the rail is absent — not a strip (that is increment 2b,
+    his call), not a broken flag. The template hides `.marktab` under a
+    max-width media query, and because the whole flag (label + nav) lives
+    inside `.marktab`, that one rule removes the rail, the strip and the
+    controls at once.
+
+    Production line: the `@media(max-width:…) { .marktab{display:none} }` rule.
+    Drop it and a narrow viewport renders clipped flags past the page edge."""
+    assert _cliff_px(template) is not None, \
+        "the cliff no longer hides .marktab — below it the rail would render"
+
+
+# ── the carried-over #389 limit: U+200B zero-width space (#367) ───────────
+#
+# #389 closed the empty-label hole but left one measured limit: the refusal is
+# str.strip()-based, so it catches every Zs space (U+00A0, U+2003, U+3000) but
+# NOT U+200B zero-width space, which is category Cf and therefore not
+# whitespace to .strip(). A label of only zero-width spaces is accepted and
+# would render a blank tab — which matters MORE now that tabs are rendered. The
+# rule that matches file-formats.md's wording ("a label must carry readable
+# text") is no character outside Unicode categories Z* and C*; the carve-out
+# the valueless data-mark must still be ignored is the discriminating half.
+
+
+def test_a_label_of_only_zero_width_spaces_is_refused(template):
+    """A label of only U+200B zero-width spaces is category Cf, so str.strip()
+    does not see it and #389's refusal let it through — rendering a blank tab.
+    The rule is no character outside categories Z* and C*; a valueless
+    data-mark must STILL be ignored (the naive widening swallows that carve-out
+    and reddens the two #389 guards below).
+
+    Production line: the blank-label refusal in render() (or the blank
+    detection in `_EssentialMarkScan._see`). Widening `not label.strip()` to
+    `not _readable(label)` where the latter rejects any char outside Z*/C*."""
+    zwsp = "\u200b\u200b"            # two zero-width spaces — not whitespace to .strip()
+    assert zwsp.strip() == zwsp, \
+        "precondition: U+200B is not whitespace to str.strip — if this fails " \
+        "the refusal under test is already covered by #389 and this is vacuous"
+    element = '<section id="blank" data-mark="%s"><p>blank flag</p></section>' % zwsp
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += "\n" + element
+    with pytest.raises(ra.ArtifactError, match="readable text"):
+        ra.render(fields, template=template)

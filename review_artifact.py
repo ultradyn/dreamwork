@@ -52,6 +52,7 @@ import html.parser
 import os
 import re
 import sys
+import unicodedata
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_PATH = os.path.join(HERE, "review-artifact.template.html")
@@ -685,6 +686,19 @@ MARKS_WARN_AT = 8        # soft cap 7: warn at 8 or more (advisory, via `warn`)
 MARKS_REFUSE_AT = 15     # hard cap 15: refuse — fifteen flags is wallpaper
 
 
+def _readable_label(label):
+    """A label carries readable text iff some character is outside Unicode
+    categories Z* (separators — every space, including U+00A0 / U+2003 / U+3000
+    that str.strip already caught) and C* (control/format — including U+200B
+    zero-width space, which str.strip does NOT see). A label of only Z*/C*
+    characters would render a blank tab, so the refusal treats it as blank.
+
+    The valueless `data-mark` (None) never reaches here: `_EssentialMarkScan`
+    returns on `label is None` before this is called, so widening the blank
+    check from str.strip to this cannot swallow the valueless carve-out."""
+    return any(unicodedata.category(ch)[:1] not in "ZC" for ch in label)
+
+
 # Sentinel for "the data-mark attribute is absent entirely", which
 # `dict(attrs).get("data-mark")` cannot tell from a valueless `data-mark`
 # (both surface as a missing key → None). HTMLParser reports a valueless
@@ -721,6 +735,17 @@ class _EssentialMarkScan(html.parser.HTMLParser):
     red-proof exists to catch. A mark whose element carries no stable `id` is
     recorded in `no_id` — next/prev cannot land on it, and the builder assigns
     nothing implicitly.
+
+    #367's carry-over from #389: `str.strip()` sees every Z* space (U+00A0,
+    U+2003, U+3000) but NOT U+200B zero-width space, which is category Cf and
+    so is not whitespace to `.strip()`. A label of only zero-width spaces would
+    render a blank tab — which matters more once tabs are rendered. The rule
+    that matches file-formats.md's "a label must carry readable text" is
+    `_readable_label`: a label is blank if EVERY character is in Unicode Z*
+    (separators) or C* (control/format). The valueless carve-out (`label is
+    None: return`) sits BEFORE it, so widening `.strip()` to `_readable_label`
+    cannot swallow valueless — the discrimination the two #389 guards exist to
+    hold.
     """
 
     def __init__(self):
@@ -738,7 +763,7 @@ class _EssentialMarkScan(html.parser.HTMLParser):
         self._seen += 1
         if label is None:            # valueless `data-mark`: not a mark, ignored
             return
-        if not label.strip():        # `data-mark=""` / whitespace-only: refused
+        if not _readable_label(label):  # empty / whitespace / zero-width-only: refused
             element_id = table.get("id")
             if element_id:
                 self.empty.append('id="%s"' % element_id)
@@ -771,6 +796,180 @@ def essential_marks(document):
     scan.feed(document)
     scan.close()
     return scan.labels, scan.no_id, scan.empty
+
+
+# ── the visible rail (#367 increment 2a) ──────────────────────────────────
+#
+# A flag is a child of the passage it marks, positioned absolutely against it
+# (the marked element is the positioning ancestor via `.is-marked`). That makes
+# the vertical free — the flag sits at the passage's own top, no pixel
+# knowledge, no script — and the horizontal a single CSS `left` against the
+# reading column's edge. The artifact is offline-clean (no script ever), so the
+# rail is BUILT into the HTML at build time rather than positioned at read time.
+#
+# The injection runs AFTER every validation (fetch, component, caps, no-id) so
+# the tabs it adds — pure fragment-link spans with no `src`/`href` to a network
+# resource — can never trip those checks, and so a body with no marks is left
+# byte-identical (the safety property increment 1 exists for). It cannot reach a
+# mark on a documented component's stray child, because a mark sits on the
+# COMPONENT element (which is its own host), not inside one.
+
+_TAG_ATTR_RE = re.compile(r'(\bclass\s*=\s*")|(\bclass\s*=\s*\')|(\s/?>(?:\s*))\Z')
+
+
+def _augment_open_tag(tag_text):
+    """Add `is-marked` to the class and `tabindex="-1"` to a start tag.
+
+    The marked element becomes the positioning ancestor (``position:relative``
+    via ``.is-marked``) and focusable (``tabindex="-1"``), so navigating to it
+    by fragment both scrolls it under the sticky rail correctly (its
+    ``scroll-margin-top``) and lets a screen reader announce it as the current
+    passage. ``tabindex="-1"`` is programmatic-focus only: it never enters the
+    Tab order, so it adds nothing to keyboard traversal that the flag links do
+    not already provide.
+    """
+    text = tag_text
+    class_match = re.search(r'\bclass\s*=\s*("|\')', text)
+    if class_match:
+        # Insert right after the opening quote of the existing class attribute.
+        after_quote = class_match.end()
+        text = text[:after_quote] + "is-marked " + text[after_quote:]
+    else:
+        close = re.search(r'\s*/?>\Z', text)
+        pos = close.start() if close else len(text)
+        text = text[:pos] + ' class="is-marked"' + text[pos:]
+    if not re.search(r'\btabindex\s*=', text):
+        close = re.search(r'\s*/?>\Z', text)
+        pos = close.start() if close else len(text)
+        text = text[:pos] + ' tabindex="-1"' + text[pos:]
+    return text
+
+
+class _MarkInjectScan(html.parser.HTMLParser):
+    """Find each real marked element's opening tag and whether it is nested.
+
+    Records, per mark in document order, the byte span of its opening tag (so
+    the injector can rewrite it and plant the flag) and whether an earlier
+    marked element is still open above it (the structural proxy for "closer
+    than a tab height" — the measured densest pair is a section and its first
+    marked child, which is exactly the nested case). The builder cannot know
+    pixel gaps (the artifact is script-free), so nesting is the honest signal:
+    a flag on a descendant of another flag is staggered down rather than
+    overlapped, and the guard re-proves no two flags overlap in pixels.
+    """
+
+    def __init__(self, line_starts):
+        super().__init__(convert_charrefs=True)
+        self._line_starts = line_starts
+        self.sites = []        # [{start, end, id, label}] in document order
+        self._stack = []       # [(tag, is_mark)] of open elements
+
+    def _offset(self):
+        lineno, col = self.getpos()
+        return self._line_starts[lineno - 1] + col
+
+    def _record(self, attrs):
+        table = dict(attrs)
+        label = table.get("data-mark", _ABSENT)
+        if label is _ABSENT or label is None:
+            return False
+        if not str(label).strip():
+            return False          # blanks were refused before injection
+        if not str(table.get("id", "")).strip():
+            return False          # no-id marks were refused before injection
+        tag_text = self.get_starttag_text() or ""
+        start = self._offset()
+        self.sites.append({
+            "start": start, "end": start + len(tag_text),
+            "tag_text": tag_text, "id": str(table["id"]).strip(),
+            "label": label,
+            "stagger": any(m for _, m in self._stack),
+        })
+        return True
+
+    def handle_starttag(self, tag, attrs):
+        is_mark = self._record(attrs)
+        if tag not in _VOID:
+            self._stack.append((tag, is_mark))
+
+    def handle_startendtag(self, tag, attrs):
+        self._record(attrs)       # self-closing; never stacked
+
+    def handle_endtag(self, tag):
+        while self._stack:
+            popped, _ = self._stack.pop()
+            if popped == tag:
+                break
+
+
+def _line_starts(text):
+    starts = [0]
+    for index, char in enumerate(text):
+        if char == "\n":
+            starts.append(index + 1)
+    return starts
+
+
+def _mark_tab_html(index, total, site, sites):
+    """One flag: its label links to its own passage; ‹/› walk the marks.
+
+    The label link is the flag itself (a real focusable control whose target is
+    the passage it hangs on). Next/prev are sibling fragment links inside a
+    ``.marknav`` that is hidden unless this passage is ``:target`` — so the
+    arrows read as a single next/prev control that follows the current mark,
+    with no script and no nested anchors. A single mark renders no nav at all.
+    """
+    host = site["id"]
+    label = html.escape(site["label"], quote=True)
+    where = index + 1
+    parts = ['<span class="marktab" data-mid="%d"%s>'
+             % (index, ' data-stagger' if site["stagger"] else '')]
+    parts.append(
+        '<a class="markflag" href="#%s" aria-label="essential mark %d of %d: '
+        '%s">%s</a>' % (host, where, total, label, label))
+    if total > 1:
+        nav = ['<span class="marknav">']
+        if index > 0:
+            nav.append(
+                '<a class="markprev" href="#%s" aria-label="previous essential '
+                'mark (mark %d of %d)">\u2039</a>'
+                % (sites[index - 1]["id"], where - 1, total))
+        if index < total - 1:
+            nav.append(
+                '<a class="marknext" href="#%s" aria-label="next essential mark '
+                '(mark %d of %d)">\u203a</a>'
+                % (sites[index + 1]["id"], where + 1, total))
+        nav.append('</span>')
+        parts.append(''.join(nav))
+    parts.append('</span>')
+    return ''.join(parts)
+
+
+def inject_mark_rail(document):
+    """Plant a flag on each marked passage. No marks → the document unchanged.
+
+    The opening tags are rewritten and the flags inserted last-offset-first so
+    earlier byte spans stay valid as the string grows. Returns ``document``
+    unchanged when there is nothing to plant, which is the half of the safety
+    property the byte-identity check rests on: a body with no marks gains no
+    chrome at all.
+    """
+    scan = _MarkInjectScan(_line_starts(document))
+    scan.feed(document)
+    scan.close()
+    sites = scan.sites
+    if not sites:
+        return document
+    total = len(sites)
+    out = document
+    # Inject from the last mark to the first: every insertion shifts bytes that
+    # come after it, so working backwards keeps each earlier site's span honest.
+    for index in range(total - 1, -1, -1):
+        site = sites[index]
+        augmented = _augment_open_tag(site["tag_text"])
+        flag = _mark_tab_html(index, total, site, sites)
+        out = out[:site["start"]] + augmented + flag + out[site["end"]:]
+    return out
 
 
 # ── the build ─────────────────────────────────────────────────────────────
@@ -901,6 +1100,15 @@ def render(fields, template=None, warn=None):
             "output misuses %d documented component(s) — the template styles "
             "the documented classes and nothing else, so this renders wrong "
             "with no other symptom:\n  %s" % (len(strays), "\n  ".join(strays)))
+    # #367 increment 2a — plant the visible flag rail (tabs + next/prev) into
+    # the built output. Runs AFTER every validation, so the fragment-link spans
+    # it adds can never trip the fetch or component checks, and a body with no
+    # marks is left byte-identical — the safety property increment 1 is for.
+    # `labels` was parsed from the body above; inject_mark_rail re-scans `out`
+    # for the opening tags (the body sits in `out` unchanged) and plants a flag
+    # on each. No labels → no flags → `out` returned untouched.
+    if labels:
+        out = inject_mark_rail(out)
     return out
 
 
