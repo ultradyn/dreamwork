@@ -1,42 +1,6 @@
 # Questions for the human
 
 ## Open
-- **P1 · 2026-07-28 — #361: may I switch on the ledger-lint hook we built in
-  #138/#156 and never turned on?** One line from you, then a reviewed install.
-  No artifact — it is a consent question, not a design.
-
-  **The evidence is two of my own mistakes tonight, four hours apart.** I wrote
-  `tasks.md`, introduced a lint ERROR, and committed anyway — because the lint
-  run and the `git commit` were in one shell command and the error scrolled past
-  above the commit's own output. Once a next-id mismatch, once prose that quoted
-  the origin marker literally so lint counted two markers on one entry. Both
-  needed an amend, and both were caught only by the *next* lint run.
-
-  **The fix already exists and is switched off.** #138/#156 shipped
-  `plugins/ud-dreamwork-hooks/hooks/posttooluse_ledger_lint.py`, which lints
-  `questions.md` and `tasks.md` **in the same turn as the write** — before any
-  commit, while the agent that mangled the file still has the context. That is
-  exactly the window both incidents fell through. It is measurably off: not
-  referenced in `~/.claude/settings.json` or `~/.claude-w/settings.json`, and
-  DREAMWORK.md has Load lines for `ud-dreamwork-worktrees` and
-  `ud-dreamwork-github` but none for the hooks plugin.
-
-  It is off because #138's entry put a scope gate on it — the plugin writes to
-  your Claude Code config — and the plugin's own design refuses to act without a
-  DREAMWORK.md Load line. So it cannot be self-granted, correctly.
-
-  Rec: **add the Load line**; I then show you `install.py --print` before
-  anything is applied (`--apply` is idempotent, takes a timestamped backup, and
-  refuses to clobber). Note it is Claude Code-specific, so it protects this
-  session and any other Claude lane, not pi or ccc agents.
-
-  The weaker half of the fix needs no permission and I am doing it regardless:
-  never put a lint run and a `git commit` in one command again.
-
-  Answer `rec`, `rec but show me install.py --print first` (the same thing,
-  said explicitly), or `Pause #361`.
-  - **Answer (via watch, 2026-07-28 02:47):** sure, rec
-
 - **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
   pre-phase on the existing card ghost?** Max directed Grok toward shader work;
   read-only review mapped the actual transition matrix. Route departures already
@@ -325,6 +289,64 @@
 
 
 ## Answered
+
+- **P1 · 2026-07-28 — #361: may I switch on the ledger-lint hook we built in
+  #138/#156 and never turned on?**
+  → answered (2026-07-28 02:47): **"sure, rec" — the Load line is in** (DREAMWORK.md,
+  Plugins), which is the consent gate the plugin's own design requires: both hooks re-check
+  it every invocation and skip silently without it, so deleting that line disables them
+  without touching any config.
+  · **`--apply` has NOT been run**, per your own rec that I show you `--print` first. The
+  snippet is two entries: `PreCompact` -> `precompact_focus.py`, and `PostToolUse` matching
+  `Write|Edit` -> `posttooluse_ledger_lint.py`. Your existing `PostToolUse` entry (the c2c
+  inbox check, matcher `^(?!mcp__).*`) is a separate object and is not touched; `--apply`
+  refuses to replace a differing entry without `--force`.
+  · **And that pre-apply look found a real bug, filed as #369.** Your two config dirs are
+  the SAME INODE — `~/.claude/settings.json` and `~/.claude-w/settings.json` are both
+  `256518042` — and this session runs with `CLAUDE_CONFIG_DIR=~/.claude-w` while
+  `install.py` defaults to `~/.claude`. It writes a `.tmp` and calls `replace()`, which is
+  atomic and **breaks the hardlink**: the other name keeps the old inode. So `--apply` would
+  print success, write its backup, be idempotent on re-run, and leave the session it was
+  meant to protect with no hooks. Every visible signal would say it worked.
+  · So I am holding at exactly where your grant ends. Say `apply` once #369 is fixed, or
+  `apply anyway` if you would rather have it on the `~/.claude` name today and relink by
+  hand.
+
+  One line from you, then a reviewed install.
+  No artifact — it is a consent question, not a design.
+
+  **The evidence is two of my own mistakes tonight, four hours apart.** I wrote
+  `tasks.md`, introduced a lint ERROR, and committed anyway — because the lint
+  run and the `git commit` were in one shell command and the error scrolled past
+  above the commit's own output. Once a next-id mismatch, once prose that quoted
+  the origin marker literally so lint counted two markers on one entry. Both
+  needed an amend, and both were caught only by the *next* lint run.
+
+  **The fix already exists and is switched off.** #138/#156 shipped
+  `plugins/ud-dreamwork-hooks/hooks/posttooluse_ledger_lint.py`, which lints
+  `questions.md` and `tasks.md` **in the same turn as the write** — before any
+  commit, while the agent that mangled the file still has the context. That is
+  exactly the window both incidents fell through. It is measurably off: not
+  referenced in `~/.claude/settings.json` or `~/.claude-w/settings.json`, and
+  DREAMWORK.md has Load lines for `ud-dreamwork-worktrees` and
+  `ud-dreamwork-github` but none for the hooks plugin.
+
+  It is off because #138's entry put a scope gate on it — the plugin writes to
+  your Claude Code config — and the plugin's own design refuses to act without a
+  DREAMWORK.md Load line. So it cannot be self-granted, correctly.
+
+  Rec: **add the Load line**; I then show you `install.py --print` before
+  anything is applied (`--apply` is idempotent, takes a timestamped backup, and
+  refuses to clobber). Note it is Claude Code-specific, so it protects this
+  session and any other Claude lane, not pi or ccc agents.
+
+  The weaker half of the fix needs no permission and I am doing it regardless:
+  never put a lint run and a `git commit` in one command again.
+
+  Answer `rec`, `rec but show me install.py --print first` (the same thing,
+  said explicitly), or `Pause #361`.
+  - **Answer (via watch, 2026-07-28 02:47):** sure, rec
+
 
 - **P1 · 2026-07-28 — #264 the task-transition boundary: one append-only log, no
   outbox, and burndown becomes a query.**

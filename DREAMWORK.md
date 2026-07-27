@@ -221,6 +221,27 @@ dreamwork-version: 5853e1789929
 
 ## Plugins
 
+- Load: `ud-dreamwork-hooks` (2026-07-28, **human-approved 02:47 — "sure, rec"**,
+  asked as #361) — the compaction/lint hooks plugin #138/#156 shipped on 2026-07-27
+  and nobody switched on. This line is the consent gate the plugin's own design
+  requires: **both hooks re-check it on every invocation and skip silently without
+  it**, so removing this line disables them without touching any config.
+  - **Why it was asked for.** Two commits went through with a `lint.py` ERROR
+    present, four hours apart, both because the lint run and the `git commit`
+    shared one shell command and the error scrolled past above the commit's own
+    output. `posttooluse_ledger_lint.py` lints `questions.md` and `tasks.md` **in
+    the same turn as the write** — before any commit, while the agent that mangled
+    the file still holds the context — which is exactly the window both slips fell
+    through.
+  - **Scope of the grant, read narrowly.** It authorises the Load line and
+    reviewing `install.py --print`. It does **not** authorise `--apply`: the human's
+    rec was *"add the Load line; I then show you `install.py --print` before
+    anything is applied"*, so the printed diff goes to him and `--apply` waits for
+    a second word. `--apply` is idempotent, takes a timestamped backup, and refuses
+    to clobber.
+  - **Claude Code only**, so it protects Claude lanes and does nothing for pi or
+    `ccc` agents. Not a substitute for the discipline: never put a lint run and a
+    `git commit` in one command.
 - Load: `ud-dreamwork-worktrees` (2026-07-26) — explicitly requested by
   Max. Use bounded one-task worktrees for subagents and the same-host durable
   claim/inbox protocol for longer co-agents. The coordinator remains the main

@@ -24,9 +24,57 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **368**
+Next id: **370**
 
 ## Open
+
+- **#369** — `install.py --apply` would break the hardlink and protect the wrong session ·
+  P1 · plugin bug/silent failure · origin: **loop** · 20m · **found by the pre-apply check his
+  #361 rec required, which is the only reason it was found at all** · `~/.claude/settings.json`
+  and `~/.claude-w/settings.json` are **the same inode** (verified: both `256518042`), and this
+  Claude session runs with `CLAUDE_CONFIG_DIR=/home/xertrov/.claude-w` while `install.py`'s
+  default target is `~/.claude/settings.json`
+  · **the defect is the write mode, not the path**: `install.py:129-131` writes a `.tmp` and
+  calls `tmp.replace(settings_path)`. That rename is atomic and correct in isolation — and it
+  **breaks the hardlink**, leaving the other name on the old inode. So `--apply` against the
+  default would report success, write a timestamped backup, be idempotent on re-run, and the
+  session it was asked to protect would still have no hooks. Applying to `--settings
+  ~/.claude-w/settings.json` mirrors the same failure onto the other name
+  · this is the silent class exactly: every visible signal says it worked
+  · rec: `install.py` reads `st_nlink` before writing and, when it is >1, either refuses with
+  the reason or writes in place and re-establishes the link afterwards — with a red-first test
+  that hardlinks two temp settings files, applies, and asserts BOTH names still resolve to one
+  inode carrying the hooks · until then **`--apply` is not run**, which is also where his grant
+  stops: he authorised the Load line and reviewing `--print`
+  · **not just this plugin's problem**: anything that rewrites his config by atomic replace has
+  the same hazard, and the two config dirs being hardlinked is invisible to every one of them
+
+- **#368** — Break the large Python files into a modular, testable codebase · P2 ·
+  refactor/architecture · origin: **human** · **human via watch `add-idea` 2026-07-28 02:46**:
+  *"after the cli, we should refactor the large python files into a proper modular codebase
+  that's reusable and more easily tested. also, re cli, we can write a core in python that we
+  can later replace with something written in a faster-to-start compiled language. We can
+  measure how fast it is to start too and like return 'version' as a benchmark."*
+  · **three asks, and the third makes the first two checkable**, which is the part worth
+  keeping: a startup benchmark turns "modular" and "fast to start" from taste into numbers
+  · measured now, so the baseline exists before anything moves: `watch.py` **8647** lines,
+  `test_watch.py` 3830, `test_lint.py` 2443, `lint.py` 2004, `dreamhub.py` 982,
+  `review_artifact.py` 813 · startup, min of 5 runs each: bare `python3 -c pass` **20ms**,
+  `review_artifact.py --help` **75ms**, `lint.py --help` **106ms**, and `import watch` alone
+  **93ms** · so the interpreter floor is 20ms and importing the dashboard costs 4.7x that
+  before any work happens — his instinct that a `version` call is a fair benchmark is right,
+  because it measures exactly the import cost and nothing else
+  · **sequencing is his and it is deliberate — "after the cli"**: #352 standardises the
+  duplicated ledger parsing, then the CLI exists, and only then does the refactor have a shape
+  to move things into. Refactoring first would rearrange code around an interface that does not
+  exist yet
+  · and the middle ask sets the boundary the refactor must respect: a **Python core that a
+  compiled language can later replace**, which means the seam is the CLI's data contract, not
+  Python function signatures · #264's design already states its boundary "in terms a non-Python
+  CLI could implement" for this reason, so the constraint is consistent and already partly paid
+  · blocked on #352 and the CLI existing · rec when it starts: move the benchmark first (a
+  `version` verb plus a recorded baseline), so every later step is measured against it rather
+  than argued about
 
 - **#367** — Tabbed pointers to a review's essentials, with next/prev · P2 ·
   review tooling/UX · origin: **human** · **human via watch `add-idea` 2026-07-28 02:36**,
