@@ -24,9 +24,22 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **308**
+Next id: **309**
 
 ## Open
+
+- **#308** — Record the whole-pixel rounding trap in `transitions.md` · P3 ·
+  chore · 10m · origin: **loop** · goal: a motion guard should not be able to
+  report a clean ease as a snap ← DREAMWORK.md *Nothing fails quietly* · found
+  in dream grooming (#142's batch, one archive from being lost): rounding a
+  per-frame trace to whole pixels reported a clean 2.1px ease as a snap, which
+  is an instrument bug that presents as a feature bug · the trap is live in the
+  idiom, not hypothetical — `reviewsplit.mjs`'s `distinct()` rounds, and it is
+  only safe there because its travel assertions require >=60px of movement, so
+  the guard whose gesture IS small is the one that will be bitten · belongs in
+  `transitions.md` beside how to check a transition, which is where someone
+  writing a motion guard is already looking · **blocked while
+  dreamer-reviewsplit owns `transitions.md`** — take it after #305 merges
 
 - **#305** — Read a review document and answer its question side by side · P1 ·
   Web UI feature/design · ~75m, **needs splitting** · origin: **human** ·

@@ -1023,3 +1023,17 @@ this shape and convert opportunistically.)
   severity, because the repair is somebody else's side effect and it will be
   refactored by someone who does not know it is load-bearing.
   (dreamer-qsec via #198, distilled by the coordinator 2026-07-27)
+- **A red proof can be defamed by its own injection.** Among four instrument
+  bugs in one batch, the nastiest was an injection written as `'' || x`, which
+  returns `x` — so the deliberate break never applied, the guard stayed green,
+  and the honest reading of that is "this check cannot fail". The danger is the
+  direction of the mistake: every other instrument bug makes a good check look
+  broken and you go looking, while this one makes a *correct* check look hollow,
+  and the next move after "it would not go red" is to rewrite or delete the
+  check that was right all along. So a red proof has two halves, and the second
+  is usually skipped: confirm the check went red, AND confirm the injection
+  actually changed the behaviour — read the injected source back, or assert the
+  broken build fails some *other* check that the break necessarily also breaks.
+  A green run after an injection is two indistinguishable states until you look:
+  a check that cannot fail, and a break that never happened.
+  (dreamer-panels via #142, distilled by the coordinator 2026-07-27)
