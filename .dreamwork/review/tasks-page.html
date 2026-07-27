@@ -192,7 +192,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 <nav class="toprail" aria-label="Proposal navigation">
   <div class="toprail-in">
     <div class="identity"><b>/tasks · proposal</b><span>task #281 · route, data contract, canonical detail URL</span></div>
-    <div class="topactions"><span class="status">awaiting review</span><a class="full" href="#drawn">the page, drawn</a><a href="#decision">decisions</a></div>
+    <div class="topactions"><span class="status">approved with amendments &middot; re-verified 27 Jul</span><a class="full" href="#drawn">the page, drawn</a><a href="#decision">decisions</a></div>
   </div>
 </nav>
 
@@ -202,20 +202,24 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <div class="hero-grid">
     <div>
       <div class="kicker"><h1>The ledger gets a page, and every task gets an address.</h1><span class="proposal">proposal only</span></div>
-      <div class="sub">task #281 · 27 July 2026 · self-contained proposal, as the ledger entry requires</div>
+      <div class="sub">task #281 · 27 July 2026 · <strong>approved with amendments 21:47</strong>; re-verified against the tree at <code>16ef2e2</code> under #327</div>
       <p class="lead"><code>.dreamwork/tasks.md</code> is the durable half of the queue and it has never had a
       surface. Everything that reads it today reads <em>sets of ids</em> — the burndown counts them, the
       provenance bar classifies them, nothing turns one entry into fields. This proposes the missing
       reader, one page built on it, and <strong>one canonical URL per task</strong> that
       <code>#282</code>'s hovercards and <code>#229</code> can hardcode.</p>
-      <div class="call"><strong>Recommendation.</strong> Approve the route <code>/tasks</code>, the canonical
-      detail <code>/tasks?t=&lt;id&gt;</code>, and the record contract below. Twelve increments, each
-      independently verifiable; the ledger stays the sole authority and this page never writes to it.
-      Seven decisions at the foot want a one-line answer each.</div>
+      <div class="call"><strong>Approved, with three amendments.</strong> The route <code>/tasks</code>, the canonical
+      detail <code>/tasks?t=&lt;id&gt;</code> and the record contract below are authorised for implementation.
+      His three overrides are folded in: the wide two-pane layout is approved <em>at a second route</em>
+      (<code>/tasks2</code>, <code>#328</code>) with <code>/tasks</code> kept one-column; sort is a
+      <em>control</em> beside the filters, not a fixed default; and the in-flight signal says
+      <strong>in progress</strong> with no hedge, its honesty carried by a hover box reading
+      <em>Reported: Xm Ys ago</em>. Twelve increments, each independently verifiable; the ledger stays the
+      sole authority and this page never writes to it.</div>
     </div>
     <div class="version-mark" aria-label="Scale of the ledger today">
-      <span class="big">121</span>
-      <small>entries in the ledger today<br>104 open · 17 landed<br>0 entry-level readers exist</small>
+      <span class="big">148</span>
+      <small>entries in the ledger at <code>16ef2e2</code><br>106 open · 42 landed<br>+87 landed ids with no entry left<br>0 entry-level readers exist</small>
     </div>
   </div>
 </header>
@@ -230,7 +234,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <tbody>
     <tr><td><code>ledger_entries(text)</code></td><td><code>(ids, raw_text)</code></td><td>entry, unparsed</td><td class="unknown">the grammar, yes — the fields, no</td></tr>
     <tr><td><code>entry_origins(text)</code></td><td><code>(ids, origin)</code></td><td>one field</td><td class="unknown">its fail-closed rule is the model</td></tr>
-    <tr><td><code>parse_ledger(text)</code></td><td>two id sets</td><td>id only</td><td class="fail">no — and it is blind to combined entries</td></tr>
+    <tr><td><code>parse_ledger(text)</code></td><td>two id sets</td><td>id only</td><td class="fail">no — id sets carry no fields. <span class="dim">(It <em>was</em> also blind to combined entries; #301 and #315 fixed that, so this row is now about granularity alone.)</span></td></tr>
     <tr><td><code>ledger_series(target)</code></td><td>buckets + counts</td><td>aggregate</td><td class="unknown">it already computes per-id facts, then discards them</td></tr>
     <tr class="row-accent"><td><strong>proposed <code>ledger_tasks(text)</code></strong></td><td>a record per entry</td><td><strong>entry, parsed</strong></td><td class="pass">yes — the contract #282 and #294 both consume</td></tr>
   </tbody>
@@ -238,12 +242,14 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <div class="notice"><b>The metadata chain is free-form prose</b>, so the parse is genuinely partial. Every
   field below therefore states which of three things it is — <strong>parsed</strong>, <strong>derived</strong>,
   or <strong>unknown</strong> — and an unknown renders <em>as unknown</em>, never as a blank that reads like a
-  claim. Coverage is measured against today's file, not asserted.</div>
+  claim. Coverage is measured against the file at <code>16ef2e2</code>, not asserted — and it is a
+  <strong>measurement with a date, not a constant</strong>: every figure in the first draft of this page aged
+  out inside a day (121 entries became 148), which is why no check may assert one as a literal.</div>
   <div class="facts">
-    <div class="fact"><span class="number">103<span class="dim">/104</span></span><span class="caption">open entries carrying a priority marker (the 104th writes it bolded: <code>**P2**</code>)</span></div>
-    <div class="fact"><span class="number">65<span class="dim">/104</span></span><span class="caption">whose effort token parses to minutes — <code>4-5 increments</code> deliberately yields none</span></div>
-    <div class="fact"><span class="number">53<span class="dim">/104</span></span><span class="caption">carrying an <code>origin:</code> marker; the rest are honestly unknown, never guessed</span></div>
-    <div class="fact"><span class="number">19<span class="dim">/104</span></span><span class="caption">naming a blocker — and some blockers are prose, not ids</span></div>
+    <div class="fact"><span class="number">106<span class="dim">/106</span></span><span class="caption">open entries carrying a priority marker — 102 as a chain token, <strong>4 only bolded</strong> (<code>**P2**</code>), so that branch is not a one-entry edge case</span></div>
+    <div class="fact"><span class="number">64<span class="dim">/106</span></span><span class="caption">whose effort token parses to minutes — <code>4-5 increments</code> deliberately yields none</span></div>
+    <div class="fact"><span class="number">59<span class="dim">/106</span></span><span class="caption">carrying an <code>origin:</code> marker; the rest are honestly unknown, never guessed</span></div>
+    <div class="fact"><span class="number">21<span class="dim">/106</span></span><span class="caption">naming a blocker — and some blockers are prose, not ids</span></div>
   </div>
 </section>
 
@@ -307,7 +313,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       <text x="8" y="200">#294 replaces the two left columns with SQLite and leaves the accented box's signature intact.</text>
       <text x="8" y="220">ledger_tasks then becomes the migration's importer; the views never learn that storage moved.</text>
       <text x="8" y="240">ledger_history adds no git call: ledger_series already builds these maps and throws them away (#218 says so).</text>
-      <text x="8" y="264">/tasksdata is route-scoped and NOT a /data.json field: that payload is already 374KB, re-fetched every ~2s in every window.</text>
+      <text x="8" y="264">/tasksdata is route-scoped and NOT a /data.json field: that payload measures 456,842 bytes, re-fetched every ~2s in every window.</text>
     </g>
   </svg>
   <figcaption>The accented box is the point: one function is the storage boundary, and it is the only thing <code>#294</code> has to re-point.</figcaption>
@@ -318,8 +324,8 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <div class="label" id="url-t">Route and URL contract</div>
   <div class="summary-line"><span class="key">list</span><span><code>/tasks</code> — heading <code>tasks</code>, crumbs <code>&larr; dashboard</code></span></div>
   <div class="summary-line"><span class="key">canonical detail</span><span><code>/tasks?t=281</code> — heading <code>task #281</code>, crumbs <code>&larr; tasks · dashboard</code></span></div>
-  <div class="summary-line"><span class="key">deep-linkable</span><span><code>q=</code> search · <code>f=</code> facets · <code>s=</code> sort. <span class="dim">Ephemeral and deliberately absent: scroll, open disclosures, focus, caret.</span></span></div>
-  <div class="summary-line"><span class="key">history</span><span>filter and search <strong>replace</strong>; only a route change <strong>pushes</strong></span></div>
+  <div class="summary-line"><span class="key">deep-linkable</span><span><code>q=</code> search · <code>f=</code> facets · <code>s=</code> sort — <strong>his to set</strong>, so the default is never written and an unrecognised value is dropped rather than honoured. <span class="dim">Ephemeral and deliberately absent: scroll, open disclosures, focus, caret.</span></span></div>
+  <div class="summary-line"><span class="key">history</span><span>filter, search <em>and sort</em> <strong>replace</strong>; only a route change <strong>pushes</strong> — choosing a ranking is not a destination</span></div>
 
   <h3>Why a query param and not a path segment</h3>
   <div class="scroller"><table>
@@ -356,12 +362,13 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
         <span class="searchbox"><span>transition<i>|</i></span></span>
         <span class="sgroup" role="group" aria-label="state"><span class="sgbtn">open</span><span class="sgbtn">blocked</span><span class="sgbtn">landed</span><span class="sgbtn on">all</span></span>
         <span class="sgroup" role="group" aria-label="priority"><span class="sgbtn">P0-1</span><span class="sgbtn">P2</span><span class="sgbtn">P3</span><span class="sgbtn on">any</span></span>
+        <span class="sgroup" role="group" aria-label="sort"><span class="sgbtn on">priority</span><span class="sgbtn">newest</span><span class="sgbtn">oldest</span><span class="sgbtn">effort</span></span>
       </div>
-      <div class="countline"><b>7</b> of 121 · 104 open · 17 landed · sorted by priority</div>
+      <div class="countline"><b>7</b> of 238 · 106 open · 113 landed · 19 unknown <span class="dim">(87 of the 238 have no entry left)</span> · sorted by priority</div>
 
-      <a class="tk claimed" href="#drawn"><span class="tk-1"><b class="tkid">#281</b><span class="tkt">add a rich interactive <span class="hilite">/tasks</span> page</span><span class="tkp p01">P1</span></span><span class="tk-2">dashboard feature/design · human · filed 26 Jul · <em>the loop says it is on this</em></span></a>
+      <a class="tk claimed" href="#drawn"><span class="tk-1"><b class="tkid">#281</b><span class="tkt">add a rich interactive <span class="hilite">/tasks</span> page</span><span class="tkp p01">P1</span></span><span class="tk-2">dashboard feature/design · human · filed 26 Jul · <em>in progress</em> <span class="dim">— hover or focus: Reported: 04m 12s ago</span></span></a>
 
-      <a class="tk blocked" href="#drawn"><span class="tk-1"><b class="tkid">#282</b><span class="tkt">link task references to rich hover previews</span><span class="tkp p01">P1</span></span><span class="tk-2">task-navigation feature · human · filed 26 Jul · blocked on #281, #213 <em class="stale">· #213 landed 27 Jul</em></span></a>
+      <a class="tk blocked" href="#drawn"><span class="tk-1"><b class="tkid">#282</b><span class="tkt">link task references to rich hover previews</span><span class="tkp p01">P1</span></span><span class="tk-2">task-navigation feature · human · filed 26 Jul · blocked on #281 <em>· still open</em>, #213 <em class="stale">· landed 27 Jul</em>, #106 <em class="stale">· state unknown</em></span></a>
 
       <a class="tk" href="#drawn"><span class="tk-1"><b class="tkid">#297</b><span class="tkt">make every dashboard disclosure travel instead of jump</span><span class="tkp p2">P2</span></span><span class="tk-2">Web UI bug · human · filed 27 Jul · 60m</span></a>
 
@@ -369,13 +376,13 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 
       <a class="tk landed" href="#drawn"><span class="tk-1"><b class="tkid">#216</b><span class="tkt">parse first-seen origin in ledger history</span><span class="tkp p2">P2</span></span><span class="tk-2">loop · landed 27 Jul · e9c30ff</span></a>
 
-      <a class="tk landed" href="#drawn"><span class="tk-1"><b class="tkid">#154</b><span class="tkt">the enter-snap rule beats the component</span><span class="tkp p2">P2</span></span><span class="tk-2">landed 25 Jul · <em>entry pruned from the ledger · title from its last snapshot</em></span></a>
+      <a class="tk landed" href="#drawn"><span class="tk-1"><b class="tkid">#231</b><span class="tkt">the fold snapshot keyed by content, not by index</span><span class="tkp p2">P2</span></span><span class="tk-2">landed · <em>entry pruned from the ledger · title from its last snapshot</em> <span class="dim">— one of 87</span></span></a>
 
-      <a class="tk unknownstate" href="#drawn"><span class="tk-1"><b class="tkid">#—</b><span class="tkt">an entry whose leading token numbers nothing</span><span class="tkp">—</span></span><span class="tk-2"><em>unknown</em> · listed anyway, because it exists</span></a>
+      <a class="tk unknownstate" href="#drawn"><span class="tk-1"><b class="tkid">#154</b><span class="tkt">the enter-snap rule beats the component</span><span class="tkp">—</span></span><span class="tk-2"><em>unknown</em> · no entry, and no snapshot ever placed it under either heading in a form the readers can see · listed anyway, because it exists <span class="dim">— one of 19</span></span></a>
 
       <div class="annot"><b>01</b><span>Two lines. Every field is <strong>whole or absent</strong> — no truncated description, because a preview that might be complete is worse than one that obviously is not (<code>#106</code>).</span></div>
-      <div class="annot"><b>02</b><span>Priority is <strong>luminance</strong>, not colour. The accent is spent on exactly one thing on this page: the loop's live claim.</span></div>
-      <div class="annot"><b>03</b><span>A landed blocker is <em>said</em>, never silently unblocked; a blocker id that does not exist says that instead.</span></div>
+      <div class="annot"><b>02</b><span>Priority is <strong>luminance</strong>, not colour. The accent is spent on exactly one thing on this page: the <strong>in progress</strong> rail. The <em>Reported:</em> box spends no second colour — the age qualifies the accent rather than competing with it.</span></div>
+      <div class="annot"><b>03</b><span>A landed blocker is <em>said</em>, never silently unblocked. The cross-check is <strong>three-way</strong>: landed · still open · <em>state unknown</em> — because twelve genuinely-landed ids (#106 among them) are in neither reader set today, and calling those “not in this ledger” would be a wrong claim on the page.</span></div>
     </div>
   </div>
 
@@ -386,7 +393,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       <div class="crumbs">&larr; tasks&nbsp;·&nbsp;dashboard</div>
       <p style="margin:.2rem 0 .9rem;color:var(--bright)">add a rich interactive <code>/tasks</code> page</p>
       <dl class="detgrid">
-        <dt>state</dt><dd>open · <em>the loop says it is on this</em></dd>
+        <dt>state</dt><dd><strong>in progress</strong> · <em>Reported: 04m 12s ago</em></dd>
         <dt>priority</dt><dd>P1</dd>
         <dt>kind</dt><dd>dashboard feature/design</dd>
         <dt>effort</dt><dd><em>none recorded</em></dd>
@@ -420,19 +427,19 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       <p class="quiet" style="font-size:.72rem">A target that keeps no ledger has not failed at anything. One dim line, his call.</p>
     </div></div>
     <div class="frame"><div class="framebar"><b>unreadable</b><span>the fault</span></div><div class="framebody">
-      <div class="warnline"><b>tasks.md holds 1,462 lines and this page can see no entries in it</b><br><span class="dim">.dreamwork/tasks.md</span></div>
+      <div class="warnline"><b>tasks.md holds 2,361 lines and this page can see no entries in it</b><br><span class="dim">.dreamwork/tasks.md</span></div>
       <p class="quiet" style="font-size:.72rem">Amber, on the rail, with the path as a <code>/file</code> link. Not a third use of <code>--warn</code>: it is <code>#136</code>'s fact — a file the reader cannot see — on a second file.</p>
     </div></div>
   </div>
   <div class="frames" style="margin-top:1.2rem">
     <div class="frame"><div class="framebar"><b>/tasks?q=xyzzy</b><span>no match</span></div><div class="framebody">
-      <div class="countline"><b>0</b> of 104 open · 17 landed</div>
+      <div class="countline"><b>0</b> of 106 open · 113 landed</div>
       <div class="calmline">nothing matches “xyzzy” · <span class="dim">clear the filter</span></div>
       <p class="quiet" style="font-size:.72rem">Never collapsed into “no tasks”. The ledger is fine; the filter is the thing that is empty, and the count line keeps saying so.</p>
     </div></div>
     <div class="frame"><div class="framebar"><b>/tasks?t=9999</b><span>unknown id</span></div><div class="framebody">
       <div class="mockhead"><span class="opener">+</span><span class="mocktitle">task #9999</span></div>
-      <div class="calmline">no #9999 in this ledger · the highest id is #300 · <span class="dim">&larr; tasks</span></div>
+      <div class="calmline">no #9999 in this ledger · the highest id is #328 · <span class="dim">&larr; tasks</span></div>
       <p class="quiet" style="font-size:.72rem">200, not 404. The statement is about the ledger, not about the server, and a 404 would make the client treat a legitimate route as broken.</p>
     </div></div>
   </div>
@@ -444,29 +451,39 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <thead><tr><th>state</th><th>evidenced by</th><th>treatment</th></tr></thead>
   <tbody>
     <tr><td>open</td><td>sits under <code>## Open</code>, nothing else claims it</td><td>the default, full ramp</td></tr>
-    <tr class="row-accent"><td>claimed</td><td><code>status.json</code> names the id — <strong>the loop's claim, labelled as one</strong></td><td>the page's only accent here: a rail, and no breath (the awaiting-fold wisp stays the one moving exception)</td></tr>
+    <tr class="row-accent"><td><strong>in progress</strong></td><td>a <strong>structured</strong> source names the id: the ledger's own <code>· in progress</code> token, or <code>status.json</code>'s <code>*_task_ids</code> once that field exists. <strong>Never prose</strong></td><td>the page's only accent here: a rail, the words <strong>in progress</strong> with no hedge, and a hover/focus box reading <em>Reported: Xm Ys ago</em>. No breath — the awaiting-fold wisp stays the one moving exception</td></tr>
     <tr><td>blocked</td><td>an explicit <code>blocked on …</code>. <strong>Never inferred</strong></td><td>one step down the ramp, blockers listed</td></tr>
-    <tr><td>blocked · blocker landed</td><td>every named blocker is in the landed set</td><td>says so. The page does <strong>not</strong> unblock it — only the coordinator can</td></tr>
-    <tr><td>blocked · blocker missing</td><td>the named id exists nowhere</td><td>says <em>not in this ledger</em>. A wrong claim is worse than an incomplete one, and this is the shape of an unnoticed typo</td></tr>
-    <tr><td>landed</td><td>git: first snapshot naming the id under <code>## Recently landed</code></td><td>dim end, with date and sha</td></tr>
+    <tr><td>blocked · blocker landed</td><td>the named blocker is in the landed set</td><td>says so. The page does <strong>not</strong> unblock it — only the coordinator can</td></tr>
+    <tr><td>blocked · blocker state unknown</td><td>history has seen the id, but neither reader set holds it</td><td>says <em>state unknown</em>. <strong>Twelve real landed ids are in this position today</strong> (§found on the way), so collapsing it into the row below would put a wrong claim on the page</td></tr>
+    <tr><td>blocked · blocker missing</td><td>no snapshot has <em>ever</em> named the id</td><td>says <em>not in this ledger</em>. A wrong claim is worse than an incomplete one, and this is the shape of an unnoticed typo</td></tr>
+    <tr><td>landed</td><td>the entry sits under <code>## Recently landed</code> now, <strong>or</strong> git says a snapshot once did and no current entry outranks it</td><td>dim end, with date and sha. <strong>The current file wins:</strong> <code>#275</code> is in the open set <em>and</em> the ever-landed set today and renders <code>open</code>, with the older fact stated rather than dropped</td></tr>
     <tr><td>landed · entry pruned</td><td>git says landed; the current file has no entry</td><td>the same, with the title from its last snapshot — the case <code>#282</code> most needs not to be a dead link</td></tr>
     <tr><td>unknown</td><td>the leading token numbers nothing, or no section resolves</td><td>rendered <em>as unknown</em> and <strong>still listed</strong></td></tr>
   </tbody>
   </table></div>
-  <div class="notice"><b>Three things #281 asks for do not exist in the ledger, and the page says so rather
+  <div class="notice"><b>Two things #281 asks for do not exist in the ledger, and the page says so rather
   than inventing them.</b> There is no <strong>owner</strong> field — ownership appears as prose inside
-  descriptions, and regexing for <code>dreamer-*</code> would manufacture a column. There is no
-  <strong>in-progress</strong> field — the only in-flight signal anywhere is <code>status.json</code>'s claim.
+  descriptions, and regexing for <code>dreamer-*</code> would manufacture a column.
   And nothing records a <strong>re-open, re-prioritisation or hand-off</strong>; that is <code>#264</code>'s
   transactional history. A shallow clone additionally cannot see arrivals before its boundary, and the page
   states that on its own line — <em>the incompleteness it can detect, not every incompleteness that exists</em>.</div>
+  <div class="notice"><b>In progress is shown, and dropping the hedge raised the bar on its evidence rather
+  than lowering it.</b> While the badge said <em>“the loop says”</em>, a loose read was merely vague; saying
+  <strong>in progress</strong> makes it a statement, and a statement has to be right. Measured on the live
+  <code>status.json</code>: its <code>task</code> prose names <code>#269</code>, <code>#325</code> and
+  <code>#326</code> and describes the last as <em>queued behind</em> the first, while <code>current_task</code>
+  adds <code>#327</code> and <code>coordinator_next</code> adds <code>#281</code>. An “is #N mentioned”
+  test therefore marks <strong>five</strong> tasks in progress and at least one of them falsely — the same
+  defect as regexing an owner column into existence. And <code>agents[].in_flight</code>, documented as
+  <em>“one line: what it is doing right now”</em>, is written as <code>true</code>. So the badge reads a
+  structured id list or the ledger's own <code>· in progress</code> token, and shows nothing otherwise.</div>
 </section>
 
 <section aria-labelledby="motion-t">
   <div class="label" id="motion-t">Motion — four moments, no new mechanism</div>
   <div class="spine">
     <div class="spine-row"><div class="spine-key">he filters</div><div class="spine-rail"><span class="spine-dot"></span></div><div class="spine-body">
-      <p><strong>#104's regroup over a third keyed list.</strong> <code>TASK_LIST = { sel: '.tk[data-tid]', key: 'tid' }</code> — survivors travel in position and height, departures <code>dreamAway</code> at the rect they occupied, arrivals snap with <code>.dreamin</code> and ease in.</p>
+      <p><strong>#104's regroup over a fifth keyed list</strong> — <code>QA_LIST</code>, <code>ANSWER_LIST</code>, <code>GIT_LIST</code> and <code>REVIEW_LIST</code> already exist. <code>TASK_LIST = { sel: '.tk[data-tid]', key: 'tid' }</code> — survivors travel in position and height, departures <code>dreamAway</code> at the rect they occupied, arrivals snap with <code>.dreamin</code> and ease in.</p>
       <p>Neighbours travel <strong>up</strong> to close a gap, so departures rise — the question list's sign, not the commits panel's (<code>#174</code>: a departure leaves in the direction its list travels).</p>
     </div></div>
     <div class="spine-row"><div class="spine-key">he opens a task</div><div class="spine-rail"><span class="spine-dot"></span></div><div class="spine-body">
@@ -480,17 +497,19 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       <p>Route swap instant, tint and seed snap, rows <strong>place</strong>, the morph is skipped. <strong>Function is identical</strong> — filtering filters, sorting sorts, focus still moves, the count still updates. <code>.dreamin</code> is never applied as a start pose, because it is a start pose and not a skin (<code>#293</code>: a stuck one leaves rows invisible and still clickable).</p>
     </div></div>
   </div>
-  <div class="notice"><b>The page also earns its own dissolve signature</b> (<code>TINT.tasks</code>,
-  <code>SEED.tasks</code>) — and designing that found a live gap: <code>/answers</code> has neither, so it
-  silently inherits the dashboard's atmosphere through <code>TINT[name] || 0</code> while
-  <code>transitions.md</code> states that every destination has its own.</div>
+  <div class="notice"><b>The page also earns its own dissolve signature</b> (<code>TINT.tasks = -0.30</code>,
+  <code>SEED.tasks = 13</code>, re-checked against the full current sets — no collision). Designing it found a
+  live gap in <code>/answers</code>, which had neither and inherited the dashboard's atmosphere through
+  <code>TINT[name] || 0</code>; <strong><code>#302</code> has since fixed that</strong>
+  (<code>0.08</code> / <code>29</code>), so <code>/tasks</code> now adds the sixth signature to a complete
+  set rather than the fifth to an incomplete one — there is no precedent here for skipping it.</div>
 </section>
 
 <section aria-labelledby="a11y-t">
   <div class="label" id="a11y-t">Input parity — the half nobody looks at</div>
   <div class="deltas">
     <div class="delta"><b>01</b><span><strong>Rows are links.</strong> Tab, Enter, middle-click and new-tab work with no JS; modified clicks already fall through <code>isInternal</code>. The facets sit <em>inside</em> the link, so the accessible name is the whole row and the whole row is one ~40px tap target at phone width.</span></div>
-    <div class="delta"><b>02</b><span><strong>The count line is <code>aria-live="polite"</code>.</strong> A sighted reader watches rows travel; a screen-reader user hears “38 of 104 open”. Without it, filtering is a silent event — the same class of failure as a fold that hides something in flight.</span></div>
+    <div class="delta"><b>02</b><span><strong>The count line is <code>aria-live="polite"</code>.</strong> A sighted reader watches rows travel; a screen-reader user hears “38 of 106 open”. Without it, filtering is a silent event — the same class of failure as a fold that hides something in flight.</span></div>
     <div class="delta"><b>03</b><span><strong>Focus moves only on <em>his</em> navigation.</strong> To the detail title on open, back to the row on Back, and <strong>never on a tick</strong> — which is <code>#179</code>, the bug where his caret came back in the right place and dead.</span></div>
     <div class="delta"><b>04</b><span><strong>Blocked-on ids are plain text on the row and links on the detail.</strong> Nested links inside <code>&lt;a&gt;</code> are invalid; the accepted cost of making the row one honest target.</span></div>
     <div class="delta"><b>05</b><span><code>/</code> focuses search and is ignored inside text fields — the rule the shader hotkey already obeys. <code>Escape</code> clears. No modal keymap is invented.</span></div>
@@ -509,7 +528,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   passing over the thing they were written for, so each one below is paired with the sabotage that must be seen
   red first — <em>for that check's own message</em>, not for any red at all.</p>
   <div class="checks">
-    <div class="check"><span>a combined entry is ONE record addressable by either id</span><br><b>red by: building on <code>LEDGER_ENTRY</code> — the entry vanishes</b></div>
+    <div class="check"><span>a combined entry is ONE record addressable by either id</span><br><b>red by: <em>no longer that</em> — <code>LEDGER_ENTRY</code> is combined-aware since #315. Red it by splitting the head's ids into two records</b></div>
     <div class="check"><span>a <code>#N</code> in a body numbers nothing</span><br><b>red by: <code>ENTRY_ID.findall(whole_entry)</code></b></div>
     <div class="check"><span>two origin markers → unknown; <code>**Human**</code> → unknown</span><br><b>red by: taking <code>marks[0]</code> unchecked</b></div>
     <div class="check"><span>a hard-wrapped chain parses (<code>origin:</code> ending a line)</span><br><b>red by: parsing per physical line</b></div>
@@ -518,7 +537,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
     <div class="check"><span><code>blocked on #264 design and relevant #263 cutover</code> → [264, 263] + verbatim prose</span><br><b>red by: anchoring the pattern at end-of-token</b></div>
     <div class="check"><span>an entry whose token has no digits is listed, state unknown</span><br><b>red by: <code>ids[0]</code> → the whole route 500s</b></div>
     <div class="check"><span>the landing date comes from git; with no repo, the text claim is shown <em>labelled</em></span><br><b>red by: reading either one alone</b></div>
-    <div class="check"><span>a pruned id appears with <code>present:false</code> and a snapshot title</span><br><b>red by: building the list from the file alone</b></div>
+    <div class="check"><span>a pruned id appears with <code>present:false</code> and a snapshot title — <strong>87 records take this path today</strong></span><br><b>red by: building the list from the file alone, which drops a third of every task this ledger has had</b></div>
     <div class="check"><span><code>?t=9999</code> → 200 <code>{task:null}</code></span><br><b>red by: returning 404</b></div>
     <div class="check"><span><code>lint.py</code> reads the priority band <em>from watch.py</em></span><br><b>red by: giving the linter its own copy — the exact drift #197 paid for</b></div>
   </div>
@@ -529,13 +548,21 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <code>provenance.mjs</code>, <code>gitrow.mjs</code> and <code>dashboard.mjs</code> each name in their own
   headers. History is <strong>planted</strong>, so the numbers are known rather than read off the page and
   compared to itself. The fixture is deliberately <em>not</em> seeded: seeding it can make a neighbouring guard
-  vacuous without making it red, which is the worse of the two failures. And the guard asserts its subject
-  exists before driving it, so absence costs one line instead of a 120-second timeout.</p>
+  vacuous without making it red, which is the worse of the two failures.</p>
+  <p class="read"><strong>It is written on <code>dev/capture/report.mjs</code></strong>, the shared reporter
+  <code>#192</code> landed after this proposal was drafted. A guard that imports it inherits four obligations by
+  construction rather than by memory: the exit-handler <strong>crash sentinel</strong> (so a partway crash prints
+  its checks plus a FAIL, where a tail-printer printed nothing and a FAIL-grep read the silence as a clean
+  sheet), <code>present()</code> <strong>absence-first</strong> so absence costs one named line instead of a
+  30-second timeout that points at the guard rather than the page, <strong>no count offered at all</strong> (a
+  <code>grep -c</code> once reported 6 FAILs where the output held 14), and a
+  <code>declare({drives, traceWindow})</code> that <strong>throws</strong> on a missing half. That last one is
+  not documentation: a guard which watches long enough sees a later tick supply the motion it was asserting.</p>
   <div class="scroller"><table>
   <thead><tr><th>phase</th><th>the load-bearing assertion</th><th>shown red by</th></tr></thead>
   <tbody>
-    <tr><td>filter motion</td><td>every surviving row visits <strong>many distinct intermediate positions</strong>, every departure ghosts at its own rect, and <strong>no frame goes past the final position</strong>. Trace bounded to the click (≤900ms)</td><td>an <code>innerHTML</code> rebuild with no regroup — exactly <strong>2</strong> distinct positions, which every end-state check passes</td></tr>
-    <tr><td>reduced motion</td><td>≤2 positions <strong>and</strong> the same final row set, count and focus</td><td>skipping the RM branch (motion appears) <em>or</em> letting RM skip the filter (function lost)</td></tr>
+    <tr><td>filter motion</td><td><strong>at least one frame of each surviving row sits part-way</strong> between its old and new position (<code>between()</code>, ~3% deadband), with the travel span derived, printed and asserted above a literal floor; every departure ghosts at its own rect; and <strong>no frame goes past the final position</strong>. Trace bounded to the interaction and <em>declared</em></td><td>an <code>innerHTML</code> rebuild with no regroup — <strong>zero</strong> part-way frames, which every end-state check passes</td></tr>
+    <tr><td>reduced motion</td><td><strong>zero</strong> part-way frames <strong>and</strong> the same final row set, count and focus</td><td>skipping the RM branch (a part-way frame appears) <em>or</em> letting RM skip the filter (function lost)</td></tr>
     <tr class="row-accent"><td>the morph</td><td>the hero node was <strong>never replaced</strong> across the window — so whatever moved, the morph moved it</td><td>navigating without <code>fromRect</code></td></tr>
     <tr><td>history</td><td><code>history.length</code> grows by <strong>one</strong> across the typing; Back returns the filtered list</td><td><code>pushState</code> per keystroke — Back walks his own search</td></tr>
     <tr><td>survives the tick</td><td>the row nodes <strong>were replaced</strong>, and value, caret, focus and the open peek all survived</td><td>omitting the snapshot pair, or running cards before folds (<code>#179</code>)</td></tr>
@@ -545,19 +572,28 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <p class="quiet">Resolve <code>--accent</code> through a throwaway element, never off <code>:root</code>: the
   token is authored <code>#a5b4fc</code> and every computed colour comes back <code>rgb(…)</code>, so the naive
   comparison matches nothing and passes on a page painted entirely in it.</p>
+  <div class="notice"><b>The motion phases are stated in <code>transitions.md</code>'s current form, and the
+  form this page first proposed is now forbidden.</b> <em>“Many distinct intermediate positions”</em> encodes a
+  property of the <em>machine</em>: <code>uniq(positions).length &gt;= 8</code> says “this box rendered eight
+  frames in 850ms”. Measured on a 1s glide — 5 part-way frames of 31 idle, <strong>2 of 14</strong> under six
+  CPU burners — so guards went red on commits that were fine, twice, at two different loads. Five existing
+  guards have been converted away from it. The floor is therefore <strong>one</strong> part-way frame, with the
+  travel span asserted beside it so <code>&gt;= 1</code> cannot pass on a 2px twitch: zero-versus-some is the
+  whole distinction between a snap and a travel, and whether the travel is too <em>fast</em> is the
+  no-frame-past-the-end rule's question.</div>
 </section>
 
 <section aria-labelledby="inc-t">
-  <div class="label" id="inc-t">Twelve increments, each independently committable</div>
+  <div class="label" id="inc-t">Twelve increments, each independently committable — unchanged by this review</div>
   <div class="stages">
     <div class="stage"><span><b>Parse an entry into a record.</b> <code>ledger_tasks(text)</code> on the pinned <code>ledger_entries</code> grammar; the reader's rules land in <code>file-formats.md</code> in the same commit.</span></div>
-    <div class="stage"><span><b>Expose the per-id git facts.</b> <code>ledger_history(target)</code> returns the maps <code>ledger_series</code> already builds; the snapshot memo also keeps titles, so a pruned task has one.</span></div>
+    <div class="stage"><span><b>Expose the per-id git facts.</b> <code>ledger_history(target)</code> returns the maps <code>ledger_series</code> already builds; the snapshot memo also keeps titles — the only title <strong>87</strong> records have — and the age of the <code>· in progress</code> marker.</span></div>
     <div class="stage"><span><b>Merge and serve.</b> <code>ledger_index(target)</code> cached on HEAD, plus <code>/tasksdata</code> (<code>?t=</code> for one record, the only place <code>raw</code> travels).</span></div>
     <div class="stage"><span><b>Add the route.</b> Allowlist, <code>routeOf</code>, <code>isInternal</code>, <code>TITLES</code>, <code>TITLE_ROUTE</code>, crumbs, <code>TINT</code>, <code>SEED</code>, a bare <code>buildTasks</code>.</span></div>
-    <div class="stage"><span><b>The row, the facets, the three nothings.</b> Whole-or-absent fields, priority as luminance, and the colour budget documented with its reasoning.</span></div>
-    <div class="stage"><span><b>Search, filter, sort, and the URL codec.</b> Standing <code>.sgroup</code>; throttled <code>replaceState</code>; the labelled <em>no estimate</em> tail.</span></div>
-    <div class="stage"><span><b>Rows travel.</b> <code>TASK_LIST</code> through <code>snapshotCards</code>/<code>regroupCards</code>; guard phases for motion, reduced motion and the three nothings, red first.</span></div>
-    <div class="stage"><span><b>The detail view.</b> Fixed-key fact grid, bidirectional blockers, reflowed description, mentions, raw peek, honest unknown id.</span></div>
+    <div class="stage"><span><b>The row, the facets, the three nothings.</b> Whole-or-absent fields, priority as luminance, the <strong>in progress</strong> badge with its <em>Reported:</em> box, and the colour budget documented with its reasoning.</span></div>
+    <div class="stage"><span><b>Search, filter, sort, and the URL codec.</b> Sort is a <strong>third standing <code>.sgroup</code></strong> beside the filters (his ruling); throttled <code>replaceState</code>; the labelled <em>no estimate</em> tail with its count derived at render.</span></div>
+    <div class="stage"><span><b>Rows travel.</b> <code>TASK_LIST</code> through <code>snapshotCards</code>/<code>regroupCards</code>; the guard built on <code>report.mjs</code> from its first line; phases for motion, reduced motion and the three nothings, red first — <em>zero</em> part-way frames is the red, not a position count.</span></div>
+    <div class="stage"><span><b>The detail view.</b> Fixed-key fact grid, bidirectional blockers with the <strong>three-way</strong> cross-check, reflowed description, mentions, raw peek, honest unknown id — and <code>buildTaskDetail</code> stays container-agnostic, which is <code>#328</code>'s seam.</span></div>
     <div class="stage"><span><b>The morph, both directions</b>, failing to the plain dissolve when the destination row is absent.</span></div>
     <div class="stage"><span><b>His state survives any re-render.</b> <code>snapshotTaskFilter</code>, <code>data-keep</code>, folds before filter before regroups.</span></div>
     <div class="stage"><span><b>History, focus and keyboard.</b> The <code>history.length</code> discipline, focus-on-his-navigation-only, <code>/</code> and <code>Escape</code>, the colour audit.</span></div>
@@ -567,63 +603,117 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 
 <section aria-labelledby="found-t">
   <div class="label" id="found-t">Found on the way — out of scope, worth filing</div>
-  <div class="notice"><b><code>parse_ledger</code> cannot see combined entries.</b>
-  <code>LEDGER_ENTRY</code> requires <code>**</code> immediately after the digits, so
-  <code>- **#138/#156**</code>, <code>- **#250/#251**</code> and <code>- **#292/#293**</code> match nothing.
-  Measured: <code>ledger_entries</code> finds <strong>123</strong> ids where <code>parse_ledger</code> finds
-  <strong>118</strong> — so the burndown's arrivals, completions and open level are wrong by that much, on the
-  dashboard, today. <code>entry_origins</code> is already right, so two readers disagree about one file.</div>
-  <div class="notice"><b><code>/answers</code> has no dissolve signature.</b> No <code>TINT</code> or
-  <code>SEED</code> entry, so it inherits the dashboard's field through <code>TINT[name] || 0</code>.</div>
-  <div class="notice"><b>The hovercard task is <code>#282</code>, not <code>#213</code>.</b> <code>#213</code>
-  is the landed forward-only origin contract, which this design <em>consumes</em>. Worth correcting wherever the
-  pairing is recorded, because the blocked-on chain is what this proposal exists to unblock.</div>
+  <div class="notice"><b>Both findings this section opened with are now FIXED</b>, and they are recorded as
+  resolved rather than deleted — a known-bugs list that silently empties gives the next reader no way to tell
+  fixed from forgotten. <code>parse_ledger</code>'s blindness to combined entries went with <code>#301</code>
+  (landed mentions) and <code>#315</code> (open heads): <code>LEDGER_ENTRY</code> is now an ids-only bold span
+  and both sections read combined-aware, with <code>lint.py</code>'s copies widened in the same lockstep.
+  <code>/answers</code>' missing dissolve signature went with <code>#302</code>. And the hovercard task is
+  <code>#282</code>, not <code>#213</code> — already corrected in the ledger.</div>
+
+  <div class="notice"><b>The landed reader misses SPACE-joined bold id spans.</b>
+  <code>LEDGER_COMBINED_MENTION</code> matches ids joined by <code>/</code>, but the compacted roll-up under
+  <code>## Recently landed</code> also writes <code>**#121 #123**</code>, <code>**#104 #77**</code>,
+  <code>**#109 #116**</code>, <code>**#107 #108 #110**</code>, <code>**#102 #106**</code> and
+  <code>**#96 stage 1**</code>. Measured: <strong>#77, #96, #102, #104, #106, #107, #108, #109, #110, #116,
+  #121 and #123 are in neither reader set</strong> — twelve landed tasks the current file cannot classify. It is
+  the same class of bug <code>#301</code>/<code>#315</code> just fixed, one separator over, and it is a live
+  under-count on the burndown today. It is also why this page's blocker cross-check is three-way.</div>
+
+  <div class="notice"><b><code>agents[].in_flight</code> is documented as prose and written as a bool.</b>
+  <code>file-formats.md</code> calls it <em>“one line: what it is doing right now”</em> and
+  <em>“the one subfield with two readers … load-bearing”</em>; the live <code>status.json</code> writes
+  <code>true</code>, and the renderer passes it through <code>String(...)</code> — so the deployed agent glance
+  currently reads <strong><code>doing: true</code></strong>. Either the writer or the contract is wrong, and
+  both readers trust the documented shape.</div>
+
+  <div class="notice"><b><code>status.json</code> has no structured way to name a task.</b> Which is what an
+  honest <strong>in progress</strong> badge needs. Requested addition, worded for the contract table:
+  <code>current_task_ids</code> (array of ints, top level) and <code>task_ids</code> (array of ints, per agent)
+  — <em>“the task ids this names, as integers; prose in <code>task</code> is not a substitute, because one
+  sentence routinely names several ids in different states.”</em> Until it exists, the badge comes from the
+  ledger's own <code>· in progress</code> token alone.</div>
+
+  <div class="notice"><b>The ledger and its own history disagree about <code>#275</code>, correctly.</b> It is in
+  the current open set <em>and</em> the ever-landed set: its research landed, and the task is open because its
+  ask awaits approval, which its entry states is part of done. So this page needed a precedence rule rather than
+  an <code>or</code> — the current file wins, history answers only where no entry exists, and the disagreement
+  is shown rather than silently resolved.</div>
 </section>
 
 <section id="decision" aria-labelledby="dec-t">
-  <div class="label" id="dec-t">Decisions wanted — one line each</div>
-  <p class="read">Everything the recorded contracts already answer is decided above and its reasoning is
-  stated. These seven are taste-or-authority calls that are yours; each carries a recommendation, so
-  <code>rec</code> is a complete answer to any of them.</p>
+  <div class="label" id="dec-t">His rulings — answered 21:47, and binding</div>
+  <p class="read">All seven were answered. They are recorded here as <strong>decisions</strong>, not
+  recommendations, because a proposal that still argues its own refuted option is one that gets built wrong.
+  <strong>Three overrode the recommendation</strong>, and the body of this page has been amended to state his
+  call rather than to argue against it.</p>
 
   <div class="choice"><div class="choice-grid"><span class="choice-tag">Q1</span><div>
     <strong>May <code>/tasks</code> claim a wider column on a wide screen — a two-pane list-plus-detail triage layout?</strong>
-    <div class="answer"><strong>Rec: no, for v1.</strong> <code>watch-design.md</code> names <code>/review</code> as <em>the</em> deliberate width exception, and a second exception is how a one-column page becomes a two-column one. The morph plus a canonical URL gives most of the benefit, and a split view can be added later without touching the data contract.</div>
+    <div class="answer"><strong>Approved, at its own route</strong> — <em>“yes, but at <code>/tasks2</code>, and
+    keep a simpler one-column variant at <code>/tasks</code>”</em>. So the recommendation (<em>no, for v1</em>) is
+    <strong>overruled</strong>, and the argument against a second width exception is not a reason to skip the
+    layout — it is the reason the wide one gets its own address. <code>/tasks2</code> is <code>#328</code> and is
+    outside this plan; what this plan owes it is a seam and no second parser: <code>ledger_index</code> and the
+    record shape, <code>taskRow</code>/<code>taskFacets</code>, and a container-agnostic
+    <code>buildTaskDetail</code>. It inherits <code>/review</code>'s post-<code>#305</code> split idiom — the
+    measured window-tall pane, the keyboard-operable gutter separator, the CSS-clamped ratio, the persisted
+    width — rather than authoring a second one.</div>
   </div></div></div>
 
   <div class="choice"><div class="choice-grid"><span class="choice-tag">Q2</span><div>
     <strong>Default sort: priority band first, or newest id first (the file's own order)?</strong>
-    <div class="answer"><strong>Rec: priority, then newest id.</strong> Same reason <code>questions.md</code> sorts in the parse — the page's job is telling you what to look at first. The ledger is written newest-first, which is arrival order, not urgency.</div>
+    <div class="answer"><strong>Priority then newest id — accepted, “but user configurable alongside
+    filters”.</strong> So sort is a <strong>control</strong>, not a constant: a third <code>.sgroup</code> in the
+    controls row beside the two filter groups, single-select, drawn above. The URL key was already
+    <code>s</code>, which is what makes this a UI addition rather than a contract change — and the default is
+    never written into the URL, so <code>?t=281</code> stays the short canonical form <code>#282</code>
+    hardcodes.</div>
   </div></div></div>
 
   <div class="choice"><div class="choice-grid"><span class="choice-tag">Q3</span><div>
     <strong>Default filter: open only, or everything?</strong>
-    <div class="answer"><strong>Rec: open only</strong>, with <code>17 landed</code> in the count line and one click away. The page is for steering; 17 settled rows diluting 104 live ones is the opposite of ranking.</div>
+    <div class="answer"><strong>Open only — as proposed</strong>, with the landed count in the count line and one
+    click away.</div>
   </div></div></div>
 
   <div class="choice"><div class="choice-grid"><span class="choice-tag">Q4</span><div>
-    <strong>Is <code>/tasks?t=281</code> the URL <code>#282</code> should hardcode, or do you want <code>/tasks/281</code>?</strong>
-    <div class="answer"><strong>Rec: <code>?t=281</code>.</strong> It keeps the server's route allowlist an exact membership test, matches <code>/file?p=</code> and <code>/review?p=</code>, and needs no router change. <code>/tasks/281</code> reads nicer and costs prefix routing in the same seam <code>#133</code> will touch.</div>
+    <strong>Is <code>/tasks?t=281</code> the URL <code>#282</code> should hardcode?</strong>
+    <div class="answer"><strong>Yes — as proposed.</strong> <code>#282</code> may hardcode it.</div>
   </div></div></div>
 
   <div class="choice"><div class="choice-grid"><span class="choice-tag">Q5</span><div>
-    <strong>Should the loop's <code>status.json</code> claim (“I am on #281 right now”) be shown at all, given it is a claim and not a fact?</strong>
-    <div class="answer"><strong>Rec: yes, labelled as the loop's claim</strong>, carrying this page's only accent. It is the sole in-flight signal that exists, and <code>#294</code> is what turns it into a fact. The alternative is a page that cannot tell you what is happening now.</div>
+    <strong>Should the loop's in-flight signal be shown at all, given it is a claim and not a fact?</strong>
+    <div class="answer"><strong>Show it, but say “in progress” — the hedge is rejected.</strong> No
+    <em>“this is a claim”</em> label; the honesty is carried by a hover box reading
+    <strong>Reported: Xm Ys ago</strong>.
+    <br><br><strong>His version is better, and the reason shapes the rest of the copy:</strong> freshness is a
+    <em>fact</em>, where “the loop's claim” is a <em>disclaimer</em>. A disclaimer admits the page might be wrong
+    and leaves the reader no way to tell; a measured age makes staleness <strong>legible</strong> — four seconds
+    ago and forty minutes ago read differently, and only the measurement says which one he is looking at.
+    Anywhere this page hedged where it could instead show a measurement has been changed the same way. The
+    formatter already exists (<code>agePair</code> renders <code>05m 23s</code>); the age is the age of the
+    <em>claim</em>, never of the render.</div>
   </div></div></div>
 
   <div class="choice"><div class="choice-grid"><span class="choice-tag">Q6</span><div>
     <strong>Do you want a write affordance on a row later — <code>do now: #281</code> sent straight from the list?</strong>
-    <div class="answer"><strong>Rec: not in v1, yes as a follow-up.</strong> It needs no new endpoint or vocabulary (<code>/command</code> and <code>do-now</code> both exist), so it is cheap — but it turns a read-only page into a steering surface, and that is a decision to make deliberately rather than fold into a list page.</div>
+    <div class="answer"><strong>Not approved, and not in scope.</strong> He asked what it would mean rather than
+    answering, and it has been re-asked as its own question. Nothing here assumes it: the read-only constraint
+    stands and no increment adds a POST seam.</div>
   </div></div></div>
 
   <div class="choice"><div class="choice-grid"><span class="choice-tag">Q7</span><div>
-    <strong>File the two bugs above as tasks?</strong>
-    <div class="answer"><strong>Rec: yes.</strong> The combined-entry blindness is a P2 bug rather than a polish item — the burndown is on the dashboard and is under-counting right now. The third finding is a correction to this batch's brief, not a task.</div>
+    <strong>File the bugs found on the way?</strong>
+    <div class="answer"><strong>Yes — as proposed.</strong> Both original findings have since been fixed by other
+    tasks (<code>#301</code>/<code>#315</code> and <code>#302</code>); the section above now carries the four
+    measured findings that replaced them.</div>
   </div></div></div>
 
-  <div class="approval">Approve the route, the canonical detail URL and the record contract, or name what should
-  change. On approval, increment 01 is parser-and-format only and fits one verified commit. Nothing here is
-  implementation authority for <code>#282</code>, <code>#294</code> or <code>#264</code>.</div>
+  <div class="approval"><strong>Approved with amendments, 27 July 21:47.</strong> Implementation of the twelve
+  increments is authorised; deployment is not. Increment 01 is parser-and-format only and fits one verified
+  commit. Nothing here is implementation authority for <code>#282</code>, <code>#294</code>, <code>#264</code>
+  or <code>#328</code>.</div>
 </section>
 
 <details>
@@ -632,26 +722,26 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <div class="scroller"><table>
   <thead><tr><th>field</th><th>source</th><th>rule</th><th>today</th></tr></thead>
   <tbody>
-  <tr><td><code>ids</code> / <code>id</code></td><td>leading bold token</td><td>every numeric id in it; a body <code>#N</code> numbers nothing</td><td>121/121</td></tr>
-  <tr><td><code>section</code></td><td>the <code>##</code> heading above</td><td><code>open</code> | <code>landed</code> | <code>unknown</code></td><td>121/121</td></tr>
-  <tr><td><code>title</code></td><td>after the em dash, to the first <code> · </code></td><td>never truncated; no chain means the whole remainder is the title</td><td>121/121</td></tr>
-  <tr><td><code>annotation</code></td><td>a leading balanced <code>[…]</code></td><td>unbalanced → no annotation, text stays in the title (fail toward keeping his words)</td><td>9/121</td></tr>
-  <tr><td><code>priority_raw</code></td><td>a chain token <code>P[0-3](/P[0-3])*</code>, or a bolded <code>**P2**</code> beside the title</td><td>rendered verbatim, compounds included</td><td>103/104 open</td></tr>
+  <tr><td><code>ids</code> / <code>id</code></td><td>leading bold token</td><td>every numeric id in it; a body <code>#N</code> numbers nothing</td><td>148/148</td></tr>
+  <tr><td><code>section</code></td><td>the <code>##</code> heading above</td><td><code>open</code> | <code>landed</code> | <code>unknown</code>. <strong>The current file outranks history</strong></td><td>148/148 (106 open, 42 landed)</td></tr>
+  <tr><td><code>title</code></td><td>after the em dash, to the first <code> · </code></td><td>never truncated; no chain means the whole remainder is the title</td><td>148/148</td></tr>
+  <tr><td><code>annotation</code></td><td>a leading balanced <code>[…]</code></td><td>unbalanced → no annotation, text stays in the title (fail toward keeping his words)</td><td>9/148</td></tr>
+  <tr><td><code>priority_raw</code></td><td>a chain token <code>P[0-3](/P[0-3])*</code>, or a bolded <code>**P2**</code> beside the title</td><td>rendered verbatim, compounds included</td><td>106/106 open — 102 chain, 4 bolded-only</td></tr>
   <tr><td><code>priority_band</code></td><td>derived</td><td>first recognised band in a compound; <strong>absent → P2</strong> with <code>priority_raw: null</code> so <em>unmarked</em> and <em>explicitly P2</em> stay distinguishable</td><td>all</td></tr>
   <tr><td><code>kind</code></td><td>the token after the priority</td><td>free prose, recorded, never normalised into a closed set the ledger does not have</td><td>~100/104</td></tr>
-  <tr><td><code>effort_raw</code> / <code>effort_min</code></td><td>a size-shaped token</td><td>minutes only from <code>^\d+\s*(m|min|h|hr)$</code>; prose kept verbatim</td><td>65/104 numeric</td></tr>
-  <tr><td><code>origin</code></td><td><code>entry_origins</code>' rule verbatim</td><td>exactly one marker in <code>human</code>/<code>loop</code> is a claim; none, several or wrong case → <code>unknown</code></td><td>53/104 open</td></tr>
+  <tr><td><code>effort_raw</code> / <code>effort_min</code></td><td>a size-shaped token</td><td>minutes only from <code>^\d+\s*(m|min|h|hr)$</code>; prose kept verbatim</td><td>64/106 numeric</td></tr>
+  <tr><td><code>origin</code></td><td><code>entry_origins</code>' rule verbatim</td><td>exactly one marker in <code>human</code>/<code>loop</code> is a claim; none, several or wrong case → <code>unknown</code></td><td>59/106 open</td></tr>
   <tr><td><code>origin_first_sight</code></td><td>git</td><td>the arrival classification (<code>#216</code>); first sight is final</td><td>history-wide</td></tr>
-  <tr><td><code>arrival_raw</code> / <code>arrival_when</code></td><td>a <code>**human …**</code> stamp</td><td>verbatim, with channel; <strong>a time with no date stays a time</strong></td><td>59/104</td></tr>
+  <tr><td><code>arrival_raw</code> / <code>arrival_when</code></td><td>a <code>**human …**</code> stamp</td><td>verbatim, with channel; <strong>a time with no date stays a time</strong></td><td>52/106</td></tr>
   <tr><td><code>first_commit</code> / <code>first_seen</code></td><td>git</td><td>the only trustworthy filed-date</td><td>history-wide</td></tr>
-  <tr><td><code>landed_at</code></td><td>git</td><td>survives grooming, which the text claim does not</td><td>82 ids</td></tr>
-  <tr><td><code>landed_claim</code></td><td><code>landed &lt;date&gt;</code> in the text</td><td>shown only when git is unavailable, labelled as the ledger's claim</td><td>17/17</td></tr>
-  <tr><td><code>sha</code></td><td>a trailing <code>`&lt;hex&gt;`</code></td><td>plain text, <strong>not a link</strong> — <code>#157</code>'s rule that a link which 404s promises something</td><td>15/17</td></tr>
-  <tr><td><code>blocked_on</code> / <code>blocked_note</code></td><td><code>blocked on …</code> to the next <code> · </code></td><td>ids <em>and</em> the prose, because “blocked on user-event model #263” says more than <code>[263]</code></td><td>19/104</td></tr>
+  <tr><td><code>landed_at</code></td><td>git</td><td>survives grooming, which the text claim does not</td><td>114 ids</td></tr>
+  <tr><td><code>landed_claim</code></td><td><code>landed &lt;date&gt;</code> in the text</td><td>shown only when git is unavailable, labelled as the ledger's claim</td><td>34/42 landed entries</td></tr>
+  <tr><td><code>sha</code></td><td>a trailing <code>`&lt;hex&gt;`</code></td><td>plain text, <strong>not a link</strong> — <code>#157</code>'s rule that a link which 404s promises something</td><td>34/42 landed entries</td></tr>
+  <tr><td><code>blocked_on</code> / <code>blocked_note</code></td><td><code>blocked on …</code> to the next <code> · </code></td><td>ids <em>and</em> the prose, because “blocked on user-event model #263” says more than <code>[263]</code></td><td>21/106</td></tr>
   <tr><td><code>refs</code></td><td>every other <code>#N</code></td><td>cross-references, for mentions in both directions</td><td>all</td></tr>
   <tr><td><code>description</code></td><td>the remaining chain</td><td>reflowed through <code>mdB</code>; the whole thing, never a preview</td><td>all</td></tr>
-  <tr><td><code>raw</code></td><td>the entry verbatim</td><td><strong>single-record response only</strong> — measured, it is 63% of the list body (139KB without, 226KB with) for a field only the detail reads</td><td>all</td></tr>
-  <tr><td><code>present</code></td><td><code>false</code> for a git-only id</td><td>with the title from its last snapshot</td><td>0 today</td></tr>
+  <tr><td><code>raw</code></td><td>the entry verbatim</td><td><strong>single-record response only</strong>. <code>description</code> is nearly the same bytes, so carrying both roughly <strong>doubles</strong> the list body for a field only the detail reads. <span class="dim">(The earlier 139KB/226KB figures were measured at <code>c1f5aaa</code> and are stale; the ledger has grown 67% since, and “63% of the body” was <code>raw</code> relative to the body <em>without</em> it, not of the whole. Both are re-measured by the test rather than quoted here.)</span></td><td>all</td></tr>
+  <tr><td><code>present</code></td><td><code>false</code> for a git-only id</td><td>with the title from its last snapshot — <strong>the only title these records have</strong></td><td><strong>87 today</strong></td></tr>
   </tbody>
   </table></div>
   </div>
@@ -660,29 +750,38 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 <details>
   <summary>Why the records ride their own endpoint rather than <code>/data.json</code></summary>
   <div class="details-in">
-  <p><code>/data.json</code> measures <strong>374KB today</strong> and is re-fetched on every open window every
-  two seconds. The parsed ledger adds <strong>139KB</strong> — measured, not estimated — for the benefit of one
-  route.</p>
-  <pre>files            145,851 bytes   (DREAMWORK.md + questions.md + lessons.md)
-dreams_archive   100,996
-answered_entries  42,660
-questions_open    32,269
-burndown           1,074   ← aggregate only, which is why it belongs there
+  <p><code>/data.json</code> measures <strong>456,842 bytes</strong> at <code>16ef2e2</code> — up from 374KB
+  when this page was drafted — and is re-fetched on every open window every two seconds. Adding the parsed
+  ledger would put the whole task text on that wire for the benefit of one route.</p>
+  <pre>files            184,114 bytes   (lessons.md 89,738 · questions.md 85,252 · DREAMWORK.md 9,009)
+dreams_archive   131,606
+answered_entries  54,877
+questions_open    33,158
+git               17,367
+status            12,728
 —
-tasks.md itself  103,391 bytes of Markdown</pre>
+tasks.md itself  171,951 bytes of Markdown (was 103,391)</pre>
   <p><code>/filedata</code> is the standing precedent for a route-scoped fetch. The client caches
   <code>/tasksdata</code> and invalidates on a changed <code>/mtime</code>, so liveness is unchanged and the
   cost is paid only where it buys something. <code>#282</code>'s hovercards fetch one record — which is why the
   single-record shape exists at all.</p>
-  <p><strong>And the client-side scan has a named ceiling rather than a discovered one:</strong> at ~600 entries
-  or a list body over ~512KB, search moves behind <code>#294</code>'s query API. A pytest asserts the current
-  size, so the ceiling arrives as a red light instead of as a slow page.</p>
+  <p><strong>And the client-side scan has a named ceiling rather than a discovered one:</strong> at ~600
+  <em>records</em> or a list body over ~512KB, search moves behind <code>#294</code>'s query API. The
+  denominator is records, not entries, and that changed the headroom: 148 entries <em>plus</em> 87 pruned ids is
+  <strong>238 records</strong>, and the count is <strong>monotonic</strong> — grooming turns an entry into a
+  pruned record rather than removing it, so it never falls. Under 3× headroom, where against entries alone it
+  read as 4×. The pytest compares the real serialised body to the <em>ceiling constant</em> and prints the
+  measured size; it must never assert today's value, which is a literal with an invisible expiry date.</p>
   </div>
 </details>
 
-<footer>Prepared for task #281 · 27 July 2026 · self-contained proposal, offline-clean, no external requests.
-Records no implementation authority for #282, #294 or #264. Coverage figures measured against the ledger at
-<code>c1f5aaa</code> (121 entries: 104 open, 17 landed).</footer>
+<footer>Prepared for task #281 · 27 July 2026 · <strong>approved with amendments 21:47</strong> · re-verified
+under #327 against the tree at <code>16ef2e2</code>, where every claim touching <code>watch.py</code>,
+<code>lint.py</code>, <code>transitions.md</code> or the ledger format was re-read against the source rather
+than against this document. Offline-clean, no external requests. Records no implementation authority for #282,
+#294, #264 or #328. Coverage figures measured at <code>16ef2e2</code> (148 entries: 106 open, 42 landed; 238
+ids ever named, 87 with no entry left). Figures first published against <code>c1f5aaa</code> (121 entries) had
+aged out within a day, which is why none of them is a check's literal.</footer>
 
 </main>
 </body>

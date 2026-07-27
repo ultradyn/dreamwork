@@ -31,7 +31,9 @@ app shell, pytest, one Playwright guard with its own planted git target.
   build step.
 - **Read-only.** `/tasks` adds no POST seam. The composer's `+` is already in
   every heading, and `do-now`/`add-idea` already exist; a row-level write is a
-  new authority surface and is deliberately out of scope (open question 6).
+  new authority surface and is **out of scope by his ruling** — he asked what
+  it would mean rather than approving it, and it has been re-asked as its own
+  question (ruling 6). No increment below adds one.
 - Every appear/disappear/expand/collapse/reorder/route change obeys
   `transitions.md` and **reuses an existing idiom** — no new mechanism.
 - Every field the page renders is *parsed*, *derived* or **unknown**; an
@@ -57,7 +59,7 @@ Defended against the three alternatives, because `#282` will hardcode it and
 `#133` may later prefix it:
 
 - **`/tasks/281` (path segment)** — rejected. The server allowlist is an exact
-  `parsed.path in (…)` membership test (watch.py ~7292). A path segment turns
+  `parsed.path in (…)` membership test (`watch.py:7766` — `("/", "/questions", "/answers", "/file", "/review")`). A path segment turns
   that into prefix matching, which is a change in *kind* to the one place that
   decides what this server will serve, and it lands in the same seam `#133`
   will rewrite. Query params keep the allowlist exact and get the prefix for
@@ -86,7 +88,25 @@ or bookmark:
 |---|---|---|
 | `q` | free-text search | `/tasks?q=transition` |
 | `f` | facet filter, comma-separated | `/tasks?f=open,P1` |
-| `s` | sort key | `/tasks?s=oldest` |
+| `s` | sort key — **he sets it**, the default is only a default | `/tasks?s=oldest` |
+
+**`s` is a user control, not a constant** (his ruling 2): the default is
+priority-then-newest-id and he can change it from the controls row beside the
+filters. Three consequences for the URL contract, all of which keep it
+consistent with `?t=<id>`:
+
+- **The default is never written.** `s` is absent at the default sort and
+  present only when he has chosen another, exactly as `f` is absent at the
+  default filter. A URL that spells out every default is a URL nobody can
+  read, and `/tasks?t=281` stays the short canonical form `#282` hardcodes.
+- **An unrecognised `s` falls back to the default and is dropped**, the same
+  rule §Task 6 states for an unknown facet: ignored, never an empty list and
+  never a 400. `?s=urgency` renders the default sort, and the next
+  `replaceState` removes the key rather than preserving a value nothing
+  honours.
+- **Sort changes `replaceState` like the other two**, so choosing a sort does
+  not add a Back step (§1.3). Reorder is a view of one list, not a
+  destination.
 
 Ephemeral, deliberately **not** in the URL: scroll position, which
 disclosures are open, focus, and the caret. They are per-window state that
@@ -153,52 +173,118 @@ ledger_index(target)    → {tasks, health, note, history_complete}
   hostile input with no repository at all.
 - `ledger_history` does **not** add a walk. `ledger_series` already builds
   `arrived`, `landed` and `first_sight` per id and discards them at the end
-  (which `#218` names in its own entry). It returns them instead, memoised on
-  the same immutable `(rev, path)` snapshot key, and additionally keeps each
-  entry's **title** per snapshot so a pruned task still has one. Cost: one
-  extra dict per revision, ~1MB at today's 139 ledger commits, no extra
-  `git show`.
+  (which `#218` names in its own entry) — `watch.py:6545-6578`. It returns them
+  instead, memoised on the same immutable `(rev, rel)` snapshot key
+  (`watch.py:6553`, which carries the tree-relative path for #217's reason and
+  not the rev alone), and additionally keeps each entry's **title** per
+  snapshot so a pruned task still has one. Cost: one extra dict per revision,
+  at **288** ledger commits today and growing, and **no extra `git show`** —
+  the walk already reads every snapshot's text.
+  The memo tuple is `(open_ids, landed_ids, entry_origins)` today
+  (`watch.py:6558`); §Task 2 extends it, and `_LEDGER_SNAPS` is keyed on an
+  immutable commit so an extended tuple invalidates nothing.
 - `ledger_index` is the merge, cached on HEAD exactly as `ledger_stats` is,
   and it is **the swap point** (§8).
 
-**The grammar is `ledger_entries`, not a copy of it.** That function is pinned
-byte-identical between `watch.py` and `lint.py` by a test, and it is the only
-reader that gets combined entries right. Building on `LEDGER_ENTRY`
-(`^- \*\*#(\d+)\*\*`) instead would silently drop `- **#250/#251**`,
-`- **#292/#293**` and `- **#138/#156**` — which is a bug that exists today in
-`parse_ledger` and is filed rather than fixed here (§10).
+**The grammar is `ledger_entries`, not a copy of it** — and the *reason* has
+changed since this was written, which matters because the old reason is now
+false and an implementer who checks it will conclude the rule is optional.
+
+`#301` and `#315` widened the narrow readers. `LEDGER_ENTRY` is now
+`^- \*\*(#\d+(?:/#\d+)*)\*\*` (`watch.py:6317`) — an **ids-only** bold span,
+so it matches `- **#250/#251**` and `- **#292/#293**` and no longer drops
+combined heads. So *"`LEDGER_ENTRY` cannot see a combined entry"* is **no
+longer true** and is not the argument.
+
+The argument that is still true is a different one, and it is the one §9.1
+case 9 is about: `ledger_entries` walks `ENTRY_HEAD`
+(`^- \*\*([^*]+?)\*\*`, `watch.py:6367`), which is **wider** than
+`LEDGER_ENTRY`. An entry whose leading bold token is *not* a bare id span —
+`- **#7 stage 1** — …`, or a head with no digits at all — is still an entry
+under `ledger_entries` (it yields `ids: []`), and would **vanish entirely**
+under `LEDGER_ENTRY`. Vanishing is the failure this page cannot have: §3 lists
+such an entry as `unknown` precisely because it exists. Zero of today's 148
+entries take that shape, which is exactly why building on the narrow pattern
+would look correct for as long as nobody wrote one.
+
+What is pinned, stated precisely because the two guarantees are not the same
+strength: `watch.LEDGER_ENTRY.pattern == lint.LEDGER_ID.pattern` and the same
+for `ENTRY_HEAD`/`ENTRY_ID`/`ORIGIN_MARK`
+(`test_watch.py:483`, `test_watch.py:840`) — **byte-identical patterns**. The
+`ledger_entries` *function* is pinned by **output agreement on one hostile
+fixture** (`test_watch.py:862-864`), not by byte-identity. That is enough to
+catch a widening applied to one copy and not the other; it is not a proof the
+two bodies are the same.
 
 ### 2.2 The record, field by field
 
-Coverage figures are measured against today's ledger (104 open entries, 17
-landed, 121 total).
+**Coverage figures are re-measured at `16ef2e2`, 2026-07-27** — the ledger is
+**148 entries** (106 open, 42 landed), 172KB of Markdown, **288 commits** of
+history, **238 ids** ever named, of which **151 have a current entry**.
+
+The `today` column is a **measurement with a date, not a constant**, and the
+first pass of these figures aged out inside a day: the ledger was 121 entries
+when this plan was written and the landed section held 17. So no check may
+assert one of these numbers as a literal — §9.1's checks derive every count
+they compare (the ceiling assertion in §4.1 is the one deliberate exception,
+and it is a ceiling rather than a value).
+
+Figures below are counted with the shapes this section states, at `16ef2e2`;
+the implementation's own parse may land a few either way, and where it does the
+implementation's number is the true one.
 
 | field | source | rule | today |
 |---|---|---|---|
-| `ids` | leading bold token, via `ledger_entries` | every numeric id in it; a `#N` in the body is a cross-reference and numbers nothing | 121/121 |
-| `id` | first id in `ids` | the display id; all of `ids` address the record | 121/121 |
-| `section` | which `##` heading it sits under | `open` \| `landed`; an entry before any heading is `unknown` | 121/121 |
-| `title` | after the em dash, up to the first ` · ` | never truncated; if there is no ` · ` the whole remainder is the title | 121/121 |
-| `annotation` | a leading balanced `[…]` before the title | lifted out so the title is the title; **unbalanced → no annotation** and the text stays in the title (fail toward keeping his words) | 9/121 |
-| `priority_raw` | a chain token matching `P[0-3](/P[0-3])*`, **or** a bolded `**P2**` adjacent to the title | rendered verbatim, compounds included | 103/104 open (the 104th is #99's bolded form) |
+| `ids` | leading bold token, via `ledger_entries` | every numeric id in it; a `#N` in the body is a cross-reference and numbers nothing | 148/148 |
+| `id` | first id in `ids` | the display id; all of `ids` address the record | 148/148 |
+| `section` | which `##` heading it sits under | `open` \| `landed`; an entry before any heading is `unknown` | 148/148 (106 open, 42 landed) |
+| `title` | after the em dash, up to the first ` · ` | never truncated; if there is no ` · ` the whole remainder is the title | 148/148 |
+| `annotation` | a leading balanced `[…]` before the title | lifted out so the title is the title; **unbalanced → no annotation** and the text stays in the title (fail toward keeping his words) | 9/148 |
+| `priority_raw` | a chain token matching `P[0-3](/P[0-3])*`, **or** a bolded `**P2**` adjacent to the title | rendered verbatim, compounds included | 106/106 open — 102 as a chain token, **4 only in the bolded form**, so the bolded branch is not an edge case for one entry |
 | `priority_band` | derived | the first recognised band in a compound (`P0/P1` → P0 — the entry is claiming at least P0). **Absent → P2**, the same middle-band rule as `questions.md`, and `priority_raw: null` so the page can say *unmarked* rather than implying an explicit P2 | all |
-| `kind` | the chain token after the priority | free prose (`idea`, `Web UI bug`, `storage/tooling migration`) — recorded, never normalised into a closed set the ledger does not have | ~100/104 |
-| `effort_raw` | a chain token that reads as a size | verbatim (`20m`, `several increments`, `2 parts`, `later`) | 65/104 parse to minutes; the rest keep prose |
-| `effort_min` | derived from `effort_raw` | only `^\d+\s*(m\|min\|h\|hr)$`. **`4-5 increments` yields no number** — a digit-anywhere regex would report 4 minutes | 65/104 |
-| `origin` | `entry_origins`' rule, verbatim | exactly one marker in `human`/`loop` is a claim; none, several, or wrong case → `unknown` | 53/104 open |
+| `kind` | the chain token after the priority | free prose (`idea`, `Web UI bug`, `storage/tooling migration`) — recorded, never normalised into a closed set the ledger does not have | 106/106 open carry a token after the priority |
+| `effort_raw` | a chain token that reads as a size | verbatim (`20m`, `several increments`, `2 parts`, `later`) | 64/106 parse to minutes; the rest keep prose |
+| `effort_min` | derived from `effort_raw` | only `^\d+\s*(m\|min\|h\|hr)$`. **`4-5 increments` yields no number** — a digit-anywhere regex would report 4 minutes | 64/106 |
+| `origin` | `entry_origins`' rule, verbatim | exactly one marker in `human`/`loop` is a claim; none, several, or wrong case → `unknown` | 59/106 open |
 | `origin_first_sight` | git | the arrival classification (`#216`); first sight is final and never revisited | history-wide |
-| `arrival_raw` | a `**human …**` / `**loop …**` stamp in the chain | verbatim, including the channel (`via watch \`add-idea\` 14:37`) | 59/104 |
+| `arrival_raw` | a `**human …**` / `**loop …**` stamp in the chain | verbatim, including the channel (`via watch \`add-idea\` 14:37`) | 52/106 |
 | `arrival_when` | parsed out of `arrival_raw` | `YYYY-MM-DD` and/or `HH:MM`. **A time with no date stays a time** — no date is invented from the file's context | subset of the above |
 | `first_commit` / `first_seen` | git | the first committed snapshot naming the id. **The only trustworthy filed-date** | history-wide |
-| `landed_at` | git | the first snapshot naming the id under `## Recently landed`. Survives grooming, which the text claim does not | 82 ids |
-| `landed_claim` | `landed <date>` in the entry text | the ledger's own claim. Shown **only** when git is unavailable, labelled as the ledger's claim | 17/17 landed |
-| `sha` | a trailing `` `<7-12 hex>` `` | the landing commit the entry names; plain text, **not a link** (`#157`'s rule: a path/rev from an old commit may not resolve, and a link that 404s promises something) | 15/17 landed |
-| `blocked_on` | `blocked on …` up to the next ` · ` | every `#N` in that span (`blocked on #264 design and relevant #263 cutover decisions` → `[264, 263]`) | 19/104 |
-| `blocked_note` | the same span, verbatim | because some blockers are prose, not ids (`blocked on user-event model #263`) | 19/104 |
+| `landed_at` | git | the first snapshot naming the id under `## Recently landed`. Survives grooming, which the text claim does not | 114 ids |
+| `landed_claim` | `landed <date>` in the entry text | the ledger's own claim. Shown **only** when git is unavailable, labelled as the ledger's claim | 34/42 landed entries |
+| `sha` | a trailing `` `<7-12 hex>` `` | the landing commit the entry names; plain text, **not a link** (`#157`'s rule: a path/rev from an old commit may not resolve, and a link that 404s promises something) | 34/42 landed entries |
+| `blocked_on` | `blocked on …` up to the next ` · ` | every `#N` in that span (`blocked on #264 design and relevant #263 cutover decisions` → `[264, 263]`) | 21/106 |
+| `blocked_note` | the same span, verbatim | because some blockers are prose, not ids (`blocked on user-event model #263`) | 21/106 |
 | `refs` | every other `#N` in the entry | cross-references, for the detail view's "mentions" | all |
 | `description` | the remaining chain tokens | reflowed through `mdB`; **the whole thing, never a preview** | all |
 | `raw` | the entry verbatim | **only on the single-record response**, never in the list payload (§4.3) | all |
-| `present` | `false` for a git-only (pruned) id | with `title` from the last snapshot that held it | 0 today |
+| `present` | `false` for a git-only (pruned) id | with `title` from the last snapshot that held it | **87 today** — the common case, not a hypothetical |
+
+**`present: false` is the case this plan most under-weighted, and the number
+is the argument.** It was recorded as *0 today*, which made the whole pruned-id
+path read as speculative machinery for a future grooming. Measured at
+`16ef2e2`: git history has named **238 ids**; **151** have a current entry; so
+**87 ids — 37% of every task this ledger has ever had — have no entry in the
+file at all.**
+
+The shape that produces them is documented and deliberate. Grooming compacts
+`## Recently landed` into **column-0 prose roll-ups**, and
+`file-formats.md:262-264` states outright that *"the column-0 prose summaries
+under Recently landed are not entries and never join one."* So a landed task's
+entry is replaced by a sentence naming it, and `ledger_entries` — correctly —
+sees no entry.
+
+Three consequences, each of which changes an implementation decision:
+
+- **The list is built from the UNION of ids**, `ledger_tasks(text)` ∪
+  `ledger_history(target)`, never from the file alone. §9.1 case 11 already
+  says so and is now the check that covers 87 records rather than zero.
+- **The snapshot title in `ledger_history` is load-bearing, not a nicety.** It
+  is the only title 87 records have. §Task 2 must not be trimmed to skip it.
+- **These records are in the list payload**, and the open-only default filter
+  hides them. Excluding them from the payload instead would make the `landed`
+  filter lie by 87 rows — a filter that silently under-reports is worse than a
+  larger body, and the body cost is §4.3's problem to state, not to hide.
 
 ### 2.3 What is NOT detectable, stated plainly
 
@@ -208,11 +294,63 @@ landed, 121 total).
   (`**dreamer-qsec holds it**`). The page therefore renders **no owner**, and
   says the ledger has none, rather than regexing for `dreamer-*` and inventing
   a field. `#294` is where owner becomes a column.
-- **The ledger cannot tell open from in-progress.** The only in-flight signal
-  that exists anywhere is `status.json` — the loop's own live claim — so a
-  task is shown as claimed **only** when `status.json`'s `task` or an agent's
-  `in_flight` names its id, and it is labelled as the loop's claim, not as a
-  fact (§3).
+- **In-progress is shown, it is labelled "in progress", and its evidence has
+  to be structured.** His ruling 5 drops the *"this is a claim"* hedge, and
+  that raises the bar on the evidence rather than lowering it: while the badge
+  hedged, a loose read was merely vague; saying **in progress** makes it a
+  statement, and a statement has to be right. So the page reads the signal
+  from a **structured field that names an id**, never from prose.
+
+  **Measured against the live file, prose is not usable, and it is worth
+  showing why.** `.dreamwork/status.json` today carries
+  `task: "TWO agents in flight on his two do-nexts: #269 … and #325 …. #326 …
+  is diagnosed and queued behind #269's hold on watch.py."`, plus
+  `current_task` naming `#327` and `coordinator_next` naming `#326`, `#281`
+  and `#269`. An "is `#N` mentioned in status.json" test therefore marks
+  **five** tasks in progress at once — and one of them, `#326`, is described
+  in that very sentence as *queued*. That is a false statement on the page,
+  which §3's own rule forbids, and it is the same defect as regexing
+  `dreamer-*` into an owner column one bullet up.
+
+  `agents[].in_flight` does not rescue it: `file-formats.md:494` documents it
+  as *"one line: what it is doing right now"*, and the live file writes
+  `"in_flight": true` — a bool, naming no id at all.
+
+  **So the evidence, in priority order, and the page shows nothing when
+  neither exists:**
+  1. **A structured id list in `status.json`** — `current_task_ids` at the top
+     level and `task_ids` per agent, arrays of ints. This does not exist yet;
+     it is a `file-formats.md` addition that the coordinator owns and it is
+     recorded in §10 as required-but-not-made. Until it lands, this source is
+     absent and contributes nothing.
+  2. **The ledger's own `· in progress` chain token**, which the coordinator
+     already writes — `#281`'s entry carries it today and it is the only
+     entry that does. It is a parsed field like every other on the record, it
+     needs no second reader, and it survives a target with no `status.json`.
+  3. **Neither present → no badge.** Not "open, probably"; the row is simply
+     `open`, which is what the ledger says.
+
+- **"Reported: Xm Ys ago" is a measurement, and the formatter already
+  exists.** `agePair(ct)` (`watch.py:1441`) renders exactly `05m 23s` — two
+  units, each zero-padded, so the field never changes width — and `ages()`
+  applies it to any `.age[data-ct]` node once a second (`watch.py:2756-2757`),
+  which is also what keeps the number alive between ticks. **Do not author a
+  second formatter**; this is the same one-idiom rule the rest of the page
+  obeys.
+
+  **What the age is the age *of*** — the moment the claim was written, not the
+  moment the page rendered, because an age computed from `now` reads
+  `00m 00s` forever and would be the exact hedge-dressed-as-a-fact his ruling
+  removed:
+  - ledger token → the commit time of the **first snapshot in which that
+    entry carried the marker**, out of `ledger_history` (§2.2). Git-derived,
+    so it survives grooming and cannot be rewritten.
+  - `status.json` → the file's own **mtime**, which the server observes
+    rather than the loop claims. `last_tick` is the loop's own claim about the
+    same moment and is the fallback, labelled, when mtime is unavailable.
+  - **No age available → the badge says so** (`in progress · when it was
+    reported is unknown`) rather than showing a zero. An unknown renders as
+    unknown here as everywhere else.
 - **A task's own history is not visible beyond arrival and landing.** Nothing
   records a re-open, a re-prioritisation or a hand-off; `#264` is the design
   lane for a transactional transition history.
@@ -230,19 +368,72 @@ One axis, as the question card has one: **who is this waiting on?**
 | state | evidenced by | treatment |
 |---|---|---|
 | `open` | the entry sits under `## Open`, nothing else claims it | full ramp, the default |
-| `claimed` | `status.json` names the id — **the loop's claim, labelled** | the page's one accent here: a rail plus `the loop says it is on this` |
+| `in progress` | a **structured** source names the id: the ledger's `· in progress` token, or `status.json`'s `*_task_ids` once that field exists (§2.3). Never prose | the page's one accent here: a rail plus **`in progress`** — no hedge — and a hover/focus box reading `Reported: Xm Ys ago` |
 | `blocked` | an explicit `blocked on …` in the entry text. **Never inferred** | one step down the ramp; blockers listed |
 | `blocked · blocker landed` | as above, and every named id is in the landed set | says so: `blocked on #216 · which landed 2026-07-27`. The page does **not** silently unblock it — only the coordinator can |
-| `landed` | git says the id first appeared under `## Recently landed`, or the entry sits there now | dim end of the ramp; carries the date and the sha |
+| `landed` | the entry sits under `## Recently landed` now, **or** git says a snapshot once named it there and no current entry says otherwise | dim end of the ramp; carries the date and the sha |
 | `landed · entry pruned` | git says landed; no entry in the current file | as above, title from the last snapshot |
 | `unknown` | leading token parses no id, or no section can be determined | rendered **as unknown and still listed** — the entry exists, so it is reachable |
 
-Two rules follow and are worth stating because both are easy to get wrong:
+**The current file outranks history, and this needs saying because the two
+disagree on a real id today.** The draft's evidence for `landed` was *"git says
+… **or** the entry sits there now"*, and an `or` between two sources is not a
+rule — it is whichever the renderer happens to test first. Measured at
+`16ef2e2`: **`#275` is in the current open set AND in the ever-landed set**,
+and that is not a bug in the ledger. Its research landed (`4b49ecb`) and a
+snapshot named it under `## Recently landed`, but the task is legitimately open
+because its ask awaits his approval, which its own entry states is part of its
+definition of done. So:
+
+- **A current entry's section is the answer.** History says only *"it was once
+  listed as landed"*, and the coordinator is the authority on the present.
+  `#275` renders `open`.
+- **History answers only when the file does not** — which is the 87 pruned
+  records (§2.2), where there is no current entry to outrank it.
+- **The disagreement is shown on the detail view, never silently resolved:**
+  `open · a snapshot once listed this as landed (2026-07-2x)`. Dropping the
+  older fact would hide exactly the case where a task went back to open, which
+  is the transition `#264` exists to record and nothing else can currently see.
+
+**The partition, measured, because it is what makes `unknown` first-class
+rather than a rarity:** of 238 records, **106 are open** (one of them also
+ever-landed, above), **113 are landed and not open**, and **19 are neither** —
+`#77, #95, #96, #102, #104, #106, #107, #108, #109, #110, #116, #121, #123,
+#132, #141, #149, #151, #154, #157`. Twelve of the nineteen are the
+space-joined-mention gap (§10); the rest are ids no snapshot ever placed under
+either heading in a form the readers can see. All nineteen render as `unknown`
+**and are still listed**, because they exist.
+
+**The `Reported:` box is a transition and obeys `transitions.md`.** It arrives
+and departs on the existing hover/focus idiom; it is **not** hover-only —
+§7's rule stands, so it opens on focus as well and the badge itself carries
+the state, which is the part a touch reader gets without it. Nothing
+load-bearing lives in the box: the age refines the badge, it does not replace
+it.
+
+Three rules follow and are worth stating because all three are easy to get
+wrong:
 
 - **A blocker that is missing is not the same as a blocker that landed.**
   `blocked on #999` where no such id exists renders `blocked on #999 · not in
   this ledger` — a wrong claim on the page is worse than an incomplete one,
   and this is exactly the shape of a typo nobody would otherwise notice.
+- **"not in this ledger" needs a third state beside it, because the landed
+  reader has a measured blind spot.** `_landed_ids` reads
+  `LEDGER_COMBINED_MENTION` (`watch.py:6340`), an ids-only bold span joined by
+  `/`. The landed section's compacted roll-up also writes **space-joined**
+  spans — `**#121 #123**`, `**#104 #77**`, `**#109 #116**`,
+  `**#107 #108 #110**`, `**#102 #106**` — and `**#96 stage 1**`, none of which
+  match. Measured on today's file: **#77, #96, #102, #104, #106, #107, #108,
+  #109, #110, #116, #121 and #123 are in neither the open set nor the landed
+  set**, though every one of them landed and is named in the file.
+  So `blocked on #106` must **not** render `not in this ledger` — that is
+  precisely the wrong claim this rule exists to prevent, and it would be wrong
+  on twelve real ids. The cross-check is three-way:
+  **in the landed set** → `which landed <date>`; **in the open set** →
+  `still open`; **in neither, but `ledger_history` has ever seen the id** →
+  `state unknown` with no date. Only an id no snapshot has ever named earns
+  `not in this ledger`. The reader gap itself is out of scope and filed (§10).
 - **`blocked_note`'s prose is always shown**, because "blocked on user-event
   model #263" says more than `[263]` does, and dropping the words to keep the
   ids is the truncation failure in miniature.
@@ -254,16 +445,31 @@ Two rules follow and are worth stating because both are easy to get wrong:
 ### 4.1 Client-side, and where that stops being true
 
 **Decision: filtering, search and sort run on the client**, over the
-route-scoped payload. 121 records is a sub-millisecond scan; a server round
-trip per keystroke would add a new endpoint shape, break the deep-link model
-(the URL would no longer be sufficient state), and buy nothing measurable.
+route-scoped payload. A few hundred records is a sub-millisecond scan; a
+server round trip per keystroke would add a new endpoint shape, break the
+deep-link model (the URL would no longer be sufficient state), and buy nothing
+measurable.
 
 **And it does not scale forever, so the ceiling is named rather than
-discovered:** at ~600 entries or a `/tasksdata` list body over ~512KB,
-whichever comes first, search moves behind `#294`'s query API. The
-implementation asserts the current size in a pytest so the ceiling arrives as
-a red light rather than as a slow page. (Today's ledger is 103KB of Markdown;
-the list payload measures **139KB**, see §4.3.)
+discovered:** at **~600 records or a `/tasksdata` list body over ~512KB**,
+whichever comes first, search moves behind `#294`'s query API.
+
+**The denominator is records, not entries, and that changed the headroom.**
+The record count is 148 entries **plus 87 pruned ids = 238 records** (§2.2),
+and it is **monotonic**: grooming converts an entry into a pruned record
+rather than removing it, so this number never falls. At 238 of 600 the
+headroom is under 3×, where against entries alone it read as 4×.
+
+**How the ceiling is asserted, because the obvious form is a check with an
+expiry date:** the pytest measures the **real serialised body** of
+`/tasksdata` against a planted ledger *and* against the repository's own, and
+asserts `len(body) < CEILING`. It must not assert today's size — that is a
+literal tuned to today's fixture, the trap `CLAUDE.md` names — and it must
+derive and **print** the current size so the number in the output is today's.
+The ceiling is the one constant here, and it is a constant on purpose.
+
+*(Both figures the earlier draft quoted — 103KB of Markdown, a 139KB payload —
+were measured at `c1f5aaa` and are stale: the ledger is now 172KB. See §4.3.)*
 
 ### 4.2 The controls
 
@@ -275,12 +481,24 @@ the list payload measures **139KB**, see §4.3.)
   geometry, motion and the ghost-outline rule are free. Two groups: **state**
   (`open` · `blocked` · `landed` · `all`) and **priority** (`P0-1` · `P2` ·
   `P3` · `any`). Multi-select within a group is a `,`-joined `f` value.
-- **Sort** — `priority` (default), `newest`, `oldest`, `effort`. `effort`
-  puts the 39 un-estimated tasks in a **labelled tail** (`no estimate · 39`)
-  rather than sorting them as zero or hiding them: `nothing is dropped, only
-  demoted`.
+- **Sort — a third group in the same controls row, on the same `.sgroup`**
+  (his ruling 2: *"user configurable alongside filters"*). `priority`
+  (default), `newest`, `oldest`, `effort`; single-select, because two sort
+  keys at once is a claim about tie-breaks the reader cannot see. It is the
+  same component as the two filter groups and it sits beside them rather than
+  in a menu of its own: a control he has to open is a control he does not know
+  he has, and the whole point of his ruling is that the ranking stops being
+  the page's opinion.
+  `effort` puts the un-estimated tasks in a **labelled tail**
+  (`no estimate · N`, the count derived at render) rather than sorting them as
+  zero or hiding them: `nothing is dropped, only demoted`.
+
+  **Three groups is the row's budget, and it is spent.** At ≤540px the row
+  stacks (§7); a fourth group would make the stack taller than the first two
+  rows of results, which is the point at which the controls stop serving the
+  list. Any later facet is a value inside an existing group, not a new one.
 - **The count line is always present** and names the denominator:
-  `38 of 104 open · 17 landed`. It is an `aria-live="polite"` region, which is
+  `38 of 106 open · 113 landed`. It is an `aria-live="polite"` region, which is
   the screen-reader equivalent of watching rows travel (§7).
 
 ### 4.3 The payload
@@ -288,17 +506,26 @@ the list payload measures **139KB**, see §4.3.)
 New GET `/tasksdata`, allowlisted beside `/filedata`:
 
 - `/tasksdata` → `{generated, health, note, history_complete, tasks:[…]}`,
-  **without `raw`**. Measured on today's ledger: **139KB** without it,
-  **226KB** with — `raw` is 63% of the body for a field only the detail view
-  reads.
+  **without `raw`**. `raw` is the entry verbatim and `description` is nearly
+  all of the same bytes, so carrying both roughly **doubles** the list body
+  for a field only the detail view reads. The earlier draft's figures (139KB
+  without, 226KB with, *"63% of the body"*) were measured at `c1f5aaa` and are
+  doubly wrong now: the ledger has grown 67% since, and 87KB of 226KB is 38%
+  of that body — 63% was the size of `raw` **relative to the body without
+  it**, which is not what the sentence said. **Both numbers are to be
+  re-measured in §Task 3 against the real serialised body**, printed by the
+  test, and neither is to be quoted here as a constant.
 - `/tasksdata?t=281` → `{task: {…, raw}}` or `{task: null}`.
 
-**It is a route-scoped fetch, not a `/data.json` field.** `/data.json` is
-already 374KB (measured) and is re-fetched every ~2s on every open window;
-adding the parsed ledger to it would put 139KB of task text on the wire every
-two seconds for the benefit of one route. `/filedata` is the standing precedent
-for exactly this. The client caches it and invalidates on a changed `/mtime`,
-so liveness is unchanged and the cost is paid only where it buys something.
+**It is a route-scoped fetch, not a `/data.json` field.** `/data.json`
+measures **456,842 bytes at `16ef2e2`** (up from 374KB when this was written)
+and is re-fetched every ~2s on every open window; adding the parsed ledger to
+it would put the whole task text on the wire every two seconds for the benefit
+of one route. Its own composition says why it must not grow: `files` is 184KB
+of it (`lessons.md` 90KB, `questions.md` 85KB), `dreams_archive` 132KB,
+`answered_entries` 55KB. `/filedata` is the standing precedent for exactly
+this. The client caches it and invalidates on a changed `/mtime`, so liveness
+is unchanged and the cost is paid only where it buys something.
 
 `#282`'s hovercards fetch `/tasksdata?t=N` for one record and cache it — which
 is why the single-record shape exists at all.
@@ -309,11 +536,44 @@ is why the single-record shape exists at all.
 
 In `watch-design.md`'s vocabulary. Every component named below already exists.
 
-### 5.1 The column
+### 5.1 The column, and the seam `/tasks2` composes
 
-**One 72ch column, centred, as every reading view.** `/review` is documented
-as *the* deliberate width exception and stays the only one; a two-pane
-triage layout is open question 1.
+**`/tasks` is one 72ch column, centred, as every reading view** — his ruling,
+not a refusal of the wide layout. The wide two-pane list-plus-detail triage
+layout is **approved and lives at `/tasks2` (`#328`)**, which is why this page
+does not need to be two things: he gets the reading column at one address and
+the triage bench at another.
+
+`watch-design.md` records `/review` as the styleguide's one width exception
+(`watch-design.md:158-161`, `:613`), so `/tasks2` adds the second and must say
+so in that document when it lands — that is `#328`'s obligation, not this
+plan's.
+
+**What this plan owes `#328` is a seam, and it is exactly three things**, each
+of which this plan already produces for its own reasons:
+
+- **`ledger_index(target)` and the record shape** (§2) — `/tasks2` reads the
+  same records through the same `/tasksdata`. It adds **no second parser and
+  no second endpoint shape**; the constraint in §8 binds it identically.
+- **`taskRow(t)` and `taskFacets(t)`** (§5.2) — the list pane is this page's
+  row, unchanged. A row that only renders correctly inside a 72ch column
+  would force `#328` to author a second one, so the row is written to lay out
+  in its container rather than against the page.
+- **`buildTaskDetail(t, d)`** (§5.3) — the detail pane is this page's detail
+  view, called with a container instead of a route. Keeping the builder
+  container-agnostic is the whole seam; it costs nothing here.
+
+**And `/tasks2` inherits `/review`'s split idiom rather than authoring a
+second one.** `#305` reworked that pane and the machinery is now specific and
+reusable: a window-tall two-column pane measured by `fitReview` into `--rvh`
+(layout, via `offsetTop`, never a rect read through the dissolve's
+transform), the gutter promoted to a keyboard-operable `role="separator"`, the
+ratio clamped in CSS as `clamp(32ch, var(--rsplit), calc(100% - 26ch))`, the
+width persisted in `localStorage['dw.review.split']` and emitted into the
+markup so a fresh load *paints* at his width, and a `@media (max-width:900px)`
+branch that goes back to one document rather than crushing two columns
+(`watch-design.md:192-322`). None of that is this plan's work; naming it here
+is what stops `#328` from re-deriving it.
 
 ### 5.2 The list
 
@@ -371,11 +631,14 @@ Three things about it are decisions, not defaults:
 
 ### 5.4 Colour, stated because both loud colours are enumerable
 
-- **`--accent` is spent on exactly one thing: the `claimed` rail.** It is the
-  only live, in-flight fact on this page. Everything else here is work for the
-  *loop*, not an errand for him, which is the burndown panel's rule (`#142`)
-  one surface over. It does **not** breathe — the awaiting-fold wisp stays the
-  page's one continuously moving exception.
+- **`--accent` is spent on exactly one thing: the `in progress` rail.** It is
+  the only live, in-flight fact on this page. Everything else here is work for
+  the *loop*, not an errand for him, which is the burndown panel's rule
+  (`#142`) one surface over. It does **not** breathe — the awaiting-fold wisp
+  stays the page's one continuously moving exception.
+  The `Reported: Xm Ys ago` box spends **no** second colour: it is `--dim`
+  text on the panel, because the age qualifies the accent rather than
+  competing with it.
 - **`--warn` appears in exactly one state: a `tasks.md` the reader cannot
   see** — amber, on the rail, with the line count and the path as a `/file`
   link. This is not a third use of amber: it is `#136`'s use (a file the
@@ -392,7 +655,7 @@ the same empty list:
 |---|---|---|
 | `missing` | no `.dreamwork/tasks.md` | one dim line. A target that keeps no ledger has not failed at anything |
 | `unreadable` | content, and `ledger_entries` sees no entries | **the fault** — `--warn`, the rail, the line count, the path as a `/file` link |
-| `no match` | the ledger is fine, the filter matches nothing | `nothing matches "xyz" · 104 tasks in the ledger` and a one-click clear. **Never collapsed into "no tasks"** |
+| `no match` | the ledger is fine, the filter matches nothing | `nothing matches "xyz" · 238 tasks in the ledger` (the denominator derived, never a literal) and a one-click clear. **Never collapsed into "no tasks"** |
 
 ---
 
@@ -402,16 +665,28 @@ Per `transitions.md`. Nothing below is a new mechanism.
 
 ### 6.1 Route entry and exit
 
-The dream dissolve, with `TINT.tasks` and `SEED.tasks` entries of its own
-(`-0.30` / `13` — distinct from dashboard 0, questions .14, file -.14, review
-.22). A destination without its own signature silently shares another's,
-which is a real gap today for `/answers` (§10).
+The dream dissolve, with `TINT.tasks` and `SEED.tasks` entries of its own:
+**`-0.30` and `13`**, re-checked at `16ef2e2` against the full current sets —
+tints `dashboard 0, questions .14, answers .08, file -.14, review .22`
+(`watch.py:3086`) and seeds `7, 23, 29, 41, 61` (`watch.py:3090`). Both
+proposed values still collide with nothing.
+
+A destination without its own signature silently shares another's through
+`TINT[name] || 0`. That was a live gap for `/answers` when this was written and
+**`#302` has since fixed it** (§10), so `/tasks` is now adding the sixth
+signature to a complete set rather than the fifth to an incomplete one — there
+is no precedent here for skipping it.
 
 ### 6.2 Rows arriving, departing and reordering
 
-**This is `#104`'s regroup over a third list, and it must be the same
+**This is `#104`'s regroup over a FIFTH keyed list, and it must be the same
 `snapshotCards`/`regroupCards` pair** — a second implementation of "one
-leaves, its neighbours travel" is two things to keep true.
+leaves, its neighbours travel" is two things to keep true. Four descriptors
+exist today, not two: `QA_LIST`, `ANSWER_LIST`, `GIT_LIST` and `REVIEW_LIST`
+(`watch.py:3953-3956`). The draft called this the third; it is the fifth, and
+the correction matters only because "third" was the argument that one more
+user of one mechanism is unremarkable — with four already there, it is more
+unremarkable, not less.
 
 ```js
 const TASK_LIST = { sel: '.tk[data-tid]', key: 'tid' };
@@ -448,9 +723,13 @@ lifted above the dissolve so it reads as *that row travelled* rather than
 
 ### 6.4 Disclosures
 
-The detail's raw-entry peek uses `foldDetailsLocal` — height travel +
-`revealBody` arrival + `dreamAway` departure, the section-fold pieces, with
-`box-sizing:border-box` while the height animates. It does **not** get a
+The detail's raw-entry peek uses `foldDetailsLocal` (`watch.py:4302`) — height
+travel through `travelCard` + `revealBody` arrival + `dreamAway` departure at
+the rect it occupied, the section-fold pieces, and it takes the reduced-motion
+branch (`if (rmr) { det.open = !det.open; return; }`) for free.
+`box-sizing:border-box` while the height animates comes from `travelCard`
+itself (`watch.py:~3998`), so it is inherited rather than restated — do not set
+it a second time here. It does **not** get a
 `data-keep` list key it cannot honestly own; it opts into the fold snapshot
 with `data-keep="task:281:raw"`, which is content-addressed by the id, so open
 survives the tick and cannot re-open the wrong record.
@@ -469,19 +748,37 @@ skin, and a stuck one leaves rows invisible and still clickable).
 
 ## 7 · Accessibility and input parity
 
-- **Semantics.** `<ol>` labelled `open tasks · 38 of 104`; one `<li>` per
+- **Semantics.** `<ol>` labelled `open tasks · 38 of 106`; one `<li>` per
   record; the row is a block `<a href="/tasks?t=281">` whose accessible name is
   the whole row. Facet tokens carry visually-hidden prefixes only where the
   bare value is ambiguous (`filed 2026-07-26`, `origin human`).
 - **The count line is `aria-live="polite"`.** A sighted reader watches rows
-  travel; a screen-reader user hears `38 of 104 open`. Without it, filtering
+  travel; a screen-reader user hears `38 of 106 open`. Without it, filtering
   is a silent event, which is the same class of failure as a fold that hides
   something in flight.
 - **Keyboard.** Rows are links, so Tab/Enter/middle-click/new-tab work with no
-  JS (modified clicks already fall through `isInternal`). `/` focuses the
-  search box and is **ignored inside text fields** — the same rule the shader
-  hotkey already obeys. `Escape` in the search box clears the filter (and
-  replaces the URL). No modal keymap is invented.
+  JS (modified clicks already fall through `isInternal`). `Escape` in the
+  search box clears the filter (and replaces the URL). No modal keymap is
+  invented.
+
+  **`/` is the page's first bare single-key global hotkey, and the draft
+  under-stated that.** It cited *"the same rule the shader hotkey already
+  obeys"*, and there is no shader hotkey: the main document's only keydown
+  handlers today are `Escape` for the command palette (`watch.py:5409`) and
+  Ctrl/Cmd+Enter to submit from a text field (`watch.py:5415`). The one bare
+  single-key handler in the tree is the **debug layer switcher's `l`**, and it
+  lives in a popout (`watch.py:5840`) rather than on the main document. Its
+  guard is the idiom to copy verbatim, comment included — *"never hijack a
+  keystroke aimed at a text field"*:
+
+  ```js
+  if (e.target.closest && e.target.closest('input, textarea, select')) return;
+  ```
+
+  Being the first of its kind is the reason phase J is not optional: a bare
+  letter or symbol bound at the document is one keystroke away from eating a
+  character out of the composer, which is the class of loss `#269` is open on
+  right now.
 - **Focus management, which the page has never had to do before.** After *his*
   navigation to a detail, focus moves to the detail's title block
   (`tabindex="-1"`), so the new subject is announced; after Back, focus returns
@@ -545,22 +842,27 @@ habit of passing over the thing they were written for.
 
 | # | asserts | red by |
 |---|---|---|
-| 1 | a combined entry yields ONE record addressable by either id | building on `LEDGER_ENTRY` instead of `ledger_entries` → the entry vanishes |
+| 1 | a combined entry yields ONE record addressable by either id | **the old injection no longer reddens this** — `LEDGER_ENTRY` is combined-aware after `#315`. Red it by building on `LEDGER_COMBINED_MENTION` with a space-joined head, or on an `ENTRY_ID.findall` over the head that yields the ids as two records rather than one |
 | 2 | a `#N` in a body numbers nothing | `ENTRY_ID.findall(whole_entry)` |
 | 3 | origin fails closed: two markers → unknown; `**Human**` → unknown | taking `marks[0]` without the count/vocabulary test |
 | 4 | a hard-wrapped metadata chain parses (`origin:` ending a line) | parsing per physical line instead of joining the entry |
 | 5 | `P0/P1` → band P0, raw preserved; absent → band P2 with `priority_raw: null`; `**P2**`-before-title is found; `P4` → no band, raw kept | `int(tok[1])`, or defaulting `priority_raw` to `"P2"` |
 | 6 | `20m` → 20; `4-5 increments` → **no** minutes, raw kept | a digits-anywhere regex (reports 4) |
 | 7 | `blocked on #264 design and relevant #263 cutover` → `[264, 263]` + verbatim note | anchoring the pattern at end-of-token |
-| 8 | a blocker in the landed set surfaces `blocker_landed`; an absent blocker surfaces `blocker_missing` | dropping the cross-check → blocked forever / a wrong claim |
-| 9 | an entry whose leading token has no digits yields `ids: []`, state unknown, **and is still listed** | `ids[0]` → IndexError → the whole route 500s |
+| 8 | the blocker cross-check is **three-way**: in the landed set → `blocker_landed`; in the open set → `still open`; known to history but in neither set → `state unknown`; named by no snapshot ever → `blocker_missing` | collapsing the third state into `blocker_missing` — which is wrong today on twelve real landed ids (§3, §10). **Assert the precondition:** the fixture's four blockers must land in four different states, derived at runtime, or three of the four branches are untested and the check still passes |
+| 9 | an entry whose leading token has no digits yields `ids: []`, state unknown, **and is still listed** | `ids[0]` → IndexError → the whole route 500s. **Assert the precondition:** today's ledger holds **zero** entries of this shape (measured at `16ef2e2`), so the case is reachable only from the planted fixture — the test must build the entry itself and assert it is absent from the real ledger, or it is a check whose subject may quietly stop existing |
 | 10 | landing date comes from git; with no repository, the text claim is shown **labelled** | reading only one of the two → a pruned entry has no date, or a non-checkout shows nothing |
-| 11 | a git-only (pruned) id appears with `present: false` and a snapshot title | building the list from the file alone |
-| 12 | `/tasksdata` omits `raw`, and the list body is under the stated ceiling | including `raw` |
+| 11 | a git-only (pruned) id appears with `present: false` and a snapshot title | building the list from the file alone. **87 records take this path on the real ledger** (§2.2), so the check also asserts the union is strictly larger than the entry set — a fixture-only assertion would have passed while the real page dropped a third of its records |
+| 12 | `/tasksdata` omits `raw`, and the list body is under the stated ceiling | including `raw`. The check **prints** the measured body size and compares it to the ceiling constant, never to today's value (§4.1) |
 | 13 | `/tasksdata?t=9999` → 200 `{task: null}`; `?t=abc` likewise | returning 404 |
 | 14 | `/tasks` and `/tasks?t=1` both serve the shell (allowlist) | leaving the allowlist unchanged |
 | 15 | `ledger_series`' existing outputs are byte-identical after the refactor | changing a bucket boundary while exposing the maps |
-| 16 | `lint.py` WARNs on a token that reads as a priority and parses to no band, reading the band rule **from watch.py** | giving the linter its own copy of the rule (the exact drift `#197` paid for) |
+| 16 | `lint.py` WARNs on a token that reads as a priority and parses to no band, reading the band rule **from watch.py** | giving the linter its own copy of the rule (the exact drift `#197` paid for). The precedent is now in the tree: `check_priorities` asks `watch.title_priority` and never re-derives (`lint.py:243-252`, `:266`) — the task-band function is a **second** rule and needs its own single copy, not a reuse of the question one |
+| 17 | the `s` codec round-trips, an unrecognised `s` renders the default sort **and is dropped from the URL**, and the default is never written | honouring an unknown key (a sort nothing implements) or spelling the default into every URL — which would break the `?t=281` canonical form `#282` hardcodes |
+| 18 | `in progress` comes from a **structured** source only: the ledger's `· in progress` token, or `*_task_ids` when present. A `status.json` whose `task` prose names three ids marks **none** of them | matching ids out of prose → the live file marks five tasks in progress, one of which it calls *queued* (§2.3). Build the fixture from the real file's shape, and assert the prose names ids the badge does not claim, or the check cannot fail |
+| 19 | the reported-age is the age of **the claim**, not of the render: an `in progress` marker planted N seconds back reports ≈N, not zero | computing the age from `now` → every badge reads `00m 00s` forever, which is the hedge his ruling removed wearing a number |
+| 20 | an id under `## Open` whose history also names it as landed renders **`open`**, with the older fact stated and not dropped | testing history first (or an `or` between the two sources) → `#275` renders landed today while its entry describes live work. **Assert the precondition** that the fixture id really is in both sets, derived at runtime |
+| 21 | an id known to history but in neither set renders `unknown` **and is listed** | filtering the record set down to open∪landed → nineteen real ids vanish from a page whose whole claim is that nothing is dropped |
 
 ### 9.2 Browser guard — `dev/capture/tasks.mjs`
 
@@ -571,27 +873,101 @@ check against the shared server would pass against nothing — the trap
 The fixture is **not** extended: seeding it can make a *neighbouring* guard
 vacuous without making it red, which is the worse failure. History is planted,
 so the numbers are known rather than read off the page and compared to itself.
-It asserts its subject **exists** before driving it, so absence costs one line
-instead of a 120s timeout.
+
+**It is written on `dev/capture/report.mjs`, which did not exist when this plan
+was drafted.** `#192` landed the shared reporter (`9fcbcda`), and the whole
+point of it is that a new guard inherits the four obligations by construction
+instead of being written without them — the count of unconverted guards was
+17 of 39 eighteen minutes before it was measured as 18 of 40, because *every
+new guard* was one. So:
+
+```js
+import { makeReporter } from './report.mjs';
+const { ok, present, declare, finish, checks, notes, errs } = makeReporter();
+declare({ drives: '/tasks list + detail, filter/sort/search, the morph, a real tick',
+          traceWindow: '…and why that bound is the interaction, not a tick' });
+```
+
+- **`declare({drives, traceWindow})` is mandatory and THROWS on a missing
+  half** (`report.mjs:112-121`). The trace window is not documentation: a guard
+  that watches long enough sees a later tick supply the motion it was asserting,
+  which is how `regroup.mjs` traced 5.2s past a 1.6s `holdRerenderUntil` and
+  went green over a teleport.
+- **`present(page, sel, what)` replaces the plan's hand-rolled absence check** —
+  it prints one named FAIL in seconds where a Playwright timeout costs 30s and
+  points at the guard rather than the page.
+- **The crash sentinel is the exit handler**, so a partway crash still prints
+  the checks plus `FAIL the guard threw before finishing its checks`; the guard
+  calls `finish()` at its successful end. Forgetting `finish()` makes a crash
+  visible, which is the point.
+- **No count, ever.** The module prints `checks.join('\n')` and offers no tally,
+  because a `grep -c` once reported 6 FAILs where the output held 14. Do not
+  add one.
+- Add `tasks` to `DEFAULT_GUARDS` in the justfile (`justfile:135`) and to the
+  header's own-target notes, as `burndown` is.
 
 | phase | asserts | red by |
 |---|---|---|
 | A route | direct load of `/tasks?t=281` renders the detail, the title reads `task #281`, the crumb is `← tasks` | routing param-less → the list renders |
-| B filter motion | on a real typed keystroke: every surviving row visits **many distinct intermediate positions**, every departing row leaves a ghost at its own rect, and **no frame goes past the final position**. Trace bounded to the interaction (≤900ms) | rebuilding via `innerHTML` with no regroup → exactly 2 distinct positions |
-| C reduced motion | same filter: ≤2 distinct positions, **and** the same final row set, the same count line, focus still moved | skipping the RM branch (motion appears) or letting RM skip the filter (function lost) |
-| D morph | clicking a row: the hero node was **never replaced** across the window, travelled many positions, and no frame went past its final rect | navigating without `fromRect` |
+| B filter motion | on a real typed keystroke: **at least one frame of each surviving row sits part-way between its old and new position** (`between(vals, first, last)`, ~3% deadband), with the row's travel span derived, printed, and asserted above a literal floor; every departing row leaves a ghost at its own rect; and **no frame goes past the final position**. Trace bounded to the interaction | rebuilding via `innerHTML` with no regroup → **zero** part-way frames |
+| C reduced motion | same filter: **zero** part-way frames, **and** the same final row set, the same count line, focus still moved | skipping the RM branch (a part-way frame appears) or letting RM skip the filter (function lost) |
+| D morph | clicking a row: the hero node was **never replaced** across the window, at least one frame part-way between the row's rect and the title's, and no frame past the final rect | navigating without `fromRect` |
 | E history | type `foo`, open a row, Back → the filtered list returns; one more Back leaves `/tasks`. Assert `history.length` grew by **one** across the typing | `pushState` per keystroke → Back walks his typing |
 | F survives the tick | half-typed search + an open raw peek, then a forced real tick (`POST /command`): assert the row nodes **were replaced** and that value, caret, focus and the open peek all survived | omitting the snapshot pair, or running cards before folds (`#179`) |
 | G stale blocker | planted `blocked on #216` with #216 landed → the row says the blocker landed; planted `blocked on #999` → says not in this ledger | rendering a bare `blocked` |
 | H unknown id | `/tasks?t=9999` states it honestly, the list stays reachable, the title says so | rendering an empty detail |
 | I focus | after his navigation focus is the detail title; after Back it is the row; after a **tick** it has not moved | moving focus in `setContent` |
 | J hotkey | `/` focuses search; `/` typed inside the search box inserts a slash | no target guard |
-| K colour audit | `--accent` resolves on the claimed rail and nowhere else; `--warn` only in the unreadable state | accenting priority (the sabotage `status.mjs` used) |
+| K colour audit | `--accent` resolves on the `in progress` rail and nowhere else; `--warn` only in the unreadable state | accenting priority (the sabotage `status.mjs` used) |
 | L three nothings | missing / unreadable / no-match render three distinguishable states | collapsing no-match into no-tasks |
 
 Resolve `--accent` through a throwaway element, not off `:root` — the token is
 authored as `#a5b4fc` and every computed colour comes back `rgb(…)`, so the
 naive comparison matches nothing and passes on a page painted entirely in it.
+
+**The motion phases above are written in `transitions.md`'s current form, and
+the earlier draft's form is now forbidden.** That document's *Checking a
+transition* section (`transitions.md:21-140`) has moved on, and phases B, C and
+D as first written specified precisely the idiom it names as a mistake. Five
+existing guards were converted away from it. What it now requires, each with
+the reason:
+
+- **Never assert an absolute COUNT of distinct positions.**
+  `uniq(positions).length >= 8` says *"this machine rendered eight frames in
+  850ms"* — a fact about the box, not about the motion. `headertravel`'s 1s
+  glide gave 5 part-way frames of 31 idle and **2 of 14** under six CPU
+  burners, so a floor of 2 was already on the line. Guards went red on a
+  commit that was fine, twice, at two different loads.
+- **The floor is ONE part-way frame** — not a fraction (tuned to the trace
+  window) and not a bigger count. Zero-versus-some is the entire distinction
+  between a snap and a travel. Whether the travel is too *fast* is the
+  no-frame-past-the-end rule's question and must not be smuggled in here.
+- **A part-way count needs a vacuity precondition, and that one IS a
+  literal.** `between(...) >= 1` passes on a 2px twitch, so assert the travel
+  span first. Derive and print the real span so the printed number is today's;
+  keep the floor a constant so it fails when the subject stops moving. This is
+  the one place the never-a-literal rule does not apply.
+- **Copy the `between` helper, not a file.** It is deliberately one idiom
+  (`reviewsplit.mjs:145` is the original; `headertravel`, `regroup`, `morph`
+  and `qsec` carry it verbatim). `qsec` spent a day holding both forms and read
+  as a considered distinction rather than an unfinished job.
+- **Do not round a per-frame trace.** Rounding a clean 2.1px ease reported it
+  as a snap. `reviewsplit.mjs`'s `distinct()` rounds and is only safe because
+  its travel assertions require ≥60px — so either keep raw values or state the
+  minimum travel the rounding tolerates.
+- **Do not anchor an arrival to a clock**, and do not assert a terminal state
+  inside a fixed sampling window: `dismiss.mjs:134`'s `ops.at(-1) >= 95`
+  reddens over a perfect animation on a slow box. Wait on the transition's own
+  completion (`getAnimations()`, `transitionend`) and then assert.
+- **Never measure geometry beneath a mid-transform ancestor.** The dissolve
+  scales, so every rect under it reads ~3% small with the error multiplying
+  from the transform origin — which is why it presents as intermittent. Phase
+  D measures the hero after the travel ends, or divides the current scale back
+  out (`rect.width / offsetWidth`, exactly 1 when nothing is mid-transform).
+
+**And the trace window is now a declared value, not a comment.** The `≤900ms`
+the draft named goes in `declare({traceWindow})` with its reasoning, so a
+reader sees the guard's reach in the output header before its verdicts.
 
 ### 9.3 The full sweep
 
@@ -603,20 +979,58 @@ who owns the port first.
 
 ## 10 · Found while designing this — out of scope, worth filing
 
-- **`parse_ledger` cannot see combined entries.** `LEDGER_ENTRY`
-  (`^- \*\*#(\d+)\*\*`) requires `**` immediately after the digits, so
-  `- **#138/#156**`, `- **#250/#251**` and `- **#292/#293**` match nothing.
-  Measured: `ledger_entries` finds 123 ids where `parse_ledger` finds 118, and
-  the burndown's arrival, completion and open-level series are wrong by that
-  much. `entry_origins` (built on `ledger_entries`) is already right, so the
-  two readers disagree about the same file.
-- **`TINT` and `SEED` have no `answers` entry**, so `/answers` silently
-  inherits the dashboard's atmosphere (`TINT[name] || 0`) while
-  `transitions.md` states that each destination has its own turbulence seed
-  and tint.
-- The dispatch brief for this batch numbered the hovercard task `#213`; it is
+**The two findings this section opened with have both been fixed** by tasks
+that landed after it was written, and they are recorded as resolved rather than
+deleted, because a plan whose "known bugs" list has silently emptied gives the
+next reader no way to tell fixed from forgotten:
+
+- ~~`parse_ledger` cannot see combined entries.~~ **Fixed by `#301` (landed
+  mentions) and `#315` (open heads).** `LEDGER_ENTRY` is now
+  `^- \*\*(#\d+(?:/#\d+)*)\*\*` (`watch.py:6317`) and `parse_ledger` reads both
+  sections combined-aware through `_open_ids`/`_landed_ids`
+  (`watch.py:6448-6473`). `lint.py`'s `LEDGER_ID` and `check_ledger_sections`
+  widened in the same lockstep (`lint.py:43`, `:285`, `:382-392`). Verified:
+  `- **#138/#156**`, `- **#250/#251**` and `- **#292/#293**` all parse today.
+  §2.1 states the argument that replaced this one.
+- ~~`TINT` and `SEED` have no `answers` entry.~~ **Fixed by `#302`
+  (`cdb89df`).** `/answers` now carries `TINT.answers = 0.08` and
+  `SEED.answers = 29` (`watch.py:3086`, `:3090`). Re-checked for this page: the
+  proposed `TINT.tasks = -0.30` / `SEED.tasks = 13` still collide with nothing
+  — tints are `0, 0.14, 0.08, -0.14, 0.22` and seeds `7, 23, 29, 41, 61`.
+- The dispatch brief for that batch numbered the hovercard task `#213`; it is
   **`#282`**. `#213` is the landed forward-only origin-marker contract, which
-  this design consumes rather than blocks.
+  this design consumes rather than blocks. (Already corrected in `#281`'s
+  ledger entry.)
+
+**And three new findings, all measured, all out of this plan's scope:**
+
+- **The landed reader misses SPACE-joined bold id spans.**
+  `LEDGER_COMBINED_MENTION` (`watch.py:6340`) is `\*\*(#\d+(?:/#\d+)*)\*\*` —
+  ids joined by `/`. The compacted roll-up under `## Recently landed` also
+  writes `**#121 #123**`, `**#104 #77**`, `**#109 #116**`,
+  `**#107 #108 #110**`, `**#102 #106**` and `**#96 stage 1**`. Measured at
+  `16ef2e2`: **#77, #96, #102, #104, #106, #107, #108, #109, #110, #116, #121
+  and #123 are in neither `parse_ledger` set** — twelve landed tasks the
+  current file's readers cannot classify at all. This is the same class of bug
+  `#301`/`#315` just fixed, one separator over, and it is why §3's blocker
+  cross-check is three-way rather than two. It is a live under-count on the
+  burndown's completion series today.
+- **`agents[].in_flight` is documented as prose and written as a bool.**
+  `file-formats.md:494` says *"one line: what it is doing right now"* and calls
+  it *"the one subfield with two readers … load-bearing"*; the live
+  `status.json` writes `"in_flight": true`, and `watch.py:2105` renders it
+  through `mdInline(String(a.in_flight || '—'))` — so the deployed agent glance
+  currently reads **`doing: true`**. Either the writer or the contract is
+  wrong; both readers (`watch.py`, `dreamhub.py:342`) trust the documented
+  shape.
+- **`status.json` has no structured way to say which task an agent is on**,
+  which is what §2.3 needs for an honest `in progress` badge. Required change,
+  stated exactly so the coordinator can land it in `file-formats.md`'s
+  status.json table: add `current_task_ids` (array of ints, top level) and
+  `task_ids` (array of ints, per agent) — *"the task ids this names, as
+  integers; prose in `task` is not a substitute, because one sentence routinely
+  names several ids in different states"*. Until it exists the page shows
+  `in progress` from the ledger's own `· in progress` token only.
 
 ---
 
@@ -625,6 +1039,12 @@ who owns the port first.
 Each is one commit, ~15-20 minutes, independently verifiable. Stage by
 explicit path. A commit touching `watch.py`'s page also touches
 `watch-design.md` or `file-formats.md` (`just audit-styleguide`).
+
+**The twelve-increment structure survives this review unchanged.** His rulings
+moved work *inside* increments — sort becomes a control in Task 6, the badge
+and its age box land in Tasks 5 and 8 — and moved the wide two-pane layout out
+entirely into `#328`, which the proposal had never scheduled as an increment.
+Nothing was added, merged or dropped. Only the checklists below changed.
 
 ### Task 1: Parse a ledger entry into a record
 
@@ -648,14 +1068,24 @@ explicit path. A commit touching `watch.py`'s page also touches
 **Files:** Modify `watch.py`, `test_watch.py`.
 
 **Interfaces:** Produces `ledger_history(target)` →
-`{id: {origin, first_commit, first_seen, landed_at, snapshot_title}}`.
-Consumes the existing `_LEDGER_SNAPS` memo, extended to carry titles.
+`{id: {origin, first_commit, first_seen, landed_at, snapshot_title,
+in_progress_since}}`. Consumes the existing `_LEDGER_SNAPS` memo
+(`watch.py:6558`, currently `(open_ids, landed_ids, entry_origins)`), extended
+to carry titles and the in-progress marker.
 
 - [ ] Write failing tests: per-id arrival/landing/first-sight, a pruned id
       keeping a snapshot title, and case 15 (`ledger_series`' outputs
       unchanged).
 - [ ] Observe red.
 - [ ] Return the maps instead of discarding them; extend the memo tuple.
+- [ ] **`snapshot_title` is not optional polish** — it is the only title the
+      **87** `present: false` records have (§2.2). Assert in the test that the
+      real ledger yields strictly more history ids than entry ids, so this
+      cannot regress into a path with no exercised subject.
+- [ ] **`in_progress_since`**: the commit time of the first snapshot in which
+      that id's entry carried the `· in progress` token — the age the
+      `Reported:` box renders (§2.3, case 19). One more derivation over text the
+      walk already reads; no extra `git show`.
 - [ ] Focused pytest green; confirm no additional `git show` per revision.
 
 ### Task 3: Merge them behind one function, and serve it
@@ -692,15 +1122,25 @@ swap point**) and GET `/tasksdata` (`?t=<id>` for one record).
 
 **Files:** Modify `watch.py`, `test_watch.py`, `watch-design.md`.
 
-**Interfaces:** Produces `taskRow(t)`, `taskFacets(t)`, `TASKS_NONE`.
+**Interfaces:** Produces `taskRow(t)`, `taskFacets(t)`, `TASKS_NONE`, and the
+`in progress` badge with its `Reported:` box.
 
 - [ ] Write failing tests for the three empty states, the whole-or-absent
-      facet rule, and the accent/warn budget in the generated source.
+      facet rule, the accent/warn budget in the generated source, and case 18
+      (the badge reads a structured source, never prose).
 - [ ] Observe red.
 - [ ] Implement the row (block link, two lines, priority as luminance) and the
       three nothings.
-- [ ] Document the row anatomy, the colour budget and its reasoning
-      (amber = `#136`'s fact on a second file).
+- [ ] **The badge says `in progress`** — no *"the loop says"*, no *"claim"*
+      (his ruling 5) — and carries the `Reported: Xm Ys ago` box through the
+      existing `agePair`/`.age[data-ct]` path (`watch.py:1441`, `:2756`), not a
+      second formatter. It opens on **focus as well as hover** (§7's rule) and
+      obeys `transitions.md` for its arrival and departure.
+- [ ] **The row must lay out in its container, not against the page** — a row
+      that only works inside a 72ch column forces `#328` to write a second one
+      (§5.1).
+- [ ] Document the row anatomy, the badge copy and *why* it is not hedged, the
+      colour budget and its reasoning (amber = `#136`'s fact on a second file).
 - [ ] Focused pytest green.
 
 ### Task 6: Search, filter, sort, and the URL
@@ -711,11 +1151,19 @@ swap point**) and GET `/tasksdata` (`?t=<id>` for one record).
 codec, the `aria-live` count line, `/` and Escape handling.
 
 - [ ] Write failing tests for the codec round trip (including an unknown facet
-      → ignored, never an empty list) and the labelled `no estimate` tail.
+      → ignored, never an empty list), case 17 (the `s` codec: unknown value
+      dropped, default never written), and the labelled `no estimate` tail
+      whose count is **derived at render**, not a literal.
 - [ ] Observe red.
+- [ ] **Sort is a THIRD `.sgroup` in the controls row** (his ruling 2:
+      *"user configurable alongside filters"*), single-select, beside the two
+      filter groups rather than in a menu. Three groups is the row's budget
+      (§4.2).
 - [ ] Implement the controls on the standing `.sgroup`; `replaceState`
-      throttled with an immediate flush.
-- [ ] Document the history rule and the client-side ceiling.
+      throttled with an immediate flush — sort replaces like the other two, so
+      choosing a ranking adds no Back step.
+- [ ] Document the history rule, that **sort is his** rather than the page's
+      opinion, and the client-side ceiling with its record-count denominator.
 - [ ] Focused pytest green.
 
 ### Task 7: Rows travel — guard phases B, C, L
@@ -725,13 +1173,22 @@ codec, the `aria-live` count line, `/` and Escape handling.
 
 **Interfaces:** Produces `TASK_LIST`; consumes `snapshotCards`/`regroupCards`.
 
-- [ ] Write phases B, C and L against the planted target.
-- [ ] Run them red on the un-regrouped list; confirm B reports exactly 2
-      distinct positions and C reports motion under reduced motion.
+- [ ] Build the guard on `report.mjs` from its first line: `makeReporter()`,
+      `declare({drives, traceWindow})` (it **throws** on a missing half),
+      `present()` before anything is driven, `finish()` at the end. §9.2.
+- [ ] Write phases B, C and L against the planted target, using `between()`
+      copied verbatim from `reviewsplit.mjs:145` — **not** a count of distinct
+      positions, which `transitions.md` now names as a mistake and five guards
+      were converted away from.
+- [ ] Derive and **print** each row's travel span, and assert it above a
+      literal floor, so `between(...) >= 1` cannot pass on a 2px twitch.
+- [ ] Run them red on the un-regrouped list; confirm B reports **zero**
+      part-way frames and C reports a part-way frame under reduced motion.
 - [ ] Route filtering and sorting through snapshot → mutate → regroup.
-- [ ] Add `tasks` to `GUARDS` and to the justfile header's own-target notes.
+- [ ] Add `tasks` to `DEFAULT_GUARDS` (`justfile:135`) and to the justfile
+      header's own-target notes, as `burndown` is.
 - [ ] Guard green; record the motion contract in `transitions.md` (the list is
-      a third user of one mechanism, not a new gesture).
+      the **fifth** user of one mechanism, not a new gesture).
 
 ### Task 8: The detail view
 
@@ -745,6 +1202,11 @@ codec, the `aria-live` count line, `/` and Escape handling.
 - [ ] Observe red.
 - [ ] Implement the fact grid (fixed key column), bidirectional blockers,
       the reflowed description, mentions, and the raw peek.
+- [ ] **The blocker cross-check is three-way** (§3, case 8): landed / still
+      open / known-to-history-but-unclassifiable / never named. Collapsing the
+      third into *"not in this ledger"* is wrong on twelve real ids today.
+- [ ] **`buildTaskDetail(t, d)` stays container-agnostic** — `#328` calls it
+      into a pane rather than a route, and that seam costs nothing here (§5.1).
 - [ ] Document the detail contract and the `expand`-vs-navigate reasoning.
 - [ ] Focused pytest + guard green.
 
@@ -755,8 +1217,12 @@ codec, the `aria-live` count line, `/` and Escape handling.
 
 **Interfaces:** Consumes `flipDock`, `opts.fromRect`.
 
-- [ ] Write phase D (hero never replaced; many positions; no frame past the
-      final rect).
+- [ ] Write phase D (hero never replaced; **at least one part-way frame** via
+      `between()` with the span derived, printed and floored; no frame past the
+      final rect — never a count of positions, per `transitions.md`).
+- [ ] Measure the hero **after** the travel ends, or divide the current scale
+      back out: the dissolve transforms its ancestor, so every rect under it
+      reads ~3% small with the error growing from the transform origin.
 - [ ] Run it red against navigation without `fromRect`.
 - [ ] Wire both directions; fail to the plain dissolve when the destination
       row is absent.
@@ -802,61 +1268,65 @@ codec, the `aria-live` count line, `/` and Escape handling.
 - [ ] `python3 -m pytest -q`, `python3 lint.py --target .`, the full guard
       sweep, `just audit-styleguide`, `git diff --check`.
 - [ ] Commit, merge, deploy `watch.py`, verify with `deployed.py`.
-- [ ] Coordinator updates `.dreamwork/tasks.md` and `status.json`; file the
-      two §10 bugs as tasks (the third finding is a brief correction, not a
+- [ ] Coordinator updates `.dreamwork/tasks.md` and `status.json`; file §10's
+      **three current** findings as tasks — the space-joined landed mentions,
+      `in_flight`'s bool-vs-prose contract break, and the `status.json`
+      structured task-id field. The section's two original findings are already
+      fixed (`#301`/`#315`, `#302`) and the id correction is recorded (not a
       task).
 
 ---
 
-## Open questions for Max
+## His rulings — answered 2026-07-27 21:47, and binding
 
-Each is a taste-or-authority call this proposal could not settle from the
-recorded contracts. A one-line answer unblocks each.
+The seven open questions this document was written to ask have been answered.
+They are recorded here as **decisions**, not as recommendations, because a
+plan that still argues its own refuted option is a plan that gets built
+wrong. Where his answer overrode the recommendation, the reasoning above has
+been amended to match — §1.2, §4.2, §5.1 and §3 each carry his call now, not
+the proposal's.
 
-1. **Should `/tasks` be allowed a wider column on a wide screen — a two-pane
-   list-plus-detail triage layout?**
-   *Rec: no, for v1.* `watch-design.md` names `/review` as *the* deliberate
-   width exception, and a second exception is how a one-column page becomes a
-   two-column one. The morph plus a canonical URL gives most of the benefit,
-   and a split view can be added later without changing the data contract.
+1. **A wider two-pane list-plus-detail triage layout — APPROVED, at its own
+   route.** *"yes, but at `/tasks2`, and keep a simpler one-column variant at
+   `/tasks`."* So the recommendation (*no, for v1*) is **overruled**, and the
+   proposal's argument against a second width exception is not the reason to
+   skip it — it is the reason `/tasks` stays one column while the wide layout
+   gets its own address. `/tasks2` is **`#328`** and is out of this plan's
+   scope; what this plan owes it is a clean seam and no second parser (§5.1).
 
-2. **Default sort: priority band first, or newest id first (the file's own
-   order)?**
-   *Rec: priority, then newest id.* It is the same reason `questions.md` sorts
-   in the parse — the page's job is telling you what to look at first — and
-   the ledger is written newest-first, which is arrival order, not urgency.
+2. **Default sort: priority, then newest id — accepted, "but user
+   configurable alongside filters."** So sort is a **control**, not a
+   constant, and it lives in the controls row with the filters. §1.2 and §4.2
+   carry the consequences; the URL key was already `s`, which is what makes
+   this a UI addition rather than a contract change.
 
-3. **Default filter: open only, or everything?**
-   *Rec: open only, with `17 landed` visible in the count line and one click
-   away.* The page is for steering; 17 settled rows diluting 104 live ones is
-   the opposite of ranking.
+3. **Default filter: open only — as proposed**, with the landed count visible
+   in the count line and one click away.
 
-4. **Is `/tasks?t=281` the URL `#282` should hardcode, or do you want
-   `/tasks/281`?**
-   *Rec: `?t=281`.* It keeps the server's route allowlist an exact membership
-   test, matches `/file?p=` and `/review?p=`, and needs no router change.
-   `/tasks/281` reads nicer and costs prefix routing in the same seam `#133`
-   will touch.
+4. **`/tasks?t=281` is the canonical detail URL — as proposed.** `#282` may
+   hardcode it.
 
-5. **Should the loop's `status.json` claim ("I am on #281 right now") be shown
-   at all, given it is a claim and not a fact?**
-   *Rec: yes, labelled as the loop's claim and carrying the page's only accent
-   here.* It is the sole in-flight signal that exists, and `#294` is what turns
-   it into a fact. The alternative is a page that cannot tell you what is
-   happening now.
+5. **Show the in-flight signal, but say "in progress" — the hedge is
+   rejected.** No *"this is a claim"* label; the honesty is carried instead by
+   a hover box reading **"Reported: Xm Ys ago"**.
 
-6. **Do you want a write affordance on a row later — `do now: #281` sent
-   straight from the list?**
-   *Rec: not in v1, and yes as a follow-up.* It needs no new endpoint or
-   vocabulary (`/command` + `do-now` already exist), so it is cheap — but it
-   turns a read-only page into a steering surface, and that is your call to
-   make deliberately rather than mine to fold into a list page.
+   **Why his version is better, stated because it should shape the rest of
+   the copy:** freshness is a *fact*, where "the loop's claim" is a
+   *disclaimer*. A disclaimer admits the page might be wrong and leaves the
+   reader no way to tell; a measured age makes staleness **legible** — a
+   signal reported four seconds ago and one reported forty minutes ago read
+   differently, and only the measurement can say which he is looking at.
+   Anywhere else in this document that hedges where it could instead show a
+   measurement is the same defect and is to be fixed the same way.
 
-7. **The two §10 bugs** — `parse_ledger`'s blindness to combined
-   entries (a live wrong number on the burndown), and `/answers`' missing
-   dissolve signature. *Rec: file both now; the combined-entry one is a P2 bug
-   rather than a polish item, because the burndown is on the dashboard and is
-   currently under-counting.*
+6. **A per-row write affordance is NOT approved and NOT in scope.** He asked
+   what it would mean rather than answering it, and it has been re-asked as
+   its own question. Nothing in this plan may assume it: §Global constraints'
+   read-only rule stands unchanged, and no increment adds a POST seam.
+
+7. **File the findings — as proposed.** Both original findings have since
+   been fixed by other tasks (`#301`/`#315` and `#302`); §10 now carries what
+   replaced them.
 
 ---
 
@@ -868,38 +1338,66 @@ recorded contracts. A one-line answer unblocks each.
   `q`/`f`/`s` and use `replaceState`, so Back never walks his own typing;
   only route changes push.
 - **Data.** One new deep module in three parts: `ledger_tasks(text)` (pure
-  entry-level parse, built on the pinned `ledger_entries` grammar),
-  `ledger_history(target)` (the per-id arrival/landing/first-sight facts the
-  existing burndown walk already computes and discards), and
-  `ledger_index(target)` — cached on HEAD and **the single swap point for
-  `#294`**. Records ride a route-scoped `/tasksdata`, not `/data.json`, which
-  is already 374KB every two seconds.
-- **Honesty.** Every field is parsed, derived or **unknown**, and unknown
-  renders as unknown. Coverage is measured, not assumed (priority 103/104,
-  effort 65/104, origin marker 53/104, blockers 19/104). **Owner and
-  in-progress are not detectable from the ledger** and the page says so; the
-  only in-flight signal is `status.json`'s claim, labelled as a claim.
-  `blocked on #216 · which landed` and `blocked on #999 · not in this ledger`
-  are separate, stated states — the page never silently unblocks anything.
-- **Design.** One 72ch column; a two-line block-link row whose every field is
-  whole or absent (no truncated preview — `#106`); priority as luminance, not
-  colour; `--accent` spent on exactly one thing (the loop's live claim) and
-  `--warn` on exactly one (a ledger the reader cannot see, which is `#136`'s
-  fact on a second file); three distinguishable kinds of nothing.
+  entry-level parse on `ledger_entries`' grammar — whose *reason* changed after
+  `#315` widened `LEDGER_ENTRY`: the argument is now that `ENTRY_HEAD` is wider
+  and an entry with a non-id head would vanish, not that combined heads are
+  missed), `ledger_history(target)` (the per-id arrival/landing/first-sight
+  facts the existing burndown walk already computes and discards, plus the
+  snapshot title and the in-progress marker's age), and `ledger_index(target)`
+  — cached on HEAD and **the single swap point for `#294`**. Records ride a
+  route-scoped `/tasksdata`, not `/data.json`, which measures **456,842 bytes**
+  every two seconds.
+- **Honesty, re-measured at `16ef2e2`.** Every field is parsed, derived or
+  **unknown**, and unknown renders as unknown. Coverage is a measurement with a
+  date, not a constant — 148 entries (106 open, 42 landed), priority 106/106,
+  effort 64/106 numeric, origin marker 59/106, blockers 21/106 — and the
+  figures the first draft carried had all aged out inside a day.
+  **`present: false` is 87, not 0**: 37% of the 238 ids this ledger has ever
+  named have no entry, because grooming compacts Recently-landed into prose
+  roll-ups. **Owner is not detectable** and the page says so. **In progress
+  is shown and says "in progress"** (his ruling), evidenced only by a
+  structured source, with the honesty carried by `Reported: Xm Ys ago` through
+  the existing `agePair` formatter. The blocker cross-check is **three-way**,
+  because twelve genuinely-landed ids are currently in neither reader set.
+- **Design.** `/tasks` is one 72ch column **by his ruling**, with the wide
+  two-pane triage layout **approved at `/tasks2` (`#328`)** — so the row, the
+  detail builder and `ledger_index` are the seam it composes, and it inherits
+  `/review`'s post-`#305` split idiom rather than authoring a second one. A
+  two-line block-link row whose every field is whole or absent (no truncated
+  preview — `#106`); priority as luminance, not colour; `--accent` spent on
+  exactly one thing (the `in progress` rail) and `--warn` on exactly one (a
+  ledger the reader cannot see, `#136`'s fact on a second file); three
+  distinguishable kinds of nothing. Sort is a **third `.sgroup` beside the
+  filters**, his to set.
 - **Motion.** No new mechanism: filtering and sorting are `#104`'s regroup
-  over a third keyed list (`TASK_LIST`), list↔detail is the review dock's
-  lifted-hero morph in both directions failing to the plain dissolve, and the
-  raw-entry peek is the section fold's pieces. Reduced motion changes timing,
-  never function.
-- **Verification.** 16 pytest checks and 12 browser-guard phases, each with
-  the bug named that will be reintroduced to see it red; the guard **builds
-  its own git target** because the shared fixture is not a repository and
-  holds no ledger, and the shared fixture is deliberately not seeded.
-- **Twelve increments**, each independently committable, ending in lint,
-  docs, deploy and verification.
-- **Seven open questions**, each with a recommendation: the wide two-pane
-  layout (rec no), default sort (rec priority), default filter (rec open
-  only), the URL shape (rec `?t=`), showing the loop's claim (rec yes,
-  labelled), a future row-level `do now` (rec follow-up), and filing the three
-  bugs found on the way (rec yes — `parse_ledger` is blind to combined
-  entries, so the burndown is currently under-counting).
+  over a **fifth** keyed list (`TASK_LIST`, beside `QA_LIST`, `ANSWER_LIST`,
+  `GIT_LIST` and `REVIEW_LIST`), list↔detail is the review dock's lifted-hero
+  morph in both directions failing to the plain dissolve, and the raw-entry
+  peek is the section fold's pieces. `/tasks` gets the sixth dissolve
+  signature of a now-complete set (`#302` closed the `/answers` gap). Reduced
+  motion changes timing, never function.
+- **Verification.** 21 pytest checks and 12 browser-guard phases, each with the
+  bug named that will be reintroduced to see it red. The guard is written on
+  **`dev/capture/report.mjs`** (`#192`, which post-dates the draft): the crash
+  sentinel, `present()` absence-first, no count offered at all, and a
+  `declare({drives, traceWindow})` that throws on a missing half. It **builds
+  its own git target** because the shared fixture is not a repository and holds
+  no ledger, and the fixture is deliberately not seeded. The motion phases are
+  rewritten in `transitions.md`'s **current** form — one part-way frame via
+  `between()` with a derived-and-printed span above a literal floor, never an
+  absolute count of distinct positions, which is the exact idiom the draft
+  specified and five guards have since been converted away from.
+- **Twelve increments**, unchanged in number and boundary by this review, each
+  independently committable, ending in lint, docs, deploy and verification.
+- **His seven rulings are recorded as decisions, not recommendations** — the
+  two-pane layout **approved at `/tasks2`**, sort **user-configurable**, filter
+  open-only, `?t=281` canonical, the in-flight signal saying **"in progress"**
+  with a measured freshness box instead of a hedge, a per-row write affordance
+  **not approved and not in scope**, and the findings filed. Three of those
+  overrode this proposal's own recommendation, and §§1.2, 3, 4.2, 5.1 and 5.4
+  now state his call rather than arguing against it.
+- **§10 is current.** Its two original findings are fixed (`#301`/`#315`,
+  `#302`); three measured replacements stand — space-joined bold id spans
+  invisible to the landed reader, `in_flight` documented as prose and written
+  as a bool (so the agent glance reads `doing: true`), and `status.json`
+  lacking any structured task-id field.
