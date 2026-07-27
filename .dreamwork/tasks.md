@@ -596,13 +596,6 @@ Next id: **297**
   for · candidate: assert the x-position of load-bearing columns in the
   guards that own them, or a coarse screenshot-diff capture (NOT gated)
   that flags layout deltas for a human eye · relates #210's vacuity class
-- **#213** — Enforce forward-only task provenance · P2 · implementation · 20m ·
-  **approved via watch 18:36** · record `origin: **human|loop**` on every task
-  from cutoff #216 onward; historical tasks remain unknown rather than guessed ·
-  first increment adds the ledger contract and linter only; first-seen parsing
-  remains #216 and honest human/loop/historical-unknown UI remains #217 ·
-  red-first linter fixtures must prove new missing/invalid origin fails while
-  old unmarked entries and explicit unknown coverage remain accepted
 - **#211** — A title that GAINS a priority departs and arrives instead
   of travelling · P3 · idea · 20m · honest today (`data-qid` is the
   title, and the title changed) but a human watching the loop stamp
@@ -948,6 +941,14 @@ Next id: **297**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#213** — Enforce forward-only task provenance · P2 · origin:
+  **loop** · landed 2026-07-27 · entries whose leading id token contains any
+  id >=216 require exactly one `origin: **human|loop|unknown**`; older entries
+  may remain unmarked and are never guessed · combined ids key only on the
+  leading token, body references do not govern · 12 landed summaries gained
+  truthful unknown markers pending #216 archaeology · +17 red-first tests,
+  559 + 46 subtests, Standards + Spec PASS · `f9dc636`
 
 - **#296** — Stabilise answers guard premises under load · P1 · origin:
   **unknown** · landed
