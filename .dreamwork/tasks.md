@@ -525,7 +525,7 @@ Next id: **329**
   #263/#269 · replay/concurrent same-ID fixture asserts one receipt/application;
   new ID with same text remains a distinct intentional action
 
-- **#269** — Make every Web UI text draft durable and cross-tab coherent · **P0** · **next-up** ·
+- **#269** — Make every Web UI text draft durable and cross-tab coherent · P1 ·
   client reliability/module · origin: **human** · **human via watch 16:45** ·
   composer, answer/note boxes, future chat inputs and every later user text field
   get a stable logical input ID; autosave content before submission to one
@@ -550,10 +550,29 @@ Next id: **329**
   box outranks storage per #118) but it is hardcoded to the single element
   `#cmdtext` and keys only by target, so it cannot serve N boxes; `qi${key}`
   (1700), `askbox` (2514) and `ptext` (4835) have nothing · **two loss modes, and
-  the second is the one he reported**: a full reload, which restore-on-load
-  fixes, and the LIVE RE-RENDER, where the textarea is replaced by a new node and
-  no reload ever happens — his word "autoreload" points at the second, and a fix
-  verified only against F5 leaves it untouched
+  the coordinator's diagnosis was WRONG about which**: I recorded that the live
+  re-render was the biting mode and that "autoreload" pointed at it. Reproduction
+  proved the opposite — #118's in-memory snapshot already carries text into the
+  recreated node on both `/questions` and `/review`, and the real loss is the
+  FULL RELOAD, which is exactly what "autoreload" named. Kept here rather than
+  deleted because the brief handed that guess to an agent as the likely answer,
+  and only the instruction to reproduce both modes before building stopped it
+  from fixing a mode that was not broken · **the acute fix LANDED
+  `0366706`, merged `e383492`**: `dwDraft` gives the per-question answer box the
+  composer's rules verbatim, keyed by the question's `data-qid` title identity
+  (stable across a re-render, a re-sort and the re-index between sections, where
+  the positional key is not) and partitioned by target; guard
+  `dev/capture/reviewdraft.mjs` is in DEFAULT_GUARDS (41 gating); the
+  coordinator independently reproduced both its 12/12 green and its red, the red
+  being discriminating — mode 2 PASS, mode 1 FAIL — so the guard separates the
+  mode #118 covers from the one he reported · **STILL OPEN, and this is the
+  remaining scope**: the project-partitioned IndexedDB store itself,
+  cross-tab coherence for one logical input across views, ownership/conflict
+  rules, privacy/retention, migration off composer localStorage, and the deep
+  module every later input consumes. `askbox` (2514) and `ptext` (4835) still
+  have no persistence at all and are the next cheapest consumers. Priority drops
+  to P1 and the next-up mark is cleared: the acute loss he reported is fixed, so
+  the remainder is no longer urgent
 
 - **#265** — Add a research command to the composer · P2 · command design ·
   origin: **human** · **human via watch 16:05** · hidden/menu command for

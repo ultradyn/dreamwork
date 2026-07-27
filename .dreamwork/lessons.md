@@ -1235,3 +1235,27 @@ this shape and convert opportunistically.)
   `test_clear_names_the_kind_of_agent_it_cannot_see`, and is in `lifecycle.md`
   step 1 and the checklist — because a warning that lives only here is read by
   nobody standing at the decision.
+
+- **A coordinator's confident diagnosis, handed to an agent as "the likely one",
+  is a steer toward the wrong fix.** For #269 I read his word *"autoreload"*, found
+  the live tick re-render, and wrote into both the brief and the ledger that this
+  was probably the biting mode — with the plausible mechanism spelled out (the
+  textarea is a new node after a re-render, so the typed text goes with the old
+  one). It was wrong: #118's in-memory snapshot already covered that path, and the
+  real loss was the plain full reload, which is what he actually said. What saved
+  it was one line in the brief — *reproduce both modes first and say which you
+  reproduced* — so the agent measured before building and reported the correction.
+  **Write the hypothesis down, but always require reproduction to rank the modes,
+  and never let the ledger keep the guess without the measurement beside it.** A
+  diagnosis in a task entry reads as established fact to whoever picks it up next.
+  The corrected entry keeps both, deliberately.
+
+- **The strongest guard evidence is a DISCRIMINATING red, not a red.** #269's guard
+  drives two loss modes; run against pre-fix code it returned mode 2 PASS and mode
+  1 FAIL. That single asymmetry proves far more than an all-red run would: it shows
+  the guard distinguishes the path that was already covered from the path that was
+  broken, so it cannot be passing for an unrelated reason. When a check covers
+  several mechanisms, **look at the SHAPE of the red, not just its exit code** — a
+  hollow check tends to move all its assertions together. (Same run, honestly: one
+  assertion — "a successful answer clears the draft" — passed pre-fix vacuously,
+  nothing having been stored to clear. Count such an assertion out of the proof.)
