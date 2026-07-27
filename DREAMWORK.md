@@ -74,6 +74,21 @@ dreamwork-version: 5853e1789929
   were overridden** and earned their place. Two of four is the ratio to beat,
   and the test before writing an ask is *"would I be surprised by any answer
   other than my rec?"* — if not, it is not a question.
+- **The coordinator plans; subagents execute a written brief** (human-set
+  2026-07-28 05:43, granting #263's lanes): *"I expect you main opus 5 claude
+  orchestrator to do all the planning around this and to prepare precise
+  instructions with measurable goals and acceptance criteria for your
+  subagents. Idelaly write these to file so they are reusable in case of any
+  issue and so you can show them to me."* Three requirements, and the third is
+  the one that is easy to lose: the brief is a **file**, not a prompt — under
+  `.dreamwork/docs/briefs/<id>-<slug>.md` — because a prompt dies with the
+  dispatch and a file survives to be re-dispatched after a failure and read by
+  him. Every brief carries **measurable goals and acceptance criteria**, not a
+  description of the work; the test is whether a second agent could tell
+  pass from fail without asking. Planning does not delegate: the coordinator
+  writes the brief itself.
+  · he asked for `xdg-open` on the briefs for #263 specifically, after
+  dispatch — a one-off review, not a standing routine.
 - Cadence & comms: brief updates; `attn` (TTS) only for blockers,
   questions, and notable milestones. **Dreamwork decisions never use the
   harness Ask User Question tool** (human-set 2026-07-26): write the ask to
