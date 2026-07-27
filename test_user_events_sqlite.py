@@ -531,3 +531,120 @@ def test_two_processes_one_uuid_make_one_receipt(tmp_path: Path):
         )
     finally:
         j.close()
+
+
+def _validate(j, receipt_id: str) -> int:
+    """Transition received→validated; return the new revision from the store."""
+    stored = j.get_receipt(receipt_id)
+    assert stored is not None
+    tr = j.transition(
+        receipt_id, "validated", expected_revision=stored["revision"]
+    )
+    assert tr.kind == "applied", f"validate failed: {tr!r}"
+    stored = j.get_receipt(receipt_id)
+    assert stored["state"] == "validated"
+    return stored["revision"]
+
+
+def test_expired_lease_is_reclaimable_and_the_stale_claimant_cannot_finish(
+    tmp_path: Path,
+):
+    """B5: real short lease; after expiry a reclaimer wins; stale cannot finish.
+
+    PRODUCTION LINE WHOSE DELETION MUST FAIL THIS TEST:
+      the `lease_until > <backend now>` predicate in the claim UPDATE
+      (written as NOT (lease_until > ?)). Without it, a second consumer can
+      reclaim while the first lease is still active.
+
+    Must not patch the clock. Backend/server time only. Assert at runtime that
+    observed elapsed time exceeded the lease — a sleep that returned early on a
+    loaded box would otherwise make the test pass vacuously.
+    """
+    path = tmp_path / "claims.sqlite3"
+    j = open_journal(path)
+    try:
+        ins = j.receive(_envelope(body=b'{"text":"lease-me"}'))
+        assert ins.kind == "inserted"
+        rev = _validate(j, ins.receipt_id)
+
+        lease_seconds = 1
+        # --- first claimant ---
+        claim_a = j.claim(
+            ins.receipt_id,
+            consumer="worker-a",
+            lease_seconds=lease_seconds,
+            expected_revision=rev,
+        )
+        assert claim_a.kind == "claimed", f"first claim failed: {claim_a!r}"
+        assert claim_a.claim_token
+        token_a = claim_a.claim_token
+        rev_a = claim_a.revision
+        assert rev_a is not None
+
+        # While the lease is active, a second consumer must be refused.
+        # This is what makes the lease_until predicate load-bearing: without
+        # it, reclaim would succeed here and the sleep would be decorative.
+        stored = j.get_receipt(ins.receipt_id)
+        early = j.claim(
+            ins.receipt_id,
+            consumer="worker-b",
+            lease_seconds=lease_seconds,
+            expected_revision=stored["revision"],
+        )
+        assert early.kind == "refused", (
+            f"active lease must refuse reclaim, got kind={early.kind!r}; "
+            "if this passes as claimed, the lease_until > now predicate is gone"
+        )
+
+        # Real sleep past the lease. No monkeypatched time.
+        t0 = time.monotonic()
+        time.sleep(lease_seconds + 0.6)
+        elapsed = time.monotonic() - t0
+        assert elapsed > lease_seconds, (
+            f"observed elapsed {elapsed:.3f}s did not exceed lease "
+            f"{lease_seconds}s — sleep returned early; refuse to pass vacuously"
+        )
+
+        # --- reclaimer after expiry ---
+        stored = j.get_receipt(ins.receipt_id)
+        claim_b = j.claim(
+            ins.receipt_id,
+            consumer="worker-b",
+            lease_seconds=30,
+            expected_revision=stored["revision"],
+        )
+        assert claim_b.kind == "claimed", (
+            f"expired lease must be reclaimable, got kind={claim_b.kind!r}"
+        )
+        assert claim_b.claim_token != token_a
+        assert claim_b.revision != rev_a
+
+        # Stale claimant (worker-a with old token/revision) cannot finish.
+        finish_a = j.finish(
+            ins.receipt_id,
+            claim_token=token_a,
+            consumer="worker-a",
+            expected_revision=rev_a,
+        )
+        assert finish_a.kind in ("refused", "stale"), (
+            f"stale claimant must not finish, got kind={finish_a.kind!r}"
+        )
+        stored = j.get_receipt(ins.receipt_id)
+        assert stored["state"] == "claimed", (
+            "stale finish must leave the receipt claimed by the reclaimer"
+        )
+        assert stored["claim_consumer"] == "worker-b"
+
+        # Reclaimer can finish.
+        finish_b = j.finish(
+            ins.receipt_id,
+            claim_token=claim_b.claim_token,
+            consumer="worker-b",
+            expected_revision=claim_b.revision,
+        )
+        assert finish_b.kind == "finished", f"reclaimer finish failed: {finish_b!r}"
+        stored = j.get_receipt(ins.receipt_id)
+        assert stored["state"] == "applied"
+    finally:
+        j.close()
+

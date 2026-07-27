@@ -91,9 +91,48 @@ class ClaimResult:
     revision: Optional[int] = None
     claim_token: Optional[str] = None
     lease_until: Optional[str] = None
+    consumer: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class FinishResult:
+    """Outcome of finish(): finished | stale | refused | missing."""
+
+    kind: str
+    receipt_id: Optional[str] = None
+    state: Optional[str] = None
+    revision: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class CursorView:
+    """A consumer's replay cursor projection."""
+
+    consumer: str
+    journal_id: str
+    scanned_through_event_ordinal: int
+    chain_hash_at_ordinal: str
+    revision: int
+
+
+@dataclass(frozen=True)
+class AdvanceCursorResult:
+    """Outcome of advance_cursor(): advanced | refused.
+
+    On refuse after a broken chain, rebuild is True and ordinals_read counts
+    how many event rows the rebuild path examined (from 1 through the target).
+    """
+
+    kind: str  # "advanced" | "refused"
+    reason: Optional[str] = None
+    cursor: Optional[CursorView] = None
+    rebuild: bool = False
+    ordinals_read: int = 0
+    failed_ordinal: Optional[int] = None
 
 
 # Edges authorised at B4. claim requires validated; rejected is a sink.
+# finish moves claimed → applied (B5).
 _TRANSITION_EDGES = {
     ("received", "validated"),
     ("received", "rejected"),
@@ -163,7 +202,17 @@ CREATE TABLE IF NOT EXISTS receipts (
     redaction_class     TEXT NOT NULL DEFAULT 'default',
     purged_at           TEXT,
     state               TEXT NOT NULL DEFAULT 'received',
-    revision            INTEGER NOT NULL DEFAULT 1
+    revision            INTEGER NOT NULL DEFAULT 1,
+    claim_token         TEXT,
+    claim_consumer      TEXT,
+    lease_until         TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cursors (
+    consumer                       TEXT PRIMARY KEY,
+    scanned_through_event_ordinal  INTEGER NOT NULL,
+    chain_hash_at_ordinal          TEXT NOT NULL,
+    revision                       INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS transitions (
@@ -528,8 +577,8 @@ class Journal:
         """Read current receipt projection. Revisions must come from here, not the test."""
         row = self.conn.execute(
             "SELECT receipt_id, sequence, client_action_id, request_digest, "
-            "state, revision, exact_payload_bytes FROM receipts "
-            "WHERE receipt_id = ?",
+            "state, revision, exact_payload_bytes, claim_token, claim_consumer, "
+            "lease_until FROM receipts WHERE receipt_id = ?",
             (receipt_id,),
         ).fetchone()
         if row is None:
@@ -542,6 +591,9 @@ class Journal:
             "state": row["state"],
             "revision": int(row["revision"]),
             "exact_payload_bytes": bytes(row["exact_payload_bytes"]),
+            "claim_token": row["claim_token"],
+            "claim_consumer": row["claim_consumer"],
+            "lease_until": row["lease_until"],
         }
 
     def transition(
@@ -627,16 +679,19 @@ class Journal:
         lease_seconds: int,
         expected_revision: int,
     ) -> ClaimResult:
-        """Claim a validated receipt. Rejected receipts can never be claimed.
+        """Claim a validated receipt, or reclaim one whose lease has expired.
 
-        The AND state = 'validated' predicate in the UPDATE is the B4 red line:
-        without it a rejected receipt can be claimed.
+        B4 red line: AND state = 'validated' (rejected can never be claimed).
+        B5 red line: lease_until > <backend now> — an active lease blocks
+        reclaim; only when that predicate is false (lease expired) may a
+        second consumer take the claim. Lease deadlines use backend/server
+        time, never client clocks.
         """
         if lease_seconds <= 0:
             raise ValueError("lease_seconds must be positive")
         now = datetime.now(timezone.utc)
         now_s = now.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-        # lease_until from backend time (wall clock); B5 will stress expiry.
+        # lease_until from backend time (wall clock); never a client-supplied clock.
         lease_until = (now + timedelta(seconds=lease_seconds)).strftime(
             "%Y-%m-%dT%H:%M:%S.%fZ"
         )
@@ -645,7 +700,8 @@ class Journal:
         self.conn.execute("BEGIN IMMEDIATE")
         try:
             row = self.conn.execute(
-                "SELECT state, revision FROM receipts WHERE receipt_id = ?",
+                "SELECT state, revision, lease_until, claim_token, claim_consumer "
+                "FROM receipts WHERE receipt_id = ?",
                 (receipt_id,),
             ).fetchone()
             if row is None:
@@ -659,19 +715,41 @@ class Journal:
                     state=row["state"],
                     revision=int(row["revision"]),
                 )
-            # --- B4 red line: AND state = 'validated' in the claim UPDATE ---
+            from_state = row["state"]
+            # --- B4: validated may be claimed; rejected never.
+            # --- B5 red line: lease_until > backend now blocks reclaim ---
+            # First claim: state = 'validated'.
+            # Reclaim: state = 'claimed' AND NOT (lease_until > now_s)
+            #   i.e. the active-lease predicate is false (expired or absent).
             cur = self.conn.execute(
                 """
                 UPDATE receipts
-                SET state = 'claimed', revision = revision + 1
+                SET state = 'claimed',
+                    revision = revision + 1,
+                    claim_token = ?,
+                    claim_consumer = ?,
+                    lease_until = ?
                 WHERE receipt_id = ?
                   AND revision = ?
-                  AND state = 'validated'
+                  AND (
+                    state = 'validated'
+                    OR (
+                      state = 'claimed'
+                      AND NOT (lease_until > ?)
+                    )
+                  )
                 """,
-                (receipt_id, expected_revision),
+                (
+                    token,
+                    consumer,
+                    lease_until,
+                    receipt_id,
+                    expected_revision,
+                    now_s,
+                ),
             )
             if cur.rowcount != 1:
-                # Either not validated (e.g. rejected) or lost the race.
+                # Not validated, still leased, rejected, or lost the race.
                 self.conn.execute("COMMIT")
                 fresh = self.conn.execute(
                     "SELECT state, revision FROM receipts WHERE receipt_id = ?",
@@ -689,12 +767,13 @@ class Journal:
                 INSERT INTO transitions (
                     transition_id, receipt_id, at, from_state, to_state,
                     revision, consumer_id, claim_token, lease_until
-                ) VALUES (?, ?, ?, 'validated', 'claimed', ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, 'claimed', ?, ?, ?, ?)
                 """,
                 (
                     str(uuid.uuid4()),
                     receipt_id,
                     now_s,
+                    from_state,
                     new_rev,
                     consumer,
                     token,
@@ -723,10 +802,228 @@ class Journal:
                 revision=new_rev,
                 claim_token=token,
                 lease_until=lease_until,
+                consumer=consumer,
             )
         except Exception:
             self.conn.execute("ROLLBACK")
             raise
+
+    def finish(
+        self,
+        receipt_id: str,
+        *,
+        claim_token: str,
+        consumer: str,
+        expected_revision: int,
+        outcome: str = "applied",
+    ) -> FinishResult:
+        """CAS-finish a claim. Stale claimant (wrong token/revision) cannot finish.
+
+        Compares receipt + token + consumer + revision. After a reclaim, the
+        first claimant's token no longer matches and finish is refused.
+        """
+        if outcome != "applied":
+            # B5 only needs the applied path; other outcomes land with D later.
+            raise ValueError(f"unsupported finish outcome: {outcome!r}")
+        now_s = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.conn.execute(
+                "SELECT state, revision, claim_token, claim_consumer "
+                "FROM receipts WHERE receipt_id = ?",
+                (receipt_id,),
+            ).fetchone()
+            if row is None:
+                self.conn.execute("COMMIT")
+                return FinishResult(kind="missing")
+            if int(row["revision"]) != expected_revision:
+                self.conn.execute("COMMIT")
+                return FinishResult(
+                    kind="stale",
+                    receipt_id=receipt_id,
+                    state=row["state"],
+                    revision=int(row["revision"]),
+                )
+            cur = self.conn.execute(
+                """
+                UPDATE receipts
+                SET state = 'applied',
+                    revision = revision + 1,
+                    claim_token = NULL,
+                    claim_consumer = NULL,
+                    lease_until = NULL
+                WHERE receipt_id = ?
+                  AND revision = ?
+                  AND state = 'claimed'
+                  AND claim_token = ?
+                  AND claim_consumer = ?
+                """,
+                (receipt_id, expected_revision, claim_token, consumer),
+            )
+            if cur.rowcount != 1:
+                self.conn.execute("COMMIT")
+                fresh = self.conn.execute(
+                    "SELECT state, revision FROM receipts WHERE receipt_id = ?",
+                    (receipt_id,),
+                ).fetchone()
+                return FinishResult(
+                    kind="refused",
+                    receipt_id=receipt_id,
+                    state=fresh["state"] if fresh else None,
+                    revision=int(fresh["revision"]) if fresh else None,
+                )
+            new_rev = expected_revision + 1
+            self.conn.execute(
+                """
+                INSERT INTO transitions (
+                    transition_id, receipt_id, at, from_state, to_state,
+                    revision, consumer_id, claim_token
+                ) VALUES (?, ?, ?, 'claimed', 'applied', ?, ?, ?)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    receipt_id,
+                    now_s,
+                    new_rev,
+                    consumer,
+                    claim_token,
+                ),
+            )
+            canonical = length_framed(
+                "receipt.finished",
+                receipt_id,
+                consumer,
+                claim_token,
+                outcome,
+                str(new_rev),
+            )
+            self._append_event(
+                event_kind="receipt.finished",
+                receipt_id=receipt_id,
+                at=now_s,
+                canonical_payload=canonical,
+            )
+            self.conn.execute("COMMIT")
+            return FinishResult(
+                kind="finished",
+                receipt_id=receipt_id,
+                state="applied",
+                revision=new_rev,
+            )
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
+    def cursor(self, consumer: str) -> CursorView:
+        """Return this consumer's cursor, or the empty-chain origin if none."""
+        row = self.conn.execute(
+            "SELECT scanned_through_event_ordinal, chain_hash_at_ordinal, revision "
+            "FROM cursors WHERE consumer = ?",
+            (consumer,),
+        ).fetchone()
+        if row is None:
+            return CursorView(
+                consumer=consumer,
+                journal_id=self.journal_id,
+                scanned_through_event_ordinal=0,
+                chain_hash_at_ordinal=_h0(self.journal_id),
+                revision=0,
+            )
+        return CursorView(
+            consumer=consumer,
+            journal_id=self.journal_id,
+            scanned_through_event_ordinal=int(row["scanned_through_event_ordinal"]),
+            chain_hash_at_ordinal=row["chain_hash_at_ordinal"],
+            revision=int(row["revision"]),
+        )
+
+    def advance_cursor(
+        self,
+        consumer: str,
+        expected: str,
+        scanned_through: int,
+    ) -> AdvanceCursorResult:
+        """CAS-advance the cursor only past a verified chain endpoint.
+
+        Always runs a bounded rebuild (verify_chain from ordinal 1 through
+        scanned_through). On a broken chain, refuses and reports ordinals_read.
+        The expected == verified head comparison is the B6 red line: without it
+        a caller can advance past a hash they do not hold.
+        """
+        if scanned_through < 0:
+            raise ValueError("scanned_through must be >= 0")
+
+        # Bounded full rebuild from ordinal 1 — count is the target ordinal
+        # (verify_chain walks 1..through inclusive; 0 reads nothing).
+        verify = self.verify_chain(through_ordinal=scanned_through)
+        ordinals_read = scanned_through
+
+        if not verify.ok:
+            return AdvanceCursorResult(
+                kind="refused",
+                reason="chain_broken",
+                rebuild=True,
+                ordinals_read=ordinals_read,
+                failed_ordinal=verify.failed_ordinal,
+            )
+
+        # Verified endpoint hash. For ordinal 0 this is H_0.
+        stored_chain_hash = verify.head_hash
+        # --- B6 red line: expected == stored_chain_hash ---
+        if expected != stored_chain_hash:
+            return AdvanceCursorResult(
+                kind="refused",
+                reason="expected_mismatch",
+                rebuild=True,
+                ordinals_read=ordinals_read,
+            )
+
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            existing = self.conn.execute(
+                "SELECT revision FROM cursors WHERE consumer = ?",
+                (consumer,),
+            ).fetchone()
+            if existing is None:
+                new_rev = 1
+                self.conn.execute(
+                    """
+                    INSERT INTO cursors (
+                        consumer, scanned_through_event_ordinal,
+                        chain_hash_at_ordinal, revision
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    (consumer, scanned_through, stored_chain_hash, new_rev),
+                )
+            else:
+                new_rev = int(existing["revision"]) + 1
+                self.conn.execute(
+                    """
+                    UPDATE cursors
+                    SET scanned_through_event_ordinal = ?,
+                        chain_hash_at_ordinal = ?,
+                        revision = ?
+                    WHERE consumer = ?
+                    """,
+                    (scanned_through, stored_chain_hash, new_rev, consumer),
+                )
+            self.conn.execute("COMMIT")
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
+        return AdvanceCursorResult(
+            kind="advanced",
+            cursor=CursorView(
+                consumer=consumer,
+                journal_id=self.journal_id,
+                scanned_through_event_ordinal=scanned_through,
+                chain_hash_at_ordinal=stored_chain_hash,
+                revision=new_rev,
+            ),
+            rebuild=False,
+            ordinals_read=ordinals_read,
+        )
 
 
 def open_journal(path: PathLike) -> Journal:
