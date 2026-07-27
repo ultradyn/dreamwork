@@ -169,12 +169,27 @@ for (const reduced of [false, true]) {
      plateau >= 1);
 
   // ── blur rises during the dissolve, before the departure ────────────────
-  // .pregone takes blur 0→8px; .gone takes it to 6px. So blur must reach
-  // ≥5px before opacity drops below 0.4 (the departure zone).
+  // .pregone takes blur 0→8px; .gone takes it to 8px (raised from 6px to
+  // match pregone — the corpse must not UN-blur as it leaves). So blur must
+  // reach ≥5px before opacity drops below 0.4 (the departure zone).
   const depIdx = ops.findIndex(o => o < 0.4);
   const blurBefore = depIdx > 0 ? Math.max(...blurs.slice(0, depIdx)) : 0;
   ok(`${tag}: blur rises to ≥5px before the departure zone (dissolve-first)`,
      depIdx < 0 || blurBefore >= 5);
+
+  // ── blur must NOT decrease during departure (no un-blur) ────────────────
+  // The dissolve's peak (pregone, ~8px) must be <= the departure's blur
+  // (.gone, 8px). If .gone's blur were lower than .pregone's, the corpse
+  // would get crisper as it leaves — a partial reversal of the dissolve.
+  // Found by coordinator pixel review; the existing >= 5px check passes
+  // over it because 6px > 5px throughout. Assert the blur is non-decreasing:
+  // the max blur in the departure half >= max blur in the dissolve half.
+  const mid = Math.floor(frames.length / 2);
+  const blurFirstHalf = Math.max(...blurs.slice(0, mid));
+  const blurSecondHalf = Math.max(...blurs.slice(mid));
+  ok(`${tag}: blur does not decrease during departure (no un-blur: ` +
+     `${blurSecondHalf.toFixed(1)}px late >= ${blurFirstHalf.toFixed(1)}px early)`,
+     blurSecondHalf >= blurFirstHalf - 0.5);
 
   // ── the drift sign: question-card ghosts rise (#174), never fall ────────
   ok(`${tag}: the ghost drifts UP (question-card sign, #174), never down`,

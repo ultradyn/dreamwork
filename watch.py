@@ -674,7 +674,7 @@ STYLE = """<style>
   .qaghost.pregone {
     transition:opacity .18s ease, filter .18s ease, transform .18s ease;
     opacity:.8; filter:blur(8px); transform:translateY(-2px); }
-  .qaghost.gone { opacity:0; filter:blur(6px); transform:translateY(-10px); }
+  .qaghost.gone { opacity:0; filter:blur(8px); transform:translateY(-10px); }
   /* ...but WHICH WAY it dreams away follows the list it is leaving (#174).
      A question card's neighbours travel UP to close the gap it left, so a
      ghost that rises is continuous with them. In the commits panel the
@@ -684,8 +684,11 @@ STYLE = """<style>
      what he saw ("the bottom commit moves *up* towards where the new one
      appears"). Growing while fading is the page's standing departure — it is
      what `.ghost.out` does for a whole view — so this is the same idiom with
-     its sign taken from its surroundings, not a second one. */
-  .qaghost.commit.gone { transform:translateY(14px) scale(1.07); }
+     its sign taken from its surroundings, not a second one. Commits keep
+     their original blur(6px) — inherited before #277 raised .gone to 8px to
+     match .pregone, so the commit gesture is byte-identical (#277 must not
+     touch it). */
+  .qaghost.commit.gone { filter:blur(6px); transform:translateY(14px) scale(1.07); }
   /* the other end of the same gesture: the new row comes DOWN into the place
      it now owns, growing into it, rather than rising up into it against the
      four rows it is displacing. `.dreamin` still supplies the snap. */

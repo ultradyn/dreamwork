@@ -337,7 +337,9 @@ exception; an element leaving fades rather than vanishing.
   transition; then `.gone` sends it away on the `.7s` that was always there.
   Removing `.pregone` restores `.qaghost`'s `.7s`, and the browser retargets
   from the dissolve's mid-values to `.gone`'s targets, so the two beats chain
-  continuously without a seam. Total lifetime stays under `1.1s`.
+  continuously without a seam. `.gone`'s blur matches `.pregone`'s peak
+  (`8px`), so the corpse never un-blurs as it leaves — it dissolves, then
+  departs at the same softness. Total lifetime stays under `1.1s`.
 
   The data/DOM commit and the survivor FLIP stay **immediate** — the corpse
   dreamfades while the live list is already correct, exactly as before. v1
@@ -348,12 +350,13 @@ exception; an element leaving fades rather than vanishing.
   ghost never exists at all (`regroupCards` and `foldDetailsLocal` gate the
   whole departure on `rmr`), so the phase is simply unreachable.
 
-  The guard is `dev/capture/dreamfade.mjs`. Its load-bearing assertion is
-  **phase separation**: blur must reach its mid-values *before* opacity
-  reaches its departure targets, stated as the frame-rate-free form from the
-  rules above — some captured frame is strictly between the dissolve's ends,
-  and no frame past the final position. Reduced motion is traced on the same
-  gesture and asserts no ghost is ever created.
+  The guard is `dev/capture/dreamfade.mjs`. Its load-bearing assertions are
+  **phase separation**: `.pregone` must appear before `.gone` (class
+  membership), blur must reach ≥5px before opacity drops below 0.4
+  (dissolve-first ordering), and blur must not decrease during departure
+  (`.gone`'s blur matches `.pregone`'s peak — the corpse does not un-blur as
+  it leaves). Reduced motion is traced on the same gesture and asserts no
+  ghost is ever created.
 - **The dream dissolve** (route change). The outgoing view becomes a
   `.ghost` (z-index above `#view`) that liquifies into a swirling mist and
   lifts up and toward the viewer as it fades — dissolving *in front*. The
