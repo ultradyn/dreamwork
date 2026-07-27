@@ -130,29 +130,6 @@ Next id: **381**
   · blocked on his answer; the first increment is the source contract in `file-formats.md` plus
   the "declares no marks ⇒ byte-identical output" check, red first, which touches no artifact
 
-- **#380** — `check_cited_shas` has four exits that say nothing, and one of them fired · P2 ·
-  lint/verification · origin: **loop** · 20m · found by a **flake**: the full suite failed once on
-  `test_a_dead_cited_sha_warns` (`assert 0 == 1`), then passed 25 runs in isolation and a full
-  re-run, and no single other test file reproduces it — so the check declined to run and said so
-  nowhere
-  · **the docstring already states the principle the code breaks.** It ends *"Skipped in silence
-  when the target is not a git repository — 'cannot check' must not read as 'nothing to fix'"*,
-  which is self-contradicting: silence is exactly what makes "cannot check" read as "nothing to
-  fix". Four silent exits at `lint.py:1878-1896` — `OSError`/`SubprocessError`, non-zero exit with
-  empty stdout, every citation missing, and (unstated) `zip(shas, stdout.splitlines())` truncating
-  when git answers for fewer shas than were asked about
-  · the `zip` truncation is a defect independent of the flake: `--batch-check` writes one line per
-  input, so a short answer means something went wrong, and a dead sha in the truncated tail is
-  never examined
-  · rec: keep WARN for a real anomaly inside a real repo (`.git` present, git failed), use an OK
-  row for the legitimately-unknowable cases so the skip is *visible* without failing a
-  non-repo target, and compare the line count. **Two existing tests encode the silence as
-  intended** — `test_every_sha_missing_says_nothing` and
-  `test_a_target_that_is_not_a_git_repo_is_silent` — so they change with it, and their names are
-  the tell
-  · this is the repo's own documented failure mode (a check that passes over the thing it was
-  written for) reappearing as a check that vanishes over it; `lessons.md` gets the distillation
-
 - **#378** — One `.fact` sits outside any `.facts` grid, in a file with no source · P3 ·
   review tooling · origin: **loop** · 10m · found by #365's measurement and verified
   independently: `protected-service-boundary-288.html` has `containers=0 facts=1`, so that
@@ -2312,6 +2289,23 @@ Next id: **381**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#380** — `check_cited_shas` said nothing on four different exits, and one fired · landed
+  `PENDING` · origin: **loop** · found by a flake, not by anyone reading the code: one full-suite
+  run failed `test_a_dead_cited_sha_warns`, then 25 isolated runs and a full re-run passed and no
+  single other test file reproduced it — so the check had declined to run and left no row naming
+  which exit it took. Its own docstring already stated the principle the code broke
+  · fixed all four, and the LEVEL is the discrimination rather than the silence: WARN when `.git`
+  is present and git failed anyway (a real anomaly), OK when the target simply is not a repository
+  · **the red proof found a second defect nobody had noticed**: `zip(shas, stdout.splitlines())`
+  absorbed a short answer from `--batch-check`, and with the answer truncated to one line the
+  check reported *"2 cited commit(s) all resolve"* having examined one — the dead sha was in the
+  tail it never read. Now compares the line count and refuses to conclude
+  · 5 tests, all red first, three induced at real seams (empty `PATH`, a `.git` gitdir pointer to
+  nowhere, a non-repo target) rather than by patching; the one that patches asserts git really
+  answered for both shas before truncating, so it cannot pass on an injection that never landed
+  · two existing tests encoded the silence as intended — `test_every_sha_missing_says_nothing` and
+  `test_a_target_that_is_not_a_git_repo_is_silent` — and their names were the tell; both replaced
 
 - **#370** — `/answer` and `/comment` truncate `questions.md` in place ·
   **closed `ea9d7d9`** · P0 · durability bug · origin: **loop** · both routes opened his

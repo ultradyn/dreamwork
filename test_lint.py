@@ -2086,24 +2086,107 @@ Next id: **9**
         t, live = self.build(tmp_path, ledger)
         assert self.rows(t, lint.WARN) == []
 
-    def test_every_sha_missing_says_nothing(self, tmp_path):
-        """A fresh clone or the wrong target is not a ledger full of errors.
+    def test_every_sha_missing_states_the_assumption_it_made(self, tmp_path):
+        """A fresh clone or the wrong target is not a ledger full of errors —
+        but it is not nothing either, and it used to render as nothing (#380).
 
-        The production line is the `len(dead) == len(shas)` guard; delete it and
-        this fails while `test_a_dead_cited_sha_warns` still passes, because
-        that fixture has one live sha alongside the dead one.
+        The production line is the `len(dead) == len(shas)` guard: it must still
+        suppress the WARNs (delete it and `test_a_dead_cited_sha_warns` keeps
+        passing while this one gains two) and it must now SAY that it did.
         """
         ledger = self.LEDGER.replace("landed `LIVE`", "landed `f0f4e2a`")
         t, live = self.build(tmp_path, ledger)
-        assert self.rows(t) == []
+        assert self.rows(t, lint.WARN) == [], "the wrong tree is not a wrong ledger"
+        oks = self.rows(t, lint.OK)
+        assert len(oks) == 1, oks
+        assert "wrong tree" in oks[0] and "nothing was checked" in oks[0]
 
-    def test_a_target_that_is_not_a_git_repo_is_silent(self, tmp_path):
+    def test_a_target_that_is_not_a_git_repo_says_it_could_not_check(self, tmp_path):
+        """#380, and the docstring's own principle: *"cannot check" must not
+        read as "nothing to fix"*. It read as exactly that for a non-repo
+        target, because the exit was a bare `return`.
+
+        Not a WARN: a target with no `.git` has not done anything wrong. The
+        production line is the OK row on the empty-stdout exit — make it a
+        bare `return` again and this fails while every other row here passes.
+        """
         t = fresh(tmp_path)
         dw = t / ".dreamwork"
         dw.mkdir()
         (dw / "tasks.md").write_text(
             self.LEDGER.replace("landed `LIVE`", "landed `f0f4e2a`"))
-        assert self.rows(t) == []
+        # Precondition for the OK-not-WARN branch, asserted rather than assumed.
+        assert not (t / ".git").exists()
+        assert self.rows(t, lint.WARN) == []
+        oks = self.rows(t, lint.OK)
+        assert len(oks) == 1, oks
+        assert "unchecked" in oks[0]
+
+    def test_a_broken_git_inside_a_real_repo_warns(self, tmp_path):
+        """The other half of the same exit, and the half that matters: `.git`
+        is present, so git failing IS an anomaly and must be loud.
+
+        The seam is real — no patching. `.git` is replaced with a gitdir
+        pointer to nowhere, which is what a moved worktree leaves behind.
+        """
+        import shutil
+        t, live = self.build(tmp_path, self.LEDGER)
+        shutil.rmtree(t / ".git")
+        (t / ".git").write_text("gitdir: /nonexistent/elsewhere\n")
+        assert (t / ".git").exists(), "precondition: the WARN branch needs .git"
+        warns = self.rows(t, lint.WARN)
+        assert len(warns) == 1, warns
+        assert "unchecked" in warns[0]
+
+    def test_git_absent_from_path_is_reported_rather_than_swallowed(self, tmp_path):
+        """The `OSError` exit. Induced at a real seam — `PATH` is emptied, so
+        the actual `execvp` fails — rather than by patching `subprocess`.
+
+        The production line is the row inside the `except` clause.
+        """
+        t, live = self.build(tmp_path, self.LEDGER)
+        import os
+        saved = os.environ.get("PATH", "")
+        os.environ["PATH"] = ""
+        try:
+            rows = self.rows(t)
+        finally:
+            os.environ["PATH"] = saved
+        assert len(rows) == 1, rows
+        assert "unchecked" in rows[0] or "could not ask git" in rows[0]
+
+    def test_a_short_answer_from_git_is_not_silently_truncated(self, tmp_path,
+                                                               monkeypatch):
+        """`--batch-check` writes one line per input, so fewer lines back means
+        the tail was never examined — and `zip(shas, lines)` made that
+        invisible. A dead sha in the truncated tail went unreported.
+
+        The production line is the `len(lines) != len(shas)` comparison. Delete
+        it and this fails: the fixture's dead sha is deliberately the SECOND of
+        the two, so `zip` drops precisely the one that should warn.
+        """
+        ledger = self.LEDGER.replace(
+            "landed `LIVE`", "landed `LIVE` and also merged `beefca7`")
+        t, live = self.build(tmp_path, ledger)
+        real = lint.subprocess.run
+        seen = {}
+
+        def short(cmd, *a, **kw):
+            out = real(cmd, *a, **kw)
+            if isinstance(cmd, list) and "cat-file" in cmd:
+                lines = out.stdout.splitlines(True)
+                seen["full"] = len(lines)
+                out.stdout = lines[0] if lines else ""
+            return out
+
+        monkeypatch.setattr(lint.subprocess, "run", short)
+        rows = self.rows(t)
+        # The precondition the whole test depends on: git really did answer for
+        # both, so the truncation removed a line that existed. Without this the
+        # test passes just as well when git answers for none.
+        assert seen.get("full") == 2, "git did not answer for both shas: %r" % seen
+        assert len(rows) == 1, rows
+        assert "1 of 2" in rows[0]
 
     def test_the_check_is_registered_in_run_checks(self):
         """Every row above comes through `run_checks`, which is the single list

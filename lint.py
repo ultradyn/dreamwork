@@ -1856,9 +1856,16 @@ def check_cited_shas(dw: Path, rep: Report) -> None:
     alias false positive.
 
     **WARNs, never ERRORs**, following `check_landed_still_open`: a wrong sha is
-    recoverable and the entry's words are still true. Skipped in silence when the
-    target is not a git repository — "cannot check" must not read as "nothing to
-    fix".
+    recoverable and the entry's words are still true.
+
+    **And a skip is always a row (#380).** The sentence above used to end "skipped
+    in silence when the target is not a git repository — 'cannot check' must not
+    read as 'nothing to fix'", which contradicted itself: silence is exactly what
+    makes the one read as the other. Four exits said nothing, and one of them
+    fired — the full suite failed once on `test_a_dead_cited_sha_warns` and then
+    passed twenty-five runs in isolation, so the check had declined to run and
+    left no trace anywhere to say which exit it took. Whichever it was, it is
+    now named in the report.
     """
     path = dw / "tasks.md"
     if not path.exists():
@@ -1875,24 +1882,52 @@ def check_cited_shas(dw: Path, rep: Report) -> None:
             shas.append(token)
     if not shas:
         return
+    # #380: every exit below used to be a bare `return`, which is the one thing
+    # the docstring says must not happen. A skip is now always a row. The LEVEL
+    # discriminates whose fault it is: `.git` present and git still unusable is
+    # an anomaly worth a WARN, while a target that is not a repository has done
+    # nothing wrong and gets an OK that merely says so.
+    in_repo = (dw.parent / ".git").exists()
+    unchecked = "%d cited commit(s) went unchecked" % len(shas)
     try:
         proc = subprocess.run(
             ["git", "-C", str(dw.parent), "cat-file", "--batch-check"],
             input="".join("%s^{commit}\n" % s for s in shas),
             capture_output=True, text=True, timeout=20,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as exc:
+        rep.add(WARN if in_repo else OK, "tasks.md",
+                f"could not ask git about the ledger's citations "
+                f"({type(exc).__name__}), so {unchecked}")
         return
     if proc.returncode != 0 and not proc.stdout:
-        return          # not a repo, or git unusable: say nothing
+        rep.add(WARN if in_repo else OK, "tasks.md",
+                f"git could not read this tree, so {unchecked}"
+                + ("" if in_repo else " (no `.git` here, which is not a fault)"))
+        return
+    lines = proc.stdout.splitlines()
+    if len(lines) != len(shas):
+        # `--batch-check` writes exactly one line per input, so a short answer
+        # means something went wrong mid-stream. `zip()` used to absorb this and
+        # report "all resolve" over a tail it had never looked at — including a
+        # dead sha sitting in that tail.
+        rep.add(WARN, "tasks.md",
+                f"git answered for {len(lines)} of {len(shas)} cited commit(s) "
+                f"— one line per input is expected, so the rest were never "
+                f"examined and this says nothing about them")
+        return
     dead = []
-    for sha, line in zip(shas, proc.stdout.splitlines()):
+    for sha, line in zip(shas, lines):
         if "missing" in line or "ambiguous" in line:
             dead.append(sha)
-    if len(dead) == len(shas):
+    if dead and len(dead) == len(shas):
         # Every single one missing means we are almost certainly not looking at
         # the repository these shas came from (a fresh clone, a different
-        # target), not that the ledger is entirely wrong.
+        # target), not that the ledger is entirely wrong. Suppressing the WARNs
+        # is right; suppressing the fact that it happened is what #380 fixed.
+        rep.add(OK, "tasks.md",
+                f"all {len(shas)} cited commit(s) are missing here, read as the "
+                f"wrong tree rather than a wrong ledger — so nothing was checked")
         return
     for sha in dead:
         rep.add(

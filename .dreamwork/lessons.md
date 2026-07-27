@@ -1560,3 +1560,16 @@ this shape and convert opportunistically.)
   there the *contents* were stable and the *container* misbehaved; here the
   container reports stable geometry while its contents break. A box-level or
   end-state check passes over exactly this case. (dreamer, #347, 2026-07-28-0337-two-seams-in-the-review-frame)
+- **A check that declines to run must say so; a bare `return` turns "cannot
+  check" into "nothing to fix".** `check_cited_shas` had four silent exits, and
+  its own docstring stated the very principle they broke. The evidence arrived as
+  a flake: one full-suite run failed on `test_a_dead_cited_sha_warns`, then
+  twenty-five isolated runs and a full re-run passed and no single other test file
+  reproduced it — so the check had skipped, and there was no row anywhere naming
+  which exit it took. A silent skip is undiagnosable by construction. Fixing it
+  also exposed a defect nothing had noticed: `zip(shas, stdout.splitlines())`
+  absorbed a short answer from `git cat-file --batch-check`, and the red proof
+  showed the check reporting *"2 cited commit(s) all resolve"* having looked at
+  one — the dead sha was in the truncated tail. The level is the discrimination,
+  not the silence: WARN when `.git` is present and git still failed, OK when the
+  target simply is not a repository. (coordinator, #380)
