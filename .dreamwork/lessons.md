@@ -1277,3 +1277,14 @@ this shape and convert opportunistically.)
   test**: `stamp_is_derived_from_bytes` passed against a hardcoded digest. When a
   name claims derivation, the assertion must **vary the input** and watch the
   output move.
+
+- **Long commit messages go through `git commit -F <file>`, not `-m "…"`.** Three
+  shell-quoting incidents in one evening, all in the same family: `?` characters
+  in a message glob-expanded and killed the commit (`no matches found: ??`);
+  `echo "exit=$?"` after a pipe reported the exit status of `tail` rather than the
+  command being verified, twice, once concluding a real failure was a success; and
+  `just guards port=39895` passed the literal string `port=39895` as the
+  positional argument. The messages here are long by design — they carry the
+  reasoning — which makes `-m` the wrong tool for them, and a scratch file is one
+  extra call. For exit status: never read `$?` through a pipe; redirect to a file
+  and check the status directly.
