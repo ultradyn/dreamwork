@@ -371,9 +371,38 @@ One axis, as the question card has one: **who is this waiting on?**
 | `in progress` | a **structured** source names the id: the ledger's `· in progress` token, or `status.json`'s `*_task_ids` once that field exists (§2.3). Never prose | the page's one accent here: a rail plus **`in progress`** — no hedge — and a hover/focus box reading `Reported: Xm Ys ago` |
 | `blocked` | an explicit `blocked on …` in the entry text. **Never inferred** | one step down the ramp; blockers listed |
 | `blocked · blocker landed` | as above, and every named id is in the landed set | says so: `blocked on #216 · which landed 2026-07-27`. The page does **not** silently unblock it — only the coordinator can |
-| `landed` | git says the id first appeared under `## Recently landed`, or the entry sits there now | dim end of the ramp; carries the date and the sha |
+| `landed` | the entry sits under `## Recently landed` now, **or** git says a snapshot once named it there and no current entry says otherwise | dim end of the ramp; carries the date and the sha |
 | `landed · entry pruned` | git says landed; no entry in the current file | as above, title from the last snapshot |
 | `unknown` | leading token parses no id, or no section can be determined | rendered **as unknown and still listed** — the entry exists, so it is reachable |
+
+**The current file outranks history, and this needs saying because the two
+disagree on a real id today.** The draft's evidence for `landed` was *"git says
+… **or** the entry sits there now"*, and an `or` between two sources is not a
+rule — it is whichever the renderer happens to test first. Measured at
+`16ef2e2`: **`#275` is in the current open set AND in the ever-landed set**,
+and that is not a bug in the ledger. Its research landed (`4b49ecb`) and a
+snapshot named it under `## Recently landed`, but the task is legitimately open
+because its ask awaits his approval, which its own entry states is part of its
+definition of done. So:
+
+- **A current entry's section is the answer.** History says only *"it was once
+  listed as landed"*, and the coordinator is the authority on the present.
+  `#275` renders `open`.
+- **History answers only when the file does not** — which is the 87 pruned
+  records (§2.2), where there is no current entry to outrank it.
+- **The disagreement is shown on the detail view, never silently resolved:**
+  `open · a snapshot once listed this as landed (2026-07-2x)`. Dropping the
+  older fact would hide exactly the case where a task went back to open, which
+  is the transition `#264` exists to record and nothing else can currently see.
+
+**The partition, measured, because it is what makes `unknown` first-class
+rather than a rarity:** of 238 records, **106 are open** (one of them also
+ever-landed, above), **113 are landed and not open**, and **19 are neither** —
+`#77, #95, #96, #102, #104, #106, #107, #108, #109, #110, #116, #121, #123,
+#132, #141, #149, #151, #154, #157`. Twelve of the nineteen are the
+space-joined-mention gap (§10); the rest are ids no snapshot ever placed under
+either heading in a form the readers can see. All nineteen render as `unknown`
+**and are still listed**, because they exist.
 
 **The `Reported:` box is a transition and obeys `transitions.md`.** It arrives
 and departs on the existing hover/focus idiom; it is **not** hover-only —
@@ -810,6 +839,8 @@ habit of passing over the thing they were written for.
 | 17 | the `s` codec round-trips, an unrecognised `s` renders the default sort **and is dropped from the URL**, and the default is never written | honouring an unknown key (a sort nothing implements) or spelling the default into every URL — which would break the `?t=281` canonical form `#282` hardcodes |
 | 18 | `in progress` comes from a **structured** source only: the ledger's `· in progress` token, or `*_task_ids` when present. A `status.json` whose `task` prose names three ids marks **none** of them | matching ids out of prose → the live file marks five tasks in progress, one of which it calls *queued* (§2.3). Build the fixture from the real file's shape, and assert the prose names ids the badge does not claim, or the check cannot fail |
 | 19 | the reported-age is the age of **the claim**, not of the render: an `in progress` marker planted N seconds back reports ≈N, not zero | computing the age from `now` → every badge reads `00m 00s` forever, which is the hedge his ruling removed wearing a number |
+| 20 | an id under `## Open` whose history also names it as landed renders **`open`**, with the older fact stated and not dropped | testing history first (or an `or` between the two sources) → `#275` renders landed today while its entry describes live work. **Assert the precondition** that the fixture id really is in both sets, derived at runtime |
+| 21 | an id known to history but in neither set renders `unknown` **and is listed** | filtering the record set down to open∪landed → nineteen real ids vanish from a page whose whole claim is that nothing is dropped |
 
 ### 9.2 Browser guard — `dev/capture/tasks.mjs`
 
@@ -1323,7 +1354,7 @@ the proposal's.
   peek is the section fold's pieces. `/tasks` gets the sixth dissolve
   signature of a now-complete set (`#302` closed the `/answers` gap). Reduced
   motion changes timing, never function.
-- **Verification.** 19 pytest checks and 12 browser-guard phases, each with the
+- **Verification.** 21 pytest checks and 12 browser-guard phases, each with the
   bug named that will be reintroduced to see it red. The guard is written on
   **`dev/capture/report.mjs`** (`#192`, which post-dates the draft): the crash
   sentinel, `present()` absence-first, no count offered at all, and a
