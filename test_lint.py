@@ -1681,3 +1681,174 @@ footer: the footer
         rep = lint.Report()
         lint.check_review_artifacts(lint.SKILL_DIR / ".dreamwork", rep)
         assert not [d for l, w, d in rep.rows if l == lint.WARN], rep.render()
+
+
+class TestSelfCompletedOpen:
+    """#335: an entry under `## Open` that declares ITSELF completed in its
+    metadata run — the ` · `-delimited chain after the title where `P1`,
+    `origin:` and `owner:` live.
+
+    #261 sat open for a full day carrying `completed **2026-07-26 16:21**`
+    in that run. #323 could not see it: that check compares the ledger
+    against git, and #261 was closed in prose with no `close(#261)` commit.
+    The same words (`completed`, `landed`, `merged`) deep in the prose body
+    are NOT a self-declared close — four real open entries carry them for
+    legitimate reasons, and the discriminator is POSITION, not vocabulary.
+    A vocabulary-only grep over the open entries has precision 1-in-5.
+    """
+
+    def _real_ledger(self):
+        return (lint.SKILL_DIR / ".dreamwork" / "tasks.md").read_text()
+
+    def _entry_text(self, ledger_text, tid):
+        for ids, body in lint.ledger_entries(ledger_text):
+            if tid in ids:
+                return body
+        return None
+
+    def _slice_open(self, ledger_text):
+        lines = ledger_text.splitlines()
+        start = end = None
+        for n, ln in enumerate(lines):
+            if ln.strip().startswith("## "):
+                if ln.strip() == "## Open":
+                    start = n + 1
+                elif start is not None:
+                    end = n
+                    break
+        if start is None:
+            return ""
+        return "\n".join(lines[start:end])
+
+    def _self_completed_warns(self, rep):
+        return [d for lvl, w, d in rep.rows
+                if lvl == lint.WARN and w == "tasks.md" and "#335" in d]
+
+    def test_261_restored_to_open_fires_warn(self, tmp_path):
+        """The bug: #261's exact text, placed under ## Open, must WARN.
+
+        #261 is in `## Recently landed` now (its own note says it was moved),
+        so the positive case is built by restoring its real entry text into
+        an Open section. A fixture that merely resembles it is not evidence.
+        """
+        real = self._real_ledger()
+        body_261 = self._entry_text(real, 261)
+
+        # PRECONDITION: #261 exists and carries the marker this test is about.
+        # If the entry moved or was edited, the test must fail loudly rather
+        # than quietly pass on a fixture that no longer means anything.
+        assert body_261 is not None, "#261 not found in the real ledger"
+        assert "completed" in body_261, \
+            "#261 must carry its completion marker for this test to mean anything"
+        assert "2026-07-26" in body_261, \
+            "#261 must carry its completion date for this test to mean anything"
+
+        fixture = ("# Tasks\n\nNext id: **999**\n\n## Open\n\n"
+                   + body_261 + "\n\n## Recently landed\n")
+        t = target(tmp_path, **{"tasks.md": fixture})
+        rep = run(t)
+        warns = self._self_completed_warns(rep)
+        assert any("#261" in d for d in warns), (
+            "#261 declares itself completed in its metadata run; the check "
+            f"must WARN. Got: {warns}")
+
+    def test_the_four_false_positives_stay_silent(self, tmp_path):
+        """#275, #283, #269, #281 are legitimately open despite carrying
+        `landed`/`completed`/`merged` deep in their PROSE BODY.
+
+        Their metadata runs carry no such marker — that is the position
+        discrimination, and it is the whole value of the task. Each one's
+        real text is read from the live ledger at test time; a fixture
+        that merely resembles them is not evidence.
+        """
+        real = self._real_ledger()
+        open_text = self._slice_open(real)
+
+        # PRECONDITION: all four are actually in ## Open right now. If any
+        # moved to Recently landed, "stays silent" would pass on nothing.
+        open_ids = set()
+        for ids, _ in lint.ledger_entries(open_text):
+            open_ids.update(ids)
+        for tid in (275, 283, 269, 281):
+            assert tid in open_ids, (
+                f"#{tid} must be in ## Open for this test to mean anything")
+
+        # PRECONDITION: each one's body actually carries the keyword that
+        # would trip a vocabulary rule. If the text was edited to remove it,
+        # "stays silent" would prove nothing about the discrimination.
+        for ids, body in lint.ledger_entries(open_text):
+            flat = " ".join(ln.strip() for ln in body.split("\n"))
+            if 275 in ids:
+                assert "landed" in flat.lower() and "4b49ecb" in flat, \
+                    "#275 must carry its body-level landing marker"
+            if 283 in ids:
+                assert "completed" in flat.lower() and "2026-07-27" in flat, \
+                    "#283 must carry its body-level completion marker"
+            if 269 in ids:
+                assert "landed" in flat.lower() and "0366706" in flat, \
+                    "#269 must carry its body-level landing marker"
+            if 281 in ids:
+                assert "merged" in flat.lower() and "9c00cd2" in flat, \
+                    "#281 must carry its body-level merge marker"
+
+        t = target(tmp_path, **{"tasks.md": real})
+        rep = run(t)
+        warns = self._self_completed_warns(rep)
+        for tid in (275, 283, 269, 281):
+            assert not any(f"#{tid}" in d for d in warns), (
+                f"#{tid} is a false positive — its keyword is in the body, "
+                f"not the metadata run; got: {warns}")
+
+    def test_breaking_position_fires_the_false_positives(self, tmp_path, monkeypatch):
+        """DISCRIMINATION PROOF: break the position discriminator so the
+        check searches the whole entry, and the four false positives fire.
+
+        This is what position discrimination prevents, and it is the whole
+        value of the task: the same vocabulary without the position check
+        has precision 1-in-5. The production line that would have to change
+        for a real bug to pass this silently is `_metadata_clause`'s body-
+        break condition (the `;` / length test that stops the token scan);
+        this test breaks exactly that function.
+        """
+        real = self._real_ledger()
+        open_text = self._slice_open(real)
+
+        open_ids = set()
+        for ids, _ in lint.ledger_entries(open_text):
+            open_ids.update(ids)
+        for tid in (275, 283, 269, 281):
+            assert tid in open_ids, f"#{tid} must be open for this proof"
+
+        # Break: make _metadata_clause return the WHOLE flattened entry,
+        # removing the position discrimination entirely.
+        monkeypatch.setattr(lint, "_metadata_clause",
+                            lambda entry_text:
+                            " ".join(ln.strip() for ln in entry_text.split("\n")))
+
+        fixture = ("# Tasks\n\nNext id: **999**\n\n## Open\n\n"
+                   + open_text + "\n\n## Recently landed\n")
+        t = target(tmp_path, **{"tasks.md": fixture})
+        rep = run(t)
+        warns = self._self_completed_warns(rep)
+
+        flagged = set()
+        for d in warns:
+            for m in re.finditer(r"#(\d+)", d):
+                flagged.add(int(m.group(1)))
+        for tid in (275, 283, 269, 281):
+            assert tid in flagged, (
+                f"breaking position discrimination must fire on #{tid}; "
+                f"the same vocabulary without position has precision 1-in-5. "
+                f"Flagged: {flagged}")
+
+    def test_no_open_section_is_silent(self, tmp_path):
+        t = target(tmp_path, **{
+            "tasks.md": "# Tasks\n\nNext id: **1**\n\n## Recently landed\n"})
+        rep = run(t)
+        assert self._self_completed_warns(rep) == []
+
+    def test_empty_open_is_silent(self, tmp_path):
+        t = target(tmp_path, **{
+            "tasks.md": "# Tasks\n\nNext id: **1**\n\n## Open\n\n## Recently landed\n"})
+        rep = run(t)
+        assert self._self_completed_warns(rep) == []

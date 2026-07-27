@@ -47,6 +47,17 @@ NEXT_ID = re.compile(r"^Next id: \*\*(\d+)\*\*", re.M)
 # subject is a usable signal that a task shipped. The trailing character class
 # matters: without it `close(#31)` would answer for #3.
 CLOSE_SUBJECT = re.compile(r"^(?:close|merge)\(#(\d+)[)/,]")
+# #335: a completion keyword near a date or sha. The vocabulary is what a
+# naive grep would reach for — and it matches five of 108 open entries when
+# run across the whole entry, only one of which is real. The check's value
+# is POSITION (inside the metadata run, not the body), not the vocabulary:
+# `_metadata_clause` is what holds the four false positives silent.
+COMPLETION_MARK = re.compile(
+    r"\b(?:completed|landed|merged)\b"
+    r".{0,40}?"
+    r"(?:\d{4}-\d{2}-\d{2}|[0-9a-f]{7,})",
+    re.IGNORECASE,
+)
 
 # ── task provenance, forward-only from the cutoff (#213) ──────────────
 # The origin rule reads WHOLE entries (ENTRY_HEAD/ENTRY_ID below), not head
@@ -88,6 +99,47 @@ def ledger_entries(text: str) -> list[tuple[list[int], str]]:
         else:
             cur = None
     return [(ids, "\n".join(lines)) for ids, lines in entries]
+
+
+def _metadata_clause(entry_text: str) -> str:
+    """The ` · `-delimited tag run between the title and the body prose (#335).
+
+    An entry's metadata is the chain of short tags following the title:
+    `P1`, `incident`, `origin: **human**`, `owner: dreamer-x`, and similar.
+    The same words deeper in the prose body are NOT metadata — four real
+    open entries carry `landed`/`completed`/`merged` in their body for
+    legitimate reasons (#275, #283, #269, #281), and a vocabulary rule that
+    ignored position has precision 1-in-5.
+
+    The boundary is structural, not lexical: the chain is a sequence of
+    ` · `-separated tokens, and the body begins at the first token that
+    reads as prose — one carrying a `;` (the punctuation the metadata run
+    never uses), or too long to be a tag (> 50 chars). Measured on the five
+    real entries: #261's `completed **2026-07-26 16:21**` token is 31 chars
+    with no `;`, so it stays inside the chain; each false positive's keyword
+    sits in a body token past the boundary.
+    """
+    flat = " ".join(ln.strip() for ln in entry_text.split("\n"))
+    m = ENTRY_HEAD.match(flat)
+    if not m:
+        return ""
+    rest = flat[m.end():]
+    sep = re.match(r"\s*[—-]\s+", rest)
+    if not sep:
+        return ""  # no title separator: cannot locate the metadata run
+    rest = rest[sep.end():]
+    parts = rest.split(" · ", 1)
+    if len(parts) < 2:
+        return ""  # no ` · ` at all: title + body, no metadata chain
+    tokens = []
+    for tok in parts[1].split(" · "):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if ";" in tok or len(tok) > 50:
+            break
+        tokens.append(tok)
+    return " · ".join(tokens)
 
 
 def load_watch():
@@ -309,6 +361,7 @@ def check_tasks(dw: Path, rep: Report) -> None:
     check_task_origins(text, rep)
     check_ledger_sections(text, rep)
     check_landed_still_open(dw, text, rep)
+    check_self_completed_open(dw, text, rep)
 
 
 def check_landed_still_open(dw: Path, text: str, rep: Report) -> None:
@@ -408,6 +461,73 @@ def check_landed_still_open(dw: Path, text: str, rep: Report) -> None:
         rep.add(OK, "tasks.md",
                 f"{acknowledged} open entr{'y' if acknowledged == 1 else 'ies'} "
                 f"cite the landing that would otherwise look stale")
+
+
+def check_self_completed_open(dw: Path, text: str, rep: Report) -> None:
+    """#335: an entry under `## Open` that declares ITSELF completed in its
+    metadata run.
+
+    #261 sat open for a full day carrying `completed **2026-07-26 16:21**`
+    in the ` · `-separated chain after its title — the same run that carries
+    `P1`, `origin:` and `owner:`. `check_landed_still_open` (#323) cannot see
+    this class: it compares the ledger against git and warns when a
+    `close(#N)`/`merge(#N)` commit is uncited, but #261 was closed in PROSE,
+    with no such commit to name, so it was structurally invisible.
+
+    **The discrimination is POSITION, not vocabulary, and it was measured.**
+    A keyword grep for `completed|landed|merged` near a date or sha across
+    the 108 open entries returns five hits and only one is real — precision
+    1-in-5. The four false positives (#275, #283, #269, #281) each carry the
+    keyword deep in the prose body for a legitimate reason (a partial
+    landing, a sub-stage, a sha cited for a sub-finding). So the rule is: a
+    completion marker inside the entry's **metadata clause** is a self-
+    declared close; the same words in the body are not. `_metadata_clause`
+    above draws that boundary.
+
+    **WARN, never ERROR** — same reasoning as #323: strong evidence worth a
+    look, not a gate. The message names the id and the phrase it matched, so
+    a false positive is obvious rather than a mystery. Degrades silently on a
+    ledger with no `## Open`, an empty one, or a missing file, exactly as
+    `check_landed_still_open` does.
+    """
+    lines = text.splitlines()
+    start = end = None
+    for n, ln in enumerate(lines):
+        if ln.strip().startswith("## "):
+            if ln.strip() == "## Open":
+                start = n + 1
+            elif start is not None:
+                end = n
+                break
+    if start is None:
+        return
+    open_text = "\n".join(lines[start:end])
+
+    for ids, body in ledger_entries(open_text):
+        clause = _metadata_clause(body)
+        if not clause:
+            continue
+        m = COMPLETION_MARK.search(clause)
+        if not m:
+            continue
+        # Extract the full ` · `-delimited token containing the match, so the
+        # message reads as a complete phrase (e.g. `completed **2026-07-26
+        # 16:21**`) rather than a regex substring cut mid-token.
+        s = clause.rfind(" · ", 0, m.start())
+        s = s + 3 if s != -1 else 0
+        e = clause.find(" · ", m.end())
+        e = e if e != -1 else len(clause)
+        phrase = clause[s:e]
+        name = "/".join(f"#{i}" for i in ids)
+        rep.add(
+            WARN,
+            "tasks.md",
+            f"{name} is under `## Open` but its metadata run carries "
+            f"`{phrase}` — a completion marker in the ` · ` chain after "
+            f"the title is a self-declared close; either fold it into "
+            f"`## Recently landed`, or, if it is deliberately still open, "
+            f"strike that marker from the metadata run (#335)",
+        )
 
 
 def check_landed_asks(dw: Path, watch, rep: Report) -> None:
