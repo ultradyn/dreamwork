@@ -205,35 +205,6 @@
   `Accept V1 for design`, `Accept V1 with amendments: …`, `Choose V2`, or
   `Pause #289`.
 
-- **P1 · 2026-07-27 — #290 main-dreamer run modes: accept the local
-  three-mode v1 and reserve hierarchy?** Read-only architecture map from Grok
-  confirms `status.json` is an ephemeral loop claim, `/command` is wake-only,
-  and `.dreamwork/watch-tint` is the closest durable-setting precedent.
-
-  Rec **M1**: machine-local/gitignored `.dreamwork/run-mode` is authoritative;
-  `status.json` mirrors it but never owns it. Selectable v1 modes are
-  **lackadaisical** (idle-friendly, no proactive fan-out), **hot** (continuous
-  bounded work, coordinator-only), and **assisted** (hot plus a few disjoint
-  helpers under existing ownership rules). Show **hierarchical** as planned but
-  disabled until #264 concurrency and #288 containment/authority design make it
-  honest.
-
-  The dashboard shares one pending mode/deadline across tabs. Every change resets
-  a visible 10-second countdown; only the final mode is atomically persisted and
-  emits one monitored event. Identical final submissions are idempotent. Reduced
-  motion removes the continuously animated width but retains the second-by-second
-  text countdown and identical application time/function. Reload/tick reads the
-  authoritative file; compaction cannot lose it.
-
-  **M2** commits the mode to Git so collaborators inherit it (not recommended: an
-  operational posture becomes a surprising project default). **M3** puts it only
-  in `status.json` (refuted: tick/compaction writers may overwrite it).
-
-  Approval authorizes a written design and visual proposal only—no endpoint,
-  state file, event, UI, mode-policy, subagent fan-out, deployment, or hierarchy.
-  Answer `Accept M1 for design`, `Accept M1 with mode-name changes: …`, `Choose
-  M2`, or `Pause #290`.
-
 - **P1 · 2026-07-27 — #254 note/reply conversation: use one rooted exchange
   branch rather than flat siblings or a nesting staircase?** Evidence:
   `.dreamwork/review/evidence/review-note-reply-unclear.png`.
@@ -518,6 +489,53 @@
     commits as an installed-release upgrade on every tick.
 
 ## Answered
+
+- **P1 · 2026-07-27 — #290 main-dreamer run modes: accept the local
+  three-mode v1 and reserve hierarchy?**
+  → answered (2026-07-27 16:47): **approved and shipped — this ask was simply
+  never folded.** His authorization arrived on a different channel and went
+  further than this entry asked for: the ask offered M1/M2/M3 and said approval
+  would authorize "a written design and visual proposal only", while what he
+  actually wrote in `answers.md` at 01:57 was "Modes 1-3 have no hard dependency
+  and I have sent the implementation to Grok" — answering the dependency
+  question and granting implementation authority in one move. M1 is what
+  shipped: authoritative machine-local `.dreamwork/run-mode`, mirrored into
+  status but never owned by it, with the resettable 10-second cross-tab arm
+  emitting one coalesced event. `hierarchical` stays visible but disabled
+  pending #264 and #288, exactly as both he and this entry required. Landed
+  across `2f0e7ea`..`b0db53d`, closed `4d3ec8b`; this host's mode is `hot`.
+  Why it sat here as an open P1 for ~15 hours: the answering commit `4c18941`
+  wrote `answers.md` and the ledger and never touched this file, so the two
+  channels did not cross-reference and the ask stayed open with its work already
+  deployed. Nothing detects that — a question whose subject has landed looks
+  exactly like one still waiting. Filed as #306.
+ Read-only architecture map from Grok
+  confirms `status.json` is an ephemeral loop claim, `/command` is wake-only,
+  and `.dreamwork/watch-tint` is the closest durable-setting precedent.
+
+  Rec **M1**: machine-local/gitignored `.dreamwork/run-mode` is authoritative;
+  `status.json` mirrors it but never owns it. Selectable v1 modes are
+  **lackadaisical** (idle-friendly, no proactive fan-out), **hot** (continuous
+  bounded work, coordinator-only), and **assisted** (hot plus a few disjoint
+  helpers under existing ownership rules). Show **hierarchical** as planned but
+  disabled until #264 concurrency and #288 containment/authority design make it
+  honest.
+
+  The dashboard shares one pending mode/deadline across tabs. Every change resets
+  a visible 10-second countdown; only the final mode is atomically persisted and
+  emits one monitored event. Identical final submissions are idempotent. Reduced
+  motion removes the continuously animated width but retains the second-by-second
+  text countdown and identical application time/function. Reload/tick reads the
+  authoritative file; compaction cannot lose it.
+
+  **M2** commits the mode to Git so collaborators inherit it (not recommended: an
+  operational posture becomes a surprising project default). **M3** puts it only
+  in `status.json` (refuted: tick/compaction writers may overwrite it).
+
+  Approval authorizes a written design and visual proposal only—no endpoint,
+  state file, event, UI, mode-policy, subagent fan-out, deployment, or hierarchy.
+  Answer `Accept M1 for design`, `Accept M1 with mode-name changes: …`, `Choose
+  M2`, or `Pause #290`.
 
 - **P1 · 2026-07-26 — #283 Git index-lock attribution: run the safe
   Dolphin-window falsification test before privileged tracing?**

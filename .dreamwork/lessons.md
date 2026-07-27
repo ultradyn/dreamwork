@@ -963,3 +963,14 @@ this shape and convert opportunistically.)
   reason it has one. Anchor structural markers to line starts, and be
   suspicious of any format where documenting the format can break it.
   (coordinator, 2026-07-27, #304)
+- **An answer that arrives on a different channel leaves the original ask
+  open, and nothing notices.** #290 was authorized by the human in
+  `answers.md` and shipped and deployed, while its P1 entry in `questions.md`
+  sat Open for ~15 hours — because the answering commit wrote the answer
+  channel and the ledger and never touched the ask channel. The two do not
+  cross-reference, and an ask whose subject has landed looks exactly like one
+  still waiting; the previous coordinator's handoff carried a hand-written
+  "this question is stale" caveat, which is a human remembering in place of a
+  tool checking. When you record a decision, close the thing that asked for
+  it in the same commit — and where two files hold two halves of one fact,
+  assume they have already drifted. (coordinator, 2026-07-27, #306)

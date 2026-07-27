@@ -24,9 +24,32 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **306**
+Next id: **307**
 
 ## Open
+
+- **#306** — Notice an open question whose subject has already landed · P2 ·
+  chore · 25m · origin: **loop** · goal: stop a shipped feature from reading as
+  an open gate ← DREAMWORK.md *Nothing fails quietly* · **found by folding
+  #290**: he authorized it in `answers.md` at 01:57 and the implementation
+  landed and deployed, but the answering commit `4c18941` wrote `answers.md`
+  and the ledger and never touched `questions.md`, so the P1 ask sat Open for
+  ~15 hours with its own work already on the dashboard — and the previous
+  coordinator's handoff had to carry a hand-written "the #290 question is
+  stale" caveat, which is a human remembering instead of a tool checking ·
+  a question whose subject has landed is indistinguishable from one still
+  waiting, and the ask channel and the answer channel do not cross-reference ·
+  **checkable rule**: an Open `questions.md` entry naming `#N` in its title,
+  where `#N` is in the ledger's landed set, is at least a WARN — the same shape
+  as #304's two-readers-must-agree check, and cheap because `parse_ledger`
+  already returns that set · decide deliberately whether it is WARN or ERROR:
+  a legitimately-open follow-up question about a landed task exists (an
+  amendment thread), so ERROR may be too strong — WARN that names the id and
+  says "landed at <sha>, fold or say why" is probably right · red-first by
+  planting an open question for a landed id and watching it warn, then folding
+  it and watching the warning go · the deeper fix (one write path that folds
+  the ask when the answer is recorded) belongs with #263's event journal, not
+  here — this is the detector, not the cure
 
 - **#305** — Read a review document and answer its question side by side · P1 ·
   Web UI feature/design · ~75m, **needs splitting** · origin: **human** ·
