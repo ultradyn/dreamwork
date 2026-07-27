@@ -443,16 +443,6 @@ Next id: **296**
   answer to it, and dispatches fresh subagent · avoid duplicate live histories
   and `/answers` bloat · blocked on #229 approval/implementation
 
-- **#234** — Minimise the answer-morph rerender hold · P2 · bug · 20m ·
-  origin: **human** · **human via watch 14:05** · reduce the current
-  `Date.now() + 1600` toward 850ms, choosing the shortest reasonable value
-  that cannot let `/mtime` replacement interrupt answer/note morphs · measure
-  CARD travel, lifted hero/cleanup and relevant guard window; red-prove early
-  release rather than assuming CARD_MS is the whole critical path · research:
-  1150ms `flipDock` transform + ~1000ms card cleanup make 850ms unsafe; use a
-  forced-mtime race to choose a named ~1200–1300ms hold or event completion ·
-  stale #233 LAN dependency removed · queued after active #250/#251 correction
-
 - **#230** — Add a `use subagent` composer checkbox · P2 · task · later ·
   origin: **human** · **human via watch 12:57** · request fresh-context,
   parallel processing outside the main queue; integrate with #228 project
@@ -959,6 +949,19 @@ Next id: **296**
 
 ## Recently landed
 
+- **#234** — Minimise the answer-morph rerender hold · P2 · landed
+  2026-07-27 · `Date.now() + 1600` replaced by named `MORPH_HOLD_MS = 1250`,
+  derived from the measured critical path (flipDock's 1150ms transform is
+  the longest visible leg + 100ms slack; the 850ms card travel, its 1000ms
+  cleanup and the out-of-view ripple all finish inside it) — 850ms was
+  rejected as mid-glide · reduced-motion path runs none of the three, so
+  the shared constant is pure margin there · new guard
+  `dev/capture/morphhold.mjs` drives `tick()` over a forced /mtime change
+  entirely in page time: node intact on every probe inside the hold,
+  release measured ~1250ms after hold-set · RED against the old 1600ms
+  build (release measured 1676-1794ms) and against a 100ms build
+  (mid-glide replacement) · `morph.mjs` window shrunk 1400→1200 to stay
+  inside the shorter hold
 - **#138/#156** — Ship optional compaction/lint hooks plugin · P2 · landed
   2026-07-27 · `plugins/ud-dreamwork-hooks/`, off by default, same family
   shape as ud-dreamwork-github; both hooks re-check the DREAMWORK.md Load

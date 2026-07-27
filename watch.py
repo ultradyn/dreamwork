@@ -2409,7 +2409,7 @@ async function sendAnswer(key) {
   // 409 itself (#136)
   if (!res || !res.ok) { qaFail(card, res ? res.status : 0); return; }
   if (!card) return;
-  holdRerenderUntil = Date.now() + 1600;   // let the morph settle before regroup
+  holdRerenderUntil = Date.now() + MORPH_HOLD_MS;   // see ROUTER_JS
   // the morph IS the confirmation: the box reshapes into the answered state,
   // the typed text lifting from the box into the rendered answer (the
   // lifted-hero rule — the answer text is the tracked element). A soft
@@ -2448,7 +2448,7 @@ async function sendComment(key) {
   const res = await postComment(entry.title, val,
                                 key[0] === 'o' ? 'Open' : 'Answered');
   if (!res || !res.ok) { qaFail(card, res ? res.status : 0); return; }
-  holdRerenderUntil = Date.now() + 1600;
+  holdRerenderUntil = Date.now() + MORPH_HOLD_MS;
   if (!card) { el.value = ''; return; }
   // #191, the same as an answer: the note lands INSIDE the card, so the card
   // grows and every card below it moves. Snapshot before the first thing that
@@ -2639,7 +2639,23 @@ ROUTER_JS = """
 const rmr = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let data = null, fetchedAt = 0, lastMtime = null, serverGen = null;
 /* after a local answer morph, hold the live re-render briefly so the card
-   settles in place before the loop's fresh data regroups it (#79/#81). */
+   settles in place before the loop's fresh data regroups it (#79/#81).
+   #234 derived the hold from the critical path instead of padding it:
+   - `flipDock`'s transform leg is 1.15s — the longest VISIBLE gesture of
+     the submit morph (its filter/opacity legs are shorter, and its 1500ms
+     safety-net `clear` only strips inline styles `transitionend` already
+     stripped at ~1150ms, so nothing is on screen past the transform).
+   - the regroup's `CARD_TRAVEL` is 850ms of visible travel; its inline
+     cleanup at `CARD_MS + 150` is, again, invisible.
+   - the ripple lives on `document.body`, outside the re-rendered view, so
+     a tick cannot interrupt it at all.
+   So 1150ms plus one beat of slack for the rAF that starts the transition
+   and for frame jitter: 1250ms. 850ms was considered and rejected — it
+   would release mid-glide. Under reduced motion NONE of the three runs
+   (`flipDock`/`ripple` skip on `rmr`, `regroupCards` returns early), so
+   the same number is pure margin there, and the shared constant keeps the
+   two paths from drifting. Measured by dev/capture/morphhold.mjs. */
+const MORPH_HOLD_MS = 1250;
 let holdRerenderUntil = 0;
 /* /mtime is "<generation> <mtime>": a changed generation means the server
    was rebuilt (--autoreload) or restarted (redeploy) — reload to pick up the

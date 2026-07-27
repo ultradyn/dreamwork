@@ -299,8 +299,11 @@ exception; an element leaving fades rather than vanishing.
   from the box into the rendered answer (the lifted-hero FLIP — the answer
   is the tracked element), a ripple accenting it, **and the list regroups
   around it** so the cards below travel rather than jumping the height delta
-  (#191, above). The live re-render is held ~1.6s so the morph settles before
-  the loop's fresh data regroups the card. reduced-motion swaps straight to
+  (#191, above). The live re-render is held for `MORPH_HOLD_MS` (1250ms —
+  #234: flipDock's 1150ms transform is the longest visible leg of the morph,
+  plus a beat of slack; the 850ms card travel and the ripple finish inside
+  it, and the old flat 1600ms was padding) so the morph settles before the
+  loop's fresh data regroups the card. reduced-motion swaps straight to
   the answered state.
 
 - **Missing-aid answered disclosure (#250).** `/answers` answered records
@@ -318,12 +321,17 @@ exception; an element leaving fades rather than vanishing.
   real UI too, but it traces 5.2s — past the hold — so the tick's own regroup
   travels the neighbour, and every "it slid" check passes over a teleport that
   happened a second and a half earlier. `dev/capture/morph.mjs` traces
-  **1400ms**, inside the hold, and its load-bearing assertion is that the card
+  **1200ms**, inside the hold, and its load-bearing assertion is that the card
   node was **never replaced** across the window: `card.innerHTML = …` keeps the
   node and a tick's list swap does not, so whatever moved, the *morph* moved.
   It runs four phases (answer/note × normal/reduced) on its own server and a
   pristine target each time, because answering the first open question changes
-  which card the next phase would pick.
+  which card the next phase would pick. The hold ITSELF is measured by
+  `dev/capture/morphhold.mjs` (#234): it drives `tick()` over a forced
+  /mtime change — blocked on every probe inside the hold, released ~1250ms
+  after the hold is set, red against the old 1600ms value — with the race
+  run in page time, because a Playwright roundtrip costs most of the window
+  being measured.
 - **The awaiting-fold wisp — the one standing exception to "opt-in".**
   Everything else on this page moves only in response to something; the
   awaiting-fold state breathes continuously, on purpose, because it is the
