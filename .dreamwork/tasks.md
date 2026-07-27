@@ -509,12 +509,6 @@ Next id: **296**
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
-- **#158** — `/file` reflows markdown · P2 · bug · 25m · **APPROVED**
-  2026-07-25 15:23 ("rec still... only reflowing .md or similar. not
-  source code") · replaces the #102 rule, which drew its line at WHO
-  COMPOSED the text where the useful line is WHAT IT IS · rewrite the
-  rule in the same commit so it reads as reconsidered, not forgotten ·
-  pairs with #178, same route
 - **#205** — [plan: `docs/plans/heartbeat-into-monitor.md` — ezfb's
   `run_watch()` READ and mapped; timeout-on-receive, quiet limit 7,
   `on_quiet` = #200's audit seam] Roll the heartbeat INTO the monitor ·
@@ -958,6 +952,18 @@ Next id: **296**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#158** — `/file` reflows markdown · P2 · landed earlier at `5c45d83`
+  (task work 2026-07-27 found the entry stale in Open) · the line moved
+  from WHO composed the text to WHAT the file is: `.md` / `.markdown` /
+  `.mdx` at `/file` reflow through the same `mdB` as dashboard peeks,
+  source and all other paths stay verbatim in a `<pre>`, path-based never
+  content-sniffed · #102 rule rewritten in the same commit so it reads as
+  reconsidered · raw bytes remain reachable via `/filedata`; full
+  Source/Raw toggle is #252, JSON is #178 · reflow guard was left
+  asserting the OLD verbatim line — updated to the new branch plus
+  hostile-markup inertness and source-verbatim checks, each red-proved
+  against a reintroduced break; pytest tokens extended (542 + 46 green)
 
 - **#138/#156** — Ship optional compaction/lint hooks plugin · P2 · landed
   2026-07-27 · `plugins/ud-dreamwork-hooks/`, off by default, same family
