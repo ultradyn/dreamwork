@@ -65,7 +65,22 @@ Next id: **308**
   the fade is a gradient over live text, so it must not clip the last line or
   make copied text lossy · obey transitions.md and watch-design.md · likely
   three increments: the two-column shell + splitter, the glued input + fade,
-  then the height/responsive behaviour
+  then the height/responsive behaviour · **the three-increment brief was wrong**
+  (17:19) — the feature has no working intermediate, so it lands as one; see
+  lessons.md · increment 1 committed in `.worktrees/305-review-split`
+  (`a0cc24a`, 667 insertions) and coordinator-reviewed: 25 guard checks, each
+  shown red against a build broken in the way it names, nine injections · it
+  also fixed a latent bug of its own: a scroll offset assigned to a node the
+  live-tick swap is one statement old clamps to zero and reports nothing, so
+  his typed draft's scroll position had been silently discarded on every tick
+  since #118; now a `putScroll()` that reads back and retries (#179's rule
+  applied to the other thing a restore hands back silently) · **the class was
+  audited and is contained** (17:28): `restoreReviewFrame` preserves the live
+  browsing context rather than recreating the iframe, so its `scrollTo` never
+  meets a fresh node, and the `setSelectionRange` calls are not
+  layout-dependent — no third instance, do not re-audit · NOT yet merged; the
+  dreamer's `pytest 600` is against base f72f730 and master is 611 after #307,
+  so the suite re-runs on the merged tree
 
 - **#303** — Make `lint.py` notice a `status.json` that lost known keys · P3 ·
   chore · 20m · origin: **loop** · goal: make a silent projection-rewrite loss
