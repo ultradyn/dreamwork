@@ -40,14 +40,14 @@ EX_USAGE = 64
 EX_NOINPUT = 66
 EX_SOFTWARE = 70
 
-COMMANDS = ("list", "show", "replay", "purge")
+COMMANDS = ("list", "show", "health", "replay", "purge")
 
 # Read-only classification: the dispatcher routes read commands to the read
 # path (read-only journal handle, never a managed file) and consults
 # `_write_authorized` before any write-capable code runs. `replay`/`purge` are
 # the only commands permitted a domain effect; widening `_write_authorized` is
 # the F3 red line (a read command must never be write-authorized).
-READ_COMMANDS = frozenset({"list", "show"})
+READ_COMMANDS = frozenset({"list", "show", "health"})
 WRITE_COMMANDS = frozenset({"replay", "purge"})
 _HELP = __doc__
 
@@ -55,6 +55,40 @@ _HELP = __doc__
 def _write_authorized(command: str) -> bool:
     """The read-only guard. True only for commands permitted a domain effect."""
     return command in WRITE_COMMANDS
+
+
+# health: every failure semantic in the design (user-event-journal.md
+# §"Failure semantics") has a named recovery path here. Keys are the pre-colon
+# phrase of each bullet in that section, parsed by the F4 test; if the parse
+# silently finds nothing the coverage check would pass vacuously, so the test
+# asserts a plausible parsed count first (the lessons.md:1447 shape).
+HEALTH_ROWS = {
+    "Journal open/transaction/fsync failure": (
+        "no 202; the client attempt remains. Recovery: inspect the journal "
+        "path/permissions; no receipt was committed, so retry is safe."),
+    "Busy timeout": (
+        "retriable 503; no receipt unless the receive transaction committed. "
+        "Recovery: retry with backoff; a committed receipt is idempotent."),
+    "Shadow failure": (
+        "still 202; health reports shadow_failed against the durable receipt. "
+        "Recovery: the receipt stands; re-emit the shadow when able."),
+    "JSON/schema/domain validation error after a registered complete envelope": (
+        "received -> rejected without claim, with a bounded reason code. "
+        "Recovery: correct the payload and resend with a NEW client_action_id."),
+    "Transient domain I/O": (
+        "retryable; exact receipt and claim history preserved. Recovery: the "
+        "lease expires and the consumer retries the bounded write."),
+    "Ambiguous/torn domain": (
+        "recovering; no mutation until an operator resolves. Recovery: "
+        "rebaseline or discard the torn file, then replay from the cursor."),
+    "Consumer crash": (
+        "lease expiry + ternary proof; never start from latest time. Recovery: "
+        "reclaim the expired lease; proof decides apply/no-op/unknown."),
+    "Corrupt journal": (
+        "fail closed; preserve files; health explains the recovery path. "
+        "Recovery: rebuild the chain from ordinal 1 or restore from backup; "
+        "never recreate over the only authority."),
+}
 
 
 class _CliError(Exception):
@@ -227,6 +261,19 @@ def cmd_purge(args, ctx, out):
     )
 
 
+def cmd_health(args, ctx, out):
+    """A recovery path for every failure semantic the design lists.
+
+    Emits one JSONL row per semantic: {"semantic": ..., "recovery": ...}. The
+    F4 test parses the design's §"Failure semantics" list and asserts each has
+    a row here — and that the parse found a plausible count, so a parser that
+    silently finds nothing fails loudly rather than passing vacuously.
+    """
+    for semantic, recovery in HEALTH_ROWS.items():
+        out.write(json.dumps({"semantic": semantic, "recovery": recovery}) + "\n")
+    return EX_OK
+
+
 def _print_top_help(out) -> None:
     out.write(_HELP)
     if not _HELP.endswith("\n"):
@@ -289,6 +336,8 @@ def main(argv=None, out=None) -> int:
                 return cmd_list(args, ctx, out)
             if command == "show":
                 return cmd_show(args, ctx, out)
+            if command == "health":
+                return cmd_health(args, ctx, out)
             return EX_USAGE
         # The read-only guard: only write-authorized commands reach the write
         # path. Deleting/widening `_write_authorized` is the F3 red line.

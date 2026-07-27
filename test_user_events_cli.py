@@ -74,6 +74,76 @@ def seed_journal(path: Path, n: int, *, body: bytes | None = None) -> list:
 
 
 # ---------------------------------------------------------------------------
+# F4 — health names a recovery path for every failure semantic
+# ---------------------------------------------------------------------------
+
+DESIGN_DOC = REPO / ".dreamwork" / "docs" / "plans" / "user-event-journal.md"
+
+
+def _parse_failure_semantics(path: Path) -> list:
+    """The pre-colon phrase of each bullet in the design's §Failure semantics.
+
+    The design doc is the source of truth; HEALTH_ROWS is the thing checked
+    against it (no second copy of the rule is held here). The caller must assert
+    the result is plausible — a parser that silently finds nothing makes the
+    coverage check vacuous.
+    """
+    lines = path.read_text().splitlines()
+    start = None
+    for i, ln in enumerate(lines):
+        if ln.strip() == "## Failure semantics":
+            start = i
+            break
+    assert start is not None, "## Failure semantics section not found in design doc"
+    keys = []
+    for ln in lines[start + 1:]:
+        s = ln.strip()
+        if s.startswith("## "):
+            break  # next section ends the list
+        if s.startswith("- "):
+            key = s[2:].split(":", 1)[0].strip()
+            if key:
+                keys.append(key)
+    return keys
+
+
+def test_every_failure_semantic_has_a_health_row(module):
+    semantics = _parse_failure_semantics(DESIGN_DOC)
+    # CRITICAL (criterion 6, lessons.md:1447): a parse that silently finds
+    # nothing must FAIL LOUDLY. Without this guard the coverage loop below
+    # iterates over zero items and passes having checked nothing — a silent
+    # third verdict that reads as reassurance. The count is derived from the
+    # document; 5 is a sanity floor the current document (8) comfortably clears.
+    assert len(semantics) >= 5, (
+        f"parse found only {len(semantics)} failure semantics — the coverage "
+        "check would be vacuous; the parser is broken or the section moved")
+    assert len(semantics) == len(set(semantics)), (
+        f"duplicate semantic keys parsed: {semantics}")
+
+    rows = module.HEALTH_ROWS
+    missing = [s for s in semantics if s not in rows]
+    assert not missing, f"health has no recovery row for: {missing}"
+    # No orphan rows either: every health row corresponds to a real semantic,
+    # so the table cannot silently drift from the design.
+    orphan = [k for k in rows if k not in set(semantics)]
+    assert not orphan, f"health has rows for semantics not in the design: {orphan}"
+
+
+def test_health_command_emits_one_row_per_semantic(module, tmp_path):
+    db = tmp_path / "journal.sqlite3"
+    seed_journal(db, 1)
+    buf = io.StringIO()
+    code = module.main(
+        ["health", "--journal", str(db), "--target", str(tmp_path)], out=buf)
+    assert code == module.EX_OK
+    rows = [json.loads(line) for line in buf.getvalue().splitlines() if line.strip()]
+    assert len(rows) == len(module.HEALTH_ROWS)
+    assert {r["semantic"] for r in rows} == set(module.HEALTH_ROWS)
+    for r in rows:
+        assert r["recovery"]
+
+
+# ---------------------------------------------------------------------------
 # F3 — replay is the only command that may cause a domain effect
 # ---------------------------------------------------------------------------
 
