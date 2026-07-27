@@ -550,6 +550,89 @@ class TestCollector(unittest.TestCase):
         self.assertEqual(watch.parse_ledger(text.replace(LANDED + "\n\n", ""))[1],
                          set(), "no landed section should mean no landed ids")
 
+    def test_parse_ledger_lands_every_id_in_a_combined_mention(self):
+        """#301 (landed half): a combined mention like `**#138/#156**` names
+        TWO ids, but the narrow LEDGER_MENTION requires `**` right after the
+        digits and matched NEITHER half — verified directly against the regex.
+        LEDGER_COMBINED_MENTION reads an ids-only bold span, so the three
+        combined mentions in the current ledger's landed section (#138/#156,
+        #250/#251, #292/#293) now contribute all their ids instead of zero.
+
+        The open-section half of #301 (combined entry HEADS) is deliberately
+        NOT fixed here — see `test_open_combined_head_still_needs_lint_py`.
+        """
+        COMBINED_MENTION = "**#5/#6**"
+        text = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
+                "- **#9** — a singular live one · P3 · idea\n\n"
+                "## Recently landed\n\n"
+                + COMBINED_MENTION + " did two things (abc1234) (2026-07-25). "
+                "**#2** did another (def5678).\n")
+        # Precondition — a test whose fixture silently lost its combined
+        # mention would pass forever, so assert the fixture holds it.
+        self.assertIn(COMBINED_MENTION, text,
+                      "fixture must hold a combined mention to land")
+        # And the defect is real against the narrow pattern today, not a claim
+        # about a pattern that has since been widened — pin the RED.
+        self.assertEqual(watch.LEDGER_MENTION.findall(COMBINED_MENTION), [],
+                         "narrow LEDGER_MENTION misses the combined mention")
+        _openids, landed = watch.parse_ledger(text)
+        # RED before the fix: landed == {"2"} — the singular mention only —
+        # because the combined mention contributed none of the ids it named.
+        self.assertEqual(landed, {"2", "5", "6"},
+                         "a combined mention lands every id it names")
+
+    def test_parse_ledger_ignores_a_prose_span_that_only_references_an_id(self):
+        """#301 guard against widening too far: a bold span wrapping prose
+        (`**#96 stage 1**`) is a REFERENCE, not a landing — the span's content
+        is not ids-only, so LEDGER_COMBINED_MENTION leaves it inert. Without
+        this guard the wider read would land every id named in any bold span,
+        which is exactly the `**#96 stage 1**` shape that lives in this repo's
+        own landed section today.
+        """
+        text = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
+                "- **#9** — open\n\n"
+                "## Recently landed\n\n"
+                "**#5** landed (abc1234). The **#96 stage 1** dreamhub work "
+                "relates.\n")
+        # Precondition: the prose-reference span is actually in the fixture.
+        self.assertIn("**#96 stage 1**", text,
+                      "fixture must hold a prose-reference span to ignore")
+        _openids, landed = watch.parse_ledger(text)
+        self.assertEqual(landed, {"5"},
+                         "a prose span referencing an id does not land it")
+
+    def test_open_combined_head_still_needs_lint_py(self):
+        """#301 (open half, DEFERRED): a combined entry HEAD under `## Open`
+        (`- **#7/#8**`) is still read narrow today, so parse_ledger reports
+        neither id. This is deliberate, not an oversight: lint.check_ledger_
+        sections cross-checks `len(parse_ledger(open))` against its own count
+        of open entry lines, and that count uses the narrow LEDGER_ID that
+        the pinning test asserts and that this worktree cannot widen in step.
+        Making parse_ledger's open read combined-aware would make the two
+        readers DISAGREE on any ledger holding a combined open entry. The
+        honest fix is for lint.py's LEDGER_ID and check_ledger_sections to
+        widen together; that is reported to the coordinator, not landed here.
+
+        This guard exists so the deferral is loud: if someone widens the open
+        read in parse_ledger without coordinating lint.py, THIS test goes red
+        before `test_combined_ids_all_old_are_exempt` in test_lint.py does.
+        No combined head is open in the live ledger today, so the live defect
+        is confined to landed (see the test above).
+        """
+        COMBINED_HEAD = "- **#7/#8**"
+        text = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
+                + COMBINED_HEAD + " — a combined live one · P2 · task\n"
+                "- **#9** — a singular live one · P3 · idea\n\n"
+                "## Recently landed\n\n")
+        self.assertIn(COMBINED_HEAD, text,
+                      "fixture must hold a combined head to defer")
+        # The defect is real against the narrow pattern — pin it.
+        self.assertEqual(watch.LEDGER_ENTRY.findall(COMBINED_HEAD), [],
+                         "narrow LEDGER_ENTRY misses the combined head")
+        openids, _landed = watch.parse_ledger(text)
+        self.assertEqual(openids, {"9"},
+                         "open read stays narrow until lint.py widens in step")
+
     def _ledger_repo(self, d, snapshots):
         """Commit each `(text, when)` as .dreamwork/tasks.md. Returns the run
         helper so a caller can keep going."""
@@ -605,6 +688,38 @@ class TestCollector(unittest.TestCase):
             self.assertEqual([b["landed"] for b in r["buckets"]], [0, 1, 1])
             # the open count is a LEVEL, not a count of events
             self.assertEqual([b["open"] for b in r["buckets"]], [2, 2, 1])
+
+    def test_ledger_series_lands_every_id_in_a_combined_mention(self):
+        """#301: ledger_series calls parse_ledger per snapshot, so a combined
+        mention that parse_ledger missed was never counted as landed at ANY
+        commit — the burndown under-counted landings silently across the
+        whole history walk. Settles #301's hypothesis: the combined form was
+        never read as singular at any snapshot, because the narrow reader
+        lost it everywhere, not just at HEAD.
+        """
+        LED = "## Open\n\n{open}\n## Recently landed\n\n{done}\n"
+        T = 1784900000
+        one_open = "- **#1** — one · P2 · task\n"
+        t0 = LED.format(open=one_open, done="")
+        t1 = LED.format(open=one_open,
+                        done="**#2/#3** did it together (abc1234) (2026-07-25).")
+        # Precondition: the landed snapshot actually held a combined mention —
+        # a fixture whose combined form silently became singular would test a
+        # different rule than the one filed.
+        self.assertIn("**#2/#3**", t1,
+                      "fixture must hold a combined mention to land")
+        watch._LEDGER_SNAPS.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [(t0, T), (t1, T + 3600)])
+            r = watch.ledger_series(d, now=T + 3600)
+            self.assertEqual(r["state"], watch.BURN_OK)
+            # RED before the fix: arrived == 1 and landed == 0 — parse_ledger
+            # saw neither id named in `**#2/#3**`, so two completed tasks left
+            # no trace in the burndown at all, at HEAD or in history.
+            self.assertEqual(r["arrived"], 3, "the combined ids arrived")
+            self.assertEqual(r["landed"], 2,
+                             "a combined mention lands every id it names")
+            self.assertEqual(r["open"], 1)
 
     def test_ledger_series_carries_a_level_across_an_empty_bucket(self):
         # a bucket with no ledger commit in it inherits the last reading. The

@@ -6270,6 +6270,30 @@ LEDGER_ENTRY = re.compile(r"^- \*\*#(\d+)\*\*", re.M)
 # ...and in `## Recently landed` an id is named inline, in prose, so the
 # entry-head shape does not apply there.
 LEDGER_MENTION = re.compile(r"\*\*#(\d+)\*\*")
+# Both patterns above are pinned narrow: LEDGER_ENTRY to lint.py's LEDGER_ID
+# by a test, and LEDGER_MENTION reconstructed verbatim in test_lint.py's
+# pre-#304 regression. Each requires `**` immediately after the digits, so a
+# COMBINED head or mention (`- **#138/#156**`, `**#250/#251**`) matches
+# NEITHER half — the rule as pinned is blind to combined entries (#301).
+#
+# The LANDED half of #301 is fixed below via LEDGER_COMBINED_MENTION, which
+# matches a `**#…**` span whose content is ids only (`#7` or `#138/#156`),
+# so a prose span like `**#96 stage 1**` stays inert (it is a reference, not
+# a landing). parse_ledger reads landed ids through it; the singular
+# LEDGER_MENTION stays narrow where test_lint.py's regression still imports
+# it by name.
+#
+# The OPEN half of #301 (combined entry HEADS under `## Open`) is NOT fixed
+# here, deliberately. lint.check_ledger_sections cross-checks the size of
+# parse_ledger's open-id set against its own count of open entry lines, and
+# that count uses the narrow LEDGER_ID — a count that misses a combined head
+# entirely. Making parse_ledger's open read combined-aware would make the two
+# readers DISAGREE on any ledger holding a combined open entry, and the only
+# honest resolution is for lint.py's LEDGER_ID and check_ledger_sections to
+# widen in step. lint.py is outside this worktree's ownership, so the open
+# half is reported rather than landed. No combined head is open TODAY (the
+# coordinator measured 103 = 103), so the live defect is confined to landed.
+LEDGER_COMBINED_MENTION = re.compile(r"\*\*(#\d+(?:/#\d+)*)\*\*")
 # A SECTION is opened by a heading LINE and by nothing else (#304). These were
 # once located with an unanchored `text.split("## Open", 1)`, which let any
 # entry whose PROSE quoted a heading become the split point — and that is not
@@ -6360,6 +6384,14 @@ def parse_ledger(text):
     reading the landed section with the entry-head rule finds nothing at all
     — which would render as "the loop has completed nothing", the exact shape
     of failure #136 is about.
+
+    The landed read is combined-aware: a mention like `**#138/#156**` names
+    BOTH ids, so LEDGER_COMBINED_MENTION (ids-only bold span) reads every id
+    in the token while leaving a prose span like `**#96 stage 1**` inert
+    (#301). The open read stays narrow (LEDGER_ENTRY): widening it would
+    diverge from lint.check_ledger_sections, which counts open entries with
+    the narrow LEDGER_ID that the pinning test asserts and that this
+    worktree cannot widen in step — see LEDGER_COMBINED_MENTION's comment.
     """
     if not text:
         return set(), set()
@@ -6369,7 +6401,21 @@ def parse_ledger(text):
     split = _ledger_section(opened[1], LEDGER_SEC_LANDED)
     open_text, landed_text = split if split else (opened[1], "")
     return (set(LEDGER_ENTRY.findall(open_text)),
-            set(LEDGER_MENTION.findall(landed_text)))
+            _landed_ids(landed_text))
+
+
+def _landed_ids(text):
+    """Every id named in this landed section's `**#…**` mentions, combined-aware.
+
+    A combined mention (`**#138/#156**`) names two ids; LEDGER_COMBINED_MENTION
+    matches an ids-only bold span so `**#96 stage 1**` (a prose reference) does
+    not land #96. Returns strings, matching the shape LEDGER_MENTION.findall
+    returned — `ledger_series` and the origin walk key on string ids throughout.
+    """
+    ids = set()
+    for m in LEDGER_COMBINED_MENTION.finditer(text):
+        ids.update(ENTRY_ID.findall(m.group(1)))
+    return ids
 
 
 def _burn_step(span):
