@@ -94,40 +94,6 @@ Next id: **399**
   · **the honest framing for him, then, is not "should we split watch.py"** but *"75% of the
   dashboard's source is a web app living in Python strings; is extracting it worth breaking the
   one-file deploy?"* That is a question he can answer; the other one is not
-- **#396** — an **inline** `data-mark` puts its flag outside the reading column and clips past the
-  page edge · P1 · review-artifact/geometry · origin: **loop** · found by **probing #367 increment
-  2a's stated caveat**, and it is the case beside the one the lane flagged
-  · **`file-formats.md:1118` says `data-mark` goes "on any element inside `body`"**, so an inline
-  `<strong data-mark="…">` is documented-legal input. Increment 2a's flag positioning relies on
-  `left:calc(var(--measure) + .4ch)` resolving against the **body** font on an outer `.marktab` —
-  the lane's own `ch`-resolution insight, which is correct and subtle. But for an **inline** marked
-  element the containing block is the inline box, so `left` resolves from **that box's horizontal
-  offset**, not the reading column's edge
-  · **measured on a purpose-built probe artifact** (two marks on one line, built with
-  `review_artifact.py build`), flag right edge vs viewport:
-  **1280px → 1076, fits** · **1000px → 1012, CLIPPED by 12px** · **900px → CLIPPED by 112px** ·
-  **861px → CLIPPED by 151px**, and 861 is one pixel above the cliff, where the rail is meant to be
-  shown *and proven to fit*
-  · **the flag does not reflow**: right stays at 1012 from 1000px down to 861px while the viewport
-  shrinks, so the clipping grows monotonically. Block marks anchor at 696.7 and behave correctly —
-  this is inline-only
-  · **why the guard passes over it, which is the part to fix along with the CSS:** `markrail`
-  asserts the flag anchors within 2px of `.read`'s right edge, and that assertion is true — for the
-  block marks the fixture contains. **The fixture has no inline mark**, so the check's coverage,
-  not its logic, is the hole. Same shape as the silent-skip lesson: the check was working perfectly
-  on the inputs it could see
-  · this is precisely the failure the increment-2 measurement lane was dispatched to prevent (a tab
-  clipping past the page edge) and the 860px cliff was chosen to guarantee the worst case fits —
-  but the worst case was computed for block marks only, so the cliff does not bound this
-  · **rec:** decide whether an inline mark is supported. If yes, the outer `.marktab` must be
-  positioned from a **block** ancestor rather than the inline box. If no, `review_artifact.py` must
-  **refuse** it at build time the way it already refuses an `id` on an ancestor and a blank label —
-  a silently-clipped flag is the worse failure. Either way the fixture gains an inline mark so the
-  guard can see the case
-  · **red-first note:** add an inline mark to the guard fixture *before* touching the CSS. If
-  `markrail` stays green with it present, the assertion is not watching the anchor
-  · related: **#367**
-
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
   dashboard/transitions · origin: **loop** · from **#381's own caveat**, probed rather than accepted
   · `#381` surfaced pending hand-offs by adding a span to the existing `stfacts` row, which is the
@@ -2734,6 +2700,32 @@ Next id: **399**
   **blocked**: human pick
 
 ## Recently landed
+- **#396** — an inline `data-mark` puts its flag outside the reading column and clips past the page
+  edge · origin: **loop** · closed 2026-07-28 09:26 · `7902818`
+  · `ccc @glm52`, brief `.dreamwork/docs/briefs/396-inline-mark-refusal.md`. Refused at **build
+  time** with a **tag-name allowlist** (`MARKS_BLOCK_HOSTS`, `:706`) rather than an inline denylist —
+  the reasoning it recorded beside the constant is the part worth keeping: a denylist fails open on
+  `abbr`, `kbd`, `mark`, `sub` *"and whatever arrives next"*, and only an allowlist can say yes to a
+  `<span>` the page re-floated without saying yes to one it did not
+  · **coordinator verified it against the artifact that FOUND the defect, which is the strongest
+  form available**: the probe I built at 08:50 to reproduce the clipping **no longer builds**, and
+  the refusal names both offending elements *and* both labels *and* the mechanism *and* the allowed
+  containers. A block mark still builds. Injecting `strong em a code span` into the allowlist makes
+  my probe build again and fails `test_an_inline_data_mark_is_refused` while
+  `test_a_block_data_mark_is_still_accepted` stays green; injection grepped for, restored from a `cp`
+  snapshot byte-exact. `markrail` re-run by me: **PASS at load 15.8**
+  · **it refuted my brief's premise about the harness, and that is the third premise a lane has
+  corrected today.** I wrote criterion 4 around adding an inline mark to `dev/capture/fixture/`.
+  **`markrail` does not read that directory** — it builds its own fixture as an inline source string
+  in `dev/capture/markrail.mjs` and loads it over `file://`; `dev/capture/fixture/` serves the guards
+  that navigate a live `watch.py`. The lane put the mark in the right place, got the red there, and
+  **reverted the guard** — because once the build refuses an inline mark, **a committed inline-mark
+  fixture is unconstructible**. So the permanent regression net is the pytest, not the guard, and
+  that is the correct resolution rather than a shortfall: the input class can no longer reach the
+  geometry at all
+  · **CSS-induced shape changes are explicitly out of scope** and it said so beside the constant — a
+  block the artifact's CSS floated or shrank is `#367` increment 2b's territory
+  · related: **#367**
 - **#395** — a relation marker without bold parses as absent · origin: **loop** · closed
   2026-07-28 09:14 · `301f195`
   · `ccc @grok`, brief `.dreamwork/docs/briefs/395-relation-marker-shape.md`. A present-but-
