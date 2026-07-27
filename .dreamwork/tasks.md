@@ -24,9 +24,46 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **366**
+Next id: **368**
 
 ## Open
+
+- **#367** — Tabbed pointers to a review's essentials, with next/prev · P2 ·
+  review tooling/UX · origin: **human** · **human via watch `add-idea` 2026-07-28 02:36**,
+  typed from `/review?p=task-store-schema.html` — so from inside the problem: *"on reviews, it
+  would be really handy to have some pointer labels at the most important parts. like the
+  absolute essentials. then i could have a next/prev button too. something like those little
+  thin postits that lawyers use to indicate key points and where you need to sign. would make
+  it a lot quicker to go through reviews I think. (Sometimes they are quite long)"*
+  · **his analogy is precise and it decides the design.** A lawyer's flag is not a table of
+  contents: it marks *where you must act*, it protrudes so you can find it without opening the
+  document, and there are five of them and not fifty. So this is a **different axis from the
+  existing `nav`** — nav is structure (`findings` / `shape` / `decision`), this is *"read this
+  if you read nothing else"* — and conflating them would produce a second table of contents,
+  which is not what he asked for
+  · **the forcing function is worth as much as the feature.** Marks come from the source, so
+  the authoring dreamer has to name which three or four passages are the essentials. An
+  artifact that cannot say what its own essentials are is an artifact that has not decided what
+  it is asking — so this makes a quality problem visible rather than only saving him time
+  · design constraints already known, so nobody rediscovers them: **(a)** it is a frame change,
+  and touching `review-artifact.template.html` restamps all 15 artifacts (`template_stamp`
+  digests its bytes), so it should land **in one commit with #347's missing
+  `white-space:nowrap`** and whatever #364's answered-marker turns out to be — three frame
+  tasks, one rebuild · **(b)** next/prev is movement between marks, so `transitions.md` governs
+  it, and a **long-range smooth scroll is already refuted** — the #229 v2 review found a 1.5s
+  one and it failed the gate; a settled landing is the requirement, not a journey · **(c)** the
+  template has no `scroll-behavior` today (measured: zero occurrences), so the behaviour is
+  chosen here rather than inherited · **(d)** the tabs are navigation, so they are real
+  focusable controls with the current mark announced, not decorative edge art · **(e)** on
+  mobile a protruding edge tab competes with the column for width, which is where the physical
+  metaphor stops paying and needs its own answer rather than a shrink
+  · rec: one source-declared mark per essential passage (a class on the block, plus its short
+  label), rendered as thin edge tabs; next/prev walks them in document order; the count is
+  **capped low and the cap is stated**, because his whole point is that five flags help and
+  fifty are wallpaper
+  · **cannot start yet**: `review_artifact.py`'s component vocabulary is now enforced
+  (`40a1d71`), so a new component means a new rule in `COMPONENT_CHILDREN` and #365 says
+  measure real usage before writing one · and the artifact frame wants one batched change
 
 - **#365** — The component check guards one component out of about twenty · P3 ·
   review tooling · origin: **loop** · 20m · reported by dreamer-264-boundary as report-only,
@@ -850,21 +887,6 @@ Next id: **366**
   it is not in #324's fifteen, so it would otherwise be missed by the sweep ·
   convert it to `report.mjs` with its own crash injection, exactly as #324 does,
   and it stops being a trap for whoever reads the plan
-
-- **#330** — A guard run should not dirty the tree it is verifying · P3 ·
-  tooling/dogfood friction · origin: **loop** · running `just guards` rewrites the
-  four committed evidence PNGs under
-  `.dreamwork/review/evidence/provenance-coverage-217/` (byte-different every
-  run: 248500 vs 248101 for the same screenshot), so verifying leaves four
-  modified files behind · that is not merely untidy: a dirty tree is the signal
-  the worktree-cleanup contract reads to decide whether a finished agent has
-  unsaved work, and #316's own procedure keys off `git status --porcelain`, so
-  guard churn adds false positives to the check that protects other agents' work
-  · decide whether the captures belong in the repo at all (they are #217's
-  evidence of record, which is an argument for keeping them) or whether the
-  guard should write to its outdir and only a deliberate `just` recipe should
-  refresh the committed set · do not simply gitignore them — that would silently
-  drop the evidence #217 landed
 
 - **#328** — Add `/tasks2`, the wide two-pane task triage layout · P2 · dashboard
   feature · origin: **human** · **human via watch 2026-07-27 21:47** · his answer
@@ -2213,6 +2235,42 @@ Next id: **366**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#330** — A guard run should not dirty the tree it is verifying · **closed `a617606`** ·
+  P3 · tooling/dogfood friction · origin: **loop** · `provenance.mjs` wrote its four evidence
+  plates into the COMMITTED path `.dreamwork/review/evidence/provenance-coverage-217/` on every
+  run (byte-different each time: 248500 vs 248101 for the same screenshot), so `just guards`
+  left four modified PNGs behind · that was not untidiness: a dirty tree is the signal the
+  worktree-cleanup contract reads to decide whether a finished agent has unsaved work, and
+  #316's procedure keys off `git status --porcelain`, so guard churn manufactured false
+  positives in the check that protects other agents' work
+  · resolved on the **keep** branch this entry itself offered, not by gitignoring: the plates
+  are #217's evidence of record, so they stay committed, the guard writes only to `OUT` like
+  every other guard, and a deliberate `just provenance-evidence` recipe refreshes the committed
+  set · merged `17d2f97`
+  · **folded late, and by a check rather than by anyone noticing**: it landed and sat under
+  `## Open` until `check_landed_still_open` named it. The same forgotten-fold class as #346's
+  unfolded answer, arriving from the other end of the file — which is two instances in one
+  night and the argument for #357's ambient counts, not for trying harder
+
+- **#366** — lint catches an answer sitting in the section reserved for the unanswered ·
+  **landed `6db36f7`** · P2 · tooling/reliability · origin: **loop** · filed AFTER landing, and
+  that is itself the finding: the id was cited in `lint.py`, `test_lint.py` and the commit
+  message while the ledger's next id was still 366, so for one commit the code referenced a
+  task that did not exist · caught by reading lint's own `next id` line, not by any check —
+  nothing verifies that an id cited in source has an entry
+  · what it does: WARNs when an answer-tagged bullet sits under `## Open`, with the **age** in
+  the message rather than only the fact, because a fold on the next tick is legitimate and an
+  ERROR inside that window would cry wolf on correct behaviour · and WARNs separately when two
+  answer bullets share one timestamp, naming #274, since the duplication is upstream of the
+  file write · both proved on the real pre-fold file (`git show 5041fa1:…`), then six
+  injections, three discriminating to a single test
+  · **its first version came back GREEN on the real file**, which is the durable part: it read
+  `_parse_entries(…, "Open", False)` and looked in `body`, but #340's fix makes an answer
+  bullet there a CONTRIBUTION — tag stripped, author label carrying it — so the parsed form
+  cannot say whether a bullet was an answer or a note. The reader hides the one fact the check
+  needs · it is the **interim half of #357**: it fires when someone runs lint, and he asked for
+  ambient
 
 - **#336** — `/file` must show an image, not its bytes as mojibake · **closed `203ee06`** · **P1** ·
   **next-up** · dashboard bug · origin: **human** · **human via watch `do-next`
