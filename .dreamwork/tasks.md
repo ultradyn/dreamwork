@@ -49,10 +49,16 @@ Next id: **306**
   body already ends there, (d) an invisible draggable divider resizes the two
   columns, (e) both columns may grow taller when the viewport allows,
   (f) the whole thing must read as this page's own aesthetic, not a generic
-  split pane · **the width question is the gate**: `watch-design.md` names
-  `/review` as *the* deliberate width exception and #281 Q1 asks him whether a
-  second two-pane layout is allowed — his answer here may already be that
-  ruling, so reconcile the two rather than building against one of them ·
+  split pane · **a correction to this entry's first reading, made before
+  starting:** the coordinator initially called the width question a gate on
+  #281 Q1 and that was wrong. Q1 asks whether **/tasks** may become two-pane;
+  this is **/review**, which `watch-design.md` already names as *the* width
+  exception and which already renders the question beside the document via
+  `buildReview(name, q, d)` and `?q=`. So this restructures an existing wide
+  page rather than creating a second exception, needs no ruling from him, and
+  the two are separable — though landing it does weaken Q1's "a second
+  exception is how one column becomes two" argument, which is worth saying
+  when he answers ·
   the divider needs a persisted width, a keyboard-operable equivalent (a
   drag-only affordance is not reachable), a reduced-motion story, and a
   narrow-viewport fallback that stacks rather than shrinking both to unusable ·
