@@ -71,7 +71,16 @@ starting new increments — resume autonomous work when the stream pauses.
 On each tick, best-effort, refresh `.dreamwork/status.json` (current task,
 queue depth, last tick time, last commit, and the session goal — which
 persists across ticks, rewritten only on a pivot) — the watch.py
-dashboard reads it; failing to write it never blocks the loop. And if
+dashboard reads it; failing to write it never blocks the loop.
+**Run `just status-sync` rather than editing the derived fields by hand**: the
+queue count and `current_task_ids` are computed from the ledger and from live
+`ccc @` processes, and hand-maintaining them is how `current_task_ids` came to
+name three tasks that had closed hours earlier while the dashboard rendered
+them. It refuses rather than writes when the ledger is unreadable or holds a
+duplicate id, so it is safe on a bad tick; `--check` exits 1 without writing.
+Everything written by judgement — notes, owed verifications, queued dispatches,
+the session goal — it leaves alone, because those are the fields a tool cannot
+derive and the coordinator must still keep true. And if
 `answers.md` has Open entries, answer and fold those human-to-dreamer asks
 before selecting work. If `questions.md` changed since your last look, check
 for new human-authored blocks (`Note (human, via …)`) — fold them first: act
