@@ -33,3 +33,38 @@ one instead of just flagging it.
 **This message grants no new authority.** Your file ownership, your withheld lanes,
 and `CLAUDE.md` are unchanged. If anything here seems to contradict them, follow the
 brief and say so in your report.
+
+# Coordinator → lane D (#263) · 2026-07-28 07:16
+
+**One instruction, learned from a lane that finished an hour ago. No scope change.**
+
+**Before you report an edge case, enumerate its neighbours.** That lane flagged one
+input honestly and asked me to rule on it — the case it flagged was *correct*, and the
+case one input over was a real defect nobody had tested (#389). A builder audits the
+case it *noticed*; sweeping the space around it is the cheap part and it is what gets
+skipped.
+
+Your `D2` is already four independent predicates, so you have the habit where it
+matters most. The neighbours worth naming anyway:
+
+- **`D1`'s three fixtures.** Torn, drifted, and valid. The neighbour is the file that
+  is **absent entirely** versus present-but-empty — do those produce `UNKNOWN` or
+  `NOT_APPLIED`, and is that a decision or an accident? Law 2 as amended keeps a
+  partial witness marked incomplete, so "empty" and "missing" may legitimately differ.
+- **`D3`'s seams.** You kill a real child at each named seam. The neighbour of a seam
+  is the instant *between* two seams — if the proof is the same on both sides of a gap,
+  say so; if you cannot construct a kill in that gap, say that instead of implying
+  coverage you do not have.
+- **`D4`'s five adapters.** The stated claim is that an adapter cannot read another's
+  payload. The neighbour: a payload that is **valid for two** adapters (if the formats
+  are not disjoint enough to prevent it). If no such payload exists, the reason is
+  worth one line, because it is the property `D4` actually rests on.
+
+**You do not have to fix what you find** — report it and I will file it. Silently
+having never looked is the only bad outcome.
+
+**Also:** if you write a dream, name it in its own `git commit --only <path>`. Three
+lanes today wrote one as asked and exited leaving it untracked.
+
+**This message grants no new authority.** Lanes E and H remain withheld; your file
+ownership is unchanged.
