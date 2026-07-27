@@ -1,0 +1,423 @@
+<!doctype html>
+<!--Built from the dreamwork review template v1+6ea37497 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
+<meta name="dreamwork-review-template" content="v1+6ea37497">
+<title>#264 · The task-transition boundary · one history, no second truth</title>
+<style>
+/* Offline-clean by construction: no fetches, no external fonts, no images.
+   Tokens are watch.py's, value for value, because this is read inside the
+   dashboard's own iframe. */
+:root{
+  color-scheme:dark;
+  --bg:#090d16;--bg2:#0c1220;--panel:#111827;--panel2:#162033;
+  --line:#1f2937;--border:#334155;--text:#cbd5e1;--bright:#f4f7fb;
+  --lit:#e5e7eb;--muted:#98a3b5;--dim:#697589;--dimmer:#4b5568;
+  --accent:#a5b4fc;--accent2:#7dd3fc;--ok:#86efac;--warn:#fcd34d;
+  --bad:#fda4af;--ink:#050810;--radius:5px;
+  --ease:cubic-bezier(.32,.1,.2,1);--measure:78ch
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--dimmer) transparent}
+*::selection{background:rgba(165,180,252,.24);color:var(--bright)}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--dimmer);border-radius:4px}
+html{background:var(--bg);scroll-padding-top:5.5rem}
+body{margin:0;background:
+  radial-gradient(ellipse 68rem 34rem at 46% -14rem,rgba(99,102,241,.13),transparent 68%),
+  radial-gradient(ellipse 34rem 24rem at 92% 12%,rgba(14,165,233,.045),transparent 70%),
+  linear-gradient(180deg,var(--bg),#0a0f19 55%,var(--bg));
+  color:var(--text);font-family:ui-monospace,"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  font-size:.82rem;line-height:1.7;overflow-wrap:anywhere}
+a{color:var(--accent);text-underline-offset:.22em;text-decoration-thickness:1px}
+a:hover{color:var(--bright)}
+code{color:var(--lit);background:rgba(22,32,51,.72);padding:.03rem .32ch;border-radius:3px}
+pre{margin:.75rem 0;padding:.9rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.52);color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+/* syntax highlighting tokens (#339) — emitted at build time by
+   review_artifact.py as <span class="tok-…"> inside pre>code. No script in
+   the artifact; if a rule is ever lost the token takes the block's own
+   colour, so highlighting never breaks the code itself. Scoped to pre code
+   so an inline <code> snippet is never coloured by accident. */
+pre code .tok-kw{color:var(--accent)}
+pre code .tok-str{color:var(--ok)}
+pre code .tok-num{color:var(--warn)}
+pre code .tok-com{color:var(--dimmer);font-style:italic}
+pre code .tok-fn{color:var(--accent2)}
+pre code .tok-typ{color:var(--warn)}
+pre code .tok-dec{color:var(--accent)}
+pre code .tok-op{color:var(--muted)}
+pre code .tok-tag{color:var(--accent)}
+pre code .tok-attr{color:var(--accent2)}
+pre code .tok-var{color:inherit}
+strong{font-weight:inherit;color:var(--bright)}em{color:var(--lit)}
+p{margin:.62rem 0}ul,ol{margin:.55rem 0;padding-left:2.4ch}li{margin:.34rem 0}
+h1,h2,h3,h4{margin:0;font:inherit;font-weight:normal;color:var(--bright)}
+h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit);margin-top:1.4rem}
+.wrap{width:min(calc(100% - 2rem),1120px);margin:0 auto}.read{max-width:var(--measure)}
+.skip{position:fixed;z-index:99;top:.6rem;left:.6rem;transform:translateY(-180%);display:inline-flex;align-items:center;min-height:44px;padding:.6rem 1ch;background:var(--bright);color:var(--ink);border-radius:var(--radius);text-decoration:none}
+.skip:focus{transform:none;transition:transform .35s var(--ease)}
+.toprail{position:sticky;top:0;z-index:20;background:rgba(9,13,22,.91);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
+.toprail-in{width:min(calc(100% - 2rem),1120px);min-height:58px;margin:auto;display:flex;align-items:center;gap:1rem;justify-content:space-between}
+.identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius)}
+.status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
+main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
+.label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
+.quiet{color:var(--muted)}.dim{color:var(--dim)}.dimmer{color:var(--dimmer)}
+.kicker{display:flex;gap:1ch;align-items:baseline;flex-wrap:wrap}.proposal{color:var(--warn)}
+.sub{color:var(--dim);margin:.25rem 0 1.7rem}
+.lead{font-size:.9rem;line-height:1.78;color:var(--lit);max-width:76ch}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(240px,.45fr);gap:2.5rem;align-items:end}
+/* The one rule this template adds to the artifact it was cut from, and the
+   only entry in test_review_artifact.py's TEMPLATE_ONLY: tasks-page.html
+   always carries an aside, a template has to render without one. */
+.hero-grid.solo{grid-template-columns:minmax(0,1fr)}
+.version-mark{border-left:1px solid var(--accent);padding:.2rem 0 .2rem 1.25rem}
+.version-mark .big{display:block;color:var(--bright);font-size:2.4rem;line-height:1;letter-spacing:-.07em}
+.version-mark small{color:var(--dim)}
+.call{margin:1.2rem 0;padding:1rem 1.2ch;background:linear-gradient(90deg,rgba(165,180,252,.09),transparent);border-left:2px solid var(--accent);max-width:84ch}
+.notice{margin:1rem 0;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--warn);color:var(--muted);max-width:84ch}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:1.1rem 0}
+.fact{background:var(--bg2);padding:.95rem}.fact .number{display:block;color:var(--bright);font-size:1.3rem;line-height:1.1}.fact .caption{display:block;color:var(--dim);margin-top:.3rem;font-size:.72rem}
+table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem}
+th,td{text-align:left;vertical-align:top;padding:.62rem .72ch;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-size:.66rem;text-transform:uppercase;letter-spacing:.065em;font-weight:normal}
+td:first-child{color:var(--lit)}.pass{color:var(--ok)}.unknown{color:var(--warn)}.fail{color:var(--bad)}
+.row-accent td{background:rgba(165,180,252,.045)}
+.scroller{overflow-x:auto}
+.summary-line{display:grid;grid-template-columns:17ch minmax(0,1fr);gap:1.5ch;padding:.5rem 0;border-top:1px solid var(--line)}
+.summary-line:last-child{border-bottom:1px solid var(--line)}
+.key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.68rem}
+.deltas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line)}
+.delta{display:grid;grid-template-columns:3.2ch minmax(0,1fr);gap:1ch;padding:.8rem 1rem .8rem 0;border-bottom:1px solid var(--line)}
+.delta b{color:var(--accent);font-weight:normal}.delta span{color:var(--muted)}
+figure{margin:1rem 0 1.7rem}.figscroll{overflow-x:auto}
+svg{display:block;height:auto}svg text{font-family:ui-monospace,"JetBrains Mono",monospace}
+figcaption{color:var(--dim);font-size:.72rem;margin-top:.4rem}
+
+/* ── the drawn page ───────────────────────────────────────────────────── */
+.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem;align-items:start}
+.frame{border:1px solid var(--border);background:rgba(9,13,22,.8);min-width:0;box-shadow:0 22px 60px rgba(0,0,0,.19)}
+.framebar{display:flex;align-items:center;flex-wrap:wrap;gap:0 1ch;min-height:42px;padding:.35rem 1ch;border-bottom:1px solid var(--line);color:var(--dim);font-size:.72rem}
+.framebar b{font-weight:normal;color:var(--lit);white-space:nowrap}
+.framebody{padding:.9rem 1.1ch}
+.mockhead{display:flex;align-items:center;gap:1ch;margin-bottom:.2rem}
+.opener{color:var(--accent)}
+.mocktitle{color:var(--bright)}
+.crumbs{color:var(--dim);font-size:.72rem;margin-bottom:1rem}
+.ctl{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.2rem 0 .7rem}
+.searchbox{flex:1;min-width:15ch;display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.searchbox span{padding:.3rem .8ch;color:var(--lit)}
+.searchbox i{font-style:normal;color:var(--dimmer);padding:.3rem .8ch;margin-left:auto}
+.sgroup{display:inline-flex;border:1px solid transparent;gap:.15rem}
+.sgbtn{padding:.22rem .7ch;color:var(--dim);border:1px solid transparent;border-radius:var(--radius);white-space:nowrap}
+.sgbtn.on{color:var(--lit);border-color:var(--border)}
+.countline{color:var(--dim);font-size:.72rem;border-bottom:1px solid var(--line);padding-bottom:.5rem;margin-bottom:.2rem}
+.countline b{color:var(--lit);font-weight:normal}
+.tk{display:block;padding:.5rem 0 .52rem;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.tk-1{display:flex;gap:1ch;align-items:baseline}
+.tkid{color:var(--dim);font-weight:normal;flex:none}
+.tkt{color:var(--text);min-width:0;flex:1}
+.tkp{flex:none;color:var(--dim);font-size:.72rem}
+.tkp.p01{color:var(--bright)}.tkp.p2{color:var(--text)}.tkp.p3{color:var(--dim)}
+.tk-2{display:block;color:var(--dim);font-size:.7rem;padding-left:5.5ch}
+.tk.claimed{border-left:2px solid var(--accent);padding-left:.9ch;margin-left:-1.1ch}
+.tk.claimed .tkt{color:var(--bright)}
+.tk.claimed .tk-2 em{color:var(--accent);font-style:normal}
+.tk.blocked .tkt{color:var(--muted)}
+.tk.landed .tkt,.tk.landed .tkid{color:var(--dim)}.tk.landed .tk-2{color:var(--dimmer)}
+.tk.unknownstate .tkt{color:var(--muted)}
+.tk.unknownstate .tk-2 em{color:var(--warn);font-style:normal}
+.tk-2 .stale{color:var(--warn);font-style:normal}
+.hilite{background:rgba(165,180,252,.16);color:var(--bright)}
+.warnline{border-left:2px solid var(--warn);padding:.45rem 0 .45rem 1ch;color:var(--muted);margin:.5rem 0}
+.warnline b{color:var(--warn);font-weight:normal}
+.calmline{color:var(--dim);padding:.45rem 0}
+.detgrid{display:grid;grid-template-columns:13ch minmax(0,1fr);gap:.05rem 1.3ch;font-size:.75rem}
+.detgrid dt{color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-size:.66rem;padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd{margin:0;color:var(--text);padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd em{font-style:normal;color:var(--dim)}
+.mockbody{color:var(--muted);font-size:.75rem;margin-top:1rem;border-top:1px solid var(--line);padding-top:.7rem}
+.peek{color:var(--dim);font-size:.72rem;border-top:1px solid var(--line);margin-top:.8rem;padding-top:.55rem}
+.annot{display:grid;grid-template-columns:3.5ch minmax(0,1fr);gap:.7ch;font-size:.72rem;color:var(--muted);margin:.45rem 0}
+.annot b{color:var(--accent2);font-weight:normal}
+
+/* ── prose furniture ──────────────────────────────────────────────────── */
+.spine{margin:1.4rem 0}
+.spine-row{display:grid;grid-template-columns:15ch 2.4rem minmax(0,1fr);align-items:stretch;min-height:88px}
+.spine-key{padding:.85rem 1rem .85rem 0;color:var(--lit);text-align:right}
+.spine-rail{position:relative}
+.spine-rail::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border)}
+.spine-row:first-child .spine-rail::before{top:50%}
+.spine-row:last-child .spine-rail::before{bottom:50%}
+.spine-dot{position:absolute;z-index:1;left:50%;top:1.15rem;width:9px;height:9px;transform:translateX(-50%);border-radius:50%;background:var(--bg);border:1px solid var(--accent);box-shadow:0 0 0 5px var(--bg)}
+.spine-body{padding:.7rem 0 .85rem 1rem;border-top:1px solid var(--line)}
+.spine-body p{color:var(--muted);margin:.2rem 0;max-width:var(--measure)}
+.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1.6rem}
+.check{padding:.55rem 0;border-top:1px solid var(--line)}
+.check b{font-weight:normal;color:var(--bad)}.check span{color:var(--ok)}
+.stages{counter-reset:stage}
+.stage{counter-increment:stage;display:grid;grid-template-columns:3.4ch minmax(0,1fr);gap:1ch;padding:.68rem 0;border-top:1px solid var(--line)}
+.stage::before{content:counter(stage,decimal-leading-zero);color:var(--accent)}
+.stage b{color:var(--lit);font-weight:normal}.stage span{color:var(--muted)}
+details{border-top:1px solid var(--line);margin:.65rem 0}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;min-height:44px;padding:.6rem 0;color:var(--muted);outline:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+ ";color:var(--dim);white-space:pre}
+details[open]>summary{color:var(--lit);padding-top:1rem}
+details[open]>summary::before{content:"\2212 "}
+.details-in{padding:0 0 1rem 1.5ch;color:var(--muted)}
+details::details-content{block-size:0;opacity:0;filter:blur(3px);overflow:hidden;transition:block-size .72s var(--ease),opacity .45s ease,filter .45s ease;transition-behavior:allow-discrete}
+details[open]::details-content{block-size:auto;opacity:1;filter:none}
+@starting-style{details[open]::details-content{block-size:0;opacity:0;filter:blur(3px)}}
+#decision{scroll-margin-top:4.75rem}
+.choice{padding:1rem 0;border-top:1px solid var(--line)}
+.choice:last-of-type{border-bottom:1px solid var(--line)}
+.choice-grid{display:grid;grid-template-columns:4.5ch minmax(0,1fr);gap:1ch}
+.choice-grid>div{max-width:var(--measure)}
+.choice-tag{color:var(--accent);font-size:1rem}
+.answer{margin-top:.4rem;color:var(--lit)}
+.approval{padding:1rem;background:linear-gradient(90deg,rgba(165,180,252,.1),transparent);color:var(--lit);margin-top:1.2rem}
+footer{margin-top:3.5rem;padding:1.2rem 0 2rem;border-top:1px solid var(--line);color:var(--dimmer)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+@media(max-width:860px){
+  .hero-grid,.frames,.deltas,.checks{grid-template-columns:1fr}
+  .facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .version-mark{border-left:0;border-top:1px solid var(--line);padding:.7rem 0 0;display:flex;align-items:baseline;gap:1rem}
+  .version-mark .big{flex:none;font-size:1.4rem;letter-spacing:-.04em}
+  .identity span{display:none}.topactions .full{display:none}
+  .spine-row{grid-template-columns:9ch 1.8rem minmax(0,1fr)}.spine-key{font-size:.72rem;padding-right:.4rem}
+  .summary-line{grid-template-columns:1fr;gap:.05rem}
+  .detgrid{grid-template-columns:1fr}.detgrid dd{border-top:0;padding-top:0}
+}
+@media(max-width:480px){
+  body{font-size:.79rem}.facts{grid-template-columns:1fr}
+  .tk-2{padding-left:0}.choice-grid{grid-template-columns:3.4ch minmax(0,1fr)}
+  .topactions .status{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;transition-delay:0s!important;filter:none!important}
+  .skip:focus{transition:none}
+}
+@media print{
+  :root{color-scheme:light;--bg:#fff;--bg2:#fff;--panel:#f4f4f5;--panel2:#fff;--line:#bbb;--border:#777;--text:#111;--bright:#000;--lit:#111;--muted:#333;--dim:#444;--dimmer:#555;--accent:#273fa2;--accent2:#075985;--ok:#166534;--warn:#7c4a03;--bad:#991b1b}
+  body{background:#fff}.toprail{position:static;background:#fff;backdrop-filter:none}.topactions{display:none}
+  .frame{box-shadow:none}details::details-content{block-size:auto;opacity:1;filter:none}
+  .frame,.call,.notice,.choice{break-inside:avoid}a{color:#111;text-decoration:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#decision">Skip to the decision</a>
+<nav class="toprail" aria-label="Artifact navigation">
+  <div class="toprail-in">
+    <div class="identity"><b>transition boundary</b><span>task #264 · design only</span></div>
+    <div class="topactions"><span class="status">awaiting review</span><a class="full" href="#findings">findings</a><a href="#shape">shape</a><a href="#decision">decision</a></div>
+  </div>
+</nav>
+
+<main class="wrap" id="top">
+
+<header>
+  <div class="hero-grid">
+    <div>
+      <div class="kicker"><h1>Your two options were the same option. Here is the third one.</h1><span class="proposal">design only — nothing is built</span></div>
+      <div class="sub">task #264 · 28 July 2026 · your 14:11 amendment, answered</div>
+      <p class="lead">You asked whether a task transition should share #263's journal or use a
+      task-state outbox, <em>"but never dual-write two fallible truths"</em>. The answer is
+      <strong>neither, and for one reason</strong>: both options assume a task transition and a user
+      event are the same kind of fact. They are not. Your constraint forbids storing <strong>one
+      fact</strong> twice — it does not forbid storing <strong>two facts</strong> and joining them
+      with a foreign key. Full design at
+      <code>.dreamwork/docs/plans/task-transition-boundary.md</code>.</p>
+      <div class="call"><strong>Recommendation.</strong> Task history is its own append-only
+      <code>task_event</code> log, in the <strong>same SQLite file</strong> as #263's journal,
+      appended in the <strong>same transaction</strong> as the compare-and-swap that moves task
+      state. No outbox, no drain. Burndown and the dashboard status section become
+      <strong>queries</strong> over that log — not tables, not caches, not files — so neither can be
+      stale. One materialised row survives, and only because a claim needs something to CAS
+      against.</div>
+    </div>
+    <div class="version-mark" aria-label="At a glance">
+      <span class="big">9</span>
+      <small>the amount your dashboard's two queue numbers already disagree by<br>122 open ids in the ledger, 113 in status.json<br>0 tables created under this id</small>
+    </div>
+  </div>
+</header>
+
+<section id="already" aria-labelledby="al-t">
+  <div class="label" id="al-t">Your constraint is already broken, and by how much is measurable</div>
+  <p class="read">"Never dual-write two fallible truths" reads like a rule for the future. It
+  is not: two numbers describing queue depth render on one dashboard page right now, and they
+  disagree. Measured at 01:52 through the readers the system already uses, not a fresh
+  regex.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">122</span><span class="caption">open ids in <code>tasks.md</code>, and <code>lint.py</code> independently agrees — <em>"section split agrees with watch.py at 122 open ids"</em></span></div>
+    <div class="fact"><span class="number">113</span><span class="caption"><code>status.json</code>'s queue: <code>in_progress 4 + pending 109</code>. Hand-written by an LLM each tick</span></div>
+    <div class="fact"><span class="number">122</span><span class="caption">the burndown's own open reading — from the last <em>committed</em> revision, which is the other half of the problem</span></div>
+    <div class="fact"><span class="number">0 / 3</span><span class="caption">tasks badged "in progress" by <code>/tasks</code> versus tasks actually in flight, because <code>current_task_ids</code> is <code>[]</code> while the agents hold <code>252, 264, 284</code></span></div>
+  </div>
+  <p>The fourth is the same disease one level down: <em>inside</em> a single file, two fields
+  describing which tasks the loop holds disagree with each other. And that one is not cosmetic
+  — <code>file-formats.md:632</code> says <code>/tasks</code> badges a row "in progress"
+  <em>from <code>current_task_ids</code></em>, which is precisely the field that is empty.</p>
+  <div class="notice"><strong>The loop already wrote the lesson that predicts this.</strong>
+  <code>lessons.md:980</code>, from #306: <em>"where two files hold two halves of one fact,
+  assume they have already drifted."</em> The measurement is that rule coming true on the exact
+  fact #264 is about — which is why the fix is structural rather than a reminder to be more
+  careful.</div>
+</section>
+
+<section id="findings" aria-labelledby="f-t">
+  <div class="label" id="f-t">Why neither of your two options works</div>
+  <div class="scroller"><table>
+  <thead><tr><th>option</th><th>what refutes it</th><th>measured how</th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td><strong>A · share #263's journal</strong></td><td class="fail">its <code>Transition</code> record requires a <code>receipt_id</code> — in that document's own notation nine sibling fields carry a <code>?</code> and this one does not. Its states are <code>received → validated → claimed → applying → applied</code>: the processing of <em>a submission</em>, not a thing a task ever is. And its replay <em>"enumerate[s] every receipt event"</em>, so task rows with a null receipt make replay wrong by default — every consumer must remember to filter, and the day one forgets, a task event is applied as a receipt</td><td><code>user-event-journal.md:101</code>, <code>§Replay cursor</code></td></tr>
+    <tr><td><strong>B · a task-state outbox</strong></td><td class="fail">an outbox exists to cross a boundary the consumer cannot cross. Both consumers here read the same file the writer just committed to. So the drain buys nothing and costs the one thing you named: a projector that dies leaves the dashboard silently behind, and an undrained row <em>is</em> the "second derived truth" your #294 note forbids</td><td>#294's own words, and F5 in the design</td></tr>
+    <tr><td><strong>C · one log, one transaction</strong></td><td class="pass">the receipt is the <em>cause</em>, the transition is the <em>effect</em>, and a foreign key is the whole of their relationship. Two facts, each with one home</td><td>the recommendation</td></tr>
+  </tbody>
+  </table></div>
+  <div class="notice"><strong>If "outbox" only meant "the task store keeps its own
+  transactional transition log", then we agree and this is your answer.</strong> Only the
+  drain-into-view-tables reading is refuted. Worth resolving rather than winning on.</div>
+</section>
+
+<section id="receipts" aria-labelledby="r-t">
+  <div class="label" id="r-t">Most task transitions have no receipt — and even the ones that do cannot share its transaction</div>
+  <p class="read"><code>watch.py</code> has six POST write routes. Exactly one of them
+  (<code>/command</code>) carries <code>do now:</code> / <code>do next:</code> /
+  <code>add idea:</code> — and <code>_handle_command</code> at <code>watch.py:8505</code>
+  validates the kind and then does <em>one</em> thing: appends a line to
+  <code>watch-events.log</code>. <strong>Zero task state is mutated at HTTP time today.</strong>
+  A <code>do now:</code> becomes a task because an LLM reads that log on a later tick and
+  decides to make one — and routinely files a task, marks another blocked, and re-prioritises a
+  third from the same line. No transaction could contain both the <code>202</code> and
+  that.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">18</span><span class="caption">enumerated causes a task changes state, read out of <code>SKILL.md</code> and <code>initialization.md</code> — filed-from-idea, filed-from-split at the 20-minute cap, started-from-backlog, landed, claimed-by-agent, lease-expired, reprioritised, superseded, reconciled at init, and the rest</span></div>
+    <div class="fact"><span class="number">2</span><span class="caption">of those eighteen can carry a receipt at all: a composer command, and the next-up mark it sets</span></div>
+    <div class="fact"><span class="number">1</span><span class="caption">disappears entirely — landing a blocker writes <em>no</em> unblock event, because <code>blocked</code> becomes derived from the dependency graph rather than stored</span></div>
+    <div class="fact"><span class="number">6</span><span class="caption">POST write routes on the whole dashboard, and only <code>/command</code> is even about work: <code>/answer</code>, <code>/ask</code>, <code>/comment</code>, <code>/tint</code>, <code>/run-mode</code></span></div>
+  </div>
+</section>
+
+<section id="git" aria-labelledby="g-t">
+  <div class="label" id="g-t">Burndown is already a projection of an append-only log. The log is git, and git lags</div>
+  <p class="read"><code>ledger_series</code> walks every commit that touched
+  <code>tasks.md</code>, <code>git show</code>s each revision and takes first-sightings. Its own
+  comment states the consequence: <em>"an uncommitted entry in the working tree is not a
+  historical arrival."</em> So the chart cannot be computed from current state, and its source
+  is already immutable — the only question was <strong>which</strong> append-only log. Today's
+  costs a commit per reading:</p>
+  <div class="scroller"><table>
+  <thead><tr><th>the lag, measured over the ledger's own history</th><th></th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td>commits touching <code>tasks.md</code></td><td><strong>331</strong></td></tr>
+    <tr><td>median gap between them</td><td><strong>4.8 min</strong></td></tr>
+    <tr><td>p90</td><td><strong>20 min</strong></td></tr>
+    <tr><td>worst</td><td class="fail"><strong>13.3 h</strong></td></tr>
+  </tbody>
+  </table></div>
+  <p>That distribution <em>is</em> the "no Git-HEAD lag" your #294 amendment forbids. Two
+  honest qualifications: the chart's buckets are 4 hours wide, so a five-minute lag does not
+  change the chart's <em>shape</em> — but the headline open/arrived/landed numbers are exact,
+  and they are the ones that disagree with <code>status.json</code>.</p>
+  <div class="notice"><strong>A bonus nobody has to pay for twice.</strong> First-sight
+  semantics exist because <code>## Recently landed</code> gets pruned in grooming, so
+  <em>current</em> contents lose a completion every time the ledger is tidied. An append-only
+  event log removes that hazard outright: a landing is one immutable row, not a mention that
+  has to be caught before it is pruned.</div>
+</section>
+
+<section id="shape" aria-labelledby="s-t">
+  <div class="label" id="s-t">The shape, and the rule that keeps it small</div>
+  <pre><code class="language-sql"><span class="tok-kw">BEGIN</span> <span class="tok-kw">IMMEDIATE</span><span class="tok-op">;</span>                    <span class="tok-com">-- not deferred: deferred takes the write lock late</span>
+  <span class="tok-kw">INSERT</span> <span class="tok-kw">INTO</span> <span class="tok-fn">task_event</span><span class="tok-op">(...);</span>      <span class="tok-com">-- ordinal, cause, actor, receipt_id?, prev_hash, hash</span>
+  <span class="tok-kw">UPDATE</span> <span class="tok-var">task_state</span> <span class="tok-kw">SET</span> <span class="tok-op">...,</span> <span class="tok-var">revision</span> <span class="tok-op">=</span> <span class="tok-var">revision</span> <span class="tok-op">+</span> <span class="tok-num">1</span><span class="tok-op">,</span> <span class="tok-var">at_ordinal</span> <span class="tok-op">=</span> <span class="tok-op">&lt;</span><span class="tok-var">new</span> <span class="tok-var">ordinal</span><span class="tok-op">&gt;</span>
+    <span class="tok-kw">WHERE</span> <span class="tok-var">task_id</span> <span class="tok-op">=</span> ? <span class="tok-kw">AND</span> <span class="tok-var">revision</span> <span class="tok-op">=</span> ? <span class="tok-kw">AND</span> <span class="tok-op">&lt;</span><span class="tok-var">the</span> <span class="tok-var">verb</span>'<span class="tok-var">s</span> <span class="tok-var">own</span> <span class="tok-var">predicate</span><span class="tok-op">&gt;;</span>
+<span class="tok-kw">COMMIT</span><span class="tok-op">;</span></code></pre>
+  <p>Outside it, always, and never load-bearing: the <code>tasks.md</code> export, the
+  <code>watch-events.log</code> wake line, and any file an agent writes by hand.</p>
+  <div class="summary-line"><span>the governing rule</span><span>a <strong>materialised row exists only where a writer must compare-and-swap against it.</strong> Everything a reader wants is a query. Exactly one table qualifies</span></div>
+  <div class="summary-line"><span>task_event</span><span>authoritative, append-only, never updated, never deleted — <strong>including by purge</strong>, because burndown needs 2026's landings in 2027. It carries no submitted bytes precisely so no retention policy ever needs to reach it</span></div>
+  <div class="summary-line"><span>task_state</span><span>the one materialised row, and only because <code>grab</code> needs something to CAS. Rebuildable, and verified by replay</span></div>
+  <div class="summary-line"><span>at_ordinal</span><span>the load-bearing column: it names the event that produced the row, so "is this current?" is a <em>comparison</em> rather than a belief — and a hand-edited row becomes detectable, which a bare state column is not</span></div>
+  <div class="summary-line"><span>burndown</span><span>a <code>GROUP BY</code>. Today it is 331 <code>git show</code>s memoised on HEAD because it is expensive; over a few thousand rows it needs no cache, so there is no cache to go stale</span></div>
+  <div class="summary-line"><span>blocked</span><span>derived from the dependency graph plus a small <code>gate</code> table for "blocked on you". Never written, so it can never drift — and landing #263 makes every dependent selectable with zero writes. Today that is free prose in 28 entries and hand-annotated <code>UNBLOCKED</code> in 4</span></div>
+  <div class="summary-line"><span>status.json</span><span>keeps what is genuinely a live process's own claim — the prose, the goal, the agents, the monitors. <strong>Loses <code>queue</code>, <code>current_task_ids</code> and per-agent <code>task_ids</code>.</strong> That is the direct reading of your "no agent hand-editing status.json"</span></div>
+  <p class="quiet">One database file, and this one is measured rather than argued: SQLite has
+  <strong>no syntax</strong> for a foreign key into an <code>ATTACH</code>ed database
+  (<code>near ".": syntax error</code>, 3.53.3). So the
+  <code>task_event.receipt_id → receipt</code> check can only exist inside one file. Two files
+  reduce it to an unvalidated string — the exact "single truth across two stores" hazard.</p>
+</section>
+
+<section id="care" aria-labelledby="c-t">
+  <div class="label" id="c-t">Two footguns, made into checked invariants</div>
+  <div class="scroller"><table>
+  <thead><tr><th>footgun</th><th>what silently breaks</th><th>the check</th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td><code>PRAGMA foreign_keys</code> is <strong>OFF by default, per connection</strong></td><td class="fail">every reference — <code>receipt_id</code>, <code>task_id</code>, the enum lookups — validates nothing on any connection that forgot</td><td class="pass">set in one place; a test asserts a violating insert raises</td></tr>
+    <tr><td>plain <code>BEGIN</code> takes the write lock <strong>late</strong></td><td class="fail">a read-then-CAS transaction hits <code>SQLITE_BUSY</code> mid-transaction, where retrying is not safe. Under concurrency this is the common failure, not the rare one</td><td class="pass"><code>BEGIN IMMEDIATE</code> everywhere; a two-process test proves one writer wins and the other retries cleanly</td></tr>
+  </tbody>
+  </table></div>
+  <p class="quiet">And one difference from #263 worth stating: an expired <em>receipt</em> claim
+  may be quietly reclaimed, but an abandoned <strong>task</strong> claim appends a
+  <code>lease_expired</code> event naming the prior owner. Which dreamer vanished, and when, is
+  what the file-ownership invariant reads — a silent reclaim would delete the only durable
+  trace of a dreamer that died mid-increment.</p>
+</section>
+
+<section id="decision" aria-labelledby="d-t">
+  <div class="label" id="d-t">What to decide</div>
+  <div class="choice"><strong>T1 · The boundary.</strong> Task history is its own append-only
+  <code>task_event</code> log in the same SQLite file as #263's journal, appended in the same
+  transaction as the state CAS; burndown and the status section are queries; the receipt link
+  is a foreign key, not a shared transaction.
+  <div class="answer"><strong>Rec: take it.</strong> It is the only one of the three shapes
+  where each fact has exactly one home, and it is the smallest — one materialised row in the
+  whole design.</div></div>
+
+  <div class="choice"><strong>T2 · <code>status.json</code> loses its task-derived fields</strong>
+  — <code>queue</code>, <code>current_task_ids</code>, per-agent <code>task_ids</code> — and
+  the dashboard queries the store instead.
+  <div class="answer"><strong>Rec: yes.</strong> Those three fields are the measured 122-vs-113
+  disagreement. Everything else in the file is a live process describing itself, which is what
+  <code>status.json</code> is for and stays.</div></div>
+
+  <div class="choice"><strong>T3 · Does the burndown have to survive a fresh clone?</strong>
+  Today it does, because git history <em>is</em> the source and the ledger is committed. A
+  SQLite store is gitignored and machine-local, so a clone would start with no history.
+  <div class="answer"><strong>Rec: yes, and it costs nothing now.</strong> Defining the log's
+  canonical byte form on day one (the hash chain needs one anyway) makes a committed
+  append-only text export a provable projection — so this becomes a deployment choice later
+  instead of a schema change. Say if machine-local is fine and it gets simpler; this is the one
+  answer that could still move the shape.</div></div>
+
+  <div class="choice"><strong>T4 · Does anything <em>else</em> read the burndown or the status
+  section that this would break?</strong>
+  <div class="answer"><strong>Rec: only you know.</strong> #334 is live on
+  <code>burndown.mjs</code> and #281 on <code>/tasks</code>; both were reasoned about, neither
+  was touched. If there is a consumer outside the dashboard, it changes the export
+  question.</div></div>
+</section>
+
+<section id="next" aria-labelledby="n-t">
+  <div class="label" id="n-t">What approval means, and what it does not</div>
+  <div class="approval">Approving accepts <strong>the boundary</strong> and nothing more. It
+  does <strong>not</strong> authorise creating a table, writing a CLI, migrating, cutover,
+  deleting anything from <code>status.json</code>, touching <code>tasks.md</code>, PostgreSQL,
+  or payload purge — those wait on #263's implementation gate exactly as the rest of #294 does,
+  and this document inherits every limit that gate states. Thirteen red-first fixtures are
+  drafted, each naming the production line that must change for it to fail, and two of them
+  naming the fixture-shaped way the check could pass hollow.</div>
+</section>
+
+<footer>task #264 · design only · <code>.dreamwork/docs/plans/task-transition-boundary.md</code> <span class="dimmer">· built from review template v1+6ea37497</span></footer>
+
+</main>
+</body>
+</html>

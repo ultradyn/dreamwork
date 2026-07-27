@@ -1,0 +1,203 @@
+<!--dreamwork-review-source
+title: #264 · The task-transition boundary · one history, no second truth
+identity: transition boundary
+context: task #264 · design only
+status: awaiting review
+headline: Your two options were the same option. Here is the third one.
+tag: design only — nothing is built
+sub: task #264 · 28 July 2026 · your 14:11 amendment, answered
+skip: Skip to the decision
+skip_href: #decision
+-->
+<!--#nav-->
+<a class="full" href="#findings">findings</a><a href="#shape">shape</a><a href="#decision">decision</a>
+<!--#lead-->
+<p class="lead">You asked whether a task transition should share #263's journal or use a
+task-state outbox, <em>"but never dual-write two fallible truths"</em>. The answer is
+<strong>neither, and for one reason</strong>: both options assume a task transition and a user
+event are the same kind of fact. They are not. Your constraint forbids storing <strong>one
+fact</strong> twice — it does not forbid storing <strong>two facts</strong> and joining them
+with a foreign key. Full design at
+<code>.dreamwork/docs/plans/task-transition-boundary.md</code>.</p>
+<!--#call-->
+<div class="call"><strong>Recommendation.</strong> Task history is its own append-only
+<code>task_event</code> log, in the <strong>same SQLite file</strong> as #263's journal,
+appended in the <strong>same transaction</strong> as the compare-and-swap that moves task
+state. No outbox, no drain. Burndown and the dashboard status section become
+<strong>queries</strong> over that log — not tables, not caches, not files — so neither can be
+stale. One materialised row survives, and only because a claim needs something to CAS
+against.</div>
+<!--#aside-->
+<span class="big">9</span>
+<small>the amount your dashboard's two queue numbers already disagree by<br>122 open ids in the ledger, 113 in status.json<br>0 tables created under this id</small>
+<!--#body-->
+<section id="already" aria-labelledby="al-t">
+  <div class="label" id="al-t">Your constraint is already broken, and by how much is measurable</div>
+  <p class="read">"Never dual-write two fallible truths" reads like a rule for the future. It
+  is not: two numbers describing queue depth render on one dashboard page right now, and they
+  disagree. Measured at 01:52 through the readers the system already uses, not a fresh
+  regex.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">122</span><span class="caption">open ids in <code>tasks.md</code>, and <code>lint.py</code> independently agrees — <em>"section split agrees with watch.py at 122 open ids"</em></span></div>
+    <div class="fact"><span class="number">113</span><span class="caption"><code>status.json</code>'s queue: <code>in_progress 4 + pending 109</code>. Hand-written by an LLM each tick</span></div>
+    <div class="fact"><span class="number">122</span><span class="caption">the burndown's own open reading — from the last <em>committed</em> revision, which is the other half of the problem</span></div>
+    <div class="fact"><span class="number">0 / 3</span><span class="caption">tasks badged "in progress" by <code>/tasks</code> versus tasks actually in flight, because <code>current_task_ids</code> is <code>[]</code> while the agents hold <code>252, 264, 284</code></span></div>
+  </div>
+  <p>The fourth is the same disease one level down: <em>inside</em> a single file, two fields
+  describing which tasks the loop holds disagree with each other. And that one is not cosmetic
+  — <code>file-formats.md:632</code> says <code>/tasks</code> badges a row "in progress"
+  <em>from <code>current_task_ids</code></em>, which is precisely the field that is empty.</p>
+  <div class="notice"><strong>The loop already wrote the lesson that predicts this.</strong>
+  <code>lessons.md:980</code>, from #306: <em>"where two files hold two halves of one fact,
+  assume they have already drifted."</em> The measurement is that rule coming true on the exact
+  fact #264 is about — which is why the fix is structural rather than a reminder to be more
+  careful.</div>
+</section>
+
+<section id="findings" aria-labelledby="f-t">
+  <div class="label" id="f-t">Why neither of your two options works</div>
+  <div class="scroller"><table>
+  <thead><tr><th>option</th><th>what refutes it</th><th>measured how</th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td><strong>A · share #263's journal</strong></td><td class="fail">its <code>Transition</code> record requires a <code>receipt_id</code> — in that document's own notation nine sibling fields carry a <code>?</code> and this one does not. Its states are <code>received → validated → claimed → applying → applied</code>: the processing of <em>a submission</em>, not a thing a task ever is. And its replay <em>"enumerate[s] every receipt event"</em>, so task rows with a null receipt make replay wrong by default — every consumer must remember to filter, and the day one forgets, a task event is applied as a receipt</td><td><code>user-event-journal.md:101</code>, <code>§Replay cursor</code></td></tr>
+    <tr><td><strong>B · a task-state outbox</strong></td><td class="fail">an outbox exists to cross a boundary the consumer cannot cross. Both consumers here read the same file the writer just committed to. So the drain buys nothing and costs the one thing you named: a projector that dies leaves the dashboard silently behind, and an undrained row <em>is</em> the "second derived truth" your #294 note forbids</td><td>#294's own words, and F5 in the design</td></tr>
+    <tr><td><strong>C · one log, one transaction</strong></td><td class="pass">the receipt is the <em>cause</em>, the transition is the <em>effect</em>, and a foreign key is the whole of their relationship. Two facts, each with one home</td><td>the recommendation</td></tr>
+  </tbody>
+  </table></div>
+  <div class="notice"><strong>If "outbox" only meant "the task store keeps its own
+  transactional transition log", then we agree and this is your answer.</strong> Only the
+  drain-into-view-tables reading is refuted. Worth resolving rather than winning on.</div>
+</section>
+
+<section id="receipts" aria-labelledby="r-t">
+  <div class="label" id="r-t">Most task transitions have no receipt — and even the ones that do cannot share its transaction</div>
+  <p class="read"><code>watch.py</code> has six POST write routes. Exactly one of them
+  (<code>/command</code>) carries <code>do now:</code> / <code>do next:</code> /
+  <code>add idea:</code> — and <code>_handle_command</code> at <code>watch.py:8505</code>
+  validates the kind and then does <em>one</em> thing: appends a line to
+  <code>watch-events.log</code>. <strong>Zero task state is mutated at HTTP time today.</strong>
+  A <code>do now:</code> becomes a task because an LLM reads that log on a later tick and
+  decides to make one — and routinely files a task, marks another blocked, and re-prioritises a
+  third from the same line. No transaction could contain both the <code>202</code> and
+  that.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">18</span><span class="caption">enumerated causes a task changes state, read out of <code>SKILL.md</code> and <code>initialization.md</code> — filed-from-idea, filed-from-split at the 20-minute cap, started-from-backlog, landed, claimed-by-agent, lease-expired, reprioritised, superseded, reconciled at init, and the rest</span></div>
+    <div class="fact"><span class="number">2</span><span class="caption">of those eighteen can carry a receipt at all: a composer command, and the next-up mark it sets</span></div>
+    <div class="fact"><span class="number">1</span><span class="caption">disappears entirely — landing a blocker writes <em>no</em> unblock event, because <code>blocked</code> becomes derived from the dependency graph rather than stored</span></div>
+    <div class="fact"><span class="number">6</span><span class="caption">POST write routes on the whole dashboard, and only <code>/command</code> is even about work: <code>/answer</code>, <code>/ask</code>, <code>/comment</code>, <code>/tint</code>, <code>/run-mode</code></span></div>
+  </div>
+</section>
+
+<section id="git" aria-labelledby="g-t">
+  <div class="label" id="g-t">Burndown is already a projection of an append-only log. The log is git, and git lags</div>
+  <p class="read"><code>ledger_series</code> walks every commit that touched
+  <code>tasks.md</code>, <code>git show</code>s each revision and takes first-sightings. Its own
+  comment states the consequence: <em>"an uncommitted entry in the working tree is not a
+  historical arrival."</em> So the chart cannot be computed from current state, and its source
+  is already immutable — the only question was <strong>which</strong> append-only log. Today's
+  costs a commit per reading:</p>
+  <div class="scroller"><table>
+  <thead><tr><th>the lag, measured over the ledger's own history</th><th></th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td>commits touching <code>tasks.md</code></td><td><strong>331</strong></td></tr>
+    <tr><td>median gap between them</td><td><strong>4.8 min</strong></td></tr>
+    <tr><td>p90</td><td><strong>20 min</strong></td></tr>
+    <tr><td>worst</td><td class="fail"><strong>13.3 h</strong></td></tr>
+  </tbody>
+  </table></div>
+  <p>That distribution <em>is</em> the "no Git-HEAD lag" your #294 amendment forbids. Two
+  honest qualifications: the chart's buckets are 4 hours wide, so a five-minute lag does not
+  change the chart's <em>shape</em> — but the headline open/arrived/landed numbers are exact,
+  and they are the ones that disagree with <code>status.json</code>.</p>
+  <div class="notice"><strong>A bonus nobody has to pay for twice.</strong> First-sight
+  semantics exist because <code>## Recently landed</code> gets pruned in grooming, so
+  <em>current</em> contents lose a completion every time the ledger is tidied. An append-only
+  event log removes that hazard outright: a landing is one immutable row, not a mention that
+  has to be caught before it is pruned.</div>
+</section>
+
+<section id="shape" aria-labelledby="s-t">
+  <div class="label" id="s-t">The shape, and the rule that keeps it small</div>
+  <pre><code class="language-sql">BEGIN IMMEDIATE;                    -- not deferred: deferred takes the write lock late
+  INSERT INTO task_event(...);      -- ordinal, cause, actor, receipt_id?, prev_hash, hash
+  UPDATE task_state SET ..., revision = revision + 1, at_ordinal = &lt;new ordinal&gt;
+    WHERE task_id = ? AND revision = ? AND &lt;the verb's own predicate&gt;;
+COMMIT;</code></pre>
+  <p>Outside it, always, and never load-bearing: the <code>tasks.md</code> export, the
+  <code>watch-events.log</code> wake line, and any file an agent writes by hand.</p>
+  <div class="summary-line"><span>the governing rule</span><span>a <strong>materialised row exists only where a writer must compare-and-swap against it.</strong> Everything a reader wants is a query. Exactly one table qualifies</span></div>
+  <div class="summary-line"><span>task_event</span><span>authoritative, append-only, never updated, never deleted — <strong>including by purge</strong>, because burndown needs 2026's landings in 2027. It carries no submitted bytes precisely so no retention policy ever needs to reach it</span></div>
+  <div class="summary-line"><span>task_state</span><span>the one materialised row, and only because <code>grab</code> needs something to CAS. Rebuildable, and verified by replay</span></div>
+  <div class="summary-line"><span>at_ordinal</span><span>the load-bearing column: it names the event that produced the row, so "is this current?" is a <em>comparison</em> rather than a belief — and a hand-edited row becomes detectable, which a bare state column is not</span></div>
+  <div class="summary-line"><span>burndown</span><span>a <code>GROUP BY</code>. Today it is 331 <code>git show</code>s memoised on HEAD because it is expensive; over a few thousand rows it needs no cache, so there is no cache to go stale</span></div>
+  <div class="summary-line"><span>blocked</span><span>derived from the dependency graph plus a small <code>gate</code> table for "blocked on you". Never written, so it can never drift — and landing #263 makes every dependent selectable with zero writes. Today that is free prose in 28 entries and hand-annotated <code>UNBLOCKED</code> in 4</span></div>
+  <div class="summary-line"><span>status.json</span><span>keeps what is genuinely a live process's own claim — the prose, the goal, the agents, the monitors. <strong>Loses <code>queue</code>, <code>current_task_ids</code> and per-agent <code>task_ids</code>.</strong> That is the direct reading of your "no agent hand-editing status.json"</span></div>
+  <p class="quiet">One database file, and this one is measured rather than argued: SQLite has
+  <strong>no syntax</strong> for a foreign key into an <code>ATTACH</code>ed database
+  (<code>near ".": syntax error</code>, 3.53.3). So the
+  <code>task_event.receipt_id → receipt</code> check can only exist inside one file. Two files
+  reduce it to an unvalidated string — the exact "single truth across two stores" hazard.</p>
+</section>
+
+<section id="care" aria-labelledby="c-t">
+  <div class="label" id="c-t">Two footguns, made into checked invariants</div>
+  <div class="scroller"><table>
+  <thead><tr><th>footgun</th><th>what silently breaks</th><th>the check</th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td><code>PRAGMA foreign_keys</code> is <strong>OFF by default, per connection</strong></td><td class="fail">every reference — <code>receipt_id</code>, <code>task_id</code>, the enum lookups — validates nothing on any connection that forgot</td><td class="pass">set in one place; a test asserts a violating insert raises</td></tr>
+    <tr><td>plain <code>BEGIN</code> takes the write lock <strong>late</strong></td><td class="fail">a read-then-CAS transaction hits <code>SQLITE_BUSY</code> mid-transaction, where retrying is not safe. Under concurrency this is the common failure, not the rare one</td><td class="pass"><code>BEGIN IMMEDIATE</code> everywhere; a two-process test proves one writer wins and the other retries cleanly</td></tr>
+  </tbody>
+  </table></div>
+  <p class="quiet">And one difference from #263 worth stating: an expired <em>receipt</em> claim
+  may be quietly reclaimed, but an abandoned <strong>task</strong> claim appends a
+  <code>lease_expired</code> event naming the prior owner. Which dreamer vanished, and when, is
+  what the file-ownership invariant reads — a silent reclaim would delete the only durable
+  trace of a dreamer that died mid-increment.</p>
+</section>
+
+<section id="decision" aria-labelledby="d-t">
+  <div class="label" id="d-t">What to decide</div>
+  <div class="choice"><strong>T1 · The boundary.</strong> Task history is its own append-only
+  <code>task_event</code> log in the same SQLite file as #263's journal, appended in the same
+  transaction as the state CAS; burndown and the status section are queries; the receipt link
+  is a foreign key, not a shared transaction.
+  <div class="answer"><strong>Rec: take it.</strong> It is the only one of the three shapes
+  where each fact has exactly one home, and it is the smallest — one materialised row in the
+  whole design.</div></div>
+
+  <div class="choice"><strong>T2 · <code>status.json</code> loses its task-derived fields</strong>
+  — <code>queue</code>, <code>current_task_ids</code>, per-agent <code>task_ids</code> — and
+  the dashboard queries the store instead.
+  <div class="answer"><strong>Rec: yes.</strong> Those three fields are the measured 122-vs-113
+  disagreement. Everything else in the file is a live process describing itself, which is what
+  <code>status.json</code> is for and stays.</div></div>
+
+  <div class="choice"><strong>T3 · Does the burndown have to survive a fresh clone?</strong>
+  Today it does, because git history <em>is</em> the source and the ledger is committed. A
+  SQLite store is gitignored and machine-local, so a clone would start with no history.
+  <div class="answer"><strong>Rec: yes, and it costs nothing now.</strong> Defining the log's
+  canonical byte form on day one (the hash chain needs one anyway) makes a committed
+  append-only text export a provable projection — so this becomes a deployment choice later
+  instead of a schema change. Say if machine-local is fine and it gets simpler; this is the one
+  answer that could still move the shape.</div></div>
+
+  <div class="choice"><strong>T4 · Does anything <em>else</em> read the burndown or the status
+  section that this would break?</strong>
+  <div class="answer"><strong>Rec: only you know.</strong> #334 is live on
+  <code>burndown.mjs</code> and #281 on <code>/tasks</code>; both were reasoned about, neither
+  was touched. If there is a consumer outside the dashboard, it changes the export
+  question.</div></div>
+</section>
+
+<section id="next" aria-labelledby="n-t">
+  <div class="label" id="n-t">What approval means, and what it does not</div>
+  <div class="approval">Approving accepts <strong>the boundary</strong> and nothing more. It
+  does <strong>not</strong> authorise creating a table, writing a CLI, migrating, cutover,
+  deleting anything from <code>status.json</code>, touching <code>tasks.md</code>, PostgreSQL,
+  or payload purge — those wait on #263's implementation gate exactly as the rest of #294 does,
+  and this document inherits every limit that gate states. Thirteen red-first fixtures are
+  drafted, each naming the production line that must change for it to fail, and two of them
+  naming the fixture-shaped way the check could pass hollow.</div>
+</section>
+<!--#footer-->
+task #264 · design only · <code>.dreamwork/docs/plans/task-transition-boundary.md</code>
