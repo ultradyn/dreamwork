@@ -24,9 +24,73 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **393**
+Next id: **396**
 
 ## Open
+- **#395** — a relation marker without bold parses as absent, so the reciprocity check silently
+  skips it · P2 · lint/correctness · origin: **loop** · found by **lint rejecting my own edit**,
+  then probing why the shape it wanted was the shape it wanted
+  · `RELATED_MARKER` is `related` + colon + `\s*\*\*([^*]*?)\*\*` — it **requires** the bold
+  span, and `check_related` does `if not found: continue`. So a marker written without asterisks is
+  read as *no marker at all* and the entry is skipped in silence. The check that exists because
+  *"an entry is read alone"* stops applying to any entry whose marker is merely mis-shaped
+  · **four broken relations were hiding behind it, measured before repair:** `#388 → #383` (nothing
+  back), `#388 → #386` (#386 named only #383), `#387 → #361` (nothing back), `#386 → #383` (nothing
+  back). Three entries, all with unbolded markers. **Repaired in the same commit** — bolded the
+  three markers and added the missing back-references to `#383` and `#361` — so the check now sees
+  and enforces all four
+  · **it is not a dead branch, which I assumed and had to correct by measuring:** the wrong-case
+  ERROR *is* reachable — a capitalised marker and a marker missing its space both produce a match
+  while failing the literal-prefix test. The hole is specifically **missing bold**, not case
+  · **the multi-id form is a second trap and it bit me first:** two adjacent bold spans yield only
+  the first id, because the regex captures one span. The correct form is one span holding the whole
+  comma list. That distinction is invisible in the file, and the check reports the *reciprocity*
+  failure rather than the *shape* failure — so the error message points away from the cause
+  · **a third trap, found by writing this entry:** the marker vocabulary **cannot be quoted in
+  prose**. Naming it in an entry body makes `[^*]*?` run forward to the next `**` anywhere in the
+  entry and manufactures a phantom marker — this entry produced **five** before it was reworded.
+  Any fix should anchor the marker to its own `·` field rather than matching it mid-sentence
+  · **rec:** flag a marker that is present-but-unparseable rather than skipping it. Assert the
+  precondition that the fixture's marker really is unparseable by running the regex on it, not by
+  trusting the literal
+  · **red-first note for whoever takes it:** un-bold one of the markers repaired here and the check
+  must ERROR. If it comes back green the fix is not watching the seam. `lint.py` and `test_lint.py`
+  are the files; both were free as of 08:42
+  · related: **#353**
+- **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
+  dashboard/transitions · origin: **loop** · from **#381's own caveat**, probed rather than accepted
+  · `#381` surfaced pending hand-offs by adding a span to the existing `stfacts` row, which is the
+  right call — it reuses the panel's tick-driven treatment and authors no second motion idiom. But
+  **the span appears**, and this repo's rule is that *every* transition obeys `transitions.md` and
+  **"there is no size below which this stops applying"**
+  · the lane said so itself: *"a populated hand-off's appearance is unverified in pixels … the
+  pytest test asserts the wiring + `collect()` data, not the rendered motion"* — honest, and within
+  its brief's "keep it small" and no-full-sweep constraints, so this is a follow-on and not a lane
+  failure
+  · **why a pytest cannot cover it, which is the reason this is its own task:** an end-state
+  assertion cannot fail on a motion bug and neither can "did it move". `transitions.md` opens with
+  how to check, and that reasoning cost three batches to learn
+  · needs a `dev/capture/*.mjs` guard, so it also needs the `justfile`'s `DEFAULT_GUARDS` — grant
+  both to whoever takes it, per the lesson that an ownership list comes from the deliverables
+  · related: **#381**
+
+- **#394** — a dreamer lane reports only to the inbox, so its landing dies with its coordinator ·
+  P2 · loop/durability · origin: **loop** · found while verifying **#381** end to end
+  · `#381` built the delivery half of the single-writer rule and **both its readers work** — but
+  `## Pending` was **empty** while two lanes had just landed work they cannot write the ledger for.
+  Not a defect in #381: **nothing instructs a producer.** Every brief I write says *"report by
+  appending once to `.dreamwork/inbox.md`"*, and an inbox report is **prose nobody parses**
+  · the inbox has never lost a report *while a coordinator is alive to read it*. `#334` and `#362`
+  are the other case — work landed, nobody folded, an hour each. **That is precisely the case a
+  hand-off line survives and an inbox report does not:** one is machine-checked by `lint.py` and
+  rendered on the dashboard, the other is paragraphs
+  · so a lane should write **both**: the inbox report for the coordinator's judgement, and one
+  hand-off line for the ledger's bookkeeping. Cheap — one `cat >>` per landing
+  · where the instruction belongs is the open question: my brief prose is not durable, so the
+  candidate is `SKILL.md`'s Subagents section, beside *"All subagents report to the coordinator
+  through a file"* — which is already the right paragraph and already load-bearing
+  · related: **#381**
+
 - **#392** — the humanized question age is measured from midnight, so it is wrong by up to a
   day · P2 · dashboard/correctness · origin: **loop** · found by coordinator **looking at the
   deployed page** after redeploying, not by any check
@@ -287,7 +351,7 @@ Next id: **393**
   · **do not chase this by making guards more patient in general** — a longer timeout hides a
   server that died, and the whole reason we can distinguish these classes today is that #383
   made a throwing guard name its own exception
-  · related: #383, #386
+  · related: **#383, #386**
 
 - **#387** — The ledger-lint hook cannot see how the coordinator actually edits the ledger ·
   P2 · dogfood/reliability · origin: **loop** · 15m · **found by installing the thing, which is
@@ -327,41 +391,7 @@ Next id: **393**
   · **and one thing needs no permission at all, so it is already in force**: this coordinator
   now uses Write/Edit for ledger files where the edit is expressible that way, which covers the
   writer that caused both incidents. Recorded here rather than left as an intention
-  · related: #361
-
-- **#381** — The single-writer rule has no delivery half · P2 · loop architecture/reliability ·
-  origin: **loop** · 45m · **split out of #363, which landed the reader-facing half at
-  `28ac5ac`** · the ledger has exactly one writer, correctly, so a foreign session that lands
-  work must not touch `tasks.md` — and today it has no way to tell the writer either. Its report
-  goes into its own session. The entry therefore sits done-but-open with nothing anywhere saying
-  it landed, until someone happens to look
-  · **it has now cost something twice, measurably.** #334 merged at `ecc1f44` 01:39 and sat open
-  for an hour while a coordinator overrode lint's WARN from memory three times. And #362 sat
-  under Open carrying the literal text `LANDED <pending>` until 04:50, when it was found *by
-  accident* while selecting an unrelated task — no check saw it, because a placeholder is not hex
-  and `check_cited_shas` only reads hex
-  · **why the obvious fix is wrong**, and #363 proved it by building it: a liveness signal (a
-  worktree naming the id, `status.json` claiming it) would have reported "another lane is
-  mid-flight" for the entire hour AFTER #334 stopped being live. Inferring liveness from
-  surviving artefacts is what produced the wrong answer in the first place
-  · rec: delivery, not inference. A session that lands work it does not own the ledger for
-  **writes a hand-off** the ledger's writer reads on its next tick — the same shape as the
-  dreamer inbox, which has never lost one, and pointedly not a status mirror. `#357`'s ambient
-  counts are the other end of the same gap
-  · **the cheap partial landed `49c3c04`**: `lint.check_placeholder_citations` WARNs on a landing
-  citation that is an unfilled slot, contract in `file-formats.md`. WARN and not ERROR for a real
-  reason — a commit cannot cite its own sha, so the slot is honest for exactly one commit and
-  erroring would block the commit doing the work; the WARN exists for the follow-up
-  · **the discrimination was measured, and the obvious rule was refuted**: "a landing keyword
-  introducing a token that is not a sha" flags four things on the live ledger and none is a
-  placeholder (`questions.md`, `dev/capture/report.mjs`, `dither: "lsb-ign-v1"`, a run of prose)
-  — precision 0-in-4. A closed vocabulary of slot shapes flags all nine real ones and none of the
-  four, and those four are pinned in tests so nobody re-widens it
-  · red-proved against **the actual revision that hid it**, not a fixture: `tasks.md` at
-  `4ce04e0` fires exactly one WARN naming `#362`, and the test asserts the historical placeholder
-  is still in that revision so it cannot pass over an absent injection
-  · **the delivery half remains and is the real gap** — this only makes the omission visible to
-  whoever runs lint, which is still the ledger's writer and not the session that landed the work
+  · related: **#361**
 
 - **#359** — A hosted Dreamhub as a paid service, agents registering against it · P2 ·
   product/architecture · origin: **human** · **human via watch 2026-07-28 01:39**, splitting
@@ -638,6 +668,7 @@ Next id: **393**
   complete: 3 combined entries split, the relation contracted and checked, 4 compound bands
   accounted for, the 6 bandless entries deliberately left as his call
 
+  · related: **#395**
 - **#352** — Standardize the duplicated ledger parsing before the store migration ·
   P1 · refactor/prerequisite · origin: **human** · **human via watch 2026-07-28 01:05**,
   as a follow-up on the #346 ask: *"before we work on this proper we should standardize the
@@ -2522,6 +2553,31 @@ Next id: **393**
   **blocked**: human pick
 
 ## Recently landed
+- **#381** — the single-writer rule has no delivery half · origin: **loop** · closed
+  2026-07-28 08:42 · `38b541c` `f09a1ba` `374c044`
+  · `ccc @glm52`, brief `.dreamwork/docs/briefs/381-handoff-delivery.md`. `.dreamwork/handoffs.md`
+  with literal `## Pending` / `## Folded`, append-only in both directions — **nothing ever moves**,
+  so two sessions landing at once cannot lose each other's line, which is the property the dreamer
+  inbox has and a rewrite would not. Plus `lint.check_handoffs`, the status-panel surfacing, and
+  the `SKILL.md` tick step that reads and folds
+  · **coordinator verified the READER end to end, which was the stated hollow outcome** — a channel
+  nobody reads is the bug the task was sent to fix, so a written-but-unread file would have looked
+  done. Against a temp target copy, with the precondition derived at runtime rather than
+  hardcoded (`#392` really is under `## Open`): an unfolded landing WARNs *"#392 is named as landed
+  in a hand-off … but is still under `## Open`"*; appending the `→ folded` line **clears it**, which
+  is the property the brief cared about most, because a nag that persists after you comply gets
+  muted and a muted check is worse than none. Second reader too: `pending_handoff_records` returns
+  the record when pending and `[]` once folded, asserted as a gap rather than as two literals
+  · **ruled on the lane's open offer, and the answer is no:** it asked whether a hand-off whose task
+  has already landed but carries no fold record should WARN. **Leave it silent.** That state is
+  "work done, bookkeeping lagging" — benign, and the grooming tick closes it. A check that fires on
+  a benign state is exactly how a check gets muted, which is the title of the lane's own dream
+  · gaps filed rather than absorbed: **#393** (the appearing span has no motion guard) and **#394**
+  (nothing instructs a lane to write a hand-off, so `## Pending` sat empty while two landed)
+  · the lane also observed, without acting on it, that **the relay is the same bug one layer up** —
+  coordinator writes a steer, an idle lane never reads it, nothing wakes it. Same shape, same fix.
+  Recorded in `.dreamwork/dreams/2026-07-28-0838-the-nag-that-gets-muted.md`
+  · related: **#393, #394, #363**
 
 - **#390** — a fresh domain's first answer creates its file · origin: **loop** · closed
   2026-07-28 08:06 · `fa65bce`
@@ -2682,7 +2738,7 @@ Next id: **393**
   · rec: reproduce under the same moderate load (3 busyloops) that the #383 lane used, since it
   is the only condition known to show it, and check whether the row's own arrival transition is
   still in flight when the click is dispatched
-  · related: #383
+  · related: **#383, #388**
 
   · **closed `1cd588a`** — and the lane refuted this entry's own hypothesis, which said the row's
   arrival transition was still in flight when the click landed. **It is not a page-readiness bug
@@ -2755,6 +2811,7 @@ Next id: **393**
   the failure is a **0px open** — the click or gesture did not run at all — not too few frames of
   a real travel. Filed as #386 rather than papered over here
 
+  · related: **#386, #388**
 - **#384** — Two more guards read the wrong `.cmdmsg`, and their notes lie about it · P3 ·
   guards/honesty · origin: **loop** · 10m · found by generalising #382's cause: `watch.py` has
   **two** elements carrying `class="cmdmsg"` — `#fmsg` at 1562 and `#cmdmsg` at 1587 — so
@@ -2813,6 +2870,7 @@ Next id: **393**
   `Write|Edit`, before the commit, while the agent that mangled the file still holds the context
 
 
+  · related: **#387**
 - **#363** — lint's landed-but-open WARN cannot tell a forgotten fold from a live lane · P3 ·
   tooling/honesty · origin: **loop** · 10m · reported by dreamer-264-boundary as report-only ·
   `check_landed_still_open` says an entry under Open has a close/merge commit and asks the
@@ -2858,6 +2916,7 @@ Next id: **393**
   · **the delivery half is split out as #381** and is the larger, real gap
 
 
+  · related: **#381**
 - **#362** — Nothing compared status.json's queue with the ledger, so it drifted · P2 ·
   tooling/reliability · origin: **loop** · 20m · found by dreamer-264-boundary while measuring
   for #264, and the numbers are the argument: `queue` summed to **115** while `parse_ledger`
