@@ -24,9 +24,28 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **309**
+Next id: **311**
 
 ## Open
+
+- **#310** — Audit `dreamhub.py` against `dreamhub-design.md` for drift · P3 ·
+  chore · 30m · origin: **loop** · goal: the hub's standing design stays
+  single-source ← DREAMWORK.md *Durable over ephemeral* · docs-freshness
+  rotation, and the hub is the one surface whose design doc was written before
+  most of its code · the doc names exact `status.json` fields, watch-port,
+  `/mtime` and `/data.json` contracts, so drift here is checkable rather than a
+  matter of taste · read-only audit, findings only — the coordinator applies
+  · dispatched to a ccc glm-5.2 subagent 2026-07-27 18:07 · in progress
+
+- **#309** — Coherence re-read of SKILL.md + initialization.md · P3 · chore ·
+  30m · origin: **loop** · goal: keep the skill's own instructions coherent ←
+  DREAMWORK.md *Routines* ("after structural edits, do a full coherence
+  re-read of SKILL.md + initialization.md — this is the project's test suite")
+  · the routine is recorded and has not run since several structural edits
+  landed (#290 run-mode, #216 origin markers, the worktrees plugin, #304's
+  parser fix) · read-only audit, findings only — the coordinator applies, since
+  it is the single writer for the skill's own contracts · dispatched to a ccc
+  glm-5.2 subagent 2026-07-27 18:07 · in progress
 
 - **#308** — Record the whole-pixel rounding trap in `transitions.md` · P3 ·
   chore · 10m · origin: **loop** · goal: a motion guard should not be able to
