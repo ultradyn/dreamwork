@@ -1350,3 +1350,24 @@ this shape and convert opportunistically.)
   cost one message instead of a wrongly-dropped P2. Asking a subagent to
   substantiate is cheap; deciding it is wrong from your own adjacent measurement is
   not.
+
+- **Assign guard ownership by NAME, never by directory glob — a UI change drags
+  its guard along with it.** I dispatched `#324` owning `dev/capture/*.mjs`
+  (a mechanical sweep converting 15 hand-rolled reporters) while `fade326` was
+  already out owning `watch.py` plus, as I wrote it, `dev/capture/qfade.mjs`. Both
+  then edited `dev/capture/reviewsplit.mjs`, for entirely orthogonal reasons:
+  `#326` moved the scroller from `.qa` to `.qa > .qbody`, so its guard had to
+  re-point or it would assert on the wrong element; `#324` rewrites the same
+  file's `checks[]`/`process.exitCode` tail. Neither agent did anything wrong —
+  **the ownership assignment was wrong**, because a change to a surface almost
+  always forces a change to the guard that watches it, and a directory glob
+  silently claims that guard for someone else. The tell is that the collision was
+  invisible from both sides: each agent saw a file inside the scope it was given.
+  **So: when a dreamer owns a UI surface, it owns that surface's guards too, and
+  a sweep over a guard directory is scoped by explicit filename list minus
+  whatever is currently held.** And when the collision already exists and one of
+  the two is a `ccc` agent — non-interactive, single prompt, no inbox — it cannot
+  be steered mid-run, so the only lever left is **merge order**: land the semantic
+  change first and rebase the mechanical sweep onto it, never the reverse, because
+  a conversion merged first turns the semantic diff into a conflict against code
+  that no longer exists.
