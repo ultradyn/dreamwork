@@ -1075,19 +1075,6 @@ Next id: **325**
   the lone variant — an `uncaughtException` handler makes it loud about the crash
   and silent about the 14 checks it had already proven
 
-- **#156** — Lint questions.md at WRITE time (PostToolUse hook) · P2 · landed
-  2026-07-26 · idea · 40m · origin: **human** · c51da8f, merged d7983be ·
-  delivered as `plugins/ud-dreamwork-hooks/hooks/posttooluse_ledger_lint.py`,
-  which lints `questions.md` and `tasks.md` in the same turn as the write · his
-  idea and the strongest version of the fix: every other defence fires LATER than
-  the mistake (lint at init and in `just test`, the dashboard at read time),
-  while a hook fires while the agent that mangled the file still holds the
-  context · shipped bundled with #138 exactly as the entry asked — both are
-  Claude Code hooks, ship the plugin or ship neither · opt-in by design: no
-  config until `install.py --apply`, and a DREAMWORK.md Load line is required
-  for use · **found still listed Open on a truthfulness sweep**, a day after
-  `close(#138,#156)` named it
-
 - **#314** — `audit-styleguide` asked the wrong question, so its misses were a
   mix · P3 · landed 2026-07-27 · tooling/correctness · ~40m · origin: **loop** ·
   goal: a check should not accrue failures for work it was never about ←
