@@ -1869,3 +1869,20 @@ this shape and convert opportunistically.)
   probe whose failure is **fatal and named** — `if [ "$up" != yes ]; then echo "server
   never came up in Ns"; cat the log; exit 1; fi`. Print the server's own stderr on that
   path; mine said `unrecognized arguments` the whole time and nobody was looking.
+- **When a fix changes two things to cure one symptom, find out which one carried it —
+  the other may be silently breaking something else.** #277 (`22f9884`) was quieting an
+  8px summary shift under the pointer during a fold. It made two changes: it rewrote the
+  shared rule `details[open] { padding:.5rem 0 }` to `padding:0 0 .5rem`, and it added
+  `.qa.folded .qfold { margin:0 }`. The padding rewrite **silently broke #169** — "an
+  expanded element becomes prominent, not just taller" — on all four surfaces, for three
+  hours, behind a load-flake reading (#391). Restoring the padding and re-running #277's
+  **own** guard plus eight neighbours: **all nine pass.** So the margin fix was the
+  load-bearing half and the padding rewrite was never needed for #277's purpose at all.
+  Two habits fall out. **A deliberate change to a SHARED rule is the one to isolate:**
+  `details[open]` styles four surfaces, so a one-sided rewrite trades a contract nobody
+  in that commit was thinking about. And **when you fix a regression whose cause was
+  itself an intentional fix, re-run the guard of the task that made it** — otherwise you
+  have only moved the breakage back where it came from, and neither commit's author will
+  see it. That check was outside the fixing lane's remit (it was forbidden the full
+  sweep), so it is the coordinator's, and it is the whole difference between "restored
+  #169" and "restored #169 and confirmed #277 never needed the trade".
