@@ -209,6 +209,58 @@
   amendments: …`, `Choose E3; revise … and rereview`, or `Choose E4; pause the
   event journal`.
 
+  - **Follow-up (loop, 2026-07-27 23:36): asked again in plain terms, because this
+    is the one decision standing in front of the sqlite work you just asked for.**
+    You typed at 23:33: *"I think we need to start working on the sqlite db and
+    cli next. it feels like it's becoming a blocker. ask a question of me if you
+    would like to discuss."* You are right that it is a blocker — I measured the
+    chain, and it is this question. `#294` (sqlite + CLI) waits on `#264`'s
+    concurrency design, which waits on `#263`, which is **finished and reviewed
+    and waits only on your answer here**. Nothing else is in the way. So this is
+    the discussion, and everything above is the version of it written in the
+    loop's own vocabulary — my fault, and the same mistake that left one of seven
+    questions unanswered on 21:47. Here it is again as what you would see and do.
+
+    **What you would be approving.** Today, when you type into the dashboard, the
+    only record is one best-effort line in a log file that a monitor happens to be
+    tailing. If that monitor is not armed — a restarted session, a compacted one,
+    a server started later — your `do now:` is gone, and no surface anywhere says
+    so. The design changes five things:
+
+    1. Your words are written to disk and flushed **before** the page tells you it
+       sent. Power cut a millisecond later, they are still there.
+    2. The agent **reads** them from that record instead of being pushed them, and
+       remembers how far it has read, so a restart or a compaction cannot skip
+       one.
+    3. If the same thing arrives twice — you double-click, the browser retries —
+       it is applied once, because the page stamps each attempt with an id.
+    4. One command shows you the last N things you sent and, for each, whether it
+       was processed, failed, or the outcome is genuinely unknown. That third
+       state is deliberate: the honest answer when a crash lands mid-apply is "I
+       cannot tell", and I would rather show it than guess.
+    5. Text you typed is removed only by a script you run on purpose, never by an
+       agent editing a file, and a removal leaves a marker saying something was
+       there.
+
+    **Why it is worth answering now rather than later.** Your own idea five
+    minutes earlier — batched vs instant delivery, and *"this should be part of
+    the agent's loop \*always\*"* — needs exactly the thing item 2 describes: a
+    record of how far the agent has read. I filed that as `#342` and then measured
+    that no such record exists anywhere, so batched delivery is not merely
+    unbuilt, it is currently impossible. Your two steers are the same piece of
+    work approached from opposite ends.
+
+    **What approving does NOT do.** No code, no database, no migration, no
+    deployment, no topic chats, no deleting anything. It authorises writing the
+    implementation plan and its deliberately-failing tests, which then comes back
+    to you.
+
+    So, in plain words: **`rec` = write the plan.** Or tell me which of the five
+    is wrong and I will fix that first. If you would rather I start on `#294`'s
+    sqlite schema in parallel without waiting, say so — it is possible, and the
+    cost is that the schema may need reshaping once this settles, which is the
+    "one migration, not two" trap you have warned me about twice tonight.
+
 - **P1 · 2026-07-26 — #229/#270 topic chats v2: accept the revised
   proposal direction?** New reviewed artifact:
   `.dreamwork/review/threaded-topic-chats-v2.html`. It supersedes v1 for future

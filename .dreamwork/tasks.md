@@ -72,7 +72,14 @@ Next id: **343**
   makes the documented mtime check honest. **One migration, not two**: a cursor is
   durable state, so its shape folds into the sqlite migration's scope at approval time
   rather than landing as a file that must then be converted
-  · blocked on #294 for the toggle; cursor half unblocked
+  · **the cursor half is #263, not new work** (found while folding his 23:33
+  `do-next`): #263's reviewed user-event journal already specifies a durable record
+  with a hash-chained read cursor and a projection CLI, which is precisely what the
+  always-poll guarantee needs. So this task does not design a cursor — it consumes
+  #263's and adds the per-kind interrupt policy and the toggle on top. Recorded
+  because filing it as independent work would have built a second cursor able to
+  disagree with the first, which is the failure #263 exists to prevent
+  · blocked on #294 for the toggle, #263's E1 answer for the cursor it consumes
 
 - **#340** — His answer renders as raw prose in `## Answered`, tag showing, on more
   than half of them · **P1** · UI correctness · origin: **loop** · from #254's design
@@ -556,6 +563,24 @@ Next id: **343**
   (`unlinked`, never `pending`) — plus the integrity rule that two questions
   claiming one artifact with conflicting decisions is an error the store can
   detect · #289 implements against this after cutover, not before
+  · **NEXT-UP, human via watch `do-next` 2026-07-27 23:33**: *"I think we need to
+  start working on the sqlite db and cli next. it feels like it's becoming a
+  blocker. ask a question of me if you would like to discuss."* · his read is
+  correct and measured: this entry is now the gate on `#287`, `#289`, part of
+  `#281`, `#229`/`#270`'s CLI-only seam, and `#342`'s toggle — five lanes
+  · **but the thing blocking it is not this task, it is his own answer on #263**,
+  whose design is finished, reviewed and PASS and waits only on E1–E4. The chain is
+  `#294` ← `#264` ← `#263`, so starting here without that answer means designing
+  the schema against an unsettled event model — the exact double-migration he has
+  warned about twice tonight · so the loop's response to the steer is to ask, which
+  he invited: the E1 ask has been **restated in plain terms** as a threaded
+  follow-up (questions.md, 23:36), because the original was written in the loop's
+  vocabulary and that is why it has sat unanswered · it also offers him the
+  parallel-start option explicitly, with its cost named, rather than deciding on
+  his behalf that he cannot have it
+  · **#342 is the same work from the other end**: his batched-delivery idea needs a
+  read cursor, and #263's journal IS that cursor — so E1 unblocks the delivery mode
+  he asked about five minutes earlier, and the two steers should not be built twice
 
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch

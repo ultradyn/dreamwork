@@ -162,7 +162,20 @@ dreamwork-version: 5853e1789929
     and zero writes.
 - Subagent lifecycle (2026-07-25): **prefer fresh subagents; reuse an
   existing one only if it stopped less than ~4 minutes ago.** Retire
-  idle dreamers rather than leaving them parked. Exception/routine
+  idle dreamers rather than leaving them parked.
+  - **The 4 minutes is a cost boundary, not a freshness preference**
+    (human-set 2026-07-27 23:33, and it changes the decision): *"please do not
+    reuse subagents that hhave been idle for more than 4 minutes, since there's a
+    good chance we miss the cache -> expensive prompt of like 200k tokens. oof."*
+    The rule above was recorded as *fresh eyes cost about the same*, which makes
+    reuse-after-4-minutes merely unnecessary. His reason makes it actively
+    expensive: past the window the prompt cache is gone and re-sending a
+    dreamer's context is a ~200k-token bill for nothing. So the tie no longer
+    goes either way — outside the window, spawning fresh is the CHEAPER act, and
+    reuse needs a reason rather than an excuse. It also explains why he has been
+    closing idle subagents himself (*"I have closed some idle subagents from time
+    to time"*): prompt retirement is cost control, not tidiness, and leaving one
+    parked is a standing liability the coordinator pays for on the next message. Exception/routine
   (human-set 2026-07-26): keep the named co-agent `grok-sugar-vesi-x6tv`
   usefully occupied whenever unblocked small/medium in-repo work exists with
   disjoint ownership; never manufacture busywork, violate a model gate, or
