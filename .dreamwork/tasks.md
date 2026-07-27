@@ -24,9 +24,43 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **396**
+Next id: **397**
 
 ## Open
+- **#396** — an **inline** `data-mark` puts its flag outside the reading column and clips past the
+  page edge · P1 · review-artifact/geometry · origin: **loop** · found by **probing #367 increment
+  2a's stated caveat**, and it is the case beside the one the lane flagged
+  · **`file-formats.md:1118` says `data-mark` goes "on any element inside `body`"**, so an inline
+  `<strong data-mark="…">` is documented-legal input. Increment 2a's flag positioning relies on
+  `left:calc(var(--measure) + .4ch)` resolving against the **body** font on an outer `.marktab` —
+  the lane's own `ch`-resolution insight, which is correct and subtle. But for an **inline** marked
+  element the containing block is the inline box, so `left` resolves from **that box's horizontal
+  offset**, not the reading column's edge
+  · **measured on a purpose-built probe artifact** (two marks on one line, built with
+  `review_artifact.py build`), flag right edge vs viewport:
+  **1280px → 1076, fits** · **1000px → 1012, CLIPPED by 12px** · **900px → CLIPPED by 112px** ·
+  **861px → CLIPPED by 151px**, and 861 is one pixel above the cliff, where the rail is meant to be
+  shown *and proven to fit*
+  · **the flag does not reflow**: right stays at 1012 from 1000px down to 861px while the viewport
+  shrinks, so the clipping grows monotonically. Block marks anchor at 696.7 and behave correctly —
+  this is inline-only
+  · **why the guard passes over it, which is the part to fix along with the CSS:** `markrail`
+  asserts the flag anchors within 2px of `.read`'s right edge, and that assertion is true — for the
+  block marks the fixture contains. **The fixture has no inline mark**, so the check's coverage,
+  not its logic, is the hole. Same shape as the silent-skip lesson: the check was working perfectly
+  on the inputs it could see
+  · this is precisely the failure the increment-2 measurement lane was dispatched to prevent (a tab
+  clipping past the page edge) and the 860px cliff was chosen to guarantee the worst case fits —
+  but the worst case was computed for block marks only, so the cliff does not bound this
+  · **rec:** decide whether an inline mark is supported. If yes, the outer `.marktab` must be
+  positioned from a **block** ancestor rather than the inline box. If no, `review_artifact.py` must
+  **refuse** it at build time the way it already refuses an `id` on an ancestor and a blank label —
+  a silently-clipped flag is the worse failure. Either way the fixture gains an inline mark so the
+  guard can see the case
+  · **red-first note:** add an inline mark to the guard fixture *before* touching the CSS. If
+  `markrail` stays green with it present, the assertion is not watching the anchor
+  · related: **#367**
+
 - **#395** — a relation marker without bold parses as absent, so the reciprocity check silently
   skips it · P2 · lint/correctness · origin: **loop** · found by **lint rejecting my own edit**,
   then probing why the shape it wanted was the shape it wanted
@@ -319,6 +353,7 @@ Next id: **396**
   artifact — and it is the one that makes the frame change safe to ship before any artifact
   adopts it
 
+  · related: **#396**
 - **#378** — One `.fact` sits outside any `.facts` grid, in a file with no source · P3 ·
   review tooling · origin: **loop** · 10m · found by #365's measurement and verified
   independently: `protected-service-boundary-288.html` has `containers=0 facts=1`, so that
