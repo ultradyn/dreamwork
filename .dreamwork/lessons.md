@@ -1469,3 +1469,20 @@ this shape and convert opportunistically.)
   expected stayed green, its fixture is the bug. Three injections were run here to establish
   the suite discriminates at all; two failed small distinct subsets, and the third failing
   nothing is what found this.
+
+- **An injection-undo that reaches for `git checkout --` destroys the very work it is
+  proving, unless that work is already committed — and the proofs that follow look clean
+  while meaning nothing.** Red-proving #348 (sql in the review highlighter), each injection
+  was reverted with `git checkout -- review_artifact.py`. The first revert took the
+  uncommitted `_SQL` spec with it. Injections two and three then ran against a tree with no
+  sql support at all, so the sql tests failed **because the feature was gone**, printed one
+  tidy `FAILED` line each, and read exactly like discriminating reds. Twenty minutes of work
+  was gone and two of three proofs were worthless, and neither fact announced itself: the
+  tell was `git status` showing only the test file modified. The rule: **for an injection you
+  intend to undo, snapshot to scratch and restore from the snapshot** (`cp file $S/bak` /
+  `cp $S/bak file`), because that undo cannot reach anything but the file you injected into.
+  Reach for git only when the work under test is committed — at which point `checkout` is
+  exactly right. The deeper point is the one this file keeps making in new costumes: a red
+  that comes from the harness, the scaffolding, or the undo mechanism proves nothing about
+  the check, and it is indistinguishable from a real one in the output. **Name what you
+  broke, then confirm the tree still contains everything else you meant to keep.**
