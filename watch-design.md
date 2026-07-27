@@ -235,6 +235,45 @@ you could not do the second while looking at the first.
 - **The question is the scroller, not the dock**, so `answering` stays put as
   a column head. `scrollbar-gutter:stable` keeps a live re-render from
   re-wrapping the text when the scrollbar comes and goes.
+- **The answer box is glued to the foot of the pane**, ending on the same line
+  as the artifact. It is `position:sticky` **inside** the question's own
+  scroller rather than a second box lifted out of the card, because
+  `.qcompose` is the shared component three other surfaces render and four
+  functions address through the card (`snapshotCardState`, `setCardMode`,
+  `submitCard`, the mode group) — a copy for this one route would be a second
+  thing to keep true. The card's own `1rem` bottom margin goes with it: *"in
+  line with the bottom"* is a measurable claim, 16px is a visible miss, and a
+  sticky box parks its **border** edge on the scrollport, so a kept margin
+  would be absent while stuck and reappear as a nudge the moment the body
+  ended.
+- **Two fades, and they are not the same mechanism, because they are not
+  hiding the same thing.**
+  - At the **foot**, the *answer box* is doing the hiding, so the fade is a
+    gradient `::before` **behind the compose's own children** (`z-index:-1`
+    inside the sticky's stacking context): the live text is occluded, never
+    masked, so selection and copy are untouched. It has to be as tall as the
+    box, stop where the box stops, and get out of the way when the text ends —
+    none of which a mask over the scroller can be told about.
+  - At the **head**, the *edge of the box* is doing the hiding, and a mask
+    paints exactly that. Making the card a scroller left the first visible
+    line sliced in half directly under `answering`, which reads as a rendering
+    fault rather than as scrolled text. `--qfade` is the mask's depth, a
+    registered property so the edge **arrives** rather than blinking, and it
+    is listed in **`.qa`'s** transition rather than the dock's because a
+    `transition` shorthand on a more specific selector replaces the list
+    wholesale — declaring it on `.qdock > .qa` would silently take a card's
+    travel away on the one route that also re-groups cards. A registered
+    property's `initial-value` must be computationally independent, so it is
+    `24px`, not `1.5rem`.
+  - **Both lift where they would be lying.** `syncDockFade` reads one scroll
+    distance and sets `atend` (nothing passes under the box, so a band there
+    would dim his last line to hide nothing — *his own exception*) and `attop`
+    (nothing is above, so the question's own title stays crisp). It is read
+    from the scroll, never remembered, and called from the three places the
+    answer can change: the scroll, a re-render that replaces the card, and a
+    resize. The listener is delegated on the **capture** phase, because
+    `scroll` does not bubble and the card it watches is replaced every two
+    seconds.
 - **How far he has READ is state he owns** (#118's rule, with reading in
   place of typing): `snapshotCardState` carries `card.scrollTop` under `read`
   and restores it, or a question he was halfway down would snap back to its
@@ -255,10 +294,13 @@ you could not do the second while looking at the first.
   reads back 0, and reads back 209 with the layout forced first.
 - **Narrow stacks rather than crushing.** Below 900px it is a document again:
   one column, natural heights, the page scrolls, and the bar is `display:none`
-  so it leaves the tab order with the layout it belonged to.
+  so it leaves the tab order with the layout it belonged to. Nothing is glued
+  and neither fade is drawn: there is no inner scroller, so both would be
+  lying about the layout — the box is simply the end of the question again.
 
-Motion for all of it — the keyed step travelling while the drag does not, and
-the hairline arriving rather than blinking on — is `transitions.md`'s.
+Motion for all of it — the keyed step travelling while the drag does not, the
+hairline arriving rather than blinking on, and both fades crossing rather than
+switching — is `transitions.md`'s.
 `dev/capture/reviewsplit.mjs` guards the pane, and each of its checks was
 shown red against a build broken in exactly the way that check names.
 

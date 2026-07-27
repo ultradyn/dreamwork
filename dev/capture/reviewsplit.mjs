@@ -15,6 +15,12 @@
        not scroll behind them.
      - the QUESTION scrolls in its own box — scrolling it must not move the
        artifact, which is the whole complaint.
+     - the answer box is GLUED to the foot of the pane, in line with the
+       artifact's bottom edge — checked as "its place in the flow is well above
+       where it is painted", which a box that merely happens to be last fails.
+     - the text passing UNDER it fades out, the head of the column dissolves
+       once anything is above it, and both lift where his exception says they
+       should. Each is a state with two ends, so each is traced part-way.
      - the bar DRAGS, and the check asserts the SIGN (#174: "it moved" is
        satisfied by exactly backwards) plus conservation — what one column
        gains the other loses.
@@ -77,6 +83,29 @@ const GEO = `(() => {
     compose: r(comp),
     docW: doc ? doc.offsetWidth : 0, dockW: dock ? dock.offsetWidth : 0,
     barShown: !!(bar && bar.checkVisibility()),
+    /* increment 2. flowEnd is where the question's content ACTUALLY ends on
+       screen. The answer box is the last thing in that content, so if the box
+       is painted well above this line it is being held there — which is the
+       only reading of "stays glued" that a box merely happening to be last
+       cannot pass. NOT comp.offsetTop: a sticky box is shifted in LAYOUT, so
+       offsetTop already contains the offset and reports the box exactly where
+       it is painted, every time, glued or not. */
+    flowEnd: card ? card.getBoundingClientRect().top + card.scrollHeight
+                    - card.scrollTop : null,
+    sticky: comp ? getComputedStyle(comp).position : null,
+    /* made and shown are two different questions and the guard needs both:
+       a pseudo-element with no content is never generated but still reports
+       opacity 1 and a real top, so "is there a band" has to be asked of
+       content, while the narrow rule that switches it off does so with
+       display. Asking only one of them passed a page with no band. */
+    band: comp ? (b => ({ opacity: +b.opacity, top: b.top, image: b.backgroundImage,
+                          made: b.content !== 'none', shown: b.display !== 'none' }))(
+                   getComputedStyle(comp, '::before')) : null,
+    qfade: card ? parseFloat(getComputedStyle(card)
+                             .getPropertyValue('--qfade')) : null,
+    masked: card ? getComputedStyle(card).maskImage !== 'none' : null,
+    atend: dock ? dock.classList.contains('atend') : null,
+    attop: dock ? dock.classList.contains('attop') : null,
     scroll: card ? { top: card.scrollTop, client: card.clientHeight,
                      full: card.scrollHeight } : null,
     pageOver: document.documentElement.scrollHeight - window.innerHeight,
@@ -89,6 +118,37 @@ const GEO = `(() => {
 })()`;
 
 const distinct = xs => new Set(xs.map(v => Math.round(v))).size;
+
+/* trace ANY number across a gesture. Same shape as TRACE below and used for
+   the two fades, which are opacity and a length rather than a width. */
+const TRACEV = (expr, ms) => `new Promise(res => {
+  const seen = []; const t0 = performance.now();
+  (function step() {
+    seen.push(+(${expr}));
+    if (performance.now() - t0 < ${ms}) requestAnimationFrame(step); else res(seen);
+  })();
+})`;
+/* frames strictly BETWEEN the two ends, with a 3% deadband so a frame that is
+   really an end does not read as travel. This is the frame-rate-free half of
+   the motion check: a snap has none of these at any frame rate. */
+const between = (seen, a, b) => {
+  const lo = Math.min(a, b), hi = Math.max(a, b), eps = (hi - lo) * 0.03;
+  return seen.filter(v => v > lo + eps && v < hi - eps).length;
+};
+const BAND = `getComputedStyle(document.querySelector('#qdock .qcompose'),
+  '::before').opacity`;
+const QFADE = `parseFloat(getComputedStyle(
+  document.querySelector('.qdock > .qa')).getPropertyValue('--qfade'))`;
+const scrollQ = to => `(() => { const c =
+  document.querySelector('.qdock > .qa');
+  c.scrollTop = ${to === 'end' ? 'c.scrollHeight' : to}; })()`;
+/* How far this question can scroll, read per page rather than assumed. A
+   fixed 220 silently became "scrolled to the very end" the moment the card
+   grew 16px taller, which turned three fade checks green-for-the-wrong-reason
+   and two red — the middle of the range has to be computed from the range. */
+const scrollMax = pg => pg.evaluate(`(() => { const c =
+  document.querySelector('.qdock > .qa');
+  return c.scrollHeight - c.clientHeight; })()`);
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const open = async (opts = {}) => {
@@ -132,19 +192,90 @@ const { ctx: c1, p } = await open();
      '(else the scroll checks below are vacuous)',
      !!g.scroll && g.scroll.full > g.scroll.client + 40);
 }
+const MAX = await scrollMax(p), HALF = Math.round(MAX / 2);
+say(`the question can scroll ${MAX}px; the checks below read it at ${HALF}`);
+ok('...and by enough that HALF way down is neither end (else the fade ' +
+   'checks below are vacuous)', MAX >= 100);
 {
   // scrolling the question must not move the artifact, and must not scroll
   // the page — that pairing IS the report.
   const before = await p.evaluate(GEO);
-  await p.evaluate(`document.querySelector('.qdock > .qa').scrollTop = 220`);
+  await p.evaluate(scrollQ(HALF));
   await sleep(120);
   const after = await p.evaluate(GEO);
   say(`scrolling the question: card top ${before.scroll.top} -> ` +
       `${after.scroll.top}; artifact top ${before.frame.t} -> ${after.frame.t}; ` +
       `page overflow ${after.pageOver}`);
   ok('the question scrolls ALONGSIDE: it moves and the artifact does not',
-     after.scroll.top >= 200 && Math.abs(after.frame.t - before.frame.t) <= 1 &&
+     after.scroll.top >= HALF - 2 && Math.abs(after.frame.t - before.frame.t) <= 1 &&
      after.pageOver <= 1);
+
+  /* ── (b) the answer box is GLUED to the foot of the pane ──────────────── */
+  say(`glued: box ${after.compose.t}..${after.compose.b}, artifact ends ` +
+      `${after.frame.b}, the question's text ends at ${after.flowEnd} ` +
+      `(position:${after.sticky})`);
+  ok('the answer box ends in line with the bottom of the review document',
+     Math.abs(after.compose.b - after.frame.b) <= 1);
+  // "in line with the bottom" is also satisfied by a box that just happens to
+  // be the last thing in a card that fits. This is the reading that is not:
+  // there is still text below the fold, and the box is held above it.
+  ok('...and it is GLUED there rather than merely last — the question runs ' +
+     'on below it', after.flowEnd > after.compose.b + 40);
+}
+
+/* ── (c) the question fades out into the box, unless it ends there ───────── */
+{
+  await p.evaluate(scrollQ(0));
+  await sleep(600);
+  const top = await p.evaluate(GEO);
+  // the head of the column fades once there is text above it and NOT before:
+  // an unscrolled question shows its own title, crisply.
+  ok('at the top of the question nothing is cut off and nothing is dimmed',
+     top.attop === true && top.qfade <= 0.5 && top.masked === true);
+
+  const th = p.evaluate(TRACEV(QFADE, 700));
+  await sleep(60);
+  await p.evaluate(scrollQ(HALF));
+  const head = await th;
+  await sleep(400);
+  const mid = await p.evaluate(GEO);
+  say(`head fade: --qfade ${head[0]} -> ${mid.qfade} over ` +
+      `${between(head, head[0], head.at(-1))} of ${head.length} part-way frames`);
+  ok('once he has scrolled, the first line dissolves instead of being cut',
+     mid.attop === false && mid.qfade >= 12);
+  ok('...and that edge ARRIVES rather than blinking on',
+     between(head, head[0], head.at(-1)) >= 2);
+
+  say(`foot band while text passes under: opacity ${mid.band.opacity}, ` +
+      `reaching ${mid.band.top} above the box, made=${mid.band.made}, ` +
+      `atend=${mid.atend}, ${mid.band.image}`);
+  ok('text passing under the answer box fades out into it',
+     mid.band.made && mid.band.shown && mid.band.opacity >= 0.9 &&
+     parseFloat(mid.band.top) <= -20 && /gradient/.test(mid.band.image));
+
+  // ...unless the body ends at the box — his own exception, and a state with
+  // two ends, so it crossfades rather than switching (transitions.md).
+  const tf = p.evaluate(TRACEV(BAND, 800));
+  await sleep(60);
+  await p.evaluate(scrollQ('end'));
+  const foot = await tf;
+  await sleep(400);
+  const end = await p.evaluate(GEO);
+  say(`at the end of the question: atend=${end.atend}, band ` +
+      `${mid.band.opacity} -> ${end.band.opacity} over ` +
+      `${between(foot, 1, 0)} of ${foot.length} part-way frames`);
+  ok('at the end of the question the fade lifts off his last line',
+     end.atend === true && end.band.opacity <= 0.05);
+  ok('...having faded away rather than switched off', between(foot, 1, 0) >= 2);
+  ok('...and the box is still glued to the foot of the pane',
+     Math.abs(end.compose.b - end.frame.b) <= 2);
+
+  // it comes back: the exception is a state, not a one-way door
+  await p.evaluate(scrollQ(HALF));
+  await sleep(700);
+  const back = await p.evaluate(GEO);
+  ok('scrolling back up brings the fade back', back.atend === false &&
+     back.band.opacity >= 0.9);
 }
 
 /* ── the bar drags, in the direction it is dragged ─────────────────────── */
@@ -301,6 +432,29 @@ await c1.close();
   ok('reduced motion: the keyboard still resizes the columns (function intact)',
      after.docW > before.docW + 60);
   ok('reduced motion: ...in one step, not a travel', tr.positions <= 2);
+
+  // both fades: the STATES still hold, the travel between them does not
+  await rp.evaluate(scrollQ(0));
+  await sleep(400);
+  // this page is 60/40, so it wraps differently and has its own range
+  const rhalf = Math.round(await scrollMax(rp) / 2);
+  const th = rp.evaluate(TRACEV(QFADE, 500));
+  await sleep(60);
+  await rp.evaluate(scrollQ(rhalf));
+  const head = await th;
+  const tf = rp.evaluate(TRACEV(BAND, 500));
+  await sleep(60);
+  await rp.evaluate(scrollQ('end'));
+  const foot = await tf;
+  await sleep(300);
+  const g = await rp.evaluate(GEO);
+  say(`reduced: head fade over ${distinct(head)} values, foot band over ` +
+      `${distinct(foot.map(v => v * 100))}, ending atend=${g.atend} ` +
+      `band=${g.band.opacity} qfade=${g.qfade}`);
+  ok('reduced motion: the fades still say the same thing at rest',
+     g.atend === true && g.band.opacity <= 0.05 && g.qfade >= 12);
+  ok('reduced motion: ...arriving in one step, both of them',
+     between(head, head[0], head.at(-1)) === 0 && between(foot, 1, 0) === 0);
   await ctx.close();
 }
 
@@ -316,6 +470,11 @@ await c1.close();
   ok('narrow: the bar is gone, not present-but-useless', !g.barShown);
   ok('narrow: the question is a document again, not trapped in a box',
      g.scroll.full <= g.scroll.client + 1 && g.pageOver > 0);
+  // nothing is glued to a column that is now just a document, and nothing
+  // passes under the box, so both fades would be lying about the layout
+  ok('narrow: the answer box sits at the end of the question, not glued ' +
+     'over it', g.sticky === 'static' && !g.band.shown);
+  ok('narrow: and the head of the question is not dimmed', g.masked === false);
   await np.screenshot({ path: `${OUT}/reviewsplit-narrow.png` });
   await ctx.close();
 }

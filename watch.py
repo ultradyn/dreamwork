@@ -612,9 +612,13 @@ STYLE = """<style>
   a:hover { text-decoration:underline; }
   /* a card travels to its new place in the list rather than teleporting
      there (#104/#77); the transform is set and cleared by regroupCards */
+  /* `--qfade` belongs to the review dock (#305) and is listed HERE because a
+     `transition` shorthand on a more specific selector replaces this list
+     wholesale — declaring it on `.qdock > .qa` would silently take a card's
+     travel away on the one route that also re-groups cards. */
   .qa { margin:.6rem 0 1rem;
         transition:transform .85s cubic-bezier(.32,.1,.2,1),
-                   opacity .55s ease, filter .55s ease; }
+                   opacity .55s ease, filter .55s ease, --qfade .45s ease; }
   /* a card that has left the list entirely dreams away where it stood */
   .qaghost { position:absolute; z-index:3; pointer-events:none;
     transition:opacity .7s ease, filter .7s ease, transform .7s ease; }
@@ -940,6 +944,11 @@ STYLE = """<style>
      into slivers. */
   @property --rsplit { syntax:'<percentage>'; inherits:false;
                        initial-value:70%; }
+  /* The question column's top fade depth, registered so it can travel. The
+     initial value has to be an absolute length: a registered property's
+     initial value must be computationally independent, so `1.5rem` would
+     make this whole rule invalid and the mask would never resolve. */
+  @property --qfade { syntax:'<length>'; inherits:false; initial-value:24px; }
   #reviewwrap { display:grid; gap:0; align-items:stretch; margin-top:1rem;
     grid-template-columns:clamp(32ch, var(--rsplit), calc(100% - 26ch))
                           1.3rem minmax(0,1fr);
@@ -990,11 +999,58 @@ STYLE = """<style>
      column IS, and a heading that scrolls away with its first paragraph makes
      the reader ask again. `scrollbar-gutter` keeps the text from re-wrapping
      the moment a live re-render changes the card's length. */
+  /* the card's own 1rem bottom margin goes: "in line with the bottom of the
+     review document" is a measurable claim and 16px is a visible miss. The
+     card's border edge and the iframe's now end on the same line. */
+  /* THE TOP EDGE FADES TOO, once there is anything above it. Making the card
+     a scroller cut the first visible line in half directly under `answering`,
+     and half a row of glyph-tops under a heading reads as a rendering fault
+     rather than as scrolled text. Here a mask IS the right tool — the fade
+     belongs to the edge and to nothing else, there is no box to occlude — and
+     it is the same gesture as the foot, mirrored, not a second idiom. The
+     depth is a registered property so the edge ARRIVES when he leaves the top
+     and departs when he returns (transitions.md), instead of blinking. */
   .qdock > .qa { flex:1 1 auto; min-height:0; overflow-y:auto;
-    scrollbar-gutter:stable; }
+    scrollbar-gutter:stable; margin-bottom:0;
+    -webkit-mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade));
+    mask-image:linear-gradient(to bottom, transparent, #000 var(--qfade)); }
+  .qdock.attop > .qa { --qfade:0px; }
+  /* (b) THE INPUT IS GLUED TO THE BOTTOM, in line with the artifact's bottom
+     edge — his second ask, and the reason the first one is worth anything: a
+     question you can scroll past an answer box you cannot reach is still two
+     acts. It is `sticky` INSIDE the question's own scroller rather than a box
+     moved out of the card, because `.qcompose` is the shared component three
+     other surfaces render and four functions address through the card
+     (`snapshotCardState`, `setCardMode`, `submitCard`, the mode group). A
+     second copy on this one route would be a second thing to keep true.
+     The bottom margin goes because a sticky box parks its BORDER edge on the
+     scrollport: kept, it would be absent while stuck and reappear as a 3px
+     nudge the moment the body ended. */
+  .qdock > .qa > .qcompose { position:sticky; bottom:0; z-index:1;
+    margin-bottom:0; padding-bottom:.3rem; }
+  /* (c) ...and the text passing UNDER it fades out rather than running into a
+     hard edge. The band is a pseudo-element BEHIND the compose's own children
+     (`z-index:-1` inside the sticky's stacking context), so the live text is
+     OCCLUDED, never masked: selection, copy and the last line are untouched.
+     The head of the column fades with a mask and this end does not, and the
+     difference is which thing is doing the hiding — up there the edge of the
+     box is, and a mask paints exactly that; down here the ANSWER BOX is, so
+     the fade has to be as tall as the box, stop where the box stops, and get
+     out of the way when the text ends. A mask over the scroller cannot be
+     told about the box, and would dim his last line at the end. */
+  .qdock > .qa > .qcompose::before { content:''; position:absolute;
+    left:0; right:0; bottom:0; top:-2rem; z-index:-1; pointer-events:none;
+    background:linear-gradient(to bottom, transparent, var(--bg) 2rem);
+    transition:opacity .45s ease; }
+  /* ...unless the body already ends at the box — his own exception. At the
+     end of the scroll nothing passes underneath, so a band there would be
+     dimming his last line to hide nothing. It is a state with two ends, so it
+     crossfades (transitions.md) rather than switching. */
+  .qdock.atend > .qa > .qcompose::before { opacity:0; }
   @media (prefers-reduced-motion:reduce) {
     #reviewwrap.rkeyed { transition:none; }
     .rsplit::after { transition:none; }
+    .qdock > .qa > .qcompose::before { transition:none; }
   }
   /* NARROW STACKS, it does not crush. Below 900px there is no room for two
      readable columns, so the pane goes back to being a document: one column,
@@ -1006,7 +1062,12 @@ STYLE = """<style>
     .rsplit { display:none; }
     #reviewdoc { height:60vh; }
     #reviewframe { height:100%; }
-    .qdock > .qa { overflow:visible; }
+    /* no inner scroller, so nothing is glued and nothing passes under the
+       box: both would be lying about a column that is now just a document */
+    .qdock > .qa { overflow:visible; -webkit-mask-image:none;
+                   mask-image:none; }
+    .qdock > .qa > .qcompose { position:static; }
+    .qdock > .qa > .qcompose::before { display:none; }
   }
   /* the composer: the + opener sits in the heading's left gutter; the
      panel it toggles drifts in through a soft blur (the dream language),
@@ -2585,8 +2646,34 @@ function fitReview() {
   const pad = parseFloat(getComputedStyle(document.body).paddingBottom) || 0;
   const h = Math.round(window.innerHeight - top - pad);
   wrap.style.setProperty('--rvh', Math.max(0, h) + 'px');
+  syncDockFade();                    // a resize changes what is still below
 }
 addEventListener('resize', fitReview);
+/* IS ANYTHING STILL PASSING UNDER THE ANSWER BOX? That is the only question
+   the fade band asks, and the answer is a scroll distance, so it is read
+   rather than remembered. A card that does not overflow at all answers "no"
+   by the same arithmetic — there is nothing below, so there is nothing to
+   fade — which is the zero case his exception describes.
+
+   Called from the three places the answer can change and nowhere else: the
+   scroll itself, a re-render that replaces the card, and a resize. The
+   listener is delegated on the CAPTURE phase because `scroll` does not
+   bubble and the card it is watching is replaced every two seconds. */
+function syncDockFade() {
+  const dock = document.getElementById('qdock');
+  if (!dock) return;
+  const card = dock.querySelector(':scope > .qa');
+  if (!card) return;
+  const below = card.scrollHeight - card.clientHeight - card.scrollTop;
+  dock.classList.toggle('atend', below <= 2);
+  /* and the mirror of it at the head: nothing is above at the top, so the
+     title is crisp there and the edge only softens once he has scrolled */
+  dock.classList.toggle('attop', card.scrollTop <= 2);
+}
+addEventListener('scroll', e => {
+  const t = e.target;
+  if (t && t.nodeType === 1 && t.classList.contains('qa')) syncDockFade();
+}, true);
 /* every number on this page that can drift without a disk change is written
    HERE, once a second, as TEXT into nodes that already exist — never through
    a re-render. That was already the shape; #132 is what makes it load-bearing
@@ -3585,6 +3672,10 @@ function setLiveContent(html) {
     if (currentDock && nextDock) currentDock.replaceWith(nextDock);
     else setContent(html);
     paintIndicators(true); ages();
+    // the fresh card may be a different length, so what is below the box is a
+    // different answer; the restore that follows this scrolls it and the
+    // delegated listener catches that.
+    syncDockFade();
     return;
   }
   setContent(html);
