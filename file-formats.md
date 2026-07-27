@@ -204,7 +204,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 
 | File | Read by | Contract | Checked |
 |---|---|---|---|
-| `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | One `- **#N**` entry per task; `Next id: **N**` in the header. Ids are **permanent**, so a duplicate is unrecoverable and `Next id` must exceed every id present. Origin is recorded forward-only from #216 — the section below | `lint.py` |
+| `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | One `- **#N**` entry per task; a combined head `- **#N/#M**` is a single entry naming every id in its ids-only bold span, and both ledger readers (`watch.parse_ledger`, `lint.check_ledger_sections`) count every id — so `#7/#8` is two ids in one entry, not one. `Next id: **N**` in the header. Ids are **permanent**, so a duplicate is unrecoverable and `Next id` must exceed every id present. Origin is recorded forward-only from #216 — the section below | `lint.py` |
 | `.dreamwork/status.json` | `watch.py`'s status reader; **`dreamhub.py`** | Valid JSON, and now an interface — see below | `lint.py` |
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |

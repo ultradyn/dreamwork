@@ -601,23 +601,28 @@ class TestCollector(unittest.TestCase):
         self.assertEqual(landed, {"5"},
                          "a prose span referencing an id does not land it")
 
-    def test_open_combined_head_still_needs_lint_py(self):
-        """#301 (open half, DEFERRED): a combined entry HEAD under `## Open`
-        (`- **#7/#8**`) is still read narrow today, so parse_ledger reports
-        neither id. This is deliberate, not an oversight: lint.check_ledger_
-        sections cross-checks `len(parse_ledger(open))` against its own count
-        of open entry lines, and that count uses the narrow LEDGER_ID that
-        the pinning test asserts and that this worktree cannot widen in step.
-        Making parse_ledger's open read combined-aware would make the two
-        readers DISAGREE on any ledger holding a combined open entry. The
-        honest fix is for lint.py's LEDGER_ID and check_ledger_sections to
-        widen together; that is reported to the coordinator, not landed here.
+    def test_open_combined_head_reads_every_id_now_that_lint_widens_in_step(self):
+        """#315 (the open half of #301, no longer deferred): a combined entry
+        HEAD under `## Open` (`- **#7/#8**`) now reads EVERY id it names.
+        The narrow LEDGER_ENTRY required `**` right after a single digit run
+        and matched NEITHER half — verified directly against the regex below —
+        so parse_ledger dropped both ids and the dashboard silently lost two
+        tasks.
 
-        This guard exists so the deferral is loud: if someone widens the open
-        read in parse_ledger without coordinating lint.py, THIS test goes red
-        before `test_combined_ids_all_old_are_exempt` in test_lint.py does.
-        No combined head is open in the live ledger today, so the live defect
-        is confined to landed (see the test above).
+        This cannot be fixed in parse_ledger alone: lint.check_ledger_sections
+        cross-checks `len(parse_ledger(open))` against its OWN open-id count,
+        which uses LEDGER_ID — pinned identical to LEDGER_ENTRY. Widening one
+        reader makes the two DISAGREE on any ledger holding a combined open
+        entry (a previous agent watched test_combined_ids_all_old_are_exempt
+        go red proving exactly that). So LEDGER_ENTRY, LEDGER_ID and
+        check_ledger_sections widen in ONE commit. This guard exists so the
+        lockstep is loud: narrow parse_ledger's open read again without
+        lint.py and THIS test goes red before test_lint.py does.
+
+        The runtime precondition asserts the fixture head genuinely carries
+        TWO DISTINCT ids — both are derived from the fixture, never hardcoded,
+        because a literal pair is true only of today's fixture and a future
+        edit that collapsed them to one would pass vacuously.
         """
         COMBINED_HEAD = "- **#7/#8**"
         text = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
@@ -625,13 +630,26 @@ class TestCollector(unittest.TestCase):
                 "- **#9** — a singular live one · P3 · idea\n\n"
                 "## Recently landed\n\n")
         self.assertIn(COMBINED_HEAD, text,
-                      "fixture must hold a combined head to defer")
-        # The defect is real against the narrow pattern — pin it.
-        self.assertEqual(watch.LEDGER_ENTRY.findall(COMBINED_HEAD), [],
-                         "narrow LEDGER_ENTRY misses the combined head")
+                      "fixture must hold a combined head to read")
+        # Precondition is a property of the FIXTURE, not the pattern under
+        # test, so derive both ids straight from the head string: the case is
+        # only combined if there are two distinct ids. A literal pair would
+        # be true only of today's fixture and a future edit that collapsed
+        # them to one would pass vacuously.
+        head_ids = watch.ENTRY_ID.findall(COMBINED_HEAD)
+        self.assertEqual(len(head_ids), 2,
+                         "fixture head must carry two ids to be combined")
+        self.assertNotEqual(head_ids[0], head_ids[1],
+                            "the two ids must differ or the case is singular")
+        # Pin the WIDENED capture: a future narrowing of LEDGER_ENTRY turns
+        # this assertion (and so this test) red.
+        self.assertEqual(watch.LEDGER_ENTRY.findall(COMBINED_HEAD), ["#7/#8"],
+                         "widened LEDGER_ENTRY captures the combined id span")
         openids, _landed = watch.parse_ledger(text)
-        self.assertEqual(openids, {"9"},
-                         "open read stays narrow until lint.py widens in step")
+        # RED before the fix: openids == {"9"} — the combined head contributed
+        # neither id it named, and the dashboard silently lost two tasks.
+        self.assertEqual(openids, {"7", "8", "9"},
+                         "a combined open head reads every id it names")
 
     def _ledger_repo(self, d, snapshots):
         """Commit each `(text, when)` as .dreamwork/tasks.md. Returns the run
