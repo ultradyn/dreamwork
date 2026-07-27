@@ -138,26 +138,6 @@ Next id: **331**
   guard cannot silently omit its coverage · cheap to parallelise across agents by
   file, since the guards do not import each other
 
-- **#323** — Nothing notices when a landed task is still listed Open · P2 ·
-  tooling/correctness · ~20m · origin: **loop** · goal: the ledger must not
-  overstate what is left ← DREAMWORK.md *Nothing fails quietly* · **two found in
-  one beat**: #314 landed as `bff36ec` hours earlier and #156 as `c51da8f` a day
-  earlier, both still under `## Open` · the queue was overstating itself by two,
-  and worse, the entries that SUPERSEDED #314 (#320, #321) read as unrelated work
-  while its open entry still described the problem as live · `lint.py` already
-  cross-checks parse_ledger's open count against its own, so it catches a
-  MISCOUNT but not a task that is simply in the wrong section — nothing compares
-  the ledger against git · rec: for each open id, look for a commit subject
-  matching `close(#id)` or `merge(#id)` (the repo keeps that convention
-  rigorously) and WARN, never error — a close commit is strong evidence but not
-  proof, since #275 has both a `close` and a `merge` and is legitimately still
-  open because its ask awaits his approval, which is part of its definition of
-  done (#306) · so the check must be a prompt to look, like the styleguide audit,
-  and #275 is the fixture that keeps it honest: **a version of this check that
-  flags #275 is wrong**, and that is the precondition to assert · the sweep that
-  found these is ~30 lines and nothing in the repo runs it · touches `lint.py`
-  (held by an agent right now), so filed not started
-
 - **#322** — Allow pasting images into the command composer · P2 · dashboard
   feature · origin: **human** · **human via dashboard composer 2026-07-27
   21:20** (verbatim: *"add-idea: allow pasting images to command composer"*) ·
@@ -189,24 +169,6 @@ Next id: **331**
   given, which they already do · check that a run with no port argument still
   reaches its own server and not another
 
-
-- **#315** — A combined entry HEAD under `## Open` is invisible to both ledger
-  readers, and they must widen together · P2 · correctness · ~30m · origin:
-  **loop** · goal: the ledger's own readers must not disagree about what it says
-  ← DREAMWORK.md *Nothing fails quietly* · #301 fixed the LANDED half; a
-  combined head (`- **#7/#8**`) is still read by the narrow `LEDGER_ENTRY`, so
-  parse_ledger reports neither id · **the reason this is its own task and not an
-  oversight**: `lint.check_ledger_sections` cross-checks parse_ledger's open
-  count against lint's own count, which uses `LEDGER_ID` — pinned identical to
-  `LEDGER_ENTRY` by `test_ledger_entry_rule_has_exactly_one_copy` — so widening
-  either reader alone makes the two DISAGREE on any ledger holding a combined
-  open entry, which the delegated agent proved by watching
-  `test_combined_ids_all_old_are_exempt` go red · so `LEDGER_ENTRY`, `LEDGER_ID`
-  and `check_ledger_sections` widen in ONE commit or not at all · **no combined
-  head is open today** (103 = 103 measured), so there is no live defect — this
-  is a latent one that fires the first time someone files a combined entry, and
-  it fires as a silent miscount, not an error · red-prove it by filing a
-  combined open head in a fixture and watching both readers miss it
 
 - **#275** — Research public Dreamhub authentication informed by shoo.dev · P2 ·
   security research/design · origin: **human** · **human via answer 17:48** ·
@@ -1212,6 +1174,35 @@ Next id: **331**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#323** — lint compares the ledger against git · landed this commit · origin:
+  **loop** · `check_landed_still_open` WARNs when an open entry's id has a
+  `close(#N)`/`merge(#N)` commit the entry does not name · the discrimination was
+  the design: #269 and #275 are legitimately open after a landing, and a prose
+  keyword rule was tried and MEASURED wrong first (all three cases contain the
+  word "landed"; #315's is describing the problem it fixes) · the rule that works
+  is "git names a commit the entry does not", which works because a deliberate
+  partial already cites its sha — #269 and #275 both did unprompted, so the rule
+  records a habit rather than inventing a marker · it found a fourth stale-open
+  while being measured for: #315 itself, now folded · WARN never ERROR, and a
+  non-git target is silent · red re-proved by injection on the final test;
+  documented in `file-formats.md` in the same commit
+
+- **#315** — both ledger readers widen to combined open heads together · landed
+  `7764be4`, merged `4b69196` · origin: **loop** · `LEDGER_ENTRY`, `LEDGER_ID` and
+  `check_ledger_sections` widened in ONE commit as the task required, since
+  widening either alone makes the two readers disagree on any ledger holding a
+  combined open entry · `parse_ledger` gained `_open_ids`; the section check counts
+  ids rather than lines; the pinning test needed no change because the patterns
+  stayed identical · the latent defect it fixed had no live instance (103 = 103
+  when measured), so the red proof was the deliverable: a combined head filed in a
+  fixture, watched missing by both readers · **it immediately earned its keep** —
+  the widening surfaced a real stale-open (#156 open AND named in the landed
+  roll-up `- **#138/#156**`), which lint reported as `duplicate id(s) [156]` ten
+  minutes after landing, and that is also the error my own fold had just created
+  · this entry was itself left stale under `## Open` after landing and was found
+  by #323's measurement — the third such case in one evening, which is what
+  finally made #323 worth building rather than filing
 
 - **#325** — the review artifact is a template with a builder · landed `2365cb0`,
   merged `e798e07` · origin: **human** · **human via watch 2026-07-27 21:38** ·

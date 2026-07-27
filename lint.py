@@ -32,6 +32,7 @@ import argparse
 import importlib.util
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -42,6 +43,10 @@ ERROR, WARN, OK = "ERROR", "WARN", "OK"
 DREAM_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}-[a-z0-9-]+\.md$")
 LEDGER_ID = re.compile(r"^- \*\*(#\d+(?:/#\d+)*)\*\*", re.M)
 NEXT_ID = re.compile(r"^Next id: \*\*(\d+)\*\*", re.M)
+# #323: the repo keeps `close(#N):` / `merge(#N):` rigorously, so a commit
+# subject is a usable signal that a task shipped. The trailing character class
+# matters: without it `close(#31)` would answer for #3.
+CLOSE_SUBJECT = re.compile(r"^(?:close|merge)\(#(\d+)[)/,]")
 
 # ── task provenance, forward-only from the cutoff (#213) ──────────────
 # The origin rule reads WHOLE entries (ENTRY_HEAD/ENTRY_ID below), not head
@@ -303,6 +308,106 @@ def check_tasks(dw: Path, rep: Report) -> None:
 
     check_task_origins(text, rep)
     check_ledger_sections(text, rep)
+    check_landed_still_open(dw, text, rep)
+
+
+def check_landed_still_open(dw: Path, text: str, rep: Report) -> None:
+    """#323: git says it landed; the ledger still lists it under Open.
+
+    `check_ledger_sections` compares the open COUNT between two readers, so
+    it catches a miscount and never a task sitting in the wrong section —
+    nothing compared the ledger against git at all. Three stale-opens turned
+    up in one evening (#314, #156, #315), and the third was found by this
+    check's own measurement rather than by anyone noticing, which is the
+    argument for automating it: the failure is silent and it makes the queue
+    overstate what is left, while the entries that SUPERSEDED the landed one
+    read as unrelated work.
+
+    **It WARNs and must never ERROR.** A close commit is strong evidence, not
+    proof: #275 carries both a `close` and a `merge` and is legitimately open
+    because its ask awaits his ruling, which is part of its definition of
+    done (#306). An error would make an honest state unrepresentable, so this
+    is a prompt to look, like the styleguide audit.
+
+    THE DISCRIMINATION, which is the whole design. A prose keyword search was
+    tried first and is wrong: #315's body contains "landed" while describing
+    the *problem* (`#301 fixed the LANDED half`), so a keyword rule flags the
+    stale case for the wrong reason and cannot separate it from a deliberate
+    partial. The rule is instead **git names a close/merge commit that the
+    entry does not name**. That works because an entry which deliberately
+    stays open after a landing already cites its commit — measured on the
+    three real cases: #315 (commit `4b69196`, uncited → flagged, correctly),
+    #269 (`e383492`, cited → silent, correctly), #275 (`4b49ecb`, cited →
+    silent, correctly).
+
+    A target that is not a git repository is skipped in silence. The loop runs
+    on projects that may not be under git at all, and "cannot check" must not
+    render as "nothing to fix".
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(dw.parent), "log", "--format=%h %s"],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+    if out.returncode != 0:
+        return  # not a repo, or no commits yet: nothing to compare against
+
+    # id -> the short shas of its close/merge commits. The trailing class stops
+    # `close(#31)` from answering for #3, which a bare prefix match would.
+    closed: dict[int, list[str]] = {}
+    for line in out.stdout.splitlines():
+        parts = line.split(" ", 1)
+        if len(parts) != 2:
+            continue
+        sha, subject = parts
+        m = CLOSE_SUBJECT.match(subject)
+        if m:
+            closed.setdefault(int(m.group(1)), []).append(sha)
+    if not closed:
+        return
+
+    # Slice the Open section rather than teaching `ledger_entries` about
+    # headings: it is a shared helper with its own pinned tests, and a second
+    # caller's need is a poor reason to widen it.
+    lines = text.splitlines()
+    start = end = None
+    for n, ln in enumerate(lines):
+        if ln.strip().startswith("## "):
+            if ln.strip() == "## Open":
+                start = n + 1
+            elif start is not None:
+                end = n
+                break
+    if start is None:
+        return
+    open_text = "\n".join(lines[start:end])
+
+    stale: list[str] = []
+    acknowledged = 0
+    for ids, body in ledger_entries(open_text):
+        for tid in ids:
+            shas = closed.get(tid)
+            if not shas:
+                continue
+            if any(s in body for s in shas):
+                acknowledged += 1       # a deliberate partial: it cites its commit
+            else:
+                stale.append(f"#{tid} ({', '.join(shas)})")
+    for name in stale:
+        rep.add(
+            WARN,
+            "tasks.md",
+            f"{name} is under `## Open` but git already has a close/merge commit "
+            f"for it that the entry does not name — either fold it into "
+            f"`## Recently landed`, or, if it is deliberately still open, cite "
+            f"that commit in the entry the way #269 and #275 do (#323)",
+        )
+    if acknowledged and not stale:
+        rep.add(OK, "tasks.md",
+                f"{acknowledged} open entr{'y' if acknowledged == 1 else 'ies'} "
+                f"cite the landing that would otherwise look stale")
 
 
 def check_landed_asks(dw: Path, watch, rep: Report) -> None:

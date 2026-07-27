@@ -1339,3 +1339,130 @@ class TestStatusKeys:
         rep = lint.Report()
         lint.run_checks(dw, lint.load_watch(), rep)
         assert any("retired_today" in d for l, _, d in rep.rows if l == lint.WARN)
+
+
+class TestLandedStillOpen:
+    """#323: git says a task landed; the ledger still lists it under Open.
+
+    Three real cases in one evening (#314, #156, #315) motivated this, and
+    the third was found by this check's own measurement rather than by
+    anyone noticing. `lint` already cross-checks the open COUNT, so it
+    catches a miscount but never a task sitting in the wrong section —
+    nothing compared the ledger against git.
+
+    The discrimination is the whole design, and it is why a keyword search
+    was rejected: #315's body contains the word "landed" describing the
+    problem (`#301 fixed the LANDED half`), so any prose-matching rule
+    flags it for the wrong reason and would flag deliberate partials too.
+    The rule is instead **git names a close/merge commit that the entry
+    does not** — and an entry that deliberately stays open after a landing
+    already names its commit, because #269 and #275 both do so naturally.
+    """
+
+    LEDGER = """# Tasks
+
+Next id: **9**
+
+## Open
+
+- **#1** — a task whose landing the entry does NOT acknowledge · P2 ·
+  origin: **loop** · this is the stale case
+
+- **#2** — a task deliberately still open after a partial landing · P2 ·
+  origin: **loop** · the acute half landed `SHA2`, the module remains
+
+- **#3** — a task with no close or merge commit at all · P2 ·
+  origin: **loop** · still genuinely in progress
+
+## Recently landed
+
+- **#8** — something else · landed `deadbee`
+"""
+
+    def build(self, tmp_path):
+        """A REAL git repo, because the check reads real `git log` output."""
+        import subprocess
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+
+        def git(*a):
+            return subprocess.run(["git", "-C", str(t), *a],
+                                  capture_output=True, text=True, check=True)
+
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        (t / "f").write_text("1")
+        git("add", "f")
+        git("commit", "-qm", "close(#1): landed and the entry never said so")
+        (t / "f").write_text("2")
+        git("add", "f")
+        git("commit", "-qm", "merge(#2): the acute half of a partial")
+        sha2 = git("rev-parse", "--short", "HEAD").stdout.strip()
+        (dw / "tasks.md").write_text(self.LEDGER.replace("SHA2", sha2))
+        return t, sha2
+
+    def warns(self, t):
+        rep = lint.Report()
+        lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
+        return [d for lvl, w, d in rep.rows if lvl == lint.WARN and w == "tasks.md"]
+
+    def flagged(self, t):
+        """The ids this check actually flagged, not a substring search.
+
+        A substring test is wrong here and cost one debugging pass: the
+        warning's own advice names #269 and #275, so `"#2" in text` is true
+        for a warning about #1. Read the id from the head of the message,
+        which is the only place the SUBJECT appears.
+        """
+        import re as _re
+        out = []
+        for d in self.warns(t):
+            m = _re.match(r"#(\d+) \(", d)
+            if m:
+                out.append(int(m.group(1)))
+        return out
+
+    def test_it_flags_the_unacknowledged_landing_only(self, tmp_path):
+        t, sha2 = self.build(tmp_path)
+
+        # --- PRECONDITIONS, so this cannot pass vacuously ---
+        # The fixture's meaning depends on the three cases genuinely differing.
+        # Derive each at runtime; a fixture edit that collapsed them would
+        # otherwise make the assertions below true about nothing.
+        import subprocess
+        subs = subprocess.run(["git", "-C", str(t), "log", "--format=%s"],
+                              capture_output=True, text=True).stdout
+        assert "close(#1)" in subs, "case 1 needs a real close commit"
+        assert "merge(#2)" in subs, "case 2 needs a real merge commit"
+        assert "#3)" not in subs, "case 3 must have NO close/merge commit"
+        ledger = (t / ".dreamwork" / "tasks.md").read_text()
+        assert sha2 in ledger, "case 2 must NAME its commit — that is the discriminator"
+        assert not any(s in ledger for s in ("close(#1)",)), "case 1 must not name its commit"
+
+        got = self.flagged(t)
+        assert got == [1], (
+            "exactly the stale landing must be flagged: #2 is a deliberate "
+            "partial that NAMES its commit (#269/#275's real shape) and #3 has "
+            f"no close commit at all; flagged {got}")
+
+    def test_it_is_a_warning_never_an_error(self, tmp_path):
+        # A close commit is strong evidence, not proof: #275 has both a close
+        # and a merge and is legitimately open because its ask awaits his
+        # ruling, which is part of its definition of done (#306). So this is a
+        # prompt to look, like the styleguide audit — an error would make the
+        # ledger's honest states unrepresentable.
+        t, _ = self.build(tmp_path)
+        rep = lint.Report()
+        lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
+        assert not rep.failed, [r for r in rep.rows if r[0] == lint.ERROR]
+
+    def test_a_target_that_is_not_a_git_repo_is_silent(self, tmp_path):
+        # The loop runs on targets that may not be git repos at all, and
+        # "cannot check" must not read as "nothing to fix".
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(self.LEDGER.replace("SHA2", "abc1234"))
+        assert not any("landed" in w for w in self.warns(t))

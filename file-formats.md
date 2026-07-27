@@ -278,6 +278,35 @@ Rendering human/loop/unknown coverage on the dashboard (#217) is its
 own increment and deliberately NOT here. First-sight parsing (#216) HAS
 landed — see the next section.
 
+## `.dreamwork/tasks.md` — an open entry whose work has landed (#323)
+
+An entry under `## Open` may legitimately stay there after a commit says it
+landed. Two real shapes: a task whose acute half shipped while its larger
+scope remains (`#269`), and a task whose ask awaits the human's ruling,
+because that ruling is part of its definition of done (`#275`, and `#306`
+for why).
+
+**Such an entry must NAME the commit** — the short sha, anywhere in the
+entry body. That is the whole contract, and it exists because the
+alternative has no signal: a genuinely stale open entry and a deliberate
+partial are otherwise identical text, and three stale ones accumulated in
+a single evening (`#314`, `#156`, `#315`) with nothing noticing. Citing the
+sha is what `#269` and `#275` already did unprompted, so the rule writes
+down an existing habit rather than inventing a marker.
+
+`lint.check_landed_still_open` reads `git log` for subjects matching
+`close(#N):` or `merge(#N):` — a convention this repo keeps rigorously —
+and **WARNs** when an open entry's id has such a commit that the entry does
+not name. It never ERRORs: a close commit is strong evidence, not proof, so
+an error would make `#275`'s honest state unrepresentable. A target that is
+not a git repository is skipped silently, because "cannot check" must not
+read as "nothing to fix".
+
+Do not reach for a prose keyword instead. It was tried and it is wrong:
+`#315`'s body contained the word "landed" while describing the *problem*
+(`#301 fixed the LANDED half`), so a keyword rule flags the stale case for
+the wrong reason and cannot separate it from a deliberate partial.
+
 ## `.dreamwork/tasks.md` — first-seen origin from git history (#216)
 
 `task_origins.py` answers "who filed each task" as a fact about the
