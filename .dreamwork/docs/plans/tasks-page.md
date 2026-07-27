@@ -207,6 +207,19 @@ such an entry as `unknown` precisely because it exists. Zero of today's 148
 entries take that shape, which is exactly why building on the narrow pattern
 would look correct for as long as nobody wrote one.
 
+**One hazard in composing them, and it is not theoretical — this review hit it
+while measuring.** `ledger_entries` returns ids as **`int`**
+(`[[331], [332], …]`), while `parse_ledger` returns them as **`str`**
+(`{'50', '73', …}`, and its docstring says so deliberately, because
+`ledger_series` and the origin walk key on strings throughout). So the obvious
+composition — *is this entry's id in the open set?* — is `False` for **every**
+id, silently, and the page renders 244 records all marked `unknown` while every
+reader involved is working correctly. There is no exception and no crash to
+notice. `ledger_index` must therefore **normalise once, at the seam, and state
+which side it normalises to**; the record's `id` is an `int` because that is
+what the URL contract and `?t=<id>` parse to, so the string sets are converted
+on the way in, not the ints on the way out. §9.1 case 22 holds this.
+
 What is pinned, stated precisely because the two guarantees are not the same
 strength: `watch.LEDGER_ENTRY.pattern == lint.LEDGER_ID.pattern` and the same
 for `ENTRY_HEAD`/`ENTRY_ID`/`ORIGIN_MARK`
@@ -312,9 +325,13 @@ Three consequences, each of which changes an implementation decision:
   which §3's own rule forbids, and it is the same defect as regexing
   `dreamer-*` into an owner column one bullet up.
 
-  `agents[].in_flight` does not rescue it: `file-formats.md:494` documents it
-  as *"one line: what it is doing right now"*, and the live file writes
-  `"in_flight": true` — a bool, naming no id at all.
+  `agents[].in_flight` does not rescue it either, and for a subtler reason
+  than a broken contract: it holds exactly what `file-formats.md:523` promises
+  — *"one line: what it is doing right now"* — but **a line about the work is
+  not a reference to a task.** Measured on the live file at `01df3b6`: of three
+  agents, **two name no id at all**, and the third's line names `#281` while
+  that agent's actual task is `#327`. So harvesting ids from it would attribute
+  the wrong task and still miss the right one — worse than showing nothing.
 
   **So the evidence, in priority order, and the page shows nothing when
   neither exists:**
@@ -395,14 +412,17 @@ definition of done. So:
   older fact would hide exactly the case where a task went back to open, which
   is the transition `#264` exists to record and nothing else can currently see.
 
-**The partition, measured, because it is what makes `unknown` first-class
-rather than a rarity:** of 238 records, **106 are open** (one of them also
-ever-landed, above), **113 are landed and not open**, and **19 are neither** —
-`#77, #95, #96, #102, #104, #106, #107, #108, #109, #110, #116, #121, #123,
-#132, #141, #149, #151, #154, #157`. Twelve of the nineteen are the
-space-joined-mention gap (§10); the rest are ids no snapshot ever placed under
-either heading in a form the readers can see. All nineteen render as `unknown`
-**and are still listed**, because they exist.
+**The partition, measured at `01df3b6`, because it is what makes `unknown`
+first-class rather than a rarity:** of 244 records, **108 are open** (one of
+them also ever-landed, above), **117 are landed and not open**, and **19 are
+neither** — `#77, #95, #96, #102, #104, #106, #107, #108, #109, #110, #116,
+#121, #123, #132, #141, #149, #151, #154, #157`. **Seventeen of the nineteen
+are the multi-id-span gap** (§10). The other two are `#95` and `#96`, ids no
+snapshot ever placed under either heading in a form any reader can see — and
+`#96` is the one to keep in mind, because its only bold span is
+`**#96 stage 1**`, which is prose and **must stay inert**: a widening that
+admitted trailing words would start reading section titles as task ids. All
+nineteen render as `unknown` **and are still listed**, because they exist.
 
 **The `Reported:` box is a transition and obeys `transitions.md`.** It arrives
 and departs on the existing hover/focus idiom; it is **not** hover-only —
@@ -420,16 +440,19 @@ wrong:
   and this is exactly the shape of a typo nobody would otherwise notice.
 - **"not in this ledger" needs a third state beside it, because the landed
   reader has a measured blind spot.** `_landed_ids` reads
-  `LEDGER_COMBINED_MENTION` (`watch.py:6340`), an ids-only bold span joined by
-  `/`. The landed section's compacted roll-up also writes **space-joined**
-  spans — `**#121 #123**`, `**#104 #77**`, `**#109 #116**`,
-  `**#107 #108 #110**`, `**#102 #106**` — and `**#96 stage 1**`, none of which
-  match. Measured on today's file: **#77, #96, #102, #104, #106, #107, #108,
-  #109, #110, #116, #121 and #123 are in neither the open set nor the landed
-  set**, though every one of them landed and is named in the file.
-  So `blocked on #106` must **not** render `not in this ledger` — that is
-  precisely the wrong claim this rule exists to prevent, and it would be wrong
-  on twelve real ids. The cross-check is three-way:
+  `LEDGER_COMBINED_MENTION` (`watch.py:6450`), an ids-only bold span joined by
+  `/` **and only by `/`**. The landed section's compacted roll-up also writes
+  **space-joined** spans — `**#121 #123**`, `**#104 #77**`, `**#109 #116**`,
+  `**#107 #108 #110**`, `**#102 #106**`, `**#141 #149**`,
+  `**#132 #151 #154**` — and one `+`-joined, `**#157 + #222 + #223**`. None of
+  them match. Measured at `01df3b6`: **nineteen ids are in neither the open set
+  nor the landed set** — `#77, #102, #104, #106, #107, #108, #109, #110, #116,
+  #121, #123, #132, #141, #149, #151, #154, #157, #222, #223` — and **not one
+  of them was in a landed set at any of the ledger's 295 revisions**, so
+  walking history does not recover them either. So `blocked on #106` must
+  **not** render `not in this ledger` — that is precisely the wrong claim this
+  rule exists to prevent, and it would be wrong on nineteen real ids. The
+  cross-check is three-way:
   **in the landed set** → `which landed <date>`; **in the open set** →
   `still open`; **in neither, but `ledger_history` has ever seen the id** →
   `state unknown` with no date. Only an id no snapshot has ever named earns
@@ -849,7 +872,7 @@ habit of passing over the thing they were written for.
 | 5 | `P0/P1` → band P0, raw preserved; absent → band P2 with `priority_raw: null`; `**P2**`-before-title is found; `P4` → no band, raw kept | `int(tok[1])`, or defaulting `priority_raw` to `"P2"` |
 | 6 | `20m` → 20; `4-5 increments` → **no** minutes, raw kept | a digits-anywhere regex (reports 4) |
 | 7 | `blocked on #264 design and relevant #263 cutover` → `[264, 263]` + verbatim note | anchoring the pattern at end-of-token |
-| 8 | the blocker cross-check is **three-way**: in the landed set → `blocker_landed`; in the open set → `still open`; known to history but in neither set → `state unknown`; named by no snapshot ever → `blocker_missing` | collapsing the third state into `blocker_missing` — which is wrong today on twelve real landed ids (§3, §10). **Assert the precondition:** the fixture's four blockers must land in four different states, derived at runtime, or three of the four branches are untested and the check still passes |
+| 8 | the blocker cross-check is **three-way**: in the landed set → `blocker_landed`; in the open set → `still open`; known to history but in neither set → `state unknown`; named by no snapshot ever → `blocker_missing` | collapsing the third state into `blocker_missing` — which is wrong today on nineteen real landed ids (§3, §10). **Assert the precondition:** the fixture's four blockers must land in four different states, derived at runtime, or three of the four branches are untested and the check still passes |
 | 9 | an entry whose leading token has no digits yields `ids: []`, state unknown, **and is still listed** | `ids[0]` → IndexError → the whole route 500s. **Assert the precondition:** today's ledger holds **zero** entries of this shape (measured at `16ef2e2`), so the case is reachable only from the planted fixture — the test must build the entry itself and assert it is absent from the real ledger, or it is a check whose subject may quietly stop existing |
 | 10 | landing date comes from git; with no repository, the text claim is shown **labelled** | reading only one of the two → a pruned entry has no date, or a non-checkout shows nothing |
 | 11 | a git-only (pruned) id appears with `present: false` and a snapshot title | building the list from the file alone. **87 records take this path on the real ledger** (§2.2), so the check also asserts the union is strictly larger than the entry set — a fixture-only assertion would have passed while the real page dropped a third of its records |
@@ -862,6 +885,7 @@ habit of passing over the thing they were written for.
 | 18 | `in progress` comes from a **structured** source only: the ledger's `· in progress` token, or `*_task_ids` when present. A `status.json` whose `task` prose names three ids marks **none** of them | matching ids out of prose → the live file marks five tasks in progress, one of which it calls *queued* (§2.3). Build the fixture from the real file's shape, and assert the prose names ids the badge does not claim, or the check cannot fail |
 | 19 | the reported-age is the age of **the claim**, not of the render: an `in progress` marker planted N seconds back reports ≈N, not zero | computing the age from `now` → every badge reads `00m 00s` forever, which is the hedge his ruling removed wearing a number |
 | 20 | an id under `## Open` whose history also names it as landed renders **`open`**, with the older fact stated and not dropped | testing history first (or an `or` between the two sources) → `#275` renders landed today while its entry describes live work. **Assert the precondition** that the fixture id really is in both sets, derived at runtime |
+| 22 | an id that is open **and** has an entry renders `open`, proving the entry set and the open set were joined on the same id type | comparing `ledger_entries`' `int` ids against `parse_ledger`'s `str` ids → the join is empty and EVERY record renders `unknown`. **Assert the precondition:** the test derives one id from each reader and asserts the raw values are unequal while the normalised ones are equal, so the case cannot pass by both readers happening to agree |
 | 21 | an id known to history but in neither set renders `unknown` **and is listed** | filtering the record set down to open∪landed → nineteen real ids vanish from a page whose whole claim is that nothing is dropped |
 
 ### 9.2 Browser guard — `dev/capture/tasks.mjs`
@@ -1002,35 +1026,50 @@ next reader no way to tell fixed from forgotten:
   this design consumes rather than blocks. (Already corrected in `#281`'s
   ledger entry.)
 
-**And three new findings, all measured, all out of this plan's scope:**
+**And two new findings, both measured, both out of this plan's scope and
+both now filed:**
 
-- **The landed reader misses SPACE-joined bold id spans.**
-  `LEDGER_COMBINED_MENTION` (`watch.py:6340`) is `\*\*(#\d+(?:/#\d+)*)\*\*` —
-  ids joined by `/`. The compacted roll-up under `## Recently landed` also
-  writes `**#121 #123**`, `**#104 #77**`, `**#109 #116**`,
-  `**#107 #108 #110**`, `**#102 #106**` and `**#96 stage 1**`. Measured at
-  `16ef2e2`: **#77, #96, #102, #104, #106, #107, #108, #109, #110, #116, #121
-  and #123 are in neither `parse_ledger` set** — twelve landed tasks the
-  current file's readers cannot classify at all. This is the same class of bug
-  `#301`/`#315` just fixed, one separator over, and it is why §3's blocker
-  cross-check is three-way rather than two. It is a live under-count on the
-  burndown's completion series today.
-- **`agents[].in_flight` is documented as prose and written as a bool.**
-  `file-formats.md:494` says *"one line: what it is doing right now"* and calls
-  it *"the one subfield with two readers … load-bearing"*; the live
-  `status.json` writes `"in_flight": true`, and `watch.py:2105` renders it
-  through `mdInline(String(a.in_flight || '—'))` — so the deployed agent glance
-  currently reads **`doing: true`**. Either the writer or the contract is
-  wrong; both readers (`watch.py`, `dreamhub.py:342`) trust the documented
-  shape.
-- **`status.json` has no structured way to say which task an agent is on**,
-  which is what §2.3 needs for an honest `in progress` badge. Required change,
+- **The landed reader sees only `/`-joined id spans — filed as `#331`.**
+  `LEDGER_COMBINED_MENTION` (`watch.py:6450`) is `\*\*(#\d+(?:/#\d+)*)\*\*`.
+  Grooming's compacted roll-up under `## Recently landed` also writes
+  **space-joined** spans — `**#121 #123**`, `**#104 #77**`, `**#109 #116**`,
+  `**#107 #108 #110**`, `**#102 #106**`, `**#141 #149**`, `**#132 #151 #154**`
+  — and one `+`-joined, `**#157 + #222 + #223**`. Measured at `01df3b6`:
+  **nineteen ids are in neither `parse_ledger` set** — `#77, #102, #104, #106,
+  #107, #108, #109, #110, #116, #121, #123, #132, #141, #149, #151, #154, #157,
+  #222, #223` — and **none of the nineteen was in a landed set at any of the
+  295 ledger revisions**, so the history walk does not recover them: closing
+  the gap moves the ever-landed total from **117 to 136**. It is a live
+  under-count on the burndown's completion series, and it is why §3's blocker
+  cross-check is three-way rather than two.
+
+  Two things to carry into `#331` rather than rediscover. **The fix is not a
+  third regex**: `#301` widened the landed reader, `#315` widened the open
+  readers and `LEDGER_ID` together, and this is the same defect at a third
+  door — one shared definition of "an ids-only bold span" that every reader
+  consumes, pinned the way `test_ledger_entry_rule_has_exactly_one_copy`
+  already pins two of them. And **`**#96 stage 1**` must stay inert** — a span
+  is ids-only or it is prose; admitting trailing words would start reading
+  section titles as ids, which is why `#96` is *not* in the nineteen and why
+  it is the fixture the widening has to be red-proved against.
+- **`status.json` has no structured way to say which task an agent is on —
+  filed as `#332`.** This is what §2.3 needs for an honest `in progress`
+  badge. Required change,
   stated exactly so the coordinator can land it in `file-formats.md`'s
   status.json table: add `current_task_ids` (array of ints, top level) and
   `task_ids` (array of ints, per agent) — *"the task ids this names, as
   integers; prose in `task` is not a substitute, because one sentence routinely
   names several ids in different states"*. Until it exists the page shows
   `in progress` from the ledger's own `· in progress` token only.
+
+**One claim from an earlier draft of this review is withdrawn.** It said
+`agents[].in_flight` was documented as prose and written as a bool, so the
+agent glance read `doing: true`. **That is wrong and there is no such bug.**
+`in_flight` holds prose in the live file and has held prose in every one of the
+last forty revisions of `status.json`; the bool is `awaiting_result`, a
+different key, and the two were conflated. The §2.3 argument does not depend on
+it — see there for the reason `in_flight` cannot carry the badge, which is that
+prose about the work names the wrong ids or none, measured.
 
 ---
 
@@ -1204,7 +1243,7 @@ codec, the `aria-live` count line, `/` and Escape handling.
       the reflowed description, mentions, and the raw peek.
 - [ ] **The blocker cross-check is three-way** (§3, case 8): landed / still
       open / known-to-history-but-unclassifiable / never named. Collapsing the
-      third into *"not in this ledger"* is wrong on twelve real ids today.
+      third into *"not in this ledger"* is wrong on nineteen real ids today.
 - [ ] **`buildTaskDetail(t, d)` stays container-agnostic** — `#328` calls it
       into a pane rather than a route, and that seam costs nothing here (§5.1).
 - [ ] Document the detail contract and the `expand`-vs-navigate reasoning.
@@ -1352,13 +1391,13 @@ the proposal's.
   date, not a constant — 148 entries (106 open, 42 landed), priority 106/106,
   effort 64/106 numeric, origin marker 59/106, blockers 21/106 — and the
   figures the first draft carried had all aged out inside a day.
-  **`present: false` is 87, not 0**: 37% of the 238 ids this ledger has ever
+  **`present: false` is 87, not 0**: 36% of the 244 ids this ledger has ever
   named have no entry, because grooming compacts Recently-landed into prose
   roll-ups. **Owner is not detectable** and the page says so. **In progress
   is shown and says "in progress"** (his ruling), evidenced only by a
   structured source, with the honesty carried by `Reported: Xm Ys ago` through
   the existing `agePair` formatter. The blocker cross-check is **three-way**,
-  because twelve genuinely-landed ids are currently in neither reader set.
+  because nineteen genuinely-landed ids are currently in neither reader set.
 - **Design.** `/tasks` is one 72ch column **by his ruling**, with the wide
   two-pane triage layout **approved at `/tasks2` (`#328`)** — so the row, the
   detail builder and `ledger_index` are the seam it composes, and it inherits
@@ -1397,7 +1436,10 @@ the proposal's.
   overrode this proposal's own recommendation, and §§1.2, 3, 4.2, 5.1 and 5.4
   now state his call rather than arguing against it.
 - **§10 is current.** Its two original findings are fixed (`#301`/`#315`,
-  `#302`); three measured replacements stand — space-joined bold id spans
-  invisible to the landed reader, `in_flight` documented as prose and written
-  as a bool (so the agent glance reads `doing: true`), and `status.json`
-  lacking any structured task-id field.
+  `#302`); **two** measured replacements stand and both are filed — the landed
+  reader seeing only `/`-joined id spans, so nineteen landed ids are in neither
+  set and history does not recover them (`#331`), and `status.json` lacking any
+  structured task-id field (`#332`). A third claim, that `in_flight` was
+  written as a bool, was **withdrawn on challenge**: it is prose, and always
+  was; `awaiting_result` is the bool. The §2.3 argument stands on a measured
+  replacement — prose about the work names the wrong ids or none.
