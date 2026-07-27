@@ -12,10 +12,51 @@ from __future__ import annotations
 import os
 import sqlite3
 import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
+
+from user_events.digest import (
+    canonical_media_type,
+    canonical_method,
+    canonical_route,
+    request_digest,
+)
 
 PathLike = Union[str, os.PathLike]
+
+
+@dataclass(frozen=True)
+class Envelope:
+    """One complete registered transport envelope ready for receive."""
+
+    client_action_id: str
+    protocol_version: str
+    method: str
+    route: str
+    content_type: str
+    body: bytes
+    target_id: str = ""
+    source_hint: str = ""
+    redaction_class: str = "default"
+
+
+@dataclass(frozen=True)
+class ReceiveResult:
+    """Outcome of receive(): inserted | replay | conflict.
+
+    kind is the discriminating field — a unique-constraint IntegrityError is a
+    *different* failure and must not be counted as a successful replay.
+    """
+
+    kind: str  # "inserted" | "replay" | "conflict"
+    receipt_id: Optional[str]
+    sequence: Optional[int]
+    request_digest: str
+    state: Optional[str]
+    revision: Optional[int]
+    exact_payload_bytes: Optional[bytes] = None
 
 SCHEMA_VERSION = 1
 # Bounded busy timeout in milliseconds. The durability boundary claims a
@@ -168,6 +209,118 @@ class Journal:
             "synchronous": int(sync),
             "busy_timeout": int(busy),
         }
+
+    def receipt_count(self) -> int:
+        return int(self.conn.execute("SELECT COUNT(*) FROM receipts").fetchone()[0])
+
+    def receive(self, envelope: Envelope) -> ReceiveResult:
+        """Idempotent receive: absent→insert, equal digest→replay, else conflict.
+
+        Implements the three-row table in user-event-journal.md §Receive and
+        idempotency. The SELECT-then-compare before insert is load-bearing: without
+        it a same-UUID retry raises IntegrityError on the unique constraint, which
+        is a *different* failure than a clean replay (B2 red line).
+        """
+        digest = request_digest(
+            protocol_version=envelope.protocol_version,
+            method=envelope.method,
+            route=envelope.route,
+            content_type=envelope.content_type,
+            body=envelope.body,
+        )
+        # Canonical surface fields stored on the receipt (import from digest;
+        # never re-implement).
+        method = canonical_method(envelope.method)
+        endpoint = canonical_route(envelope.route)
+        content_type = canonical_media_type(envelope.content_type)
+        body = bytes(envelope.body)
+
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            # --- B2 red line: this SELECT + digest comparison before insert ---
+            existing = self.conn.execute(
+                "SELECT request_digest, receipt_id, sequence, state, revision, "
+                "exact_payload_bytes FROM receipts WHERE client_action_id = ?",
+                (envelope.client_action_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["request_digest"] == digest:
+                    self.conn.execute("COMMIT")
+                    return ReceiveResult(
+                        kind="replay",
+                        receipt_id=existing["receipt_id"],
+                        sequence=int(existing["sequence"]),
+                        request_digest=existing["request_digest"],
+                        state=existing["state"],
+                        revision=int(existing["revision"]),
+                        exact_payload_bytes=bytes(existing["exact_payload_bytes"]),
+                    )
+                # present + different digest → conflict; preserve original
+                self.conn.execute("COMMIT")
+                return ReceiveResult(
+                    kind="conflict",
+                    receipt_id=existing["receipt_id"],
+                    sequence=int(existing["sequence"]),
+                    request_digest=existing["request_digest"],
+                    state=existing["state"],
+                    revision=int(existing["revision"]),
+                    exact_payload_bytes=bytes(existing["exact_payload_bytes"]),
+                )
+
+            # absent → insert one receipt in state received
+            receipt_id = str(uuid.uuid4())
+            seq_row = self.conn.execute(
+                "SELECT COALESCE(MAX(sequence), 0) + 1 FROM receipts"
+            ).fetchone()
+            sequence = int(seq_row[0])
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            self.conn.execute(
+                """
+                INSERT INTO receipts (
+                    receipt_id, sequence, client_action_id, request_digest,
+                    received_at, method, endpoint, content_type,
+                    exact_payload_bytes, payload_size, target_id, source_hint,
+                    redaction_class, state, revision
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', 1)
+                """,
+                (
+                    receipt_id,
+                    sequence,
+                    envelope.client_action_id,
+                    digest,
+                    now,
+                    method,
+                    endpoint,
+                    content_type,
+                    body,
+                    len(body),
+                    envelope.target_id,
+                    envelope.source_hint,
+                    envelope.redaction_class,
+                ),
+            )
+            # Initial received transition at revision 1
+            self.conn.execute(
+                """
+                INSERT INTO transitions (
+                    transition_id, receipt_id, at, from_state, to_state, revision
+                ) VALUES (?, ?, ?, '', 'received', 1)
+                """,
+                (str(uuid.uuid4()), receipt_id, now),
+            )
+            self.conn.execute("COMMIT")
+            return ReceiveResult(
+                kind="inserted",
+                receipt_id=receipt_id,
+                sequence=sequence,
+                request_digest=digest,
+                state="received",
+                revision=1,
+                exact_payload_bytes=body,
+            )
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
 
 
 def open_journal(path: PathLike) -> Journal:
