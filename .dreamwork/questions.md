@@ -1,6 +1,64 @@
 # Questions for the human
 
 ## Open
+- **P1 · 2026-07-28 — #346 task-store schema: approve the entity shape and
+  four decisions (S1-S4)?** Decision artifact:
+  `.dreamwork/review/task-store-schema.html`; full design:
+  `.dreamwork/docs/plans/task-store-schema.md`. You said at 23:33 that the sqlite
+  db and cli are becoming a blocker and invited a question — this is it, plus the
+  half of #294 that turns out not to need your #263 answer at all.
+
+  **First, the gate is not what #294 said it was.** That entry claimed starting
+  would mean designing against an *unsettled* event model. Read against the
+  document, `user-event-journal.md:4` says *"human approval required; no
+  implementation authority"* and its approval gate authorises *"a separate
+  red-first implementation plan"*. So #263's model is designed, reviewed and PASS
+  — it is **unratified**, which only you can change. What #264 gates is one
+  question: does a task transition share #263's journal or use a task-state
+  outbox? That is about how a **transition** becomes durable, and the columns
+  describing a task **at rest** are identical either way. So the entity schema and
+  its read surface are separable, and #346 is that half.
+
+  **Five measurements against your live ledger, each breaking a schema that looks
+  obviously right.** All five came from `watch.ledger_entries`/`parse_ledger`, not
+  a fresh regex — a fresh regex was tried first and reported 10 open entries
+  instead of 111, because `text.index('## Open')` matched a prose mention of the
+  heading in the file's own preamble. (1) An entry is not a task id: `#138/#156`,
+  `#250/#251`, `#292/#293` are one body under two permanent ids. (2) The count
+  that would catch that agrees **by accident** today — open entries 111, open ids
+  111, because all three combined entries happen to be landed. (3) Priority is not
+  a closed set: `P0/P1`x3, `P1/P2`x1, and 6 entries with no band. (4) Origin has
+  four states, because 60 entries have no marker at all and 8 say `unknown`
+  explicitly, and your own contract makes those different facts. (5) The
+  dot-separated fields are not positional, so `type` cannot be parsed by index —
+  reading "the field after the band" yields 65 values including
+  `landed 2026-07-27`.
+
+  **It also settles the invariant #294 told us to verify rather than assume, and
+  the answer is that it is already false.** `ledger_entries` has two
+  implementations (lint's and watch's — same logic, different source), three
+  callers (`lint.py`, `watch.py`, `task_origins.py`), pinned by one behavioural
+  fixture at `test_watch.py:863`. Re-pointing `watch.py` alone at cutover would
+  leave the other two parsing a file that cutover renames to
+  `tasks.md.deprecated`.
+
+  Rec **S1 keep** combined entries via an entry/task split (**refuted: split the
+  three and forbid new ones** — simpler forever, but it edits three of your
+  existing entries and combining was deliberate). Rec **S2 compound bands stay
+  legal** (**refuted: resolve each to one band when touched** — `P0/P1` says
+  something one band cannot, and a derived rank sorts it correctly without editing
+  your words). Rec **S3 leave the 60 unmarked origins NULL** (**refuted: backfill
+  to `unknown`** — that asserts an audit that never happened, and destroys exactly
+  the distinction your #289 `unlinked`-vs-`pending` rule protects). Rec **S4 keep
+  `type` free text with NULL for unreadable** (**refuted: freeze the ~10 real
+  values** — closing the set requires classifying all 237 entries correctly, and
+  finding 5 says that cannot be done).
+
+  Approval accepts the entity shape, the read-only verbs, and whichever recs you
+  do not overrule. It authorises **no** table, migration, CLI or cutover — those
+  wait on #263 E1 like the rest of #294. Answer `rec`, `rec except S<n>: ...`, or
+  `Pause #346`.
+
 - **P2 · 2026-07-27 — #277 departure dreamfade: prototype one CSS-only
   pre-phase on the existing card ghost?** Max directed Grok toward shader work;
   read-only review mapped the actual transition matrix. Route departures already
