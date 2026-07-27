@@ -35,8 +35,14 @@ Next id: **400**
   #96"* — and that exclusion only works when prose puts **words inside the bold**. **This ledger's
   natural voice is `filed as **#392**`**, a bare bolded id, which lands it
   · **measured: `parse_ledger` returns 7 ids in BOTH sets** — `353, 367, 378, 387, 392, 393, 394`.
-  Each traced to its source: `#367` from `· related: **#367**`; `#393`/`#394` from *"gaps filed
+  Each traced to its source: `#367` from a reciprocity marker naming it; `#393`/`#394` from *"gaps filed
   rather than absorbed: **#393** … and **#394**"*; `#353` and `#392` from `filed as **#N**`
+  · **a third trap, met while writing this entry, and it is a real gap in `#395`'s fix:** `#395`
+  anchored the marker pattern to line-start or a `·` separator so prose could not manufacture a
+  phantom. But **quoting the marker *accurately* means quoting its separator too**, and that is
+  exactly what an entry describing the marker does — this entry produced **two** phantom markers and
+  a lint ERROR before it was reworded. The anchoring fix protects against casual mention and not
+  against precise citation, which is the mention most likely to appear in a ledger about itself
   · **the first half is a direct tension between two checks, and obeying one corrupts the other.**
   `lint.check_related_markers` **requires** a landed entry to name its open counterpart —
   *"an entry is read alone"* — and `_landed_ids` then reads that very marker as a landing. So the
