@@ -192,7 +192,9 @@ which commits exactly those paths and leaves the rest of the index
 staged and untouched. Measured, because the plausible version of this
 rule is the wrong one: with a peer's file staged, `git add mine &&
 git commit` produced a two-file commit; `git commit --only mine`
-produced a one-file commit and left the peer's still staged.
+produced a one-file commit and left the peer's still staged. One edge:
+`--only <directory>` skips untracked files inside it silently, so a NEW
+file needs `git add <file>` before `git commit --only <file>`.
 
 When disjointness can't be arranged — the work overlaps owned files, or
 the change is large or risky — dispatch the dreamer in a worktree (the

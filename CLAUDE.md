@@ -102,7 +102,10 @@ change that line and watch. If you cannot name one, there isn't one.
   That happened at `12f47e3`, which carries a lane's test file inside a
   ledger commit. Avoiding `git add -A` does not help — the sweep is
   invisible in your own command. `--only` is the fix and it is verified:
-  it commits just those paths and leaves the rest of the index staged.
+  it commits just those paths and leaves the rest of the index staged. One
+  edge: `--only <directory>` does **not** pick up untracked files inside it
+  and does not say so, so a **new** file needs `git add <file>` before
+  `git commit --only <file>`.
 - A commit that changes what an existing install must do says so in a git
   trailer: `Migration:`, `Feature:`, `Needs: config|consent`.
 - Files the loop writes and a tool parses have their shape stated in
