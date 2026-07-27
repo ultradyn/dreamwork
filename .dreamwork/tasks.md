@@ -67,6 +67,7 @@ Next id: **318**
   worktree and confirming removal refuses, then that it proceeds once the shell
   exits
 
+  · **out with ccc-glm52-316** in `.worktrees/316-wtsafe` (owns `plugins/ud-dreamwork-worktrees/` only, no guard port) · briefed NOT to share the `/proc/<pid>/cwd` primitive with #203's reaper mid-flight; one primitive with two callers is the consolidation once both land
 - **#275** — Research public Dreamhub authentication informed by shoo.dev · P2 ·
   security research/design · origin: **human** · **human via answer 17:48** ·
   evaluate shoo.dev's actual primary-source auth/deployment model and alternatives
