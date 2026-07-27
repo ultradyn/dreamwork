@@ -1650,17 +1650,31 @@ const ageStr = mt => {
     if (s >= div) return `${Math.floor(s/div)}${u}`;
   return `${Math.floor(s)}s`;
 };
-/* the same age at commit resolution (#132): TWO units, each zero-padded to
-   two digits — `05m 23s`, `02h 14m`, `03d 07h`.
+/* the same age at commit resolution (#132 / #385): TWO units, each zero-
+   padded to two digits — `05m 23s`, `02h 14m`, `03d 07h`, `02w 03d`,
+   `01y 14w`.
 
    Two edges, both decided rather than fallen into:
      · under a minute it still reads as two units (`00m 12s`), so the column
        never changes width — and seconds-old is exactly when he is watching.
-     · past 100 days the DAY count widens and the second unit stays at two.
-       The shape is "two units", not "four characters"; a truncated day count
-       would be a wrong number rather than a narrow one. */
+     · the ladder runs seconds → minutes → hours → days → weeks → years, so
+       neither field reaches 100 for ~100 years (his invariant). Without the
+       year and week rungs the day count alone passed 99 at 100 days.
+
+   Year length is 365 days, not 52 weeks (= 364). A human reading `01y …`
+   expects a calendar-ish year; 52 weeks of remainder inside that year is
+   still ≤ 99, so the XX≤99 invariant holds either choice — but 365 matches
+   the word "year" and the remainder is derived, not assumed. Weeks are
+   always 7 days. */
 const p2 = n => String(n).padStart(2, '0');
-const AGE_PAIRS = [["d",86400,"h",3600], ["h",3600,"m",60], ["m",60,"s",1]];
+const AGE_Y = 365 * 86400, AGE_W = 7 * 86400;
+const AGE_PAIRS = [
+  ["y", AGE_Y, "w", AGE_W],
+  ["w", AGE_W, "d", 86400],
+  ["d", 86400, "h", 3600],
+  ["h", 3600, "m", 60],
+  ["m", 60, "s", 1],
+];
 const agePair = ct => {
   const s = Math.max(0, Math.floor(Date.now()/1000 - ct));
   for (const [bu, bd, su, sd] of AGE_PAIRS)

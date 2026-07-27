@@ -2030,12 +2030,15 @@ dreamlike fade away, the new top one should dreamlike fade in, and the other 4
 should gently slide down one. should come together nice and smoothly."*
 
 **The age is two units, two digits each** — `05m 23s ago`, `02h 14m ago`,
-`03d 07h ago`. Two edges are decided rather than fallen into: under a minute
-it still reads as two units (`00m 12s ago`), so the column never changes width
-and a seconds-old commit is exactly the case he is watching; and past 100 days
-the DAY count widens while the second unit stays at two, because the shape is
-"two units" and not "four characters" — a truncated day count is a wrong
-number rather than a narrow one.
+`03d 07h ago`, `02w 03d ago`, `01y 14w ago` (#385). Two edges are decided
+rather than fallen into: under a minute it still reads as two units
+(`00m 12s ago`), so the column never changes width and a seconds-old commit
+is exactly the case he is watching; and the ladder runs seconds → minutes →
+hours → days → weeks → years so neither field reaches 100 for ~100 years —
+his own invariant. Without the year and week rungs the day count alone
+passed 99 at 100 days, which broke the format he designed. Year length is
+365 days (not 52 weeks = 364); weeks are 7 days. The remainder after a year
+can show 52 weeks, which is still two figures.
 
 **The time arrives as a number and the row renders none of it.** `git_tail`
 emits `%ct`; the row is a `<span class="age" data-ct=…>` that is *empty* in

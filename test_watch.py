@@ -2633,6 +2633,170 @@ class TestAppShell(unittest.TestCase):
         # and #139): every part of the row is addressed by its own class
         self.assertNotIn('.git div {', watch.PAGE)
 
+    def _age_pair_js_block(self):
+        """Extract p2 + AGE_* + agePair from production PAGE. The production
+        lines that must change for these tests to fail are AGE_PAIRS and
+        agePair itself — not a Python reimplementation."""
+        import re
+        page = watch.PAGE
+        start = page.index('const p2 = n =>')
+        end = page.index('/* components: every section', start)
+        block = page[start:end].rstrip()
+        self.assertIn('const AGE_PAIRS =', block)
+        self.assertIn('const agePair =', block)
+        return block
+
+    def _age_pairs_from_page(self):
+        """Parse AGE_PAIRS values via node so AGE_Y/AGE_W resolve exactly as
+        production does — no second copy of 365 or 7."""
+        import json, subprocess, textwrap
+        block = self._age_pair_js_block()
+        script = textwrap.dedent("""\
+            %s
+            process.stdout.write(JSON.stringify(AGE_PAIRS));
+        """) % block
+        out = subprocess.check_output(["node", "-e", script], text=True)
+        pairs = json.loads(out)
+        self.assertTrue(pairs, "AGE_PAIRS empty")
+        return pairs  # [[bu, bd, su, sd], ...]
+
+    def _age_pair_render(self, age_s, pairs_override=None):
+        """Run production agePair (or the same body with AGE_PAIRS replaced)
+        at a fixed now, age_s seconds ago. Returns 'XXu YYv'."""
+        import re, subprocess, textwrap
+        block = self._age_pair_js_block()
+        if pairs_override is not None:
+            # rewrite the table literal; production line under test is AGE_PAIRS
+            import json
+            lit = json.dumps(pairs_override)
+            block = re.sub(
+                r'const AGE_PAIRS = \[.*?\];',
+                'const AGE_PAIRS = %s;' % lit, block, count=1, flags=re.S)
+        script = textwrap.dedent("""\
+            %s
+            const NOW = 2000000000;  // fixed epoch seconds
+            Date.now = () => NOW * 1000;
+            const age = %d;
+            process.stdout.write(agePair(NOW - age));
+        """) % (block, int(age_s))
+        return subprocess.check_output(["node", "-e", script], text=True)
+
+    def _parse_pair(self, rendered):
+        import re
+        m = re.fullmatch(r'(\d+)([a-z]) (\d+)([a-z])', rendered)
+        self.assertIsNotNone(m, f"agePair shape: {rendered!r}")
+        return m.group(2), int(m.group(1)), m.group(4), int(m.group(3))
+
+    def test_age_pairs_ladder_covers_seconds_to_years(self):
+        # #385. The table itself must name every rung he asked for, in
+        # descending order. Derived from PAGE via node — not a hand-list.
+        pairs = self._age_pairs_from_page()
+        bigs = [p[0] for p in pairs]
+        self.assertEqual(bigs, ['y', 'w', 'd', 'h', 'm'],
+                         f"ladder big units: {bigs}")
+        for i, row in enumerate(pairs):
+            bu, bd, su, sd = row
+            if i + 1 < len(pairs):
+                self.assertEqual(su, pairs[i + 1][0],
+                                 f"{bu}'s small unit should be next big")
+            else:
+                self.assertEqual(su, 's')
+        # year length is named in the source so the choice is not silent
+        self.assertIn('365 * 86400', watch.PAGE)
+        self.assertIn('7 * 86400', watch.PAGE)
+
+    def test_age_pair_fields_stay_under_100_for_a_century(self):
+        # #385 his invariant: neither XX nor YY > 99 for at least 100 years.
+        # The field cap (100) is the digit budget the format is built around —
+        # not a magic fixture number. The century LENGTH is derived from the
+        # table's year rung when present; when the year rung is missing (the
+        # discriminating injection) the same span is taken from the named
+        # `365 * 86400` expression in PAGE so the check still probes a century
+        # and can fail by SHOWING a field ≥ 100 rather than only by naming
+        # the missing rung.
+        pairs = self._age_pairs_from_page()
+        day_s = next(bd for bu, bd, _, _ in pairs if bu == 'd')
+        year_row = next((r for r in pairs if r[0] == 'y'), None)
+        # Century length from the table's year rung. If the year rung is
+        # gone (discriminating injection), size it as 100 × 365 × day_s —
+        # 365 is the year-length decision named beside AGE_Y in PAGE, and
+        # day_s comes from the table so a change to the day divisor moves
+        # both halves together.
+        if year_row is not None:
+            year_s = year_row[1]
+        else:
+            self.assertIn('365', watch.PAGE)
+            year_s = 365 * day_s
+        century = 100 * year_s
+        field_cap = 100
+        samples = {0, 1, 59, 60, 3599, 3600, 86399, 86400, 100 * day_s}
+        for bu, bd, su, sd in pairs:
+            samples.add(bd)
+            samples.add(max(0, bd - 1))
+            samples.add(bd + sd)
+            samples.add(100 * bd)  # age that overflows this unit alone
+        samples.add(century - 1)
+        samples = sorted(a for a in samples if 0 <= a < century)
+        self.assertLess(100 * day_s, century,
+                        "precondition: 100 days is inside the century span")
+        for age in samples:
+            rendered = self._age_pair_render(age)
+            bu, bn, su, sn = self._parse_pair(rendered)
+            for unit, n in ((bu, bn), (su, sn)):
+                self.assertLess(
+                    n, field_cap,
+                    f"field {unit}={n} at age {age}s → {rendered!r}; "
+                    f"year_s={year_s}")
+        # production must not still render 100 days as a three-digit day
+        # count — that is the live defect this test exists to see.
+        rendered = self._age_pair_render(100 * day_s)
+        bu, bn, su, sn = self._parse_pair(rendered)
+        self.assertFalse(
+            bu == 'd' and bn >= field_cap,
+            f"100 days still renders as day-count: {rendered!r}")
+
+    def test_age_pair_without_year_rung_breaks_the_invariant(self):
+        # #385 discriminating red for the ladder. Production line under
+        # test: AGE_PAIRS. Strip the year rung and the century-span must
+        # overflow a field. With weeks still present the week count passes
+        # 99; the live defect (no year AND no week) shows a day count of
+        # 100 at 100 days — both are the same class of bug, and this test
+        # also proves the day-count signature against the pre-#385 table.
+        pairs = self._age_pairs_from_page()
+        self.assertEqual(pairs[0][0], 'y')
+        year_s = pairs[0][1]
+        without_year = pairs[1:]
+        self.assertTrue(without_year and without_year[0][0] != 'y')
+        century = 100 * year_s
+        day_s = next(bd for bu, bd, _, _ in pairs if bu == 'd')
+        # 1) remove year only — probe until a field ≥ 100 appears
+        overflow = None
+        for age in (100 * day_s, 100 * without_year[0][1], century - 1):
+            rendered = self._age_pair_render(age, pairs_override=without_year)
+            bu, bn, su, sn = self._parse_pair(rendered)
+            if bn >= 100 or sn >= 100:
+                overflow = (age, rendered, bu, bn, su, sn)
+                break
+        self.assertIsNotNone(
+            overflow,
+            "removing the year rung did not produce any field ≥ 100 "
+            "inside a century — the invariant test cannot go red on that "
+            "injection, so it is not testing his invariant")
+        age, rendered, bu, bn, su, sn = overflow
+        self.assertGreaterEqual(
+            max(bn, sn), 100,
+            f"year-rung removed: expected overflow, got {rendered!r} "
+            f"at age {age}s")
+        # 2) the live defect signature: days-only ladder at 100 days
+        days_only = [row for row in pairs if row[0] in ('d', 'h', 'm')]
+        rendered_d = self._age_pair_render(100 * day_s, pairs_override=days_only)
+        bu_d, bn_d, su_d, sn_d = self._parse_pair(rendered_d)
+        self.assertEqual(bu_d, 'd')
+        self.assertGreaterEqual(
+            bn_d, 100,
+            f"days-only ladder at 100d must show day count ≥ 100; "
+            f"got {rendered_d!r}")
+
     def test_commits_panel_is_five_near_the_top_and_regroups_on_a_new_sha(self):
         # #151. Three claims, and the third is the one worth guarding.
         self.assertEqual(watch.GIT_ROWS, 5)
