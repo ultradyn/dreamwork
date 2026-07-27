@@ -210,9 +210,24 @@ Next id: **361**
   · `depends` was deliberately left unspecified: its Markdown form has to reconcile with the
   **29 entries that say "blocked on #N" in prose**, which is its own decision and its own
   task, not a line to smuggle into this one
-  · **what remains under this id**: write the six split entries with their markers, and
-  resolve the 4 compound bands. The classification of each pair is still to propose to him,
-  per his own uncertainty — *"like 250/251 i guess, not sure exactly what they are"*
+  · **SPLIT LANDED `9fec0bf`: 3 combined entries are now 6, and history wrote them.** Every
+  original single-id entry survives in git history with its own title, band, type and origin,
+  so nothing was reconstructed from the combined summary — the six are the originals' identity
+  merged with the summary's facts about what shipped
+  · **his uncertainty is answered: all three pairs are `related`, none `depends`**, for one
+  uniform reason — each was *co-delivered, never sequenced*, so no half was a precondition for
+  the other. #251 is the proof that #250's node really goes; #292 and #293 are two bugs from
+  one message of his at 01:17; #138 and #156 are two Claude Code hooks that had to ship in one
+  plugin or not at all
+  · **two facts the combination had silently lost, and history still had**: both pairs carried
+  an unknown origin while the originals recorded loop/loop and human/human — four
+  governed ids marked unknown when nothing was ever actually unknown (repaired; lint's origin
+  coverage moved 127 → 129) · and **the `P1/P2` band was never ambiguity at all**: it is
+  #250's P1 and #251's P2 concatenated, so the split resolved it for free
+  · **what remains is smaller than it looked**: only **three** genuine compound bands, all
+  `P0/P1` on single-id entries — #288, #274, #263. Those are the ones S2's caveat was written
+  for (*"if any of the four still says something, say so and it stays"*), and the fourth turned
+  out to be a mechanical artefact rather than a judgement call
 
 - **#352** — Standardize the duplicated ledger parsing before the store migration ·
   P1 · refactor/prerequisite · origin: **human** · **human via watch 2026-07-28 01:05**,

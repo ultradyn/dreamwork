@@ -1474,3 +1474,16 @@ this shape and convert opportunistically.)
   the suite discriminates at all; two failed small distinct subsets, and the third failing
   nothing is what found this.
 
+- **A check that emits both a verdict and findings must gate the verdict on the
+  findings, and no fixture that tests one outcome at a time can catch it when it
+  does not.** `check_related_markers` was red-proved with ten injections, eight of
+  them discriminating to a single test, and then its FIRST use on the live ledger
+  printed `3 related pair(s), all reciprocal` in the same run as `#250 is related
+  to #251 but #251 does not say so back`. The summary was unconditional. Every one
+  of the eleven fixtures asserted errors **or** the OK line, never both in one run,
+  so all eleven were structurally blind to the contradiction — and a reader
+  scanning output for the reassuring line would have been told the opposite of the
+  truth by the check that had just found it. Red-proving establishes that each
+  branch can fail; it says nothing about what the check *says* when two branches
+  fire together. So when a check has a summary row, write one test that makes a
+  finding fire and asserts the summary is ABSENT. (coordinator, #353, 2026-07-28)
