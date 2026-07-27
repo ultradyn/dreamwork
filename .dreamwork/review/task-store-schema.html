@@ -314,9 +314,10 @@ task (id PK, entry_id -&gt; entry, ordinal)</code></pre>
   else, which is only true while that reader stays the sole parser". It is not the sole parser
   now, and this was worth measuring before cutover rather than at it.</p>
   <div class="facts">
-    <div class="fact"><strong>2</strong><small>implementations of <code>ledger_entries</code> — lint's and watch's. Identical logic; the source differs (watch's drops the annotations), so a source-equality check would fail on a behaving pair</small></div>
-    <div class="fact"><strong>3</strong><small>callers: <code>lint.py</code>, <code>watch.py</code>, <code>task_origins.py</code></small></div>
-    <div class="fact"><strong>1</strong><small>fixture pinning the two, at <code>test_watch.py:863</code> — behavioural, which is the better kind, and weaker than it reads</small></div>
+    <div class="fact"><span class="number">1</span><span class="caption">parser #294's plan assumed there was — <em>"the sole parser"</em>, the invariant it told us to verify rather than trust</span></div>
+    <div class="fact"><span class="number">2</span><span class="caption">implementations of <code>ledger_entries</code> — lint's and watch's. Identical logic; the source differs (watch's drops the annotations), so a source-equality check would fail on a behaving pair</span></div>
+    <div class="fact"><span class="number">3</span><span class="caption">callers: <code>lint.py</code>, <code>watch.py</code>, <code>task_origins.py</code></span></div>
+    <div class="fact"><span class="number">1</span><span class="caption">fixture pinning the two, at <code>test_watch.py:863</code> — behavioural, which is the better kind, and weaker than it reads</span></div>
   </div>
   <p>The consequence is concrete: re-pointing <code>watch.py</code> alone leaves
   <code>lint.py</code> and <code>task_origins.py</code> parsing a file that cutover renames to

@@ -291,6 +291,147 @@ def test_the_reference_artifact_is_itself_offline_clean(reference):
     assert ra.fetch_violations(reference) == []
 
 
+# ── the component vocabulary (#347-adjacent) ──────────────────────────────
+#
+# The template documents which classes each component's children take, and for
+# two days nothing read that. `task-store-schema.html` duly wrote
+# `<div class="fact"><strong>122</strong><small>…</small></div>` — plausible
+# HTML the template styles not at all, so the number ran into its caption as
+# `122open ids…` while the build exited 0 and `check` said `current`.
+#
+# Every test below states the production line that must change for it to fail,
+# because a check over a component's markup is exactly the shape that passes
+# vacuously: `render` would raise for a dozen unrelated reasons, so a bare
+# `pytest.raises` proves nothing about which one fired.
+
+FACT_ROW = ('<div class="facts">'
+            + '<div class="fact"><span class="number">%d</span>'
+              '<span class="caption">a caption</span></div>' * 4
+            + '</div>')
+
+
+def _with_facts(markup):
+    fields = ra.parse_source(SOURCE)
+    fields["body"] += "\n" + markup
+    return fields
+
+
+def test_a_stray_child_of_a_documented_component_refuses_the_build(template):
+    """Break by emptying `COMPONENT_CHILDREN` — the refusal is that dict."""
+    good = _with_facts(FACT_ROW % (1, 2, 3, 4))
+    ra.render(good, template=template)          # the precondition: the ROW is fine
+    bad = _with_facts('<div class="facts">'
+                      + '<div class="fact"><strong>1</strong><small>a</small></div>' * 4
+                      + '</div>')
+    with pytest.raises(ra.ArtifactError, match=r"misuses .* documented component"):
+        ra.render(bad, template=template)
+    # …and it names WHICH children, or an author cannot act on it.
+    assert ra.component_violations("<div class=\"fact\"><strong>1</strong></div>") == [
+        "a `.fact` has a child that is neither `.number` nor `.caption`: <strong>"]
+
+
+def test_bare_text_inside_a_component_is_the_same_defect(template):
+    """An unwrapped number renders wrong for the identical reason — the styling
+    lives on the class. Break by dropping `_ComponentScan.handle_data`."""
+    fields = _with_facts('<div class="facts">'
+                         + '<div class="fact">122<span class="caption">a</span></div>' * 4
+                         + '</div>')
+    with pytest.raises(ra.ArtifactError, match="bare text"):
+        ra.render(fields, template=template)
+
+
+def test_nesting_inside_a_documented_child_is_not_a_stray(template):
+    """The check must discriminate by DEPTH or authors lose `<code>` in captions.
+
+    Break by matching children with a regex instead of the parser: `<code>` and
+    `<strong>` are indistinguishable to anything that cannot see nesting, and a
+    check that forbids both is a check that gets deleted.
+    """
+    fields = _with_facts(
+        '<div class="facts">'
+        + ('<div class="fact"><span class="number">1</span>'
+           '<span class="caption">a <code>path</code> and <em>emphasis</em>'
+           '</span></div>') * 4
+        + '</div>')
+    built = ra.render(fields, template=template)
+    assert "<code>path</code>" in built
+
+
+def test_the_grid_column_count_is_read_from_the_template_not_assumed(template):
+    """The decisive one: the verdict must INVERT when the template is reshaped.
+
+    A hard-coded `4` passes every other test in this section. So the template is
+    patched in memory to declare three columns, and a 3-item row must stop
+    warning while a 4-item row must start. Break by replacing
+    `grid_columns(template, container)` with a literal — this is the only test
+    that can fail on it.
+    """
+    three = template.replace("grid-template-columns:repeat(4,minmax(0,1fr))",
+                             "grid-template-columns:repeat(3,minmax(0,1fr))", 1)
+    assert three != template, \
+        "the template no longer declares repeat(4,…) for .facts — this test's " \
+        "premise is gone, not merely its expectation"
+    assert (ra.grid_columns(template), ra.grid_columns(three)) == (4, 3)
+
+    row = lambda n: ('<div class="facts">'                       # noqa: E731
+                     + '<div class="fact"><span class="number">1</span></div>' * n
+                     + '</div>')
+    assert ra.grid_warnings(row(3), template) and not ra.grid_warnings(row(3), three)
+    assert ra.grid_warnings(row(4), three) and not ra.grid_warnings(row(4), template)
+
+
+def test_an_undeclared_grid_container_disables_the_count_rather_than_guessing():
+    """None is a real answer. Break by defaulting to 4 — a check that invents
+    its own premise is worse than an absent one."""
+    assert ra.grid_columns(ra.read_template(), "no-such-container") is None
+
+
+def test_a_short_grid_row_warns_and_still_builds(template):
+    """Advisory, not fatal: the row renders, it just shows an empty track. Break
+    by raising instead — which would make a source nobody owns unbuildable."""
+    warned = []
+    fields = _with_facts('<div class="facts">'
+                         + '<div class="fact"><span class="number">1</span></div>' * 3
+                         + '</div>')
+    built = ra.render(fields, template=template, warn=warned.append)
+    assert len(built) > 12000
+    assert len(warned) == 1 and "empty track" in warned[0]
+    # and a full row is silent, or the warning means nothing
+    assert ra.render(_with_facts(FACT_ROW % (1, 2, 3, 4)), template=template,
+                     warn=warned.append) and len(warned) == 1
+
+
+def test_no_warn_callback_means_no_crash(template):
+    """`warn=None` is the library default and must not be called."""
+    fields = _with_facts('<div class="facts">'
+                         + '<div class="fact"><span class="number">1</span></div>' * 3
+                         + '</div>')
+    assert ra.render(fields, template=template)
+
+
+def test_every_live_source_is_free_of_stray_children(template):
+    """The check's whole claim is about real files, so it is held to them.
+
+    Warnings are deliberately NOT asserted here: a short row is a judgement
+    about someone's prose, and pinning today's set would make this a test of
+    the artifacts rather than of the builder.
+    """
+    src = os.path.join(HERE, ".dreamwork", "review", "src")
+    sources = sorted(name for name in os.listdir(src) if name.endswith(".html"))
+    assert len(sources) >= 3, \
+        "only %d source(s) found under %s — the sweep is not seeing them" % (
+            len(sources), src)
+    offenders = {}
+    for name in sources:
+        with open(os.path.join(src, name), encoding="utf-8") as handle:
+            fields = ra.parse_source(handle.read())
+        built = ra.render(fields, template=template)
+        strays = ra.component_violations(built)
+        if strays:
+            offenders[name] = strays
+    assert not offenders, "sources misuse a documented component: %r" % offenders
+
+
 # ── provenance ────────────────────────────────────────────────────────────
 
 
