@@ -213,9 +213,17 @@ class TestDomainFileOneWrite(unittest.TestCase):
                 "precondition: the seeded file is non-trivial, so a truncation "
                 "or partial write is observable rather than indistinguishable "
                 "from the seed")
-            self.assertTrue(
-                domain_files.validate(pre.decode("utf-8")),
-                "precondition: the seed is a valid managed file")
+            # Structural precondition ONLY — not validate(). validate() is the
+            # lineage property (increment 12) and this test owns ATOMICITY
+            # (increment 13); coupling them would make the exclusion red break
+            # this neighbour too. We need only that the seed is a real managed
+            # file, which holds whether or not the exclusion filter is present.
+            pre_md = domain_files.parse_metadata(pre.decode("utf-8"))
+            self.assertIsNotNone(
+                pre_md, "precondition: the seed has a managed footer")
+            self.assertEqual(
+                len(pre_md["body_digest"]), 64,
+                "precondition: the seed carries a SHA-256 digest")
 
             # A real child process crashes at the seam. Bounded wait; the child
             # is dead afterwards so reading its stdout hits EOF at once.
@@ -254,12 +262,19 @@ class TestDomainFileOneWrite(unittest.TestCase):
                 "no leftover may sit at the managed path")
 
             # The orphan is ignorable in the way that matters: a subsequent
-            # normal write lands a correct, validating new generation.
+            # normal write lands its content. Checked STRUCTURALLY (footer +
+            # generation + the new body), not via validate() — this test owns
+            # atomicity, not the digest-exclusion property, and coupling them
+            # would make the exclusion red break this neighbour.
             domain_files.write(path, "after the crash, a clean recovery\n",
                                generation=3, applied="recv-1|adapter-answer")
-            self.assertTrue(
-                domain_files.validate(open(path, encoding="utf-8").read()),
-                "a leftover orphan temp must not stop a later write validating")
+            recovered = open(path, encoding="utf-8").read()
+            self.assertEqual(
+                domain_files.parse_metadata(recovered)["domain_generation"], 3,
+                "the recovery write landed its new generation")
+            self.assertIn(
+                "after the crash, a clean recovery", recovered,
+                "the recovery write landed its new body")
 
 
 if __name__ == "__main__":
