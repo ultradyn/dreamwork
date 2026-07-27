@@ -87,30 +87,6 @@ Next id: **392**
   has bytes that do not parse)
   · blocked on nothing; `user_events/apply.py` is free as of `6cd9f95`
 
-- **#389** — an essential mark with an empty or whitespace-only label is accepted · P3 ·
-  correctness/authoring · origin: **loop** · found by coordinator while auditing #367
-  increment 1, **not reported by the lane that built it** — it flagged the *valueless*
-  `data-mark` (boolean form) as an open question and was right that ignoring it is correct,
-  but the neighbouring case went unnoticed
-  · measured, not assumed: `data-mark` valueless → `([], [])`, ignored, correct.
-  `data-mark=""` → `([''], [])` and `data-mark="   "` → `(['   '], [])` — **both collected as
-  marks with unreadable labels**, and no test covers any of the three
-  · **why it matters more than P3 sounds**: the contract's line is "the label is what the tab
-  reads", so an empty label renders a tab with nothing in it. It counts toward the cap, it
-  takes a next/prev stop, and it looks exactly like a **rendering bug in increment 2's tab
-  code** — so the cost is not the blank tab, it is the hour someone spends debugging the
-  renderer for a defect that is in the parser
-  · **the inconsistency is the actual defect**: absent-value is ignored while empty-value is
-  accepted, which no author could predict. Pick one rule and test all three
-  · rec: **refuse** `""` and whitespace-only (an authoring mistake the builder should name,
-  like the no-id refusal beside it), keep ignoring the valueless form. `file-formats.md`
-  already states this as the target — the contract is deliberately ahead of the code here, the
-  same way it was written before #367 itself, so **this task is what closes that gap**
-  · small: a `.strip()` in `essential_marks()` plus a refusal branch, and one test asserting
-  all three cases — the discriminating half is that the *valueless* form must stay ignored,
-  since a rule that refuses everything falsy passes any test that only checks `""`
-  · natural to fold into increment 2, but independently committable today
-
 - **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
   reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified
   · **the half that needs no ruling from him is DONE (`d33cc2f`)**: `submissions.log` now
@@ -2560,6 +2536,22 @@ Next id: **392**
   **blocked**: human pick
 
 ## Recently landed
+
+- **#389** — empty/blank mark labels refused · origin: **loop** · closed 2026-07-28 07:44 · `b79f339` `e0a3356`
+  · `ccc @glm52`, brief `.dreamwork/docs/briefs/389-empty-mark-label.md`. Valueless `data-mark`
+  stays ignored; `""` and whitespace-only are refused naming the offending element; all three
+  tested. **76 tests in `test_review_artifact.py`.**
+  · **coordinator verified the red I actually cared about**: injecting the naive one-liner
+  `if not (label or "").strip()` — the fix that swallows the valueless carve-out — reddened
+  exactly `test_a_mark_label_must_carry_readable_text[valueless]` and
+  `test_a_valueless_mark_on_an_id_less_element_is_not_a_no_id_error`, with all 74 others green.
+  Snapshot-restored; 76 pass
+  · **the lane read its relay and answered all four neighbours**, and found a limit I had not
+  anticipated: `.strip()` catches every `Zs` space (U+00A0, U+2003, U+3000 all refuse) but
+  **not U+200B**, which is category `Cf`. I confirmed that independently. It flagged rather
+  than widened its brief unasked, which was right. Named as a known limit in `file-formats.md`
+  and folded into #367 increment 2a's brief as a secondary item, since 2a owns that file next —
+  a blank tab matters more once tabs are actually rendered
 
 - **#300** — Let run-mode descriptions liquefy through one shared popover · P2
   · **IN PROGRESS 2026-07-28 06:13** — he re-raised it himself as `do-next` at 06:07:

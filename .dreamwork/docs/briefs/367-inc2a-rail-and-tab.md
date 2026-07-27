@@ -76,6 +76,27 @@ warning rather than trusting a table.
    artifact and add the rule only if the set is unanimous, recording the count. That
    pass already refuted `.summary-line` and `.choice`/`.answer`.
 
+## One small carried-over fix, because you own the file
+
+#389 closed the empty-label hole but left **one measured limit**, correctly rather than
+widening its brief unasked: the refusal is `str.strip()`-based, so it catches every `Zs`
+space (U+00A0, U+2003, U+3000 all refuse) but **not U+200B zero-width space**, which is
+Unicode category `Cf` and so is not whitespace to `.strip()`. A label of only zero-width
+spaces is accepted and would render a blank tab — which matters *more* once you are
+actually rendering tabs, since a blank tab in a rail reads as a rendering bug in your code.
+
+The rule that matches `file-formats.md`'s wording ("a label must carry readable text") is
+**no character outside Unicode categories `Z*` and `C*`**. It is roughly one line plus one
+test. **The discriminating half is that the valueless `data-mark` must STILL be ignored** —
+the naive widening swallows that carve-out, and I verified that failure mode myself: the
+one-liner `if not (label or "").strip()` reddens exactly
+`test_a_mark_label_must_carry_readable_text[valueless]` and
+`test_a_valueless_mark_on_an_id_less_element_is_not_a_no_id_error`, so those two tests are
+your guard against repeating it.
+
+This is a **secondary** priority — behind the tab and the rail. If you do not reach it, say
+so and it gets its own task.
+
 If you disagree with any of the three, **say so in your report and implement it your
 way with the reason stated** — two lanes today were right to contradict their brief.
 

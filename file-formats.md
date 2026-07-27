@@ -1061,10 +1061,17 @@ list, so it cannot drift from the passage it points at:
   a whitespace-only label are **authoring mistakes and are refused**, because they
   do reach the renderer and produce a tab with nothing in it — a blank postit that
   reads as a rendering bug and is not one.
-  **Gap, and it is the code that is behind:** increment 1 ignores the valueless form
-  correctly but *accepts* `""` and `"   "` as marks with empty labels, with no test
-  covering either. Filed as **#389**; this clause is the target, in the same
-  ahead-of-the-code way the rest of this section was written before #367.
+  **Closed by #389** (`b79f339`, `e0a3356`): the valueless form is ignored, `""` and
+  whitespace-only are refused with the offending element named, and all three are tested.
+  **One known limit, measured rather than assumed:** the refusal is `str.strip()`-based, so
+  it catches every `Zs` space — U+00A0, U+2003, U+3000 all refuse — but **not U+200B
+  zero-width space**, which is category `Cf` and therefore not whitespace to `.strip()`. A
+  label of only zero-width spaces is accepted and renders a blank tab. That is a real if
+  absurd authoring case; #389's builder matched this clause's literal "whitespace-only"
+  rather than widening unasked, which was right. **Closing it belongs to whoever next owns
+  `review_artifact.py`** — the rule that matches the words above is "no character outside
+  Unicode categories `Z*` and `C*`", and the discriminating test is that the **valueless**
+  form must still be ignored.
 
 **The count, per his ruling of 2026-07-28 05:35** — he overrode the loop's
 proposal of five-and-refuse:
