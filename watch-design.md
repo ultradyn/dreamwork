@@ -156,7 +156,8 @@ No cards, borders-as-decoration, pills, or shadows in the reading views —
 structure comes from whitespace and dim uppercase labels (`.label`, letter-
 spaced). Reading column is `max-width:72ch`, centred; the review view is the
 one deliberate exception (`body.review` widens the column for the artifact +
-docked question). Dividers are hairlines (`--line`), not boxes.
+docked question, and **he sets the ratio between them** — see The review
+pane). Dividers are hairlines (`--line`), not boxes.
 
 ### Review artifacts
 
@@ -186,6 +187,80 @@ be sure to remember it"*):
 A decision artifact shows each option beside its alternative rather than
 only the recommendation: the human is being asked to decide, not to
 ratify.
+
+### The review pane (#305)
+
+`/review` is **one window-tall pane of two columns**, not two documents
+stacked in a scrolling page. His report, sent from `/review?p=…&q=…` while he
+was reading one: *"should be able to scroll the question alongside a review
+document, and the answer/add note input should stay glued to the bottom in
+line with the bottom of the review document… an invisible vertical bar
+between review doc and question being answered that allows dragging
+left/right… we also can extend the height of the review doc and RHS column if
+the height of the window allows."* Before it, the artifact stopped at `74vh`
+and the docked question ran on underneath it, so its answer box sat a
+thousand pixels below the fold: reading and answering were two scrolls, and
+you could not do the second while looking at the first.
+
+- **The pane is measured, not assumed.** `fitReview` writes `--rvh` from
+  `window.innerHeight` minus the pane's own `offsetTop` and the body's bottom
+  padding. `offsetTop` rather than a rect because it is **layout** and cannot
+  be read through the dissolve's transform (`transitions.md`), and it is
+  refitted from `renderChrome` as well as `setContent`, because the pane's top
+  *is* the bottom of the chrome and the chrome is written after the view.
+  The `calc(100dvh - 12rem)` in the CSS is a floor for the frames before the
+  first measurement, not the value.
+- **`min-height:26rem` is what keeps a short window honest.** Below that the
+  page starts scrolling again instead of crushing two columns into slivers.
+- **The gutter IS the splitter.** The 1.3rem the eye already reads as space
+  became a `role="separator"` with a value: invisible at rest, a hairline on
+  hover/focus/drag, `col-resize`, and **operable from the keyboard** —
+  arrows ±2%, shift ±8%, Home/End to the floors, Enter or double-click back
+  to 70%. A drag-only affordance is one a keyboard cannot reach, and this one
+  is invisible as well.
+- **It needs `z-index`, and the reason is not cosmetic.** An
+  answered-awaiting card hangs its accent rail `.9rem` into that gutter
+  (`.qa.awaiting`'s negative margin) and, as a positioned sibling later in
+  the DOM, wins the hit test — so without it the bar is dead to the pointer
+  in exactly the state he is in one second after answering.
+- **The floors live in CSS**, as `clamp(32ch, var(--rsplit), calc(100% -
+  26ch))`, for #108's reason: a clamp holds on every frame and at every window
+  width, where a JS re-derivation is always one frame behind the layout it is
+  correcting. 30–82% is the range in which both columns still read.
+- **Where the width lives:** `localStorage['dw.review.split']`, read by
+  `buildReview` at build time and emitted into the markup, so a fresh
+  `/review` *paints* at his width instead of correcting to it a frame later.
+  It is a preference, not shared state, and it needs no snapshot seam: the
+  tick replaces only `#qdock`, never `#reviewwrap`.
+- **The question is the scroller, not the dock**, so `answering` stays put as
+  a column head. `scrollbar-gutter:stable` keeps a live re-render from
+  re-wrapping the text when the scrollbar comes and goes.
+- **How far he has READ is state he owns** (#118's rule, with reading in
+  place of typing): `snapshotCardState` carries `card.scrollTop` under `read`
+  and restores it, or a question he was halfway down would snap back to its
+  first line every two seconds.
+  **And it goes back through `putScroll`, which CHECKS that it landed** —
+  `refocus`'s rule (#179) applied to the other thing a restore hands back
+  silently. A `scrollTop` assigned to a node the swap is one statement old is
+  clamped to zero (the fresh box has no overflow yet as far as the assignment
+  can see) and reports nothing in either direction; reading the value back
+  both detects that and forces the layout that fixes it. The textarea's scroll
+  restore and `restoreAskState` have had the identical latent bug since #118
+  and now go through the same helper.
+  **Stated as unguarded on purpose:** whether the clamp happens depends on
+  whether something between the swap and the restore already forced a layout,
+  so removing the retry leaves `reviewsplit.mjs` green — a check that cannot
+  fail for its stated cause would send the next reader to the wrong file. The
+  mechanism was measured directly instead: 209 assigned to a just-swapped card
+  reads back 0, and reads back 209 with the layout forced first.
+- **Narrow stacks rather than crushing.** Below 900px it is a document again:
+  one column, natural heights, the page scrolls, and the bar is `display:none`
+  so it leaves the tab order with the layout it belonged to.
+
+Motion for all of it — the keyed step travelling while the drag does not, and
+the hairline arriving rather than blinking on — is `transitions.md`'s.
+`dev/capture/reviewsplit.mjs` guards the pane, and each of its checks was
+shown red against a build broken in exactly the way that check names.
 
 ### Components (idioms)
 
