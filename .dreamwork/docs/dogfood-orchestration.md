@@ -334,6 +334,81 @@ had just done the most work on.** The countermeasure that actually works is not 
 care; it is checking the outcome rather than the intent — `git show --stat` after a
 commit I am confident about.
 
+## The result that dominates everything else: nine lanes, six refutations
+
+Tallied at 07:05, after nine dispatches. **Six of the nine refuted something their
+brief stated as established** — and the briefs were not sloppy; each refuted claim
+sat in the passage I had measured most carefully.
+
+| lane | what I asserted | what was true |
+|---|---|---|
+| #382 | a fixed-900ms timing race | `querySelector('.cmdmsg')` returned the wrong element |
+| #383 | guards sample on a wall-clock schedule | they counted `distinct >= 8` sampled values |
+| #384 | "checked rather than assumed": no guard asserts on the misread node | `subslog` did |
+| #386 | the row's arrival transition is still in flight | the click was a separate roundtrip landing after the trace window |
+| #300 | count POSTs/events/file bytes to prove hover is side-effect free | the arm is silent for 10s, so all three stay quiet while it arms |
+| B7 | `UNIQUE(client_action_id)` is the red line | `BEGIN IMMEDIATE` + SELECT-before-insert carry it; `UNIQUE` is never reached |
+
+Plus `B1`, where the plan's red line assumed a pragma differing from the platform
+default — SQLite 3.53's default already matched, so the prescribed deletion changed
+nothing.
+
+**Three distinct error classes, and they want different countermeasures:**
+
+1. **A wrong causal story** (#382, #383, #386). The measurement was right every
+   time; the *explanation* attached to it was wrong. Countermeasure: mark measured
+   apart from inferred in the brief's own prose, and attach "refute this" to the
+   named hypothesis rather than leaving a general permission at the bottom.
+2. **A check that cannot observe its subject** (#300). Not a wrong guess — a
+   category error. The signals I named are real and they are *late*: a
+   deferred-commit control makes durable state a trailing indicator. Countermeasure:
+   ask *when* each signal becomes true relative to the act being policed.
+3. **A red line naming the wrong layer** (`B1`, `B7`). Both are the same trap and it
+   is the one I would not have predicted: **defence-in-depth and a discriminating
+   red are in tension.** Where two mechanisms each prevent the bug, deleting either
+   proves nothing. A plan written before the code names the layer its author imagines
+   will carry the property, not the layer that does. Countermeasure: treat a written
+   red line as a hypothesis about the implementation, and when a red comes back green
+   ask **"which layer is holding this up?"** rather than "is the code fine?"
+
+**Why this is a result about the method and not about me being careless.** Every one
+of the six was caught, none reached a commit unchallenged, and the mechanism that
+caught them was the same each time: **a lane instructed to disbelieve a green
+red-run, plus explicit permission to contradict the brief.** Those two lines cost
+about thirty words. Without them, four of these would have shipped as
+confidently-wrong verified claims — the #300 one in particular would have shipped a
+guard that passes while hover arms the mode, which is worse than no guard, because
+it would be cited as evidence.
+
+**What I would change about my own briefs, concretely:** for every named red line,
+add *"if deleting this leaves the suite green, find which layer is actually carrying
+the property and report that"* — because the instruction I gave ("report a green
+red-run") got the finding, but the lanes that went further and **named the real
+mechanism** (`B7`'s `DEFERRED` probe, #386's settled-row discriminator) produced
+something I could act on immediately rather than a puzzle.
+
+## Coordinator verification: nine lanes, five independent re-runs
+
+I re-ran one red per lane from my own snapshot rather than folding the report. All
+five confirmed the lane, and each was a check that could plausibly have been hollow:
+
+| lane | injection | result |
+|---|---|---|
+| A | deleted the 8-byte length prefix | named test failed, neighbour green |
+| B1 | deleted `PRAGMA synchronous=FULL` | `got 1` vs 2, 7 neighbours green |
+| C3 | direct `open(path,"w")` for temp-then-rename | `b'' != b'the quick brown fox…'` — **file emptied** |
+| #300 | `pickRunMode` into `showRunDesc` | failed **exactly the two assertions the lane added**; my three stayed green |
+| F4 | broke the semantics parser to zero | `parse found only 0 … would be vacuous`, `assert 0 >= 5` |
+| B7 | removed `UNIQUE` | **12 passed** — reproduced the hollowness |
+
+Two of those are worth more than the others. The #300 row is *evidence about my own
+criterion*: the checks I specified stayed green while the bug was live, so the claim
+"my criterion was blind" is measured rather than argued. The C3 row is the one to
+copy stylistically — its failure printed `b''` against the file's real contents, so
+the diff of the failure *is* the argument for the increment. **Prefer injections
+whose failure names the real-world consequence over injections that produce a
+boolean.**
+
 ## Notes on the orchestrator role, written from inside it
 
 He asked for these at 05:26, an hour into coordinating rather than implementing.
