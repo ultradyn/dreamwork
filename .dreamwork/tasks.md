@@ -22,6 +22,8 @@ Next id: **296**
 
 ## Open
 
+- **#296** — Stabilise answers guard premises under load without weakening motion evidence · P1 · test/bug · origin: **loop** · found 2026-07-27 11:22 during the first full browser-guard sweep after #290 · master `answers` guard failed `#250 close visits >2 distinct details heights` + `>2 distinct marker tops`; focused three-run sweep under concurrent `pytest -n 2` later failed a different premise, `#251 original node starts connected` (1/3), while unloaded runs pass · diagnose whether fixture `/mtime` refresh, stale ElementHandle selection, or sampling cadence races the guard; red-reproduce under load and fix the causal premise/handshake, never add blanket sleep or weaken the >2-intermediate-state assertions; repeat under load ≥5× and keep #250/#251 product behavior unchanged unless a real product race is proven
+
 - **#295** — Add subtle dithering to background shaders · P2 · visual/shader
   quality · origin: **human** · **human via chat 2026-07-27 01:47** · add a
   restrained, resolution-stable dithering treatment to the current background
