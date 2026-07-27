@@ -2443,7 +2443,7 @@ Next id: **378**
   `assertNotIn("tok-", watch.PAGE)` must be NARROWED to the Source path rather than deleted
   · related: **#284**
 
-- **#377** — Nothing checked that a guard file is in `DEFAULT_GUARDS` · **closed `<this>`** ·
+- **#377** — Nothing checked that a guard file is in `DEFAULT_GUARDS` · **closed `2db39f5`** ·
   P2 · dogfood/tooling · origin: **loop** · #117 named this once and it had happened **four
   times**: `filehead` and `fileview` arrived with seven named red proofs each and were left
   unregistered on purpose ("one line, still not mine"), and `fileimg` (#336) and `qfade` (#326)
