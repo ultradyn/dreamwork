@@ -24,9 +24,42 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **301**
+Next id: **303**
 
 ## Open
+
+- **#301** — Teach the ledger patterns to see combined entry heads · P2 · bug ·
+  25m · origin: **loop** · found by `dreamer-taskspage` during the #281 design
+  batch, then re-measured by the coordinator, which narrowed the claim ·
+  **proven:** both patterns require `**` immediately after the digits
+  (`LEDGER_ENTRY` = `^- \*\*#(\d+)\*\*`, `LEDGER_MENTION` = `\*\*#(\d+)\*\*`),
+  so a combined head like `- **#138/#156**` matches *neither* — verified
+  directly against both regexes · **live consequence, measured:** the three
+  combined heads all sit under `## Recently landed` (#138/#156, #250/#251,
+  #292/#293), and `parse_ledger` reports #138, #250, #251, #292 and #293 as
+  neither open nor landed, so `ledger_series` never records their completion
+  and the burndown under-counts landings · **the dreamer's own numbers did not
+  reproduce**: it reported 123 vs 118 ids and "arrival, completion and open
+  level all wrong right now"; within `## Open` the two readers agree exactly
+  (103 = 103, no combined head is currently open), so the defect is confined to
+  the landed section — file the narrow truth, not the alarming version ·
+  **hypothesis, not established:** that these ids were never singular under
+  `## Recently landed` earlier in history (series `landed` = 83 equals the
+  current file's mention count, which is consistent with it but does not prove
+  it) — the red-first test settles it · also groom the inconsistency it
+  surfaced: #156 has an open entry head while appearing in a landed combined
+  entry · fix in the shared pattern so `lint.py` and `watch.py` cannot diverge
+  (a test pins `ledger_entries` verbatim-identical between them)
+
+- **#302** — Give `/answers` its own tint and turbulence seed · P3 · chore ·
+  10m · origin: **loop** · found by `dreamer-taskspage` during the #281 design
+  batch · `TINT` and `SEED` have no `answers` entry, so the route silently
+  inherits the dashboard's atmosphere via `TINT[name] || 0` while
+  `transitions.md` states every destination has its own seed and tint · small,
+  but the page is quietly outside a stated contract, and the same omission is
+  what #281 must not repeat for `/tasks` (its proposal already names
+  `TINT.tasks`/`SEED.tasks`) · check by reddening on the missing entry, not on
+  the rendered colour
 
 - **#300** — Let run-mode descriptions liquefy through one shared popover · P2
   · Web UI feature · 35m · origin: **human** · **human via watch `add-idea`

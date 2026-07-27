@@ -2,6 +2,53 @@
 
 ## Open
 
+- **P1 · 2026-07-27 — #281 `/tasks`: seven taste calls on the design proposal
+  you asked for first.** The self-contained artifact is
+  `.dreamwork/review/tasks-page.html` (open it from the dashboard's review
+  list); the implementation plan is `.dreamwork/docs/plans/tasks-page.md`,
+  twelve increments landed as design-only at `f2c1bd0`. #281's own entry
+  required a proposal before implementation, and #282's hovercards are blocked
+  on the route/data contract it defines, so this is the ask that unblocks both.
+
+  **Every one answers in a word, so a bare `rec` is a complete reply.**
+
+  1. **Wide-screen two-pane list-plus-detail triage layout?** Rec **no, for
+     v1** — `watch-design.md` names `/review` as *the* deliberate width
+     exception, and a second exception is how a one-column page becomes a
+     two-column one. A split view can be added later without changing the
+     data contract.
+  2. **Default sort: priority band, or newest id (the file's own order)?** Rec
+     **priority, then newest id** — the ledger is written in arrival order,
+     which is not urgency, and the page's job is to say what to look at first.
+  3. **Default filter: open only, or everything?** Rec **open only**, with the
+     landed count visible in the count line and one click away — 17 settled
+     rows diluting 103 live ones is the opposite of ranking.
+  4. **Is `/tasks?t=281` the canonical detail URL #282 hardcodes, or do you
+     want `/tasks/281`?** Rec **`?t=281`** — it keeps the server's route
+     allowlist an exact membership test and matches `/file?p=` and
+     `/review?p=`. `/tasks/281` reads nicer and costs prefix routing in the
+     very seam #133 will rewrite.
+  5. **Show the loop's `status.json` claim ("I am on #281 right now"), given
+     it is a claim and not a fact?** Rec **yes, labelled as the loop's claim**,
+     carrying the page's only accent. It is the sole in-flight signal that
+     exists; #294 is what turns it into a fact. The alternative is a page that
+     cannot tell you what is happening now.
+  6. **A write affordance on a row later — `do now: #281` sent from the
+     list?** Rec **not in v1, yes as a follow-up.** It needs no new endpoint or
+     vocabulary (`/command` + `do-now` exist), so it is cheap — but it turns a
+     read-only page into a steering surface, and that is deliberately your call
+     rather than something folded into a list page.
+  7. **The two findings the batch turned up** — now filed as **#301** (both
+     ledger patterns are blind to combined entry heads) and **#302** (`/answers`
+     has no `TINT`/`SEED` entry). Rec **filed, worked in id order behind
+     #281**; #301 is P2 because it is a wrong number on the live dashboard, and
+     the coordinator's own re-measurement narrowed *which* number — see the
+     entry.
+
+  Answer `rec`, `rec except N: …`, or answer them individually. Approval
+  authorises red-first implementation of the twelve increments in an isolated
+  worktree with the visual gate — not deployment.
+
 - **P2 · 2026-07-27 — #252 Markdown `/file` modes: one quiet Rendered/Source switch in the file heading?** #158 already made `.md`/`.markdown`/`.mdx` reflow safely through the existing escape-first `mdB` pipeline while source files stay verbatim. #252 adds the explicit exact-bytes path and mode transition the human requested.
 
   Rec **M1**: for Markdown only, place a compact two-position **Rendered / Source** segmented switch beside the path heading. Rendered is the default; Source shows the exact escaped bytes in the existing `<pre>` and is deep-linkable with `?view=source` so copy/share preserves intent. Changing mode dissolves the body with the page's small atmospheric blur/fade gesture, keeps the heading/control fixed, restores the same scroll ratio where possible, and reduced-motion swaps instantly. Internal Markdown links reuse confined `/file` routing; external links remain explicit external anchors; raw HTML is always inert. Source is never syntax-rewritten, so exact copy remains trustworthy. Mobile keeps the same two labels in one row rather than hiding either mode.
