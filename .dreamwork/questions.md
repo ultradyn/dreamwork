@@ -1,6 +1,21 @@
 # Questions for the human
 
 ## Open
+- **P1 · 2026-07-28 — `ccc @grok` is 401 and only you can refresh it; half the fleet is down.**
+  Two lanes died at three seconds today with nothing in the tree. Verbatim:
+  `Unauthorized (401) from https://cli-chat-proxy.grok.com/v1/responses: Invalid or expired
+  credentials (auth_kind=none, x_xai_token_auth=xai-grok-cli, upstream=Unauthenticated,
+  reason=no auth context)`, `Model: grok-4.5`, ccc `0.2.112`.
+  **`ccc @glm52` is fine** — same runner binary, and it answered a probe instantly, so this is
+  one model's credential and not the CLI. Work is continuing on glm52; `#399b` (the burndown
+  regression that has `master` red) is running there now.
+  **Nothing is blocked, it is just half as wide and slower**, since grok was the fast one. I am
+  not touching the credential — that is yours. Filed as `#410`.
+  Worth knowing for the provider question you set me: the outage was **invisible** for two
+  lanes because I was dispatching with `> /dev/null 2>&1`. ccc's own run log does not help —
+  `~/.local/state/cc-w/ccc/runs/<run>/output.txt` is **zero bytes** for a 401. I now capture
+  stderr on every dispatch, which is how this got diagnosed at all.
+
 - **P2 · 2026-07-28 — one word: may I add `GIT_OPTIONAL_LOCKS=0` to `~/.claude/settings.json`?**
   `~/CLAUDE.md`'s git-index-lock entry says that setting is already there "for all Claude
   sessions". It is not — `settings.json`'s `env` has no such key, and `echo
