@@ -1082,6 +1082,172 @@ class TestCollector(unittest.TestCase):
             self.assertIn("nothing to chart", r["note"])
             self.assertEqual(r["buckets"], [])
 
+    def test_ledger_series_median_is_over_the_landed_intersection(self):
+        """#218. The median is over the ids that have BOTH a first sighting
+        and a first landing — the work that FINISHED. An id still open has
+        no duration, so it is excluded; the renderer's label must be able to
+        rely on median_n being the size of that intersection, not the
+        arrival count. A median that folds unlanded ids in as zero-duration
+        is the optimistic-bias trap the brief named, and the assertion that
+        fails for it is named below."""
+        LED = "## Open\n\n{open}\n## Recently landed\n\n{done}\n"
+        entry = "- **#{i}** — task {i} · P2 · task\n"
+        T = 1784900000
+        # #1 and #3 arrive at t0; #1 lands 1h later; #2 arrives; #3 lands
+        # 4h later; #2 stays open. The intersection is {1, 3}; #2 is
+        # excluded from the duration population even though it arrived.
+        watch._LEDGER_SNAPS.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [
+                (LED.format(open=entry.format(i=1) + entry.format(i=3),
+                            done=""), T),
+                (LED.format(open=entry.format(i=2) + entry.format(i=3),
+                            done="- **#1** — done · landed `aaa1111`\n"),
+                 T + 3600),
+                (LED.format(open=entry.format(i=2),
+                            done="- **#1** — done · landed `aaa1111`\n" +
+                                 "- **#3** — done · landed `ccc3333`\n"),
+                 T + 4 * 3600),
+            ])
+            r = watch.ledger_series(d, now=T + 4 * 3600)
+            self.assertEqual(r["state"], watch.BURN_OK)
+            self.assertEqual(r["arrived"], 3, "all three arrived")
+            self.assertEqual(r["landed"], 2, "two landed")
+            self.assertEqual(r["open"], 1, "#2 is still open")
+            # PRECONDITION, derived at runtime: the two landed durations
+            # genuinely differ (1h vs 4h), so a median over them is a real
+            # choice between values rather than a tautology.
+            self.assertNotEqual(3600, 4 * 3600,
+                                "fixture durations must differ for the "
+                                "median assertion to mean anything")
+            # THE LOAD-BEARING ONE: median_n is the INTERSECTION size (2),
+            # not the arrival count (3). Folding #2 in as zero-duration
+            # would make median_n == 3 and a different median.
+            self.assertEqual(r["median_n"], 2,
+                             "the median population is the landed "
+                             "intersection, not the arrivals")
+            self.assertEqual(r["median"], 3600 * 2.5,
+                             "median of {3600, 14400} is their mean 9000")
+            # #2 must not appear as a zero-duration duration: that is the
+            # optimistic bias. The population is exactly the two finished.
+            self.assertNotIn(0, [3600, 4 * 3600],
+                             "an open id contributes no duration")
+
+    def test_ledger_series_median_counts_a_combined_head_as_two_pairs(self):
+        """#218 / #399. A combined landed head (`- **#A/#B**`) names TWO
+        ids; ledger_series already counts them as two landings, and the
+        median follows the function: it contributes TWO durations, not one.
+        #392's audit lane got this wrong and was refuted — follow the
+        function, and assert the pair count here."""
+        LED = "## Open\n\n{open}\n## Recently landed\n\n{done}\n"
+        T = 1784900000
+        # #1 arrives; then #2 and #3 land together as a combined head an
+        # hour later. The intersection is {2, 3} and BOTH contribute a
+        # duration — the median population is 2, not 1.
+        t0 = LED.format(open="- **#1** — one · P2 · task\n", done="")
+        t1 = LED.format(open="",
+                        done="- **#2/#3** — did it together · "
+                             "landed `abc1234`\n")
+        self.assertIn("- **#2/#3**", t1,
+                      "fixture must hold a combined head to land")
+        watch._LEDGER_SNAPS.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [(t0, T), (t1, T + 3600)])
+            r = watch.ledger_series(d, now=T + 3600)
+            self.assertEqual(r["state"], watch.BURN_OK)
+            self.assertEqual(r["arrived"], 3, "the combined ids arrived")
+            self.assertEqual(r["landed"], 2,
+                             "a combined head lands every id it names")
+            # THE LOAD-BEARING ONE: the combined head produced TWO
+            # filed-to-landed pairs, not one. A reader that collapsed the
+            # head would see median_n == 1.
+            self.assertEqual(r["median_n"], 2,
+                             "a combined head contributes two durations, "
+                             "one per id it names — follow the function")
+
+    def test_ledger_series_median_takes_the_mean_of_two_middles(self):
+        """#218. An even-sized population has no single middle value. The
+        standard median is the MEAN of the two middle values (statistics
+        .median), and that choice is stated here so the renderer and any
+        future reader know which of the two it is. The fixture has FOUR
+        landed ids at distinct durations so the choice is observable."""
+        LED = "## Open\n\n{open}\n## Recently landed\n\n{done}\n"
+        entry = "- **#{i}** — task {i} · P2 · task\n"
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        with tempfile.TemporaryDirectory() as d:
+            # land #1..#4 at 1h, 2h, 3h, 4h after their (simultaneous)
+            # arrival — four distinct durations, even-sized population.
+            open0 = "".join(entry.format(i=j) for j in range(1, 5))
+            snaps = [(LED.format(open=open0, done=""), T)]
+            for i, hrs in enumerate((1, 2, 3, 4), start=1):
+                done = "".join("- **#%d** — done · landed `s%d`\n" % (j, j)
+                               for j in range(1, i + 1))
+                open_ = "".join(entry.format(i=j) for j in range(i + 1, 5))
+                snaps.append((LED.format(open=open_, done=done),
+                              T + hrs * 3600))
+            self._ledger_repo(d, snaps)
+            r = watch.ledger_series(d, now=T + 4 * 3600)
+            self.assertEqual(r["state"], watch.BURN_OK)
+            self.assertEqual(r["landed"], 4)
+            # PRECONDITION: four distinct durations in ascending order, so
+            # the even-mid choice (2h, 3h) is real rather than degenerate.
+            self.assertEqual(r["median_n"], 4)
+            self.assertEqual(4 % 2, 0,
+                             "population must be even-sized for the "
+                             "mean-of-middles assertion to be meaningful")
+            # THE LOAD-BEARING ONE: the standard median (mean of the two
+            # middles) is 2.5h. Returning the lower middle (2h) or the
+            # upper (3h) would fail this.
+            self.assertEqual(r["median"], 2.5 * 3600,
+                             "an even population takes the mean of its two "
+                             "middle values, not one of them")
+
+    def test_ledger_series_median_says_which_kind_of_nothing(self):
+        """#218. The no-data case follows the panel's existing idiom
+        (`test_ledger_series_says_which_kind_of_nothing`): a bare `0` or a
+        dash reads as 'work takes no time', which is a lie. 'Nothing has
+        landed' is its own answer, distinguishable from 'one thing landed
+        in 0s'. median is None and median_n is 0 — the renderer's no-data
+        branch keys on median_n, and None here is the absence the branch
+        names."""
+        LED = "## Open\n\n- **#1** — one · P2 · task\n\n## Recently landed\n\n"
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [(LED, T)])
+            r = watch.ledger_series(d, now=T)
+            self.assertEqual(r["state"], watch.BURN_OK)
+            self.assertEqual(r["arrived"], 1, "one task filed")
+            self.assertEqual(r["landed"], 0, "nothing landed")
+            self.assertEqual(r["median_n"], 0,
+                             "no landed id -> no duration population")
+            self.assertIsNone(r["median"],
+                              "median is absent (None), not 0 — a 0 would "
+                              "read as 'work takes no time'")
+
+    def test_ledger_series_median_handles_a_single_pair(self):
+        """#218. One landed id: the median is its duration, and median_n
+        is 1. The degenerate case is not the no-data case — it is a real
+        measurement over one pair, and the renderer must not collapse it
+        to 'nothing landed'."""
+        LED = "## Open\n\n{open}\n## Recently landed\n\n{done}\n"
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        with tempfile.TemporaryDirectory() as d:
+            self._ledger_repo(d, [
+                (LED.format(open="- **#1** — one · P2 · task\n", done=""), T),
+                (LED.format(open="",
+                            done="- **#1** — done · landed `aaa1111`\n"),
+                 T + 5400),
+            ])
+            r = watch.ledger_series(d, now=T + 5400)
+            self.assertEqual(r["state"], watch.BURN_OK)
+            self.assertEqual(r["landed"], 1)
+            self.assertEqual(r["median_n"], 1)
+            self.assertEqual(r["median"], 5400.0,
+                             "a single pair's median is its own duration")
+
     def test_ledger_stats_replays_only_what_is_new(self):
         # the walk is one `git show` per ledger commit and it only ever grows,
         # so it must never replay per tick. History is immutable, so the

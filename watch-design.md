@@ -2033,6 +2033,67 @@ denominator line are one line each, `nowrap` + ellipsis, short enough to
 never clip at 390px at any realistic count; the full text rides the
 aria-label either way. The incomplete-coverage line is constant prose.
 
+**How long finished work took, from the pairs the walk already holds
+(#218).** `ledger_series` builds an id's first-sighting time and its first
+appearance under `## Recently landed` on its way to the burndown, and used
+to return only their counts — so every filed-to-landed duration in the
+project's history was computed and dropped on the floor. The median is now
+rendered, as ONE honest duration in the panel's surrounding copy and the
+population it was computed over. It is not a velocity score, a rate, a
+burn-rate, or anything that blends two quantities into an index: the entry
+said "without a velocity score", and that is taken literally. (The
+burndown's standing "no velocity score, deliberately" rule is unchanged —
+this is a single honest measurement, not the composite that rule refuses.)
+
+  - **Copy, not a chart mark.** #417's caution is that the burndown's
+    quality is not to be traded for an extra series, and the chart already
+    states honest denominators and hatches unknowns (#217); a median belongs
+    in that same voice rather than as a new visual element competing with
+    the chart. So it is one line of `.bd` copy — the head's `bdnum`/`bdhead`
+    treatment one element down — placed after the provenance block. The
+    number rides the SAME age ladder as the commits (`ageParts`), one figure
+    at its dominant unit (`1h`, `2d`) rather than a second humanizer; the
+    count beside it is the population the median was computed over, because
+    a median over 4 pairs and one over 200 are different kinds of claim.
+  - **The population is the INTERSECTION, and the label says so.** An id in
+    `arrived` but not `landed` is still open and has no duration, so the
+    median is over the ids that have both — the work that FINISHED. That
+    silently answers a different question than a reader assumes: it is "of
+    the work that finished, how long did it take", NOT "how long does work
+    take", and the still-open long tail is excluded (an optimistic bias that
+    grows the longer something sits). The copy says `median time finished
+    work took to land · over N pairs`, so it cannot be read as the second;
+    the aria-label adds that still-open work is not in the median.
+  - **A combined head is two pairs, not one.** `- **#A/#B**` names two ids
+    and `ledger_series` already counts each as a landing; the median follows
+    the function, and a test asserts the head contributes TWO durations.
+    (#392's audit lane got this wrong and was refuted.)
+  - **An even-sized population takes the MEAN of its two middle values**
+    (the standard median), stated here so the choice is known. A test pins
+    it against a four-pair fixture with distinct durations.
+  - **The no-data case says which kind of nothing**, following the panel's
+    existing idiom (`test_ledger_series_says_which_kind_of_nothing`): a bare
+    `0` or a dash reads as "work takes no time", which is a lie, so when
+    nothing has landed the line says so (`nothing landed yet — no
+    filed-to-landed duration to take the median of`). `median` is `None` and
+    `median_n` is `0`, and the renderer keys its no-data branch on
+    `median_n` — `None` rather than `0` is the absence the branch names, and
+    a genuine single-pair median of 0s is not collapsed into it.
+  - **No second walk.** The pairs already exist inside `ledger_series`, and
+    a second git walk is a second truth; the median rides the same walk the
+    provenance counts do (#217), so it costs no second pass over history.
+  - **No motion, like the rest of this panel.** A live tick commits its DOM
+    instantly (transitions.md) and nothing about a median is a gesture the
+    page initiates, so `.bdmed` declares no transition and reduced-motion
+    parity is the identical settled visual. The accent is not spent — the
+    panel's rule (#142) is that nothing in it waits on him, and a median does
+    not.
+
+`dev/capture/burndown.mjs` already measures the panel's constant height
+premise; the median line is re-rendered copy in that same panel, so it adds
+no new visual element and earns no guard of its own — a unit test plus the
+existing surface guard is right, and a new capture guard would be noise.
+
 **No motion, on purpose.** A live tick commits its DOM instantly
 (transitions.md), and nothing about this datum is a layout change anyone
 initiated — so no part of it declares a transition, and reduced-motion

@@ -711,6 +711,23 @@ STYLE = """<style>
             font-size:.65rem; margin-top:.3rem; }
   .bdnote, .bdnone { color:var(--dimmer); font-size:.7rem; max-width:66ch;
                      margin:.45rem 0 0; }
+  /* the median filed-to-landed duration (#218): ONE honest duration in the
+     panel's surrounding copy, and the population it was computed over —
+     not a mark on the chart and not a velocity score. It is the head's
+     `bdhead`/`bdnum` treatment one element down: the number is the fact, at
+     `--lit` (one step down from the head's only because the head is the
+     picture-of-the-whole and this is a derived figure), in a line that may
+     never wrap for the same reason the head and the provenance lines may
+     not — a number that changes must never move the panels below while the
+     bars travel. NO MOTION, and no transition declared: this panel
+     re-renders through innerHTML on every tick and nothing about it is a
+     gesture the page initiates (transitions.md), so reduced-motion parity
+     is the identical settled visual, the contract provenance holds one
+     rule up. THE ACCENT IS NOT SPENT: the panel's rule (#142) is that
+     nothing in it waits on him, and a median does not. */
+  .bdmed { color:var(--dim); font-size:.7rem; max-width:66ch; margin:.3rem 0 0;
+           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bdmed .bdnum { color:var(--lit); }
   /* the provenance coverage (#217): who filed each task, by FIRST SIGHT —
      three counts and a denominator, with the historical unknown drawn as
      itself and never folded into loop. THE ACCENT IS NOT SPENT (the
@@ -2750,6 +2767,50 @@ function provBlock(p) {
         `boundary are invisible, so coverage is incomplete</div>` : '') +
     `</div>`;
 }
+/* the median filed-to-landed duration (#218). One honest number — the
+   median of every filed-to-landed pair the walk already holds — and the
+   population it was computed over. NOT a velocity score, a rate, or an
+   index: a single duration that says how long finished work took. The
+   population is the INTERSECTION of arrived and landed (the work that
+   finished), so the copy says "finished" plainly: a reader otherwise
+   assumes "how long work takes" and the still-open long tail is excluded,
+   which is the optimistic bias the brief named. It rides the SAME age
+   ladder as the commits (`ageParts`), one figure at its dominant unit —
+   `1h`, `2d` — rather than a second humanizer, and the count beside it is
+   the size of the population, because a median over 4 pairs and one over
+   200 are different kinds of claim. NO MOTION: this panel re-renders
+   through innerHTML on every tick and nothing about it is a layout change
+   the page initiates (transitions.md), so this declares no transition —
+   the same contract provenance holds one block up, and reduced-motion
+   parity is the identical settled visual. */
+function medDur(m) {
+  if (!m && m !== 0) return '';
+  const p = ageParts(Math.floor(Date.now()/1000) - Math.round(m));
+  return p.big + p.bu;
+}
+function medianBlock(s) {
+  const n = (s && typeof s.median_n === 'number') ? s.median_n : 0;
+  /* THE NO-DATA CASE follows the panel's "which kind of nothing" idiom
+     (`test_ledger_series_says_which_kind_of_nothing`): a bare `0` or a
+     dash is the wrong thing under any count, because it reads as "work
+     takes no time" rather than as "nothing has finished". Nothing has
+     landed yet is its own sentence. (n===0 here means work has arrived
+     but none of it has the pair a duration needs.) */
+  if (!n)
+    return `<div class="bdmed">nothing landed yet — no filed-to-landed ` +
+           `duration to take the median of</div>`;
+  const dur = medDur(s.median);
+  /* The aria-label is the whole datum in words: the bar-less line states
+     its own population and question, the way the provenance bar's label
+     does. "finished" is the load-bearing word — it is what separates this
+     median from the one a reader assumes. */
+  const aria = `median time finished work took to land: ${dur} ` +
+    `(over ${n} filed-to-landed ${n === 1 ? 'pair' : 'pairs'}; ` +
+    `still-open work is not in this median)`;
+  return `<div class="bdmed" role="img" aria-label="${esc(aria)}">` +
+    `<span class="bdnum">${esc(dur)}</span> median time finished work ` +
+    `took to land · over ${n} ${n === 1 ? 'pair' : 'pairs'}</div>`;
+}
 function burnPanel(d) {
   const s = (d && d.burndown) || null;
   if (!s || !s.state) return '';
@@ -2793,6 +2854,21 @@ function burnPanel(d) {
      ellipsised line: numbers that change must never move the panels below
      while the bars are travelling. */
   h += provBlock(s.provenance);
+  /* HOW LONG FINISHED WORK TOOK, said honestly (#218). One duration —
+     the median of filed-to-landed — and the population it was computed
+     over, never a velocity score or a rate. It is COPY in the panel's
+     surrounding text, not a mark on the chart: #417's caution is that the
+     burndown's quality is not to be traded for an extra series, and a
+     median belongs in the chart's honest voice (denominators named,
+     unknowns drawn) rather than competing with it. The population is the
+     INTERSECTION of arrived and landed — the work that finished — so the
+     label says so plainly, because a reader otherwise assumes "how long
+     work takes" and the still-open long tail is excluded. NO MOTION: this
+     panel re-renders through innerHTML on every tick and nothing about it
+     is a gesture the page initiates (transitions.md), so this line declares
+     no transition and reduced-motion parity is the identical settled
+     visual — the same contract provenance holds one block up. */
+  h += medianBlock(s);
   return h + `</div>`;
 }
 function buildDashboard(d) {
@@ -8059,6 +8135,33 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
     out["from"] = first
     out["to"] = last
     out.pop("from_", None)
+    # How long finished work took, from the pairs the walk already holds
+    # (#218). An id in `arrived` but not `landed` is still open and has no
+    # duration, so the median is over the INTERSECTION — the ids that have
+    # both a first sighting and a first landing. That silently answers a
+    # different question than a reader assumes: it is "of the work that
+    # finished, how long did it take", NOT "how long does work take", and
+    # the still-open long tail is excluded. `median_n` is carried beside it
+    # so the renderer can state the population the figure was computed over
+    # — a median over 4 pairs and one over 200 are different kinds of claim.
+    # No second walk: the two dicts above are the only source of truth, and
+    # a second walk is a second truth (#218's reason for existing). No
+    # velocity score, no rate, no index — one duration, honestly labelled.
+    # An even-sized population takes the MEAN of its two middle values
+    # (the standard median); a combined head (`- **#A/#B**`) is already two
+    # ids in `landed`, so it contributes TWO durations, not one.
+    durations = sorted(landed[i] - arrived[i]
+                       for i in landed if i in arrived)
+    n = len(durations)
+    median = None
+    if n == 1:
+        median = float(durations[0])
+    elif n > 1:
+        mid = n // 2
+        median = (float(durations[mid]) if n % 2
+                  else (durations[mid - 1] + durations[mid]) / 2.0)
+    out["median"] = median            # seconds, or None when nothing finished
+    out["median_n"] = n               # the population the median was over
     # Who filed each task, by first sight (#216), drawn honestly (#217):
     # three counts and a denominator, never a split that folds the unknown
     # remainder into loop. The denominator is COMMITTED first sightings —
