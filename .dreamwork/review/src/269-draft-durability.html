@@ -12,6 +12,14 @@ skip_href: #ask
 <!--#nav-->
 <a href="#ask">your calls</a><a href="#done">already fixed</a><a href="#id">logical id</a><a href="#order">order</a><a class="full" href="#not">not worth it</a>
 <!--#lead-->
+<p id="context" class="context">This is the design decision page for task
+  <strong>#269</strong> (draft durability across reloads and tabs). The acute
+  fix that stopped typed words vanishing on reload already landed; what remains
+  are two policy calls (cross-tab conflict, orphan retention) that finish the
+  <code>DraftStore</code> design before any module is built. You are being asked
+  now because the design is otherwise settled and the loop is waiting on those
+  two calls before implementation.</p>
+<p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> the DraftStore module stays parked — neither cross-tab policy nor orphan retention is defaulted, and nothing else is blocked.</p>
 <div id="ask" class="ask-block">
   <div class="label">Two calls — cross-tab conflict, and how long to keep orphans</div>
   <p class="ask-q">The rest of the design is settled without you (logical id, clear-on-receipt
