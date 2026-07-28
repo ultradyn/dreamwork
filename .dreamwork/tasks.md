@@ -24,9 +24,21 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **448**
+Next id: **449**
 
 ## Open
+- **#448** — a questionnaire feature for asking him things, modelled on `pag-server`'s question form ·
+  **P2** · dashboard/asking · origin: **human** · **blocked-on: #294** (SQLite) ·
+  **human via watch 2026-07-29 00:34, while reading `421-qs-opts-short.html`:** *"eventually we should add a
+  questionnaire feature (after sqlite so we can rely on structured data). This can work like pag's (get a grok
+  subagent to see ~/src/pag-server/ and look for the question form. it was quite feature rich. We should
+  probably cut back on any superfluous elements."*
+  · **explicitly sequenced after `#294`** — the point of waiting is structured data, so a questionnaire built
+  on markdown-parsed `questions.md` would be the wrong thing built early. The survey of `pag-server` is *not*
+  blocked and is worth doing now while the reference is fresh: `.dreamwork/docs/plans/questionnaire-survey.md`.
+  · **read together with `#445`** (four question/attention modes) and `#421` — a questionnaire is the surface
+  those modes would ask through, and *"cut back on any superfluous elements"* is the design constraint he
+  stated up front rather than a later review note.
 - **#447** — bundle the `use-igcs` skill with dreamwork, and make the loop reach for it before any design
   judgement · **P1** · loop-machinery/decision-method · origin: **human** ·
   **human via chat 2026-07-29 00:33:** *"re blocking #445: see /use-igcs the skill. we should bundle that skill
