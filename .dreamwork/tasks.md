@@ -24,9 +24,41 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **427**
+Next id: **429**
 
 ## Open
+- **#427** — the hand-off grammar is widened in `lint` but not in the parser, so the dashboard still
+  cannot read a two-sha line · P3 · loop-tooling/format · origin: **loop** · **named by the `#415`
+  lane rather than left to be found**
+  · `#415` widened `lint.check_handoffs` to accept one-or-more shas, correctly declining to reach into
+  `watch.py`'s `HANDOFF_PENDING_RE` which another lane's tests assert on. So `lint` is quiet and
+  `parse_handoffs` **still classifies a multi-sha line as malformed** — `pending_handoff_records` will
+  not surface its shas
+  · so: widen `HANDOFF_PENDING_RE` and `parse_handoffs`' return shape in `watch.py`, in the same commit
+  as the `test_watch.py` assertions that read `pending[0]["sha"]`, and the `lint` reclassification
+  becomes a **no-op** rather than needing removal — that ordering is the point
+  · related: **#415, #401**
+
+- **#428** — the guard suite fails under concurrent lanes and passes alone, twice now · P2 ·
+  loop-tooling/orchestration · origin: **loop** · found by the coordinator's own suite run at 17:29
+  · **`subslog` FAILED in the full run** on *"…and says so, with the status the server gave"*, with
+  **three `ccc @glm52` lanes running**. Re-run alone at 17:47: **PASS**. Result: 51 PASS / 1 FAIL,
+  `REAL_EXIT=1`, pytest **1028 passed**
+  · **second instance today with a different guard.** The `#218` lane reported *"failing guards on an
+  idle machine — `confirmation`, `identity`, `morphhold`, `prominence` all flipped to PASS, and `qsec`
+  failed on a different assertion, the hallmark of load sensitivity"*. Different guards, same shape
+  · **be careful what this claims:** *"passes in isolation"* is **not** proof of load sensitivity — it
+  is equally consistent with order-dependence or an ordinary flake. What is established is that it fails
+  under concurrent load and passes alone, twice, on timing-shaped assertions. **Establishing the cause
+  needs the experiment, not the inference**: run the suite alone N times and under synthetic load N
+  times and compare failure rates
+  · **why it matters beyond flakiness:** this is the third structural cost of fan-out after `#424` (the
+  guard range is one lock) and `#423` (a dead runner looks like a fast lane). A suite that goes red
+  because *we* are busy trains everyone to discount its reds, which is the expensive failure — and the
+  `#218` lane already discounted five of them correctly, which is exactly the habit that will one day
+  discount a real one
+  · related: **#424, #423**
+
 - **#425** — the `watch.py` split must leave `watch.py` working for clients that are already running ·
   P1 · loop-tooling/migration · origin: **human** · **human direct, 2026-07-28 17:38** · next-up ·
   blocks **#368**
@@ -93,7 +125,7 @@ Next id: **427**
   to wait
   · this is a **dogfooding finding about the orchestrator mode itself**, which is the second thing
   he asked to be measured — parallel lanes are cheap until they share a lock nobody modelled
-  · related: **#203, #423**
+  · related: **#203, #423, #428**
 
 - **#423** — `ccc @grok` 401s recur, and the loop has no signal for a dead runner · P2 ·
   loop-tooling/orchestration · origin: **loop** · **recurrence of landed `#410`**
@@ -106,7 +138,7 @@ Next id: **427**
   exits without committing or writing to the inbox should be **recorded as failed**, not silently
   forgotten. `status_sync`'s liveness work (`#402a`) already knows how to ask whether a pid is
   alive; it does not know how to ask whether a lane *did* anything
-  · related: **#410, #402, #424**
+  · related: **#410, #402, #424, #428**
 
 - **#421** — how we ask him questions, researched rather than guessed · P1 · loop-instructions ·
   origin: **human** · **human via watch `do-next` 2026-07-28 16:29** · next-up
@@ -224,7 +256,7 @@ Next id: **427**
   · low priority: the WARN is loud, correct, and the workaround is one edit. Filed so the next
   two-commit lane does not rediscover it — this is the third time today a lane has been marked
   wrong by a checker that was itself too narrow (`qacard`, the dock guards, now this)
-  · related: **#401, #367**
+  · related: **#401, #367, #427**
   · **a second instance of the same narrowness, found 15:10 and worth folding in here rather than
   filed separately:** `lint` cannot tell a merge that lands an *increment* of a multi-increment
   task from a merge that *closes* it, so `#367` — open by design, awaiting his ruling — reports as
@@ -236,6 +268,18 @@ Next id: **427**
   `.worktrees/fmt`), because both widen a grammar in `file-formats.md` + `lint.py` and both have a
   live symptom. The brief leans hardest on the **negative** tests: a widening's easy failure is
   accepting everything, and one with no negative test has removed a check rather than improved it
+  · **DONE lint-local, `4c70722`, `ccc @glm52` (merged 17:47) — and the lane found the scope I got
+  wrong.** The hand-off grammar lives in **`watch.py`'s `HANDOFF_PENDING_RE`**, which my brief listed as
+  not-yours, and `parse_handoffs`' return shape is asserted on in `test_watch.py`. So it widened
+  **`lint.check_handoffs`** instead: multi-sha lines are reclassified out of the parser's `malformed`
+  bucket and counted separately. Red from the **real** `#411` line recovered from `f7d5bea`, not a
+  fixture; negative test keeps a zero-sha line malformed
+  · decisions, all in `file-formats.md`: order is **written-order, not enforced** (a hand-off is a
+  report; `Recently landed` is where order is recoverable from `git log`), **no cap** (capping
+  reintroduces the defect), **zero-sha stays malformed** (the delivery signal would be empty)
+  · **REMAINDER, and the lane named it rather than leaving it to be discovered:** `parse_handoffs`
+  still returns a multi-sha line as malformed, so `pending_handoff_records` **will not surface its
+  shas on the dashboard** until `watch.py`'s grammar widens too. Filed as part of `#427`
 
 - **#414** — a motion guard's pass condition depends on the browser's FRAME RATE, and it does
   not say so · P2 · verification/motion · origin: **loop** · found by the only failure in the
@@ -679,6 +723,10 @@ Next id: **427**
   sub-ids. Both correct, disagreeing about a vocabulary nobody wrote down. I worked around it by
   writing ints, and **the workaround is not the fix** — the next author to write `"392a"` hits the
   same wall from the other side
+  · **`#402b` DONE, `2092d57` (merged 17:47).** The id vocabulary is now written down and enforced:
+  plain id → **int**, sub-id → **string**, a quoted plain id is **always wrong**. Verified across all
+  four cases independently, including the one that matters — `["263"]` is still an ERROR, so the
+  widening did not remove the check it widened
 
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
   P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
@@ -4428,7 +4476,7 @@ Next id: **427**
   · **`ENTRY_ID` deliberately unchanged**, blast radius documented: it is the atom for
   `parse_ledger`, `_open_ids`, `_landed_ids`, related, origins and lint's entry walk. That is
   **#399**'s neighbourhood
-  · related: **#381, #399, #395, #402, #406, #409, #415**
+  · related: **#381, #399, #395, #402, #406, #409, #415, #427**
 
 - **#406** — `handoffs.md` instructs an append that **structurally cannot** put the line where it
   is required · **P1** · handoffs/format · origin: **loop** · found by watching a live lane obey
