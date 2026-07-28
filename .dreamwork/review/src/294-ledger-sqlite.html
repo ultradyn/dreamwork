@@ -1,0 +1,180 @@
+<!--dreamwork-review-source
+title: #294 · The SQLite ledger migration — from Markdown to one store, safely
+identity: ledger migration
+context: task #294 · design only
+status: awaiting review
+headline: The schema and the boundary are settled. This is how we cross over without losing an id, an entry, or a burndown point.
+tag: design only — nothing is built
+sub: task #294 · 29 July 2026 · your /answers 01:17 ask, answered
+skip: Skip to the decision
+skip_href: #decision
+-->
+<!--#nav-->
+<a class="full" href="#deps">dependencies</a><a href="#script">the script</a><a href="#igc">decisions</a><a href="#decision">decision</a>
+<!--#lead-->
+<p class="lead">You asked for the durable ledger to move from Markdown to SQLite behind a CLI, with a
+<em>"deliberately readable and user-modifiable"</em> migration script that dry-runs, reports exact
+counts/IDs/digests/conflicts, backs up, imports atomically, verifies before cutover, and rolls back.
+The schema (<strong>#346</strong>) and the transition boundary (<strong>#264</strong>) are already
+approved; this design owns <strong>only what #264 left open</strong>: the migration, the cutover, the
+rollback, the git-history import, and <code>tasks.md.deprecated</code>. Full design at
+<code>.dreamwork/docs/plans/ledger-sqlite.md</code>.</p>
+<p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> the migration stays design-only — no table is created, no file is renamed, no <code>status.json</code> field is touched.</p>
+<div id="ask" class="ask-block">
+  <div class="label">The decisions &mdash; R1 to R4, plus one confirm</div>
+  <p class="ask-q"><strong>R1</strong> the id sequence lives in the store (<code>AUTOINCREMENT</code>, seeded from the Markdown <code>Next id</code>, verified <code>== MAX(id)+1</code>);
+  <strong>R2</strong> cutover behind an exclusive lease that freezes every writer, consuming #263's lane-H version gate (no second gate invented);
+  <strong>R3</strong> git history imports as first-sight synthetic events (<code>actor='migration:git'</code>), honest about the precision the Markdown held;
+  <strong>R4</strong> <code>tasks.md</code> content moves to <code>tasks.md.deprecated</code> and a one-line <code>tasks.md</code> shim carries a #458 notice so a stale agent self-heals.
+  <strong>C1</strong> confirm the store ships machine-local for v1 (your #264 Q2 answer <code>(c)</code>).</p>
+  <p class="ask-answers"><span class="key">accepted answers</span>
+  <code>rec</code> (all five as written) &nbsp;&middot;&nbsp; <code>R1 &hellip; R4</code> / <code>C1</code> per-item
+  &nbsp;&middot;&nbsp; free text</p>
+</div>
+<!--#call-->
+<div class="call"><strong>Recommendation.</strong> A single staged, human-readable
+<code>dreamwork tasks migrate</code> script &mdash; dry-run, report, backup, atomic import into the one
+SQLite file inside one <code>BEGIN IMMEDIATE</code>, verify by replay, cutover behind an exclusive lease.
+The id sequence lives in the store and is verified, not trusted. Git history imports as first-sight
+synthetic events so the burndown survives without fabricating precision. <code>tasks.md</code> is renamed
+to <code>.deprecated</code> and a notice-shim is left behind. Rollback restores the backup then re-runs
+the migration forward &mdash; it never restores a legacy direct writer.</div>
+<!--#aside-->
+<span class="big">2</span>
+<small>second derived truths the migration removes: <code>status.json</code>'s <code>queue</code>/<code>current_task_ids</code> (deleted, T2) and the Markdown ledger itself (becomes a deprecated shadow). 0 tables created under this id</small>
+<!--#body-->
+<section id="deps" aria-labelledby="dp-t">
+  <div class="label" id="dp-t">The dependencies are met as designs &mdash; this builds on them, it does not re-derive them</div>
+  <p class="read">The brief asked to establish what <code>#264</code> and <code>#263</code> actually settled, and
+  to design only on what is met. Both are met <strong>as designs</strong>:</p>
+  <div class="scroller"><table>
+  <thead><tr><th>dependency</th><th>what it settled</th><th>what #294 adds on top</th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td><strong>#263</strong> user-event journal</td><td>contract approved (<code>rec</code> 01:27). One SQLite file at <code>.dreamwork/user-events.sqlite3</code>, gitignored. Receipts immutable, <code>202</code> follows commit, leases/CAS, ternary proof, hash-chained event log. Lanes A&ndash;F and E merged; <strong>G/H authorised, not yet landed</strong></td><td>the migration imports into <strong>that same file</strong> (#264 F6: one file, or the receipt FK is an unvalidated string)</td></tr>
+    <tr><td><strong>#264</strong> task-transition boundary</td><td>approved in full (T1&ndash;T4). <code>task_event</code> is its own append-only log in the same file, appended in the same transaction as the <code>task_state</code> CAS. Burndown &amp; status are <strong>queries</strong>. <code>status.json</code> loses <code>queue</code>/<code>current_task_ids</code>/<code>task_ids</code></td><td>the <strong>cutover</strong> that actually deletes those fields and re-points the readers</td></tr>
+    <tr><td><strong>#346</strong> entity schema + read CLI</td><td>S1&ndash;S4 ruled. <code>task(id PRIMARY KEY)</code>, ids permanent; <code>priority</code> closed + <code>priority_uncertain</code>; <code>type</code> a lookup table; <code>related</code> n:n, <code>depends</code> directed</td><td>the <strong>import</strong> that populates that schema from today's Markdown</td></tr>
+  </tbody>
+  </table></div>
+  <div class="notice"><strong>One dependency is genuinely unmet, and it is implementation, not design.</strong>
+  #263's lane <strong>H</strong> (the mixed-version / version gate) is authorised but not landed. Cutover needs
+  the mixed-writer freeze, and lane H is what makes a mixed-version writer <em>fail closed before accepting a
+  write</em>. So the design is complete; <strong>shipping is gated on lane H</strong> &mdash; and on #352
+  unifying the three parsers, or cutover renames the input of readers it never re-pointed.</div>
+</section>
+
+<section id="drift" aria-labelledby="dr-t">
+  <div class="label" id="dr-t">The two truths already disagree &mdash; the migration is the act that removes one</div>
+  <p class="read">Measured 2026-07-29 through <code>watch.parse_ledger</code> and the live <code>status.json</code>,
+  not a fresh regex (three hand-rolled scans of this file have produced confident wrong numbers tonight):</p>
+  <div class="facts">
+    <div class="fact"><span class="number">144 / 219</span><span class="caption">open / landed ids in <code>tasks.md</code>, 0 overlap &mdash; the production reader</span></div>
+    <div class="fact"><span class="number">~9&ndash;40</span><span class="caption">the gap between the ledger's open count and <code>status.json</code>'s hand-written <code>queue</code> all session (#362's WARN). Two numbers on one page, disagreeing</span></div>
+    <div class="fact"><span class="number">470</span><span class="caption"><code>Next id</code> in the Markdown header today. The store must continue from here and never collide with an imported id</span></div>
+    <div class="fact"><span class="number">578</span><span class="caption">commits that touched <code>tasks.md</code>. That history is already the burndown's source; the migration imports it rather than losing it</span></div>
+  </div>
+  <p>A migration that left <code>status.json</code>'s task-derived fields in place would ship #264's boundary on
+  paper while preserving the second truth the boundary exists to remove. So the cutover <strong>deletes</strong>
+  them, and #362's drift check is retired for the inverse invariant &mdash; the fields must stay <em>absent</em>.</p>
+</section>
+
+<section id="script" aria-labelledby="sc-t">
+  <div class="label" id="sc-t">The script &mdash; staged, readable, each stage prints exact counts</div>
+  <pre><code class="language-text">dreamwork tasks migrate --dry-run            # parse + report; writes nothing
+dreamwork tasks migrate --report &lt;path&gt;      # full report to a file
+dreamwork tasks migrate --backup &lt;dir&gt;       # copy tasks.md + DB, fsync
+dreamwork tasks migrate --import             # atomically populate the store
+dreamwork tasks migrate --verify             # replay, diff, exit non-zero
+dreamwork tasks migrate --cutover            # the lease + rename + notice
+dreamwork tasks migrate --rollback &lt;backup&gt;  # restore file; never a legacy writer</code></pre>
+  <p class="quiet">Each stage exits non-zero on any surprise, so a human reading the output sees what the import
+  will do <em>before</em> it does it. The script uses the production parser (#352's unified module once it lands),
+  never a regex of its own. <code>--dry-run</code> reports entry/id counts <strong>derived and asserted</strong>,
+  the band/type/origin histograms, every unreadable entry, every "blocked on" phrase not convertible to an edge,
+  and a digest per entry so a later <code>--import</code> proves it carried the same bytes.</p>
+  <div class="summary-line"><span>atomicity</span><span>import runs <strong>inside one <code>BEGIN IMMEDIATE &hellip; COMMIT</code></strong> in the live store, because #264 F6 measured the receipt FK can only exist in one database file. A failed import leaves the store untouched</span></div>
+  <div class="summary-line"><span>verify</span><span>replays the import into a temp table, diffs row-for-row including digests, and re-derives the open/landed id sets from the store and asserts they equal the parser's pre-rename sets</span></div>
+  <div class="summary-line"><span>the id seed</span><span><code>sqlite_sequence</code> is seeded from the Markdown <code>Next id</code> and the seed is asserted <code>== MAX(id)+1</code> &mdash; a header drifted below reality stops the migration, it does not mint a colliding id</span></div>
+</section>
+
+<section id="igc" aria-labelledby="ig-t">
+  <div class="label" id="ig-t">The decisions worth rivals &mdash; an IGC</div>
+  <p class="read">Context: the ledger moves from one committed Markdown file (single writer by convention, 578
+  commits of history) to one gitignored SQLite store shared with #263's journal. The migration must not lose an
+  id, an entry, or a burndown point, and must roll back without restoring the hazard it removed. Goals are binary.
+  <strong>G1</strong> two writers never mint the same id &middot; <strong>G2</strong> imported &amp; future ids
+  never collide &middot; <strong>G3</strong> the seed is verified, not trusted &middot; <strong>G4</strong> the
+  sequence survives a crash mid-<code>file</code> &middot; <strong>G5</strong> rollback restores data without a
+  legacy writer &middot; <strong>G6</strong> a stale agent self-heals &middot; <strong>G7</strong> the script is
+  human-readable.</p>
+  <div class="scroller"><table>
+  <thead><tr><th>decision</th><th>All</th><th>survivor</th><th>what refutes the rivals</th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td><strong>M1 &middot; where the id sequence lives</strong></td><td>✔</td><td class="pass"><strong>A</strong> AUTOINCREMENT in the store, seeded + verified</td><td><strong>B</strong> keep <code>Next id</code> in the deprecated header &mdash; refuted on G1+G3: two places can disagree, and "trust the header" is exactly the #362 drift. <strong>C</strong> a sidecar <code>next_id</code> row &mdash; refuted on G4+G7: it lags the event under crash and is machinery a human maintains</td></tr>
+    <tr class="row-accent"><td><strong>M2 &middot; cutover &amp; the freeze</strong></td><td>✔</td><td class="pass"><strong>A</strong> exclusive lease + #263 lane-H gate; flip readers after #352</td><td><strong>B</strong> "big bang" with no freeze &mdash; refuted on G5+G6: a concurrent writer mutates <code>tasks.md</code> mid-import and the backup no longer matches; a stale agent keeps writing with no notice. <strong>C</strong> dual-write shadow &mdash; refuted on G2+G5+G6+G7: it <em>is</em> the second derived truth #264 exists to remove, preserved indefinitely</td></tr>
+    <tr class="row-accent"><td><strong>M3 &middot; git history</strong></td><td>✔</td><td class="pass"><strong>A</strong> first-sight arrivals+landings, <code>actor='migration:git'</code></td><td><strong>B</strong> import nothing, burndown-before-cutover stays on git &mdash; refuted: a store whose burndown is flat-before-cutover silently understates history on any clone that doesn't walk git. <strong>C</strong> reconstruct every cause from prose &mdash; refuted: the Markdown never recorded intra-life causes, so this is fabrication</td></tr>
+    <tr class="row-accent"><td><strong>M5 &middot; deprecation + notice</strong></td><td>✔</td><td class="pass"><strong>A</strong> rename to <code>.deprecated</code> (YAML block) + one-line <code>tasks.md</code> shim with a #458 notice</td><td><strong>B</strong> rename, no shim, rely on re-init &mdash; refuted on G6: an agent that never re-initialises (the #458 case) finds the file gone and silently loses work. <strong>C</strong> keep Markdown authoritative &mdash; the dual-write shadow, refuted again</td></tr>
+  </tbody>
+  </table></div>
+  <div class="notice"><strong>The most important refutation is M2-C.</strong> A "shadow run" that keeps Markdown
+  authoritative while mirroring into the store is the second derived truth your #294 amendment &mdash;
+  <em>"no second derived truth"</em> &mdash; exists to forbid, under another name. It also never reaches a
+  decision to flip, so a human cannot read when it is safe to stop shadowing.</div>
+</section>
+
+<section id="cutover" aria-labelledby="cu-t">
+  <div class="label" id="cu-t">Cutover copies #263's own sequence &mdash; it does not invent a second gate</div>
+  <p class="read">The hazard is the same as #263's (two writer generations must never overlap), so the cure is the
+  one already approved there:</p>
+  <div class="summary-line"><span>1</span><span>acquire an exclusive cutover lease on the target</span></div>
+  <div class="summary-line"><span>2</span><span><strong>freeze every writer</strong> &mdash; coordinator, <code>watch.py</code>, any lane &mdash; and prove none owns the generation. This is the "mixed-writer freeze". It is a lease + the version gate, <strong>not a <code>pkill</code></strong></span></div>
+  <div class="summary-line"><span>3</span><span>run dry-run, backup, import, verify under the lease</span></div>
+  <div class="summary-line"><span>4</span><span>flip the readers (after #352 unifies the parser): <code>ledger_series</code>, <code>parse_ledger</code>, the <code>/tasks</code> badge, the status section all become store queries</span></div>
+  <div class="summary-line"><span>5</span><span>rename <code>tasks.md</code> &rarr; <code>tasks.md.deprecated</code> + leave the notice shim</span></div>
+  <div class="summary-line"><span>6&ndash;7</span><span>write the cutover watermark; release the lease. New writes go through <code>dreamwork tasks file|grab|cycle</code></span></div>
+  <p class="quiet"><strong>Mixed-version fail-closed is #263 lane H, consumed not reinvented.</strong> Until H
+  lands, an old <code>watch.py</code> could keep writing <code>tasks.md</code> after cutover and the store would
+  never know. Cutover is sequenced after lane H, full stop.</p>
+</section>
+
+<section id="decision" aria-labelledby="d-t">
+  <div class="label" id="d-t">What to decide</div>
+  <div class="choice"><strong>R1 &middot; The id sequence lives in the store.</strong>
+  <code>AUTOINCREMENT</code>, seeded from the Markdown <code>Next id</code> and verified
+  <code>== MAX(id)+1</code>, so two writers can never mint the same id and a drifted header stops the migration.
+  <div class="answer"><strong>Rec: take it.</strong> The IGC survivor over a header-authority and a sidecar-row
+  rival. The seed rule is one readable line.</div></div>
+
+  <div class="choice"><strong>R2 &middot; Cutover behind an exclusive lease, consuming #263 lane H.</strong>
+  Freeze every writer, flip the readers after #352, rename + notice. No second version gate invented.
+  <div class="answer"><strong>Rec: yes.</strong> It is #263's own cutover sequence, reused. The dual-write
+  "shadow run" is refuted &mdash; it is the second truth #264 removes.</div></div>
+
+  <div class="choice"><strong>R3 &middot; Git history as first-sight synthetic events.</strong>
+  <code>actor='migration:git'</code>, chained, honest about precision. No fabricated intra-life causes.
+  <div class="answer"><strong>Rec: yes.</strong> First-sight is exactly what <code>ledger_series</code> already
+  computes; importing it makes the store self-sufficient for the burndown without lying about what the Markdown
+  recorded.</div></div>
+
+  <div class="choice"><strong>R4 &middot; <code>tasks.md.deprecated</code> + a notice shim.</strong>
+  Content moves to <code>.deprecated</code> (YAML deprecation block); a one-line <code>tasks.md</code> carries a
+  #458 notice so a stale agent self-heals. Never auto-deleted.
+  <div class="answer"><strong>Rec: yes.</strong> This resolves your "rename it" (#294) with #458's "the notice
+  lives where the stale agent looks".</div></div>
+
+  <div class="choice"><strong>C1 &middot; Confirm machine-local for v1.</strong>
+  Your #264 Q2 answer <code>(c)</code> accepted a gitignored machine-local store for recovery/reprocessing; this
+  design assumes it and imports git history so the store is self-sufficient regardless.
+  <div class="answer"><strong>Rec: confirm machine-local.</strong> If you later want cross-clone history,
+  committing the canonical byte export <em>is</em> that &mdash; a deployment choice (T3), not a schema change.</div></div>
+</section>
+
+<section id="next" aria-labelledby="n-t">
+  <div class="label" id="n-t">What approval means, and what it does not</div>
+  <div class="approval">Approving accepts <strong>the migration shape</strong> and nothing more. It does
+  <strong>not</strong> authorise creating a table, writing the CLI, running the migration, renaming
+  <code>tasks.md</code>, deleting <code>status.json</code> fields, or payload purge &mdash; those wait on #263
+  lane H landing and #352 unifying the parser. Ten red-first fixtures are drafted, each naming the production
+  line that must change for it to fail, and two naming the hollow-check way it could pass.</div>
+</section>
+<!--#footer-->
+task #294 &middot; design only &middot; <code>.dreamwork/docs/plans/ledger-sqlite.md</code>
