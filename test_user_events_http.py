@@ -28,7 +28,7 @@ import urllib.error
 import urllib.request
 
 import watch
-from user_events.sqlite import open_journal
+from user_events.sqlite import open_journal, RECEIPT_HEALTH, REJECTION_REASONS
 
 # The six write routes `do_POST` dispatches, derived from the dispatch itself
 # (the Handler class's WRITE_ROUTE_HANDLERS keys) so a seventh route added
@@ -426,6 +426,170 @@ class _BaselineHarness(E2Shadow):
     fail on the receipt count, which is the point of the baseline)."""
     __test__ = False
     journal_shadow = False
+
+
+class E4BestEffort(HttpHarness):
+    """E4: a submissions.log failure is shadow_failed health on a durable
+    receipt, not a refusal.
+
+    The shadow (submissions.log) is best-effort (design decision 3, step 4):
+    it is written AFTER the journal receipt commits, and its failure records
+    health against that receipt — the request was already accepted, so the
+    response must still be 202.
+
+    Red lines: the `record_health("shadow_failed", ...)` call, and separately
+    the absence of a re-raise (log_submission must return False, not propagate
+    the OSError)."""
+
+    def test_a_shadow_write_failure_still_returns_202_and_records_health(self):
+        # Make submissions.log a DIRECTORY so the append raises a real
+        # OSError (IsADirectoryError). Do NOT patch `open` — that would also
+        # break the journal write (sqlite3.connect uses os.open internally),
+        # so the test would pass for the wrong reason and would keep passing
+        # if the ordering inverted (plan's "must not fake" clause).
+        subs = os.path.join(self.target, ".dreamwork", "submissions.log")
+        os.makedirs(subs)
+        # Precondition: submissions.log is now a directory, not a file — the
+        # OSError is genuine, not mocked.
+        self.assertTrue(os.path.isdir(subs), subs)
+        # The closed set a parser reads: shadow_failed is the only health
+        # status today. A fixture that adds one without updating the tuple
+        # should fail loudly here.
+        self.assertIn("shadow_failed", RECEIPT_HEALTH, RECEIPT_HEALTH)
+        status, headers, body = self.post(
+            "/command", {"kind": "add-idea", "text": "shadow failure test"})
+        # The response is 202 — the receipt committed, and a shadow failure
+        # cannot turn acceptance into a refusal.
+        self.assertEqual(status, 202, status)
+        payload = json.loads(body)
+        rid = payload["receipt"]["receipt_id"]
+        # The receipt is durable (it exists in the journal).
+        with open_journal(self._journal_path()) as j:
+            row = j.get_receipt(rid)
+        self.assertIsNotNone(row, rid)
+        # shadow_failed health is recorded against it — the discriminating
+        # half. Removing the record_health call leaves the receipt healthy.
+        with open_journal(self._journal_path()) as j:
+            health = j.get_receipt_health(rid)
+        self.assertEqual(health, "shadow_failed", health)
+
+    def test_a_healthy_shadow_records_no_health(self):
+        # The positive half: a normal submissions.log write records NO health
+        # event. Without this, `return None` from get_receipt_health would
+        # pass the test above for the wrong reason.
+        status, _, body = self.post(
+            "/command", {"kind": "add-idea", "text": "healthy shadow"})
+        self.assertEqual(status, 202)
+        rid = json.loads(body)["receipt"]["receipt_id"]
+        with open_journal(self._journal_path()) as j:
+            health = j.get_receipt_health(rid)
+        self.assertIsNone(health, health)
+
+
+class E5Reject(HttpHarness):
+    """E5: malformed and schema/domain-invalid bodies are 202 then durably
+    rejected, not a synchronous 400. Unknown POST paths stay pre-receipt
+    404/405.
+
+    A complete registered envelope is *received* before any body validation;
+    JSON parsing, schema and domain checks happen after receipt. A failure
+    transitions received → rejected with a bounded reason code from
+    REJECTION_REASONS (closed set), never free text.
+
+    Red line: the send_error(400) that USED to live in _read_json.
+    Reinstating it makes malformed JSON a synchronous 400 and fails the first
+    test below; the second (unknown path → 404) stays green either way."""
+
+    def test_malformed_json_is_202_then_durably_rejected(self):
+        # A raw POST with a body that is not valid JSON. Pre-E5 this was a
+        # synchronous 400 from _read_json; now it is a 202 + a durable
+        # rejected transition with reason_code malformed_json.
+        body_bytes = b"{not json, his words"
+        # Precondition: the body really is unparseable — the test means
+        # nothing if json.loads succeeds.
+        import json as _json
+        with self.assertRaises(ValueError):
+            _json.loads(body_bytes)
+        # The closed set a parser reads: malformed_json is a member.
+        self.assertIn("malformed_json", REJECTION_REASONS, REJECTION_REASONS)
+        status, headers, payload = self.raw_post_json("/command", body_bytes)
+        # The response is 202 — a complete registered envelope is received
+        # even if its body is garbage. Rejection is durable, not synchronous.
+        self.assertEqual(status, 202, status)
+        # The receipt is durable and rejected.
+        rid = payload["receipt"]["receipt_id"]
+        with open_journal(self._journal_path()) as j:
+            row = j.get_receipt(rid)
+        self.assertIsNotNone(row, rid)
+        self.assertEqual(row["state"], "rejected", row["state"])
+        # The bounded reason code is recorded in the transition. Derive it
+        # from the journal, not from the response body.
+        reason = self._latest_reason_code(rid)
+        self.assertEqual(reason, "malformed_json", reason)
+
+    def test_schema_invalid_json_is_202_then_durably_rejected(self):
+        # Valid JSON but schema-invalid: an unknown command kind. Pre-E5 this
+        # was a synchronous 400; now it is a 202 + rejected (domain_invalid).
+        self.assertIn("domain_invalid", REJECTION_REASONS, REJECTION_REASONS)
+        status, _, body = self.post("/command", {"kind": "nope", "text": "x"})
+        self.assertEqual(status, 202, status)
+        payload = json.loads(body)
+        rid = payload["receipt"]["receipt_id"]
+        with open_journal(self._journal_path()) as j:
+            row = j.get_receipt(rid)
+        self.assertEqual(row["state"], "rejected", row["state"])
+        reason = self._latest_reason_code(rid)
+        self.assertEqual(reason, "domain_invalid", reason)
+
+    def test_an_unknown_post_path_is_404_and_creates_no_receipt(self):
+        # The PAIR is the point: a malformed body ON A REGISTERED PATH is 202
+        # (above); an unknown path is pre-receipt 404 and creates no receipt.
+        # Either alone is passable by a wrong implementation.
+        before = self.receipt_count()
+        status, _, _ = self.post("/nonexistent-route",
+                                 {"anything": "whatever"})
+        self.assertEqual(status, 404, status)
+        self.assertEqual(self.receipt_count(), before)
+
+    def test_a_valid_body_is_not_rejected(self):
+        # The positive half: a valid body transitions received→validated (or
+        # stays received) but is NOT rejected. Without this, `rejected`
+        # returned unconditionally would pass the tests above.
+        status, _, body = self.post(
+            "/command", {"kind": "add-idea", "text": "valid idea"})
+        self.assertEqual(status, 202)
+        rid = json.loads(body)["receipt"]["receipt_id"]
+        with open_journal(self._journal_path()) as j:
+            row = j.get_receipt(rid)
+        self.assertNotEqual(row["state"], "rejected", row["state"])
+
+    # --- helpers ---
+
+    def raw_post_json(self, path, body_bytes):
+        """Raw POST returning (status, headers, parsed_json_body)."""
+        response = self.raw_post(path, body_bytes)
+        return self._parse_response(response)
+
+    def _parse_response(self, raw):
+        head, _, body = raw.partition(b"\r\n\r\n")
+        status_line = head.split(b"\r\n", 1)[0]
+        status = int(status_line.split()[1])
+        headers = {}
+        for line in head.split(b"\r\n")[1:]:
+            if b": " in line:
+                k, v = line.split(b": ", 1)
+                headers[k.decode()] = v.decode()
+        payload = json.loads(body) if body.strip() else {}
+        return status, headers, payload
+
+    def _latest_reason_code(self, receipt_id):
+        with open_journal(self._journal_path()) as j:
+            row = j.conn.execute(
+                "SELECT reason_code FROM transitions "
+                "WHERE receipt_id = ? ORDER BY revision DESC LIMIT 1",
+                (receipt_id,),
+            ).fetchone()
+        return row["reason_code"] if row else None
 
 
 if __name__ == "__main__":

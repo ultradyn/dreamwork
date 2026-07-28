@@ -2443,14 +2443,39 @@ window.__dwSubmissions = subsAll;
 /* THE ONE SEAM every submission goes through, which is what makes the record
    complete rather than well-intentioned — the same reason #199 persists from
    `do_POST` rather than from four handlers. */
+/* The one verdict on a write's response, in one place (#263 E5b). Every POST
+   path whose response decides whether to clear a box, clear a draft, or show a
+   confirmation asks this — never `res.ok` alone. E5 made body-validation
+   failures a 202 with a durable `rejected` transition and a bounded reason,
+   and 202 makes `res.ok` true, so `res.ok` confirms a write that did not
+   happen — and on /answer and /comment that confirmation clears the draft,
+   which was the only remaining copy of what he typed. A Response body can be
+   read ONCE, so this is the single reader: `postJSON` calls it and stashes the
+   verdict on the Response it returns; the three raw-fetch sites (/tint,
+   /run-mode, the popped-out command) each own their own Response and call it
+   directly. `landed` is the whole rule — ok AND not rejected — and it is the
+   one thing every write surface checks. */
+async function writeVerdict(res) {
+  if (!res) return { landed: false, rejected: false, reason: null, status: 0 };
+  let j = null;
+  try { j = await res.json(); } catch (e) { j = null; }
+  const rejected = !!(j && j.rejected === true);
+  return { landed: res.ok && !rejected, rejected,
+           reason: (j && j.reason) || null, status: res.status };
+}
 const postJSON = async (url, body) => {
   const id = await subsRecord(url, body);
   let res = null;
   try { res = await fetch(url, { method:'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify(body) }); } catch (e) { res = null; }
-  subsOutcome(id, res ? (res.ok ? 'ok' : 'rejected') : 'unreachable',
-              res ? res.status : 0);
+  const v = await writeVerdict(res);
+  if (res) res._dwv = v;   // single body read; callers ask the verdict, not res.ok
+  // the outcome #175's ledger records is the VERDICT's, not res.ok's: a
+  // rejected 202 used to record 'ok' — the exact lie this fixes — so a tab
+  // that dies mid-send no longer lies that a rejected body landed.
+  subsOutcome(id, !res ? 'unreachable' : (v.landed ? 'ok' : 'rejected'),
+              v.status);
   return res;
 };
 const postAnswer = (title, text) =>
@@ -2468,15 +2493,31 @@ const QSEND_WHY = {
        'been folded, renamed, or the file may have stopped being readable',
   0:   'the page could not reach the server',
 };
-function qaFail(card, status) {
+/* Why a body was REJECTED (E5: 202 + a durable `rejected` transition), in his
+   terms. The server's reason code names the protocol; this names the problem.
+   Closed set, paired with REJECTION_REASONS in user_events/sqlite.py — a code
+   outside the set falls through to the status line, never an unrecognised
+   string. Voice is watch-design.md's: a state, an em dash, what he can do. */
+const REJECT_WHY = {
+  malformed_json: 'the request body could not be read',
+  schema_invalid: 'a required field was missing or the wrong shape',
+  domain_invalid: 'the value was not one the server accepts',
+};
+function qaFail(card, v) {
   const comp = card && card.querySelector('.qcompose');
   if (!comp) return;
   let m = comp.querySelector('.qerr');
   if (!m) { m = document.createElement('div'); m.className = 'qerr';
             comp.appendChild(m); }
-  // his words stay in the box: the send failed, so the text is the only copy
-  m.textContent = `not written (${status}) — ` +
-    (QSEND_WHY[status] || 'the server refused it') +
+  // his words stay in the box: the send failed, so the text is the only copy.
+  // a rejected body (202 + rejected:true) is the same failure as a refused one
+  // — the box does not clear and the morph does not run — so it says so in the
+  // same idiom: a reason in his terms, then the consequence.
+  const why = (v && v.rejected && v.reason && REJECT_WHY[v.reason]) ||
+              (v && QSEND_WHY[v && v.status]);
+  const head = (v && v.rejected) ? 'not written (rejected)'
+                                 : `not written (${(v && v.status) || 0})`;
+  m.textContent = `${head} — ${why || 'the server refused it'}` +
     '. what you typed is still here.';
 }
 """
@@ -3156,14 +3197,23 @@ async function sendAsk(form) {
   const liveBox = document.getElementById('askbox');
   const liveMsg = document.getElementById('askmsg');
   if (!liveBox) return;
-  if (res && res.ok) {
+  const v = res && res._dwv;
+  if (res && v && v.landed) {
     liveBox.value = '';
     if (liveMsg) liveMsg.textContent = 'asked';
     await tick();
   } else if (liveMsg) {
-    liveMsg.textContent = res
-      ? 'question was refused — your words are kept'
-      : 'dreamwork is unreachable — your words are kept';
+    // a rejected 202 (res.ok true, body rejected — E5) used to take this branch
+    // as a success and clear the box; the verdict `landed` routes it here, and
+    // the reason is named in his voice where the surface already has a message.
+    const why = (v && v.rejected && v.reason && REJECT_WHY[v.reason])
+              || (v && QSEND_WHY[v.status]);
+    liveMsg.textContent = !res
+      ? 'dreamwork is unreachable — your words are kept'
+      : (v && v.rejected)
+        ? (why ? `not written — ${why}. your words are kept`
+               : 'question was refused — your words are kept')
+        : 'question was refused — your words are kept';
   }
 }
 /* #158: reflow by file kind, never by content sniff. A .py with a `#`
@@ -3572,8 +3622,10 @@ async function sendAnswer(key) {
   const res = await postAnswer(q.title, val);
   // a failed write must NOT run the morph: the morph IS the confirmation, and
   // confirming a write that did not happen is the one thing worse than the
-  // 409 itself (#136)
-  if (!res || !res.ok) { qaFail(card, res ? res.status : 0); return; }
+  // 409 itself (#136). A rejected 202 (res.ok true, body rejected:true — E5)
+  // is that same failure, so the verdict `landed` decides, never res.ok.
+  const v = res && res._dwv;
+  if (!res || !v || !v.landed) { qaFail(card, v); return; }
   // the one moment it is safe to forget (#163's rule, one surface over): the
   // answer landed, so its draft must not survive to reappear as a thought he
   // already sent. A failed send returns above and keeps it.
@@ -3617,7 +3669,11 @@ async function sendComment(key) {
   const fromRect = el.getBoundingClientRect();
   const res = await postComment(entry.title, val,
                                 key[0] === 'o' ? 'Open' : 'Answered');
-  if (!res || !res.ok) { qaFail(card, res ? res.status : 0); return; }
+  const v = res && res._dwv;
+  // a rejected 202 (res.ok true, body rejected — E5) clears the draft below,
+  // which was the only copy of the note, so the verdict `landed` decides —
+  // the same rule as sendAnswer one function up.
+  if (!res || !v || !v.landed) { qaFail(card, v); return; }
   // a note is a successful send too, and the box clears for the next one — so
   // its draft clears with it, or the next re-render would restore the just-sent
   // note into the empty box he meant to clear (#269, #163's rule).
@@ -4009,7 +4065,9 @@ async function pickTint(name) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tint: name }),
     });
-    ok = res.ok;
+    // raw-fetch site: owns its Response, so reads the verdict here. A rejected
+    // 202 (res.ok true) would otherwise apply a tint that did not land (#136).
+    ok = (await writeVerdict(res)).landed;
   } catch (e) { ok = false; }
   if (ok) {
     if (msg) msg.textContent = '';
@@ -4238,7 +4296,7 @@ async function commitRunMode(mode, gen, opts) {
     paintRunModeSelection(committedRunMode(data), true);
     return;
   }
-  let ok = false, body = null;
+  let ok = false;
   try {
     const res = await fetch('/run-mode', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4250,8 +4308,10 @@ async function commitRunMode(mode, gen, opts) {
         orphan: orphan || false,
       }),
     });
-    ok = res.ok;
-    if (ok) body = await res.json().catch(() => ({ ok: true, mode }));
+    // raw-fetch site: owns its Response, so reads the verdict here. A rejected
+    // 202 (res.ok true) would otherwise commit a mode that did not land (#136).
+    const rv = await writeVerdict(res);
+    ok = rv.landed;
   } catch (e) { ok = false; }
   if (gen !== runArmGen) return;
   if (ok) {
@@ -6520,8 +6580,16 @@ async function requestPopout() {
           const r = await fetch(endpoint, { method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ kind, text, from }) });
-          if (r.ok) { if(!attempt.success())return; doc.getElementById('ptext').value = ''; }
-          else attempt.claim('rejected (' + r.status + ')');
+          // raw-fetch site: owns its Response, so reads the verdict here. A
+          // rejected 202 (r.ok true) would otherwise clear his thought (#136).
+          const pv = await writeVerdict(r);
+          if (pv.landed) { if(!attempt.success())return; doc.getElementById('ptext').value = ''; }
+          else {
+            const why = (pv.rejected && pv.reason && REJECT_WHY[pv.reason])
+                     || QSEND_WHY[pv.status];
+            attempt.claim(why ? `not written — ${why}. your words are kept`
+                              : 'rejected (' + r.status + ')');
+          }
         } catch (e) { attempt.claim('no connection'); }
       });
     });
@@ -7013,7 +7081,8 @@ function popoutDoc(url, label) {
       // data instead of at motion.
       const attempt=confirmation.begin();
       const r = await postJSON('/command', { kind, text, from: fromPath() });
-      if (r && r.ok) {
+      const cv = r && r._dwv;
+      if (r && cv && cv.landed) {
         if(!attempt.success())return;
         const plus = document.getElementById('cmdplus');
         if (plus) { const b = plus.getBoundingClientRect();
@@ -7028,8 +7097,16 @@ function popoutDoc(url, label) {
         // controller, independent of whether the panel stays open.
         cancelDismiss();
         if (!composing) dismissT = setTimeout(closeCmd, CMD_DISMISS_MS);
-      } else if (r) attempt.claim('rejected (' + r.status + ')');
-      else attempt.claim('no connection');   // postJSON returns null on throw
+      } else if (r) {
+        // a rejected 202 (r.ok true, body rejected — E5) used to fall into the
+        // success branch and clear his thought; the verdict routes it here and
+        // names the reason in his voice. transitions.md: a falsehood replaces
+        // success immediately and does not depart slowly.
+        const why = (cv && cv.rejected && cv.reason && REJECT_WHY[cv.reason])
+                 || (cv && QSEND_WHY[cv.status]);
+        attempt.claim(why ? `not written — ${why}. your words are kept`
+                          : 'rejected (' + r.status + ')');
+      } else attempt.claim('no connection');   // postJSON returns null on throw
       // if he is watching the history, it must include what he just did —
       // including, and especially, when it failed
       if (histEl && histEl.open) renderHist();
@@ -9712,6 +9789,42 @@ def _journal_receive(target, envelope):
         return None
 
 
+def _journal_record_health(target, receipt_id, health, detail=""):
+    """Record a health event against a durably-committed receipt (E4).
+
+    Best-effort: a journal that cannot record health must not refuse a request
+    the receipt already accepted. Health is not application state
+    (shadow_failed does not move the receipt), so a failure here is logged and
+    swallowed — the dashboard (E6) surfaces it from the journal when it can."""
+    try:
+        with open_journal(_journal_path(target)) as journal:
+            journal.record_health(receipt_id, health, detail)
+    except Exception as exc:  # never let health recording refuse a request
+        log_event(target, f"user-events journal health record failed: {exc!r}")
+
+
+def _journal_reject(target, receipt_id, reason_code):
+    """Record a received→rejected transition with a bounded reason (E5).
+
+    Rejection is durable, not synchronous: the receipt already committed in
+    do_POST, so a malformed/schema/domain-invalid body is *received* and then
+    *rejected*. Reads the current revision from the journal (not tracked in
+    the request) because a same-UUID replay may have advanced it. Best-effort:
+    a journal failure here is logged and swallowed — the response is still
+    202, because the receipt committed."""
+    try:
+        with open_journal(_journal_path(target)) as journal:
+            row = journal.get_receipt(receipt_id)
+            if row is None:
+                return
+            if row["state"] == "received":
+                journal.transition(
+                    receipt_id, "rejected", int(row["revision"]),
+                    reason_code=reason_code)
+    except Exception as exc:  # never let rejection recording refuse a request
+        log_event(target, f"user-events journal reject failed: {exc!r}")
+
+
 def log_submission(target, path, body, nbytes, truncated=False, short=False):
     """His words on disk before anything is allowed to refuse them (#199).
 
@@ -9735,6 +9848,10 @@ def log_submission(target, path, body, nbytes, truncated=False, short=False):
     · It CANNOT RAISE. A logging failure must never be why his answer was
       refused, so every error is swallowed — including the ones that are the
       caller's fault. `log_event`'s rule, on a file where it matters more.
+
+    Returns True if the line was written, False if it could not be (E4: the
+    caller records shadow_failed health against the durable receipt, never a
+    refusal).
 
     Well-formed bodies are stored parsed (`req`) rather than as an escaped
     string, because `json.loads` → `json.dumps` round-trips every value
@@ -9775,7 +9892,7 @@ def log_submission(target, path, body, nbytes, truncated=False, short=False):
     try:
         line = json.dumps(rec, ensure_ascii=False)
     except (TypeError, ValueError):        # a value json cannot render
-        return
+        return False
     try:
         # One append of one line, under a lock, because this server is
         # threaded and two interleaved writes lose both submissions rather
@@ -9784,8 +9901,14 @@ def log_submission(target, path, body, nbytes, truncated=False, short=False):
             with open(os.path.join(target, ".dreamwork", "submissions.log"),
                       "a", encoding="utf-8") as f:
                 f.write(line + "\n")
+        return True
     except OSError:
-        pass
+        # E4: a shadow-write failure is returned to the caller as False so it
+        # can record shadow_failed health against the (already-durable)
+        # receipt. Swallowed, never re-raised — this function's oldest rule
+        # ("CANNOT RAISE") is unchanged: a logging failure must never be why
+        # his answer was refused.
+        return False
 
 
 # Accepted POST /command kinds, derived from the one vocabulary (COMMANDS,
@@ -9994,6 +10117,22 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             self.end_headers()
             self.wfile.write(data)
 
+        def _reject(self, reason_code):
+            """Record a durable rejection and respond 202 (E5).
+
+            The receipt already committed in do_POST; rejection is durable,
+            not synchronous. The reason is from REJECTION_REASONS (closed set
+            in user_events.sqlite). A complete registered envelope never
+            disappears behind a synchronous 400 — it is received, then
+            rejected, and the response is still 202."""
+            result = self.journal_result()
+            if result and result.receipt_id and self.journal_shadow:
+                _journal_reject(target, result.receipt_id, reason_code)
+            self._send_receipt(
+                json.dumps({"ok": False, "rejected": True,
+                            "reason": reason_code}),
+                "application/json")
+
         def _send_bytes(self, full, rel, *, inline):
             """Serve `full` as raw bytes (#336), streamed (#354).
 
@@ -10127,11 +10266,13 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
 
             It does NOT read the socket: `do_POST` did that, because his words
             have to be on disk before anything here can refuse them (#199).
+            Returns None on a parse failure; E5 moved the 400 to a durable
+            rejection in the caller, so this method no longer sends a
+            response (the red line for increment 24).
             """
             try:
                 return json.loads(self._body)
             except ValueError:
-                self.send_error(400)
                 return None
 
         def do_POST(self):
@@ -10174,20 +10315,39 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # a partial marked incomplete is Q2 of #263's open ask, and this
             # only makes the witness truthful, which either answer needs.
             short = len(body) < want
-            log_submission(target, self.path, body, nbytes, truncated, short)
+            self._body = body
             # E1 envelope (#263 lane E): a body that arrived SHORT is a broken
             # transport promise, not a complete envelope. Law 2 of
             # `user-event-journal.md` §Receive and idempotency decides
             # transport-envelope failures BEFORE receipt: an interrupted body
             # remains a client attempt and never creates a journal receipt.
             # `submissions.log` still keeps the partial bytes (marked
-            # incomplete by `short` above), so tightening receipt semantics
-            # does not reduce recoverability — the incomplete-witness
-            # amendment he ruled on at 05:43.
+            # incomplete by `short`), so tightening receipt semantics does not
+            # reduce recoverability — the incomplete-witness amendment he
+            # ruled on at 05:43. The witness runs before the 400 (#199), as it
+            # always has.
             if short:
+                log_submission(target, self.path, body, nbytes, truncated,
+                               short)
                 self.send_error(400)
                 return
-            self._body = body
+            # The write-route dispatch is ONE table, derived from itself, so a
+            # seventh route added later is both handled here and covered by E2's
+            # "every write route commits a receipt" test (rather than slipping
+            # past a hand-copied list). `WRITE_ROUTE_HANDLERS` is a class
+            # attribute defined below the handler methods.
+            handler = self.WRITE_ROUTE_HANDLERS.get(self.path)
+            # E5: an unknown POST path is pre-receipt 404/405, not an event
+            # (design §Receive and idempotency). The receipt must only commit
+            # for a REGISTERED write route. But #199 still holds — his words
+            # are on disk before the refusal — so the witness runs here too;
+            # an unknown path has no journal receipt, and submissions.log is
+            # its only home.
+            if handler is None:
+                log_submission(target, self.path, body, nbytes, truncated,
+                               short)
+                self.send_error(404)
+                return
             # The journal commit authorises the response (E3 cutover): the
             # receipt is committed BEFORE the handler dispatches, so a journal
             # open/commit failure is a 503 with no 202 — the request was never
@@ -10199,6 +10359,24 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 if self.journal_result() is None:
                     self.send_error(503)
                     return
+                # E4 besteffort: submissions.log is a best-effort SHADOW
+                # written AFTER the durable receipt (design step 4, not step
+                # 3). Its failure is shadow_failed health on the receipt,
+                # never a refusal — the receipt already committed, so the
+                # request was accepted and the response must still be 202.
+                shadow_ok = log_submission(target, self.path, body, nbytes,
+                                           truncated=False, short=False)
+                if not shadow_ok:
+                    result = self.journal_result()
+                    if result and result.receipt_id:
+                        _journal_record_health(target, result.receipt_id,
+                                               "shadow_failed")
+            else:
+                # Journal disabled (E2 baseline) or over-long (truncated)
+                # body: submissions.log runs in its pre-cutover position,
+                # before dispatch/refusal. No receipt, no health.
+                log_submission(target, self.path, body, nbytes, truncated,
+                               short)
             # ...and only now may a request be turned away. An over-long body
             # is still refused — the cap is what makes the read bounded — but
             # it is refused with its first MAX_BODY bytes already kept, so a
@@ -10206,32 +10384,21 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             if truncated:
                 self.send_error(413)
                 return
-            # The write-route dispatch is ONE table, derived from itself, so a
-            # seventh route added later is both handled here and covered by E2's
-            # "every write route commits a receipt" test (rather than slipping
-            # past a hand-copied list). `WRITE_ROUTE_HANDLERS` is a class
-            # attribute defined below the handler methods.
-            handler = self.WRITE_ROUTE_HANDLERS.get(self.path)
-            if handler is not None:
-                handler(self)
-            else:
-                self.send_error(404)
+            handler(self)
 
         def _handle_ask(self):
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             try:
                 raw_question = req["question"]
                 if not isinstance(raw_question, str):
                     raise TypeError
                 question = raw_question.strip()
             except (KeyError, TypeError):
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             if not question:
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             path = os.path.join(target, ".dreamwork", "answers.md")
             stamp = time.strftime("%Y-%m-%d")
             with ANSWER_LOCK:
@@ -10245,16 +10412,14 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
         def _handle_answer(self):
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             try:
                 title = str(req["question"]).strip()
                 answer = str(req["answer"]).strip()
             except (KeyError, TypeError):
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             if not title or not answer:
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             qpath = os.path.join(target, ".dreamwork", "questions.md")
             stamp = time.strftime("%Y-%m-%d %H:%M")
             with ANSWER_LOCK:
@@ -10282,17 +10447,15 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
         def _handle_comment(self):
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             try:
                 title = str(req["question"]).strip()
                 note = str(req["comment"]).strip()
                 section = str(req.get("section", "Open")).strip()
             except (KeyError, TypeError):
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             if not title or not note or section not in ("Open", "Answered"):
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             qpath = os.path.join(target, ".dreamwork", "questions.md")
             stamp = time.strftime("%Y-%m-%d %H:%M")
             with ANSWER_LOCK:
@@ -10316,13 +10479,12 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
         def _handle_command(self):
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             try:
                 kind = str(req["kind"]).strip()
                 text = str(req.get("text", "")).strip()
             except (KeyError, TypeError):
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             # The plugin half is read PER REQUEST rather than cached at start
             # (#86): a plugin that resolved a minute ago is sendable a minute
             # ago, and the composer already offers it on the next tick — a
@@ -10330,11 +10492,9 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # is one small file and this is a human keypress, not a hot path.
             if kind not in COMMAND_KINDS and kind not in {
                     c["kind"] for c in plugin_commands(target)}:
-                self.send_error(400)
-                return
+                self._reject("domain_invalid"); return
             if kind != "do-next" and not text:
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             log_event(target, command_line(kind, text, req.get("from")))
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
@@ -10353,11 +10513,10 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             """
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             name = str((req or {}).get("tint", "")).strip()
             if name not in TINTS:
-                self.send_error(400)
-                return
+                self._reject("domain_invalid"); return
             if not write_tint(target, name):
                 self.send_error(500)
                 return
@@ -10376,11 +10535,10 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             """
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             mode = str((req or {}).get("mode", "")).strip()
             if mode not in RUN_MODES:
-                self.send_error(400)
-                return
+                self._reject("domain_invalid"); return
             current = read_run_mode(target)
             if mode == current:
                 self._send_receipt(json.dumps({"ok": True, "mode": mode,

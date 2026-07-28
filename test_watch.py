@@ -4034,9 +4034,16 @@ class TestAppShell(unittest.TestCase):
         # answer had landed, cleared his text, and the next tick put the
         # question back with no explanation anywhere.
         self.assertIn('function qaFail', watch.PAGE)
-        self.assertEqual(
-            watch.PAGE.count('qaFail(card, res ? res.status : 0)'), 2,
-            "both sendAnswer and sendComment surface a refusal")
+        # #263 E5b: the decision is the VERDICT's `landed`, never `res.ok`
+        # alone — a rejected 202 (res.ok true, body rejected:true) is the same
+        # failure, and on /answer+/comment that false confirmation cleared the
+        # draft, the only copy of what he typed. Both paths hand qaFail the
+        # verdict so it can name the reason; both gate on `v.landed`.
+        self.assertGreaterEqual(
+            watch.PAGE.count('qaFail(card, v)'), 2,
+            "both sendAnswer and sendComment surface a refusal via the verdict")
+        self.assertNotIn('!res.ok) { qaFail(card, res ? res.status : 0)',
+                         watch.PAGE)
 
     def test_draft_is_cleared_on_exactly_one_path(self):
         """#163 — the draft is forgotten on a successful send and nowhere else.
@@ -4130,9 +4137,10 @@ class TestAppShell(unittest.TestCase):
             make_target(d)
             base = self._serve(d)
             for bad in ({"nested": True}, ["list"]):
-                with self.assertRaises(urllib.error.HTTPError) as cm:
-                    self._post(base + "/ask", {"question": bad, "from": "/answers"})
-                self.assertEqual(cm.exception.code, 400)
+                # E5: schema-invalid JSON is 202 + durable rejected, not a
+                # synchronous 400. His words are still witnessed (#199).
+                status, _ = self._post(base + "/ask", {"question": bad, "from": "/answers"})
+                self.assertEqual(status, 202)
             self.assertFalse(os.path.exists(os.path.join(d, ".dreamwork", "answers.md")))
             with open(os.path.join(d, ".dreamwork", "submissions.log"), encoding="utf-8") as f:
                 self.assertEqual(len(f.readlines()), 2)
@@ -4687,12 +4695,16 @@ class TestAppShell(unittest.TestCase):
                 self.assertIn("Note (human, via watch", f.read())
             for bad, code in ((
                     {"question": "A real open question?", "comment": "x",
-                     "section": "Nope"}, 400),
+                     "section": "Nope"}, 202),    # E5: schema_invalid → 202+rejected
                     ({"question": "No such", "comment": "x",
                       "section": "Open"}, 409)):
-                with self.assertRaises(urllib.error.HTTPError) as cm:
-                    self._post(base + "/comment", bad)
-                self.assertEqual(cm.exception.code, code)
+                if code == 409:
+                    with self.assertRaises(urllib.error.HTTPError) as cm:
+                        self._post(base + "/comment", bad)
+                    self.assertEqual(cm.exception.code, code)
+                else:
+                    status, _ = self._post(base + "/comment", bad)
+                    self.assertEqual(status, code)
 
     def test_command_appends_event_and_validates(self):
         with tempfile.TemporaryDirectory() as d:
@@ -4707,12 +4719,12 @@ class TestAppShell(unittest.TestCase):
             status, _ = self._post(base + "/command",
                                    {"kind": "do-next", "text": ""})
             self.assertEqual(status, 202)
-            # unknown kind, and a text-requiring kind with no text, are 400
+            # E5: unknown kind and a text-requiring kind with no text are 202
+            # + durable rejected, not a synchronous 400.
             for bad in ({"kind": "nope", "text": "x"},
                         {"kind": "do-now", "text": ""}):
-                with self.assertRaises(urllib.error.HTTPError) as cm:
-                    self._post(base + "/command", bad)
-                self.assertEqual(cm.exception.code, 400)
+                status, _ = self._post(base + "/command", bad)
+                self.assertEqual(status, 202)
 
 
 class TestSubmissionLog(unittest.TestCase):
@@ -4792,10 +4804,12 @@ class TestSubmissionLog(unittest.TestCase):
         # The payload that fails to PARSE is the one most worth keeping, and it
         # is the one a "log the parsed request" design would drop. `raw`
         # carries it; `why` says which way it was unusable.
+        # E5: malformed JSON is 202 + durable rejected, not 400. The body is
+        # still witnessed verbatim (#199).
         with tempfile.TemporaryDirectory() as d:
             base = self._serve(make_target(d))
             self.assertEqual(
-                self._post_raw(base + "/answer", b"{not json, his words"), 400)
+                self._post_raw(base + "/answer", b"{not json, his words"), 202)
             ln = self._lines(d)[0]
             self.assertEqual(ln["raw"], "{not json, his words")
             self.assertEqual(ln["why"], "json")
@@ -4805,7 +4819,7 @@ class TestSubmissionLog(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             base = self._serve(make_target(d))
             self.assertEqual(
-                self._post_raw(base + "/answer", b'{"a": "\xff\xfe"}'), 400)
+                self._post_raw(base + "/answer", b'{"a": "\xff\xfe"}'), 202)
             ln = self._lines(d)[0]
             self.assertEqual(ln["why"], "decode")
             self.assertIn("raw", ln)
@@ -4848,7 +4862,8 @@ class TestSubmissionLog(unittest.TestCase):
             self.assertEqual(
                 self._post(base + "/command",
                            {"kind": "add-idea", "text": "try X"}), 202)
-            self.assertEqual(self._post(base + "/tint", {"tint": "nope"}), 400)
+            self.assertEqual(
+                self._post(base + "/tint", {"tint": "nope"}), 202)  # E5: domain_invalid → 202+rejected
             self.assertEqual([ln["path"] for ln in self._lines(d)],
                              ["/answer", "/command", "/tint"])
 
@@ -5331,10 +5346,12 @@ class TestRunMode(unittest.TestCase):
     def test_post_rejects_planned_and_unknown(self):
         with tempfile.TemporaryDirectory() as d:
             base = self._serve(make_target(d))
+            # E5: unknown/planned modes are 202 + durable rejected
+            # (domain_invalid), not a synchronous 400.
             self.assertEqual(
-                self._post(base + "/run-mode", {"mode": "hierarchical"}), 400)
+                self._post(base + "/run-mode", {"mode": "hierarchical"}), 202)
             self.assertEqual(
-                self._post(base + "/run-mode", {"mode": "turbo"}), 400)
+                self._post(base + "/run-mode", {"mode": "turbo"}), 202)
             self.assertFalse(
                 os.path.exists(os.path.join(d, ".dreamwork", "run-mode")))
             log = os.path.join(d, ".dreamwork", "watch-events.log")

@@ -1606,6 +1606,30 @@ with no explanation anywhere. Now a refused write shows why in his terms (the
 status names the protocol, not the problem), does not run the morph, and
 **keeps his text**, which at that moment is the only copy of it.
 
+**A rejected body is the same failure on a receipt that says otherwise**
+(#263 E5b). E5 turned a body-validation failure from a synchronous `400`
+into a `202` carrying `{ok:false, rejected:true, reason}` — a durable
+`rejected` transition with a bounded reason, not a transport refusal. But
+`202` makes `res.ok` **true**, and every write surface gated on `res.ok`,
+so the box cleared, the page said *asked*, and on `/answer` and `/comment`
+the draft store cleared too — the only copy of what he typed, gone. A
+rejected receipt is a write the server refused from the other end, so a
+write surface treats it as exactly that. **One verdict decides it**:
+`writeVerdict(res)` reads the body once (a `Response` body is read once, so
+it is the single reader) and returns `{landed, rejected, reason, status}`,
+where `landed` is `res.ok && !rejected` — the one thing `/ask`, `/answer`,
+`/comment`, `/command`, `/tint` and `/run-mode` gate on, never `res.ok`
+alone. The reason is named in his voice through a closed map (`REJECT_WHY`)
+paired with the server's `REJECTION_REASONS` (`malformed_json`,
+`schema_invalid`, `domain_invalid`); a code outside the set falls through to
+the status line, never an unrecognised string. The consequence is the same
+idiom as a transport refusal — the box does not clear, the morph does not
+run, the confirmation does not land — and the line says so in the same
+breath: `not written — <reason>. your words are kept` (ask, composer,
+command) and `not written (rejected) — <reason>. what you typed is still
+here.` (answer/comment cards). `dev/capture/rejectwrite.mjs` guards the four
+write surfaces against a `route.fulfill`-injected rejected `202`.
+
 `dev/capture/health.mjs` holds all three states plus the write path, because
 each is easy to get right alone and the failure is always that one swallowed
 another. Two things it learned the hard way: driving the write failure by

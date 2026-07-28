@@ -241,6 +241,47 @@ ok('EXEMPTION CHECK: one line of prose in a blessed skeleton is still a fault',
   await p.screenshot({ path: `${OUT}/write-refused.png`, fullPage: true });
   await p.close();
 }
+/* ── #263 E5b: the same three invariants against a REJECTED 202, not a 409.
+   E5 made body-validation failures 202 + a durable `rejected` transition, and
+   202 makes `res.ok` true — so the two checks above (named for exactly these
+   invariants) passed green over the regression: `route.fulfill` pinned 409, so
+   they were never driven against the 202 the server actually sends. A fake's
+   hardcoded parameter is part of the check's scope. This half closes that. */
+{
+  const qpath = join(OUT, 'empty', '.dreamwork', 'questions.md');
+  writeFileSync(qpath,
+    '# Q\n\n## Open\n\n- **A question he is about to answer?** ctx.\n');
+  const p = await br.newPage({ viewport: { width: 1100, height: 900 } });
+  p.on('pageerror', e => errs.push(`write3: ${e}`));
+  await p.route('**/answer', r => r.fulfill({ status: 202,
+    contentType: 'application/json',
+    body: JSON.stringify({ ok:false, rejected:true, reason:'schema_invalid' }) }));
+  await p.goto(`http://127.0.0.1:${ports.empty}/questions`,
+               { waitUntil: 'networkidle' });
+  await sleep(900);
+  const typed = 'an answer whose body the server rejects';
+  await p.fill('.qa.open textarea', typed);
+  await p.click('.qa.open .qsend');
+  await sleep(700);
+  const after = await p.evaluate(() => {
+    const card = document.querySelector('.qa[data-qid]');
+    const err = card && card.querySelector('.qerr');
+    const ta = card && card.querySelector('textarea');
+    return { cls: card ? card.className : null,
+             err: err ? err.textContent : null,
+             kept: ta ? ta.value : null,
+             claimedAnswered: !!(card && card.querySelector('.anstag')) };
+  });
+  notes.push(`write-rejected202: card="${after.cls}" err=${JSON.stringify(after.err)}`);
+  ok('a REJECTED 202 (res.ok true) still says so, not nothing',
+     !!after.err && /not written \(rejected\)/.test(after.err));
+  ok('...and never shows the answered state for a write that did not land',
+     !after.claimedAnswered && /\bopen\b/.test(after.cls || ''));
+  ok('...and keeps his text, which is now the only copy of it',
+     after.kept === typed);
+  await p.screenshot({ path: `${OUT}/write-rejected202.png`, fullPage: true });
+  await p.close();
+}
 
 ok('no page errors', errs.length === 0);
 await br.close();
