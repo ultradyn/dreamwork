@@ -5632,3 +5632,94 @@ class TestHandoffIdGrammar(unittest.TestCase):
         self.assertEqual(watch.handoff_parent_ids("1000"), ["1000"])  # four-digit
         # Named function, deliberate — not ENTRY_ID's silent letter-strip as API.
         self.assertNotEqual(watch.handoff_parent_ids("392a"), ["392a"])
+
+
+class TestHandoffMultiSha(unittest.TestCase):
+    """#427: parse_handoffs accepts one-or-more shas (the #415 grammar split).
+
+    lint.check_handoffs already reclassified multi-sha out of malformed; the
+    watch parser still used a single-sha HANDOFF_PENDING_RE, so a two-sha
+    line never reached pending_handoff_records. These tests call the real
+    parser — not a hand-built filtered list — so reverting the RE reds them.
+    """
+
+    def test_one_sha_and_two_sha_parse_side_by_side(self):
+        # Two distinct shas derived at runtime; the gap is the precondition
+        # the test depends on (not a literal tuned to today's fixture).
+        sha_a = "54c68e8"
+        sha_b = "25a3fe4"
+        self.assertNotEqual(sha_a, sha_b, "precondition: the two shas must differ")
+
+        one_line = (
+            f"- **#411** · landed `{sha_a}` · 2026-07-28 14:08 · by "
+            f"grok (wt/411) — one commit"
+        )
+        two_line = (
+            f"- **#411** · landed `{sha_a}` `{sha_b}` · 2026-07-28 14:08 · by "
+            f"grok (wt/411) — fix plus follow-up"
+        )
+        # Production line named for red-run: watch.HANDOFF_PENDING_RE must match
+        # both. Reinstate the single-backtick RE and this assertion fails first.
+        self.assertIsNotNone(
+            watch.HANDOFF_PENDING_RE.match(one_line),
+            "one-sha Pending line must match HANDOFF_PENDING_RE")
+        self.assertIsNotNone(
+            watch.HANDOFF_PENDING_RE.match(two_line),
+            "two-sha Pending line must match HANDOFF_PENDING_RE (#427)")
+
+        one_text = "# Hand-offs\n\n## Pending\n\n" + one_line + "\n\n## Folded\n"
+        two_text = "# Hand-offs\n\n## Pending\n\n" + two_line + "\n\n## Folded\n"
+
+        one_pending, one_folded, one_mal = watch.parse_handoffs(one_text)
+        two_pending, two_folded, two_mal = watch.parse_handoffs(two_text)
+
+        self.assertEqual(one_mal, [])
+        self.assertEqual(two_mal, [],
+                         "two-sha must not be malformed after #427; was: "
+                         f"{two_mal!r}")
+        self.assertEqual(one_folded, set())
+        self.assertEqual(two_folded, set())
+        self.assertEqual(len(one_pending), 1)
+        self.assertEqual(len(two_pending), 1)
+
+        # Triple shape: (id, first_sha, claimer) — lint and older tests unpack it.
+        self.assertEqual(one_pending[0][0], "411")
+        self.assertEqual(one_pending[0][1], sha_a)
+        self.assertEqual(two_pending[0][0], "411")
+        self.assertEqual(two_pending[0][1], sha_a,
+                         "sha stays the first (landing) sha for callers")
+        # Full list on the row — this is the return-shape widen.
+        self.assertEqual(list(one_pending[0].shas), [sha_a])
+        self.assertEqual(list(two_pending[0].shas), [sha_a, sha_b])
+        self.assertEqual(len(two_pending[0].shas), 2)
+        self.assertNotEqual(two_pending[0].shas[0], two_pending[0].shas[1])
+
+        one_recs = watch.pending_handoff_records(one_text)
+        two_recs = watch.pending_handoff_records(two_text)
+        # Side by side: both surfaces keep pending[0]["sha"] as the first sha;
+        # multi-sha also exposes the full list so the dashboard can read both.
+        self.assertEqual(one_recs[0]["sha"], sha_a)
+        self.assertEqual(one_recs[0]["shas"], [sha_a])
+        self.assertEqual(two_recs[0]["sha"], sha_a)
+        self.assertEqual(two_recs[0]["shas"], [sha_a, sha_b])
+        self.assertEqual(two_recs[0]["id"], "411")
+
+    def test_multi_sha_reaches_pending_not_malformed_via_real_parser(self):
+        # Names the production decision: parse_handoffs classifies the line.
+        # A green red-run with the narrow RE restored means this test is hollow.
+        sha_a, sha_b = "aaaaaaaa", "bbbbbbbb"
+        self.assertNotEqual(sha_a, sha_b)
+        text = (
+            "# Hand-offs\n\n## Pending\n\n"
+            f"- **#5** · landed `{sha_a}` `{sha_b}` · 2026-07-28 09:40 · by "
+            f"dreamer-5 — two commits\n"
+            "\n## Folded\n"
+        )
+        pending, _folded, malformed = watch.parse_handoffs(text)
+        self.assertEqual(malformed, [], malformed)
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(list(pending[0].shas), [sha_a, sha_b])
+        recs = watch.pending_handoff_records(text)
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs[0]["shas"], [sha_a, sha_b])
+        self.assertEqual(recs[0]["sha"], sha_a)

@@ -539,18 +539,20 @@ Three decisions, each stated because the grammar is now a widening:
   commit; zero names none. (One sha parses cleanly through the single-sha
   grammar and never reaches the widening path at all.)
 
-`lint.py`'s `check_handoffs` recognises the multi-sha shape **on top of the
-parser's `malformed` bucket** — the grammar itself lives in `watch.py`
-(`HANDOFF_PENDING_RE`, single-sha) and the parser still returns a multi-sha
-line as malformed. lint reclassifies it (counted separately as
-`multi-sha hand-off(s) recognised` in the coverage row), so it neither WARNs
-nor vanishes. When the watch lane widens its own grammar, the lint widening
-becomes a no-op: the line will parse cleanly and never reach `malformed`.
-The decision to keep the widening lint-local follows the ownership rule
-(this lane owns `lint.py`; `watch.py` is held by another), and the
-`HANDOFF_BARE_RE` fallback that already catches any bolded-id head means a
-reclassified line was already LOUD — it was mis-classified as a defect, not
-silent.
+`watch.py`'s `HANDOFF_PENDING_RE` and `parse_handoffs` accept the multi-sha
+shape directly (#427). A pending row unpacks as `(id, sha, claimer)` where
+`sha` is the **first** (landing) sha — so `lint.check_handoffs`'s existing
+`for nid, sha, claimer in pending` needs no change — and also exposes
+`.shas` for the full written-order list. `pending_handoff_records` returns
+both `"sha"` (first) and `"shas"` (one-or-more) so the dashboard can read
+every commit. A zero-sha line is still malformed (the RE requires one-or-
+more backticked tokens).
+
+`lint.py`'s multi-sha reclassification path (counted as
+`multi-sha hand-off(s) recognised` when a line still lands in `malformed`)
+is now a **no-op** for well-formed multi-sha Pending lines: they parse
+cleanly and never reach `malformed`. The path stays as a safety net for
+any residual mis-file, not as the primary grammar.
 
 ## `.dreamwork/tasks.md` — what marks a task landed (#399, #399b)
 
