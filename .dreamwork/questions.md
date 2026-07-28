@@ -38,6 +38,9 @@
   **nothing** below the cliff rather than a provisional strip, deliberately: a
   provisional strip is what ships and then gets argued with once you rule.
   Increment 1 has already landed and changed no artifact you have read.
+  - **Note (human, via watch, 2026-07-28 14:52):** can you generate
+    previews of each of the options and what they would look like please? I
+    tihnk C is fine but want to see it first.
 
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
   You said "defer publishing repo for a bit", which answers an open
@@ -143,6 +146,23 @@
     Q5 whether the redacted `/summary.json` may be designed now, Q6 who besides
     you should ever reach it. Q4 moved to #359 — the self-hosted half has no
     identity provider under your direction.
+  - **Note (human, via watch, 2026-07-28 14:53):** Q2: yes a reverse proxy
+    component is acceptable
+  - **Follow-up (loop, 2026-07-28 14:57):** **Q2 answered yes**, and it dissolves the
+    objection I raised at 01:44 rather than overriding it. That objection was never to
+    reverse proxies — it was to *Cloudflare Access and Tailscale Funnel specifically*, whose
+    control plane is a third party's, which is a strange dependency for the **self-hosted**
+    half you had just split out. **Caddy is a local binary and has that property for free**,
+    so "yes to a proxy" and "self-hosted means self-hosted" are both satisfiable at once, and
+    the landed design's boundary survives with its identity component swapped.
+    **The assumption I am acting on, so you can correct it cheaply:** Caddy (or equivalent
+    local proxy) with `forward_auth` for **#360** self-hosted, terminating the ssh-issued
+    session key; CF Access / Tailscale stay perfectly good options for **#359** the hosted
+    service, where a third-party control plane is not a contradiction. If you meant CF Access
+    for the self-hosted half too, say so and #360's auth design gets simpler, not harder.
+    Q2 now costs no further research either way — this needed a ruling, not a study.
+    **Still open on this entry:** Q3 (read-only or read+write), Q5 (may `/summary.json`
+    redaction be designed now), Q6 (who besides you). Q4 moved to #359.
 
 ## Answered
 
