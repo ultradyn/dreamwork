@@ -7703,21 +7703,72 @@ def _landed_ids(text):
 # ONE definition of the shape — lint imports it rather than keeping a second
 # copy, for the reason every other shared reader does (#137: two copies drift).
 # `·` is U+00B7; the grammar is `·`-separated on purpose.
+#
+# Id vocabulary (#401): plain `#392`, sub-id `#392a`, combined `#367/#392`.
+# The earlier `#(\d+)` grammar dropped sub-ids and combined heads from pending
+# AND from the malformed fallback (same blind axis). HANDOFF_BARE_RE matches
+# any bolded-id entry head so an unrecognised shape is LOUD, not silent.
+# HANDOFF_ID_TOKEN is the accepted id forms; BARE is intentionally wider.
+# Written form is `#367/#392` (hash before each number). Capture normalises to
+# `367/392` so display `#{nid}` stays one hash, not `##367/#392`.
+HANDOFF_ID_TOKEN = r"((?:\d+[a-z]?)(?:/#\d+[a-z]?)*)"
 HANDOFF_PENDING_RE = re.compile(
-    r"^-\s+\*\*#(\d+)\*\*\s*·\s*landed\s+`([^`\n]+)`\s*·\s*.+?\s*·\s*by\s+(.+?)\s*$")
-HANDOFF_FOLDED_RE = re.compile(r"^-\s+\*\*#(\d+)\*\*\s*→\s*folded\s*\(([^)]+)\)")
-HANDOFF_BARE_RE = re.compile(r"^-\s+\*\*#(\d+)\*\*")
+    r"^-\s+\*\*#" + HANDOFF_ID_TOKEN +
+    r"\*\*\s*·\s*landed\s+`([^`\n]+)`\s*·\s*.+?\s*·\s*by\s+(.+?)\s*$")
+HANDOFF_FOLDED_RE = re.compile(
+    r"^-\s+\*\*#" + HANDOFF_ID_TOKEN + r"\*\*\s*→\s*folded\s*\(([^)]+)\)")
+# ANY bolded head after `- **#…**` — wider than the accepted token so a shape
+# the full grammar rejects still reaches malformed (#401 defect 2).
+HANDOFF_BARE_RE = re.compile(r"^-\s+\*\*#([^*\n]+)\*\*")
+
+
+def _normalise_handoff_id_token(raw):
+    """Strip per-segment `#` so `#367/#392` capture becomes `367/392`."""
+    if not raw:
+        return raw
+    return "/".join(p.lstrip("#") for p in raw.split("/"))
+
+
+def handoff_parent_ids(token):
+    """Parent ledger id(s) for correlating a hand-off against `## Open`.
+
+    Accepts the full hand-off id vocabulary and returns the numeric parent
+    id(s) as strings (matching `parse_ledger`'s open set):
+
+      ``392``      → ``['392']``
+      ``392a``     → ``['392']``
+      ``367/392``  → ``['367', '392']``
+
+    Explicit and named — do **not** leave this to ``ENTRY_ID``'s incidental
+    letter-stripping (``#392a`` → ``392`` silently wherever that atom runs).
+    ``ENTRY_ID`` itself is out of scope here (#401); changing it would touch
+    every ledger/related/origin reader that assumes digit-only captures.
+    """
+    if not token:
+        return []
+    out = []
+    for part in str(token).split("/"):
+        part = part.lstrip("#").strip()
+        m = re.match(r"^(\d+)[a-z]?$", part)
+        if m:
+            out.append(m.group(1))
+    return out
 
 
 def parse_handoffs(text):
     """`(pending, folded_ids, malformed)` from `.dreamwork/handoffs.md`.
 
-    `pending` is a list of `(id, sha, claimer)` triples (ids as strings, no `#`,
-    matching `parse_ledger`'s shape); `folded_ids` is the set of ids a fold
-    record names; `malformed` is `(id, line)` for Pending entry heads the
-    grammar does not recognise (format validation, which only lint acts on).
-    Sections match literally — `## Pending` and `## Folded` — the way `## Open`
-    does, because a loose match is how a full file renders as zero.
+    `pending` is a list of `(id, sha, claimer)` triples (ids as strings, no
+    leading `#`; plain/sub-id/combined tokens kept as written); `folded_ids`
+    is the set of id tokens a fold record names; `malformed` is `(id, line)`
+    for entry heads the grammar does not recognise **or** that sit in the
+    wrong section (#401 / #406). Format validation is what lint acts on.
+
+    Sections match literally — `## Pending` and `## Folded` — the way
+    `## Open` does. A well-formed Pending line belongs under `## Pending` and
+    a fold under `## Folded`; a bolded-id line in the wrong section (or
+    outside both) is malformed, not silent. The malformed path runs for every
+    section so a Pending-shaped line under `## Folded` cannot vanish (#406).
     """
     pending, folded_ids, malformed = [], set(), []
     section = None
@@ -7729,16 +7780,20 @@ def parse_handoffs(text):
             section = "F"; continue
         if s.startswith("## "):
             section = None; continue
-        if section == "P":
-            m = HANDOFF_PENDING_RE.match(ln)
-            if m:
-                pending.append((m.group(1), m.group(2).strip(), m.group(3).strip()))
-            elif HANDOFF_BARE_RE.match(ln):
-                malformed.append((HANDOFF_BARE_RE.match(ln).group(1), ln))
-        elif section == "F":
-            m = HANDOFF_FOLDED_RE.match(ln)
-            if m:
-                folded_ids.add(m.group(1))
+        m_pend = HANDOFF_PENDING_RE.match(ln)
+        m_fold = HANDOFF_FOLDED_RE.match(ln)
+        m_bare = HANDOFF_BARE_RE.match(ln)
+        if section == "P" and m_pend:
+            pending.append((_normalise_handoff_id_token(m_pend.group(1)),
+                            m_pend.group(2).strip(),
+                            m_pend.group(3).strip()))
+        elif section == "F" and m_fold:
+            folded_ids.add(_normalise_handoff_id_token(m_fold.group(1)))
+        elif m_bare:
+            # Wrong section, incomplete grammar, or unrecognised id shape —
+            # all LOUD. Runs outside section P so a misfiled line is visible.
+            raw = m_bare.group(1).strip()
+            malformed.append((_normalise_handoff_id_token(raw), ln))
     return pending, folded_ids, malformed
 
 

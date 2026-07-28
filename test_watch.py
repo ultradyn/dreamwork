@@ -5047,3 +5047,77 @@ class TestShortBodyIsWitnessedAsShort(unittest.TestCase):
             self.assertTrue(rec.get("truncated"))
             self.assertNotIn("short", rec,
                              "a body the server capped did not arrive short")
+
+
+class TestHandoffIdGrammar(unittest.TestCase):
+    """#401 / #406: hand-off id vocabulary and section rules.
+
+    The earlier grammar was ``#(\\d+)`` on all three patterns, so a sub-id was
+    dropped from pending AND from the malformed fallback (same blind axis).
+    Wrong-section lines were invisible because malformed only ran in section P.
+    """
+
+    def test_a_sub_id_handoff_is_parsed_not_dropped(self):
+        text = (
+            "# Hand-offs\n\n## Pending\n\n"
+            "- **#392a** · landed `abc` · 2026-07-28 09:40 · by ccc @glm52 — x\n"
+            "\n## Folded\n"
+        )
+        pending, folded, malformed = watch.parse_handoffs(text)
+        self.assertEqual(pending, [("392a", "abc", "ccc @glm52 — x")])
+        self.assertEqual(malformed, [])
+        self.assertEqual(folded, set())
+
+    def test_a_combined_id_handoff_is_parsed(self):
+        text = (
+            "# Hand-offs\n\n## Pending\n\n"
+            "- **#367/#392** · landed `deadbee` · 2026-07-28 10:00 · by x — y\n"
+            "\n## Folded\n"
+        )
+        pending, folded, malformed = watch.parse_handoffs(text)
+        self.assertEqual(pending, [("367/392", "deadbee", "x — y")])
+        self.assertEqual(malformed, [])
+
+    def test_a_pending_line_in_the_wrong_section_is_reported_malformed(self):
+        # Precondition: the line sits under ## Folded, not ## Pending — derive
+        # that at runtime so a fixture reorder cannot hollow the test.
+        pend_line = (
+            "- **#5** · landed `abc` · 2026-07-28 09:40 · by dreamer-5 — x"
+        )
+        text = (
+            "# Hand-offs\n\n## Pending\n\n## Folded\n" + pend_line + "\n"
+        )
+        after_folded = text.split("## Folded", 1)[1]
+        self.assertIn(pend_line, after_folded)
+        self.assertNotIn(pend_line, text.split("## Folded", 1)[0])
+        pending, folded, malformed = watch.parse_handoffs(text)
+        self.assertEqual(pending, [], "wrong-section line must not be pending")
+        self.assertEqual(len(malformed), 1, malformed)
+        self.assertEqual(malformed[0][0], "5")
+        self.assertIn(pend_line, malformed[0][1])
+
+    def test_an_unrecognised_id_shape_is_malformed_not_silent(self):
+        # Prose inside the bold head is not an accepted id token; bare must
+        # still match so malformed fires (the load-bearing fallback widen).
+        line = (
+            "- **#96 stage 1** · landed `abc` · 2026-07-28 09:40 · by x — y"
+        )
+        text = "# Hand-offs\n\n## Pending\n\n" + line + "\n\n## Folded\n"
+        self.assertIsNone(watch.HANDOFF_PENDING_RE.match(line))
+        self.assertIsNotNone(
+            watch.HANDOFF_BARE_RE.match(line),
+            "BARE must match any bolded-id head or the fallback shares the "
+            "parser's blind axis again")
+        pending, folded, malformed = watch.parse_handoffs(text)
+        self.assertEqual(pending, [])
+        self.assertEqual(len(malformed), 1, malformed)
+        self.assertIn("96 stage 1", malformed[0][0])
+
+    def test_correlation_normalises_a_sub_id_to_its_parent(self):
+        self.assertEqual(watch.handoff_parent_ids("392a"), ["392"])
+        self.assertEqual(watch.handoff_parent_ids("392"), ["392"])
+        self.assertEqual(watch.handoff_parent_ids("367/392"), ["367", "392"])
+        self.assertEqual(watch.handoff_parent_ids("392b"), ["392"])
+        self.assertEqual(watch.handoff_parent_ids("1000"), ["1000"])  # four-digit
+        # Named function, deliberate — not ENTRY_ID's silent letter-strip as API.
+        self.assertNotEqual(watch.handoff_parent_ids("392a"), ["392a"])
