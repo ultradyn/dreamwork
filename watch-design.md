@@ -2270,17 +2270,22 @@ can show 52 weeks, which is still two figures.
 
 **A single-digit unit is prefixed with a gray 0** (#385) — `05h 09m` greys
 both leading zeros; `15h 42m` greys none. The pad is a `.agepad` span at
-`--dimmer` inside the already-dim `.age`, built by the shared `pushFig` (one
-grey-rule path used by `paintAgePair` and `paintDayAge`, so the two-figure
-and one-figure painters cannot drift apart). The discriminating half is the
-second case: a rule that greys unconditionally passes any check that only
-looks at `05`. The text still updates once a second through `ages()` with no
-transition — the live ages sweep is opt-in-off by design (`transitions.md`).
+**opacity 50%** (#456) inside the already-dim `.age`, built by the shared
+`pushFig` (one grey-rule path used by `paintAgePair` and `paintDayAge`, so
+the two-figure and one-figure painters cannot drift apart). Opacity rather
+than a dimmer colour token: it composites against the animated shader and
+reads close to invisible, which a solid token cannot. The discriminating
+half is the second case: a rule that greys unconditionally passes any check
+that only looks at `05`. The text still updates once a second through
+`ages()` with no transition — the live ages sweep is opt-in-off by design
+(`transitions.md`).
 **Question headlines reuse the same age, next to the date already in the
-title** (#385). `qtHtml` splits an optional `P1 · ` priority, the
-`YYYY-MM-DD` date, and the rest; the age is an empty `.age.qage[data-ct]`
-filled by the standing `ages()` sweep. No date in the title stays plain text.
-The date is day-resolution only, so `ct` is local midnight of that day.
+title** (#385 / #456). `qtHtml` splits an optional `P1 · ` priority, the
+`YYYY-MM-DD` date, and the rest; the chrome's ` · ` sits between the date
+and an empty `.age.qage[data-ct]` filled by the standing `ages()` sweep, so
+`2026-07-28 · 01d ago` is two phrases rather than one continuous digit run.
+No date in the title stays plain text. The date is day-resolution only, so
+`ct` is local midnight of that day.
 
 **A question headline is therefore no longer its title.** `qtHtml` emits the
 age span *between* the date and the ` — ` separator, so `.qt`'s textContent is

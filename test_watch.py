@@ -3801,7 +3801,120 @@ class TestAppShell(unittest.TestCase):
             rendered, r'^0[89]h \d{2}m ago$',
             f"rendered age looks midnight-derived, not 24m: {rendered!r}")
 
+    def test_day_age_has_middot_separator_and_near_invisible_pad(self):
+        # #456 — legibility of the date/age pair on a question headline.
+        # Before: `2026-07-28 01d ago` (one continuous digit run; the eye
+        # cannot find where the date ends). After: `2026-07-28 · 01d ago`
+        # with the chrome's own ` · `, and the pad zero near-invisible via
+        # opacity rather than a dimmer colour token.
+        #
+        # PRODUCTION LINES whose change reds this test:
+        #   1. qtHtml join in watch.PAGE — the template that emits
+        #      `${when} · <span class="age qage"…>` (revert the ` · `
+        #      between date and span and the separator assert fails).
+        #   2. STYLE rule `.age .agepad { opacity:.5; }` (revert to
+        #      `color:var(--dimmer)` or drop opacity and the pad rule
+        #      assert fails).
+        # No transition added: ages() is a pure text rewrite once a
+        # second (transitions.md exempts that sweep). Day-age path
+        # (data-day → paintDayAge) is unchanged — only the join and the
+        # pad's quietness.
+        import datetime, re
+        page = watch.PAGE
+        # ── pad: opacity, not a solid dimmer colour ──
+        # The rule must be present as a CSS declaration the browser applies.
+        # A colour-only quieting fails the goal (opacity composites against
+        # the shader; a token does not).
+        m_pad = re.search(
+            r'\.age\s+\.agepad\s*\{([^}]*)\}', page)
+        self.assertIsNotNone(
+            m_pad, "STYLE has no .age .agepad rule — pad quieting is gone")
+        pad_body = m_pad.group(1)
+        self.assertRegex(
+            pad_body, r'opacity\s*:\s*\.?5\d*|opacity\s*:\s*0?\.5\b',
+            f".agepad must quiet via opacity ~50% (close to invisible on "
+            f"the shader); rule body was {pad_body!r}")
+        # ── RUNTIME PRECONDITION: a date-only open question exists ──
+        # Same trap as 72c9f2e: a check with no subject passes forever.
+        # Select DATE-ONLY (not timed) so the day-age path is the one under
+        # the separator, and not-today so the age is a figure not `today`.
+        text = open('.dreamwork/questions.md', encoding='utf-8').read()
+        qs = watch.parse_open_questions(text)
+        today = datetime.date.today().isoformat()
+        dated_only = [x for x in qs
+                      if not x['title'].startswith('P2 · ' + today)
+                      and re.search(r'\d{4}-\d{2}-\d{2}', x['title'])
+                      and not re.search(r'\d{2}:\d{2}|T\d', x['title'])]
+        self.assertTrue(
+            dated_only,
+            "no date-only open question left in the live file — this test "
+            "needs one to have anything to measure; add a date-only fixture "
+            "entry rather than deleting the check (%d open, none date-only)"
+            % len(qs))
+        q = dated_only[0]
+        title = q['title']
+        dm = re.search(r'(\d{4}-\d{2}-\d{2})', title)
+        self.assertIsNotNone(dm, "fixture title carries no date")
+        date = dm.group(1)
+        self.assertNotRegex(
+            title, r'\d{2}:\d{2}|T\d',
+            "title carries a time — fixture is no longer date-only")
+        # ── RENDER via production qtHtml ──
+        html = self._qt_html(title)
+        # separator sits BETWEEN the date and the age span — not after the
+        # whole title, not inside the span. Chrome's ` · ` (U+00B7, spaces).
+        self.assertRegex(
+            html,
+            re.escape(date) + r' · <span class="age qage" data-ct="',
+            f"date and age must be joined by chrome ` · `; got {html!r}")
+        self.assertIn('data-day="1"', html,
+                      "date-only path must still mark data-day (precision)")
+        # age content is unchanged by the join: still one figure via ages()
+        ct = self._qt_ct(title)
+        now = ct + 3 * 86400 + 8 * 3600
+        [rendered] = self._render_via_ages([{'title': title}], now)
+        self.assertEqual(rendered, '03d ago',
+                         f"separator must not alter day-age semantics; "
+                         f"got {rendered!r}")
+        # pad still only on the leading 0 of a single-digit unit — the
+        # age string is 03d, so paintDayAge/pushFig still wears .agepad
+        # on that 0. Drive paintDayAge on a mocked el and count pads.
+        import json, subprocess, textwrap
+        block = self._age_pair_js_block()
+        script = textwrap.dedent("""\
+            function frag() {
+              return { nodes: [], append(...xs) {
+                for (const x of xs) this.nodes.push(x);
+              }};
+            }
+            const document = {
+              createDocumentFragment: frag,
+              createElement: () => ({ className: '', textContent: '' }),
+            };
+            %s
+            const CT = %d;
+            const NOW = CT + 3*86400 + 8*3600;
+            Date.now = () => NOW * 1000;
+            const el = { kids: null,
+              replaceChildren(f) { this.kids = f.nodes; } };
+            paintDayAge(el, CT);
+            const pads = el.kids.filter(k => k && k.className === 'agepad')
+                               .length;
+            const text = el.kids.map(k =>
+              (typeof k === 'string' || typeof k === 'number') ? String(k)
+              : (k && k.textContent != null ? k.textContent : '')).join('');
+            process.stdout.write(JSON.stringify({ pads, text }));
+        """) % (block, ct)
+        out = subprocess.check_output(["node", "-e", script], text=True)
+        data = json.loads(out)
+        self.assertEqual(data["text"], "03d ago")
+        self.assertEqual(
+            data["pads"], 1,
+            f"03d must wear exactly one .agepad on the leading 0; "
+            f"got {data!r}")
+
     def test_commits_panel_is_five_near_the_top_and_regroups_on_a_new_sha(self):
+
         # #151. Three claims, and the third is the one worth guarding.
         self.assertEqual(watch.GIT_ROWS, 5)
         # near the top: before the dreams heading, which used to be first

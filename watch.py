@@ -538,13 +538,16 @@ STYLE = """<style>
   summary::before { content:"+ "; color:var(--dim); }
   details[open] > summary::before { content:"- "; }
   .age { color:var(--dim); margin-left:.5rem; }
-  /* #385: the pad digit of a single-figure unit is quieter than the value.
-     Only the leading 0 of `05` / `09` wears this — never a genuine tens digit. */
-  .age .agepad { color:var(--dimmer); }
-  /* age next to the date inside a question title — tighter than a free-standing
-     `.age` so the headline stays one phrase rather than a date, a gap, and a
-     clock. */
-  .qt .qage { margin-left:.35rem; font-size:.7rem; }
+  /* #385 / #456: the pad digit of a single-figure unit is quieter than the
+     value. Only the leading 0 of `05` / `09` wears this — never a genuine
+     tens digit. Opacity (not a dimmer colour token) so the pad composites
+     against the animated shader and reads close to invisible; 50% is his
+     estimate of that goal. */
+  .age .agepad { opacity:.5; }
+  /* age next to the date inside a question title. #456: the chrome's ` · `
+     sits between date and age in the markup, so no left margin here — the
+     separator carries the gap (was .35rem when the join was bare). */
+  .qt .qage { margin-left:0; font-size:.7rem; }
   pre { white-space:pre-wrap; color:var(--muted); margin:.4rem 0 .8rem 1ch;
         border-left:1px solid var(--line); padding-left:1ch; }
   /* ── the file view's image and binary surfaces (#336) ─────────────────
@@ -2195,7 +2198,10 @@ const qtHtml = title => {
     dayAttr = ' data-day="1"';
   }
   const when = esc(date) + (time ? esc(' ' + time) : '');
-  return `${esc(prio || '')}${when}` +
+  /* #456: chrome's ` · ` between date and age so the eye finds where the
+     date ends — bare adjacency made `2026-07-28 01d ago` one continuous
+     digit run. Same glyph/spacing as every other chrome separator. */
+  return `${esc(prio || '')}${when} · ` +
     `<span class="age qage" data-ct="${ct}"${dayAttr}></span>` +
     `${esc(sep)}${esc(rest)}`;
 };
