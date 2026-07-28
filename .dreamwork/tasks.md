@@ -48,6 +48,33 @@ Next id: **423**
   open from an entry he answered Q2 of). **Three independent signals that our question format costs
   him more than it should**, and none of them was read as being about the format
   · blocked on nothing · related: **#422** (research artifacts as a kind), **#419**
+  · **research DONE, `ccc @grok`, ~13 minutes — `bae566d`, merged `e50226d`.** Doc:
+  `.dreamwork/docs/research/2026-07-28-question-instruction-design.md` (484 lines). Read
+  `i-have-adhd` at sha `c784dcb`, quoting its `SKILL.md`, agent configs, hooks and eval rubric.
+  Entry stays **open**: the research is half the ask; the options and the question to him remain
+  · **it refuted the premise this entry was filed with, and the refutation is the useful part.**
+  I wrote *"three independent signals that our question format costs him"*. Measured: **19 of 56**
+  entries carry two or more sub-decisions and **15 of 16** answered multi-sub entries closed
+  **complete**, often the same day, often with a bare `rec`. **Durable partials are 2 in the whole
+  corpus** (`#275` live, `#281` at fold). So multi-sub is not the failure mode and **"ask one thing
+  at a time" is not supported by our own data**
+  · **what IS measured:** length is the tax — median **127** words at zero sub-questions, **738** at
+  four, **897** at seven, open median **480**, max **1121**. And 29 of 56 entries score zero
+  sub-decisions, which is its own finding: **a large share of our "questions" do not ask anything**
+  · **`i-have-adhd` is an output-density style, not an ask protocol** — lead with the action, cap
+  lists at 5, one clarifying question, one end action, with a stated working-memory theory. **It has
+  no rule for silence, partial answers or late replies**, so the thing we most need is precisely
+  what it does not do. The lane named that boundary instead of porting across it
+  · **my own re-derivation disagreed and I was the one who was wrong**: I got 5 multi-sub against its
+  19 because I matched only `Q|S|R|G|T`, and the corpus labels decisions with `M D T B P H V N E A`
+  too — *"Rec `H1`"* against *"`H2`"* for two candidate layouts. It **derived** the alphabet from the
+  corpus; I **assumed** it. Sixth lane refutation today, same shape as the other five: a figure I
+  reasoned to from a document rather than measured
+  · **one refinement the disagreement exposed, and it matters for the options**: the count conflates
+  *options offered inside one decision* (`H1` vs `H2`) with *separate decisions requested* (`S1`–`S4`).
+  Those have different fixes, so the options must say which of the two they reduce
+  · **next, and it is mine not a lane's** (his 05:43: the orchestrator does the planning): write the
+  options to a spec doc, then dispatch the artifact, then file the question
 
 - **#422** — a research artifact is a kind we produce and have never specified · P2 ·
   loop-tooling/format · origin: **human** · **human via watch `do-next` 2026-07-28 16:29**, second
