@@ -24,9 +24,27 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **431**
+Next id: **432**
 
 ## Open
+- **#431** — `just deploy`'s `pkill -f` kills any process whose command line merely mentions the
+  snapshot, including the shell running the deploy · P1 · loop-tooling/deploy · origin: **loop**
+  · **it killed my own shell mid-deploy, 2026-07-28 18:16**
+  · The recipe does `pkill -f "$(basename "$snap")"` where the basename is
+  `ud-dreamwork-watch.py`. **`pkill -f` matches the whole command line of every process**, so it kills
+  not just the server but anything that names the file — an agent shell that assigned the path to a
+  variable, an editor, a `grep`. My command line contained the string, so the deploy killed the shell
+  executing it: **exit 144 (128+16, SIGTERM), the recipe cut off partway through.** The server did come
+  back, verified `HTTP 200` at a fresh pid with `bdmed` served, so nothing was left broken — this time
+  · **why it has never bitten before:** it only fires when the caller's own command line mentions the
+  snapshot basename, which a plain `just deploy` does not. So it is rare, silent, and it interrupts the
+  one recipe whose half-completion leaves **the human's dashboard down**. `pkill` cannot report this: it
+  has already killed the process that would have noticed
+  · fix: kill by **pid**, not by pattern — read the listening pid (`ss -ltnp` on the persisted port, the
+  idiom `dev/deploy_state.py` already uses) and `kill` that, or add `pkill -f "^python3 .*<snap>"` so a
+  mention is not a match. Prefer the pid: a pattern that must not match the caller is a pattern that
+  will one day match the caller
+  · related: **#426**
 - **#429** — the above-fold criterion we put in every review brief is unenforceable on 20 of 22
   artifacts · P1 · loop-tooling/review-artifacts · origin: **loop** · **measured, 2026-07-28 17:52**
   · Every brief that asks him to rule says the ask must satisfy
@@ -46,26 +64,6 @@ Next id: **431**
   the criterion as above in `watch-design.md`, and give it **one shared checker** instead of each lane
   writing its own mjs
   · related: **#430, #325**
-- **#430** — a viewport-setting check must assert the viewport was applied, because mine didn't · P1 ·
-  loop-tooling/verification · origin: **loop** · **caught in my own hands, 2026-07-28 17:47**
-  · I measured the `#263` artifact with `newPage({viewportSize:…})`. Playwright's option is
-  **`viewport`**; `viewportSize` is accepted silently and ignored, so both "desktop 1280×900" and
-  "mobile 390×844" runs were the **default 1280×720**. The tell was that they agreed to the byte —
-  identical `scrollHeight` for a 1280px and a 390px render, which is impossible for a responsive page.
-  Had the page happened to pass at 720, I would have reported two viewports verified and checked one
-  · **this is the hollow-check failure with a new cause: not a bad assertion, a bad harness.** The
-  assertion was right and it was applied to the wrong page. `.dreamwork/lessons.md` already says a
-  check must assert its own preconditions; the precondition of *every* responsive measurement is
-  **`innerWidth === requested`**, and no check in this repo asserts it
-  · so: one `dev/capture/above_fold.mjs` (or similar) that takes ids + viewports, asserts
-  `innerWidth`/`innerHeight` match the request before measuring anything, and is the only thing briefs
-  cite. Kills the per-lane ad-hoc copy that produced this
-  · **narrowed after measuring, 17:58 — the live bug is mine alone and the repo is clean of it.**
-  `dev/capture/` holds 65 scripts, 60 of which set a viewport, and **none** uses the wrong
-  `viewportSize` key. So this is not a defect in the tree; it is a missing precondition — **2 of 65
-  assert `innerWidth` matches what they asked for.** The repo is one typo away from the failure, not
-  living in it, which lowers the urgency and does not change the fix
-  · related: **#429**
 - **#427** — the hand-off grammar is widened in `lint` but not in the parser, so the dashboard still
   cannot read a two-sha line · P3 · loop-tooling/format · origin: **loop** · **named by the `#415`
   lane rather than left to be found**
@@ -144,7 +142,7 @@ Next id: **431**
   is built twice
   · also names `.dreamwork/run-mode` as prior art: it is re-read on every tick precisely so an on-disk
   change reaches a running loop, and it is the only file in the system with that property today
-  · related: **#425, #368, #263**
+  · related: **#425, #368, #263, #431**
 
 - **#424** — `just test` is a single shared lock, so N concurrent lanes cannot each verify · P2 ·
   loop-tooling/orchestration · origin: **loop** · found when `#419` reported guards blocked at 17:01
@@ -3597,6 +3595,31 @@ Next id: **431**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#430** — a viewport-setting check must assert the viewport was applied, because mine didn't · P1 ·
+  loop-tooling/verification · origin: **loop** · **caught in my own hands, 2026-07-28 17:47**
+  · I measured the `#263` artifact with `newPage({viewportSize:…})`. Playwright's option is
+  **`viewport`**; `viewportSize` is accepted silently and ignored, so both "desktop 1280×900" and
+  "mobile 390×844" runs were the **default 1280×720**. The tell was that they agreed to the byte —
+  identical `scrollHeight` for a 1280px and a 390px render, which is impossible for a responsive page.
+  Had the page happened to pass at 720, I would have reported two viewports verified and checked one
+  · **this is the hollow-check failure with a new cause: not a bad assertion, a bad harness.** The
+  assertion was right and it was applied to the wrong page. `.dreamwork/lessons.md` already says a
+  check must assert its own preconditions; the precondition of *every* responsive measurement is
+  **`innerWidth === requested`**, and no check in this repo asserts it
+  · so: one `dev/capture/above_fold.mjs` (or similar) that takes ids + viewports, asserts
+  `innerWidth`/`innerHeight` match the request before measuring anything, and is the only thing briefs
+  cite. Kills the per-lane ad-hoc copy that produced this
+  · **narrowed after measuring, 17:58 — the live bug is mine alone and the repo is clean of it.**
+  `dev/capture/` holds 65 scripts, 60 of which set a viewport, and **none** uses the wrong
+  `viewportSize` key. So this is not a defect in the tree; it is a missing precondition — **2 of 65
+  assert `innerWidth` matches what they asked for.** The repo is one typo away from the failure, not
+  living in it, which lowers the urgency and does not change the fix
+  · related: **#429**
+  · **→ folded 2026-07-28 18:14 — landed `1dd973f`.** The shared checker exists with all three
+  preconditions red-proved, and is declared a tool rather than a guard in `lint.NOT_GUARDS` with the
+  reason it gates nothing yet. Making it *gate* the corpus needs `#ask` to be a contract first, which
+  is `#429` and stays open
+
 - **#218** — Add filed-to-landed median · P2 · task · 20m ·
   origin: **loop** · blocked on #217 · `ledger_series` already computes
   arrival/landing pairs and discards them; render the median without a
