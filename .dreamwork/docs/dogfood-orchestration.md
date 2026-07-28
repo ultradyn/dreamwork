@@ -1132,3 +1132,53 @@ lesson for the sixth: I ran the gate as `python3 gate331.py master | tail -35` a
 choice: the gate prints its own `GATE PASSED` / `GATE FAILED` verdict line, so the output
 contradicted the exit code and the output was right. **Make every check state its verdict in
 its output**, because the exit code is the thing a pipeline silently replaces.
+
+## Scoring dispatch 2 — two of four predicted, and the two misses are the informative ones
+
+Lane ran **12:36:30 → 13:15**, one commit at ~13:00. Scored against what I wrote in advance:
+
+| prediction | outcome |
+|---|---|
+| nothing on disk 25-40 min, then a burst | **hit** — 23.5 min, then everything |
+| total 60-90 minutes | **miss, low** — 39 minutes, well under |
+| the *inert set* is where it slips | **miss** — it did not slip at all |
+| it will push back on something | **hit** — and it was right |
+
+**The duration miss is the one that changes the model.** `#399b` took 72 minutes; this task was
+strictly larger (three files plus a pinning test, versus one function) and took **39**. So
+"glm-5.2 is slow" was the wrong generalisation from one sample — what is stable across both is the
+**shape**: a long silent read, then a single dense burst. The silence is not progress I cannot see;
+it is the whole task being planned before anything is written, and a coordinator who kills a quiet
+lane at 20 minutes will kill good work. The variable is the *task*, not the runner.
+
+**The inert-set miss is worth more.** I predicted the hazard would catch it because widening a
+pattern is the easy half. It handled every case — comma rejected at the pattern level, `[ \t]`
+rather than `\s` so a span cannot cross a newline, and it said so unprompted in the report. My
+prediction was really a prediction about *briefs*: I had spent the addendum making the inert set
+vivid, and it landed. **A hazard stated concretely, with the live fixtures named, is a hazard that
+does not happen** — which is an argument for the brief effort, not evidence about the model.
+
+### The thing I most want to keep from this lane
+
+It **refused my stale claim and proved the refutation**. The brief said three guard failures were
+pre-existing on `master`; I then fixed all three on `master` during its run, so it saw 3 failures
+in its tree and 0 on `master` — a difference that reads exactly like *"my change broke three
+guards"*. It did not guess in either direction. It built a worktree at its own parent `97becd9`,
+reproduced all three there, identified the two commits on `master` that fixed them, named them by
+sha, and wrote: *"not pre-existing on master, pre-existing on my branch point, and not caused by
+#331."* Then it declined to chase them because the brief said not to.
+
+That is the behaviour worth selecting for, and it is **the second lane in a row to correct the
+coordinator with evidence**. Both times the brief explicitly invited pushback with reasons; I now
+treat that line as load-bearing rather than courtesy.
+
+### What the coordinator got wrong, twice, in the same hour
+
+- **I moved the baseline under a running lane.** Fixing the guards on `master` mid-run silently
+  edited the acceptance criteria of an agent that cannot hear me. Good work, trap timing.
+- **My own gate expired at the merge.** It compared against `master`, so once the branch landed it
+  compared the candidate with itself and printed GATE FAILED beside a dozen passes.
+
+Both are the same shape as the day's dominant class — **a signal that reports on something other
+than the thing you care about** — and both were caught by reading output rather than status. The
+running total for that family today is eight.
