@@ -161,6 +161,94 @@ class TestQuestionsEdges:
         assert ERRORS(rep, "questions.md")
 
 
+class TestAnsweredResolutionDates:
+    """#411: an answered entry that loses its `→ answered (…)` marker silently
+    loses the date the collapsed row is found by. `check_questions` verifies the
+    file PARSES and is silent on whether each entry carries a resolution date;
+    this check is the coverage the ledger entry asks for — a count that cannot
+    silently stop counting."""
+
+    def build(self, tmp_path, answered_bodies):
+        # `answered_bodies`: list of (title, body) for `## Answered` entries.
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        entries = "\n\n".join(
+            f"- **{title}**\n{body}" for title, body in answered_bodies)
+        (dw / "questions.md").write_text(
+            "# Questions\n\n## Open\n\n## Answered\n\n" + entries + "\n")
+        return t
+
+    def rows(self, t):
+        rep = lint.Report()
+        lint.check_answered_resolution_dates(t / ".dreamwork", lint.load_watch(), rep)
+        return [d for lvl, w, d in rep.rows if w == "questions.md"]
+
+    def test_every_dated_entry_is_clean(self, tmp_path):
+        t = self.build(tmp_path, [
+            ("First?", "  → resolved (2026-07-25): done.\n"),
+            ("Second?", "The review is at\n  → answered (2026-07-26 17:49): ok.\n"),
+        ])
+        # PRECONDITION, derived not pinned: both must parse as dated, or the
+        # "clean" assertion is vacuous — a check that never saw an entry cannot
+        # fail on one.
+        import watch
+        items = watch.parse_answered((t / ".dreamwork/questions.md").read_text())
+        dated = sum(1 for it in items if watch.answered_at(it["body"]))
+        assert dated == 2, dated
+        # Silent when every answered entry carries a date: this check is a
+        # companion to check_questions (which owns the OK row), and it speaks
+        # only when something is wrong. The coverage it provides is the WARN,
+        # not a duplicate OK.
+        assert self.rows(t) == []
+
+    def test_an_undated_entry_warns_and_is_named(self, tmp_path):
+        t = self.build(tmp_path, [
+            ("Dated?", "  → resolved (2026-07-25): done.\n"),
+            ("Undated?", "  A body with no marker at all.\n"),
+        ])
+        rows = self.rows(t)
+        assert rows and "1 of 2 answered entries have no resolution date" in rows[0]
+        # the offending entry is named, so a withdrawn ask is distinguishable
+        # from a dropped marker by reading the line
+        assert "Undated" in rows[0]
+
+    def test_a_second_line_marker_recovers_and_is_not_counted_as_undated(self, tmp_path):
+        # #411's actual live shape: artifact pointer, then the head on line 2.
+        t = self.build(tmp_path, [
+            ("LAN?", "The review is at\n  → answered (2026-07-26 17:49): ok.\n"),
+            ("Withdrawn?", "  decided by the loop, and withdrawn as an ask.\n"),
+        ])
+        # PRECONDITION: the second-line marker really does recover under the fix
+        # (this is the property the check's coverage depends on — without it,
+        # the WARN count would include a recovered entry and cry wolf).
+        import watch
+        items = watch.parse_answered((t / ".dreamwork/questions.md").read_text())
+        by = {it["title"]: watch.answered_at(it["body"]) for it in items}
+        assert by["LAN?"] == "2026-07-26 17:49"
+        assert by["Withdrawn?"] is None
+        rows = self.rows(t)
+        assert rows and "1 of 2 answered entries have no resolution date" in rows[0]
+        assert "Withdrawn" in rows[0]
+
+    def test_the_count_is_derived_from_the_fixture_not_pinned(self, tmp_path):
+        # The two fixtures above must genuinely differ in their undated count
+        # (1 vs 0), or every assertion here could pass over a check that
+        # counts nothing. Derive both at runtime and assert the gap.
+        dated = self.build(tmp_path, [
+            ("One?", "  → resolved (2026-07-25): done.\n")])
+        undated = self.build(tmp_path, [
+            ("One?", "  no marker here.\n")])
+        import watch
+        n_dated = sum(1 for it in watch.parse_answered(
+            (dated / ".dreamwork/questions.md").read_text())
+            if watch.answered_at(it["body"]) is None)
+        n_undated = sum(1 for it in watch.parse_answered(
+            (undated / ".dreamwork/questions.md").read_text())
+            if watch.answered_at(it["body"]) is None)
+        assert n_undated - n_dated == 1, (n_dated, n_undated)
+
+
 class TestLedger:
     def test_duplicate_id_is_an_error(self, tmp_path):
         # This happened: a careless replace left two #98 lines.

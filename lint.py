@@ -267,6 +267,53 @@ def check_questions(dw: Path, watch, rep: Report) -> None:
         )
 
 
+def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
+    """How many answered entries the page renders with NO resolved date (#411).
+
+    `answered_at(body)` returns when a folded entry was resolved, for the
+    collapsed-row view. It is deliberately never-guessing — a wrong date is
+    worse than no date — so an answered entry that returns None is one of two
+    honest things: it was withdrawn (no answer, so no timestamp), or it predates
+    the resolution-marker convention. Both are legitimate *today*. What this
+    check exists to catch is the regression: a future fold that drops or
+    mis-places the `→ answered (…)` marker on an entry that should carry one
+    makes the date silently disappear, and nothing today would notice.
+
+    So the number is DERIVED — never a literal — and it names the entries so a
+    reader can tell a withdrawn entry from a dropped marker. WARN, not ERROR:
+    a None that names a withdrawn ask is correct, and crying ERROR on the
+    legitimate state would teach the reader to mute it. The check is the
+    coverage this task's ledger entry asks for: "a count cannot silently stop
+    counting" (#411).
+    """
+    path = dw / "questions.md"
+    if not path.exists():
+        return                          # check_questions owns the absent case
+    if watch is None:
+        return                          # cannot run the reader; nothing to assert
+    try:
+        items = watch.parse_answered(path.read_text())
+    except Exception:
+        return                          # check_questions owns unparseable
+    undated = [it["title"] for it in items if watch.answered_at(it["body"]) is None]
+    if not undated:
+        # Silent when every answered entry carries a date. `check_questions`
+        # already owns the OK row for this file, and emitting a second one
+        # fragments the summary; the coverage this check exists to provide is
+        # the WARN that names the undated entries, not an OK that duplicates it.
+        return
+    # Name at most three so the line stays readable; the count is the signal.
+    sample = "; ".join(t[:48] for t in undated[:3])
+    more = "" if len(undated) <= 3 else f"; +{len(undated) - 3} more"
+    rep.add(
+        WARN,
+        "questions.md",
+        f"{len(undated)} of {len(items)} answered entries have no resolution "
+        f"date — a withdrawn ask carries none by design, but a dropped "
+        f"`→ answered (…)` marker is a regression that otherwise hides: "
+        f"{sample}{more} (#411)")
+
+
 def check_answers(dw: Path, watch, rep: Report) -> None:
     """Optional channel from the human to the dreamer."""
     path = dw / "answers.md"
@@ -2524,6 +2571,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     called by `main()` and by the tests, cannot drift from itself.
     """
     check_questions(dw, watch, rep)
+    check_answered_resolution_dates(dw, watch, rep)
     check_answers(dw, watch, rep)
     check_author_tags(dw, watch, rep)
     check_unfolded_answers(dw, watch, rep)
