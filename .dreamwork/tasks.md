@@ -461,6 +461,25 @@ Next id: **412**
   · **so a fifth gate item, and it is the one the unit tests cannot fake:** after the fix, walk those
   same revisions and assert the landed count is **non-zero for the 07-25/07-26 revisions**. That is
   an assertion about real history, derived at runtime, and no fixture can satisfy it accidentally
+  · **THE STRUCTURE OF THE BUG, derived independently at 11:21 so the lane's report can be judged
+  against it rather than believed.** Exactly **two** callers consume the landed half of
+  `parse_ledger`; the other three `lint.py` call sites discard it (`_landed`, `_`):
+    - `lint.check_landed_asks` (`lint.py:791`) — reads **today's** ledger, to decide whether a human
+      ask names a finished task and can be folded. A false landing **closes a question he has not
+      answered**. It wants PRECISION and must fail closed.
+    - `watch.ledger_series` (`watch.py:7913`) — reads **every historical revision**, for the burndown.
+      A missed landing renders the loop as having achieved nothing. It wants RECALL and must fail
+      open.
+  **So one function serves two callers whose error preferences are opposite**, and that is the whole
+  bug stated properly. `#399` optimised for precision — correct for the first caller, fatal for the
+  second. It is not that the rule was "too narrow"; it is that a single rule cannot be right for both
+  unless it raises precision **without** costing recall
+  · **which is exactly why field-exclusion is the right shape and reverting is not.** Excluding
+  `related:` removes false positives (precision up) while leaving every bare historical mention
+  intact (recall unchanged). Head-only traded one for the other; mention-everything traded the other
+  way. **If the lane proposes two functions instead, that is a legitimate answer** and the brief says
+  so — but then each caller must be named with which one it takes, or the split just moves the
+  question
   · **THE MERGE GATE, written 11:19 BEFORE the lane reports, so it cannot be shaped by what the
   lane says it achieved.** Measured now, both parsers run against today's ledger:
     - deployed/pre-`#399` logic: **136 open, 176 landed**
