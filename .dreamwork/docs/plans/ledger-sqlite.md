@@ -2,8 +2,10 @@
 
 **Tasks:** #294 (migration, cutover, rollback, git-history import, `tasks.md.deprecated`,
 mixed-writer freeze). Consumers: #287, #289, #342, #281's badge, #229/#270's CLI seam
-**Status:** design; **no implementation authority**. No table is created, no CLI ships,
-nothing is migrated, no file is renamed under this id.
+**Status:** design ratified 2026-07-29 05:48 (`rec` on R1–R4 + C1). **Increment 1
+landed:** schema + seeded sequence in `ledger_store.py` / `test_ledger_store.py` —
+open/create/seed/verify only. **Still no cutover, no import, no migration script, no
+shim, no rename of `tasks.md`.** Shipping the rest stays gated on #263 lane H and #352.
 **Date:** 2026-07-29
 **Depends on:** `user-event-journal.md` (#263 — contract approved `"rec"` 01:27; lanes
 A–F and E merged, G/H authorised, **not yet fully landed**) and
@@ -496,6 +498,58 @@ rename + shim + #458 notice, the retirement of #362's drift check, and journal-a
 rollback. It does **not** authorise creating a table, writing the CLI, running the
 migration, renaming `tasks.md`, deleting `status.json` fields, or payload purge — those
 wait on #263 lane H landing and #352 unifying the parser, exactly as #264's gate states.
+
+---
+
+## Increment 1 — schema + seeded sequence (built 2026-07-29, lane `wt/schema`)
+
+His 05:48 ruling (`rec` on all five) unblocked **building the store module**, not
+cutover. What landed:
+
+| Piece | Where | Notes |
+|---|---|---|
+| Entity + event schema | `ledger_store.py` `_SCHEMA_SQL` | `entry`, `task` (`AUTOINCREMENT`), `related`, `depends`, `review_decision`, `task_event`, `task_state`, lookup tables — #346 + #264 shapes |
+| Open / create | `open_store(path, …)` | WAL, `synchronous=FULL` (NORMAL-then-FULL pin, user_events B1 lesson), `foreign_keys=ON`, busy_timeout |
+| Seed derivation | `derive_next_id(text)` | `lint.load_watch()` → `parse_ledger` → `MAX(id)+1`; header `Next id` must agree (lint's `NEXT_ID`) |
+| Seed write + verify | `LedgerStore.seed_sequence` | writes `sqlite_sequence.seq = next_id - 1`, re-reads, refuses to *lower* an established mark |
+| Fail loud | `SeedError` | unseeded open, empty parse, header drift, non-positive next_id, lower-guard |
+
+**What building taught that the design understated:**
+
+1. **`sqlite_sequence` is not created until an AUTOINCREMENT table exists**, but a
+   direct `INSERT INTO sqlite_sequence` works once the table is present in the schema —
+   no dummy row is required to force the high-water mark. Seed is therefore one
+   INSERT/UPDATE, not a throwaway row that would then need deleting.
+2. **Unseeded open must refuse, not default to 1.** A fresh DB whose first allocate
+   hands out `1` after cutover collides with every imported permanent id. The design
+   said "seeded and verified"; the concrete rule is *refuse to open until seeded*.
+3. **`task_event.receipt_id` is free TEXT in increment 1**, not a FK to `receipts`.
+   The receipt table lives in the same *file* only after co-residence with #263's
+   journal; wiring the FK now would require either inventing a second receipts table
+   or opening the journal file, both out of this increment's scope. The column is
+   there so the import can write it; the FK lands when the files merge.
+4. **Live measurement 2026-07-29:** `parse_ledger` → 146 open / 219 landed / union
+   365; `MAX(id)+1 = 472`; header `Next id: **472**` — agreement holds. F2's "470"
+   was a point-in-time number, not a constant.
+
+**Red-proved (each injection restored, suite green after):**
+
+- Drop `AUTOINCREMENT` from `task.id` → `test_autoincrement_does_not_reuse_…` fails
+  (high-water no longer tracks the deleted peak).
+- Unseeded open invents `seed_sequence(1)` → `test_open_without_seed_fails_loud` fails.
+- Ignore header drift → `test_derive_next_id_fails_when_header_drifts_…` fails.
+
+**Still firmly out of this increment:** import, cutover, migration script, shim,
+`tasks.md` rename, write verbs, co-residence with the journal file, chain hashing
+implementation beyond the `prev_hash`/`hash` columns.
+
+**`file-formats.md` paragraph wanted (not this lane's file):** describe the
+machine-local ledger SQLite store path (once co-resident name is fixed —
+candidate is the same file as `.dreamwork/user-events.sqlite3`, or a sibling
+`.dreamwork/ledger.sqlite3` until merge), that `task.id` is `AUTOINCREMENT` with
+the sequence seeded from `MAX(parse_ledger ids)+1` verified against the Markdown
+`Next id` header, and that an unseeded or drifted seed is a hard open failure
+(`SeedError`), never a silent start-at-1.
 
 --- SUMMARY ---
 
