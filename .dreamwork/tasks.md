@@ -2608,7 +2608,21 @@ Next id: **425**
   `time.monotonic()`; `B8`'s meta-test derives contract names from `inspect.signature` and asserts
   the product, so there is no hand-copied list to drift
   · **so lanes A, B, C and F of his G1 grant are complete.** Lane D (the adapters) dispatched 07:00
-  now that `B5` and `C3` — its blockers — are both in. `#367` increment 1 and `#385` also in flight
+  now that `B5` and `C3` — its blockers — are both in. `#367` increment 1 and `#385` also in flight  · **lane C remainder IN PROGRESS 2026-07-28 16:38** — `ccc @glm52`, `.worktrees/263c`, brief
+  `263-lane-c-remainder.md`. `C4` at `f85be1c`, `C5` at `2cc3537`; the lane is still verifying, so
+  **lane C is not being called 5 of 5 until a gate says so** — that is the whole lesson of the 3/3
+  error and calling it early would repeat it
+  · **the merge gate is built and RED-PROVED before the lane reported**, at
+  `scratchpad/gateC.py` (16 checks). Run against `master` it fails **6**, each the right one: no
+  marker-search function, neither section word present, no `rebaseline`, and neither named test in a
+  file whose three tests are `C1`-`C3`'s. So the gate can see the absence it exists to detect
+  · **its denominator comes from the plan, never the lane.** It parses lane C's increment rows out
+  of the plan's own table and **asserts there are five**, because *"a denominator from the same
+  source as the numerator measures nothing"* is exactly how `3/3` passed for nine hours. It also
+  re-runs `C4`'s named red independently (drop the second section from the scan's list, the fold
+  test must fail) and refuses a **second** drift detector — `committed_lineage` in both
+  `domain_files.py` and `apply.py` is lane D's already-shipped hollow-red bug
+
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses
