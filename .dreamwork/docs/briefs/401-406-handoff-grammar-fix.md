@@ -1,5 +1,7 @@
 # Brief — #401 + #406: make a hand-off that is wrong LOUD instead of invisible
 
+Lane-owns: watch.py, lint.py, test_watch.py, test_lint.py, file-formats.md
+
 You are a dreamer on the `ud-dreamwork` skill repo. Read `CLAUDE.md` first; its
 verification rules are the reason this brief exists and they are not optional.
 

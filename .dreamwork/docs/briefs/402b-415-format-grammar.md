@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/fmt`**, branch **`wt/fmt`**. Do no
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`. **Do not write
 `.dreamwork/handoffs.md`** — the coordinator writes that line at merge time.
 
+Lane-owns: file-formats.md, lint.py, test_lint.py, status_sync.py, test_status_sync.py
+
 Two tasks, one lane, because both are the same shape in the same two files: a documented grammar that
 is narrower than what the loop legitimately produces, each with a **live symptom from today**.
 

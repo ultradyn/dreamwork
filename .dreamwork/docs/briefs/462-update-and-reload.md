@@ -3,6 +3,8 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/updrel`**, branch **`wt/updrel`**. Do not push, do not merge.
 **Never use `attn` under any circumstances** — the coordinator is the only party that notifies the human.
 
+Lane-owns: watch.py, test_watch.py, watch-design.md, transitions.md, justfile
+
 ## Why you are here, in his words
 
 **Dictated to the dashboard 2026-07-29 02:30, marked next-up and explicitly delegated:** *"re 'this page is 3

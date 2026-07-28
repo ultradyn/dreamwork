@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/fold`**, branch **`wt/fold`**. Do 
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`. **Do not write
 `.dreamwork/handoffs.md`** — the coordinator writes that line at merge time.
 
+Lane-owns: dev/capture/above_fold.mjs, dev/capture/devoverlay.mjs
+
 This is the *fold* half of `#432` only. The `#ask`-as-a-contract retrofit is `#436` and is **not yours**.
 
 ## The problem, and it is already proven rather than suspected

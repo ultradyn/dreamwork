@@ -6,6 +6,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/ledgertool`**, branch **`wt/ledger
 top. **Do not write `.dreamwork/handoffs.md`** — the coordinator writes that at merge time. Inbox and
 hand-off paths for a worktree lane are absolute, per `SKILL.md` (#405).
 
+Lane-owns: dev/ledger.py, test_ledger.py, file-formats.md, .dreamwork/docs/doc-map.md
+
 ## The defect, and it is mine rather than the code's
 
 Read `#440` in `.dreamwork/tasks.md` for the full record. In short: `.dreamwork/tasks.md` has exactly one

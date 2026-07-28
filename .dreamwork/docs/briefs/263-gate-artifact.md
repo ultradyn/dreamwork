@@ -3,6 +3,8 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/gateart`**, branch **`wt/gateart`**. Do not push, do not merge.
 **Never use `attn` under any circumstances** — the coordinator is the only party that notifies the human.
 
+Lane-owns: .dreamwork/review/src/263-second-gate.html, .dreamwork/review/263-second-gate.html
+
 ## Two-way channel — do this first
 
 Load the **`subagent-protocols`** skill (`/home/xertrov/.claude-w/skills/subagent-protocols/SKILL.md`) and

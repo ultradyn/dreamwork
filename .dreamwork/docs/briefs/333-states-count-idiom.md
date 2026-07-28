@@ -7,6 +7,8 @@ top — three lane reports tonight named a different model than was dispatched a
 **Do not write `.dreamwork/handoffs.md`** — the coordinator writes that at merge time. Inbox and hand-off
 paths for a worktree lane are absolute, per `SKILL.md` (#405).
 
+Lane-owns: dev/capture/states.mjs, transitions.md
+
 ## The defect
 
 **Read `transitions.md` first — it is binding and it opens with how to check motion.** Its count rule:

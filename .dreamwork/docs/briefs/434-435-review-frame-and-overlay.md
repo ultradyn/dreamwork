@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/frame`**, branch **`wt/frame`**. D
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`. **Do not write
 `.dreamwork/handoffs.md`** — the coordinator writes that line at merge time.
 
+Lane-owns: watch.py, test_watch.py, watch-design.md, dev/capture/above_fold.mjs
+
 Two defects, one lane, because both live in `watch.py`'s dashboard shell and a second lane there would
 collide.
 

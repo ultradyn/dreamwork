@@ -1,5 +1,7 @@
 # Brief — #264, the empirical half: what thirteen parallel lanes in one tree actually did
 
+Lane-owns: .dreamwork/docs/research/2026-07-28-parallel-lanes-evidence.md
+
 You are a dreamer on the `ud-dreamwork` skill repo. Read `CLAUDE.md` first.
 
 **Do NOT use the `attn` utility. Ever.** Only the coordinator talks to the human.

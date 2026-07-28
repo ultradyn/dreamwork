@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/421`**, branch **`wt/421`**. Do no
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`. **Do not write
 `.dreamwork/handoffs.md`** — the coordinator writes that line at merge time.
 
+Lane-owns: .dreamwork/docs/research/2026-07-28-question-instruction-design.md
+
 ## What he asked for, verbatim
 
 Via the dashboard at 2026-07-28 16:29:

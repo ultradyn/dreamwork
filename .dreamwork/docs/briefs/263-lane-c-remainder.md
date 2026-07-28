@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/263c`**, branch **`wt/263c`**. Do 
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`. **Do not write
 `.dreamwork/handoffs.md`** — the coordinator writes that line at merge time.
 
+Lane-owns: user_events/domain_files.py, test_user_events_domain_files.py
+
 ## Why you exist, stated plainly
 
 Lane C was recorded **DONE, 3/3** in the ledger nine hours ago. Lane C is plan increments **11–15**.

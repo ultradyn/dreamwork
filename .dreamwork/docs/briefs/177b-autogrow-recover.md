@@ -6,6 +6,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/autogrow`** (it already exists —
 Report by appending **once** to the absolute path
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`, and **state which model you are**.
 
+Lane-owns: watch.py, justfile, dev/capture/autogrow.mjs, watch-design.md, test_watch.py
+
 ## The situation
 
 A previous lane implemented `#177` (text boxes grow with what he types, then scroll) and **exited without

@@ -3,6 +3,8 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/399c`**, branch **`wt/399c`**. Do not push, do not
 merge. **Never use `attn`.**
 
+Lane-owns: watch.py, test_watch.py, file-formats.md
+
 ## The bug
 
 `watch._landed_ids(text)` decides which task ids a ledger's `## Recently landed` section marks done.

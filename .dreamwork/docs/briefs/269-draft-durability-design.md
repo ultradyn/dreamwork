@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/drafts`**, branch **`wt/drafts`**.
 Report by appending **once** to the absolute path
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`, and **state which model you are**.
 
+Lane-owns: .dreamwork/docs/plans/draft-durability-design.md, .dreamwork/docs/doc-map.md, .dreamwork/review/src/269-draft-durability.html
+
 ## Why this one matters
 
 Read `#269` in `.dreamwork/tasks.md`. **He escalated it to P0 and marked it next-up himself** (2026-07-27 21:35

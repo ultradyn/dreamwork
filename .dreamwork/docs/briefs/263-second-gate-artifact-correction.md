@@ -6,6 +6,8 @@ circumstances.** Report by appending **once** to the absolute path
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`. **Do not write
 `.dreamwork/handoffs.md`** — the coordinator writes that line at merge time.
 
+Lane-owns: .dreamwork/review/src/263-second-gate.html, .dreamwork/review/263-second-gate.html
+
 ## What happened, and the good news is that a lane like you caught it
 
 A previous `@grok` lane built `.dreamwork/review/263-second-gate.html` from

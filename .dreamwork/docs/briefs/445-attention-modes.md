@@ -2,6 +2,9 @@
 
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/attention`**, branch **`wt/attention`**. Do not push, do not merge.
 **Never use `attn` under any circumstances** — the coordinator is the only party that notifies the human.
+
+Lane-owns: .dreamwork/docs/plans/attention-modes.md, .dreamwork/review/src/445-attention-modes.html, .dreamwork/docs/doc-map.md
+
 **DESIGN ONLY. Build no mechanism.** No `watch.py` change, no new runtime behaviour, no file the loop reads at
 tick time. The deliverable is a design plus a review artifact he can rule on.
 

@@ -3,6 +3,8 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/411`**, branch **`wt/411`**. Do not push, do not merge.
 **Never use `attn`** — report through the inbox path at the bottom.
 
+Lane-owns: watch.py, lint.py, test_watch.py, test_lint.py
+
 This is a small task. It is briefed carefully because the obvious edit is a **no-op**, and because
 the thing it must *not* do is the part that will bite.
 

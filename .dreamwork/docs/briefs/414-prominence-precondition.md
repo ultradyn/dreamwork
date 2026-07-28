@@ -9,6 +9,8 @@ paths for a worktree lane are absolute, per `SKILL.md` (#405).
 
 **Read `transitions.md` first** — it is binding, it has no size floor, and it opens with how to check motion.
 
+Lane-owns: dev/capture/prominence.mjs, transitions.md
+
 ## What is left of #414, and the sweep is already done
 
 `#414` fixed `confirmation.mjs` (a frame-rate precondition naming its sample count) and then swept: **34

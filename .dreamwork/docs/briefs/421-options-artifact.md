@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/421a`**, branch **`wt/421a`**. Do 
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`. **Do not write
 `.dreamwork/handoffs.md`** — the coordinator writes that line at merge time.
 
+Lane-owns: .dreamwork/review/src/421-question-options.html, .dreamwork/review/421-question-options.html
+
 ## The spec, and it is a file rather than this brief
 
 **`.dreamwork/docs/plans/question-instruction-options.md`** is authoritative: four options (A the ask

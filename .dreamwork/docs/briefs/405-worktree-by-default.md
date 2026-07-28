@@ -6,6 +6,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/wtdefault`**, branch **`wt/wtdefau
 the top — a lane report today was labelled `grok` when `glm52` was dispatched and I am tracking that.
 **Do not write `.dreamwork/handoffs.md`** — the coordinator writes that at merge time.
 
+Lane-owns: SKILL.md, lint.py, test_lint.py, test_watch.py
+
 ## The defect, and it is a documentation defect with a measured cost
 
 `CLAUDE.md` and `SKILL.md` both already say worktrees are the preference when work overlaps owned files.
