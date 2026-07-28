@@ -338,6 +338,48 @@ RUN_MODE_DESC = {
         "planned · needs concurrency (#264) and containment (#288)",
 }
 
+# Soft upper bound for the dashboard stepper only — the file and the loop
+# accept any non-negative integer; this is a control affordance, not a cap
+# on concurrency (his #445 Q3: the number is a TARGET, never a limit).
+POSTURE_DELEGATION_UI_MAX = 9
+# Contract copy per stop (file-formats.md / #445 dictation), not marketing.
+# Closed sets live in lint.py (single source) and are reached via
+# `_posture_vocab()` — lazy, so `import lint` (which imports watch at
+# module level) does not meet a half-initialised lint when watch binds.
+POSTURE_PACE_DESC = {
+    "idle": "idle-friendly · no proactive fan-out",
+    "steady": "continuous bounded work · measured, not urgent",
+    "hot": "continuous work · the loop stays on it",
+}
+POSTURE_ASKING_DESC = {
+    "ask": "ask me everything · material choices surface as reviews he decides",
+    "inform": "keep me informed · mostly automatic; ~10–20% escalate as docs",
+    "near-auto": "near-automatic · journal each material choice; surface only the big ones",
+    "auto": "full auto · never blocked on a reply; still cooperates, never parks",
+}
+POSTURE_DELEGATION_DESC = {
+    "own": "occasional helpers · target avg below 0.5 running — not forbidden",
+    "assist": "a helper on average · target between 0.5 and 1.5",
+    "delegate": "several helpers · target 2+; pairs may share one worktree",
+}
+# Hoisted early so lint can `import watch` without waiting for the ledger
+# section thousands of lines later. Single definition — the ledger block
+# reuses this name, never restates.
+IDS_ONLY_SPAN = r"#\d+(?:[ \t]*[/+][ \t]*#\d+|[ \t]+#\d+)*"
+
+
+def _posture_vocab():
+    """lint.py's posture closed sets — import, never restate (#445 / #413).
+
+    Lazy on purpose: lint does `import watch` at module top, so a watch-level
+    `import lint` during watch's own load would see lint mid-initialisation
+    and miss POSTURE_STOPS_*. Callers (and `__getattr__`) reach this only
+    after both modules have finished loading.
+    """
+    import lint
+    return lint
+
+
 # Design tokens + shared shell: every watch page renders through these,
 # so a redesign is a token/component edit, not a page-by-page hunt.
 STYLE = """<style>
@@ -1624,6 +1666,67 @@ STYLE = """<style>
     .runbar { display:none; }
     .runbarfill { transition:none; }
     .rundesc, .rundesc-text { transition:none; }
+  }
+  /* #445 three-axis posture — sibling of run-mode. Asymmetry is honest:
+     pace three chips, asking four (his dictation — do not compress),
+     delegation an integer target with a derived label. One shared 10s arm
+     covers a whole posture edit (one file, one event), not three ceremonies.
+     Active stop takes --accent (live loop control). Reduced motion hides
+     the bar, keeps the second-by-second text + same application time. */
+  .posture { margin:.55rem 0 .35rem; }
+  .posture-axes { display:flex; flex-direction:column; gap:.45rem;
+    margin:.2rem 0 .1rem; }
+  .paxis { min-width:0; }
+  .paxis-lab { color:var(--dimmer); font-size:.65rem; letter-spacing:.06em;
+    text-transform:uppercase; margin:0 0 .15rem; }
+  .paxis-chips { margin:0; }
+  .pchip { padding:.24rem .5rem; font-size:.7rem; }
+  .pchip .pchip-short { letter-spacing:0; }
+  .pstep { display:inline-flex; align-items:center; gap:.35rem;
+    margin:.05rem 0; }
+  .pstepbtn { background:none; border:1px solid var(--line); font:inherit;
+    color:var(--muted); padding:.18rem .55rem; cursor:pointer;
+    border-radius:var(--radius); line-height:1.2;
+    transition:color .3s ease, border-color .3s ease; }
+  .pstepbtn:hover { color:var(--accent); border-color:var(--border); }
+  .pstepbtn:disabled { color:var(--dimmer); cursor:default; opacity:.72; }
+  .pstepval { min-width:1.6rem; text-align:center; color:var(--lit);
+    font-variant-numeric:tabular-nums; font-size:.8rem; }
+  .psteplabel { color:var(--dim); font-size:.7rem; }
+  .pstephint { color:var(--dimmer); font-size:.65rem; margin:.1rem 0 0; }
+  .posture-src { color:var(--dimmer); font-size:.65rem; margin:.2rem 0 0; }
+  .posture-src.file { color:var(--dim); }
+  .parm { margin:.35rem 0 0; min-height:1.15rem; }
+  .pbar { height:3px; background:var(--line); border-radius:2px;
+          overflow:hidden; margin:0 0 .28rem; }
+  .pbar[hidden] { display:none; }
+  .pbarfill { height:100%; width:100%; background:var(--muted);
+    border-radius:2px;
+    transition:width 10s linear; transform-origin:left center; }
+  .pbarfill.snap { transition:none; }
+  .pcount { color:var(--dim); font-size:.7rem;
+            font-variant-numeric:tabular-nums; }
+  .pmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
+  .pmsg:empty { display:none; }
+  .pdesc { margin:.28rem 0 .12rem; min-height:0; max-width:100%;
+    font-size:.7rem; color:var(--dim); line-height:1.4;
+    overflow:hidden;
+    transition:opacity .42s ease, filter .42s ease,
+               transform .42s cubic-bezier(.32,.1,.2,1); }
+  .pdesc[hidden] { display:none; }
+  .pdesc.open { min-height:2.6em; }
+  .pdesc.pose { transition:none !important; opacity:0;
+    filter:blur(6px); transform:translateY(4px); }
+  .pdesc.depart { opacity:0; filter:blur(7px); transform:translateY(-4px); }
+  .pdesc-text { display:block; max-width:100%;
+    transition:opacity .34s ease, filter .34s ease,
+               transform .34s cubic-bezier(.32,.1,.2,1); }
+  .pdesc-text.out { opacity:0; filter:blur(6px); transform:translateY(-2px); }
+  .pdesc-text.in { opacity:0; filter:blur(4px); transform:translateY(2px); }
+  @media (prefers-reduced-motion: reduce) {
+    .pbar { display:none; }
+    .pbarfill { transition:none; }
+    .pdesc, .pdesc-text { transition:none; }
   }
   /* ── what he has sent, from this browser (#165) ───────────────────────
      The row is the page's standing shape for a list of small facts — the
@@ -3149,6 +3252,7 @@ function buildDashboard(d) {
   h += burnPanel(d);
   h += statusBlock(d.status, d.pending_handoffs);
   h += runModePicker(d);   // loop control, after status, before preference
+  h += posturePicker(d);   // #445 three-axis override of run-mode's posture
   h += tintPicker(d);      // last, and dim: a preference, not status
   return h + `</div>`;
 }
@@ -4764,6 +4868,623 @@ window.addEventListener('storage', e => {
   paintRunModeSelection(pending.mode, true);
   armRunModeUI(pending.mode, pending.until, runArmGen);
 });
+/* ── #445 three-axis posture controls ───────────────────────────────────
+   Sibling of run-mode. Authority is `.dreamwork/posture` when present;
+   otherwise the UI paints the derivation from run-mode (lint.derive_posture
+   via collect()). ONE shared 10s arm covers a whole posture edit — three
+   independent arms would be three ceremonies for one file. Reuses RUN_ARM_MS
+   rather than a second cooldown. Asymmetry is honest: pace three chips,
+   asking four (his dictation — never compress), delegation an integer
+   target with a derived label (own/assist/delegate) — a TARGET, never a cap.
+   One POST /posture; one events line only on a real change. */
+let postArmGen = 0;
+let postArmTimer = null;
+let postArmTick = null;
+let postArmShouldCommit = false;
+let postArmUntil = 0;
+// Draft of the whole triple while arming (any axis change resets the arm).
+let postDraft = null;
+function postPendingKey() {
+  return (data && data.target) ? ('dw:posture-pending:' + data.target) : null;
+}
+function postTabId() {
+  try {
+    let id = sessionStorage.getItem('dw:posture-tab');
+    if (!id) {
+      id = 't' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      sessionStorage.setItem('dw:posture-tab', id);
+    }
+    return id;
+  } catch (e) { return 'anon'; }
+}
+const POST_ORPHAN_GRACE_MS = 3000;
+function readPostPending() {
+  try {
+    const k = postPendingKey();
+    if (!k) return null;
+    const p = JSON.parse(localStorage.getItem(k) || 'null');
+    if (!p || typeof p.pace !== 'string' || typeof p.asking !== 'string')
+      return null;
+    if (POSTURE_STOPS_PACE.indexOf(p.pace) < 0) return null;
+    if (POSTURE_STOPS_ASKING.indexOf(p.asking) < 0) return null;
+    if (typeof p.delegation !== 'number' || p.delegation < 0) return null;
+    if (typeof p.until !== 'number') return null;
+    if (p.phase === 'cancel') {
+      if (Date.now() >= p.until) { localStorage.removeItem(k); return null; }
+      return p;
+    }
+    if (Date.now() >= p.until + POST_ORPHAN_GRACE_MS) {
+      localStorage.removeItem(k);
+      return null;
+    }
+    return p;
+  } catch (e) { return null; }
+}
+function pendingPostIsLive(p) {
+  return !!(p && !p.phase && typeof p.until === 'number' && Date.now() < p.until);
+}
+function writePostPending(draft, until, owner) {
+  try {
+    const k = postPendingKey();
+    if (!k) return;
+    localStorage.setItem(k, JSON.stringify({
+      pace: draft.pace, asking: draft.asking, delegation: draft.delegation,
+      until, owner: owner || postTabId(),
+    }));
+  } catch (e) {}
+}
+function writePostCancel(draft) {
+  try {
+    const k = postPendingKey();
+    if (!k) return;
+    localStorage.setItem(k, JSON.stringify({
+      pace: draft.pace, asking: draft.asking, delegation: draft.delegation,
+      phase: 'cancel', until: Date.now() + 800, owner: postTabId(),
+    }));
+  } catch (e) {}
+}
+function clearPostPending() {
+  try {
+    const k = postPendingKey();
+    if (k) localStorage.removeItem(k);
+  } catch (e) {}
+}
+function committedPosture(d) {
+  const p = (d && d.posture) || {};
+  const pace = POSTURE_STOPS_PACE.indexOf(p.pace) >= 0 ? p.pace : POSTURE_STOPS_PACE[0];
+  const asking = POSTURE_STOPS_ASKING.indexOf(p.asking) >= 0
+    ? p.asking : POSTURE_STOPS_ASKING[0];
+  let dlg = 0;
+  try { dlg = Math.max(0, parseInt(p.delegation, 10) || 0); } catch (e) { dlg = 0; }
+  return {
+    pace, asking, delegation: dlg,
+    source: p.source === 'file' ? 'file' : 'derived',
+    delegation_label: p.delegation_label || delegationLabel(dlg),
+  };
+}
+function delegationLabel(n) {
+  if (n <= 0) return 'own';
+  if (n === 1) return 'assist';
+  return 'delegate';
+}
+function paintPostureSelection(draft, snap) {
+  document.querySelectorAll('.sgroup.paxis-chips').forEach(g => {
+    const axis = g.dataset.axis;
+    g.querySelectorAll('.sgbtn').forEach(b => {
+      const on = b.dataset.stop === draft[axis];
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    slideIndicator(g, !!snap);
+  });
+  const val = document.getElementById('pstepval');
+  const lab = document.getElementById('psteplabel');
+  if (val) val.textContent = String(draft.delegation);
+  if (lab) {
+    const name = delegationLabel(draft.delegation);
+    lab.textContent = name;
+    lab.dataset.label = name;
+  }
+  const dec = document.getElementById('pstepdec');
+  const inc = document.getElementById('pstepinc');
+  if (dec) dec.disabled = draft.delegation <= 0;
+  if (inc) inc.disabled = draft.delegation >= POSTURE_DELEGATION_UI_MAX;
+  const src = document.getElementById('posture-src');
+  if (src) {
+    const live = pendingPostIsLive(readPostPending());
+    if (live) {
+      src.textContent = 'arming override…';
+      src.className = 'posture-src file';
+    } else if (draft.source === 'file') {
+      src.textContent = 'override · .dreamwork/posture';
+      src.className = 'posture-src file';
+    } else {
+      src.textContent = 'derived from run mode · pick a stop to override';
+      src.className = 'posture-src';
+    }
+  }
+}
+function clearPostArmUI() {
+  if (postArmTimer) { clearTimeout(postArmTimer); postArmTimer = null; }
+  if (postArmTick) { clearInterval(postArmTick); postArmTick = null; }
+  postArmUntil = 0;
+  const bar = document.getElementById('pbar');
+  const fill = document.getElementById('pbarfill');
+  const count = document.getElementById('pcount');
+  if (bar) bar.hidden = true;
+  if (fill) {
+    fill.classList.add('snap');
+    fill.style.width = '100%';
+  }
+  if (count) count.textContent = '';
+}
+function armPostureUI(draft, until, gen) {
+  if (postArmTimer) { clearTimeout(postArmTimer); postArmTimer = null; }
+  if (postArmTick) { clearInterval(postArmTick); postArmTick = null; }
+  const bar = document.getElementById('pbar');
+  const fill = document.getElementById('pbarfill');
+  const count = document.getElementById('pcount');
+  const rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const remainingMs = () => Math.max(0, until - Date.now());
+  const setCount = () => {
+    if (gen !== postArmGen) return;
+    if (!count) return;
+    const s = Math.ceil(remainingMs() / 1000);
+    const label = draft.pace + ' · ' + draft.asking + ' · ' + draft.delegation;
+    count.textContent = s > 0
+      ? `arms in ${s}s · ${label}`
+      : `applying ${label}…`;
+  };
+  setCount();
+  if (!rm && bar && fill) {
+    bar.hidden = false;
+    const left = remainingMs();
+    const frac = Math.max(0, Math.min(1, left / RUN_ARM_MS));
+    fill.classList.add('snap');
+    fill.style.transitionDuration = '0ms';
+    fill.style.width = (frac * 100) + '%';
+    void fill.offsetWidth;
+    fill.style.transitionDuration = Math.max(0, left) + 'ms';
+    fill.classList.remove('snap');
+    fill.style.width = '0%';
+  } else if (bar) {
+    bar.hidden = true;
+  }
+  postArmUntil = until;
+  postArmTick = setInterval(() => {
+    if (gen !== postArmGen) return;
+    setCount();
+    if (remainingMs() <= 0 && postArmTick) {
+      clearInterval(postArmTick); postArmTick = null;
+    }
+  }, 250);
+  postArmTimer = setTimeout(() => {
+    if (gen !== postArmGen) return;
+    if (postArmShouldCommit) commitPosture(draft, gen);
+    else {
+      clearPostArmUI();
+      setTimeout(() => {
+        if (gen !== postArmGen) return;
+        const p = readPostPending();
+        const cur = committedPosture(data);
+        if (p && !p.phase && p.pace === draft.pace
+            && p.asking === draft.asking
+            && p.delegation === draft.delegation
+            && (cur.pace !== draft.pace || cur.asking !== draft.asking
+                || cur.delegation !== draft.delegation
+                || cur.source !== 'file'))
+          commitPosture(draft, gen, { orphan: true });
+        else
+          paintPostureSelection(committedPosture(data), true);
+      }, 1500);
+    }
+  }, remainingMs());
+}
+function claimPostPending(draft, { orphan = false } = {}) {
+  try {
+    const k = postPendingKey();
+    if (!k) return false;
+    const raw = localStorage.getItem(k);
+    if (!raw) return false;
+    const p = JSON.parse(raw);
+    if (!p || p.phase === 'cancel') return false;
+    if (p.pace !== draft.pace || p.asking !== draft.asking
+        || p.delegation !== draft.delegation) return false;
+    if (p.owner && p.owner !== postTabId()) {
+      if (!orphan) return false;
+      if (typeof p.until === 'number' && Date.now() < p.until + 1000)
+        return false;
+    }
+    localStorage.removeItem(k);
+    return true;
+  } catch (e) { return false; }
+}
+async function commitPosture(draft, gen, opts) {
+  if (gen !== postArmGen) return;
+  const msg = document.getElementById('pmsg');
+  const orphan = !!(opts && opts.orphan);
+  if (!claimPostPending(draft, { orphan })) {
+    postArmShouldCommit = false;
+    clearPostArmUI();
+    paintPostureSelection(committedPosture(data), true);
+    return;
+  }
+  let ok = false;
+  let body = null;
+  try {
+    const res = await fetch('/posture', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pace: draft.pace,
+        asking: draft.asking,
+        delegation: draft.delegation,
+        from: location.pathname + location.search,
+        tab: postTabId(),
+        orphan: orphan || false,
+      }),
+    });
+    const rv = await writeVerdict(res);
+    ok = rv.landed;
+    body = rv;
+  } catch (e) { ok = false; }
+  if (gen !== postArmGen) return;
+  if (ok) {
+    postArmShouldCommit = false;
+    clearPostArmUI();
+    if (msg) msg.textContent = '';
+    if (data) {
+      data.posture = {
+        pace: draft.pace,
+        asking: draft.asking,
+        delegation: draft.delegation,
+        source: 'file',
+        delegation_label: delegationLabel(draft.delegation),
+      };
+    }
+    postDraft = null;
+    paintPostureSelection(committedPosture(data), true);
+  } else if (msg) {
+    msg.textContent = 'could not save the posture — the write was refused';
+    clearPostPending();
+    postArmShouldCommit = false;
+    clearPostArmUI();
+    postDraft = null;
+    paintPostureSelection(committedPosture(data), true);
+  }
+}
+function armPostureDraft(next) {
+  const msg = document.getElementById('pmsg');
+  if (msg) msg.textContent = '';
+  const cur = committedPosture(data);
+  // Re-selecting the fully committed triple cancels any pending arm.
+  if (next.pace === cur.pace && next.asking === cur.asking
+      && next.delegation === cur.delegation && cur.source === 'file') {
+    postArmGen++;
+    postArmShouldCommit = false;
+    writePostCancel(cur);
+    clearPostArmUI();
+    postDraft = null;
+    paintPostureSelection(cur, false);
+    setTimeout(() => {
+      const p = readPostPending();
+      if (p && p.phase === 'cancel') clearPostPending();
+    }, 100);
+    return;
+  }
+  const until = Date.now() + RUN_ARM_MS;
+  postArmGen++;
+  const gen = postArmGen;
+  postArmShouldCommit = true;
+  postDraft = {
+    pace: next.pace, asking: next.asking, delegation: next.delegation,
+    source: 'file',
+  };
+  writePostPending(postDraft, until, postTabId());
+  paintPostureSelection(postDraft, false);
+  armPostureUI(postDraft, until, gen);
+}
+function pickPostureAxis(axis, stop) {
+  if (axis === 'pace' && POSTURE_STOPS_PACE.indexOf(stop) < 0) return;
+  if (axis === 'asking' && POSTURE_STOPS_ASKING.indexOf(stop) < 0) return;
+  const base = postDraft || committedPosture(data);
+  const next = {
+    pace: base.pace, asking: base.asking, delegation: base.delegation,
+  };
+  next[axis] = stop;
+  armPostureDraft(next);
+}
+function stepPostureDelegation(delta) {
+  const base = postDraft || committedPosture(data);
+  let n = base.delegation + delta;
+  if (n < 0) n = 0;
+  if (n > POSTURE_DELEGATION_UI_MAX) n = POSTURE_DELEGATION_UI_MAX;
+  armPostureDraft({
+    pace: base.pace, asking: base.asking, delegation: n,
+  });
+}
+function posturePicker(d) {
+  const pending = readPostPending();
+  const arm = pendingPostIsLive(pending) ? pending : null;
+  const cur = arm
+    ? { pace: arm.pace, asking: arm.asking, delegation: arm.delegation,
+        source: 'file' }
+    : committedPosture(d);
+  if (arm) postDraft = cur;
+  const paceChips = POSTURE_STOPS_PACE.map(n =>
+    `<button type="button" role="radio" class="sgbtn pchip` +
+    `${n === cur.pace ? ' on' : ''}" data-stop="${esc(n)}"` +
+    ` aria-checked="${n === cur.pace ? 'true' : 'false'}"` +
+    ` aria-describedby="pdesc-text"` +
+    ` onclick="pickPostureAxis('pace','${esc(n)}')">${esc(n)}</button>`
+  ).join('');
+  // Asking keeps all FOUR stops — his dictation. The control is asymmetric
+  // on purpose; do not compress to three for tidy geometry.
+  const askChips = POSTURE_STOPS_ASKING.map(n =>
+    `<button type="button" role="radio" class="sgbtn pchip` +
+    `${n === cur.asking ? ' on' : ''}" data-stop="${esc(n)}"` +
+    ` aria-checked="${n === cur.asking ? 'true' : 'false'}"` +
+    ` aria-describedby="pdesc-text"` +
+    ` onclick="pickPostureAxis('asking','${esc(n)}')">${esc(n)}</button>`
+  ).join('');
+  const dlgLab = delegationLabel(cur.delegation);
+  const srcNote = cur.source === 'file'
+    ? 'override · .dreamwork/posture'
+    : 'derived from run mode · pick a stop to override';
+  return `<section class="posture" id="posture" aria-label="posture">` +
+    label('posture') +
+    `<div class="posture-axes">` +
+    `<div class="paxis" data-axis="pace">` +
+    `<div class="paxis-lab" id="pace-lab">pace</div>` +
+    `<div class="sgroup paxis-chips" role="radiogroup" data-axis="pace"` +
+    ` aria-labelledby="pace-lab">` +
+    `<div class="sgind"></div>${paceChips}</div></div>` +
+    `<div class="paxis" data-axis="asking">` +
+    `<div class="paxis-lab" id="asking-lab">asking</div>` +
+    `<div class="sgroup paxis-chips" role="radiogroup" data-axis="asking"` +
+    ` aria-labelledby="asking-lab">` +
+    `<div class="sgind"></div>${askChips}</div></div>` +
+    `<div class="paxis" data-axis="delegation">` +
+    `<div class="paxis-lab" id="dlg-lab">delegation · avg concurrency target</div>` +
+    `<div class="pstep" role="group" aria-labelledby="dlg-lab">` +
+    `<button type="button" class="pstepbtn" id="pstepdec"` +
+    ` aria-label="decrease delegation target"` +
+    ` onclick="stepPostureDelegation(-1)"` +
+    `${cur.delegation <= 0 ? ' disabled' : ''}>−</button>` +
+    `<span class="pstepval" id="pstepval" aria-live="polite">` +
+    `${esc(String(cur.delegation))}</span>` +
+    `<button type="button" class="pstepbtn" id="pstepinc"` +
+    ` aria-label="increase delegation target"` +
+    ` onclick="stepPostureDelegation(1)"` +
+    `${cur.delegation >= POSTURE_DELEGATION_UI_MAX ? ' disabled' : ''}>+</button>` +
+    `<span class="psteplabel" id="psteplabel" data-label="${esc(dlgLab)}">` +
+    `${esc(dlgLab)}</span></div>` +
+    `<div class="pstephint">target, not a cap · 0 is occasional, not forbidden</div>` +
+    `</div></div>` +
+    `<div class="pdesc" id="pdesc" role="tooltip" hidden aria-hidden="true">` +
+    `<span class="pdesc-text" id="pdesc-text"></span></div>` +
+    `<div class="posture-src${cur.source === 'file' ? ' file' : ''}"` +
+    ` id="posture-src">${esc(srcNote)}</div>` +
+    `<div class="parm" id="parm">` +
+    `<div class="pbar" id="pbar" hidden aria-hidden="true">` +
+    `<div class="pbarfill" id="pbarfill"></div></div>` +
+    `<span class="pcount" id="pcount" aria-live="polite"></span></div>` +
+    `<div class="pmsg" id="pmsg" aria-live="polite"></div></section>`;
+}
+/* Shared description for posture stops — presentation only; never arms. */
+let pdescKey = null;
+let pdescPendingKey = null;
+let pdescMorphGen = 0;
+let pdescHideTimer = null;
+let pdescMorphTimer = null;
+function pdescReduced() {
+  return matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+function postDescFor(axis, stop) {
+  if (axis === 'pace' && POSTURE_PACE_DESC[stop]) return POSTURE_PACE_DESC[stop];
+  if (axis === 'asking' && POSTURE_ASKING_DESC[stop]) return POSTURE_ASKING_DESC[stop];
+  if (axis === 'delegation' && POSTURE_DELEGATION_DESC[stop])
+    return POSTURE_DELEGATION_DESC[stop];
+  return '';
+}
+function hidePostDesc(immediate) {
+  const shell = document.getElementById('pdesc');
+  const text = document.getElementById('pdesc-text');
+  if (!shell) return;
+  if (pdescHideTimer) { clearTimeout(pdescHideTimer); pdescHideTimer = null; }
+  if (pdescMorphTimer) { clearTimeout(pdescMorphTimer); pdescMorphTimer = null; }
+  if (!shell.classList.contains('open') && shell.hidden) {
+    pdescKey = null; pdescPendingKey = null; return;
+  }
+  pdescMorphGen++;
+  pdescPendingKey = null;
+  const rm = !!immediate || pdescReduced();
+  const finish = () => {
+    shell.classList.remove('open', 'pose', 'depart');
+    shell.setAttribute('aria-hidden', 'true');
+    shell.hidden = true;
+    if (text) { text.textContent = ''; text.classList.remove('out', 'in'); }
+    pdescKey = null; pdescPendingKey = null;
+  };
+  if (rm) { finish(); return; }
+  shell.classList.add('depart');
+  const onEnd = e => {
+    if (e.target !== shell || e.propertyName !== 'opacity') return;
+    shell.removeEventListener('transitionend', onEnd);
+    finish();
+  };
+  shell.addEventListener('transitionend', onEnd);
+  pdescHideTimer = setTimeout(finish, 550);
+}
+function showPostDesc(axis, stop) {
+  const body = postDescFor(axis, stop);
+  if (!body) return;
+  const shell = document.getElementById('pdesc');
+  const text = document.getElementById('pdesc-text');
+  if (!shell || !text) return;
+  if (pdescHideTimer) { clearTimeout(pdescHideTimer); pdescHideTimer = null; }
+  shell.classList.remove('depart');
+  const key = axis + ':' + stop;
+  const rm = pdescReduced();
+  const first = !shell.classList.contains('open') || shell.hidden;
+  if (first) {
+    pdescMorphGen++;
+    if (pdescMorphTimer) { clearTimeout(pdescMorphTimer); pdescMorphTimer = null; }
+    text.classList.remove('out', 'in');
+    text.textContent = body;
+    shell.dataset.key = key;
+    shell.hidden = false;
+    shell.setAttribute('aria-hidden', 'false');
+    shell.classList.add('open');
+    if (rm) shell.classList.remove('pose');
+    else {
+      shell.classList.add('pose');
+      void shell.offsetWidth;
+      shell.classList.remove('pose');
+    }
+    pdescKey = key;
+    pdescPendingKey = null;
+    return;
+  }
+  if (key === pdescKey && !pdescPendingKey) return;
+  pdescPendingKey = key;
+  if (rm) {
+    text.textContent = body;
+    shell.dataset.key = key;
+    pdescKey = key;
+    pdescPendingKey = null;
+    return;
+  }
+  // dissolve then resolve — shell geometry fixed
+  text.classList.add('out');
+  const gen = ++pdescMorphGen;
+  if (pdescMorphTimer) clearTimeout(pdescMorphTimer);
+  pdescMorphTimer = setTimeout(() => {
+    if (gen !== pdescMorphGen) return;
+    const k = pdescPendingKey || pdescKey;
+    const [ax, st] = (k || '').split(':');
+    const b = postDescFor(ax, st);
+    if (!b) return;
+    text.textContent = b;
+    shell.dataset.key = k;
+    pdescKey = k;
+    pdescPendingKey = null;
+    text.classList.remove('out');
+    text.classList.add('in');
+    void text.offsetWidth;
+    text.classList.remove('in');
+  }, 340);
+}
+document.addEventListener('pointerover', e => {
+  const b = e.target && e.target.closest && e.target.closest('#posture .pchip');
+  if (!b) return;
+  const g = b.closest('.paxis-chips');
+  if (!g) return;
+  showPostDesc(g.dataset.axis, b.dataset.stop);
+});
+document.addEventListener('focusin', e => {
+  const b = e.target && e.target.closest && e.target.closest('#posture .pchip');
+  if (!b) return;
+  const g = b.closest('.paxis-chips');
+  if (!g) return;
+  showPostDesc(g.dataset.axis, b.dataset.stop);
+});
+document.addEventListener('pointerout', e => {
+  const sec = document.getElementById('posture');
+  if (!sec) return;
+  setTimeout(() => {
+    if (sec.matches(':hover')) return;
+    hidePostDesc();
+  }, 0);
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const shell = document.getElementById('pdesc');
+  if (!shell || !shell.classList.contains('open')) return;
+  hidePostDesc();
+});
+// Stepper hover: show the label's description (own/assist/delegate)
+document.addEventListener('pointerover', e => {
+  const lab = e.target && e.target.closest && e.target.closest('#psteplabel');
+  if (!lab) return;
+  showPostDesc('delegation', lab.dataset.label || lab.textContent);
+});
+function syncPostureFromData() {
+  const pending = readPostPending();
+  if (pending && pending.phase === 'cancel') {
+    if (document.getElementById('posture'))
+      paintPostureSelection({
+        pace: pending.pace, asking: pending.asking,
+        delegation: pending.delegation, source: 'file',
+      }, true);
+    postArmShouldCommit = false;
+    clearPostArmUI();
+    return;
+  }
+  if (pending && !pending.phase) {
+    if (pending.owner && pending.owner === postTabId())
+      postArmShouldCommit = true;
+    const draft = {
+      pace: pending.pace, asking: pending.asking,
+      delegation: pending.delegation, source: 'file',
+    };
+    postDraft = draft;
+    if (document.getElementById('posture'))
+      paintPostureSelection(draft, true);
+    if (pendingPostIsLive(pending)) {
+      postArmGen++;
+      armPostureUI(draft, pending.until, postArmGen);
+    } else if (postArmShouldCommit || !pending.owner
+               || pending.owner === postTabId()) {
+      postArmGen++;
+      commitPosture(draft, postArmGen, { orphan: !postArmShouldCommit });
+    } else {
+      postArmGen++;
+      const gen = postArmGen;
+      setTimeout(() => {
+        if (gen !== postArmGen) return;
+        const p = readPostPending();
+        const cur = committedPosture(data);
+        if (p && !p.phase
+            && (cur.pace !== p.pace || cur.asking !== p.asking
+                || cur.delegation !== p.delegation || cur.source !== 'file'))
+          commitPosture({
+            pace: p.pace, asking: p.asking, delegation: p.delegation,
+          }, gen, { orphan: true });
+      }, 200);
+    }
+    return;
+  }
+  postDraft = null;
+  if (document.getElementById('posture'))
+    paintPostureSelection(committedPosture(data), true);
+  postArmShouldCommit = false;
+  clearPostArmUI();
+}
+window.addEventListener('storage', e => {
+  if (!e.key || e.key.indexOf('dw:posture-pending:') !== 0) return;
+  if (!data || e.key !== postPendingKey()) return;
+  const pending = readPostPending();
+  postArmGen++;
+  if (!pending) {
+    postArmShouldCommit = false;
+    clearPostArmUI();
+    return;
+  }
+  if (pending.phase === 'cancel') {
+    postArmShouldCommit = false;
+    clearPostArmUI();
+    paintPostureSelection(committedPosture(data), true);
+    return;
+  }
+  postArmShouldCommit = false;
+  const draft = {
+    pace: pending.pace, asking: pending.asking,
+    delegation: pending.delegation, source: 'file',
+  };
+  postDraft = draft;
+  paintPostureSelection(draft, true);
+  armPostureUI(draft, pending.until, postArmGen);
+});
 /* Set from the route change, from the tick, AND from the 1s age sweep — the
    liveness word drifts with the wall clock and nothing on disk changes when
    a loop stops, so it needs the same seam the commit ages use (#132).
@@ -5086,6 +5807,8 @@ function setContent(html) {
   // #290: innerHTML destroys the arm bar nodes; resume shared pending (or
   // re-sync the committed selection) without inventing a new deadline.
   syncRunModeFromData();
+  // #445: same arm-resume idiom for the three-axis posture control.
+  syncPostureFromData();
   // every navigate and every non-review tick commits through here, so this is
   // the one place that puts a drafted answer back after the box is recreated —
   // the in-memory snapshot does the same for a tick, but only storage survives
@@ -7931,7 +8654,10 @@ def page_shell(title, body, js):
 # half (#86) rides /data.json because it is a property of the machine, and so
 # can change under a page that is already open. `COMMANDS` is the one table
 # everything downstream reads, and it is a `let` for exactly that reason.
-PAGE = page_shell('dreamwork watch', APP_BODY,
+# Template only — posture closed sets are injected by `_get_page()` on first
+# access so `import lint` (which does `import watch` at its top) never meets a
+# half-initialised lint. External code reads `watch.PAGE` via `__getattr__`.
+_PAGE_TEMPLATE = page_shell('dreamwork watch', APP_BODY,
                   "const CORE_COMMANDS = " + json.dumps(list(COMMANDS)) + ";\n"
                   + "let COMMANDS = CORE_COMMANDS.slice();\n"
                   + "const TINTS = " + json.dumps(TINTS) + ";\n"
@@ -7945,8 +8671,37 @@ PAGE = page_shell('dreamwork watch', APP_BODY,
                   + "const DEPLOY_WAIT_MS = " + json.dumps(DEPLOY_WAIT_MS) + ";\n"
                   + "const RUN_MODE_DESC = "
                   + json.dumps(RUN_MODE_DESC, ensure_ascii=True) + ";\n"
+                  + "/*__POSTURE_VOCAB__*/"
                   + COMPONENTS_JS + VIEWS_JS + FAVICON_JS + SHADER_JS
                   + ROUTER_JS + COMMAND_JS)
+
+_PAGE_CACHE = None
+
+
+def _get_page():
+    """HTML shell with posture vocab injected from lint (single source)."""
+    global _PAGE_CACHE
+    if _PAGE_CACHE is not None:
+        return _PAGE_CACHE
+    lint = _posture_vocab()
+    vocab = (
+        "const POSTURE_STOPS_PACE = "
+        + json.dumps(list(lint.POSTURE_STOPS_PACE)) + ";\n"
+        + "const POSTURE_STOPS_ASKING = "
+        + json.dumps(list(lint.POSTURE_STOPS_ASKING)) + ";\n"
+        + "const DELEGATION_POSTURES = "
+        + json.dumps(list(lint.DELEGATION_POSTURES)) + ";\n"
+        + "const POSTURE_DELEGATION_UI_MAX = "
+        + json.dumps(POSTURE_DELEGATION_UI_MAX) + ";\n"
+        + "const POSTURE_PACE_DESC = "
+        + json.dumps(POSTURE_PACE_DESC, ensure_ascii=True) + ";\n"
+        + "const POSTURE_ASKING_DESC = "
+        + json.dumps(POSTURE_ASKING_DESC, ensure_ascii=True) + ";\n"
+        + "const POSTURE_DELEGATION_DESC = "
+        + json.dumps(POSTURE_DELEGATION_DESC, ensure_ascii=True) + ";\n"
+    )
+    _PAGE_CACHE = _PAGE_TEMPLATE.replace("/*__POSTURE_VOCAB__*/", vocab)
+    return _PAGE_CACHE
 
 
 def age_str(seconds):
@@ -8448,9 +9203,10 @@ LEDGER_PATH = ".dreamwork/tasks.md"
 # and `**#392a**` (a sub-id) do too, because after the first `#\d+` the next
 # token must be `/`/`+` (with optional blanks) or a blank run and another `#`,
 # never a word, a comma, or a letter.
-IDS_ONLY_SPAN = r"#\d+(?:[ \t]*[/+][ \t]*#\d+|[ \t]+#\d+)*"
+# IDS_ONLY_SPAN is defined near RUN_MODES (above) so lint can import watch
+# mid-module for #445 posture vocab. Ledger uses that same name — one copy.
 # `lint.py`'s `LEDGER_ID` and `status_sync.py`'s `LEDGER_HEAD` are built from
-# `IDS_ONLY_SPAN` above and a test asserts all three heads share one pattern.
+# it and a test asserts all three heads share one pattern.
 # What counts as an entry is one rule and it must have one copy: the linter
 # already learned this the hard way (3073055), holding a wider copy of the
 # priority-marker rule than the parser and blessing three typos.
@@ -10059,6 +10815,10 @@ def collect(target):
         # loop also sees the change through watch-events.log when the mode
         # actually changes (identical final is silent).
         "run_mode": read_run_mode(target),
+        # #445 three-axis posture (pace × asking × delegation). Absent file
+        # → derived from run-mode via lint.derive_posture (single source).
+        # Rides the same /mtime poll so every open window converges.
+        "posture": resolve_posture(target),
         # plugin-contributed command kinds (#86), for the same reason and by
         # the same route. The core vocabulary is baked into the page shell
         # because it is a property of watch.py; this half is a property of the
@@ -10171,6 +10931,125 @@ def run_mode_line(mode, source=""):
     Pure; testable. one_line so free text cannot forge a second event.
     """
     return f"run-mode via watch{from_hint(source)}: {one_line(mode)}"
+
+
+def parse_posture_text(raw):
+    """Parse posture file body → dict of valid axes only.
+
+    Unknown axes ignored; invalid pace/asking dropped (lint is what fails
+    loud on hand-edits). Delegation must be a non-negative int. Empty /
+    comment-only → {}. Pure so tests need no disk.
+    """
+    out = {}
+    if not raw:
+        return out
+    lint = _posture_vocab()
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if ":" not in s:
+            continue
+        k, _, v = s.partition(":")
+        k, v = k.strip().lower(), v.strip()
+        if k == "pace" and v in lint.POSTURE_STOPS_PACE:
+            out["pace"] = v
+        elif k == "asking" and v in lint.POSTURE_STOPS_ASKING:
+            out["asking"] = v
+        elif k == "delegation":
+            try:
+                n = int(v)
+            except ValueError:
+                continue
+            if n >= 0:
+                out["delegation"] = n
+    return out
+
+
+def read_posture_file(target):
+    """Axes present and valid in `.dreamwork/posture`, or {} if absent."""
+    raw = read_text(os.path.join(target, ".dreamwork", "posture"))
+    if raw is None:
+        return {}
+    return parse_posture_text(raw)
+
+
+def resolve_posture(target):
+    """Effective three-axis posture for the dashboard and collect().
+
+    Absent file → derived from run-mode (lint.derive_posture). Present file
+    overlays any valid axes on that derivation. Always returns pace, asking,
+    delegation, source ('derived'|'file'), and delegation_label for display.
+    """
+    lint = _posture_vocab()
+    mode = read_run_mode(target)
+    base = lint.derive_posture(mode)
+    if base is None:
+        base = lint.derive_posture(RUN_MODE_DEFAULT) or {
+            "pace": "idle", "asking": "ask", "delegation": 0,
+        }
+    file_vals = read_posture_file(target)
+    out = {
+        "pace": base["pace"],
+        "asking": base["asking"],
+        "delegation": int(base["delegation"]),
+        "source": "derived",
+    }
+    if file_vals:
+        out["source"] = "file"
+        for k in ("pace", "asking", "delegation"):
+            if k in file_vals:
+                out[k] = file_vals[k]
+    out["delegation_label"] = lint.delegation_posture(int(out["delegation"]))
+    return out
+
+
+def write_posture(target, pace, asking, delegation):
+    """Persist a complete three-axis override. Returns False if refused."""
+    lint = _posture_vocab()
+    if pace not in lint.POSTURE_STOPS_PACE:
+        return False
+    if asking not in lint.POSTURE_STOPS_ASKING:
+        return False
+    try:
+        n = int(delegation)
+    except (TypeError, ValueError):
+        return False
+    if n < 0:
+        return False
+    path = os.path.join(target, ".dreamwork", "posture")
+    body = f"pace: {pace}\nasking: {asking}\ndelegation: {n}\n"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        atomic_write_text(path, body)
+        return True
+    except OSError:
+        return False
+
+
+def posture_line(pace, asking, delegation, source=""):
+    """Source-tagged watch-events.log line for a committed posture change.
+
+    Pure; one_line on each free field so nothing forges a second event.
+    """
+    return (
+        f"posture via watch{from_hint(source)}: "
+        f"pace={one_line(str(pace))} "
+        f"asking={one_line(str(asking))} "
+        f"delegation={one_line(str(delegation))}"
+    )
+
+
+def posture_equal(a, b):
+    """Whether two posture dicts name the same three-axis point."""
+    if not a or not b:
+        return False
+    try:
+        return (a.get("pace") == b.get("pace")
+                and a.get("asking") == b.get("asking")
+                and int(a.get("delegation")) == int(b.get("delegation")))
+    except (TypeError, ValueError):
+        return False
 
 
 def persistent_port(target):
@@ -10451,7 +11330,10 @@ def _expected_disconnect(exc):
 
 
 def make_handler(target, dev=False, authority=None, journal_shadow=True):
-    page = PAGE.replace("/*DEV*/false", "true") if dev else PAGE
+    # _get_page() injects posture vocab from lint on first access (lazy so
+    # lint↔watch import order never meets a half-initialised lint).
+    base_page = _get_page()
+    page = (base_page.replace("/*DEV*/false", "true") if dev else base_page)
 
     class Handler(http.server.BaseHTTPRequestHandler):
         # E2 shadow phase toggle: when True (production default) every
@@ -10777,13 +11659,15 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # configured trusted-LAN authority: /answer folds his answer;
             # /ask records his question for the dreamer; /comment threads his
             # note; /command records steering; /tint saves project colour;
-            # /run-mode commits main-dreamer pace (#290); /deploy runs
-            # `just deploy` (#462, loopback peer only, single-flight).
+            # /run-mode commits main-dreamer pace (#290); /posture commits
+            # the three-axis override (#445); /deploy runs `just deploy`
+            # (#462, loopback peer only, single-flight).
             # Answer/ask/comment/command wake the loop through
-            # watch-events.log; /run-mode does too, but only when the mode
-            # actually changes (identical final is silent). Tint and deploy
-            # do not wake: tint is presentation state; deploy restarts the
-            # dashboard process. Every other POST path is rejected.
+            # watch-events.log; /run-mode and /posture do too, but only when
+            # the value actually changes (identical final is silent). Tint
+            # and deploy do not wake: tint is presentation state; deploy
+            # restarts the dashboard process. Every other POST path is
+            # rejected.
             #
             # THE BODY IS READ AND PERSISTED HERE, BEFORE ANY OF THAT (#199).
             # One call site rather than four: a handler added later gets the
@@ -11045,6 +11929,69 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             self._send_receipt(json.dumps({"ok": True, "mode": mode, "changed": True}),
                        "application/json")
 
+        def _handle_posture(self):
+            """Three-axis posture override (#445).
+
+            Dual-write: authoritative gitignored `.dreamwork/posture` plus
+            one watch-events.log line when the three-axis point actually
+            changes. Identical final is 200 + no event. The client arms a
+            single shared 10s pending across all three axes (one file, one
+            ceremony) and only POSTs the final triple; this handler never
+            debounce-timer itself. Closed sets imported from lint — never
+            restated. Delegation is a non-negative integer TARGET, never a
+            cap (his #445 Q3).
+            """
+            req = self._read_json()
+            if req is None:
+                self._reject("malformed_json"); return
+            pace = str((req or {}).get("pace", "")).strip()
+            asking = str((req or {}).get("asking", "")).strip()
+            raw_dlg = (req or {}).get("delegation", "")
+            try:
+                delegation = int(raw_dlg)
+            except (TypeError, ValueError):
+                self._reject("domain_invalid"); return
+            lint = _posture_vocab()
+            if (pace not in lint.POSTURE_STOPS_PACE
+                    or asking not in lint.POSTURE_STOPS_ASKING):
+                self._reject("domain_invalid"); return
+            if delegation < 0:
+                self._reject("domain_invalid"); return
+            current = resolve_posture(target)
+            if (current.get("pace") == pace
+                    and current.get("asking") == asking
+                    and int(current.get("delegation", -1)) == delegation
+                    and current.get("source") == "file"):
+                # Identical file-backed final: silent. (Derived-source match
+                # still writes the file so an explicit override is durable.)
+                self._send_receipt(json.dumps({
+                    "ok": True, "pace": pace, "asking": asking,
+                    "delegation": delegation, "changed": False,
+                }), "application/json")
+                return
+            # Also silent when the on-disk file already holds exactly this
+            # triple (resolve may have filled source=file already above).
+            file_vals = read_posture_file(target)
+            if (file_vals.get("pace") == pace
+                    and file_vals.get("asking") == asking
+                    and file_vals.get("delegation") == delegation
+                    and len(file_vals) == 3):
+                self._send_receipt(json.dumps({
+                    "ok": True, "pace": pace, "asking": asking,
+                    "delegation": delegation, "changed": False,
+                }), "application/json")
+                return
+            if not write_posture(target, pace, asking, delegation):
+                self.send_error(500)
+                return
+            log_event(target, posture_line(pace, asking, delegation,
+                                           req.get("from")))
+            self._send_receipt(json.dumps({
+                "ok": True, "pace": pace, "asking": asking,
+                "delegation": delegation, "changed": True,
+                "delegation_label": lint.delegation_posture(delegation),
+            }), "application/json")
+
         def _handle_deploy(self):
             """Page-triggered `just deploy` (#462).
 
@@ -11085,6 +12032,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             "/command": _handle_command,
             "/tint": _handle_tint,
             "/run-mode": _handle_run_mode,
+            "/posture": _handle_posture,
             "/deploy": _handle_deploy,
         }
 
@@ -11147,6 +12095,21 @@ def main(argv=None):
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+
+
+# Module-level accessors for posture closed sets and PAGE. Bare names inside
+# this file go through `_posture_vocab()` / `_get_page()`; external code
+# (tests, lint) may use `watch.POSTURE_STOPS_PACE` and `watch.PAGE`.
+def __getattr__(name):
+    if name == "PAGE":
+        return _get_page()
+    if name in (
+        "POSTURE_STOPS_PACE", "POSTURE_STOPS_ASKING", "DELEGATION_POSTURES",
+        "POSTURE_AXES", "derive_posture", "delegation_posture",
+        "RUN_MODE_TO_POSTURE",
+    ):
+        return getattr(_posture_vocab(), name)
+    raise AttributeError(f"module 'watch' has no attribute {name!r}")
 
 
 if __name__ == "__main__":
