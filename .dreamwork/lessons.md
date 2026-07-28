@@ -2580,3 +2580,12 @@ this shape and convert opportunistically.)
   command. It is the `| tee` failure wearing the clothes of the fix. **Read the marker, never the
   job's status** — and note that the run had stopped at pytest, so the browser guards never ran
   and "the suite is green" was a claim nothing in that run supported.
+- **A harness-backgrounded dispatch can be stopped without the lane having failed, and the two
+  look identical if you only check whether the process is gone.** The `#411` lane was reported
+  `killed` about a minute in. Every failure signal I have learned to check said *nothing was
+  wrong*: the log held its 127 bytes of ordinary runner warning, no 401, no traceback, and the
+  worktree was untouched — which is precisely what a lane that never got started looks like, and
+  also what one that died looks like. **The discriminator is the log's CONTENT, not the process's
+  absence**, and it only exists because dispatches now write to a file instead of `/dev/null`.
+  Re-dispatched with `setsid … & disown` so the lane's lifetime is not the background task's;
+  `ps -o ppid=` confirms it reparented away from the harness. Check the parent, not just the pid.
