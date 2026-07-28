@@ -108,3 +108,32 @@ Say: the `review_artifact.py check` output verbatim; how you verified the above-
 viewports and what you measured; every number you re-derived with its command, flagging any that
 disagreed with the plan; your offline-clean count; whether you used a disclosure and how you handled
 its transition; and **your own visual verdict on whether the page passes the standard it argues for**.
+
+---
+
+## AMENDMENT, 2026-07-28 16:56 — you are `@glm52`, and you cannot see
+
+The first attempt at this brief went to `ccc @grok` and died on a 401 before writing anything. grok is
+the only runner here with vision and it is down (`#423`, and an ask is open for the human's credential).
+**You are `@glm52`. Two criteria change and nothing else does.**
+
+**Criterion 2 becomes fully mechanical, and it is better this way.** *"Visible without scrolling"* was
+going to be judged by eye. Instead **measure it**: drive a headless browser at 1280×900 and 390×844,
+and assert `getBoundingClientRect().bottom` of the ask element is **less than the viewport height**,
+printing both numbers. That is a real check where a visual verdict was an opinion — and the repo's
+existing guards in `dev/capture/*.mjs` show the idiom for driving a page and reading a rectangle.
+**Assert the precondition too:** that the page actually scrolls at that viewport
+(`scrollHeight > innerHeight`), because an above-the-fold assertion passes trivially on a page short
+enough to fit entirely, which would make the check meaningless rather than satisfied.
+
+**Criterion 8's `transitions.md` obligation is unchanged** — reduced-motion parity and the existing
+idiom still bind, and they are checkable without eyes.
+
+**Criterion 3's "your own visual verdict" is deferred, not dropped.** Say in your report: *"visual
+verdict owed — dispatched to `@glm52`, no vision"*. The coordinator will run a short seeing pass when
+grok returns. **Do not guess at how it looks.** A claim about appearance from a runner that cannot
+render is worse than an admission, and this repo has spent a day on figures asserted rather than
+observed.
+
+Everything else in the brief stands: the plan is the spec, re-derive every number, the page must pass
+its own Option A test, and the rejected option carries its completion number.
