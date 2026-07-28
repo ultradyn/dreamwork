@@ -18,6 +18,7 @@ Required: the task id (plain `#N`, sub-id `#Na`, or combined `#N/#M`), the
 append — never a deletion — so a folded hand-off is not flagged twice.
 
 ## Folded
+- **#331** → folded (2026-07-28 13:18): merged `cb476a7` into `## Recently landed`; gate re-run on the merged tree with an explicit pre-merge baseline — 19 ids recovered, landed 152→171, span core 4 copies → 1, all three heads pinned including `status_sync`
 - **#399** → folded (2026-07-28 12:24): merged `0595b13` into `## Recently landed`; burndown green on the merged tree, and the 3 remaining `just test` failures verified pre-existing on master; residual space-separated multi-id gap filed as #412
 - **#398** → folded (2026-07-28 09:31): folded into `## Recently landed` citing `9f2012a`; verification owed
 - **#397** → folded (2026-07-28 09:52): folded into `## Recently landed` citing `1b508b0`; recommendation (do-not-extract) accepted, no ruling requested, worktree alternative filed as #405

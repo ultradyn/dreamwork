@@ -1294,6 +1294,12 @@ GUARDS_LIST = re.compile(r'DEFAULT_GUARDS="([^"]*)"')
 # about a helper on every run until nobody reads the warning.
 NOT_GUARDS = frozenset({
     "report",                                    # shared exit-handler helper
+    # Shared DOM reader for the dock guards, not a guard: it asserts nothing and
+    # gates nothing. It exists because docktarget and noteprop both had to ask
+    # "is this still the question I docked?" of rendered text, and #385 put a live
+    # age inside that headline -- one copy of the strip-the-age rule, so the next
+    # thing added to a headline cannot red two guards again. (#413)
+    "dom",
     "beautycap", "cmdcap", "menucap", "reviewcap",  # capture tools, for looking
     "indtrace", "optrace", "rm-check2", "note82", "pip83", "worldspace",
     # A measurement, not a guard: it renders prototype geometry against a COPY of a

@@ -1497,61 +1497,6 @@ Next id: **414**
   `watch.py` being free; sequence after #336, which is his newer and higher steer
 
 
-- **#331** — One shared notion of "an ids-only bold span", instead of a fourth
-  one-separator patch · P2 · correctness/refactor · origin: **loop** · from #327's
-  drift review, challenged by the coordinator, then substantiated and re-measured ·
-  `LEDGER_COMBINED_MENTION` (`watch.py:6450`) is `\*\*(#\d+(?:/#\d+)*)\*\*` — `/`
-  only — while `_landed_ids` runs it over the WHOLE landed section because, in
-  `watch.py`'s own words (`6337-6339`), *"in `## Recently landed` an id is named
-  inline, in prose, so the entry-head shape does not apply there"* · so the landed
-  reader is already the prose/mention reader by design, and it declines these spans
-  purely on **joiner width** · **the number is 19 and nothing is recovered** —
-  corrected from the 12 this entry was originally filed with: `#77 #102 #104 #106
-  #107 #108 #109 #110 #116 #121 #123 #132 #141 #149 #151 #154 #157 #222 #223`, in
-  seven space-joined spans (`**#121 #123**` `**#104 #77**` `**#109 #116**`
-  `**#107 #108 #110**` `**#102 #106**` `**#141 #149**` `**#132 #151 #154**`) and one
-  `+`-joined (`**#157 + #222 + #223**`) · **coordinator-verified independently at
-  `04b9e00`**: all 19 are in NEITHER `parse_ledger` set, tested per id rather than by
-  re-deriving the spans — a first attempt to re-collect the spans with a quick bold
-  regex disagreed (it said 9), and per-id set membership is the authoritative test,
-  not any second regex · `#96` is NOT among them: its only span is `**#96 stage 1**`,
-  which is prose and must stay inert · net and gross are the SAME number, so the
-  entry's original "gross 19, some recovered from other single mentions" was wrong
-  and is withdrawn · **reported by #327 and NOT re-verified here** (it needs a walk
-  over 295 ledger revisions): none of the 19 was in a landed set at any revision, so
-  history does not recover them, and closing the gap moves ever-landed 117 → 136 ·
-  **the point of this task is NOT to add `[ /+]` to a third regex.** #301 widened the
-  landed reader, #315 widened the open readers and `LEDGER_ID` together, and this is
-  the same defect at a third door — three patches one separator at a time, each
-  correct, each leaving the next · so: one shared definition of an ids-only bold span
-  that every reader consumes, with the existing pinning test extended to hold them to
-  it, exactly as `test_ledger_entry_rule_has_exactly_one_copy` already holds two ·
-  **the hazard to respect**: `**#96 stage 1**` must stay INERT — a span is ids-only or
-  it is prose, and a widening that admits trailing words would start reading section
-  titles as task ids. Assert that at runtime, in the check, with `**#96 stage 1**` as
-  the fixture · red-prove the 19-id case against the real ledger before and after
-  · **re-verified by the coordinator 2026-07-28 12:34, on today's ledger**, after
-  independently rediscovering this gap while closing `#399b` and filing it as `#412` —
-  which is a **strict duplicate of this entry and is withdrawn**. #331 was already here,
-  already had the right number, and already named the right fix; I did not check the
-  ledger before filing. The re-derivation agrees with this entry exactly: all **19** ids
-  are in NEITHER set today, and the list matches character for character
-  · **today's numbers**, which have moved since this was filed: landed reads **151** and a
-  correct fix gives **170**. Derive them again rather than trusting these — `#399` and
-  `#399b` both changed the landed reader after this entry was written
-  · **the third door is now confirmed by measurement, not just predicted.** The same
-  `(?:/#\d+)*` sub-pattern is copied in three files: `watch.LEDGER_COMBINED_MENTION`,
-  `lint.LEDGER_ID` and `status_sync.LEDGER_HEAD` (the last is new since this entry —
-  the fourth door arrived while the task sat open, which is the entry's own argument
-  made for it)
-  · **red-prove both directions**, from #412: a space-joined AND a `+`-joined span land
-  every id they name, AND `**#96 stage 1**` still lands nothing. One direction alone
-  passes for a pattern that is simply too greedy
-  · when it lands, `file-formats.md` should **state the joined form explicitly** — it
-  documents `**#5/#6**` and says history packs several landings to a line, both true,
-  so there is no lie to fix, but a reader can only infer the space and `+` forms
-  · related: **#412**
-
 - **#333** — `states.mjs` is the SIXTH holder of the forbidden count idiom, and
   unconverted · **P2** (raised from P3) · correctness · origin: **loop** · #327
   filed this as a docs-wording slip; measuring it made it a real one · the count
@@ -3085,6 +3030,77 @@ Next id: **414**
   **blocked**: human pick
 
 ## Recently landed
+- **#331** — One shared notion of "an ids-only bold span", instead of a fourth
+  one-separator patch · P2 · correctness/refactor · origin: **loop** · from #327's
+  drift review, challenged by the coordinator, then substantiated and re-measured ·
+  `LEDGER_COMBINED_MENTION` (`watch.py:6450`) is `\*\*(#\d+(?:/#\d+)*)\*\*` — `/`
+  only — while `_landed_ids` runs it over the WHOLE landed section because, in
+  `watch.py`'s own words (`6337-6339`), *"in `## Recently landed` an id is named
+  inline, in prose, so the entry-head shape does not apply there"* · so the landed
+  reader is already the prose/mention reader by design, and it declines these spans
+  purely on **joiner width** · **the number is 19 and nothing is recovered** —
+  corrected from the 12 this entry was originally filed with: `#77 #102 #104 #106
+  #107 #108 #109 #110 #116 #121 #123 #132 #141 #149 #151 #154 #157 #222 #223`, in
+  seven space-joined spans (`**#121 #123**` `**#104 #77**` `**#109 #116**`
+  `**#107 #108 #110**` `**#102 #106**` `**#141 #149**` `**#132 #151 #154**`) and one
+  `+`-joined (`**#157 + #222 + #223**`) · **coordinator-verified independently at
+  `04b9e00`**: all 19 are in NEITHER `parse_ledger` set, tested per id rather than by
+  re-deriving the spans — a first attempt to re-collect the spans with a quick bold
+  regex disagreed (it said 9), and per-id set membership is the authoritative test,
+  not any second regex · `#96` is NOT among them: its only span is `**#96 stage 1**`,
+  which is prose and must stay inert · net and gross are the SAME number, so the
+  entry's original "gross 19, some recovered from other single mentions" was wrong
+  and is withdrawn · **reported by #327 and NOT re-verified here** (it needs a walk
+  over 295 ledger revisions): none of the 19 was in a landed set at any revision, so
+  history does not recover them, and closing the gap moves ever-landed 117 → 136 ·
+  **the point of this task is NOT to add `[ /+]` to a third regex.** #301 widened the
+  landed reader, #315 widened the open readers and `LEDGER_ID` together, and this is
+  the same defect at a third door — three patches one separator at a time, each
+  correct, each leaving the next · so: one shared definition of an ids-only bold span
+  that every reader consumes, with the existing pinning test extended to hold them to
+  it, exactly as `test_ledger_entry_rule_has_exactly_one_copy` already holds two ·
+  **the hazard to respect**: `**#96 stage 1**` must stay INERT — a span is ids-only or
+  it is prose, and a widening that admits trailing words would start reading section
+  titles as task ids. Assert that at runtime, in the check, with `**#96 stage 1**` as
+  the fixture · red-prove the 19-id case against the real ledger before and after
+  · **re-verified by the coordinator 2026-07-28 12:34, on today's ledger**, after
+  independently rediscovering this gap while closing `#399b` and filing it as `#412` —
+  which is a **strict duplicate of this entry and is withdrawn**. #331 was already here,
+  already had the right number, and already named the right fix; I did not check the
+  ledger before filing. The re-derivation agrees with this entry exactly: all **19** ids
+  are in NEITHER set today, and the list matches character for character
+  · **today's numbers**, which have moved since this was filed: landed reads **151** and a
+  correct fix gives **170**. Derive them again rather than trusting these — `#399` and
+  `#399b` both changed the landed reader after this entry was written
+  · **the third door is now confirmed by measurement, not just predicted.** The same
+  `(?:/#\d+)*` sub-pattern is copied in three files: `watch.LEDGER_COMBINED_MENTION`,
+  `lint.LEDGER_ID` and `status_sync.LEDGER_HEAD` (the last is new since this entry —
+  the fourth door arrived while the task sat open, which is the entry's own argument
+  made for it)
+  · **red-prove both directions**, from #412: a space-joined AND a `+`-joined span land
+  every id they name, AND `**#96 stage 1**` still lands nothing. One direction alone
+  passes for a pattern that is simply too greedy
+  · when it lands, `file-formats.md` should **state the joined form explicitly** — it
+  documents `**#5/#6**` and says history packs several landings to a line, both true,
+  so there is no lie to fix, but a reader can only infer the space and `+` forms
+  · related: **#412**
+  · **LANDED `ddc4e3e`, merged `cb476a7` (2026-07-28 13:18), by a `ccc @glm52` lane.** One
+  `IDS_ONLY_SPAN` in `watch.py`; `watch.LEDGER_ENTRY` and `watch.LEDGER_COMBINED_MENTION` are
+  built from it, and `lint.LEDGER_ID` / `status_sync.LEDGER_HEAD` import it instead of
+  restating it — so there is no fourth copy to write wrong. `grep -rnF '#\d+(?:'` across the
+  three files: **1 hit**, was 4
+  · **verified by the coordinator against a gate built and red-proved BEFORE the lane reported**
+  (narrow ⇒ 19-id/arithmetic/one-definition/pinning fail; deliberately over-wide ⇒ all six
+  inert-span checks and the newline check fail), then re-run on the **merged** tree with the
+  pre-merge sha as an explicit baseline: all 19 recovered, landed **152 → 171** exactly, open
+  unchanged at 136, disjoint, every live prose span inert, all three heads the identical
+  compiled rule — including `status_sync`, which nothing pinned before
+  · **the lane pushed back and was right.** It refused my brief's stale claim that three guard
+  failures were pre-existing on `master`, proved they reproduce at its parent `97becd9` and
+  were fixed on `master` by `7007d5b`+`e15b0c0`, and declined to chase them. I had moved the
+  baseline under it mid-run; that is recorded as a lesson
+  · residual: none. `#412` was withdrawn into this task and is closed with it
+
 - **#412** — withdrawn as a duplicate of `#331`, not implemented · P2 · parser/burndown ·
   origin: **loop** · filed 2026-07-28 12:0x while closing `#399b`, withdrawn 12:34 the same hour
   · I found the space-separated gap by running #399b's merge gate against the lane's tip, measured
