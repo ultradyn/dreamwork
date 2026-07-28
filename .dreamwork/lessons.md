@@ -2968,3 +2968,21 @@ this shape and convert opportunistically.)
   `202` + `Location` + a receipt id present in all three journal tables. Rule:
   **assert the responder's identity, not just that something responded** — and treat
   a subprocess you never confirmed came up as a subprocess that did not.
+
+- **A fault-injection fake pins the failure it was written for, and goes blind to
+  every other one.** `health.mjs` carries exactly the checks this repo would want
+  for `#263`'s `E5` defect — *"never shows the answered state for a write that did
+  not land"* and *"keeps his text, which is now the only copy of it"* — and both
+  were **green with the defect fully present**. Its `route.fulfill` hardcodes
+  `status: 409`, so it only ever drives a refusal where `res.ok` is **false**. `E5`
+  made a refusal arrive as `202`, where `res.ok` is **true**, and the checks were
+  structurally incapable of seeing it. **Evidence:** the lane ran all 16 checks
+  before touching anything and reported GREEN, and the coordinator had separately
+  measured the real behaviour over HTTP — `POST /ask {"nope": …}` → `202 {"ok":
+  false, "rejected": true}` — with `watch.py:3109` clearing the box on `res.ok`
+  alone. Two checks named for the exact invariant, both passing over its violation.
+  The rule that follows is not "write more checks": it is that a fake's **fixed
+  parameter is part of the check's scope**, so a check driven by one hardcoded
+  status asserts something narrower than its name claims. When a contract changes
+  which status carries a failure, every fake pinned to the old one silently stops
+  covering it — and nothing in the guard output says so.
