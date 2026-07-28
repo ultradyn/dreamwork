@@ -2,29 +2,27 @@
 
 ## Open
 
-### P1 · 2026-07-29 02:42 — #445: ratify the four attention levels, and how they sit beside the run modes
+- **P1 · 2026-07-29 02:42 — #445: ratify the four attention levels, and how they sit beside the run modes**
+  **Artifact:** `.dreamwork/review/445-attention-modes.html` — context, the problem, the IGC, and a
+  recommendation. Design only; nothing is built.
 
-**Artifact:** `.dreamwork/review/445-attention-modes.html` — context, the problem, the IGC, and a
-recommendation. Design only; nothing is built.
+  Your dictation gave four levels for how much the loop asks you. Designing them turned up a structural
+  finding worth your ruling before anything is built: **`run-mode` today carries three independent decisions
+  in one word.** The decisive evidence is this session — you told me *"be lackadaisical, but also use
+  sub-agents"* in prose, twice, because no control could express it. One enum cannot; the design resolves to
+  **three axes: pace × asking × delegation**.
 
-Your dictation gave four levels for how much the loop asks you. Designing them turned up a structural
-finding worth your ruling before anything is built: **`run-mode` today carries three independent decisions
-in one word.** The decisive evidence is this session — you told me *"be lackadaisical, but also use
-sub-agents"* in prose, twice, because no control could express it. One enum cannot; the design resolves to
-**three axes: pace × asking × delegation**.
+  **Sub-decisions:** `Q1`, `Q2`, `Q3`
 
-**Sub-decisions:** `Q1`, `Q2`, `Q3`
+  - **Q1** — ratify three orthogonal axes (pace × asking × delegation)? Or collapse them differently.
+  - **Q2** — your four level names as the closed set, and **where the asking axis lives**: a sibling file (no
+    migration) — recommended — or widen `run-mode` into a multi-field file (needs a `Migration:`).
+  - **Q3** — the subagent target and policy: an integer target `>= 1`, warn on `0`, hard-invalid below `0`, plus
+    free text, read every tick like `run-mode`. Or amend.
 
-- **Q1** — ratify three orthogonal axes (pace × asking × delegation)? Or collapse them differently.
-- **Q2** — your four level names as the closed set, and **where the asking axis lives**: a sibling file (no
-  migration) — recommended — or widen `run-mode` into a multi-field file (needs a `Migration:`).
-- **Q3** — the subagent target and policy: an integer target `>= 1`, warn on `0`, hard-invalid below `0`, plus
-  free text, read every tick like `run-mode`. Or amend.
-
-**If you say nothing:** nothing is built and nothing blocks — the design sits in
-`.dreamwork/docs/plans/attention-modes.md` and the loop keeps its current posture, which is your prose
-instruction rather than a control. `#443` stays open, since it is the same knot.
-
+  **If you say nothing:** nothing is built and nothing blocks — the design sits in
+  `.dreamwork/docs/plans/attention-modes.md` and the loop keeps its current posture, which is your prose
+  instruction rather than a control. `#443` stays open, since it is the same knot.
 
 - **P2 · 2026-07-28 — #417: four ways to put commits-per-period on the burndown, priced. Which, if any?**
   **Ask: `C1`, `C2`, `C3`, `C4`, or `none` — and `rec` takes C4.**
