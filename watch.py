@@ -10983,6 +10983,103 @@ def collect(target):
     }
 
 
+# /summary.json — a redacted, whitelist view of collect(), for a consumer
+# that is not the loopback dashboard (Q5; plans/hub-public-auth.md §11.2,
+# plans/hub-ssh-auth.md). collect() feeds /data.json, which serves
+# DREAMWORK.md / questions.md / lessons.md IN FULL plus parsed entries,
+# transcripts and status.json — unfit to expose. This replaces it for any
+# non-local consumer (dreamhub reading across projects, or a later
+# authenticated remote reader). It is designed safe-to-expose over a link
+# today, so a future bind ruling cannot re-open the leak by accident.
+#
+# REDACTION IS A WHITELIST, NEVER A DENYLIST. summary() names the fields
+# that may leave and pulls ONLY those; it never iterates collect()'s keys,
+# so a field collect() grows tomorrow cannot appear here unless it was
+# deliberately named. Whether a new collect() key may leave is a decision
+# recorded in SUMMARY_ALLOWED or SUMMARY_DENIED below — and the partition
+# test (TestSummary.test_summary_classifies_every_collect_key) is what
+# notices that the decision got made, because a summary that quietly passed
+# a new field through is the exact bug this endpoint exists to prevent.
+
+# collect() keys that may NOT leave, each excluded for a stated reason. The
+# set is not "everything else" — it is exhaustive (see the partition test),
+# so a brand-new collect() key is in NEITHER set and reds until classified.
+SUMMARY_DENIED = frozenset({
+    "target",            # absolute machine path — the operator's home dir
+    "linkable_paths",    # every target-relative file path (repo structure)
+    "dreams",            # agent transcripts — his words + working state
+    "dreams_archive",    # the same, archived
+    "files",             # full DREAMWORK/questions/lessons text (container;
+                         #   one safe scalar is pulled out under skill_version)
+    "reviews",           # design artifacts carrying his decision context
+    "questions_open",    # parsed question bodies — his words
+    "answered_entries",  # parsed answered-question bodies — his words
+    "answers_open",      # his questions to the loop — his words
+    "answers_answered",  # the same, answered
+    "pending_handoffs",  # landed-work records — what the loop is doing
+    "status",            # status.json: queue, agent ownership, pid, deploy
+    "git",               # recent commit subjects — operational, sometimes his
+    "deployed",          # serving state + machine-local paths/notes
+    "plugin_commands",   # machine UI vocabulary (prose desc/label), not a
+                         #   project-status summary, and reveals the plugin set
+})
+
+
+def _summary_posture(v):
+    # Only the four enum/int axes; delegation_label is display chrome and a
+    # fifth key posture might grow never rides out unreviewed.
+    return {k: v.get(k) for k in ("pace", "asking", "delegation", "source")}
+
+
+def _summary_skill_identity(v):
+    return {k: v.get(k) for k in ("commit", "skill_version")}
+
+
+def _summary_burndown_counts(v):
+    # The three scalar counts only — buckets is a working-cadence time
+    # series, state/note/from/to carry machine-local error prose and paths.
+    return {k: v.get(k) for k in ("open", "arrived", "landed")}
+
+
+# collect() keys that MAY leave, each as (output_name, projection). A
+# projection of None copies the value verbatim (the partition test vouches
+# for its shape); a callable reaches into an otherwise-unsafe container or
+# copies only named sub-keys, so a field the source grows never rides out
+# unreviewed. `files` is allowed as a SOURCE only to extract the one safe
+# skill-version scalar — the full document bodies never leave.
+SUMMARY_ALLOWED = {
+    "generated": ("generated", None),
+    "open_questions": ("open_questions", None),
+    "questions_health": ("questions_health", None),
+    "answers_health": ("answers_health", None),
+    "tint": ("tint", None),
+    "run_mode": ("run_mode", None),
+    "posture": ("posture", _summary_posture),
+    "skill_identity": ("skill_identity", _summary_skill_identity),
+    "burndown": ("burndown_counts", _summary_burndown_counts),
+    "files": ("skill_version",
+              lambda v: v.get("skill-version") if isinstance(v, dict) else None),
+}
+
+
+def summary(target):
+    """Whitelist view of collect() served at /summary.json (Q5).
+
+    Pulls ONLY the source keys named in SUMMARY_ALLOWED, projecting each to
+    its output name; it never iterates collect()'s keys, so a field
+    collect() grows cannot appear here unless it was deliberately named.
+    Whether a new collect() key is allowed to leave is a decision recorded
+    in SUMMARY_ALLOWED or SUMMARY_DENIED, and the partition test enforces
+    that the decision gets made rather than defaulted to "passes through".
+    """
+    full = collect(target)
+    out = {}
+    for source, (name, project) in SUMMARY_ALLOWED.items():
+        out[name] = (full[source] if project is None
+                     else project(full[source]))
+    return out
+
+
 def watched_mtime(target):
     """The newest thing under the target, as one number the client polls.
 
@@ -11712,6 +11809,16 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 self._send(page, "text/html")
             elif parsed.path == "/data.json":
                 self._send(json.dumps(collect(target)), "application/json")
+            elif parsed.path == "/summary.json":
+                # Q5: a whitelist view of collect() (summary()), for any
+                # non-loopback consumer. /data.json serves full documents and
+                # parsed entries; this serves only the counts, health and
+                # operational metadata named in SUMMARY_ALLOWED. It does NOT
+                # widen authority: it rides the same _preflight() gate as
+                # every other GET, and where it may listen is a separate
+                # ruling (#275/Q3) he has not given. Adding a read endpoint
+                # changes no bind address, host allowlist or flag.
+                self._send(json.dumps(summary(target)), "application/json")
             elif parsed.path == "/mtime":
                 # "<generation> <watched-mtime>": generation gates a full
                 # reload (new server build), mtime gates a data re-render.

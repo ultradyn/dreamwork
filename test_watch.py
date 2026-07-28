@@ -2957,6 +2957,180 @@ class TestCollector(unittest.TestCase):
             self.assertTrue(3000 <= p1 < 63000)
 
 
+class TestSummary(unittest.TestCase):
+    # /summary.json — a redacted, whitelist view of collect() (Q5; the
+    # hub-public-auth.md §11.2 / hub-ssh-auth.md deliverable). The full
+    # /data.json serves DREAMWORK.md, questions.md and lessons.md IN FULL
+    # plus parsed entries, transcripts and status.json; this drops all of
+    # that and keeps only counts, health and operational metadata, for any
+    # non-loopback consumer. Redaction is a whitelist: summary() names the
+    # fields that may leave and never iterates collect()'s keys, so a field
+    # collect() grows cannot appear unless deliberately classified.
+
+    EXPECTED = {"generated", "open_questions", "questions_health",
+                "answers_health", "tint", "run_mode", "posture",
+                "skill_identity", "burndown_counts", "skill_version"}
+
+    def test_summary_serves_only_the_whitelisted_fields(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            s = watch.summary(d)
+            self.assertEqual(set(s), self.EXPECTED)
+
+    def test_summary_classifies_every_collect_key(self):
+        # THE HEART (#275/Q5): a summary built by naming what may leave is
+        # only safe if a NEW collect() key cannot pass through unreviewed.
+        # So every collect() key must be classified into exactly one of
+        # ALLOWED (source, projected) or DENIED. A brand-new key lands in
+        # NEITHER and this reds — forcing a deliberate decision rather than
+        # a silent default to "exposed". This is the test that protects
+        # against the field added in three weeks, not today's field list.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            keys = set(watch.collect(d))
+        allowed = set(watch.SUMMARY_ALLOWED)
+        denied = set(watch.SUMMARY_DENIED)
+        # precondition — there ARE keys to classify, else this is vacuous
+        self.assertGreater(len(keys), 10)
+        unclassified = keys - allowed - denied
+        self.assertEqual(unclassified, set(),
+                         "new collect() key(s) not classified "
+                         "allowed-or-denied: %s" % sorted(unclassified))
+        # `files` is the one key allowed ONLY as a source projected to the
+        # skill_version scalar — its full document bodies are denied. A key
+        # that is BOTH allowed-source and denied is permitted only when the
+        # allowed entry projects it to a safe scalar; assert that is `files`.
+        overlap = allowed & denied
+        self.assertEqual(overlap, {"files"},
+                         "only `files` may be an allowed source AND denied; "
+                         "a new overlap must prove its projection is safe, "
+                         "got: %s" % sorted(overlap))
+
+    def test_summary_drops_every_denied_field(self):
+        # Each denied key is absent from summary() by NAME. This enumerates
+        # today's denied set (the partition test above protects growth); the
+        # value here is naming what must never appear, per field.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            s = watch.summary(d)
+            for key in ("target", "linkable_paths", "dreams", "dreams_archive",
+                        "files", "reviews", "questions_open",
+                        "answered_entries", "answers_open", "answers_answered",
+                        "pending_handoffs", "status", "git", "deployed",
+                        "plugin_commands"):
+                self.assertNotIn(key, s,
+                                 "denied collect() key leaked into summary: "
+                                 + key)
+
+    def test_summary_drops_transcripts_and_full_documents(self):
+        # #275 brief: transcripts are OUT, stated explicitly. A derived leak
+        # string — taken from the REAL questions.md body at runtime — must
+        # be absent from summary(); and the PRECONDITION that it really is in
+        # collect()/data.json is asserted, or the absence is vacuous (the
+        # exact hollowness that cost this repo two green red-runs). The probe
+        # is DERIVED, never hand-written: a planted "secret" proves only that
+        # the planted string is absent.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            full = watch.collect(d)
+            s = watch.summary(d)
+            # derive a distinctive phrase from the real questions.md body —
+            # the first non-heading prose line, which carries the human's words
+            questions_body = full["files"]["questions.md"]
+            probe = next((ln.strip() for ln in questions_body.splitlines()
+                          if ln.strip() and not ln.lstrip().startswith("#")
+                          and len(ln.strip()) > 8), None)
+            self.assertIsNotNone(probe, "fixture has no usable prose probe")
+            # precondition: the probe really is in the full collect payload
+            blob_full = json.dumps(full)
+            self.assertIn(probe, blob_full)   # present in /data.json
+            blob = json.dumps(s)
+            # the leak: a value in summary() contains content only the full
+            # document carries
+            self.assertNotIn(probe, blob,
+                             "summary.json leaked content from questions.md")
+            # transcripts: dreams content is his words; assert its absence.
+            # derive the probe from the real dream transcript too.
+            self.assertGreaterEqual(len(full["dreams"]), 1)
+            dream_probe = full["dreams"][0]["content"].strip()
+            self.assertGreater(len(dream_probe), 8)   # precondition: real text
+            self.assertIn(dream_probe, blob_full)
+            self.assertNotIn(dream_probe, blob,
+                             "summary.json leaked dream transcript content")
+
+    def test_summary_count_and_health_fields_are_values_not_prose(self):
+        # The fields that DO leave must be safe by shape, not by assumption.
+        # open_questions is a count; the two health fields are enum tokens;
+        # burndown_counts is three ints. None carry his words.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            s = watch.summary(d)
+            self.assertIsInstance(s["open_questions"], int)
+            self.assertIn(s["questions_health"],
+                          {"ok", "missing", "unreadable", "empty"})
+            self.assertIn(s["answers_health"],
+                          {"ok", "missing", "unreadable", "empty"})
+            self.assertEqual(set(s["posture"]),
+                             {"pace", "asking", "delegation", "source"})
+            self.assertEqual(set(s["skill_identity"]),
+                             {"commit", "skill_version"})
+            self.assertEqual(set(s["burndown_counts"]),
+                             {"open", "arrived", "landed"})
+            for k in ("open", "arrived", "landed"):
+                self.assertIsInstance(s["burndown_counts"][k], int)
+
+
+class TestSummaryRoute(unittest.TestCase):
+    # /summary.json the route: served by watch.py's GET, behind the SAME
+    # _preflight() authority gate as every other GET. Adding the read
+    # endpoint changes no bind address, host allowlist or flag.
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.target = make_target(self.tmp.name)
+        probe = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+        port = probe.server_address[1]
+        probe.server_close()
+        self.authority = watch.RequestAuthority(
+            ["allowed.test", "127.0.0.1"], port)
+        self.server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", port),
+            watch.make_handler(self.target, authority=self.authority))
+        threading.Thread(target=self.server.serve_forever,
+                         daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{port}"
+        self.host = f"allowed.test:{port}"
+
+    def _request(self, path, *, host=None):
+        headers = {}
+        if host is not None:
+            headers["Host"] = host
+        req = urllib.request.Request(self.base + path, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=5) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read()
+
+    def test_summary_route_is_served_as_json(self):
+        status, body = self._request("/summary.json", host=self.host)
+        self.assertEqual(status, 200)
+        s = json.loads(body)
+        self.assertEqual(set(s), TestSummary.EXPECTED)
+
+    def test_summary_route_is_gated_by_host_authority(self):
+        # A foreign Host is refused exactly as /data.json is — this endpoint
+        # adds a read surface, never a wider authority.
+        self.assertEqual(
+            self._request("/summary.json", host="evil.test")[0], 421)
+        self.assertEqual(
+            self._request("/summary.json", host=self.host)[0], 200)
+
+
 class TestAppShell(unittest.TestCase):
     """The single-document router: /, /questions and /file all serve the
     one shell (deep links render client-side), and /filedata backs the
