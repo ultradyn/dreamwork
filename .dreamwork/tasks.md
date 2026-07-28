@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **418**
+Next id: **419**
 
 ## Open
 
@@ -1315,6 +1315,7 @@ Next id: **418**
   is the eight red-first fixtures, which can be written before any ruling because each one
   names the production line that must change for it to fail; do not create the schema to
   run them
+  · related: **#418**
 
 - **#345** — `gitrow`'s motion assertions red under load, so `just test` is not
   reliably repeatable · P2 · verification reliability · origin: **loop** · found
@@ -1749,6 +1750,7 @@ Next id: **418**
   · **#342 is the same work from the other end**: his batched-delivery idea needs a
   read cursor, and #263's journal IS that cursor — so E1 unblocks the delivery mode
   he asked about five minutes earlier, and the two steers should not be built twice
+  · related: **#418**
 
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch
@@ -1990,6 +1992,7 @@ Next id: **418**
   that is what `?t=<id>` parses to; the plan's §9.1 case 22 holds it · blocked-behind: #327's
   drift re-review lands first, since #301/#315 moved the readers this depends on
   · in progress
+  · related: **#418**
 
 - **#280** — Design selectable preserved background shaders · P2 · visual/settings
   design · origin: **human** · **human via watch 18:12** · keep the current
@@ -3066,6 +3069,28 @@ Next id: **418**
   · needs `watch-design.md` updated in the same commit as any code, per the styleguide contract
   · related: **#367**
 
+- **#418** — a `#264` in any rendered text should be hoverable for its info and clickable to its
+  task page · P2 · Web UI/cross-cutting · origin: **human** · **human via watch `add-idea`
+  2026-07-28 15:03** · verbatim: *"for after sqlite and `/tasks` impl, when dreamwork tasks are
+  referenced like `#264`, it'd be great if I could hover to get their info (and click to open
+  their task page)"*
+  · **he stated the dependency himself**, which is the useful part: this is *after* `#294`'s
+  SQLite cutover and `#281`'s `/tasks` page. Both are prerequisites for the honest reason — the
+  hover needs **single-entry fetch by id**, which is exactly the read verb `#346` is designing
+  (`?t=<id>`), and building it against a Markdown re-parse would be a second implementation
+  thrown away at cutover
+  · scope is wider than it first reads: task ids appear in the ledger panel, question bodies,
+  hand-off lines, commit subjects on the git row, and review artifacts. **A treatment that only
+  works in one surface is the wrong answer** — the id is a cross-cutting reference type, so this
+  wants one linkifier consumed everywhere, in the spirit of `#331`'s one-span rule
+  · the hover surface itself is a solved problem here and must not be re-solved: `#300` landed one
+  geometrically stable popover that morphs its content between triggers, and `transitions.md`
+  governs its arrival and departure. **Reuse `#rundesc`'s idiom rather than authoring a second**
+  · open question for whoever takes it, worth settling before any code: what does hover show for
+  an id that does not resolve — a landed task, a withdrawn one, a typo? `#402`'s lesson applies:
+  *"I could not tell"* and *"nothing"* must not render the same
+  · related: **#294, #346, #281, #300**
+
 ## Recently landed
 
 - **#408** — `CLAUDE.md` documents a `GIT_OPTIONAL_LOCKS` mitigation that is **not in place**, so
@@ -4114,6 +4139,7 @@ Next id: **418**
   lanes held guard ports. `rundesc` is green twice isolated, `lint.py` clean, `test_watch.py::TestRunMode`
   10/10, and I have since run the whole pytest half at 910 passed — so the untested remainder is
   the guard sweep, not the code
+  · related: **#418**
 
 - **#386** — `gitrow` opens 0px under load: the gesture does not run, and the motion check
   correctly says nothing moved · P3 · guards/reliability · origin: **loop** · 15m ·
