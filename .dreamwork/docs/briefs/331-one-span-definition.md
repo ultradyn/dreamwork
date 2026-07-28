@@ -153,7 +153,7 @@ comma case; and anything you are unsure of.
 
 ---
 
-## Addendum, 12:47 — measured after dispatch, while red-proving the merge gate
+## Addendum, 12:40 — measured after dispatch, while red-proving the merge gate
 
 I built the acceptance gate before you report (deliberately: on the last task that ordering
 found a residual neither the lane nor the guard surfaced) and red-proved it in both

@@ -25,8 +25,8 @@
   `~/.local/state/cc-w/ccc/runs/<run>/output.txt` is **zero bytes** for a 401. I now capture
   stderr on every dispatch, which is how this got diagnosed at all.
 
-  **Follow-up 2026-07-28 12:58 — re-measured, and now it needs a decision from you, not a
-  refresh.** Still 401, verbatim the same error, so this is stable and not a blip. I have read
+  **Follow-up 2026-07-28 12:43 — re-measured, and now it needs a decision from you, not a
+  refresh.** Still 401 (probed 12:41), verbatim the same error, so this is stable and not a blip. I have read
   your `~/.config/ccc/config.toml` and the cause is exact: `[aliases.grok]` is
   `runner = "grok"`, `model = "grok-4.5"` with **no provider**, so it authenticates to xAI
   directly with the expired key; `[aliases.glm52]` is the **same runner binary** with
