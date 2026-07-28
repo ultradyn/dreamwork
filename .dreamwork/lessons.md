@@ -2564,3 +2564,19 @@ this shape and convert opportunistically.)
   hold shared-baseline fixes until the lane lands, or post the correction the moment you commit
   — and expect it to be unread, so also plan to explain the discrepancy at review rather than
   treating the lane's confusion as a defect in the lane.
+- **A review gate whose baseline is a moving ref expires at exactly the merge it was built for.**
+  `gate331.py` compared the candidate against `master`. That was right for four runs and wrong on
+  the fifth: once `wt/331` merged, candidate *was* baseline, so "the 19 are lost at baseline"
+  failed and the arithmetic compared 171 against 171+19. It printed **GATE FAILED** while every
+  substantive check beside it passed — a true statement pointing the wrong way, which is worse
+  than a plain error because the instinct is to distrust the merge. **Name the baseline as an
+  explicit argument and pass the pre-merge sha**; a gate is a two-ended measurement and only one
+  end may float.
+- **The line that captures an exit code can be the line that discards it.** I ran
+  `just test > "$LOG" 2>&1; echo "EXIT=$?" >> "$LOG"` in the background. The harness reported the
+  job as *"exit code 0"* and it was not wrong — the compound command's status is `echo`'s, and
+  `echo` succeeded. The real code was **1**, preserved only inside the log by the marker. My first
+  reading blamed the harness; the truth is that appending the marker makes the marker the last
+  command. It is the `| tee` failure wearing the clothes of the fix. **Read the marker, never the
+  job's status** — and note that the run had stopped at pytest, so the browser guards never ran
+  and "the suite is green" was a claim nothing in that run supported.
