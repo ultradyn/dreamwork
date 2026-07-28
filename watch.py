@@ -366,7 +366,7 @@ STYLE = """<style>
      to an inline box; the separator belongs to the crumb that FOLLOWS, so a
      departing crumb takes no punctuation with it. */
   #chrome { position:relative; }
-  .crumb, .htitle { display:inline-block;
+  .crumb, .htitle, .hproj { display:inline-block;
     transition:transform .85s cubic-bezier(.32,.1,.2,1),
                opacity .55s ease, filter .55s ease; }
   /* non-breaking spaces: an inline-block collapses the leading/trailing
@@ -485,7 +485,7 @@ STYLE = """<style>
   .fmodes .fmode:focus-visible { outline:1px solid var(--accent);
                                  outline-offset:2px; }
   @media (prefers-reduced-motion: reduce) {
-    .crumb, .htitle, .fcopy { transition:none; }
+    .crumb, .htitle, .hproj, .fcopy { transition:none; }
   }
   .label { color:var(--dim); text-transform:uppercase; letter-spacing:.08em;
            font-size:.7rem; margin:var(--space) 0 .5rem; }
@@ -1312,8 +1312,23 @@ STYLE = """<style>
      and what `/file`'s copy button describes itself by. It carries NO weight
      or size of its own: emphasis on this page is luminance (see Type &
      geometry), and a UA-bold 2em heading would say "more important" twice
-     while changing the metrics the + is centred against (#123). */
-  .htitle { display:inline; font:inherit; margin:0; }
+     while changing the metrics the + is centred against (#123).
+
+     flex:1 soaks the free space so #hproj can sit on the bar's trailing
+     edge without the route word's length shoving it (#172). */
+  .htitle { display:inline; font:inherit; margin:0;
+            flex:1 1 auto; min-width:0; }
+  /* Project identity in the title bar (#172). The route word varies; the
+     project does not — so the name is pinned to the TRAILING edge of the
+     bar (margin-left:auto), not placed beside the route where a longer
+     word would slide it. Basename only in the bar; the full path rides
+     `title=` because two checkouts can share a basename (see popoutShell
+     and the openPopout comment) and a full path in an h1 competes with
+     the subject the way #284 already ruled against for file paths. Same
+     size and --bright as the heading: this is identity, not a breadcrumb. */
+  .hproj { flex:none; margin-left:auto; color:var(--bright); font:inherit;
+           white-space:nowrap; max-width:42%; overflow:hidden;
+           text-overflow:ellipsis; }
   /* The opener hangs in the gutter LEFT of the reading column, so its offset
      is only affordable when the gutter exists. It does not on the review
      view's 1360px column, or in any narrow window — the button was sliced in
@@ -1616,7 +1631,8 @@ APP_BODY = """<canvas id="dreambg"></canvas>
 <div id="chrome">
  <header class="htitlebar"><button id="cmdplus" type="button"
    title="command the dream" aria-label="open command palette">+</button>
-  <h1 class="htitle" id="htitle"></h1></header>
+  <h1 class="htitle" id="htitle"></h1>
+  <span class="hproj" id="hproj" hidden></span></header>
  <div id="meta"></div>
  <div class="cmdmsg fmsg" id="fmsg" aria-live="polite"></div>
 </div>
@@ -5457,6 +5473,32 @@ function renderChrome(v, d, snap) {
   if (titleEl.innerHTML !== nextTitle) {
     titleEl.innerHTML = nextTitle;
     if (snap && !rmr) { titleEl.classList.add('dreamin'); arrived.push(titleEl); }
+  }
+  /* #172 — project identity, edge-pinned. The basename is invariant across
+     routes, so it is a SURVIVOR: rewrite only when the name itself changes
+     (a different target would be a full reload anyway). First appearance
+     rides the same enter-snap as the route word; a route change that leaves
+     the name alone does not re-dream it. Full path is the title= tooltip —
+     not in the bar — for popoutShell's reason (two checkouts, one basename). */
+  const projEl = document.getElementById('hproj');
+  if (projEl) {
+    const name = projectName(d);
+    const path = (d && d.target) || '';
+    if (name) {
+      if (projEl.textContent !== name) {
+        projEl.textContent = name;
+        if (snap && !rmr) {
+          projEl.classList.add('dreamin');
+          arrived.push(projEl);
+        }
+      }
+      if (projEl.getAttribute('title') !== path) projEl.setAttribute('title', path);
+      projEl.hidden = false;
+    } else {
+      projEl.textContent = '';
+      projEl.removeAttribute('title');
+      projEl.hidden = true;
+    }
   }
   // #252: the switch's state and whether it slides. Before `ages()` only
   // because both are "finish the row"; it needs the row's final geometry,
