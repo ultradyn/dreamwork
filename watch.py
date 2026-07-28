@@ -7533,11 +7533,29 @@ def serving_cached(target):
 # day of a loop that has been alive for a day would be a claim about the
 # future dressed as a measurement.
 LEDGER_PATH = ".dreamwork/tasks.md"
-# `lint.py`'s LEDGER_ID, VERBATIM, and a test asserts the two stay identical.
+# #331: ONE definition of an ids-only bold span, consumed by every reader.
+# The ledger joins several ids inside one bold span three ways — `**#5/#6**`,
+# `**#121 #123**`, `**#157 + #222 + #223**` — and `/` only used to be parsed,
+# so the space- and `+`-joined spans were invisible to every reader (19 ids
+# lost). This core is the single place that decides what "ids only" means;
+# `LEDGER_ENTRY` (head) and `LEDGER_COMBINED_MENTION` (anywhere) are built
+# from it, and `lint.LEDGER_ID` / `status_sync.LEDGER_HEAD` import and reuse
+# it rather than restating it — a fourth reader cannot be written wrong.
+#
+# Joiners are `[ \t]`, never `\s`: the ledger is line-structured, and a span
+# that could run across a newline would be a new bug in place of the old one.
+# Comma is NOT a joiner: `**#392, #401, #405**` is a prose list, not three ids,
+# and it stays inert at the pattern level — `**#96 stage 1**` (a section title)
+# and `**#392a**` (a sub-id) do too, because after the first `#\d+` the next
+# token must be `/`/`+` (with optional blanks) or a blank run and another `#`,
+# never a word, a comma, or a letter.
+IDS_ONLY_SPAN = r"#\d+(?:[ \t]*[/+][ \t]*#\d+|[ \t]+#\d+)*"
+# `lint.py`'s `LEDGER_ID` and `status_sync.py`'s `LEDGER_HEAD` are built from
+# `IDS_ONLY_SPAN` above and a test asserts all three heads share one pattern.
 # What counts as an entry is one rule and it must have one copy: the linter
-# already learned this the hard way today (3073055), holding a wider copy of
-# the priority-marker rule than the parser and blessing three typos.
-LEDGER_ENTRY = re.compile(r"^- \*\*(#\d+(?:/#\d+)*)\*\*", re.M)
+# already learned this the hard way (3073055), holding a wider copy of the
+# priority-marker rule than the parser and blessing three typos.
+LEDGER_ENTRY = re.compile(rf"^- \*\*({IDS_ONLY_SPAN})\*\*", re.M)
 # Pre-#399 landed readers: bare bold spans anywhere in `## Recently landed`.
 # Kept for regression reconstructions in tests; `_landed_ids` no longer uses
 # them (#399). A bare `**#N**` is a REFERENCE (related:, filed-as, prose).
@@ -7565,7 +7583,9 @@ LEDGER_MENTION = re.compile(r"\*\*#(\d+)\*\*")
 # historical column-0 inline form lands while a `related:` marker (#367) does
 # not. #399 had retired it as too wide; the body+field guard is what makes the
 # width safe, and the discriminating-pair reds prove neither side slides.
-LEDGER_COMBINED_MENTION = re.compile(r"\*\*(#\d+(?:/#\d+)*)\*\*")
+# Built from IDS_ONLY_SPAN (#331): the mention form is the same ids-only span
+# as the head form, just unanchored, so one core defines both.
+LEDGER_COMBINED_MENTION = re.compile(rf"\*\*({IDS_ONLY_SPAN})\*\*")
 # #399b: `·`-fields whose bold id is a REFERENCE, not a landing. `related:`
 # (lint.check_related_markers requires it; #367) and `filed as` (a filing
 # cross-ref) never land. `also-landed:` is listed so the generic mention pass
