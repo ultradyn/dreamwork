@@ -1,6 +1,27 @@
 # Questions for the human
 
 ## Open
+- **P1 · 2026-07-29 — #288 contain vs detect: is the wall worth wiring, or are the positive invariants the whole defence?**
+
+  Artifact: `.dreamwork/review/288-containment.html` · Spec:
+  `.dreamwork/docs/plans/subagent-containment.md` · Prototype:
+  `dev/containment_falsify.py`
+
+  **A (rec):** ship the positive PID/health invariants as the whole defence —
+  `GENERATION` ≥ snapshot mtime **and** snapshot bytes == HEAD bytes, sampled each
+  tick, with a subagent's "PASS" downgraded to *suspect* on contradiction. That
+  catches the `#288` class completely, within a tick, at negligible cost.
+
+  **B:** spend the integration cost to route tool calls through a real wall —
+  knowing it is `#358`-shaped, because the harness owns both the API call and tool
+  execution in one process, so a wall around the harness contains the API key too.
+
+  The wall itself works: all three incident vectors HELD at ~22ms per contained
+  process on this host. The finding is that **the seam to cut is not ours** — so
+  this is a build-authorisation question, not a feasibility one.
+
+  Accepted answers: `rec` · `A` · `B` · free text · `not yet`.
+
 - **P1 · 2026-07-29 — #269 draft durability: two calls (C1/C2)**
 
   Artifact: `.dreamwork/review/269-draft-durability.html` · Spec:

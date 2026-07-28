@@ -2015,6 +2015,12 @@ Next id: **447**
   design rather than after it, because if the head/body fork is buildable it changes what
   the sandbox here needs to contain
   · related: **#443**
+  · **DESIGN + FALSIFICATION PROTOTYPE LANDED `c5510c7` `1eb2393` (2026-07-29 00:14, lane `wt/containment`, merge `9f42e4e`), no deployment, nothing on the host changed.** All three incident vectors **HELD** against a `bwrap` namespace, at **~22ms per contained process**: signalling a process it did not create (PID namespace hid the victim), reading a path it was not given (tmpfs mask), and reaching a host listener (net namespace — the victim's accept count stayed 0). It spawned its own victims and killed only those, by exact pid, never `pkill -f`.
+  · **the lane caught a born-hollow check in its own prototype, which is the finding to keep.** Its first run marked a *refused* network connection as BROKEN because it grepped for `"CONNECTED"` in a Python traceback — and the traceback prints the failing source line, which contains that literal. Exactly the trap this repo documents. Fixed by deriving the verdict from the victim's accept count (host ground truth), then **red-proved separately**: the same attack *without* containment flips to BROKEN (accept 0→1), so the detector is not hollow.
+  · **and it found the seam is not ours to cut**, which is the strategically important part: the harness owns both the API call and tool execution **in one process**, so a wall around the harness contains the API key too. Routing a real subagent's tool calls through the wall therefore needs harness-specific interception or `#358`'s head/body split — build authorisation he has not given. Reporting that rather than half-building it is the correct answer.
+  · **the contain-vs-detect call is his and is now on his desk** with an artifact: **A** ship the positive PID/health invariants as the whole defence (catches the `#288` class within a tick) and leave the wall prototyped-not-wired; **B** pay the integration cost knowing it is `#358`-shaped.
+  · **blocked-on: **human** (A vs B)**
+
 - **#287** — Design a Matt Pocock skills bridge plugin for Dreamwork · P1 ·
   plugin/research/design · origin: **human** · **human via coordinator
   2026-07-26 19:56** · research the installed first-party
