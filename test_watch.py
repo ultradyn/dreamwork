@@ -202,10 +202,10 @@ class TestRequestAuthorityHTTP(unittest.TestCase):
         payload = {"kind": "add-idea", "text": "trusted LAN words"}
         self.assertEqual(self.request(
             "/command", host=self.host, origin=f"http://{self.host}",
-            data=payload)[0], 200)
+            data=payload)[0], 202)
         self.assertEqual(self.request(
             "/command", host=self.host,
-            data={"kind": "add-idea", "text": "CLI words"})[0], 200)
+            data={"kind": "add-idea", "text": "CLI words"})[0], 202)
         with open(os.path.join(self.target, ".dreamwork", "submissions.log"),
                   encoding="utf-8") as handle:
             rows = [json.loads(line) for line in handle]
@@ -1821,7 +1821,9 @@ class TestCollector(unittest.TestCase):
         self.assertIn("/answers", watch.PAGE)
         self.assertIn("postJSON('/ask'", watch.PAGE)
         self.assertNotIn("fetch('/ask'", watch.PAGE)
-        self.assertIn('self.path == "/ask"', inspect.getsource(watch.make_handler))
+        # /ask is dispatched as a write route (WRITE_ROUTE_HANDLERS keys).
+        self.assertIn('"/ask": _handle_ask',
+                      inspect.getsource(watch.make_handler))
 
     def test_answers_askbox_ctrl_enter_and_open_visibility_contract(self):
         # #292: Ctrl/Cmd+Enter must reach the ask form, not only cards/composer.
@@ -4111,7 +4113,7 @@ class TestAppShell(unittest.TestCase):
             base = self._serve(d)
             status, _ = self._post(base + "/ask", {
                 "question": "Can this wake the dreamer?", "from": "/answers"})
-            self.assertEqual(status, 200)
+            self.assertEqual(status, 202)
             with open(apath, encoding="utf-8") as f:
                 text = f.read()
             self.assertEqual(len(watch.parse_open_answers(text)), 1)
@@ -4678,7 +4680,7 @@ class TestAppShell(unittest.TestCase):
             status, _ = self._post(base + "/comment", {
                 "question": "A real open question?", "comment": "a note",
                 "section": "Open"})
-            self.assertEqual(status, 200)
+            self.assertEqual(status, 202)
             qpath = os.path.join(d, ".dreamwork", "questions.md")
             with open(qpath) as f:
                 # #109: the tag names the AUTHOR, not just the channel
@@ -4697,14 +4699,14 @@ class TestAppShell(unittest.TestCase):
             base = self._serve(make_target(d))
             status, _ = self._post(base + "/command",
                                    {"kind": "add-idea", "text": "try X"})
-            self.assertEqual(status, 200)
+            self.assertEqual(status, 202)
             log = os.path.join(d, ".dreamwork", "watch-events.log")
             with open(log) as f:
                 self.assertIn("command via watch: add-idea: try X", f.read())
             # do-next may omit text
             status, _ = self._post(base + "/command",
                                    {"kind": "do-next", "text": ""})
-            self.assertEqual(status, 200)
+            self.assertEqual(status, 202)
             # unknown kind, and a text-requiring kind with no text, are 400
             for bad in ({"kind": "nope", "text": "x"},
                         {"kind": "do-now", "text": ""}):
@@ -4842,10 +4844,10 @@ class TestSubmissionLog(unittest.TestCase):
             self.assertEqual(
                 self._post(base + "/answer",
                            {"question": "A real open question?",
-                            "answer": "yes"}), 200)
+                            "answer": "yes"}), 202)
             self.assertEqual(
                 self._post(base + "/command",
-                           {"kind": "add-idea", "text": "try X"}), 200)
+                           {"kind": "add-idea", "text": "try X"}), 202)
             self.assertEqual(self._post(base + "/tint", {"tint": "nope"}), 400)
             self.assertEqual([ln["path"] for ln in self._lines(d)],
                              ["/answer", "/command", "/tint"])
@@ -5311,16 +5313,16 @@ class TestRunMode(unittest.TestCase):
             base = self._serve(make_target(d))
             self.assertEqual(
                 self._post(base + "/run-mode",
-                           {"mode": "hot", "from": "/"}), 200)
+                           {"mode": "hot", "from": "/"}), 202)
             self.assertEqual(watch.read_run_mode(d), "hot")
             log = os.path.join(d, ".dreamwork", "watch-events.log")
             with open(log, encoding="utf-8") as f:
                 lines = [ln for ln in f if "run-mode" in ln]
             self.assertEqual(len(lines), 1)
             self.assertIn("run-mode via watch [/]: hot", lines[0])
-            # identical final is idempotent: 200, no second event, file holds
+            # identical final is idempotent: 202, no second event, file holds
             self.assertEqual(
-                self._post(base + "/run-mode", {"mode": "hot"}), 200)
+                self._post(base + "/run-mode", {"mode": "hot"}), 202)
             with open(log, encoding="utf-8") as f:
                 lines = [ln for ln in f if "run-mode" in ln]
             self.assertEqual(len(lines), 1)
@@ -5390,7 +5392,7 @@ class TestRunMode(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             base = self._serve(make_target(d))
             self.assertEqual(
-                self._post(base + "/run-mode", {"mode": "assisted"}), 200)
+                self._post(base + "/run-mode", {"mode": "assisted"}), 202)
             paths = [ln["path"] for ln in self._lines(d)]
             self.assertIn("/run-mode", paths)
 

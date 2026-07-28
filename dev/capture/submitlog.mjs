@@ -162,7 +162,7 @@ const GOOD = `an answer that lands ${TOKEN('GOOD')}`;
   const md = await questionsMd();
   notes.push(`accepted answer: client saw ${r.status}`);
   // the TOKEN in questions.md, the whole string in the log — the file wraps
-  ok('the accepted answer landed', r.status === 200 && md.includes(TOKEN('GOOD')));
+  ok('the accepted answer landed', r.status === 202 && md.includes(TOKEN('GOOD')));
   ok('...and is in the log as well as in questions.md',
      !!log && log.some(l => l.path === '/answer' &&
                             JSON.stringify(l.req || '').includes(GOOD)));
