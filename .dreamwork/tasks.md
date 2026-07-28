@@ -131,6 +131,29 @@ Next id: **414**
   · **`watch.py` is owned by the `#399b` lane right now** — do not dispatch this into that file
   until it merges
   · related: **#399, #340**
+  · **MEASURED 13:08 before writing any brief, and the recorded fix direction is INSUFFICIENT
+  as stated.** `RESOLVED_AT` is `\A\s*→[^:]*?\((\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*\)`
+  — it begins with **`\A`**, so `.search` is **identical** to `.match` here and swapping them
+  changes nothing. This entry says the fix "must be line-anchored, not `.search`", which is right
+  about the destination and would still have sent a lane to a no-op if it read the second half as
+  the instruction. The real edit is `\A` → `^` **with `re.M`**, then `.search`
+  · **the population, derived not assumed**: 49 answered entries, **6** had no date. Under a
+  line-anchored pattern **2 recover** — `#233 LAN binding` (2026-07-26 17:49) and `#229 threaded
+  topic chats` (2026-07-26 17:11), both of which carry the marker on the SECOND body line because
+  an artifact link precedes it — and **0 of the 43 that already have a date change**. That last
+  number is the one that makes the change safe, and it is the one a lane will not think to check
+  · **a third was not a parser bug at all and is already fixed** (`46de3da`): his 05:43 entry
+  had its title truncated after `journal:` and its closing `**` dropped while I folded it, so the
+  `**` opening his answer closed the title and swallowed the whole `→ answered (…)` marker into
+  it. The date was not lost, it was **misfiled**, and the page was showing a question he never
+  asked. So the count is now **5** with no date
+  · **the remaining 5 are honest** and must stay `None`: `#194` and the dreamhub-URL-space ask
+  were *withdrawn* (no answer, so no timestamp), and the rest predate the marker convention.
+  **A fix that gives them a date is wrong** — this is why `answered_at`'s docstring says it never
+  guesses, and any lane touching it should be told so
+  · so the brief writes itself and it is small: change the anchor, keep the never-guess rule, and
+  **assert both directions** — the 2 recover AND the 43 are byte-identical before and after.
+  Derive the 43 at runtime; a literal is a check with an expiry date
 
 - **#410** — `ccc @grok` is 401 and has been silently eating lanes: two died at three seconds
   with nothing in the tree · **P1** · dogfood/orchestration · origin: **loop** · found by capturing
