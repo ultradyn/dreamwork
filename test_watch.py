@@ -3624,11 +3624,24 @@ class TestAppShell(unittest.TestCase):
         import datetime, re
         text = open('.dreamwork/questions.md', encoding='utf-8').read()
         qs = watch.parse_open_questions(text)
-        # an open entry whose date is NOT today, so it renders a day figure
+        # A DATE-ONLY open entry whose date is NOT today, so it renders a day
+        # figure. Selecting on date-only is the point: since #392b a title may
+        # legally carry ` HH:MM`, and a selector that took any dated entry then
+        # asserted date-only turned every new timed ask into a failure of this
+        # test (it did, at 00:57, on a `#449` entry — the assertion below was
+        # right and the selection was wrong). The precondition it protects is
+        # now that a date-only entry EXISTS at all, asserted after the search.
         today = datetime.date.today().isoformat()
-        q = next(x for x in qs
-                 if not x['title'].startswith('P2 · ' + today)
-                 and re.search(r'\d{4}-\d{2}-\d{2}', x['title']))
+        dated_only = [x for x in qs
+                      if not x['title'].startswith('P2 · ' + today)
+                      and re.search(r'\d{4}-\d{2}-\d{2}', x['title'])
+                      and not re.search(r'\d{2}:\d{2}|T\d', x['title'])]
+        self.assertTrue(dated_only,
+                        "no date-only open question left in the live file — "
+                        "this test needs one to have anything to measure; "
+                        "add a date-only fixture entry rather than deleting "
+                        "the check (%d open entries, all timed)" % len(qs))
+        q = dated_only[0]
         title = q['title']
         # ── RUNTIME PRECONDITION: the fixture genuinely carries NO TIME ──
         dm = re.search(r'(\d{4}-\d{2}-\d{2})', title)
