@@ -57,22 +57,47 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 // empty band under a fixed 60vh frame) of the page:
 //
 //   viewport 1280x900 -> iframe ~740px tall at top≈120  -> effective fold 738
-//   viewport  390x844 -> iframe ~708px tall at top≈120  -> effective fold 706
+//   viewport  390x844 -> iframe 693..708px tall           -> effective fold 691
+//
+// MOBILE IS A RANGE, AND A FOLD MUST TAKE THE FLOOR OF IT.
+// The iframe's BOTTOM is pinned (828 at 390x844) but its TOP is not: on the
+// stacked layout `SPAN.revname` in the title bar wraps to a second line once the
+// artifact's filename is long enough, which makes the chrome 15px taller and the
+// frame 15px shorter. Measured across six real artifacts at 390x844, strictly on
+// `#reviewframe`:
+//
+//   top=120 h=708  tasks-page / ud-dreamtask / threaded-topic-chats   (<=25 chars)
+//   top=135 h=693  task-transition-boundary / threaded-topic-chats-v2 /
+//                  user-event-journal-implementation                  (>=28 chars)
+//
+// So the fold is 691 (the 693 floor, less a 2px hair), NOT 706. Taking the top
+// of the range would call content at y=700 "above the fold" while it is clipped
+// for every long-named artifact — an optimistic check, which is the one direction
+// that matters, because this file exists to refuse asks he cannot see.
+// The guard `devoverlay.mjs` now asserts this constant against the measured
+// minimum rather than trusting the comment; the number and the check move
+// together or the check is decoration.
+//
+// It also makes `#432` necessary rather than tidy: the offset is DATA-dependent,
+// so no constant is right for all inputs — a longer name than any yet filed, or
+// a name long enough to wrap at 1280, moves it again and nothing here would know.
 //
 // (#434 reclaimed the mobile dead space: the frame was 506px / fold 504 under
 // a fixed 60vh; it now uses fitReview's measured --rvh, fills the window, and
 // tightens the review-route bottom pad to 1rem on the stacked layout.)
-// Mobile is still the one that matters: 706 against 844 is an ~16%
+// Mobile is still the one that matters: 691 against 844 is an ~18%
 // overstatement of what a naive innerHeight check would claim. An ask sitting
 // at 780px passes a naive 844 check and is invisible where he reads it. So
 // `fold` below is the effective height, not `innerHeight`, and the viewport is
 // still set to the real device size because layout depends on WIDTH.
-// Measured 2026-07-28 (post-#434); if the shell's chrome changes these move,
-// which is why `#432` wants the checker to derive them from the live route
-// instead.
+// Measured 2026-07-28 (post-#434). These move if the shell's chrome changes,
+// which is why `#432` wants the checker to derive them from the live route —
+// and why `devoverlay.mjs` measures the real corpus in the real chrome and
+// holds the mobile number to the floor it finds. The comment is no longer the
+// only thing keeping this honest.
 const VIEWPORTS = [
   { label: 'desktop', width: 1280, height: 900, fold: 738 },
-  { label: 'mobile', width: 390, height: 844, fold: 706 },
+  { label: 'mobile', width: 390, height: 844, fold: 691 },
 ];
 
 function usage(msg) {

@@ -26,7 +26,7 @@
    Own ephemeral port + --dev (the overlay only mounts under --dev). Does
    NOT bind 39880–39899. usage: node devoverlay.mjs <outdir> [port ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
-import { mkdirSync, cpSync, rmSync } from 'node:fs';
+import { mkdirSync, cpSync, rmSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
@@ -91,14 +91,14 @@ const BASE = `http://127.0.0.1:${PORT}`;
   notes.push(`port ${PORT} (outside 39880-39899)`);
 }
 
-const review = ((await (await fetch(`${BASE}/data.json`)).json()).reviews || [])[0];
+const allReviews = ((await (await fetch(`${BASE}/data.json`)).json()).reviews || []);
+const review = allReviews[0];
 if (!review) {
   console.log('FAIL fixture has no review artifact');
   process.exit(1);
 }
 const REVIEW = `/review?p=${encodeURIComponent(review.name)}`;
 notes.push(`review ${review.name}`);
-
 const br = await chromium.launch({
   args: ['--use-gl=swiftshader', '--enable-webgl'],
 });
@@ -225,6 +225,111 @@ for (const vp of VIEWPORTS) {
     `#434 ${vp.label}: frame is at least ${minH}px tall (got ${m.h})`,
     m.h >= minH,
   );
+}
+
+/* ── the mobile fold constant is the FLOOR of the frame height, not the top ──
+   `above_fold.mjs` decides whether an ask he must rule on is visible, using a
+   hard-coded effective fold per viewport. That constant is only as good as the
+   SHORTEST frame the shell produces, and at 390px the shell produces more than
+   one height: `SPAN.revname` wraps the title bar once the artifact's name is long
+   enough, the chrome grows and the frame shrinks. The constant had been set to
+   the TALL case (706 against a real floor of 693), which calls clipped content
+   visible — optimistic, and that is the one direction that matters for a check
+   whose whole job is refusing asks he cannot see.
+
+   IT MEASURES THE REAL TARGET, NOT THE FIXTURE, and that is not incidental.
+   Two fixture-based versions of this check were wrong in the same direction,
+   both demanding a fold no real artifact needs:
+
+     - a 60-character invented name wrapped to THREE lines -> 651
+     - a padded stem of the right character count also wrapped to three, because
+       `xxxx…` has no hyphen to break on where real names do -> 672
+     - and the fixture's own target directory is `devoverlay-target`, which is
+       LONGER than the real project name and shares the title bar with the
+       artifact name, so even the real longest name measured 672 there
+
+   A derived length is not a derived layout, and a fixture is not the surface.
+   The fold is a property of the real corpus rendered in the real chrome, so this
+   block serves the actual repo read-only on its own port and measures the real
+   shortest- and longest-named artifacts. It follows that filing an artifact with
+   a longer name than any today can turn this red — which is the correct
+   behaviour: it means the constant needs revisiting, and `#432` wants the whole
+   constant replaced by this derivation.
+
+   Injection that fails it: restore `fold: 706` in above_fold.mjs. */
+{
+  const REAL = process.cwd();
+  let rport = await freePort();
+  while (rport >= 39880 && rport <= 39899) rport = await freePort();
+  const rsrv = spawn('python3',
+    ['watch.py', '--target', REAL, '--port', String(rport)], { stdio: 'ignore' });
+  try {
+    await sleep(2500);
+    const rbase = `http://127.0.0.1:${rport}`;
+    let names = [];
+    try {
+      const rd = await (await fetch(`${rbase}/data.json`)).json();
+      if (rd.target !== REAL) throw new Error(`serving ${rd.target}, not ${REAL}`);
+      names = (rd.reviews || []).map(r => r.name);
+    } catch (e) { notes.push(`fold: real-target server unusable: ${e}`); }
+    ok('fold: real target served its review corpus', names.length >= 2);
+    if (names.length >= 2) {
+      const byLen = [...names].sort((a, b) => a.length - b.length);
+      const subjects = [byLen[0], byLen[byLen.length - 1]];
+      const heights = [];
+      for (const n of subjects) {
+        const ctx = await br.newContext({ viewport: { width: 390, height: 844 } });
+        const page = await ctx.newPage();
+        await page.goto(`${rbase}/review?p=${encodeURIComponent(n)}`,
+                        { waitUntil: 'networkidle' });
+        // STRICT: wait for the real element. A `|| querySelector('iframe')`
+        // fallback would silently measure a different box.
+        await page.waitForSelector('#reviewframe', { timeout: 8000 }).catch(() => {});
+        await sleep(1000);
+        const m = await page.evaluate(() => {
+          const f = document.getElementById('reviewframe');
+          if (!f) return null;
+          const r = f.getBoundingClientRect();
+          return { iw: innerWidth, ih: innerHeight,
+                   top: Math.round(r.top), h: Math.round(r.height) };
+        });
+        await ctx.close();
+        if (!m) { notes.push(`fold: no #reviewframe for ${n}`); continue; }
+        // VIEWPORT_APPLIED, both axes — same reason as withPage.
+        if (m.iw !== 390 || m.ih !== 844) {
+          notes.push(`fold: viewport miss on ${n}: ${m.iw}x${m.ih}`);
+          continue;
+        }
+        heights.push({ name: n, h: m.h, top: m.top });
+        notes.push(`fold: ${n} (${n.length} chars) -> frame top=${m.top} h=${m.h}`);
+      }
+      ok('fold: measured a frame height for both extremes', heights.length === 2);
+      if (heights.length === 2) {
+        // ANTI-VACUITY: if the shortest and longest name render the SAME height
+        // the wrap never happened, the "minimum" is not a minimum, and a
+        // `fold <= min` pass would mean nothing. Derived from the two subjects
+        // rather than compared to a literal, so a corpus change cannot quietly
+        // hollow it out — it goes red instead.
+        const spread = Math.abs(heights[0].h - heights[1].h);
+        ok(`fold: shortest and longest names give DIFFERENT frame heights `
+           + `(spread ${spread}px: ${heights.map(x => `${x.h}`).join(' vs ')})`,
+           spread >= 8);
+        const src = readFileSync('dev/capture/above_fold.mjs', 'utf8');
+        const mm = src.match(/label:\s*'mobile'[^}]*fold:\s*(\d+)/);
+        ok('fold: mobile fold constant is parseable from above_fold.mjs', !!mm);
+        if (mm) {
+          const declared = Number(mm[1]);
+          const minH = Math.min(...heights.map(x => x.h));
+          notes.push(`fold: declared ${declared}, measured real min ${minH}`);
+          ok(`fold: above_fold.mjs mobile fold ${declared} <= shortest real frame `
+             + `${minH} (a long artifact name wraps the title bar and shortens it)`,
+             declared <= minH);
+        }
+      }
+    }
+  } finally {
+    try { rsrv.kill(); } catch (e) {}
+  }
 }
 
 /* ── #435 overlay / wordmark overlap ───────────────────────────────────── */
