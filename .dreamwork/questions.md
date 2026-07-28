@@ -1,6 +1,27 @@
 # Questions for the human
 
 ## Open
+- **P1 · 2026-07-28 — #254: authorise implementation of the threaded-notes design?**
+
+  Design is written at `.dreamwork/docs/plans/threaded-notes-spec.md` (post-R1;
+  supersedes `note-reply-threading-254.md` for implementers). N1 + R1 are settled;
+  no design decision left open. This ask is the separate implementation grant your
+  23:03 approval explicitly withheld.
+
+  Scope if accepted: recognise `- **Reply (loop, <ts>):**` as a loop *resolution*
+  tag (together in `NOTE_TAGS` / parser / `file-formats.md` / tests — never the
+  format ahead of the parser); implement `qaBranch` as specified; one flat branch
+  at one inset under the root; a11y nested list; 390px keep-rail/drop-padding;
+  reuse existing transition matrix cells only; frozen fixtures F1–F6 and the
+  named red-first checks. Out of scope still: true nesting, `## Answered`
+  threading, two-answer retention (now `#446`), Answered raw-Answer lift.
+
+  No artifact: the lane found no decision genuinely yours left open, and a decoy
+  ask is worse than none. Before/after rendering is in the spec's §3.
+
+  Rec **I1: authorise implementation as the spec**. Answer `Approve I1`,
+  `Approve I1 with changes: …`, or `Hold; not yet`.
+
 - **P2 · 2026-07-28 — #417: four ways to put commits-per-period on the burndown, priced. Which, if any?**
   **Ask: `C1`, `C2`, `C3`, `C4`, or `none` — and `rec` takes C4.**
   Artifact: [`417-burndown-commits.html`](../review/417-burndown-commits.html) (`5fe331a`) — ten real

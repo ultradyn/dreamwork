@@ -24,9 +24,29 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **446**
+Next id: **447**
 
 ## Open
+- **#446** — a second `Answer` on a question **overwrites the first**, and the text is gone before anything can
+  render it · **P1** · durability/data-loss · origin: **loop** · **found by `#254`'s design lane while reading
+  the grammar it was forbidden to change**
+  · `watch.py`'s question parser keeps one answer per entry: a second `Answer (via watch, …)` **replaces** the
+  first, so the earlier text is lost at parse time — before any render rule, thread rule or dashboard code
+  runs. Nothing reports it and nothing in the file says it happened
+  · **this is his words being dropped**, which puts it above every rendering concern in the same area. The
+  threading work explicitly declined to fix it because his grant was design-only (correctly), so it needs its
+  own entry rather than riding along
+  · **`questions.md` is the durable record of what he decided** — the ledger and `DREAMWORK.md` both defer to
+  it — so a silent overwrite there is the worst class of bug this system can have: the loop cannot know what it
+  forgot
+  · so: decide what a second answer **means** (amendment thread, correction, or genuine second answer to a
+  re-opened entry — the entry grammar already threads follow-ups, so the shape may exist already) and keep
+  both. **A parse that discards input must at minimum say so loudly**; fixing the loss is better
+  · check whether `answers.md` (his questions to the loop) has the mirror-image defect, and whether the
+  `## Answered` section's `lift_answer=False` hides a second instance of the same thing
+  · **red-first will be easy to get wrong here**: a fixture with two answers must assert **both** texts are
+  retrievable, derived at runtime, not that a count is 2 — a count passes on a parse that kept the wrong one
+  · related: **#254, #340, #343**
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
@@ -2865,7 +2885,9 @@ Next id: **446**
   make the point that the reverse direction is the one with the live cost now: the no-question half is
   loud once you look for it, while an *answered* question leaves the blocked entry reading exactly as
   it did before
-
+  · **DESIGN LANDED `542c43a` (2026-07-28 23:42, lane `wt/threaded`), and the grant's boundary was respected exactly** — no parser, format, UI, transition or migration touched. Spec at `.dreamwork/docs/plans/threaded-notes-spec.md`. The rule is `qaBranch(q) → [lead, root, branch]`: his `Answer (via watch, …)` is root; failing that the last `Reply (loop, …)` is root (**R1 — the Reply *is* the resolution, not the row above it**); failing that, flat. One branch, one inset, never a staircase, and **prefer flat over wrongly-attached**. Never structure from timestamps. **Artifact deliberately skipped** because N1+R1 left no decision genuinely his — a decoy ask is worse than none. **Implementation is a separate grant and is now on his desk as an `#ask`** (`I1`). It also found four grammar ambiguities, one of which is data loss and is filed as `#446`.
+  · **blocked-on: **human** (implementation grant `I1`)**
+  · related: **#446**
 - **#253** — Add contextual review annotations and attached discussions · P2 ·
   approved design/implementation · origin: **human** · **approved via watch
   18:35** · preserve static style-isolated iframe; narrow versioned `postMessage`
@@ -4870,8 +4892,7 @@ Next id: **446**
   · **the brief written for this task was deleted, not kept.** Its premise was the stale one and
   its prescription — the symmetric one-argument fix — was actively wrong. A wrong brief left in
   `.dreamwork/docs/briefs/` is a loaded trap for whoever greps that directory next
-  · related: **#411** — the other half of this section: this entry is what the page gets RIGHT about an answered entry, `#411` is the date it silently drops
-
+  · related: **#411, #446** — the other half of this section: this entry is what the page gets RIGHT about an answered entry, `#411` is the date it silently drops
 - **#394** — a dreamer lane reports only to the inbox, so its landing dies with its coordinator ·
   P2 · loop/durability · origin: **loop** · found while verifying **#381** end to end
   · `#381` built the delivery half of the single-writer rule and **both its readers work** — but
@@ -5992,7 +6013,7 @@ Next id: **446**
   to a single leading word plus a trailing colon — 3-in-3. The stated cost: a tag mangled
   so badly it loses its colon is missed, while the wrong-NAME case this exists for keeps
   the shape and only changes the word
-
+  · related: **#446**
 - **#326** — The answer box sits on a black band instead of the text fading ·
   **P1** · **next-up** · bug/visual · ~30m · origin: **human** · **human via chat
   with a screenshot 2026-07-27 21:40** (verbatim: *"the black stuff around the
