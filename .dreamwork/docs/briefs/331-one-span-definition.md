@@ -150,3 +150,34 @@ that file, and a relative path creates one nobody reads.
 Say: where you put the shared definition and why; the real `just test` exit code and how you got it;
 both red-proofs with exact test names; the landed/open numbers you derived; what you did about the
 comma case; and anything you are unsure of.
+
+---
+
+## Addendum, 12:47 — measured after dispatch, while red-proving the merge gate
+
+I built the acceptance gate before you report (deliberately: on the last task that ordering
+found a residual neither the lane nor the guard surfaced) and red-proved it in both
+directions. Two results change what you should watch, and one corrects the brief above.
+
+**1. `**#96 stage 1**` is the ONLY prose span in the entire landed section that sits at
+column 0.** Every other prose bold span — all 26 of them, including every comma-joined list
+— is on an indented continuation line, so the column-0 rule already keeps it inert and the
+pattern is a *second* guard. For `#96` the pattern is the **only** guard: its line reads
+`blocked. **#96 stage 1** dreamhub —`, unindented. This is why `#331` named that fixture
+and no other, and it means a too-wide pattern shows up in the totals as **+1**, not as a
+flood. Do not read a nearly-correct landed count as evidence of a correct rule.
+
+**2. Correction to "Done means all of these", item 4.** I asked you to check that `#501`
+and `#502` do not land. That check is real but it is *weaker than it looks*: those ids
+appear only in an indented line, so they are held inert by the column-0 rule regardless of
+your pattern. I confirmed this — under a deliberately over-wide pattern the live-ledger
+check for `#5/#501/#502` still passes while the pattern is landing `#501` and `#502` out of
+the same span in isolation. **Keep the check, but do not treat it as evidence about the
+pattern.** The tests that actually bind the pattern are the inert-span ones, and they must
+place the span at **column 0** in the fixture, or they test the wrong guard.
+
+**3. The arithmetic that follows from this**: landed must be exactly `152 + 19 = 171`.
+Over-wide gave 172 (the extra is `#96`), narrow gives 152. One id either side of correct,
+so derive the number — do not eyeball it.
+
+Everything else in the brief stands.
