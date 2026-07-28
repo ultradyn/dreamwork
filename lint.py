@@ -87,6 +87,16 @@ ENTRY_ID = re.compile(r"#(\d+)")
 # value opening the next — #288 and #252 both do this) still reads.
 ORIGIN_MARK = re.compile(r"origin:\s*\*\*\s*([^*]+?)\s*\*\*")
 
+# #419: a blocked-on-human claim, same `key: **value**` idiom as origin/related.
+# The marker names a KIND of blocker (a human decision), not a specific question
+# — a task-blocker (`blocked on #352`) is a different relation and stays prose.
+# Joined per-entry before matching, so it survives a hard wrap the way origin does.
+BLOCKED_ON_HUMAN_MARK = re.compile(r"blocked-on:\s*\*\*\s*([^*]+?)\s*\*\*")
+# A `gate:` companion naming where the ruling lives (the task whose question
+# carries this decision), for the case the question does not carry the entry's
+# own id — the #371 trap. Optional; absent defaults to the entry's own id.
+GATE_MARK = re.compile(r"gate:\s*\*\*\s*([^*]+?)\s*\*\*")
+
 
 def ledger_entries(text: str) -> list[tuple[list[int], str]]:
     """Each ledger entry as (its ids, its full text).
@@ -969,6 +979,168 @@ def check_task_origins(text: str, rep: Report) -> None:
             )
     if checked and not errors:
         rep.add(OK, "tasks.md", f"origin recorded on all {checked} entries from #{ORIGIN_CUTOFF} onward")
+
+
+def _question_id_sets(watch, qpath: Path):
+    """The ids a questions.md file names in each section, via the real parser.
+
+    Returns ``(open_ids, answered_ids)`` as sets of ints, or ``(None, None)``
+    when the file or parser is unavailable — callers treat None as "cannot
+    correlate" and stay silent, the idiom every cross-file check here follows
+    for an absent reader.
+    """
+    if watch is None or not qpath.exists():
+        return None, None
+    try:
+        text = qpath.read_text()
+        open_ids = set()
+        for it in watch.parse_open_questions(text):
+            open_ids |= {int(x) for x in re.findall(r"#(\d+)", it.get("title", ""))}
+        answered_ids = set()
+        for it in watch.parse_answered(text):
+            answered_ids |= {int(x) for x in re.findall(r"#(\d+)", it.get("title", ""))}
+    except Exception:
+        return None, None
+    return open_ids, answered_ids
+
+
+def check_human_blocker(dw: Path, watch, rep: Report) -> None:
+    """#419 — no human blocker without a question, made checkable.
+
+    He tried to rule on `#264` and found no question to act on: the loop had
+    reported itself blocked on him while no `questions.md` entry existed. His
+    words: *"there always has to be an answer in our data."* The invariant is
+    that every open task whose blocker is a human decision has a question that
+    is **open** or **answered-but-unfolded**. Both are legitimate; **absent is
+    not.**
+
+    A task cannot currently SAY it is blocked on a human — entries express it in
+    prose — and prose is not checkable, so this reads a `blocked-on: **human**`
+    marker in the metadata chain (same idiom as `origin:` / `related:`). The
+    marker is forward-only, not a retrofit, so **absence means "no claim", never
+    "unblocked"**: an entry without one is simply not making a machine-readable
+    claim, and the check says nothing about it. That is the brief's explicit
+    requirement, and the alternative — a check over prose keyword matching — is
+    the hollow-check failure this repo has spent a day learning to distrust.
+
+    ONE direction is enforced:
+
+    - **Direction 1 (ERROR): "there always has to be an answer in our data."** An
+      open entry carries `blocked-on: **human**`, and NO question (open or
+      answered) names the gate id — the `gate:` value if present, else the
+      entry's own id. **Transitive coverage does NOT count.** A neighbouring
+      task's question covering the same decision does not satisfy an entry whose
+      own id has none, because a reader landing on the entry alone cannot find
+      it — the #371 trap. Name the neighbour with `gate:` and the check follows
+      it there.
+
+    **Direction 2 ("he ruled and nobody processed it") is deliberately NOT
+    implemented.** The brief's amendment (16:23) retracted the #371 specimen: a
+    ruling that *answers* a decision does not *authorise* the work — "answered ≠
+    authorised." His Q2 amended a design whose implementation was a
+    separately-gated increment, so reading the landed answer as a green light was
+    the exact error `7c5fc82` made and `6ea8f6b` retracted. The other three
+    specimens are non-defects too (#254 deliberate partial, #367 in progress, #50
+    authorised-but-not-started). A Direction-2 rule built on "the gate's question
+    is answered" rests on a false equivalence, and the live repo measures the
+    cost: the prose form `blocked on #N` where N is answered fires on 11 open
+    entries, all 11 legitimate task dependencies on N's *work* landing. #371
+    itself is among the eleven. A WARN that fires 11 wrong and 0 right is the
+    hollow-check this repo refuses, so Direction 2 is refused. Catching "ruled
+    but unprocessed" needs a mechanism that records *authorisation*, not one that
+    infers it from a question's section heading.
+
+    The correlation set comes from the REAL parser — `parse_open_questions` /
+    `parse_answered` for the titles — never a second copy. Every count printed is
+    derived at runtime. Silent on a missing ledger, a missing questions.md, or an
+    unimportable watch (cannot correlate ⇒ say nothing), exactly as
+    `check_landed_asks` degrades.
+    """
+    tpath = dw / "tasks.md"
+    if not tpath.exists():
+        return
+    # Slice the Open section once, the idiom check_landed_still_open uses, so
+    # only OPEN entries are governed — a landed entry is not "blocked on him".
+    lines = tpath.read_text().splitlines()
+    start = end = None
+    for n, ln in enumerate(lines):
+        if ln.strip().startswith("## "):
+            if ln.strip() == "## Open":
+                start = n + 1
+            elif start is not None:
+                end = n
+                break
+    if start is None:
+        return
+    open_text = "\n".join(lines[start:end])
+
+    open_ids, answered_ids = _question_id_sets(watch, dw / "questions.md")
+    if open_ids is None:
+        # Cannot correlate without the question reader — say nothing rather
+        # than claim every marked entry is fine (the hollow-pass this repo
+        # keeps refusing).
+        return
+
+    marked = 0
+    d1_errors = 0
+    for ids, body in ledger_entries(open_text):
+        # The marker is anchored the way `related:` is — `blocked-on:` at a `·`
+        # boundary or line start — so quoting the vocabulary in prose (which the
+        # #419 entry itself does) does NOT manufacture a phantom marker. We read
+        # only the metadata clause, never the whole entry, for the same reason
+        # `check_self_completed_open` reads position and not vocabulary.
+        clause = _metadata_clause(body)
+        clause_flat = re.sub(r"\s+", " ", clause)
+        marks = [v.strip() for v in BLOCKED_ON_HUMAN_MARK.findall(clause_flat)]
+        if not marks:
+            continue  # no machine-readable claim; absence is "no claim", not "unblocked"
+        marked += 1
+        name = "/".join(f"#{i}" for i in ids)
+        # Vocabulary: one value, human. Wrong case / extra values are a claim a
+        # reader would have to interpret, same reasoning as the origin marker.
+        vals = [v for v in marks if v != "human"]
+        if vals:
+            d1_errors += 1
+            rep.add(
+                ERROR, "tasks.md",
+                f"{name} is blocked-on: **{vals[0]}** — the vocabulary is exactly "
+                f"`human`; a task-blocker stays in prose (`blocked on #N`), this "
+                f"marker names a human decision (#419)")
+            continue
+        # Resolve the gate: the `gate:` value if present, else the entry's own
+        # ids. An entry may legitimately carry several own ids; any of them
+        # having a question satisfies Direction 1.
+        gate_match = GATE_MARK.search(clause_flat)
+        if gate_match:
+            gates = [int(x) for x in ENTRY_ID.findall(gate_match.group(1))]
+        else:
+            gates = []
+        if not gates:
+            gates = list(ids)
+        # Direction 1: no question (open or answered) names any gate id. This is
+        # the load-bearing half — "there always has to be an answer in our data".
+        if not any(g in open_ids or g in answered_ids for g in gates):
+            d1_errors += 1
+            gate_desc = ", ".join(f"#{g}" for g in gates)
+            rep.add(
+                ERROR, "tasks.md",
+                f"{name} is marked blocked-on: **human** but no questions.md "
+                f"entry names {gate_desc} — blocked on him with nothing on the "
+                f"channel to him; file the question, or name the ruling's "
+                f"neighbour with `gate:`. \"there always has to be an answer in "
+                f"our data\" (#419)")
+            continue
+        # NOTE: Direction 2 (gate answered ⇒ stall) is deliberately absent. See
+        # the docstring: "answered ≠ authorised", and the prose form fires 11/11
+        # false positives on the live repo. Do not re-add it without a mechanism
+        # that records AUTHORISATION rather than inferring it from a section.
+    # Coverage, derived not pinned, so a check that stops examining entries
+    # cannot look the same as one that examined them all (#395 idiom).
+    if marked and not d1_errors:
+        rep.add(
+            OK, "tasks.md",
+            f"{marked} of {len(open_ids)} open entries marked blocked-on-human "
+            f"all have a question (#419)")
 
 
 # status.json has two readers now (watch.py and dreamhub.py), which makes it
@@ -2576,6 +2748,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_author_tags(dw, watch, rep)
     check_unfolded_answers(dw, watch, rep)
     check_tasks(dw, rep)
+    check_human_blocker(dw, watch, rep)
     check_landed_asks(dw, watch, rep)
     check_status(dw, rep)
     check_status_task_ids(dw, rep)
