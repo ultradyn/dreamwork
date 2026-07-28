@@ -257,6 +257,37 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `~/.cache/agent-comms/<target>/coord-inbox.md` | the coordinator's tail monitor | Append-only, one report per line, prefixed `[agent-name]`. Machine-local, never committed | prose only |
 | `~/.cache/agent-comms/<target>/<agent>-inbox.md` | that subagent, **between increments** | Append-only. Write it with `relay.py` — body from stdin so it cannot be shell-expanded, stamp from the clock so it cannot be invented | prose only |
 
+## `.dreamwork/tasks.md` — the two section headings are unique and ordered (#440)
+
+The ledger has exactly two sections, opened by literal heading LINES:
+`## Open` then `## Recently landed`. Both are matched **anchored**
+(`^[ \t]*## Open[ \t]*$` / `^[ \t]*## Recently landed[ \t]*$` — the patterns
+`watch.LEDGER_SEC_OPEN` / `LEDGER_SEC_LANDED` compile), never by a bare
+`text.split('## Recently landed', 1)`: the string `## Recently landed` also
+appears **in the prose of open entries** (one quotes the very grammar that
+reads it), and the unanchored split lands on the mention. That corrupted the
+file twice on 2026-07-28 — a fold wrote a file with two landed headings and
+130 lines in the wrong half, and a count returned 33 open entries instead of
+142. Five hand-rolled ledger parsers have now been wrong here, against a file
+whose production parser was importable every time.
+
+The contract is three properties, each load-bearing:
+
+- **Exactly one `## Open` and one `## Recently landed` heading LINE.** A
+  second copy — a real heading, or a quoted one an unanchored reader mistakes
+  for one — moves where every consumer thinks a section begins.
+  `lint.check_ledger_sections` cross-checks the open-id count against
+  `watch.parse_ledger` for this reason, and `dev/ledger.py assert_headings`
+  refuses to fold or count a file that violates it.
+- **`## Open` precedes `## Recently landed`.** The ledger is read as
+  `(open, landed)` in document order; an inversion is not a valid ledger.
+- **Locate the sections by the anchored heading LINE, never by substring.**
+  `dev/ledger.py` (the one supported `fold` / `counts` path) reuses
+  `watch.parse_ledger` for the id sets and the anchored patterns for the
+  section boundaries, and asserts all three properties before AND after every
+  write — the post-write assertion matters most, because both incidents had
+  the symptom appear far from the cause.
+
 ## `.dreamwork/tasks.md` — origin, forward-only from #216 (#213)
 
 Who filed a task is a fact. Before this contract the ledger almost never
