@@ -178,6 +178,31 @@ So, for anything in this document:
   opacity transition drew zero rAF samples inside its window in 6/6 runs
   at load 40-63 on 16 cores; `transitionstart` fired in every one. The
   helpers are `transitionWindow` and `framesInWindow` in `dom.mjs`.
+- **Existence is the snap detector; do not assert observed duration against
+  the declared one (#444).** `transitionWindow` returns `dur` (end − start),
+  so the width is measurable with no rAF sampling — load-independent by the
+  same argument that motivated `#442`. That does **not** make a duration
+  floor earn its keep. Measured 2026-07-28 on confirmation's main
+  departure (declared `.cmdmsg` opacity `.35s` = 350ms) at load 36–42 on 16
+  cores, six consecutive green runs: **239, 371, 354, 329, 307, 348 ms**.
+  `#442` under 8 burners had already measured **289–665 ms** for the same
+  gesture. A ±20% band around 350 (280–420) fails the green set on 239; a
+  band wide enough for 665 only excludes pathologies the STYLE constant
+  already forbids. Separately, pairing `ends.at(idx)` with `starts.at(idx)`
+  independently produced **negative** popout-departure durs (−68…−178ms)
+  when an opacity end from a transition that started *before* `afterT`
+  landed after it — so `dur` is not even always the width of the transition
+  under test (the helper now pairs the first end at-or-after the chosen
+  start; the measurement still stands as evidence that the instrument was
+  not ready to be a gate). **A check that restates the CSS it reads is not
+  a check**: the declared duration lives in `watch.py`'s STYLE (and the
+  styleguide's single-source rule), and existence already asks the browser
+  whether it registered a transition. Shortening the declaration to `1ms`
+  is a styleguide edit, not a silent motion bug the sampler can uniquely
+  catch. Log `dur` as a diagnostic; assert `ran`. The red-proof of this
+  refusal is `test_duration_refusal.py`: replaying the six measured green
+  durs against a ±20% band fails, and the confirmation guard is asserted
+  not to floor on `dur`/`win.dur`.
 - **Show the check RED on the current behaviour before trusting it.**
 - **Verify reduced-motion too** — it is a hard contract below, and it is
   the half nobody looks at.
