@@ -160,6 +160,10 @@ Next id: **425**
   matching gap: `· landed \`<sha>\` ·` says *landed*, with no way to say *increment 2 of n
   landed*. Both are the same missing distinction, so whoever widens the sha field should widen
   this too
+  · **IN PROGRESS 2026-07-28 17:03** — folded into the `#402b` lane (`ccc @glm52`,
+  `.worktrees/fmt`), because both widen a grammar in `file-formats.md` + `lint.py` and both have a
+  live symptom. The brief leans hardest on the **negative** tests: a widening's easy failure is
+  accepting everything, and one with no negative test has removed a check rather than improved it
 
 - **#414** — a motion guard's pass condition depends on the browser's FRAME RATE, and it does
   not say so · P2 · verification/motion · origin: **loop** · found by the only failure in the
@@ -597,6 +601,12 @@ Next id: **425**
   · immediate data corrected by hand rather than by widening the check: my `dreamers` entries said
   `"task": "172"` where `172` is a plain integer id, which lint is right to reject. Sub-id lanes
   like `402a` still need the string form and still have nowhere legitimate to live
+  · **`#402b` IN PROGRESS 2026-07-28 17:03** — `ccc @glm52`, `.worktrees/fmt`, with `#415` in the
+  same lane (same two files, same shape). The live symptom is mine from 16:44: `lint` errored on
+  `current_task_ids ['218','263','419']` while `status_sync` deliberately keeps the string form for
+  sub-ids. Both correct, disagreeing about a vocabulary nobody wrote down. I worked around it by
+  writing ints, and **the workaround is not the fix** — the next author to write `"392a"` hits the
+  same wall from the other side
 
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
   P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
