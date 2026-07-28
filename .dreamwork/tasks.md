@@ -665,6 +665,15 @@ Next id: **421**
   increment whichever way it goes
   · #263's plan places that half at its increment 20 (envelope decided before the body is
   read) · **blocked on #263 Q2 only** — no longer on `watch.py`, which is free
+  · **UNBLOCKED — his `#263` Q2 was answered at 05:43 and this entry never noticed** (found by
+  `#420`'s census, verified by the coordinator against `questions.md` 2026-07-28 16:08). The answer is
+  explicit: *"**Q2 yes** (amend law 2 to keep a partial witness marked incomplete)"*. So the one thing
+  this waited on has been settled for ten hours, `watch.py` is free, and **this is a startable P1**
+  · **and it is `#419`'s reverse direction, in its most expensive form:** the loop never asked Q2 as
+  its own question — it rode inside another entry — so when it was answered there was nothing pointing
+  back here. A ruling that arrives on a *neighbouring* question is invisible to the entry that needed
+  it. `#419`'s check must therefore key on the *decision*, not on the entry that happened to carry it
+
 - **#368** — Break the large Python files into a modular, testable codebase · P2 ·
   refactor/architecture · origin: **human** · **human via watch `add-idea` 2026-07-28 02:46**:
   *"after the cli, we should refactor the large python files into a proper modular codebase
@@ -2513,6 +2522,16 @@ Next id: **421**
   not merely on scheduling · spec records seven open decisions as D1–D7, and its
   own proof plan names two checks that would be hollow — see #340 and #341 for
   the two out-of-scope findings it produced
+  · **UNBLOCKED — R1/R2/R3 were answered on 2026-07-27 (23:03 and 23:38) and the body still says
+  the answer is "now open in questions.md"** (found by `#420`'s census, verified against
+  `parse_answered` 2026-07-28 16:08). Both entries are in `## Answered`; nothing is open for this
+  task. Startable, subject to its own scope
+  · one of the **four** entries the census found holding a stale *"waiting on him"* claim (`#254`,
+  `#367`, `#371`, `#50`). Together they are the ready-made red fixtures for `#419`'s check, and they
+  make the point that the reverse direction is the one with the live cost now: the no-question half is
+  loud once you look for it, while an *answered* question leaves the blocked entry reading exactly as
+  it did before
+
 - **#253** — Add contextual review annotations and attached discussions · P2 ·
   approved design/implementation · origin: **human** · **approved via watch
   18:35** · preserve static style-isolated iframe; narrow versioned `postMessage`
