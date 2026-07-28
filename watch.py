@@ -32,6 +32,14 @@ from dataclasses import dataclass
 import webbrowser
 
 from user_events.sqlite import Envelope, open_journal
+# #352: the ledger's entry/origin grammar is ONE module now, imported here
+# (and by lint.py and task_origins.py) rather than copied. These names stay
+# importable FROM watch — callers that read `watch.ledger_entries`,
+# `watch.ENTRY_ID` etc. are undisturbed — but their definition lives in
+# ledger_parse.py, which is why the deploy snapshot needs it alongside
+# watch.py exactly the way it needs user_events/.
+from ledger_parse import (ENTRY_HEAD, ENTRY_ID, KNOWN_ORIGINS, ORIGIN_MARK,
+                          entry_origins, ledger_entries)
 
 # Server generation: a fresh value every time this process (re)starts, so a
 # client can tell "same server, data changed" from "server rebuilt, reload
@@ -9760,14 +9768,10 @@ def _ledger_section(text, pattern):
 # entries. Provenance is NOT read from the working tree: a task's origin is
 # a fact about its ARRIVAL, so it is classified from the FIRST snapshot in
 # which its id appears (#216), inside the same walk the series below makes.
-# The first-sight grammar is lint.py's (#213), VERBATIM, and a test asserts
-# the copies stay identical — the one-copy rule LEDGER_ENTRY already states.
-ENTRY_HEAD = re.compile(r"^- \*\*([^*]+?)\*\*")
-ENTRY_ID = re.compile(r"#(\d+)")
-ORIGIN_MARK = re.compile(r"origin:\s*\*\*\s*([^*]+?)\s*\*\*")
-# `human` and `loop` are claims about who filed the task; everything else —
-# no marker, several, an out-of-vocabulary value — fails closed to unknown.
-KNOWN_ORIGINS = ("human", "loop")
+# The first-sight grammar — ENTRY_HEAD, ENTRY_ID, ORIGIN_MARK,
+# KNOWN_ORIGINS, ledger_entries, entry_origins — is ledger_parse.py's
+# (#352): one module, imported at the top of this file, no second copy
+# here for a test to have to pin.
 # The bucket ladder: the smallest step that keeps the chart under this many
 # columns. A fixed step would give one column on a young ledger and four
 # hundred on an old one.
@@ -9780,42 +9784,6 @@ BURN_ERROR = "error"       # git failed; explicitly NOT "no history"
 
 _LEDGER_SNAPS = {}         # (rev, tree-relative path) -> parsed snapshot
 _LEDGER_CACHE = {}         # (target, head) -> the whole answer
-
-
-def ledger_entries(text):
-    """lint.py's ledger_entries, VERBATIM (a test pins the two identical):
-    each ledger entry as (its ids, its full text). Only the leading bold
-    token numbers an entry — combined entries list every id, while a `#N`
-    in a body is a cross-reference — and landed prose is never an entry.
-    """
-    entries, cur = [], None
-    for ln in text.split("\n"):
-        m = ENTRY_HEAD.match(ln)
-        if m:
-            ids = [int(x) for x in ENTRY_ID.findall(m.group(1))]
-            cur = (ids, [ln])
-            entries.append(cur)
-        elif cur is not None and (not ln.strip() or ln[0] in " \t"):
-            cur[1].append(ln)
-        else:
-            cur = None
-    return [(ids, "\n".join(lines)) for ids, lines in entries]
-
-
-def entry_origins(text):
-    """(ids, origin) per entry in one ledger snapshot, fail-closed.
-
-    Exactly one marker whose value is human or loop is a claim; anything
-    else is unknown — the truthful value, never a guess (#216's rule, and
-    task_origins.py's `_classify` value for value).
-    """
-    out = []
-    for ids, body in ledger_entries(text):
-        marks = [v.strip() for v in ORIGIN_MARK.findall(body)]
-        origin = marks[0] if len(marks) == 1 and marks[0] in KNOWN_ORIGINS \
-            else "unknown"
-        out.append((ids, origin))
-    return out
 
 
 def parse_ledger(text):
