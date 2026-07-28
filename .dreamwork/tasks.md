@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **472**
+Next id: **474**
 
 ## Open
 - **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
@@ -202,7 +202,49 @@ Next id: **472**
   · **the fix is a check, not a habit:** if a body contains a `→ answered` marker positioned after a nested
   `- **` bullet, ERROR and say where it must go. Assert the precondition at runtime — the check is vacuous
   unless the fixture's marker really is unreachable, so derive that from the parser rather than trusting the
-  fixture's layout · related: **#411, #366**
+  fixture's layout · related: **#411, #366, #473**
+- **#472** — a review-artifact link in a question renders as raw markdown, so he cannot open the artifact ·
+  **P1** · dashboard/questions · origin: **human** ·
+  **human via watch 2026-07-29 06:21:** *"the link to the review artifact does not work (doesn't render as a
+  link even)"*
+  · **this is the failure mode every review ask depends on.** The standing rule is that any ask requiring him
+  to read a design ships an artifact; if the link does not render, the artifact is unreachable from the place
+  that asks him to read it, and the ask silently becomes prose
+  · the `#417` entry writes it as a markdown inline link —
+  `[`417-burndown-commits.html`](../review/417-burndown-commits.html)` — and `watch.py` has `linkify`,
+  `linkifyReview` and `mdInline`/`mdSpans` (~2049-2140), so **something in that chain does not handle
+  `[text](url)`** while it does handle backticked paths and bare review names. Measure which before changing
+  anything: three functions compose here and the relative `../review/` path may also be wrong for the route
+  the questions view is served at
+  · **other entries use a different shape** — `#294` and `#445` write `` `.dreamwork/review/x.html` ``
+  backticked and unlinked — so the corpus is inconsistent and the fix has two halves: render the link, and
+  settle **one** way of writing it so the next ask is not a coin flip. `file-formats.md` is where that shape
+  belongs
+  · blocked on nothing · related: **#473**
+
+- **#473** — a question can be updated and he has no way to notice · **P1** · dashboard/questions ·
+  origin: **human** ·
+  **human via watch 2026-07-29 06:21:** *"it was not obvious that this question had updated, we should show
+  the updated ago or something as well as having an event get posted to the user (for notifications) that a
+  question was updated. Add tasks for these."*
+  · **two deliverables and they are different mechanisms**, which is why they are one task only if they share
+  a definition of *updated*: (a) an **updated-ago** on the entry in the questions view, beside the existing
+  date and age; (b) an **event posted for notification** when a question changes, so he learns about it
+  without looking
+  · **the hard part is what counts as an update**, and it is not the file mtime: entries thread, so a
+  coordinator follow-up, a shrink, a rewritten rec and a new sub-decision are all edits to an existing entry,
+  while an unrelated entry's answer also rewrites `questions.md`. Per-entry, not per-file — and nothing
+  currently records when an entry last changed, so this needs a stored timestamp the way `#463` needed
+  created-vs-modified
+  · **it is the same class of defect as `#419`** (he could not find `#264`'s question) and as `#467` (the
+  `→ answered` marker the parser could not see): the loop changes something and assumes he will notice.
+  Tonight `#465` and `#275` were both rewritten smaller and he had no signal either time — he found out by
+  re-reading
+  · **`#456` is prior art for the age display** (` · ` between date and age, dim pad zero) and the notification
+  half should reuse `watch-events.log` rather than inventing a second channel — noting that channel is
+  best-effort and lossy by design, which is a real limit on (b) and may make it the weaker half
+  · blocked on nothing · related: **#472, #419, #467**
+
 - **#471** — a single guard cannot be run on its own, and I cannot explain why the full run disagrees · P2 ·
   loop-tooling/verification · origin: **loop** · **found while verifying `#269`, 2026-07-29 05:5x**
   · `DREAMWORK_GUARDS=<one-self-serving-guard> just guards` **always fails**, for `reviewdraft` and for
@@ -232,6 +274,9 @@ Next id: **472**
   · **ROOT CAUSE CONFIRMED, and it is not a flake — `#461` (`aec8adc` + `54f8fcd`, 2026-07-29 02:56).** Those commits changed six own-server guards (`fileimg fileview identity filehead gitrow serving`) from `const PORT = await freePort()` to `process.argv[3] ? +process.argv[3] : await freePort()`. The recipe **always** passes `{{port}}`, so the fallback never runs and every one of them is forced onto the shared port that the recipe's own server already holds for a different target — `serveVerified` then refuses, correctly. Verified independently: `git log -L` on `identity.mjs:52` shows exactly that one-line change, and a **pair** run (`DREAMWORK_GUARDS="identity gitrow"`) fails both deterministically, which rules out the frame-sampling load flake that everything else at load ~50 looks like.
   · **the irony is the finding, and it is the most `#428`-shaped thing here:** `aec8adc`'s message says the argument exists *"so a squatter red-proof can aim"*. The knob was added **to make verification better** — and it silently switched off eight guards' assertions from 02:56 onward. A change to a check's plumbing is a change to the check, and nothing measured whether the guards still ran, because the suite reports **registration** (`58 guard(s) registered, each with a file`) and never execution.
   · so everything guard-verified after 02:56 today was gated by nothing. The two that matter tonight — `reviewdraft` (`#269`/`#459`) and `burndownmock` (`#417`) — were both run **directly** by the coordinator and passed, so their content stands; what was missing was the suite's enforcement, not the evidence.
+  · **EXPLAINED AND FIXED — `c54f48f` (lane `wt/guardport`, explanation), merge `9c768ee`, fix `80ac4b5`.** The lane's verdict on where the fix belongs was right and it **refused the change the brief floated**: `serveVerified` must keep refusing a port held by a server for a different target, because that refusal is `#461`'s entire contract — making it lenient would reopen the defect it exists to close. The fix is one line per guard: back to `await freePort()`, keeping `serveVerified`. Applied to all eight (the six from `#461`, plus `reviewdraft`, plus `summaryjson` which was written tonight in the same broken idiom). `reviewdraft` also lost its hardcoded `39894`, which lost to `argv[3]` in a full run anyway **and** squatted inside the reserved 39890-39899 range (`#319`). `justfile`: no change — the recipe was correct and the guards had drifted from its documented contract.
+  · **turning `identity` back on immediately exposed a REAL failure it had been hiding**, which is the clearest possible demonstration of the cost: it asserted that a refused tint returns **400**, but since `#263` E5 a durable rejection is **202 with `rejected` in the body** — *a 202 does not mean the write landed*. So that assertion had been wrong since E5 and invisible since 02:56. Now it asserts the **verdict**, not the status, because status alone passes on an accepted write. `identity`, `gitrow`, `reviewdraft` and `summaryjson` all PASS under `just guards`, which **none of them could do before**.
+  · **the successor this leaves open, and it is the real lesson:** the suite reports `59 guard(s) registered, each with a file` and nothing measures whether a registered guard **executed**. That gap is what let eight guards idle for three and a half hours. A count of guards that actually ran, compared against the registered set, is the missing check.
 
 - **#470** — the hook plugin ships behaviour into his harness and nothing measures whether it still fires ·
   **P2** · verification/plugins · origin: **loop** · filed 2026-07-29 while looking for work disjoint from
@@ -3545,6 +3590,8 @@ Next id: **472**
   · note for whoever reads the panel next: `#218`'s median line landed in it at 17:19, so it is
   fuller than the last person to look at it remembers
   · **HE ASKED TO SEE ALL FOUR (2026-07-29 05:51: *"show me mockups of all 4 options please"*) and the mockups LANDED `ab7baa5`+`643198a` (lane `wt/mockups`, merge `5a6c964`).** The lane measured before building and found the renders were **already there** — ten of them, reference plus c1–c4 at desktop 554px and mobile 358px, all non-blank. The defect was the **layout**: stacked desktop/mobile pairs per option, which is a gallery and not a comparison, so seeing four options against each other meant scrolling and remembering. Fix is a **five-up strip at one scale**. **Nothing is drawn**: every cell is a real render of the real panel against the live ledger, which is the rule `#367` established the hard way — an opinion about appearance cannot be red-proved, so a mockup he cannot check is worse than none. New guard `dev/capture/burndownmock.mjs` (`DEFAULT_GUARDS` **58**) asserts the strip covers every option **as a set** rather than counting to four, that every render decodes to the **same** `naturalWidth` (a comparison at two scales is not a comparison), and that none is blank — a broken data URI renders as nothing and reads as a subtle design choice. **Coordinator-verified independently:** deleting one option's `data-option` cell reds exactly the set check and nothing else; artifact restored byte-identical, `check` reports `current`, 0 external URLs. The decision itself is still his — `rec` remains `c4` with the copy shortened, and `c2` if he wants shape.
+  · **HE RULED 2026-07-29 06:23: `c3` + `c4`, overriding both the rec and the coordinator's rejection of `c3`.** *"I think c3 + c4. I like the chunkyness of the line. granted it's not that intuitively connected to the number of tasks … but yeah. it shows density of action still which is kind of nice."* **And he answered the objection rather than dismissing it:** the visual verdict rejected `c3` because a weight→commits mapping is *learned, not obvious* — his fix is *"we should show exact numbers for each column on hover of that column. then it's very easy to learn."* That converts an unlearnable encoding into a learnable one, which is a better answer than the rejection was. **The hover must show all three facts, not only commits**, because the level line already means open-count and the whole difficulty is that it now carries two things.
+  · so the work is: cap weight 2-6px for commits (`c3`), the figure line in `#218`'s voice with the copy **shortened so it does not ellipsise** (`c4`, his condition), and a per-column hover. **Constraint carried from the panel's design:** every height in `.bd` is fixed so fresh data never moves the page, so neither the hover affordance nor the copy line may change the panel's height — and a hover is an **arrival**, so `transitions.md` applies with no size floor.
 
 - **#418** — a `#264` in any rendered text should be hoverable for its info and clickable to its
   task page · P2 · Web UI/cross-cutting · origin: **human** · **human via watch `add-idea`
@@ -5126,7 +5173,7 @@ Next id: **472**
   was absent, not that the surface is missing. Worth stating so nobody builds a second surface
   · **P1 because it is a loop-integrity property, not a feature**: every hour he spends unable to
   unblock work he believes he is blocking is a direct cost, and the failure is silent on both sides
-  · related: **#264, #294, #289, #420**
+  · related: **#264, #294, #289, #420, #473**
   · **landed `0f11df5`, 2026-07-28 17:00** — direction 1 enforced, direction 2 refused and the refusal red-proved
 
   · **IN PROGRESS 2026-07-28 16:14** — `ccc @glm52`, `.worktrees/419`, brief

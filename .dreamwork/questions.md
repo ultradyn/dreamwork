@@ -28,67 +28,6 @@
   - **Note (human, via watch, 2026-07-29 05:51):** why can't we enable #465
     without this? And also, what is 465?
 
-- **P2 · 2026-07-28 — #417: four ways to put commits-per-period on the burndown, priced. Which, if any?**
-  **Ask: `C1`, `C2`, `C3`, `C4`, or `none` — and `rec` takes C4.**
-  Artifact: [`417-burndown-commits.html`](../review/417-burndown-commits.html) (`5fe331a`) — ten real
-  renders of the real panel against the live ledger, at desktop and mobile.
-
-  Your words were *"design needs to be considered since we have a pretty good design now and it would
-  be easy to make it worse"*, so this is a proposal and **nothing has been built into the chart.**
-
-  | | what it is | what it costs |
-  |---|---|---|
-  | **C1** | faint commit histogram behind the flow | height holds; the bars share a colour family with arrived/landed, so the chart gains a second thing to disambiguate. New motion idiom |
-  | **C2** | thin sparkline rail beneath the axis | **+25px, which breaks the `burndown` guard's constant-height premise.** New motion idiom |
-  | **C3** | commit count encoded in the level line's weight | no second scale at all, but the level line then means two things at once. New motion idiom |
-  | **C4** | copy only — one figure line in the panel's voice | **+19px, no new motion idiom** — inherits `#218`'s median treatment |
-
-  **`rec: C4`,** and the reasoning is that it is the only option that spends nothing on the chart's
-  legibility, which is the thing you said not to trade. The other three each introduce a new motion
-  gesture, and `transitions.md` has no size floor — so each is a bigger job than it looks. If you want
-  the *shape* of commit activity and not just its size, that is `C1`, and `rec` is wrong for you.
-
-  **Visual verdict, 19:10 — I looked at them myself.** grok is 401 and `@glm52` cannot see, but the
-  coordinator can, so this is no longer owed and `defer` is no longer needed. I extracted the ten
-  embedded renders and read them. **It changes one of the four answers and confirms the rec.**
-
-  Context the reference render supplies and the prose does not: **the panel already carries two bar
-  series** (arrivals above the axis, landed below), plus the level line, the provenance bar and `#218`'s
-  median line. A third quantity is landing in an already-dense frame.
-
-  - **`c1` histogram behind — reject. It is invisible.** Side by side with the reference at the panel's
-    real 553px I cannot tell them apart; the faint bars are lost behind the two series already there.
-    It buys nothing measurable and still costs a new motion idiom.
-  - **`c2` sparkline rail — the real contender if you want the shape.** It is legible: a thin curve in
-    its own band below the axis, labelled *"59 peak commits/period"* at the right, and it does not fight
-    the bars because it is not among them. Costs `+25px` and **breaks the `burndown` guard's
-    constant-height premise**, which is a real bill, not a formality.
-  - **`c3` line weight — reject, and this is where I disagree with the lane.** It offered `c3` as the
-    fallback if you want shape. Seen rather than reasoned about, `c3` makes the level line **chunky and
-    noisy** next to the reference's clean dashes, and thickness cannot be read as a quantity — so it
-    degrades the chart's *primary* signal to carry a secondary one badly. If you want shape, `c2`.
-  - **`c4` copy only — still the rec, with one fix.** The chart is untouched and the line sits in
-    `#218`'s exact voice. **But as rendered it truncates:** *"16 median ledger commits per period · 59
-    peak · 3 periods with n…"*. The lane priced this honestly as *"one ellipsised line"*; seeing it, an
-    ellipsis reads as broken rather than terse. **Shorten the copy so it fits** — that is a condition of
-    `c4`, not a reason against it.
-
-  **So: `rec` is still `c4` (with the copy shortened), and if you want the per-period shape the answer
-  is `c2`, not `c3`.**
-  · **Mockups built, 2026-07-29 06:03 — `5a6c964`.** The renders already existed; what was missing was a
-  way to compare them, so `417-burndown-commits.html` now opens with a **five-up strip (reference + c1–c4)
-  at one scale**, all real renders of the real panel against the live ledger. Nothing is drawn or
-  approximated. A guard asserts the strip covers every option **as a set** rather than counting to four,
-  that every render decodes to the same width (a comparison at two scales is not one), and that none is
-  blank — verified independently by deleting one option's cell, which reds exactly that set check.
-  - **Note (human, via watch, 2026-07-29 05:51):** show me mockups of all 4
-    options please.
-
-
-
-
-
-
 
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
   You said "defer publishing repo for a bit", which answers an open
@@ -125,6 +64,89 @@
 
 
 ## Answered
+
+- **P2 · 2026-07-28 — #417: four ways to put commits-per-period on the burndown, priced. Which, if any?**
+  **Ask: `C1`, `C2`, `C3`, `C4`, or `none` — and `rec` takes C4.**
+  Artifact: [`417-burndown-commits.html`](../review/417-burndown-commits.html) (`5fe331a`) — ten real
+  renders of the real panel against the live ledger, at desktop and mobile.
+
+  Your words were *"design needs to be considered since we have a pretty good design now and it would
+  be easy to make it worse"*, so this is a proposal and **nothing has been built into the chart.**
+
+  | | what it is | what it costs |
+  |---|---|---|
+  | **C1** | faint commit histogram behind the flow | height holds; the bars share a colour family with arrived/landed, so the chart gains a second thing to disambiguate. New motion idiom |
+  | **C2** | thin sparkline rail beneath the axis | **+25px, which breaks the `burndown` guard's constant-height premise.** New motion idiom |
+  | **C3** | commit count encoded in the level line's weight | no second scale at all, but the level line then means two things at once. New motion idiom |
+  | **C4** | copy only — one figure line in the panel's voice | **+19px, no new motion idiom** — inherits `#218`'s median treatment |
+
+  **`rec: C4`,** and the reasoning is that it is the only option that spends nothing on the chart's
+  legibility, which is the thing you said not to trade. The other three each introduce a new motion
+  gesture, and `transitions.md` has no size floor — so each is a bigger job than it looks. If you want
+  the *shape* of commit activity and not just its size, that is `C1`, and `rec` is wrong for you.
+
+  **Visual verdict, 19:10 — I looked at them myself.** grok is 401 and `@glm52` cannot see, but the
+  coordinator can, so this is no longer owed and `defer` is no longer needed. I extracted the ten
+  embedded renders and read them. **It changes one of the four answers and confirms the rec.**
+
+  Context the reference render supplies and the prose does not: **the panel already carries two bar
+  series** (arrivals above the axis, landed below), plus the level line, the provenance bar and `#218`'s
+  median line. A third quantity is landing in an already-dense frame.
+
+  → answered (2026-07-29 06:24): **`c3` + `c4`, and your hover answers my objection better than my
+    rejection did.** I rejected `c3` because the weight→commits mapping is learned rather than obvious;
+    exact per-column numbers on hover make it *learnable*, which removes the objection instead of
+    arguing with it. So: cap weight 2-6px carries commits, the copy line carries the figures, and
+    hovering a column shows that column's exact numbers.
+    **Your question — yes, nearly: the level line is how many were OPEN at that period**, not tasks
+    completed. The panel runs two tracks over one set of columns: the *level* (open count) above, and
+    the *flow* below (arrivals up, completions down about a hairline). So the chunkiness you like will
+    sit on the open-count track, and commits are a third fact on a line that already means one thing —
+    which is exactly why the hover matters, and it should show all three, not only commits.
+    One constraint carried into the work: **every height in this panel is fixed** so fresh data never
+    moves the page, and `c4`'s copy line must not wrap. Recorded on `#417`; two follow-up tasks filed
+    from your other notes.
+  - **`c1` histogram behind — reject. It is invisible.** Side by side with the reference at the panel's
+    real 553px I cannot tell them apart; the faint bars are lost behind the two series already there.
+    It buys nothing measurable and still costs a new motion idiom.
+  - **`c2` sparkline rail — the real contender if you want the shape.** It is legible: a thin curve in
+    its own band below the axis, labelled *"59 peak commits/period"* at the right, and it does not fight
+    the bars because it is not among them. Costs `+25px` and **breaks the `burndown` guard's
+    constant-height premise**, which is a real bill, not a formality.
+  - **`c3` line weight — reject, and this is where I disagree with the lane.** It offered `c3` as the
+    fallback if you want shape. Seen rather than reasoned about, `c3` makes the level line **chunky and
+    noisy** next to the reference's clean dashes, and thickness cannot be read as a quantity — so it
+    degrades the chart's *primary* signal to carry a secondary one badly. If you want shape, `c2`.
+  - **`c4` copy only — still the rec, with one fix.** The chart is untouched and the line sits in
+    `#218`'s exact voice. **But as rendered it truncates:** *"16 median ledger commits per period · 59
+    peak · 3 periods with n…"*. The lane priced this honestly as *"one ellipsised line"*; seeing it, an
+    ellipsis reads as broken rather than terse. **Shorten the copy so it fits** — that is a condition of
+    `c4`, not a reason against it.
+
+  **So: `rec` is still `c4` (with the copy shortened), and if you want the per-period shape the answer
+  is `c2`, not `c3`.**
+  · **Mockups built, 2026-07-29 06:03 — `5a6c964`.** The renders already existed; what was missing was a
+  way to compare them, so `417-burndown-commits.html` now opens with a **five-up strip (reference + c1–c4)
+  at one scale**, all real renders of the real panel against the live ledger. Nothing is drawn or
+  approximated. A guard asserts the strip covers every option **as a set** rather than counting to four,
+  that every render decodes to the same width (a comparison at two scales is not one), and that none is
+  blank — verified independently by deleting one option's cell, which reds exactly that set check.
+  - **Note (human, via watch, 2026-07-29 05:51):** show me mockups of all 4
+    options please.
+  - **Note (human, via watch, 2026-07-29 06:21):** note: the link to the
+    review artifact does not work (doesn't render as a link even) note: it
+    was not obvious that this question had updated, we should show the
+    updated ago or something as well as having an event get posted to the
+    user (for notifications) that a question was updated. Add tasks for
+    these.
+  - **Answer (via watch, 2026-07-29 06:23):** I think c3 + c4. I like
+    the chunkyness of the line. granted it's not that intuitively
+    connected to the number of tasks (which I think is what the line is,
+    right?) but yeah. it shows density of action still which is kind of
+    nice. with regards to: "Encodes a third fact (commits) into the
+    level line's cap weight (2–6px). The mapping is learned, not
+    obvious." in the review doc: we should show exact numbers for each
+    column on hover of that column. then it's very easy to learn.
 
 - **P2 · 2026-07-27 — #275 Dreamhub auth: three calls left of the original six**
 
