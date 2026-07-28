@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **419**
+Next id: **420**
 
 ## Open
 
@@ -1792,7 +1792,7 @@ Next id: **419**
   · **#342 is the same work from the other end**: his batched-delivery idea needs a
   read cursor, and #263's journal IS that cursor — so E1 unblocks the delivery mode
   he asked about five minutes earlier, and the two steers should not be built twice
-  · related: **#418**
+  · related: **#418, #419**
 
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch
@@ -1824,6 +1824,7 @@ Next id: **419**
   #294 rather than landing a pre-migration shape that must then be migrated ·
   authority is a written design + migration proposal ONLY — no grammar, parser,
   lint, UI, icon, transition, artifact or deployment change
+  · related: **#419**
 
 - **#288** — Prevent isolated agents from killing protected live services to
   satisfy invented test premises · P0/P1 · tooling/authority incident · origin:
@@ -2236,7 +2237,7 @@ Next id: **419**
   than proven; two incidents predate the fan-out window
   · **the broad research half remains open** — the primitive comparison and the #294 migration
   script, cutover and rollback. This task answered the evidence question, not that one
-  · related: **#397, #402, #405**
+  · related: **#397, #402, #405, #419**
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
@@ -3159,6 +3160,42 @@ Next id: **419**
   an id that does not resolve — a landed task, a withdrawn one, a typo? `#402`'s lesson applies:
   *"I could not tell"* and *"nothing"* must not render the same
   · related: **#294, #346, #281, #300**
+
+- **#419** — it must be structurally impossible to be blocked on a human decision with no question
+  asking for it · **P1** · loop-integrity/format · origin: **human** · **human via watch
+  `/answers` 2026-07-28 15:19**
+  · verbatim: *"I cannot see any question for #264 in the webui, how am I meant to provide a
+  ruling? (Note: we must have a way to do this via the webui, and we should structure things in
+  such a way that it's impossible for us to be blocked on a user decision without a corresponding
+  question or sometihng either pending an answer/ruling, or that question could be answered but
+  waiting for processing, but yea hthere always has to be an answer in our data for these kinds of
+  questions."*
+  · **he found it by being unable to act, which is the worst way to find it.** At 15:02 I answered
+  that ratifying `#264` was *"the only thing of this chain on your desk"* — and no `questions.md`
+  entry existed for it. The design had landed at `914648c` with its artifact and the ask simply was
+  never filed. So the loop reported itself blocked on him, told him so, and gave him nothing to
+  rule on. The question is filed now; **this entry is the reason it cannot recur**
+  · **the invariant, stated so it can be checked:** every open task whose blocker is a human
+  decision has a corresponding `questions.md` entry that is either **open** (awaiting his ruling)
+  or **answered-but-unfolded** (ruled, awaiting processing). Both states are legitimate; **absent
+  is not.** Equivalently — *"there always has to be an answer in our data"* — a blocked-on-human
+  task with no entry is a lint ERROR, not a WARN
+  · **the missing half is that a task cannot currently SAY this.** Entries express it in prose
+  (*"awaiting his ruling"*, *"blocked on #264 Q2"*, *"WITHHELD behind a second gate"*), and prose is
+  not checkable. So this needs a machine-readable marker in `file-formats.md` — a `blocked-on:
+  **human**` field, or a `gate:` naming the question — in the same commit as the check, per the
+  repo's standing rule. **Design the marker before writing the check**: a check over a field nobody
+  fills is the hollow-check failure one level up
+  · **and the reverse direction is worth the same line, because it is the cheaper error:** an
+  answered-but-unfolded entry that has sat unprocessed is also a stall he cannot see. `lint` already
+  derives *"N of 51 answered entries have no resolution date"*; this is the same idiom pointed at
+  fold latency
+  · his *"we must have a way to do this via the webui"* is already satisfied for entries that
+  exist — the dashboard's `/questions` composer answers them — so the gap is purely that the entry
+  was absent, not that the surface is missing. Worth stating so nobody builds a second surface
+  · **P1 because it is a loop-integrity property, not a feature**: every hour he spends unable to
+  unblock work he believes he is blocking is a direct cost, and the failure is silent on both sides
+  · related: **#264, #294, #289**
 
 ## Recently landed
 
