@@ -24,9 +24,38 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **443**
+Next id: **444**
 
 ## Open
+- **#443** — run modes conflate PACE with DELEGATION POSTURE, so there is no way to say *"idle-friendly, but
+  use subagents"* · **P1** · loop-design/run-mode · origin: **human** · **human via watch 2026-07-28 22:18**
+  · his words (dictated, lightly punctuated): *"We need to rethink how the Run modes work. Because when,
+  like, we need ways to say, like, be lackadaisical, but also use sub-agents. So we need a good — I guess
+  like a good — yeah, good way to do that. We need to think about how we're gonna structure this and
+  restructure it from first principles so that it works and it works well."*
+  · **the defect stated plainly.** `.dreamwork/run-mode` (`#290`) is one line from a closed set —
+  `lackadaisical` / `hot` / `assisted` — and that single axis is carrying at least two independent
+  decisions: **how often the loop acts** and **whether it acts through subagents.** `assisted` is the only
+  value that implies helpers, and it also implies a pace, so *"lackadaisical but delegating"* is
+  unexpressible. Tonight's session is exactly that state — he asked for low activity **and** for all work to
+  go through subagents — and it was held in conversation rather than in the file, which means it does not
+  survive a restart or a compaction
+  · **first principles, as he asked**, and the axes to argue about rather than assume: (1) **pace** — how
+  eagerly the coordinator starts new work; (2) **delegation** — coordinator's own hands vs subagents, and how
+  many at once; (3) **quota posture** — what to spend, which tonight was the *reason* for the mismatch and is
+  arguably its own axis rather than a consequence of pace; (4) **autonomy** — how much lands without asking.
+  Whether these are four axes, or two axes and two derived values, is the actual design question
+  · **what must not be lost.** `#288` is explicit that a run mode grants **no kill or sandbox authority** on
+  its own, and `#290`'s file contract is load-bearing: gitignored, machine-local, re-read every tick, written
+  by the dashboard behind a 10s arm with one events line on change. A richer mode must keep *re-read every
+  tick* — that is the only property that lets an on-disk change reach a running loop (`#426`), and it is why
+  `run-mode` is the prior art the reload design points at
+  · **the closed set is the thing under review**, so `file-formats.md`, `watch.py`'s parser, the dashboard's
+  composer control, and `SKILL.md`'s selection posture all move together — and a wider grammar has a
+  migration cost for existing installs (`Migration:` trailer)
+  · **design first, with a review artifact and an `#ask`** — this is a restructure of a contract he set and
+  the axes are his call, not the loop's. Do not change the file format before he rules
+  · **blocked-on: **human** (after the design lands)** · related: **#290, #288, #426, #438**
 - **#442** — `midFrames(...) >= 1` reduces the frame-rate bet but does not remove it, and the guard that
   proves this is the one that claimed otherwise · P2 · verification/motion · origin: **loop** · **found by
   coordinator inspection at `#414`'s merge, minutes after the lane argued the problem was gone**
@@ -86,6 +115,7 @@ Next id: **443**
   · **brainstorm-gated, deliberately**: he asked for the design conversation to wait for the quota reset
   after 21:00, so this is filed now and designed then. Do not start building it
   · **blocked-on: **human** (brainstorm scheduled after 21:00 2026-07-28)**
+  · related: **#443**
 - **#439** — the staleness banner says the page is behind but offers no way to act on it · P2 ·
   watch-ui/deploy · origin: **human** · **human via watch 2026-07-28 20:34**
   · his words: *"re: \"this page is 2 watch.py commits behind · serving bfc3222\", we should have after
@@ -2106,7 +2136,7 @@ Next id: **443**
   deciding and doing rather than around the tools — and it should be read alongside this
   design rather than after it, because if the head/body fork is buildable it changes what
   the sandbox here needs to contain
-
+  · related: **#443**
 - **#287** — Design a Matt Pocock skills bridge plugin for Dreamwork · P1 ·
   plugin/research/design · origin: **human** · **human via coordinator
   2026-07-26 19:56** · research the installed first-party
@@ -3697,9 +3727,8 @@ Next id: **443**
   is built twice
   · also names `.dreamwork/run-mode` as prior art: it is re-read on every tick precisely so an on-disk
   change reaches a running loop, and it is the only file in the system with that property today
-  · related: **#425, #368, #263, #431**
+  · related: **#425, #368, #263, #431, #443**
   · **LANDED `ed2d7e1` `2b261f4` (2026-07-28 20:35, lane `wt/reload`).** Design at `.dreamwork/docs/reload-signal-design.md`; increment is `watch.skill_identity()` → `{commit, skill_version}`, exposed via `collect()` so it rides `/data.json`. **Two facts, never one** (the `deploy_state.py` discipline): `commit` moves on every change, `skill_version` only on a migration, so *"my tree changed"* and *"the change affects what I read"* split structurally rather than heuristically. **Lane H decision: do NOT share a mechanism** — same question shape, but different comparand (protocol version in data vs commit of source), trigger site (data-witness vs time boundary) and action (fail-closed refuse-write vs reload-or-report); parallel instances, not nested. Lanes E/G/H not built. Deliberately **not** built: a per-tick `reload-signal` flag file (it re-conflates exactly what the design splits), auto-reloading SKILL.md/CLAUDE.md (the harness reads once; the loop cannot make it re-read), content hashing. **No artifact shipped, on purpose** — the one decision that is his (convention vs flag file) is premature until the convention has been tried, and a decoy ask is worse than none.
-
 - **#405** — the loop has been managing file contention by hand all session when his standing
   convention already removes it: **worktrees** · **P1** · loop/parallelism · origin: **loop** ·
   found because **#397's plan named it as the cheaper alternative to the thing #397 was asked to
@@ -6994,7 +7023,7 @@ Next id: **443**
   TestRunMode 9/9, 515 tests + 46 subtests, runmode guard PASS repeatedly incl
   under pytest -n 2 load; final Standards + Spec PASS · deployed PID 2583034 ·
   `b0db53d`
-
+  · related: **#443**
 - **#292** — Make Ctrl/Cmd+Enter submit `/answers` questions · P1 · UI bug ·
   origin: **human** · **human via watch 2026-07-27 01:17** · landed 2026-07-27 ·
   related: **#293** · exact ask: “bug (give it to grok): on the /answers page,
