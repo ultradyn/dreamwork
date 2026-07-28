@@ -2796,3 +2796,37 @@ this shape and convert opportunistically.)
   conclusion is worth. Record the disagreement, act on what survives both, and say the gap is open —
   a figure with two independent derivations bracketing it is stronger than one with a single
   authoritative-looking value.
+- **A hollow check has a third cause nobody was watching for: the assertion is right and it is
+  applied to the wrong page.** Measuring the `#263` artifact I called
+  `newPage({viewportSize: {...}})`. Playwright's option is **`viewport`**; the wrong key is accepted
+  in silence, so the "desktop 1280×900" run and the "mobile 390×844" run were **both the default
+  1280×720** — one page measured twice under two labels, reported as two viewports verified.
+  **Evidence it was luck that caught it, not rigour:** the tell was that the two runs agreed *to the
+  byte* — identical `scrollHeight` for a 1280px and a 390px render, which is impossible for a
+  responsive page. Had the artifact happened to pass at 720 I would have shipped "verified at both
+  viewports" having checked one. The existing rules do not catch this: the assertion was correct, so
+  reviewing the assertion finds nothing, and a red-proof would have gone red for the right reason on
+  the wrong page. **So: every measurement that configures its subject must assert the configuration
+  took effect, before it measures anything.** For a viewport that is `innerWidth === requested`
+  *and* `innerHeight === requested`, and the second is not redundant — proved, not reasoned: the
+  default width is 1280 and desktop asks for 1280, so on the wrong key **the width matches anyway**
+  and only the height reveals it. A width-only precondition passes the exact bug. Fixed once, in
+  `dev/capture/above_fold.mjs` (`1dd973f`), so no lane writes its own again.
+- **A criterion that names an element nobody agreed to is unenforced, not enforced.** Every review
+  brief for weeks demanded the ask sit above the fold, measured on `#ask`. **`#ask` existed on 2 of 22
+  built artifacts.** On the other 20 the criterion could not be evaluated at all, so it read as a
+  standard while functioning as a wish, and no lane was ever wrong for ignoring it. **Evidence the
+  gap was invisible from either side:** the two artifacts that *do* have the id disagree about the
+  answer — one puts the ask inside the hero and passes at 218/266, one puts it after and fails at
+  594/1006 — so even the compliant cases had no shared meaning. **Before writing a criterion that
+  names a selector, a file, or a marker, measure how much of the corpus has one.** If the answer is
+  "two", the deliverable is the convention, not the criterion.
+- **`bottom < innerHeight` was the wrong shape for the thing it was protecting.** The above-fold rule
+  as written demands the ask's *box end* within the first screen. `#263`'s ask is 870px tall because
+  it carries three decisions — the literal is unsatisfiable at any viewport, and obeying it would mean
+  splitting one coherent decision across pages to please a measurement. **Evidence the intent was
+  recoverable:** the reason the rule exists is "he can see what he is being asked", which measures as
+  *the block starts above the fold* **and** *its first decision does too* — and the second half is
+  load-bearing, because `top < innerHeight` alone passes a block that begins one pixel up with every
+  word below. When a mechanical criterion becomes unsatisfiable, the usual cause is that it encoded a
+  proxy; recover the intent and re-encode it, rather than dropping the check or exempting the page.
