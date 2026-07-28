@@ -1320,46 +1320,6 @@ Next id: **410**
   disagree with the first, which is the failure #263 exists to prevent
   · blocked on #294 for the toggle, #263's E1 answer for the cursor it consumes
 
-- **#340** — His answer renders as raw prose in `## Answered`, tag showing, on more
-  than half of them · **P1** · UI correctness · origin: **loop** · from #254's design
-  agent, verified independently by the coordinator · in `## Answered` the parser runs
-  with `lift_answer=False`, so a retained `- **Answer (via watch, …):**` sub-bullet
-  falls into the entry **body** and `mdB` renders it as a `·` item with its raw author
-  tag visible as text and **no `you` label** — his words lose their attribution on the
-  page while looking like loop prose · **measured on the live file at `0f9d753`: 17 of
-  31 answered entries** (~55%), where the agent reported 15 of 29 before tonight's four
-  folds — same defect, count moves with the file, so the check must derive it at
-  runtime and never pin a literal · this is the SAME visual defect as the screenshot he
-  filed #254 about, on the more-travelled path, and #109 already made mis-attributed
-  authorship a correctness matter rather than a cosmetic one · the fix is reportedly one
-  `lift_answer` argument, which is exactly why it must not be done blind: `## Answered`
-  also carries the `→ answered` resolution head that `answered_at()` reads, so lifting
-  the bullet must not create a second thing able to disagree with it · red-prove with a
-  real answered entry and assert at runtime that the `you` label appears AND that the
-  raw tag does not
-  · **STOP — this appears to be ALREADY FIXED, and I nearly dispatched a lane at it.** While
-  verifying my own brief's line-number claims before dispatch, the citations proved stale after the
-  `#399` merge — and re-deriving the measurement showed the defect gone. **`8009c90 fix(#340): his
-  answer is a contribution, not unattributed body prose`** exists in history; this entry never cited
-  it and so was never folded
-  · **measured on the live file now:** `parse_answered` returns **49** answered entries, **0** with a
-  raw `**Answer (via …)` tag in the body, **0** with one in a follow, and **36** whose follows carry
-  an explicit `author` field (`'human'` / `'loop'`). The entry's own figure — 17 of 31, ~55% — is
-  from before that commit
-  · **and the fix would NOT have been the one-argument change this entry describes.** There are
-  **two** `lift_answer=False` call sites for `## Answered`: `parse_answered` (`:8449`, reads
-  `questions.md`, where the answer is **his**) and `parse_answered_answers` (`:8299`, reads
-  `answers.md`, where it is the **loop's**). They are different channels, so the change is
-  **asymmetric** — and `answers.md`'s Answered section contains **zero** `Answer (via …)` bullets,
-  only `→ answered` heads. A lane doing "the one-argument fix" symmetrically would have attributed
-  **loop prose to him**, which `#109` makes a correctness fault. Worse than the bug
-  · **not closed yet, deliberately: the evidence is parsed-data, and the defect is about pixels.**
-  Owed: look at `/questions`' Answered section on the deployed page and confirm the `you` label
-  renders and no raw tag shows. Then close citing `8009c90`
-  · **separately, worth a look and NOT part of this:** `answered_at` returns `None` for **6** of the
-  49 answered entries, so those carry no answered-date. Five are real entries; one is *"Four early
-  asks, all applied"*. File it if it survives a look
-
 - **#341** — Two answers on one OPEN entry silently keep only the last · P2 ·
   reliability · origin: **loop** · from #254's design agent · `_parse_entries`
   overwrites `cur["answer"]` and resets `answer_at`, so a second
@@ -2995,6 +2955,63 @@ Next id: **410**
   **blocked**: human pick
 
 ## Recently landed
+- **#340** — His answer renders as raw prose in `## Answered`, tag showing, on more
+  than half of them · **P1** · UI correctness · origin: **loop** · from #254's design
+  agent, verified independently by the coordinator · in `## Answered` the parser runs
+  with `lift_answer=False`, so a retained `- **Answer (via watch, …):**` sub-bullet
+  falls into the entry **body** and `mdB` renders it as a `·` item with its raw author
+  tag visible as text and **no `you` label** — his words lose their attribution on the
+  page while looking like loop prose · **measured on the live file at `0f9d753`: 17 of
+  31 answered entries** (~55%), where the agent reported 15 of 29 before tonight's four
+  folds — same defect, count moves with the file, so the check must derive it at
+  runtime and never pin a literal · this is the SAME visual defect as the screenshot he
+  filed #254 about, on the more-travelled path, and #109 already made mis-attributed
+  authorship a correctness matter rather than a cosmetic one · the fix is reportedly one
+  `lift_answer` argument, which is exactly why it must not be done blind: `## Answered`
+  also carries the `→ answered` resolution head that `answered_at()` reads, so lifting
+  the bullet must not create a second thing able to disagree with it · red-prove with a
+  real answered entry and assert at runtime that the `you` label appears AND that the
+  raw tag does not
+  · **STOP — this appears to be ALREADY FIXED, and I nearly dispatched a lane at it.** While
+  verifying my own brief's line-number claims before dispatch, the citations proved stale after the
+  `#399` merge — and re-deriving the measurement showed the defect gone. **`8009c90 fix(#340): his
+  answer is a contribution, not unattributed body prose`** exists in history; this entry never cited
+  it and so was never folded
+  · **measured on the live file now:** `parse_answered` returns **49** answered entries, **0** with a
+  raw `**Answer (via …)` tag in the body, **0** with one in a follow, and **36** whose follows carry
+  an explicit `author` field (`'human'` / `'loop'`). The entry's own figure — 17 of 31, ~55% — is
+  from before that commit
+  · **and the fix would NOT have been the one-argument change this entry describes.** There are
+  **two** `lift_answer=False` call sites for `## Answered`: `parse_answered` (`:8449`, reads
+  `questions.md`, where the answer is **his**) and `parse_answered_answers` (`:8299`, reads
+  `answers.md`, where it is the **loop's**). They are different channels, so the change is
+  **asymmetric** — and `answers.md`'s Answered section contains **zero** `Answer (via …)` bullets,
+  only `→ answered` heads. A lane doing "the one-argument fix" symmetrically would have attributed
+  **loop prose to him**, which `#109` makes a correctness fault. Worse than the bug
+  · **not closed yet, deliberately: the evidence is parsed-data, and the defect is about pixels.**
+  Owed: look at `/questions`' Answered section on the deployed page and confirm the `you` label
+  renders and no raw tag shows. Then close citing `8009c90`
+  · **separately, worth a look and NOT part of this:** `answered_at` returns `None` for **6** of the
+  49 answered entries, so those carry no answered-date. Five are real entries; one is *"Four early
+  asks, all applied"*. File it if it survives a look
+  · **CLOSED 2026-07-28 11:05, and the pixel check is what closed it.** The parsed evidence above
+  said the defect was gone; this entry deliberately withheld the close until someone looked at the
+  page, because the defect is about pixels and parsed data cannot see pixels. Looked, on the
+  deployed `/questions`: **33** answered entries in the source carry a retained
+  `- **Answer (via …):**` sub-bullet — the precondition, and without asserting it a count of zero
+  raw tags is vacuous and reads exactly like a pass; **0** of them render the tag as literal text
+  anywhere in the DOM (measured on `textContent`, 420,637 chars, so collapsed bodies count too —
+  `innerText` alone sees 15,396 chars and would have proved nothing); and **53** `span.who`
+  attribution pills render. The screenshot shows a thread as `↳ YOU 2026-07-26 18:54` /
+  `↳ LOOP 2026-07-26 18:56`. Landed at **`8009c90`**, which this entry never cited — that missing
+  citation is the whole reason a fixed defect stayed open as a P1 and nearly got a lane
+  · **the instrument had to be checked before the measurement meant anything.** The deployed page
+  is running `c42af82`, not master — but every hunk of that diff falls inside 7541-7711, the ledger
+  parsers. The answered-rendering code is byte-identical, so the page could answer this question
+  · **the brief written for this task was deleted, not kept.** Its premise was the stale one and
+  its prescription — the symmetric one-argument fix — was actively wrong. A wrong brief left in
+  `.dreamwork/docs/briefs/` is a loaded trap for whoever greps that directory next
+
 - **#394** — a dreamer lane reports only to the inbox, so its landing dies with its coordinator ·
   P2 · loop/durability · origin: **loop** · found while verifying **#381** end to end
   · `#381` built the delivery half of the single-writer rule and **both its readers work** — but
