@@ -3713,7 +3713,7 @@ Next id: **437**
   · scope today was limited to the one artifact on his desk: `263`'s crumb shortened from 56 to 20
   characters, overflow 440px->390px in a 356px bar. **One overlap survives that**, which is why the
   template half is real
-  · related: **#325, #429**, **#436**
+  · related: **#325, #429, #436**
   · **landed `2ade390`** (glm52 lane `9d9c41b`, `46f90dd`). `.identity b` gained the
   `overflow:hidden;text-overflow:ellipsis;min-width:0` trio its sibling one declaration away already
   carried. Lane chose **(a)** and refused all 12 untemplated migrations with per-file evidence — 12
@@ -3824,7 +3824,7 @@ Next id: **437**
   · so: make `#ask` a documented required element in `file-formats.md` / the artifact template, restate
   the criterion as above in `watch-design.md`, and give it **one shared checker** instead of each lane
   writing its own mjs
-  · related: **#430, #325, #432, #433**, **#436**
+  · related: **#430, #325, #432, #433, #436**
   · **→ folded 2026-07-28 18:21 — landed `1dd973f` + `a54d162`.** The defect as stated is closed:
   the criterion is restated to something satisfiable (`top < innerHeight` for the block *and* its
   first decision, not `bottom < innerHeight` for a 870px three-decision block), it has one shared
