@@ -2646,6 +2646,28 @@ Next id: **425**
   re-runs `C4`'s named red independently (drop the second section from the scan's list, the fold
   test must fail) and refuses a **second** drift detector — `committed_lineage` in both
   `domain_files.py` and `apply.py` is lane D's already-shipped hollow-red bug
+  · **lane C is 5 of 5 as of 2026-07-28 17:21** — `C4` `f85be1c`, `C5` `2cc3537`, `ccc @glm52`,
+  ~43 minutes. `find_marker` scans `_MANAGED_SECTIONS = ("Open","Answered")`; `rebaseline` validates,
+  mints `max(committed)+1`, preserves bytes and journals the import through a callback (mirroring
+  `reconcile`'s `finish`). **So A, B, C, D and F are all complete and the second gate's condition is
+  MET** — this time asserted by a gate rather than read off a lane's self-report
+  · **the gate passed 16/16 on the candidate and still fails 6 on `master`**, so narrowing it did not
+  hollow it. Its one FAIL was **mine**: it counted every mention of `committed_lineage` (7 in
+  `domain_files`, 11 in `apply`) and called it a duplicated drift detector. It is a **parameter name
+  threaded through**; the membership test exists once, `apply.py:166`. **A substring cannot tell a
+  duplicated predicate from a threaded argument** — the same defect as grepping prose for *"condition
+  met"* and finding five retractions, twice in one hour. Narrowed to `in committed_lineage`: 0 and 1
+  · **the lane disclosed that its own `C5` red is defence-in-depth, not the sole mechanism.** The file
+  after `rebaseline` always sits at `S = max(committed)+1`, so a caller passing `reserved_successor =
+  S` sees `APPLIED` via the successor half alone and the lineage red would be **hollow**; its test
+  passes `max(new_lineage)+1` so the lineage half is load-bearing. It reported the geometry rather
+  than claim a cleaner discrimination than the geometry allows
+  · **and it found plan row 15's red line stale** — it named `apply._is_valid_known_file`'s predicate,
+  which is `D1`'s red and already proven there. Corrected in the plan with the reason visible; same
+  class as the stale `B1`/`B7` rows
+  · **`TestCitedShas` failed 3× under random order** (`OSError: File too large`) and passes in
+  isolation and under `-p no:randomly` (1011 passed). Consistent with four lanes running `git`
+  against the live repo at once — the known interaction, not a defect
 
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report

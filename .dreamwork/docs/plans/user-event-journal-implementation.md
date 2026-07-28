@@ -1,7 +1,7 @@
 # Durable user-event journal — red-first implementation plan
 
 **Tasks:** #263 (the plan only) · consumers #260, #262, #269, #274 · adjacent #264, #294, #287, #289, #342, #346
-**Status:** **lanes A–D and F authorised** 2026-07-28 05:43 (`8c5c9cf`). Landed: **A** `aad1d8d` (2/2) · **B** `6a865e4`..`fec80be` (8/8, two batches) · **C** `3f1a6af`, `8c1bb60`, `b5555e4` — **3 of 5; `C4` markers and `C5` rebaseline are NOT built** · **D** `6cd9f95` (4/4) · **F** `9263a42`..`4c918b2` (4/4). **So A–D are NOT proved and the second gate stays shut**, holding lanes **E** (20–25) and **H** (34–35); lane **G** (30–33) was never in G1 and stays withheld regardless. A coordinator claim that the condition was met (`questions.md`, 2026-07-28 16:24) was **wrong and is corrected in place at 16:35** — it read the ledger's *"lane C DONE … 3/3"* as the lane's scope when the lane's scope is 5. §"What this plan does not authorise" still binds everything it names.
+**Status:** **lanes A–D and F authorised** 2026-07-28 05:43 (`8c5c9cf`) and **ALL LANDED** — **A** `aad1d8d` (2/2) · **B** `6a865e4`..`fec80be` (8/8) · **C** `3f1a6af`, `8c1bb60`, `b5555e4`, `f85be1c`, `2cc3537` (**5/5** as of 17:21) · **D** `6cd9f95` (4/4) · **F** `9263a42`..`4c918b2` (4/4). **So the second gate's condition — his 05:43 *"until A–D are proved"* — IS MET**, and lanes **E** (20–25) and **H** (34–35) await only his word; lane **G** (30–33) was never in `G1` and stays withheld regardless. Verified by a merge gate whose denominator is parsed from this document's own increment table and asserted to be five rows — because at 16:24 a coordinator claim that the condition was met was **wrong**, having read the ledger's *"lane C DONE … 3/3"* as the lane's scope when the lane's scope is 5. §"What this plan does not authorise" still binds everything it names.
 **Do not read a landed prerequisite as an open gate.** On 2026-07-28 at 16:14 the coordinator dispatched a lane onto `#371` — which is increment **20**, `E1 envelope`, **lane E** — having read his *"Q2 yes"* at line 19 below as authorisation. It authorises the **design** change; the row itself says *"Increment 20 implements it — behind the second gate."* Killed at 16:20 with nothing committed; retracted at `6ea8f6b`. **An answered question and an opened gate are different facts**, and this document states both in the same table.
 **Date:** 2026-07-28
 **Input:** [`user-event-journal.md`](user-event-journal.md), approved `"rec"` via watch 2026-07-28 01:27 — contract only. Its §"Red-first acceptance fixtures" is this plan's acceptance set; nothing here invents a different one.
@@ -506,9 +506,19 @@ journals the import.
 a syntactically valid file with a generation outside committed lineage; assert
 `Unknown`/refusal; run `rebaseline`; assert application proceeds and the journal
 holds the import event.
-*Red line:* the `generation in committed_lineage or generation == reserved_successor`
-predicate. Deleting the lineage half must make the first assertion fail while the
-post-rebaseline assertion still passes — a discriminating pair.
+*Red line:* **corrected 2026-07-28 17:21, by the lane that built it.** This row named
+the `generation in committed_lineage or generation == reserved_successor`
+predicate — but that predicate lives in `apply._is_valid_known_file` and is
+**`D1`'s** red, already proven there. `C5`'s own red is `rebaseline`'s
+lineage-adoption line, `new_lineage = set(committed_lineage) | {successor}`:
+dropping the successor from the returned lineage fails
+`test_unjournaled_valid_successor_fails_closed_until_rebaselined` on its
+lineage-equality assertion. Same class of stale row as `B1`/`B7`.
+*And the geometry is narrower than it looks, disclosed by the lane rather than
+glossed:* the file after `rebaseline` always sits at `S = max(committed)+1`, so a
+caller computing `reserved_successor = S` would see `APPLIED` through the
+**successor half alone** and the lineage red would be hollow. The test passes
+`max(new_lineage)+1` precisely so the lineage half is what grants `APPLIED`.
 
 ### Lane D — application
 
