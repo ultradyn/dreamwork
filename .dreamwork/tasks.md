@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **470**
+Next id: **471**
 
 ## Open
 - **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
@@ -201,6 +201,19 @@ Next id: **470**
   `- **` bullet, ERROR and say where it must go. Assert the precondition at runtime — the check is vacuous
   unless the fixture's marker really is unreachable, so derive that from the parser rather than trusting the
   fixture's layout · related: **#411, #366**
+- **#470** — the hook plugin ships behaviour into his harness and nothing measures whether it still fires ·
+  **P2** · verification/plugins · origin: **loop** · filed 2026-07-29 while looking for work disjoint from
+  `watch.py`
+  · `plugins/ud-dreamwork-hooks/` has a `tests/` directory, so somebody meant to check it — but nobody has
+  established whether what it ships is what those tests cover, or whether they run at all
+  · **the failure mode is invisible by construction:** a hook that silently stops firing leaves the loop
+  working, slightly worse, forever. The question that matters per hook is not *"do its functions work"* but
+  *"would anything fail if it stopped firing entirely"* — a test that imports a hook and checks a pure
+  function while the **registration** is broken proves nothing
+  · **prior art for exactly this being wrong:** `#310` found *"not yet wired into `just test`"* had been false
+  for two days in one doc while another doc assumed it true. A suite nothing runs is documentation
+  · **do not change hook behaviour to make it testable** without saying so plainly — these run in his harness,
+  so that is a change to his environment, not just to this repo · blocked on nothing · related: **#310**
 - **#469** — nothing here can say which MODEL a lane ran on, and the two signals used for it are both
   unreliable · **P2** · loop-orchestration/provenance · origin: **loop** · filed 04:24 as a routing bug,
   **corrected by the human 04:47**
@@ -3950,6 +3963,7 @@ Next id: **470**
   · blocked on nothing · related: **#432, #429, #433**
   · **CONTRACT LANDED, RETROFIT DONE, GUARD DELIBERATELY NOT REGISTERED — `53078a9` `99b0039` `1a829be` (2026-07-29 00:04, lane `wt/askcontract`, merge `19bf3ac`).** `#ask` is now a **build-time** contract in `review_artifact.py`: a build **refuses** a page carrying neither an `#ask` nor an exemption, refuses one carrying both, and refuses a **decoy** — so the hollowness the entry warned about is rejected at the point of authorship rather than measured afterwards. Exemption is **by declaration** as required: `<meta name="dreamwork-review-ask" content="exempt: <reason>">`. The **8 `src/`-having decision artifacts** carry a real `#ask` and all 11 were rebuilt through the tool — no built file hand-edited. **Still open on purpose**: the walking guard is unregistered because **12 of 23 artifacts have no `src/`** and cannot be rebuilt, so registering it would red the suite over pre-contract pages; `above_fold`'s `lint.NOT_GUARDS` reason was refreshed to say exactly that instead of going stale. The remaining question is what to do with those 12 — reconstruct sources, or declare them exempt in a side-file the guard reads.
   · remainder landed \`75a3488\` — the source-less half is now **explicitly exempt, not silently skipped**: side-file `.dreamwork/review/legacy-contract-exemptions.txt` (one reason per artifact), `corpus_contract_coverage` asserting **as sets** `examined ∪ side_exempt == built`, `examined ∩ side_exempt == ∅` and `{src} − {built} == ∅`, and the walking guard `dev/capture/reviewask.mjs` **registered** (DEFAULT_GUARDS 54). IGC over classes chose exemption over reconstruction for all 12: no template stamp, never built through `review_artifact`, and hand-editing a built file is forbidden. Coordinator-verified independently: guard PASS at load 33.54, and dropping one exemption line yields `unaccounted={tasks-page.html}` plus the equation failure with the missing member named — restored byte-identical, green. `threaded-topic-chats.html` flagged superseded, retirement deferred to the coordinator; `{src} − {built}` is empty today, which the old `|built|−|src|` arithmetic could not have told us.
+  · **CLOSED `12673fe` (lane `wt/askmark`, merge `3b2d579`, 2026-07-29 05:10).** The lane arrived expecting to build the contract and instead **half-refuted its own brief with measurement** — neither/both/decoy and the corpus equation were already in place — which is the outcome a brief should allow. What it found still open was the shape of the escape hatch: the side-file accepted **any basename with any free-text reason**, so a grandfather list for 12 pre-contract pages was also a **quiet landing pad for new ones**, which is the original hollowness relocated rather than removed. Two seals, each naming its production line in a comment: a reason must open with `pre-#436` (`LEGACY_REASON_PREFIX`), and `side_exempt ⊆ built − src`, so a page that *has* a builder source can never be listed here — it uses `no_ask:` at build time. It also **stated the `#ask` floor** rather than widening it, and was right to: the brief listed sub-decisions + `rec` + an if-silent line, and the lane enforced only *present and meaningful*, on the grounds that if-silent is `#455`'s separate contract and a genuine single-decision page must not be forced to invent a decoy Q2. **Coordinator-verified independently, not accepted on report:** reverting each seal in turn (`if False:` on the prefix gate; `side_with_src = set()`) reds exactly one named test each and nothing else. One correction: its report cited commit `5168e0a`, which is its parent — the work is `12673fe`.
 
 - **#450** — note the containment deficiency, and warn per harness where interception is impossible ·
   **P2** · docs/safety · origin: **human** · **from `#288`'s answer, 2026-07-29 00:50** ·
@@ -7773,7 +7787,7 @@ Next id: **470**
   field list is a menu, not a whitelist, and that is now stated where someone
   would otherwise prune it · audit kept at
   `.dreamwork/review/evidence/310-hub-drift-audit.md`
-
+  · related: **#470**
 - **#248** — Decide whether answers records need persisted IDs · P3 · design ·
   origin: **loop** · landed 2026-07-27 (`1fc4bc7`) · **ruling: defer, with a
   trigger** · a ccc glm-5.2 subagent measured rather than speculated — 0 Open,
