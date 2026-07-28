@@ -22,6 +22,11 @@ __pycache__/
 # portable project default (unlike watch-tint). Migration
 # 2026-07-27-01-run-mode.md tells targets the same.
 .dreamwork/run-mode
+# and the three-axis posture beside it (#445): same properties for the same
+# reasons — machine-local, re-read every tick, and it describes THIS host's
+# posture rather than the project's, so committing it would export one
+# machine's settings to every checkout.
+.dreamwork/posture
 # The coordinator inbox: every line points at a report under /tmp, so the file
 # is worthless the moment the session ends — all 8 of today's entries name
 # paths that will not exist tomorrow. Same argument that ignores status.json
