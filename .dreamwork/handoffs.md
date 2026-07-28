@@ -41,3 +41,4 @@ append — never a deletion — so a folded hand-off is not flagged twice.
 - **#411** · landed `25a3fe4` · 2026-07-28 14:08 · by grok (wt/411) — (also `54c68e8`) answered_at anchor \A→^+re.M+.search so the 2 second-line markers recover (5→3 None); 44 dated byte-identical; lint WARN with derived count; both red-proofs discriminating
 
 - **#367** · landed `a36c674` · 2026-07-28 15:02 · by grok (wt/367p) — option previews A/B/C at true below-cliff geometry; chrome measured at load (A 167.9 / B 127.2 / C 31.8 px at 780); 16px margin holds at 640; row-count red-proof 3→1 rows
+- **#172** · landed `33284c2` · 2026-07-28 15:40 · by grok (wt/172) — project basename edge-pinned in title bar (#hproj); tab title already had dreamwork/<project>; guard projtitle.mjs with three-route identity box
