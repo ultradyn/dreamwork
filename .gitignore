@@ -22,6 +22,10 @@ __pycache__/
 # portable project default (unlike watch-tint). Migration
 # 2026-07-27-01-run-mode.md tells targets the same.
 .dreamwork/run-mode
+# #473: the dashboard's per-entry "when did this question last change" store.
+# Machine-local by the same argument as run-mode above -- it records what THIS
+# dashboard has seen, so committing it would assert another machine's history.
+.dreamwork/question-sigs.json
 # and the three-axis posture beside it (#445): same properties for the same
 # reasons — machine-local, re-read every tick, and it describes THIS host's
 # posture rather than the project's, so committing it would export one

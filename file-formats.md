@@ -1955,6 +1955,76 @@ is the single lane-ownership definition, so the backstop and the pre-merge
 assertion share one reader — two callers, one place the parsing can drift, not
 two.
 
+## `/summary.json` — a whitelist view, not a projection of everything (#275 Q5)
+
+`watch.py` serves `/summary.json` as a **whitelisted** view of `collect()`,
+behind the same `_preflight()` GET authority gate as every other route. Output
+keys: `generated`, `open_questions`, `questions_health`, `answers_health`,
+`tint`, `run_mode`, `posture` (`pace`/`asking`/`delegation`/`source`),
+`skill_identity` (`commit`/`skill_version`), `burndown_counts`
+(`open`/`arrived`/`landed`), `skill_version`.
+
+Redaction is a **whitelist**, held as `SUMMARY_ALLOWED` / `SUMMARY_DENIED` in
+`watch.py`, and the partition is what makes it safe to extend: a **new
+`collect()` key is refused until it is classified into exactly one of the two
+sets**, enforced by `TestSummary.test_summary_classifies_every_collect_key`. A
+denylist would leak by default the moment `collect()` grew a field — this fails
+loudly instead. One key is deliberately in both roles: `files` is allowed as a
+*source* and denied as *output*, projected down to the `skill_version` scalar.
+Guard: `dev/capture/summaryjson.mjs`.
+
+## Review artifact references in a question body (#472)
+
+Prefer a **backticked path**: `` `.dreamwork/review/<name>.html` ``. The
+dashboard turns that into a dock link on `/review?p=<name>` carrying the
+question. Do **not** write a markdown inline link to a relative `../review/`
+path — `mdSpans` does not general-linkify, so it did not render as a link at
+all, and the relative form is *also* wrong for the `/questions` route, so even
+a rendered one would 404. Both halves were the same reported bug. A markdown
+link whose target is already a review basename under `.dreamwork/review/` or
+`../review/` is now rewritten to the same dock by `linkifyReview` and is
+tolerated, but **new asks use the backticked form** so the corpus stays one
+shape — the corpus majority (`#294`, `#445`, the fixture) already does.
+
+## `.dreamwork/question-sigs.json` — when an entry last changed (#473)
+
+Machine-local and gitignored, like `run-mode` and `watch-events.log`, because it
+describes what *this* dashboard has seen. One record per question entry: a
+content digest over title + body + follows + answers, and `updated_at`. First
+sight stores the digest with `updated_at` null; a later digest change stamps the
+clock and emits one `question-updated via watch: <title>` line to
+`watch-events.log`.
+
+The definition is **per-entry content**, and the three alternatives were
+rejected for reasons worth keeping: **file mtime** moves when a *neighbour*
+entry is answered, since every entry lives in one file; **git history of
+`questions.md`** needs the file committed, and the coordinator commits minutes
+after writing, so it lags and is partial; a **format marker in `questions.md`**
+would change the parsed ledger — a migration nobody asked for. The display half
+is the reliable deliverable; the event half rides `watch-events.log`, which is
+**best-effort and lossy by design** (`log_event` swallows `OSError`), so it is
+a convenience and never a notification to rely on.
+
+## Guard run-log verdict contract — registration is not execution (#471)
+
+Every guard in `dev/capture/` (whether it imports `report.mjs` or inlines the
+idiom) writes verdicts to stdout as one line per assertion, `PASS <name>` or
+`FAIL <name>`, separated from coverage and notes by a line containing only
+`----`. A guard that exits before its first assertion emits the crash sentinel
+`FAIL the guard threw before finishing its checks` as its only FAIL-ish line;
+that marks **did-not-judge**, not a verdict.
+
+The `guards` recipe captures each guard's combined stdout+stderr to
+`<OUT>/<guard>.log`. `lint.py guard-execution <OUT> <guard>…` classifies each
+log: a guard **ran and judged** iff its log carries at least one `^(PASS|FAIL) `
+line that is not the sentinel. The recipe fails the run when any requested guard
+did not run and judge, and the OK row carries **both** numbers —
+`guards: <executed> of <registered> registered guard(s) ran and judged` — because
+the row that hid `#471` for three and a half hours carried one. A
+zero-assertion guard is not-executed by construction. This is the detector for
+`#310`'s family: a guard can be registered, have a file, be believed to gate,
+and never run.
+
 ## Why this file exists rather than a paragraph in SKILL.md
 
 SKILL.md says what each file *means* and when to write it. That is the
