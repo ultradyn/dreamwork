@@ -2159,16 +2159,24 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
         return  # the parser lives in watch; without it this check cannot run
     pending, folded_ids, malformed = watch.parse_handoffs(text)
 
-    # Format: a Pending entry head that does not carry the required sha + claimer
-    # is a garbled append — named so the writer fixes the line rather than the
-    # check learning to skip it. (A folded one is consumed, so leave it be.)
+    # Format: an entry head the grammar does not recognise, or one in the wrong
+    # section (#401/#406). Always named — never silenced by a same-id fold
+    # record. A Pending-shaped line under `## Folded` is the #406 defect; a
+    # fold for the same id must not hide it (that was the silent path).
     for nid, line in malformed:
-        if nid in folded_ids:
-            continue
         rep.add(
             WARN, "handoffs.md",
-            f"#{nid} has a Pending entry the grammar does not recognise "
-            f"(needs `· landed \\`<sha>\\` · … · by <claimer>`): {line!r} (#381)")
+            f"#{nid} has a hand-off entry the grammar does not recognise "
+            f"(needs `· landed \\`<sha>\\` · … · by <claimer>` under "
+            f"`## Pending`, or `→ folded (ts):` under `## Folded`; id may be "
+            f"`#N`, `#Na`, or `#N/#M`): {line!r} (#381/#401/#406)")
+
+    # Coverage (#395 idiom / #401): how many of each bucket the parser saw.
+    # A check that counts what it examined cannot silently stop examining.
+    rep.add(
+        OK, "handoffs.md",
+        f"{len(pending)} pending, {len(folded_ids)} folded, "
+        f"{len(malformed)} malformed")
 
     ledger_path = dw / "tasks.md"
     if not ledger_path.exists():
@@ -2178,13 +2186,16 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
     except Exception:
         return  # a mid-edit ledger is not a hand-off problem
 
-    # THE delivery signal: pending (not folded) and still open. The
+    # THE delivery signal: pending (not folded) and still open. Correlation
+    # normalises sub-ids/combined tokens to parent ledger ids via the named
+    # helper — never ENTRY_ID's incidental letter-strip (#401).
     # `if nid in folded_ids: continue` is the consumed marker — the one line
     # that stops a complied hand-off being nagged forever.
     for nid, sha, claimer in pending:
         if nid in folded_ids:
             continue
-        if nid in open_ids:
+        parents = watch.handoff_parent_ids(nid)
+        if any(p in open_ids for p in parents):
             rep.add(
                 WARN, "handoffs.md",
                 f"#{nid} is named as landed in a hand-off (by {claimer}, sha "

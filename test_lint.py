@@ -2255,6 +2255,36 @@ class TestHandoffs:
         warns = self._warns(tmp_path, self.LEDGER, handoffs)
         assert any("#5" in w and "grammar" in w for w in warns), warns
 
+    def test_a_sub_id_handoff_correlates_to_its_parent_open_id(self, tmp_path):
+        """#401: correlation normalises `#392a` → parent `392` against ## Open.
+
+        Precondition: the ledger head is plain `#5`, the hand-off is `#5a`.
+        Derived at runtime so a fixture that already used `#5a` as a head
+        cannot hollow the test.
+        """
+        watch = lint.load_watch()
+        open_ids, _ = watch.parse_ledger(self.LEDGER)
+        assert "5" in open_ids, "precondition: parent #5 is under ## Open"
+        assert "5a" not in open_ids, "precondition: sub-id is not a ledger head"
+        assert watch.handoff_parent_ids("5a") == ["5"]
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5a** · landed `abc1234` · 2026-07-28 14:30 · by "
+                    "dreamer-5a — the fix\n\n## Folded\n")
+        warns = self._warns(tmp_path, self.LEDGER, handoffs)
+        assert len(warns) == 1, warns
+        assert warns[0].startswith("#5a "), warns[0]
+        assert "still under `## Open`" in warns[0]
+
+    def test_a_pending_line_under_folded_is_named_by_lint(self, tmp_path):
+        """#406: a Pending-shaped line under ## Folded is LOUD, not silent."""
+        pend_line = ("- **#5** · landed `abc1234` · 2026-07-28 14:30 · by "
+                     "dreamer-5 — the fix")
+        handoffs = ("# Hand-offs\n\n## Pending\n\n## Folded\n" + pend_line + "\n")
+        # Precondition: the line is really after ## Folded.
+        assert pend_line in handoffs.split("## Folded", 1)[1]
+        warns = self._warns(tmp_path, self.LEDGER, handoffs)
+        assert any("#5" in w and "grammar" in w for w in warns), warns
+
     def test_it_flags_a_handoff_for_a_real_open_id_in_the_live_ledger(self, tmp_path):
         """Red-proved against a REAL condition, not a fixture invented to fail.
 
@@ -2310,17 +2340,25 @@ class TestHandoffs:
             "— the check landed\n\n## Folded\n")
         rep = lint.Report()
         lint.check_handoffs(dw, watch, rep)
-        handoff_rows = [d for lvl, w, d in rep.rows if w == "handoffs.md"]
+        handoff_rows = [d for lvl, w, d in rep.rows
+                        if w == "handoffs.md" and lvl == lint.WARN]
         assert len(handoff_rows) == 1, rep.render()
         assert handoff_rows[0].startswith("#362 "), handoff_rows[0]
         assert "still under `## Open`" in handoff_rows[0]
 
     def test_the_live_repo_handoffs_file_is_silent(self):
-        """Dogfood: the seeded (empty) hand-offs file lints clean."""
+        """Dogfood: the live hand-offs file has no hand-off WARNs.
+
+        Coverage always prints an OK row (`N pending, M folded, K malformed`),
+        so silence means zero WARNs — not an empty report.
+        """
         dw = Path(lint.__file__).parent / ".dreamwork"
         rep = lint.Report()
         lint.check_handoffs(dw, lint.load_watch(), rep)
-        assert rep.rows == [], rep.render()
+        warns = [d for lvl, w, d in rep.rows if w == "handoffs.md" and lvl == lint.WARN]
+        assert warns == [], rep.render()
+        oks = [d for lvl, w, d in rep.rows if w == "handoffs.md" and lvl == lint.OK]
+        assert oks and "pending" in oks[0] and "folded" in oks[0] and "malformed" in oks[0], oks
 
     def test_the_check_is_registered_in_run_checks(self):
         import inspect

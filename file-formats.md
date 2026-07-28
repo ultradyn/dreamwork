@@ -243,7 +243,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 |---|---|---|---|
 | `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | One `- **#N**` entry per task; a combined head `- **#N/#M**` is a single entry naming every id in its ids-only bold span, and both ledger readers (`watch.parse_ledger`, `lint.check_ledger_sections`) count every id — so `#7/#8` is two ids in one entry, not one. `Next id: **N**` in the header. Ids are **permanent**, so a duplicate is unrecoverable and `Next id` must exceed every id present. Origin is recorded forward-only from #216 — the section below | `lint.py` |
 | `.dreamwork/status.json` | `watch.py`'s status reader; **`dreamhub.py`** | Valid JSON, and now an interface — see below | `lint.py` |
-| `.dreamwork/handoffs.md` | the coordinator's tick; `watch.py`'s status panel; `lint.py` | Append-only. Literal `## Pending` / `## Folded` headings. One line per landing under Pending (`- **#N** · landed \`<sha>\` · <ts> · by <claimer> — what`); one `→ folded (ts):` line per fold under Folded. Nothing moves; correlation by `#N` | `lint.py` |
+| `.dreamwork/handoffs.md` | the coordinator's tick; `watch.py`'s status panel; `lint.py` | Append-only. **Section order is `## Folded` then `## Pending`** so an EOF append lands under Pending (the instruction is true). Id grammar: plain `#N`, sub-id `#Na`, or combined `#N/#M` in the bold head. Pending line: `- **#…** · landed \`<sha>\` · <ts> · by <claimer> — what`. Folded line: `- **#…** → folded (ts): …`. Nothing moves; correlation normalises sub-id/combined to parent digit id(s) against `## Open`. A bolded-id line in the wrong section or with an unrecognised head is malformed (loud), never silent | `lint.py` |
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
 | `.dreamwork/run-mode` | `watch.py` dashboard + the coordinator/main dreamer on tick and via `watch-events.log` | One line: one name from `watch.py`'s `RUN_MODES` (`lackadaisical`, `hot`, `assisted`). Absent/unknown → `lackadaisical`. Machine-local, **gitignored** — operational posture, not a portable project default. `status.json` may mirror it later but never owns it | `lint.py` |
@@ -427,34 +427,50 @@ is the check that surfaces an unfolded one to whoever runs it.
 `questions.md`/`answers.md`'s — literal `## ` section headings, a
 `- **…**` entry head, and a `→ resolved (ts):`-style prefix for the
 fold record — with one load-bearing difference: **nothing ever moves between
-sections.** `## Pending` and `## Folded` each grow only by append. That is
+sections.** `## Folded` and `## Pending` each grow only by append. That is
 the property the dreamer inbox has and a move-based shape would not: two
 foreign sessions landing work at the same moment both append, and neither
 can clobber the other's line. A rewrite that moved a Pending entry into
 Folded would race a peer's append and lose it — exactly the lost-update the
 single-writer rule exists to prevent, reopened one layer down.
 
+**Section order (#406):** `## Folded` comes **first**, then `## Pending`. An
+EOF append therefore lands under Pending, so the instruction "append under
+`## Pending`" is true without rewriting. The older order put Folded last and
+made a compliant `cat >>` land in the wrong section; a Pending-shaped line
+under Folded was invisible to every reader until the malformed path ran
+outside section scope.
+
+**Id grammar (#401):** the bold head accepts the ledger's full vocabulary —
+plain `#N`, sub-id `#Na` (one trailing letter), or combined `#N/#M` (and
+longer `/`-chains). Correlation against `## Open` normalises to the parent
+digit id(s) via `watch.handoff_parent_ids` — explicitly, not via
+`ENTRY_ID`'s incidental letter-stripping. An unrecognised bold head, or a
+well-formed line in the wrong section, is **malformed** (lint WARN), never
+silent.
+
 ```markdown
+## Folded
+
+- **#362** → folded (2026-07-28 02:05): moved to Recently landed as `49c3c04`
+
 ## Pending
 
 - **#362** · landed `ecc1f44` · 2026-07-28 01:39 · by dreamer-362 — the
   placeholder-citation check, red-proved against 4ce04e0
-
-## Folded
-
-- **#362** → folded (2026-07-28 02:05): moved to Recently landed as `49c3c04`
 ```
 
 A **Pending** entry is one line and must state four things — the task id,
 the **sha** that landed, **who** is claiming it (`by <claimer>`), and a
 one-line `— what landed`. A **Folded** entry is the consumption marker: one
 line naming the id and a `→ folded (ts):` note saying where it landed in the
-ledger. Correlation is by id: a Pending entry is **consumed** iff a Folded
-entry names the same `#N`, so a folded hand-off is never flagged again. The
-fold record is appended in the same increment as the ledger move (the
-coordinator's only act on this file besides reading), so a hand-off marked
-folded while its task is still under `## Open` is a stale record, not a
-normal state — and `lint.check_handoffs` WARNs on exactly that.
+ledger. Correlation is by id (exact token for fold consumption; parent
+id(s) for the open-ledger WARN): a Pending entry is **consumed** iff a
+Folded entry names the same token, so a folded hand-off is never flagged
+again. The fold record is appended in the same increment as the ledger move
+(the coordinator's only act on this file besides reading), so a hand-off
+marked folded while its task is still under `## Open` is a stale record, not
+a normal state — and `lint.check_handoffs` WARNs on exactly that.
 
 `lint.check_handoffs` reads `watch.parse_ledger` for the open/landed id sets
 (the real parser, never a second copy) and WARNs on the one condition that
