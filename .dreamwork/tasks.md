@@ -150,46 +150,6 @@ Next id: **434**
   discount a real one
   · related: **#424, #423**
 
-- **#425** — the `watch.py` split must leave `watch.py` working for clients that are already running ·
-  P1 · loop-tooling/migration · origin: **human** · **human direct, 2026-07-28 17:38** · next-up ·
-  blocks **#368**
-  · verbatim: *"when we migrate watch.py to something more maintanable, we should keep a copy of the
-  monolithic script in like `deprecated/watch.py` but symlink `watch.py` in the main dir so clients
-  won't break if the files on disk are updated before the new skill is rerun and things are properly
-  updated."*
-  · **so this is a constraint on `#368`, not a task after it.** The split cannot simply move code out
-  of `watch.py` and leave a smaller `watch.py` behind: the path itself has to keep working for a
-  **process that started before the split landed** and for tooling that names it. `deprecated/watch.py`
-  holds the monolith; `watch.py` becomes a symlink to it until the new entry point is proven and the
-  skill has been rerun
-  · **it is timely to the hour**: `#263`'s open ask (Q3) asks him whether `#368` lands before lane E
-  starts. If he says split-first, **this is the first increment of that split**, and the ask should say
-  so — folded into that entry
-  · what to check, since a symlink is the kind of thing that works until it does not: does
-  `python3 watch.py` behave identically through the symlink; does the port file, `--target` resolution
-  and `__file__`-relative path handling still resolve (a monolith that computes paths from `__file__`
-  sees the **symlink target's** directory under some invocations); does `just test` still find its
-  guards; and does an **already-running** server survive the swap without its next tick failing
-  · **MEASURED BLOCKER, 2026-07-28 18:24 — the symlink as specified takes his dashboard down on the
-  next `just deploy`, and the recipe's own safety check waves it through.** The recipe does
-  `git show HEAD:watch.py > "$snap"` and then `ast.parse` on the snapshot. **Git stores a symlink as a
-  blob whose content is the target path**, verified in a scratch repo: `git show HEAD:watch.py` prints
-  `deprecated/watch.py` and the index mode is `120000`. And **`ast.parse("deprecated/watch.py")` parses
-  clean** — it is a valid expression, `deprecated / watch.py`, a division with an attribute access. So
-  the syntax guard that exists precisely to catch a broken snapshot **passes on a 19-byte file that is
-  not a server**
-  · the failure order is what makes it bite: `pkill` kills the working server **first**, then the
-  garbage snapshot is written, passes `ast.parse`, is started, dies on import, and only the final
-  `curl` notices — so the recipe correctly reports *"deploy failed"* **with his dashboard already down
-  and staying down**. (`./deprecated/watch.py` as a target would at least fail `ast.parse`, but relying
-  on that is relying on a syntax accident)
-  · so `#425` must fix the **deploy path** too, not only the tree: resolve the link before snapshotting
-  (`git show HEAD:$(git symlink target)`) or, better, stop snapshotting a single file — after `#368`
-  the dashboard is a package and `deploy` has to copy a tree. **Whichever way, the `ast.parse` guard
-  needs to assert the snapshot is a module that defines the server**, not merely that it parses; a
-  syntax check that passes on a path string is measuring the wrong property
-  · related: **#368, #426, #431**
-
 - **#426** — an agent must survive its own files changing under it, or be told to reload · P1 ·
   loop-architecture · origin: **human** · **human direct, 2026-07-28 17:38**, stated as a general
   principle rather than a bug
@@ -3667,6 +3627,57 @@ Next id: **434**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#425** — the `watch.py` split must leave `watch.py` working for clients that are already running ·
+  P1 · loop-tooling/migration · origin: **human** · **human direct, 2026-07-28 17:38** · next-up ·
+  blocks **#368**
+  · verbatim: *"when we migrate watch.py to something more maintanable, we should keep a copy of the
+  monolithic script in like `deprecated/watch.py` but symlink `watch.py` in the main dir so clients
+  won't break if the files on disk are updated before the new skill is rerun and things are properly
+  updated."*
+  · **so this is a constraint on `#368`, not a task after it.** The split cannot simply move code out
+  of `watch.py` and leave a smaller `watch.py` behind: the path itself has to keep working for a
+  **process that started before the split landed** and for tooling that names it. `deprecated/watch.py`
+  holds the monolith; `watch.py` becomes a symlink to it until the new entry point is proven and the
+  skill has been rerun
+  · **it is timely to the hour**: `#263`'s open ask (Q3) asks him whether `#368` lands before lane E
+  starts. If he says split-first, **this is the first increment of that split**, and the ask should say
+  so — folded into that entry
+  · what to check, since a symlink is the kind of thing that works until it does not: does
+  `python3 watch.py` behave identically through the symlink; does the port file, `--target` resolution
+  and `__file__`-relative path handling still resolve (a monolith that computes paths from `__file__`
+  sees the **symlink target's** directory under some invocations); does `just test` still find its
+  guards; and does an **already-running** server survive the swap without its next tick failing
+  · **MEASURED BLOCKER, 2026-07-28 18:24 — the symlink as specified takes his dashboard down on the
+  next `just deploy`, and the recipe's own safety check waves it through.** The recipe does
+  `git show HEAD:watch.py > "$snap"` and then `ast.parse` on the snapshot. **Git stores a symlink as a
+  blob whose content is the target path**, verified in a scratch repo: `git show HEAD:watch.py` prints
+  `deprecated/watch.py` and the index mode is `120000`. And **`ast.parse("deprecated/watch.py")` parses
+  clean** — it is a valid expression, `deprecated / watch.py`, a division with an attribute access. So
+  the syntax guard that exists precisely to catch a broken snapshot **passes on a 19-byte file that is
+  not a server**
+  · the failure order is what makes it bite: `pkill` kills the working server **first**, then the
+  garbage snapshot is written, passes `ast.parse`, is started, dies on import, and only the final
+  `curl` notices — so the recipe correctly reports *"deploy failed"* **with his dashboard already down
+  and staying down**. (`./deprecated/watch.py` as a target would at least fail `ast.parse`, but relying
+  on that is relying on a syntax accident)
+  · so `#425` must fix the **deploy path** too, not only the tree: resolve the link before snapshotting
+  (`git show HEAD:$(git symlink target)`) or, better, stop snapshotting a single file — after `#368`
+  the dashboard is a package and `deploy` has to copy a tree. **Whichever way, the `ast.parse` guard
+  needs to assert the snapshot is a module that defines the server**, not merely that it parses; a
+  syntax check that passes on a path string is measuring the wrong property
+  · related: **#368, #426, #431**
+  · **→ folded 2026-07-28 19:07 — landed `cf452d2` + `51729f4`.** The safety net exists and the
+  measured blocker is closed: `deploy` resolves a symlinked `watch.py` through `git ls-tree` and proves
+  the snapshot **is** the server (top-level `main` + `GENERATION`) **before** `pkill`, so a broken link
+  is now refused with his dashboard still running rather than after it is dark. Verified independently
+  in a scratch clone with a real symlink: the blob is 19 bytes, a bare `ast.parse` accepts it, the
+  resolver emits the real 500,807-byte module, and the guard refuses the blob and a truncated module
+  both. `dev/deploy_state.py` and the recipe share one resolver so they cannot drift. Procedure in
+  `.dreamwork/docs/migrate-watch-symlink.md`
+  · **the symlink itself is NOT created, deliberately** — his sentence opens *"when we migrate"*, and
+  the migration is `#368`, behind his open `#263` Q3. So this stays `#368`'s first increment and the
+  net is in place for it. `watch.py` is still mode 100755 and `deprecated/` does not exist
+
 - **#429** — the above-fold criterion we put in every review brief is unenforceable on 20 of 22
   artifacts · P1 · loop-tooling/review-artifacts · origin: **loop** · **measured, 2026-07-28 17:52**
   · Every brief that asks him to rule says the ask must satisfy
