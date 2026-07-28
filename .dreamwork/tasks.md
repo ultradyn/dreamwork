@@ -24,9 +24,31 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **436**
+Next id: **437**
 
 ## Open
+- **#436** — `#ask` is not a required element, so 19 of 22 artifacts cannot be measured at all · P2 ·
+  loop-tooling/review-artifacts · origin: **loop** · **split out of `#432` on 2026-07-28 19:57**, which
+  held two tasks: this retrofit and the fold derivation. The fold half is out with a lane; this is not
+  · the criterion and its checker exist (`1dd973f`) and **three** artifacts carry `#ask`: `421`
+  (218/266), `417` (246/315) and `263` (188/266). **The other 19 have no such element**, so
+  `above_fold.mjs` reports `#ask MISSING` and gates nothing about them — a criterion naming a selector
+  most of the corpus lacks is a wish, not a standard
+  · so: make the id a documented requirement in `file-formats.md` and the artifact template, and only
+  **then** register a guard that walks `.dreamwork/review/` — registering it before the retrofit would
+  red the suite over 19 artifacts that predate the contract, which is why `above_fold` sits in
+  `lint.NOT_GUARDS` today with that reason written down
+  · **do not retrofit by adding an empty `#ask` to each page.** The id has to wrap the actual decision
+  or the check passes on a page whose ask is still buried — the same hollowness in a new place. Pages
+  with no decision to make (a design note, a schema) should be **exempt by declaration**, not by
+  carrying a decoy element
+  · **cost is known and it is not small:** touching the template re-stamps every built artifact, and
+  **12 of 23 have no `src/`** and cannot be rebuilt by `review_artifact.py build` — the `#433` lane
+  measured that and refused to migrate them, with per-file evidence (12 distinct hand-rolled
+  stylesheets, none matching the template; 4 with no `<header>` at all). So this task inherits that
+  wall: plan for the 11, and treat the 12 as a separate declared migration or leave them exempt
+  · blocked on nothing · related: **#432, #429, #433**
+
 - **#432** — `#ask` is not a required element, so 19 artifacts cannot be measured at all · P2 ·
   loop-tooling/review-artifacts · origin: **loop** · **the half of `#429` that is a retrofit, not a fix**
   · The criterion and its checker exist (`1dd973f`) and three artifacts carry `#ask`: `421` (218/266),
@@ -40,12 +62,20 @@ Next id: **436**
   or the check passes on a page whose ask is still buried — the same hollowness in a new place. Pages
   with no decision to make (a design note, a schema) should be **exempt by declaration**, not by
   carrying a decoy element
-  · **also derive the fold from the live route rather than hard-coding it.** `above_fold.mjs` now
-  compares against **738** (desktop) and **504** (mobile), measured from the real iframe on `/review`,
-  because `innerHeight` overstates the visible area by **40%** on mobile — he reads artifacts inside
-  a frame, not as pages. Those two numbers are dated constants: a change to the shell's chrome moves
-  the fold and nothing would notice. Measure the frame at runtime
-  · related: **#429, #430, #434**
+  · **SPLIT 2026-07-28 19:57.** The `#ask`-as-a-contract retrofit above is now **#436**; this entry is
+  the **fold-derivation half only**, and it is the half that is out with a lane
+  · **also derive the fold from the live route rather than hard-coding it** — and the case for this is no
+  longer theoretical. The mobile constant was wrong **three times in one evening, always optimistic**:
+  **706** (the top of a measured 693..708 range, when a fold must take the floor), **691** (the floor
+  measured inside a worktree), then **670** (the floor on the real target). Three separate inputs move
+  it and none is the viewport: the **artifact's filename length** (`SPAN.revname` wraps the title bar,
+  the chrome grows, the frame shrinks — the iframe's bottom is pinned at 828, its top is not); the
+  **target directory's basename**, because that is the project name in `#hproj` sharing the same line
+  (`frame` gives floor 693, `ud-dreamwork` gives 672 — so a fold verified in a worktree is not verified
+  for his surface); and **how the name breaks** (a padded `xxxx…` run of the right character count has
+  no hyphen to break on where real names do, so a derived *length* is not a derived *layout*)
+  · **owner: `wt/fold` lane (glm52), dispatched 19:57** · brief: `.dreamwork/docs/briefs/432-derive-the-fold.md`
+  · related: **#429, #430, #434, #436**
 - **#431** — `just deploy`'s `pkill -f` kills any process whose command line merely mentions the
   snapshot, including the shell running the deploy · P1 · loop-tooling/deploy · origin: **loop**
   · **it killed my own shell mid-deploy, 2026-07-28 18:16**
@@ -3683,7 +3713,7 @@ Next id: **436**
   · scope today was limited to the one artifact on his desk: `263`'s crumb shortened from 56 to 20
   characters, overflow 440px->390px in a 356px bar. **One overlap survives that**, which is why the
   template half is real
-  · related: **#325, #429**
+  · related: **#325, #429**, **#436**
   · **landed `2ade390`** (glm52 lane `9d9c41b`, `46f90dd`). `.identity b` gained the
   `overflow:hidden;text-overflow:ellipsis;min-width:0` trio its sibling one declaration away already
   carried. Lane chose **(a)** and refused all 12 untemplated migrations with per-file evidence — 12
@@ -3794,7 +3824,7 @@ Next id: **436**
   · so: make `#ask` a documented required element in `file-formats.md` / the artifact template, restate
   the criterion as above in `watch-design.md`, and give it **one shared checker** instead of each lane
   writing its own mjs
-  · related: **#430, #325, #432, #433**
+  · related: **#430, #325, #432, #433**, **#436**
   · **→ folded 2026-07-28 18:21 — landed `1dd973f` + `a54d162`.** The defect as stated is closed:
   the criterion is restated to something satisfiable (`top < innerHeight` for the block *and* its
   first decision, not `bottom < innerHeight` for a 870px three-decision block), it has one shared
