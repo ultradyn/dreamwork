@@ -1799,6 +1799,26 @@ this shape and convert opportunistically.)
   command *name* and not its arguments — so verify with `-f` or the proof lies too.
   Consequence when it happens: the lanes are fine, only the notification is lost, so
   fall back to polling `pgrep` and `.dreamwork/inbox.md`.
+  **CORRECTED 2026-07-28 11:31, and the correction cost two lanes: `> /dev/null 2>&1` in
+  the recipe above is WRONG. Use `> "$LOG" 2>&1`.** `ccc @grok` began returning
+  `Unauthorized (401) … Invalid or expired credentials` mid-day; two lanes died at three
+  seconds and the only artifact naming the cause went to `/dev/null`. **A lane that dies
+  before its first token is indistinguishable from one that ran and reported nothing** —
+  same clean worktree, same empty inbox, same absent process — and the two have opposite
+  fixes. `ccc`'s own run log does not cover for it: `~/.local/state/cc-w/ccc/runs/<run>/`
+  holds `output.txt` and `transcript.txt`, and for a 401 death **both are zero bytes**,
+  because the error is on stderr only.
+  **And the `-f` half of this entry did not save me either, which is the part worth
+  keeping.** It was written here, correctly, before today. I still ran `pgrep -c "ccc @"`,
+  read `0` for a live lane, declared it dead, and started a second lane **in the same
+  worktree** — two agents on one file set, the split-brain the disjointness invariant
+  exists to prevent. So: **a lesson only prevents the mistake if it is read at the moment
+  of the mistake**, and a file this long is not read at that moment. The durable fix is
+  not a better entry here; it is putting the flag in the recipe you copy — which is why
+  the corrected form appears above rather than as a caution below it. Liveness is
+  `pgrep -af`; before declaring a lane dead require **two** agreeing signals: no process
+  *by command line*, and either an error in `$LOG` or an exit trailer. A quiet transcript
+  is not one of them — grok and pi runners write **zero bytes until exit**.
 - **A lane's stated uncertainty is a map to the defect, not a question to answer.**
   #367 increment 1 ended its report with an honest flag: a valueless `data-mark` is
   ignored rather than refused, the contract is silent, *tell me if you'd rather it
@@ -2424,3 +2444,34 @@ this shape and convert opportunistically.)
   · Fix: **`cd <abs> && …` at the head of any call that touches repo state**, rather than trusting
   inherited cwd — and when a measurement says something catastrophic happened, check the instrument
   is pointed at the right thing before believing it. Panic is a reason to re-read the header.
+
+- **A check with two WARNs that are "the condition and its inverse" is a smell, and the
+  inverse one is the one that gets the whole check muted.** `check_handoffs` was first
+  written with a delivery WARN (a hand-off names `#N` landed but `#N` is still open) and
+  its mirror, a "stale fold record" WARN (marked folded but still open). They read as a
+  tidy pair. But the second fires on a **transient** — the fold record lands a tick before
+  the ledger move — and a transient that the check assumes will self-correct does not, so
+  it **nags every run after you have complied**. A check that nags after compliance gets
+  muted, and a muted check is worse than none. The honest pair is **one WARN for the
+  unacted state and silence-by-construction for the acted state**, where "acted" is marked
+  by a record the actor writes and the check treats that record as authoritative instead
+  of re-deriving whether the act really happened. (#381 lane, dream 0838)
+- **A consumed-marker test must exercise the path where the marker is load-bearing, and
+  that is the OPEN path.** The same lane's test would have passed with the marker ignored
+  entirely, had it used a landed task: the delivery signal requires the task to be open,
+  so a landed-and-folded hand-off is silent whether or not the marker is respected.
+  **A test on the masking case is structurally incapable of detecting the bug it is named
+  for** — the "test scaffolding stood in front of the code" trap, in its quietest form.
+  Ask which input makes the mechanism necessary, and test that one. (#381 lane, dream 0838)
+- **"Did my change leave X byte-identical?" must resolve its baseline by CONTENT, never by
+  a moving ref.** `git show HEAD:file` is the obvious implementation and it is wrong in
+  this tree: HEAD moved twice within an hour under concurrent lanes (e84ca0c → 5e908ff,
+  then 8d5ad92 after the lane's own commit), and once the feature is committed HEAD
+  *carries* it, so the check compares new against new and passes forever. A pinned SHA
+  breaks on the next rebase; recomputing the expected side with the new code is the hollow
+  version. What survived both a peer's commit and its own: **walk `git log -- <file>` for
+  the newest commit whose copy lacks the feature's marker constant**, freeze a digest
+  captured before editing as the fallback, **re-run the pre-change builder from the
+  resolved ref and assert it reproduces the frozen digest** (so the constant is verified
+  rather than fabricated), and guard with `assert not hasattr(old, "<feature>")` so the
+  resolver can never silently pick a post-change commit. (#367 inc1, dream 0658)
