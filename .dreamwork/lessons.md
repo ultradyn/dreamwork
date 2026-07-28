@@ -2535,3 +2535,9 @@ this shape and convert opportunistically.)
   `#331` named that fixture and no other. **When a check has two independent guards in front of
   it, disable the one you are not testing** — here, put the fixture span at column 0 — or you
   are measuring the wrong one and cannot tell.
+- **Read the clock; do not estimate elapsed time from how long the work felt.** I stamped a
+  brief addendum `12:47` and a questions follow-up `12:58` while the system clock read `12:43` —
+  both in the future, one of them in an entry he reads. The work between them was dense
+  (a gate, two red-proofs, three commits) and dense work feels long. The rule is already
+  written for `status.json`; it applies to **anything a reader will date**, and the cost of
+  obeying it is `date '+%H:%M'`.
