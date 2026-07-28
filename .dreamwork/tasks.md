@@ -81,7 +81,6 @@ Next id: **415**
   `prominence.mjs` (1); keep the sample-count preconditions as diagnostics; red-prove each by
   removing the transition so mid-frames go to zero
   · related: **#413**
-  · related: **#413**
 
 - **#413** — a guard can encode a SUPERSEDED contract, and nothing measures that · P2 ·
   verification/meta · origin: **loop** · found by fixing `qacard`, which had been red since
