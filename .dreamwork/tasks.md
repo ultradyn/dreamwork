@@ -436,6 +436,28 @@ Next id: **412**
   field** (`related:`, and anything else field-anchored) rather than excluding **all** mentions.
   That kills the `#367` false landing — which was a `related:` marker — without discarding the
   historical inline form. Keep `also-landed:`; it is a good addition and costs nothing
+  · **THE MERGE GATE, written 11:19 BEFORE the lane reports, so it cannot be shaped by what the
+  lane says it achieved.** Measured now, both parsers run against today's ledger:
+    - deployed/pre-`#399` logic: **136 open, 176 landed**
+    - master/post-`#399` logic: **136 open, 95 landed**
+    - ids the old logic calls landed and the new one does not: **81**
+    - ids the old logic reports as **both open and landed: 10** (`#367, #378, #387, #392, #393,
+      #399, #404, #405, #409, #411`). New logic: **0**
+  Spot-checking those 81 shows both populations are real, which is the whole tension: `**#91**
+  composer tweaks and **#101** scrollbar styling (2026-07-25), **#97** durable task ledger` are
+  **genuine historical landings** in the inline form, while `related: **#367**` and prose like
+  *"the same question that found **#399**"* are **references**. So **176 is too high and 95 is too
+  low**, and the fix must land between them.
+  **Therefore the gate, and all four must hold:** `just test` green · both-open-and-landed stays
+  **0** (that is `#399`'s win and must not regress) · landed count comes back **well above 95** ·
+  and the burndown guard passes without its fixture being edited
+  · **a neighbour NOBODY enumerated, and field-exclusion alone does not catch it: the ledger
+  contains prose ABOUT id syntax, and that prose parses as ids.** `#5` is counted landed because a
+  landed entry documents the shapes the parser cannot see — literally `no bold (- #5 …), no #
+  (- **5** …), a different list marker (* **#5**)`. Those are *examples in a sentence*, inside no
+  field at all, so excluding `related:` will not exclude them. **Check this specific id when
+  reviewing the lane's work**; if `#5` still counts as landed the fix is incomplete, and if the lane
+  found it independently that is a strong signal about the lane
   · **do not revert.** `8e37db3` fixed a real P1 and its tests are sound; the defect is that its
   landed-id rule is too narrow for the history walker. The follow-up is additive
   · **my error, stated plainly: I merged on `pytest` alone while `just test` was still running**,
