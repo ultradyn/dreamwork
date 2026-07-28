@@ -24,9 +24,29 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **479**
+Next id: **480**
 
 ## Open
+- **#479** — `typing` loses the destination mode across a tick, and it was green two hours ago · P1 ·
+  regression/bug · origin: **loop** · **found 2026-07-29 09:12 by the full `just test` that closed `#475`** —
+  the ONLY failure in a 60-guard run (59 PASS, 60 of 60 judged), and it was **PASSING** in the 07:40 run, so it
+  arrived with tonight's merges or with `#477` (`c42ce90`)
+  · **the failure is narrow:** two assertions, `normal, quiet tick: the destination mode survived` and
+  `normal, content changed: …` — i.e. `comp.dataset.mode === 'note' && lit === 'note'`. In the same guard,
+  *the tick really replaced the card node*, *the typed text survived*, *the caret survived* and *focus stayed in
+  the box he was typing in* all **PASSED**
+  · **why that matters for diagnosis:** text/caret/focus come from `snapshotCardState` (`watch.py:6193`), which
+  carries `mode` in the SAME map — so the snapshot is being taken and mostly restored, and only the mode half is
+  lost. That is a different path from the `snapshotFolds`/`restoreFolds` pair `#477` changed, which is evidence
+  *against* my own fix being the cause but not proof: `#477` is still the first suspect because it is the newest
+  `watch.py` change and it runs on every tick
+  · **first move is empirical, not analytical:** run `typing` solo (it has only ever been observed failing under
+  a loaded suite at load ~30), and if it reproduces, bisect `watch.py` against `c42ce90` — `git bisect` here
+  wants `--first-parent` and a **pathspec** (`#474`'s lesson: 841 commits became 55)
+  · code to read: `setCardMode` (`watch.py:4019-4021`, whose `if (!btn && comp.dataset.mode !== mode) return;`
+  is a silent early exit — the shape of this failure) and the `.qcompose[data-mode]` render at `watch.py:2346`
+  · **handed to the incoming coordinator (Grok Build) at 09:27**, unstarted by me
+  · blocked on nothing · related: **#477**
 - **#478** — the cited-sha check declines to run in the full suite, twice, and says so at OK · P2 ·
   verification/lint · origin: **loop** · **found 2026-07-29 09:05 by the full `just test` after tonight's four
   merges** — `test_lint.py::TestCitedShas::test_a_dead_cited_sha_warns` failed with a bare `[]`, and
@@ -65,6 +85,7 @@ Next id: **479**
   interrupted height, and `restoreFolds` resumes the travel on the fresh node through `travelCard`/`revealBody`
   — the same two calls the click handler already uses, per `transitions.md`'s reuse-the-idiom rule
   · **wants `watch.py`**, so it is coordinator work, not a lane's
+  · related: **#479**
 - **#476** — a guard that THROWS on a changed contract reports "did not judge", not "failed" · P2 ·
   verification/guards · origin: **loop** · **found 2026-07-29 08:07 while red-proofing `#475`'s draft fix**
   · **the measurement:** changing the production key builder (`'dw:draft:v1:'` → `'dw:draft:v2:'`,
