@@ -58,10 +58,20 @@ So, for anything in this document:
   widths), `regroup` and `morph` (>= 6 positions), and `qsec` twice
   (>= 8 positions, >= 8 heights) — and a sixth, `states.mjs`, held three
   more (`uniq(h).length >= 6` on unfold / fold / tick-grow heights). **All
-  six are now converted** to `between()` with a sample-count precondition
-  first (#333, after #414's confirmation shape). The opposite assertion —
-  reduced-motion does NOT animate, so `uniq(h).length <= 3` — remains a
-  count on purpose; converting it would destroy the check.
+  are now converted** to `between()` with a sample-count precondition
+  first (#333, after #414's confirmation shape). A seventh held out longest
+  by NAMING a stronger claim: `prominence.mjs` asserted
+  `new Set(tops.map(Math.round)).size >= 6` as "continuous, not a couple
+  of jumps" and defended it as not-this-rule. It was this rule —
+  "continuous" is no more frame-rate-decidable than "six frames" (two
+  teleports and a starved smooth travel both yield few positions, for
+  opposite reasons), and the assertion failed inside a loaded `just test`
+  while passing solo, confirmation's failure at a second site. Now
+  `midFrames(tops) >= 1`, the shared helper `confirmation` uses (#414),
+  with the play-then-snap failure it was loosely proxying owned by the
+  late-arrival check beside it. The opposite assertion — reduced-motion
+  does NOT animate, so `uniq(h).length <= 3` — remains a count on
+  purpose; converting it would destroy the check.
 
   `dismiss` holds two more on one trace with the terminal-state shape
   below, which is why "some checks passed" is not evidence a loaded run

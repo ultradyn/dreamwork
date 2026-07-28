@@ -30,6 +30,7 @@
    usage: node prominence.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
+import { midFrames } from './dom.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39899';
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -66,6 +67,11 @@ const lum = c => {
   if (!m) return -1;
   return 0.2126 * +m[1] + 0.7152 * +m[2] + 0.0722 * +m[3];
 };
+/* Minimum samples for a part-way frame to be decidable: start, at least one
+   intermediate draw, end. Named in the precondition so a starved rAF window
+   fails with "sampled enough… (N frames)" rather than masquerading as a
+   motion bug (#413/#414 — same constant confirmation.mjs/states.mjs carry). */
+const MIN_SAMPLES = 3;
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const p = await br.newPage({ viewport: { width: 1100, height: 1600 } });
@@ -174,25 +180,42 @@ if (thread && fold) {
     const i0 = tops.findIndex(v => Math.abs(v - from) > 1);
     const t0 = i0 < 0 ? 0 : seen[i0].t;
     const late = Math.abs(at(t0 + 950).top - tops.at(-1));
+    const mid = midFrames(tops);
     notes.push(`one gesture: neighbour travelled ${total.toFixed(0)}px over ` +
-               `${new Set(tops.map(Math.round)).size} distinct positions; ` +
+               `${tops.length} frames (${mid} part-way); ` +
                `still ${late.toFixed(1)}px from its final place when the ` +
                `travel ended`);
+    // distance vacuity, and a deliberate literal — transitions.md: "a part-way
+    // count needs a vacuity precondition beside it, and that one IS a literal."
+    // It proves the neighbour moved at all; it says nothing about how many
+    // frames caught it, which is the separate question the precondition below
+    // owns, so the two do not cover for each other (#414's point).
     ok('the card below is carried at all (else vacuous)', total >= 8);
-    /* #414: deliberately NOT converted to the mid-frame form that
-       `confirmation` now uses. That form proves "not a snap", and this
-       assertion claims something strictly stronger -- CONTINUOUS travel, "not
-       a couple of jumps" -- which two jumps would satisfy while a snap would
-       not. A property about smoothness genuinely needs many samples, so the
-       honest fix here is to say so rather than to weaken the claim: the check
-       below is frame-rate coupled by nature, and the precondition names the
-       count when a starved trace makes it unsatisfiable. The neighbouring
-       vacuity check measures DISTANCE travelled, not samples, so it does not
-       cover this. */
-    ok(`sampled enough frames for "continuously" to be decidable ` +
-       `(${tops.length} frames, needs >= 6)`, tops.length >= 6);
-    ok('...continuously, rather than in a couple of jumps',
-       new Set(tops.map(Math.round)).size >= 6);
+    /* #414/#333: the sample-count precondition FIRST. rAF density IS the frame
+       rate, so under host load the window starves and "did it travel" becomes
+       undecidable — not wrong, unseen. Naming the count makes a starved run
+       print "sampled enough… (N frames)" instead of masquerading as a motion
+       bug, the exact failure #413/#414 chased out of confirmation/states. */
+    ok(`sampled enough frames to see the neighbour travel (${tops.length})`,
+       tops.length >= MIN_SAMPLES);
+    /* #414: MID-FRAME form via the shared `midFrames` (dom.mjs) — the same
+       helper confirmation.mjs uses, not a fourth private copy. The old
+       `new Set(tops.map(Math.round)).size >= 6` was the last frame-rate bet
+       in the suite: it read "this box drew six rounded positions in the
+       window", a fact about the machine that failed inside a loaded `just
+       test` while passing solo (confirmation's failure, second site). A snap
+       has ZERO frames strictly between its ends at ANY frame rate, so
+       `mid >= 1` is the rank-1 requirement that does not bet on the box.
+       transitions.md: "never assert an absolute COUNT of distinct positions
+       … the floor is ONE part-way frame."
+
+       The "continuous, not a couple of jumps" claim the count reached for is
+       itself not frame-rate-decidable — two teleports and a starved smooth
+       travel both yield few positions for opposite reasons — so the honest
+       assertion is "not a snap", and the late-arrival check just below owns
+       the play-then-snap failure (a padding transition aiming the FLIP at a
+       height the card never reaches) that the count was loosely proxying. */
+    ok('...and it travels there rather than snapping', mid >= 1);
     /* The padding-transition failure, stated as the thing it does. If the
        growth is not in the layout before `regroupCards` measures, the FLIP
        aims at a height the card never reaches; it plays to that wrong height
