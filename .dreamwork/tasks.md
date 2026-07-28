@@ -97,24 +97,6 @@ Next id: **447**
   the design discussion
   · **blocked-on: **human** (define `IGC`; then rule on the composition with `#443`)**
   · related: **#443, #421, #438, #426**
-- **#444** — the new snap detector proves a transition EXISTS, not that it has the right duration · P2 ·
-  verification/motion · origin: **loop** · **the cost of `#442`'s fix, recorded at merge rather than
-  discovered later**
-  · `#442` correctly made `transitionstart` the load-independent gate, because a compositor-driven transition
-  is invisible to a starved rAF sampler and the frame evidence cannot be required. But `transitionRan` is a
-  **boolean about existence**: a transition shortened to `1ms` still fires `transitionstart`, so it now passes
-  the gate where the old frame-count form might have caught it
-  · **the trade is right** — a guard that lies under load is worse than one that checks less — but the gap
-  should be named: between *"the CSS says animate"* and *"it animated for the duration the styleguide
-  specifies"* there is now no check on this path
-  · the events already captured carry the answer: `transitionWindow` returns the window, so its **width** is
-  measurable without any rAF sampling at all. Asserting the observed duration against the declared
-  `CARD_TRAVEL`/`.cmdmsg` value (with tolerance, and derived from the declaration rather than a literal) would
-  close it and is load-independent by the same argument that motivated `#442`
-  · check first whether the duration is worth asserting at all, or whether `transitions.md`'s intent is
-  satisfied by existence plus the styleguide's own single-source rule — **a check that restates the CSS it
-  reads is not a check**. That is the design question and it may be a refusal
-  · related: **#442, #414, #413**
 - **#443** — run modes conflate PACE with DELEGATION POSTURE, so there is no way to say *"idle-friendly, but
   use subagents"* · **P1** · loop-design/run-mode · origin: **human** · **human via watch 2026-07-28 22:18**
   · his words (dictated, lightly punctuated): *"We need to rethink how the Run modes work. Because when,
@@ -624,155 +606,6 @@ Next id: **447**
   a sweep that finds nothing must be distinguishable from one that did not run
   · related: **#381, #398, #394, #406**
 
-- **#402** — `status.json`'s `dreamers` array has no stated shape, and the tool that reads it goes
-  stale in the one direction that costs parallelism · P2 · loop-tooling/durability · origin:
-  **loop** · found by using it: registering a new lane crashed the tool and revealed three more
-  · **it went stale, measured.** `#396` and `#398` had **landed** and were still listed as owning
-  `review_artifact.py`, `file-formats.md`, `dev/capture/fixture/**`, `lint.py` and `test_lint.py`.
-  `status_sync.py` recomputes `queue` and `current_task_ids` from live `pgrep` but **never touches
-  `dreamers`**, so ownership only ever accumulates
-  · **the direction of the error is the whole problem.** A stale entry says a free file is *owned*,
-  so the coordinator declines a dispatch it could have made. I reasoned `dev/capture/fixture` was
-  free from *memory* of `#396` landing; the file said otherwise, and had I trusted the file I would
-  have skipped the dispatch. `#264` measured file contention as the **binding constraint** on how
-  much runs at once — this is that constraint, manufactured
-  · **it crashed on a mixed-type id.** Existing entries carry `"task": 396` (int); writing
-  `"task": "401"` made `sorted()` raise `TypeError: '<' not supported between instances of 'str'
-  and 'int'` and `just status-sync` exited 1. **Loud, so not the worst kind** — but it stops the
-  whole sync, and the drift it exists to prevent resumes silently from there
-  · **and a fourth `#401` instance:** a **sub-id cannot be represented at all**. The live lane is
-  `#392a`; the int field can only hold `392`. Same class — the tooling's id vocabulary is narrower
-  than the loop's
-  · **the root cause is a missing contract, and it is this repo's own stated rule.** `grep dreamers
-  file-formats.md` returns **nothing**, yet `dreamers` is written by the loop and parsed by **two**
-  tools (`status_sync.py`, and `watch.py` renders it). The rule is that such a file's shape is
-  stated there and checked by `lint.py`, in the same commit. Absent that, the int/str question had
-  no answer to get wrong
-  · **a fifth thing, and it bears on what he asked me to find out:** the pre-existing entries carry
-  **no `agent` field**, so `status.json` does not record *which model* owns a lane. He asked which
-  models and providers work best for us; the runtime record cannot answer it
-  · deliverables, and therefore ownership: `status_sync.py` (prune `dreamers` by the same live-pgrep
-  test it already applies to `current_task_ids`; accept both id types or normalise), `file-formats.md`
-  (the `dreamers` row), `lint.py` + `test_lint.py` (the check that row implies), `test_status_sync.py`
-  if one exists — check
-  · **the red is available without an injection**: reinstate a landed lane's entry and assert the
-  prune drops it. Assert the precondition too — that at least one entry is live and one is dead,
-  derived at runtime, or the test is vacuous the day nothing is running
-  · **BIGGER THAN FILED, and this half is visible to HIM.** `status_sync.py` refreshes `queue` and
-  `current_task_ids` and **silently leaves every other field to rot**. Measured 10:26:
-  **`last_tick` was 133 minutes stale** (`08:13`), `last_commit` was `a6c0732` — **30+ commits
-  behind** HEAD — and `deployed` named rev `b4d4b3e` and **pid `1970752`, which was dead**
-  · **so the browser tab he reads said `· stalled` while the loop was doing its most productive work
-  of the day.** `watch.py:3667` is right — `Date.now() - t > STALE_TICK_MS ? 'stalled' : 'dreaming'`
-  — and its comment at `:3634` says that word is how he tells *whether the LOOP is alive*. **The
-  dashboard did its job; the data lied to it.** Refreshing the three fields flipped the title to
-  `· dreaming`, verified in the browser
-  · **the dead `deployed.pid` is `#363`'s lesson reopened** — the one `pending_handoff_records`'
-  docstring cites as *"inferring liveness from surviving artefacts is the wrong answer"*. A pid
-  field nothing re-reads is exactly such an artefact
-  · **and the tool's own success message is the trap:** `just status-sync` printed
-  *"already in sync (136 open, 1 live)"* **while three fields were stale**. It is in sync on the two
-  it knows about and says nothing about the rest, so the reassuring line is scoped to a subset the
-  reader cannot see. **Whatever fixes this must either own the whole file or NAME the fields it does
-  not touch** — a coverage statement, the same idiom `#395` established for checks, applied to a
-  syncer
-  · deliberately **not** fixed inline: this is the same tool and the same class as the `dreamers`
-  half above, so it belongs to one lane, not to a coordinator patch. The **data** was corrected by
-  hand at 10:26 as tick hygiene; the **tool** is still wrong
-  · **another derived-in-two-places field, found 11:16: `awaiting_human`.** It is a hand-written
-  list and `questions.md` is the source; they had drifted to **4 vs 5** — the panel was missing
-  `#408` and `#410` (both asked today) and carried `#371/#263 Q2`, which is **not an open question
-  at all**. So his dashboard said "waiting on you" for something he had never been asked, while two
-  things he HAD been asked were absent from the panel. `status_sync.py` derives `queue` and
-  `current_task_ids`; `awaiting_human` wants the same treatment, from `parse_open_questions`
-  · **and my hand-rolled regex for it was wrong too** — `^- \*\*(.+?)\*\*\s*$` returned 4 because one
-  title wraps across lines. Third hand-rolled parser to be wrong today, against a file whose
-  production parser was importable the whole time. **`status_sync` should call `watch.parse_*`, never
-  re-implement it**
-  · **the derived half is wrong too, measured 12:52 — and it overwrote a correct value.**
-  `status_sync.py:72` gates on `pgrep -af "^ccc @"`. Today's dispatch is
-  `ccc --yolo @glm52 …` — a control flag sits between the binary and the alias, so the anchored
-  pattern matches **nothing** and `current_task_ids` was recomputed from `[331]` to `[]` **while
-  the lane was live**, in the same run that printed a clean sync. So the dashboard reports no
-  current task for the entire duration of every lane dispatched with any flag
-  · **this is worse than the un-derived fields above.** Those rot; this one **actively replaces a
-  correct hand-written value with a derived wrong one**, so the more careful the coordinator is
-  about writing truth, the more the tool destroys. A partial syncer that overwrites what it cannot
-  correctly derive is worse than one that leaves the field alone — which sharpens the coverage
-  rule already recorded here: **naming the fields it does not touch is not enough if it touches a
-  field it cannot compute**
-  · same root as this repo's standing `pgrep` lesson, one level up: that one is *the process name
-  is not its arguments*, this one is *the argument order is not a contract*. `^ccc @` silently
-  encodes "no flags between binary and alias". Match the alias wherever it appears, or resolve the
-  lane from `dreamers[].pid` with `kill -0`, which is exact and needs no pattern
-  · related: **#401, #264, #403, #405, #410, #423, #440**
-  · **it demonstrated itself at 14:56, while I was dispatching the lane to fix it.** Two lanes
-  were live (`ccc --yolo @glm52`, `ccc --yolo @grok`) and `status_sync.py` printed
-  *"already in sync (135 open, 0 live)"*. Not reconstructed from logs — observed in the same
-  minute, which is the cleanest evidence this entry will get
-  · **and the crash is currently MASKED by the pgrep bug, which will surprise whoever fixes
-  them in the obvious order.** `dreamers` now carries `"task": "402a"` and `"task": 367` —
-  mixed str/int, and one of them a sub-id. `sorted()` never sees either, because `live` is
-  empty before it gets there. **Fixing the pattern makes the TypeError appear**, so the first
-  green after fixing bug 1 is a crash, not a pass. Two bugs in series where the second is
-  invisible until the first is fixed
-  · **THE SYNCER HALF LANDED `f1f269b`** (lane `#402a`, `ccc @glm52`, ~40 min): an
-  order-independent detector, `dreamers` pruned by that same liveness test, a failed probe that
-  leaves fields **byte-identical** rather than writing a derived empty, a **coverage line** naming
-  every field it does not own (derived from the file's keys, so a field added next month appears
-  without anyone remembering), and mixed `str`/`int`/sub-id task ids
-  · **verified on the real dashboard, not only on a fixture**: the first post-merge run reported
-  `current_task_ids [] -> ['172', '420']` — it found both live lanes, **pruned the dead `402a`
-  entry**, and listed all 26 author-owned fields. `gate402a.py` PASSED against the merged tree with
-  the pre-merge baseline
-  · **the mixed-type fix HAD to ship in the same commit**, and this is the general shape worth
-  keeping: the `TypeError` was **masked** by the pgrep bug, because `live` was empty before
-  `sorted()` ever saw the ids. Fixing the pattern is what makes the crash reachable, so the two
-  bugs were in series with the second invisible until the first was fixed. Splitting them would
-  have shipped a commit whose first real use crashes
-  · **the lane refuted the premise of one of my gate's checks, by experiment, and it was right.**
-  I demanded that a lane whose recorded pid died but whose argv is live still be found — encoding
-  `live_tasks`' old docstring (*"ccc re-execs and the recorded pid is the wrapper's, not the
-  survivor's"*). Measured: after an `exec` the **pid is preserved and the argv is what vanishes**.
-  So the pid is the exact signal and the brief path is the fragile fallback — the reverse of the
-  docstring, which it fixed in the same commit. **Fourth lane today to be right where a check
-  disagreed**; the prior in `lessons.md` is now 4-for-4
-  · **the residual risk this creates, recorded because nothing checks it**: correctness now depends
-  on the dispatch recipe recording the **surviving** pid. A recipe whose recorded pid is a wrapper
-  that exits early would prune a **live** lane — and over-pruning is the dangerous direction, since
-  the coordinator then edits files a live lane owns. Today's `setsid bash -c "… ccc …"` is safe
-  because bash execs into `ccc`, so the recorded pid *is* `ccc` (`comm=ccc`, measured). Any change
-  to how lanes are launched must re-check that
-  · **WHAT REMAINS OF THIS ENTRY, narrowed 15:40:** (a) the `dreamers` row in `file-formats.md` plus
-  the `lint.py` check it implies — deliberately withheld from the lane as `#402b`; and (b)
-  `awaiting_human` is **still hand-written**: the post-merge coverage line lists it under
-  author-owned, so the 4-vs-5 drift this entry recorded can recur. It wants deriving from
-  `watch.parse_open_questions`, which is now a three-line change against a tool that already has
-  the idiom
-  · **`#402b` now has a LIVE symptom, found within a minute of the merge and caused by my own
-  scoping.** `lint.py` errors on *"current_task_ids has non-integer member(s) '172', '420' — ids
-  are integers; a quoted id matches no task row, silently"*. The lane widened the syncer's id
-  vocabulary to carry sub-ids (this entry's own fourth finding: the int field cannot hold `#392a`)
-  and I **withheld `lint.py` from it**, so the two now disagree by construction
-  · **both parties are half right, which is why this is a format decision and not a bug fix.** A
-  genuine sub-id lane *must* be a string, and lint's stated reason is also real — a quoted `"172"`
-  matches no task row in any consumer that compares to an int. So `file-formats.md` has to state
-  the vocabulary (plain id → int; sub-id → string; never a quoted plain id) and `lint.py` has to
-  enforce **that**, in the same commit. Fourth checker today found narrower than the work it
-  describes
-  · immediate data corrected by hand rather than by widening the check: my `dreamers` entries said
-  `"task": "172"` where `172` is a plain integer id, which lint is right to reject. Sub-id lanes
-  like `402a` still need the string form and still have nowhere legitimate to live
-  · **`#402b` IN PROGRESS 2026-07-28 17:03** — `ccc @glm52`, `.worktrees/fmt`, with `#415` in the
-  same lane (same two files, same shape). The live symptom is mine from 16:44: `lint` errored on
-  `current_task_ids ['218','263','419']` while `status_sync` deliberately keeps the string form for
-  sub-ids. Both correct, disagreeing about a vocabulary nobody wrote down. I worked around it by
-  writing ints, and **the workaround is not the fix** — the next author to write `"392a"` hits the
-  same wall from the other side
-  · **`#402b` DONE, `2092d57` (merged 17:47).** The id vocabulary is now written down and enforced:
-  plain id → **int**, sub-id → **string**, a quoted plain id is **always wrong**. Verified across all
-  four cases independently, including the one that matters — `["263"]` is still an ERROR, so the
-  widening did not remove the check it widened
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
   P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
   · the existing row is for root-level `.dreamwork/docs/research-*.md` — a **different** location.
@@ -3564,6 +3397,177 @@ Next id: **447**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#402** — `status.json`'s `dreamers` array has no stated shape, and the tool that reads it goes
+  stale in the one direction that costs parallelism · P2 · loop-tooling/durability · origin:
+  **loop** · found by using it: registering a new lane crashed the tool and revealed three more
+  · **it went stale, measured.** `#396` and `#398` had **landed** and were still listed as owning
+  `review_artifact.py`, `file-formats.md`, `dev/capture/fixture/**`, `lint.py` and `test_lint.py`.
+  `status_sync.py` recomputes `queue` and `current_task_ids` from live `pgrep` but **never touches
+  `dreamers`**, so ownership only ever accumulates
+  · **the direction of the error is the whole problem.** A stale entry says a free file is *owned*,
+  so the coordinator declines a dispatch it could have made. I reasoned `dev/capture/fixture` was
+  free from *memory* of `#396` landing; the file said otherwise, and had I trusted the file I would
+  have skipped the dispatch. `#264` measured file contention as the **binding constraint** on how
+  much runs at once — this is that constraint, manufactured
+  · **it crashed on a mixed-type id.** Existing entries carry `"task": 396` (int); writing
+  `"task": "401"` made `sorted()` raise `TypeError: '<' not supported between instances of 'str'
+  and 'int'` and `just status-sync` exited 1. **Loud, so not the worst kind** — but it stops the
+  whole sync, and the drift it exists to prevent resumes silently from there
+  · **and a fourth `#401` instance:** a **sub-id cannot be represented at all**. The live lane is
+  `#392a`; the int field can only hold `392`. Same class — the tooling's id vocabulary is narrower
+  than the loop's
+  · **the root cause is a missing contract, and it is this repo's own stated rule.** `grep dreamers
+  file-formats.md` returns **nothing**, yet `dreamers` is written by the loop and parsed by **two**
+  tools (`status_sync.py`, and `watch.py` renders it). The rule is that such a file's shape is
+  stated there and checked by `lint.py`, in the same commit. Absent that, the int/str question had
+  no answer to get wrong
+  · **a fifth thing, and it bears on what he asked me to find out:** the pre-existing entries carry
+  **no `agent` field**, so `status.json` does not record *which model* owns a lane. He asked which
+  models and providers work best for us; the runtime record cannot answer it
+  · deliverables, and therefore ownership: `status_sync.py` (prune `dreamers` by the same live-pgrep
+  test it already applies to `current_task_ids`; accept both id types or normalise), `file-formats.md`
+  (the `dreamers` row), `lint.py` + `test_lint.py` (the check that row implies), `test_status_sync.py`
+  if one exists — check
+  · **the red is available without an injection**: reinstate a landed lane's entry and assert the
+  prune drops it. Assert the precondition too — that at least one entry is live and one is dead,
+  derived at runtime, or the test is vacuous the day nothing is running
+  · **BIGGER THAN FILED, and this half is visible to HIM.** `status_sync.py` refreshes `queue` and
+  `current_task_ids` and **silently leaves every other field to rot**. Measured 10:26:
+  **`last_tick` was 133 minutes stale** (`08:13`), `last_commit` was `a6c0732` — **30+ commits
+  behind** HEAD — and `deployed` named rev `b4d4b3e` and **pid `1970752`, which was dead**
+  · **so the browser tab he reads said `· stalled` while the loop was doing its most productive work
+  of the day.** `watch.py:3667` is right — `Date.now() - t > STALE_TICK_MS ? 'stalled' : 'dreaming'`
+  — and its comment at `:3634` says that word is how he tells *whether the LOOP is alive*. **The
+  dashboard did its job; the data lied to it.** Refreshing the three fields flipped the title to
+  `· dreaming`, verified in the browser
+  · **the dead `deployed.pid` is `#363`'s lesson reopened** — the one `pending_handoff_records`'
+  docstring cites as *"inferring liveness from surviving artefacts is the wrong answer"*. A pid
+  field nothing re-reads is exactly such an artefact
+  · **and the tool's own success message is the trap:** `just status-sync` printed
+  *"already in sync (136 open, 1 live)"* **while three fields were stale**. It is in sync on the two
+  it knows about and says nothing about the rest, so the reassuring line is scoped to a subset the
+  reader cannot see. **Whatever fixes this must either own the whole file or NAME the fields it does
+  not touch** — a coverage statement, the same idiom `#395` established for checks, applied to a
+  syncer
+  · deliberately **not** fixed inline: this is the same tool and the same class as the `dreamers`
+  half above, so it belongs to one lane, not to a coordinator patch. The **data** was corrected by
+  hand at 10:26 as tick hygiene; the **tool** is still wrong
+  · **another derived-in-two-places field, found 11:16: `awaiting_human`.** It is a hand-written
+  list and `questions.md` is the source; they had drifted to **4 vs 5** — the panel was missing
+  `#408` and `#410` (both asked today) and carried `#371/#263 Q2`, which is **not an open question
+  at all**. So his dashboard said "waiting on you" for something he had never been asked, while two
+  things he HAD been asked were absent from the panel. `status_sync.py` derives `queue` and
+  `current_task_ids`; `awaiting_human` wants the same treatment, from `parse_open_questions`
+  · **and my hand-rolled regex for it was wrong too** — `^- \*\*(.+?)\*\*\s*$` returned 4 because one
+  title wraps across lines. Third hand-rolled parser to be wrong today, against a file whose
+  production parser was importable the whole time. **`status_sync` should call `watch.parse_*`, never
+  re-implement it**
+  · **the derived half is wrong too, measured 12:52 — and it overwrote a correct value.**
+  `status_sync.py:72` gates on `pgrep -af "^ccc @"`. Today's dispatch is
+  `ccc --yolo @glm52 …` — a control flag sits between the binary and the alias, so the anchored
+  pattern matches **nothing** and `current_task_ids` was recomputed from `[331]` to `[]` **while
+  the lane was live**, in the same run that printed a clean sync. So the dashboard reports no
+  current task for the entire duration of every lane dispatched with any flag
+  · **this is worse than the un-derived fields above.** Those rot; this one **actively replaces a
+  correct hand-written value with a derived wrong one**, so the more careful the coordinator is
+  about writing truth, the more the tool destroys. A partial syncer that overwrites what it cannot
+  correctly derive is worse than one that leaves the field alone — which sharpens the coverage
+  rule already recorded here: **naming the fields it does not touch is not enough if it touches a
+  field it cannot compute**
+  · same root as this repo's standing `pgrep` lesson, one level up: that one is *the process name
+  is not its arguments*, this one is *the argument order is not a contract*. `^ccc @` silently
+  encodes "no flags between binary and alias". Match the alias wherever it appears, or resolve the
+  lane from `dreamers[].pid` with `kill -0`, which is exact and needs no pattern
+  · related: **#401, #264, #403, #405, #410, #423, #440**
+  · **it demonstrated itself at 14:56, while I was dispatching the lane to fix it.** Two lanes
+  were live (`ccc --yolo @glm52`, `ccc --yolo @grok`) and `status_sync.py` printed
+  *"already in sync (135 open, 0 live)"*. Not reconstructed from logs — observed in the same
+  minute, which is the cleanest evidence this entry will get
+  · **and the crash is currently MASKED by the pgrep bug, which will surprise whoever fixes
+  them in the obvious order.** `dreamers` now carries `"task": "402a"` and `"task": 367` —
+  mixed str/int, and one of them a sub-id. `sorted()` never sees either, because `live` is
+  empty before it gets there. **Fixing the pattern makes the TypeError appear**, so the first
+  green after fixing bug 1 is a crash, not a pass. Two bugs in series where the second is
+  invisible until the first is fixed
+  · **THE SYNCER HALF LANDED `f1f269b`** (lane `#402a`, `ccc @glm52`, ~40 min): an
+  order-independent detector, `dreamers` pruned by that same liveness test, a failed probe that
+  leaves fields **byte-identical** rather than writing a derived empty, a **coverage line** naming
+  every field it does not own (derived from the file's keys, so a field added next month appears
+  without anyone remembering), and mixed `str`/`int`/sub-id task ids
+  · **verified on the real dashboard, not only on a fixture**: the first post-merge run reported
+  `current_task_ids [] -> ['172', '420']` — it found both live lanes, **pruned the dead `402a`
+  entry**, and listed all 26 author-owned fields. `gate402a.py` PASSED against the merged tree with
+  the pre-merge baseline
+  · **the mixed-type fix HAD to ship in the same commit**, and this is the general shape worth
+  keeping: the `TypeError` was **masked** by the pgrep bug, because `live` was empty before
+  `sorted()` ever saw the ids. Fixing the pattern is what makes the crash reachable, so the two
+  bugs were in series with the second invisible until the first was fixed. Splitting them would
+  have shipped a commit whose first real use crashes
+  · **the lane refuted the premise of one of my gate's checks, by experiment, and it was right.**
+  I demanded that a lane whose recorded pid died but whose argv is live still be found — encoding
+  `live_tasks`' old docstring (*"ccc re-execs and the recorded pid is the wrapper's, not the
+  survivor's"*). Measured: after an `exec` the **pid is preserved and the argv is what vanishes**.
+  So the pid is the exact signal and the brief path is the fragile fallback — the reverse of the
+  docstring, which it fixed in the same commit. **Fourth lane today to be right where a check
+  disagreed**; the prior in `lessons.md` is now 4-for-4
+  · **the residual risk this creates, recorded because nothing checks it**: correctness now depends
+  on the dispatch recipe recording the **surviving** pid. A recipe whose recorded pid is a wrapper
+  that exits early would prune a **live** lane — and over-pruning is the dangerous direction, since
+  the coordinator then edits files a live lane owns. Today's `setsid bash -c "… ccc …"` is safe
+  because bash execs into `ccc`, so the recorded pid *is* `ccc` (`comm=ccc`, measured). Any change
+  to how lanes are launched must re-check that
+  · **WHAT REMAINS OF THIS ENTRY, narrowed 15:40:** (a) the `dreamers` row in `file-formats.md` plus
+  the `lint.py` check it implies — deliberately withheld from the lane as `#402b`; and (b)
+  `awaiting_human` is **still hand-written**: the post-merge coverage line lists it under
+  author-owned, so the 4-vs-5 drift this entry recorded can recur. It wants deriving from
+  `watch.parse_open_questions`, which is now a three-line change against a tool that already has
+  the idiom
+  · **`#402b` now has a LIVE symptom, found within a minute of the merge and caused by my own
+  scoping.** `lint.py` errors on *"current_task_ids has non-integer member(s) '172', '420' — ids
+  are integers; a quoted id matches no task row, silently"*. The lane widened the syncer's id
+  vocabulary to carry sub-ids (this entry's own fourth finding: the int field cannot hold `#392a`)
+  and I **withheld `lint.py` from it**, so the two now disagree by construction
+  · **both parties are half right, which is why this is a format decision and not a bug fix.** A
+  genuine sub-id lane *must* be a string, and lint's stated reason is also real — a quoted `"172"`
+  matches no task row in any consumer that compares to an int. So `file-formats.md` has to state
+  the vocabulary (plain id → int; sub-id → string; never a quoted plain id) and `lint.py` has to
+  enforce **that**, in the same commit. Fourth checker today found narrower than the work it
+  describes
+  · immediate data corrected by hand rather than by widening the check: my `dreamers` entries said
+  `"task": "172"` where `172` is a plain integer id, which lint is right to reject. Sub-id lanes
+  like `402a` still need the string form and still have nowhere legitimate to live
+  · **`#402b` IN PROGRESS 2026-07-28 17:03** — `ccc @glm52`, `.worktrees/fmt`, with `#415` in the
+  same lane (same two files, same shape). The live symptom is mine from 16:44: `lint` errored on
+  `current_task_ids ['218','263','419']` while `status_sync` deliberately keeps the string form for
+  sub-ids. Both correct, disagreeing about a vocabulary nobody wrote down. I worked around it by
+  writing ints, and **the workaround is not the fix** — the next author to write `"392a"` hits the
+  same wall from the other side
+  · **`#402b` DONE, `2092d57` (merged 17:47).** The id vocabulary is now written down and enforced:
+  plain id → **int**, sub-id → **string**, a quoted plain id is **always wrong**. Verified across all
+  four cases independently, including the one that matters — `["263"]` is still an ERROR, so the
+  widening did not remove the check it widened
+  · **PART (a) LANDED `cc0e244` (2026-07-28 23:52, lane `wt/dreamers`).** `status_sync.py` now reaps a `dreamers` entry whose pid is dead or whose task has left the open section, **normalises ids on write** while tolerating both types on read, and **never crashes on junk** — it skips and reports instead of exiting 1, which mattered because a syncer that exits stops protecting everything after it. The mixed-type `sorted()` crash is covered by sorting with `key=str`. `file-formats.md` states the entry shape in the same commit. **The second half is NOT done and is deliberately left**: the dashboard's rendering of `dreamers`, and what the coordinator writes at dispatch time. The lane's recommendation on that is worth keeping — **record the surviving pid, not a wrapper that exits early**, because over-pruning is the dangerous direction: a live owner reaped by mistake invites two agents into one file, which is worse than a stale entry that merely costs a dispatch.
+
+- **#444** — the new snap detector proves a transition EXISTS, not that it has the right duration · P2 ·
+  verification/motion · origin: **loop** · **the cost of `#442`'s fix, recorded at merge rather than
+  discovered later**
+  · `#442` correctly made `transitionstart` the load-independent gate, because a compositor-driven transition
+  is invisible to a starved rAF sampler and the frame evidence cannot be required. But `transitionRan` is a
+  **boolean about existence**: a transition shortened to `1ms` still fires `transitionstart`, so it now passes
+  the gate where the old frame-count form might have caught it
+  · **the trade is right** — a guard that lies under load is worse than one that checks less — but the gap
+  should be named: between *"the CSS says animate"* and *"it animated for the duration the styleguide
+  specifies"* there is now no check on this path
+  · the events already captured carry the answer: `transitionWindow` returns the window, so its **width** is
+  measurable without any rAF sampling at all. Asserting the observed duration against the declared
+  `CARD_TRAVEL`/`.cmdmsg` value (with tolerance, and derived from the declaration rather than a literal) would
+  close it and is load-independent by the same argument that motivated `#442`
+  · check first whether the duration is worth asserting at all, or whether `transitions.md`'s intent is
+  satisfied by existence plus the styleguide's own single-source rule — **a check that restates the CSS it
+  reads is not a check**. That is the design question and it may be a refusal
+  · related: **#442, #414, #413**
+  · **REFUSED, with measurement and a red-proved refusal, `a268255` (2026-07-28 23:52, lane `wt/duration`).** The lane measured six consecutive green runs at load 36–42 against the declared `.35s` and refused to add a duration floor, for reasons I accept: a ±20% band (280–420) **fails the green set** on an observed 239.4ms, while a band wide enough for `#442`'s measured 665ms would exclude only pathologies the STYLE constant already forbids — **a check that restates the CSS it reads**. Shortening the declared duration is a styleguide edit in a single-source file, not a silent motion bug. Existence via `transitionstart` stays the load-independent detector. **The refusal is red-proved** in `test_duration_refusal.py`: injecting `win.dur>=280` into the snap detector fails a test, so rebuilding the floor breaks the suite. **And it found a real bug while measuring**: `transitionWindow` paired ends by `ends.at(idx)`, producing **negative durations** (−67.7, −70, −177.8ms) while `ran` stayed true — so `#442`'s helper was not always measuring the transition under test. Now pairs the first end at-or-after the chosen start, red-proved by reverting to `ends.at(-1)`.
+
 - **#442** — `midFrames(...) >= 1` reduces the frame-rate bet but does not remove it, and the guard that
   proves this is the one that claimed otherwise · P2 · verification/motion · origin: **loop** · **found by
   coordinator inspection at `#414`'s merge, minutes after the lane argued the problem was gone**
