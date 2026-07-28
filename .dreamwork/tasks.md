@@ -76,8 +76,16 @@ Next id: **476**
   an assertion — the crash sentinel, so it would be reported as *did not judge* rather than *failed*. Sensitivity
   to the key is therefore confirmed, but the guard cannot **judge** a wrong key, which is precisely the shape
   `#471`'s accounting exists to flag. Worth a follow-up: a guard should fail on a changed contract, not die on it
-  · **remaining eight**, with lanes `motion` and `surfaces` still out on them at the time of writing:
-  `oneinput`, `wisp`, `qsec`, `posture` (motion) and `health`, `serving`, `answers`, `burndownmock` (surfaces)
+  · **6 of 10 now fixed — `surfaces` merged too (`36b4ad1`, `2ceb904`, `a7a4a11`, `f37c287`).** All four were
+  **guard-side**; the lane wanted **no `watch.py` change at all**, which is the sixth through ninth checks
+  tonight to outlive their contract. `burndownmock` was one of the two guards `#471`'s accounting named as
+  never having judged, and `#417`'s panel changes were indeed what its mock no longer matched. On `health` the
+  page was **not** silent about refusals: an unmatched title still returns `409` and the client paints
+  `not written (409) — …`; the guard's fixed `sleep(700)` was racing `sendAnswer`. Verified here: 4 of 4 ran and
+  judged, all PASS
+  · **remaining four**, lane `motion` still out: `oneinput`, `wisp`, `qsec`, `posture`
+  · **one low follow-up the lane reported and correctly did not build:** hold a refusal's `.qerr` against a tick
+  the way a success holds its morph, if that race reappears under extreme load — a page change, so not theirs
   · blocked on nothing · related: **#471, #474, #269, #459**
 
 - **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
