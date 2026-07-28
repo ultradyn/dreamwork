@@ -693,6 +693,99 @@ class TestCollector(unittest.TestCase):
         self.assertEqual(landed, {"5"})
         self.assertNotIn("6", landed)
 
+    # ── #399b: the historical inline landed form, which #399 lost ──────────
+    # The burndown guard caught the regression and these unit tests did not,
+    # which is why it reached master. They feed `_landed_ids` the shapes the
+    # history walk (`ledger_series`) meets in old revisions, where the landed
+    # section was inline prose — not entry heads — so every column-0 mention
+    # is a landing and the indented body / reference-field guards must not
+    # touch them.
+
+    def test_a_historical_inline_mention_lands(self):
+        """#399b: the pre-entry-head landed form is `**#N** <prose> (sha)`,
+        a column-0 paragraph. `ledger_series` walks these old revisions, so a
+        landed reader that misses them makes the burndown lose every
+        completion older than the last groom — exactly how #399 re-reddened
+        master. The inline mention must land."""
+        text = ("# Task ledger\n\nNext id: **10**\n\n## Open\n\n"
+                "- **#9** — still open\n\n"
+                "## Recently landed\n\n"
+                "**#1** landed (aaa1111). **#2** landed (aaa1112).\n")
+        # Precondition: neither id is an entry head, so #399's entry-heads-
+        # only rule read ZERO landings here — the regression this test pins.
+        self.assertNotIn("- **#1**", text)
+        self.assertNotIn("- **#2**", text)
+        _open, landed = watch.parse_ledger(text)
+        self.assertEqual(landed, {"1", "2"},
+                         "the historical inline form must land its ids")
+
+    def test_a_historical_one_line_multi_mention_lands_every_id(self):
+        """#399b: history packed several landings on one column-0 line
+        (`**#101** …, **#97** …`), and the burndown fixture joins its
+        landings with a space for the same reason. A mention that is not at
+        the start of its line still lands, because the line itself begins at
+        column 0."""
+        landed = watch._landed_ids(
+            "## Recently landed\n\n"
+            "**#101** scrollbar styling (2026-07-25), **#97** durable ledger\n")
+        self.assertEqual(landed, {"101", "97"})
+
+    def test_a_related_marker_does_not_land_even_at_column_zero(self):
+        """#399b: #367's hole stays closed. A `related:` or `filed as`
+        marker written on a ONE-LINE head sits at column 0, so the
+        indented-body guard alone would not exclude it — the reference-field
+        guard (LANDED_REF_FIELD) is what does. This is the load-bearing case
+        for that guard and the third discriminating red."""
+        text = ("## Recently landed\n\n"
+                "- **#395** — x · related: **#367** · filed as **#392** · "
+                "landed `abc`\n")
+        landed = watch._landed_ids(text)
+        self.assertEqual(landed, {"395"})
+        self.assertNotIn("367", landed)
+        self.assertNotIn("392", landed)
+
+    def test_an_indented_body_prose_reference_does_not_land(self):
+        """#399b: a cross-ref in an entry's INDENTED body ('see **#N**',
+        'corrected (**#N**)') is a reference, not a landing. Counting it
+        would put an open id into the landed set — #367's class of bug — and
+        break open/landed disjointness on the live ledger. This is the
+        load-bearing case for the indented-body guard."""
+        text = ("## Recently landed\n\n"
+                "- **#5** — shipped · landed `abc`\n"
+                "  · see **#9** which is still open, and found **#8**\n"
+                "  · corrected (**#7**) in the same pass\n")
+        landed = watch._landed_ids(text)
+        self.assertEqual(landed, {"5"})
+        for ref in ("7", "8", "9"):
+            self.assertNotIn(ref, landed)
+
+    def test_an_empty_landed_section_lands_nothing(self):
+        """#399b neighbour: a revision whose landed section is empty — the
+        first commits of any ledger — lands nothing, without raising."""
+        self.assertEqual(watch._landed_ids(""), set())
+        self.assertEqual(watch._landed_ids("## Recently landed\n\n"), set())
+
+    def test_a_combined_head_and_inline_combined_each_land_every_id(self):
+        """#399b neighbour: a combined head (`- **#7/#8**`) and a combined
+        inline mention (`**#7/#8** …`) each land BOTH ids — the historical
+        walk meets the inline combined form."""
+        self.assertEqual(
+            watch._landed_ids("## Recently landed\n\n- **#7/#8** — x\n"),
+            {"7", "8"})
+        self.assertEqual(
+            watch._landed_ids(
+                "## Recently landed\n\n**#7/#8** the thing (sha)\n"),
+            {"7", "8"})
+
+    def test_an_id_both_a_head_and_mentioned_inline_lands_once(self):
+        """#399b neighbour: an id that is an entry head AND named again in an
+        inline summary lands once (a set), not twice; the inline repeat is
+        idempotent, not additive."""
+        text = ("## Recently landed\n\n"
+                "- **#5** — shipped · landed `abc`\n"
+                "**#5** also appears in an old summary (abc)\n")
+        self.assertEqual(watch._landed_ids(text), {"5"})
+
     def test_the_real_ledger_has_no_id_both_open_and_landed(self):
         """#399: open ∩ landed is empty on the real ledger, measured at runtime.
 
