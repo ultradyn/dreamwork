@@ -2554,3 +2554,13 @@ this shape and convert opportunistically.)
   available from the first run and I did not read it: four failures across two guards were all
   **one invariant**, and the *reduced-motion* arm failed beside the animated one, which no
   timing flake explains.
+- **Fixing `master` under a running lane silently invalidates the acceptance criteria you gave
+  it.** I briefed the `#331` lane with *"three failures are known pre-existing on master —
+  verify they fail on master too"*, then spent that lane's runtime fixing all three on `master`.
+  Its branch predates the fixes, so its own run shows 3 failures against `master`'s 0 — a
+  difference that reads exactly like *"my change broke three guards"*. The work was good and the
+  timing made it a trap. **A brief's criteria are a contract against a named baseline; if you
+  move the baseline, you have edited the contract of an agent that cannot hear you.** Either
+  hold shared-baseline fixes until the lane lands, or post the correction the moment you commit
+  — and expect it to be unread, so also plan to explain the discrepancy at review rather than
+  treating the lane's confusion as a defect in the lane.

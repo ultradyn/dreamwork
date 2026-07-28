@@ -181,3 +181,31 @@ Over-wide gave 172 (the extra is `#96`), narrow gives 152. One id either side of
 so derive the number — do not eyeball it.
 
 Everything else in the brief stands.
+
+---
+
+## URGENT addendum, 13:02 — MASTER MOVED UNDER YOU. Read before judging `just test`.
+
+**Criterion 7 is now wrong and it is my fault, not yours.** I told you three failures are known
+pre-existing on `master` — `qacard`, `docktarget`, `noteprop` — and asked you to verify they fail
+on `master` too. **While you were working I fixed all three on `master`** (`7007d5b`, `e15b0c0`).
+
+So if you check now you will find: **3 failures in your tree, 0 on `master`.** That difference is
+**not** caused by your change. Your branch is off `97becd9`, which predates both fixes, so your
+worktree still holds the old guard files.
+
+None of the three has anything to do with the ids-only span:
+
+- `qacard` asserted every question age is two figures; `#392a` made date-only entries **one**
+  figure, so the check was asserting the bug.
+- `docktarget` / `noteprop` compared a raw question title against the rendered dock headline;
+  `#385` put a live age *inside* that headline, so the title is no longer a contiguous substring.
+  Fixed with a shared `dev/capture/dom.mjs`.
+
+**What to do:** treat the three as pre-existing **for your tree** and say so — that is still the
+honest report, and it is what criterion 7 was really asking for. **Do not try to fix them, do not
+merge `master` to make them go away, and do not read the difference as evidence about your own
+change.** If `just test` shows *only* those three, you are done on that criterion. If it shows a
+**fourth**, that one is yours and is worth your attention.
+
+Everything else in the brief and the first addendum stands.
