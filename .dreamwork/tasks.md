@@ -223,63 +223,6 @@ Next id: **475**
   · blocked on nothing · related: **#473**
   · **FIXED `f0ca86e` (lane `wt/qsignal`, merge `aa9581f`, 2026-07-29 06:46) — and there were TWO defects, as suspected.** `mdSpans` had **no `[text](url)` handler at all**, and `linkifyReview` only matched the backticked `.dreamwork/review/x.html` form — so his markdown link matched nothing. **Separately the path was also wrong:** `../review/` does not resolve from `/questions`, so even a rendered link would have 404'd. A link that renders and 404s is the same defect wearing a fix's clothes, which is why the guard asserts the href **fetches**, not that an `<a>` exists. Shape settled on the corpus majority (backticked `.dreamwork/review/x.html`) **plus** tolerance for markdown links so his live `#417` entry works rather than waiting on a corpus migration nobody asked for.
 
-- **#474** — `docktarget` and `noteprop` fail on master and passed at this session's first commit · **P1** ·
-  regression/dashboard · origin: **loop** · **found 2026-07-29 06:45 while discharging the guard debt `#471`
-  exposed**
-  · **the measurement, and it is solid:** at `b9fa1a4` (this session's starting commit) both PASS; on master
-  both FAIL, **deterministically at load 28-38**, which rules out the frame-sampling flake that everything else
-  in that load band looks like. Re-tested `b9fa1a4` twenty-five minutes later and it still PASSED, so the
-  signal is code-dependent and not the passage of time
-  · failing assertions, verbatim: `docktarget` — *"note: dock visibly remains original after in-memory
-  reorder"* and the same for `answer`; `noteprop` — *"normal motion: the dock stays on the same stable target"*
-  and *"the textarea resize and scroll survive"*, in **both** normal and reduced motion
-  · **prime suspect, not confirmed: `a63930a` (`#463`/`#464`)**, because `#463` changed how review artifacts
-  **sort** (created time rather than modified) and both guards are about the dock **after a reorder**. Against
-  it: its parent `3564a1f` also fails, so if `a63930a` is the cause something before it fails too — or the
-  bisect that produced that pair was malformed (it was; see below)
-  · **two failed attempts to bisect this, and the second failure is the reusable lesson:** (1) hand-picking
-  commits gave a contradictory answer because I assumed `2b50801` was `a63930a`'s parent and it is not;
-  (2) `git bisect start 3564a1f 2b50801` accepted a *"good"* that is **not an ancestor** of the *"bad"*, so it
-  explored 445 revisions of a divergent graph and blamed `0dd136e`, a **dream-file commit**, which cannot break
-  a browser guard. **A bisect verdict naming a commit that could not possibly cause the failure is evidence the
-  RANGE is wrong, not the code** — check ancestry before trusting a bisect, and treat an absurd culprit as a
-  finding about the method
-  · so: bisect properly with `--first-parent` over `b9fa1a4..master` (a well-formed range), and note the
-  runner needs `git bisect reset` to actually take — a stale `bisect log` served the previous run's verdict
-  · **why this was invisible:** the suite reports `60 guard(s) registered` and, until `#471`'s successor landed
-  minutes ago, never whether one **ran**. The coordinator reported the tree green all session on **pytest +
-  lint + individually-invoked guards**, and a full `just test` never completed — one run was killed by an
-  external sweep mid-guards. So a dock regression rode along inside a merge that was called verified
-  · **→ closed 2026-07-29 07:15. Both halves landed and the code was correct both times; the checks were
-  wrong.** Bisected properly at last: `git merge-base --is-ancestor` first, then `--first-parent` over
-  `b9fa1a4..master` **restricted to the paths that could matter** (`watch.py` and the two guards), which cut 841
-  first-parent commits to 55 — six steps, 25s a probe. First bad is `0dd136e`, **the same commit the malformed
-  bisect named**: I had dismissed it as a dream-file commit by reading its `dream(#385)` *subject* instead of its
-  diffstat, and it changes `watch.py`, a guard and two docs. It was right the first time
-  · **half one, the headline (landed `dfce438`):** `#385` puts a live age *inside* the question headline, so
-  `dockHeadline` identifies a docked question by the headline **minus its chrome** — and it can only remove
-  **nodes**. `#456` added its ` · ` between the date and the age span as bare **text**, which survived the strip,
-  so the raw title stopped being a substring of the result and both guards failed for two days on a page that was
-  behaving correctly. The `#266` invariant they exist for (`posted.question`, read from data) stayed green
-  throughout. Fix: the separator is an `.rsep` node (the idiom `#473`'s separator already used), `dockHeadline`
-  also strips `.qup`/`.rsep` — `#473`'s pair was a second latent break — and both guards now **derive** the
-  precondition the strip rests on: raw and stripped textContent must differ
-  · **half two, the height (landed `5bcaf58`):** `noteprop` seeded `ta.style.height = '80px'` and demanded it
-  back after a tick. `#177`/`#464` made that wrong deliberately — the box is `resize:none` *because autosize owns
-  the height*, and `fitText`'s restore branch re-fits it every tick so it does not re-grow under him. It now lets
-  autogrow choose and asserts *that* height survives. Splitting the compound assertion (which could not say which
-  half failed) surfaced a third thing: the scroll comparison was **racing the .85s height travel**, since a
-  textarea clamps `scrollTop` to its current scrollable range — seeded mid-travel it recorded 160 in normal motion
-  and 109 in reduced for identical content, and the post-travel re-clamp read as lost scroll. Reduced motion never
-  saw it because there is no travel to race
-  · both red-proved on the production line (`dockHeadline`'s `querySelectorAll` made a no-op; `fitText`'s restore
-  `ta.style.height = target + 'px'` made `target + 7`), injections confirmed present and then removed. Full
-  `pytest` 1266 passed, `lint` clean. Rules recorded in `watch-design.md`: **headline chrome is a node whose class
-  is listed in `dockHeadline`**, and **a guard must never assert a height autosize owns**
-  · also fixed a literal that had quietly expired: a test asserted *"at least the three known open questions"* of
-  the **live** file and went red today because two had been answered. It derives its subject now
-  · blocked on nothing · related: **#471, #463, #456, #385, #177**
-
 - **#473** — a question can be updated and he has no way to notice · **P1** · dashboard/questions ·
   origin: **human** ·
   **human via watch 2026-07-29 06:21:** *"it was not obvious that this question had updated, we should show
@@ -3675,6 +3618,63 @@ Next id: **475**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#474** — `docktarget` and `noteprop` fail on master and passed at this session's first commit · **P1** ·
+  regression/dashboard · origin: **loop** · **found 2026-07-29 06:45 while discharging the guard debt `#471`
+  exposed**
+  · **the measurement, and it is solid:** at `b9fa1a4` (this session's starting commit) both PASS; on master
+  both FAIL, **deterministically at load 28-38**, which rules out the frame-sampling flake that everything else
+  in that load band looks like. Re-tested `b9fa1a4` twenty-five minutes later and it still PASSED, so the
+  signal is code-dependent and not the passage of time
+  · failing assertions, verbatim: `docktarget` — *"note: dock visibly remains original after in-memory
+  reorder"* and the same for `answer`; `noteprop` — *"normal motion: the dock stays on the same stable target"*
+  and *"the textarea resize and scroll survive"*, in **both** normal and reduced motion
+  · **prime suspect, not confirmed: `a63930a` (`#463`/`#464`)**, because `#463` changed how review artifacts
+  **sort** (created time rather than modified) and both guards are about the dock **after a reorder**. Against
+  it: its parent `3564a1f` also fails, so if `a63930a` is the cause something before it fails too — or the
+  bisect that produced that pair was malformed (it was; see below)
+  · **two failed attempts to bisect this, and the second failure is the reusable lesson:** (1) hand-picking
+  commits gave a contradictory answer because I assumed `2b50801` was `a63930a`'s parent and it is not;
+  (2) `git bisect start 3564a1f 2b50801` accepted a *"good"* that is **not an ancestor** of the *"bad"*, so it
+  explored 445 revisions of a divergent graph and blamed `0dd136e`, a **dream-file commit**, which cannot break
+  a browser guard. **A bisect verdict naming a commit that could not possibly cause the failure is evidence the
+  RANGE is wrong, not the code** — check ancestry before trusting a bisect, and treat an absurd culprit as a
+  finding about the method
+  · so: bisect properly with `--first-parent` over `b9fa1a4..master` (a well-formed range), and note the
+  runner needs `git bisect reset` to actually take — a stale `bisect log` served the previous run's verdict
+  · **why this was invisible:** the suite reports `60 guard(s) registered` and, until `#471`'s successor landed
+  minutes ago, never whether one **ran**. The coordinator reported the tree green all session on **pytest +
+  lint + individually-invoked guards**, and a full `just test` never completed — one run was killed by an
+  external sweep mid-guards. So a dock regression rode along inside a merge that was called verified
+  · **→ closed 2026-07-29 07:15. Both halves landed and the code was correct both times; the checks were
+  wrong.** Bisected properly at last: `git merge-base --is-ancestor` first, then `--first-parent` over
+  `b9fa1a4..master` **restricted to the paths that could matter** (`watch.py` and the two guards), which cut 841
+  first-parent commits to 55 — six steps, 25s a probe. First bad is `0dd136e`, **the same commit the malformed
+  bisect named**: I had dismissed it as a dream-file commit by reading its `dream(#385)` *subject* instead of its
+  diffstat, and it changes `watch.py`, a guard and two docs. It was right the first time
+  · **half one, the headline (landed `dfce438`):** `#385` puts a live age *inside* the question headline, so
+  `dockHeadline` identifies a docked question by the headline **minus its chrome** — and it can only remove
+  **nodes**. `#456` added its ` · ` between the date and the age span as bare **text**, which survived the strip,
+  so the raw title stopped being a substring of the result and both guards failed for two days on a page that was
+  behaving correctly. The `#266` invariant they exist for (`posted.question`, read from data) stayed green
+  throughout. Fix: the separator is an `.rsep` node (the idiom `#473`'s separator already used), `dockHeadline`
+  also strips `.qup`/`.rsep` — `#473`'s pair was a second latent break — and both guards now **derive** the
+  precondition the strip rests on: raw and stripped textContent must differ
+  · **half two, the height (landed `5bcaf58`):** `noteprop` seeded `ta.style.height = '80px'` and demanded it
+  back after a tick. `#177`/`#464` made that wrong deliberately — the box is `resize:none` *because autosize owns
+  the height*, and `fitText`'s restore branch re-fits it every tick so it does not re-grow under him. It now lets
+  autogrow choose and asserts *that* height survives. Splitting the compound assertion (which could not say which
+  half failed) surfaced a third thing: the scroll comparison was **racing the .85s height travel**, since a
+  textarea clamps `scrollTop` to its current scrollable range — seeded mid-travel it recorded 160 in normal motion
+  and 109 in reduced for identical content, and the post-travel re-clamp read as lost scroll. Reduced motion never
+  saw it because there is no travel to race
+  · both red-proved on the production line (`dockHeadline`'s `querySelectorAll` made a no-op; `fitText`'s restore
+  `ta.style.height = target + 'px'` made `target + 7`), injections confirmed present and then removed. Full
+  `pytest` 1266 passed, `lint` clean. Rules recorded in `watch-design.md`: **headline chrome is a node whose class
+  is listed in `dockHeadline`**, and **a guard must never assert a height autosize owns**
+  · also fixed a literal that had quietly expired: a test asserted *"at least the three known open questions"* of
+  the **live** file and went red today because two had been answered. It derives its subject now
+  · blocked on nothing · related: **#471, #463, #456, #385, #177**
+
 - **#439** — the staleness banner says the page is behind but offers no way to act on it · P2 ·
   watch-ui/deploy · origin: **human** · **human via watch 2026-07-28 20:34**
   · his words: *"re: \"this page is 2 watch.py commits behind · serving bfc3222\", we should have after
