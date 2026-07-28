@@ -24,9 +24,45 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **411**
+Next id: **412**
 
 ## Open
+- **#411** — two answered entries carry a perfectly good date and the page throws it away, because
+  `answered_at` anchors at position 0 · **P2** · UI correctness / parser · origin: **loop** · found
+  while checking a stray note that said "6 of 49"; the note was right and the cause was not
+  · **`answered_at(body)` is `RESOLVED_AT.match(body)`** — `.match`, so the resolution head must be
+  the FIRST thing in the body. Measured on the live file: **6 of 49** answered entries return
+  `None`, and they are **not one fault, they are three**:
+    - **2 are a real bug.** `#233 LAN binding` and `#229 threaded topic chats` both begin with an
+      artifact-pointer line and carry the head on the SECOND line — `The threat-model review is at`
+      then `→ answered (2026-07-26 17:49): …`. The timestamp is present, unambiguous, and dropped
+      for a purely positional reason.
+    - **2 are honest.** `#194` and the dreamhub-URL-space ask were *withdrawn* — `→ decided by the
+      loop, and withdrawn as an ask` carries no timestamp because there was no answer. `None` is
+      correct and the docstring earns it: *"a wrong date is worse than no date."*
+    - **2 predate the convention** (`Four early asks`, and the user-event-journal grant whose body
+      opens mid-sentence). History, not a defect.
+  · **the page confirms the count from the other side, which is why this is worth believing:** the
+  deployed `/questions` renders **43** `span.qwhen` stamps against **49** answered entries. 49−43=6.
+  Two independent instruments, same six — the parse count is not measuring itself
+  · **the fix is NOT `.search`.** That is the trap this ledger has paid for twice today: I split
+  `tasks.md` on the literal `## Recently landed` an hour ago and hit a PROSE mention on line 355,
+  and `#399` exists because mention-scanning read `related:` markers as landings. A `→ answered (…)`
+  quoted deeper in a body would become that entry's date. **Line-anchored, and only within the head
+  block** (before the first blank line) — same discipline as `ALSO_LANDED_MARKER` being
+  field-anchored
+  · **the silence is the actual defect, and it outlives whichever fix is chosen.** Two entries lose
+  a date they own and nothing anywhere says so. Wanted either way: a `lint.py` line reporting how
+  many answered entries have no parseable resolution date, with the withdrawn ones distinguished
+  from the unparseable ones — a count cannot silently stop counting. **Derive it; never pin 6**
+  · decide, and say which: widen the parser to a head *block*, or declare the two entries malformed
+  and correct the file. The second is smaller and `file-formats.md` already claims the head is
+  prefixed to the body — but it makes a hand-authored ordering load-bearing with nothing enforcing
+  it, which is how these two got written in the first place
+  · **`watch.py` is owned by the `#399b` lane right now** — do not dispatch this into that file
+  until it merges
+  · related: **#399, #340**
+
 - **#410** — `ccc @grok` is 401 and has been silently eating lanes: two died at three seconds
   with nothing in the tree · **P1** · dogfood/orchestration · origin: **loop** · found by capturing
   a lane's stderr after the second death
@@ -387,7 +423,7 @@ Next id: **411**
   · **my error, stated plainly: I merged on `pytest` alone while `just test` was still running**,
   forty minutes after recording the lesson that a selection is not the suite. The lane's own brief
   made `just test` green the acceptance criterion and I merged without it
-  · related: **#392, #401, #405**
+  · related: **#392, #401, #405, #411**
 
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
   dashboard/transitions · origin: **loop** · from **#381's own caveat**, probed rather than accepted
@@ -3033,6 +3069,7 @@ Next id: **411**
   · **the brief written for this task was deleted, not kept.** Its premise was the stale one and
   its prescription — the symmetric one-argument fix — was actively wrong. A wrong brief left in
   `.dreamwork/docs/briefs/` is a loaded trap for whoever greps that directory next
+  · related: **#411** — the other half of this section: this entry is what the page gets RIGHT about an answered entry, `#411` is the date it silently drops
 
 - **#394** — a dreamer lane reports only to the inbox, so its landing dies with its coordinator ·
   P2 · loop/durability · origin: **loop** · found while verifying **#381** end to end
