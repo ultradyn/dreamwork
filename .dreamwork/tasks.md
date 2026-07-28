@@ -89,6 +89,22 @@ Next id: **433**
   under concurrent load and passes alone, twice, on timing-shaped assertions. **Establishing the cause
   needs the experiment, not the inference**: run the suite alone N times and under synthetic load N
   times and compare failure rates
+  · **third instance, 2026-07-28 18:22 — six guards, and the sample is now big enough to describe.**
+  `morphhold`, `qsec`, `history`, `plugcmd`, `reviewsplit`, `runmode` failed; pytest clean, lint clean,
+  `REAL_EXIT=1`. **Every single failure is a frame-sampling assertion** — *"eases in rather than blinking
+  on (distinct part-way opacities)"*, *"the column travels there rather than snapping"*, *"the morph
+  glided through the hold"*, *"the guard threw before finishing its checks"*. Those are assertions that
+  motion **happened**, and the way they fail under starvation is that the sampler misses the
+  intermediate frames and the transition reads as a snap. **The failing set is not random across the
+  suite; it is the subset that samples per frame** — `burndown`, `provenance`, `subslog`, `qorder`,
+  `revieworder`, `serving`, `gitrow`, `hfit`, `contract` all passed in the same run
+  · **and this run does not answer the experiment either, because I broke its isolation myself.** I
+  dispatched the `#425` lane mid-run rather than waiting, so it is a third *contended* data point and
+  not the controlled arm. Recorded as such rather than counted as evidence — the experiment above still
+  needs running, and doing it accidentally three times is not doing it once deliberately
+  · **the failures grew as the run progressed** (2 at guard 29, 5 at guard 40, 6 at the end), which is
+  what a load-dependent cause looks like and is not what order-dependence looks like. Weak evidence,
+  stated as weak
   · **why it matters beyond flakiness:** this is the third structural cost of fan-out after `#424` (the
   guard range is one lock) and `#423` (a dead runner looks like a fast lane). A suite that goes red
   because *we* are busy trains everyone to discount its reds, which is the expensive failure — and the
