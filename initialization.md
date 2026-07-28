@@ -173,7 +173,18 @@ read, initialization has already happened; return to the loop.
    `.dreamwork/skill-version` against the latest entry in the skill's
    `migrations/` — behind means read the intervening entries, apply
    what's relevant, bump the version file (`migrations/README.md` has the
-   protocol). Learn the project's verify commands (justfile, package
+   protocol). **A migration may have left a notice in a data file** (#458)
+   — a declared comment block at the top of `tasks.md` or another hot file,
+   which exists because a long-running loop never re-initializes and so
+   never sees a migration at all. Its data files are the only channel that
+   reaches it. So after bumping the version, retire any notice the bump
+   makes spent — the version argument is **required** and the tool refuses
+   rather than guessing a path:
+   `python3 <skill-dir>/migration_notice.py retire --path <hot-file>
+   --skill-version-file .dreamwork/skill-version`. It prints `removed` or
+   `kept`, and `kept` is the correct answer while the version is still
+   behind. A notice that outlives its migration is the next agent's
+   confusion, and the retirement is the half nobody is prompted to do. Learn the project's verify commands (justfile, package
    scripts: test, lint, build) — you'll run them every increment. Skim
    the recent git log (~10 commits) to absorb current direction and
    granularity.
