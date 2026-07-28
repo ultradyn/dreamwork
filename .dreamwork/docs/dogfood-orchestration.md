@@ -1243,3 +1243,83 @@ are different files, so the identical line lands uncommitted in main **and** com
 branch, and `git merge` refuses on a file whose two versions are byte-identical. It arrives after
 the work is finished, looking like a conflict. Fix the template: report to the absolute inbox path,
 commit the hand-off inside the worktree only.
+
+---
+
+## The runner comparison at ten lanes, written 17:09 — and availability now dominates capability
+
+His second dogfooding question was *"what are the best models and providers to use (for us)"*. Ten
+attributed lanes in, here is what the record supports and, more importantly, what it does not.
+
+### Durations, from the ledger's own recorded figures
+
+Every figure below was written into a ledger entry when that lane reported, so none is a recollection.
+**Small samples — n=6 and n=4 — and they are the whole population, not a draw from it.**
+
+| runner | recorded lane durations (min) | median |
+|---|---|---|
+| `@grok` | 12, 13, 13, 20, 24, 25 | ~16.5 |
+| `@glm52` (incl. one `@pi-glm52`) | 14, 35, 45, 45 | 40 |
+
+**grok is about 2.4× faster on comparable work and no grok lane exceeded 26 minutes.** That direction
+matches his own framing at dispatch — *"grok is much faster than glm52"* — so this measures agreement
+with a prior rather than discovering something.
+
+**What it does NOT support:** the tasks were not matched. grok got the previews, the title, the research
+and the artifacts; glm52 got the census, the syncer, the CLI, the lint checks. If artifact-and-read work
+is intrinsically shorter than check-and-prove work, the gap is partly the work and not the runner. **I
+have never given the same brief to both**, and until I do, the multiplier is an association.
+
+### Refutation quality, which is the part that surprised me
+
+Both runners refute their briefs and both are usually right. But **the kind differs, and it tracks the
+speed profile rather than cutting against it**:
+
+- **grok refutes by measuring the tree.** *"`watch.py` is 9,688 lines, your 8,647 is stale."*
+  *"`C4`/`C5` are not in the tree while the plan table lists them"* — the finding that stopped me
+  asking the human to open a gate over unproved prerequisites. *"`214px` is `167.9px` measured."*
+  Fast reads against reality, and they catch **wrong facts**.
+- **glm52 refutes by declining to build.** `#419` was handed four direction-2 specimens as defects,
+  examined all four, found none was a defect, **measured** that the proposed check would fire on 11
+  entries and be wrong on all 11 — then **red-proved its own refusal**, so reinstating the rejected
+  design breaks the two tests that hold the rejection. `#402a` refuted my merge gate's premise by
+  experiment. These catch **wrong designs**.
+
+That is a real difference in what each is good for, and it is more useful than the speed number:
+**send grok at "is this true?", send glm52 at "should this exist?"** A wrong fact costs a correction;
+a wrong design costs a batch and then a correction.
+
+### Availability, and this is the finding that outranks the rest
+
+`@grok` was **401 from 05:52 to 14:50** (~9 hours, needing his credential), worked for **two hours**
+across five lanes, then went **401 again at ~16:50** mid-dispatch. `@glm52` has had **no observed
+outage** all day.
+
+So the honest ranking today is not "grok is faster". It is: **grok is faster and available about a
+quarter of the time; glm52 is slower and always there.** A runner that is 2.4× faster and absent for
+nine hours delivered less than one that is slower and present. **Scorecards written during a grok
+outage compare glm52 with itself** — the section above this one had to open by invalidating every
+scorecard above *it* for exactly that reason, and this is the second time in one day.
+
+And the loop could not see the outage: `nohup ccc … &` **exits 0 on a 401**, the worktree stays at
+the branch point, nothing reaches the inbox, and a dead runner is indistinguishable from a slow lane.
+Filed as `#423`. **The capability comparison is downstream of a liveness signal we do not have**, and
+building the signal is worth more than refining the comparison.
+
+### One capability that is not substitutable
+
+grok can **see**; glm52 cannot. When grok died mid-dispatch of the `#421` options artifact, the
+reassignment cost a criterion: *"visible without scrolling"* became *"assert
+`getBoundingClientRect().bottom < innerHeight` at two viewports, and assert the page actually scrolls
+so the check is not vacuous"*. **The mechanical version is better than the visual verdict it replaced** —
+it is a check where the original was an opinion. But the subjective half (does this read as identity or
+as a breadcrumb? is it prominent at his reading size?) has **no owner** while grok is down, and it is
+recorded as owed rather than skipped.
+
+### What I would tell him if he asked right now
+
+- **Default to `@glm52`** for anything that has to be correct and can wait 40 minutes, and for
+  anything where the right answer might be *"do not build this"*.
+- **Use `@grok` for reads, measurements and pixels** while it is up, and expect it not to be.
+- **The next experiment worth running is the matched one:** the same brief to both, on a task neither
+  has seen. Everything above it is association.
