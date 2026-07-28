@@ -27,26 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **447**
 
 ## Open
-- **#446** — a second `Answer` on a question **overwrites the first**, and the text is gone before anything can
-  render it · **P1** · durability/data-loss · origin: **loop** · **found by `#254`'s design lane while reading
-  the grammar it was forbidden to change**
-  · `watch.py`'s question parser keeps one answer per entry: a second `Answer (via watch, …)` **replaces** the
-  first, so the earlier text is lost at parse time — before any render rule, thread rule or dashboard code
-  runs. Nothing reports it and nothing in the file says it happened
-  · **this is his words being dropped**, which puts it above every rendering concern in the same area. The
-  threading work explicitly declined to fix it because his grant was design-only (correctly), so it needs its
-  own entry rather than riding along
-  · **`questions.md` is the durable record of what he decided** — the ledger and `DREAMWORK.md` both defer to
-  it — so a silent overwrite there is the worst class of bug this system can have: the loop cannot know what it
-  forgot
-  · so: decide what a second answer **means** (amendment thread, correction, or genuine second answer to a
-  re-opened entry — the entry grammar already threads follow-ups, so the shape may exist already) and keep
-  both. **A parse that discards input must at minimum say so loudly**; fixing the loss is better
-  · check whether `answers.md` (his questions to the loop) has the mirror-image defect, and whether the
-  `## Answered` section's `lift_answer=False` hides a second instance of the same thing
-  · **red-first will be easy to get wrong here**: a fixture with two answers must assert **both** texts are
-  retrievable, derived at runtime, not that a count is 2 — a count passes on a parse that kept the wrong one
-  · related: **#254, #340, #343**
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
@@ -3143,14 +3123,6 @@ Next id: **447**
   control · general rule worth stating: reformat by default when the
   original formatting carries no meaning AND he never wants it back;
   offer a toggle when he might
-- **#177** — [plan: `docs/plans/composer-row.md`] Text boxes grow with what he types, then scroll · P2 ·
-  idea · 30m · his numbers: composer 2-3 → 10-15, answer/note 2 → 6 ·
-  the different ceilings are right — a 15-line box inside a question
-  card would shove the list for a ten-second sentence · **third time
-  today** that growing something moves what is below it (#141, #169,
-  now) — the growth and #104's travel are ONE gesture · the box's HEIGHT
-  is now state, so #118's tick-survival applies to it · fires on every
-  newline, so it is the most frequent animation on the page
 - **#176** — Paste images into the composer and answer boxes · P3 ·
   idea · 90m · **the biggest new surface the page would gain**: a fifth
   write exception that takes ARBITRARY BINARY, where the other four take
@@ -3397,6 +3369,38 @@ Next id: **447**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#446** — a second `Answer` on a question **overwrites the first**, and the text is gone before anything can
+  render it · **P1** · durability/data-loss · origin: **loop** · **found by `#254`'s design lane while reading
+  the grammar it was forbidden to change**
+  · `watch.py`'s question parser keeps one answer per entry: a second `Answer (via watch, …)` **replaces** the
+  first, so the earlier text is lost at parse time — before any render rule, thread rule or dashboard code
+  runs. Nothing reports it and nothing in the file says it happened
+  · **this is his words being dropped**, which puts it above every rendering concern in the same area. The
+  threading work explicitly declined to fix it because his grant was design-only (correctly), so it needs its
+  own entry rather than riding along
+  · **`questions.md` is the durable record of what he decided** — the ledger and `DREAMWORK.md` both defer to
+  it — so a silent overwrite there is the worst class of bug this system can have: the loop cannot know what it
+  forgot
+  · so: decide what a second answer **means** (amendment thread, correction, or genuine second answer to a
+  re-opened entry — the entry grammar already threads follow-ups, so the shape may exist already) and keep
+  both. **A parse that discards input must at minimum say so loudly**; fixing the loss is better
+  · check whether `answers.md` (his questions to the loop) has the mirror-image defect, and whether the
+  `## Answered` section's `lift_answer=False` hides a second instance of the same thing
+  · **red-first will be easy to get wrong here**: a fixture with two answers must assert **both** texts are
+  retrievable, derived at runtime, not that a count is 2 — a count passes on a parse that kept the wrong one
+  · related: **#254, #340, #343**
+  · **LANDED `0f0bddb` (2026-07-29 00:00, lane `wt/answerloss`).** Verified first: a two-answer Open entry lost the **first** answer entirely — not in `answer`, not in `follows` (the lift removes answers from the thread), not in `body`. Unrecoverable anywhere, at parse time, silently. Decision: **a second answer is a subsequent answer, retained in file order** — the parser does not rank or interpret amendment versus correction, because `questions.md` is the record of what he decided and the loop cannot know what it forgot; the loop reconciles semantics at fold. It reused the **`#427` `sha`+`shas` pattern**: single `answer`/`answer_when`/`answer_by`/`answer_at` fields now hold the **first** answer as the resolution anchor, plus an additive `answers` list, so **no caller changed** and single-answer DOM is byte-identical (the submit-morph `flipDock` and the wisp guard are untouched). Red-proved on `cur["answers"].append(rec)` in `_parse_entries`' `is_answer` branch: commenting it out reds on the substance — *first answer lost: []* — not on a missing key, so the test reaches the real parser. Precondition derived rather than pinned: the two answer texts are asserted different before the fixture is built. **Both mirrors checked and both safe**: `answers.md` and `## Answered` run `lift_answer=False`, so each answer survives as a separate contribution in `follows` — the defect was isolated to the Open-section lift path.
+
+- **#177** — [plan: `docs/plans/composer-row.md`] Text boxes grow with what he types, then scroll · P2 ·
+  idea · 30m · his numbers: composer 2-3 → 10-15, answer/note 2 → 6 ·
+  the different ceilings are right — a 15-line box inside a question
+  card would shove the list for a ten-second sentence · **third time
+  today** that growing something moves what is below it (#141, #169,
+  now) — the growth and #104's travel are ONE gesture · the box's HEIGHT
+  is now state, so #118's tick-survival applies to it · fires on every
+  newline, so it is the most frequent animation on the page
+  · **LANDED `95a83fb` + `e0600d5` (2026-07-29 00:00, lanes `wt/autogrow` then a recovery lane).** Both boxes grow with content to **his** ceilings and scroll past them, and the ceilings stay deliberately different — composer 2–3 → 10–15, answer/note 2 → 6 — because a 15-line box inside a question card would shove the list. Guard `dev/capture/autogrow.mjs` registered in `DEFAULT_GUARDS`; PASS at load 46.1. The `#118` tick-survival half is real work rather than a formality: on a **restore** (tick, draft) `fitText` snaps to the target height and *then* restores the standing transition, so a status tick does not re-grow the box under him mid-typing while the next keystroke still travels. **Process finding, and the reason this took two lanes: the first lane exited without reporting and with its second half uncommitted** — the guard, the justfile registration and the `fitText` fix all sat dirty in the worktree. It was recovered by dispatching a fresh lane into the same worktree to verify and land it, which worked; but this is the second occurrence of the same failure in one day and the recovery only worked because the coordinator inspected the worktree instead of trusting the branch. **The recovery lane's own note, worth keeping**: the guard's tick-survival step cannot isolate `restoreCardState`'s fit line because `restoreAnswerDrafts` masks it, so if either restore-fit path is ever removed the guard needs a second step that exercises the other in isolation — otherwise the redundancy is silently relied upon. Recorded in `watch-design.md`.
+
 - **#402** — `status.json`'s `dreamers` array has no stated shape, and the tool that reads it goes
   stale in the one direction that costs parallelism · P2 · loop-tooling/durability · origin:
   **loop** · found by using it: registering a new lane crashed the tool and revealed three more
