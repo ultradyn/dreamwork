@@ -2,6 +2,31 @@
 
 ## Open
 
+- **P1 · 2026-07-29 05:00 — #294: the SQLite ledger migration — five calls on how the loop's own memory moves**
+  **Artifact:** `.dreamwork/review/294-ledger-sqlite.html` — the design, the IGC, and what each option costs.
+  Design only; **nothing is built**, and shipping is gated on `#263` lane H and `#352` regardless of your answer.
+
+  This is the ledger — the loop's memory — so the migration is the one place a mistake is not recoverable by
+  re-running anything. The design is deliberately conservative and it refuted the option that looked safest.
+
+  **Sub-decisions:** `R1`, `R2`, `R3`, `R4`, `C1` — **`rec` takes all five.**
+
+  - **R1** — the id sequence lives in the store (`AUTOINCREMENT`, seeded from today's next id and **verified**
+    before cutover). Ids are permanent and never reused, so the sequence is the one thing a bad import cannot be
+    allowed to reset.
+  - **R2** — cutover takes an **exclusive lease** and consumes `#263` lane H's version gate. **Dual-write
+    shadowing was refuted**, and the decisive error is worth your eye: a shadow period means two truths, which
+    is exactly the second derived truth `#264` exists to remove.
+  - **R3** — git history imports as **first-sight synthetic events**, attributed `actor=migration:git` rather
+    than to you or the loop, so a reader can always tell a reconstructed event from a witnessed one.
+  - **R4** — `tasks.md` becomes `tasks.md.deprecated` plus a **one-line shim** carrying a `#458` migration
+    notice, so an agent still reading the old path is told where the ledger went instead of finding it stale.
+  - **C1** — confirming v1 stays **machine-local**: no hosted store, no network, same trust boundary as today.
+
+  **If you say nothing:** nothing is built and nothing blocks — the design sits in
+  `.dreamwork/docs/plans/ledger-sqlite.md`, the Markdown ledger keeps working, and `#294` stays open. The cost of
+  waiting is only that `status.json`/ledger drift stays a `lint` warning rather than becoming impossible.
+
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of every repo's commits?**
   → the guard landed (`ef5db01`) and is **inert until enabled**, because `core.hooksPath` is machine-local
   and not committed. Enabling it is one command; the reason it is an ask is what that command reaches.

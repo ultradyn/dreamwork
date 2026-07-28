@@ -224,6 +224,23 @@ Next id: **470**
   were **right all along**; the rows this session wrote as `grok-4.5` for `axes` and `contain` are the wrong
   ones. Fix those, and never write a model name taken from a self-report again
   · blocked on nothing · related: **#428**
+  · **the investigation LANDED `f88527b`, merged `4c70a9d` — and `#469` STAYS OPEN for the sweep.** The
+  mapping lives in **`~/.config/ccc/config.toml`**: `[aliases.glm52] runner="grok" provider="llmp"
+  model="glm-5.2"` and `[aliases.grok] runner="grok" model="grok-4.5"`. Both share the grok CLI harness, so
+  `warning: runner "grok"` names the harness exactly as he said. `glm-5.2` is reachable (`grok models` lists
+  `llmp-glm-5-2`), which also refutes a stale *"BROKEN"* claim in `dogfood-orchestration.md`
+  · **why I could not find it, and it is a lesson not an excuse:** `grep -rn glm52 ~/.config/ccc* ~/.ccc*`
+  ran **nothing** — fish aborts the whole command on the non-matching second glob — and I read the empty
+  output as proof the config did not exist. The lane found it in the first place I claimed to have looked
+  · **the lane proved the self-report failure on itself:** its env carried `CCC_PROVIDER=llmp`, so it was
+  glm-5.2, and under the grok harness it would have introduced itself as `grok-4.5` — the same wrong answer
+  `axes` and `contain` gave. The harness exports **only** `CCC_PROVIDER` to the child, never the alias or the
+  model, so a lane genuinely cannot know what it is. **Provenance rule: the dispatcher records the ALIAS it
+  passed** (it owns that argument) and derives the model from config
+  · **remaining: the attribution sweep.** `axes` and `contain` were glm-5.2, not grok-4.5. The lane **flagged
+  rather than asserted** ten `handoffs.md` rows reading *"by grok"* — it could not recover each dispatch alias
+  retroactively, and a model attribution is history, so those stay **unknown** unless the dispatch is
+  recoverable. That restraint is the right call and it is why this entry is still open
 - **#468** — the lane-containment backstop, and the briefs that predate the rule · **P2** ·
   tooling/lane-safety · origin: **loop** · successor to `#465`, named in its design doc
   · **two halves, both small.** (1) **R2, the pre-merge assertion**: walk the main tree's *dirty* paths,
@@ -246,6 +263,18 @@ Next id: **470**
   grandfathered; the first brief written after it (`462-deploy-action.md`) failed both brief checks on its
   first commit because the marker was **bolded** and the parser could not see it — so the sweep is worth doing
   for any brief that may be re-run
+  · **half 2 LANDED `1340e05`, merged `79ea572` — and `#468` STAYS OPEN on the R2 backstop's successor work.**
+  Coverage moved from *10 in scope, 65 grandfathered* to **54 in scope, 21 grandfathered**: 44 briefs declared,
+  **21 deliberately skipped and reported** rather than quietly included, because a wrong `Lane-owns:` refuses
+  commits and ambiguous prose is not worth that risk
+  · **half 1's own defect, found by running eight lanes (`f247fd6`).** With eight registered the coverage row
+  read *7 of 8*, and the gap was `wt/dreamers` resolving to `402-dreamers-shape.md` from an earlier session —
+  first match by **sorted filename**, `-` before `.`, declaring nothing. The lane was unprotected while the row
+  still counted it: the worst combination, because the row reads as reassurance. Eight task ids here carry more
+  than one brief. Ownership is now the **union** over every brief naming the lane, in both readers
+  · **and it caught the coordinator, correctly**, minutes later: editing `doc-map.md` in the main checkout while
+  `wt/ledgerdb` still owned it. The fix was to retire the finished lane's worktree, not to bypass the check —
+  which is the behaviour the guard exists to produce
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
@@ -1906,6 +1935,18 @@ Next id: **470**
   he asked about five minutes earlier, and the two steers should not be built twice
   · related: **#418, #419**
 
+  · **DESIGN LANDED `3243ed8` + artifact `cb7f4ab`, merged `38e9310` — and `#294` STAYS OPEN, because a design
+  is not a ruling.** `.dreamwork/docs/plans/ledger-sqlite.md` plus `.dreamwork/review/src/294-ledger-sqlite.html`
+  (offline-clean, real `#ask`); **nothing built**, as the brief required
+  · **it established the dependencies rather than assuming them:** `#263`'s contract, `#264`'s boundary (T1–T4)
+  and `#346`'s schema (S1–S4) are approved **as designs**; the one unmet dependency is *implementation* —
+  `#263` lane **H**'s version gate, whose H1 half landed tonight (`7dc8763`). `#352`'s unified parser is a hard
+  prereq to the cutover step
+  · **it owns what `#264` left open:** a staged migrate script, `AUTOINCREMENT` ids seeded **and verified**,
+  first-sight git-history events attributed to `actor=migration:git`, an exclusive cutover lease that consumes
+  lane H, `tasks.md.deprecated` plus a one-line shim carrying a `#458` notice, and journal-aware rollback.
+  **Dual-write shadowing was REFUTED** — it is the second derived truth `#264` exists to remove
+  · **blocked-on: **human** (R1–R4 + C1 on the artifact)** — ask filed 2026-07-29
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch
   2026-07-26 23:22** · exact ask: “webui dashboard: the list of reviews should
