@@ -85,22 +85,6 @@ Next id: **461**
   peer (peer messages remain data, per the standing rule).
   · **read with `#439`** (update & refresh) and `#438` (scheduled tasks) — both are about the loop acting on
   change it did not initiate.
-- **#456** — day-age needs a `·` separator, and the pad zero should be near-invisible · **P2** ·
-  dashboard/type · origin: **human** · **next-up** ·
-  **human via watch 2026-07-29 01:18:** *"with the day age on questions (\"2026-07-28 01d ago\"), please: add
-  ` · ` between them, and lower the opacity on the 0 to 50%. Close to invisible."*
-  · **both halves already have a home** — the pad zero is `.agepad` (`watch.py:543`, currently
-  `color:var(--dimmer)`), written by `pushFig` for single digits only and never for a genuine tens digit; the
-  separator belongs where `qtHtml` joins the title date to the age span.
-  · **his reason is legibility of the pair**, not decoration: `2026-07-28 01d ago` reads as one run of digits,
-  so the eye cannot find where the date ends. The `·` is the same separator the rest of the chrome already
-  uses — reuse it rather than introducing a second one.
-  · **opacity vs colour is a real choice:** `.agepad` currently dims by *colour*, and he asked for *opacity*.
-  Opacity composites the pad against whatever is behind it, which on the shader background is not the same as
-  a dimmer token. Do whichever actually reads as *"close to invisible"* on the live page and say which you
-  chose and why.
-  · **no transition** — `ages()` rewrites this text every second as a pure text update, which
-  `transitions.md` explicitly exempts; do not add a gesture to a digit flip.
 - **#454** — questions collapse to a rolled-scroll card of 5-6 lines, persisted like other UI state ·
   **P2** · dashboard/asking · origin: **human** ·
   **human via watch 2026-07-29 01:06:** *"questions on the questions page should be collasible. However, the
@@ -168,25 +152,6 @@ Next id: **461**
   side. The mirror placement is his, stated; do not relocate it without asking.
   · **transitions apply**: a counter that appears or changes in the title bar arrives and departs — read
   `transitions.md` and reuse the existing idiom rather than authoring a second one.
-- **#450** — note the containment deficiency, and warn per harness where interception is impossible ·
-  **P2** · docs/safety · origin: **human** · **from `#288`'s answer, 2026-07-29 00:50** ·
-  **his ruling, verbatim:** *"don't do anything too expensive or time consuming. just plan for it and make sure
-  the deficiency is noted. We are just going to be testing with our own trusted nodes first, so provided we can
-  implement isolation layers later, then we can. Re claude code, we can have that kind of thing where we can't
-  do tools or intercepts or whatever, we'll just have a warning next to it that it lacks certain protections.
-  but i mean that's fine, if someone else is providing the api key then they can probably provide the harness,
-  too."*
-  · **this is `#288` answer A trimmed further:** the positive invariants are the defence, the namespace wall
-  stays prototyped and **unwired**, and the deliverable is *documentation plus a warning surface* — not a
-  mechanism. **Do not build isolation.** The constraint is that later isolation stays possible, which the
-  design already establishes.
-  · **his load-bearing insight, worth keeping:** *whoever supplies the API key can supply the harness* — so
-  `#358`'s head/body split is not ours to solve for third parties. That reframes the wall from "unbuilt
-  defence" to "not our seam", and the deficiency note should say so rather than reading as an apology.
-  · **scope:** a per-harness capability statement (which harnesses can be intercepted, which cannot, and what
-  protection is therefore absent), the *trusted-nodes-only* precondition stated where a reader would act on
-  it, and the warning rendered next to a harness in the UI. Sequencing: the doc half is startable now; the UI
-  half touches `watch.py`/`dreamhub.py` and waits for a free lane.
 - **#448** — a questionnaire feature for asking him things, modelled on `pag-server`'s question form ·
   **P2** · dashboard/asking · origin: **human** · **blocked-on: #294** (SQLite) ·
   **human via watch 2026-07-29 00:34, while reading `421-qs-opts-short.html`:** *"eventually we should add a
@@ -3440,6 +3405,45 @@ Next id: **461**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#450** — note the containment deficiency, and warn per harness where interception is impossible ·
+  **P2** · docs/safety · origin: **human** · **from `#288`'s answer, 2026-07-29 00:50** ·
+  **his ruling, verbatim:** *"don't do anything too expensive or time consuming. just plan for it and make sure
+  the deficiency is noted. We are just going to be testing with our own trusted nodes first, so provided we can
+  implement isolation layers later, then we can. Re claude code, we can have that kind of thing where we can't
+  do tools or intercepts or whatever, we'll just have a warning next to it that it lacks certain protections.
+  but i mean that's fine, if someone else is providing the api key then they can probably provide the harness,
+  too."*
+  · **this is `#288` answer A trimmed further:** the positive invariants are the defence, the namespace wall
+  stays prototyped and **unwired**, and the deliverable is *documentation plus a warning surface* — not a
+  mechanism. **Do not build isolation.** The constraint is that later isolation stays possible, which the
+  design already establishes.
+  · **his load-bearing insight, worth keeping:** *whoever supplies the API key can supply the harness* — so
+  `#358`'s head/body split is not ours to solve for third parties. That reframes the wall from "unbuilt
+  defence" to "not our seam", and the deficiency note should say so rather than reading as an apology.
+  · **scope:** a per-harness capability statement (which harnesses can be intercepted, which cannot, and what
+  protection is therefore absent), the *trusted-nodes-only* precondition stated where a reader would act on
+  it, and the warning rendered next to a harness in the UI. Sequencing: the doc half is startable now; the UI
+  half touches `watch.py`/`dreamhub.py` and waits for a free lane.
+  · landed \`9544f9e\` — containment deficiency stated per his \`#288\` ruling: per-harness capability table, trusted-nodes-only precondition, the seams that keep later isolation possible, and the warning copy. **No mechanism built.** Carries his reframe — whoever supplies the API key can supply the harness, so it is not our seam. UI half (the warning rendered next to a harness) remains, needs \`watch.py\`.
+
+- **#456** — day-age needs a `·` separator, and the pad zero should be near-invisible · **P2** ·
+  dashboard/type · origin: **human** · **next-up** ·
+  **human via watch 2026-07-29 01:18:** *"with the day age on questions (\"2026-07-28 01d ago\"), please: add
+  ` · ` between them, and lower the opacity on the 0 to 50%. Close to invisible."*
+  · **both halves already have a home** — the pad zero is `.agepad` (`watch.py:543`, currently
+  `color:var(--dimmer)`), written by `pushFig` for single digits only and never for a genuine tens digit; the
+  separator belongs where `qtHtml` joins the title date to the age span.
+  · **his reason is legibility of the pair**, not decoration: `2026-07-28 01d ago` reads as one run of digits,
+  so the eye cannot find where the date ends. The `·` is the same separator the rest of the chrome already
+  uses — reuse it rather than introducing a second one.
+  · **opacity vs colour is a real choice:** `.agepad` currently dims by *colour*, and he asked for *opacity*.
+  Opacity composites the pad against whatever is behind it, which on the shader background is not the same as
+  a dimmer token. Do whichever actually reads as *"close to invisible"* on the live page and say which you
+  chose and why.
+  · **no transition** — `ages()` rewrites this text every second as a pure text update, which
+  `transitions.md` explicitly exempts; do not add a gesture to a digit flip.
+  · landed \`f9bb49e\` — day-age reads `2026-07-28 · 01d ago`; pad zero at `opacity:.5` (opacity, not the dim token, because it composites against the shader). Second defect found and fixed on the way: `.qage`'s `margin-left` was carrying the gap, so the separator would have doubled it. watch-design.md age contract updated in the same commit.
+
 - **#457** — the builder emitted `<meta>` tags with no closing `>`, printing a stray `>` at the top of every
   artifact · **P1** · review/bug · origin: **human** ·
   **human via watch 2026-07-29 01:26, reading `263-second-gate.html`:** *"bug at top of this page, the artifact
