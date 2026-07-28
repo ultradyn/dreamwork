@@ -1,69 +1,6 @@
 # Questions for the human
 
 ## Open
-- **P2 · 2026-07-28 — #367: what do 5–7 marks become below the cliff?**
-  Artifact: `.dreamwork/review/367-strip-below-cliff.html` (one decision, three
-  options, ~2 screens). It has the specimen that makes the case in one glance.
-
-  **Your 05:35 ruling — two-line tabs, ~6 words, nobody truncates — moved two
-  things and I have taken both, reversibly:** a worst-case tab is **180×32.3px**,
-  not the 96px one-line flag every number rested on, so the rail/strip cliff is
-  **~830px** and not the literal 780 (at 780 the flag is clipped **mid-word**);
-  and two marks closer than a tab height are the renderer's problem, not an
-  authoring rule you have to remember.
-
-  **The one thing I cannot decide for you:** below the cliff there is no lateral
-  space — the reading column is fixed at 613.5px and the page's outer margin is
-  16px at every width from 1120px down — so at your soft cap of 7 a strip needs
-  **3 rows and ~214px** of chrome stacked above the text. Truncation is off the
-  table because you removed it.
-
-  - **A · Pay the chrome** — the strip grows to as many rows as the marks need.
-  - **B · Bounded strip, then "+3 more"** — **rec: reject.** Keeps the chrome
-    *and* becomes an incomplete index, and it truncates the *set* rather than a
-    label, which is the argument you already rejected one level up.
-  - **C · Just the walk — rec.** No labels in the chrome below the cliff: one row
-    with next/prev and "3 of 7", and the label appears *at* the mark you land on.
-    ~32px instead of 214, nothing truncated, every mark reachable. The rail's
-    affordance is lateral space at a height; below the cliff there is none, so
-    preserving the *index* preserves the wrong half. The *walk* was your own
-    second sentence.
-
-  **The honest cost of C, which is yours to price:** it loses the at-a-glance
-  overview. On a narrow window you would have to walk the marks to learn what
-  they are. A says that overview is worth 214px; C says it is not.
-
-  **This does not block increment 2a** — the rail, tab and next/prev *above* the
-  cliff — which is fully specified and whose brief is written. 2a renders
-  **nothing** below the cliff rather than a provisional strip, deliberately: a
-  provisional strip is what ships and then gets argued with once you rule.
-  Increment 1 has already landed and changed no artifact you have read.
-  - **Note (human, via watch, 2026-07-28 14:52):** can you generate
-    previews of each of the options and what they would look like please? I
-    tihnk C is fine but want to see it first.
-  - **Follow-up (loop, 2026-07-28 15:10): the previews are built, and they correct a number
-    I gave you.** Artifact: **`.dreamwork/review/367-option-previews.html`** (open it from the
-    dashboard's review list). All three options render at true below-cliff geometry with seven
-    realistic two-line labels, and **every figure on the page is measured from the rendered DOM
-    at load** — nothing is captioned by hand, red-proved by changing a row count and watching the
-    caption follow.
-    **Measured chrome, at 780px and at 640px:** **A 167.9px** (3 rows) · **B 127.2px** (2 rows +
-    "+3 more") · **C 31.8px** (1 row). **I told you A costs ~214px. It costs 168.** The 214 was a
-    worst-case extrapolation from a 180px tab; with realistic mixed labels the pills pack into
-    three tidier rows.
-    **A second correction, smaller but yours to know:** *"the reading column is fixed at
-    613.5px"* holds down to 780 and **not** to 640, where it shrinks to 608 because 78ch stops
-    fitting. **The 16px outer margin does hold at both**, so the "no lateral space below the
-    cliff" argument — which is what the whole decision rests on — survives unchanged.
-    **What seeing them changed, honestly.** The lane recommended C and so do I, but it also
-    reported, and I agree having looked at the screenshots myself, that **A reads lighter than
-    its number implied** — three tidy rows of product-shaped pills, not a wall. So if you often
-    want the index *before* walking, A is more defensible than my 214 made it sound. **B is still
-    reject** and looks worse in pixels than in prose: it keeps most of A's height and loses the
-    complete index. C at 31.8px reads as a usable walk rather than a stub.
-    **Still your call, and nothing is built** — increment 2a still renders nothing below the
-    cliff until you rule.
-
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
   You said "defer publishing repo for a bit", which answers an open
   question belonging to the dreamwork instance on **x-game**
@@ -187,6 +124,89 @@
     redaction be designed now), Q6 (who besides you). Q4 moved to #359.
 
 ## Answered
+
+- **P2 · 2026-07-28 — #367: what do 5–7 marks become below the cliff?**
+  → answered (2026-07-28 15:11): **C, with a collapsible index** — *"can we do C but: add a
+  little double chevron on RHS indicating that the bar is collapsible, and when it expands it
+  should show a list of the marks. Collapsed by default."*
+  **This is neither of the options as posed and it is better than both.** It pays C's 31.8px by
+  default and A's 167.9px only when asked for, so the overview stops being a permanent tax and
+  becomes a disclosure. The cost I asked him to price — *"it loses the at-a-glance overview"* — is
+  the one thing his answer removes, and the previews are what made that visible: A read lighter
+  than my number and C read like a real walk, so combining them was the obvious move once both
+  were on screen rather than in prose.
+  Spec for increment 2b: default collapsed at the walk height; a double chevron at the right-hand
+  edge as the affordance; expanded reveals the labelled marks. **`transitions.md` governs the
+  expand and collapse with no exception** — it arrives and departs, it does not snap, and reduced
+  motion gets identical meaning. `aria-expanded` on the chevron and keyboard parity are not
+  optional. Two things left to the implementer rather than asked: whether the expanded list
+  replaces the walk row or sits beneath it, and whether the expanded state persists across
+  navigation.
+  Artifact: `.dreamwork/review/367-strip-below-cliff.html` (one decision, three
+  options, ~2 screens). It has the specimen that makes the case in one glance.
+
+  **Your 05:35 ruling — two-line tabs, ~6 words, nobody truncates — moved two
+  things and I have taken both, reversibly:** a worst-case tab is **180×32.3px**,
+  not the 96px one-line flag every number rested on, so the rail/strip cliff is
+  **~830px** and not the literal 780 (at 780 the flag is clipped **mid-word**);
+  and two marks closer than a tab height are the renderer's problem, not an
+  authoring rule you have to remember.
+
+  **The one thing I cannot decide for you:** below the cliff there is no lateral
+  space — the reading column is fixed at 613.5px and the page's outer margin is
+  16px at every width from 1120px down — so at your soft cap of 7 a strip needs
+  **3 rows and ~214px** of chrome stacked above the text. Truncation is off the
+  table because you removed it.
+
+  - **A · Pay the chrome** — the strip grows to as many rows as the marks need.
+  - **B · Bounded strip, then "+3 more"** — **rec: reject.** Keeps the chrome
+    *and* becomes an incomplete index, and it truncates the *set* rather than a
+    label, which is the argument you already rejected one level up.
+  - **C · Just the walk — rec.** No labels in the chrome below the cliff: one row
+    with next/prev and "3 of 7", and the label appears *at* the mark you land on.
+    ~32px instead of 214, nothing truncated, every mark reachable. The rail's
+    affordance is lateral space at a height; below the cliff there is none, so
+    preserving the *index* preserves the wrong half. The *walk* was your own
+    second sentence.
+
+  **The honest cost of C, which is yours to price:** it loses the at-a-glance
+  overview. On a narrow window you would have to walk the marks to learn what
+  they are. A says that overview is worth 214px; C says it is not.
+
+  **This does not block increment 2a** — the rail, tab and next/prev *above* the
+  cliff — which is fully specified and whose brief is written. 2a renders
+  **nothing** below the cliff rather than a provisional strip, deliberately: a
+  provisional strip is what ships and then gets argued with once you rule.
+  Increment 1 has already landed and changed no artifact you have read.
+  - **Note (human, via watch, 2026-07-28 14:52):** can you generate
+    previews of each of the options and what they would look like please? I
+    tihnk C is fine but want to see it first.
+  - **Follow-up (loop, 2026-07-28 15:10): the previews are built, and they correct a number
+    I gave you.** Artifact: **`.dreamwork/review/367-option-previews.html`** (open it from the
+    dashboard's review list). All three options render at true below-cliff geometry with seven
+    realistic two-line labels, and **every figure on the page is measured from the rendered DOM
+    at load** — nothing is captioned by hand, red-proved by changing a row count and watching the
+    caption follow.
+    **Measured chrome, at 780px and at 640px:** **A 167.9px** (3 rows) · **B 127.2px** (2 rows +
+    "+3 more") · **C 31.8px** (1 row). **I told you A costs ~214px. It costs 168.** The 214 was a
+    worst-case extrapolation from a 180px tab; with realistic mixed labels the pills pack into
+    three tidier rows.
+    **A second correction, smaller but yours to know:** *"the reading column is fixed at
+    613.5px"* holds down to 780 and **not** to 640, where it shrinks to 608 because 78ch stops
+    fitting. **The 16px outer margin does hold at both**, so the "no lateral space below the
+    cliff" argument — which is what the whole decision rests on — survives unchanged.
+    **What seeing them changed, honestly.** The lane recommended C and so do I, but it also
+    reported, and I agree having looked at the screenshots myself, that **A reads lighter than
+    its number implied** — three tidy rows of product-shaped pills, not a wall. So if you often
+    want the index *before* walking, A is more defensible than my 214 made it sound. **B is still
+    reject** and looks worse in pixels than in prose: it keeps most of A's height and loses the
+    complete index. C at 31.8px reads as a usable walk rather than a stub.
+    **Still your call, and nothing is built** — increment 2a still renders nothing below the
+    cliff until you rule.
+  - **Answer (via watch, 2026-07-28 15:11):** Okay, can we do C but: -
+    add a little double chevron on RHS indicating that the bar is
+    collapsible, and when it expands it should show a list of the marks.
+    Collapsed by default.
 
 - **P2 · 2026-07-28 — `ccc @grok` (only `grok-4.5`) is 401; the other eleven models are fine.**
   → answered (2026-07-28 14:48): **option 2 — he refreshed the xAI key**, and I
