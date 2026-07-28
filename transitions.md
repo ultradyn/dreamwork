@@ -158,6 +158,26 @@ So, for anything in this document:
   instinct applied three ways. When a motion guard goes red, the first
   question is which of these it encodes, and the second is what else the
   box was doing.
+- **A compositor-driven CSS transition is invisible to a starved rAF
+  sampler, and `transitionstart` is its load-independent snap detector.**
+  `opacity` and `transform` transitions run on the **compositor** in real
+  time; `requestAnimationFrame` runs on the **main thread**, which the
+  page's own `#dreambg` shader and host load keep busy. Under contention
+  the compositor animates the property while **zero** rAF callbacks fire
+  inside the transition window — so `midFrames >= 1` reads 0 over a
+  perfect animation, the exact false positive #414's form was built to
+  prevent. The fix is not a better sampler but a different question:
+  `transitionstart` fires iff the browser registered a CSS transition for
+  the property — load-independent because it asks the browser, not the
+  sampler. Use it as the snap detector; keep `midFrames >= 1` as the
+  motion evidence when the trace sampled inside the window, and fall back
+  to `transitionRan` when it did not. **FLIP animations do NOT have this
+  gap**: the FLIP sets `element.style.transform` per frame on the main
+  thread, so the sampler and the animation share the thread and stay in
+  sync. Measured (#442, 2026-07-28): confirmation's 350ms `.depart`
+  opacity transition drew zero rAF samples inside its window in 6/6 runs
+  at load 40-63 on 16 cores; `transitionstart` fired in every one. The
+  helpers are `transitionWindow` and `framesInWindow` in `dom.mjs`.
 - **Show the check RED on the current behaviour before trusting it.**
 - **Verify reduced-motion too** — it is a hard contract below, and it is
   the half nobody looks at.

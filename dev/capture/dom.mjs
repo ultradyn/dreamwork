@@ -68,3 +68,63 @@ export function midStates(values) {
   const from = values[0], final = values[values.length - 1];
   return values.filter(v => v !== from && v !== final).length;
 }
+
+/* ── compositor-driven transitions and the rAF sampling gap (#442) ─────────
+ *
+ * `midFrames`/`midStates` are frame-rate-free in the sense #414 intended: a
+ * snap has zero mid-frames at ANY frame rate. But they share a blind spot
+ * with every rAF-sampled assertion: rAF runs on the MAIN THREAD, while
+ * opacity/transform CSS transitions run on the COMPOSITOR. Under host load
+ * (or even at baseline, because the page's own `#dreambg` shader keeps the
+ * main thread busy) the compositor animates the property in real time while
+ * rAF callbacks are starved — so zero samples land inside the transition
+ * window, `midFrames` reads 0, and the guard reports a motion defect for a
+ * scheduling artifact. Measured (#442): a 350ms opacity departure drew zero
+ * rAF samples inside its window in 6/6 runs under 8 burners, and the
+ * existing `length >= 3` precondition passed on every one because it counts
+ * frames that ARRIVED (including settling frames outside the window), not
+ * frames that landed INSIDE it.
+ *
+ * FLIP animations (prominence, states, morph, qsec) do NOT have this problem:
+ * the FLIP sets `element.style.transform` per frame on the main thread, so
+ * the sampler and the animation share the thread and stay in sync — slow
+ * frames spread apart but the mid-values are still caught. The gap is
+ * specific to compositor-driven CSS transitions (confirmation's `.depart`
+ * opacity/transform/filter).
+ *
+ * The load-independent snap detector for a compositor-driven transition is
+ * `transitionstart`: it fires iff the browser registered and began a CSS
+ * transition for the property. A snap (transition removed from CSS) never
+ * fires it — it asks the browser "did you animate?" rather than "how many
+ * frames did the sampler catch?". The helpers below process the transition
+ * events a guard captures alongside its rAF trace so the two failure modes
+ * print distinguishable lines: "snapped" (no transitionstart) vs "the trace
+ * did not sample the window" (transitionstart fired but zero frames inside
+ * [start, end]). */
+
+/** Given an array of `{type, prop, t}` transition events (captured by
+ *  listening for transitionrun/start/end in the page), find the window of a
+ *  transition for `prop` that starts at or after `afterT`. `pick` selects
+ *  'first' (the arrival) or 'last' (the departure) when multiple match.
+ *  confirmation's success has two opacity transitions — arrival (0→100) and
+ *  departure (100→0) — and the caller isolates the one under test with
+ *  `afterT` and `pick`. Returns `{ran, start, end, dur}`; `ran` is false
+ *  when no matching transitionstart fired. */
+export function transitionWindow(events, prop, afterT = -Infinity, pick = 'last') {
+  const idx = pick === 'first' ? 0 : -1;
+  const starts = events.filter(e => e.type === 'start' && e.prop === prop && e.t >= afterT);
+  const ends = events.filter(e => e.type === 'end' && e.prop === prop && e.t >= afterT);
+  const start = starts.at(idx)?.t ?? null;
+  const end = ends.at(idx)?.t ?? null;
+  return { ran: start !== null, start, end,
+           dur: start !== null && end !== null ? end - start : null };
+}
+
+/** Count trace frames whose timestamps fall inside a transition window.
+ *  `frames` is the rAF trace (each entry has `.t`); `win` is the return of
+ *  `transitionWindow`. When the window is null (no transition), returns 0. */
+export function framesInWindow(frames, win) {
+  if (win.start === null) return 0;
+  const end = win.end ?? Infinity;
+  return frames.filter(f => f.t >= win.start && f.t <= end).length;
+}
