@@ -2589,3 +2589,17 @@ this shape and convert opportunistically.)
   absence**, and it only exists because dispatches now write to a file instead of `/dev/null`.
   Re-dispatched with `setsid … & disown` so the lane's lifetime is not the background task's;
   `ps -o ppid=` confirms it reparented away from the harness. Check the parent, not just the pid.
+- **The "must NOT happen" half of a gate is the half that is born hollow, and only an injection
+  finds it.** My `#411` gate asserted that two *withdrawn* asks keep returning `None`, because
+  `answered_at` must never fabricate a date. Against a deliberately over-greedy reader — any
+  parenthesised date, no `→` required — **both of those checks still passed**, and the gate
+  printed GATE PASSED. The reason was not subtle once looked at: **neither withdrawn body
+  contains a parenthesised date at all**, so there was no bait for a greedy reader to take. The
+  checks were structurally incapable of failing on the exact thing they were named for, while
+  reading as the careful part of the gate.
+  The positive checks were fine — they name a value that must appear, so a broken reader misses
+  it. **A negative check names a value that must NOT appear, and the live fixture usually does
+  not contain it for unrelated reasons.** So: **feed the bait yourself.** Call the function
+  directly with input that would tempt the failure, *and* pair it with a positive control — a
+  reader that returns `None` for everything sails through a bait check alone. Both directions now
+  discriminate: narrow fails the recoveries, greedy fails the bait, correct passes both.
