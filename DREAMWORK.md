@@ -466,6 +466,32 @@ dreamwork-version: 5853e1789929
   This is a **constraint on `#368`**, not a follow-up to it — the split may not
   simply leave a smaller `watch.py` behind. Filed as `#425`, and it blocks `#368`.
 
+- **The subagent number he sets is an average, not a cap** (ruled 2026-07-29,
+  answering `#445` Q3). *"0 can mean that subagents aren't necessarily banned or
+  w/e, but they should only be used when a subagent is necessary or a
+  particularly good choice"* — i.e. **the target concurrency of running
+  subagents**: `0` means occasional (average below 0.5 running), `1` means an
+  average strictly between 0.5 and 1.5, and so on. So a `1` that is idle half
+  the time is obeying the setting, and a `1` running four at once is not. It is
+  a target the loop steers toward across a session, never a gate on any single
+  dispatch — and *"we still need to be aware of interdependent work"*, which
+  keeps disjointness the binding constraint.
+- **Two subagents may pair on one worktree**, coordinating through
+  `subagent-protocols` (same ruling). This is the first exception to
+  one-lane-one-worktree, and it is the human's, not the loop's — it works
+  because the channel is a real channel, which is why he asked in the same
+  breath that the skill be **bundled with dreamwork** (`#466`) rather than named
+  by each brief in passing.
+- **How much the loop asks him is its own axis** (ruled 2026-07-29, `#445` Q1
+  `rec`): **pace × asking × delegation**, three orthogonal dimensions, because
+  one enum cannot express *"be lackadaisical, but also use sub-agents"* — his own
+  instruction, given twice in prose because no control could hold it. Widening
+  `.dreamwork/run-mode`'s format is approved but **deferred**: convert today's
+  three values into the new vocabulary first, and give each axis a control with
+  about three stops. *"IDK that I will leave up to you, but we get 3 dimensions
+  of input is the point"* — the stops are the loop's call, the three dimensions
+  are not.
+
 ## Plugins
 
 - Load: `ud-dreamwork-hooks` (2026-07-28, **human-approved 02:47 — "sure, rec"**,
