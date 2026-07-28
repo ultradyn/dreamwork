@@ -94,7 +94,9 @@ Also: the accent is deliberately **not** spent in this panel, because nothing he
   watch it fail. **A green red-run is a finding, never a relief** — and if a red comes back green, **suspect
   your injection before the test**: confirm you edited the line the check names.
 - `python3 lint.py --target .` clean; `python3 -m pytest -q -p no:randomly` passing. **Do not run the full
-  `just test`.** Bind nothing in 39880–39889; kill by exact pid; `ss -ltnp` before finishing.
+  `just test`.** A full `just test` is in flight in the MAIN checkout from ~07:19 and
+  holds **39899**; run your guard with an explicit different port (`just guards 39893`, or
+  `node dev/capture/burndown.mjs <out> <port>` — check `ss -ltnp` first) and do not wait on it. Bind nothing in 39880–39889; kill by exact pid; `ss -ltnp` before finishing.
 - **Do not restart, `pkill` or redeploy the dashboard on :35110** — he is reading it. Never `pkill -f`.
 - **The artifact is now decided, so do not rebuild it** — but if the built page still presents `c3` as
   rejected, that is stale against his ruling; **report it** rather than editing (it is not yours).
