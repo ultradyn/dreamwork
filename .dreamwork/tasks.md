@@ -338,6 +338,33 @@ Next id: **410**
   file and reported it in one line as "pre-existing"
   · so the acceptance criterion for whoever takes this is **`just test` green**, not "the WARN is
   gone"
+  · **MERGED `8e37db3` (`3344e43`) AND NOT DONE — it traded one red for another.** `just test` is
+  **still failing**, now on the **burndown guard** instead of `forgotten_folds`. Proved causally by
+  bisect, not inferred: the burndown guard **PASSES at `c42af82`** (the merge's first parent) and
+  **FAILS at HEAD**. Before `#399`: `forgotten_folds` red, burndown green. After: the reverse. **The
+  suite has never been green today**
+  · the two failing assertions are `dev/capture/burndown.mjs:183,185` — *"the head states the three
+  totals it is a picture of"* and *"...a completion **GROOMED OUT** of the landed section still
+  counts (#1, #2 and #3 were pruned)"*
+  · **the cause, and it is the neighbour the brief failed to name.** The guard builds its own git
+  history inline (`:91-107`) and writes landed entries in the **inline-mention** form —
+  `**#1** landed (aaa1111).` — **not** as `- **#N**` entry heads. Under the new heads-plus-
+  `also-landed:` rule those read as **zero landed ids**
+  · **and that form is not the guard being unrealistic — it is the ledger's own history.**
+  `ledger_series` walks **old revisions** of `tasks.md`, and the old landed shape was exactly that
+  inline mention; the pre-`#399` docstring said so outright (*"an id under `## Recently landed` is
+  named inline in prose … two shapes because the file has two"*). **`#399` fixed the present and
+  lost the past.** A burndown that silently drops historical completions is `#136`'s failure shape —
+  the chart reads as though the loop completed less than it did
+  · **rec, smaller than what landed and probably right:** exclude ids that sit inside a **known
+  field** (`related:`, and anything else field-anchored) rather than excluding **all** mentions.
+  That kills the `#367` false landing — which was a `related:` marker — without discarding the
+  historical inline form. Keep `also-landed:`; it is a good addition and costs nothing
+  · **do not revert.** `8e37db3` fixed a real P1 and its tests are sound; the defect is that its
+  landed-id rule is too narrow for the history walker. The follow-up is additive
+  · **my error, stated plainly: I merged on `pytest` alone while `just test` was still running**,
+  forty minutes after recording the lesson that a selection is not the suite. The lane's own brief
+  made `just test` green the acceptance criterion and I merged without it
   · related: **#392, #401, #405**
 
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·

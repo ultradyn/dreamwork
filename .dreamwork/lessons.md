@@ -2358,3 +2358,31 @@ this shape and convert opportunistically.)
   before commissioning the fix.** Not the diagnosis — the symptom. If it will not reproduce, the
   task has changed shape and the brief you were about to write is for a different repo.
 
+- **`cmd | tail` reports `tail`'s exit code, so a failing suite announced itself as exit 0 — and I
+  had already started saying it was green.** · I ran `timeout 1200 just test 2>&1 | tail -25` in the
+  background. The harness reported **exit code 0**. The captured output ended
+  `error: Recipe 'guards' failed with exit code 1`. **The pipeline's status is the last command's**,
+  and `tail` always succeeds.
+  · This is the day's recurring shape wearing its plainest disguise: **a success signal that reports
+  on something other than the thing you care about.** It sits alongside `lint.py` exiting 0 on a
+  WARN, `sha256sum` printing one line for a missing operand, and `grep -c` exiting 1 on zero — four
+  instances, one family.
+  · Fix, and it is one token: **`set -o pipefail`**, or read `${PIPESTATUS[0]}`, on any pipeline
+  whose left side is the thing being judged. Better for long runs: **do not pipe at all** — write to
+  a file and read the file, so the exit code belongs to the command.
+
+- **I merged on a partial verification forty minutes after recording the lesson that a partial
+  verification is not a verification.** · `#399`'s own brief made **`just test` green** the
+  acceptance criterion, in those words, because the suite was red and a `-k` selection had hidden it
+  from me for hours. I then verified the lane's work with `pytest test_watch.py test_lint.py`
+  (502 passed), an independent red, and four lint checks — **and merged while `just test` was still
+  running**. It failed. Bisect: the burndown guard **passes at the merge's first parent and fails at
+  HEAD**, so the merge traded `forgotten_folds` red for burndown red and the suite was never green.
+  · **Knowing the rule and having just written it down did not make me apply it.** The gap was that
+  the guards live *outside* the tool I habitually reach for, so "I ran the tests" felt complete while
+  being, precisely, the selection the lesson was about.
+  · The operational form, which is what I actually needed: **the acceptance criterion is a gate, not
+  a report.** If a brief says the criterion is `just test` green, nothing merges until that command
+  has exited and been read. Waiting cost nothing; merging early cost a regression on `master` and a
+  bisect to find it.
+
