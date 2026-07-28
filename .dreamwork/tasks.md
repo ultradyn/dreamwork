@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **437**
+Next id: **438**
 
 ## Open
 - **#436** — `#ask` is not a required element, so 19 of 22 artifacts cannot be measured at all · P2 ·
@@ -49,33 +49,6 @@ Next id: **437**
   wall: plan for the 11, and treat the 12 as a separate declared migration or leave them exempt
   · blocked on nothing · related: **#432, #429, #433**
 
-- **#432** — `#ask` is not a required element, so 19 artifacts cannot be measured at all · P2 ·
-  loop-tooling/review-artifacts · origin: **loop** · **the half of `#429` that is a retrofit, not a fix**
-  · The criterion and its checker exist (`1dd973f`) and three artifacts carry `#ask`: `421` (218/266),
-  `417` (246/315) and now `263` (188/266). **The other 19 have no such element**, so
-  `above_fold.mjs` reports `#ask MISSING` and gates nothing about them
-  · so: make the id a documented requirement in `file-formats.md` / the artifact template, and only
-  then register a guard that walks `.dreamwork/review/` — registering it before the retrofit would red
-  the suite over 19 artifacts that predate the contract, which is why `above_fold` sits in
-  `lint.NOT_GUARDS` today with that reason written down
-  · **do not retrofit by adding an empty `#ask` to each page.** The id has to wrap the actual decision
-  or the check passes on a page whose ask is still buried — the same hollowness in a new place. Pages
-  with no decision to make (a design note, a schema) should be **exempt by declaration**, not by
-  carrying a decoy element
-  · **SPLIT 2026-07-28 19:57.** The `#ask`-as-a-contract retrofit above is now **#436**; this entry is
-  the **fold-derivation half only**, and it is the half that is out with a lane
-  · **also derive the fold from the live route rather than hard-coding it** — and the case for this is no
-  longer theoretical. The mobile constant was wrong **three times in one evening, always optimistic**:
-  **706** (the top of a measured 693..708 range, when a fold must take the floor), **691** (the floor
-  measured inside a worktree), then **670** (the floor on the real target). Three separate inputs move
-  it and none is the viewport: the **artifact's filename length** (`SPAN.revname` wraps the title bar,
-  the chrome grows, the frame shrinks — the iframe's bottom is pinned at 828, its top is not); the
-  **target directory's basename**, because that is the project name in `#hproj` sharing the same line
-  (`frame` gives floor 693, `ud-dreamwork` gives 672 — so a fold verified in a worktree is not verified
-  for his surface); and **how the name breaks** (a padded `xxxx…` run of the right character count has
-  no hyphen to break on where real names do, so a derived *length* is not a derived *layout*)
-  · **owner: `wt/fold` lane (glm52), dispatched 19:57** · brief: `.dreamwork/docs/briefs/432-derive-the-fold.md`
-  · related: **#429, #430, #434, #436**
 - **#431** — `just deploy`'s `pkill -f` kills any process whose command line merely mentions the
   snapshot, including the shell running the deploy · P1 · loop-tooling/deploy · origin: **loop**
   · **it killed my own shell mid-deploy, 2026-07-28 18:16**
@@ -163,32 +136,6 @@ Next id: **437**
   (see the `pgrep` aside above), repeated until the failure rate is a number. Everything else is a
   fourth anecdote
   · related: **#424, #423**
-
-- **#426** — an agent must survive its own files changing under it, or be told to reload · P1 ·
-  loop-architecture · origin: **human** · **human direct, 2026-07-28 17:38**, stated as a general
-  principle rather than a bug
-  · verbatim: *"In general this should kind of be a principle of ours: the files on disk might be
-  updated while agents are running, so they need to be able to continue running OR be explicitly told
-  (via tooling or which files they read) that they must reload the skill and associated tooling like
-  heartbeat, Monitor for user events, etc."*
-  · **the two acceptable states, and there is no third:** either the running agent **continues
-  correctly** across the on-disk change, or it is **explicitly told to reload** the skill and its
-  tooling (heartbeat, the watch-events monitor, the dashboard server). Silently running against a
-  half-updated tree is the state this forbids, and it is the state we are in by default today
-  · **we have live evidence this session, which is what makes it P1 rather than hygiene.** A brief was
-  amended mid-flight three times today and each time the question *"has the lane already read it?"* had
-  no answer available to either side. `SKILL.md` and `CLAUDE.md` are read once at session start, so a
-  change to either reaches nobody already running. And this session is running `watch.py` as a server
-  from a tree that has had **many** commits under it since it started
-  · so the shape is a **version/identity signal** the running agent can check cheaply — the skill
-  version plus what it read, against what is on disk — and a defined action when they differ. That is
-  adjacent to `#263`'s mixed-version gate (lane **H**, increments 34-35: *"mixed-version fail-closed
-  before witnessing"*), which solves the same problem for the **journal**. **The generalisation is
-  his, and lane H is one instance of it** — worth deciding whether they share a mechanism before either
-  is built twice
-  · also names `.dreamwork/run-mode` as prior art: it is re-read on every tick precisely so an on-disk
-  change reaches a running loop, and it is the only file in the system with that property today
-  · related: **#425, #368, #263, #431**
 
 - **#424** — `just test` is a single shared lock, so N concurrent lanes cannot each verify · P2 ·
   loop-tooling/orchestration · origin: **loop** · found when `#419` reported guards blocked at 17:01
@@ -569,62 +516,6 @@ Next id: **437**
   larger question — whether a page of uniformly day-precision ages needs any signal at all — is
   worth asking before writing that sentence
   · related: **#392**
-
-- **#405** — the loop has been managing file contention by hand all session when his standing
-  convention already removes it: **worktrees** · **P1** · loop/parallelism · origin: **loop** ·
-  found because **#397's plan named it as the cheaper alternative to the thing #397 was asked to
-  design** — the lane routed around its own brief and was right to
-  · **the whole session's binding constraint is one that was already solved on paper.** `CLAUDE.md`
-  states worktrees under `.worktrees/` as the preference for features and executing plans.
-  `SKILL.md` is more specific still: *"When disjointness can't be arranged — the work overlaps owned
-  files … dispatch the dreamer in a worktree: the invariant then holds by construction."* **Every
-  lane this session ran in the shared tree.** Nothing consulted either rule at dispatch time
-  · **what that cost, counted:** `#354` inc1 was **shelved** (`a6c0732`) purely because `#300`,
-  `#385` and `#391` held `watch.py`; three dispatches serialised on that one file; `#392b` and
-  `#399` are blocked on it **right now**; and `#402` exists because I hand-maintain the ownership
-  list that only matters in a shared tree
-  · **and it produced a 459-line design document.** `#397` asked whether to extract 6,756 lines of
-  client into real files, and its own answer was *"the throughput win is captured more cheaply by a
-  worktree"*. So the loop commissioned an architecture study for a problem the human had already
-  ruled on, in writing, in the file the loop reads at init
-  · **why it did not get used, which is the actually interesting question:** the coordinator tracks
-  ownership in `status.json` and treats a conflict as *"do not dispatch"* rather than *"dispatch
-  differently"*. That is a **selection** habit, and it never reaches the worktree branch because
-  the conflict is resolved (by declining) before the branch is considered. Nothing is broken —
-  a step is simply missing from the dispatch decision
-  · rec: at dispatch, a file conflict routes to a **worktree**, not to a queue. Make it the
-  documented default in `SKILL.md`'s subagent section, then measure whether the next batch actually
-  takes the branch — *"the loop optimises against the criteria"*, and an unmeasured default is a
-  preference nobody reads (**#400**)
-  · **the two costs `SKILL.md` already names, which stay real:** duplicated build state (no
-  compiled toolchain here, so cheap), and cleanup — never force-remove without
-  `git status --porcelain --ignored` first, because untracked lane scratch is exactly what lives in
-  a lane's worktree
-  · **one thing to check before adopting, not after:** a lane in a worktree cannot see the parent's
-  uncommitted state, and several guards resolve paths from `__file__` or copy the tree to a temp
-  target. Verify `just guards` and `just deploy` behave in a worktree **before** a batch depends on
-  it. `#397`'s plan already found `deploy` snapshots by `git show rev:`, which is worktree-safe
-  · **FIRST USE, and it worked: `#392a`'s red was taken in `.worktrees/verify-392a` off `HEAD`**,
-  injuring a copy while the live tree stayed clean throughout. `pytest` runs in a worktree unchanged.
-  `git worktree list` also shows `.worktrees/277-dreamfade` — so the machinery has been used here
-  before and simply never enters the dispatch decision, which is `#405`'s whole point
-  · **but dispatching a LANE into one has two traps the shared tree hides, and both are silent:**
-  **(1) `.dreamwork/inbox.md` is UNTRACKED, so it does not exist in a worktree at all** — a lane
-  appending its report there creates a fresh file in the worktree that the coordinator never reads.
-  That is exactly the loss `#392a` suffered by accident, made structural. **(2)
-  `.dreamwork/handoffs.md` IS committed**, so a lane appends to its own copy and the line is
-  invisible until merge, or becomes a merge conflict
-  · **so the dispatch prompt must give both channels as ABSOLUTE paths into the main checkout**, not
-  repo-relative ones. Every brief written so far says `.dreamwork/inbox.md`, which is correct in the
-  shared tree and silently wrong in a worktree. **Fix the brief template before the second lane, not
-  after**
-  · **and adjacency is a real constraint on how much a worktree buys.** `#399`'s target
-  (`_landed_ids`, `:7685`) and `#401`/`#406`'s (`parse_handoffs`, `:7712`, with the `HANDOFF_*_RE`
-  constants **between** them) are **27 lines apart**. Worktrees remove the *contention*, not the
-  *merge*: two lanes in one region still collide, just later and less visibly. Route by **region**,
-  not by file
-  · related: **#397, #264, #402, #400, #399, #406**
-
 
 - **#404** — for a same-tree lane, `git log` is a strictly more reliable landing channel than
   `handoffs.md`, and the tick reads the weaker one first · P2 · loop/design · origin: **loop** ·
@@ -3652,6 +3543,130 @@ Next id: **437**
 
 ## Recently landed
 
+- **#432** — the above-fold checker hard-codes a fold that three separate inputs move · P2 ·
+  loop-tooling/review-artifacts · origin: **loop** · **the half of `#429` that is a retrofit, not a fix**
+  · The criterion and its checker exist (`1dd973f`) and three artifacts carry `#ask`: `421` (218/266),
+  `417` (246/315) and now `263` (188/266). **The other 19 have no such element**, so
+  `above_fold.mjs` reports `#ask MISSING` and gates nothing about them
+  · so: make the id a documented requirement in `file-formats.md` / the artifact template, and only
+  then register a guard that walks `.dreamwork/review/` — registering it before the retrofit would red
+  the suite over 19 artifacts that predate the contract, which is why `above_fold` sits in
+  `lint.NOT_GUARDS` today with that reason written down
+  · **do not retrofit by adding an empty `#ask` to each page.** The id has to wrap the actual decision
+  or the check passes on a page whose ask is still buried — the same hollowness in a new place. Pages
+  with no decision to make (a design note, a schema) should be **exempt by declaration**, not by
+  carrying a decoy element
+  · **SPLIT 2026-07-28 19:57.** The `#ask`-as-a-contract retrofit above is now **#436**; this entry is
+  the **fold-derivation half only**, and it is the half that is out with a lane
+  · **also derive the fold from the live route rather than hard-coding it** — and the case for this is no
+  longer theoretical. The mobile constant was wrong **three times in one evening, always optimistic**:
+  **706** (the top of a measured 693..708 range, when a fold must take the floor), **691** (the floor
+  measured inside a worktree), then **670** (the floor on the real target). Three separate inputs move
+  it and none is the viewport: the **artifact's filename length** (`SPAN.revname` wraps the title bar,
+  the chrome grows, the frame shrinks — the iframe's bottom is pinned at 828, its top is not); the
+  **target directory's basename**, because that is the project name in `#hproj` sharing the same line
+  (`frame` gives floor 693, `ud-dreamwork` gives 672 — so a fold verified in a worktree is not verified
+  for his surface); and **how the name breaks** (a padded `xxxx…` run of the right character count has
+  no hyphen to break on where real names do, so a derived *length* is not a derived *layout*)
+  · **owner: `wt/fold` lane (glm52), dispatched 19:57** · brief: `.dreamwork/docs/briefs/432-derive-the-fold.md`
+  · related: **#429, #430, #434, #436**
+  · **LANDED `a6fbf3b` `04dcae9` (2026-07-28 20:35, lane `wt/fold`).** `above_fold.mjs` now derives the fold per artifact by serving the real target on an ephemeral port, loading `/review?p=…` and measuring `#reviewframe` — no constant survives. Reproduced 708 (shortest name) / 672 (longest) / 740 (desktop, and the lane's pushback is that desktop has **no** per-artifact spread: no name in the corpus wraps at 1280, so 740 is uniform and it says so). `devoverlay.mjs`'s fold block was **repointed, not deleted** — it keeps the anti-vacuity spread (≥8px between shortest and longest) and now cross-checks the tool's derived fold against the guard's own independent `getBoundingClientRect`. Red-proved on `fold: r.h` → `fold: r.ih`: 844 vs 708. The lane names the residual honestly — the cross-check cannot catch a fold that regresses *too small*, since a small fold passes `ask.top < fold` harder; that pessimism lives in FALLBACK mode and the spread assertion.
+
+- **#426** — an agent must survive its own files changing under it, or be told to reload · P1 ·
+  loop-architecture · origin: **human** · **human direct, 2026-07-28 17:38**, stated as a general
+  principle rather than a bug
+  · verbatim: *"In general this should kind of be a principle of ours: the files on disk might be
+  updated while agents are running, so they need to be able to continue running OR be explicitly told
+  (via tooling or which files they read) that they must reload the skill and associated tooling like
+  heartbeat, Monitor for user events, etc."*
+  · **the two acceptable states, and there is no third:** either the running agent **continues
+  correctly** across the on-disk change, or it is **explicitly told to reload** the skill and its
+  tooling (heartbeat, the watch-events monitor, the dashboard server). Silently running against a
+  half-updated tree is the state this forbids, and it is the state we are in by default today
+  · **we have live evidence this session, which is what makes it P1 rather than hygiene.** A brief was
+  amended mid-flight three times today and each time the question *"has the lane already read it?"* had
+  no answer available to either side. `SKILL.md` and `CLAUDE.md` are read once at session start, so a
+  change to either reaches nobody already running. And this session is running `watch.py` as a server
+  from a tree that has had **many** commits under it since it started
+  · so the shape is a **version/identity signal** the running agent can check cheaply — the skill
+  version plus what it read, against what is on disk — and a defined action when they differ. That is
+  adjacent to `#263`'s mixed-version gate (lane **H**, increments 34-35: *"mixed-version fail-closed
+  before witnessing"*), which solves the same problem for the **journal**. **The generalisation is
+  his, and lane H is one instance of it** — worth deciding whether they share a mechanism before either
+  is built twice
+  · also names `.dreamwork/run-mode` as prior art: it is re-read on every tick precisely so an on-disk
+  change reaches a running loop, and it is the only file in the system with that property today
+  · related: **#425, #368, #263, #431**
+  · **LANDED `ed2d7e1` `2b261f4` (2026-07-28 20:35, lane `wt/reload`).** Design at `.dreamwork/docs/reload-signal-design.md`; increment is `watch.skill_identity()` → `{commit, skill_version}`, exposed via `collect()` so it rides `/data.json`. **Two facts, never one** (the `deploy_state.py` discipline): `commit` moves on every change, `skill_version` only on a migration, so *"my tree changed"* and *"the change affects what I read"* split structurally rather than heuristically. **Lane H decision: do NOT share a mechanism** — same question shape, but different comparand (protocol version in data vs commit of source), trigger site (data-witness vs time boundary) and action (fail-closed refuse-write vs reload-or-report); parallel instances, not nested. Lanes E/G/H not built. Deliberately **not** built: a per-tick `reload-signal` flag file (it re-conflates exactly what the design splits), auto-reloading SKILL.md/CLAUDE.md (the harness reads once; the loop cannot make it re-read), content hashing. **No artifact shipped, on purpose** — the one decision that is his (convention vs flag file) is premature until the convention has been tried, and a decoy ask is worse than none.
+
+- **#405** — the loop has been managing file contention by hand all session when his standing
+  convention already removes it: **worktrees** · **P1** · loop/parallelism · origin: **loop** ·
+  found because **#397's plan named it as the cheaper alternative to the thing #397 was asked to
+  design** — the lane routed around its own brief and was right to
+  · **the whole session's binding constraint is one that was already solved on paper.** `CLAUDE.md`
+  states worktrees under `.worktrees/` as the preference for features and executing plans.
+  `SKILL.md` is more specific still: *"When disjointness can't be arranged — the work overlaps owned
+  files … dispatch the dreamer in a worktree: the invariant then holds by construction."* **Every
+  lane this session ran in the shared tree.** Nothing consulted either rule at dispatch time
+  · **what that cost, counted:** `#354` inc1 was **shelved** (`a6c0732`) purely because `#300`,
+  `#385` and `#391` held `watch.py`; three dispatches serialised on that one file; `#392b` and
+  `#399` are blocked on it **right now**; and `#402` exists because I hand-maintain the ownership
+  list that only matters in a shared tree
+  · **and it produced a 459-line design document.** `#397` asked whether to extract 6,756 lines of
+  client into real files, and its own answer was *"the throughput win is captured more cheaply by a
+  worktree"*. So the loop commissioned an architecture study for a problem the human had already
+  ruled on, in writing, in the file the loop reads at init
+  · **why it did not get used, which is the actually interesting question:** the coordinator tracks
+  ownership in `status.json` and treats a conflict as *"do not dispatch"* rather than *"dispatch
+  differently"*. That is a **selection** habit, and it never reaches the worktree branch because
+  the conflict is resolved (by declining) before the branch is considered. Nothing is broken —
+  a step is simply missing from the dispatch decision
+  · rec: at dispatch, a file conflict routes to a **worktree**, not to a queue. Make it the
+  documented default in `SKILL.md`'s subagent section, then measure whether the next batch actually
+  takes the branch — *"the loop optimises against the criteria"*, and an unmeasured default is a
+  preference nobody reads (**#400**)
+  · **the two costs `SKILL.md` already names, which stay real:** duplicated build state (no
+  compiled toolchain here, so cheap), and cleanup — never force-remove without
+  `git status --porcelain --ignored` first, because untracked lane scratch is exactly what lives in
+  a lane's worktree
+  · **one thing to check before adopting, not after:** a lane in a worktree cannot see the parent's
+  uncommitted state, and several guards resolve paths from `__file__` or copy the tree to a temp
+  target. Verify `just guards` and `just deploy` behave in a worktree **before** a batch depends on
+  it. `#397`'s plan already found `deploy` snapshots by `git show rev:`, which is worktree-safe
+  · **FIRST USE, and it worked: `#392a`'s red was taken in `.worktrees/verify-392a` off `HEAD`**,
+  injuring a copy while the live tree stayed clean throughout. `pytest` runs in a worktree unchanged.
+  `git worktree list` also shows `.worktrees/277-dreamfade` — so the machinery has been used here
+  before and simply never enters the dispatch decision, which is `#405`'s whole point
+  · **but dispatching a LANE into one has two traps the shared tree hides, and both are silent:**
+  **(1) `.dreamwork/inbox.md` is UNTRACKED, so it does not exist in a worktree at all** — a lane
+  appending its report there creates a fresh file in the worktree that the coordinator never reads.
+  That is exactly the loss `#392a` suffered by accident, made structural. **(2)
+  `.dreamwork/handoffs.md` IS committed**, so a lane appends to its own copy and the line is
+  invisible until merge, or becomes a merge conflict
+  · **so the dispatch prompt must give both channels as ABSOLUTE paths into the main checkout**, not
+  repo-relative ones. Every brief written so far says `.dreamwork/inbox.md`, which is correct in the
+  shared tree and silently wrong in a worktree. **Fix the brief template before the second lane, not
+  after**
+  · **and adjacency is a real constraint on how much a worktree buys.** `#399`'s target
+  (`_landed_ids`, `:7685`) and `#401`/`#406`'s (`parse_handoffs`, `:7712`, with the `HANDOFF_*_RE`
+  constants **between** them) are **27 lines apart**. Worktrees remove the *contention*, not the
+  *merge*: two lanes in one region still collide, just later and less visibly. Route by **region**,
+  not by file
+  · related: **#397, #264, #402, #400, #399, #406**
+  · **LANDED `066c57d` (2026-07-28 20:35, lane `wt/wtdefault`).** `SKILL.md` now states **worktree-by-default for any dreamer that writes files** at the dispatch point — shared-tree is the exception needing a reason, a read-only lane being the legitimate one — and the escalate-only-when-disjointness-fails paragraph is gone rather than duplicated. It also states the trap this session kept paying by hand: **inbox and hand-off paths given to a worktree lane are absolute**, because a lane in `.worktrees/x` told to append `.dreamwork/inbox.md` writes its own copy and the coordinator never sees it. Made checkable: `lint.check_brief_worktree_abs_inbox` flags a post-cutoff brief naming a worktree without an absolute inbox path, with the cutoff **content-resolved rather than sha-pinned**, a hollow-no-cutoff ERROR, and a live-coverage precondition. Red-proved on the `ABS_INBOX_PATH_RE` branch. 30 existing worktree briefs grandfathered, 0 in scope.
+
+- **#437** — dispatch selection depends on what the coordinator happens to remember, and the ledger is
+  too large to re-read · P2 · loop-tooling/orchestration · origin: **loop** · **filed and landed in the
+  same hour, split out of `#420`'s inventory work**
+  · `#420` fixed the *inventory* question once; the *dispatch* question — given these files are already
+  owned by live lanes, what should go out next and what would it own — is asked several times an hour and
+  had no artifact
+  · **LANDED `201bdf4` (2026-07-28 20:16, lane `shortlist`, read-only on master).**
+  `.dreamwork/docs/dispatch-shortlist.md`: 12 ranked startable tasks, each with its file-ownership set,
+  plus two parallel-safe triples with disjointness shown. It **corrected the census** rather than
+  restating it: `#371` reads as unblocked in its own prose but sits behind `#263`'s second gate and is
+  not buildable; `#172` and `#218` have landed, cutting the stale-blocker ten to eight; counts moved
+  139/175 → 144/186. Lanes E/G/H excluded as ordered
 - **#427** — the hand-off grammar is widened in `lint` but not in the parser, so the dashboard still
   cannot read a two-sha line · P3 · loop-tooling/format · origin: **loop** · **named by the `#415`
   lane rather than left to be found**

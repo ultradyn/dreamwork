@@ -2920,3 +2920,5 @@ this shape and convert opportunistically.)
   so, and my own probe confirmed it. **When writing an acceptance criterion, check it goes red on the
   current bug before shipping it to someone as the standard** — otherwise it is a wish, and the lane has
   to notice on your behalf.
+
+- **An unanchored split on `## Recently landed` hit a PROSE mention of the heading, not the heading.** Folding four landed entries, `t.split('## Recently landed', 1)` matched an open entry that *quoted* the heading, truncating the open section and writing a file with **two** landed headers — 130 lines moved into the wrong half. lint caught it, but only indirectly: it reported a *reciprocity* error about an unrelated pair (`#395`/`#353`), which cost four probe commands to trace back to the structure. The ledger already records this defect twice about itself and a brief written an hour earlier told a lane to guard against exactly it. Fix: `re.search(r'^## Recently landed$', t, re.M)` plus `assert` that both headings match exactly once — and assert the post-write invariant too, since the symptom appears far from the cause.
