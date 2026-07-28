@@ -59,6 +59,7 @@ import posixpath
 import re
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -212,6 +213,123 @@ def listening_pid(port: int):
     return None
 
 
+def process_argv(pid: int):
+    """Argv of `pid` from /proc, or None if the process is gone/unreadable.
+
+    Null-separated, so a decoy shell whose command line merely *mentions* a
+    path string is distinguishable from the process whose argv[1] *is* that
+    path. This is the discrimination `pkill -f` does not have (#431).
+    """
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            raw = f.read()
+    except OSError:
+        return None
+    if not raw:
+        return None
+    return [a for a in raw.decode("utf-8", "replace").split("\0") if a]
+
+
+def argv_runs_snap(argv, snap: str) -> bool:
+    """True when `argv` is a process whose script path is `snap`.
+
+    Compares realpaths so a relative argv and an absolute snap still match.
+    A command line that merely *mentions* the basename (a shell comment, a
+    `pgrep` pattern, an agent's own check) does not match — that is the
+    whole point of #431.
+    """
+    if not argv:
+        return False
+    try:
+        snap_real = os.path.realpath(snap)
+    except OSError:
+        snap_real = os.path.abspath(snap)
+    for arg in argv:
+        try:
+            if os.path.realpath(arg) == snap_real:
+                return True
+        except OSError:
+            if arg == snap:
+                return True
+    return False
+
+
+def stop_deployed(port: int, snap: str, *, signal_num: int = 15,
+                  wait_s: float = 2.0) -> int:
+    """Stop the process listening on `port` if and only if it is serving `snap`.
+
+    Mechanism for #431: identify the target by the listening socket (exact —
+    one pid owns a TCP listen), then verify via `/proc/<pid>/cmdline` that the
+    process is actually running `snap` before signalling. Never `pkill -f`.
+
+    Exit semantics for `just deploy`:
+      0 — nothing listening, or our server was stopped.
+      1 — something is listening that is not our snap (refuse to kill), or
+          the kill failed. Fail loud: killing nothing and saying so beats
+          killing the shell.
+
+    Does not start anything; does not touch any other port.
+    """
+    pid = listening_pid(port)
+    if pid is None:
+        print(f"nothing listening on :{port} — nothing to stop")
+        return 0
+    if pid in (0, 1) or pid == os.getpid():
+        print(f"refuse to signal pid {pid} on :{port} — not a deploy target",
+              file=sys.stderr)
+        return 1
+
+    argv = process_argv(pid)
+    if argv is None:
+        print(f"pid {pid} on :{port} vanished before inspect — nothing to stop")
+        return 0
+    if not argv_runs_snap(argv, snap):
+        # Something else owns the port. Do not kill it. Say why.
+        preview = " ".join(argv)[:160]
+        print(
+            f"deploy stop refused: :{port} is owned by pid {pid} whose argv is "
+            f"not {snap!r} (got: {preview!r}). Not signalling — a pattern match "
+            f"would have killed the wrong process (#431).",
+            file=sys.stderr)
+        return 1
+
+    try:
+        os.kill(pid, signal_num)  # SIGTERM first; watch.py exits cleanly
+    except ProcessLookupError:
+        print(f"pid {pid} already gone — nothing to stop")
+        return 0
+    except PermissionError as exc:
+        print(f"deploy stop failed: cannot signal pid {pid}: {exc}",
+              file=sys.stderr)
+        return 1
+
+    # Wait for the listen to release so the restart bind does not race.
+    deadline = time.time() + wait_s
+    while time.time() < deadline:
+        if listening_pid(port) != pid:
+            print(f"stopped pid {pid} on :{port} (was {snap})")
+            return 0
+        time.sleep(0.05)
+
+    # Still listening — escalate once, then refuse to claim success.
+    try:
+        os.kill(pid, 9)
+    except ProcessLookupError:
+        print(f"stopped pid {pid} on :{port} (was {snap})")
+        return 0
+    except PermissionError as exc:
+        print(f"deploy stop failed: pid {pid} ignored SIGTERM and SIGKILL "
+              f"refused: {exc}", file=sys.stderr)
+        return 1
+    time.sleep(0.1)
+    if listening_pid(port) == pid:
+        print(f"deploy stop failed: pid {pid} still listening on :{port} "
+              f"after SIGKILL", file=sys.stderr)
+        return 1
+    print(f"stopped pid {pid} on :{port} via SIGKILL (was {snap})")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Report whether the deployed dashboard is current. Also "
@@ -235,6 +353,18 @@ def main() -> int:
              "`main` and `GENERATION`); exit 1 if not. Used by `just deploy` "
              "BEFORE it touches the live process, so a broken snapshot is "
              "rejected with the dashboard still up.")
+    actions.add_argument(
+        "--stop-deployed", action="store_true",
+        help="stop the process listening on --port if and only if its argv "
+             "is --snap (the #431 fix: never pkill -f a pattern that can "
+             "match the caller). Exit 0 when nothing was listening or the "
+             "server was stopped; exit 1 when the port owner is not our snap.")
+    ap.add_argument(
+        "--port", type=int, default=None,
+        help="with --stop-deployed: the deploy port (from .dreamwork/watch-port).")
+    ap.add_argument(
+        "--snap", default=None,
+        help="with --stop-deployed: absolute path of the deployed snapshot.")
     args = ap.parse_args()
 
     if args.resolve_snapshot is not None:
@@ -250,6 +380,11 @@ def main() -> int:
             print(f"snapshot guard failed: {exc}", file=sys.stderr)
             return 1
         return 0
+    if args.stop_deployed:
+        if args.port is None or not args.snap:
+            print("--stop-deployed requires --port and --snap", file=sys.stderr)
+            return 2
+        return stop_deployed(args.port, args.snap)
 
     st = {"current": False}
     portfile = os.path.join(ROOT, ".dreamwork", "watch-port")
