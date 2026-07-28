@@ -128,6 +128,23 @@ Next id: **419**
   · remaining, unchanged: `reviewsplit`'s `distinct(...) === 1` assertions (that something did NOT
   move) fail **green** under starvation — the opposite direction, uncovered by anything here
   · related: **#413**
+  · **the ORIGINAL SYMPTOM IS FIXED, measured 14:31-14:50.** A full `just test` ran to completion
+  under its own contention: **51 guards, 0 failures, real exit 0** — the first fully green suite of
+  the day — and `confirmation`, the guard this entry was filed for, **passed under full-suite
+  load**, which is precisely the condition it used to fail in while passing solo. So `a027ad0`'s
+  frame-counting conversion holds where the distinct-value form did not
+  · **what keeps this entry open is the INVERSE hazard, and it is the more dangerous half.**
+  `reviewsplit.mjs` asserts `distinct(head) === 1 && range(head) <= 0.5` to prove a fade did
+  **not** happen under reduced motion. Under starvation a real fade also samples one value — so
+  that assertion **passes when the thing it forbids is occurring**. Frame-rate coupling in the
+  positive direction costs a false red, which is loud; in the negative direction it costs a false
+  green, which is silent, and this repo has spent a day on exactly that asymmetry
+  · so the remaining work is not "convert the last two". `prominence.mjs:183` stays as it is
+  deliberately (its *"continuously, not a couple of jumps"* is strictly stronger than
+  not-a-snap, and a precondition already states its sampling requirement). The work is: give
+  `reviewsplit`'s reduced-motion assertions a **sample-count precondition** so starvation makes
+  them ABSTAIN rather than pass, and red-prove that by starving them on purpose
+  · narrowed to that single deliverable 15:12; priority unchanged at P2
 
 - **#413** — a guard can encode a SUPERSEDED contract, and nothing measures that · P2 ·
   verification/meta · origin: **loop** · found by fixing `qacard`, which had been red since
