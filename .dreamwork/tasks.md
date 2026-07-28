@@ -24,9 +24,29 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **449**
+Next id: **450**
 
 ## Open
+- **#449** — the question→review dissolve is framey: the mist filter costs too much on the widest, tallest
+  view · **P1** · dashboard/perf · origin: **human** · **next-up** ·
+  **human via watch 2026-07-29 00:39:** *"there is a bit of a performance issue when I changed from a question
+  screen to this screen … the SVG liquify stuff, maybe? … there could be a lot of elements on the page … it's
+  framey when it changes from the question page to the review page … I think it might be a recent addition …
+  the additions that were made for expanding and contracting, like collapsible sections, so that they had the
+  liquify effect as well."*
+  · **coordinator's reading, to be confirmed or refuted, not assumed:** `crossfade()` puts
+  `url(#dissolveOut)` on a **full-page ghost clone** and `url(#dissolveIn)` on the incoming view, then
+  `stepFx` animates **`feTurbulence`'s `baseFrequency`** (0.009→0.018) every frame. A changing
+  `baseFrequency` invalidates the noise field, so the whole turbulence texture is regenerated per frame at a
+  150%×150% filter region over an element whose area scales with page height — and **review is the widest and
+  tallest view**, which is exactly the transition he named. `scale` and `stdDeviation` are the cheap knobs;
+  `baseFrequency` is the expensive one.
+  · **his "recent addition" hypothesis is not confirmed:** grep finds only three filters (`dissolveOut`,
+  `dissolveIn`, `departMist`), all route/ghost gestures, and no turbulence on collapse. Either something in
+  the dissolve path changed recently or the suspicion is misplaced — the lane checks history rather than
+  trusting either account.
+  · **the constraint is `transitions.md`:** the fix is cheaper mist, not less gesture. A route change that
+  stops liquifying to gain frames has traded the thing the page is for.
 - **#448** — a questionnaire feature for asking him things, modelled on `pag-server`'s question form ·
   **P2** · dashboard/asking · origin: **human** · **blocked-on: #294** (SQLite) ·
   **human via watch 2026-07-29 00:34, while reading `421-qs-opts-short.html`:** *"eventually we should add a
