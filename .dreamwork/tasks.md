@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **461**
+Next id: **465**
 
 ## Open
 - **#460** — a tool that replays the `task_event` `.jsonl` log and reconstructs the database · **P3** ·
@@ -2521,7 +2521,7 @@ Next id: **461**
   · **`TestCitedShas` failed 3× under random order** (`OSError: File too large`) and passes in
   isolation and under `-p no:randomly` (1011 passed). Consistent with four lanes running `git`
   against the live repo at once — the known interaction, not a defect
-  · related: **#426**
+  · related: **#426, #461**
 
   · **SECOND GATE OPEN 2026-07-29 01:37 — *"ack good to go"*.** Lanes **E** (HTTP `202`), **G** (browser)
   and **H** (version gate) are authorised; the standing prohibition on building them is lifted. Still
@@ -2553,6 +2553,64 @@ Next id: **461**
   design, which is *not* a cutover defect), **E6** (visible — a browser/motion increment, so it needs
   `transitions.md` and the design skills, not a tail bolted onto E). Then lane **G** (30–33, shares
   `watch.py` with E) and **H** (34–35)
+- **#461** — an own-server guard grades whatever holds its port, because it never checks whose server answered ·
+  **P1** · loop-machinery/verification bug · origin: **loop** · found while verifying `#263`'s `202` cutover
+  · **the shared runner is already defended and its comment says the own-server guards are immune. They are
+  not.** `justfile`'s `guards` recipe refuses to start when someone holds its port and then compares
+  `/data.json`'s `target` to the fixture it meant to serve — but it reasons *"only the guards that start their
+  OWN server were immune, so the check belongs here rather than in each of the ten."* That was true of `#203`'s
+  failure mode and is false of this one: own-server guards do **not** use ephemeral ports, they take a base port
+  and increment it (`ports[name] = ++port`), landing on fixed ports in **39890–39899** — the range that collects
+  orphans
+  · **and their readiness step is `await sleep(2500)` with `stdio: 'ignore'`.** So when the port is held, python
+  exits *address in use* invisibly, the sleep passes anyway, and every later assertion grades a **different
+  target** — the guard reports feature bugs about a fixture nothing ever read. 32 of 69 guard scripts read
+  `data.json`; measure the adopters rather than trusting that count
+  · **the incident that found it**: two probes of the `E3` cutover returned `200` (the pre-cutover fallback) and
+  read a correct change as broken. Two orphaned `watch.py` servers from a worktree deleted 2.5 hours earlier
+  held 39895/39896, and the probe's own server had died on an argparse error (`watch.py` has no `--no-open`).
+  Nothing was mocked — the answer just came from somewhere other than the code under test
+  · **fix is a module, not a sweep** — `dev/capture/serve.mjs`, adopted one guard at a time exactly as
+  `report.mjs` was, because a one-time sweep of 30 files is stale the day a 31st guard is written. It proves two
+  things per port (the child is alive, and `/data.json`'s `target` is the directory asked for), since either
+  alone passes over the failure
+  · rollout is the successor: `health.mjs` is the first adopter; the rest adopt individually
+  · related: **#203, #263, #462**
+- **#462** — the dashboard says it is N commits behind but gives him no way to act on it · **P1** ·
+  feature/dashboard · origin: **human** · **human via watch 2026-07-29 02:30, next-up, delegate soon:** *"re
+  'this page is 3 watch.py commits behind · serving f9bb49e' on dashboard, we should have a task for adding an
+  'update & reload' button/link I think? Please delegate that to a subagent in the near future. I would like it
+  soon."*
+  · the staleness row already exists and already knows the answer — it computes the gap — so what is missing is
+  only the action, which is why he reads it as an obvious omission
+  · **it lands in `watch.py`, which lane E2 holds**, so it goes to a worktree and merges after; that is a
+  scheduling cost, not a blocker
+  · every transition it introduces obeys `transitions.md` — a button that appears when the page falls behind is
+  an arrival, not a pop, and *"it is only a small toggle"* is how a page ends up with one gesture that snaps
+  · the hard half is not the button: a reload that restarts the server he is reading must not lose his drafts
+  (`#269` keys them per target) nor his place, and it must say what happened if the restart fails
+  · related: **#461**
+- **#463** — review artifacts sort and age by the wrong timestamp · P2 · UI/review · origin: **human** ·
+  **human via watch 2026-07-29 02:30:** *"fix the assets for review sorting — they should use ctime not mtime.
+  And the age should show since ctime, not mtime. However, when ctime != mtime, we can show a 'modified X ago'
+  msg to the right in a slightly different color. separate it from the age with a dot."*
+  · so three changes, and the third is the interesting one: **the two facts coexist** — created-age is the
+  primary, modified-age is secondary and only appears when it differs, dimmer, dot-separated
+  · the dot separator and the age treatment already exist (`#456` landed the day-age separator and found
+  `.qage`'s margin would have doubled the gap) — reuse that idiom rather than authoring a second one
+  · note *ctime* in his sense is **creation**, which POSIX `st_ctime` is not (it is inode change) — decide the
+  source of truth (birth time via `statx` where available, else the artifact's own build stamp or first commit)
+  and say what happens when it is unavailable, rather than shipping `st_ctime` and calling it created
+  · related: **#456**
+- **#464** — the command composer's scrollbar appears and disappears, reflowing his text as he types · P2 ·
+  UI/polish · origin: **human** · **human via watch 2026-07-29 02:30:** *"make the scroll bar in the command
+  composer always show. It causes text to reflow when it disappears after the text box grows large enough to
+  hold all the text. It's a bit distracting."*
+  · the reflow is the symptom of a width change, so reserving the gutter is the fix; `scrollbar-gutter: stable`
+  is the cheap form, a permanently-visible bar the literal reading — his words say *always show*, so decide
+  which he means and note that a gutter with no bar still removes the reflow
+  · check it against the autogrow behaviour that makes the box tall enough in the first place, and against
+  reduced-motion
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses
@@ -3470,7 +3528,7 @@ Next id: **461**
   · **no transition** — `ages()` rewrites this text every second as a pure text update, which
   `transitions.md` explicitly exempts; do not add a gesture to a digit flip.
   · landed \`f9bb49e\` — day-age reads `2026-07-28 · 01d ago`; pad zero at `opacity:.5` (opacity, not the dim token, because it composites against the shader). Second defect found and fixed on the way: `.qage`'s `margin-left` was carrying the gap, so the separator would have doubled it. watch-design.md age contract updated in the same commit.
-
+  · related: **#463**
 - **#457** — the builder emitted `<meta>` tags with no closing `>`, printing a stray `>` at the top of every
   artifact · **P1** · review/bug · origin: **human** ·
   **human via watch 2026-07-29 01:26, reading `263-second-gate.html`:** *"bug at top of this page, the artifact
@@ -6876,7 +6934,7 @@ Next id: **461**
   hole its own note pointed at: `is_deployed` was printed and never consulted,
   so a deployed dashboard with a deleted cwd was sweepable — red-proved and
   closed · **the port-0 half remains open**, see #319
-  · related: **#424**
+  · related: **#424, #461**
 
 - **#317** — `qorder.mjs` is the fifth instance of the frame-count assertion ·
   P2 · guard craft · ~20m · origin: **loop** · goal: a guard must not go red for

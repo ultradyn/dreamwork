@@ -1720,6 +1720,12 @@ GUARDS_LIST = re.compile(r'DEFAULT_GUARDS="([^"]*)"')
 # about a helper on every run until nobody reads the warning.
 NOT_GUARDS = frozenset({
     "report",                                    # shared exit-handler helper
+    # Shared server starter for the guards that run their OWN watch.py, not a
+    # guard: it asserts nothing about the product. It exists because those
+    # guards spawn with `stdio: 'ignore'` and then `sleep`, so a port already
+    # held meant python exited invisibly and every later assertion graded a
+    # stale server's target. One copy of "prove the responder is ours". (#461)
+    "serve",
     # Shared DOM reader for the dock guards, not a guard: it asserts nothing and
     # gates nothing. It exists because docktarget and noteprop both had to ask
     # "is this still the question I docked?" of rendered text, and #385 put a live

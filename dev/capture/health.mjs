@@ -29,6 +29,7 @@ import { mkdirSync, writeFileSync, rmSync, cpSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
+import { serveAllVerified } from './serve.mjs';
 const OUT = process.argv[2], PORT = +(process.argv[3] || 39887);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
@@ -59,9 +60,15 @@ const targets = {
   // the exemption check: the blessed skeleton plus one line of prose
   leak: SKELETON + '\nWe should decide about the thing.\n',
 };
-const servers = [];
-let port = PORT;
-const ports = {};
+/* Four fixtures written first, then served through `serve.mjs` (#461) rather
+   than spawn-and-sleep. The old shape was `spawn(..., {stdio:'ignore'})`
+   followed by `await sleep(2500)`: when a port was already held, python exited
+   "address in use" invisibly, the sleep passed anyway, and every assertion
+   below graded a stale server's target instead of the fixture just written —
+   reporting feature bugs about a file nothing read. `serveAllVerified` proves
+   per port that the responder is alive AND serving the directory we asked
+   for. */
+const entries = [];
 for (const [name, body] of Object.entries(targets)) {
   const dir = join(OUT, name);
   rmSync(dir, { recursive: true, force: true });
@@ -69,14 +76,11 @@ for (const [name, body] of Object.entries(targets)) {
   const qpath = join(dir, '.dreamwork', 'questions.md');
   if (body === null) rmSync(qpath, { force: true });
   else writeFileSync(qpath, body);
-  ports[name] = ++port;
-  servers.push(spawn('python3', ['watch.py', '--target', dir,
-                                 '--port', String(ports[name])],
-                     { stdio: 'ignore' }));
+  entries.push([name, dir]);
 }
+const { children: servers, ports } = await serveAllVerified(entries, PORT);
 const stopAll = () => servers.forEach(s => { try { s.kill(); } catch (e) {} });
 process.on('exit', stopAll);
-await sleep(2500);
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 
