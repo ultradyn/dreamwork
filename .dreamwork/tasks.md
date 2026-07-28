@@ -412,6 +412,16 @@ Next id: **417**
   encodes "no flags between binary and alias". Match the alias wherever it appears, or resolve the
   lane from `dreamers[].pid` with `kill -0`, which is exact and needs no pattern
   · related: **#401, #264, #403, #405, #410**
+  · **it demonstrated itself at 14:56, while I was dispatching the lane to fix it.** Two lanes
+  were live (`ccc --yolo @glm52`, `ccc --yolo @grok`) and `status_sync.py` printed
+  *"already in sync (135 open, 0 live)"*. Not reconstructed from logs — observed in the same
+  minute, which is the cleanest evidence this entry will get
+  · **and the crash is currently MASKED by the pgrep bug, which will surprise whoever fixes
+  them in the obvious order.** `dreamers` now carries `"task": "402a"` and `"task": 367` —
+  mixed str/int, and one of them a sub-id. `sorted()` never sees either, because `live` is
+  empty before it gets there. **Fixing the pattern makes the TypeError appear**, so the first
+  green after fixing bug 1 is a crash, not a pass. Two bugs in series where the second is
+  invisible until the first is fixed
 
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
   P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
@@ -873,6 +883,13 @@ Next id: **417**
   needs a primary-source check that any current client exists at all · blocked on #233
   base LAN mode for the transport, and it supersedes #276's bearer token if the ssh-issued
   session lands · public/WAN serving stays forbidden regardless
+  · **Q2 settled 2026-07-28 14:53: a reverse proxy component is acceptable.** My 01:44
+  objection is dissolved rather than overruled — it was to Cloudflare Access and Tailscale
+  Funnel *specifically*, whose control plane belongs to a third party, which is a strange
+  dependency for the self-hosted half. **A local Caddy has the property I was asking for**, so
+  the landed design's boundary survives with its identity component swapped for the
+  ssh-issued session key. Acting on that reading and said so on the entry; correctable in a
+  sentence if he meant otherwise
 
 - **#357** — A CLI warning layer that surfaces incomplete data and what is waiting ·
   P1 · tooling/feature · origin: **human** · **human via watch 2026-07-28 01:23**, inside his
