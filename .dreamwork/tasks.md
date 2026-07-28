@@ -641,101 +641,6 @@ Next id: **447**
   · related: **#381**
 
 
-- **#392** — the humanized question age is measured from midnight, so it is wrong by up to a
-  day · P2 · dashboard/correctness · origin: **loop** · found by coordinator **looking at the
-  deployed page** after redeploying, not by any check
-  · **#385 shipped the format correctly and the input to it is date-precision.** `data-ct` for a
-  questions entry resolves to **midnight local** of the entry's date, because a questions.md
-  headline carries `P2 · 2026-07-28 — title` and there is **no time in the data**. Measured on the
-  live dashboard at 08:18: my #367 question, which **landed at 07:54** (`git log -S` on its
-  headline, exact), renders **`08h 17m ago`** — so `data-ct` is midnight to the second, and
-  the entry was ~24 minutes old
-  · **the error is worst exactly where it matters most.** It is bounded by 24h, and it is largest
-  for the *newest* entries — the ones where "how long has this been waiting?" is the question he is
-  actually asking. An entry filed minutes ago can read as most of a day old
-  · older entries look plausible and that is the trap: `02d 08h` for a 2026-07-25 entry is
-  believable, so nothing draws the eye. Only a same-day entry exposes it
-  · **this was a gap in my acceptance criteria, not in the lane's work.** #385's brief asked
-  whether a parseable timestamp reaches the client "or whether one has to be added", and criterion
-  4 asked only that the headline *show* an age and that a fixture's two ages *differ*. **Two ages
-  can differ and both be wrong by the same 8 hours.** See the `lessons.md` entry on differ-checks
-  · options, and the choice is a real one rather than a one-liner: **(a)** record a time in the
-  questions.md entry format going forward and degrade honestly for historical date-only entries —
-  durable, but it is a format change and `file-formats.md` has a live owner (#381); **(b)** derive
-  the timestamp server-side from the commit that introduced the entry — accurate for everything
-  including history, but git-per-entry is slow and fragile; **(c)** keep date precision and make
-  the imprecision **visible** rather than implied, which his `XXa YYb` spec makes awkward because
-  it always wants two figures
-  · rec: **(a) plus a floor** — a date-only entry must not claim sub-day precision it does not
-  have. Do not silently keep showing a confident wrong number
-  · **(b) is now measured, so the choice is decidable rather than a menu.** `git log --format=%cI
-  -1 -S'<headline substring>' -- .dreamwork/questions.md` returns the exact landing time and costs
-  **18ms**. Exact, needs no format change, covers history — but 3 open questions is 54ms while
-  **3 open + 49 answered is ~0.94s per page build**, and `/data.json` is built per request, so it
-  is not a runtime path without a cache. It is also pickaxe-fragile: an edited headline dates the
-  edit, not the filing
-  · **so: (a) at runtime, (b) as a one-time backfill, and never (b) per request.** Record a time in
-  the entry format going forward; for entries that predate it, either backfill once from git or
-  render at the precision the data actually has. Do not put a git call in the request path
-  · **the red must catch the offset, not the presence**: assert that an entry written at a known
-  time renders an age matching that time and **not** midnight — a check that only asserts two
-  entries differ passes with every age wrong by the same amount
-  · **the audit lane (`ccc @grok`, brief `.dreamwork/docs/briefs/392-adj-figure-audit.md`, report
-  `.dreamwork/docs/measurements/2026-07-28-0830-dashboard-figure-audit.md`, `d348122`) confirmed
-  this at scale**: all **38** `.qage` nodes on `/questions` use midnight timestamps, and every
-  multi-day age ends in the same `08h` — a signature that was visible on the page and that nobody
-  had read as one. 42 figures checked, 28 correct
-  · **its second finding — burndown open +1 for four buckets — is REFUTED, and the refutation is
-  worth more than the finding was.** `watch.py` was right. Three derivations (the lane's two, plus
-  my own) all matched `^- \*\*#(\d+)\*\*` and so all missed the combined head
-  `- **#138/#156**`, which `file-formats.md:244` documents. Settled by asking the **deployed**
-  `parse_ledger` what it counted: 110, agreeing with the payload. Recorded as a lesson
-  · **found beside it, and it is real:** `#156` sat under `## Open` twice at once for ~16 hours
-  (07-26 20:23 → 07-27 12:23) — 111 ids, 110 unique. `lint.check_tasks` has ERRORed on exactly
-  that since `b7151ec`, so the check was never the problem; it was not run or not read. **No new
-  task filed** — nothing to build
-  · related: **#385, #399, #407, #413**
-
-
-  · **SPLIT 2026-07-28 09:14, because the half that stops the wrongness needs none of the held
-  files.** **#392a — honest degradation** (`watch.py`, `test_watch.py`, `watch-design.md`): a
-  date-only entry stops claiming a sub-day figure. Every entry in the file is date-only today, so
-  this alone removes the whole user-visible error. **#392b — a time in the format** (`file-formats.md`
-  plus a writer): precise ages for entries filed from now on. `b` is blocked on `#396`; `a` is not
-  · **the presentation decision is made, and it needs no new vocabulary.** *The number of figures
-  encodes the precision.* **Two figures means we know the time; one figure means we know only the
-  day.** So a date-only entry shows `03d ago`, not `03d 08h ago` — the missing second figure *is*
-  the signal, read against the timed entries beside it. That reuses `#385`'s existing greyed-pad
-  idiom rather than inventing a tilde or a tooltip, and it degrades to exactly the information the
-  data holds
-  · **the same-day case must be decided rather than fall out**: `0d ago` reads wrong for something
-  filed this morning, and it is the case he will see most. Whoever takes it decides and justifies it
-  · rec order: **a first**, since it is the fix
-  · **#392a LANDED and is VERIFIED CLOSED** — `159917b` (2026-07-28 09:43, `ccc @glm52`, brief
-  `.dreamwork/docs/briefs/392a-date-only-degradation.md`). `watch.py` + `test_watch.py` +
-  `watch-design.md`; no guard and no `justfile` line, correctly, because a text-only change is not a
-  transition and it said so
-  · **verified by the coordinator, not folded from the report** (there was no report — see below):
-  **231 passed** in `test_watch.py`; `just audit-styleguide` clean (0 UI commits without an entry);
-  `lint` 0 errors; deployed snapshot **byte-identical** to `HEAD:watch.py` by sha256 **with an arity
-  check** (2 lines, 1 distinct hash — the check that silently told me nothing this morning)
-  · **the red was taken in a WORKTREE, not against the live file** — `.worktrees/verify-392a` off
-  `HEAD`, injection `if (el.dataset.day === '1')` → `if (false)`, which reinstates `#392`'s exact
-  bug. Discriminating: `test_a_date_only_question_shows_one_figure_not_two` **failed** showing
-  `got '03d 08h ago'`, `test_an_entry_dated_today_does_not_read_as_stale` **failed** with
-  `'05h 00m ago' != 'today'`, and the timed neighbour **stayed green**. Injection grep-confirmed and
-  `ast.parse`-confirmed before believing the result. **The live tree was never dirty** — which is
-  **#405** demonstrated rather than argued
-  · **and criterion 3 is real, not decorative:** the traceback shows the derived precondition
-  assertions (`assertRegex(date, …)`, `assertNotRegex(title, r'\d{2}:\d{2}|T\d')`) executing before
-  the failing assert
-  · **checked on the deployed page with real data, which is how `#392` was found in the first
-  place: 38 age nodes, all 38 day-precision, ZERO two-figure renders.** My `#367` question — which
-  read `08h 17m ago` at 08:18 while being 24 minutes old — now reads `today`. Pixels reviewed: the
-  word carries the same dimmed `.age` treatment and reads naturally beside `01d`/`03d ago`;
-  `OPEN (3)` confirms no entry was dropped
-  · **#392b remains open** (put a time INTO the format) and `file-formats.md` is now free
-
 - **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
   reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified
   · **the half that needs no ruling from him is DONE (`d33cc2f`)**: `submissions.log` now
@@ -3378,6 +3283,102 @@ Next id: **447**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#392** — the humanized question age is measured from midnight, so it is wrong by up to a
+  day · P2 · dashboard/correctness · origin: **loop** · found by coordinator **looking at the
+  deployed page** after redeploying, not by any check
+  · **#385 shipped the format correctly and the input to it is date-precision.** `data-ct` for a
+  questions entry resolves to **midnight local** of the entry's date, because a questions.md
+  headline carries `P2 · 2026-07-28 — title` and there is **no time in the data**. Measured on the
+  live dashboard at 08:18: my #367 question, which **landed at 07:54** (`git log -S` on its
+  headline, exact), renders **`08h 17m ago`** — so `data-ct` is midnight to the second, and
+  the entry was ~24 minutes old
+  · **the error is worst exactly where it matters most.** It is bounded by 24h, and it is largest
+  for the *newest* entries — the ones where "how long has this been waiting?" is the question he is
+  actually asking. An entry filed minutes ago can read as most of a day old
+  · older entries look plausible and that is the trap: `02d 08h` for a 2026-07-25 entry is
+  believable, so nothing draws the eye. Only a same-day entry exposes it
+  · **this was a gap in my acceptance criteria, not in the lane's work.** #385's brief asked
+  whether a parseable timestamp reaches the client "or whether one has to be added", and criterion
+  4 asked only that the headline *show* an age and that a fixture's two ages *differ*. **Two ages
+  can differ and both be wrong by the same 8 hours.** See the `lessons.md` entry on differ-checks
+  · options, and the choice is a real one rather than a one-liner: **(a)** record a time in the
+  questions.md entry format going forward and degrade honestly for historical date-only entries —
+  durable, but it is a format change and `file-formats.md` has a live owner (#381); **(b)** derive
+  the timestamp server-side from the commit that introduced the entry — accurate for everything
+  including history, but git-per-entry is slow and fragile; **(c)** keep date precision and make
+  the imprecision **visible** rather than implied, which his `XXa YYb` spec makes awkward because
+  it always wants two figures
+  · rec: **(a) plus a floor** — a date-only entry must not claim sub-day precision it does not
+  have. Do not silently keep showing a confident wrong number
+  · **(b) is now measured, so the choice is decidable rather than a menu.** `git log --format=%cI
+  -1 -S'<headline substring>' -- .dreamwork/questions.md` returns the exact landing time and costs
+  **18ms**. Exact, needs no format change, covers history — but 3 open questions is 54ms while
+  **3 open + 49 answered is ~0.94s per page build**, and `/data.json` is built per request, so it
+  is not a runtime path without a cache. It is also pickaxe-fragile: an edited headline dates the
+  edit, not the filing
+  · **so: (a) at runtime, (b) as a one-time backfill, and never (b) per request.** Record a time in
+  the entry format going forward; for entries that predate it, either backfill once from git or
+  render at the precision the data actually has. Do not put a git call in the request path
+  · **the red must catch the offset, not the presence**: assert that an entry written at a known
+  time renders an age matching that time and **not** midnight — a check that only asserts two
+  entries differ passes with every age wrong by the same amount
+  · **the audit lane (`ccc @grok`, brief `.dreamwork/docs/briefs/392-adj-figure-audit.md`, report
+  `.dreamwork/docs/measurements/2026-07-28-0830-dashboard-figure-audit.md`, `d348122`) confirmed
+  this at scale**: all **38** `.qage` nodes on `/questions` use midnight timestamps, and every
+  multi-day age ends in the same `08h` — a signature that was visible on the page and that nobody
+  had read as one. 42 figures checked, 28 correct
+  · **its second finding — burndown open +1 for four buckets — is REFUTED, and the refutation is
+  worth more than the finding was.** `watch.py` was right. Three derivations (the lane's two, plus
+  my own) all matched `^- \*\*#(\d+)\*\*` and so all missed the combined head
+  `- **#138/#156**`, which `file-formats.md:244` documents. Settled by asking the **deployed**
+  `parse_ledger` what it counted: 110, agreeing with the payload. Recorded as a lesson
+  · **found beside it, and it is real:** `#156` sat under `## Open` twice at once for ~16 hours
+  (07-26 20:23 → 07-27 12:23) — 111 ids, 110 unique. `lint.check_tasks` has ERRORed on exactly
+  that since `b7151ec`, so the check was never the problem; it was not run or not read. **No new
+  task filed** — nothing to build
+  · related: **#385, #399, #407, #413**
+
+
+  · **SPLIT 2026-07-28 09:14, because the half that stops the wrongness needs none of the held
+  files.** **#392a — honest degradation** (`watch.py`, `test_watch.py`, `watch-design.md`): a
+  date-only entry stops claiming a sub-day figure. Every entry in the file is date-only today, so
+  this alone removes the whole user-visible error. **#392b — a time in the format** (`file-formats.md`
+  plus a writer): precise ages for entries filed from now on. `b` is blocked on `#396`; `a` is not
+  · **the presentation decision is made, and it needs no new vocabulary.** *The number of figures
+  encodes the precision.* **Two figures means we know the time; one figure means we know only the
+  day.** So a date-only entry shows `03d ago`, not `03d 08h ago` — the missing second figure *is*
+  the signal, read against the timed entries beside it. That reuses `#385`'s existing greyed-pad
+  idiom rather than inventing a tilde or a tooltip, and it degrades to exactly the information the
+  data holds
+  · **the same-day case must be decided rather than fall out**: `0d ago` reads wrong for something
+  filed this morning, and it is the case he will see most. Whoever takes it decides and justifies it
+  · rec order: **a first**, since it is the fix
+  · **#392a LANDED and is VERIFIED CLOSED** — `159917b` (2026-07-28 09:43, `ccc @glm52`, brief
+  `.dreamwork/docs/briefs/392a-date-only-degradation.md`). `watch.py` + `test_watch.py` +
+  `watch-design.md`; no guard and no `justfile` line, correctly, because a text-only change is not a
+  transition and it said so
+  · **verified by the coordinator, not folded from the report** (there was no report — see below):
+  **231 passed** in `test_watch.py`; `just audit-styleguide` clean (0 UI commits without an entry);
+  `lint` 0 errors; deployed snapshot **byte-identical** to `HEAD:watch.py` by sha256 **with an arity
+  check** (2 lines, 1 distinct hash — the check that silently told me nothing this morning)
+  · **the red was taken in a WORKTREE, not against the live file** — `.worktrees/verify-392a` off
+  `HEAD`, injection `if (el.dataset.day === '1')` → `if (false)`, which reinstates `#392`'s exact
+  bug. Discriminating: `test_a_date_only_question_shows_one_figure_not_two` **failed** showing
+  `got '03d 08h ago'`, `test_an_entry_dated_today_does_not_read_as_stale` **failed** with
+  `'05h 00m ago' != 'today'`, and the timed neighbour **stayed green**. Injection grep-confirmed and
+  `ast.parse`-confirmed before believing the result. **The live tree was never dirty** — which is
+  **#405** demonstrated rather than argued
+  · **and criterion 3 is real, not decorative:** the traceback shows the derived precondition
+  assertions (`assertRegex(date, …)`, `assertNotRegex(title, r'\d{2}:\d{2}|T\d')`) executing before
+  the failing assert
+  · **checked on the deployed page with real data, which is how `#392` was found in the first
+  place: 38 age nodes, all 38 day-precision, ZERO two-figure renders.** My `#367` question — which
+  read `08h 17m ago` at 08:18 while being 24 minutes old — now reads `today`. Pixels reviewed: the
+  word carries the same dimmed `.age` treatment and reads naturally beside `01d`/`03d ago`;
+  `OPEN (3)` confirms no entry was dropped
+  · **#392b remains open** (put a time INTO the format) and `file-formats.md` is now free
+  · **BOTH HALVES LANDED —  (a) and  (b, 2026-07-29 00:25, lane ).** (a) shipped **honest degradation** for date-only titles: one figure (`03d ago`) or the word `today`, which removed the fabrication without needing a time in the data. (b) adds the real clock: an **optional ` HH:MM`** in the title (`P2 · YYYY-MM-DD[ HH:MM] — rest`), reusing the shape note and answer tags already use, so a timed entry ages from its time and a date-only one keeps (a)'s path. **It measured the git option rather than dismissing it**: `git log -S` is ~18ms per entry, **~1.7s for all 61**, and pickaxe-dates an *edited* headline rather than its creation — so it was rejected for the request path with numbers, not by assertion. Cost of what shipped is **zero per request**: one client-side regex on strings already rendered, no server field, no cache. Red-proved on the `qtHtml` regex branch by forcing always-midnight, with the precondition derived at runtime — the fixture's 07:54 gap from midnight is computed and asserted against a date-only sibling on the same day rather than pinned to a literal. **Coordinator note: entries the loop writes from now on should carry ` HH:MM`;** history is deliberately not rewritten.
+
 - **#446** — a second `Answer` on a question **overwrites the first**, and the text is gone before anything can
   render it · **P1** · durability/data-loss · origin: **loop** · **found by `#254`'s design lane while reading
   the grammar it was forbidden to change**
