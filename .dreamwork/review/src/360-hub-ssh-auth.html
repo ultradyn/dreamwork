@@ -1,0 +1,211 @@
+<!--dreamwork-review-source
+title: "#360 · Self-hosted Dreamhub auth built on ssh, not a hosted IdP · design + docs"
+identity: hub ssh auth
+context: task #360 · decision
+status: awaiting review
+headline: Document the ssh tunnel now; the session-key-over-ssh is the one worth building.
+tag: design + documentation only — no implementation authorised
+sub: task #360 · 28 July 2026 · supersedes #275's identity rec; inherits its threat model
+skip: Skip to the ask
+skip_href: "#ask"
+nav: <a class="full" href="#ask">the ask</a><a href="#options">four options</a><a href="#rec">recommendation</a>
+-->
+<!--#lead-->
+<div id="ask" class="ask-block">
+  <div class="label">Ask</div>
+  <p class="ask-q">The ssh-tunnel recipe (<strong>§6 of the plan</strong>) works today and I will ship it as
+  documentation regardless. The decision is <strong>what to build next, if anything</strong>:
+  <strong>A</strong> &mdash; document the tunnel only, build nothing yet (recommended). Or <strong>B</strong>
+  &mdash; also build <strong>option 2</strong> (session key issued over ssh, phone needs no ssh app) behind a
+  <strong>local Caddy</strong> for TLS, which carries the redacted <code>/summary.json</code> from <code>#275</code>
+  as a hard prerequisite. Free text is always fine, and <em>&ldquo;not yet&rdquo;</em> is a real answer.</p>
+  <p class="ask-answers"><span class="key">accepted answers</span>
+  <code>rec</code> &nbsp;&middot;&nbsp; <code>A</code> &nbsp;&middot;&nbsp; <code>B</code>
+  &nbsp;&middot;&nbsp; free text</p>
+  <p class="ask-rejected"><span class="key">rejected, by measurement</span>
+  a hosted IdP (Cloudflare Access / Tailscale Funnel) as the <em>sole boundary</em> &mdash; the exact redirect
+  this task exists to make; and SQRL &mdash; dormant ecosystem + Ed25519 not in stdlib, the same wall that blocked shoo.</p>
+</div>
+<!--#call-->
+<div class="call"><strong>Recommendation: A now, B when the phone-without-ssh case is real.</strong>
+The tunnel recipe is the deliverable with value tonight: it adds zero code, the hub stays loopback-bound, ssh is
+the whole boundary, and it answers the phone case (clunkily, via an ssh app). Option 2 is the interesting one
+&mdash; ssh as a trust root, one-shot token traded for a cookie, phone is just a browser on the LAN &mdash; and
+it supersedes <code>#276</code>&rsquo;s static bearer token. But it depends on the <code>#233</code> LAN binding
+(landed) plus a local Caddy for TLS (his <code>#360</code> Q2 ruling) plus <code>#275</code>&rsquo;s redacted
+<code>/summary.json</code>, so it is real work, not a one-liner. User/pw is the fallback everyone understands and
+the one with the most ways to get wrong (reusable secret over an unencrypted LAN); SQRL is honestly &ldquo;no&rdquo;.</div>
+<!--#aside-->
+<span class="big">~105ms</span>
+<small>scrypt verify at n=2&#185;5 r=8 p=1, <strong>stdlib <code>hashlib.scrypt</code></strong> &mdash; measured this session. So user/pw stays stdlib-only (unlike shoo&rsquo;s ES256); the cost is the TLS gap, not the KDF.</small>
+<!--#body-->
+<style>
+/* Page-local. Tokens only — no hex (watch-design.md / template contract). */
+.ask-block{
+  border-left:2px solid var(--accent);
+  padding:.35rem 0 .35rem 1.3ch;
+  margin:.4rem 0 .2rem;
+}
+.ask-block .label{margin:0 0 .4rem;color:var(--accent)}
+.ask-block .ask-q{font-size:.92rem;line-height:1.6;color:var(--lit);margin:.15rem 0 .55rem}
+.ask-block .ask-answers,.ask-block .ask-rejected{margin:.3rem 0;font-size:.78rem;color:var(--muted)}
+.ask-block .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.ask-block .x-rej{color:var(--bad)}
+.ask-block code{color:var(--lit)}
+.selfref{margin:.2rem 0 1.4rem;color:var(--dim);font-size:.74rem}
+.selfref b{color:var(--muted);font-weight:normal}
+/* Override shared template `table{min-width:max-content}` (c19107a, #436):
+   that sizes every cell to unwrapped content so the table runs wide and the
+   trust-root / operator-cost / revocation columns never break. Per-artifact
+   only — do not restamp the template. Fixed layout + min-width:0 lets the
+   prose wrap. */
+.opt-tbl{
+  min-width:0;
+  width:100%;
+  table-layout:fixed;
+}
+.opt-tbl th,.opt-tbl td{
+  overflow-wrap:anywhere;
+  word-break:normal;
+  min-width:0;
+}
+.opt-tbl th:nth-child(1),.opt-tbl td:nth-child(1){width:16%}
+.opt-tbl th:nth-child(2),.opt-tbl td:nth-child(2){width:30%}
+.opt-tbl th:nth-child(3),.opt-tbl td:nth-child(3){width:30%}
+.opt-tbl th:nth-child(4),.opt-tbl td:nth-child(4){width:24%}
+.opt-tbl td:nth-child(1){color:var(--bright)}
+.opt-tbl .rec{color:var(--ok);font-weight:600}
+.opt-tbl .no{color:var(--bad)}
+.opt-tbl .maybe{color:var(--warn)}
+/* Below the stack breakpoint a 4-col comparison restacks to labelled blocks.
+   No transition: media-query layout only (transitions.md: no gesture introduced). */
+@media (max-width:860px){
+  .opt-tbl,.opt-tbl thead,.opt-tbl tbody,.opt-tbl tr,.opt-tbl th,.opt-tbl td{display:block}
+  .opt-tbl th:nth-child(1),.opt-tbl td:nth-child(1),
+  .opt-tbl th:nth-child(2),.opt-tbl td:nth-child(2),
+  .opt-tbl th:nth-child(3),.opt-tbl td:nth-child(3),
+  .opt-tbl th:nth-child(4),.opt-tbl td:nth-child(4){width:100%}
+  .opt-tbl thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  .opt-tbl tr{padding:.85rem 0;border-bottom:1px solid var(--line)}
+  .opt-tbl tr:last-child{border-bottom:0}
+  .opt-tbl td{padding:.28rem 0;border-bottom:0}
+  .opt-tbl td:nth-child(1){padding-bottom:.45rem;font-size:.82rem}
+  .opt-tbl td:not(:first-child)::before{
+    content:attr(data-col);
+    display:block;
+    color:var(--dim);
+    font-size:.66rem;
+    text-transform:uppercase;
+    letter-spacing:.065em;
+    margin-bottom:.15rem;
+  }
+}
+.verb{font-size:.74rem;color:var(--dim)}
+.verb code{color:var(--lit)}
+</style>
+
+<p class="selfref"><b>This page carries its own ask above this sentence.</b> The decision and its
+accepted answers sit in the hero, before any argument &mdash; so a reader who stops at the fold has the
+ruling to make, not just the context for it.</p>
+
+<section id="options" aria-labelledby="opt-t">
+  <div class="label" id="opt-t">The four options, on the three axes that decide it</div>
+  <p class="read">His redirect (&ldquo;self-hosted with a tunnel or over a shared mesh or lan &mdash; we should
+  aim for simpler auth methods; ssh tunnel, session key auth&rsquo;d via ssh (magic-link esq), user/pw, sqrl if
+  possible&rdquo;) names four options in cost order. Each is answered in full in the plan
+  (<code>.dreamwork/docs/plans/hub-ssh-auth.md</code>) against six bullets; this table is the decision view &mdash;
+  the trust root, the per-device operator cost, and the &ldquo;lost my phone&rdquo; revocation story, which is the
+  question that separates a design from a wish.</p>
+
+  <div class="scroller"><table class="opt-tbl">
+    <thead><tr>
+      <th>option</th><th>trust root &amp; what an attacker without it cannot do</th>
+      <th>operator cost (per new device)</th><th>revocation (lost phone)</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td>1. ssh tunnel <span class="rec">document now</span></td>
+        <td data-col="trust root">the device&rsquo;s ssh private key. Attacker without it cannot reach the hub
+        at all &mdash; the hub is invisible off-host and holds no credential.</td>
+        <td data-col="cost">zero implementation. ~10&ndash;15 min on a phone (ssh app + key + forward); one
+        <code>ssh -L</code> on a laptop.</td>
+        <td data-col="revoke">remove the key from <code>authorized_keys</code>; live session dies on its
+        keepalive. <code>permitopen</code> scopes a key to the hub port only.</td>
+      </tr>
+      <tr>
+        <td>2. session key over ssh <span class="maybe">build first</span></td>
+        <td data-col="trust root">ssh (to run the issue-command) + a one-shot token traded for a cookie. Attacker
+        without ssh cannot mint; an on-LAN eavesdropper without the token gets 401. Token is one-shot &mdash; a
+        logged token is dead after first use.</td>
+        <td data-col="cost">moderate build (~3 incs: issue/store, middleware/cookie, redacted
+        <code>/summary.json</code>). Per device: one <code>ssh &hellip; issue-session</code> + a scan/paste &mdash;
+        <strong>no key management on the device</strong>, which is the point.</td>
+        <td data-col="revoke"><code>dreamhub revoke-session --all</code> (or <code>--note phone</code>); phone 401s
+        on its next request. Sliding cookie TTL + token dies in ~5 min if unused.</td>
+      </tr>
+      <tr>
+        <td>3. user / password <span class="maybe">fallback</span></td>
+        <td data-col="trust root">a shared, reusable secret. Attacker without it cannot log in &mdash; but it can
+        be phished, replayed, guessed, reused. <strong>The TLS gap is the real cost:</strong> over HTTP on a LAN
+        the password is sniffable, so this needs the tunnel (redundant) or a Caddy (his Q2).</td>
+        <td data-col="cost">moderate-to-high and mostly redundant. scrypt ~105ms/verify (stdlib) is fine; login
+        form + session store shared with option 2; rate-limit mandatory (~9 verifies/sec). Cheapest per device
+        (type a password) and the weakest.</td>
+        <td data-col="revoke">change the password (one global password &rArr; revokes everyone). Per-user accounts
+        add complexity for little gain on a single-operator hub.</td>
+      </tr>
+      <tr>
+        <td>4. SQRL <span class="no">no</span></td>
+        <td data-col="trust root">a per-site derived key from a master key. Cryptographically interesting;
+        ecosystem not. <strong>Ed25519 verify is not in Python&rsquo;s stdlib</strong> &mdash; the same wall that
+        blocked shoo&rsquo;s ES256 in <code>#275</code>.</td>
+        <td data-col="cost">not worth measuring. Dormant ecosystem (<code>sqrlid.com</code> defunct, thin clients),
+        idiosyncratic protocol, third-party crypto. Even a survey impl is not worth the dependency.</td>
+        <td data-col="revoke">moot &mdash; do not build. Honest &ldquo;no&rdquo;: not broken, but not alive enough
+        to bet an agent control plane on.</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <p class="verb">Full per-option detail (six bullets each, plus the ssh-tunnel recipe and the failure modes) in
+  <code>.dreamwork/docs/plans/hub-ssh-auth.md</code>. scrypt figure measured this session on this host with stdlib
+  <code>hashlib.scrypt</code>; all other claims are grounded in <code>dreamhub.py</code>, <code>hub-public-auth.md</code>,
+  <code>lan-bind.md</code>, and the OpenSSH man pages.</p>
+</section>
+
+<section id="rec" aria-labelledby="rec-t">
+  <div class="label" id="rec-t">Recommendation, with an order &mdash; and what is not worth doing</div>
+  <div class="stages">
+    <div class="stage"><b>Document option 1 now.</b><span>The ssh-tunnel recipe (plan &sect;6) is the deliverable
+    with value tonight. It works today, adds zero code, keeps the hub loopback-bound, and answers the phone case
+    via an ssh app. This ships from this task as documentation, no ruling needed.</span></div>
+    <div class="stage"><b>If anything is built, build option 2 first.</b><span>It honours his redirect most
+    directly: ssh is the trust root, the phone needs no ssh app, the credential is short-lived and per-device
+    revocable, and it supersedes <code>#276</code>&rsquo;s static bearer token. Pairs with a <strong>local
+    Caddy</strong> for TLS (his Q2 ruling, 14:53) &mdash; not Cloudflare Access &mdash; so identity stays on-host.
+    Carries <code>#275</code>&rsquo;s redacted <code>/summary.json</code> as a hard prerequisite.</span></div>
+    <div class="stage"><b>Do not build option 3 standalone.</b><span>Its only real value is as a layer behind TLS
+    or the tunnel, both of which make it redundant. Kept in the plan as a written fallback, not as an increment.</span></div>
+    <div class="stage"><b>Do not build option 4.</b><span>SQRL is dormant and stdlib-blocked. Documented as
+    &ldquo;no&rdquo; so the next reader does not rediscover it.</span></div>
+  </div>
+  <div class="facts">
+    <div class="fact"><span class="number">0</span><span class="caption">lines of auth code in the hub for option 1 &mdash; ssh is the whole boundary</span></div>
+    <div class="fact"><span class="number">1-shot</span><span class="caption">tokens in option 2 &mdash; consumed on first use, so a logged token is already dead</span></div>
+    <div class="fact"><span class="number">~105ms</span><span class="caption">scrypt verify, stdlib &mdash; the user/pw cost is the TLS gap, not the KDF</span></div>
+    <div class="fact"><span class="number">0</span><span class="caption">non-loopback binds / tunnels / off-host listeners opened by this lane &mdash; design &amp; docs only</span></div>
+  </div>
+</section>
+
+<section id="rel" aria-labelledby="rel-t">
+  <div class="label" id="rel-t">Relationship to hub-public-auth (#275) and #276</div>
+  <p class="read"><strong>This plan supersedes the identity recommendation of <code>hub-public-auth.md</code> and
+  extends its boundary shape; it does not duplicate it.</strong> The threat model, asset inventory, TLS/proxy
+  analysis and the <code>/data.json</code>-leak finding (C2) are <code>#275</code>&rsquo;s and are inherited, not
+  re-derived. What is superseded is the identity layer &mdash; Cloudflare Access / Tailscale Funnel as the
+  authenticating boundary &mdash; replaced by ssh as the trust root, with a local Caddy (his Q2 ruling) carrying
+  TLS so the control plane stays on the operator&rsquo;s host. <code>#276</code> (LAN bearer token) is superseded
+  by option 2 if the ssh-issued session lands: same transport, but short-lived, revocable per-device, and not a
+  static string the operator guards by hand. If option 2 does not land, <code>#276</code> stands.</p>
+</section>
+<!--#footer-->
+Plan: <code>.dreamwork/docs/plans/hub-ssh-auth.md</code> &middot; design + documentation only; no bind, tunnel, listener or <code>.py</code> touched &middot; supersedes <code>#275</code>&rsquo;s identity rec; inherits its threat model
