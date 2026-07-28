@@ -1,19 +1,29 @@
-# legacy-contract-exemptions — side-file the #436 walking guard reads
+# legacy-contract-exemptions — CLOSED grandfather list the #436 walking guard reads
 #
 # Format (one entry per line; blank lines and # comments ignored):
-#   <basename.html>: <one-line reason>
+#   <basename.html>: pre-#436 <one-line reason>
+#
+# CLOSED. This file is history, not a policy loophole. Every reason MUST open
+# with the token `pre-#436` (enforced by review_artifact.load_legacy_exemptions).
+# A new page with no decision does NOT land here: it declares `no_ask: <reason>`
+# in its source header and is rebuilt through the builder. A side-file entry for
+# a page that has a builder source (src/) is refused (side_exempt ⊆ sourceless).
+# Adding a post-contract basename by inventing a pre-#436 reason is a deliberate
+# lie, not a quiet skip — catch it in review, do not encode a second list.
 #
 # Purpose: every built artifact under .dreamwork/review/ must be either
 # CHECKED (carries dreamwork-review-ask / dreamwork-review-if-silent meta from
-# the builder) or EXPLICITLY EXEMPT here with a stated reason. There is no third
-# state. Untemplated pre-#436 pages have no src/ and must not be hand-edited
-# (generated-looking output that the next rebuild would not own; #329 only
-# catches stale templated builds). Listing them here makes the skip countable.
+# the builder) or EXPLICITLY EXEMPT here with a stated legacy reason. There is
+# no third state. Untemplated pre-#436 pages have no src/ and must not be
+# hand-edited (generated-looking output that the next rebuild would not own;
+# #329 only catches stale templated builds). Listing them here makes the skip
+# countable.
 #
 # The walking guard asserts at runtime:
 #   examined ∪ side_exempt == built
 #   examined ∩ side_exempt == ∅
-#   {src} − {built} == ∅   (a source that was never built is a real defect)
+#   side_exempt ⊆ sourceless          (no src-having quiet landings)
+#   {src} − {built} == ∅              (a source never built is a real defect)
 # where sourceless is the set difference {built} − {src}, never |built|−|src|.
 
 # Class: template reference (the hand-rolled page the template was cut to match)
