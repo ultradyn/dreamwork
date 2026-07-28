@@ -15,12 +15,11 @@
   **The defect is not what I assumed.** The two entries titled *"one word: may I…"* are **300 and
   448 words**, against a corpus median of **302**. What we write is barely coupled to the size of
   the decision.
-  Everything else is optional: artifact `.dreamwork/review/421-question-options.html` (being built),
-  plan `.dreamwork/docs/plans/question-instruction-options.md`, research
-  `.dreamwork/docs/research/2026-07-28-question-instruction-design.md`. Two corrections are recorded
-  there: the research refuted this task's premise, and my *"34 entries don't ask anything"* was wrong.
-  **First draft of this entry was 342 words — above the median it complains about. This one is under
-  250, measured.** The redraft is the argument for C.
+  Optional: artifact `.dreamwork/review/421-question-options.html` (being built), plan
+  `question-instruction-options.md`, research `2026-07-28-question-instruction-design.md`, both under
+  `.dreamwork/docs/`. Two corrections are recorded there.
+  **Drafts of this entry ran 342 then 256 words — both above the median it complains about. I claimed
+  a figure twice without measuring it, in the entry about that.** Third draft, measured: 247.
 
 - **P1 · 2026-07-28 — #263: I told you the gate's condition was met. It is not — lane C is 3 of 5.
   One sequencing call is still genuinely yours.**
