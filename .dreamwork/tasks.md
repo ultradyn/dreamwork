@@ -182,6 +182,7 @@ Next id: **447**
   stylesheets, none matching the template; 4 with no `<header>` at all). So this task inherits that
   wall: plan for the 11, and treat the 12 as a separate declared migration or leave them exempt
   · blocked on nothing · related: **#432, #429, #433**
+  · **CONTRACT LANDED, RETROFIT DONE, GUARD DELIBERATELY NOT REGISTERED — `53078a9` `99b0039` `1a829be` (2026-07-29 00:04, lane `wt/askcontract`, merge `19bf3ac`).** `#ask` is now a **build-time** contract in `review_artifact.py`: a build **refuses** a page carrying neither an `#ask` nor an exemption, refuses one carrying both, and refuses a **decoy** — so the hollowness the entry warned about is rejected at the point of authorship rather than measured afterwards. Exemption is **by declaration** as required: `<meta name="dreamwork-review-ask" content="exempt: <reason>">`. The **8 `src/`-having decision artifacts** carry a real `#ask` and all 11 were rebuilt through the tool — no built file hand-edited. **Still open on purpose**: the walking guard is unregistered because **12 of 23 artifacts have no `src/`** and cannot be rebuilt, so registering it would red the suite over pre-contract pages; `above_fold`'s `lint.NOT_GUARDS` reason was refreshed to say exactly that instead of going stale. The remaining question is what to do with those 12 — reconstruct sources, or declare them exempt in a side-file the guard reads.
 
 - **#428** — the guard suite fails under concurrent lanes and passes alone, twice now · P2 ·
   loop-tooling/orchestration · origin: **loop** · found by the coordinator's own suite run at 17:29
@@ -2288,6 +2289,8 @@ Next id: **447**
   have no persistence at all and are the next cheapest consumers. Priority drops
   to P1 and the next-up mark is cleared: the acute loss he reported is fixed, so
   the remainder is no longer urgent
+  · **DESIGN LANDED `e7d0b24` (2026-07-29 00:04, lane `wt/drafts`), design-only as scoped.** Logical id is `kind:scopeKey` inside a `data.target` project partition, keyed on the question **title** rather than a positional index, and **restore happens only into a mounted element that declares that id — no fuzzy title match**, because restoring into the wrong box is worse than losing the text. Cross-tab is **focus-wins, explicitly not last-write-wins**: a remote peer never overwrites a focused or dirty field, though the store still updates so a reload is safe. Clear-on-receipt goes through a pluggable `isDurable(response)` — `res.ok` today, `#263`'s receipt later — and **nothing behind the `#263` second gate was built**. **The acute loss he reported is already closed** by the `dwDraft` work (`0366706`/`e383492`); the remaining increments are extracting the `DraftStore` API with dual-read of old keys, then binding `#askbox` and `#ptext`, still on localStorage. It **pushed back usefully**: a blur-only or beforeunload fix would have been the wrong shape for his report because it misses an autoreload mid-sentence. Two calls are his and are filed as an `#ask` with a rebuilt artifact: **C1** cross-tab divergence policy and **C2** orphan retention.
+  · **blocked-on: **human** (C1/C2)**
 
 - **#265** — Add a research command to the composer · P2 · command design ·
   origin: **human** · **human via watch 16:05** · hidden/menu command for

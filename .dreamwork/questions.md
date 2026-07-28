@@ -1,6 +1,29 @@
 # Questions for the human
 
 ## Open
+- **P1 · 2026-07-29 — #269 draft durability: two calls (C1/C2)**
+
+  Artifact: `.dreamwork/review/269-draft-durability.html` · Spec:
+  `.dreamwork/docs/plans/draft-durability-design.md`
+
+  **C1 — cross-tab, when two unfocused copies diverge.** Rec **R1**: offer
+  *"updated in another tab — load?"* rather than swapping text under you. Alt
+  **R2**: silently take the newer store when the field is unfocused. Either way a
+  **focused or dirty field is never overwritten** — that part is settled.
+
+  **C2 — orphan retention.** Rec **30 days** idle GC by `updatedAt`, plus explicit
+  *forget this* and *forget all for this project*. Alts: 7d · 90d · never GC
+  (explicit only). These are your words being kept on disk, so the number is
+  yours.
+
+  Settled without you: the logical id (title-keyed, no fuzzy restore), the
+  clear-on-receipt seam (`res.ok` today, `#263`'s receipt later, behind your
+  gate), localStorage first and IndexedDB later, and nothing built behind the
+  `#263` second gate. The acute loss you reported is already closed.
+
+  Accepted answers: `rec` · `R1`/`R2` plus a day count · free text ·
+  `defer, implement the rest`.
+
 - **P1 · 2026-07-28 — #254: authorise implementation of the threaded-notes design?**
 
   Design is written at `.dreamwork/docs/plans/threaded-notes-spec.md` (post-R1;
