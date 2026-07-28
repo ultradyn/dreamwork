@@ -94,18 +94,6 @@ Next id: **437**
   mention is not a match. Prefer the pid: a pattern that must not match the caller is a pattern that
   will one day match the caller
   · related: **#426, #425**
-- **#427** — the hand-off grammar is widened in `lint` but not in the parser, so the dashboard still
-  cannot read a two-sha line · P3 · loop-tooling/format · origin: **loop** · **named by the `#415`
-  lane rather than left to be found**
-  · `#415` widened `lint.check_handoffs` to accept one-or-more shas, correctly declining to reach into
-  `watch.py`'s `HANDOFF_PENDING_RE` which another lane's tests assert on. So `lint` is quiet and
-  `parse_handoffs` **still classifies a multi-sha line as malformed** — `pending_handoff_records` will
-  not surface its shas
-  · so: widen `HANDOFF_PENDING_RE` and `parse_handoffs`' return shape in `watch.py`, in the same commit
-  as the `test_watch.py` assertions that read `pending[0]["sha"]`, and the `lint` reclassification
-  becomes a **no-op** rather than needing removal — that ordering is the point
-  · related: **#415, #401**
-
 - **#428** — the guard suite fails under concurrent lanes and passes alone, twice now · P2 ·
   loop-tooling/orchestration · origin: **loop** · found by the coordinator's own suite run at 17:29
   · **`subslog` FAILED in the full run** on *"…and says so, with the status the server gave"*, with
@@ -3663,6 +3651,29 @@ Next id: **437**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+
+- **#427** — the hand-off grammar is widened in `lint` but not in the parser, so the dashboard still
+  cannot read a two-sha line · P3 · loop-tooling/format · origin: **loop** · **named by the `#415`
+  lane rather than left to be found**
+  · `#415` widened `lint.check_handoffs` to accept one-or-more shas, correctly declining to reach into
+  `watch.py`'s `HANDOFF_PENDING_RE` which another lane's tests assert on. So `lint` is quiet and
+  `parse_handoffs` **still classifies a multi-sha line as malformed** — `pending_handoff_records` will
+  not surface its shas
+  · so: widen `HANDOFF_PENDING_RE` and `parse_handoffs`' return shape in `watch.py`, in the same commit
+  as the `test_watch.py` assertions that read `pending[0]["sha"]`, and the `lint` reclassification
+  becomes a **no-op** rather than needing removal — that ordering is the point
+  · related: **#415, #401**
+  · **landed `30ed49d`** (Grok 4.5 lane `3b6e674`, self-identified). Shape: `HandoffPending(tuple)` that
+  unpacks and compares as `(id, sha, claimer)` with an **additive `.shas`** — so `lint`'s 3-unpack and
+  every existing triple assertion needed no change, and **`lint.py` was never touched**, which was the
+  whole point of the ordering the entry specified
+  · verified against the real parser rather than the report: a two-sha line yields `malformed=[]`,
+  `shas=('54c68e8','25a3fe4')`, `sha == shas[0]`, with the two shas **asserted to differ at runtime** so
+  the check cannot be vacuous. Red-proved by reverting the named production line
+  (`HANDOFF_PENDING_RE`'s single-backtick form) with the pattern's presence asserted first, so a missed
+  injection could not read as a pass. 262 passed (was 260)
+  · `file-formats.md` updated in the same commit — its Multi-sha section still described the watch parser
+  as single-sha, so the doc had been describing the bug as the design
 
 - **#434** — the `/review` route wastes 24% of a phone screen below the artifact frame · P2 ·
   Web UI/dashboard · origin: **loop** · **found by looking at the page, measured after, 2026-07-28 19:12**
