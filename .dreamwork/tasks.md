@@ -27,28 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **441**
 
 ## Open
-- **#440** — the coordinator hand-rolls a ledger split on every fold, and the unanchored form has now
-  corrupted the file once and produced a nonsense count once · **P1** · loop-tooling/ledger ·
-  origin: **loop** · **found by doing it wrong twice in one hour, with the fix already written down**
-  · `.dreamwork/tasks.md` has exactly one `## Open` and one `## Recently landed`, but the string
-  `## Recently landed` also appears **in the prose of an open entry**. So `t.split('## Recently landed', 1)`
-  splits at the *mention*, not the heading
-  · **what that cost, both times on 2026-07-28.** (1) Folding four landed entries wrote a file with **two**
-  landed headers and 130 lines in the wrong half; `lint` caught it only obliquely, reporting a *reciprocity*
-  error about an unrelated pair (`#395`/`#353`), which took four probe commands to trace back to the
-  structure. (2) Counting open entries for `status.json` returned **33** instead of 142, caught only because
-  the number was absurd
-  · **this is the fifth hand-rolled ledger parser to be wrong here**, two of which damaged a sectioned
-  file, against a file whose production parser (`watch.parse_ledger` / `ledger_entries`) was importable
-  every time. The lesson is recorded, `#437`'s brief warned a lane about this exact defect an hour before
-  it bit, and it bit anyway — which is the argument that a **lesson is not a guardrail**
-  · so: a single supported way to fold an entry. Sketch: `dev/ledger.py fold <id> --note <text>` that moves
-  the entry from Open to the top of Recently landed, appends the note line, bumps nothing it should not, and
-  **asserts both headings match `^## …$` exactly once before and after**. Counting comes free from the same
-  module, which removes the second failure mode as well
-  · **`lint` cannot police a throwaway script**, so the check that matters is that the tool exists and is
-  the only path — the anti-corruption assertions live inside it, not in a linter looking at the aftermath
-  · related: **#402, #353**
 - **#438** — a generic scheduled-tasks facility, so maintenance and inbound-scanning work is filed rather
   than done ad hoc · P2 · feature/scheduling · origin: **human** · **human via watch 2026-07-28 20:34**
   · his words: *"we should add support for task scheduling (probably managed through dreamhub). central
@@ -3583,6 +3561,29 @@ Next id: **441**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#440** — the coordinator hand-rolls a ledger split on every fold, and the unanchored form has now
+  corrupted the file once and produced a nonsense count once · **P1** · loop-tooling/ledger ·
+  origin: **loop** · **found by doing it wrong twice in one hour, with the fix already written down**
+  · `.dreamwork/tasks.md` has exactly one `## Open` and one `## Recently landed`, but the string
+  `## Recently landed` also appears **in the prose of an open entry**. So `t.split('## Recently landed', 1)`
+  splits at the *mention*, not the heading
+  · **what that cost, both times on 2026-07-28.** (1) Folding four landed entries wrote a file with **two**
+  landed headers and 130 lines in the wrong half; `lint` caught it only obliquely, reporting a *reciprocity*
+  error about an unrelated pair (`#395`/`#353`), which took four probe commands to trace back to the
+  structure. (2) Counting open entries for `status.json` returned **33** instead of 142, caught only because
+  the number was absurd
+  · **this is the fifth hand-rolled ledger parser to be wrong here**, two of which damaged a sectioned
+  file, against a file whose production parser (`watch.parse_ledger` / `ledger_entries`) was importable
+  every time. The lesson is recorded, `#437`'s brief warned a lane about this exact defect an hour before
+  it bit, and it bit anyway — which is the argument that a **lesson is not a guardrail**
+  · so: a single supported way to fold an entry. Sketch: `dev/ledger.py fold <id> --note <text>` that moves
+  the entry from Open to the top of Recently landed, appends the note line, bumps nothing it should not, and
+  **asserts both headings match `^## …$` exactly once before and after**. Counting comes free from the same
+  module, which removes the second failure mode as well
+  · **`lint` cannot police a throwaway script**, so the check that matters is that the tool exists and is
+  the only path — the anti-corruption assertions live inside it, not in a linter looking at the aftermath
+  · related: **#402, #353**
+  · **LANDED `1b32398` (2026-07-28 21:20, lane `wt/ledgertool`).** `dev/ledger.py` is now the one supported path: `fold <id> --note <text>` and `counts`, both reusing the production parser — membership from `watch.parse_ledger`, section boundaries from the imported `watch.LEDGER_SEC_OPEN`/`LEDGER_SEC_LANDED`, entry grammar from `watch.LEDGER_ENTRY`, so no sixth parser exists. Headings asserted anchored, exactly-once-each and Open-first, **before and after** every write, and a file that fails is never written. Red-proved in place on `landed_idx = _heading_line(...)`: swapping it for the unanchored line-scan failed **3** tests and reproduced *both* real incidents — `#2 matches 0 open entry head(s)` (the 33-instead-of-142 count) and an entry folded at the prose mention (the corruption). Its trap fixture asserts its own precondition at runtime, so dropping the prose mention fails loudly rather than going hollow. `file-formats.md` now states the heading contract, which was implied but written down only for the other files. **This entry was folded by the tool itself.**
 
 - **#431** — `just deploy`'s `pkill -f` kills any process whose command line merely mentions the
   snapshot, including the shell running the deploy · P1 · loop-tooling/deploy · origin: **loop**
