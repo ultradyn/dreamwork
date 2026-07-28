@@ -362,5 +362,172 @@ class TestDomainFileMarkers(unittest.TestCase):
                             "a marker still in Open must be found")
 
 
+# C5 imports the application layer to prove the unjournaled successor fails
+# closed via the EXISTING detection (apply.prove_applied), then runs the
+# domain-file operator rebaseline and re-proves. This is deliberate: the brief
+# says the detection half already lives in apply.py (verified: _is_valid_known_file
+# at apply.py:166 carries the lineage predicate; successor_matches at apply.py:132
+# the successor half), and C5's remaining work is the operator. The test names
+# both halves so the red is honest about which file holds which.
+from user_events import apply  # noqa: E402
+
+# A receipt identity the proof compares against, in apply.py's pipe-separated
+# shape (receipt | adapter | application_ref). Same shape as test_user_events_apply.
+_C5_REC = "receipt-rebaseline"
+_C5_ADAPTER = "/answer"
+_C5_APPREF = "app-rebaseline"
+
+
+class TestDomainFileRebaseline(unittest.TestCase):
+    """Increment 15 (C5 rebaseline): an unjournaled valid successor fails closed,
+    and ``rebaseline`` is the only way to adopt one.
+
+    External drift detection is ALREADY built in apply.py (lane D, red-proven by
+    D1/D2): ``prove_applied`` reads a generation outside committed lineage and not
+    the reserved successor as UNKNOWN. C5's own work is the operator that adopts
+    such a file: validate, preserve bytes, mint a successor generation, and
+    journal the import. The test drives BOTH halves end to end.
+    """
+
+    def _drifted_file(self, path, marker):
+        """A store-produced valid file at a generation OUTSIDE committed lineage.
+
+        The drift is the generation we asked the store to write (generation 99),
+        not a forgery of the digest — the file is itself a valid managed file,
+        which is the whole point: it is syntactically fine, just unjournaled. The
+        marker is present so that AFTER rebaseline (which makes its generation
+        part of committed lineage) the same file proves APPLIED.
+        """
+        body = "an answer that arrived by external edit\n" + marker + "\n"
+        identity = apply.make_identity(_C5_REC, _C5_ADAPTER, _C5_APPREF)
+        domain_files.write(path, body, generation=99, applied=identity)
+        return open(path, encoding="utf-8").read()
+
+    def test_unjournaled_valid_successor_fails_closed_until_rebaselined(self):
+        # PRODUCTION LINE WHOSE DELETION FAILS THIS TEST:
+        #   the detection half lives in apply._is_valid_known_file's lineage
+        #   predicate (apply.py:166 ``if gen in committed_lineage: return True``;
+        #   without it a drifted generation falls through to the reserved-successor
+        #   check, and a file that is not the successor proves UNKNOWN for a
+        #   DIFFERENT reason — that half is red-proven by D1). C5's OWN line is
+        #   domain_files.rebaseline's lineage-adoption: the new successor
+        #   generation it mints is ADDED to committed lineage, so the same file
+        #   that proved UNKNOWN proves APPLIED afterward. Delete the adoption and
+        #   the post-rebaseline assertion fails while the pre-rebaseline one still
+        #   passes — the reverse of D1's discriminating pair.
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "questions.md")
+            marker = apply._marker_for(_C5_ADAPTER, _C5_REC)
+            drifted = self._drifted_file(path, marker)
+
+            # PRECONDITIONS, derived at runtime (never a literal tuned to today):
+            # the file is a VALID managed file whose only "drift" is its
+            # generation, and its generation is genuinely outside committed
+            # lineage and not the reserved successor.
+            self.assertTrue(domain_files.validate(drifted),
+                            "precondition: the drifted file is itself valid")
+            md = domain_files.parse_metadata(drifted)
+            committed_before = {1, 2, 3}
+            reserved = 4
+            self.assertNotIn(md["domain_generation"], committed_before,
+                             "precondition: generation is outside committed lineage")
+            self.assertNotEqual(md["domain_generation"], reserved,
+                                "precondition: generation is not the reserved successor")
+            self.assertEqual(
+                apply.parse_identity(md["last_applied"]),
+                (_C5_REC, _C5_ADAPTER, _C5_APPREF),
+                "precondition: identity is intact")
+
+            # ---- The detection half (already built in apply.py): UNKNOWN. ----
+            # An unjournaled valid successor fails closed — never NOT_APPLIED,
+            # which would re-apply and duplicate the effect. This assertion's
+            # red is the lineage predicate at apply.py:166 (D1's red).
+            common_before = dict(
+                receipt_id=_C5_REC, adapter=_C5_ADAPTER, application_ref=_C5_APPREF,
+                reserved_successor=reserved, committed_lineage=committed_before,
+                has_marker=lambda t: apply._marker_for(_C5_ADAPTER, _C5_REC) in t)
+            proof_before = apply.prove_applied(drifted, **common_before)
+            self.assertIs(
+                proof_before, apply.Proof.UNKNOWN,
+                "an unjournaled valid successor must fail closed (UNKNOWN), not "
+                "NOT_APPLIED (which would duplicate the effect)")
+
+            # ---- C5's own half: the rebaseline operator. ----
+            # A place the journal import lands. rebaseline is given a callback
+            # (mirroring how reconcile takes a finish callback): the operator
+            # decides to adopt and mints the successor; the caller wires the
+            # import into the journal. The test records what rebaseline reported
+            # so the "journals the import" requirement is observed, not assumed.
+            imported = []
+
+            def journal_import(old_generation, new_generation, identity_str):
+                imported.append((old_generation, new_generation, identity_str))
+
+            new_lineage = domain_files.rebaseline(
+                path, committed_lineage=committed_before,
+                journal_import=journal_import)
+
+            # The successor generation rebaseline minted: one past the committed
+            # high water, NOT the drifted file's 99 — rebaseline MINTS the
+            # successor rather than trusting the external generation.
+            expected_successor = max(committed_before) + 1
+            self.assertEqual(
+                new_lineage, committed_before | {expected_successor},
+                "rebaseline mints a successor one past the committed high water "
+                "and adds it to committed lineage; it does NOT adopt the drifted "
+                "file's own generation")
+
+            # The journal import fired exactly once, naming the minted successor
+            # and the file's identity — "journals the import" (law 5). Derived
+            # from the rebaseline result, never a literal.
+            self.assertEqual(len(imported), 1, "the import is journaled exactly once")
+            old_g, new_g, ident = imported[0]
+            self.assertEqual(new_g, expected_successor,
+                             "the journaled successor is the one rebaseline minted")
+            self.assertEqual(ident, md["last_applied"],
+                             "the journaled identity is the file's embedded identity")
+
+            # Bytes preserved: the file on disk is byte-identical to the drifted
+            # original. rebaseline validated and re-emitted the SAME body under a
+            # new generation, so nothing the human typed changed.
+            after = open(path, encoding="utf-8").read()
+            md_after = domain_files.parse_metadata(after)
+            self.assertEqual(
+                md_after["domain_generation"], expected_successor,
+                "rebaseline rewrote the file at the minted successor generation")
+            self.assertEqual(
+                md_after["last_applied"], md["last_applied"],
+                "rebaseline preserved the identity")
+            self.assertTrue(domain_files.validate(after),
+                            "rebaseline left a valid file")
+
+            # ---- The discriminating pair, reversed: now APPLIED. ----
+            # The SAME file that proved UNKNOWN now proves APPLIED, because
+            # rebaseline added its generation to committed lineage. Deleting the
+            # lineage-adoption line makes THIS assertion fail while the
+            # pre-rebaseline UNKNOWN assertion still holds — C5's own red.
+            #
+            # The post-rebaseline reserved successor is the NEXT application's
+            # successor (one past the new high water), NOT the rebaselined
+            # generation. This is what makes the assertion discriminating: the
+            # rebaselined file's generation is in committed_lineage (the lineage
+            # half grants APPLIED), and it is NOT the reserved successor (so the
+            # successor half does not). Passing reserved=the rebaselined gen
+            # instead would let the successor half grant APPLIED on its own and
+            # the lineage-adoption red would be hollow — the two-mechanisms trap
+            # the plan warns about (B1/B7).
+            reserved_after = max(new_lineage) + 1
+            common_after = dict(
+                receipt_id=_C5_REC, adapter=_C5_ADAPTER, application_ref=_C5_APPREF,
+                reserved_successor=reserved_after, committed_lineage=new_lineage,
+                has_marker=lambda t: apply._marker_for(_C5_ADAPTER, _C5_REC) in t)
+            proof_after = apply.prove_applied(after, **common_after)
+            self.assertIs(
+                proof_after, apply.Proof.APPLIED,
+                "after rebaseline, the file's generation is in committed lineage "
+                "and its marker is found, so it proves APPLIED — the only path "
+                "that makes the journal-then-apply order safe")
+
+
 if __name__ == "__main__":
     unittest.main()
