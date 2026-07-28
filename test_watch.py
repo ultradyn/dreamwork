@@ -2295,6 +2295,89 @@ class TestCollector(unittest.TestCase):
             [plain["answer"], plain["answer_at"], plain["answer_when"],
              plain["answer_by"]], [None, None, None, None])
 
+    def test_a_second_answer_does_not_overwrite_the_first(self):
+        """#446 — a second `Answer (via watch…)` under an Open question used to
+        REPLACE the first at parse time, so the earlier text was lost before
+        any render rule ran. questions.md is the durable record of what the
+        human decided; a silent overwrite there is the worst class of bug this
+        system can have, because the loop cannot know what it forgot.
+
+        A second answer is a subsequent answer from the human, retained in file
+        order — the parser does not rank or interpret (amendment vs correction
+        vs re-open); it keeps every one. The first stays the thread's
+        resolution anchor (the `answer_at` cut), so the single-field callers
+        are unchanged; `answers` carries every answer for the page to show.
+
+        Production line whose reversion reds this test: the `is_answer` branch
+        in `_parse_entries` must retain every answer (append to `answers`),
+        not assign single fields over the previous one. Remove the append and
+        the first answer is gone from the parsed structure entirely — not in
+        `answer`, not in `follows`, nowhere.
+
+        The fixture's two answer texts are derived values asserted to differ,
+        never a count of 2: a count passes on a parse that kept the wrong one
+        or kept one twice.
+        """
+        first_txt, first_when = "go with A — first answer", "2026-07-25 09:00"
+        second_txt, second_when = "no, B — changed my mind", "2026-07-25 10:00"
+        # PRECONDITION, derived: the two answers must actually differ, or every
+        # retrieval assertion below passes over a fixture that never exercised
+        # the overwrite. A literal tuned to today's strings is a check with an
+        # invisible expiry date.
+        self.assertNotEqual(first_txt, second_txt)
+
+        text = ("# Q\n\n## Open\n\n"
+                "- **Which option?** body.\n"
+                "  - **Note (human, via watch, 2026-07-25 08:00):** a note.\n"
+                f"  - **Answer (via watch, {first_when}):** {first_txt}\n"
+                "  - **Note (human, via watch, 2026-07-25 09:30):** between.\n"
+                f"  - **Answer (via watch, {second_when}):** {second_txt}\n"
+                "\n## Answered\n\n- **Old** done.\n")
+        q = watch.parse_open_questions(text)[0]
+
+        # BOTH answers retrievable from `answers`, each attributed and stamped,
+        # in file order. This is the whole fix — his words are not lost. `.get`
+        # so the red names the substance ("first answer lost") rather than a
+        # missing key, and so a parser that keeps the wrong one still fails.
+        ans = q.get("answers") or []
+        texts = [a["text"] for a in ans]
+        self.assertIn(first_txt, texts, "first answer lost: %r" % (ans,))
+        self.assertIn(second_txt, texts, "second answer lost: %r" % (ans,))
+        self.assertEqual(texts.index(first_txt), texts.index(second_txt) - 1,
+                         "answers not in file order: %r" % (texts,))
+        by_first = next(a for a in ans if a["text"] == first_txt)
+        by_second = next(a for a in ans if a["text"] == second_txt)
+        self.assertEqual(by_first["by"], "human")
+        self.assertEqual(by_second["by"], "human")
+        self.assertEqual(by_first["when"], first_when)
+        self.assertEqual(by_second["when"], second_when)
+        # each answer records where it sat among the notes (#128, per-answer):
+        # one note preceded the first; two preceded the second.
+        self.assertEqual(by_first["at"], 1)
+        self.assertEqual(by_second["at"], 2)
+
+        # The single fields stay the FIRST answer's projection — the resolution
+        # anchor — so every existing caller (qaState truthiness, the thread cut
+        # at `answer_at`, open_question_count) is unchanged. first == anchor.
+        self.assertEqual(q["answer"], first_txt)
+        self.assertEqual(q["answer_when"], first_when)
+        self.assertEqual(q["answer_by"], "human")
+        self.assertEqual(q["answer_at"], 1)
+        # neither answer leaks into the body or the thread (still lifted)
+        self.assertNotIn("Answer (via watch", q["body"])
+        self.assertNotIn(first_txt, " ".join(f["text"] for f in q["follows"]))
+        self.assertNotIn(second_txt, " ".join(f["text"] for f in q["follows"]))
+
+        # the badge still counts this as answered-awaiting-fold (one entry)
+        self.assertEqual(watch.open_question_count(text), 0)
+
+    def test_an_entry_with_no_answer_carries_an_empty_answers_list(self):
+        # the page reads `answers`; a missing key would make "no resolution"
+        # indistinguishable from an older parse, exactly like the single fields
+        text = "# Q\n\n## Open\n\n- **Q?** body.\n"
+        q = watch.parse_open_questions(text)[0]
+        self.assertEqual(q["answers"], [])
+
     def test_answer_authorship_never_guesses(self):
         self.assertEqual(
             watch.answer_author("- **Answer (via watch, t):** x"), "human")

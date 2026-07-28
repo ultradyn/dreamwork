@@ -127,6 +127,20 @@ Load-bearing details, each of which was a bug at some point:
   A note written before the answer renders above it; one written after
   renders below. Append — never insert a note above an answer that
   predates it, or the card will say he replied to himself.
+- **A second `Answer (via watch…)` is retained, never overwritten** (#446).
+  The reader used to keep one answer per entry, so a second answer
+  replaced the first and his earlier words were gone at parse time —
+  before any render rule ran, and with nothing recording that it
+  happened. questions.md is the durable record of what he decided, and
+  the loop cannot know what it forgot, so every answer bullet is kept,
+  each with its author tag and timestamp, in file order. The parser does
+  not rank or interpret (amendment, correction, or a genuine second
+  answer to a re-opened entry): it retains what he wrote, and the loop
+  reconciles semantics at fold. The **first** answer is the thread's
+  resolution anchor (the position the card cuts the discussion around);
+  a later answer rides the same awaiting-fold rail beneath it. This is
+  the existing thread grammar — timestamped contributions in file order
+  — not a second one.
 - **The `<ts>` in a tag is read, not decoration.** `YYYY-MM-DD` with an
   optional ` HH:MM`, inside the tag's parentheses. It is rendered beside
   the author label, so a wrong one is a wrong claim on screen; an absent
