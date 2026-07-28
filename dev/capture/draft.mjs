@@ -82,10 +82,21 @@ const boxAfterReload = async () => {
     return { value: t ? t.value : null, kind: on ? on.dataset.kind : null };
   })()`);
 };
+/* Post-#269/#459 DraftStore (ca799f5): composer writes
+   dw:draft:v1:<target>:composer:main, not the pre-module dw:draft:<target>.
+   Dual-read still lifts a legacy key, but the live save path is v1 — assert
+   that. Target is derived at runtime so a hollow empty-string match cannot
+   pass. Production line that reds the partition check: DraftStore.v1Key /
+   save for composer:main (watch.py DraftStore module). */
 const stored = () => p.evaluate(`(() => {
-  const k = 'dw:draft:' + (data && data.target);
-  const raw = localStorage.getItem(k);
-  return { key: k, raw };
+  const t = (data && data.target) || '';
+  const v1 = t ? 'dw:draft:v1:' + t + ':composer:main' : '';
+  const legacy = t ? 'dw:draft:' + t : '';
+  const rawV1 = v1 ? localStorage.getItem(v1) : null;
+  const rawLegacy = legacy ? localStorage.getItem(legacy) : null;
+  const key = rawV1 !== null ? v1 : (rawLegacy !== null ? legacy : v1);
+  const raw = rawV1 !== null ? rawV1 : rawLegacy;
+  return { key, raw, v1, legacy, target: t };
 })()`);
 
 await load();
@@ -110,9 +121,12 @@ const TEXT = 'a half-typed thought about the regroup, mid-sentence and';
   })()`);
   await type(TEXT);
   const s = await stored();
-  notes.push(`stored under ${s.key}: ${s.raw}`);
+  notes.push(`stored under ${s.key}: ${s.raw} (v1=${s.v1})`);
+  // Precondition: data.target known — else the partition string is empty and
+  // any match is vacuous. Contract replaced by ca799f5 (#269/#459 DraftStore).
   ok('typing writes a draft for THIS project (keyed by the target path)',
-     !!s.raw && s.key.startsWith('dw:draft:/') && s.raw.includes('thought'));
+     !!s.target && !!s.raw && s.key === s.v1 &&
+     s.v1.indexOf(s.target) >= 0 && s.raw.includes('thought'));
 
   const after = await boxAfterReload();
   notes.push(`after reload: ${JSON.stringify(after)}`);
