@@ -79,9 +79,16 @@ dreamwork-version: 5853e1789929
   like things like that which become errors too easily (are brittle)."* A count
   in a prose contract fails the moment the corpus shifts — `#421`'s own
   word-count claim had already broken twice against its own data before he
-  ruled. Keep the intent, drop the number: require *what a thing must answer*,
-  refuse on **absence** rather than on size, and where a threshold genuinely is
-  needed in code, derive it at runtime with the precondition asserted (`#441`).
+  ruled. **Refined by him at 01:17, and the distinction is the point:** a number
+  as a *soft estimate* is fine — *"you can also provide estimates (like: aim for
+  under 200 words) with the knowledge that agents will be out … don't worry too
+  much about it. We just want to steer the soft stuff, not try to measure it."*
+  What is forbidden is a number that **gates** — a check that passes or fails on
+  length, a claim we assert as measured. So: steer style with **descriptors**
+  (precise, detailed, concise, dense) and tell the agent to **plan the words in
+  advance** so it can be concise when it must; keep estimates advisory; refuse on
+  **absence** rather than on size; and where a threshold genuinely is needed in
+  code, derive it at runtime with the precondition asserted (`#441`).
 - **An updated question must get smaller** (human-set 2026-07-29 00:54):
   *"it would have been nice to know q1 didn't matter earlier. like when you
   update these, it's probably better to comment out the stuff that doesn't

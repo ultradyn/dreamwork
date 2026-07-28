@@ -65,25 +65,7 @@
   **So: `rec` is still `c4` (with the copy shortened), and if you want the per-period shape the answer
   is `c2`, not `c3`.**
 
-- **P1 · 2026-07-28 — #421: how the loop should ask you things (A/B/D live; C withdrawn on your note)**
 
-  **One-minute version: `.dreamwork/review/421-qs-opts-short.html`.** Long page and corpus
-  figures: `421-question-options.html`.
-
-  **A** — the ask comes first, with the accepted answers. **B** — an unanswered sub-decision is
-  recorded and `lint` errors when a fold drops one. **D** — state what a valid answer looks like.
-  **Rec: A + B + D.** B is the only one with a live defect behind it — `#275`'s Q3/Q5/Q6 have been
-  unanswered since 2026-07-25 and nothing notices.
-
-  **Rejected, by your own data: one decision per entry** — **15 of 16** of your multi-part answers
-  closed complete, so it would multiply items on your desk for a rare problem.
-
-  ~~C — a ~250-word budget~~ **withdrawn 01:13 on your note**: *"don't quote word counts or whatever.
-  like things like that which become errors too easily (are brittle)."* The intent survives without
-  the number — evidence belongs on the artifact, judged by whether the ask reads short, not counted.
-
-  Accepted answers: `rec` · any combination of `A`/`B`/`D` · free text · *"none of these"*.
-  Note `#445` (your four attention levels) may retire this entry outright — say so if it does.
 
 - **P1 · 2026-07-28 — #263: the second gate's condition is met, verified this time. Open it?**
   **Ask: `rec` for "open E and H, split `#368` first" — or answer Q1/Q2/Q3 separately.** Free text
@@ -274,6 +256,42 @@
     redaction be designed now), Q6 (who besides you). Q4 moved to #359.
 
 ## Answered
+- **P1 · 2026-07-28 — #421: how the loop should ask you things (A/B/D live; C withdrawn on your note)**
+
+  → answered (2026-07-29 01:17): **`rec` — A + B + D adopted**, C withdrawn. Plus the
+  length rule refined: steer style with **descriptors** (precise, detailed, concise, dense),
+  plan the words in advance, and a soft estimate is fine (*"aim for under 200 words"*) —
+  models will be out, and inconsistently so. *"We just want to steer the soft stuff, not try
+  to measure it."* Folded into DREAMWORK.md; B is the buildable half (`lint` errors on a
+  dropped sub-decision).
+
+  **One-minute version: `.dreamwork/review/421-qs-opts-short.html`.** Long page and corpus
+  figures: `421-question-options.html`.
+
+  **A** — the ask comes first, with the accepted answers. **B** — an unanswered sub-decision is
+  recorded and `lint` errors when a fold drops one. **D** — state what a valid answer looks like.
+  **Rec: A + B + D.** B is the only one with a live defect behind it — `#275`'s Q3/Q5/Q6 have been
+  unanswered since 2026-07-25 and nothing notices.
+
+  **Rejected, by your own data: one decision per entry** — **15 of 16** of your multi-part answers
+  closed complete, so it would multiply items on your desk for a rare problem.
+
+  ~~C — a ~250-word budget~~ **withdrawn 01:13 on your note**: *"don't quote word counts or whatever.
+  like things like that which become errors too easily (are brittle)."* The intent survives without
+  the number — evidence belongs on the artifact, judged by whether the ask reads short, not counted.
+
+  Accepted answers: `rec` · any combination of `A`/`B`/`D` · free text · *"none of these"*.
+  Note `#445` (your four attention levels) may retire this entry outright — say so if it does.
+  - **Answer (via watch, 2026-07-29 01:17):** rec. with word counts,
+    better to use descriptors like precise, detailed, concise, dense,
+    etc to describe writing style. Tell the agent to plan out the words
+    in advance so that it can be concise if you need to. You can also
+    provide estimates (like: aim for under 200 words) with the knowledge
+    that agents will be out but that amount out will proibabyl be
+    somewhat consistent for that model (though different models might be
+    totally different). Anyway, don't worry to much about it. We just
+    wnat to steer the soft stuff, not try to measure it.
+
 - **P1 · 2026-07-29 — #269 draft durability: two calls (C1/C2)**
 
   → answered (2026-07-29 01:12): **rec on both** — C1 = **R1** (offer *"updated in

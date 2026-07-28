@@ -491,6 +491,13 @@ Next id: **456**
   · remaining on this entry: he rules on A/B/C/D, then `DREAMWORK.md` + `file-formats.md` + `lint.py`
   change. Nothing is built until then
   · **ARTIFACT FIXED `c19107a` (2026-07-28 22:35, lane `tablefix`), on his do-now while he was reading it** — *"I can't read it (reduces and costs columns don't break text lines)"*. The cells were never the problem: they already had `white-space:normal` and `overflow-wrap:anywhere`. The template's `table{min-width:max-content}` let the table size to unwrapped content — **4197px inside a 1120px pane** (reduces ~817px, costs ~1114px, risk ~2197px), so `.scroller` scrolled sideways and every cell was one line. Fixed **per-artifact** (`table-layout:fixed`, 16/24/24/36 columns) rather than in the shared template, which would re-stamp 23 artifacts of which 12 have no `src/` (`#436`). It also restacks each option as a labelled full-width block below 860px, because a four-column comparison is unreadable at 390px however well it wraps. Coordinator-verified: derived fold 740/693, `#ask.top` **218** desktop (up from 266) and 266 mobile, both above. **The question itself is still open and still his.**
+  · **ANSWERED 2026-07-29 01:17 — `rec`: A + B + D adopted, C withdrawn.** **A** the ask comes first with
+  its accepted answers; **B** an unanswered sub-decision is recorded and `lint` errors when a fold drops
+  one; **D** every ask states what a valid answer looks like. A and D are conventions the coordinator
+  applies when writing asks (`file-formats.md` is where they belong); **B is the buildable half** and the
+  only one with a live defect behind it — `#275`'s Q3/Q5/Q6 unanswered since 2026-07-25 with nothing
+  noticing. **C is dead**: no length gate, ever — steer style with descriptors and keep any number
+  advisory (his 01:13 + 01:17 notes, folded into DREAMWORK.md).
 - **#422** — a research artifact is a kind we produce and have never specified · P2 ·
   loop-tooling/format · origin: **human** · **human via watch `do-next` 2026-07-28 16:29**, second
   half of the same message
