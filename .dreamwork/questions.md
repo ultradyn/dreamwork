@@ -1,30 +1,19 @@
 # Questions for the human
 
 ## Open
+- **P2 · 2026-07-29 01:14 — #269: build it? (authorisation only, no design content)**
+
+  You just settled C1 (`R1`) and C2 (30 days), so `.dreamwork/docs/plans/draft-durability-design.md`
+  has no open design decision. This is only the build grant — the same shape as `#254`'s,
+  which is the pattern `#451` wants queued separately.
+
+  Scope if yes: per-field IndexedDB drafts keyed by the title-derived logical id, restore
+  on load, the cross-tab prompt, 30-day idle GC, explicit forget. Out: anything touching
+  `questions.md` on disk.
+
+  Accepted answers: `yes` · `yes, but …` · `not yet`.
 
 
-- **P1 · 2026-07-29 — #269 draft durability: two calls (C1/C2)**
-
-  Artifact: `.dreamwork/review/269-draft-durability.html` · Spec:
-  `.dreamwork/docs/plans/draft-durability-design.md`
-
-  **C1 — cross-tab, when two unfocused copies diverge.** Rec **R1**: offer
-  *"updated in another tab — load?"* rather than swapping text under you. Alt
-  **R2**: silently take the newer store when the field is unfocused. Either way a
-  **focused or dirty field is never overwritten** — that part is settled.
-
-  **C2 — orphan retention.** Rec **30 days** idle GC by `updatedAt`, plus explicit
-  *forget this* and *forget all for this project*. Alts: 7d · 90d · never GC
-  (explicit only). These are your words being kept on disk, so the number is
-  yours.
-
-  Settled without you: the logical id (title-keyed, no fuzzy restore), the
-  clear-on-receipt seam (`res.ok` today, `#263`'s receipt later, behind your
-  gate), localStorage first and IndexedDB later, and nothing built behind the
-  `#263` second gate. The acute loss you reported is already closed.
-
-  Accepted answers: `rec` · `R1`/`R2` plus a day count · free text ·
-  `defer, implement the rest`.
 
 
 
@@ -289,6 +278,35 @@
     redaction be designed now), Q6 (who besides you). Q4 moved to #359.
 
 ## Answered
+- **P1 · 2026-07-29 — #269 draft durability: two calls (C1/C2)**
+
+  → answered (2026-07-29 01:12): **rec on both** — C1 = **R1** (offer *"updated in
+  another tab — load?"*, never swap text under him) and C2 = **30 days** idle GC by
+  `updatedAt` plus explicit *forget this* / *forget all for this project*. Design is now
+  fully settled; folded into `.dreamwork/docs/plans/draft-durability-design.md`.
+
+  Artifact: `.dreamwork/review/269-draft-durability.html` · Spec:
+  `.dreamwork/docs/plans/draft-durability-design.md`
+
+  **C1 — cross-tab, when two unfocused copies diverge.** Rec **R1**: offer
+  *"updated in another tab — load?"* rather than swapping text under you. Alt
+  **R2**: silently take the newer store when the field is unfocused. Either way a
+  **focused or dirty field is never overwritten** — that part is settled.
+
+  **C2 — orphan retention.** Rec **30 days** idle GC by `updatedAt`, plus explicit
+  *forget this* and *forget all for this project*. Alts: 7d · 90d · never GC
+  (explicit only). These are your words being kept on disk, so the number is
+  yours.
+
+  Settled without you: the logical id (title-keyed, no fuzzy restore), the
+  clear-on-receipt seam (`res.ok` today, `#263`'s receipt later, behind your
+  gate), localStorage first and IndexedDB later, and nothing built behind the
+  `#263` second gate. The acute loss you reported is already closed.
+
+  Accepted answers: `rec` · `R1`/`R2` plus a day count · free text ·
+  `defer, implement the rest`.
+  - **Answer (via watch, 2026-07-29 01:12):** rec
+
 - **P1 · 2026-07-29 01:03 — #449 framey dissolve: the mist itself is the cost, and it is all-or-nothing**
 
   → answered (2026-07-29 01:05): **M3, framed as temporary** — *"let's try temporarily

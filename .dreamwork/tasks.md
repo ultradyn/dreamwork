@@ -2262,6 +2262,10 @@ Next id: **456**
   · **DESIGN LANDED `e7d0b24` (2026-07-29 00:04, lane `wt/drafts`), design-only as scoped.** Logical id is `kind:scopeKey` inside a `data.target` project partition, keyed on the question **title** rather than a positional index, and **restore happens only into a mounted element that declares that id — no fuzzy title match**, because restoring into the wrong box is worse than losing the text. Cross-tab is **focus-wins, explicitly not last-write-wins**: a remote peer never overwrites a focused or dirty field, though the store still updates so a reload is safe. Clear-on-receipt goes through a pluggable `isDurable(response)` — `res.ok` today, `#263`'s receipt later — and **nothing behind the `#263` second gate was built**. **The acute loss he reported is already closed** by the `dwDraft` work (`0366706`/`e383492`); the remaining increments are extracting the `DraftStore` API with dual-read of old keys, then binding `#askbox` and `#ptext`, still on localStorage. It **pushed back usefully**: a blur-only or beforeunload fix would have been the wrong shape for his report because it misses an autoreload mid-sentence. Two calls are his and are filed as an `#ask` with a rebuilt artifact: **C1** cross-tab divergence policy and **C2** orphan retention.
   · **blocked-on: **human** (C1/C2)**
 
+  · **C1/C2 answered 2026-07-29 01:12 — `rec` on both.** C1 = **R1**: offer *"updated in another tab —
+  load?"*, never swap text under him. C2 = **30 days** idle GC by `updatedAt`, plus explicit *forget this*
+  and *forget all for this project*. **No design decision remains open**; the build grant is asked
+  separately (an authorisation-only ask, the shape `#451` wants queued apart from design rulings).
 - **#265** — Add a research command to the composer · P2 · command design ·
   origin: **human** · **human via watch 16:05** · hidden/menu command for
   primary-source feasibility research on features/subprojects · distinguish
