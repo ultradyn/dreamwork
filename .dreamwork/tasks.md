@@ -24,9 +24,43 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **429**
+Next id: **431**
 
 ## Open
+- **#429** — the above-fold criterion we put in every review brief is unenforceable on 20 of 22
+  artifacts · P1 · loop-tooling/review-artifacts · origin: **loop** · **measured, 2026-07-28 17:52**
+  · Every brief that asks him to rule says the ask must satisfy
+  `getBoundingClientRect().bottom < innerHeight`. **`#ask` exists on 2 of 22 built artifacts.** On the
+  other 20 the criterion cannot be evaluated at all, so it has been silently unenforced since it was
+  written — a lane either invented the id, or didn't, and nothing noticed either way
+  · **the two that have it disagree about the answer, which is the useful part.**
+  `421-question-options` passes (`ask.top` 218 desktop / 266 mobile) because it puts the ask **inside
+  the hero**; `263-second-gate` fails (594 / **1006**) because it puts the ask after the hero. So the
+  working pattern already exists in the corpus and is undocumented
+  · **the criterion's letter is also wrong for a multi-question ask.** 263's `#ask` is 870px tall
+  because it holds three decisions; `bottom < innerHeight` is unachievable for it at any viewport and
+  demanding it would mean splitting a coherent decision block. The measurable intent is *the ask
+  **starts** above the fold and its first decision is readable* — `top < innerHeight`, plus the first
+  sub-decision's `top < innerHeight`
+  · so: make `#ask` a documented required element in `file-formats.md` / the artifact template, restate
+  the criterion as above in `watch-design.md`, and give it **one shared checker** instead of each lane
+  writing its own mjs
+  · related: **#430, #325**
+- **#430** — a viewport-setting check must assert the viewport was applied, because mine didn't · P1 ·
+  loop-tooling/verification · origin: **loop** · **caught in my own hands, 2026-07-28 17:47**
+  · I measured the `#263` artifact with `newPage({viewportSize:…})`. Playwright's option is
+  **`viewport`**; `viewportSize` is accepted silently and ignored, so both "desktop 1280×900" and
+  "mobile 390×844" runs were the **default 1280×720**. The tell was that they agreed to the byte —
+  identical `scrollHeight` for a 1280px and a 390px render, which is impossible for a responsive page.
+  Had the page happened to pass at 720, I would have reported two viewports verified and checked one
+  · **this is the hollow-check failure with a new cause: not a bad assertion, a bad harness.** The
+  assertion was right and it was applied to the wrong page. `.dreamwork/lessons.md` already says a
+  check must assert its own preconditions; the precondition of *every* responsive measurement is
+  **`innerWidth === requested`**, and no check in this repo asserts it
+  · so: one `dev/capture/above_fold.mjs` (or similar) that takes ids + viewports, asserts
+  `innerWidth`/`innerHeight` match the request before measuring anything, and is the only thing briefs
+  cite. Kills the per-lane ad-hoc copy that produced this
+  · related: **#429**
 - **#427** — the hand-off grammar is widened in `lint` but not in the parser, so the dashboard still
   cannot read a two-sha line · P3 · loop-tooling/format · origin: **loop** · **named by the `#415`
   lane rather than left to be found**
@@ -138,6 +172,15 @@ Next id: **429**
   exits without committing or writing to the inbox should be **recorded as failed**, not silently
   forgotten. `status_sync`'s liveness work (`#402a`) already knows how to ask whether a pid is
   alive; it does not know how to ask whether a lane *did* anything
+  · **third instance, 17:45, and it is the worst shape yet because the work existed.** The `gate2`
+  lane (`@glm52`) rebuilt the `#263` artifact correctly, ran 24 turns, and **exited without
+  committing**. `git log master..wt/gate2` was empty and the worktree HEAD equalled master, so by
+  every signal the loop watches the lane had done *nothing*; the edits were sitting unstaged in the
+  worktree and would have been destroyed by a routine `git worktree remove`. Recovered by hand and
+  committed on its behalf (`da197b8`). **So the missing signal is not "did the pid die" but "is the
+  worktree dirty at exit"** — one `git status --porcelain` per finished lane distinguishes *crashed
+  before working*, *worked and did not deliver*, and *delivered*, and only the middle one is
+  recoverable-but-invisible. Fold that into whatever `#423` builds
   · related: **#410, #402, #424, #428**
 
 - **#421** — how we ask him questions, researched rather than guessed · P1 · loop-instructions ·
