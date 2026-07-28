@@ -2516,3 +2516,22 @@ this shape and convert opportunistically.)
   in a commit whose subject was tidying the ledger. **Re-run `parse_ledger` and assert
   `open ∩ landed == ∅` after every ledger edit, not only after parser changes.** Prose
   about ids is ledger data; the reader cannot tell your commentary from a landing.
+- **Make every check print its own verdict, because the exit code is what a pipeline silently
+  replaces.** Seventh instance of the day's dominant family, one hour after writing it up for
+  the sixth: I ran the `#331` gate as `python3 gate331.py master | tail -35`, read `EXIT=0`,
+  and the gate had in fact failed. The lesson did not stop me — I had written it twice. What
+  stopped me was that the gate ends with a literal `GATE PASSED` / `GATE FAILED` line, so the
+  output contradicted the status and the output was the true one. **The habit is not
+  "don't pipe"** — that one has now failed seven times and will fail again. It is: **every
+  check emits a verdict token, and you read the token, never `$?`.** A guardrail that survives
+  your own forgetting beats a lesson that depends on remembering.
+- **A criterion that cannot fail is not a criterion, and briefs are where they hide.** My
+  `#331` brief required the lane to prove `#501`/`#502` do not land. Red-proving the gate
+  showed that check passes even against a deliberately over-wide pattern that IS landing both
+  ids — because in the live ledger they sit on an *indented* line, so the column-0 rule holds
+  them inert no matter what the pattern does. The check tests a different guard than the one it
+  names. 26 of 27 prose spans in the landed section are protected this way; only
+  `**#96 stage 1**` sits at column 0 where the pattern is the sole guard, which is exactly why
+  `#331` named that fixture and no other. **When a check has two independent guards in front of
+  it, disable the one you are not testing** — here, put the fixture span at column 0 — or you
+  are measuring the wrong one and cannot tell.
