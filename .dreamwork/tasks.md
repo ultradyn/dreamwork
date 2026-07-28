@@ -24,9 +24,27 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **444**
+Next id: **445**
 
 ## Open
+- **#444** — the new snap detector proves a transition EXISTS, not that it has the right duration · P2 ·
+  verification/motion · origin: **loop** · **the cost of `#442`'s fix, recorded at merge rather than
+  discovered later**
+  · `#442` correctly made `transitionstart` the load-independent gate, because a compositor-driven transition
+  is invisible to a starved rAF sampler and the frame evidence cannot be required. But `transitionRan` is a
+  **boolean about existence**: a transition shortened to `1ms` still fires `transitionstart`, so it now passes
+  the gate where the old frame-count form might have caught it
+  · **the trade is right** — a guard that lies under load is worse than one that checks less — but the gap
+  should be named: between *"the CSS says animate"* and *"it animated for the duration the styleguide
+  specifies"* there is now no check on this path
+  · the events already captured carry the answer: `transitionWindow` returns the window, so its **width** is
+  measurable without any rAF sampling at all. Asserting the observed duration against the declared
+  `CARD_TRAVEL`/`.cmdmsg` value (with tolerance, and derived from the declaration rather than a literal) would
+  close it and is load-independent by the same argument that motivated `#442`
+  · check first whether the duration is worth asserting at all, or whether `transitions.md`'s intent is
+  satisfied by existence plus the styleguide's own single-source rule — **a check that restates the CSS it
+  reads is not a check**. That is the design question and it may be a refusal
+  · related: **#442, #414, #413**
 - **#443** — run modes conflate PACE with DELEGATION POSTURE, so there is no way to say *"idle-friendly, but
   use subagents"* · **P1** · loop-design/run-mode · origin: **human** · **human via watch 2026-07-28 22:18**
   · his words (dictated, lightly punctuated): *"We need to rethink how the Run modes work. Because when,
@@ -56,29 +74,6 @@ Next id: **444**
   · **design first, with a review artifact and an `#ask`** — this is a restructure of a contract he set and
   the axes are his call, not the loop's. Do not change the file format before he rules
   · **blocked-on: **human** (after the design lands)** · related: **#290, #288, #426, #438**
-- **#442** — `midFrames(...) >= 1` reduces the frame-rate bet but does not remove it, and the guard that
-  proves this is the one that claimed otherwise · P2 · verification/motion · origin: **loop** · **found by
-  coordinator inspection at `#414`'s merge, minutes after the lane argued the problem was gone**
-  · `#414`'s lane converted `prominence.mjs` to `midFrames(tops) >= 1` and concluded *"the conversion IS the
-  resolution … the `mid >= 1` form is frame-rate-free — it needs one part-way frame, which a real non-snap
-  motion produces regardless of load"*, and therefore that no separate entry was needed. The reasoning is
-  good and the conversion is right; the conclusion is too strong
-  · **the counter-evidence was already on disk.** `confirmation.mjs` has been on `midFrames(...)>=1` /
-  `midStates(...)>=1` since `a027ad0` — not the count form — and at merge it **FAILED** `popout success
-  arrives through intermediate opacity and drift` in a two-guard run at load 52.42, then **PASSED solo** at
-  load 53.06. Same tree, same minute, higher load on the passing run. So load is not the variable and the
-  count form is not the cause: **contention within a run is**, which is exactly what `#414` originally
-  observed and parked
-  · **the mechanism to check first**: `mid >= 1` needs one frame landing *strictly between* the endpoints
-  **during the transition window**. Under contention rAF can deliver its frames clustered before and after
-  the CSS transition rather than inside it, so `tops.length >= MIN_SAMPLES` (3) passes while `mid` is 0. The
-  precondition and the assertion measure different things and the gap between them is where this lives
-  · so: decide whether the precondition should assert *frames landed inside the window*, not merely *frames
-  arrived*. That is a smaller and more testable claim than the three options `#414` listed, and it does not
-  require a deterministic clock
-  · **this host is never idle** (~30 ambient, 52 during this merge, from other agents' sessions), so any
-  criterion shaped like *"passes on a quiet machine"* is untestable here — see `#428`
-  · related: **#414, #441, #428, #413**
 - **#441** — `states.mjs`'s new vacuity thresholds are literals with a 3px margin on one of the two
   motions they guard · P3 · verification/motion · origin: **loop** · **found by coordinator inspection of
   `#333` at merge, not by the guard**
@@ -475,7 +470,7 @@ Next id: **444**
   · **what remains of this task is the meta half**, which is unfixed: nothing measures
   guard-against-doc, and a red excused in a brief still goes invisible. Six hours here, across
   three lanes, on a signal that was correct the whole time
-  · related: **#392, #414, #420, #442**
+  · related: **#392, #414, #420, #442, #444**
 - **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
   right now · P2 · handoffs/correctness · origin: **loop** · **predicted by the `#401` lane in its
   neighbour table and not filed by it; found in the tree one minute later**
@@ -3498,6 +3493,30 @@ Next id: **444**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#442** — `midFrames(...) >= 1` reduces the frame-rate bet but does not remove it, and the guard that
+  proves this is the one that claimed otherwise · P2 · verification/motion · origin: **loop** · **found by
+  coordinator inspection at `#414`'s merge, minutes after the lane argued the problem was gone**
+  · `#414`'s lane converted `prominence.mjs` to `midFrames(tops) >= 1` and concluded *"the conversion IS the
+  resolution … the `mid >= 1` form is frame-rate-free — it needs one part-way frame, which a real non-snap
+  motion produces regardless of load"*, and therefore that no separate entry was needed. The reasoning is
+  good and the conversion is right; the conclusion is too strong
+  · **the counter-evidence was already on disk.** `confirmation.mjs` has been on `midFrames(...)>=1` /
+  `midStates(...)>=1` since `a027ad0` — not the count form — and at merge it **FAILED** `popout success
+  arrives through intermediate opacity and drift` in a two-guard run at load 52.42, then **PASSED solo** at
+  load 53.06. Same tree, same minute, higher load on the passing run. So load is not the variable and the
+  count form is not the cause: **contention within a run is**, which is exactly what `#414` originally
+  observed and parked
+  · **the mechanism to check first**: `mid >= 1` needs one frame landing *strictly between* the endpoints
+  **during the transition window**. Under contention rAF can deliver its frames clustered before and after
+  the CSS transition rather than inside it, so `tops.length >= MIN_SAMPLES` (3) passes while `mid` is 0. The
+  precondition and the assertion measure different things and the gap between them is where this lives
+  · so: decide whether the precondition should assert *frames landed inside the window*, not merely *frames
+  arrived*. That is a smaller and more testable claim than the three options `#414` listed, and it does not
+  require a deterministic clock
+  · **this host is never idle** (~30 ambient, 52 during this merge, from other agents' sessions), so any
+  criterion shaped like *"passes on a quiet machine"* is untestable here — see `#428`
+  · related: **#414, #441, #428, #413, #444**
+  · **LANDED `9edb3f7` (2026-07-28 23:15, lane `wt/window`).** My diagnosis was the right shape and the wrong mechanism, and the lane found the real one: **rAF runs on the main thread while opacity/transform transitions run on the compositor**, so under load the compositor animates the property perfectly in real time while **zero** rAF callbacks fire inside the window — `midFrames` reads 0 over a flawless animation. Measured: 8 burners, 6 samples, transition 289–665ms wide, **0 rAF samples inside the window in all six**; at baseline 4 land inside. It also found the page's own `#dreambg` shader is a continuous main-thread rAF consumer, so the sampler competes with the page even at zero external load. Fix: `transitionstart` is the **load-independent snap detector** (a snap never fires it), with `transitionWindow`/`framesInWindow` in `dom.mjs` giving direct frame evidence when the trace did sample the window. **It refuted my acceptance criterion and was right**: I asked for *did-not-sample-the-window* to be a hard FAIL, and it measured that this happens at every load level including baseline, so my criterion would have made the guard fail permanently on this host. It deliberately left `prominence.mjs`, `states.mjs` and `reviewsplit.mjs` alone because those are FLIP animations on the main thread, where sampler and animation share a thread and cannot desync. Coordinator-verified after merge: three guards PASS solo at load 24.9, and **two concurrent suites both PASS at load 36.37** — the two-guard shape that failed at 52.42 before the fix.
 - **#416** — a mitigation record is a claim about system state, and nothing re-checks it · P3 ·
   system/mitigation-drift · origin: **loop** · **split out of `#408`'s rec rather than folded into
   its closure**, because it applies to bullets `#408` never touched
@@ -3588,7 +3607,7 @@ Next id: **444**
   and cannot — for those, state the precondition and accept that a starved machine cannot decide it
   · remaining, unchanged: `reviewsplit`'s `distinct(...) === 1` assertions (that something did NOT
   move) fail **green** under starvation — the opposite direction, uncovered by anything here
-  · related: **#413, #442**
+  · related: **#413, #442, #444**
   · **the ORIGINAL SYMPTOM IS FIXED, measured 14:31-14:50.** A full `just test` ran to completion
   under its own contention: **51 guards, 0 failures, real exit 0** — the first fully green suite of
   the day — and `confirmation`, the guard this entry was filed for, **passed under full-suite
