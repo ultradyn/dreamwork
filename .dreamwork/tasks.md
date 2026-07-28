@@ -154,22 +154,6 @@ Next id: **450**
   · **design first, with a review artifact and an `#ask`** — this is a restructure of a contract he set and
   the axes are his call, not the loop's. Do not change the file format before he rules
   · **blocked-on: **human** (after the design lands)** · related: **#290, #288, #426, #438, #445**
-- **#441** — `states.mjs`'s new vacuity thresholds are literals with a 3px margin on one of the two
-  motions they guard · P3 · verification/motion · origin: **loop** · **found by coordinator inspection of
-  `#333` at merge, not by the guard**
-  · `#333` converted the count idiom correctly and its preconditions are real, but the vacuity check uses a
-  **literal** `MIN_HEIGHT_SPAN = 20`, justified in the lane's report as *"well below measured 193px fold /
-  23px tick-grow"*. For the fold that is a 10x margin; **for tick-grow it is 3px**
-  · the repo's own rule is that a literal tuned to today's fixture is a check with an expiry date nobody can
-  see, and this one has two thresholds behind one constant with very different headroom. A chrome change
-  that shaves the tick-grow travel by 15% takes it under the floor and the guard reports a *vacuity* failure
-  for a motion that is merely smaller
-  · so: derive the floor per motion from the measurement rather than sharing one constant — e.g. a fraction
-  of the observed span, asserted against a separately-derived expectation — or split the constant in two and
-  say what each is protecting. **The tick-grow number is the one to look at first**
-  · not urgent: the check is correct today and fails safe (a too-high floor reds, it does not pass silently).
-  It is filed because the margin is invisible in the guard output
-  · related: **#442**
 - **#438** — a generic scheduled-tasks facility, so maintenance and inbound-scanning work is filed rather
   than done ad hoc · P2 · feature/scheduling · origin: **human** · **human via watch 2026-07-28 20:34**
   · his words: *"we should add support for task scheduling (probably managed through dreamhub). central
@@ -1040,35 +1024,6 @@ Next id: **450**
   actual implication — $2/mo is a strong statement about per-tenant cost, so storage and
   egress are design inputs, not billing details · unblocks nothing and blocks nothing;
   it can be designed while #275 continues on the self-hosted half
-
-- **#360** — Self-hosted remote Dreamhub auth built on ssh, not a hosted IdP · P2 ·
-  security design · origin: **human** · **human via watch 2026-07-28 01:39**, redirecting
-  #275's recommendation: *"self-hosted with a tunnel or over a shared mesh or lan -- we
-  should aim for simpler auth methods; ssh tunnel, session key auth'd via ssh
-  (magic-link esq), user/pw, sqrl if possible"* · **the redirect is real and worth naming**:
-  #275's landed design put a mature authenticating reverse proxy (Cloudflare Access,
-  Tailscale Funnel) at the boundary and called that the safe answer; he is asking instead
-  for auth the operator already owns, and the reasoning is sound — a self-hosted tool
-  whose auth depends on a third party's control plane is not self-hosted · the four he
-  named, in the order they cost least: **ssh tunnel** (no auth code at all, the hub stays
-  loopback-bound and ssh is the boundary — this is already possible today and should be
-  documented before anything is built); **session key issued over ssh**, which is the
-  interesting one — the operator runs one command on the box, it prints a URL with a
-  one-shot token, and the browser trades it for a session cookie, so ssh's existing
-  authentication becomes the hub's without the hub verifying anything itself; **user/pw**,
-  which needs a KDF and therefore leaves stdlib-only territory unless `hashlib.scrypt`
-  suffices (it does — measure it); **SQRL**, which he flagged as conditional and which
-  needs a primary-source check that any current client exists at all · blocked on #233
-  base LAN mode for the transport, and it supersedes #276's bearer token if the ssh-issued
-  session lands · public/WAN serving stays forbidden regardless
-  · **Q2 settled 2026-07-28 14:53: a reverse proxy component is acceptable.** My 01:44
-  objection is dissolved rather than overruled — it was to Cloudflare Access and Tailscale
-  Funnel *specifically*, whose control plane belongs to a third party, which is a strange
-  dependency for the self-hosted half. **A local Caddy has the property I was asking for**, so
-  the landed design's boundary survives with its identity component swapped for the
-  ssh-issued session key. Acting on that reading and said so on the entry; correctable in a
-  sentence if he meant otherwise
-  · **UNBLOCKED — `#233` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): the base LAN mode this waited on is in. The ssh-issued session-key design is also unblocked from the other side: his 14:53 ruling settled Q2 (a reverse proxy is acceptable, and a local Caddy satisfies the self-hosted constraint), so **both** of this entry's blockers are gone. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
 
 - **#357** — A CLI warning layer that surfaces incomplete data and what is waiting ·
   P1 · tooling/feature · origin: **human** · **human via watch 2026-07-28 01:23**, inside his
@@ -3331,6 +3286,54 @@ Next id: **450**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#360** — Self-hosted remote Dreamhub auth built on ssh, not a hosted IdP · P2 ·
+  security design · origin: **human** · **human via watch 2026-07-28 01:39**, redirecting
+  #275's recommendation: *"self-hosted with a tunnel or over a shared mesh or lan -- we
+  should aim for simpler auth methods; ssh tunnel, session key auth'd via ssh
+  (magic-link esq), user/pw, sqrl if possible"* · **the redirect is real and worth naming**:
+  #275's landed design put a mature authenticating reverse proxy (Cloudflare Access,
+  Tailscale Funnel) at the boundary and called that the safe answer; he is asking instead
+  for auth the operator already owns, and the reasoning is sound — a self-hosted tool
+  whose auth depends on a third party's control plane is not self-hosted · the four he
+  named, in the order they cost least: **ssh tunnel** (no auth code at all, the hub stays
+  loopback-bound and ssh is the boundary — this is already possible today and should be
+  documented before anything is built); **session key issued over ssh**, which is the
+  interesting one — the operator runs one command on the box, it prints a URL with a
+  one-shot token, and the browser trades it for a session cookie, so ssh's existing
+  authentication becomes the hub's without the hub verifying anything itself; **user/pw**,
+  which needs a KDF and therefore leaves stdlib-only territory unless `hashlib.scrypt`
+  suffices (it does — measure it); **SQRL**, which he flagged as conditional and which
+  needs a primary-source check that any current client exists at all · blocked on #233
+  base LAN mode for the transport, and it supersedes #276's bearer token if the ssh-issued
+  session lands · public/WAN serving stays forbidden regardless
+  · **Q2 settled 2026-07-28 14:53: a reverse proxy component is acceptable.** My 01:44
+  objection is dissolved rather than overruled — it was to Cloudflare Access and Tailscale
+  Funnel *specifically*, whose control plane belongs to a third party, which is a strange
+  dependency for the self-hosted half. **A local Caddy has the property I was asking for**, so
+  the landed design's boundary survives with its identity component swapped for the
+  ssh-issued session key. Acting on that reading and said so on the entry; correctable in a
+  sentence if he meant otherwise
+  · **UNBLOCKED — `#233` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): the base LAN mode this waited on is in. The ssh-issued session-key design is also unblocked from the other side: his 14:53 ruling settled Q2 (a reverse proxy is acceptable, and a local Caddy satisfies the self-hosted constraint), so **both** of this entry's blockers are gone. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
+  · design landed \`4d4e705\` — ssh-rooted hub auth, design and docs only, no implementation. Public/WAN serving remains forbidden until he approves.
+
+- **#441** — `states.mjs`'s new vacuity thresholds are literals with a 3px margin on one of the two
+  motions they guard · P3 · verification/motion · origin: **loop** · **found by coordinator inspection of
+  `#333` at merge, not by the guard**
+  · `#333` converted the count idiom correctly and its preconditions are real, but the vacuity check uses a
+  **literal** `MIN_HEIGHT_SPAN = 20`, justified in the lane's report as *"well below measured 193px fold /
+  23px tick-grow"*. For the fold that is a 10x margin; **for tick-grow it is 3px**
+  · the repo's own rule is that a literal tuned to today's fixture is a check with an expiry date nobody can
+  see, and this one has two thresholds behind one constant with very different headroom. A chrome change
+  that shaves the tick-grow travel by 15% takes it under the floor and the guard reports a *vacuity* failure
+  for a motion that is merely smaller
+  · so: derive the floor per motion from the measurement rather than sharing one constant — e.g. a fraction
+  of the observed span, asserted against a separately-derived expectation — or split the constant in two and
+  say what each is protecting. **The tick-grow number is the one to look at first**
+  · not urgent: the check is correct today and fails safe (a too-high floor reds, it does not pass silently).
+  It is filed because the margin is invisible in the guard output
+  · related: **#442**
+  · landed \`a06f6ea\` — per-motion vacuity floors in states.mjs: MIN_FOLD_SPAN 20 (fold measures 193px, headroom was never the defect) and MIN_GROW_SPAN 6 (minimum real single-line note grow measured at exactly 20px, so the old shared 20 sat ON the signal with zero headroom, not the 3px the filing estimated). Refused a fraction-of-observed-span floor as the #444 trap one level down. transitions.md updated in the same commit: one literal PER MOTION.
+
 - **#392** — the humanized question age is measured from midnight, so it is wrong by up to a
   day · P2 · dashboard/correctness · origin: **loop** · found by coordinator **looking at the
   deployed page** after redeploying, not by any check

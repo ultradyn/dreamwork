@@ -1,6 +1,45 @@
 # Questions for the human
 
 ## Open
+- **P1 · 2026-07-29 00:47 — #449 framey dissolve: the liquify is not on the collapsible sections, so which cost may I spend?**
+
+  Your report (dashboard composer, 00:39) attributed the framiness to *"the additions
+  that were made for expanding and contracting, like collapsible sections, so that
+  they had the liquify effect as well."*
+
+  **That attribution does not hold, and you should know before the fix lands.** The
+  page defines exactly three SVG filters — `dissolveOut`, `dissolveIn`, `departMist`
+  — and all three are route/ghost gestures. **No collapsible section carries a
+  liquify filter.** So the cost is not "a lot of elements each filtered"; it is one
+  filter over one very large element.
+
+  **What I think it actually is** (the `mistperf` lane is measuring, so treat this as
+  a hypothesis): `crossfade()` filters a full-page ghost clone, and `stepFx`
+  animates `feTurbulence`'s `baseFrequency` every frame (0.009 → 0.018). Unlike
+  `scale` and `stdDeviation`, changing `baseFrequency` invalidates the noise field,
+  so the entire fractal texture is regenerated per frame — over a 150%×150% filter
+  region on an element whose area scales with **page height**. Review is the tallest
+  and widest view, which is exactly the transition you named. Your other guess —
+  reflow — is still live and the lane is told to check it.
+
+  **The ask is which cost I may spend**, because every candidate fix trades a little
+  of the gesture for frames and `transitions.md` says that trade is not mine to make
+  silently:
+
+  **Q1 — the mist field.** Rec **F1**: freeze `baseFrequency` and let `scale` alone
+  carry the "field tightens, it flows" reading — nearly free, but the swirl stops
+  *evolving* mid-dissolve. Alt **F2**: keep the evolution and buy frames elsewhere
+  only (region + area), accepting a smaller win.
+
+  **Q2 — off-screen mist.** Rec **V1**: mist only what is in the viewport, since a
+  tall review page currently mists surface you cannot see. Your own words —
+  *"remove them from the page if they're not going to make a difference at that
+  point"* — read as approving this; I want it explicit because the edge of the
+  mist would then sit at the fold rather than at the page edge.
+
+  Accepted answers: `rec` · `F1`/`F2` · `V1` or `no` · free text · *"whatever
+  measures best"* (a real answer — it hands the trade to the numbers).
+
 - **P1 · 2026-07-29 — #288 contain vs detect: is the wall worth wiring, or are the positive invariants the whole defence?**
 
   Artifact: `.dreamwork/review/288-containment.html` · Spec:
