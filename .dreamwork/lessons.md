@@ -3127,3 +3127,13 @@ this shape and convert opportunistically.)
   guard, runs it directly (`node dev/capture/<g>.mjs <outdir> <port>`), and REPORTS the name; the coordinator
   registers it. Say in the ledger that the guard was unregistered at the lane's commit, or its branch reads as
   gating when it does not. Evidence: the correction relayed to `summaryjson` at 06:00, before it wrote.
+
+- **When a red-run comes back green, suspect the INJECTION before the test.** Verifying `#294`'s
+  `test_autoincrement_does_not_reuse_a_deleted_high_water_id`, I dropped `AUTOINCREMENT` and all 14 tests
+  stayed green. By this repo's own rule that is a finding, and I was one step from reporting the lane's test as
+  hollow — but the test's docstring names `task.id` and I had edited `entry.entry_id`. Injecting into the right
+  line reds exactly that one test. So the rule *"a green red-run is a finding, never a relief"* needs its
+  companion: **confirm the injection reached the line the check names.** Both failure modes look identical from
+  the outside — a check that cannot fail, and a probe that never arrived — and this repo has now been bitten by
+  each. Read the docstring's named production line and edit *that*. Evidence: `46c3f4c`; the same session
+  earlier produced an inconclusive lint probe that also proved nothing and was reported as inconclusive.
