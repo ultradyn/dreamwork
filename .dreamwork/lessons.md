@@ -3099,3 +3099,12 @@ this shape and convert opportunistically.)
   might not exist**, and treat "no output" from a compound command as *unknown* until the
   command's exit is checked. This is the same shape as a check that examines nothing —
   absence of a finding is not a finding, and here it manufactured a false one.
+
+- **Writing a marker's literal form inside an entry body makes the parser count it as a marker.** Prose in
+  `#469` mentioned `origin: **unknown**` to explain why an attribution stays unknown, and `lint` correctly
+  errored: *"2 origin markers (loop, unknown) — exactly one is the claim; two is none"*. The checker was
+  right and the writing was wrong. Evidence: `efa3f3a` fixes it by naming the value in words instead.
+  The general shape is that **these files are parsed, so quoting their grammar inside them is writing in
+  it** — the same reason a bolded `Lane-owns:` was invisible to `dev/lane_guard.py` (`#468`) and a nested
+  `- **Answer (via watch…)**` bullet terminated a parsed entry (`#467`). Discuss a marker by describing it,
+  never by spelling it.
