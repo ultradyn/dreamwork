@@ -682,6 +682,30 @@ Next id: **421**
   two claims and one red covers only one
   · it must **not** add a field to `file-formats.md` — the `#419` lane holds that file — so it reuses
   the landed `short`/`got` spelling or reports the field it needs
+  · **RETRACTED 2026-07-28 16:22 — the "UNBLOCKED" note above is WRONG and I dispatched a lane on
+  it before catching that.** His *"Q2 yes"* amended the **design**; it did not authorise the
+  **implementation**. `user-event-journal-implementation.md:19` is explicit: *"landed in the design …
+  **Increment 20 implements it — behind the second gate.**"* And increment 20 is
+  **`E1 envelope`** (`:71`) — **lane E**, which his same 05:43 answer withheld: *"E, the HTTP
+  cutover, and H, the mixed-version gate, **stay behind a second gate** until A–D are proved."*
+  Lanes A, B, C and F are done; **D is not**, so the gate is correctly still shut
+  · **so this entry is blocked on the SECOND GATE, not on Q2.** The lane (`ccc @grok`, dispatched
+  16:14) was killed at 16:20 having committed nothing; its 233-line working diff is kept at
+  `scratchpad/371-abandoned.diff` rather than discarded, since it is the same work whenever the gate
+  opens. No commit, no merge, no change to `master`
+  · **the mistake, named exactly, because the repo had already written this distinction down:** this
+  entry's own text says *"the approval covers the CONTRACT, not #263's implementation"* about the
+  01:27 approval, and I made the identical error one question later with the 05:43 one. **"He
+  answered it" and "we may build it" are different facts, and an answer that arrives inside a
+  neighbouring entry carries no authority beyond its own scope.** I read *"Q2 yes"* as a green light
+  because the sentence was affirmative
+  · `#420`'s census was right that the ruling landed and unprocessed, and wrong — as I was — that
+  processing it means implementing it. Processing it means **recording** that the design changed,
+  which is what this note does
+  · **what would actually unblock it, and it is a question rather than work**: prove lane D, then ask
+  him to open the second gate. That ask does not exist, which makes it a `#419` case — a human gate
+  with no question — and the honest count of open questions on his desk is therefore still 3, not 4,
+  until lane D is proved and the ask is worth making
 
 - **#368** — Break the large Python files into a modular, testable codebase · P2 ·
   refactor/architecture · origin: **human** · **human via watch `add-idea` 2026-07-28 02:46**:
