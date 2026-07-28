@@ -600,5 +600,113 @@ class E5Reject(HttpHarness):
         return row["reason_code"] if row else None
 
 
+class H1MixedVersion(HttpHarness):
+    """H1: mixed-version fail-closed — refuse writes before witnessing.
+
+    A journal whose ``schema_version`` this process cannot understand makes
+    open fail; the cutover path then 503s with no receipt and no
+    ``submissions.log`` line (same end-state as Origin's pre-body gate, at
+    the journal-open seam).  Plan test name:
+    ``test_a_mixed_version_server_refuses_before_witnessing``.
+
+    Production line: ``_bootstrap_meta``'s ``stored != SCHEMA_VERSION`` check
+    (via ``open_journal`` → ``_journal_receive`` → 503 when result is None).
+    Drive more than one foreign version, assert coverage at runtime.
+    """
+
+    def _pin_schema_version(self, foreign):
+        """Create the journal (if needed) then pin a foreign schema_version."""
+        # Ensure the file exists with a real schema first.
+        with open_journal(self._journal_path()) as j:
+            from user_events.sqlite import SCHEMA_VERSION
+            current = int(
+                j.conn.execute(
+                    "SELECT value FROM meta WHERE key = 'schema_version'"
+                ).fetchone()[0]
+            )
+            # Precondition: the foreign value must differ from supported.
+            self.assertNotEqual(foreign, current)
+            self.assertNotEqual(foreign, SCHEMA_VERSION)
+            j.conn.execute(
+                "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                (str(foreign),),
+            )
+            j.conn.commit()
+
+    def test_a_mixed_version_server_refuses_before_witnessing(self):
+        from user_events.sqlite import SCHEMA_VERSION
+
+        # Two foreign versions, derived at runtime so a literal pair cannot
+        # expire when SCHEMA_VERSION moves.  Both must refuse.
+        foreign_versions = (SCHEMA_VERSION + 1, max(SCHEMA_VERSION - 1, 0))
+        if foreign_versions[0] == foreign_versions[1]:
+            # SCHEMA_VERSION == 0 is impossible today; keep the assertion.
+            foreign_versions = (SCHEMA_VERSION + 1, SCHEMA_VERSION + 2)
+        self.assertEqual(len(set(foreign_versions)), 2, foreign_versions)
+        for fv in foreign_versions:
+            self.assertNotEqual(fv, SCHEMA_VERSION)
+
+        refused = []
+        for foreign in foreign_versions:
+            # Fresh target so receipts/submissions from one trial cannot
+            # pollute the next (and so the open path re-reads the meta row).
+            self.doCleanups()
+            self.setUp()
+            self._pin_schema_version(foreign)
+            # A registered write route: after E3 the body is read, then the
+            # journal open is attempted, then submissions.log is written only
+            # on a successful receive.  Mismatch must 503 with neither.
+            status, _, _ = self.post(
+                "/command",
+                {"kind": "add-idea", "text": f"mixed-ver probe {foreign}"},
+            )
+            # open_journal refuses a foreign schema, so count receipts by
+            # raw SQL rather than through the production open path — the
+            # refuse is the property under test; the count is the witness
+            # that no row landed underneath it.
+            import sqlite3 as _sql
+            jpath = self._journal_path()
+            if os.path.exists(jpath):
+                c = _sql.connect(jpath)
+                try:
+                    receipts = int(
+                        c.execute("SELECT COUNT(*) FROM receipts").fetchone()[0]
+                    )
+                finally:
+                    c.close()
+            else:
+                receipts = 0
+            subs = self.submissions_rows()
+            # 503 (or any non-202) with zero durable homes for the write.
+            self.assertNotEqual(
+                status, 202,
+                f"foreign schema_version={foreign} still minted a 202",
+            )
+            self.assertEqual(
+                receipts, 0,
+                f"foreign schema_version={foreign} left {receipts} receipt(s)",
+            )
+            self.assertEqual(
+                len(subs), 0,
+                f"foreign schema_version={foreign} left submissions: {subs}",
+            )
+            refused.append((foreign, status, receipts, len(subs)))
+
+        # Coverage: both foreign versions were exercised and refused.
+        self.assertEqual(len(refused), len(set(foreign_versions)), refused)
+        covered = {r[0] for r in refused}
+        self.assertEqual(covered, set(foreign_versions), refused)
+
+        # Positive half on a clean target: supported schema still 202s.
+        # Without this, a blanket 503 would pass the refuse loop.
+        self.doCleanups()
+        self.setUp()
+        status, _, body = self.post(
+            "/command", {"kind": "add-idea", "text": "supported schema ok"})
+        self.assertEqual(status, 202, body)
+        self.assertEqual(self.receipt_count(), 1)
+        self.assertEqual(len(self.submissions_rows()), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
