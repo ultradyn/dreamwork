@@ -160,10 +160,11 @@ page and a project's dashboard constantly, and a second palette would read as
 a second product. Mono stack, two sizes, dim uppercase labels, hairlines not
 boxes, `72ch` column.
 
-The accent is scarce and spent on exactly three things: a `dreaming` state, a
-nonzero open-question count, and `waiting on you`. Everything else, including
-`stalled` and `missing`, is stated plainly — the page is read at a glance, and
-a wall of red says nothing.
+The accent is scarce and spent only on what is live or actionable: a
+`dreaming` state, a nonzero open-question count, `waiting on you`, and the
+row's one link — the project name, an accent-coloured anchor only when its
+watch is `up`. Everything else, including `stalled` and `missing`, is stated
+plainly — the page is read at a glance, and a wall of red says nothing.
 
 **One second colour, and it means BROKEN rather than live** (`--warn`,
 `#fcd34d`, watch.py's value). It has exactly one user: `.stale`, the line
@@ -211,10 +212,10 @@ Two halves, because neither can see what the other sees.
   fixture, asserting the hub agrees with it and follows a change.
 
 See `dev/hub/README.md`. **Wired into `just test`** since #134 (`09e3397`):
-the `guards` recipe runs `$HUB_GUARDS` (`justfile:130`, `:183`), so a green
-`just test` does cover the hub. This paragraph claimed the opposite for as
-long as it was false, and `dev/hub/README.md` already assumed the wiring —
-two records of one fact, disagreeing (#310).
+`test` depends on `guards`, which runs `$HUB_GUARDS` (`hub` and `contract`),
+so a green `just test` does cover the hub. This paragraph claimed the
+opposite for as long as it was false, and `dev/hub/README.md` already
+assumed the wiring — two records of one fact, disagreeing (#310).
 
 Every check in all three was shown failing on the bug it claims to catch
 before it was trusted. Two checks passed on their own bug the first time and
