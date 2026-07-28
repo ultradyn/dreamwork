@@ -352,6 +352,22 @@ Next id: **414**
   title wraps across lines. Third hand-rolled parser to be wrong today, against a file whose
   production parser was importable the whole time. **`status_sync` should call `watch.parse_*`, never
   re-implement it**
+  · **the derived half is wrong too, measured 12:52 — and it overwrote a correct value.**
+  `status_sync.py:72` gates on `pgrep -af "^ccc @"`. Today's dispatch is
+  `ccc --yolo @glm52 …` — a control flag sits between the binary and the alias, so the anchored
+  pattern matches **nothing** and `current_task_ids` was recomputed from `[331]` to `[]` **while
+  the lane was live**, in the same run that printed a clean sync. So the dashboard reports no
+  current task for the entire duration of every lane dispatched with any flag
+  · **this is worse than the un-derived fields above.** Those rot; this one **actively replaces a
+  correct hand-written value with a derived wrong one**, so the more careful the coordinator is
+  about writing truth, the more the tool destroys. A partial syncer that overwrites what it cannot
+  correctly derive is worse than one that leaves the field alone — which sharpens the coverage
+  rule already recorded here: **naming the fields it does not touch is not enough if it touches a
+  field it cannot compute**
+  · same root as this repo's standing `pgrep` lesson, one level up: that one is *the process name
+  is not its arguments*, this one is *the argument order is not a contract*. `^ccc @` silently
+  encodes "no flags between binary and alias". Match the alias wherever it appears, or resolve the
+  lane from `dreamers[].pid` with `kill -0`, which is exact and needs no pattern
   · related: **#401, #264, #403, #405, #410**
 
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
