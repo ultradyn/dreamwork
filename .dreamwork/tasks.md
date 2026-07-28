@@ -24,9 +24,25 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **451**
+Next id: **452**
 
 ## Open
+- **#451** — authorisation asks are a distinct queue, surfaced in the title bar opposite the composer ·
+  **P2** · dashboard/asking · origin: **human** ·
+  **human via watch 2026-07-29 01:02:** *"when a question is just an authorization request, we should have a
+  special queue for them and something in the title bar, maybe on the RHS mirrored to where the command
+  composer is."*
+  · **the observation behind it is real and measurable:** an authorisation ask carries no design decision — the
+  design is settled and the only content is *may I build it*. `#254` was exactly this (*"Approve I1"* →
+  *"yes"*), `#288`'s was one, and `#263`'s second gate is one. They are the cheapest asks to answer and they
+  currently sit in the same list as multi-part design rulings, which is why they wait longest.
+  · **read with `#445`** (four question/attention modes) — an authorisation queue is plausibly one of the
+  artifact obligations those levels differ on, not a separate feature. Whoever designs either reconciles them.
+  · **scope:** how an authorisation ask is *recognised* (a declared kind in the entry, not a guess from prose
+  — `file-formats.md` is the contract), the separate queue, and the title-bar surface mirroring the composer's
+  side. The mirror placement is his, stated; do not relocate it without asking.
+  · **transitions apply**: a counter that appears or changes in the title bar arrives and departs — read
+  `transitions.md` and reuse the existing idiom rather than authoring a second one.
 - **#450** — note the containment deficiency, and warn per harness where interception is impossible ·
   **P2** · docs/safety · origin: **human** · **from `#288`'s answer, 2026-07-29 00:50** ·
   **his ruling, verbatim:** *"don't do anything too expensive or time consuming. just plan for it and make sure
@@ -2588,6 +2604,10 @@ Next id: **451**
   · **DESIGN LANDED `542c43a` (2026-07-28 23:42, lane `wt/threaded`), and the grant's boundary was respected exactly** — no parser, format, UI, transition or migration touched. Spec at `.dreamwork/docs/plans/threaded-notes-spec.md`. The rule is `qaBranch(q) → [lead, root, branch]`: his `Answer (via watch, …)` is root; failing that the last `Reply (loop, …)` is root (**R1 — the Reply *is* the resolution, not the row above it**); failing that, flat. One branch, one inset, never a staircase, and **prefer flat over wrongly-attached**. Never structure from timestamps. **Artifact deliberately skipped** because N1+R1 left no decision genuinely his — a decoy ask is worse than none. **Implementation is a separate grant and is now on his desk as an `#ask`** (`I1`). It also found four grammar ambiguities, one of which is data loss and is filed as `#446`.
   · **blocked-on: **human** (implementation grant `I1`)**
   · related: **#446**
+  · **IMPLEMENTATION AUTHORISED 2026-07-29 01:01** — *"yes"* to `Approve I1`, via the dashboard. Build it
+  as `.dreamwork/docs/plans/threaded-notes-spec.md` states, with the scope boundaries that ask listed
+  (out: true nesting, `## Answered` threading, two-answer retention which is `#446`, Answered raw-Answer
+  lift). **next-up**, queued behind the `mistperf` lane because it holds `watch.py` and `test_watch.py`.
 - **#253** — Add contextual review annotations and attached discussions · P2 ·
   approved design/implementation · origin: **human** · **approved via watch
   18:35** · preserve static style-isolated iframe; narrow versioned `postMessage`
