@@ -8465,12 +8465,18 @@ def parse_open_questions(text):
 
 
 # A folded entry's body opens with the resolution the loop wrote:
-# `→ <verdict> (<timestamp>): …`. Anchored at the body's start so it can only
-# ever read the RESOLUTION head — a date further down the body is somebody
-# else's date. The timestamp may be hard-wrapped (the file is written at ~72
-# columns), so whitespace inside it is tolerated.
+# `→ <verdict> (<timestamp>): …`. Two entries carry an artifact-pointer line
+# first and the head on the SECOND body line (#233, #229), so the head is
+# anchored to a LINE start (^ + re.M), not the absolute body start (\A), and
+# found with .search. .search still returns the FIRST line-start head, so a
+# date further down the body is never read — and the leading `→` is the
+# never-guess rule: a date with no resolution head is prose, not a verdict
+# (answered_at's docstring: "a wrong date is worse than no date"). The
+# timestamp may be hard-wrapped (the file is written at ~72 columns), so
+# whitespace inside it is tolerated. (\A would make .search identical to
+# .match and is the no-op the trap warns of; the anchor is what changes.)
 RESOLVED_AT = re.compile(
-    r"\A\s*→[^:]*?\((\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*\)")
+    r"^\s*→[^:]*?\((\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*\)", re.M)
 
 
 def answered_at(body):
@@ -8479,7 +8485,7 @@ def answered_at(body):
     A collapsed row (#111) has to stay findable by *when*, and a wrong date is
     worse than no date — so this never guesses, exactly as `note_author`
     never guesses an author."""
-    m = RESOLVED_AT.match(body or "")
+    m = RESOLVED_AT.search(body or "")
     if not m:
         return None
     return m.group(1) + (" " + m.group(2) if m.group(2) else "")

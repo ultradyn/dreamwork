@@ -1976,6 +1976,46 @@ class TestCollector(unittest.TestCase):
         self.assertIsNone(watch.answered_at(''))
         self.assertIsNone(watch.answered_at(None))
 
+    def test_answered_at_finds_the_head_on_a_later_body_line(self):
+        """#411 — two answered entries begin with an artifact-pointer line and
+        carry the `→ answered (…)` marker on the SECOND body line. Anchoring
+        at the body's absolute start (the \\A anchor) dropped a date they plainly
+        carried; the marker is line-anchored (^ + re.M) so it is still found only
+        at a line start and `.search` still returns the FIRST one — a date further
+        down the body is never read. The real live shapes, verbatim."""
+        # #233 LAN binding, verbatim first two body lines (wraps at ~72 cols)
+        lan = ("The threat-model review is at\n"
+               "  → answered (2026-07-26 17:49): Approved A: ship explicit\n"
+               "  trusted-LAN mode.\n")
+        self.assertEqual(watch.answered_at(lan), "2026-07-26 17:49")
+        # #229 threaded topic chats, verbatim first two body lines
+        tc = ("The reviewed artifact is at\n"
+              "  → answered (2026-07-26 17:11): Revision directed, not\n"
+              "  approved.\n")
+        self.assertEqual(watch.answered_at(tc), "2026-07-26 17:11")
+        # an indented marker still counts — the file writes at 2-space indent
+        self.assertEqual(
+            watch.answered_at("  → resolved (2026-07-25 09:00): ok.\n"),
+            "2026-07-25 09:00")
+
+    def test_answered_at_returns_none_when_a_date_has_no_resolution_arrow(self):
+        """#411 — the never-guess half. A date that is not behind a `→`
+        resolution head is prose, not a verdict, so it returns None even when
+        a date is unambiguously present. This is the rule that makes widening
+        the pattern dangerous: a wider pattern that finds a date anywhere in
+        the body would manufacture a wrong date for withdrawn entries."""
+        # withdrawn shape: the verdict is in the TITLE, the body opens with the
+        # reasoning and carries NO arrow head anywhere
+        withdrawn = ("decided by the loop, and withdrawn as an ask.\n"
+                     "  Rec (b) stands — never landed.\n")
+        self.assertIsNone(watch.answered_at(withdrawn))
+        # a date with no arrow anywhere is not a resolution
+        self.assertIsNone(
+            watch.answered_at("Some prose mentioning 2026-07-25 in passing.\n"))
+        # a date on a later line with no `→` is still not a resolution head
+        self.assertIsNone(
+            watch.answered_at("First line.\n  Closed on (2026-07-25).\n"))
+
     def test_a_retained_answer_bullet_is_his_contribution_not_body_prose(self):
         """#340 — his answer rendered as unattributed prose on 22 of 36 entries.
 
