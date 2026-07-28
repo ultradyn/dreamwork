@@ -39,3 +39,5 @@ append — never a deletion — so a folded hand-off is not flagged twice.
 
 - **#331** · landed `ddc4e3e` · 2026-07-28 13:13 · by dreamer-331 — one IDS_ONLY_SPAN core in watch.py, consumed by lint.LEDGER_ID and status_sync.LEDGER_HEAD; landed 152→171, open 135, all 19 joined-span ids recovered; red-proved both directions; the three guard reds (qacard/docktarget/noteprop) reproduce at parent 97becd9 and were fixed on master by 7007d5b+e15b0c0 (guard-contract fixes, not this parser change)
 - **#411** · landed `25a3fe4` · 2026-07-28 14:08 · by grok (wt/411) — (also `54c68e8`) answered_at anchor \A→^+re.M+.search so the 2 second-line markers recover (5→3 None); 44 dated byte-identical; lint WARN with derived count; both red-proofs discriminating
+
+- **#367** · landed `a36c674` · 2026-07-28 15:02 · by grok (wt/367p) — option previews A/B/C at true below-cliff geometry; chrome measured at load (A 167.9 / B 127.2 / C 31.8 px at 780); 16px margin holds at 640; row-count red-proof 3→1 rows
