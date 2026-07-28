@@ -160,8 +160,11 @@
   - **Answer (via watch, 2026-07-29 01:43):** yes, provided no good
     reasons not to.
 
-- **P1 · 2026-07-28 — #264: ratify the task-transition boundary, and one deployment call
-  only you can make.** Artifact: `.dreamwork/review/task-transition-boundary.html` (open it from
+- **P1 · 2026-07-28 — #264: ratify the task-transition boundary, and one deployment call only you can make.**
+  → answered (2026-07-29 01:43): **`rec` on the boundary and `(c)` on the deployment call, plus *"we
+  should keep a .jsonl log"*.** Folded into `#264`; the log requirement is recorded there. The marker was
+  dropped at fold time, which is the regression this check exists to surface (#411).
+  Artifact: `.dreamwork/review/task-transition-boundary.html` (open it from
   the dashboard's review list); design at `.dreamwork/docs/plans/task-transition-boundary.md`,
   landed design-only at `914648c`. **Nothing is built** — no table, no CLI, no migration.
   **You are right that this was missing and it was my failure.** I told you in an answer at 15:02
@@ -213,6 +216,9 @@
     merge event streams.
 
 - **P1 · 2026-07-28 — #263: the second gate's condition is met, verified this time. Open it?**
+  → answered (2026-07-29 01:37): ***"ack good to go"* — the second gate is OPEN.** Lanes E, G and H
+  authorised; payload purge and the PostgreSQL half stay excluded by the earlier Q4 ruling. Folded into
+  `#263`; E1-E4 have since landed. Marker dropped at fold time (#411).
   **Ask: `rec` for "open E and H, split `#368` first" — or answer Q1/Q2/Q3 separately.** Free text
   fine; *"not yet"* is a real answer.
   **Q1 — open the gate for lane E** (increments 20–25, the HTTP cutover: the journal commit, not the
@@ -590,8 +596,10 @@
   same way — each names a file or a unit, so each is one line to check.
   - **Answer (via watch, 2026-07-28 14:48):** yes
 
-- **P2 · 2026-07-25 — #194: where does an upgrade check get its commit range,
-  → resolved (2026-07-28 06:25): **decided by the loop, and withdrawn as an ask.**
+- **P2 · 2026-07-25 — #194: where does an upgrade check get its commit range?**
+  → resolved (2026-07-25): the question was decided by the loop and withdrawn as an ask. Rec **(b)**
+  stands. (The marker used to sit inside a two-line bold title, where `watch.answered_at` cannot see it —
+  it reads only the head of the body.)
   Rec **(b)** stands — CI ships a generated changelog inside the release, and the
   upgrade pass reads a local file. Withdrawn under his 05:35 rule: option (a) puts a
   credential requirement in the startup path of a loop whose entire promise is
@@ -652,7 +660,10 @@
     commits as an installed-release upgrade on every tick.
 
 
-- **P3 · 2026-07-25 — dreamhub URL space: one hub URL, or one per project?
+- **P3 · 2026-07-25 — dreamhub URL space: one hub URL, or one per project?**
+  → resolved (2026-07-25): decided by the loop and withdrawn as an ask — he never answered it and no
+  longer needs to. Origin-per-project stands, on the measurement already recorded below. (Marker was
+  inside a two-line bold title.)
   → resolved (2026-07-28 06:25): **decided by the loop, and withdrawn as an ask —
   he never answered it and no longer needs to.** Origin-per-project stands, on the
   measurement already in this entry: `routeOf()`/`isInternal()` compare
@@ -2751,6 +2762,8 @@
   Detail lives in `docs/plans/ud-dreamwork-github.md` and the plugin's
   own SKILL.md.
 - **Four early asks, all applied (2026-07-25)** — the alignment-review
+  → resolved (2026-07-25): a summary of four asks that were each applied. It poses nothing, so it has no
+  resolution of its own beyond this line — recorded so the check can tell it apart from a dropped marker.
   shape (#36), roll.py timing (#37), the dogfood reflection, and Task D's
   flow diagram. each
   now lives where it acts (the review routine in SKILL.md, roll.py and
