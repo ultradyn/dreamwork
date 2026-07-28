@@ -27,10 +27,19 @@
    usage: node rejectwrite.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
-const OUT = process.argv[2], PORT = +(process.argv[3] || 39891);
+import { serveVerified } from './serve.mjs';
+const freePort = () => new Promise(res => {
+  const s = createServer();
+  s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
+});
+const OUT = process.argv[2];
+// OWN-SERVER GUARD: ephemeral port, argv[3] deliberately ignored (#471).
+// #461 taught that adopting argv[3] forces this onto the shared recipe port,
+// serveVerified refuses, and the assertions never run.
+const PORT = await freePort();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 
@@ -57,12 +66,9 @@ rmSync(dir, { recursive: true, force: true });
 cpSync('dev/capture/fixture', dir, { recursive: true });
 writeFileSync(join(dir, '.dreamwork', 'questions.md'), QUESTIONS);
 writeFileSync(join(dir, '.dreamwork', 'answers.md'), ANSWERS);
-const server = spawn('python3', ['watch.py', '--target', dir,
-                                 '--port', String(PORT)],
-                     { stdio: 'ignore' });
+const server = await serveVerified(dir, PORT);
 const stop = () => { try { server.kill(); } catch (e) {} };
 process.on('exit', stop);
-await sleep(2500);
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 
@@ -135,39 +141,59 @@ const REJECTED = { status: 202, contentType: 'application/json',
   if (!hasBox) {
     checks.push('FAIL an open answer box exists (else every check below is about a page that has none)');
   } else {
-  // seed the draft store by TYPING (dwDraft.save fires on input, so the key
-  // is created with whatever target prefix the live page uses — we don't need
-  // to know it, only that a key exists before and survives after).
+  // seed the draft store by TYPING (dwDraft.save → DraftStore on input).
+  // Post-ca799f5 (#269/#459 DraftStore) the live key is
+  // dw:draft:v1:<target>:card:<title>, not dw:adraft:<target>:<title>.
+  // Derive the expected key at runtime from data.target + data-qid so a
+  // hollow prefix count cannot pass on an empty store (and cannot FAIL when
+  // the page is correct but the shape has moved). Production line that reds
+  // the survival half: isDurable / the clear-on-success branch of sendAnswer
+  // (watch.py: if (DraftStore.isDurable(res)) dwDraft.clear(...)).
   await p.fill('.qa.open textarea', 'pre-seeded draft that must survive');
   await p.dispatchEvent('.qa.open textarea', 'input');
   await sleep(150);
-  const seeded = await p.evaluate(() =>
-    Object.keys(localStorage).filter(k => k.startsWith('dw:adraft:')).length);
-  notes.push(`answer: seeded dw:adraft keys=${seeded}`);
+  const seeded = await p.evaluate(t => {
+    const tgt = (typeof data !== 'undefined' && data && data.target) || '';
+    const title = t ? decodeURIComponent(t) : '';
+    const v1 = tgt && title ? 'dw:draft:v1:' + tgt + ':card:' + title : '';
+    const legacy = tgt && title ? 'dw:adraft:' + tgt + ':' + title : '';
+    return {
+      v1, legacy, target: tgt, title,
+      v1Present: !!(v1 && localStorage.getItem(v1)),
+      legacyPresent: !!(legacy && localStorage.getItem(legacy)),
+    };
+  }, title);
+  notes.push(`answer: seeded ${JSON.stringify(seeded)}`);
+  // Precondition: the save-on-input path actually wrote the DraftStore key.
+  // Without this, "does not clear" passes vacuously when nothing was stored.
+  ok('answer precondition: typing wrote the DraftStore v1 card key',
+     !!seeded.target && !!seeded.title && seeded.v1Present &&
+     seeded.v1.indexOf(seeded.target) >= 0);
   await p.route('**/answer', r => r.fulfill(REJECTED));
   const typed = 'an answer whose body the server rejects';
   await p.fill('.qa.open textarea', typed);
   await p.dispatchEvent('.qa.open textarea', 'input');
   await p.click('.qa.open .qsend');
   await sleep(800);
-  const rej = await p.evaluate(t => {
+  const rej = await p.evaluate(({ t, expectedV1 }) => {
     const card = document.querySelector(`.qa[data-qid="${CSS.escape(t)}"]`) ||
                  document.querySelector('.qa[data-qid]');
     const ta = card && card.querySelector('textarea');
     const err = card && card.querySelector('.qerr');
+    const v1Still = !!(expectedV1 && localStorage.getItem(expectedV1));
     return { cls: card ? card.className : null,
              kept: ta ? ta.value : null,
              err: err ? err.textContent : null,
              answered: !!(card && card.querySelector('.anstag')),
-             drafts: Object.keys(localStorage).filter(k => k.startsWith('dw:adraft:')).length };
-  }, title);
-  notes.push(`answer rejected: cls="${rej.cls}" kept=${JSON.stringify(rej.kept)?.slice(0,40)} err=${JSON.stringify(rej.err)?.slice(0,60)} drafts=${rej.drafts}`);
+             v1Still, expectedV1 };
+  }, { t: title, expectedV1: seeded.v1 });
+  notes.push(`answer rejected: cls="${rej.cls}" kept=${JSON.stringify(rej.kept)?.slice(0,40)} err=${JSON.stringify(rej.err)?.slice(0,60)} v1Still=${rej.v1Still}`);
   ok('a rejected /answer keeps his text — the only copy of it',
      rej.kept === typed);
   ok('...and never shows the answered state for a write that did not land',
      !rej.answered && /\bopen\b/.test(rej.cls || ''));
   ok('...and does not clear the draft store (the permanent-loss vector)',
-     rej.drafts > 0);
+     rej.v1Still);
   ok('...and names the reason in his voice', !!rej.err &&
      /not written \(rejected\)/.test(rej.err) && /what you typed is still here/.test(rej.err));
   await p.screenshot({ path: `${OUT}/answer-rejected.png`, fullPage: true });
@@ -189,9 +215,6 @@ const REJECTED = { status: 202, contentType: 'application/json',
     const c = document.querySelector('.qa[data-qid]');
     return c ? c.getAttribute('data-qid') : null;
   });
-  await p.evaluate(t => {
-    // seed by typing below instead — dwDraft.save needs the live target prefix
-  }, title);
   // switch to note mode so the send routes to /comment
   const noteBtn = await p.evaluate(() => {
     const card = document.querySelector('.qa.open') || document.querySelector('.qa');
@@ -203,24 +226,38 @@ const REJECTED = { status: 202, contentType: 'application/json',
   await p.fill('.qa.open textarea, .qa textarea', 'pre-seeded note that must survive');
   await p.dispatchEvent('.qa.open textarea, .qa textarea', 'input');
   await sleep(150);
+  // Same DraftStore v1 shape as /answer (ca799f5); derive at runtime.
+  const seeded = await p.evaluate(t => {
+    const tgt = (typeof data !== 'undefined' && data && data.target) || '';
+    const title = t ? decodeURIComponent(t) : '';
+    const v1 = tgt && title ? 'dw:draft:v1:' + tgt + ':card:' + title : '';
+    return {
+      v1, target: tgt, title,
+      v1Present: !!(v1 && localStorage.getItem(v1)),
+    };
+  }, title);
+  notes.push(`comment: seeded ${JSON.stringify(seeded)}`);
+  ok('comment precondition: typing wrote the DraftStore v1 card key',
+     !!seeded.target && !!seeded.title && seeded.v1Present);
   await p.route('**/comment', r => r.fulfill(REJECTED));
   const typed = 'a follow-up whose body the server rejects';
   await p.fill('.qa.open textarea, .qa textarea', typed);
   await p.dispatchEvent('.qa.open textarea, .qa textarea', 'input');
   await p.click('.qa.open .qsend, .qa .qsend');
   await sleep(800);
-  const rej = await p.evaluate(t => {
+  const rej = await p.evaluate(({ t, expectedV1 }) => {
     const card = document.querySelector(`.qa[data-qid="${CSS.escape(t)}"]`) ||
                  document.querySelector('.qa[data-qid]');
     const ta = card && card.querySelector('textarea');
     const err = card && card.querySelector('.qerr');
+    const v1Still = !!(expectedV1 && localStorage.getItem(expectedV1));
     return { kept: ta ? ta.value : null,
              err: err ? err.textContent : null,
-             drafts: Object.keys(localStorage).filter(k => k.startsWith('dw:adraft:')).length };
-  }, title);
-  notes.push(`comment rejected: kept=${JSON.stringify(rej.kept)?.slice(0,40)} err=${JSON.stringify(rej.err)?.slice(0,60)} drafts=${rej.drafts}`);
+             v1Still };
+  }, { t: title, expectedV1: seeded.v1 });
+  notes.push(`comment rejected: kept=${JSON.stringify(rej.kept)?.slice(0,40)} err=${JSON.stringify(rej.err)?.slice(0,60)} v1Still=${rej.v1Still}`);
   ok('a rejected /comment keeps his text', rej.kept === typed);
-  ok('...and does not clear the draft store', rej.drafts > 0);
+  ok('...and does not clear the draft store', rej.v1Still);
   ok('...and names the reason in his voice', !!rej.err &&
      /not written \(rejected\)/.test(rej.err));
   await p.screenshot({ path: `${OUT}/comment-rejected.png`, fullPage: true });
