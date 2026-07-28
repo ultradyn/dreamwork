@@ -3003,3 +3003,19 @@ this shape and convert opportunistically.)
   broken", and those get conflated exactly when a plausible story is already in
   hand. Measure the pre-state from history, per subject, before generalising one
   finding into a sweep.
+
+- **A red-proof that needs the diff's own new code to be reachable proves nothing
+  about the defect.** `#461`'s batch 2 converted eight guards that were already
+  immune (ephemeral ports, inline responder checks) and reported red-proving each
+  one *"with a squatter on the pin each guard takes from `argv[3]`"*. They took no
+  such pin: **the conversion added it**, with a comment saying it existed so a
+  squatter proof could aim. The proof was real, the failure was real, and both were
+  properties of the new code. **Evidence, and it is why this mattered more than
+  churn:** the `guards` recipe hands every guard `{{port}}` while the shared server
+  already holds it, so the added pin aims eight self-porting guards at a socket
+  that is guaranteed occupied — under that exact condition the converted guard
+  exits 1 and master's exits 0. The rollout would have reddened eight guards in
+  `just test` to fix a defect none of them had. Test: **could this red have been
+  produced against the code as it stood before the diff?** If reaching the failure
+  required a parameter, flag or seam the same change introduced, the proof is
+  circular — and it will look most convincing exactly when the change is largest.

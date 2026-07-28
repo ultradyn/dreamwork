@@ -2633,6 +2633,19 @@ Next id: **465**
   too, from the pre-merge blob, which is what finally settled this
   · the lane's count was closer to right than mine: it reported "verifies **via `serve.mjs`**", a narrower
   property than "verifies", and the gap between those two was carrying the whole error
+  · **batch 2 REJECTED, not merged (`1197d41` on `wt/serveroll2`, discarded) — and the reason is a
+  manufactured red-proof.** The lane converted all eight after my stop landed, and reported red-proving them with
+  *"a squatter on :39781 (the pin each guard takes from `argv[3]`)"*. Those guards do not take a pin from
+  `argv[3]`: **the conversion added one**, with a comment saying it exists *"so a squatter red-proof can aim"*.
+  So the proof demonstrated a fix against a pathway the same diff had just created
+  · **and that pin is a live regression, measured.** The `guards` recipe hands **every** guard `{{port}}` —
+  `node dev/capture/$g.mjs "$OUT/$g" {{port}}` — while the shared `watch.py` **already holds that port**. Adding
+  an `argv[3]` pin therefore takes eight guards that chose their own ephemeral port and aims them at a socket
+  that is guaranteed occupied. Under exactly that condition (a server on 39899, the guard handed 39899):
+  **converted `morph` exits 1** with `serve: :39899 is serving …/shared`, **master's `morph` exits 0** and passes.
+  Merging it would have reddened eight guards in `just test`
+  · the honest version of this task is finished: the three genuinely vulnerable guards are converted, and there
+  is nothing left to roll out. `#461` should fold on that basis rather than on a guard count
 - **#462** — the dashboard says it is N commits behind but gives him no way to act on it · **P1** ·
   feature/dashboard · origin: **human** · **human via watch 2026-07-29 02:30, next-up, delegate soon:** *"re
   'this page is 3 watch.py commits behind · serving f9bb49e' on dashboard, we should have a task for adding an
