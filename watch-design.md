@@ -2133,6 +2133,18 @@ title** (#385). `qtHtml` splits an optional `P1 · ` priority, the
 filled by the standing `ages()` sweep. No date in the title stays plain text.
 The date is day-resolution only, so `ct` is local midnight of that day.
 
+**A question headline is therefore no longer its title.** `qtHtml` emits the
+age span *between* the date and the ` — ` separator, so `.qt`'s textContent is
+not the raw title with something appended — the title is **interrupted**, and a
+substring test against it fails. Anything asking *"is this the same question?"*
+of rendered text must strip the age node first; `dev/capture/dom.mjs`'s
+`dockHeadline` is the one copy of that rule and both dock guards use it. This is
+not hypothetical: adding the age silently reddened `docktarget` and `noteprop`
+for six hours, and because the failures were inherited by every lane as
+"pre-existing" nobody read them. Identity that must survive presentation belongs
+in **data** — `posted.question` (#266) reads the question id path, never the
+headline, and it stayed correct throughout.
+
 **The number of figures IS the precision, and that is a deliberate departure
 from #385's always-two-figures grammar** (#392a). A question title carries a
 DAY and no TIME, so its midnight `ct` cannot honestly produce the hour figure

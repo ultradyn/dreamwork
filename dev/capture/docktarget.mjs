@@ -10,6 +10,7 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
+import { dockHeadline } from './dom.mjs';
 
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -40,7 +41,7 @@ async function openPhase(mode) {
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));
   await page.goto(url, { waitUntil: 'networkidle' });
-  const shownBefore = await page.locator('#qdock .qt').first().textContent();
+  const shownBefore = await dockHeadline(page);
   let posted = null;
   await page.route(`**/${mode === 'note' ? 'comment' : 'answer'}`, async route => {
     posted = JSON.parse(route.request().postData() || '{}');
@@ -68,7 +69,7 @@ for (const phase of phases) {
   await page.waitForFunction(title =>
     typeof data !== 'undefined' && data.questions_open[0].title !== title,
     original.title, { timeout: 7000 });
-  const shownAfter = await page.locator('#qdock .qt').first().textContent();
+  const shownAfter = await dockHeadline(page);
   if (mode === 'note') await page.locator('#qdock .qmode[data-mode="note"]').click();
   const text = `stable ${mode} target sentinel`;
   await page.locator('#qdock textarea').fill(text);
@@ -76,8 +77,17 @@ for (const phase of phases) {
   for (let i = 0; i < 20 && !phase.posted(); i++) await page.waitForTimeout(25);
   const posted = phase.posted();
   ok(`${mode}: no page errors`, errors.length === 0);
+  // #385 put a live age INSIDE this headline, so the raw title is no longer a
+  // contiguous substring of `.qt`'s textContent -- `dockHeadline` strips the
+  // age node and asks the identity question of the stable part. The check the
+  // #266 invariant actually rests on is `posted.question` below, which reads
+  // data rather than pixels and never broke.
   ok(`${mode}: dock visibly remains original after in-memory reorder`,
      shownBefore?.includes(original.title) && shownAfter?.includes(original.title));
+  // Anti-vacuity: `includes` on a null/empty headline is not a match, but an
+  // empty ORIGINAL title would make both sides trivially true. Derive it.
+  ok(`${mode}: precondition -- a non-empty original title to match against`,
+     typeof original.title === 'string' && original.title.length > 10);
   ok(`${mode}: request was made`, !!posted);
   ok(`${mode}: request targets visibly docked question after reorder (#266)`,
      posted?.question === original.title);
