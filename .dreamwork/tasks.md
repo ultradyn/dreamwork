@@ -357,53 +357,7 @@ Next id: **410**
   both to whoever takes it, per the lesson that an ownership list comes from the deliverables
   · related: **#381**
 
-- **#394** — a dreamer lane reports only to the inbox, so its landing dies with its coordinator ·
-  P2 · loop/durability · origin: **loop** · found while verifying **#381** end to end
-  · `#381` built the delivery half of the single-writer rule and **both its readers work** — but
-  `## Pending` was **empty** while two lanes had just landed work they cannot write the ledger for.
-  Not a defect in #381: **nothing instructs a producer.** Every brief I write says *"report by
-  appending once to `.dreamwork/inbox.md`"*, and an inbox report is **prose nobody parses**
-  · the inbox has never lost a report *while a coordinator is alive to read it*. `#334` and `#362`
-  are the other case — work landed, nobody folded, an hour each. **That is precisely the case a
-  hand-off line survives and an inbox report does not:** one is machine-checked by `lint.py` and
-  rendered on the dashboard, the other is paragraphs
-  · so a lane should write **both**: the inbox report for the coordinator's judgement, and one
-  hand-off line for the ledger's bookkeeping. Cheap — one `cat >>` per landing
-  · where the instruction belongs is the open question: my brief prose is not durable, so the
-  candidate is `SKILL.md`'s Subagents section, beside *"All subagents report to the coordinator
-  through a file"* — which is already the right paragraph and already load-bearing
-  · related: **#381, #398, #400, #404**
 
-  · **LANDED (instruction), VERIFICATION PENDING** 2026-07-28 08:59 — `SKILL.md` now states the
-  obligation at dispatch time with the reason: the inbox carries judgement, is prose, and is read by
-  a coordinator **once**; the hand-off carries the id and the sha and is read by `lint.py` and the
-  dashboard **forever**. Relayed to all three live lanes with `handoffs.md` explicitly granted,
-  since none of their briefs could have granted it
-  · **it is not verified yet and I will not record it as such.** The test is whether a hand-off line
-  actually appears when a lane lands — and **the relay is itself a write-then-hope channel with no
-  wake**, which is the irony `#381`'s lane pointed at and did not act on. A lane already past its
-  increment boundary may never read it, so a silent result proves nothing about the instruction and
-  everything about the delivery. If none of the three writes a line, the finding is that the
-  instruction must reach a lane **in its dispatch prompt**, not in a relay it may never open
-  · so the durable half of this fix is the brief template rather than `SKILL.md` alone — every
-  future dispatch prompt carries the line, and that is a coordinator habit with no enforcement.
-  A `lint.py` check that a landed-and-committed lane left a hand-off is not possible (lint cannot
-  know a lane ran); what *is* checkable is the condition `#381` already checks
-  · **VERIFIED NEGATIVE 2026-07-28 09:12, which is the result I predicted and it settles the
-  design.** `#395` landed `301f195` and exited having written **no hand-off line**; its report
-  mentions the relay **zero** times. So the instruction did not reach it. Per the annotation above
-  I do not read this as "the instruction is wrong" — I read it as **"the relay was the wrong
-  channel"**, which is what that annotation said the silent case would mean
-  · **and the control exists, which makes it a measurement rather than a guess:** `#389`'s lane
-  *did* read its relay and reported on it by name. So relays are read by lanes with increments left
-  and missed by lanes that run straight through — a property of the lane's own decomposition, which
-  is chosen after dispatch and is invisible to me. Recorded as a lesson
-  · **so the fix moves: every dispatch prompt carries the hand-off line.** `SKILL.md` already states
-  the obligation; what it must also say — and now does not — is that the obligation goes in the
-  *prompt*, because a lane reads its brief and prompt exactly once and reliably. That is a one-line
-  amendment and it is the remaining work on this task
-  · `#396` is still in flight with the same relay-delivered obligation, so it is a second trial of
-  the same negative; do not treat its silence as new information
 - **#392** — the humanized question age is measured from midnight, so it is wrong by up to a
   day · P2 · dashboard/correctness · origin: **loop** · found by coordinator **looking at the
   deployed page** after redeploying, not by any check
@@ -3014,6 +2968,72 @@ Next id: **410**
   **blocked**: human pick
 
 ## Recently landed
+- **#394** — a dreamer lane reports only to the inbox, so its landing dies with its coordinator ·
+  P2 · loop/durability · origin: **loop** · found while verifying **#381** end to end
+  · `#381` built the delivery half of the single-writer rule and **both its readers work** — but
+  `## Pending` was **empty** while two lanes had just landed work they cannot write the ledger for.
+  Not a defect in #381: **nothing instructs a producer.** Every brief I write says *"report by
+  appending once to `.dreamwork/inbox.md`"*, and an inbox report is **prose nobody parses**
+  · the inbox has never lost a report *while a coordinator is alive to read it*. `#334` and `#362`
+  are the other case — work landed, nobody folded, an hour each. **That is precisely the case a
+  hand-off line survives and an inbox report does not:** one is machine-checked by `lint.py` and
+  rendered on the dashboard, the other is paragraphs
+  · so a lane should write **both**: the inbox report for the coordinator's judgement, and one
+  hand-off line for the ledger's bookkeeping. Cheap — one `cat >>` per landing
+  · where the instruction belongs is the open question: my brief prose is not durable, so the
+  candidate is `SKILL.md`'s Subagents section, beside *"All subagents report to the coordinator
+  through a file"* — which is already the right paragraph and already load-bearing
+
+  · **LANDED (instruction), VERIFICATION PENDING** 2026-07-28 08:59 — `SKILL.md` now states the
+  obligation at dispatch time with the reason: the inbox carries judgement, is prose, and is read by
+  a coordinator **once**; the hand-off carries the id and the sha and is read by `lint.py` and the
+  dashboard **forever**. Relayed to all three live lanes with `handoffs.md` explicitly granted,
+  since none of their briefs could have granted it
+  · **it is not verified yet and I will not record it as such.** The test is whether a hand-off line
+  actually appears when a lane lands — and **the relay is itself a write-then-hope channel with no
+  wake**, which is the irony `#381`'s lane pointed at and did not act on. A lane already past its
+  increment boundary may never read it, so a silent result proves nothing about the instruction and
+  everything about the delivery. If none of the three writes a line, the finding is that the
+  instruction must reach a lane **in its dispatch prompt**, not in a relay it may never open
+  · so the durable half of this fix is the brief template rather than `SKILL.md` alone — every
+  future dispatch prompt carries the line, and that is a coordinator habit with no enforcement.
+  A `lint.py` check that a landed-and-committed lane left a hand-off is not possible (lint cannot
+  know a lane ran); what *is* checkable is the condition `#381` already checks
+  · **VERIFIED NEGATIVE 2026-07-28 09:12, which is the result I predicted and it settles the
+  design.** `#395` landed `301f195` and exited having written **no hand-off line**; its report
+  mentions the relay **zero** times. So the instruction did not reach it. Per the annotation above
+  I do not read this as "the instruction is wrong" — I read it as **"the relay was the wrong
+  channel"**, which is what that annotation said the silent case would mean
+  · **and the control exists, which makes it a measurement rather than a guess:** `#389`'s lane
+  *did* read its relay and reported on it by name. So relays are read by lanes with increments left
+  and missed by lanes that run straight through — a property of the lane's own decomposition, which
+  is chosen after dispatch and is invisible to me. Recorded as a lesson
+  · **so the fix moves: every dispatch prompt carries the hand-off line.** `SKILL.md` already states
+  the obligation; what it must also say — and now does not — is that the obligation goes in the
+  *prompt*, because a lane reads its brief and prompt exactly once and reliably. That is a one-line
+  amendment and it is the remaining work on this task
+  · `#396` is still in flight with the same relay-delivered obligation, so it is a second trial of
+  the same negative; do not treat its silence as new information
+  · **VERIFIED AND CLOSED** 2026-07-28 10:45 — `6f72b8d` (SKILL.md) + `9e7e209` (dispatch prompt),
+  enforced by `#398`'s lint check (`9f2012a`)
+  · **this entry named its own test and the test has now run.** It said the question was *"whether a
+  hand-off line actually appears when a lane lands"*, and predicted that if the relayed lanes wrote
+  nothing, *"the finding is that the instruction must reach a lane in its dispatch prompt, not in a
+  relay it may never open"*. **Both halves came back exactly as predicted.** The relay arm: the lane
+  that landed wrote no line and its report never mentioned the relay. The dispatch-prompt arm,
+  measured across a four-lane batch: **4 of 4 wrote one**
+  · **and the measurement corrected me once, which is why it is worth stating how it was taken.** At
+  09:46 I observed two landed lanes with no hand-off line and nearly filed *"prompt placement is
+  insufficient"*. I withheld it because both lanes were **still alive**; both wrote within fifteen
+  minutes. **A landing and its hand-off are not one act**, so a compliance count taken at commit time
+  measures the wrong moment — `pgrep`, not the file, decides when to count
+  · **what it did NOT fix, now filed rather than assumed:** the line can land in the wrong section
+  (**#406**, fixed), carry an id no reader accepts (**#401**, fixed), or be suppressed by another
+  landing's fold (**#409**, open). And one lane wrote a hand-off but **no inbox report at all**, so
+  the sentence this entry leaned on — *"the inbox has never lost a report"* — is **false as of
+  today** and `SKILL.md` has been corrected (**#404**)
+  · related: **#381, #398, #400, #404**
+
 - **#401** — a sub-id hand-off is invisible to **every** reader: the parser drops it, the
   malformed-validator cannot see it, and the correlation would not match it either · **P1** ·
   handoffs-parser/correctness · origin: **loop** · found by asking what the grammar accepts of the
