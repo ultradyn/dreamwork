@@ -55,6 +55,48 @@ carries a `+` command opener (steer the loop without a chat turn).
   All file access goes through `resolve_confined()` (rejects absolute, `~`,
   traversal); `/filedata`, `/filebytes` (#336) and `/reviewraw` are all
   behind it.
+- **`/summary.json` — a redacted, whitelist view of `collect()` for any
+  non-loopback consumer** (Q5; `plans/hub-public-auth.md` §11.2,
+  `plans/hub-ssh-auth.md`). `/data.json` serves `DREAMWORK.md`,
+  `questions.md` and `lessons.md` **in full** plus parsed entries, dream
+  transcripts and `status.json` — the loop's whole operating state, including
+  the operator's unfinished thinking — so it is unfit to expose. `summary()`
+  (served at `/summary.json`) replaces it for dreamhub reading across
+  projects and any later authenticated remote reader: it keeps the counts,
+  health and operational metadata and drops every full-text and parsed-entry
+  field.
+  **Redaction is a whitelist, never a denylist.** `summary()` names the
+  fields that may leave (`SUMMARY_ALLOWED`) and pulls only those; it never
+  iterates `collect()`'s keys, so a field `collect()` grows cannot appear
+  unless deliberately classified. Whether a new `collect()` key may leave is
+  a decision recorded in `SUMMARY_ALLOWED` or `SUMMARY_DENIED`, and the
+  partition test (`TestSummary.test_summary_classifies_every_collect_key`)
+  is what notices that decision got made — a brand-new unclassified key reds
+  until classified rather than passing through by default. That is the heart
+  of the endpoint: the next field someone adds is safe by construction, not
+  by vigilance.
+  **The whitelist, field by field.** `generated` (build stamp), `open_questions`
+  (an int count), `questions_health`/`answers_health` (enum tokens — `ok`/
+  `missing`/`unreadable`/`empty`, never prose), `tint`/`run_mode` (closed
+  enum values, not his words), `posture` (only the four enum/int axes — pace,
+  asking, delegation, source — never the display label), `skill_identity`
+  (commit + skill_version), `burndown_counts` (only the three scalar counts —
+  open/arrived/landed — never the working-cadence time series or error prose),
+  and `skill_version` (the one safe scalar pulled out of `files`, projected
+  from `files.skill-version`). A ledger or question **title** is often a
+  description of his words, and a question title **is** his words — so neither
+  titles nor any parsed entry leaves, and the decision was made at the
+  category (everything carrying his words is denied by name) rather than per
+  title. Everything else — full documents, parsed entries, transcripts,
+  handoffs, `status`, `git`, `deployed`, `plugin_commands`, the machine path
+  — is denied by name in `SUMMARY_DENIED`.
+  **It rides the same `_preflight()` authority gate as every other GET**; the
+  endpoint adds a read surface, never a wider authority. Where it may listen
+  is a separate ruling (`#275`/Q3) the human has not given, and this lane
+  changed no bind address, host allowlist, flag or listener. Guard:
+  `dev/capture/summaryjson.mjs` — a fetch-only (not browser) content/leak
+  check, with leak strings DERIVED from the fixture's real documents and
+  their PRECONDITION asserted (the probe really is in `/data.json`).
 - **Port** persisted to `.dreamwork/watch-port` (random 3000–63000 once)
   so bookmarks survive restarts; port-in-use error names the port.
 - **Live reload**: poll `/mtime` ~2s → re-fetch `/data.json` → re-render
