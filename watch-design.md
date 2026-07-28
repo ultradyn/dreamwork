@@ -2538,12 +2538,39 @@ Detail is ranked, never withheld: the summary is the line, and the individual
 missing commits are in its `title`, so hovering gives the whole list without
 the panel growing to hold it — the hub's arrangement, one surface over.
 
-**No new motion, deliberately.** The line's presence can only change when
-HEAD moves, and that is already the commits panel's own gesture (#151): the
-sha sequence changed, so `regroupCards` runs and the rows travel from where
-they were — which is below where the line now is. The other direction
-(`behind` → `current`) happens only on a redeploy, and a redeploy is a new
-process, so `GENERATION` changes and the page reloads.
+**The remedy is on the page (#462).** The row named the fault; without more it
+told him something was wrong and gave him no way to act on it. So a `behind`
+row carries the exact command — `just deploy` — as a copyable control directly
+after the summary, present only when the row is genuinely behind and absent
+when current. Click copies it to the clipboard and confirms on the page's one
+polite-confirmation lifecycle (`#fmsg`, the same `confirmationFor` the
+file-path copy uses — still exactly one confirmation idiom), and the text is
+selectable so a refused clipboard leaves him the command anyway. What "update"
+means is stated by what the running process IS: `just deploy` snapshots
+`watch.py` from HEAD and restarts, and the `GENERATION` bump reloads this tab,
+so the command IS the action. A button that ran the deploy from the page would
+work (failure stays visible: this loaded tab polls `/mtime` and can say
+"restart didn't take" when no new generation returns; drafts survive it in
+`localStorage`; it stops the dashboard pid, not the loop), but it grants an
+unauthenticated host-bound web request the authority to run deploy machinery,
+and that is a consent question for him rather than a refusal to make for him —
+so the shipped action copies the command, and a page-triggered deploy is his
+call to file.
+
+**The line itself still has no new motion; the remedy arrives.** The line's
+*presence* can only change when HEAD moves, which is already the commits
+panel's own gesture (#151), and `behind` → `current` is a redeploy = a new
+process = a `GENERATION` change = a full reload, so the line departs with the
+page and needs no motion of its own. The *remedy* is different: it appears
+exactly when the page falls behind, which is an **arrival**, and it obeys
+`transitions.md` with no exception for size. It uses the one-shot `.dreamin`
+idiom mirrored from `revealNewOpenAsks` (`revealStaleAction`): the start pose
+is applied only on the genuine current→behind transition, never on first paint
+(which settles visible), never replayed on a tick where it was already
+present, and never under reduced motion (function, no pose). `dev/capture/
+staleremedy.mjs` guards the arrival by sampling mid-transition opacity
+(`midFrames`) with `transitionstart` as the load-independent snap detector,
+plus reduced-motion parity and a runtime-derived current→behind precondition.
 
 The Python half is cached on HEAD (`serving_cached`) because the `behind`
 walk costs one `git show` per revision of `watch.py` — 75 today and growing

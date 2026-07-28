@@ -768,6 +768,46 @@ STYLE = """<style>
   .gserve.unknown { color:var(--dimmer); }
   .gserve.stale { color:var(--warn);
                   border-left:2px solid var(--warn); padding-left:.8rem; }
+  /* #462 — the staleness row's remedy, on the page. The row already named
+     the fault; without this it tells him something is wrong and gives him no
+     way to act on it.
+
+     WHAT "UPDATE" MEANS HERE. The running process serves a fixed SNAPSHOT
+     (`just deploy` copies watch.py outside the repo and runs that), so a
+     browser reload only re-fetches the same stale bytes, and a self-re-exec
+     (the --autoreload seam at :10351) re-serves that same snapshot too — its
+     trigger is `__file__` mtime, and the served `__file__` IS the snapshot,
+     which a tree commit never touches. So the only thing that actually
+     clears the staleness is a re-snapshot from HEAD plus a restart, which is
+     `just deploy`; the GENERATION bump it causes already reloads this tab.
+
+     WHY THE REMEDY IS THE COMMAND AND NOT A BUTTON THAT RUNS IT. A button
+     that triggered the deploy from the page would work — failure stays
+     visible (this loaded tab polls /mtime and can say "restart didn't take"
+     when no new generation returns), drafts survive it (#269), and it would
+     stop the dashboard pid, not the loop. But it grants an unauthenticated,
+     host-bound web request the authority to run deploy machinery on his box,
+     and that is a consent question for him, not a refusal to make for him.
+     Until that call is made, naming the command is honest and complete: it is
+     copyable, and the text is selectable so a refused clipboard still leaves
+     him the exact thing to run.
+
+     MOTION. The row is re-rendered through innerHTML every tick, so .dreamin
+     is applied only on the current→behind transition by revealStaleAction()
+     (the revealNewOpenAsks idiom: start pose on a genuinely new arrival, rAF
+     remove; first paint settles without replaying it; reduced-motion skips
+     the pose entirely), never baked in and never replayed on a tick where
+     the affordance was already present. Behind→current is a redeploy = a new
+     process = a generation change = a full reload, so the affordance departs
+     with it and needs no departure motion of its own. */
+  .gservact { font:inherit; color:inherit; background:none; border:0;
+    margin-left:.4ch; padding:0; cursor:pointer;
+    transition:opacity .55s ease, filter .55s ease, transform .55s ease;
+    text-decoration:underline; text-decoration-style:dotted;
+    text-underline-offset:2px; }
+  .gservact:hover { text-decoration-style:solid; }
+  .gservact:focus-visible { outline:1px solid var(--warn); outline-offset:2px; }
+  .gservact.copied { text-decoration-style:solid; }
   /* the dashboard's questions fold (#141). `> summary` and not `summary`:
      the child combinator is what keeps this from being one of the catch-alls
      above — a question card inside carries its OWN <details><summary>, and a
@@ -2747,8 +2787,18 @@ function servingLine(d) {
   const title = missing.length
     ? ` title="${esc(missing.map(([h, sub]) => `${h}  ${sub}`).join('\\n'))}"`
     : '';
+  // #462 — the remedy appears ONLY when the row is genuinely behind. The
+  // command is the affordance: it is the exact thing to run (`just deploy`
+  // re-snapshots from HEAD and restarts, and the generation bump reloads this
+  // tab), copyable via data-copy, selectable as the clipboard fallback. It is
+  // never baked with .dreamin — revealStaleAction() applies that start pose
+  // once, on the current→behind transition only (see setContent).
+  const remedy = s.state === 'behind'
+    ? ` — <button class="gservact" type="button" ` +
+      `data-copy="just deploy">just deploy</button> to update`
+    : '';
   return `<div class="gserve${loud ? ' stale' : ''}"${title}>` +
-         `${say({ ...s, missing })}</div>`;
+         `${say({ ...s, missing })}${remedy}</div>`;
 }
 /* what a row holds when he opens it (#166). The subject is a LABEL for the
    reasoning; the body is the reasoning, and in this repo it is the most
@@ -4817,6 +4867,38 @@ function revealNewOpenAsks() {
   }
   knownOpenAskKeys = now;
 }
+/* #462 — one-shot atmospheric arrival for the staleness row's remedy, present
+   only when the page is behind. The row is re-rendered through innerHTML
+   every tick, so like revealNewOpenAsks the .dreamin start pose is applied
+   ONLY on the genuine current→behind transition (the moment the page just
+   fell behind), never on first paint (which settles visible), never replayed
+   on a tick where the affordance was already present, and never under
+   reduced motion (function, no pose). Behind→current is a redeploy = a
+   generation change = a full reload, so there is no departure to animate: the
+   affordance leaves with the page that held it. window.__dwSkipStaleArrival
+   is the guard's RED inject point, mirroring __dwSkipOpenAskArrival. */
+let knownStaleAction = null;
+function revealStaleAction() {
+  if (view.name !== 'dashboard') { knownStaleAction = null; return; }
+  const node = document.querySelector('.gservact');
+  const now = !!node;
+  if (knownStaleAction === null || window.__dwSkipStaleArrival) {
+    if (node) node.classList.remove('dreamin');
+    knownStaleAction = now;
+    return;
+  }
+  if (now && !knownStaleAction) {
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduce && node) {
+      node.classList.add('dreamin');
+      void node.offsetWidth;                    // commit the start pose
+      requestAnimationFrame(() => {
+        if (node.isConnected) node.classList.remove('dreamin');
+      });
+    }
+  }
+  knownStaleAction = now;
+}
 function setContent(html) {
   document.getElementById('view').innerHTML = html;
   // before anything measures: the review pane's height is a measurement, and
@@ -4827,6 +4909,7 @@ function setContent(html) {
   paintIndicators(true);
   ages();
   revealNewOpenAsks();
+  revealStaleAction();
   // #290: innerHTML destroys the arm bar nodes; resume shared pending (or
   // re-sync the committed selection) without inventing a new deadline.
   syncRunModeFromData();
@@ -5854,7 +5937,29 @@ async function copyFilePath() {
     c.note('copy was blocked — the path beside it is selectable', false);
   }
 }
+/* #462 — the staleness row's remedy copies the deploy command on click, on
+   the page's ONE confirmation lifecycle (the same #fmsg the file-path copy
+   uses, so there is still exactly one polite-confirmation idiom rather than a
+   second). The command is read from the button's data-copy — where the render
+   put it — so it has one source. A refused clipboard leaves the command
+   selectable in the button text, the same fallback the file path relies on. */
+async function copyStaleCommand(btn) {
+  const cmd = (btn && btn.dataset.copy) || '';
+  const c = fileConfirmation();
+  if (!cmd) { c.note('there is no command to copy', false); return; }
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.writeText)
+      throw new Error('no clipboard');
+    await navigator.clipboard.writeText(cmd);
+    btn.classList.add('copied');
+    c.note('copied — run it to update this page', true);
+  } catch (e) {
+    c.note('copy was blocked — the command is selectable', false);
+  }
+}
 addEventListener('click', e => {
+  const stale = e.target.closest && e.target.closest('.gservact');
+  if (stale) { copyStaleCommand(stale); return; }
   const btn = e.target.closest && e.target.closest('.fcopy');
   if (btn) copyFilePath();
 });
