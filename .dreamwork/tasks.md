@@ -24,9 +24,29 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **454**
+Next id: **455**
 
 ## Open
+- **#454** — questions collapse to a rolled-scroll card of 5-6 lines, persisted like other UI state ·
+  **P2** · dashboard/asking · origin: **human** ·
+  **human via watch 2026-07-29 01:06:** *"questions on the questions page should be collasible. However, the
+  size of each collapsed question should be at least like 5-6 lines. So it's more like a card or the top of a
+  rolled up scroll. This should be persisted to IndexedDB and kept in sync like other ui state."*
+  · **the 5-6 line floor is the whole design, not a detail.** A one-line collapse is a title list, and a title
+  alone does not say whether an entry still needs him — that is exactly the failure `#419`'s blocked-on marker
+  and `#392`'s honest ages exist to fix. *"the top of a rolled up scroll"* is the shape: enough of the body
+  visible to judge without opening, so **derive the floor from rendered line height at runtime** rather than
+  pinning a pixel constant (`#441` split a shared literal for exactly this reason).
+  · **machinery already exists for both halves and must be reused, not re-authored:** `#111` folds answered
+  cards via `cardBody` and `#169` makes expansion grow padding, and the IndexedDB helper at `watch.py:2300` is
+  already the persisted-UI-state path (with its raced-timeout handling for a wedged store — do not add a second
+  one).
+  · **transitions are the hard part and there is no exemption**: this is expand/collapse, so it obeys
+  `transitions.md` and reuses `#111`/`#169`'s existing gesture. Note `#449` has just disabled the SVG mist for
+  measured cost — **a per-card filter is therefore forbidden**, and this feature is precisely the "many
+  filtered elements" shape he wrongly suspected of causing that jank. CSS blur/transform/opacity only.
+  · **read with `#452`** (focus one question) — collapsing and focusing are two answers to the same complaint
+  about a churning list, and whoever builds either should say why both are wanted.
 - **#453** — restore the liquify with a moved or layered noise texture instead of two live SVG filters ·
   **P2** · dashboard/motion · origin: **human** · **blocked-on: #449** (which disables the mist) ·
   **human via watch 2026-07-29 00:53:** *"could we generate the flowingness by just having a single texture
