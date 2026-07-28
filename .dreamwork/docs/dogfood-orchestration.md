@@ -31,12 +31,39 @@ Written down before the results so the bar cannot move afterwards.
 
 ## Runner routing — what actually works
 
-| alias | route | verdict |
-|---|---|---|
-| `@grok` | grok CLI, `grok-4.5` | **works** |
-| `@glm52` | grok CLI + `provider=llmp`, `glm-5.2` | **BROKEN — cannot work** |
-| `@oc-glm52` | opencode + `zai-coding-plan`, `glm-5.2` | **works** (smoke-tested) |
-| `@pi-glm52` | pi + `llmp`, `glm-5.2` | **prefer this for glm-5.2** (his 05:26 steer) |
+**This table inverted between 05:52 and 11:10 and both grok-CLI rows flipped.** Re-measure
+before trusting it; the verdicts below carry the time they were taken.
+
+| alias | route | verdict (05:52) | verdict (11:10) |
+|---|---|---|---|
+| `@grok` | grok CLI, `grok-4.5` | works | **DEAD — 401** |
+| `@glm52` | grok CLI + `provider=llmp`, `glm-5.2` | BROKEN — cannot work | **works, and is now the CLI default** |
+| `@gk-glm52` | grok CLI + `llmp`, `glm-5.2` | predicted to fail the same way | **should work now** (untested) |
+| `@oc-glm52` | opencode + `zai-coding-plan`, `glm-5.2` | works (smoke-tested) | untested since |
+| `@pi-glm52` | pi + `llmp`, `glm-5.2` | prefer this for glm-5.2 (his 05:26 steer) | untested since |
+
+**The measurement, 11:10.** `grok models` now returns **twelve** models, all the `llmp-*`
+ones, and prints `Default model: llmp-glm-5-2`:
+
+```
+grok-4.5, llmp-gpt-5-6-luna, llmp-gpt-5-6-terra, llmp-gpt-5-6-sol, llmp-gpt-5-5,
+llmp-gpt-5-4-mini, llmp-glm-4-7, llmp-glm-5-turbo, llmp-glm-5-1,
+llmp-glm-5-2 (default), llmp-glm-5, llmp-glm-4-5-air
+```
+
+At 05:52 that same command returned `grok-4.5` and nothing else. So **`llmp` became
+reachable through the grok runner during the day** — the config never changed (`@glm52` is
+still `runner = "grok"`, `provider = "llmp"`), the upstream did. Meanwhile `grok-4.5`
+itself now 401s: `Model 'llmp-gpt-5-6-luna' is using its own API key` is the CLI telling
+you the `llmp-*` models authenticate separately from `grok-4.5`, and only the latter's
+credential is expired.
+
+**The lesson is about the table, not the aliases.** A routing verdict is a measurement
+with a timestamp, and this one had a shelf life of five hours. I lost two lanes acting on
+the `@grok` row and nearly skipped the runner that was working, because the row that said
+**"BROKEN — cannot work"** was the strongest claim in the file and the least true.
+Anything here that says *cannot* deserves a re-probe before it is believed — `grok models`
+costs one second.
 
 **Use `@pi-glm52` rather than `@oc-glm52`** — his heads-up at 05:26: opencode
 **hangs** when it touches `/tmp` or similar. Confirmed observable in lane A, which
@@ -46,6 +73,11 @@ accruing and the transcript kept growing — but it went very slow, and a stalle
 transcript is indistinguishable from a dead agent without checking `ps`. Since the
 guards' own `justfile` recipe uses `mktemp -d` (i.e. `/tmp`), **any guard lane is
 exposed to this**, which makes pi the right default for guard work specifically.
+
+**Superseded 11:10 — kept because the reasoning was sound and the conclusion still
+expired.** The 05:52 finding, verbatim below, was correct when taken. What it could not
+know is that the constraint was upstream and temporary. Read it as a record of a
+measurement, not as a fact about the alias:
 
 **`@glm52` cannot reach glm-5.2 and it is not an environment problem.** Measured:
 
@@ -886,9 +918,9 @@ Ranked by what actually found defects today, unchanged at the top and now with a
 
 ## Dispatch is not a solved problem, and it cost four lanes on one task
 
-`#399b` — the P1 that has `master` red — was dispatched four times before a lane
-survived. Three deaths, **two distinct causes**, and neither was visible in the place
-I was looking.
+`#399b` — the P1 that has `master` red — was dispatched four times before I stopped.
+Two of those were real deaths from one cause; the third was my own bad measurement, and
+none of it was visible where I was looking.
 
 **Deaths 1 and 2 — `ccc @grok` returns 401.** The runner's credential expired at some
 point today. Every lane sent to it died at about three seconds. What made this expensive
@@ -903,26 +935,52 @@ rather than obvious:
   `~/.local/state/cc-w/ccc/runs/<run>/` holds `output.txt` and `transcript.txt`, and for
   a 401 **both are zero bytes**. The error exists on stderr only.
 
-**Death 3 — the background job did not outlive the shell that started it.** Dispatching
-`ccc @glm52 … &` from inside a Bash tool call, the lane read the brief, wrote a correct
-statement of the diagnosis, and stopped **~60 seconds in** with no error, no `output.txt`,
-and a truncated transcript. That is the shape of a child being reaped when its parent
-shell exits, not of a crash.
+**"Death" 3 was not a death. I killed a healthy lane's twin instead.** Dispatched with
+`ccc @glm52 … &`, the lane read the brief, wrote a correct statement of the diagnosis, and
+went quiet. I checked with **`pgrep -c "ccc @"`**, got `0`, and concluded it had been
+reaped by the shell that started it. It had not: **`pgrep -c` matches the process *name*,
+which is `ccc`, and never the argument string I was searching for.** The earlier checks
+that worked used `-f`. The lane was alive and working the whole time; its transcript was
+simply unflushed, which for a slow runner mid-tool-call is normal.
 
-**The recipe that follows, and it is two changes:**
+So I dispatched a fourth lane into **the same worktree**, and for about a minute two
+agents were editing the same files — precisely the split-brain the disjointness invariant
+exists to prevent. I stopped the newer one (one minute in, nothing lost) and kept the
+incumbent.
+
+This is the day's dominant class *again*, and now in my own instrumentation: **a check
+that reports on something other than the thing you care about.** `pgrep -c` joins
+`cmd | tail` returning tail's status, `lint.py` exiting 0 on a WARN, `sha256sum` printing
+one line for a missing operand, and `grep -c` exiting 1 on zero. **Silence from an agent
+and absence of an agent look identical, and the command that distinguishes them differs
+from the one that does not by a single flag.**
+
+**The recipe that follows, and it is three changes:**
 
 1. **Never `/dev/null` a dispatch.** `> "$LOG" 2>&1`, and read `$LOG` the moment a lane
    looks quiet. One variable; it is what diagnosed the 401 on the third attempt.
-2. **Do not background with `&` from a tool call — use the harness's own background
-   dispatch** (`run_in_background`). It is detached by construction, it survives across
-   turns, it notifies on exit, and it leaves the session's cwd alone.
+2. **Liveness is `pgrep -cf`, never `pgrep -c`** — and a quiet transcript is not evidence
+   of death. Before declaring a lane dead, require **two** signals that agree: no process
+   *by command line*, and either an error in `$LOG` or an exit trailer.
+3. **Prefer the harness's own background dispatch** (`run_in_background`) over `&`. Not
+   because `&` fails — it plainly does not, the incumbent outlived its parent shell by a
+   quarter of an hour — but because the harness notifies on exit, which removes the
+   polling that produced this whole mistake. It also leaves the session's cwd alone.
 
-**A note on the runners themselves, since the provider question is the point of this
-exercise.** `ccc @grok` is down and only the human can refresh it, so the fleet is one
-runner deep. `ccc @glm52` answers a probe instantly and both dispatch warnings still read
-`runner "grok"` — same binary, different model — so this is a per-model credential
-failure, not the CLI. **A runner outage presents as a brief that does not work.** That is
-the trap worth remembering: three times I reached for the brief, and the brief was fine.
+**A note on the runners, and my first reading of it was backwards.** I recorded this as
+"the fleet is one runner deep". It is the opposite: `grok-4.5` alone is 401, and the
+**eleven `llmp-*` models became reachable through the same CLI today** (see the routing
+table above). The fleet got *wider* during the outage, not narrower. What is true is the
+narrow part: **a runner outage presents as a brief that does not work.** Three times I
+reached for the brief, and the brief was fine.
+
+**And the quiet-transcript trap was already in this file before I fell into it.** The
+05:58 observability note above says it plainly: grok and pi runners write **zero bytes
+until exit**, and "the only mid-run signal is the filesystem". I re-derived that at 11:07
+as a lane death and acted on it. The note was right, it was two screens up, and I did not
+re-read it. **A record only prevents the mistake if it is consulted at the moment of the
+mistake** — which argues for putting this kind of finding where the action happens (the
+dispatch recipe) and not only where the reasoning was written down.
 
 ## Addendum to the leverage list: what found things this batch
 

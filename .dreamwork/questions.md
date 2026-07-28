@@ -9,8 +9,17 @@
   **`ccc @glm52` is fine** — same runner binary, and it answered a probe instantly, so this is
   one model's credential and not the CLI. Work is continuing on glm52; `#399b` (the burndown
   regression that has `master` red) is running there now.
-  **Nothing is blocked, it is just half as wide and slower**, since grok was the fast one. I am
-  not touching the credential — that is yours. Filed as `#410`.
+  **Correction, 11:12 — I had this backwards and the news is good.** `grok models` now lists
+  **twelve** models and prints `Default model: llmp-glm-5-2`. At 05:52 that same command
+  returned `grok-4.5` and nothing else, which is why this morning's dogfood note recorded
+  `@glm52` as *"BROKEN — cannot work"*. The `llmp` provider became reachable through the grok
+  CLI at some point today — your config never changed — so the fleet got **wider** during the
+  outage: `grok-4.5, llmp-gpt-5-6-{luna,terra,sol}, llmp-gpt-5-{5,4-mini}, llmp-glm-{4-7,
+  5-turbo,5-1,5-2,5,4-5-air}`. The CLI says the `llmp-*` models use a separate API key, which
+  is why they work while `grok-4.5` does not.
+  **So nothing is blocked and nothing is narrower** — one model of twelve is out. Worth your
+  refresh whenever convenient, not urgent. I am not touching the credential; that is yours.
+  Filed as `#410`.
   Worth knowing for the provider question you set me: the outage was **invisible** for two
   lanes because I was dispatching with `> /dev/null 2>&1`. ccc's own run log does not help —
   `~/.local/state/cc-w/ccc/runs/<run>/output.txt` is **zero bytes** for a 401. I now capture

@@ -80,9 +80,17 @@ Next id: **412**
   holds `output.txt` and `transcript.txt`, but for a 401 death **both are zero bytes**. The error is
   on stderr only. So the dispatch recipe must redirect stderr to a file the coordinator can read —
   `> "$LOG" 2>&1` — and that is now the recipe
-  · **owed to him, since he asked which providers work for us:** grok is his fast runner and it is
-  down, so the fleet is one slower runner deep until the credential is refreshed. He is the only
-  one who can refresh it; filed rather than attempted
+  · **CORRECTED 11:12 — "the fleet is one runner deep" was backwards.** `grok models` now returns
+  **twelve** models and `Default model: llmp-glm-5-2`; at 05:52 it returned `grok-4.5` alone, which
+  is why the dogfood doc recorded `@glm52` as *"BROKEN — cannot work"*. `llmp` became reachable
+  through the grok CLI during the day with no config change, so the fleet got **wider** during the
+  outage. One model of twelve is out, not half the fleet
+  · **the routing table's strongest claim was its least true one.** *"BROKEN — cannot work"* had a
+  shelf life of five hours, and I lost two lanes to the row beside it. A routing verdict is a
+  measurement with a timestamp — anything saying *cannot* gets re-probed before it is believed, and
+  `grok models` costs one second. The table now carries both timestamps rather than one verdict
+  · **owed to him, since he asked which providers work for us:** only he can refresh the `grok-4.5`
+  credential. Not urgent now that eleven other models answer; filed rather than attempted
   · related: **#402**
 
 - **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
