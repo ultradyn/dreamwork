@@ -3578,7 +3578,17 @@ Next id: **434**
   `C3` hold the constant-height premise at 177px, `C2` grows the panel to 202px and so **breaks the
   `burndown` guard**, `C4` costs 19px and inherits `#218`'s treatment with **no new motion idiom**.
   The other three each need one
-  · **visual verdict still owed** — glm52 cannot see, and pixels in front of him is the whole point
+  · **visual verdict DISCHARGED 19:10 by the coordinator, who can see** — not owed, and not waiting on
+  grok. Extracted the ten embedded renders and read them. **`c1` is invisible** at the panel's real
+  553px (indistinguishable from the reference, because the panel already carries two bar series);
+  **`c3` degrades the primary signal** (the level line goes chunky and noisy, and thickness cannot be
+  read as a quantity) — so I **disagree with the lane's `c3`-as-shape-fallback** and say `c2` is the
+  answer if he wants shape, since it is legible in its own band and labelled; **`c4` truncates as
+  rendered** (*"3 periods with n…"*), which the lane priced honestly but which reads as broken, so
+  shortening the copy is a condition of `c4` rather than an argument against it
+  · **the standing lesson**: three artifacts have carried *"visual verdict owed"* on the assumption
+  that only grok can see. **The coordinator is multimodal.** A verdict blocked on a 401 for twelve
+  hours was never actually blocked
   · blocked-on: **human** — asked 2026-07-28 18:11
   · candidate treatments to price, not a decision: a faint baseline histogram behind the burndown;
   a thin sparkline rail beneath the axis; encoding it into the existing line (dot size or segment

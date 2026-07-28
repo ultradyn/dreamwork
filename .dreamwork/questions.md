@@ -21,11 +21,33 @@
   gesture, and `transitions.md` has no size floor — so each is a bigger job than it looks. If you want
   the *shape* of commit activity and not just its size, that is `C1`, and `rec` is wrong for you.
 
-  **One thing you should know before trusting the pixels: nobody has looked at them.** They were
-  rendered by `@glm52`, which cannot see, because grok has been 401 since ~16:50 (the ask above).
-  The geometry is verified — I confirmed the ten renders are ten distinct images at both viewports,
-  and that the panel really is 553px wide at 1280 and 358px at 390 — but *how they look* is unjudged.
-  **`defer` is a reasonable answer** if you would rather a seeing lane review them first.
+  **Visual verdict, 19:10 — I looked at them myself.** grok is 401 and `@glm52` cannot see, but the
+  coordinator can, so this is no longer owed and `defer` is no longer needed. I extracted the ten
+  embedded renders and read them. **It changes one of the four answers and confirms the rec.**
+
+  Context the reference render supplies and the prose does not: **the panel already carries two bar
+  series** (arrivals above the axis, landed below), plus the level line, the provenance bar and `#218`'s
+  median line. A third quantity is landing in an already-dense frame.
+
+  - **`c1` histogram behind — reject. It is invisible.** Side by side with the reference at the panel's
+    real 553px I cannot tell them apart; the faint bars are lost behind the two series already there.
+    It buys nothing measurable and still costs a new motion idiom.
+  - **`c2` sparkline rail — the real contender if you want the shape.** It is legible: a thin curve in
+    its own band below the axis, labelled *"59 peak commits/period"* at the right, and it does not fight
+    the bars because it is not among them. Costs `+25px` and **breaks the `burndown` guard's
+    constant-height premise**, which is a real bill, not a formality.
+  - **`c3` line weight — reject, and this is where I disagree with the lane.** It offered `c3` as the
+    fallback if you want shape. Seen rather than reasoned about, `c3` makes the level line **chunky and
+    noisy** next to the reference's clean dashes, and thickness cannot be read as a quantity — so it
+    degrades the chart's *primary* signal to carry a secondary one badly. If you want shape, `c2`.
+  - **`c4` copy only — still the rec, with one fix.** The chart is untouched and the line sits in
+    `#218`'s exact voice. **But as rendered it truncates:** *"16 median ledger commits per period · 59
+    peak · 3 periods with n…"*. The lane priced this honestly as *"one ellipsised line"*; seeing it, an
+    ellipsis reads as broken rather than terse. **Shorten the copy so it fits** — that is a condition of
+    `c4`, not a reason against it.
+
+  **So: `rec` is still `c4` (with the copy shortened), and if you want the per-period shape the answer
+  is `c2`, not `c3`.**
 
 - **P1 · 2026-07-28 — `ccc @grok` is 401 again, and it is your credential.**
   **Ask: refresh grok's auth when convenient, then say so here (a bare "ok" is enough).** Nothing
