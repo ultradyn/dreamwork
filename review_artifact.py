@@ -19,6 +19,7 @@ owns the words.
 
     build     python3 review_artifact.py build .dreamwork/review/src/<slug>.html
     check     python3 review_artifact.py check .dreamwork/review/*.html
+    corpus    python3 review_artifact.py corpus   # #436/#455 walking coverage
     version   python3 review_artifact.py version
 
 THE SOURCE, and why it is a second file rather than the artifact itself: the
@@ -1595,6 +1596,286 @@ def classify(document, template=None):
     return "current" if stamp == current else "stale"
 
 
+# ── corpus coverage (#436 walking guard) ──────────────────────────────────
+#
+# Build-time contracts (#436 ask, #455 if-silent) only run when a source is
+# built. Untemplated pre-#436 artifacts have no src/ and cannot be hand-edited,
+# so a walking guard that only read metas would silently pass over them — the
+# hollow-check failure this repo has paid for most often.
+#
+# Coverage is therefore a SET equation, not a count of files the walker liked:
+#
+#   examined ∪ side_exempt == built
+#   examined ∩ side_exempt == ∅
+#   {src} − {built} == ∅
+#
+# `examined` = basenames whose built HTML carries the ask meta (the builder
+# always writes one; content is `ask` or `exempt: <reason>`). `side_exempt` =
+# basenames listed in the legacy side-file with a stated reason. Sourceless is
+# the set difference `{built} − {src}`, never `|built| − |src|` (the latter is
+# only right when every src has a same-basename build).
+#
+# Production lines the red-proof names:
+#   * strip `#ask` from a content="ask" artifact → `check_examined_artifact`
+#     fails on `scan_ask` (the meta alone is not enough).
+#   * drop a side-file entry → that basename lands in `unaccounted`.
+#   * remove the coverage equation assert → a half-corpus walk can pass.
+
+LEGACY_EXEMPTIONS_NAME = "legacy-contract-exemptions.txt"
+_EXEMPTION_LINE_RE = re.compile(
+    r"^([A-Za-z0-9][A-Za-z0-9._-]*%s)\s*:\s*(.+)$" % re.escape(".html"))
+
+
+def default_review_dir(root=None):
+    """`.dreamwork/review` under the skill (or an explicit project root)."""
+    return os.path.join(root or HERE, ".dreamwork", "review")
+
+
+def list_built_basenames(review_dir):
+    """Set of `*.html` basenames sitting directly under `review_dir` (not src/)."""
+    if not os.path.isdir(review_dir):
+        return set()
+    return {name for name in os.listdir(review_dir)
+            if name.endswith(".html")
+            and os.path.isfile(os.path.join(review_dir, name))}
+
+
+def list_src_basenames(review_dir):
+    """Set of `*.html` basenames under `review_dir/src/`."""
+    src = os.path.join(review_dir, "src")
+    if not os.path.isdir(src):
+        return set()
+    return {name for name in os.listdir(src)
+            if name.endswith(".html")
+            and os.path.isfile(os.path.join(src, name))}
+
+
+def load_legacy_exemptions(path):
+    """Parse the side-file into `{basename: reason}`.
+
+    Unknown shape is a refusal (a silent half-parse is the hollow check). A
+    duplicate basename is a refusal. Reasons must be non-empty.
+    """
+    try:
+        text = open(path, encoding="utf-8").read()
+    except OSError as error:
+        raise ArtifactError(
+            "legacy exemptions side-file unreadable at %s: %s" % (path, error))
+    out = {}
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = _EXEMPTION_LINE_RE.match(line)
+        if not match:
+            raise ArtifactError(
+                "%s:%d: expected `<basename.html>: <reason>`, got %r"
+                % (path, lineno, raw))
+        name, reason = match.group(1), match.group(2).strip()
+        if not reason:
+            raise ArtifactError(
+                "%s:%d: exemption for %s has an empty reason" % (path, lineno, name))
+        if name in out:
+            raise ArtifactError(
+                "%s:%d: duplicate exemption for %s" % (path, lineno, name))
+        out[name] = reason
+    return out
+
+
+def check_examined_artifact(name, document):
+    """Validate one checked (non-side-exempt) built artifact.
+
+    Returns a list of failure strings (empty = ok). Production line for the
+    strip-#ask red-proof: when `ask_status` is exactly `"ask"`, `scan_ask` must
+    report present+meaningful — the meta alone is the wish, not the standard.
+    Same shape for if-silent (#455).
+    """
+    failures = []
+    ask = ask_status(document)
+    silent = if_silent_status(document)
+    if ask is None:
+        failures.append(
+            "%s: no %s meta — a checked artifact must carry the builder's "
+            "ask declaration (or be side-exempt)" % (name, ASK_META_NAME))
+    elif ask == "ask":
+        present, meaningful = scan_ask(document)
+        if not present:
+            # PRODUCTION LINE the strip-#ask red-proof names: this branch.
+            failures.append(
+                "%s: meta says ask but id=%r is MISSING — strip of #ask must "
+                "red the walking guard" % (name, ASK_ID))
+        elif not meaningful:
+            failures.append(
+                "%s: meta says ask but id=%r is a decoy (empty / no structure)"
+                % (name, ASK_ID))
+    elif not ask.startswith("exempt:"):
+        failures.append(
+            "%s: %s meta has unrecognised content %r (want 'ask' or "
+            "'exempt: <reason>')" % (name, ASK_META_NAME, ask))
+
+    if silent is None:
+        failures.append(
+            "%s: no %s meta — #455 reaches every checked artifact"
+            % (name, IF_SILENT_META_NAME))
+    elif silent == "if-silent":
+        present, meaningful = scan_if_silent(document)
+        if not present:
+            failures.append(
+                "%s: meta says if-silent but id=%r is MISSING"
+                % (name, IF_SILENT_ID))
+        elif not meaningful:
+            failures.append(
+                "%s: meta says if-silent but id=%r is empty"
+                % (name, IF_SILENT_ID))
+    elif not silent.startswith("exempt:"):
+        failures.append(
+            "%s: %s meta has unrecognised content %r"
+            % (name, IF_SILENT_META_NAME, silent))
+    return failures
+
+
+def corpus_contract_coverage(review_dir=None, exemptions_path=None):
+    """Walk the built corpus; return a result dict the CLI and tests share.
+
+    Keys:
+      ok            bool
+      built         set of basenames
+      src           set of basenames
+      sourceless    set: built − src   (set difference, not count subtraction)
+      unbuilt_src   set: src − built   (source never built — a real defect)
+      examined      set: carry ask meta
+      side_exempt   set: listed in the side-file and not examined
+      unaccounted   set: built − examined − side_exempt
+      double        set: examined ∩ side_file keys (side-file must not rename a checked one)
+      stale_exempt  set: side-file keys not in built
+      failures      list of human strings
+      reasons       dict basename -> side-file reason (only side_exempt)
+    """
+    review_dir = review_dir or default_review_dir()
+    exemptions_path = exemptions_path or os.path.join(
+        review_dir, LEGACY_EXEMPTIONS_NAME)
+
+    failures = []
+    built = list_built_basenames(review_dir)
+    src = list_src_basenames(review_dir)
+    sourceless = built - src
+    unbuilt_src = src - built
+
+    # PRECONDITION the hollow-pass dies on: there is a corpus.
+    if not built:
+        failures.append(
+            "no built artifacts under %s — the walking guard would match "
+            "nothing and pass forever" % review_dir)
+
+    if unbuilt_src:
+        failures.append(
+            "source(s) never built ( {src} − {built} nonempty ): %s — "
+            "#329 catches STALE builds, never MISSING ones"
+            % ", ".join(sorted(unbuilt_src)))
+
+    try:
+        side = load_legacy_exemptions(exemptions_path)
+    except ArtifactError as error:
+        return {
+            "ok": False,
+            "built": built, "src": src, "sourceless": sourceless,
+            "unbuilt_src": unbuilt_src,
+            "examined": set(), "side_exempt": set(),
+            "unaccounted": set(built), "double": set(),
+            "stale_exempt": set(),
+            "failures": failures + [str(error)],
+            "reasons": {},
+        }
+
+    examined = set()
+    for name in sorted(built):
+        path = os.path.join(review_dir, name)
+        with open(path, encoding="utf-8") as handle:
+            document = handle.read()
+        if ask_status(document) is not None:
+            examined.add(name)
+            failures.extend(check_examined_artifact(name, document))
+
+    side_keys = set(side)
+    double = examined & side_keys
+    if double:
+        failures.append(
+            "side-file lists artifact(s) that already carry ask meta "
+            "(examined ∩ side_exempt must be empty): %s"
+            % ", ".join(sorted(double)))
+    stale_exempt = side_keys - built
+    if stale_exempt:
+        failures.append(
+            "side-file lists artifact(s) that are not built: %s"
+            % ", ".join(sorted(stale_exempt)))
+
+    side_exempt = side_keys - examined  # only those without meta count as exempt
+    # But if they had meta we already flagged double; still subtract so the
+    # coverage equation does not double-count.
+    unaccounted = built - examined - side_keys
+    if unaccounted:
+        failures.append(
+            "unaccounted artifact(s) — neither checked (ask meta) nor "
+            "side-exempt: %s" % ", ".join(sorted(unaccounted)))
+
+    # THE COVERAGE EQUATION — sets, not counts. A literal count is wrong the
+    # day after it is written; set equality fails the moment one basename
+    # drifts either side.
+    covered = examined | (side_keys & built)
+    if covered != built:
+        failures.append(
+            "coverage equation failed: examined ∪ side_exempt != built "
+            "(examined=%d side_in_built=%d built=%d; missing=%s extra=%s)"
+            % (len(examined), len(side_keys & built), len(built),
+               ", ".join(sorted(built - covered)) or "—",
+               ", ".join(sorted(covered - built)) or "—"))
+
+    reasons = {name: side[name] for name in sorted(side_exempt) if name in side}
+    return {
+        "ok": not failures,
+        "built": built,
+        "src": src,
+        "sourceless": sourceless,
+        "unbuilt_src": unbuilt_src,
+        "examined": examined,
+        "side_exempt": side_exempt & built,
+        "unaccounted": unaccounted,
+        "double": double,
+        "stale_exempt": stale_exempt,
+        "failures": failures,
+        "reasons": reasons,
+    }
+
+
+def report_corpus_coverage(result):
+    """Print a one-screen corpus report; return 0 on ok, 1 on failure."""
+    built = result["built"]
+    src = result["src"]
+    print("corpus: built=%d src=%d sourceless=|{built}−{src}|=%d "
+          "unbuilt_src=|{src}−{built}|=%d"
+          % (len(built), len(src), len(result["sourceless"]),
+             len(result["unbuilt_src"])))
+    print("corpus: examined=%d side_exempt=%d unaccounted=%d"
+          % (len(result["examined"]), len(result["side_exempt"]),
+             len(result["unaccounted"])))
+    print("corpus: coverage equation "
+          "examined ∪ side_exempt == built → %s"
+          % ("ok" if (result["examined"] | result["side_exempt"]) == built
+             and not result["double"] else "FAIL"))
+    for name in sorted(result["side_exempt"]):
+        print("  EXEMPT  %s — %s" % (name, result["reasons"].get(name, "?")))
+    for name in sorted(result["examined"]):
+        path_note = "ask-meta"
+        print("  CHECK   %s (%s)" % (name, path_note))
+    for message in result["failures"]:
+        print("FAIL %s" % message)
+    if result["ok"]:
+        print("corpus: ok — every built artifact is checked or explicitly exempt")
+        return 0
+    print("corpus: FAILED — %d problem(s)" % len(result["failures"]))
+    return 1
+
+
 # ── cli ───────────────────────────────────────────────────────────────────
 
 
@@ -1606,6 +1887,18 @@ def main(argv=None):
     make.add_argument("-o", "--out", help="output path (one source only)")
     look = sub.add_parser("check", help="which template each artifact came from")
     look.add_argument("path", nargs="+")
+    corp = sub.add_parser(
+        "corpus",
+        help="walk built review artifacts for #436/#455 coverage (#436 guard)")
+    corp.add_argument(
+        "--review-dir",
+        default=None,
+        help="path to .dreamwork/review (default: this skill's)")
+    corp.add_argument(
+        "--exemptions",
+        default=None,
+        help="legacy exemptions side-file "
+             "(default: <review-dir>/%s)" % LEGACY_EXEMPTIONS_NAME)
     sub.add_parser("version", help="print the current template stamp")
     args = parser.parse_args(argv)
 
@@ -1627,6 +1920,10 @@ def main(argv=None):
                 return 1
             print("%s -> %s (%s)" % (source, out, template_stamp(read_template())))
         return 0
+    if args.cmd == "corpus":
+        result = corpus_contract_coverage(
+            review_dir=args.review_dir, exemptions_path=args.exemptions)
+        return report_corpus_coverage(result)
 
     worst = 0
     for path in args.path:
