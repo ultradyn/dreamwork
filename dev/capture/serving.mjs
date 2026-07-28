@@ -31,9 +31,10 @@
    usage: node serving.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, rmSync, cpSync, writeFileSync, readFileSync } from 'node:fs';
-import { spawn, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
+import { serveVerified } from './serve.mjs';
 
 const OUT = process.argv[2];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -42,7 +43,7 @@ const freePort = () => new Promise(res => {
   const s = createServer();
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
 });
-const PORT = await freePort();
+const PORT = process.argv[3] ? +process.argv[3] : await freePort();
 
 const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 const notes = []; const errs = [];
@@ -83,21 +84,11 @@ git(['commit', '-q', '-m', 'a project that is not this dashboard']);
 // a stand-in because "is this byte-identical to a revision" is the claim.
 const RUNNING = readFileSync('watch.py');
 
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
-                  { stdio: 'ignore' });
+/* #461: serveVerified proves the responder is the target we just built. */
+const srv = await serveVerified(DIR, PORT);
 process.on('exit', () => { try { srv.kill(); } catch (e) {} });
-await sleep(2500);
 
 const BASE = `http://127.0.0.1:${PORT}`;
-{
-  // it must be OUR server: a readiness probe that accepts any answer
-  // eventually grades a stranger's process
-  const d = await (await fetch(`${BASE}/data.json`)).json();
-  if (d.target !== DIR) {
-    console.log(`FAIL :${PORT} is serving ${d.target}, not ${DIR}`);
-    process.exit(1);
-  }
-}
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const ctx = await br.newContext({ viewport: { width: 1100, height: 1000 } });

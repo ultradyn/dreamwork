@@ -28,9 +28,9 @@
    usage: node pushhealth.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, writeFileSync, rmSync, cpSync, readFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
+import { serveAllVerified } from './serve.mjs';
 const OUT = process.argv[2], PORT = +(process.argv[3] || 39893);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
@@ -70,10 +70,12 @@ const states = {
 };
 
 /* one scratch target per state, each on its own port, so the three renders
-   can be compared without a server restart racing a read */
-const servers = [];
-let port = PORT;
-const ports = {};
+   can be compared without a server restart racing a read. Served through
+   serve.mjs (#461) rather than spawn-and-sleep: a fixed base port +
+   ports[name]=++port lands in the orphan range, and a blind sleep grades
+   whoever already holds it. serveAllVerified proves each responder is
+   alive AND serving the directory we just wrote. */
+const entries = [];
 for (const [name, push] of Object.entries(states)) {
   const dir = join(OUT, name);
   rmSync(dir, { recursive: true, force: true });
@@ -81,11 +83,9 @@ for (const [name, push] of Object.entries(states)) {
   const doc = JSON.parse(JSON.stringify(FIX_STATUS));
   if (push) doc.push = push;
   writeFileSync(join(dir, '.dreamwork', 'status.json'), JSON.stringify(doc, null, 2));
-  ports[name] = ++port;
-  servers.push(spawn('python3', ['watch.py', '--target', dir,
-                                 '--port', String(ports[name])],
-                     { stdio: 'ignore' }));
+  entries.push([name, dir]);
 }
+const { children: servers, ports } = await serveAllVerified(entries, PORT);
 // Reap every server we start, in a trap, including on failure — the task's
 // hard rule. The reporter's own exit handler (registered in makeReporter)
 // prints the checks + crash sentinel; this one only reaps servers. Both
@@ -94,7 +94,6 @@ for (const [name, push] of Object.entries(states)) {
 // covered by this exit handler + Node's default signal→exit path.
 const stopAll = () => servers.forEach(s => { try { s.kill(); } catch (e) {} });
 process.on('exit', stopAll);
-await sleep(2500);
 
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 

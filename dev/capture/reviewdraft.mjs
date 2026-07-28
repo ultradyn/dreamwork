@@ -50,12 +50,12 @@
    usage: node reviewdraft.mjs <outdir> [port] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { makeReporter } from './report.mjs';
+import { serveVerified } from './serve.mjs';
 import { mkdirSync, rmSync, cpSync, utimesSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 
 const OUT = process.argv[2];
-const PORT = process.argv[3] || '39894';   // this guard's exclusive port
+const PORT = +(process.argv[3] || 39894);   // this guard's exclusive port
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 
@@ -71,33 +71,25 @@ declare({
 });
 
 // ── own target + own server, reaped on every exit path ───────────────────
+// Fixed exclusive port 39894 (#461): spawn-and-sleep graded a squatter when
+// the port was held; the prior hand-check on /data.json exited 0 on mismatch
+// so it did not gate. serveVerified proves the responder is ours and throws
+// (non-zero) when it is not.
 const DIR = join(OUT, 'target');
 const reset = () => {
   rmSync(DIR, { recursive: true, force: true });
   cpSync('dev/capture/fixture', DIR, { recursive: true });
 };
 reset();
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', PORT],
-                  { stdio: 'ignore' });
+const srv = await serveVerified(DIR, PORT);
 const reap = () => { try { srv.kill('SIGTERM'); } catch (e) {} };
 process.on('exit', reap);
 process.on('SIGINT', () => { reap(); process.exit(130); });
 process.on('SIGTERM', () => { reap(); process.exit(143); });
 
-await sleep(2200);
 const BASE = `http://127.0.0.1:${PORT}`;
 let br = null;                                   // closed on every exit path
 const br_safe_close = async () => { try { if (br) await br.close(); } catch (e) {} };
-{
-  let d = null;
-  try { d = await (await fetch(`${BASE}/data.json`)).json(); } catch (e) {}
-  if (!d || d.target !== DIR) {
-    // #203: a stale server holding the port would otherwise be graded. Name it
-    // and stop rather than assert fixture facts at a server that is not ours.
-    notes.push(`:${PORT} is serving ${d && d.target} (not ${DIR}); aborting`);
-    reap(); finish(); process.exit(0);
-  }
-}
 
 br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const p = await br.newPage({ viewport: { width: 1400, height: 900 } });

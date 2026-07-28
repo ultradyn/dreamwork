@@ -39,9 +39,9 @@
    dashboard.mjs's reason. usage: node identity.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, writeFileSync, readFileSync, rmSync, cpSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
+import { serveVerified } from './serve.mjs';
 const OUT = process.argv[2];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
@@ -49,7 +49,7 @@ const freePort = () => new Promise(res => {
   const s = createServer();
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
 });
-const PORT = await freePort();
+const PORT = process.argv[3] ? +process.argv[3] : await freePort();
 
 const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 const notes = [];
@@ -99,21 +99,16 @@ const writeStatus = extra => writeFileSync(SPATH, status(extra));
    from the server below and the gap is asserted rather than assumed. */
 writeStatus({ awaiting_human: ['placeholder until the open count is known'] });
 
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
-                  { stdio: 'ignore' });
+/* #461: prove the responder is ours before reading open_questions from it.
+   spawn-and-sleep + a hand-check exits 1 on a stranger; serveVerified does
+   the same and also refuses a dead spawn. */
+const srv = await serveVerified(DIR, PORT);
 process.on('exit', () => { try { srv.kill(); } catch (e) {} });
-await sleep(2500);
 
-/* our server, not a neighbour's — a readiness probe that accepts any answer
-   eventually grades a stranger's process */
 const BASE = `http://127.0.0.1:${PORT}`;
 let OPENQ = 0;
 {
   const d = await (await fetch(`${BASE}/data.json`)).json();
-  if (d.target !== DIR) {
-    console.log(`FAIL :${PORT} is serving ${d.target}, not ${DIR}`);
-    process.exit(1);
-  }
   OPENQ = d.open_questions;
 }
 const AWAIT_N = OPENQ + 2;      // deliberately not the open count
