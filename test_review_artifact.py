@@ -2038,3 +2038,160 @@ def test_no_meta_in_a_built_head_is_missing_its_close():
         assert ">>" not in head, (
             "%s head carries a stray '>' — the meta-anchor regexes must "
             "swallow the tag close (see ASK_META_RE)" % path)
+
+
+# ── corpus coverage / walking guard (#436 remainder) ──────────────────────
+#
+# Every built artifact is checked (ask meta) or side-exempt with a reason.
+# Sourceless is the set difference {built}−{src}, never |built|−|src|.
+# Production line for strip-#ask: check_examined_artifact's "meta says ask but
+# id=ask is MISSING" branch.
+
+
+def test_corpus_coverage_equation_holds_on_the_real_tree():
+    """The live corpus satisfies examined ∪ side_exempt == built as sets.
+
+    PRECONDITION derived at runtime: built non-empty, side-file present, at
+    least one examined and at least one side-exempt (today's shape). A pass
+    over an empty review dir would be the silent-pass failure this closes.
+    """
+    review = os.path.join(HERE, ".dreamwork", "review")
+    result = ra.corpus_contract_coverage(review_dir=review)
+    assert result["built"], "no built artifacts — coverage would be vacuous"
+    assert result["examined"], "no examined artifacts — ask meta missing on all"
+    assert result["side_exempt"], (
+        "no side-exempt artifacts — the untemplated half vanished or the "
+        "side-file is empty; either way the equation's other arm is untested")
+    # Sets, not counts:
+    assert result["examined"] | result["side_exempt"] == result["built"], (
+        "coverage equation failed: missing=%r extra=%r"
+        % (sorted(result["built"] - (result["examined"] | result["side_exempt"])),
+           sorted((result["examined"] | result["side_exempt"]) - result["built"])))
+    assert result["examined"] & result["side_exempt"] == set(), (
+        "examined ∩ side_exempt must be empty: %r"
+        % sorted(result["examined"] & result["side_exempt"]))
+    assert result["unaccounted"] == set(), (
+        "unaccounted: %r" % sorted(result["unaccounted"]))
+    assert result["unbuilt_src"] == set(), (
+        "source(s) never built ({src}−{built}): %r — #329 does not catch these"
+        % sorted(result["unbuilt_src"]))
+    # Sourceless is the set difference, and today it equals the side-exempt set
+    # (every untemplated page is side-exempt; every side-exempt is untemplated).
+    assert result["sourceless"] == result["built"] - result["src"]
+    assert result["ok"], "failures: %s" % result["failures"]
+
+
+def test_sourceless_is_set_difference_not_count_subtraction():
+    """|{built}| − |{src}| is only right when every src has a built twin.
+
+    The production helpers expose both sets so a future unbuilt source cannot
+    make the arithmetic look fine while sourceless is understated.
+    """
+    review = os.path.join(HERE, ".dreamwork", "review")
+    built = ra.list_built_basenames(review)
+    src = ra.list_src_basenames(review)
+    assert built - src == ra.corpus_contract_coverage(review_dir=review)["sourceless"]
+    # PRECONDITION: today every src is built, so the arithmetic happens to
+    # match — assert that gap explicitly so the day it diverges is a finding.
+    assert src - built == set(), (
+        "unbuilt source(s) present: %r" % sorted(src - built))
+    assert len(built) - len(src) == len(built - src), (
+        "arithmetic and set difference diverged — an unbuilt src or a "
+        "basename mismatch is hiding")
+
+
+def test_stripping_ask_from_a_content_ask_artifact_reds_the_corpus_walk(tmp_path):
+    """Red-proof: remove #ask from a content='ask' artifact → walk fails.
+
+    Production line: `check_examined_artifact`'s branch
+    `if ask == "ask": ... if not present: failures.append(...)`.
+    A green red-run here is a finding — the meta alone must not pass.
+    """
+    review = os.path.join(HERE, ".dreamwork", "review")
+    # PRECONDITION: find a real content=ask artifact with a real #ask element.
+    victim_name = None
+    victim_text = None
+    for name in sorted(ra.list_built_basenames(review)):
+        text = open(os.path.join(review, name), encoding="utf-8").read()
+        if ra.ask_status(text) == "ask":
+            present, meaningful = ra.scan_ask(text)
+            if present and meaningful:
+                victim_name = name
+                victim_text = text
+                break
+    assert victim_name, (
+        "no content=ask artifact with a meaningful #ask — strip red-proof "
+        "has no subject")
+
+    # Build a private corpus: copy every built file + the side-file, then
+    # strip #ask only on the victim. The production walk must see the rest of
+    # the corpus too or the coverage equation is untested.
+    private = tmp_path / "review"
+    private.mkdir()
+    (private / "src").mkdir()
+    import shutil
+    for name in ra.list_built_basenames(review):
+        shutil.copy2(os.path.join(review, name), private / name)
+    for name in ra.list_src_basenames(review):
+        shutil.copy2(os.path.join(review, "src", name), private / "src" / name)
+    shutil.copy2(
+        os.path.join(review, ra.LEGACY_EXEMPTIONS_NAME),
+        private / ra.LEGACY_EXEMPTIONS_NAME)
+
+    # Strip the outer id="ask" element. Leave the meta so a different branch
+    # is not what reds.
+    stripped, n = re.subn(
+        r'<([a-zA-Z0-9]+)\b[^>]*\bid=["\']ask["\'][^>]*>.*?</\1>',
+        '',
+        victim_text,
+        count=1,
+        flags=re.S,
+    )
+    assert n == 1, "failed to strip exactly one #ask element from %s" % victim_name
+    assert ra.ask_status(stripped) == "ask", (
+        "strip must leave the meta in place — otherwise a different branch reds")
+    present, _ = ra.scan_ask(stripped)
+    assert not present, "strip did not remove #ask — red-proof is vacuous"
+    (private / victim_name).write_text(stripped, encoding="utf-8")
+
+    result = ra.corpus_contract_coverage(review_dir=str(private))
+    assert not result["ok"], (
+        "strip of #ask from %s left corpus ok — production line is wrong"
+        % victim_name)
+    joined = " ".join(result["failures"]).lower()
+    assert "missing" in joined or "ask" in joined, (
+        "failure did not name the missing ask: %r" % result["failures"])
+
+
+def test_dropping_a_side_file_entry_leaves_an_unaccounted_artifact(tmp_path):
+    """Red-proof of the coverage equation: omit one exempt → unaccounted.
+
+    Production line: `unaccounted = built - examined - side_keys` in
+    `corpus_contract_coverage`.
+    """
+    review = os.path.join(HERE, ".dreamwork", "review")
+    full = ra.corpus_contract_coverage(review_dir=review)
+    assert full["side_exempt"], "no side-exempt to drop — test is vacuous"
+    drop = sorted(full["side_exempt"])[0]
+
+    private = tmp_path / "review"
+    private.mkdir()
+    (private / "src").mkdir()
+    import shutil
+    for name in full["built"]:
+        shutil.copy2(os.path.join(review, name), private / name)
+    for name in full["src"]:
+        shutil.copy2(os.path.join(review, "src", name), private / "src" / name)
+    # Rewrite side-file without `drop`.
+    lines = []
+    with open(os.path.join(review, ra.LEGACY_EXEMPTIONS_NAME), encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip().startswith(drop):
+                continue
+            lines.append(line)
+    (private / ra.LEGACY_EXEMPTIONS_NAME).write_text("".join(lines), encoding="utf-8")
+
+    result = ra.corpus_contract_coverage(review_dir=str(private))
+    assert not result["ok"]
+    assert drop in result["unaccounted"], (
+        "dropped %s but unaccounted=%r" % (drop, sorted(result["unaccounted"])))

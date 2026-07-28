@@ -1,0 +1,39 @@
+# legacy-contract-exemptions — side-file the #436 walking guard reads
+#
+# Format (one entry per line; blank lines and # comments ignored):
+#   <basename.html>: <one-line reason>
+#
+# Purpose: every built artifact under .dreamwork/review/ must be either
+# CHECKED (carries dreamwork-review-ask / dreamwork-review-if-silent meta from
+# the builder) or EXPLICITLY EXEMPT here with a stated reason. There is no third
+# state. Untemplated pre-#436 pages have no src/ and must not be hand-edited
+# (generated-looking output that the next rebuild would not own; #329 only
+# catches stale templated builds). Listing them here makes the skip countable.
+#
+# The walking guard asserts at runtime:
+#   examined ∪ side_exempt == built
+#   examined ∩ side_exempt == ∅
+#   {src} − {built} == ∅   (a source that was never built is a real defect)
+# where sourceless is the set difference {built} − {src}, never |built|−|src|.
+
+# Class: template reference (the hand-rolled page the template was cut to match)
+tasks-page.html: pre-#436 untemplated; the hand-rolled reference the template was cut from; no src/; not rebuilt through review_artifact
+
+# Class: pre-builder design / incubation reviews (hand-rolled, no template stamp)
+goal-hierarchies.html: pre-#436 untemplated design review (#95); no builder source; reconstruction would not be byte-identical
+ud-dreamtask.html: pre-#436 untemplated design review (#50); no builder source; reconstruction would not be byte-identical
+
+# Class: pre-builder contract / threat / ordering notes (hand-rolled mini-pages)
+explore-command-contract.html: pre-#436 untemplated contract note (#225); no builder source
+lan-bind-threat-model.html: pre-#436 untemplated threat model (#233); no builder source
+task-origin-contract.html: pre-#436 untemplated contract note (#213); no builder source
+protected-service-boundary-288.html: pre-#436 untemplated boundary note (#288); no builder source
+review-datetime-order.html: pre-#436 untemplated ordering decision (#221); no builder source
+hub-public-auth.html: pre-#436 untemplated auth design (#275); no builder source
+
+# Class: pre-builder treatment / proposal pages
+do-now-urgency-treatment.html: pre-#436 untemplated treatment design (#257/#258); no builder source
+threaded-topic-chats-v2.html: pre-#436 untemplated revised proposal (#270 v2); no builder source
+
+# Class: superseded proposal (still present; listed for possible retirement by coordinator)
+threaded-topic-chats.html: pre-#436 untemplated proposal (#229); superseded by threaded-topic-chats-v2.html; no builder source; candidate for retirement (do not delete without coordinator)
