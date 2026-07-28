@@ -27,14 +27,32 @@ declare({
                '350-600ms settles around each click/submit; motion sampled per frame',
 });
 
-// per-frame trace of one card's indicator while something happens to it
+// per-frame trace of one card's indicator while something happens to it.
+// A frame is recorded as null (and so dropped by the uniq filters below) when
+// the indicator is detached or still at its un-positioned default: the live
+// tick re-renders `/questions` by swapping the card's innerHTML, which leaves
+// the `g` reference pointing at a node no longer in the document, and a
+// DETACHED element's getBoundingClientRect() is all zeros — so its `.left`
+// reads 0 and a single such frame mid-trace invents a third "position" and
+// fails the reduced-motion JUMPS check (which expects ≤2) on a page that is
+// honouring reduced motion perfectly (`.snap` on, `transition:none`, exactly
+// two real positions). The width gate excludes exactly that frame: a
+// connected, positioned indicator has a non-zero width set by slideIndicator,
+// while the detached/default one is 0×0. (#475.)
 const TRACE = act => `((act, ms) => new Promise(res => {
   const frames = [];
   const g = document.querySelector('.qa.open .qmodes');
   const t0 = performance.now();
   (function step() {
     const ind = g && g.querySelector('.sgind');
-    frames.push(ind ? Math.round(ind.getBoundingClientRect().left) : null);
+    let v = null;
+    if (ind) {
+      const r = ind.getBoundingClientRect();
+      // width 0 ⇒ detached, or the pre-paint default before slideIndicator
+      // sizes it — either way not a real position sample.
+      if (r.width > 0) v = Math.round(r.left);
+    }
+    frames.push(v);
     if (performance.now() - t0 < ms) requestAnimationFrame(step);
     else res(frames);
   })();
