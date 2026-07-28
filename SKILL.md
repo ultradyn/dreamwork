@@ -279,6 +279,13 @@ paths — `file-formats.md` for the shape), which the lane-containment guard
 (`dev/lane_guard.py`) reads to refuse a main-checkout commit touching them.
 `lint.check_brief_lane_owns` errors on a worktree brief that declares none,
 so the omission is loud at dispatch rather than a silent no-op at commit.
+**That guard is not write-time containment** (#450): on the harnesses the
+loop dispatches (`ccc @grok` / `ccc @glm52`), a `Write` with an absolute path
+is not interceptable before it lands — cwd, `git -C`, and the brief do not
+stop it. The guard fails at first *commit* (and `#468`'s lint backstop when
+the main tree is dirty); do not read either as a guarantee that a lane cannot
+touch the main checkout. Ceiling per harness:
+`.dreamwork/docs/plans/harness-containment.md`.
 
 **Inbox and hand-off paths given to a worktree lane are absolute.** A lane
 in `.worktrees/x` told to append to `.dreamwork/inbox.md` writes its own
