@@ -24,9 +24,29 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **424**
+Next id: **425**
 
 ## Open
+- **#424** — `just test` is a single shared lock, so N concurrent lanes cannot each verify · P2 ·
+  loop-tooling/orchestration · origin: **loop** · found when `#419` reported guards blocked at 17:01
+  · guards bind **39890-39899** and the recipe hard-aborts if any port in the range is held (the
+  `#203` trap, and that abort is correct). So with four lanes live and every brief instructing
+  *"then `just test`"*, **at most one lane can ever run it** — the others either wait indefinitely
+  or report a blocked suite. `#419` waited, refused to force-kill, and said so; the reaper also
+  refused (correctly — I checked, the holder's parent `just guards` was alive and writing)
+  · **the brief's instruction is therefore unsatisfiable at fan-out and I have written it into five
+  briefs today.** *"Check `ss -ltnp | grep 3989` and say if you waited"* tells a lane how to notice
+  the collision and nothing about what to do for the next fourteen minutes
+  · options: **(a)** a per-lane port range derived from the worktree name, so four lanes get four
+  disjoint decades — needs the range to stop being a constant; **(b)** the coordinator owns `just
+  test` and lanes run `pytest` + `lint` only, verifying guards once at merge — cheapest, and it
+  matches who actually merges; **(c)** a lock file with a queue, which serialises honestly but makes
+  a lane's wall-clock unpredictable. **Rec: (b)**, with the brief saying so instead of asking a lane
+  to wait
+  · this is a **dogfooding finding about the orchestrator mode itself**, which is the second thing
+  he asked to be measured — parallel lanes are cheap until they share a lock nobody modelled
+  · related: **#203, #423**
+
 - **#423** — `ccc @grok` 401s recur, and the loop has no signal for a dead runner · P2 ·
   loop-tooling/orchestration · origin: **loop** · **recurrence of landed `#410`**
   · grok was 401 from **05:52 to 14:50** (his fix), worked for three lanes, then went 401 again at
@@ -38,7 +58,7 @@ Next id: **424**
   exits without committing or writing to the inbox should be **recorded as failed**, not silently
   forgotten. `status_sync`'s liveness work (`#402a`) already knows how to ask whether a pid is
   alive; it does not know how to ask whether a lane *did* anything
-  · related: **#410, #402**
+  · related: **#410, #402, #424**
 
 - **#421** — how we ask him questions, researched rather than guessed · P1 · loop-instructions ·
   origin: **human** · **human via watch `do-next` 2026-07-28 16:29** · next-up
@@ -3347,6 +3367,7 @@ Next id: **424**
   *"I could not tell"* and *"nothing"* must not render the same
   · related: **#294, #346, #281, #300**
 
+## Recently landed
 - **#419** — it must be structurally impossible to be blocked on a human decision with no question
   asking for it · **P1** · loop-integrity/format · origin: **human** · **human via watch
   `/answers` 2026-07-28 15:19**
@@ -3382,8 +3403,8 @@ Next id: **424**
   · **P1 because it is a loop-integrity property, not a feature**: every hour he spends unable to
   unblock work he believes he is blocking is a direct cost, and the failure is silent on both sides
   · related: **#264, #294, #289, #420**
+  · **landed `0f11df5`, 2026-07-28 17:00** — direction 1 enforced, direction 2 refused and the refusal red-proved
 
-## Recently landed
   · **IN PROGRESS 2026-07-28 16:14** — `ccc @glm52`, `.worktrees/419`, brief
   `.dreamwork/docs/briefs/419-human-blocker-invariant.md`, owning `file-formats.md`, `lint.py`,
   `test_lint.py`. Told to **design the marker before writing the check**, because a check over a field
@@ -3393,6 +3414,37 @@ Next id: **424**
   answered-but-unprocessed entries the census found are the corpus
   · `#402b`'s id-vocabulary row is offered to the same lane as an opportunistic add, since it is in the
   same file — with permission to decline it if it grows the diff
+  · **DONE, `ccc @glm52`, ~45 minutes, landed `c58edc4` (merged 17:01).** `file-formats.md` +105,
+  `lint.py` +173, `test_lint.py` +214 with 12 new tests. Marker: `· blocked-on: **human** ·`, with
+  `· gate: **#N** ·` when the ruling rides a neighbour's question. Direction 1 is an **ERROR** and
+  quotes his own words in the message
+  · **verified independently before merge**: I injected the marker onto `#416` — an open entry with
+  no question — in a copy of the live ledger and lint named that entry and errored; restored, silent
+  again. `test_lint.py` 277 passed. **Silent on the live repo by design** (no entry carries a marker
+  yet), so it is forward-looking: the next entry that claims a human block without a question errors
+  the day it is written
+  · **direction 2 REFUSED, with reasons, and the refusal is the better half.** The brief handed it
+  four specimens as *"he ruled and nobody processed it"* and **none is a defect**: `#371` was
+  retracted by my own 16:23 amendment, `#254` is a deliberate design-only grant, `#367` is being
+  built now, `#50` is authorised-but-unstarted. Then it **measured** the prose form — `blocked on
+  #N` where `#N` is answered fires on **11 open entries, all 11 legitimate** task dependencies. A
+  WARN that is 11 wrong and 0 right is the hollow check this repo spent a day refusing
+  · **it red-proved the refusal, which I had not thought to ask for**: reintroducing the rejected
+  design breaks exactly the two tests that hold the rejection. A decision *not* to build something,
+  defended by a test that fails if someone builds it
+  · **the finding for his desk, and it is the real answer to his 15:19 ask:** *"there always has to
+  be an answer in our data"* is only **half** satisfiable from what we keep. Direction 1 is now
+  enforced. Direction 2 needs a record of **authorisation** — which is what `#263`'s journal is —
+  rather than an inference from which section a question sits in
+  · **and it vindicates `#421`'s option B rather than refuting it.** Option B asks that an
+  unanswered sub-decision be **explicitly recorded**; this lane's refusal is precisely that
+  *inferring* it is impossible. The two agree, one door apart
+  · **transitive coverage does NOT count** — an entry whose own id has no question errors even when
+  a neighbour's question covers the decision, because a reader landing on that entry alone cannot
+  find it. Same shape as the `#371` trap. Consequence: `#353` carries no marker so the check is
+  silent on it; giving it one requires either its own question or `gate: **#264**`, and that is my
+  call not the check's
+  · declined `#402b`'s id-vocabulary row as out of its diff, correctly — the brief said to
 
 - **#420** — a census of everything not done, because nobody has a view of 138 open entries · P2 ·
   loop-tooling/grooming · origin: **human** · **human via watch `/answers` 2026-07-28 15:25**
@@ -5692,6 +5744,7 @@ Next id: **424**
   hole its own note pointed at: `is_deployed` was printed and never consulted,
   so a deployed dashboard with a deleted cwd was sweepable — red-proved and
   closed · **the port-0 half remains open**, see #319
+  · related: **#424**
 
 - **#317** — `qorder.mjs` is the fifth instance of the frame-count assertion ·
   P2 · guard craft · ~20m · origin: **loop** · goal: a guard must not go red for
