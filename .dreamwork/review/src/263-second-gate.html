@@ -1,0 +1,350 @@
+<!--dreamwork-review-source
+title: #263 · Second gate · open E and H, or don't?
+identity: #263 · second gate
+context: task #263 · A–D and F landed · gate condition met
+status: awaiting ruling
+headline: The condition was met at 07:25. The ask arrived nine hours later, by walking into the gate.
+tag: second gate · three calls
+sub: task #263 · 28 July 2026 · every figure measured at build time
+skip: Skip to the three questions
+skip_href: #asks
+-->
+<!--#nav-->
+<a href="#asks">asks</a><a href="#withheld">limits</a><a class="full" href="#evidence">evidence</a><a href="#q3">split?</a>
+<!--#lead-->
+<p class="lead">Your 05:43 ruling held lanes <strong>E</strong> (HTTP cutover) and
+<strong>H</strong> (mixed-version gate) until A–D were <em>proved</em>. They are landed.
+This page is the evidence half of that condition, and the three calls that sit on top of it.
+It is not the plan-as-authored page
+(<code>user-event-journal-implementation.html</code>) — that predates the landings.</p>
+<!--#call-->
+<div class="call"><strong>Why this exists now rather than at 07:25.</strong> Lane D landed at
+<strong>07:25</strong> (<code>6cd9f95</code>). For nine hours the gate's condition was met and
+nothing asked you to open it — the ledger entry for #263 did not even record D as landed. At
+<strong>16:14</strong> the coordinator dispatched a lane onto <code>#371</code> (increment 20 =
+<code>E1 envelope</code> = <strong>lane E</strong>), reading your *"Q2 yes"* as authorisation
+when it only amended the design. Killed at 16:20 with nothing committed; retracted at
+<code>6ea8f6b</code>. <strong>Nine hours, and it was found by walking into the gate rather than
+by checking.</strong> That is data about the gate mechanism itself, not a footnote.</div>
+<!--#aside-->
+<span class="big">9h</span>
+<small>from D landing (07:25) to the ask (16:25)<br>
+measured: <code>git log 6cd9f95</code> · <code>269dcfa</code><br>
+condition met; no ask; walked in</small>
+<!--#body-->
+
+<section id="withheld" aria-labelledby="wh-t">
+  <div class="label" id="wh-t">What opening the gate does NOT authorise</div>
+  <div class="notice"><strong>This block is the limit, not decoration.</strong> Opening E and/or
+  H does not widen anything listed below. Ratifying without reading this is ratifying past a wall.</div>
+  <div class="scroller"><table>
+  <thead><tr><th>withheld</th><th>why</th><th>measured</th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td><strong>Lane G · increments 30–33</strong></td>
+      <td class="fail">never in G1; stays withheld whatever you decide on E and H</td>
+      <td>G1 table in the plan · browser drafts / attempts / conflict / migrate</td></tr>
+    <tr><td><strong>Fixture 18 · active-store purge</strong></td>
+      <td class="fail"><code>UNPLACEABLE</code> per your Q4 ruling — not built</td>
+      <td>plan §Fixture map · approval excluded payload purge</td></tr>
+    <tr><td><strong>Fixture 19 · PostgreSQL half</strong></td>
+      <td class="fail"><code>UNPLACEABLE</code> per Q4 — SQLite half may exist; PG is not stood up</td>
+      <td>same · "no PostgreSQL operation"</td></tr>
+    <tr><td><strong>Any live-target migration</strong></td>
+      <td class="fail">H's fixture is <em>code and temp targets only</em></td>
+      <td>plan H2 · "running it against a live target is migration"</td></tr>
+  </tbody>
+  </table></div>
+  <div class="approval"><strong>Not authorised by a yes on this page:</strong> lane G, payload
+  purge, PostgreSQL operation, topic chats, deployment of a cutover watermark against a live
+  target, or any rewrite of the dashboard that is not inside the named E/H increments.</div>
+</section>
+
+<section id="measured" aria-labelledby="meas-t">
+  <div class="label" id="meas-t">Numbers measured at build time — not copied from the plan</div>
+  <p class="read">The plan and the questions entry still carry figures that were true when
+  written. Below is what the tree is now. Where they disagree, that is a finding.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">9,688</span><span class="caption"><code>watch.py</code> lines today · <code>wc -l watch.py</code> · the plan says <strong>8,647</strong> — stale by <strong>1,041</strong></span></div>
+    <div class="fact"><span class="number">34</span><span class="caption">lane tests that landed · <code>rg 'def test_'</code> across the five <code>test_user_events_*.py</code> files · A2+B12+C3+D7+F10</span></div>
+    <div class="fact"><span class="number">6 / 6</span><span class="caption">lane E increments that touch <code>watch.py</code> for production code · plan §Lane E · tests prefer new <code>test_user_events_http.py</code></span></div>
+    <div class="fact"><span class="number">26</span><span class="caption"><code>assert*</code> calls with a literal <code>200</code> in <code>test_watch.py</code> today · <code>ast</code> walk · the plan said <strong>15</strong> at authoring</span></div>
+  </div>
+  <div class="notice"><strong>Two contradictions worth naming.</strong> (1) Questions entry and
+  plan status line pin B as <code>6a865e4..bc731cf</code>, but B6–B8 landed after that range
+  (<code>30947d7</code>, <code>5f729dc</code>, <code>fec80be</code>) — B is 8/8 with a wider
+  tip. (2) Plan table still lists C4/C5; status says C <strong>3/3</strong> and the tree has
+  three domain-file tests only — C4 markers and C5 rebaseline are <em>not</em> in
+  <code>user_events/domain_files.py</code>.</div>
+</section>
+
+<section id="evidence" aria-labelledby="ev-t">
+  <div class="label" id="ev-t">Evidence per landed lane — not a green row</div>
+  <p class="read">His condition was <em>"until A–D are proved"</em>. Proved is not "the suite
+  is green". Below is what each lane's commit message claims, checked against
+  <code>git show</code> and the files that exist.</p>
+
+  <div class="spine">
+    <div class="spine-row"><div class="spine-key">A · digest</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body">
+        <p><b>2 tests · 2/2 · greenfield · no <code>watch.py</code></b></p>
+        <p><code>aad1d8d</code> 05:55 · A1 framing; A2 case/parameter order landed inside
+        <code>12f47e3</code> (a ledger commit that also swept the test — the lane reported the
+        attribution loss rather than inventing a clean A2 sha). Red: delete the length-prefix
+        write → framing-boundary test fails alone. Files:
+        <code>user_events/digest.py</code> (117) · <code>test_user_events_digest.py</code> (114,
+        2 tests).</p>
+      </div></div>
+
+    <div class="spine-row"><div class="spine-key">B · journal</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body">
+        <p><b>12 tests · 8 increments · greenfield · no <code>watch.py</code></b></p>
+        <p><code>6a865e4</code> (B1, 06:11) → <code>9bea281</code> B2 · <code>2e1e987</code> B3 ·
+        <code>37d0066</code> B4 · <code>bc731cf</code> B5 · <code>5f729dc</code> B7 ·
+        <code>30947d7</code> B6 · <code>fec80be</code> B8 (06:38). Files:
+        <code>user_events/sqlite.py</code> (1,059) · <code>test_user_events_sqlite.py</code>
+        (882, 12 tests).</p>
+        <p><strong class="fail">B7 is a known hole, not a closed proof.</strong>
+        <code>5f729dc</code>'s message: red injection removed
+        <code>UNIQUE(client_action_id)</code> and the suite <strong>stayed GREEN</strong>. Not
+        hidden — reported. Mechanism: <code>BEGIN IMMEDIATE</code> + B2's SELECT-before-insert
+        already serialise writers, so the second process replays without needing the unique
+        constraint. <code>UNIQUE</code> remains in the schema today as defence-in-depth
+        (<code>user_events/sqlite.py:192</code>); no later commit made it the load-bearing red.
+        Plan §B7 was amended to name <code>BEGIN IMMEDIATE</code> + SELECT as co-reds. <em>That
+        is evidence of a different kind from lane D:</em> a proof that found it could not fail
+        the way it was written, and left the fact visible.</p>
+      </div></div>
+
+    <div class="spine-row"><div class="spine-key">C · domain files</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body">
+        <p><b>3 tests · C1–C3 landed · C4/C5 not in tree · no <code>watch.py</code></b></p>
+        <p><code>3f1a6af</code> C1 flock (06:10) · <code>8c1bb60</code> C2 lineage (06:15) ·
+        <code>b5555e4</code> C3 one-write (06:21) · <code>4a773e2</code> C3 red-decouple
+        (06:27). Files: <code>user_events/domain_files.py</code> (310) ·
+        <code>test_user_events_domain_files.py</code> (281, 3 tests). Reds: real OS processes for
+        the lock; digest exclusion line for lineage; kill-at-rename for one-write. <strong>Status
+        "3/3" matches the tree; the plan table's C4/C5 rows are still aspirational.</strong>
+        Questions entry cites only <code>3f1a6af</code>, <code>8c1bb60</code> — missing
+        <code>b5555e4</code>.</p>
+      </div></div>
+
+    <div class="spine-row"><div class="spine-key">D · application</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body">
+        <p><b>7 tests (4 D increments + follow-ups) · landed 07:25 · no <code>watch.py</code></b></p>
+        <p><code>6cd9f95</code> · <code>user_events/apply.py</code> (423) ·
+        <code>test_user_events_apply.py</code> (485 lines at land; 579 now after
+        <code>fa65bce</code> #390). Ternary <code>Proof</code>, one-successor reservation,
+        post-crash reconcile with real <code>os._exit</code> children, five route-registered
+        adapters.</p>
+        <p><strong class="pass">D found a hollow red inside itself and closed it.</strong> From
+        the commit body: the body-digest predicate initially lived in <em>both</em>
+        <code>_is_valid_known_file</code> and <code>successor_matches</code> — deleting the
+        copy under test changed nothing, because the other copy still held. Found red-first,
+        consolidated to one line in the guard. That is the difference between "the tests pass"
+        and "the tests were proved capable of failing". Seven named reds, each restored from
+        <code>cp</code> snapshots rather than <code>git checkout</code>.</p>
+      </div></div>
+
+    <div class="spine-row"><div class="spine-key">F · CLI</div><div class="spine-rail"><span class="spine-dot"></span></div>
+      <div class="spine-body">
+        <p><b>10 tests · 4/4 · greenfield · no <code>watch.py</code></b></p>
+        <p>Code: <code>9263a42</code> F1 · <code>e84ca0c</code> F2 · <code>312daeb</code> F3 ·
+        <code>4c918b2</code> F4 (06:34–06:42). Close note <code>2386345</code> is ledger-only.
+        Files: <code>ud-dw-user-events</code> (356) · <code>test_user_events_cli.py</code> (346,
+        10 tests). F4's coverage test parses the design document and was red-proved to fail
+        loudly on a zero parse — the <code>lessons.md:1447</code> shape, verified by breaking
+        the bullet match.</p>
+      </div></div>
+  </div>
+
+  <div class="checks">
+    <div class="check"><b>Lane D hollow red</b><span>found · consolidated · the predicate now has one home</span></div>
+    <div class="check"><b>Lane B B7 green red</b><span>found · reported · UNIQUE still defence-in-depth, not the red line</span></div>
+  </div>
+  <p class="quiet">Those two rows are not the same fact. A status table that paints both green
+  erases the difference his condition turns on.</p>
+</section>
+
+<section id="asks" aria-labelledby="asks-t">
+  <div class="label" id="asks-t">Three questions — his priority order</div>
+
+  <div class="choice" id="q1"><div class="choice-grid"><span class="choice-tag">Q1</span><div>
+    <strong>Open the second gate for lane E (increments 20–25), the HTTP cutover?</strong>
+    <p class="read">Journal commit, not the handler, authorises the response:
+    <code>202</code> + <code>Location</code> + receipt identity. Shadow-write first; then
+    cutover; then <code>shadow_failed</code> health. All six production increments live in
+    <code>watch.py</code> (measured: plan §Lane E, rows E1–E6; no new production module named —
+    only <code>test_user_events_http.py</code> preferred for tests). Prerequisites A–D are
+    landed. The witness half of <code>#371</code> already landed at <code>d33cc2f</code>
+    (short/got in <code>submissions.log</code>); E1 is the policy half — refuse vs incomplete
+    receipt — which your Q2 yes already directed in the design.</p>
+    <div class="answer"><strong>Rec: yes, but see Q3 first.</strong> The work is ready. Opening
+    E without answering Q3 is choosing serial-now by default, because E and G still share one
+    9,688-line file.</div>
+  </div></div></div>
+
+  <div class="choice" id="q2"><div class="choice-grid"><span class="choice-tag">Q2</span><div>
+    <strong>Open it for lane H (34–35), the mixed-version gate?</strong>
+    <p class="read">H1 refuse-before-witness on version mismatch; H2 quiesced cutover across two
+    server instances. Fixture is <em>code and temp targets only</em>. H2 is the only increment
+    that writes an irreversible watermark — and it is not authorised to run against a live
+    target under any reading of this page.</p>
+    <div class="answer"><strong>Rec: yes for the code.</strong> And I will not run it against
+    your live target without asking again. H can proceed on temp targets whether or not #368
+    lands first; it is smaller surface than E's six increments inside the dashboard.</div>
+  </div></div></div>
+
+  <div class="choice" id="q3"><div class="choice-grid"><span class="choice-tag">Q3</span><div>
+    <strong>Does #368 (the modular split) land before E runs?</strong>
+    <p class="read">Your own plan note, not the coordinator's: <em>"lanes E and G both live
+    inside the one … <code>watch.py</code>, so they are a single lane in practice."</em> That
+    number is now <strong>9,688</strong> lines (<code>wc -l watch.py</code>), not the plan's
+    8,647. Six E increments all edit that file; G would too. #368 is open P2, human-origin,
+    worded <em>"after the cli"</em> — and F, the CLI, has landed.</p>
+    <div class="answer"><strong>Rec: split first.</strong> It costs one batch and buys parallel
+    lanes for E and G with a smaller blast radius on the file the dashboard is. It delays the
+    policy half of #371. If you would rather have that P1 fixed than the file split, say so and
+    E runs serially now.</div>
+  </div></div></div>
+</section>
+
+<section id="compare" aria-labelledby="cmp-t">
+  <div class="label" id="cmp-t">Q3 · the trade-off shown, not only described</div>
+  <p class="read">Two sequencings. Same destination (E done, then eventually G). Different cost
+  and different radius. Figures from the plan's increment table and <code>wc -l watch.py</code>
+  at build time.</p>
+
+  <div class="frames">
+    <div class="frame">
+      <div class="framebar"><b>A · split first</b><span>#368 batch → then E (and later G) in parallel lanes</span></div>
+      <div class="framebody">
+        <div class="stages">
+          <div class="stage"><span><b>Now.</b> Gate opens E+H in principle; #368 starts on the extraction seam.</span></div>
+          <div class="stage"><span><b>+1 batch.</b> <code>watch.py</code> (9,688) loses HTTP / PAGE chunks into modules.</span></div>
+          <div class="stage"><span><b>Then.</b> E1–E6 and (when authorised) G1–G4 on <em>disjoint</em> files.</span></div>
+          <div class="stage"><span><b>Buys.</b> Parallelism · smaller review diffs · G no longer queues behind E's file lock.</span></div>
+          <div class="stage"><span><b>Costs.</b> One batch delay before any E commit · #371 policy half waits that batch.</span></div>
+        </div>
+        <div class="summary-line"><span>blast radius</span><span class="pass">bounded to extracted modules after the split</span></div>
+        <div class="summary-line"><span>#371 policy</span><span class="unknown">later by one batch</span></div>
+        <div class="summary-line"><span>parallelism</span><span class="pass">E and G in parallel becomes real</span></div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="framebar"><b>B · serial E now</b><span>six increments inside the one file, G still waits</span></div>
+      <div class="framebody">
+        <div class="stages">
+          <div class="stage"><span><b>Now.</b> Gate opens; E1 starts in <code>watch.py</code> immediately.</span></div>
+          <div class="stage"><span><b>E1–E6.</b> All six production edits hit the same 9,688-line file.</span></div>
+          <div class="stage"><span><b>G.</b> Still serial behind whoever holds <code>watch.py</code>.</span></div>
+          <div class="stage"><span><b>Buys.</b> #371 policy half sooner · cutover visible sooner.</span></div>
+          <div class="stage"><span><b>Costs.</b> No parallel fan-out · large review surface · G remains one-lane-in-practice.</span></div>
+        </div>
+        <div class="summary-line"><span>blast radius</span><span class="fail">whole dashboard file, six times</span></div>
+        <div class="summary-line"><span>#371 policy</span><span class="pass">earliest possible</span></div>
+        <div class="summary-line"><span>parallelism</span><span class="fail">E and G still share one lane</span></div>
+      </div>
+    </div>
+  </div>
+
+  <figure>
+    <div class="figscroll">
+      <svg viewBox="0 0 720 220" width="720" height="220" role="img" aria-label="Two timelines: split-first versus serial-now">
+        <rect width="720" height="220" fill="#0c1220"/>
+        <text x="16" y="28" fill="#a5b4fc" font-size="12">split first</text>
+        <rect x="16" y="40" width="90" height="28" fill="#162033" stroke="#334155"/>
+        <text x="28" y="58" fill="#cbd5e1" font-size="11">#368</text>
+        <path d="M106 54 H130" stroke="#697589" stroke-width="1"/>
+        <rect x="130" y="40" width="70" height="28" fill="#162033" stroke="#86efac"/>
+        <text x="145" y="58" fill="#86efac" font-size="11">E1–E6</text>
+        <rect x="210" y="40" width="70" height="28" fill="#162033" stroke="#86efac"/>
+        <text x="225" y="58" fill="#86efac" font-size="11">G later</text>
+        <text x="290" y="58" fill="#697589" font-size="11">parallel once split</text>
+
+        <text x="16" y="120" fill="#a5b4fc" font-size="12">serial now</text>
+        <rect x="16" y="132" width="50" height="28" fill="#162033" stroke="#86efac"/>
+        <text x="28" y="150" fill="#86efac" font-size="11">E1</text>
+        <rect x="70" y="132" width="50" height="28" fill="#162033" stroke="#86efac"/>
+        <text x="82" y="150" fill="#86efac" font-size="11">E2</text>
+        <rect x="124" y="132" width="50" height="28" fill="#162033" stroke="#86efac"/>
+        <text x="136" y="150" fill="#86efac" font-size="11">E3</text>
+        <rect x="178" y="132" width="50" height="28" fill="#162033" stroke="#86efac"/>
+        <text x="190" y="150" fill="#86efac" font-size="11">E4</text>
+        <rect x="232" y="132" width="50" height="28" fill="#162033" stroke="#86efac"/>
+        <text x="244" y="150" fill="#86efac" font-size="11">E5</text>
+        <rect x="286" y="132" width="50" height="28" fill="#162033" stroke="#86efac"/>
+        <text x="298" y="150" fill="#86efac" font-size="11">E6</text>
+        <rect x="350" y="132" width="90" height="28" fill="#162033" stroke="#fda4af"/>
+        <text x="365" y="150" fill="#fda4af" font-size="11">G still waits</text>
+        <text x="16" y="200" fill="#697589" font-size="11">all E boxes above = edits to the same 9,688-line watch.py · measured wc -l</text>
+      </svg>
+    </div>
+    <figcaption>Side-by-side sequencing. Green border = authorised work once the gate opens.
+    Rose = still serialised on the file even after E finishes, unless the split lands.</figcaption>
+  </figure>
+
+  <div class="deltas">
+    <div class="delta"><b>A</b><span><strong>split first</strong> — batch delay, then parallel E/G, smaller diffs. Rec.</span></div>
+    <div class="delta"><b>B</b><span><strong>serial now</strong> — #371 sooner, six serial edits in one large file, G still blocked on ownership.</span></div>
+  </div>
+</section>
+
+<section id="e-files" aria-labelledby="ef-t">
+  <div class="label" id="ef-t">Lane E file map — derived from the plan's per-increment rows</div>
+  <div class="scroller"><table>
+  <thead><tr><th>inc</th><th>name</th><th>production surface</th><th>test surface (plan)</th></tr></thead>
+  <tbody>
+    <tr class="row-accent"><td>20</td><td>E1 envelope</td><td class="fail"><code>watch.py</code> <code>do_POST</code></td><td><code>test_user_events_http.py</code> (new, preferred)</td></tr>
+    <tr><td>21</td><td>E2 shadow</td><td class="fail"><code>watch.py</code> <code>do_POST</code> + journal call</td><td>same</td></tr>
+    <tr><td>22</td><td>E3 cutover</td><td class="fail"><code>watch.py</code> <code>_send</code> / response path</td><td>same</td></tr>
+    <tr><td>23</td><td>E4 besteffort</td><td class="fail"><code>watch.py</code> shadow health record</td><td>same</td></tr>
+    <tr><td>24</td><td>E5 reject</td><td class="fail"><code>watch.py</code> <code>_read_json</code> / validation order</td><td>same</td></tr>
+    <tr><td>25</td><td>E6 visible</td><td class="fail"><code>watch.py</code> <code>PAGE</code> JS + <code>/data.json</code></td><td>browser guard</td></tr>
+  </tbody>
+  </table></div>
+  <p class="quiet">Count: <strong>6 of 6</strong> production increments touch <code>watch.py</code>;
+  <strong>0 of 6</strong> name a new production module. That is the Q3 input, measured from plan
+  lines under §Lane E rather than guessed.</p>
+</section>
+
+<section id="provenance" aria-labelledby="prov-t">
+  <div class="label" id="prov-t">How every figure was obtained</div>
+  <div class="scroller"><table>
+  <thead><tr><th>figure</th><th>command / source</th><th>vs plan or questions</th></tr></thead>
+  <tbody>
+    <tr><td><code>watch.py</code> 9,688 lines</td><td><code>wc -l watch.py</code></td><td class="fail">plan 8,647 — stale</td></tr>
+    <tr><td>34 tests</td><td><code>rg -c 'def test_'</code> on five test files</td><td>—</td></tr>
+    <tr><td>A <code>aad1d8d</code> 05:55</td><td><code>git log --format</code></td><td>matches</td></tr>
+    <tr><td>B tip <code>fec80be</code></td><td><code>git log -- user_events/sqlite.py</code></td><td class="fail">questions range ends <code>bc731cf</code></td></tr>
+    <tr><td>C includes <code>b5555e4</code></td><td><code>git log -- user_events/domain_files.py</code></td><td class="fail">questions omits C3 sha</td></tr>
+    <tr><td>D <code>6cd9f95</code> 07:25</td><td><code>git show --format</code></td><td>matches</td></tr>
+    <tr><td>F code <code>9263a42</code>..<code>4c918b2</code></td><td><code>git log -- ud-dw-user-events</code></td><td class="unknown"><code>2386345</code> is close-note only</td></tr>
+    <tr><td>B7 hole open</td><td><code>git show 5f729dc</code>; schema still has UNIQUE; plan §B7 amended</td><td>known, not closed</td></tr>
+    <tr><td>D hollow red closed</td><td><code>git show 6cd9f95</code> body</td><td>matches questions claim</td></tr>
+    <tr><td>9.0 h D→ask</td><td>timestamps of <code>6cd9f95</code> and <code>269dcfa</code></td><td>matches "nine hours"</td></tr>
+    <tr><td>26 × assert 200</td><td><code>ast</code> walk of <code>test_watch.py</code></td><td class="fail">plan said 15</td></tr>
+    <tr><td>6/6 E → watch.py</td><td>plan §Lane E rows 20–25</td><td>—</td></tr>
+  </tbody>
+  </table></div>
+</section>
+
+<details>
+  <summary>Corrections the questions entry may want (report only — not edited)</summary>
+  <div class="details-in">
+  <p><b>B range.</b> Status line says <code>6a865e4..bc731cf</code> (ends at B5). Tree has B6
+  <code>30947d7</code>, B7 <code>5f729dc</code>, B8 <code>fec80be</code>.</p>
+  <p><b>C shas.</b> Cites <code>3f1a6af</code>, <code>8c1bb60</code> only; C3 is
+  <code>b5555e4</code>.</p>
+  <p><b>watch.py size.</b> "8,647-line" is stale; measure is 9,688.</p>
+  <p><b>#371 wording.</b> "cannot be fixed without [lane E]" overstates: witness half landed at
+  <code>d33cc2f</code>; only the policy half remains for E1.</p>
+  <p><b>F sha.</b> <code>2386345</code> is the close ledger note; code is
+  <code>9263a42</code>..<code>4c918b2</code>.</p>
+  </div>
+</details>
+
+<!--#footer-->
+<p>Plan: <code>.dreamwork/docs/plans/user-event-journal-implementation.md</code> · prior
+artifact (pre-landing): <code>user-event-journal-implementation.html</code> · ask:
+<code>questions.md</code> top entry · retract: <code>6ea8f6b</code> · this page built by
+<code>review_artifact.py</code> from <code>.dreamwork/review/src/263-second-gate.html</code>.</p>
