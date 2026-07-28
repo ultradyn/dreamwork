@@ -3580,6 +3580,278 @@ class TestBriefHandoffObligation:
         assert rep.rows == [], rep.render()
 
 
+class TestBriefWorktreeAbsInbox:
+    """#405: a brief that names a worktree must give an absolute inbox path.
+
+    A lane in `.worktrees/x` told to append to `.dreamwork/inbox.md` writes
+    its own copy; the coordinator never sees it. Cutoff is content-resolved
+    from SKILL.md (WORKTREE_ABS_INBOX_PHRASE), never pinned.
+
+    Production lines named per test (what must change for it to fail):
+    - flagged: the `if not ABS_INBOX_PATH_RE.search(text)` branch in
+      classify_worktree_brief_abs_inbox / the ERROR add in
+      check_brief_worktree_abs_inbox
+    - grandfathered: the `if add_t <= cutoff_t` branch that skips pre-rule
+      worktree briefs
+    - cutoff content: resolve_worktree_abs_inbox_cutoff + the phrase constant
+      + the post-resolve "phrase in blob" guard
+    - precondition: live tree has at least one brief containing `.worktrees/`
+      (a check that silently matches nothing passes forever)
+    """
+
+    PHRASE = lint.WORKTREE_ABS_INBOX_PHRASE
+    ABS = "/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md"
+
+    def _git_repo(self, tmp_path):
+        import subprocess
+        t = fresh(tmp_path)
+
+        def git(*a, check=True):
+            return subprocess.run(
+                ["git", "-C", str(t), *a],
+                capture_output=True, text=True, check=check)
+
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        return t, git
+
+    def test_a_post_cutoff_worktree_brief_without_abs_inbox_is_flagged(
+            self, tmp_path):
+        """Production line: the missing-absolute-inbox ERROR in
+        check_brief_worktree_abs_inbox — a post-cutoff brief that names
+        `.worktrees/` but only has a relative `.dreamwork/inbox.md` must be
+        named by basename.
+        """
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "absolute-inbox rule lands")
+        time.sleep(1.1)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        # THE defect: worktree named, inbox path repo-relative only.
+        (briefs / "999-wt-rel.md").write_text(
+            "# Brief\n\nWorktree: `.worktrees/x`\n\n"
+            "Report to `.dreamwork/inbox.md`.\n",
+            encoding="utf-8")
+        git("add", ".dreamwork/docs/briefs/999-wt-rel.md")
+        git("commit", "-qm", "worktree brief, relative inbox only")
+
+        # Precondition, derived: the brief is a worktree brief AND after cutoff
+        # AND missing the absolute path — the three facts the ERROR depends on.
+        scope = lint.classify_worktree_brief_abs_inbox(t)
+        assert "999-wt-rel.md" in scope["worktree"], scope
+        assert "999-wt-rel.md" in scope["in_scope"], scope
+        assert "999-wt-rel.md" in scope["missing"], scope
+        # And the relative form does not satisfy the absolute matcher.
+        rel_only = ".dreamwork/inbox.md"
+        assert not lint.ABS_INBOX_PATH_RE.search(rel_only), rel_only
+
+        rep = lint.Report()
+        lint.check_brief_worktree_abs_inbox(t / ".dreamwork", rep)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "briefs"]
+        assert len(errors) == 1, rep.render()
+        assert "999-wt-rel.md" in errors[0], errors[0]
+        assert "absolute" in errors[0].lower() or "inbox.md" in errors[0], (
+            errors[0])
+
+    def test_a_pre_cutoff_worktree_brief_is_grandfathered(self, tmp_path):
+        """Production line: the `add_t <= cutoff_t` grandfather branch in
+        classify_worktree_brief_abs_inbox.
+        """
+        import time
+        t, git = self._git_repo(tmp_path)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        (briefs / "100-old-wt.md").write_text(
+            "# Brief\n\nWorktree: `.worktrees/old`\n\n"
+            "Report to `.dreamwork/inbox.md`.\n",
+            encoding="utf-8")
+        (t / "SKILL.md").write_text("# skill\n\nno abs rule yet\n",
+                                    encoding="utf-8")
+        git("add", "SKILL.md", ".dreamwork/docs/briefs/100-old-wt.md")
+        git("commit", "-qm", "worktree brief before rule")
+        time.sleep(1.1)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "absolute-inbox rule lands later")
+
+        scope = lint.classify_worktree_brief_abs_inbox(t)
+        assert "100-old-wt.md" in scope["worktree"], scope
+        assert "100-old-wt.md" in scope["grandfathered"], scope
+        assert "100-old-wt.md" not in scope["in_scope"], scope
+        assert scope["missing"] == [], scope
+
+        rep = lint.Report()
+        lint.check_brief_worktree_abs_inbox(t / ".dreamwork", rep)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "briefs"]
+        assert errors == [], rep.render()
+
+    def test_a_post_cutoff_worktree_brief_with_abs_inbox_is_clean(
+            self, tmp_path):
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "rule lands")
+        time.sleep(1.1)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        (briefs / "997-wt-ok.md").write_text(
+            f"# Brief\n\nWorktree: `.worktrees/ok`\n\n"
+            f"Report to `{self.ABS}`.\n",
+            encoding="utf-8")
+        git("add", ".dreamwork/docs/briefs/997-wt-ok.md")
+        git("commit", "-qm", "compliant worktree brief")
+        scope = lint.classify_worktree_brief_abs_inbox(t)
+        assert "997-wt-ok.md" in scope["in_scope"], scope
+        assert scope["missing"] == [], scope
+        rep = lint.Report()
+        lint.check_brief_worktree_abs_inbox(t / ".dreamwork", rep)
+        assert not any(lvl == lint.ERROR and w == "briefs"
+                       for lvl, w, d in rep.rows), rep.render()
+        oks = [d for lvl, w, d in rep.rows if lvl == lint.OK and w == "briefs"]
+        assert oks and "1 worktree-naming brief(s)" in oks[0], rep.render()
+
+    def test_a_brief_that_does_not_name_a_worktree_is_not_examined(
+            self, tmp_path):
+        """Only `.worktrees/`-naming briefs are in the match set."""
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "rule")
+        time.sleep(1.1)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        # Relative inbox, but no worktree — must not be flagged.
+        (briefs / "996-shared.md").write_text(
+            "# Brief\n\nShared-tree lane. Report to `.dreamwork/inbox.md`.\n",
+            encoding="utf-8")
+        git("add", ".dreamwork/docs/briefs/996-shared.md")
+        git("commit", "-qm", "shared-tree brief")
+        # Without any worktree brief the check returns without rows; seed one
+        # compliant so the OK path runs and the non-worktree brief stays silent.
+        (briefs / "995-wt.md").write_text(
+            f"# Brief\n\n`.worktrees/y`\n\n`{self.ABS}`\n",
+            encoding="utf-8")
+        git("add", ".dreamwork/docs/briefs/995-wt.md")
+        git("commit", "-qm", "worktree brief ok")
+
+        scope = lint.classify_worktree_brief_abs_inbox(t)
+        assert "996-shared.md" not in scope["worktree"], scope
+        assert "995-wt.md" in scope["worktree"], scope
+        rep = lint.Report()
+        lint.check_brief_worktree_abs_inbox(t / ".dreamwork", rep)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "briefs"]
+        assert errors == [], rep.render()
+        assert not any("996-shared" in d for _, _, d in rep.rows), rep.render()
+
+    def test_the_cutoff_is_resolved_from_content_not_a_pinned_sha(self):
+        """Production line: resolve_worktree_abs_inbox_cutoff + phrase +
+        phrase-in-blob guard. Hollow no-cutoff must not look like a pass.
+
+        Precondition (asserted, not assumed): the live tree has at least one
+        brief whose body contains `.worktrees/` — a check that silently
+        matches nothing passes forever.
+        """
+        import subprocess
+        root = lint.SKILL_DIR
+        # Precondition the check depends on: worktree-naming briefs exist.
+        scope = lint.classify_worktree_brief_abs_inbox(root)
+        # Before the introducing commit is in history, cutoff is None and
+        # worktree list may still be empty from the empty return. Derive the
+        # precondition from the filesystem so it holds even mid-landing.
+        briefs_dir = root / ".dreamwork" / "docs" / "briefs"
+        wt_names = [
+            p.name for p in briefs_dir.glob("*.md")
+            if lint.WORKTREE_BRIEF_MARKER in p.read_text(
+                encoding="utf-8", errors="replace")
+        ]
+        assert len(wt_names) > 0, (
+            "no brief names `.worktrees/` — the absolute-inbox check matches "
+            "nothing and would pass forever; precondition failed")
+
+        cutoff = lint.resolve_worktree_abs_inbox_cutoff(root)
+        assert cutoff is not None, (
+            "cutoff resolved to nothing — the hollow outcome that would skip "
+            "every worktree brief and look like a clean pass")
+        assert re.fullmatch(r"[0-9a-f]{40}", cutoff), cutoff
+
+        src = Path(lint.__file__).read_text(encoding="utf-8")
+        assert cutoff not in src, (
+            "cutoff sha is pinned in lint.py — resolution must be by content")
+
+        blob = subprocess.check_output(
+            ["git", "-C", str(root), "show", f"{cutoff}:SKILL.md"],
+            text=True)
+        assert self.PHRASE in blob, (
+            f"resolved cutoff {cutoff[:7]} does not contain the absolute-inbox "
+            f"phrase — content resolution picked the wrong commit")
+
+        # Live tree is clean for in-scope worktree briefs.
+        assert scope["missing"] == [], (
+            f"live in-scope worktree brief(s) lack absolute inbox: "
+            f"{scope['missing']}")
+
+    def test_the_live_tree_is_green_with_coverage_numbers(self):
+        root = lint.SKILL_DIR
+        briefs_dir = root / ".dreamwork" / "docs" / "briefs"
+        wt_names = [
+            p.name for p in briefs_dir.glob("*.md")
+            if lint.WORKTREE_BRIEF_MARKER in p.read_text(
+                encoding="utf-8", errors="replace")
+        ]
+        assert len(wt_names) > 0, (
+            "precondition: at least one `.worktrees/`-naming brief must exist")
+        scope = lint.classify_worktree_brief_abs_inbox(root)
+        assert len(scope["worktree"]) == len(wt_names), scope
+        rep = lint.Report()
+        lint.check_brief_worktree_abs_inbox(root / ".dreamwork", rep)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "briefs"]
+        assert errors == [], rep.render()
+        oks = [d for lvl, w, d in rep.rows
+               if lvl == lint.OK and w == "briefs" and "#405" in d]
+        assert len(oks) == 1, rep.render()
+        assert f"{len(scope['worktree'])} worktree-naming brief(s)" in oks[0], (
+            oks[0])
+
+    def test_the_check_is_registered_in_run_checks(self):
+        import inspect
+        assert "check_brief_worktree_abs_inbox(dw, rep)" in \
+            inspect.getsource(lint.run_checks)
+
+    def test_no_skill_md_is_silent(self, tmp_path):
+        t = fresh(tmp_path)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        (briefs / "1.md").write_text(
+            "Worktree: `.worktrees/x`\n", encoding="utf-8")
+        rep = lint.Report()
+        lint.check_brief_worktree_abs_inbox(t / ".dreamwork", rep)
+        assert rep.rows == [], rep.render()
+
+    def test_abs_inbox_regex_rejects_relative_and_accepts_absolute(self):
+        """Production line: ABS_INBOX_PATH_RE itself — the matcher the
+        missing-branch depends on. Relative must not match; absolute must.
+        """
+        assert not lint.ABS_INBOX_PATH_RE.search(".dreamwork/inbox.md")
+        assert not lint.ABS_INBOX_PATH_RE.search("` .dreamwork/inbox.md`")
+        m = lint.ABS_INBOX_PATH_RE.search(self.ABS)
+        assert m is not None, self.ABS
+        assert m.group(0).endswith("/inbox.md")
+
+
 class TestHumanBlocker:
     """#419 — no human blocker without a question.
 

@@ -2396,6 +2396,176 @@ def check_brief_handoff_obligation(dw: Path, rep: Report) -> None:
         )
 
 
+# ── brief worktree absolute-inbox path (#405) ─────────────────────────
+# Distinctive phrase from the SKILL.md paragraph that made worktree the
+# dispatch default and required absolute report paths. Content-resolved
+# via `git log -S`, same idiom as HANDOFF_OBLIGATION_PHRASE (#398). A
+# reword that removes this phrase must ERROR loudly, not grandfather
+# every worktree brief in silence.
+WORKTREE_ABS_INBOX_PHRASE = (
+    "Inbox and hand-off paths given to a worktree lane are absolute"
+)
+# An absolute path to inbox.md: leading `/` then path segments, ending in
+# `/inbox.md`. Repo-relative `.dreamwork/inbox.md` deliberately fails this.
+ABS_INBOX_PATH_RE = re.compile(r"/[\w./-]+/inbox\.md")
+# A brief that *names* a worktree dispatch target (not merely the word
+# "worktree"). The defect is a worktree lane handed a relative inbox path.
+WORKTREE_BRIEF_MARKER = ".worktrees/"
+
+
+def resolve_worktree_abs_inbox_cutoff(root: Path) -> str | None:
+    """Commit that introduced the absolute-inbox worktree rule into SKILL.md.
+
+    Content-resolved (`git log -S` on WORKTREE_ABS_INBOX_PHRASE). Oldest hit
+    wins. None is the hollow outcome the check refuses to treat as a pass.
+    """
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(root), "log", "-S", WORKTREE_ABS_INBOX_PHRASE,
+             "--format=%H", "--", "SKILL.md"],
+            stderr=subprocess.DEVNULL, text=True, timeout=30,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return None
+    shas = out.split()
+    if not shas:
+        return None
+    return shas[-1]
+
+
+def classify_worktree_brief_abs_inbox(root: Path) -> dict:
+    """Split worktree-naming briefs by whether they post-date the absolute-path rule.
+
+    Returns ``{cutoff, worktree, in_scope, grandfathered, skipped, missing}``
+    where ``worktree`` is every brief whose body contains ``.worktrees/``,
+    ``in_scope`` / ``grandfathered`` / ``skipped`` are subsets of those, and
+    ``missing`` is in-scope basenames that lack an absolute ``…/inbox.md`` path.
+    """
+    empty: dict = {
+        "cutoff": None, "worktree": [], "in_scope": [],
+        "grandfathered": [], "skipped": [], "missing": [],
+    }
+    briefs_dir = root / ".dreamwork" / "docs" / "briefs"
+    if not briefs_dir.is_dir():
+        return empty
+    cutoff = resolve_worktree_abs_inbox_cutoff(root)
+    if not cutoff:
+        return empty
+    cutoff_t = commit_unix_time(root, cutoff)
+    if cutoff_t is None:
+        return empty
+    out = {
+        "cutoff": cutoff, "worktree": [], "in_scope": [],
+        "grandfathered": [], "skipped": [], "missing": [],
+    }
+    for path in sorted(briefs_dir.glob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if WORKTREE_BRIEF_MARKER not in text:
+            continue
+        out["worktree"].append(path.name)
+        rel = str(path.relative_to(root))
+        add = brief_add_commit(root, rel)
+        if not add:
+            out["skipped"].append(path.name)
+            continue
+        add_t = commit_unix_time(root, add)
+        if add_t is None:
+            out["skipped"].append(path.name)
+            continue
+        if add_t <= cutoff_t:
+            out["grandfathered"].append(path.name)
+            continue
+        out["in_scope"].append(path.name)
+        if not ABS_INBOX_PATH_RE.search(text):
+            out["missing"].append(path.name)
+    return out
+
+
+def check_brief_worktree_abs_inbox(dw: Path, rep: Report) -> None:
+    """A brief that names a worktree must give an absolute inbox path (#405).
+
+    A lane in ``.worktrees/x`` told to append to ``.dreamwork/inbox.md`` writes
+    its own copy; the coordinator never reads it. The obligation lives in
+    SKILL.md; this check makes the brief carry it once the rule has landed.
+
+    Only briefs whose body contains ``.worktrees/`` are examined. Untracked
+    briefs are skipped (mid-write). Cutoff is content-resolved from
+    WORKTREE_ABS_INBOX_PHRASE — a hollow no-cutoff is an ERROR, not a silent
+    pass. Absolute = matches ABS_INBOX_PATH_RE (leading ``/…/inbox.md``).
+
+    Coverage on the OK line: worktree-naming count, in-scope, grandfathered —
+    so a check that stops matching cannot look the same as one that examined
+    them all. Precondition the live tests assert: at least one worktree-naming
+    brief exists (a check that silently matches nothing passes forever).
+    """
+    root = dw.parent
+    briefs_dir = dw / "docs" / "briefs"
+    if not briefs_dir.is_dir():
+        return
+    if not (root / "SKILL.md").exists():
+        return
+    # Precondition for the check's meaning: if no brief names a worktree, the
+    # rule has nothing to examine. That is silence (not OK coverage), and the
+    # live tests refuse a vacuous match-set — do not invent a clean pass here.
+    any_wt = any(
+        WORKTREE_BRIEF_MARKER in p.read_text(encoding="utf-8", errors="replace")
+        for p in briefs_dir.glob("*.md")
+        if p.is_file()
+    )
+    if not any_wt:
+        return
+
+    cutoff = resolve_worktree_abs_inbox_cutoff(root)
+    if not cutoff:
+        rep.add(
+            ERROR, "briefs",
+            "could not resolve the worktree absolute-inbox cutoff from "
+            f"SKILL.md content (phrase {WORKTREE_ABS_INBOX_PHRASE!r}) — every "
+            "worktree brief would have been left unchecked; a reworded phrase "
+            "or missing history is a loud failure, never a silent pass (#405)",
+        )
+        return
+
+    try:
+        blob = subprocess.check_output(
+            ["git", "-C", str(root), "show", f"{cutoff}:SKILL.md"],
+            stderr=subprocess.DEVNULL, text=True, timeout=20,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        blob = ""
+    if WORKTREE_ABS_INBOX_PHRASE not in blob:
+        rep.add(
+            ERROR, "briefs",
+            f"cutoff `{cutoff[:7]}` resolved from content but does not contain "
+            f"the worktree absolute-inbox phrase — content resolution picked "
+            f"the wrong commit, so every worktree brief would be mis-scoped "
+            f"(#405)",
+        )
+        return
+
+    scope = classify_worktree_brief_abs_inbox(root)
+    for name in scope["missing"]:
+        rep.add(
+            ERROR, "briefs",
+            f"{name} names a worktree (`.worktrees/`) but has no absolute "
+            f"`…/inbox.md` path — a worktree lane given a relative inbox path "
+            f"reports into its own copy and the coordinator never sees it "
+            f"(#405)",
+        )
+    n_wt = len(scope["worktree"])
+    n_in = len(scope["in_scope"])
+    n_gf = len(scope["grandfathered"])
+    if n_wt and not scope["missing"]:
+        rep.add(
+            OK, "briefs",
+            f"{n_wt} worktree-naming brief(s), {n_in} in scope after "
+            f"absolute-inbox rule, {n_gf} grandfathered (#405)",
+        )
+
+
 def check_handoffs(dw: Path, watch, rep: Report) -> None:
     """The delivery half of the single-writer rule (#381).
 
@@ -2835,6 +3005,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_placeholder_citations(dw, rep)
     check_handoffs(dw, watch, rep)
     check_brief_handoff_obligation(dw, rep)
+    check_brief_worktree_abs_inbox(dw, rep)
     check_related_markers(dw, watch, rep)
     check_status_keys(dw, rep)
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are
