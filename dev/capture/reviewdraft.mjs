@@ -48,7 +48,9 @@
    only re-proves the review dock would pass identically before and after the
    extract and prove nothing about the module.
 
-   Shape: own target and own server on the guard's exclusive port (39894),
+   Shape: own target and own server on an EPHEMERAL port (#471 -- it used to
+   hardcode 39894, which both lost to argv[3] in a full run and squatted inside
+   the reserved 39890-39899 range),
    because the clear-on-success phase POSTs a real answer and mutates the
    fixture — pristine for the next run, and never fighting the shared guard
    server for a port.
@@ -58,10 +60,19 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 import { makeReporter } from './report.mjs';
 import { serveVerified } from './serve.mjs';
 import { mkdirSync, rmSync, cpSync, utimesSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 
+const freePort = () => new Promise(res => {
+  const s = createServer();
+  s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
+});
 const OUT = process.argv[2];
-const PORT = +(process.argv[3] || 39894);   // this guard's exclusive port
+// OWN-SERVER GUARD: ephemeral port, argv[3] ignored (#471). The old hardcoded
+// 39894 was doubly wrong: in a full run argv[3]=39899 won and collided with the
+// shared server, and 39894 itself sits INSIDE the reserved 39890-39899 range that
+// #319 says guard servers must not squat.
+const PORT = await freePort();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 

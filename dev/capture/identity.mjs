@@ -49,7 +49,12 @@ const freePort = () => new Promise(res => {
   const s = createServer();
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
 });
-const PORT = process.argv[3] ? +process.argv[3] : await freePort();
+// OWN-SERVER GUARD: the port is ALWAYS ephemeral; argv[3] is deliberately
+// ignored. #461 made this adopt argv[3] so a squatter red-proof could aim, and
+// because the recipe always passes {{port}} that silently forced this guard onto
+// the shared server's port, where serveVerified rightly refused -- so the guard
+// stopped running at all (#471). Registration is not execution.
+const PORT = await freePort();
 
 const checks = []; const ok = (n, c) => checks.push(`${c ? 'PASS' : 'FAIL'} ${n}`);
 const notes = [];
@@ -418,7 +423,8 @@ writeFileSync(QPATH, QGOOD);
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tint: t }),
     });
-    return r.status;
+    let body = null; try { body = await r.json(); } catch {}
+    return { status: r.status, body };
   }, tint));
 
   /* the accent, resolved THROUGH AN ELEMENT: `--accent` off :root comes back
@@ -488,13 +494,20 @@ writeFileSync(QPATH, QGOOD);
   const hueIndigo = await meanHue(p);
   const favIndigo = await favRead();
 
-  ok('POST /tint is accepted for a name in the set', await post('green') === 202);
+  ok('POST /tint is accepted for a name in the set', (await post('green')).status === 202);
   await sleep(400);
   ok('...and persists to .dreamwork/watch-tint',
      readTint().trim() === 'green');
 
   const before = readTint();
-  ok('a name outside the set is refused', await post('chartreuse') === 400);
+  // #263 E5: a durable rejection is 202 with `rejected` in the BODY, not 400 --
+  // *"a 202 does not mean the write landed*". This asserted 400 (the pre-cutover
+  // status) and had been failing since E5; nobody saw it because #461 forced this
+  // guard onto the shared port and it stopped running at all (#471). Status alone
+  // would pass on an ACCEPTED write, so the verdict is what is asserted.
+  const refused = await post('chartreuse');
+  ok('a name outside the set is refused (202 + rejected, not 400)',
+     refused.status === 202 && !!refused.body && refused.body.rejected === true);
   ok('...and nothing was written', readTint() === before);
 
   /* Wait for the PAGE to have the tint, then for the shader to have finished

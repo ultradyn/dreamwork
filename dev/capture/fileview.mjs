@@ -63,7 +63,12 @@ const freePort = () => new Promise(res => {
   const s = createServer();
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
 });
-const PORT = process.argv[3] ? +process.argv[3] : await freePort();
+// OWN-SERVER GUARD: the port is ALWAYS ephemeral; argv[3] is deliberately
+// ignored. #461 made this adopt argv[3] so a squatter red-proof could aim, and
+// because the recipe always passes {{port}} that silently forced this guard onto
+// the shared server's port, where serveVerified rightly refused -- so the guard
+// stopped running at all (#471). Registration is not execution.
+const PORT = await freePort();
 
 /* ── the target ───────────────────────────────────────────────────────────
    Hostile AND long, for the two reasons above. The hostile markup is markdown
