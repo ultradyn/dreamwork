@@ -61,7 +61,15 @@ def seed_journal(path: Path, n: int, *, body: bytes | None = None) -> list:
             res = j.receive(
                 Envelope(
                     client_action_id=_uuid(i),
-                    protocol_version="HTTP/1.1",
+                    # "1" — the ENVELOPE's protocol version, a closed set of one
+                    # (user_events.sqlite.SUPPORTED_PROTOCOL_VERSIONS). This
+                    # said "HTTP/1.1" until #263 lane H1 closed the set and
+                    # refused it: a copy of `BaseHTTPRequestHandler.protocol_version`
+                    # (see dreamhub.py:818), which is an unrelated attribute that
+                    # happens to share the name. Nothing validated the field
+                    # before, so the wrong value sat here inert — the gate did
+                    # not break this fixture, it revealed it.
+                    protocol_version="1",
                     method="POST",
                     route="/answer",
                     content_type="application/json",
