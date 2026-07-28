@@ -2386,3 +2386,41 @@ this shape and convert opportunistically.)
   has exited and been read. Waiting cost nothing; merging early cost a regression on `master` and a
   bisect to find it.
 
+
+- **I discarded the one artifact that explained two lane deaths, then diagnosed the first death as a
+  mystery and re-dispatched into the same wall.** · The dispatch recipe I had been using ends
+  `> /dev/null 2>&1 &`. Two `ccc @grok` lanes on `#399b` died at ~3 seconds with no commits, no
+  report, and a clean worktree. The third dispatch differed in one respect — `> "$LOG" 2>&1` — and
+  the cause was the first line of the file: `Unauthorized (401) … Invalid or expired credentials`,
+  `Model: grok-4.5`. The runner's credential had expired; every lane sent to it would die the same
+  way.
+  · **A lane that dies before its first token is indistinguishable from one that ran and reported
+  nothing** — same empty inbox, same clean tree, same absent process. The two have opposite fixes
+  (refresh the credential vs. rewrite the brief), so guessing between them is how forty minutes go.
+  · **The runner's own log does not cover for you, and looks like it should.**
+  `~/.local/state/cc-w/ccc/runs/<run>/` holds `output.txt` and `transcript.txt` — for a 401 death
+  **both are zero bytes**, because the error is on stderr only. Finding that directory felt like
+  finding the answer and it was empty.
+  · Fix: **never `/dev/null` a dispatch.** `> "$LOG" 2>&1`, and read `$LOG` the moment a lane looks
+  quiet. It costs one variable. This is the same family as the pipefail lesson above — a channel
+  that reports on something other than the thing you care about — except here the channel was
+  deliberately destroyed by me.
+
+- **`cd` persists between Bash calls, and I spent ten minutes editing the ledger in a worktree while
+  believing I was in the main checkout.** · One earlier call began `cd .worktrees/399b && git log …`
+  to check on a lane. Every subsequent call inherited that directory. I then filed `#410` into the
+  worktree's `tasks.md`, ran `lint.py` against the worktree's `.dreamwork/`, and — because a
+  worktree has no untracked files — concluded from a directory listing that `status.json`,
+  `inbox.md`, `run-mode`, `watch-events.log`, `submissions.log` and `.status-keys` had all been
+  **deleted**. They had not. Nothing was lost, and the tree was fine.
+  · **The tool had been telling me on every single run and I read past it.** `lint.py`'s first line
+  of output is the absolute path it is linting; it had read `…/.worktrees/399b/.dreamwork` for four
+  consecutive invocations. I was grepping that output for `WARN|ERROR` and the header fell outside
+  my filter — **a filter narrow enough to be useful is narrow enough to hide the thing that says
+  which file you are looking at.**
+  · The tell that finally worked was an *inconsistency between two readings*, not the readings
+  themselves: `ls` said six files were missing while `lint` reported `handoffs.md`, `questions.md`
+  and `watch-port` all fine. A directory cannot be half-deleted, so the target had to be wrong.
+  · Fix: **`cd <abs> && …` at the head of any call that touches repo state**, rather than trusting
+  inherited cwd — and when a measurement says something catastrophic happened, check the instrument
+  is pointed at the right thing before believing it. Panic is a reason to re-read the header.
