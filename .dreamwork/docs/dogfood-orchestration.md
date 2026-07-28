@@ -883,3 +883,58 @@ Ranked by what actually found defects today, unchanged at the top and now with a
    did not know, because `lint.py` exits 0 on a WARN and every pytest run I made was a `-k`
    selection that excluded the failing test.
 
+
+## Dispatch is not a solved problem, and it cost four lanes on one task
+
+`#399b` — the P1 that has `master` red — was dispatched four times before a lane
+survived. Three deaths, **two distinct causes**, and neither was visible in the place
+I was looking.
+
+**Deaths 1 and 2 — `ccc @grok` returns 401.** The runner's credential expired at some
+point today. Every lane sent to it died at about three seconds. What made this expensive
+rather than obvious:
+
+- I dispatched with `> /dev/null 2>&1 &`, so the only artifact naming the cause was
+  destroyed at the moment it was produced.
+- **A lane that dies before its first token is indistinguishable from one that ran and
+  reported nothing** — same clean worktree, same empty inbox, same absent process. I
+  read the first as a mystery, and re-dispatched into the same wall.
+- ccc's own run log looks like the answer and is not:
+  `~/.local/state/cc-w/ccc/runs/<run>/` holds `output.txt` and `transcript.txt`, and for
+  a 401 **both are zero bytes**. The error exists on stderr only.
+
+**Death 3 — the background job did not outlive the shell that started it.** Dispatching
+`ccc @glm52 … &` from inside a Bash tool call, the lane read the brief, wrote a correct
+statement of the diagnosis, and stopped **~60 seconds in** with no error, no `output.txt`,
+and a truncated transcript. That is the shape of a child being reaped when its parent
+shell exits, not of a crash.
+
+**The recipe that follows, and it is two changes:**
+
+1. **Never `/dev/null` a dispatch.** `> "$LOG" 2>&1`, and read `$LOG` the moment a lane
+   looks quiet. One variable; it is what diagnosed the 401 on the third attempt.
+2. **Do not background with `&` from a tool call — use the harness's own background
+   dispatch** (`run_in_background`). It is detached by construction, it survives across
+   turns, it notifies on exit, and it leaves the session's cwd alone.
+
+**A note on the runners themselves, since the provider question is the point of this
+exercise.** `ccc @grok` is down and only the human can refresh it, so the fleet is one
+runner deep. `ccc @glm52` answers a probe instantly and both dispatch warnings still read
+`runner "grok"` — same binary, different model — so this is a per-model credential
+failure, not the CLI. **A runner outage presents as a brief that does not work.** That is
+the trap worth remembering: three times I reached for the brief, and the brief was fine.
+
+## Addendum to the leverage list: what found things this batch
+
+The ranked list above still holds, and this batch added a fifth that belongs on it:
+
+5. **Distrusting an alarming measurement before distrusting the system.** A directory
+   listing told me six `.dreamwork/` files had been deleted. They had not — an earlier
+   `cd` into a worktree had persisted between tool calls, and a worktree by construction
+   has no untracked files. `lint.py` had been printing the wrong target path as the first
+   line of its output for four consecutive runs while I grepped that output for
+   `WARN|ERROR`. **A filter narrow enough to be useful is narrow enough to hide the line
+   that says which file you are looking at.** What broke it was not re-reading the header
+   but noticing two readings disagree: `ls` said six files gone while `lint` said
+   `handoffs.md`, `questions.md` and `watch-port` were all fine. A directory cannot be
+   half-deleted.
