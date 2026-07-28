@@ -24,9 +24,22 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **423**
+Next id: **424**
 
 ## Open
+- **#423** — `ccc @grok` 401s recur, and the loop has no signal for a dead runner · P2 ·
+  loop-tooling/orchestration · origin: **loop** · **recurrence of landed `#410`**
+  · grok was 401 from **05:52 to 14:50** (his fix), worked for three lanes, then went 401 again at
+  **~16:50**. Probed twice, identical: `auth_kind=none … reason=no auth context`. Asked at 16:54
+  · **the loop-side defect, which is ours and not his:** a dead runner looks exactly like a fast
+  lane. `nohup ccc … &` exits **0** on a 401, the worktree stays at the branch point, and nothing
+  reports. I found this one only because the pid vanished from `pgrep` sooner than a real lane would
+  · so: a dispatch should **probe the runner first** (one cheap `PONG` round-trip) and a lane that
+  exits without committing or writing to the inbox should be **recorded as failed**, not silently
+  forgotten. `status_sync`'s liveness work (`#402a`) already knows how to ask whether a pid is
+  alive; it does not know how to ask whether a lane *did* anything
+  · related: **#410, #402**
+
 - **#421** — how we ask him questions, researched rather than guessed · P1 · loop-instructions ·
   origin: **human** · **human via watch `do-next` 2026-07-28 16:29** · next-up
   · verbatim: *"We should update instructions for the dreamwork agent: when asking users questions:
@@ -506,7 +519,7 @@ Next id: **423**
   is not its arguments*, this one is *the argument order is not a contract*. `^ccc @` silently
   encodes "no flags between binary and alias". Match the alias wherever it appears, or resolve the
   lane from `dreamers[].pid` with `kill -0`, which is exact and needs no pattern
-  · related: **#401, #264, #403, #405, #410**
+  · related: **#401, #264, #403, #405, #410, #423**
   · **it demonstrated itself at 14:56, while I was dispatching the lane to fix it.** Two lanes
   were live (`ccc --yolo @glm52`, `ccc --yolo @grok`) and `status_sync.py` printed
   *"already in sync (135 open, 0 live)"*. Not reconstructed from logs — observed in the same
@@ -3563,7 +3576,7 @@ Next id: **423**
   `grok models` costs one second. The table now carries both timestamps rather than one verdict
   · **owed to him, since he asked which providers work for us:** only he can refresh the `grok-4.5`
   credential. Not urgent now that eleven other models answer; filed rather than attempted
-  · related: **#402**
+  · related: **#402, #423**
   · **ANSWERED 2026-07-28 14:48: *"ccc @grok now working again"* — he refreshed the xAI key.**
   Probed before believing it: `ccc --yolo @grok` returned *"PROBE OK, Grok 4.5"* at 14:50. This
   entry's own lesson is that a routing verdict is a measurement with a timestamp, so accepting

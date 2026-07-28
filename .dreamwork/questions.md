@@ -1,6 +1,20 @@
 # Questions for the human
 
 ## Open
+- **P1 · 2026-07-28 — `ccc @grok` is 401 again, and it is your credential.**
+  **Ask: refresh grok's auth when convenient, then say so here (a bare "ok" is enough).** Nothing
+  else needed from you.
+  Recurrence of the ask you closed at 14:48 with *"ccc @grok now working again"*. It ran fine from
+  then until **~16:50** — three lanes landed on it in that window (`#367` previews, `#172`, and the
+  `#263` gate artifact twice) — and then went 401 mid-dispatch. Probed twice at 16:53, both
+  `Unauthorized (401) … Invalid or expired credentials (auth_kind=none … reason=no auth context)`.
+  **Cost, so you can judge the urgency:** it halves lane capacity and removes the only lane that can
+  **see**. `@glm52` is unaffected and three of its lanes are running now, so work continues — but
+  visual verdicts on rendered pages have no owner until grok is back. The `#421` options artifact was
+  mid-flight when it died and is being re-dispatched to `@glm52` with the seeing half deferred.
+  **Not asking you to change tools.** Two 401s in one day is worth recording rather than reacting to;
+  if it recurs a third time I will propose something.
+
 - **P1 · 2026-07-28 — #421: how the loop should ask you things. Four options, one rejected.**
   **Ask: any combination of A, B, C, D — or `rec` for A+B+D with C soft.** Free text always fine;
   *"none of these"* is a real answer.
