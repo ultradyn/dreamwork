@@ -148,8 +148,24 @@ await page.evaluate(()=>{
 });
 const asked='Does the live ask persist?\n## not a section\n- **not another entry**';
 await page.locator('#askbox').fill(asked); await page.locator('#askbox').focus();
-const tickResponse=await page.evaluate(()=>fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'do-next',text:'',from:'/answers'})}).then(r=>r.status));
-ok('tick trigger accepted',tickResponse===200);
+// E3 cutover: a successful write is 202 + receipt via _send_receipt, not 200.
+// Asserting status===200 was the pre-receipt contract; it fails on a correct
+// do-next that landed. "Accepted" means the write landed (ok, not rejected) —
+// the same verdict identity/#263 E5 taught, not a frozen status code.
+const tickVerdict=await page.evaluate(async()=>{
+  const r=await fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({kind:'do-next',text:'',from:'/answers'})});
+  let j=null; try{j=await r.json()}catch(e){j=null}
+  return {status:r.status, ok:!!(j&&j.ok===true), rejected:!!(j&&j.rejected===true),
+          hasReceipt:!!(j&&j.receipt)};
+});
+notes.push(`tick do-next verdict: ${JSON.stringify(tickVerdict)}`);
+// Precondition: we got a response shape at all (else "accepted" is vacuous).
+ok('precondition: tick /command returned a JSON body with ok',
+   tickVerdict && typeof tickVerdict.status==='number' && tickVerdict.ok===true);
+ok('tick trigger accepted',
+   !!tickVerdict && tickVerdict.ok && !tickVerdict.rejected &&
+   tickVerdict.status>=200 && tickVerdict.status<300);
 await page.waitForTimeout(2500);
 ok('draft survives live tick',await page.locator('#askbox').inputValue()===asked);
 ok('focus survives live tick',await page.evaluate(()=>document.activeElement?.id)==='askbox');
