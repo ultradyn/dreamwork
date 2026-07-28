@@ -673,6 +673,15 @@ Next id: **421**
   its own question — it rode inside another entry — so when it was answered there was nothing pointing
   back here. A ruling that arrives on a *neighbouring* question is invisible to the entry that needed
   it. `#419`'s check must therefore key on the *decision*, not on the entry that happened to carry it
+  · **IN PROGRESS 2026-07-28 16:14** — `ccc @grok`, `.worktrees/371`, brief
+  `.dreamwork/docs/briefs/371-short-body-policy.md`, owning `watch.py` and `test_watch.py`. His ruling
+  is the spec: keep the partial witness, mark it incomplete, let it proceed
+  · the brief carries this entry's own hard-won method as a requirement rather than a suggestion: **a
+  mocked read proves nothing about the read**, so the test is a real socket with an oversized
+  `Content-Length` and `shutdown(SHUT_WR)`. And **two** red-proofs, because *keep it* and *mark it* are
+  two claims and one red covers only one
+  · it must **not** add a field to `file-formats.md` — the `#419` lane holds that file — so it reuses
+  the landed `short`/`got` spelling or reports the field it needs
 
 - **#368** — Break the large Python files into a modular, testable codebase · P2 ·
   refactor/architecture · origin: **human** · **human via watch `add-idea` 2026-07-28 02:46**:
@@ -3232,6 +3241,15 @@ Next id: **421**
   · related: **#264, #294, #289, #420**
 
 ## Recently landed
+  · **IN PROGRESS 2026-07-28 16:14** — `ccc @glm52`, `.worktrees/419`, brief
+  `.dreamwork/docs/briefs/419-human-blocker-invariant.md`, owning `file-formats.md`, `lint.py`,
+  `test_lint.py`. Told to **design the marker before writing the check**, because a check over a field
+  nobody fills passes on every entry including the ones it exists to catch
+  · its reds come from **real history**, not fixtures: `#371`'s pre-fix body at
+  `git show 7c5fc82^:.dreamwork/tasks.md` is a defect that really existed, and the four
+  answered-but-unprocessed entries the census found are the corpus
+  · `#402b`'s id-vocabulary row is offered to the same lane as an opportunistic add, since it is in the
+  same file — with permission to decline it if it grows the diff
 
 - **#420** — a census of everything not done, because nobody has a view of 138 open entries · P2 ·
   loop-tooling/grooming · origin: **human** · **human via watch `/answers` 2026-07-28 15:25**
