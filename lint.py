@@ -3151,12 +3151,23 @@ def check_lane_containment_backstop(dw: Path, rep: Report) -> None:
     found = False
     for lane_path, branch in lanes:
         suffix = branch.split("/", 1)[-1]
+        # UNION over every brief naming this lane, not the first match.
+        # A worktree name gets reused across sessions, so one lane can have
+        # several briefs — `#402` had `402-dreamers-shape.md` and
+        # `402-dreamers.md` at once, and first-match-by-filename picked the
+        # OLDER one, which declared nothing: the lane silently went
+        # unprotected while the coverage row still counted it. Eight task ids
+        # in this repo have more than one brief, so the shadow was wide.
+        # Union is the safe direction: over-protecting a path costs a
+        # dispatch, under-protecting corrupts the disjointness invariant the
+        # whole fan-out rests on.
         owned: list[str] = []
         for brief in sorted(briefs_dir.glob("*.md")):
             text = brief.read_text(encoding="utf-8", errors="replace")
             if f"wt/{suffix}" in text or f".worktrees/{suffix}" in text:
-                owned = _parse_lane_owns(text)
-                break
+                for o in _parse_lane_owns(text):
+                    if o not in owned:
+                        owned.append(o)
         if not owned:
             # Unknowable for this lane, not clean. `check_brief_lane_owns`
             # is the check that makes the omission loud; this one stays quiet.

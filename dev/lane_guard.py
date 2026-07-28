@@ -184,7 +184,7 @@ def _main_checkout_root(repo_root: Path) -> Path:
     return common_path.parent
 
 
-def _brief_for_lane(main_root: Path, lane_branch: str) -> Path | None:
+def _briefs_for_lane(main_root: Path, lane_branch: str) -> list[Path]:
     """The brief this lane was dispatched with, if one is recorded.
 
     A lane's brief lives in the **main checkout's** ``.dreamwork/docs/briefs/``
@@ -200,16 +200,17 @@ def _brief_for_lane(main_root: Path, lane_branch: str) -> Path | None:
     # Not relied upon (no dispatch writes it today), but cheap to honour.
     suffix = lane_branch.split("/", 1)[-1] if "/" in lane_branch else lane_branch
     main_briefs = main_root / ".dreamwork" / "docs" / "briefs"
+    found: list[Path] = []
     if not main_briefs.is_dir():
-        return None
+        return found
     for b in sorted(main_briefs.glob("*.md")):
         try:
             text = b.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         if f"wt/{suffix}" in text or f".worktrees/{suffix}" in text:
-            return b
-    return None
+            found.append(b)
+    return found
 
 
 def _owned_paths_for_lane(main_root: Path, lane_branch: str) -> set[str]:
@@ -219,13 +220,18 @@ def _owned_paths_for_lane(main_root: Path, lane_branch: str) -> set[str]:
     (the guard then no-ops for that lane, and ``lint.check_brief_lane_owns``
     elsewhere errors so an empty set is never silently load-bearing).
     """
-    brief = _brief_for_lane(main_root, lane_branch)
-    if brief is None or not brief.exists():
-        return set()
-    try:
-        text = brief.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return set()
+    owned: set[str] = set()
+    for brief in _briefs_for_lane(main_root, lane_branch):
+        try:
+            text = brief.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        owned |= _owns_in_text(text)
+    return owned
+
+
+def _owns_in_text(text: str) -> set[str]:
+    """The ``Lane-owns:`` paths declared in one brief's text."""
     owned: set[str] = set()
     for raw in text.splitlines():
         line = raw.strip()

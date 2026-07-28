@@ -4631,6 +4631,60 @@ class TestLaneContainmentBackstop:
         assert [w for _, w, _ in rep.rows if w == "lane-containment"] == [], rep.render()
 
 
+    def test_an_older_brief_for_the_same_lane_cannot_shadow_the_newer_one(
+            self, tmp_path):
+        """A worktree name is reused across sessions, so one lane can have
+        several briefs. First-match-by-filename picked the OLDER one.
+
+        Measured on the live tree: `wt/dreamers` matched
+        `402-dreamers-shape.md` (no declaration) instead of `402-dreamers.md`,
+        because `-` sorts before `.`, so the lane went unprotected while the
+        coverage row still counted it — the worst combination, since the row
+        reads as reassurance. Eight task ids here have more than one brief.
+
+        Production line: the union loop in check_lane_containment_backstop
+        (reverting it to `break` on first match reds this).
+        """
+        t, _ = self._repo_with_lane(tmp_path, owns="watch.py")
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        # The shadowing brief: same lane, sorts FIRST, declares nothing.
+        (briefs / "900-lane-shape.md").write_text(
+            "# Brief\n\nWorktree: `.worktrees/lane` on `wt/lane`.\n", encoding="utf-8")
+
+        # Preconditions, both derived — the shadow only exists if the empty
+        # brief really does sort first AND really does declare nothing.
+        names = sorted(p.name for p in briefs.glob("*.md"))
+        assert names.index("900-lane-shape.md") < names.index("900-lane.md"), names
+        assert lint._parse_lane_owns(
+            (briefs / "900-lane-shape.md").read_text(encoding="utf-8")) == []
+
+        (t / "watch.py").write_text("# stray edit\n", encoding="utf-8")
+        rep = self._rows(t)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "lane-containment"]
+        assert len(errors) == 1, rep.render()
+        assert "watch.py" in errors[0]
+
+    def test_ownership_is_the_union_across_every_brief_naming_the_lane(
+            self, tmp_path):
+        """Two briefs, two different owned paths, both protected.
+
+        Union is the safe direction: over-protecting a path costs a dispatch,
+        under-protecting corrupts the disjointness invariant. Production line:
+        the same union loop.
+        """
+        t, _ = self._repo_with_lane(tmp_path, owns="watch.py")
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        (briefs / "901-lane-second.md").write_text(
+            "# Brief\n\nWorktree: `.worktrees/lane` on `wt/lane`.\n\n"
+            "Lane-owns: other.py\n", encoding="utf-8")
+        (t / "other.py").write_text("# the second brief's file\n", encoding="utf-8")
+        rep = self._rows(t)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "lane-containment"]
+        assert len(errors) == 1, rep.render()
+        assert "other.py" in errors[0]
+
 class TestPostureFile:
     """The three-axis posture override file (#445).
 
@@ -4795,3 +4849,4 @@ class TestDerivePosture:
 
     def test_unrecognised_mode_returns_none(self):
         assert lint.derive_posture("nonexistent") is None
+
