@@ -336,6 +336,20 @@ Next id: **470**
   coordinating through `subagent-protocols` (`#466`)
   · **no longer blocked-on human** — the design is ratified and the axes are settled; what remains is
   implementation, and it starts with the conversion plus the controls
+  · **increment 1 LANDED `56daaeb` + `9b64661`, merged `f57de41`** — the vocabulary, its `lint` checks,
+  `file-formats.md` and `SKILL.md`'s selection posture. A **sibling `.dreamwork/posture` file**, so `run-mode`'s
+  contract and its re-read-every-tick property are untouched and no migration is needed (his Q2: *"widen it,
+  but we don't need to do that yet"*). Gitignored (`4e704e9`) for the same reasons `run-mode` is
+  · **two coordinator steers changed the result, and the lane conceded both with evidence.** (1) It compressed
+  his **four** asking levels to three to keep the axes symmetric. Levels 3 and 4 differ observably — near-auto
+  still journals an ADR-shaped record, full-auto does not — and his *"3 stops … maybe? IDK"* was about the
+  **control**, not the vocabulary. Asking keeps four stops, in his words. (2) It derived `asking = inform` for
+  all three existing values, which would have **quietly stopped the loop asking him** — it re-derived
+  `asking = ask` after measuring 108 question resolutions and 28 artifacts against level 2's ~10–20% escalation
+  · **the asymmetry is now a control problem, flagged for increment 2**: four stops on asking, three on pace,
+  an integer target on delegation. That is increment 2's to solve and it must not solve it by deleting a level
+  · **remaining: the controls** — his *"we should add controls for the new values and their dimensions"*.
+  Blocked on nothing; it needs `watch.py`, so it goes to a lane when `watch.py` is free
 - **#443** — run modes conflate PACE with DELEGATION POSTURE, so there is no way to say *"idle-friendly, but
   use subagents"* · **P1** · loop-design/run-mode · origin: **human** · **human via watch 2026-07-28 22:18**
   · his words (dictated, lightly punctuated): *"We need to rethink how the Run modes work. Because when,
@@ -2648,6 +2662,20 @@ Next id: **470**
   idiom, and it must report the case where the new generation never arrives (the lane's own finding: a
   deployed dashboard serves a snapshot, so a reload and an `--autoreload` re-exec are both byte-identical —
   "update" can only mean re-snapshot from HEAD and restart). **Queued behind the lane holding `watch.py`**
+  · **increment 2 LANDED `09e7ea7` + `2ba0f43`, merged `21b818a` — the row now RUNS it**, on his `rec`:
+  loopback peer only, single-flight, the `RUN_ARM_MS` arm idiom reused rather than a second one, gating on
+  `writeVerdict`'s `landed`, and a 30s deadline so a deploy that never finishes is named rather than spinning
+  · **verified against a real server, identity confirmed by pid — and the probe found a defect the report
+  did not.** A non-loopback peer is rejected and **no deploy runs**; loopback starts one; a second POST in
+  flight is rejected and **exactly one** deploy ran. But both refusals were `domain_invalid`, so the page said
+  *"the value was not one the server accepts"* for a deploy already running **and** for a request from another
+  machine — the only two refusals he can reach, so that copy was wrong every time it could appear. The branch
+  that would have said *"deploy only runs from this machine"* tested `res.status === 403`, unreachable since
+  the 202 cutover: dead code reading as coverage
+  · **the fix generalises**: a rejection may carry an **optional `detail`** narrowing a closed-set reason **for
+  copy only** — `REJECTION_REASONS` stays three wide (widening it would change the journal contract) and
+  nothing gates on `detail`; `landed` remains the only verdict. Documented in `watch-design.md` as the idiom
+  any route with several refusals behind one reason takes
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses
