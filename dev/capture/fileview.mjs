@@ -40,10 +40,10 @@
    usage: node fileview.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, rmSync, cpSync, writeFileSync, readFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join, dirname } from 'node:path';
 import { makeReporter } from './report.mjs';
+import { serveVerified } from './serve.mjs';
 
 const OUT = process.argv[2];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -63,7 +63,7 @@ const freePort = () => new Promise(res => {
   const s = createServer();
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
 });
-const PORT = await freePort();
+const PORT = process.argv[3] ? +process.argv[3] : await freePort();
 
 /* ── the target ───────────────────────────────────────────────────────────
    Hostile AND long, for the two reasons above. The hostile markup is markdown
@@ -108,23 +108,13 @@ writeFileSync(join(DIR, PY_PATH), 'plain text, never a switch\n');
 // comparison is against the file rather than against the string in this script
 const ON_DISK = readFileSync(join(DIR, MD_PATH), 'utf8');
 
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
-                  { stdio: 'ignore' });
+/* #461: serveVerified replaces poll+/data.json hand-check so a stranger on
+   the port cannot be graded (and so a forced argv port can red-proof). */
+const srv = await serveVerified(DIR, PORT);
 process.on('exit', () => { try { srv.kill(); } catch (e) {} });
 const BASE = `http://127.0.0.1:${PORT}`;
 const URL_R = `${BASE}/file?p=${encodeURIComponent(MD_PATH)}`;
 const URL_S = `${URL_R}&view=source`;
-for (let i = 0; i < 60; i++) {
-  try { if ((await fetch(`${BASE}/`)).ok) break; } catch (e) {}
-  await sleep(250);
-}
-{
-  const d = await (await fetch(`${BASE}/data.json`)).json();
-  if (d.target !== DIR) {
-    console.log(`FAIL :${PORT} is serving ${d.target}, not ${DIR}`);
-    process.exit(1);
-  }
-}
 
 /* transitions.md's one idiom, verbatim (reviewsplit / headertravel / qsec /
    filehead): frames strictly BETWEEN the ends with a 3% deadband. A snap has

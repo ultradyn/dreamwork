@@ -39,9 +39,9 @@
    usage: node fileimg.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { makeReporter } from './report.mjs';
+import { serveVerified } from './serve.mjs';
 import { mkdirSync, writeFileSync, rmSync, cpSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
 import { deflateSync } from 'node:zlib';
 import { join } from 'node:path';
 const OUT = process.argv[2];
@@ -63,14 +63,13 @@ declare({
                'structurally (the class is in the markup, removed on load)',
 });
 
-/* An ephemeral port, not the one passed in (dashboard.mjs's argument). The
-   guard runs its own server, so a fixed port would be shared mutable state
-   with no owner. */
+/* An ephemeral port by default (own server, no shared mutable port). argv[3]
+   may force one so a squatter red-proof can aim at a known port (#461). */
 const freePort = () => new Promise(res => {
   const s = createServer();
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
 });
-const PORT = await freePort();
+const PORT = process.argv[3] ? +process.argv[3] : await freePort();
 const BASE = `http://127.0.0.1:${PORT}`;
 
 // ── a target with a PNG and a .bin ─────────────────────────────────────────
@@ -108,21 +107,14 @@ writeFileSync(join(DIR, 'pic.png'), PNG);
 // A non-image binary: NUL bytes so detect_file_kind returns 'binary'.
 writeFileSync(join(DIR, 'object.bin'), Buffer.from([0, 1, 2, 3, 0xff, 0xfe]));
 
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
-                  { stdio: ['ignore', 'pipe', 'pipe'] });
-srv.stdout.on('data', () => {}); srv.stderr.on('data', () => {});
+/* #461: prove the responder is ours. The old shape polled / until something
+   answered, so a stranger on a forced port (or a race after freePort) would
+   be graded instead of the PNG fixture just written. */
+const srv = await serveVerified(DIR, PORT);
 const cleanup = () => { try { srv.kill('SIGTERM'); } catch (e) {} };
 process.on('exit', cleanup);
 process.on('SIGINT', () => { cleanup(); process.exit(130); });
 process.on('SIGTERM', () => { cleanup(); process.exit(143); });
-for (let i = 0; i < 40; i++) {
-  try { const r = await fetch(`${BASE}/`); if (r.ok) break; } catch (e) {}
-  await sleep(250);
-}
-if (!(await fetch(`${BASE}/`).then(r => r.ok).catch(() => false))) {
-  console.log('----\nFAIL the guard\'s own server never came up');
-  finish(); process.exit(1);
-}
 
 /* Trace the <img>'s computed opacity from its onload forward. The image's
    own arrival is a self-contained opacity fade; the route dissolve is a
