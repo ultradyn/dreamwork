@@ -81,7 +81,7 @@ Next id: **479**
   per-guard fix, since any guard reading a keyed store has the same exposure
   · **not urgent, and deliberately not folded into `#475`:** `#475` is about ten guards being red, and this is
   about how a guard *reports* — mixing them would bury it
-  · blocked on nothing · related: **#475, #471**
+  · blocked on nothing · related: **#475, #471, #478**
 
 - **#475** — ten guards are red on master and load is not why · **P1** · regression/verification ·
   origin: **loop** · **found 2026-07-29 07:40 by the first full `just test` to complete in this session**
@@ -401,7 +401,7 @@ Next id: **479**
   · 8 of 57 registered guards call `serveVerified`: `fileimg filehead identity gitrow fileview reviewdraft
   staleremedy serving`. `staleremedy` is the only one that ignores `argv[3]` entirely (`await freePort()`),
   which may be the intended pattern or may be an accident
-  · blocked on nothing · related: **#310, #428, #203, #474, #475, #476**
+  · blocked on nothing · related: **#310, #428, #203, #474, #475, #476, #478**
   · **CORRECTION 2026-07-29 06:12 — Observation B was FALSE and the lane refuted it in its first milestone.** I wrote that `identity`, `gitrow` and `serving` **passed** in the 05:33 full run. They did not: the recorded output has `FAIL identity`, `FAIL serving`, `FAIL gitrow` and `FAIL reviewdraft`, **all four with the identical `serve: :39899 is serving …/target, not …/<guard>/…` message** — four occurrences of that string in one run. **So the two observations never disagreed**, and the escape hatch this entry offered (*"I have no evidence any self-serving guard fails in a full run"*) was itself the unsupported claim.
   · **how I got it wrong, because it is the same error twice tonight:** I read a **partially written** log as a complete one. The run was still going; those guards had not been reached yet, so their absence from an early `FAIL` list was absence of *evidence*, and I reported it as evidence of *absence* — exactly the shape of the `#469` empty-glob mistake, where a command that never ran was read as proof. A file being appended to is not a result.
   · **so the original finding stands and it is a `#310`-class defect:** guards that serve their own target are handed the recipe's shared port as `argv[3]`, `serveVerified` correctly refuses, and their assertions **never run**. At least four confirmed; eight call `serveVerified`. `reviewdraft`'s 20 draft checks and the new `burndownmock` are both in that set, so work verified tonight is **not** gated by the suite even though both are registered. The guard count on the OK row measures registration, not execution — which is precisely what `#310` was about.
@@ -6865,6 +6865,7 @@ Next id: **479**
   answered for both shas before truncating, so it cannot pass on an injection that never landed
   · two existing tests encoded the silence as intended — `test_every_sha_missing_says_nothing` and
   `test_a_target_that_is_not_a_git_repo_is_silent` — and their names were the tell; both replaced
+  · related: **#478**
 
 - **#370** — `/answer` and `/comment` truncate `questions.md` in place ·
   **closed `ea9d7d9`** · P0 · durability bug · origin: **loop** · both routes opened his
