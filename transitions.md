@@ -442,9 +442,39 @@ exception; an element leaving fades rather than vanishing.
   **and** displacement) inside **one** SVG filter
   (`feTurbulence`→`feDisplacementMap`→`feGaussianBlur`) driven per-frame
   from rAF; keep only `opacity`/`transform` on CSS. You cannot CSS-tween a
-  `filter` that holds a non-interpolable `url(#…)`, and its cost scales with
-  filtered-layer *area*, not turbulence octaves. Clear the inline filter at
-  rest so the settled element is pixel-crisp and zero-cost.
+  `filter` that holds a non-interpolable `url(#…)`. Clear the inline filter
+  at rest so the settled element is pixel-crisp and zero-cost.
+  **#449: this mist is TEMPORARILY OFF** (human ruling 2026-07-29: "let's
+  try temporarily disabling the svg filter. we can make up for it as best we
+  can with css"). Measured on the route he named — question→review — by A/B
+  on this never-idle host (the only defensible comparison here; an absolute
+  threshold is a load-meter, refused on #444's ground). The capture is
+  `dev/capture/dissolveperf.mjs`, the guard is `dev/capture/dissolve.mjs`.
+  The cost is per-frame `feTurbulence` rasterization, and the levers you
+  would expect do not move it: freezing `baseFrequency` ≈ baseline (the
+  field is *not* invalidated by the per-frame rewrite, contra the first
+  guess); freezing **all six** `stepFx` attribute writes ≈ baseline — and
+  that filter ran with `scale=0`/`stdDeviation=0`, so it was
+  applied-but-inert and still cost the same, which is the proof: Chrome
+  rasterizes `feTurbulence` afresh every frame and does **not** cache it
+  across frames, whatever the attributes do. Clamping the ghost's filtered
+  area 42% (553×1557→553×900, geometry confirmed mid-dissolve) ≈ baseline,
+  so filtered-layer **area is not the lever** either — correcting the claim
+  this bullet once made. Removing **both** dissolve filters recovered
+  +100–128% of rAF frames, and that is what shipped. The filters stay
+  defined and `stepFx` stays in place behind a single `MIST_ON` switch
+  (const in `crossfade`), so restoring the liquify is one edit when a
+  cheaper mechanism exists. CSS compositor `blur()` on the ghost (grows
+  `0→7px` as it departs) and `#view` (`5px→0` as it arrives) carries the
+  haze the mist gave — confirmed free on SwiftShader (≈ no-blur in the same
+  run), and the gesture still arrives and departs (`dissolve.mjs` proves it
+  via `transitionstart`, never an end-state assert). The non-refuted
+  successor is the human's texture idea done as the one escape from
+  per-frame regeneration: pre-render the noise **once** to a canvas/`<img>`
+  and consume it via `feImage`, animating the field by `feOffset`/`feTile`
+  or two interfering layers. Whether Chrome caches an `feImage` source
+  across frames, and whether a translated static field reads as the gesture
+  evolving, are the successor's first questions.
 - **Lifted-hero FLIP** (shared-element morph, e.g. question → review dock).
   Measure the source rect, render the destination, invert to the source,
   play to identity — but the dream twist is a blurred, low-opacity drift,

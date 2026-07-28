@@ -84,8 +84,11 @@ carries a `+` command opener (steer the loop without a chat turn).
   question ledger while `/questions` remains dreamer-to-human. The client
   router renders the view; pushState/popstate drive
   the URL. The `#dreambg` canvas is a sibling of `#view` — never unmounted,
-  so the background survives navigation. Route changes dissolve through a
-  turbulence mist (see Motion language); reduced-motion swaps instantly.
+  so the background survives navigation. Route changes dissolve — the SVG
+  turbulence mist is temporarily shelved (#449: it regenerated feTurbulence
+  every frame at a cost no cheaper lever could touch; CSS compositor blur on
+  the ghost + view carries the haze for now; see transitions.md *The mist
+  filter*); reduced-motion swaps instantly.
   `/review` embeds the raw artifact (served at `/reviewraw`) in an iframe
   for style isolation; a question linking to it travels along, docked.
 - **Events log**: actionable user submissions (answers, questions for the
