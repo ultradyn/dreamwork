@@ -1,45 +1,41 @@
 # Questions for the human
 
 ## Open
-- **P1 · 2026-07-28 — #263: A-D and F are all landed. Open the second gate, or don't?**
-  Artifact: `.dreamwork/review/263-second-gate.html` (being built; the plan's own artifact
-  `.dreamwork/review/user-event-journal-implementation.html` predates the lanes landing and does not
-  show this). Plan: `.dreamwork/docs/plans/user-event-journal-implementation.md`.
-  **Why this exists, and it is not a happy reason.** At 16:14 I dispatched a lane onto `#371`,
-  which is increment 20 = `E1 envelope` = **lane E** — work your own 05:43 answer withheld. I had
-  read your *"Q2 yes"* as authorisation when it amended the design. Killed at 16:20 with nothing
-  committed, retracted at `6ea8f6b`. The honest consequence is that **the gate has been shut on
-  finished prerequisites for nine hours with no question asking you to open it**, which is exactly
-  the `#419` hole you named at 15:19 — and I found it by walking into it rather than by checking.
-  **The condition you set is met.** Your 05:43 ruling: *"E, the HTTP cutover, and H, the
-  mixed-version gate, stay behind a second gate **until A-D are proved**."* All four are landed on
-  `master`, each red-proved per increment:
-  **A** (digest, 2/2) `aad1d8d` · **B** (journal, 8/8 across two batches) `6a865e4`..`bc731cf` ·
-  **C** (domain files, 3/3) `3f1a6af`, `8c1bb60` · **D** (application, 4/4) `6cd9f95` — `Proof`
-  ternary, one-successor reservation, post-crash reconcile, five adapters, in
-  `user_events/apply.py` + 485 lines of test · **F** (CLI, 4/4) `2386345`. Lane D's own message
-  reports finding and consolidating a hollow red inside itself, which is the kind of evidence
-  *"proved"* should mean.
-  **Q1 — open the second gate for lane E (increments 20-25)?** This is the HTTP cutover: the
-  journal commit, not the handler, authorises the response (`202` + `Location` + receipt identity),
-  with a shadow-write increment before it and `shadow_failed` health after. **Rec: yes, but see Q3
-  first** — the work is ready and `#371` (a P1: `do_POST` witnesses an interrupted body as complete)
-  cannot be fixed without it.
-  **Q2 — open it for lane H (34-35), the mixed-version gate?** Its fixture is *two server versions
-  and a request spanning a quiesced cutover*. The plan notes *"code and temp targets only; running
-  it against a live target is migration"*. **Rec: yes for the code, and I will not run it against
-  your live target without asking again.**
-  **Q3 — does `#368` (the modular split) land first? This is the one I would most like your call
-  on.** Your plan says: *"lanes E and G both live inside the one 8,647-line `watch.py`, so they are
-  a single lane in practice. That is an argument for `#368` landing before the second gate opens."*
-  That was your own note, not mine. Six increments of lane E inside one 8.6k-line file means **no
-  parallelism and a large blast radius** on the file the dashboard is; splitting first costs a
-  batch and buys parallel lanes for E and G both. **Rec: split first** — but it delays `#371`, so
-  if you would rather have the P1 fixed than the file split, say so and I will run E serially.
-  **What opening the gate does NOT authorise:** lane G (30-33) was never in G1 and stays withheld
-  regardless; increment 18's purge and 19's PostgreSQL half stay `UNPLACEABLE` per your Q4; and no
-  migration of a live target.
-
+- **P1 · 2026-07-28 — #263: I told you the gate's condition was met. It is not — lane C is 3 of 5.
+  One sequencing call is still genuinely yours.**
+  Artifact: `.dreamwork/review/263-second-gate.html` — **it carries the same wrong claim and is being
+  corrected**; the corrected build will land before you need it. Plan:
+  `.dreamwork/docs/plans/user-event-journal-implementation.md`.
+  **Correction, 16:35, and it is the second one I owe you on this task today.** At 16:24 this entry
+  said *"A-D and F are all landed"* and *"the second gate's condition is MET"*. **Wrong.** Lane C is
+  increments **11-15** (`C1` lock, `C2` lineage, `C3` one-write, `C4` markers, `C5` rebaseline).
+  **`C4` and `C5` are not built** — `user_events/domain_files.py` has no whole-file marker search and
+  no `rebaseline`, and its test file holds 3 tests. So **A-D are not proved and the gate stays shut,
+  correctly.**
+  How I got it wrong, because the mechanism matters more than the fact: the ledger's own line says
+  *"lane C (domain files) DONE … `C1`, `C2`, `C3` … 3/3 green"*, and I read `3/3` as the lane's
+  scope. **The lane's scope is 5.** `3/3` was true about what it built and silent about what it did
+  not, and I never checked it against the plan's own lane definition one file away. **The lane that
+  built your artifact caught it by reading the tree** — the fifth time today a subagent has refuted a
+  figure I derived instead of observed, and the most consequential, because this one would have had
+  you opening a gate on unproved prerequisites.
+  **What the loop is doing about it without you: building `C4` and `C5`.** Both are inside increments
+  1-19, which your 05:43 `G1` already authorises, so no ruling is needed and none is being requested.
+  When they land I will ask again — with the tree checked rather than the ledger read.
+  **The one live question, and it does not depend on any of the above.**
+  **Q1 — does `#368` (the modular split) land before lane E starts?** This was **your own note** in
+  the plan: *"lanes E and G both live inside the one 8,647-line `watch.py`, so they are a single lane
+  in practice. That is an argument for `#368` landing before the second gate opens."* Measured now:
+  `watch.py` is **9,688 lines** (`wc -l`) — your 8,647 was stale by a thousand — and **6 of lane E's
+  6 production increments touch it**, adding no new module. So lane E is six serial increments inside
+  the largest file in the repo, with lane G queued behind the same lock.
+  **Rec: split first.** It costs a batch and buys parallel E and G plus a smaller blast radius on the
+  file the dashboard *is*. The honest alternative is serial-now, which gets `#371`'s remaining policy
+  half sooner — and `#371` is less urgent than I said at 16:24: its **witness half already landed**
+  (`d33cc2f`, `short: true` + `got:`), so the server no longer records an interrupted body as
+  complete. Only the *policy* — keep it, marked incomplete, and proceed — waits on `E1`.
+  **Answering Q1 does not open the second gate** and is not being read as doing so. It decides what
+  the loop does with `#368` in the meantime, and I will come back for the gate separately.
 
 - **P1 · 2026-07-28 — #264: ratify the task-transition boundary, and one deployment call
   only you can make.** Artifact: `.dreamwork/review/task-transition-boundary.html` (open it from
@@ -1941,7 +1937,7 @@
 
 - **P1 · 2026-07-27 — #290 main-dreamer run modes: accept the local
   three-mode v1 and reserve hierarchy?**
-  → answered (2026-07-27 16:47): **approved and shipped — this ask was simply
+  → answered (2026-07-27 16:35): **approved and shipped — this ask was simply
   never folded.** His authorization arrived on a different channel and went
   further than this entry asked for: the ask offered M1/M2/M3 and said approval
   would authorize "a written design and visual proposal only", while what he
@@ -2296,7 +2292,7 @@
     review-dock submit uses positional data-qkey, so a live re-sort of
     questions_open can post against the wrong entry while the URL still
     shows the docked q=.
-  - **Note (human, via watch, 2026-07-26 16:47):** re 229 proposal,
+  - **Note (human, via watch, 2026-07-26 16:35):** re 229 proposal,
     probably need some updates. I have this here grok review that has items
     to be addressed: my question: with the threaded topics chat proposal,
     do you see any issues or concerns or things we should check to avoid

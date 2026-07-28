@@ -24,9 +24,51 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **421**
+Next id: **423**
 
 ## Open
+- **#421** — how we ask him questions, researched rather than guessed · P1 · loop-instructions ·
+  origin: **human** · **human via watch `do-next` 2026-07-28 16:29** · next-up
+  · verbatim: *"We should update instructions for the dreamwork agent: when asking users questions:
+  get a subagnet to write a research artifact about how https://github.com/ayghri/i-have-adhd works
+  (in terms of its instructions). Use that to create some options for how we can change instructions
+  to ask better questions. Then present those options to me as a question."*
+  · **he specified the method, and that is the load-bearing part.** Not *"ask better questions"* —
+  **research a named external artifact, derive options from it, and put the options to him as a
+  question.** So a lane that reads `i-have-adhd` and returns opinions has missed it; the deliverable
+  chain is research doc → options → a `questions.md` entry he can rule on
+  · **why he is asking now, inferred and worth checking with him:** today's questions have been long.
+  The `#264` entry is ~30 lines and the `#263` gate ask is ~35, each carrying three sub-questions,
+  recommendations, evidence and a boundary block. `i-have-adhd` is presumably about instruction
+  design for attention constraints, which would make this a note about **cost to read**, not about
+  correctness. Do not assume that reading; the research decides it
+  · **the loop has evidence of its own on this.** He could not find `#264`'s question at 15:19
+  (`#419`), he asked for previews before ruling on `#367` at 14:52 rather than deciding from prose,
+  and he twice answered a sub-question while its neighbours went unanswered (`#275` Q3/Q5/Q6 still
+  open from an entry he answered Q2 of). **Three independent signals that our question format costs
+  him more than it should**, and none of them was read as being about the format
+  · blocked on nothing · related: **#422** (research artifacts as a kind), **#419**
+
+- **#422** — a research artifact is a kind we produce and have never specified · P2 ·
+  loop-tooling/format · origin: **human** · **human via watch `do-next` 2026-07-28 16:29**, second
+  half of the same message
+  · verbatim: *"also, we should support research artifacts in like `.dreamwork/docs/research/` or
+  something. ideally HTML when they are user facing or benefit from visual expression."*
+  · **the directory already exists and the documentation says otherwise.** `.dreamwork/docs/research/`
+  holds one file (`2026-07-28-parallel-lanes-evidence.md`) while `doc-map.md:25` documents the flat
+  form `.dreamwork/docs/research-*.md` — and a third file, `research-window-coords.md`, sits at
+  `docs/` root in that flat form. **Three spellings of one kind**, so the convention is not a
+  convention yet
+  · **the HTML half is the real gap.** `review_artifact.py` builds and checks templated HTML and
+  `watch.py` lists and serves it, but **only under `.dreamwork/review/`**. A user-facing research
+  doc has no path to a rendered page today, which is why `#421`'s options will ship as a *review*
+  artifact even though it is research
+  · so: decide whether research HTML reuses the review pipeline (a second listing surface, one
+  builder) or gets its own, document the directory + naming in the doc-map **and** `file-formats.md`
+  if a tool will parse it, and say what distinguishes research from a measurement
+  (`.dreamwork/docs/measurements/`, also undocumented there) from a plan
+  · blocked on nothing · related: **#421**
+
 
 - **#415** — the hand-off grammar allows ONE sha, and a task landing in two commits is the
   ordinary case · P3 · loop-tooling/format · origin: **loop** · found when the `#411` lane
@@ -2421,9 +2463,25 @@ Next id: **421**
   result *kind* — which is the specific trap the plan named, since a deleted `SELECT` comparison
   raises `IntegrityError` and a count-only assertion would "fail" for the wrong reason
   · `B5`-`B8` were out of batch and correctly not started
-  · **lane C (domain files) DONE, `@pi-glm52`, ~45 minutes** — `C1` `3f1a6af`, `C2` `8c1bb60`,
+  · **lane C (domain files) is 3 of 5, NOT done — and this line said DONE for nine hours.**
+  `@pi-glm52`, ~45 minutes** — `C1` `3f1a6af`, `C2` `8c1bb60`,
   `C3` `b5555e4`, plus `4a773e2`. 3/3 green, all criteria HOLD, and it explicitly noted seeing
   concurrent-lane dirt in the tree and not staging it — which is the ownership rule working
+  · **CORRECTION 2026-07-28 16:35.** The `3/3` above is the count of what the lane **built**, and I
+  read it as the lane's **scope**. Lane C is plan increments **11-15**: `C1` lock, `C2` lineage,
+  `C3` one-write, **`C4` markers**, **`C5` rebaseline**. `C4` and `C5` are **not built** —
+  `user_events/domain_files.py` has no whole-file marker search and no `rebaseline`, and
+  `test_user_events_domain_files.py` holds 3 tests. **So A-D are NOT proved and the second gate is
+  correctly still shut.** I filed a question at 16:24 telling him the condition was met; corrected
+  in place at 16:35
+  · **caught by the `@grok` lane building the gate artifact, from the tree** (`git log --
+  user_events/domain_files.py` plus the plan's own lane table) — the fifth lane today to refute a
+  figure I derived rather than observed, and the costliest, since acting on it meant asking him to
+  open a gate on unproved prerequisites. The pattern is now specific enough to state: **a lane's
+  self-reported `n/n` is a claim about its own brief, never about the plan's lane** — reconcile the
+  two before either is quoted
+  · **`C4` + `C5` are inside increments 1-19, which `G1` already authorises**, so they need no
+  ruling and are the loop's next `#263` work rather than his
   · **`C3` verified independently by me, and the red is the most legible in the batch**: I
   replaced temp-then-`os.replace` with the direct `open(path, "w")` that `watch.py:8462` does
   today, and `test_kill_at_rename_leaves_the_previous_generation_intact` failed with
@@ -2458,7 +2516,7 @@ Next id: **421**
   inside itself** — the body-digest predicate lived in two places, so deleting the copy under test
   changed nothing — and consolidating to one line. That is what `proved` should mean
   · **so A, B, C, D and F are all landed and the second gate's condition — his 05:43 *"until A-D
-  are proved"* — is MET.** Filed as a question 2026-07-28 16:30 rather than acted on: opening it is
+  are proved"* — is MET.** Filed as a question 2026-07-28 16:24 rather than acted on: opening it is
   his, and the nine hours it sat shut with no ask is the `#419` hole he named at 15:19
   · **`B7`'s red came back GREEN, and that is the finding of the batch.** Removing
   `UNIQUE(client_action_id)` left the whole suite passing. **I reproduced it: 12 passed with the
@@ -2795,6 +2853,14 @@ Next id: **421**
   arrival/landing pairs and discards them; render the median without a
   velocity score after provenance work
   · **UNBLOCKED — `#217` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): filed-to-landed median over `ledger_series`; the provenance work it needed landed. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
+  · **IN PROGRESS 2026-07-28 16:33** — `ccc @glm52`, `.worktrees/218`, brief
+  `.dreamwork/docs/briefs/218-filed-to-landed-median.md`, owns `watch.py`, `test_watch.py`,
+  `watch-design.md`. Two things the brief makes non-optional: the population is the
+  **intersection** of arrived and landed, so the figure answers *"how long did finished work
+  take"* and the still-open tail is excluded — the label carries that or the number lies quietly;
+  and his *"without a velocity score"* is taken literally, no composite index. Defaulted to **copy
+  rather than a mark on the chart**, because `#417` says the burndown's design is at a quality he
+  does not want traded for an extra series — the lane may argue
 
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the

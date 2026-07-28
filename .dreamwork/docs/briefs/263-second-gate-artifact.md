@@ -8,7 +8,7 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/gate`**, branch **`wt/gate`**. Do 
 ## What you are building and why it has to be good
 
 He has to make three authorisation calls on `#263` and there is nothing for him to look at. The ask
-went into `.dreamwork/questions.md` at 16:30 (top entry, `#263: A-D and F are all landed. Open the
+went into `.dreamwork/questions.md` at 16:24 (top entry, `#263: A-D and F are all landed. Open the
 second gate, or don't?`) — **read that entry first; it is the specification of what the artifact must
 answer**, and its standing rule is that every request for a ruling ships a self-contained HTML
 artifact.
