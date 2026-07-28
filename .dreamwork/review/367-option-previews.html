@@ -1,0 +1,850 @@
+<!doctype html>
+<!--Built from the dreamwork review template v1+95ee67a8 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
+<meta name="dreamwork-review-template" content="v1+95ee67a8">
+<title>#367 · Option previews · A, B and C below the cliff</title>
+<style>
+/* Offline-clean by construction: no fetches, no external fonts, no images.
+   Tokens are watch.py's, value for value, because this is read inside the
+   dashboard's own iframe. */
+:root{
+  color-scheme:dark;
+  --bg:#090d16;--bg2:#0c1220;--panel:#111827;--panel2:#162033;
+  --line:#1f2937;--border:#334155;--text:#cbd5e1;--bright:#f4f7fb;
+  --lit:#e5e7eb;--muted:#98a3b5;--dim:#697589;--dimmer:#4b5568;
+  --accent:#a5b4fc;--accent2:#7dd3fc;--ok:#86efac;--warn:#fcd34d;
+  --bad:#fda4af;--ink:#050810;--radius:5px;
+  --ease:cubic-bezier(.32,.1,.2,1);--measure:78ch
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--dimmer) transparent}
+*::selection{background:rgba(165,180,252,.24);color:var(--bright)}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--dimmer);border-radius:4px}
+html{background:var(--bg);scroll-padding-top:5.5rem}
+body{margin:0;background:
+  radial-gradient(ellipse 68rem 34rem at 46% -14rem,rgba(99,102,241,.13),transparent 68%),
+  radial-gradient(ellipse 34rem 24rem at 92% 12%,rgba(14,165,233,.045),transparent 70%),
+  linear-gradient(180deg,var(--bg),#0a0f19 55%,var(--bg));
+  color:var(--text);font-family:ui-monospace,"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  font-size:.82rem;line-height:1.7;overflow-wrap:anywhere}
+a{color:var(--accent);text-underline-offset:.22em;text-decoration-thickness:1px}
+a:hover{color:var(--bright)}
+code{color:var(--lit);background:rgba(22,32,51,.72);padding:.03rem .32ch;border-radius:3px}
+pre{margin:.75rem 0;padding:.9rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.52);color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+/* syntax highlighting tokens (#339) — emitted at build time by
+   review_artifact.py as <span class="tok-…"> inside pre>code. No script in
+   the artifact; if a rule is ever lost the token takes the block's own
+   colour, so highlighting never breaks the code itself. Scoped to pre code
+   so an inline <code> snippet is never coloured by accident. */
+pre code .tok-kw{color:var(--accent)}
+pre code .tok-str{color:var(--ok)}
+pre code .tok-num{color:var(--warn)}
+pre code .tok-com{color:var(--dimmer);font-style:italic}
+pre code .tok-fn{color:var(--accent2)}
+pre code .tok-typ{color:var(--warn)}
+pre code .tok-dec{color:var(--accent)}
+pre code .tok-op{color:var(--muted)}
+pre code .tok-tag{color:var(--accent)}
+pre code .tok-attr{color:var(--accent2)}
+pre code .tok-var{color:inherit}
+strong{font-weight:inherit;color:var(--bright)}em{color:var(--lit)}
+p{margin:.62rem 0}ul,ol{margin:.55rem 0;padding-left:2.4ch}li{margin:.34rem 0}
+h1,h2,h3,h4{margin:0;font:inherit;font-weight:normal;color:var(--bright)}
+h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit);margin-top:1.4rem}
+.wrap{width:min(calc(100% - 2rem),1120px);margin:0 auto}.read{max-width:var(--measure)}
+.skip{position:fixed;z-index:99;top:.6rem;left:.6rem;transform:translateY(-180%);display:inline-flex;align-items:center;min-height:44px;padding:.6rem 1ch;background:var(--bright);color:var(--ink);border-radius:var(--radius);text-decoration:none}
+.skip:focus{transform:none;transition:transform .35s var(--ease)}
+.toprail{position:sticky;top:0;z-index:20;background:rgba(9,13,22,.91);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
+.toprail-in{width:min(calc(100% - 2rem),1120px);min-height:58px;margin:auto;display:flex;align-items:center;gap:1rem;justify-content:space-between}
+.identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
+main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
+.label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
+.quiet{color:var(--muted)}.dim{color:var(--dim)}.dimmer{color:var(--dimmer)}
+.kicker{display:flex;gap:1ch;align-items:baseline;flex-wrap:wrap}.proposal{color:var(--warn)}
+.sub{color:var(--dim);margin:.25rem 0 1.7rem}
+.lead{font-size:.9rem;line-height:1.78;color:var(--lit);max-width:76ch}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(240px,.45fr);gap:2.5rem;align-items:end}
+/* The one rule this template adds to the artifact it was cut from, and the
+   only entry in test_review_artifact.py's TEMPLATE_ONLY: tasks-page.html
+   always carries an aside, a template has to render without one. */
+.hero-grid.solo{grid-template-columns:minmax(0,1fr)}
+.version-mark{border-left:1px solid var(--accent);padding:.2rem 0 .2rem 1.25rem}
+.version-mark .big{display:block;color:var(--bright);font-size:2.4rem;line-height:1;letter-spacing:-.07em}
+.version-mark small{color:var(--dim)}
+.call{margin:1.2rem 0;padding:1rem 1.2ch;background:linear-gradient(90deg,rgba(165,180,252,.09),transparent);border-left:2px solid var(--accent);max-width:84ch}
+.notice{margin:1rem 0;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--warn);color:var(--muted);max-width:84ch}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:1.1rem 0}
+.fact{background:var(--bg2);padding:.95rem}.fact .number{display:block;color:var(--bright);font-size:1.3rem;line-height:1.1}.fact .caption{display:block;color:var(--dim);margin-top:.3rem;font-size:.72rem}
+table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem;min-width:max-content}
+th,td{text-align:left;vertical-align:top;padding:.62rem .72ch;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-size:.66rem;text-transform:uppercase;letter-spacing:.065em;font-weight:normal}
+td:first-child{color:var(--lit)}.pass{color:var(--ok)}.unknown{color:var(--warn)}.fail{color:var(--bad)}
+.row-accent td{background:rgba(165,180,252,.045)}
+.scroller{overflow-x:auto}
+.summary-line{display:grid;grid-template-columns:17ch minmax(0,1fr);gap:1.5ch;padding:.5rem 0;border-top:1px solid var(--line)}
+.summary-line:last-child{border-bottom:1px solid var(--line)}
+.key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.68rem}
+.deltas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line)}
+.delta{display:grid;grid-template-columns:3.2ch minmax(0,1fr);gap:1ch;padding:.8rem 1rem .8rem 0;border-bottom:1px solid var(--line)}
+.delta b{color:var(--accent);font-weight:normal}.delta span{color:var(--muted)}
+figure{margin:1rem 0 1.7rem}.figscroll{overflow-x:auto}
+svg{display:block;height:auto}svg text{font-family:ui-monospace,"JetBrains Mono",monospace}
+figcaption{color:var(--dim);font-size:.72rem;margin-top:.4rem}
+
+/* ── the drawn page ───────────────────────────────────────────────────── */
+.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem;align-items:start}
+.frame{border:1px solid var(--border);background:rgba(9,13,22,.8);min-width:0;box-shadow:0 22px 60px rgba(0,0,0,.19)}
+.framebar{display:flex;align-items:center;flex-wrap:wrap;gap:0 1ch;min-height:42px;padding:.35rem 1ch;border-bottom:1px solid var(--line);color:var(--dim);font-size:.72rem}
+.framebar b{font-weight:normal;color:var(--lit);white-space:nowrap}
+.framebody{padding:.9rem 1.1ch}
+.mockhead{display:flex;align-items:center;gap:1ch;margin-bottom:.2rem}
+.opener{color:var(--accent)}
+.mocktitle{color:var(--bright)}
+.crumbs{color:var(--dim);font-size:.72rem;margin-bottom:1rem}
+.ctl{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.2rem 0 .7rem}
+.searchbox{flex:1;min-width:15ch;display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.searchbox span{padding:.3rem .8ch;color:var(--lit)}
+.searchbox i{font-style:normal;color:var(--dimmer);padding:.3rem .8ch;margin-left:auto}
+.sgroup{display:inline-flex;border:1px solid transparent;gap:.15rem}
+.sgbtn{padding:.22rem .7ch;color:var(--dim);border:1px solid transparent;border-radius:var(--radius);white-space:nowrap}
+.sgbtn.on{color:var(--lit);border-color:var(--border)}
+.countline{color:var(--dim);font-size:.72rem;border-bottom:1px solid var(--line);padding-bottom:.5rem;margin-bottom:.2rem}
+.countline b{color:var(--lit);font-weight:normal}
+.tk{display:block;padding:.5rem 0 .52rem;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.tk-1{display:flex;gap:1ch;align-items:baseline}
+.tkid{color:var(--dim);font-weight:normal;flex:none}
+.tkt{color:var(--text);min-width:0;flex:1}
+.tkp{flex:none;color:var(--dim);font-size:.72rem}
+.tkp.p01{color:var(--bright)}.tkp.p2{color:var(--text)}.tkp.p3{color:var(--dim)}
+.tk-2{display:block;color:var(--dim);font-size:.7rem;padding-left:5.5ch}
+.tk.claimed{border-left:2px solid var(--accent);padding-left:.9ch;margin-left:-1.1ch}
+.tk.claimed .tkt{color:var(--bright)}
+.tk.claimed .tk-2 em{color:var(--accent);font-style:normal}
+.tk.blocked .tkt{color:var(--muted)}
+.tk.landed .tkt,.tk.landed .tkid{color:var(--dim)}.tk.landed .tk-2{color:var(--dimmer)}
+.tk.unknownstate .tkt{color:var(--muted)}
+.tk.unknownstate .tk-2 em{color:var(--warn);font-style:normal}
+.tk-2 .stale{color:var(--warn);font-style:normal}
+.hilite{background:rgba(165,180,252,.16);color:var(--bright)}
+.warnline{border-left:2px solid var(--warn);padding:.45rem 0 .45rem 1ch;color:var(--muted);margin:.5rem 0}
+.warnline b{color:var(--warn);font-weight:normal}
+.calmline{color:var(--dim);padding:.45rem 0}
+.detgrid{display:grid;grid-template-columns:13ch minmax(0,1fr);gap:.05rem 1.3ch;font-size:.75rem}
+.detgrid dt{color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-size:.66rem;padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd{margin:0;color:var(--text);padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd em{font-style:normal;color:var(--dim)}
+.mockbody{color:var(--muted);font-size:.75rem;margin-top:1rem;border-top:1px solid var(--line);padding-top:.7rem}
+.peek{color:var(--dim);font-size:.72rem;border-top:1px solid var(--line);margin-top:.8rem;padding-top:.55rem}
+.annot{display:grid;grid-template-columns:3.5ch minmax(0,1fr);gap:.7ch;font-size:.72rem;color:var(--muted);margin:.45rem 0}
+.annot b{color:var(--accent2);font-weight:normal}
+
+/* ── prose furniture ──────────────────────────────────────────────────── */
+.spine{margin:1.4rem 0}
+.spine-row{display:grid;grid-template-columns:15ch 2.4rem minmax(0,1fr);align-items:stretch;min-height:88px}
+.spine-key{padding:.85rem 1rem .85rem 0;color:var(--lit);text-align:right}
+.spine-rail{position:relative}
+.spine-rail::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border)}
+.spine-row:first-child .spine-rail::before{top:50%}
+.spine-row:last-child .spine-rail::before{bottom:50%}
+.spine-dot{position:absolute;z-index:1;left:50%;top:1.15rem;width:9px;height:9px;transform:translateX(-50%);border-radius:50%;background:var(--bg);border:1px solid var(--accent);box-shadow:0 0 0 5px var(--bg)}
+.spine-body{padding:.7rem 0 .85rem 1rem;border-top:1px solid var(--line)}
+.spine-body p{color:var(--muted);margin:.2rem 0;max-width:var(--measure)}
+.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1.6rem}
+.check{padding:.55rem 0;border-top:1px solid var(--line)}
+.check b{font-weight:normal;color:var(--bad)}.check span{color:var(--ok)}
+.stages{counter-reset:stage}
+.stage{counter-increment:stage;display:grid;grid-template-columns:3.4ch minmax(0,1fr);gap:1ch;padding:.68rem 0;border-top:1px solid var(--line)}
+.stage::before{content:counter(stage,decimal-leading-zero);color:var(--accent)}
+.stage b{color:var(--lit);font-weight:normal}.stage span{color:var(--muted)}
+details{border-top:1px solid var(--line);margin:.65rem 0}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;min-height:44px;padding:.6rem 0;color:var(--muted);outline:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+ ";color:var(--dim);white-space:pre}
+details[open]>summary{color:var(--lit);padding-top:1rem}
+details[open]>summary::before{content:"\2212 "}
+.details-in{padding:0 0 1rem 1.5ch;color:var(--muted)}
+details::details-content{block-size:0;opacity:0;filter:blur(3px);overflow:hidden;transition:block-size .72s var(--ease),opacity .45s ease,filter .45s ease;transition-behavior:allow-discrete}
+details[open]::details-content{block-size:auto;opacity:1;filter:none}
+@starting-style{details[open]::details-content{block-size:0;opacity:0;filter:blur(3px)}}
+#decision{scroll-margin-top:4.75rem}
+.choice{padding:1rem 0;border-top:1px solid var(--line)}
+.choice:last-of-type{border-bottom:1px solid var(--line)}
+.choice-grid{display:grid;grid-template-columns:4.5ch minmax(0,1fr);gap:1ch}
+.choice-grid>div{max-width:var(--measure)}
+.choice-tag{color:var(--accent);font-size:1rem}
+.answer{margin-top:.4rem;color:var(--lit)}
+.approval{padding:1rem;background:linear-gradient(90deg,rgba(165,180,252,.1),transparent);color:var(--lit);margin-top:1.2rem}
+footer{margin-top:3.5rem;padding:1.2rem 0 2rem;border-top:1px solid var(--line);color:var(--dimmer)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+
+/* ── essential marks (#367) — the lawyer's flag rail, above the cliff only ──
+   A mark is a flag at a HEIGHT, not a decoration on a box: the tab anchors to
+   the reading column's right edge at the passage's top. The artifact is
+   offline-clean (no script), so this is CSS-only — each tab is a child of its
+   marked element, positioned absolutely against it; the marked element becomes
+   the positioning ancestor (.is-marked). The tab's OUTER box (.marktab)
+   inherits the body font deliberately, so `left:calc(var(--measure) + .4ch)`
+   resolves `--measure:78ch` in BODY ch (the reading column's own unit) rather
+   than the tab's smaller font — a single-element tab would place the flag at
+   the wrong column. The visible postit (.markflag) carries the .66rem size.
+   "Current" is :target (the passage navigated to); next/prev are real fragment
+   links, so the whole thing is keyboard-operable and offline-honest. Below the
+   measured cliff the rail is display:none — absent, not broken (the strip
+   below the cliff is increment 2b and his call, not this one). */
+.is-marked{position:relative;scroll-margin-top:5.5rem}
+.marktab{position:absolute;top:0;left:calc(var(--measure) + .4ch);z-index:15;display:flex;align-items:baseline;gap:.35ch;line-height:1.25;opacity:.6;transition:opacity .45s var(--ease)}
+.is-marked:target .marktab{opacity:1}
+.markflag{font-size:.66rem;line-height:1.25;padding:.28em .55em;max-width:11.5rem;background:var(--accent);color:var(--ink);border-radius:2px 4px 4px 2px;letter-spacing:-.01em;font-weight:normal;white-space:normal;hyphens:none;word-break:normal;overflow-wrap:normal;box-shadow:0 1px 0 rgba(0,0,0,.25);text-decoration:none;color:var(--ink);display:inline-block}
+.markflag:hover{color:var(--ink)}
+.marknav{display:none;align-items:baseline;gap:.15ch;font-size:.66rem}
+.is-marked:target .marknav{display:inline-flex}
+.marknav a{color:var(--ink);text-decoration:none;padding:0 .25ch;opacity:.75;border-radius:2px}
+.marknav a:hover{opacity:1}
+.marknav a:focus-visible{outline:1px solid var(--ink);outline-offset:1px}
+/* two marks closer than a tab height (a section and its first marked child —
+   the measured 29px densest pair against a 32px tab): stagger the nested tab
+   down so the flags read as two, not one chrome mass. The renderer's problem,
+   not the author's (#367). */
+.marktab[data-stagger]{margin-top:1.05rem}
+@media(max-width:859.98px){
+  /* BELOW THE CLIFF: render nothing. The worst-case ~6-word two-line tab
+     (~184px, max-width:11.5rem) fits inside .wrap down to ~830px (measured:
+     dev/capture/marktab-geometry.mjs); 860 is the existing breakpoint and
+     leaves ~26px of margin there. dev/capture/markrail.mjs re-proves the fit
+     in pixels. */
+  .marktab{display:none!important}
+}
+@media(max-width:860px){
+  .hero-grid,.frames,.deltas,.checks{grid-template-columns:1fr}
+  .facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .version-mark{border-left:0;border-top:1px solid var(--line);padding:.7rem 0 0;display:flex;align-items:baseline;gap:1rem}
+  .version-mark .big{flex:none;font-size:1.4rem;letter-spacing:-.04em}
+  .identity span{display:none}.topactions .full{display:none}.topactions{min-width:0}
+  .spine-row{grid-template-columns:9ch 1.8rem minmax(0,1fr)}.spine-key{font-size:.72rem;padding-right:.4rem}
+  .summary-line{grid-template-columns:1fr;gap:.05rem}
+  .detgrid{grid-template-columns:1fr}.detgrid dd{border-top:0;padding-top:0}
+}
+@media(max-width:480px){
+  body{font-size:.79rem}.facts{grid-template-columns:1fr}
+  .tk-2{padding-left:0}.choice-grid{grid-template-columns:3.4ch minmax(0,1fr)}
+  .topactions .status{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;transition-delay:0s!important;filter:none!important}
+  .skip:focus{transition:none}
+}
+@media print{
+  :root{color-scheme:light;--bg:#fff;--bg2:#fff;--panel:#f4f4f5;--panel2:#fff;--line:#bbb;--border:#777;--text:#111;--bright:#000;--lit:#111;--muted:#333;--dim:#444;--dimmer:#555;--accent:#273fa2;--accent2:#075985;--ok:#166534;--warn:#7c4a03;--bad:#991b1b}
+  body{background:#fff}.toprail{position:static;background:#fff;backdrop-filter:none}.topactions{display:none}
+  .frame{box-shadow:none}details::details-content{block-size:auto;opacity:1;filter:none}
+  .frame,.call,.notice,.choice{break-inside:avoid}a{color:#111;text-decoration:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#options">Skip to the options</a>
+<nav class="toprail" aria-label="Artifact navigation">
+  <div class="toprail-in">
+    <div class="identity"><b>option previews</b><span>task #367 · visual ruling</span></div>
+    <div class="topactions"><span class="status">awaiting review</span><a class="full" href="#ref">the rail</a><a href="#options">A · B · C</a><a href="#method">method</a></div>
+  </div>
+</nav>
+
+<main class="wrap" id="top">
+
+<header>
+  <div class="hero-grid">
+    <div>
+      <div class="kicker"><h1>Three real strips. One page. Measure, never draw.</h1><span class="proposal">previews only — nothing is built</span></div>
+      <div class="sub">task #367 · 28 July 2026 · every chrome number is measured at load</div>
+      <p class="lead">You asked for <em>previews of each option</em> before ruling. Below are A, B and C
+      at true below-cliff geometry &mdash; nested viewports so the reading column, the outer margin and
+      the strip are the real layout rules, not a drawing of them. Every height, row count and
+      &ldquo;N of M&rdquo; is written into its caption by script from
+      <code>getBoundingClientRect()</code> at load. Change a row&rsquo;s pill count in the markup and
+      reload: the caption follows, with no text edit.</p>
+      <div class="call"><strong>What this page is for.</strong> Price <strong>permanent chrome</strong>
+      against <strong>losing the at-a-glance overview</strong>. Do not treat the loop&rsquo;s prior
+      recommendation as the answer &mdash; if A looks lighter than its number, that is the useful
+      finding. The rail above the cliff is shown first so C has something concrete to lose.</div>
+    </div>
+    <div class="version-mark" aria-label="At a glance">
+      <span class="big" data-fill="aside-a-h">—</span>
+      <small>px, option A chrome at the primary below-cliff width<br>measured at load &mdash; not typed<br><span data-fill="aside-c-h">—</span>px for C on the same viewport</small>
+    </div>
+  </div>
+</header>
+
+<style>
+/* Preview-only CSS. Mirrors the marktab-geometry prototype + product rail tokens
+   so the strip looks like the product rather than a diagram. Scoped under .pv. */
+.pv{--pv-accent:#a5b4fc;--pv-ink:#050810;--pv-panel:#111827;--pv-panel2:#162033;
+  --pv-line:#1f2937;--pv-border:#334155;--pv-muted:#98a3b5;--pv-dim:#697589;
+  --pv-dimmer:#4b5568;--pv-bright:#f4f7fb;--pv-lit:#e5e7eb;--pv-bg:#090d16;--pv-bg2:#0c1220}
+.pv-stack{display:flex;flex-direction:column;gap:1.6rem;margin:1.1rem 0 1.8rem}
+/* True geometry is load-bearing: shells must NOT shrink to the parent column.
+   A grid that fits two 780s side-by-side would lie about wrap width and the
+   outer margin. Stack them; horizontal scroll on the pair if the page is narrow. */
+.pv-shell{
+  --pv-w:780px;
+  width:var(--pv-w);min-width:var(--pv-w);max-width:none;
+  box-sizing:content-box; /* border outside the claimed viewport width */
+  margin:0;padding:0;
+  border:1px solid var(--pv-border);
+  background:var(--pv-bg);
+  box-shadow:0 18px 48px rgba(0,0,0,.28);
+  position:relative;
+  font-family:ui-monospace,"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  font-size:.82rem;line-height:1.7;color:var(--pv-lit);
+}
+.pv-shell[data-vw="640"]{--pv-w:640px}
+.pv-shell[data-vw="1100"]{--pv-w:1100px}
+.pv-chrome{
+  display:flex;align-items:center;justify-content:space-between;gap:1ch;
+  min-height:1.6rem;padding:.28rem .7ch;
+  background:rgba(12,18,32,.95);border-bottom:1px solid var(--pv-line);
+  color:var(--pv-dimmer);font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;
+}
+.pv-chrome b{color:var(--pv-dim);font-weight:normal;text-transform:none;letter-spacing:0}
+.pv-page{background:var(--pv-bg);position:relative}
+/* True page geometry inside the shell: wrap = min(100% - 2rem, 1120), margin auto → 1rem each side. */
+.pv-wrap{width:min(calc(100% - 2rem),1120px);margin:0 auto;position:relative}
+.pv-toprail{
+  background:rgba(9,13,22,.91);border-bottom:1px solid var(--pv-line);
+  min-height:42px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 0;gap:1rem;
+}
+.pv-toprail .pv-wrap{display:flex;align-items:center;justify-content:space-between;min-height:42px;width:min(calc(100% - 2rem),1120px)}
+.pv-id{color:var(--pv-bright);white-space:nowrap}
+.pv-id span{color:var(--pv-dim);margin-left:1ch;font-size:.72rem}
+.pv-actions{display:flex;gap:.35rem;align-items:center}
+.pv-actions span{
+  display:inline-flex;align-items:center;min-height:28px;padding:0 .55rem;
+  border:1px solid var(--pv-border);border-radius:5px;color:var(--pv-muted);font-size:.72rem;
+}
+.pv-status{color:#fcd34d;font-size:.72rem;margin-right:.4rem}
+.pv-status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.55ch;border-radius:50%;background:#fcd34d}
+
+/* Below-cliff strip — product-shaped pills from marktab-geometry.mjs */
+.pv-strip{
+  background:rgba(17,24,39,.94);border-bottom:1px solid var(--pv-line);
+  padding:.4rem 0;
+}
+.pv-strip-in{
+  width:min(calc(100% - 2rem),1120px);margin:0 auto;
+  display:flex;align-items:stretch;gap:.4rem;flex-wrap:wrap;
+}
+/* Nav lives on its own foot row so pill row-count is the label set's wrap,
+   matching the measurement script's "flex of N pills" stress — not nav-steal. */
+.pv-strip-foot{
+  width:min(calc(100% - 2rem),1120px);margin:.35rem auto 0;
+  display:flex;align-items:center;justify-content:flex-end;
+}
+.pv-pill{
+  display:inline-block;box-sizing:border-box;
+  padding:.28em .55em;
+  background:var(--pv-panel2);color:var(--pv-muted);
+  border:1px solid var(--pv-border);border-radius:5px;
+  font-size:.66rem;line-height:1.25;
+  white-space:normal;hyphens:none;word-break:normal;overflow-wrap:normal;
+  /* Prefer natural two-line width; 11.5rem caps at product .markflag */
+  max-width:11.5rem;
+}
+.pv-pill.is-current{background:var(--pv-accent);color:var(--pv-ink);border-color:transparent}
+.pv-more{
+  display:inline-flex;align-items:center;
+  padding:.28em .55em;border:1px dashed var(--pv-border);border-radius:5px;
+  color:var(--pv-dim);font-size:.66rem;line-height:1.25;white-space:nowrap;
+}
+.pv-nav{
+  display:flex;align-items:center;gap:.5ch;
+  color:var(--pv-muted);font-size:.72rem;white-space:nowrap;flex:none;
+}
+.pv-nav .pv-arrow{opacity:.75;padding:0 .15ch}
+.pv-nav .pv-pos{color:var(--pv-lit)}
+
+/* Option C: walk only — one compact row, no foot */
+.pv-strip.pv-walk{padding:.35rem 0}
+.pv-strip.pv-walk .pv-strip-in{flex-wrap:nowrap;justify-content:center;min-height:0}
+.pv-strip.pv-walk .pv-nav{gap:.8ch}
+
+/* Above-cliff rail reference */
+.pv-rail-stage{position:relative;padding:1.1rem 0 1.4rem;min-height:9.5rem}
+.pv-read{max-width:78ch;color:var(--pv-muted);font-size:.82rem;line-height:1.7}
+.pv-read .pv-ghost{
+  display:block;height:.55rem;background:var(--pv-line);border-radius:2px;margin:.45rem 0;opacity:.55
+}
+.pv-read .pv-ghost.w2{width:92%}.pv-read .pv-ghost.w3{width:78%}.pv-read .pv-ghost.w4{width:64%}
+.pv-markflag{
+  position:absolute;top:1.15rem;left:calc(78ch + .4ch);
+  font-size:.66rem;line-height:1.25;padding:.28em .55em;max-width:11.5rem;
+  background:var(--pv-accent);color:var(--pv-ink);
+  border-radius:2px 4px 4px 2px;letter-spacing:-.01em;
+  white-space:normal;hyphens:none;word-break:normal;
+  box-shadow:0 1px 0 rgba(0,0,0,.25);
+}
+.pv-markflag.quiet{opacity:.55;top:4.2rem}
+.pv-markflag.quiet2{opacity:.55;top:7.1rem}
+.pv-body{padding:1rem 0 1.2rem}
+.pv-kicker{color:var(--pv-bright);font-size:.9rem;line-height:1.45;margin:0 0 .5rem;max-width:78ch}
+.pv-tag{color:#fcd34d;font-size:.72rem;margin:0 0 .8rem}
+
+.pv-caption{
+  margin:.55rem 0 0;padding:.55rem .7ch;
+  border-top:1px solid var(--pv-line);
+  background:rgba(12,18,32,.65);
+  color:var(--pv-dim);font-size:.72rem;line-height:1.55;
+}
+.pv-caption strong{color:var(--pv-lit);font-weight:normal}
+.pv-caption .num{color:var(--pv-bright);font-variant-numeric:tabular-nums}
+
+.pv-note{margin:.4rem 0 0;color:var(--dim);font-size:.72rem;max-width:78ch}
+.pv-badge{
+  display:inline-block;margin:0 0 .55rem;padding:.15rem .55ch;
+  border:1px solid var(--border);border-radius:5px;
+  color:var(--warn);font-size:.69rem;letter-spacing:.06em;text-transform:uppercase;
+}
+.pv-opt-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.6ch 1.2ch;margin:0 0 .35rem}
+.pv-opt-head h3{margin:0;color:var(--bright);font-size:.94rem}
+.pv-pair{display:flex;flex-direction:column;gap:1.2rem;align-items:flex-start;overflow-x:auto;padding-bottom:.4rem}
+/* Do not collapse shells on narrow page windows — the claim is the nested
+   viewport, not the host page. Flags in the rail ref may still need room. */
+@media(max-width:860px){
+  .pv-markflag{/* keep absolute; shell stays 1100 and scrolls */}
+}
+</style>
+
+<section id="ref" aria-labelledby="ref-t">
+  <div class="label" id="ref-t">Reference — the rail above the cliff</div>
+  <p class="read">Not an option for below the cliff. Shown so C has a concrete thing to lose:
+  at-a-glance labels sitting in space the page was already wasting, at the height of each mark.
+  The cliff for two-line ~6-word tabs is ~830px; this shell is wider than that.</p>
+  <div class="pv pv-stack">
+    <div class="pv-shell" data-vw="1100" data-role="rail" id="pv-rail">
+      <div class="pv-chrome"><span>viewport <b data-fill="vw">—</b>px · <b>not an option</b></span><span>above the cliff</span></div>
+      <div class="pv-page">
+        <div class="pv-toprail"><div class="pv-wrap">
+          <div class="pv-id">essential marks<span>task #367</span></div>
+          <div class="pv-actions"><span class="pv-status">awaiting review</span><span>shape</span><span>decision</span></div>
+        </div></div>
+        <div class="pv-wrap pv-rail-stage">
+          <p class="pv-read" style="margin:0">The reading column is fixed at 78ch. Empty wrap to the right holds the flags.</p>
+          <span class="pv-read"><span class="pv-ghost"></span><span class="pv-ghost w2"></span><span class="pv-ghost w3"></span></span>
+          <span class="pv-read" style="display:block;margin-top:.8rem"><span class="pv-ghost w2"></span><span class="pv-ghost w4"></span></span>
+          <span class="pv-markflag is-current">reproducibility measurement against wrap geometry slack</span>
+          <span class="pv-markflag quiet">two-line tabs at smaller text size</span>
+          <span class="pv-markflag quiet2">flags mark a height not structure</span>
+        </div>
+      </div>
+      <p class="pv-caption" data-caption="rail">
+        Measured: shell <span class="num" data-fill="shell-w">—</span>px ·
+        wrap <span class="num" data-fill="wrap-w">—</span>px ·
+        outer margin <span class="num" data-fill="gutter">—</span>px ·
+        reading column <span class="num" data-fill="read-w">—</span>px ·
+        flag box <span class="num" data-fill="flag-w">—</span>&times;<span class="num" data-fill="flag-h">—</span>px
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="options" aria-labelledby="opt-t">
+  <div class="label" id="opt-t">Below the cliff — A, B and C at soft-cap seven</div>
+  <p class="read">Seven realistic ~6-word labels, no truncation. Nested shells pin the viewport
+  so geometry does not depend on the window you opened this page in. Primary width is the
+  below-cliff frame the design argues from; the second width re-checks the outer-margin claim.</p>
+
+  <!-- ── A · Pay the chrome ─────────────────────────────────────────── -->
+  <div class="choice" id="opt-a" style="margin-top:1.6rem">
+    <div class="pv-opt-head"><h3>A · Pay the chrome</h3><span class="quiet">every mark labelled · as many rows as needed</span></div>
+    <div class="answer">Complete index. The strip grows with the set. Nothing truncated, nothing hidden.</div>
+    <div class="pv pv-pair" style="margin-top:1rem">
+
+      <div class="pv-shell" data-vw="780" data-role="A" data-current="3" data-total="7" id="pv-a-780">
+        <div class="pv-chrome"><span>option A · <b data-fill="vw">—</b>px</span><span>pay the chrome</span></div>
+        <div class="pv-page">
+          <div class="pv-toprail"><div class="pv-wrap">
+            <div class="pv-id">essential marks</div>
+            <div class="pv-actions"><span class="pv-status">awaiting review</span><span>decision</span></div>
+          </div></div>
+          <div class="pv-strip" data-strip>
+            <div class="pv-strip-in" data-strip-in>
+              <span class="pv-pill">reproducibility measurement against wrap geometry slack</span>
+              <span class="pv-pill">two-line tabs at smaller text size</span>
+              <span class="pv-pill is-current">flags mark a height not structure</span>
+              <span class="pv-pill">pointer labels at the most important</span>
+              <span class="pv-pill">next prev walks every mark in order</span>
+              <span class="pv-pill">soft cap sits at seven marks</span>
+              <span class="pv-pill">strip pays chrome or loses overview</span>
+            </div>
+            <div class="pv-strip-foot">
+              <span class="pv-nav" aria-hidden="true"><span class="pv-arrow">‹</span><span class="pv-pos" data-fill="pos">—</span><span class="pv-arrow">›</span></span>
+            </div>
+          </div>
+          <div class="pv-wrap pv-body">
+            <p class="pv-kicker">Your longest review is 19.6 screens. Here is where the flags can actually go.</p>
+            <p class="pv-tag">design only — nothing is built</p>
+            <div class="pv-read">
+              <span class="pv-ghost"></span><span class="pv-ghost w2"></span>
+              <span class="pv-ghost w3"></span><span class="pv-ghost w4"></span>
+            </div>
+          </div>
+        </div>
+        <p class="pv-caption" data-caption="A">
+          Measured chrome height <strong class="num" data-fill="strip-h">—</strong>px ·
+          <strong class="num" data-fill="rows">—</strong> row(s) ·
+          <span class="num" data-fill="pills">—</span> labelled pills ·
+          position <span class="num" data-fill="pos">—</span> ·
+          wrap <span class="num" data-fill="wrap-w">—</span>px ·
+          outer margin <span class="num" data-fill="gutter">—</span>px ·
+          reading column <span class="num" data-fill="read-w">—</span>px
+        </p>
+      </div>
+
+      <div class="pv-shell" data-vw="640" data-role="A" data-current="3" data-total="7" id="pv-a-640">
+        <div class="pv-chrome"><span>option A · <b data-fill="vw">—</b>px</span><span>pay the chrome</span></div>
+        <div class="pv-page">
+          <div class="pv-toprail"><div class="pv-wrap">
+            <div class="pv-id">essential marks</div>
+            <div class="pv-actions"><span class="pv-status">awaiting review</span><span>decision</span></div>
+          </div></div>
+          <div class="pv-strip" data-strip>
+            <div class="pv-strip-in" data-strip-in>
+              <span class="pv-pill">reproducibility measurement against wrap geometry slack</span>
+              <span class="pv-pill">two-line tabs at smaller text size</span>
+              <span class="pv-pill is-current">flags mark a height not structure</span>
+              <span class="pv-pill">pointer labels at the most important</span>
+              <span class="pv-pill">next prev walks every mark in order</span>
+              <span class="pv-pill">soft cap sits at seven marks</span>
+              <span class="pv-pill">strip pays chrome or loses overview</span>
+            </div>
+            <div class="pv-strip-foot">
+              <span class="pv-nav" aria-hidden="true"><span class="pv-arrow">‹</span><span class="pv-pos" data-fill="pos">—</span><span class="pv-arrow">›</span></span>
+            </div>
+          </div>
+          <div class="pv-wrap pv-body">
+            <p class="pv-kicker">Same seven marks, narrower shell.</p>
+            <p class="pv-tag">re-check the outer margin claim</p>
+            <div class="pv-read">
+              <span class="pv-ghost"></span><span class="pv-ghost w2"></span><span class="pv-ghost w3"></span>
+            </div>
+          </div>
+        </div>
+        <p class="pv-caption" data-caption="A">
+          Measured chrome height <strong class="num" data-fill="strip-h">—</strong>px ·
+          <strong class="num" data-fill="rows">—</strong> row(s) ·
+          <span class="num" data-fill="pills">—</span> labelled pills ·
+          position <span class="num" data-fill="pos">—</span> ·
+          wrap <span class="num" data-fill="wrap-w">—</span>px ·
+          outer margin <span class="num" data-fill="gutter">—</span>px ·
+          reading column <span class="num" data-fill="read-w">—</span>px
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── B · Bounded strip ──────────────────────────────────────────── -->
+  <div class="choice" id="opt-b" style="margin-top:2rem">
+    <div class="pv-opt-head"><h3>B · Bounded strip, then &ldquo;+N more&rdquo;</h3><span class="quiet">two rows max · incomplete index</span></div>
+    <div class="answer">Keeps most of the chrome and truncates the <em>set</em> rather than a label — the argument already rejected one level up. Loop rec: reject.</div>
+    <div class="pv pv-pair" style="margin-top:1rem">
+
+      <div class="pv-shell" data-vw="780" data-role="B" data-current="3" data-total="7" data-visible="4" id="pv-b-780">
+        <div class="pv-chrome"><span>option B · <b data-fill="vw">—</b>px</span><span>bounded + overflow</span></div>
+        <div class="pv-page">
+          <div class="pv-toprail"><div class="pv-wrap">
+            <div class="pv-id">essential marks</div>
+            <div class="pv-actions"><span class="pv-status">awaiting review</span><span>decision</span></div>
+          </div></div>
+          <div class="pv-strip" data-strip>
+            <div class="pv-strip-in" data-strip-in>
+              <span class="pv-pill">reproducibility measurement against wrap geometry slack</span>
+              <span class="pv-pill">two-line tabs at smaller text size</span>
+              <span class="pv-pill is-current">flags mark a height not structure</span>
+              <span class="pv-pill">pointer labels at the most important</span>
+              <span class="pv-more" data-more>+<span data-fill="more-n">—</span> more</span>
+            </div>
+            <div class="pv-strip-foot">
+              <span class="pv-nav" aria-hidden="true"><span class="pv-arrow">‹</span><span class="pv-pos" data-fill="pos">—</span><span class="pv-arrow">›</span></span>
+            </div>
+          </div>
+          <div class="pv-wrap pv-body">
+            <p class="pv-kicker">Four labels visible. Three marks exist only as a count.</p>
+            <p class="pv-tag">incomplete index · next/prev still walks all seven</p>
+            <div class="pv-read">
+              <span class="pv-ghost"></span><span class="pv-ghost w2"></span><span class="pv-ghost w3"></span>
+            </div>
+          </div>
+        </div>
+        <p class="pv-caption" data-caption="B">
+          Measured chrome height <strong class="num" data-fill="strip-h">—</strong>px ·
+          <strong class="num" data-fill="rows">—</strong> row(s) of pills ·
+          <span class="num" data-fill="pills">—</span> visible labels ·
+          overflow <span class="num" data-fill="more">—</span> ·
+          position <span class="num" data-fill="pos">—</span> ·
+          wrap <span class="num" data-fill="wrap-w">—</span>px ·
+          outer margin <span class="num" data-fill="gutter">—</span>px
+        </p>
+      </div>
+
+      <div class="pv-shell" data-vw="640" data-role="B" data-current="3" data-total="7" data-visible="4" id="pv-b-640">
+        <div class="pv-chrome"><span>option B · <b data-fill="vw">—</b>px</span><span>bounded + overflow</span></div>
+        <div class="pv-page">
+          <div class="pv-toprail"><div class="pv-wrap">
+            <div class="pv-id">essential marks</div>
+            <div class="pv-actions"><span class="pv-status">awaiting review</span><span>decision</span></div>
+          </div></div>
+          <div class="pv-strip" data-strip>
+            <div class="pv-strip-in" data-strip-in>
+              <span class="pv-pill">reproducibility measurement against wrap geometry slack</span>
+              <span class="pv-pill">two-line tabs at smaller text size</span>
+              <span class="pv-pill is-current">flags mark a height not structure</span>
+              <span class="pv-pill">pointer labels at the most important</span>
+              <span class="pv-more" data-more>+<span data-fill="more-n">—</span> more</span>
+            </div>
+            <div class="pv-strip-foot">
+              <span class="pv-nav" aria-hidden="true"><span class="pv-arrow">‹</span><span class="pv-pos" data-fill="pos">—</span><span class="pv-arrow">›</span></span>
+            </div>
+          </div>
+          <div class="pv-wrap pv-body">
+            <p class="pv-kicker">Same bound, narrower shell.</p>
+            <div class="pv-read">
+              <span class="pv-ghost"></span><span class="pv-ghost w2"></span>
+            </div>
+          </div>
+        </div>
+        <p class="pv-caption" data-caption="B">
+          Measured chrome height <strong class="num" data-fill="strip-h">—</strong>px ·
+          <strong class="num" data-fill="rows">—</strong> row(s) of pills ·
+          <span class="num" data-fill="pills">—</span> visible labels ·
+          overflow <span class="num" data-fill="more">—</span> ·
+          position <span class="num" data-fill="pos">—</span> ·
+          wrap <span class="num" data-fill="wrap-w">—</span>px ·
+          outer margin <span class="num" data-fill="gutter">—</span>px
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── C · Just the walk ──────────────────────────────────────────── -->
+  <div class="choice" id="opt-c" style="margin-top:2rem">
+    <div class="pv-opt-head"><h3>C · Just the walk</h3><span class="quiet">no labels in the chrome · label appears at the mark</span></div>
+    <div class="answer">One row: next/prev and position. Nothing truncated, every mark reachable. The overview is gone. Loop rec: take it — <em>your</em> call is whether the overview is worth A&rsquo;s height.</div>
+    <div class="pv pv-pair" style="margin-top:1rem">
+
+      <div class="pv-shell" data-vw="780" data-role="C" data-current="3" data-total="7" id="pv-c-780">
+        <div class="pv-chrome"><span>option C · <b data-fill="vw">—</b>px</span><span>just the walk</span></div>
+        <div class="pv-page">
+          <div class="pv-toprail"><div class="pv-wrap">
+            <div class="pv-id">essential marks</div>
+            <div class="pv-actions"><span class="pv-status">awaiting review</span><span>decision</span></div>
+          </div></div>
+          <div class="pv-strip pv-walk" data-strip>
+            <div class="pv-strip-in" data-strip-in>
+              <span class="pv-nav"><span class="pv-arrow">‹</span><span class="pv-pos" data-fill="pos">—</span><span class="pv-arrow">›</span></span>
+            </div>
+          </div>
+          <div class="pv-wrap pv-body">
+            <p class="pv-kicker">Land on a mark and its label is there &mdash; not in the chrome.</p>
+            <p class="pv-tag">at the mark: <em style="color:var(--pv-accent)">flags mark a height not structure</em></p>
+            <div class="pv-read">
+              <span class="pv-ghost"></span><span class="pv-ghost w2"></span>
+              <span class="pv-ghost w3"></span><span class="pv-ghost w4"></span>
+            </div>
+          </div>
+        </div>
+        <p class="pv-caption" data-caption="C">
+          Measured chrome height <strong class="num" data-fill="strip-h">—</strong>px ·
+          <strong class="num" data-fill="rows">—</strong> row(s) ·
+          position <span class="num" data-fill="pos">—</span> ·
+          wrap <span class="num" data-fill="wrap-w">—</span>px ·
+          outer margin <span class="num" data-fill="gutter">—</span>px ·
+          reading column <span class="num" data-fill="read-w">—</span>px
+        </p>
+      </div>
+
+      <div class="pv-shell" data-vw="640" data-role="C" data-current="3" data-total="7" id="pv-c-640">
+        <div class="pv-chrome"><span>option C · <b data-fill="vw">—</b>px</span><span>just the walk</span></div>
+        <div class="pv-page">
+          <div class="pv-toprail"><div class="pv-wrap">
+            <div class="pv-id">essential marks</div>
+            <div class="pv-actions"><span class="pv-status">awaiting review</span><span>decision</span></div>
+          </div></div>
+          <div class="pv-strip pv-walk" data-strip>
+            <div class="pv-strip-in" data-strip-in>
+              <span class="pv-nav"><span class="pv-arrow">‹</span><span class="pv-pos" data-fill="pos">—</span><span class="pv-arrow">›</span></span>
+            </div>
+          </div>
+          <div class="pv-wrap pv-body">
+            <p class="pv-kicker">Walk chrome does not grow with the set.</p>
+            <p class="pv-tag">at the mark: <em style="color:var(--pv-accent)">flags mark a height not structure</em></p>
+            <div class="pv-read">
+              <span class="pv-ghost"></span><span class="pv-ghost w2"></span>
+            </div>
+          </div>
+        </div>
+        <p class="pv-caption" data-caption="C">
+          Measured chrome height <strong class="num" data-fill="strip-h">—</strong>px ·
+          <strong class="num" data-fill="rows">—</strong> row(s) ·
+          position <span class="num" data-fill="pos">—</span> ·
+          wrap <span class="num" data-fill="wrap-w">—</span>px ·
+          outer margin <span class="num" data-fill="gutter">—</span>px ·
+          reading column <span class="num" data-fill="read-w">—</span>px
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="method" aria-labelledby="me-t">
+  <div class="label" id="me-t">How the numbers were obtained</div>
+  <p class="read">No pixel figure in a caption was typed. On load, each shell runs the same
+  measure: strip <code>getBoundingClientRect().height</code>, pill row count from distinct
+  <code>offsetTop</code> values, wrap width, outer margin as
+  <code>page.left to wrap.left</code> (the product gutter, not the shell border), reading
+  column width, and position from <code>data-current</code>/<code>data-total</code> on the
+  shell. The red-proof is mechanical: remove pills from option A&rsquo;s markup and reload
+  &mdash; height and row count in that caption change with no caption edit.</p>
+  <div class="facts" id="summary-facts">
+    <div class="fact"><span class="number" data-fill="sum-a-780">—</span><span class="caption">px · A chrome at primary below-cliff width</span></div>
+    <div class="fact"><span class="number" data-fill="sum-b-780">—</span><span class="caption">px · B chrome at the same width</span></div>
+    <div class="fact"><span class="number" data-fill="sum-c-780">—</span><span class="caption">px · C chrome at the same width</span></div>
+    <div class="fact"><span class="number" data-fill="sum-gutter-640">—</span><span class="caption">px · outer margin measured inside the 640 shell</span></div>
+  </div>
+  <div class="notice"><strong>Offline-clean.</strong> Inline style and script only. No remote
+  fetch. Open over <code>file://</code>; the measure runs without a server.</div>
+</section>
+
+<script>
+(function () {
+  function r1(n) { return Math.round(n * 10) / 10; }
+  function fill(root, key, value) {
+    root.querySelectorAll('[data-fill="' + key + '"]').forEach(function (el) {
+      el.textContent = value;
+    });
+  }
+  function rowCount(pills) {
+    if (!pills.length) return 0;
+    var tops = {};
+    pills.forEach(function (p) {
+      /* round to kill sub-pixel flex jitter */
+      tops[Math.round(p.offsetTop)] = true;
+    });
+    return Object.keys(tops).length;
+  }
+  function measureShell(shell) {
+    var vw = shell.getAttribute('data-vw') || '';
+    var role = shell.getAttribute('data-role') || '';
+    var cur = shell.getAttribute('data-current') || '';
+    var total = shell.getAttribute('data-total') || '';
+    var visible = shell.getAttribute('data-visible') || '';
+    var page = shell.querySelector('.pv-page');
+    var wrap = shell.querySelector('.pv-wrap');
+    var strip = shell.querySelector('[data-strip]');
+    var pills = Array.prototype.slice.call(shell.querySelectorAll('.pv-pill'));
+    var read = shell.querySelector('.pv-read');
+    var flag = shell.querySelector('.pv-markflag');
+    var shellR = shell.getBoundingClientRect();
+    /* Gutter is page-edge → wrap-edge (the product's outer margin), not
+       shell-border → wrap. content-box shells claim the viewport as content. */
+    var pageR = page ? page.getBoundingClientRect() : shellR;
+    var wrapR = wrap ? wrap.getBoundingClientRect() : null;
+    var stripR = strip ? strip.getBoundingClientRect() : null;
+    var readR = read ? read.getBoundingClientRect() : null;
+    var flagR = flag ? flag.getBoundingClientRect() : null;
+    var gutter = wrapR ? r1(wrapR.left - pageR.left) : null;
+    var pageW = r1(pageR.width);
+    var pos = (cur && total) ? (cur + ' of ' + total) : '';
+    var moreN = '';
+    if (total && visible) {
+      moreN = String(Math.max(0, parseInt(total, 10) - parseInt(visible, 10)));
+    } else if (total && pills.length && role === 'B') {
+      moreN = String(Math.max(0, parseInt(total, 10) - pills.length));
+    }
+    var rows = rowCount(pills);
+    /* C has no pills: the walk row still counts as one chrome row when strip exists */
+    if (role === 'C' && strip && rows === 0) rows = 1;
+
+    fill(shell, 'vw', String(pageW)); /* measured content width, not the attribute */
+    if (pos) fill(shell, 'pos', pos);
+    if (wrapR) fill(shell, 'wrap-w', String(r1(wrapR.width)));
+    if (gutter !== null) fill(shell, 'gutter', String(gutter));
+    if (readR) fill(shell, 'read-w', String(r1(readR.width)));
+    if (stripR) fill(shell, 'strip-h', String(r1(stripR.height)));
+    fill(shell, 'rows', String(rows));
+    fill(shell, 'pills', String(pills.length));
+    fill(shell, 'shell-w', String(pageW));
+    if (moreN !== '') {
+      fill(shell, 'more-n', moreN);
+      fill(shell, 'more', '+' + moreN + ' more');
+    }
+    if (flagR) {
+      fill(shell, 'flag-w', String(r1(flagR.width)));
+      fill(shell, 'flag-h', String(r1(flagR.height)));
+    }
+    return {
+      role: role,
+      vw: vw,
+      pageW: pageW,
+      stripH: stripR ? r1(stripR.height) : null,
+      rows: rows,
+      pills: pills.length,
+      gutter: gutter,
+      wrapW: wrapR ? r1(wrapR.width) : null,
+      readW: readR ? r1(readR.width) : null,
+      pos: pos
+    };
+  }
+
+  var results = [];
+  document.querySelectorAll('.pv-shell').forEach(function (shell) {
+    results.push(measureShell(shell));
+  });
+
+  /* Hero aside + summary facts — also measured, never typed */
+  var a780 = results.filter(function (x) { return x.role === 'A' && x.vw === '780'; })[0];
+  var b780 = results.filter(function (x) { return x.role === 'B' && x.vw === '780'; })[0];
+  var c780 = results.filter(function (x) { return x.role === 'C' && x.vw === '780'; })[0];
+  var a640 = results.filter(function (x) { return x.role === 'A' && x.vw === '640'; })[0];
+  if (a780 && a780.stripH != null) {
+    document.querySelectorAll('[data-fill="aside-a-h"]').forEach(function (el) {
+      el.textContent = String(a780.stripH);
+    });
+    document.querySelectorAll('[data-fill="sum-a-780"]').forEach(function (el) {
+      el.textContent = String(a780.stripH);
+    });
+  }
+  if (c780 && c780.stripH != null) {
+    document.querySelectorAll('[data-fill="aside-c-h"]').forEach(function (el) {
+      el.textContent = String(c780.stripH);
+    });
+    document.querySelectorAll('[data-fill="sum-c-780"]').forEach(function (el) {
+      el.textContent = String(c780.stripH);
+    });
+  }
+  if (b780 && b780.stripH != null) {
+    document.querySelectorAll('[data-fill="sum-b-780"]').forEach(function (el) {
+      el.textContent = String(b780.stripH);
+    });
+  }
+  if (a640 && a640.gutter != null) {
+    document.querySelectorAll('[data-fill="sum-gutter-640"]').forEach(function (el) {
+      el.textContent = String(a640.gutter);
+    });
+  }
+
+  /* Expose for the red-proof harness / screenshots */
+  window.__PV_MEASURE__ = results;
+})();
+</script>
+
+<footer>task #367 · option previews · measure-never-draw · evidence under <code>.dreamwork/review/evidence/367-option-previews/</code> <span class="dimmer">· built from review template v1+95ee67a8</span></footer>
+
+</main>
+</body>
+</html>

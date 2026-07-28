@@ -1,0 +1,116 @@
+{
+  "measures": [
+    {
+      "role": "rail",
+      "vw": "1100",
+      "pageW": 1100,
+      "stripH": null,
+      "rows": 0,
+      "pills": 0,
+      "gutter": 16,
+      "wrapW": 1068,
+      "readW": 613.5,
+      "pos": ""
+    },
+    {
+      "role": "A",
+      "vw": "780",
+      "pageW": 780,
+      "stripH": 167.9,
+      "rows": 3,
+      "pills": 7,
+      "gutter": 16,
+      "wrapW": 748,
+      "readW": 613.5,
+      "pos": "3 of 7"
+    },
+    {
+      "role": "A",
+      "vw": "640",
+      "pageW": 640,
+      "stripH": 167.9,
+      "rows": 3,
+      "pills": 7,
+      "gutter": 16,
+      "wrapW": 608,
+      "readW": 608,
+      "pos": "3 of 7"
+    },
+    {
+      "role": "B",
+      "vw": "780",
+      "pageW": 780,
+      "stripH": 127.2,
+      "rows": 2,
+      "pills": 4,
+      "gutter": 16,
+      "wrapW": 748,
+      "readW": 613.5,
+      "pos": "3 of 7"
+    },
+    {
+      "role": "B",
+      "vw": "640",
+      "pageW": 640,
+      "stripH": 127.2,
+      "rows": 2,
+      "pills": 4,
+      "gutter": 16,
+      "wrapW": 608,
+      "readW": 608,
+      "pos": "3 of 7"
+    },
+    {
+      "role": "C",
+      "vw": "780",
+      "pageW": 780,
+      "stripH": 31.8,
+      "rows": 1,
+      "pills": 0,
+      "gutter": 16,
+      "wrapW": 748,
+      "readW": 613.5,
+      "pos": "3 of 7"
+    },
+    {
+      "role": "C",
+      "vw": "640",
+      "pageW": 640,
+      "stripH": 31.8,
+      "rows": 1,
+      "pills": 0,
+      "gutter": 16,
+      "wrapW": 608,
+      "readW": 608,
+      "pos": "3 of 7"
+    }
+  ],
+  "redproof": {
+    "before": {
+      "role": "A",
+      "vw": "780",
+      "pageW": 780,
+      "stripH": 167.9,
+      "rows": 3,
+      "pills": 7,
+      "gutter": 16,
+      "wrapW": 748,
+      "readW": 613.5,
+      "pos": "3 of 7"
+    },
+    "after": {
+      "role": "A",
+      "vw": "780",
+      "pageW": 780,
+      "stripH": 86.5,
+      "rows": 1,
+      "pills": 3,
+      "gutter": 16,
+      "wrapW": 748,
+      "readW": 613.5,
+      "pos": "3 of 7"
+    },
+    "capBefore": "Measured chrome height 167.9px · 3 row(s) · 7 labelled pills · position 3 of 7 · wrap 748px · outer margin 16px · reading column 613.5px",
+    "capAfter": "Measured chrome height 86.5px · 1 row(s) · 3 labelled pills · position 3 of 7 · wrap 748px · outer margin 16px · reading column 613.5px"
+  }
+}
