@@ -3,9 +3,11 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/quiesce`**, branch **`wt/quiesce`**. Do not push, do not merge.
 **Never use `attn` under any circumstances** — the coordinator is the only party that notifies the human.
 
-Lane-owns: user_events/sqlite.py, user_events/journal.py, test_user_events_sqlite.py, test_user_events_http.py, .dreamwork/docs/plans/user-event-journal-implementation.md
+Lane-owns: user_events/sqlite.py, user_events/apply.py, test_user_events_sqlite.py, test_user_events_http.py, .dreamwork/docs/plans/user-event-journal-implementation.md
 
-(If a path in that list does not exist, it is not yours to invent — report it. Take the union of what exists.)
+`user_events/` also holds `digest.py` and `domain_files.py`; if the drain genuinely belongs in one of those,
+**say so and ask** rather than widening your own ownership — the union over briefs is what the containment
+guard reads, and a lane that grants itself a file is the failure `#465` exists to catch.
 
 ## Two-way channel — do this first
 
