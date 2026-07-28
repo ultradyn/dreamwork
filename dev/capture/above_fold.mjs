@@ -37,18 +37,36 @@
 // measurement. So the criterion is the measurable form of the actual intent:
 //
 //   the ask block STARTS above the fold, and its FIRST decision is reachable
-//   without scrolling  ->  ask.top < innerHeight  AND  firstChild.top < innerHeight
+//   without scrolling  ->  ask.top < FOLD  AND  firstChild.top < FOLD
 //
-// Both halves matter. `ask.top < innerHeight` alone passes when the block starts
-// one pixel above the fold and every word of it is below. The first-child check
-// is what makes the pass mean "he can read a decision", which is the thing the
+// Both halves matter. `ask.top < FOLD` alone passes when the block starts one
+// pixel above the fold and every word of it is below. The first-child check is
+// what makes the pass mean "he can read a decision", which is the thing the
 // briefs were reaching for.
+//
+// FOLD is deliberately not `innerHeight` — see the VIEWPORTS note below. He reads
+// these inside an iframe, so `innerHeight` overstates the visible area by 40% on
+// mobile, and a check that used it would pass an ask he cannot see.
 
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 
+// THE FOLD HE ACTUALLY SEES IS NOT THE VIEWPORT, and this was measured on the
+// real surface rather than assumed. Artifacts are served to him inside an iframe
+// on the dashboard's `/review` route (raw at `/reviewraw?p=`, for style
+// isolation), so the shell's chrome eats the top and bottom of the page:
+//
+//   viewport 1280x900 -> iframe 740px tall at top=120  -> effective fold 738
+//   viewport  390x844 -> iframe 506px tall at top=135  -> effective fold 504
+//
+// Mobile is the one that matters: 504 against 844 is a **40% overstatement**. An
+// ask sitting at 600px passes a naive 844 check and is invisible where he reads
+// it. So `fold` below is the effective height, not `innerHeight`, and the
+// viewport is still set to the real device size because layout depends on WIDTH.
+// Measured 2026-07-28; if the shell's chrome changes these move, which is why
+// `#432` wants the checker to derive them from the live route instead.
 const VIEWPORTS = [
-  { label: 'desktop', width: 1280, height: 900 },
-  { label: 'mobile', width: 390, height: 844 },
+  { label: 'desktop', width: 1280, height: 900, fold: 738 },
+  { label: 'mobile', width: 390, height: 844, fold: 504 },
 ];
 
 function usage(msg) {
@@ -140,15 +158,15 @@ try {
       ok = false;
       parts.push(`#${id} MISSING`);
     } else {
-      const askOk = m.ask.top < m.innerHeight;
-      parts.push(`#${id}.top=${m.ask.top} h=${m.ask.height} ${askOk ? 'above' : 'BELOW'}`);
+      const askOk = m.ask.top < vp.fold;
+      parts.push(`#${id}.top=${m.ask.top} h=${m.ask.height} ${askOk ? 'above' : 'BELOW'} fold(${vp.fold})`);
       if (!askOk) ok = false;
       if (wantFirstChild) {
         if (!m.first) {
           ok = false;
           parts.push('first-decision NONE (no rendering child)');
         } else {
-          const fOk = m.first.top < m.innerHeight;
+          const fOk = m.first.top < vp.fold;
           parts.push(`first(${m.first.tag}).top=${m.first.top} ${fOk ? 'above' : 'BELOW'}`);
           if (!fOk) ok = false;
         }
