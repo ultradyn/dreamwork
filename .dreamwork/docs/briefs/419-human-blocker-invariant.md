@@ -107,3 +107,43 @@ your diff, leave it.
 Say: which marker you chose and why; how many entries you marked and how many you left alone; both
 red-proofs with exact test names, including the `#371` history red; whether you decided transitive
 coverage counts and what that means for `#353`; and the real `just test` exit code with how you got it.
+
+---
+
+## AMENDMENT, 2026-07-28 16:26 — your `#371` fixture is poisoned, and it is my fault
+
+**Read this before you build direction 2.** If you have already built it against `#371`, re-check it
+against what follows; if you have already reported, say in the inbox whether this changes your
+verdict.
+
+The brief above tells you that `#371` is the sharpest specimen of direction 2 — *"a ruling landed and
+the entry still claims to be waiting"* — and to use `git show 7c5fc82^:.dreamwork/tasks.md` as the
+red. **`7c5fc82` is my own defect, not the fix.** I unblocked `#371` because he answered its question
+at 05:43, and that was wrong: his *"Q2 yes"* amended the **design**, while the **implementation** of
+that answer is increment 20 = `E1 envelope` = **lane E**, which his same answer withheld behind a
+second gate. `#371`'s pre-fix body saying *"blocked on #263 Q2"* was **imprecise but not false** — it
+really was blocked, on a stricter gate than the one it named.
+
+Retracted in the live ledger at `6ea8f6b`. So:
+
+1. **`#371` is not a direction-2 red. It is a direction-2 FALSE POSITIVE, and a better test than the
+   red was.** If your check flags the live `#371` (which now names a landed ruling *and* says it is
+   blocked), your check is wrong in the way that costs most — it would have told the coordinator to do
+   exactly what I did. **Use it as a must-NOT-flag case** and say in your report that it does not
+   flag, and by what mechanism it avoids doing so.
+2. **The distinction your check has to encode is "answered" vs "authorised".** A ruling landing on a
+   decision an entry names does **not** imply the entry may proceed: the answer may amend a design
+   whose implementation is separately gated, or grant a contract while withholding its build. The
+   repo had already written this down once — `#294`'s note says *"the approval covers the CONTRACT,
+   not `#263`'s implementation"* — and I made the identical error one question later.
+3. **This is an argument for your marker naming the gate rather than the question.** A `gate:` field
+   that points at *what is withheld* survives this; one that points at *which question was asked*
+   reads a landed answer as a green light. Weigh it and say which you chose and why. If your design
+   already handles it, say how — I would rather read that than a change.
+4. Your remaining direction-2 reds — `#254`, `#367`, `#50` — are unaffected as far as I know, but **I
+   have now been wrong about one of the four, so treat the other three as claims to check rather than
+   fixtures to trust.** For each, say whether the ruling authorised the work or only amended a design.
+
+**A green red-run is a finding, not a relief** applies to this amendment too: if you conclude I am
+wrong about `#371` again, quote the lines and say so. Lanes here have refuted their briefs nine times
+today and every one was right to.
