@@ -26,8 +26,8 @@
    Own ephemeral port + --dev (the overlay only mounts under --dev). Does
    NOT bind 39880–39899. usage: node devoverlay.mjs <outdir> [port ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
-import { mkdirSync, cpSync, rmSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { mkdirSync, cpSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
@@ -227,40 +227,58 @@ for (const vp of VIEWPORTS) {
   );
 }
 
-/* ── the mobile fold constant is the FLOOR of the frame height, not the top ──
-   `above_fold.mjs` decides whether an ask he must rule on is visible, using a
-   hard-coded effective fold per viewport. That constant is only as good as the
-   SHORTEST frame the shell produces, and at 390px the shell produces more than
-   one height: `SPAN.revname` wraps the title bar once the artifact's name is long
-   enough, the chrome grows and the frame shrinks. The constant had been set to
-   the TALL case (706 against a real floor of 693), which calls clipped content
-   visible — optimistic, and that is the one direction that matters for a check
-   whose whole job is refusing asks he cannot see.
+/* ── #432 the fold is derived, not declared; this guard holds the derivation honest ──
+   `above_fold.mjs` decides whether an ask he must rule on is visible, and #432
+   replaced the hard-coded fold it compared against with a per-artifact
+   MEASUREMENT on the live /review route (`#reviewframe`'s height). So the old
+   shape of this block — parse `fold: <num>` out of above_fold.mjs's source and
+   assert it <= the measured real minimum — no longer earns its runtime: there
+   is no constant to parse, and that was the whole point of #432. Two parts of
+   the old check do, and both are kept:
+
+   1. ANTI-VACUITY (the part the brief named as worth keeping). Per-artifact
+      derivation only matters if the corpus still exercises the wrap that moves
+      the fold. If the shortest- and longest-named artifacts render the SAME
+      frame height, the wrap never happened, the per-artifact fold is a
+      per-viewport fold in disguise, and a `derived === measured` pass would
+      mean nothing. The spread between the two is derived from the subjects
+      themselves, so a corpus change that flattened the wrap goes red rather
+      than hollow.
+
+   2. THE DERIVATION EQUALS AN INDEPENDENT MEASUREMENT (the repoint). This
+      block measures `#reviewframe` itself, then runs `above_fold.mjs` on the
+      same shortest artifact and compares the tool's printed fold to this
+      block's own number. The two are independent: this is the guard's own
+      `getBoundingClientRect`, not the tool's code path. If the tool measured
+      the wrong box — the first probe fell back to `querySelector('iframe')`
+      and did, which is the reason #432 forbids that fallback — this is where
+      it shows, because the tool's whole path (arg parse, server start, live
+      load, `#reviewframe` wait, the height assignment) has to land on the same
+      number the DOM reports to this block.
 
    IT MEASURES THE REAL TARGET, NOT THE FIXTURE, and that is not incidental.
-   Two fixture-based versions of this check were wrong in the same direction,
-   both demanding a fold no real artifact needs:
+   Two fixture-based versions of the old check were wrong in the same
+   direction, both demanding a fold no real artifact needs: a 60-character
+   invented name and a padded `xxxx…` stem both wrapped further than any real
+   name because they have no hyphen to break on. A derived LENGTH is not a
+   derived LAYOUT, and a fixture is not the surface; the fold is a property of
+   the real corpus in the real chrome, so this block serves the actual repo
+   read-only on its own port. (In a worktree, the repo IS the worktree and the
+   project name is the worktree's basename — `above_fold.mjs` prints it; the
+   spread still exercises the wrap because it compares two names within the
+   same corpus. The human-surface number comes from running both against the
+   real checkout, not from this guard.)
 
-     - a 60-character invented name wrapped to THREE lines -> 651
-     - a padded stem of the right character count also wrapped to three, because
-       `xxxx…` has no hyphen to break on where real names do -> 672
-     - and the fixture's own target directory is `devoverlay-target`, which is
-       LONGER than the real project name and shares the title bar with the
-       artifact name, so even the real longest name measured 672 there
-
-   A derived length is not a derived layout, and a fixture is not the surface.
-   The fold is a property of the real corpus rendered in the real chrome, so this
-   block serves the actual repo read-only on its own port and measures the real
-   shortest- and longest-named artifacts. It follows that filing an artifact with
-   a longer name than any today can turn this red — which is the correct
-   behaviour: it means the constant needs revisiting, and `#432` wants the whole
-   constant replaced by this derivation.
-
-   Injection that fails it: restore `fold: 706` in above_fold.mjs. */
+   Injection that fails it (red-first, #432 criterion 5): in above_fold.mjs's
+   measureFold, change the height assignment `fold: r.h` to `fold: r.ih`
+   (report innerHeight instead of the frame). The tool then prints
+   `[live:fold=844]` for mobile where the real frame is ~708, and this block's
+   `derived === independent (±2)` goes red. The production line is the
+   `return { ok: true, fold: r.h, ... }` in above_fold.mjs's measureFold. */
 {
   const REAL = process.cwd();
   let rport = await freePort();
-  while (rport >= 39880 && rport <= 39899) rport = await freePort();
+  while ((rport >= 39880 && rport <= 39899) || rport === 35110) rport = await freePort();
   const rsrv = spawn('python3',
     ['watch.py', '--target', REAL, '--port', String(rport)], { stdio: 'ignore' });
   try {
@@ -314,16 +332,47 @@ for (const vp of VIEWPORTS) {
         ok(`fold: shortest and longest names give DIFFERENT frame heights `
            + `(spread ${spread}px: ${heights.map(x => `${x.h}`).join(' vs ')})`,
            spread >= 8);
-        const src = readFileSync('dev/capture/above_fold.mjs', 'utf8');
-        const mm = src.match(/label:\s*'mobile'[^}]*fold:\s*(\d+)/);
-        ok('fold: mobile fold constant is parseable from above_fold.mjs', !!mm);
-        if (mm) {
-          const declared = Number(mm[1]);
-          const minH = Math.min(...heights.map(x => x.h));
-          notes.push(`fold: declared ${declared}, measured real min ${minH}`);
-          ok(`fold: above_fold.mjs mobile fold ${declared} <= shortest real frame `
-             + `${minH} (a long artifact name wraps the title bar and shortens it)`,
-             declared <= minH);
+        // ── THE DERIVATION EQUALS AN INDEPENDENT MEASUREMENT (#432 repoint) ──
+        // Run above_fold.mjs on the SHORTEST subject and compare its printed
+        // mobile fold to THIS block's own #reviewframe height for the same
+        // artifact. Independent measurements: this is the guard's own
+        // getBoundingClientRect, not the tool's code path, so a tool that reads
+        // the wrong element (the probe that fell back to querySelector('iframe')
+        // and did) is caught here. exit 1 means #ask was MISSING on a
+        // pre-#436 artifact — the fold is still printed and is what we compare;
+        // anything else is a crash.
+        const shortest = subjects[0];
+        const shortestH = heights.find(x => x.name === shortest);
+        if (!shortestH) {
+          ok('fold: shortest artifact has an independent height to compare against',
+             false);
+        } else {
+          const out = spawnSync('node',
+            ['dev/capture/above_fold.mjs', '--target', REAL,
+             join(REAL, '.dreamwork', 'review', shortest)],
+            { encoding: 'utf8', timeout: 45000 });
+          ok(`fold: above_fold.mjs ran on ${shortest} and exited with a verdict `
+             + `(0 pass / 1 #ask-missing, not a crash; got ${out.status})`,
+             out.status === 0 || out.status === 1);
+          // The mobile viewport line carries `[live:fold=N ...]`; capture the
+          // digits right after `live:fold=` (the `]` sits later in the tag, so
+          // do not anchor on it). Match only a LIVE fold, because a FALLBACK
+          // fold (server/element unavailable) is itself the failure this guard
+          // exists to surface.
+          const lived = out.stdout.match(/mobile[^\n]*\[live:fold=(\d+)/);
+          ok(`fold: above_fold.mjs reported a LIVE mobile fold for ${shortest}`,
+             !!lived);
+          if (lived) {
+            const derived = Number(lived[1]);
+            notes.push(`fold: above_fold derived mobile=${derived} for ${shortest}; `
+              + `this block's independent #reviewframe height=${shortestH.h}`);
+            ok(`fold: above_fold derived fold (${derived}) === independent `
+               + `#reviewframe height (${shortestH.h}, ±2) for ${shortest}`,
+               Math.abs(derived - shortestH.h) <= 2);
+          } else if (out.stdout) {
+            notes.push(`fold: above_fold mobile line: `
+              + (out.stdout.split('\n').find(l => l.includes('mobile')) || '').trim());
+          }
         }
       }
     }
