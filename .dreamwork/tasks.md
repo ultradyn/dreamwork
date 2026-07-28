@@ -211,6 +211,18 @@ Next id: **469**
   declares ownership
   · **do not make the loop's own commits harder** — the constraint that shaped `#465` binds this too
   · related: **#465**
+  · **HALF (1) LANDED `64f0431`** — `lint.check_lane_containment_backstop`, and it needs **no hook**, so it
+  protects every checkout regardless of `--install`. It reads the same `Lane-owns:` declaration one step
+  earlier: a lane-owned path **dirty** in the main tree (staged, unstaged or untracked) is an ERROR, which is
+  the state that actually aborted the held `#263` merge before any commit existed
+  · **two defects in it were found by red-proofing it**, both now tested: it printed the ERROR *and* a clean
+  bill saying no owned path was dirty in the same run; and its branch parsing mishandled `refs/heads/wt/x`, so
+  it saw no lanes and the OK row silently never appeared. The second is the exact failure mode this repo keeps
+  paying for — a check that examines nothing looks identical to one that found nothing
+  · **remaining: half (2)**, retro-fitting `Lane-owns:` to briefs written before the rule. All 101 are
+  grandfathered; the first brief written after it (`462-deploy-action.md`) failed both brief checks on its
+  first commit because the marker was **bolded** and the parser could not see it — so the sweep is worth doing
+  for any brief that may be re-run
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
