@@ -1,11 +1,12 @@
 <!doctype html>
-<!--Built from the dreamwork review template v1+8ad39ec6 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<!--Built from the dreamwork review template v1+14f0e44f (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
-<meta name="dreamwork-review-template" content="v1+8ad39ec6">
+<meta name="dreamwork-review-template" content="v1+14f0e44f"
+<meta name="dreamwork-review-ask" content="ask">>
 <title>#346 · Task store schema · what the ledger actually contains</title>
 <style>
 /* Offline-clean by construction: no fetches, no external fonts, no images.
@@ -268,6 +269,16 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       smaller than #294 claimed</strong>, and the part that is not gated is designed here — the
       task entity, its read-only CLI, and the migration's report half. Nothing is built. The full
       design is <code>.dreamwork/docs/plans/task-store-schema.md</code>.</p>
+      <div id="ask" class="ask-block">
+        <div class="label">The decisions &mdash; S1 to S4</div>
+        <p class="ask-q"><strong>S1</strong> split the combined entries, <strong>S2</strong> closed
+        <code>priority</code> (band + <code>priority_uncertain</code>), <strong>S3</strong> withdrew,
+        <strong>S4</strong> closed <code>type</code> via a lookup table. What remains is
+        <strong>#263 E1</strong>, the only thing between this design and the rest of #294.</p>
+        <p class="ask-answers"><span class="key">accepted answers</span>
+        <code>open the journal gate</code> &nbsp;&middot;&nbsp; <code>not yet</code>
+        &nbsp;&middot;&nbsp; free text &nbsp;&middot;&nbsp; <em>"not yet"</em> is a real answer</p>
+      </div>
       <div class="call"><strong>Ruled 01:23 — the four decisions are answered.</strong> S1 splits the
       combined entries; S2 closes <code>priority</code> via a closed band plus <code>priority_uncertain</code>
       (the three <code>P0/P1</code> stay, deliberately); S3 is withdrawn; S4 closes <code>type</code> via a
@@ -432,7 +443,7 @@ task (id PK, entry_id -&gt; entry, ordinal)</code></pre>
   production line that must change for it to fail.</div>
 </section>
 
-<footer>task #346 · design only · <code>.dreamwork/docs/plans/task-store-schema.md</code> <span class="dimmer">· built from review template v1+8ad39ec6</span></footer>
+<footer>task #346 · design only · <code>.dreamwork/docs/plans/task-store-schema.md</code> <span class="dimmer">· built from review template v1+14f0e44f</span></footer>
 
 </main>
 </body>

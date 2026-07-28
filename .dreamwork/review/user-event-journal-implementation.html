@@ -1,11 +1,12 @@
 <!doctype html>
-<!--Built from the dreamwork review template v1+8ad39ec6 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<!--Built from the dreamwork review template v1+14f0e44f (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
-<meta name="dreamwork-review-template" content="v1+8ad39ec6">
+<meta name="dreamwork-review-template" content="v1+14f0e44f"
+<meta name="dreamwork-review-ask" content="ask">>
 <title>#263 · Red-first plan for the user-event journal · plan</title>
 <style>
 /* Offline-clean by construction: no fetches, no external fonts, no images.
@@ -269,6 +270,16 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       increments of fifteen to twenty minutes</strong>, each with its test, its assertion, and the
       one production line whose deletion makes that test fail. It authorises no code — which is why
       this page asks for the next gate rather than reporting progress.</p>
+      <div id="ask" class="ask-block">
+        <div class="label">The decisions &mdash; Q1 to Q4</div>
+        <p class="ask-q"><strong>Q1</strong> start lanes A&ndash;D and F now (E and H behind a second
+        gate); <strong>Q2</strong> keep a partial witness marked incomplete; <strong>Q3</strong>
+        <code>200 &rarr; 202</code> as a non-event; <strong>Q4</strong> purge and PostgreSQL not
+        built.</p>
+        <p class="ask-answers"><span class="key">accepted answers</span>
+        <code>rec</code> (all four as written) &nbsp;&middot;&nbsp; <code>Q1 &hellip; Q4</code> per-item
+        &nbsp;&middot;&nbsp; <em>"not yet"</em> on Q1 is a real answer &nbsp;&middot;&nbsp; free text</p>
+      </div>
       <div class="call"><strong>Recommendation.</strong> Grant implementation authority for
       <strong>lanes A–D and F only</strong> — the digest, the journal, the domain-file store, the
       application adapters and the CLI. Every one of those is new files, new tests, and
@@ -459,7 +470,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 
 <footer><p>Plan: <code>.dreamwork/docs/plans/user-event-journal-implementation.md</code> · design:
 <code>.dreamwork/docs/plans/user-event-journal.md</code> (approved <code>rec</code> 01:27,
-contract only) · adjacent: <code>task-transition-boundary.md</code> (#264, ask open).</p> <span class="dimmer">· built from review template v1+8ad39ec6</span></footer>
+contract only) · adjacent: <code>task-transition-boundary.md</code> (#264, ask open).</p> <span class="dimmer">· built from review template v1+14f0e44f</span></footer>
 
 </main>
 </body>
