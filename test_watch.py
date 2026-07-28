@@ -2619,10 +2619,13 @@ class TestAppShell(unittest.TestCase):
         # this only stops a refactor unhooking it silently.
         for token in ('function pageTitle(', 'function applyTitle(',
                       'function titleNeed(', 'function titleLive(',
-                      'const STALE_TICK_MS'):
+                      'const titleWho', 'const STALE_TICK_MS'):
             self.assertIn(token, watch.PAGE)
         self.assertIn('applyTitle();     // the liveness word drifts',
                       watch.PAGE)          # ...inside ages()
+        # project name is part of the compound field, not a free substring —
+        # a title that kept only "dreamwork" would otherwise still look wired
+        self.assertIn("'dreamwork/' + proj", watch.PAGE)
 
     def test_page_has_favicon_wiring(self):
         # Static guard: the icon is drawn INLINE and refreshed off the same 1s
@@ -4509,8 +4512,23 @@ class TestFileHeadingLockup(unittest.TestCase):
         self.assertIn("file: v => esc(fileBase(v.param || '')),", watch.PAGE)
         # ...and it must not have gained UA weight/size in the process: this
         # page says "more important" with luminance, never with metrics.
-        self.assertIn(".htitle { display:inline; font:inherit; margin:0; }",
+        self.assertIn(".htitle { display:inline; font:inherit; margin:0;",
                       watch.PAGE)
+
+    def test_project_identity_is_edge_pinned_in_the_title_bar(self):
+        # #172 — basename visible in the title section, pinned so a route
+        # change does not move it; full path on title= only. The tab title's
+        # dreamwork/<project> compound is already #153; this is the visible
+        # bar. Static wiring only — projtitle.mjs proves the geometry.
+        self.assertIn('id="hproj"', watch.PAGE)
+        self.assertIn('class="hproj"', watch.PAGE)
+        self.assertIn('const projectName =', watch.PAGE)
+        self.assertIn("margin-left:auto", watch.PAGE)
+        # the render path must use the shared basename helper, not invent a
+        # second parse of data.target that can drift from the tab title
+        self.assertIn('projectName(d)', watch.PAGE)
+        # tooltip carries the full path (two checkouts, one basename)
+        self.assertIn("projEl.setAttribute('title', path)", watch.PAGE)
 
     def test_the_path_element_declares_no_shortening(self):
         # His reasoning, and the one rule with no room in it: a path that lies

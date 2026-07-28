@@ -819,6 +819,40 @@ unclamped opener measures **-22px**, i.e. off-screen. Note the ghost is
 measured with `offsetWidth`, not `getBoundingClientRect()`: the dissolve
 lifts it with `scale(1.07)`, and only layout width answers "did it re-wrap".
 
+### Project identity in the title bar (#172)
+
+The tab title already names the project (`dreamwork/<basename>`, #153). The
+visible heading did not: `#htitle` carried only the route word (and on the
+dashboard the app phrase `dreamwork watch`), so a multi-window strip and a
+glance at the open page answered different questions. His words: show the
+project name *"in a materially more prominent position within the visible
+title section"*, and **"anchor what is invariant to an edge, not to a
+variable-width neighbour"** — the route title varies; repo identity does not.
+
+**`#hproj` is a sibling of `#htitle`, pinned to the trailing edge of
+`.htitlebar`.** `margin-left:auto` plus `.htitle { flex:1 }` is the pin: the
+route word grows and shrinks in the middle, and the identity's box does not
+move when `questions` becomes `review 367-option-previews.html`. Measuring
+that is the load-bearing check — present-on-one-route is not enough.
+`dev/capture/projtitle.mjs` captures `getBoundingClientRect()` on `/`,
+`/questions`, and a long `/review?p=…` and requires the three boxes to be
+identical.
+
+**Basename in the bar; full path on `title=`.** Popouts already show basename
+*and* full path (`popoutShell`), because two checkouts can share a basename
+and the band has room. An `h1`-adjacent full path is almost certainly wrong —
+#284 already ruled that a long path competes with the subject — so the bar
+shows the basename at the same size and `--bright` as the heading (identity,
+not a dim breadcrumb), and the absolute `data.target` path rides the native
+tooltip. The tab title keeps the compound `dreamwork/<project>` field; this
+surface does not re-state the app word.
+
+**It is a survivor, not a per-route arrival.** The name is invariant across
+navigation, so `renderChrome` rewrites `#hproj` only when the text itself
+changes and does not re-apply `.dreamin` on every route change. First paint
+rides the standing enter-snap; reduced motion keeps the same text with no
+arrival. The route word still dissolves and re-arrives as it always has.
+
 ### The file heading lockup (#284)
 
 His report: a full path such as
