@@ -1555,16 +1555,19 @@ NOT_GUARDS = frozenset({
     "marktab-geometry",
     # A tool, not a guard: it takes a path and measures whichever artifact you
     # hand it, so it has no fixed subject to gate and binds no port. It is the one
-    # shared above-the-fold check that review briefs now cite, replacing the inline
-    # copy each lane used to write -- `#ask` existed on 2 of 22 built artifacts, so
-    # the criterion every brief demanded was unevaluable on the other 20 and had
-    # been silently unenforced since it was written.
+    # shared above-the-fold check that review briefs cite, replacing the inline
+    # copy each lane used to write.
     #
-    # It SHOULD gate something eventually, and deliberately does not yet: turning
-    # it into a guard means first making `#ask` a required element, which is #429's
-    # other half. Registering it now would red the suite over 20 artifacts that
-    # predate the contract. When that lands, the guard is a separate file that
-    # walks the directory, and this stays the tool it calls. (#429, #430)
+    # The `#ask` contract now exists (#436): `review_artifact.py` refuses a
+    # source that is neither a meaningful `#ask` nor a `no_ask:` exemption, and
+    # every current artifact carries the choice as a `<meta>` in its head. All
+    # 11 src/-having artifacts were retrofitted and now carry a real `#ask`.
+    # The 12 untemplated artifacts predate the contract, have no `src/` to
+    # rebuild from, and cannot be hand-edited (generated output); they are the
+    # declared-migration class. A walking guard would red on those 12 unless it
+    # skipped them by `classify` first, so the guard stays unregistered until
+    # the untemplated migrate or a skip-by-class guard is written. This file
+    # stays the tool that guard calls. (#429, #430, #436)
     "above_fold",
 })
 

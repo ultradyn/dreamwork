@@ -71,7 +71,7 @@ TEMPLATE_DOC_RE = re.compile(r"<!--dreamwork-review-template:.*?-->\n?", re.S)
 
 REQUIRED = ("title", "identity", "headline", "lead", "body", "footer")
 OPTIONAL = ("context", "status", "tag", "sub", "call", "aside", "nav",
-            "skip", "skip_href", "aside_label")
+            "skip", "skip_href", "aside_label", "no_ask")
 # Filled by the builder from the others; an author who sets one is corrected
 # rather than quietly overridden.
 DERIVED = ("TEMPLATE_STAMP", "hero_solo")
@@ -1007,6 +1007,201 @@ def inject_mark_rail(document):
     return out
 
 
+# ── the #ask contract (#436) ──────────────────────────────────────────────
+#
+# Every brief that asks him to rule demands the ask be above the fold, and
+# `above_fold.mjs` is the shared checker for that. But the criterion could not
+# be evaluated at all on 20 of 23 artifacts, because `#ask` was a convention
+# each lane either invented or didn't — never a contract. A criterion naming a
+# selector most of the corpus lacks is a wish, not a standard.
+#
+# So a source declares EXACTLY ONE of:
+#   * a meaningful `<... id="ask">` element wrapping the actual decision, or
+#   * a `no_ask: <one-line reason>` header scalar, for a page with no decision
+#     to make (a design note, a schema with no ruling requested).
+#
+# A source with NEITHER is refused: that is the contract that makes the
+# requirement real. A source with a DECOY `#ask` — present but empty, or
+# wrapping no real decision — is also refused, because that is the precise
+# hollowness this exists to end: the fold check passes on a page whose ask is
+# still buried somewhere else. "Meaningful" is the build-time proxy for "wraps
+# the actual decision": the element must contain at least one descendant
+# element AND non-whitespace text. The browser-side `above_fold.mjs` remains
+# the final authority on whether the first decision is READABLE (it requires a
+# first child of height >= 8); the build refuses the shapes it could never
+# measure honestly.
+#
+# The builder records the choice in the built artifact as
+# `<meta name="dreamwork-review-ask" content="ask|exempt: <reason>">`, beside
+# the template-stamp meta, so the artifact is self-describing: a future walking
+# guard reads the meta, measures `ask`, skips `exempt` with the reason named,
+# and treats a templated artifact with NO meta as an error (the builder always
+# writes one). Untemplated artifacts predate the contract and carry no meta;
+# they are the declared-migration class `classify` already names `untemplated`,
+# and a guard skips them until they gain a source — hand-editing a built
+# artifact is forbidden (it is generated; the next build would overwrite it).
+
+ASK_ID = "ask"
+ASK_META_NAME = "dreamwork-review-ask"
+ASK_META_RE = re.compile(
+    r'<meta\s+name=["\']%s["\']\s+content=["\']([^"\']*)["\']' % ASK_META_NAME)
+
+
+def ask_status(document):
+    """`'ask'`, `'exempt: <reason>'`, or `None` (no meta — untemplated / pre-#436).
+
+    The reader the future walking guard consumes; also the reader the tests
+    hold to. `None` is a real answer and means "this artifact predates the
+    contract or was never templated" — never a silent pass, because the guard
+    reads `classify` first and an `untemplated` artifact is skipped by class.
+    """
+    match = ASK_META_RE.search(document)
+    return match.group(1) if match else None
+
+
+class _AskScan(html.parser.HTMLParser):
+    """Find the `id="ask"` element and whether it carries a real decision.
+
+    A decoy is an `#ask` that is empty, whitespace-only, or wraps nothing with
+    structure. The proxy for "wraps the actual decision" is two conditions,
+    both required: the element contains at least one descendant ELEMENT (a real
+    decision always has structure — a label, a question, options) AND its
+    stripped text is non-empty (so `<div id="ask"><br></div>` is still a decoy).
+    Either condition alone admits a different decoy, which is why both are held.
+
+    Depth-tracked rather than pattern-matched: `id="ask"` on a nested element
+    inside another `id="ask"` would double-count under a naive scan, and the
+    first-descision check `above_fold.mjs` makes is about the OUTER ask's
+    children. `convert_charrefs=True` so entity-encoded asks (`&nbsp;`-only)
+    read as the whitespace they render as, not as opaque text.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.present = False
+        self.meaningful = False
+        self._ask_depth = None        # element-depth while inside the ask, else None
+        self._depth = 0               # current open-element depth
+        self._saw_element_inside = False
+        self._text_inside = []
+
+    def _see(self, tag, attrs, self_closing):
+        table = dict(attrs)
+        opening_ask = (table.get("id", "").strip() == ASK_ID
+                       and self._ask_depth is None)
+        if opening_ask:
+            self.present = True
+            self._ask_depth = self._depth
+        inside = self._ask_depth is not None
+        if inside and not opening_ask and tag not in _VOID:
+            self._saw_element_inside = True
+        if inside and self_closing and tag not in _VOID:
+            # a self-closing element inside still counts as structure
+            self._saw_element_inside = True
+
+    def handle_starttag(self, tag, attrs):
+        self._see(tag, attrs, False)
+        if tag not in _VOID:
+            self._depth += 1
+
+    def handle_startendtag(self, tag, attrs):
+        self._see(tag, attrs, True)
+
+    def handle_endtag(self, tag):
+        if tag in _VOID:
+            return
+        if self._depth:
+            self._depth -= 1
+        if self._ask_depth is not None and self._depth <= self._ask_depth:
+            # closing the ask element (or an unbalanced shrink past it): settle
+            if self._saw_element_inside and any(
+                    s.strip() for s in self._text_inside):
+                self.meaningful = True
+            self._ask_depth = None
+            self._saw_element_inside = False
+            self._text_inside = []
+
+    def handle_data(self, data):
+        if self._ask_depth is not None:
+            self._text_inside.append(data)
+
+    def close(self):
+        super().close()
+        # an ask element left unclosed still settles on the text/elements it saw
+        if self._ask_depth is not None and not self.meaningful:
+            if self._saw_element_inside and any(s.strip()
+                                                for s in self._text_inside):
+                self.meaningful = True
+
+
+def scan_ask(document):
+    """`(present, meaningful)` for the `id="ask"` element in a built document."""
+    scan = _AskScan()
+    scan.feed(document)
+    scan.close()
+    return scan.present, scan.meaningful
+
+
+def _ask_meta_tag(content):
+    return ('<meta name="%s" content="%s">'
+            % (ASK_META_NAME, html.escape(content, quote=True)))
+
+
+def _inject_ask_meta(document, content):
+    """Plant the ask-status meta beside the template-stamp meta.
+
+    The template-stamp meta is always present in a built document (the builder
+    writes it from the template), so anchoring beside it places the ask meta in
+    `<head>` deterministically rather than at an arbitrary first-`<head>` site.
+    """
+    tag = _ask_meta_tag(content)
+    if ASK_META_RE.search(document):
+        return ASK_META_RE.sub(tag, document, count=1)
+    stamp = re.search(
+        r'<meta\s+name=["\']dreamwork-review-template["\']\s+content=["\'][^"\']+["\']',
+        document)
+    if stamp:
+        return document[:stamp.end()] + "\n" + tag + document[stamp.end():]
+    return document[:document.index("<head")] + tag + document[document.index("<head"):] \
+        if "<head" in document else tag + document
+
+
+def enforce_ask_contract(document, no_ask):
+    """Refuse a source that is neither a real ask nor an honest exemption.
+
+    Returns the `content` for the ask-status meta (`'ask'` or
+    `'exempt: <reason>'`) so the caller injects it in one place. The three
+    refusals are the contract: both-declared, neither-declared, and decoy-ask.
+    """
+    no_ask = (no_ask or "").strip()
+    present, meaningful = scan_ask(document)
+    if no_ask and present:
+        raise ArtifactError(
+            "source declares both a `no_ask:` exemption and an `id=\"ask\"` "
+            "element — pick one. `no_ask` is for a page with no decision to "
+            "make; `id=\"ask\"` is for a page that has one. Carrying both is "
+            "the same hollowness as carrying neither, in a new place (#436).")
+    if no_ask:
+        return "exempt: " + no_ask
+    if not present:
+        raise ArtifactError(
+            "source declares neither an `id=\"ask\"` element nor a `no_ask:` "
+            "exemption. A review artifact either asks — wrap the decision in "
+            "`<... id=\"ask\">` in the lead — or is exempt for a page with no "
+            "decision (a design note, a schema): set `no_ask: <reason>` in the "
+            "header. See review-artifact.template.html and file-formats.md "
+            "(#436).")
+    if not meaningful:
+        raise ArtifactError(
+            "the `id=\"ask\"` element carries no real decision — it is empty, "
+            "whitespace-only, or wraps no element with text. An empty ask "
+            "passes the above-the-fold check on a page whose ask is still "
+            "buried elsewhere, which is the hollowness #436 exists to end. "
+            "Wrap the actual decision: a label and at least one option or "
+            "question inside `id=\"ask\"`.")
+    return "ask"
+
+
 # ── the build ─────────────────────────────────────────────────────────────
 
 
@@ -1157,6 +1352,16 @@ def render(fields, template=None, warn=None):
     # on each. No labels → no flags → `out` returned untouched.
     if labels:
         out = inject_mark_rail(out)
+    # #436 — the #ask contract: a source is either a real ask or a declared
+    # exemption, never both, never neither, and never a decoy. The check runs
+    # AFTER every other validation so a fetch/component refusal names itself
+    # first, and on `out` (the body is already slotted in, so the `id="ask"`
+    # element is wherever the author wrote it — lead or body). The meta it
+    # returns is planted in <head> beside the template stamp, so the artifact
+    # is self-describing: a future walking guard reads it and skips exempt
+    # artifacts with the reason named, rather than carrying a decoy element.
+    ask_content = enforce_ask_contract(out, fields.get("no_ask", ""))
+    out = _inject_ask_meta(out, ask_content)
     return out
 
 
@@ -1173,8 +1378,12 @@ def build_path(source):
 def build(source, out=None, template=None, warn=None):
     with open(source, encoding="utf-8") as handle:
         fields = parse_source(handle.read())
-    document = render(fields, template=template, warn=warn)
+    # Resolve the output path BEFORE rendering: a source in the wrong place is
+    # a structural fault that names itself before any content-level check does,
+    # so `test_a_source_outside_src_is_refused` sees the src/ message rather
+    # than whichever content contract happens to fire first.
     out = out or build_path(source)
+    document = render(fields, template=template, warn=warn)
     tmp = out + ".tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
         handle.write(document)

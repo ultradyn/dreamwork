@@ -1,11 +1,12 @@
 <!doctype html>
-<!--Built from the dreamwork review template v1+8ad39ec6 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<!--Built from the dreamwork review template v1+14f0e44f (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
-<meta name="dreamwork-review-template" content="v1+8ad39ec6">
+<meta name="dreamwork-review-template" content="v1+14f0e44f"
+<meta name="dreamwork-review-ask" content="ask">>
 <title>#264 · The task-transition boundary · one history, no second truth</title>
 <style>
 /* Offline-clean by construction: no fetches, no external fonts, no images.
@@ -270,6 +271,16 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       fact</strong> twice — it does not forbid storing <strong>two facts</strong> and joining them
       with a foreign key. Full design at
       <code>.dreamwork/docs/plans/task-transition-boundary.md</code>.</p>
+      <div id="ask" class="ask-block">
+        <div class="label">The decisions &mdash; T1 to T4</div>
+        <p class="ask-q"><strong>T1</strong> take the append-only <code>task_event</code> boundary;
+        <strong>T2</strong> retire the three task-derived <code>status.json</code> fields;
+        <strong>T3</strong> ship the canonical byte export so a fresh clone is a deployment choice;
+        <strong>T4</strong> nothing else reads burndown/status that this breaks.</p>
+        <p class="ask-answers"><span class="key">accepted answers</span>
+        <code>rec</code> (all four as written) &nbsp;&middot;&nbsp; <code>T1 &hellip; T4</code> per-item
+        &nbsp;&middot;&nbsp; free text</p>
+      </div>
       <div class="call"><strong>Recommendation.</strong> Task history is its own append-only
       <code>task_event</code> log, in the <strong>same SQLite file</strong> as #263's journal,
       appended in the <strong>same transaction</strong> as the compare-and-swap that moves task
@@ -454,7 +465,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   naming the fixture-shaped way the check could pass hollow.</div>
 </section>
 
-<footer>task #264 · design only · <code>.dreamwork/docs/plans/task-transition-boundary.md</code> <span class="dimmer">· built from review template v1+8ad39ec6</span></footer>
+<footer>task #264 · design only · <code>.dreamwork/docs/plans/task-transition-boundary.md</code> <span class="dimmer">· built from review template v1+14f0e44f</span></footer>
 
 </main>
 </body>

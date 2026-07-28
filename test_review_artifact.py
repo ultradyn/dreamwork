@@ -95,6 +95,7 @@ tag: proposal only
 sub: task #999 · 27 July 2026
 skip: Skip to the decisions
 skip_href: #decision
+no_ask: fixture — a synthetic minimal artifact with no decision to make
 -->
 <!--#nav-->
 <a href="#decision">decisions</a>
@@ -1214,8 +1215,15 @@ def test_a_no_marks_artifact_renders_no_rail_tab_or_controls(template):
             "resolved ref %s already carries essential marks — the resolver "
             "picked the wrong commit, so the comparison would be new-vs-new "
             "and prove nothing" % ref)
+        # The pre-change builder predates the #ask contract (#436), so it does
+        # not know the `no_ask` header scalar. Strip it before handing the
+        # fields over: the comparison is about the BODY, and `no_ask` is a
+        # header concern the old builder never had, so leaving it in would
+        # make the old builder refuse on an unknown slot rather than render.
+        old_fields = old.parse_source(SOURCE)
+        old_fields.pop("no_ask", None)
         pre = _body_region(
-            old.render(old.parse_source(SOURCE), template=template))
+            old.render(old_fields, template=template))
         assert pre == _body_region(new), (
             "a no-marks body no longer matches the pre-change builder at %s — "
             "the marks machinery altered body bytes it must leave untouched"
@@ -1712,3 +1720,146 @@ def test_the_refusal_names_the_element_and_the_label(template):
     # the label, so the author knows which flag it is
     assert "the emphasised bit" in msg, \
         "the refusal does not name the mark's label: %r" % msg
+
+
+# ── the #ask contract (#436) ──────────────────────────────────────────────
+#
+# A criterion naming a selector most of the corpus lacks is a wish, not a
+# standard. `above_fold.mjs` is the shared checker, but it reported `#ask
+# MISSING` on 20 of 23 artifacts because `#ask` was a convention each lane
+# either invented or didn't. The contract closes that: a source declares
+# EXACTLY ONE of a meaningful `#ask` or a `no_ask:` exemption; both, neither,
+# and a decoy are refused.
+#
+# The decoy refusal is the load-bearing one and the one the brief names
+# explicitly — "an empty `#ask` passes the fold check on a page whose ask is
+# still buried". Its production line is `enforce_ask_contract`'s
+# `if not meaningful: raise` branch, backed by `scan_ask`'s
+# `_saw_element_inside and any(s.strip() for s in self._text_inside)` test.
+
+def test_a_source_with_no_ask_and_no_exemption_is_refused(template):
+    """The contract: neither a real ask nor an exemption is a refusal.
+
+    Production line: the `if not present: raise` branch in `enforce_ask_contract`.
+    Drop it and a source with neither builds, planting no ask meta — the wish,
+    not the standard, exactly as it was before #436.
+    """
+    fields = ra.parse_source(SOURCE)
+    fields.pop("no_ask", None)         # the fixture carries the exemption
+    assert "no_ask" not in fields, "fixture lost its exemption — test is vacuous"
+    with pytest.raises(ra.ArtifactError, match="neither"):
+        ra.render(fields, template=template)
+
+
+def test_a_source_with_both_an_ask_and_an_exemption_is_refused(template):
+    """Both is the same hollowness as neither, in a new place (#436).
+
+    Production line: the `if no_ask and present: raise` branch in
+    `enforce_ask_contract`.
+    """
+    fields = ra.parse_source(SOURCE)
+    assert "no_ask" in fields, "fixture carries no exemption — cannot add the both case"
+    fields["lead"] += ('\n<div id="ask" class="ask-block"><div class="label">Ask</div>'
+                       '<p class="ask-q">A real decision, and an exemption too.</p></div>')
+    with pytest.raises(ra.ArtifactError, match="both"):
+        ra.render(fields, template=template)
+
+
+def test_an_empty_or_decoy_ask_is_refused(template):
+    """A decoy ask — present but wrapping no real decision — is the precise
+    hollowness #436 exists to end: the fold check passes on a page whose ask
+    is still buried. The proxy for "wraps the actual decision" is an element
+    with at least one descendant element AND non-whitespace text.
+
+    Production line: `scan_ask`'s `_saw_element_inside and any(s.strip() …)`
+    settlement in `_AskScan.close`/`handle_endtag`, read by the
+    `if not meaningful: raise` branch in `enforce_ask_contract`. Collapse the
+    settlement to `meaningful = present` and this passes while the fold check
+    measures an empty box.
+    """
+    fields = ra.parse_source(SOURCE)
+    fields.pop("no_ask", None)
+    for decoy, why in [
+        ('<div id="ask"></div>', "empty"),
+        ('<div id="ask">   </div>', "whitespace-only"),
+        ('<div id="ask"><br></div>', "element but no text"),
+        ('<div id="ask">just text, no element</div>', "text but no element"),
+    ]:
+        f = dict(fields)
+        f["lead"] += "\n" + decoy
+        with pytest.raises(ra.ArtifactError, match="no real decision") as caught:
+            ra.render(f, template=template)
+        assert why in str(caught.value) or "real decision" in str(caught.value), (
+            "the refusal for %r did not fire: %r" % (why, caught.value))
+
+
+def test_a_meaningful_ask_builds_and_carries_the_ask_meta(template):
+    """The happy path: a real ask wraps the decision and the built artifact
+    records `content="ask"` in the ask-status meta, beside the template stamp.
+
+    Production line: `enforce_ask_contract` returns `"ask"`, `_inject_ask_meta`
+    plants it. Drop either and the meta is absent (`ask_status` returns None),
+    which a future walking guard reads as "untemplated / pre-#436" and skips.
+    """
+    fields = ra.parse_source(SOURCE)
+    fields.pop("no_ask", None)
+    fields["lead"] += ('\n<div id="ask" class="ask-block"><div class="label">Ask</div>'
+                       '<p class="ask-q">One real decision, with structure.</p></div>')
+    doc = ra.render(fields, template=template)
+    assert ra.ask_status(doc) == "ask", "the ask meta was not written"
+    present, meaningful = ra.scan_ask(doc)
+    assert present and meaningful, "scan_ask did not find the meaningful ask"
+
+
+def test_an_exempt_ask_builds_and_carries_the_exempt_meta(template):
+    """The exemption: a page with no decision declares `no_ask:` and the built
+    artifact records `content="exempt: <reason>"`. The reason is carried so a
+    reader (or a walking guard) sees WHY the page is exempt, not just that it is.
+    """
+    fields = ra.parse_source(SOURCE)
+    assert fields["no_ask"], "fixture carries no exemption — test is vacuous"
+    doc = ra.render(fields, template=template)
+    assert ra.ask_status(doc) == "exempt: " + fields["no_ask"], \
+        "the exempt meta was not written or lost the reason"
+
+
+def test_an_untemplated_artifact_has_no_ask_meta_and_is_not_asked_to_have_one():
+    """The 12 pre-#436 artifacts carry no ask meta and cannot be rebuilt. A
+    future walking guard reads `classify` first: `untemplated` is skipped by
+    class, so `ask_status` returning None on them is correct, not a gap.
+
+    Verified against the real corpus rather than a fixture: the test finds an
+    untemplated artifact in `.dreamwork/review/` and asserts on it, so it
+    cannot pass over an empty directory.
+    """
+    import glob
+    untemplated = None
+    for path in sorted(glob.glob(os.path.join(HERE, ".dreamwork", "review", "*.html"))):
+        with open(path, encoding="utf-8") as handle:
+            if ra.classify(handle.read()) == "untemplated":
+                untemplated = path
+                break
+    assert untemplated, \
+        "no untemplated artifact found in the corpus — the test is vacuous"
+    with open(untemplated, encoding="utf-8") as handle:
+        assert ra.ask_status(handle.read()) is None, \
+            "%s is untemplated but carries an ask meta — the builder should not "
+        "write one for artifacts it did not build"
+
+
+def test_the_ask_meta_sits_beside_the_template_stamp_in_head(template):
+    """The ask meta is anchored beside the template-stamp meta, in `<head>`,
+    so the artifact is self-describing in one place. A meta written into the
+    body would be valid HTML but a surprising place for a reader to find it.
+    """
+    fields = ra.parse_source(SOURCE)
+    doc = ra.render(fields, template=template)
+    head_end = doc.index("</head>")
+    ask_meta_pos = doc.index(ra.ASK_META_NAME)
+    stamp_pos = doc.index('dreamwork-review-template"')
+    assert ask_meta_pos < head_end, "the ask meta is outside <head>"
+    assert stamp_pos < head_end, "precondition: the stamp meta is in <head>"
+    # beside = within the same <meta> block, ask after stamp (stamp first so a
+    # reader scanning metas sees provenance before the ask contract)
+    assert abs(ask_meta_pos - stamp_pos) < 200, \
+        "the ask meta is far from the stamp meta — not 'beside' it"

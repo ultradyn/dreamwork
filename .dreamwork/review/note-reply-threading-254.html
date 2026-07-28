@@ -1,11 +1,12 @@
 <!doctype html>
-<!--Built from the dreamwork review template v1+8ad39ec6 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<!--Built from the dreamwork review template v1+14f0e44f (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
-<meta name="dreamwork-review-template" content="v1+8ad39ec6">
+<meta name="dreamwork-review-template" content="v1+14f0e44f"
+<meta name="dreamwork-review-ask" content="ask">>
 <title>#254 · One rooted exchange per question · design</title>
 <style>
 /* Offline-clean by construction: no fetches, no external fonts, no images.
@@ -268,6 +269,17 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       replies render as <strong>one flat branch at a single inset depth</strong> beneath it. Preserving
       order, author and stamp; never a staircase. This page is the spec's summary — the spec is
       <code>.dreamwork/docs/plans/note-reply-threading-254.md</code>.</p>
+      <div id="ask" class="ask-block">
+        <div class="label">The decisions &mdash; D1 to D7</div>
+        <p class="ask-q"><strong>D1</strong> a root is a resolution only; <strong>D2</strong> at most
+        one branch per question; <strong>D3</strong> <code>## Answered</code> stays flat;
+        <strong>D4&ndash;D7</strong> the four smaller rules. One open question rides along:
+        overruling <strong>D1</strong> is the only line that changes the card you reported.</p>
+        <p class="ask-answers"><span class="key">accepted answers</span>
+        <code>rec</code> (D1&ndash;D7 as written) &nbsp;&middot;&nbsp; <code>override D1</code>
+        (root any loop contribution) &nbsp;&middot;&nbsp; per-item <code>D1 &hellip; D7</code>
+        &nbsp;&middot;&nbsp; free text</p>
+      </div>
       <div class="call"><strong>Recommendation.</strong> Approve the rule and D1–D7 as written —
       <em>and</em> let follow-up 1 ride along with it. N1 on its own does <strong>not</strong> change
       the card you reported: that entry has no <code>Answer</code>, so your own tie-breaker keeps it
@@ -464,7 +476,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   </div>
 </details>
 
-<footer>Prepared for task #254 · 27 July 2026 · design only, self-contained, offline-clean, no external requests. <span class="dimmer">· built from review template v1+8ad39ec6</span></footer>
+<footer>Prepared for task #254 · 27 July 2026 · design only, self-contained, offline-clean, no external requests. <span class="dimmer">· built from review template v1+14f0e44f</span></footer>
 
 </main>
 </body>
