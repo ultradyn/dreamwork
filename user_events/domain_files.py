@@ -238,6 +238,178 @@ def validate(text):
 
 
 # ---------------------------------------------------------------------------
+# Markers — whole-file marker search across BOTH literal Open and Answered
+# sections (increment 14, C4).
+#
+# The loop folds an answered entry from ``## Open`` to ``## Answered`` (see
+# watch.py: append_answer moves the entry and its marker below the ``##
+# Answered`` header). A receipt marker travels with the entry it belongs to, so
+# the same receipt's marker can sit in EITHER section depending on whether the
+# fold has happened. A scan that looked only under ``## Open`` would lose the
+# marker the moment the fold moved it — and the proof would then mis-read an
+# applied receipt as not-applied and duplicate its effect. The search therefore
+# scans every section a marker can legitimately live in, and the section list
+# is the single place those sections are named.
+# ---------------------------------------------------------------------------
+
+# The literal section headers a managed marker may live under, in the form
+# ``## <name>``. Order is stable and irrelevant to a union search; what matters
+# is that BOTH are present. This tuple is the C4 red line: delete the
+# ``"Answered"`` entry and a marker the fold has moved below ``## Answered`` is
+# no longer scanned, so find_marker returns False for the folded fixture while
+# the still-open fixture stays True — a discriminating failure, not a suite
+# that moves together.
+_MANAGED_SECTIONS = ("Open", "Answered")
+
+
+def _section_header_re(section):
+    """Anchored regex matching the ``## <section>`` header line.
+
+    Anchored and strip-equal (``^[ \\t]*## <name>[ \\t]*$``), matching
+    watch.py's ``LEDGER_SEC_OPEN`` / ``LEDGER_SEC_LANDED`` and lint.py's own
+    ``heads`` rule. An unanchored ``text.split("## Open")`` once let an entry
+    *say* ``## Open`` masquerade as a section boundary (watch.py:7642); the
+    anchored form is the one-correct-answer that keeps this reader, watch and
+    lint from disagreeing about where a section begins.
+    """
+    return re.compile(r"^[ \t]*## " + re.escape(section) + r"[ \t]*$", re.M)
+
+
+def _section_text(text, section):
+    """The text of one ``## <section>``: from its header to the next ``## ``
+    header at column 0 or EOF.
+
+    ``None`` when the file carries no such section (so a caller can tell
+    "absent section" from "empty section"). The body returned excludes the
+    header line itself and any text before it, and stops at the next top-level
+    ``## `` heading — which is exactly the region an entry under that section
+    occupies, and exactly where a marker the fold placed there would sit.
+    """
+    pattern = _section_header_re(section)
+    m = pattern.search(text)
+    if m is None:
+        return None
+    body = text[m.end():]
+    nxt = re.search(r"(?m)^## ", body)
+    if nxt is None:
+        return body
+    return body[:nxt.start()]
+
+
+def find_marker(text, marker):
+    """True iff ``marker`` appears within ANY managed section of ``text``.
+
+    Searches the union of the sections named in ``_MANAGED_SECTIONS`` rather
+    than the whole file, so a marker is found whether it sits under ``## Open``
+    (before the fold) or under ``## Answered`` (after the fold). A marker that
+    appears nowhere in those sections is absent — including a marker whose only
+    occurrence is outside any section header, which is not a receipt the store
+    would recognise.
+    """
+    for section in _MANAGED_SECTIONS:
+        region = _section_text(text, section)
+        if region is not None and marker in region:
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Rebaseline — the explicit operator that adopts an externally-edited valid
+# file into committed lineage (increment 15, C5; design law 5).
+#
+# "Arbitrary editor drift fails closed": the application layer (lane D) already
+# proves a valid file whose generation is outside committed lineage and not the
+# reserved successor as UNKNOWN, and refuses to apply over it. That detection is
+# red-proven there, and it is NOT duplicated here — rebaseline is the operator
+# the SAME design law names for the *intentional* half: when an operator has
+# decided the external edit is legitimate, rebaseline is the only path that
+# validates the file, preserves its bytes, mints a successor generation, and
+# journals the import before further application proceeds.
+#
+# The successor is MINTED (one past the committed high water), not adopted from
+# the file's own generation — the external generation is untrusted by
+# construction (it is the drift that made the file UNKNOWN), so rebaseline does
+# not echo it. The file is re-emitted at the minted successor under the lock,
+# byte-for-byte the same body, with its digest recomputed for the new
+# generation.
+# ---------------------------------------------------------------------------
+
+def rebaseline(path, *, committed_lineage, journal_import, timeout=10.0):
+    """Adopt an externally-edited valid file into committed lineage.
+
+    Reads the file under the cross-process lock, validates it (law 5:
+    "validate"), re-emits its body unchanged at a freshly minted successor
+    generation ("preserve bytes", "mint a new successor generation"), and calls
+    ``journal_import(old_generation, new_generation, identity)`` so the caller
+    journals the import ("journal the import"). Returns the new committed
+    lineage — the input plus the minted successor.
+
+    Raises ``ValueError`` if the file is not a valid managed file: rebaseline is
+    the intentional path for a *valid* external edit, not a repair for a torn
+    one, so a file that fails validation is refused rather than silently
+    adopted (a torn file proving UNKNOWN stays UNKNOWN; rebaseline does not
+    override that).
+
+    ``committed_lineage`` is the set of generations the caller treats as
+    committed (the journal's CAS-finished lineage). The minted successor is
+    ``max(committed_lineage) + 1`` — one past the high water, never the file's
+    own (untrusted) generation. ``journal_import`` is a callback (mirroring how
+    ``reconcile`` takes a ``finish`` callback) so the domain-file operator stays
+    independent of the journal's concrete mechanics.
+    """
+    if not committed_lineage:
+        raise ValueError("committed_lineage must be non-empty to mint a successor")
+    with DomainFileLock(path, timeout=timeout):
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+        md = parse_metadata(text)
+        if md is None or not validate(text):
+            raise ValueError(
+                "rebaseline refuses a file that is not a valid managed file; "
+                "a torn/drifted file stays UNKNOWN — rebaseline is for the "
+                "intentional adoption of a valid external edit, not a repair")
+        # The successor is minted one past the committed high water. The file's
+        # own generation is the drift that made it UNKNOWN, so it is not
+        # echoed: rebaseline adopts the BYTES under a trusted generation.
+        old_generation = md["domain_generation"]
+        successor = max(committed_lineage) + 1
+        # C5's own red line: the minted successor is ADDED to committed lineage.
+        # Delete the union and the caller's new lineage still excludes the file's
+        # generation, so the post-rebaseline proof reads UNKNOWN (the reverse of
+        # the pre-rebaseline pair) — a discriminating failure.
+        new_lineage = set(committed_lineage) | {successor}
+        identity = md["last_applied"]
+        # Re-emit the SAME body at the minted generation: the body is preserved
+        # byte-for-byte (only the generation in the footer changes, and the
+        # digest recomputed to cover the new footer). build_managed_text over the
+        # existing body with the new generation yields exactly that.
+        body = _body_for_rebaseline(text)
+        new_text = build_managed_text(body, successor, identity)
+        _atomic_replace(path, new_text)
+        # Journal the import before further application proceeds (law 5). The
+        # callback wires the import into the journal; the operator reports the
+        # old generation, the minted successor, and the file's identity.
+        journal_import(old_generation, successor, identity)
+        return new_lineage
+
+
+def _body_for_rebaseline(text):
+    """The human-visible body of a managed file: text with its footer stripped.
+
+    The footer is the last ``<!-- dreamwork-managed v1 ... -->`` block.
+    ``rebaseline`` preserves this body unchanged when re-emitting at a new
+    generation, so the external edit's prose, markers and structure are all
+    preserved — only the footer (generation + recomputed digest) changes.
+    """
+    m = _FOOTER_RE.search(text)
+    if m is None:
+        # validate() already rejected this case; defensive only.
+        return text.rstrip("\n")
+    body = text[:m.start()]
+    return body.rstrip("\n")
+
+
+# ---------------------------------------------------------------------------
 # One write — effect, marker, generation and digest land in a single atomic
 # durable replace under the lock, or none of them do (design law 5).
 #
