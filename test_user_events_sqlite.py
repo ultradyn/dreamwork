@@ -37,6 +37,9 @@ import pytest
 
 from user_events.sqlite import (
     BUSY_TIMEOUT_MS,
+    CutoverBusy,
+    CutoverDrainTimeout,
+    CutoverResult,
     JOURNAL_BACKENDS,
     PROTOCOL_VERSION,
     SCHEMA_VERSION,
@@ -1020,3 +1023,315 @@ def test_every_contract_test_runs_under_every_registered_backend():
                 f"missing collected node for backend={backend!r} test={base!r}; "
                 f"contract_items={contract_items}"
             )
+
+
+# ---------------------------------------------------------------------------
+# H2 — cutover lease, drain, watermark (increment 35).
+#
+# A generation is a monotonic int stamped on every receipt at receive()
+# (server-side, unforgeable). cutover() acquires an exclusive lease (reusing
+# B5's claim/reclaim shape), DRAINS in-flight receipts at the current
+# generation, then commits an irreversible watermark and bumps the generation.
+# TEMP TARGETS ONLY — the watermark is irreversible.
+# ---------------------------------------------------------------------------
+
+
+def _finish_received(j, receipt_id: str) -> None:
+    """Drive a received receipt to applied: validated -> claimed -> finished.
+
+    Used by the H2 tests to bring an in-flight receipt to a terminal state
+    under the drained generation. Revisions are read back from the store
+    between steps (never tracked in the test), per the B4/B5 discipline.
+    """
+    stored = j.get_receipt(receipt_id)
+    assert stored is not None and stored["state"] == "received"
+    rev = int(stored["revision"])
+    assert j.transition(receipt_id, "validated", rev).kind == "applied"
+    stored = j.get_receipt(receipt_id)
+    rev = int(stored["revision"])
+    claimed = j.claim(receipt_id, consumer="test", lease_seconds=300,
+                      expected_revision=rev)
+    assert claimed.kind == "claimed", claimed
+    stored = j.get_receipt(receipt_id)
+    rev = int(stored["revision"])
+    finished = j.finish(receipt_id, claim_token=claimed.claim_token,
+                        consumer="test", expected_revision=rev)
+    assert finished.kind == "finished", finished
+
+
+def test_cutover_writes_an_irreversible_watermark_and_advances_generation(
+    tmp_path: Path,
+):
+    """H2 plumbing: a clean cutover bumps the generation and writes a watermark.
+
+    PRODUCTION LINE WHOSE DELETION MUST FAIL THIS TEST:
+      the ``generation.cutover`` event append + meta ``generation`` UPSERT in
+      Journal.cutover's watermark step. Nothing in flight here, so this does
+      not exercise the drain (the next test does).
+    """
+    path = tmp_path / "wm.sqlite3"
+    j = open_journal(path)
+    try:
+        gen_before = j.generation()
+        assert gen_before == 1
+        assert j.watermark_count() == 0
+        assert j.last_watermark() is None
+
+        r = j.cutover(holder="plumbing", lease_seconds=30, drain_seconds=1)
+        assert isinstance(r, CutoverResult)
+        assert r.from_gen == gen_before
+        assert r.to_gen == gen_before + 1
+        # Runtime-derived precondition: the generation genuinely moved. A
+        # no-op cutover (from==to) would leave this false.
+        assert r.to_gen != r.from_gen
+
+        assert j.generation() == r.to_gen
+        assert j.watermark_count() == 1
+        wm = j.last_watermark()
+        assert wm is not None
+        assert wm["from_gen"] == gen_before
+        assert wm["to_gen"] == r.to_gen
+        assert wm["holder"] == "plumbing"
+        # Clean advance: nothing was in flight.
+        assert wm["in_flight_at_commit"] == 0
+
+        # Irreversibility is structural (append-only event + meta bump): a
+        # second open reads the same generation, never rolls back.
+        j.close()
+        j2 = open_journal(path)
+        assert j2.generation() == r.to_gen
+        assert j2.watermark_count() == 1
+        j2.close()
+        j = open_journal(path)  # reopen for the finally
+    finally:
+        j.close()
+
+
+def test_an_active_cutover_lease_is_busy_and_an_expired_one_can_be_stolen(
+    tmp_path: Path,
+):
+    """H2 lease steal rule reuses B5's ``lease_until > now`` prior art.
+
+    An active, unexpired cutover lease is refused (CutoverBusy); an expired one
+    is reclaimable by a new holder. This is fixture 12's "dual reclaimer and
+    stale claimant => one CAS winner" applied to the cutover lease — the same
+    predicate B5's claim() uses, not a second mechanism. A lease nobody can
+    break wedges the target the first time a holder dies; a lease anyone can
+    break is not a lease.
+    """
+    path = tmp_path / "lease.sqlite3"
+    j = open_journal(path)
+    try:
+        from datetime import datetime, timedelta, timezone
+
+        # Plant an ACTIVE lease (future deadline) and assert a second holder
+        # is refused.
+        future = (datetime.now(timezone.utc) + timedelta(seconds=30)).strftime(
+            "%Y-%m-%dT%H:%M:%S.%fZ")
+        j.conn.execute(
+            "INSERT INTO meta(key,value) VALUES('cutover_holder','first') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        j.conn.execute(
+            "INSERT INTO meta(key,value) VALUES('cutover_lease_until',?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (future,))
+        j.conn.commit()
+        # Precondition: the planted lease is genuinely active right now.
+        state = j.cutover_state()
+        assert state.get("cutover_lease_until") == future
+        with pytest.raises(CutoverBusy):
+            j.cutover(holder="second", lease_seconds=10, drain_seconds=0)
+        # Refusal must not have advanced the generation.
+        assert j.generation() == 1
+
+        # Plant an EXPIRED lease (past deadline) and assert a new holder
+        # steals it and completes the cutover.
+        past = (datetime.now(timezone.utc) - timedelta(seconds=5)).strftime(
+            "%Y-%m-%dT%H:%M:%S.%fZ")
+        j.conn.execute(
+            "UPDATE meta SET value='dead' WHERE key='cutover_holder'")
+        j.conn.execute(
+            "UPDATE meta SET value=? WHERE key='cutover_lease_until'", (past,))
+        j.conn.commit()
+        r = j.cutover(holder="alive", lease_seconds=10, drain_seconds=0)
+        assert r.holder is not None
+        assert j.generation() == 2
+        wm = j.last_watermark()
+        assert wm is not None and wm["holder"] == "alive"
+        # The stolen cutover cleared the lease rows on commit.
+        assert j.cutover_state() == {}
+    finally:
+        j.close()
+
+
+def test_cutover_drain_times_out_when_a_request_never_quiesces(tmp_path: Path):
+    """H2 drain: a request that never reaches terminal trips the deadline.
+
+    PRODUCTION LINE WHOSE DELETION MUST FAIL THIS TEST: the
+    ``time.monotonic() >= deadline`` check in the drain loop. Remove it and
+    cutover blocks forever instead of raising CutoverDrainTimeout.
+    The lease is released on timeout so a later cutover can retry; no
+    watermark is written.
+    """
+    path = tmp_path / "drain-to.sqlite3"
+    j = open_journal(path)
+    try:
+        # One request, received and left in flight (never finished).
+        res = j.receive(_envelope(body=b'{"text":"stuck"}'))
+        gen_before = j.generation()
+        # Precondition: the request is genuinely in flight at the seam.
+        assert j.in_flight(gen_before) == 1
+
+        start = time.monotonic()
+        with pytest.raises(CutoverDrainTimeout):
+            j.cutover(holder="stuck", lease_seconds=30, drain_seconds=0.5,
+                      poll_interval=0.02)
+        elapsed = time.monotonic() - start
+        # It waited roughly the deadline (not zero, not forever).
+        assert elapsed >= 0.4, f"drain returned too fast ({elapsed:.3f}s)"
+        # No watermark, generation unchanged, lease released.
+        assert j.generation() == gen_before
+        assert j.last_watermark() is None
+        assert j.cutover_state() == {}
+        # A fresh cutover can proceed once the request is terminal.
+        _finish_received(j, res.receipt_id)
+        r = j.cutover(holder="retry", lease_seconds=30, drain_seconds=1)
+        assert r.to_gen == gen_before + 1
+    finally:
+        j.close()
+
+
+def _h2_cutover_child(db: str, q):
+    """One OS process: acquire the cutover lease and drain in-flight receipts."""
+    try:
+        j = open_journal(db)
+        gen = j.generation()
+        # Signal the parent that the drain is about to start on this many
+        # in-flight receipts. The parent releases the seam on this signal.
+        q.put(("draining", j.in_flight(gen), gen))
+        r = j.cutover(holder="cutover-H2", lease_seconds=60, drain_seconds=20)
+        q.put({
+            "from_gen": r.from_gen, "to_gen": r.to_gen,
+            "in_flight_at_commit": r.in_flight_at_commit,
+            "holder": r.holder,
+        })
+        j.close()
+    except Exception as e:  # pragma: no cover - reported over the queue
+        q.put({"error": repr(e)})
+
+
+def test_a_request_spanning_the_cutover_completes_under_the_drained_generation(
+    tmp_path: Path,
+):
+    """H2 main: a request held at the received->applied seam across a cutover
+    completes under the drained generation; exactly one receipt, no legacy write.
+
+    PRODUCTION LINE WHOSE DELETION MUST FAIL THIS TEST:
+      the drain wait in Journal.cutover (the ``while self.in_flight(from_gen) > 0``
+      loop). Delete it and the watermark advances over the in-flight request:
+      ``in_flight_at_commit`` becomes nonzero (the legacy-direct-write class —
+      a downstream apply would land an effect under a generation the receipt
+      was not received in), so the "no legacy direct write" assertion fails.
+
+    Two real OS processes (spawn) over one temp target, like B7 — a threaded
+    version cannot exhibit the cross-process drain this increment is about. The
+    named seam is the genuine ``received``->``applied`` in-flight window (not a
+    synthetic hook). TEMP TARGETS ONLY.
+    """
+    path = tmp_path / "span.sqlite3"
+    # Parent receives one request under generation 1 and leaves it IN FLIGHT
+    # at the seam (state=received).
+    j = open_journal(path)
+    env = _envelope(body=b'{"text":"spanning"}')
+    res = j.receive(env)
+    rid = res.receipt_id
+    gen_before = j.generation()
+    assert res.kind == "inserted"
+    assert gen_before == 1
+    # Precondition 1 (held-at-seam): the request is genuinely in flight at the
+    # drained generation. If this is 0 the cutover never waits and the test
+    # proves nothing about the drain.
+    assert j.in_flight(gen_before) == 1, "precondition: request must be in flight"
+    j.close()
+
+    # A second, distinct request used to prove the drain CLOSES gen N: a
+    # receive attempted while the drain is active must be refused (it has not
+    # been witnessed yet) and must not join gen N. Defined here so the final
+    # block can show it succeeds once the cutover is done.
+    late_env = _envelope(body=b'{"text":"too-late"}')
+
+    ctx = mp.get_context("spawn")
+    q = ctx.Queue()
+    child = ctx.Process(target=_h2_cutover_child, args=(str(path), q))
+    child.start()
+    try:
+        # Wait for the child to enter the drain on our in-flight receipt.
+        signal = q.get(timeout=30)
+        assert signal[0] == "draining", signal
+        # Give the child's drain a moment to be actively polling before we
+        # probe the closure and release the seam, so the wait is genuinely
+        # exercised.
+        time.sleep(0.3)
+
+        j = open_journal(path)
+        # Coordinator steer: while the drain is active, gen N is CLOSED to new
+        # receipts. A receive attempted now must be refused (CutoverBusy) and
+        # must NOT join gen N — the observable closure that proves the drain's
+        # time-of-check/time-of-use window is shut. One more process
+        # interleaving on the same temp target.
+        with pytest.raises(CutoverBusy):
+            j.receive(late_env)
+        # The refused receive created no receipt (closure is a refuse, not a
+        # stamp-N+1): the count is still the one spanning receipt.
+        assert j.receipt_count() == 1, (
+            f"a receive during the drain must not create a receipt, got "
+            f"{j.receipt_count()}")
+
+        # Release the seam: complete the request UNDER generation 1.
+        _finish_received(j, rid)
+        assert j.in_flight(gen_before) == 0
+        j.close()
+
+        result = q.get(timeout=30)
+        child.join(timeout=30)
+        assert child.exitcode == 0, f"child exitcode={child.exitcode}"
+        assert "error" not in result, result
+        assert result["to_gen"] == gen_before + 1
+    finally:
+        if child.is_alive():
+            child.kill()
+            child.join(timeout=5)
+
+    # Authoritative reads from a fresh open.
+    j = open_journal(path)
+    try:
+        # Precondition 2 (cutover happened): generation genuinely moved,
+        # derived — not a literal — so a no-op cutover cannot pass.
+        gen_after = j.generation()
+        assert gen_after != gen_before, (
+            f"generation must advance across the cutover; still {gen_after}")
+        # Exactly one receipt.
+        assert j.receipt_count() == 1, (
+            f"expected exactly one receipt, got {j.receipt_count()}")
+        # ...completed under the drained generation, not the new one.
+        assert j.receipt_generation(rid) == gen_before, (
+            "the spanning request must complete under the generation it was "
+            "received in (drained), not the new one")
+        wm = j.last_watermark()
+        assert wm is not None, "a cutover watermark must exist"
+        assert wm["from_gen"] == gen_before
+        assert wm["to_gen"] == gen_after
+        # No legacy direct write: the cutover advanced ONLY after the drain
+        # quiesced. A nonzero value is the legacy-write class. Deleting the
+        # drain wait makes this nonzero.
+        assert wm["in_flight_at_commit"] == 0, (
+            "cutover advanced over an in-flight request "
+            f"(in_flight_at_commit={wm['in_flight_at_commit']}); "
+            "the drain wait is gone")
+        # The closure was temporary: with the cutover done (lease cleared),
+        # the same request that was refused mid-drain now succeeds under the
+        # new generation — the close is not a permanent refusal.
+        late_res = j.receive(late_env)
+        assert late_res.kind == "inserted"
+        assert j.receipt_generation(late_res.receipt_id) == gen_after
+    finally:
+        j.close()

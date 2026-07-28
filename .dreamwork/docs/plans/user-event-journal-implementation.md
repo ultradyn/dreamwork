@@ -736,6 +736,51 @@ legacy write.
 increment may be executed against a live target — that is migration, and
 migration is not authorised.
 
+**LANDED `wt/quiesce` (H2, 2026-07-29).** Built as three parts in
+`user_events/sqlite.py:Journal`, temp targets only:
+1. **Lease** — `cutover()` CAS-acquires an exclusive lease on `meta`
+   (`cutover_holder`/`cutover_token`/`cutover_lease_until`). An active lease is
+   refused (`CutoverBusy`); an expired one is reclaimable — **reusing B5's
+   `lease_until > now` predicate** (fixture 12's "dual reclaimer and stale
+   claimant ⇒ one CAS winner"), not a second mechanism. A holder that dies
+   mid-drain wedges no one. **Taking the lease also closes gen N to new
+   receipts**: `receive()` refuses while the lease is held, so the drain cannot
+   be overtaken by a brand-new gen-N receipt (coordinator steer on the drain's
+   TOCTOU window — close before drain). Refuse, not stamp-N+1: a mid-drain
+   request has not been witnessed (no 202), and stamping N+1 would mint a
+   receipt in a generation that may not commit if the drain times out.
+2. **Drain (the red line)** — `while self.in_flight(from_gen) > 0:` waits until
+   no receipt is in flight at the current generation, or `drain_seconds`
+   elapses (`CutoverDrainTimeout`, lease released, no watermark). A generation
+   is a monotonic `meta` int stamped **server-side** on every receipt at
+   `receive()` inside `BEGIN IMMEDIATE`; the request never supplies it, so an
+   in-flight request's generation is frozen on its append-only row. The chosen
+   drained-request outcome is **completes under the drained generation**:
+   retry-under-new-gen is worse here because a `202` already promised a durable
+   receipt (E3/E5) — retry would orphan the gen-N receipt or mint a second.
+3. **Watermark** — append an irreversible `generation.cutover` chained event
+   (canonical: from_gen, to_gen, holder, `in_flight_at_commit`), UPSERT `meta
+   generation`, clear the lease. `in_flight_at_commit` records whether the
+   drain quiesced (0 = clean; nonzero = the cutover advanced over an in-flight
+   request — the legacy-direct-write class).
+*Two processes, not threads:* the spanning test uses `multiprocessing` spawn
+(parent + child) over one temp target, like B7; the named seam is the genuine
+`received`→`applied` in-flight window, not a synthetic hook, and it also probes
+the closure (a receive attempted *during* the drain is refused and does not join
+gen N). *Reds produced (both, run with closure in place):* (a) neutralising the
+**closure** check (`if False and …`) fails the spanning test on `DID NOT RAISE
+CutoverBusy` — a mid-drain receive is no longer refused and would join gen N;
+(b) neutralising the **drain** `while` fails the same test, surfacing on the
+closure assertion (the cutover finishes before the parent's probe and clears the
+lease), not on `in_flight_at_commit` — the drain wait is still load-bearing
+(closure blocks *new* gen-N receipts; the drain waits for *existing* in-flight
+ones), and `in_flight_at_commit == 0` remains an end-state invariant rather than
+the first-firing discriminator. *Verified green after restore;*
+`lint.py --target .` clean; `test_user_events_sqlite.py` (18) and
+`test_user_events_http.py` (15) green. SCHEMA_VERSION unchanged (a watermark is
+not a schema migration); `receipts.generation` is additive with an idempotent
+defensive `ALTER`.
+
 ---
 
 ## Fixture map

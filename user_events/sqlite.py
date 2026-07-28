@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -131,6 +132,27 @@ class AdvanceCursorResult:
     failed_ordinal: Optional[int] = None
 
 
+@dataclass(frozen=True)
+class CutoverResult:
+    """Outcome of cutover() (H2): the generation advanced from_gen -> to_gen.
+
+    ``in_flight_at_commit`` is the count of in-flight receipts under the
+    drained generation at the moment the watermark committed.  With the drain
+    it is 0 (every request completed under its received generation before the
+    generation advanced).  A nonzero value would mean the cutover advanced over
+    an in-flight request — the condition under which a downstream apply would
+    write an effect under a generation the receipt was not received in (a
+    legacy/uncoordinated direct write).  Recorded so a reader can tell a clean
+    watermark from a dirty one without re-deriving the count.
+    """
+
+    from_gen: int
+    to_gen: int
+    holder: str
+    in_flight_at_commit: int
+    lease_token: str
+
+
 # Edges authorised at B4. claim requires validated; rejected is a sink.
 # finish moves claimed → applied (B5).
 _TRANSITION_EDGES = {
@@ -172,6 +194,28 @@ class VersionMismatchError(RuntimeError):
     Fail-closed: refuse the open or the receive rather than skip, guess, or
     silently drop events.  Distinct from ordinary ValueError so a caller can
     surface mixed-version without treating it as a malformed field.
+    """
+
+
+class CutoverError(RuntimeError):
+    """Base for cutover (H2) failures.  See CutoverBusy / CutoverDrainTimeout."""
+
+
+class CutoverBusy(CutoverError):
+    """Another holder's cutover lease is active and unexpired (H2).
+
+    The lease is stealable only after expiry (reusing B5's
+    ``lease_until > now`` predicate); an active, unexpired lease is refused so
+    two cutover attempts over one target cannot both advance the generation.
+    """
+
+
+class CutoverDrainTimeout(CutoverError):
+    """The drain deadline elapsed before in-flight receipts quiesced (H2).
+
+    The lease is released on timeout so a later cutover can retry; no
+    watermark is written.  Distinct from CutoverBusy because the holder itself
+    gives up rather than being refused by another.
     """
 
 def _h0(journal_id: str) -> str:
@@ -229,6 +273,31 @@ def _canonical_receipt_health(
     )
 
 
+def _canonical_generation_cutover(
+    from_gen: int,
+    to_gen: int,
+    holder: str,
+    in_flight_at_commit: int,
+) -> bytes:
+    """Canonical bytes for a generation.cutover journal event (H2).
+
+    The cutover watermark is an irreversible chained event (design: *"Rollback
+    never deletes/renumbers receipts"*).  ``in_flight_at_commit`` records
+    whether the drain quiesced before the advance: 0 is a clean watermark; any
+    other value means the generation advanced over an in-flight request, which
+    is the legacy-direct-write class.  The two generation ints frame the
+    advance so a projection (CLI, dashboard) can name the boundary without
+    parsing prose.
+    """
+    return length_framed(
+        "generation.cutover",
+        str(from_gen),
+        str(to_gen),
+        holder,
+        str(in_flight_at_commit),
+    )
+
+
 def _parse_framed_fields(payload: bytes) -> list:
     """Inverse of :func:`length_framed` — split a framed blob back into fields.
 
@@ -276,7 +345,12 @@ CREATE TABLE IF NOT EXISTS receipts (
     revision            INTEGER NOT NULL DEFAULT 1,
     claim_token         TEXT,
     claim_consumer      TEXT,
-    lease_until         TEXT
+    lease_until         TEXT,
+    -- H2: the generation (cutover epoch) this receipt was received under.
+    -- Stamped server-side at receive() inside BEGIN IMMEDIATE, never supplied
+    -- by the request, so an in-flight request's generation is frozen on its
+    -- append-only row and cannot be promoted to a newer generation by itself.
+    generation          INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS cursors (
@@ -588,6 +662,28 @@ class Journal:
                 )
 
             # absent → insert one receipt in state received.
+            # received_at is not in the chain canonical form; wall clock is fine.
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            # H2 closure (coordinator steer on the drain's TOCTOU window):
+            # while a cutover drain holds its lease, the current generation is
+            # closed to NEW receipts. Replays and conflicts above still resolve
+            # against the existing row (no new receipt); only a genuinely-new
+            # insert is refused, because it has not yet been witnessed (no 202)
+            # and refusing keeps every stamped generation honest — stamping it
+            # under the next generation instead would mint a receipt in a
+            # generation that may not commit if the drain times out, the same
+            # two-durable-truths shape that decision 2 rejected. ISO-8601 Z
+            # strings compare lexically, like the lease check in cutover().
+            lease_row = self.conn.execute(
+                "SELECT value FROM meta WHERE key = 'cutover_lease_until'"
+            ).fetchone()
+            if lease_row is not None and lease_row[0] > now:
+                # The outer except rolls the BEGIN IMMEDIATE back and re-raises.
+                raise CutoverBusy(
+                    "cutover drain in progress (lease until "
+                    f"{lease_row[0]}); generation closed to new receipts — "
+                    "retry after the cutover completes"
+                )
             # receipt_id is deterministic from client_action_id so the same
             # logical sequence in two journals yields the same chain head
             # (property a); uuid4 would make every head differ for free.
@@ -601,16 +697,19 @@ class Journal:
                 "SELECT COALESCE(MAX(sequence), 0) + 1 FROM receipts"
             ).fetchone()
             sequence = int(seq_row[0])
-            # received_at is not in the chain canonical form; wall clock is fine.
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            # H2: stamp the current generation onto the receipt. Read here,
+            # inside BEGIN IMMEDIATE, so the generation is the store's own
+            # authoritative value at the moment of receive — the request never
+            # supplies it and cannot forge a different one.
+            received_generation = self.generation()
             self.conn.execute(
                 """
                 INSERT INTO receipts (
                     receipt_id, sequence, client_action_id, request_digest,
                     received_at, method, endpoint, content_type,
                     exact_payload_bytes, payload_size, target_id, source_hint,
-                    redaction_class, state, revision
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', 1)
+                    redaction_class, state, revision, generation
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', 1, ?)
                 """,
                 (
                     receipt_id,
@@ -626,6 +725,7 @@ class Journal:
                     envelope.target_id,
                     envelope.source_hint,
                     envelope.redaction_class,
+                    received_generation,
                 ),
             )
             # Initial received transition at revision 1
@@ -813,6 +913,239 @@ class Journal:
         fields = _parse_framed_fields(bytes(row["canonical_payload"]))
         # ["receipt.health", receipt_id, health, detail]
         return fields[2].decode("utf-8") if len(fields) > 2 else None
+
+    # ------------------------------------------------------------------
+    # H2 — cutover lease, drain, watermark.
+    #
+    # A generation is a monotonic int in meta stamped on every receipt at
+    # receive() (see above).  cutover() advances it: it acquires an exclusive
+    # lease (reusing B5's claim/reclaim shape — fixture 12's "dual reclaimer
+    # and stale claimant => one CAS winner"), DRAINS in-flight receipts at the
+    # current generation to a terminal state, then commits an irreversible
+    # watermark event and bumps the generation.  TEMP TARGETS ONLY: the
+    # watermark is irreversible (design: rollback never deletes/renumbers
+    # receipts), so running it against a live target is migration, not this
+    # increment.
+    # ------------------------------------------------------------------
+
+    def generation(self) -> int:
+        """Current cutover generation (meta ``generation``, default 1)."""
+        row = self.conn.execute(
+            "SELECT value FROM meta WHERE key = 'generation'"
+        ).fetchone()
+        if row is None:
+            return 1
+        return int(row[0])
+
+    def receipt_generation(self, receipt_id: str) -> Optional[int]:
+        """The generation a receipt was received under (frozen on its row)."""
+        row = self.conn.execute(
+            "SELECT generation FROM receipts WHERE receipt_id = ?",
+            (receipt_id,),
+        ).fetchone()
+        return int(row[0]) if row is not None else None
+
+    def in_flight(self, generation: Optional[int] = None) -> int:
+        """Count receipts at ``generation`` (default current) not yet terminal.
+
+        A receipt is in-flight while it is received / validated / claimed —
+        the window between receive() and finish().  The drain waits on this
+        count reaching zero so a request spanning the cutover completes under
+        the generation it was received in.
+        """
+        if generation is None:
+            generation = self.generation()
+        row = self.conn.execute(
+            "SELECT COUNT(*) FROM receipts "
+            "WHERE generation = ? AND state IN ('received','validated','claimed')",
+            (generation,),
+        ).fetchone()
+        return int(row[0])
+
+    def cutover_state(self) -> dict:
+        """Read the current cutover lease, or an empty dict when none is held."""
+        rows = self.conn.execute(
+            "SELECT key, value FROM meta WHERE key IN "
+            "('cutover_holder','cutover_token','cutover_lease_until')"
+        ).fetchall()
+        out = {r["key"]: r["value"] for r in rows}
+        return out
+
+    def _release_cutover_lease(self) -> None:
+        """Drop the cutover lease rows (called on drain timeout)."""
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            self.conn.execute(
+                "DELETE FROM meta WHERE key IN "
+                "('cutover_holder','cutover_token','cutover_lease_until')"
+            )
+            self.conn.execute("COMMIT")
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
+    def cutover(
+        self,
+        *,
+        holder: str,
+        lease_seconds: int,
+        drain_seconds: float,
+        poll_interval: float = 0.02,
+    ) -> CutoverResult:
+        """Lease, drain, watermark: advance the generation from N to N+1.
+
+        Three parts, and the middle one is the increment's meaning:
+
+        1. **Lease** — CAS-acquire an exclusive cutover lease on meta.  Reuses
+           B5's claim/reclaim shape: an active, unexpired lease is refused
+           (``CutoverBusy``); an expired lease is reclaimable by a new holder
+           (the ``lease_until > now`` predicate from B5, inverted).  A holder
+           that dies mid-drain wedges no one.  **Taking the lease also closes
+           gen N to new receipts** — ``receive()`` refuses while the lease is
+           held, so the drain below cannot be overtaken by a brand-new gen-N
+           receipt stamped behind its back (the TOCTOU window).
+        2. **Drain** — wait until no receipt is in-flight at the current
+           generation, or the ``drain_seconds`` deadline elapses.  This is the
+           red line: deleting this wait lets the watermark advance over an
+           in-flight request.  A request spanning the cutover therefore
+           COMPLETES UNDER THE DRAINED GENERATION (the chosen outcome): it is
+           never retried under the new generation, which keeps a ``202`` honest.
+        3. **Watermark** — append an irreversible ``generation.cutover`` event,
+           bump meta ``generation``, release the lease.  The event records
+           ``in_flight_at_commit`` so a reader can tell a clean advance from
+           one that ran over an in-flight request.
+
+        TEMP TARGETS ONLY.  The watermark is irreversible.
+        """
+        if lease_seconds <= 0:
+            raise ValueError("lease_seconds must be positive")
+        if drain_seconds < 0:
+            raise ValueError("drain_seconds must be >= 0")
+
+        now = datetime.now(timezone.utc)
+        now_s = now.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        lease_until = (now + timedelta(seconds=lease_seconds)).strftime(
+            "%Y-%m-%dT%H:%M:%S.%fZ"
+        )
+        token = uuid.uuid4().hex
+
+        # --- 1. lease: reuse B5's claim/reclaim shape (fixture 12 prior art) ---
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            from_gen = self.generation()
+            cur_lease = self.conn.execute(
+                "SELECT value FROM meta WHERE key = 'cutover_lease_until'"
+            ).fetchone()
+            cur_lease_s = cur_lease[0] if cur_lease is not None else None
+            # B5 red-line predicate reused: an active lease is one whose
+            # lease_until > backend now.  ISO-8601 strings compare lexically.
+            active = cur_lease_s is not None and cur_lease_s > now_s
+            if active:
+                self.conn.execute("COMMIT")
+                raise CutoverBusy(
+                    f"cutover lease active until {cur_lease_s}; "
+                    "steal only after expiry (reuse of B5 lease_until > now)"
+                )
+            self.conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('cutover_holder', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (holder,),
+            )
+            self.conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('cutover_token', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (token,),
+            )
+            self.conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('cutover_lease_until', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (lease_until,),
+            )
+            self.conn.execute("COMMIT")
+        except CutoverBusy:
+            raise
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
+        # --- 2. drain (red line): wait for in-flight receipts at from_gen ---
+        deadline = time.monotonic() + drain_seconds
+        while self.in_flight(from_gen) > 0:
+            if time.monotonic() >= deadline:
+                # Release the lease so a later cutover can retry; no watermark.
+                self._release_cutover_lease()
+                raise CutoverDrainTimeout(
+                    f"drain deadline ({drain_seconds}s) elapsed with "
+                    f"{self.in_flight(from_gen)} receipt(s) in flight at "
+                    f"generation {from_gen}; lease released, no watermark"
+                )
+            time.sleep(poll_interval)
+
+        # --- 3. watermark: irreversible advance ---
+        in_flight_at_commit = self.in_flight(from_gen)
+        now2 = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        to_gen = from_gen + 1
+        canonical = _canonical_generation_cutover(
+            from_gen, to_gen, holder, in_flight_at_commit
+        )
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            self._append_event(
+                event_kind="generation.cutover",
+                receipt_id=None,
+                at=now2,
+                canonical_payload=canonical,
+            )
+            self.conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('generation', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (str(to_gen),),
+            )
+            self.conn.execute(
+                "DELETE FROM meta WHERE key IN "
+                "('cutover_holder','cutover_token','cutover_lease_until')"
+            )
+            self.conn.execute("COMMIT")
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
+        return CutoverResult(
+            from_gen=from_gen,
+            to_gen=to_gen,
+            holder=holder,
+            in_flight_at_commit=in_flight_at_commit,
+            lease_token=token,
+        )
+
+    def last_watermark(self) -> Optional[dict]:
+        """Newest ``generation.cutover`` event, or ``None`` if none exists.
+
+        Fields are parsed from the canonical framed payload so callers do not
+        hold a private copy of the framing format.
+        """
+        row = self.conn.execute(
+            "SELECT canonical_payload FROM events "
+            "WHERE event_kind = 'generation.cutover' "
+            "ORDER BY event_ordinal DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        fields = _parse_framed_fields(bytes(row["canonical_payload"]))
+        # ["generation.cutover", from_gen, to_gen, holder, in_flight_at_commit]
+        return {
+            "from_gen": int(fields[1]),
+            "to_gen": int(fields[2]),
+            "holder": fields[3].decode("utf-8"),
+            "in_flight_at_commit": int(fields[4]),
+        }
+
+    def watermark_count(self) -> int:
+        """Number of ``generation.cutover`` events committed (== generation - 1)."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) FROM events WHERE event_kind = 'generation.cutover'"
+        ).fetchone()
+        return int(row[0])
 
     def claim(
         self,
@@ -1168,6 +1501,25 @@ class Journal:
         )
 
 
+def _ensure_generation_column(conn: sqlite3.Connection) -> None:
+    """Add ``receipts.generation`` if an older journal lacks it (H2).
+
+    SCHEMA_VERSION is unchanged (a watermark is not a schema migration), so a
+    journal created before H2 opens fine under H1's version gate but lacks the
+    column.  Additive ALTER only; fresh journals already have it.  TEMP
+    targets in practice, but defensive so an accidental reuse cannot break.
+    """
+    cols = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(receipts)").fetchall()
+    }
+    if "generation" not in cols:
+        conn.execute(
+            "ALTER TABLE receipts ADD COLUMN generation INTEGER NOT NULL DEFAULT 1"
+        )
+        conn.commit()
+
+
 def open_journal(path: PathLike) -> Journal:
     """Open (or create) the durable journal at path.
 
@@ -1185,6 +1537,7 @@ def open_journal(path: PathLike) -> Journal:
         # executescript issues its own COMMIT first; that is fine here —
         # pragmas are already applied and schema DDL is idempotent.
         conn.executescript(_SCHEMA_SQL)
+        _ensure_generation_column(conn)
         journal_id = _bootstrap_meta(conn)
     except Exception:
         conn.close()
