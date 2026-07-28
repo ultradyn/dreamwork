@@ -2525,6 +2525,25 @@ Next id: **466**
   in `_read_json`). `E4`'s seam is real — `submissions.log` made a **directory**, so `IsADirectoryError` comes
   from the filesystem rather than a patched `open`. Closed reason set `REJECTION_REASONS =
   ("malformed_json", "schema_invalid", "domain_invalid")` in `user_events/sqlite.py`, where a parser finds it
+  · **MERGE RELEASED `8ccd2fb` at 03:34, after `E5b` landed the client half** (`a328507`, `@grok`) — one
+  `writeVerdict(res)` reads the body **once** (a `Response` body is read once, so it is the single reader) and
+  returns `{landed, rejected, reason, status}` where **`landed` is `res.ok && !rejected`**. That is the one thing
+  `/ask`, `/answer`, `/comment`, `/command`, `/tint` and `/run-mode` gate on; `res.ok` alone decides nothing any
+  more. The reason reaches him through a closed map paired with the server's `REJECTION_REASONS`, and a code
+  outside the set falls through to the status line rather than printing an unrecognised string
+  · **it also caught what I had missed**: `subsOutcome` — `#175`'s submission log — was recording `'ok'` for a
+  rejected `202`, so a tab dying mid-send would have left a durable record claiming his words landed. The verdict
+  now decides that entry too
+  · **verified by me in an isolated worktree, not folded from its report**: reverting `writeVerdict`'s `landed` to
+  `res.ok` fails **10 of 12** checks in the new `dev/capture/rejectwrite.mjs` — including *"does not clear the
+  draft store (the permanent-loss vector)"* — while *"SUCCESS /ask clears the box on a write that lands"* still
+  **passes** and no page errors appear. So the guard is specific to the property rather than broken, which is what
+  its two-sided structure buys. On the merged tree: 12 PASS, exit 0
+  · guard `rejectwrite` registered (**56**); the `justfile` conflict was resolved as a union — `staleremedy` from
+  `#462`, `rejectwrite` from here — verified against `dev/capture/` in both directions with zero registered-but-
+  missing and zero present-but-unregistered
+  · **so lane E is complete except `E6`** (increment 25, `shadow_failed` on the dashboard), and `E6` is now the
+  smaller job it should always have been, because the *rejection* half of visibility landed here instead
   · **why the merge is held: `E5` turns a refused write into one the browser reads as successful, and his text
   is what pays.** A rejected body now answers `202` with `{"ok": false, "rejected": true}` — and `202` makes
   `res.ok` **true**. Every browser check is `res.ok` across 9 sites, which is exactly why Q3 could call
