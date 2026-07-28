@@ -2463,9 +2463,25 @@ Next id: **423**
   result *kind* — which is the specific trap the plan named, since a deleted `SELECT` comparison
   raises `IntegrityError` and a count-only assertion would "fail" for the wrong reason
   · `B5`-`B8` were out of batch and correctly not started
-  · **lane C (domain files) DONE, `@pi-glm52`, ~45 minutes** — `C1` `3f1a6af`, `C2` `8c1bb60`,
+  · **lane C (domain files) is 3 of 5, NOT done — and this line said DONE for nine hours.**
+  `@pi-glm52`, ~45 minutes** — `C1` `3f1a6af`, `C2` `8c1bb60`,
   `C3` `b5555e4`, plus `4a773e2`. 3/3 green, all criteria HOLD, and it explicitly noted seeing
   concurrent-lane dirt in the tree and not staging it — which is the ownership rule working
+  · **CORRECTION 2026-07-28 16:35.** The `3/3` above is the count of what the lane **built**, and I
+  read it as the lane's **scope**. Lane C is plan increments **11-15**: `C1` lock, `C2` lineage,
+  `C3` one-write, **`C4` markers**, **`C5` rebaseline**. `C4` and `C5` are **not built** —
+  `user_events/domain_files.py` has no whole-file marker search and no `rebaseline`, and
+  `test_user_events_domain_files.py` holds 3 tests. **So A-D are NOT proved and the second gate is
+  correctly still shut.** I filed a question at 16:24 telling him the condition was met; corrected
+  in place at 16:35
+  · **caught by the `@grok` lane building the gate artifact, from the tree** (`git log --
+  user_events/domain_files.py` plus the plan's own lane table) — the fifth lane today to refute a
+  figure I derived rather than observed, and the costliest, since acting on it meant asking him to
+  open a gate on unproved prerequisites. The pattern is now specific enough to state: **a lane's
+  self-reported `n/n` is a claim about its own brief, never about the plan's lane** — reconcile the
+  two before either is quoted
+  · **`C4` + `C5` are inside increments 1-19, which `G1` already authorises**, so they need no
+  ruling and are the loop's next `#263` work rather than his
   · **`C3` verified independently by me, and the red is the most legible in the batch**: I
   replaced temp-then-`os.replace` with the direct `open(path, "w")` that `watch.py:8462` does
   today, and `test_kill_at_rename_leaves_the_previous_generation_intact` failed with
