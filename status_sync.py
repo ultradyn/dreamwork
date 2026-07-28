@@ -23,9 +23,13 @@ Derived here, and nothing else is touched:
                                       hand-counts agree and all be wrong.
   current_task_ids                    the tasks whose dispatched process is
                                       still alive (see `live_lanes`).
-  dreamers                            pruned of lanes whose process is gone —
-                                      a dead lane leaves the array; nothing
-                                      else about the survivors changes.
+  dreamers                            pruned of lanes whose process is gone
+                                      OR whose task has landed — a dead or
+                                      finished lane leaves the array; nothing
+                                      else about the survivors changes. Task
+                                      ids are normalised on write (plain → int,
+                                      sub-id → str), and malformed entries are
+                                      skipped + reported rather than crashing.
 
 Everything a human or coordinator wrote by judgement is left alone: notes,
 owed_verifications, queued_dispatches, deployed, monitors, session_goal, and
@@ -182,6 +186,58 @@ def _missing_pid(d: dict) -> bool:
     return pid is None or pid == "" or pid == 0
 
 
+def _evaluable(d) -> bool:
+    """Whether an entry can be asked about at all (#402a).
+
+    The syncer must never crash on a malformed entry: a sync that exits 1
+    stops protecting everything after it. An entry is **evaluable** when it
+    is a dict carrying a ``task`` AND something to ask the OS about — a
+    parseable pid or a brief path. Entries that fail this are pre-filtered
+    as junk in ``main`` and reported, never reaching ``live_lanes``.
+    """
+    if not isinstance(d, dict):
+        return False
+    if "task" not in d:
+        return False
+    if _missing_pid(d):
+        return bool(d.get("brief"))
+    try:                                # pid present — must be parseable
+        int(d["pid"])
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _normalise_task(task):
+    """Canonical id form: plain id → int, sub-id → str (#402b).
+
+    **Tolerate on read, normalise on write** — the file is written by more
+    than one hand (the coordinator at dispatch, the syncer at reap), so the
+    syncer accepts int or str on read and writes back the canonical form.
+    A plain numeric id (``172`` or ``"172"``) becomes an int; anything else
+    (a sub-id like ``"392a"``, or an unparseable value) stays a string.
+    """
+    s = str(task)
+    if s.isdigit():
+        return int(s)
+    return s
+
+
+def _normalise_entry(d: dict) -> dict:
+    """A shallow copy with ``task`` in canonical form (#402b)."""
+    out = dict(d)
+    if "task" in out:
+        out["task"] = _normalise_task(out["task"])
+    return out
+
+
+def _entry_tag(d) -> str:
+    """A short identifier for an entry in stderr reports, never raises."""
+    if isinstance(d, dict):
+        return repr(d.get("task", "<no task>"))
+    return repr(d)
+
+
 def _base_id(task) -> int | None:
     """The integer task a (possibly sub-) id refers to.
 
@@ -249,26 +305,58 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
 
+    # Pre-filter malformed entries (#402a): the syncer must never crash on
+    # junk. An entry that is not a dict, has no task, or carries neither a
+    # parseable pid nor a brief is skipped and reported — it cannot be asked
+    # about, so a derived answer would be a guess dressed as a measurement.
+    raw_dreamers = status.get("dreamers", [])
+    if not isinstance(raw_dreamers, list):
+        raw_dreamers = []
+    clean = [d for d in raw_dreamers if _evaluable(d)]
+    junk = [d for d in raw_dreamers if not _evaluable(d)]
+    if junk:
+        print("status_sync: skipped %d malformed dreamer entr%s: %s"
+              % (len(junk), "y" if len(junk) == 1 else "ies",
+                 [_entry_tag(d) for d in junk]), file=sys.stderr)
+
     try:
-        live_set, pruned = live_lanes(status.get("dreamers", []))
+        live_set, pid_live = live_lanes(clean)
     except LivenessUnknown as e:
-        # Could not tell which lanes are live. Leave the derived fields
-        # byte-identical to their author's writing and say so on stderr —
-        # never write a value the probe could not derive. Still print coverage
-        # so the run is not silent about which fields it touched (none).
+        # Could not tell which lanes are live (pgrep broken, etc.). Leave the
+        # derived fields byte-identical to their author's writing and say so
+        # on stderr — never write a value the probe could not derive. Still
+        # print coverage so the run is not silent about which fields it
+        # touched (none).
         print("status_sync: liveness unknown — leaving %s untouched (%s)"
               % (", ".join(DERIVED), e), file=sys.stderr)
         print(coverage(status, skipped=True))
         return 3                       # distinct from stale (1) and clean (0)
 
-    live = _normalise_live(live_set)
+    # Reap entries whose task is no longer under `## Open` (#402a): an entry
+    # whose pid is dead was already dropped by live_lanes; this catches the
+    # other direction — the work landed, so the lane no longer owns files.
     # A sub-id (`392a`) is in flight on its base task (392); compare by base.
-    unknown = [t for t in live if _base_id(t) not in ids]
-    if unknown:
-        print("status_sync: live lane(s) %s are not under `## Open` — a lane "
-              "is working on a task the ledger calls closed" % unknown,
-              file=sys.stderr)
-        return 2
+    # Reaping (not a hard stop) is the load-bearing change: the old code
+    # returned 2 here, which stopped the whole sync for one stale entry.
+    pruned = []
+    reaped = []
+    for d in pid_live:
+        if _base_id(d.get("task")) in ids:
+            pruned.append(d)
+        else:
+            reaped.append(d)
+    if reaped:
+        print("status_sync: reaped %d dreamer(s) whose task is not under "
+              "`## Open`: %s"
+              % (len(reaped), [_entry_tag(d) for d in reaped]), file=sys.stderr)
+
+    # Normalise task ids on write (#402b): plain → int, sub-id → str. This
+    # happens BEFORE the live set is derived so current_task_ids and the
+    # surviving dreamers agree on the canonical form.
+    pruned = [_normalise_entry(d) for d in pruned]
+
+    # The live set for `current_task_ids` is exactly the survivors' tasks.
+    live = _normalise_live({d["task"] for d in pruned})
 
     want_queue = {"in_progress": len(live), "pending": len(ids) - len(live)}
     changes = []
@@ -279,7 +367,7 @@ def main(argv: list[str] | None = None) -> int:
                        % (status.get("current_task_ids"), live))
     dreamers_in = status.get("dreamers", [])
     if dreamers_in != pruned:
-        changes.append("dreamers prune %d dead lane(s) (%d -> %d)"
+        changes.append("dreamers prune %d stale lane(s) (%d -> %d)"
                        % (len(dreamers_in) - len(pruned),
                           len(dreamers_in), len(pruned)))
 
