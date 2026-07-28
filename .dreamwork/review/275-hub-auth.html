@@ -1,0 +1,430 @@
+<!doctype html>
+<!--Built from the dreamwork review template v1+c6a57f20 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
+<meta name="dreamwork-review-template" content="v1+c6a57f20">
+<meta name="dreamwork-review-ask" content="ask">
+<meta name="dreamwork-review-if-silent" content="if-silent">
+<title>"#275 · Public Dreamhub auth — three calls left, answered with measurement · research"</title>
+<style>
+/* Offline-clean by construction: no fetches, no external fonts, no images.
+   Tokens are watch.py's, value for value, because this is read inside the
+   dashboard's own iframe. */
+:root{
+  color-scheme:dark;
+  --bg:#090d16;--bg2:#0c1220;--panel:#111827;--panel2:#162033;
+  --line:#1f2937;--border:#334155;--text:#cbd5e1;--bright:#f4f7fb;
+  --lit:#e5e7eb;--muted:#98a3b5;--dim:#697589;--dimmer:#4b5568;
+  --accent:#a5b4fc;--accent2:#7dd3fc;--ok:#86efac;--warn:#fcd34d;
+  --bad:#fda4af;--ink:#050810;--radius:5px;
+  --ease:cubic-bezier(.32,.1,.2,1);--measure:78ch
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--dimmer) transparent}
+*::selection{background:rgba(165,180,252,.24);color:var(--bright)}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--dimmer);border-radius:4px}
+html{background:var(--bg);scroll-padding-top:5.5rem}
+body{margin:0;background:
+  radial-gradient(ellipse 68rem 34rem at 46% -14rem,rgba(99,102,241,.13),transparent 68%),
+  radial-gradient(ellipse 34rem 24rem at 92% 12%,rgba(14,165,233,.045),transparent 70%),
+  linear-gradient(180deg,var(--bg),#0a0f19 55%,var(--bg));
+  color:var(--text);font-family:ui-monospace,"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  font-size:.82rem;line-height:1.7;overflow-wrap:anywhere}
+a{color:var(--accent);text-underline-offset:.22em;text-decoration-thickness:1px}
+a:hover{color:var(--bright)}
+code{color:var(--lit);background:rgba(22,32,51,.72);padding:.03rem .32ch;border-radius:3px}
+pre{margin:.75rem 0;padding:.9rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.52);color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+/* syntax highlighting tokens (#339) — emitted at build time by
+   review_artifact.py as <span class="tok-…"> inside pre>code. No script in
+   the artifact; if a rule is ever lost the token takes the block's own
+   colour, so highlighting never breaks the code itself. Scoped to pre code
+   so an inline <code> snippet is never coloured by accident. */
+pre code .tok-kw{color:var(--accent)}
+pre code .tok-str{color:var(--ok)}
+pre code .tok-num{color:var(--warn)}
+pre code .tok-com{color:var(--dimmer);font-style:italic}
+pre code .tok-fn{color:var(--accent2)}
+pre code .tok-typ{color:var(--warn)}
+pre code .tok-dec{color:var(--accent)}
+pre code .tok-op{color:var(--muted)}
+pre code .tok-tag{color:var(--accent)}
+pre code .tok-attr{color:var(--accent2)}
+pre code .tok-var{color:inherit}
+strong{font-weight:inherit;color:var(--bright)}em{color:var(--lit)}
+p{margin:.62rem 0}ul,ol{margin:.55rem 0;padding-left:2.4ch}li{margin:.34rem 0}
+h1,h2,h3,h4{margin:0;font:inherit;font-weight:normal;color:var(--bright)}
+h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit);margin-top:1.4rem}
+.wrap{width:min(calc(100% - 2rem),1120px);margin:0 auto}.read{max-width:var(--measure)}
+.skip{position:fixed;z-index:99;top:.6rem;left:.6rem;transform:translateY(-180%);display:inline-flex;align-items:center;min-height:44px;padding:.6rem 1ch;background:var(--bright);color:var(--ink);border-radius:var(--radius);text-decoration:none}
+.skip:focus{transform:none;transition:transform .35s var(--ease)}
+.toprail{position:sticky;top:0;z-index:20;background:rgba(9,13,22,.91);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
+.toprail-in{width:min(calc(100% - 2rem),1120px);min-height:58px;margin:auto;display:flex;align-items:center;gap:1rem;justify-content:space-between}
+.identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
+main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
+.label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
+.quiet{color:var(--muted)}.dim{color:var(--dim)}.dimmer{color:var(--dimmer)}
+.kicker{display:flex;gap:1ch;align-items:baseline;flex-wrap:wrap}.proposal{color:var(--warn)}
+.sub{color:var(--dim);margin:.25rem 0 1.7rem}
+.lead{font-size:.9rem;line-height:1.78;color:var(--lit);max-width:76ch}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(240px,.45fr);gap:2.5rem;align-items:end}
+/* The one rule this template adds to the artifact it was cut from, and the
+   only entry in test_review_artifact.py's TEMPLATE_ONLY: tasks-page.html
+   always carries an aside, a template has to render without one. */
+.hero-grid.solo{grid-template-columns:minmax(0,1fr)}
+.version-mark{border-left:1px solid var(--accent);padding:.2rem 0 .2rem 1.25rem}
+.version-mark .big{display:block;color:var(--bright);font-size:2.4rem;line-height:1;letter-spacing:-.07em}
+.version-mark small{color:var(--dim)}
+.call{margin:1.2rem 0;padding:1rem 1.2ch;background:linear-gradient(90deg,rgba(165,180,252,.09),transparent);border-left:2px solid var(--accent);max-width:84ch}
+.notice{margin:1rem 0;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--warn);color:var(--muted);max-width:84ch}
+/* #455 — cost of silence: one sentence, not a second summary. Quieter than
+   the ask's accent rail; sits with the lead, not the status chip. */
+#if-silent,.if-silent{margin:.55rem 0 1rem;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--border);color:var(--muted);max-width:var(--measure);font-size:.84rem;line-height:1.6}
+#if-silent .key,.if-silent .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:1.1rem 0}
+.fact{background:var(--bg2);padding:.95rem}.fact .number{display:block;color:var(--bright);font-size:1.3rem;line-height:1.1}.fact .caption{display:block;color:var(--dim);margin-top:.3rem;font-size:.72rem}
+table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem;min-width:max-content}
+th,td{text-align:left;vertical-align:top;padding:.62rem .72ch;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-size:.66rem;text-transform:uppercase;letter-spacing:.065em;font-weight:normal}
+td:first-child{color:var(--lit)}.pass{color:var(--ok)}.unknown{color:var(--warn)}.fail{color:var(--bad)}
+.row-accent td{background:rgba(165,180,252,.045)}
+.scroller{overflow-x:auto}
+.summary-line{display:grid;grid-template-columns:17ch minmax(0,1fr);gap:1.5ch;padding:.5rem 0;border-top:1px solid var(--line)}
+.summary-line:last-child{border-bottom:1px solid var(--line)}
+.key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.68rem}
+.deltas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line)}
+.delta{display:grid;grid-template-columns:3.2ch minmax(0,1fr);gap:1ch;padding:.8rem 1rem .8rem 0;border-bottom:1px solid var(--line)}
+.delta b{color:var(--accent);font-weight:normal}.delta span{color:var(--muted)}
+figure{margin:1rem 0 1.7rem}.figscroll{overflow-x:auto}
+svg{display:block;height:auto}svg text{font-family:ui-monospace,"JetBrains Mono",monospace}
+figcaption{color:var(--dim);font-size:.72rem;margin-top:.4rem}
+
+/* ── the drawn page ───────────────────────────────────────────────────── */
+.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem;align-items:start}
+.frame{border:1px solid var(--border);background:rgba(9,13,22,.8);min-width:0;box-shadow:0 22px 60px rgba(0,0,0,.19)}
+.framebar{display:flex;align-items:center;flex-wrap:wrap;gap:0 1ch;min-height:42px;padding:.35rem 1ch;border-bottom:1px solid var(--line);color:var(--dim);font-size:.72rem}
+.framebar b{font-weight:normal;color:var(--lit);white-space:nowrap}
+.framebody{padding:.9rem 1.1ch}
+.mockhead{display:flex;align-items:center;gap:1ch;margin-bottom:.2rem}
+.opener{color:var(--accent)}
+.mocktitle{color:var(--bright)}
+.crumbs{color:var(--dim);font-size:.72rem;margin-bottom:1rem}
+.ctl{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.2rem 0 .7rem}
+.searchbox{flex:1;min-width:15ch;display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.searchbox span{padding:.3rem .8ch;color:var(--lit)}
+.searchbox i{font-style:normal;color:var(--dimmer);padding:.3rem .8ch;margin-left:auto}
+.sgroup{display:inline-flex;border:1px solid transparent;gap:.15rem}
+.sgbtn{padding:.22rem .7ch;color:var(--dim);border:1px solid transparent;border-radius:var(--radius);white-space:nowrap}
+.sgbtn.on{color:var(--lit);border-color:var(--border)}
+.countline{color:var(--dim);font-size:.72rem;border-bottom:1px solid var(--line);padding-bottom:.5rem;margin-bottom:.2rem}
+.countline b{color:var(--lit);font-weight:normal}
+.tk{display:block;padding:.5rem 0 .52rem;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.tk-1{display:flex;gap:1ch;align-items:baseline}
+.tkid{color:var(--dim);font-weight:normal;flex:none}
+.tkt{color:var(--text);min-width:0;flex:1}
+.tkp{flex:none;color:var(--dim);font-size:.72rem}
+.tkp.p01{color:var(--bright)}.tkp.p2{color:var(--text)}.tkp.p3{color:var(--dim)}
+.tk-2{display:block;color:var(--dim);font-size:.7rem;padding-left:5.5ch}
+.tk.claimed{border-left:2px solid var(--accent);padding-left:.9ch;margin-left:-1.1ch}
+.tk.claimed .tkt{color:var(--bright)}
+.tk.claimed .tk-2 em{color:var(--accent);font-style:normal}
+.tk.blocked .tkt{color:var(--muted)}
+.tk.landed .tkt,.tk.landed .tkid{color:var(--dim)}.tk.landed .tk-2{color:var(--dimmer)}
+.tk.unknownstate .tkt{color:var(--muted)}
+.tk.unknownstate .tk-2 em{color:var(--warn);font-style:normal}
+.tk-2 .stale{color:var(--warn);font-style:normal}
+.hilite{background:rgba(165,180,252,.16);color:var(--bright)}
+.warnline{border-left:2px solid var(--warn);padding:.45rem 0 .45rem 1ch;color:var(--muted);margin:.5rem 0}
+.warnline b{color:var(--warn);font-weight:normal}
+.calmline{color:var(--dim);padding:.45rem 0}
+.detgrid{display:grid;grid-template-columns:13ch minmax(0,1fr);gap:.05rem 1.3ch;font-size:.75rem}
+.detgrid dt{color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-size:.66rem;padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd{margin:0;color:var(--text);padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd em{font-style:normal;color:var(--dim)}
+.mockbody{color:var(--muted);font-size:.75rem;margin-top:1rem;border-top:1px solid var(--line);padding-top:.7rem}
+.peek{color:var(--dim);font-size:.72rem;border-top:1px solid var(--line);margin-top:.8rem;padding-top:.55rem}
+.annot{display:grid;grid-template-columns:3.5ch minmax(0,1fr);gap:.7ch;font-size:.72rem;color:var(--muted);margin:.45rem 0}
+.annot b{color:var(--accent2);font-weight:normal}
+
+/* ── prose furniture ──────────────────────────────────────────────────── */
+.spine{margin:1.4rem 0}
+.spine-row{display:grid;grid-template-columns:15ch 2.4rem minmax(0,1fr);align-items:stretch;min-height:88px}
+.spine-key{padding:.85rem 1rem .85rem 0;color:var(--lit);text-align:right}
+.spine-rail{position:relative}
+.spine-rail::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border)}
+.spine-row:first-child .spine-rail::before{top:50%}
+.spine-row:last-child .spine-rail::before{bottom:50%}
+.spine-dot{position:absolute;z-index:1;left:50%;top:1.15rem;width:9px;height:9px;transform:translateX(-50%);border-radius:50%;background:var(--bg);border:1px solid var(--accent);box-shadow:0 0 0 5px var(--bg)}
+.spine-body{padding:.7rem 0 .85rem 1rem;border-top:1px solid var(--line)}
+.spine-body p{color:var(--muted);margin:.2rem 0;max-width:var(--measure)}
+.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1.6rem}
+.check{padding:.55rem 0;border-top:1px solid var(--line)}
+.check b{font-weight:normal;color:var(--bad)}.check span{color:var(--ok)}
+.stages{counter-reset:stage}
+.stage{counter-increment:stage;display:grid;grid-template-columns:3.4ch minmax(0,1fr);gap:1ch;padding:.68rem 0;border-top:1px solid var(--line)}
+.stage::before{content:counter(stage,decimal-leading-zero);color:var(--accent)}
+.stage b{color:var(--lit);font-weight:normal}.stage span{color:var(--muted)}
+details{border-top:1px solid var(--line);margin:.65rem 0}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;min-height:44px;padding:.6rem 0;color:var(--muted);outline:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+ ";color:var(--dim);white-space:pre}
+details[open]>summary{color:var(--lit);padding-top:1rem}
+details[open]>summary::before{content:"\2212 "}
+.details-in{padding:0 0 1rem 1.5ch;color:var(--muted)}
+details::details-content{block-size:0;opacity:0;filter:blur(3px);overflow:hidden;transition:block-size .72s var(--ease),opacity .45s ease,filter .45s ease;transition-behavior:allow-discrete}
+details[open]::details-content{block-size:auto;opacity:1;filter:none}
+@starting-style{details[open]::details-content{block-size:0;opacity:0;filter:blur(3px)}}
+#decision{scroll-margin-top:4.75rem}
+.choice{padding:1rem 0;border-top:1px solid var(--line)}
+.choice:last-of-type{border-bottom:1px solid var(--line)}
+.choice-grid{display:grid;grid-template-columns:4.5ch minmax(0,1fr);gap:1ch}
+.choice-grid>div{max-width:var(--measure)}
+.choice-tag{color:var(--accent);font-size:1rem}
+.answer{margin-top:.4rem;color:var(--lit)}
+.approval{padding:1rem;background:linear-gradient(90deg,rgba(165,180,252,.1),transparent);color:var(--lit);margin-top:1.2rem}
+footer{margin-top:3.5rem;padding:1.2rem 0 2rem;border-top:1px solid var(--line);color:var(--dimmer)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+
+/* ── essential marks (#367) — the lawyer's flag rail, above the cliff only ──
+   A mark is a flag at a HEIGHT, not a decoration on a box: the tab anchors to
+   the reading column's right edge at the passage's top. The artifact is
+   offline-clean (no script), so this is CSS-only — each tab is a child of its
+   marked element, positioned absolutely against it; the marked element becomes
+   the positioning ancestor (.is-marked). The tab's OUTER box (.marktab)
+   inherits the body font deliberately, so `left:calc(var(--measure) + .4ch)`
+   resolves `--measure:78ch` in BODY ch (the reading column's own unit) rather
+   than the tab's smaller font — a single-element tab would place the flag at
+   the wrong column. The visible postit (.markflag) carries the .66rem size.
+   "Current" is :target (the passage navigated to); next/prev are real fragment
+   links, so the whole thing is keyboard-operable and offline-honest. Below the
+   measured cliff the rail is display:none — absent, not broken (the strip
+   below the cliff is increment 2b and his call, not this one). */
+.is-marked{position:relative;scroll-margin-top:5.5rem}
+.marktab{position:absolute;top:0;left:calc(var(--measure) + .4ch);z-index:15;display:flex;align-items:baseline;gap:.35ch;line-height:1.25;opacity:.6;transition:opacity .45s var(--ease)}
+.is-marked:target .marktab{opacity:1}
+.markflag{font-size:.66rem;line-height:1.25;padding:.28em .55em;max-width:11.5rem;background:var(--accent);color:var(--ink);border-radius:2px 4px 4px 2px;letter-spacing:-.01em;font-weight:normal;white-space:normal;hyphens:none;word-break:normal;overflow-wrap:normal;box-shadow:0 1px 0 rgba(0,0,0,.25);text-decoration:none;color:var(--ink);display:inline-block}
+.markflag:hover{color:var(--ink)}
+.marknav{display:none;align-items:baseline;gap:.15ch;font-size:.66rem}
+.is-marked:target .marknav{display:inline-flex}
+.marknav a{color:var(--ink);text-decoration:none;padding:0 .25ch;opacity:.75;border-radius:2px}
+.marknav a:hover{opacity:1}
+.marknav a:focus-visible{outline:1px solid var(--ink);outline-offset:1px}
+/* two marks closer than a tab height (a section and its first marked child —
+   the measured 29px densest pair against a 32px tab): stagger the nested tab
+   down so the flags read as two, not one chrome mass. The renderer's problem,
+   not the author's (#367). */
+.marktab[data-stagger]{margin-top:1.05rem}
+@media(max-width:859.98px){
+  /* BELOW THE CLIFF: render nothing. The worst-case ~6-word two-line tab
+     (~184px, max-width:11.5rem) fits inside .wrap down to ~830px (measured:
+     dev/capture/marktab-geometry.mjs); 860 is the existing breakpoint and
+     leaves ~26px of margin there. dev/capture/markrail.mjs re-proves the fit
+     in pixels. */
+  .marktab{display:none!important}
+}
+@media(max-width:860px){
+  .hero-grid,.frames,.deltas,.checks{grid-template-columns:1fr}
+  .facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .version-mark{border-left:0;border-top:1px solid var(--line);padding:.7rem 0 0;display:flex;align-items:baseline;gap:1rem}
+  .version-mark .big{flex:none;font-size:1.4rem;letter-spacing:-.04em}
+  .identity span{display:none}.topactions .full{display:none}.topactions{min-width:0}
+  .spine-row{grid-template-columns:9ch 1.8rem minmax(0,1fr)}.spine-key{font-size:.72rem;padding-right:.4rem}
+  .summary-line{grid-template-columns:1fr;gap:.05rem}
+  .detgrid{grid-template-columns:1fr}.detgrid dd{border-top:0;padding-top:0}
+}
+@media(max-width:480px){
+  body{font-size:.79rem}.facts{grid-template-columns:1fr}
+  .tk-2{padding-left:0}.choice-grid{grid-template-columns:3.4ch minmax(0,1fr)}
+  .topactions .status{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;transition-delay:0s!important;filter:none!important}
+  .skip:focus{transition:none}
+}
+@media print{
+  :root{color-scheme:light;--bg:#fff;--bg2:#fff;--panel:#f4f4f5;--panel2:#fff;--line:#bbb;--border:#777;--text:#111;--bright:#000;--lit:#111;--muted:#333;--dim:#444;--dimmer:#555;--accent:#273fa2;--accent2:#075985;--ok:#166534;--warn:#7c4a03;--bad:#991b1b}
+  body{background:#fff}.toprail{position:static;background:#fff;backdrop-filter:none}.topactions{display:none}
+  .frame{box-shadow:none}details::details-content{block-size:auto;opacity:1;filter:none}
+  .frame,.call,.notice,.choice{break-inside:avoid}a{color:#111;text-decoration:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href=""#ask"">Skip to the ask</a>
+<nav class="toprail" aria-label="Artifact navigation">
+  <div class="toprail-in">
+    <div class="identity"><b>hub public auth</b><span>task #275 · decision (sub-decisions Q3/Q5/Q6)</span></div>
+    <div class="topactions"><span class="status">awaiting review</span><a class="full" href="#ask">the ask</a><a href="#ctx">context</a><a href="#igc">IGC</a><a href="#q3">Q3 read/write</a><a href="#q5">Q5 /summary.json</a><a href="#q6">Q6 allowlist</a></div>
+  </div>
+</nav>
+
+<main class="wrap" id="top">
+
+<header>
+  <div class="hero-grid">
+    <div>
+      <div class="kicker"><h1>Read-only publicly, a redacted /summary.json first, you-only for v1 — and ssh is the trust root (#360).</h1><span class="proposal">research + design only — no implementation authorised; public/WAN serving stays forbidden until he rules</span></div>
+      <div class="sub">task #275 · 29 July 2026 · #360's ssh design supersedes the identity rec; this plan's threat model, TLS analysis and /data.json-leak (C2) are inherited</div>
+      <p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> public/WAN serving stays forbidden, nothing is built, and the three calls sit open &mdash; the cost of waiting is only that the design stays on the page rather than moving.</p>
+      <div id="ask" class="ask-block">
+        <div class="label">Ask</div>
+        <p class="ask-q">Three sub-decisions have been open since 2026-07-25. Each is answered below with measurement against the code, and each takes a <strong>rec</strong>. A bare <code>rec</code> takes all three; answer any singly with <code>Q3: &hellip;</code> etc. Free text and <em>&ldquo;not yet&rdquo;</em> are real answers.</p>
+        <p class="ask-answers"><span class="key">accepted answers</span>
+        <code>rec</code> &nbsp;&middot;&nbsp; per-question (<code>Q3: &hellip;</code>) &nbsp;&middot;&nbsp; free text &nbsp;&middot;&nbsp; <code>not yet</code></p>
+        <p class="ask-rejected"><span class="key">rejected, by measurement</span>
+        read+write publicly &mdash; <code>watch.py</code>&rsquo;s six write routes are remote steering of an autonomous agent (the <code>#288</code> incident class); a hosted IdP as the sole boundary &mdash; the redirect <code>#360</code> exists to make; SQRL &mdash; dormant ecosystem, Ed25519 not in stdlib.</p>
+      </div>
+      <div class="call"><strong>Recommendation: <code>rec</code> on all three &mdash; read-only publicly, redacted <code>/summary.json</code> ships first, you-only for v1.</strong>
+      The auth boundary is settled by <code>#360</code> (ssh as the trust root, an ssh tunnel documented now and a session-key-over-ssh behind a local Caddy if the phone-without-ssh case is real). What <em>this</em> ask settles is the three calls that gate <em>any</em> non-loopback serve whatever the identity layer: whether the public surface can write (no &mdash; <code>watch.py</code>&rsquo;s write routes are agent-steering), whether the leaking <code>/data.json</code> is replaced first (yes &mdash; it serves his full <code>questions.md</code> today), and who else may reach it (you only &mdash; the surface is his private thinking). Each is grounded in <code>watch.py</code>/<code>dreamhub.py</code>, not preference.</div>
+    </div>
+    <div class="version-mark" aria-label="At a glance">
+      <span class="big">6</span>
+      <small>human-authorised write routes in <code>watch.py</code> (<code>WRITE_ROUTE_HANDLERS</code>, dispatched from <code>do_POST</code>). <code>dreamhub.py</code> has <strong>zero</strong> &mdash; it is <code>do_GET</code>-only. That asymmetry is why Q3 is read-only publicly.</small>
+    </div>
+  </div>
+</header>
+
+<style>
+/* Page-local. Tokens only — no hex (template contract). */
+.ask-block{border-left:2px solid var(--accent);padding:.35rem 0 .35rem 1.3ch;margin:.4rem 0 .2rem}
+.ask-block .label{margin:0 0 .4rem;color:var(--accent)}
+.ask-block .ask-q{font-size:.92rem;line-height:1.6;color:var(--lit);margin:.15rem 0 .55rem}
+.ask-block .ask-answers,.ask-block .ask-rejected{margin:.3rem 0;font-size:.78rem;color:var(--muted)}
+.ask-block .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.ask-block code{color:var(--lit)}
+.ctx{margin:.2rem 0 1.3rem}
+.igc-legend{font-size:.82rem;line-height:1.6;color:var(--muted);margin:.3rem 0 .5rem}
+.igc-legend .g{color:var(--lit);font-weight:600}
+.igc-table{font-size:.86rem;min-width:0;width:100%;table-layout:fixed}
+.igc-table th,.igc-table td{overflow-wrap:anywhere;word-break:normal;min-width:0;vertical-align:top}
+.igc-table col.ci{width:30%}
+.igc-table col.cg{width:17.5%}
+.igc-table th{text-align:left;color:var(--dim);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em}
+.igc-table td.ci{color:var(--bright);font-weight:600}
+.igc-table .pass{color:var(--ok)}
+.igc-table .fail{color:var(--bad)}
+.igc-table .why{color:var(--muted);font-size:.8rem}
+@media (max-width:860px){
+  .igc-table,.igc-table thead,.igc-table tbody,.igc-table tr,.igc-table th,.igc-table td{display:block}
+  .igc-table col{display:none}
+  .igc-table thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  .igc-table tr{padding:.7rem 0;border-bottom:1px solid var(--line)}
+  .igc-table tr:last-child{border-bottom:0}
+  .igc-table td{padding:.2rem 0}
+  .igc-table td.ci{padding-bottom:.4rem;font-size:.84rem}
+  .igc-table td:not(:first-child)::before{content:attr(data-g);display:block;color:var(--dim);font-size:.64rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.1rem}
+}
+.subdec{margin:1.1rem 0;padding-left:1.2ch;border-left:2px solid var(--line)}
+.subdec .rec{color:var(--ok);font-weight:600}
+.subdec .qid{color:var(--accent);font-weight:600}
+.verb{font-size:.74rem;color:var(--dim)}
+.verb code{color:var(--lit)}
+</style>
+
+<p class="ctx selfref"><strong>Context.</strong> <code>#275</code> is the public-Dreamhub-auth research task. Its research half landed at <code>4b49ecb</code> (threat model, the shoo.dev primary-source read, TLS/proxy analysis, the <code>/data.json</code>-leak finding). He then split it 2026-07-28 into <strong>#359</strong> (a hosted SaaS, dependencies allowed) and <strong>#360</strong> (self-hosted, ssh-derived auth, stdlib-only), and redirected the identity recommendation away from a hosted IdP: a self-hosted tool whose auth depends on a third party&rsquo;s control plane is not self-hosted. <code>#360</code>&rsquo;s design (<code>hub-ssh-auth.md</code>, <code>4d4e705</code>) <strong>supersedes the identity layer</strong> and inherits this task&rsquo;s threat model, TLS analysis and the <code>/data.json</code> leak. What stays open on <em>this</em> entry is three sub-decisions &mdash; <span class="qid">Q3</span> read-only vs read+write, <span class="qid">Q5</span> the redacted <code>/summary.json</code>, <span class="qid">Q6</span> the allowlist &mdash; unanswered since 2026-07-25. They are answered below with measurement, and each carries a rec.</p>
+
+<section id="igc" aria-labelledby="igc-t">
+  <div class="label" id="igc-t">IGC &mdash; no boundary passes all four goals, so the answer is an order</div>
+  <p class="read">Method: <code>igc-method.md</code> (binary goals, <span class="pass">&#10004;</span>/<span class="fail">&#10007;</span>/<code>?</code>, decisive error written out, never a score). The candidate boundaries for a <em>self-hosted</em> hub, judged on the four goals that actually discriminate here.</p>
+  <p class="quiet igc-legend"><strong>Goals.</strong>
+  <span class="g">G1</span> no inbound port on his machine &nbsp;&middot;&nbsp;
+  <span class="g">G2</span> no third-party IdP holding his identity &nbsp;&middot;&nbsp;
+  <span class="g">G3</span> works on a phone away from the LAN &nbsp;&middot;&nbsp;
+  <span class="g">G4</span> a compromised credential does not grant write access to the loop</p>
+  <div class="scroller"><table class="igc-table">
+    <colgroup><col class="ci"><col><col><col><col></colgroup>
+    <thead><tr><th>boundary</th><th>G1 no inbound port</th><th>G2 no 3rd-party IdP</th><th>G3 phone off-LAN</th><th>G4 stolen cred &ne; write</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="ci">ssh tunnel <span class="rec" style="color:var(--ok);font-weight:600">document now</span></td>
+        <td data-g="G1" class="pass">&#10004;</td>
+        <td data-g="G2" class="pass">&#10004;</td>
+        <td data-g="G3" class="fail">&#10007;</td>
+        <td data-g="G4" class="pass">&#10004;</td>
+      </tr>
+      <tr>
+        <td class="ci">ssh session key + local Caddy <span style="color:var(--warn);font-weight:600">build if wanted</span></td>
+        <td data-g="G1" class="fail">&#10007;</td>
+        <td data-g="G2" class="pass">&#10004;</td>
+        <td data-g="G3" class="pass">&#10004;</td>
+        <td data-g="G4" class="pass">&#10004;</td>
+      </tr>
+      <tr>
+        <td class="ci">user / password</td>
+        <td data-g="G1" class="fail">&#10007;</td>
+        <td data-g="G2" class="pass">&#10004;</td>
+        <td data-g="G3" class="pass">&#10004;</td>
+        <td data-g="G4" class="fail">&#10007;</td>
+      </tr>
+      <tr>
+        <td class="ci">hosted IdP (CF Access / Funnel)</td>
+        <td data-g="G1" class="fail">&#10007;</td>
+        <td data-g="G2" class="fail">&#10007;</td>
+        <td data-g="G3" class="pass">&#10004;</td>
+        <td data-g="G4" class="pass">&#10004;</td>
+      </tr>
+      <tr>
+        <td class="ci">SQRL</td>
+        <td data-g="G1" class="fail">&#10007;</td>
+        <td data-g="G2" class="pass">&#10004;</td>
+        <td data-g="G3" class="fail">&#10007;</td>
+        <td data-g="G4" class="pass">&#10004;</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <p class="verb"><strong>ssh tunnel &#10007;G3:</strong> the phone needs an ssh app and a reachable sshd off-LAN (Tailscale/WG mesh or a jump host) &mdash; recovered without a public port by a mesh, which is why it is the safest default.
+  <strong>session key &#10007;G1:</strong> the <code>#233</code> LAN bind is an inbound port on his machine &mdash; but it is loopback-or-LAN, fronted by a local Caddy, never a WAN listener.
+  <strong>user/pw &#10007;G4:</strong> a sniffed/reused password over HTTP-on-LAN reaches the write routes unless TLS sits in front, and TLS fronting it makes user/pw redundant.
+  <strong>hosted IdP &#10007;G2:</strong> the IdP&rsquo;s control plane holds identity &mdash; the exact redirect <code>#360</code> exists to make. <strong>SQRL &#10007;G3/G2-tech:</strong> dormant ecosystem, Ed25519 not in stdlib (the same wall that blocked shoo).</p>
+  <p class="read"><strong>Survivor.</strong> No single idea passes all four. The ssh <em>tunnel</em> fails only G3 (phone convenience); the ssh <em>session key</em> fails only G1 (an already-chosen LAN bind). So the recommendation is not one boundary but an <strong>order</strong>: document the tunnel now (<code>#360</code> &sect;6, zero code); build the session key behind a local Caddy if the phone-without-ssh case is real. The three sub-decisions below are the ruling that gates both.</p>
+</section>
+
+<section id="q3" aria-labelledby="q3-t">
+  <div class="label" id="q3-t">Q3 &mdash; read-only, or read+write, publicly?</div>
+  <div class="subdec">
+  <p class="read"><span class="qid">Q3</span> &mdash; <span class="rec">rec: read-only publicly.</span> Writes stay loopback / trusted-LAN / ssh-tunnel. Measured, not preferred:</p>
+  <p class="read"><strong>(a) The hub and the watch dashboard are different surfaces.</strong> <code>dreamhub.py</code> is a <strong>read-only aggregate</strong> &mdash; its handler serves only <code>GET /hub.json</code>, <code>GET /rows</code> and <code>GET /</code> (<code>do_GET</code> at <code>dreamhub.py:831</code>), writes nothing outside <code>~/.config/dreamwork/hub/</code>, and has <strong>no <code>do_POST</code></strong>. <code>watch.py</code> is the other surface: it carries six write routes (<code>WRITE_ROUTE_HANDLERS</code>, dispatched from <code>do_POST</code> at <code>watch.py:11651</code>) &mdash; <code>/answer</code>, <code>/ask</code>, <code>/comment</code>, <code>/command</code>, <code>/tint</code>, <code>/run-mode</code> &mdash; and every one appends to a durable file the loop reads back and acts on. <code>/command</code> with <code>do-now</code> is remote steering of an autonomous agent.</p>
+  <p class="read"><strong>(b) A public write route is the <code>#288</code> incident handed to the internet.</strong> <code>#288</code> proved a same-UID process can kill a live protected service to satisfy an invented premise; <code>#358</code>&rsquo;s framing names the boundary that matters &mdash; the body &ldquo;can only kill itself&rdquo;. A public <code>/command</code> makes the credential the head&rsquo;s equal: a stolen session cookie points the agent at arbitrary work, up to commit / push / deploy. Read-only publicly bounds a compromised credential to <strong>data leak</strong>; read+write publicly bounds it to <strong>agent takeover</strong>. A v1 should not make that trade.</p>
+  </div>
+</section>
+
+<section id="q5" aria-labelledby="q5-t">
+  <div class="label" id="q5-t">Q5 &mdash; may a redacted /summary.json ship before any public serve?</div>
+  <div class="subdec">
+  <p class="read"><span class="qid">Q5</span> &mdash; <span class="rec">rec: yes &mdash; it is the blocker for any non-loopback serve.</span> The plan&rsquo;s C2 says <code>/data.json</code> leaks full documents; <strong>verified against <code>collect()</code> (<code>watch.py:10756</code>)</strong> it is worse &mdash; the loop&rsquo;s whole operating state, including his unfinished thinking:</p>
+  <ul class="read" style="margin:.3rem 0 .7rem">
+    <li><strong>Most sensitive &mdash; his words and private direction.</strong> <code>files.questions.md</code> (typed questions, answers, notes in full), <code>files.DREAMWORK.md</code>, <code>files.lessons.md</code>, <code>questions_open</code>/<code>answered_entries</code> (parsed bodies), <code>answers_open</code>/<code>answers_answered</code> (his channel <em>to</em> the loop), <code>pending_handoffs</code>, <code>dreams</code>/<code>dreams_archive</code> (transcripts).</li>
+    <li><strong>Operational state &mdash; reveals pace and where it is blocked.</strong> <code>status</code> (full <code>status.json</code>: queue, current tasks, agent ownership, deployed pid), <code>git</code>, <code>burndown</code>, <code>deployed</code>.</li>
+    <li><strong>Safe to expose.</strong> <code>open_questions</code> (a count), <code>questions_health</code>/<code>answers_health</code>, <code>target</code>, <code>generated</code>, <code>tint</code>, <code>run_mode</code>, <code>posture</code>, <code>skill_identity</code>.</li>
+  </ul>
+  <p class="read">A redacted <code>/summary.json</code> keeps the counts, health and metadata and <strong>drops every full-text and parsed-entry field</strong>. <code>#360</code>&rsquo;s option 2 already carries it as a hard prerequisite; Q5 makes it a shippable task of its own, decoupled from the auth choice. A credential should not gate a route that then leaks <code>questions.md</code> in full.</p>
+  </div>
+</section>
+
+<section id="q6" aria-labelledby="q6-t">
+  <div class="label" id="q6-t">Q6 &mdash; who besides you should ever reach this hub?</div>
+  <div class="subdec">
+  <p class="read"><span class="qid">Q6</span> &mdash; <span class="rec">rec: you only, for v1.</span> The surface (even redacted) carries the loop&rsquo;s working state, and any non-redacted path carries his questions, answers and transcripts &mdash; adding a second identity is a decision to share his private thinking, which is his. <code>#360</code>&rsquo;s option 2 makes a second identity <em>mechanically</em> cheap (one <code>ssh &hellip; issue-session</code> per device, per-device revocable), so the allowlist needs no multi-identity code up front. Starting at &ldquo;you only&rdquo; widens later for one issue-command; starting wide leaks first and narrows by revocation. v1 single-operator also sidesteps the &ldquo;whose data is this&rdquo; question entirely.</p>
+  </div>
+</section>
+
+<section id="rel" aria-labelledby="rel-t">
+  <div class="label" id="rel-t">Relationship to #360, #359 and #276</div>
+  <p class="read">The auth boundary itself is <strong>#360</strong>&rsquo;s to rule (ssh tunnel now; session-key-over-ssh if the phone case is real). This ask settles only the three calls that gate <em>any</em> non-loopback serve. <strong>#359</strong> (the hosted SaaS) is a different product where stdlib-only does not apply and a hosted IdP is back in scope &mdash; out of scope here. <strong>#276</strong> (LAN bearer token) is superseded by <code>#360</code> option 2 if the ssh-issued session lands; until then it stands.</p>
+  <div class="facts">
+    <div class="fact"><span class="number">0</span><span class="caption">write routes in dreamhub.py &mdash; it is GET-only, so exposing the hub is data-leak risk alone</span></div>
+    <div class="fact"><span class="number">6</span><span class="caption">write routes in watch.py &mdash; /command with do-now is remote steering of the agent (#288 class)</span></div>
+    <div class="fact"><span class="number">~10</span><span class="caption">full-text / parsed fields /data.json serves today &mdash; the /summary.json redaction drops all of them</span></div>
+    <div class="fact"><span class="number">0</span><span class="caption">non-loopback binds / tunnels / off-host listeners opened by this lane &mdash; research only</span></div>
+  </div>
+</section>
+
+<footer>Plan: <code>.dreamwork/docs/plans/hub-public-auth.md</code> (&sect;11) &middot; <code>hub-ssh-auth.md</code> (<code>#360</code>) &middot; research + design only, nothing implemented, no bind/tunnel/listener/<code>.py</code> touched &middot; supersedes <code>#275</code>&rsquo;s identity rec; inherits its threat model <span class="dimmer">· built from review template v1+c6a57f20</span></footer>
+
+</main>
+</body>
+</html>

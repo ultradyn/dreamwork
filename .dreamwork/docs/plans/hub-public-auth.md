@@ -460,3 +460,166 @@ These are the decisions that gate any further work, in priority order:
   not public.
 - The operator's IdP preference (Google account? GitHub?) — no primary source;
   that is open question 4.
+
+---
+
+## 11. Supersedence, and the three sub-decisions still open (Q3 / Q5 / Q6)
+
+> This section was added by the `hubauth` research lane (brief #275, 2026-07-29).
+> It reconciles this plan with `#360`'s ssh-rooted design and answers the three
+> sub-decisions the human has left open since 2026-07-25, **with measurement
+> rather than opinion**. §§1–10 above keep their value unchanged: the threat
+> model, the asset inventory, the shoo.dev primary-source analysis, the TLS/proxy
+> analysis and the `/data.json`-leak finding (C2) are all inherited by `#360`
+> rather than re-derived there.
+
+### 11.0 What `#360` superseded, and what it did not
+
+`#360` (`hub-ssh-auth.md`, `4d4e705`) **supersedes this plan's identity
+recommendation** — Cloudflare Access / Tailscale Funnel as the authenticating
+boundary — because the human refused a self-hosted tool whose auth depends on a
+third party's control plane (`#360`, watch 2026-07-28 01:39). What survives from
+this plan, and what `#360` itself says it inherits:
+
+- the **threat model and asset inventory** (§2);
+- the **TLS / reverse-proxy analysis** (§5 option B) — re-pointed at a *local
+  Caddy* rather than Cloudflare/Tailscale, but the boundary shape holds;
+- the **`/data.json`-leak finding (C2)** — `#360`'s option 2 carries a redacted
+  `/summary.json` as a hard prerequisite, citing this plan as its source;
+- the **stdlib-only constraint (C1)** and the **writes-are-steering constraint
+  (C3)** — both unchanged.
+
+So the four candidate boundaries for a *self-hosted* hub are now, in cost order:
+the **ssh tunnel** (`#360` option 1, zero code, works today), the **ssh-issued
+session key** (`#360` option 2, the one worth building, supersedes `#276`'s
+static bearer token), **user/password** (`#360` option 3, fallback), and
+**SQRL** (`#360` option 4, an honest "no"). A hosted IdP as the *sole* boundary
+is out — it is the redirect this task exists to make. **Read §§1–4 of this plan
+and all of `hub-ssh-auth.md` before the three answers below; they are the
+ground, not decoration.**
+
+### 11.1 Q3 — read-only, or read+write, publicly? → **read-only publicly**
+
+Measured against the code, not argued from preference. Two facts decide it.
+
+**(a) The hub and the watch dashboard are different surfaces with different
+blast radii.** `dreamhub.py` is a **read-only aggregate**: its handler serves
+only `GET /hub.json`, `GET /rows` and `GET /` (`dreamhub.py:831` `do_GET`), it
+writes nothing outside `~/.config/dreamwork/hub/`, and it has **no `do_POST`**.
+Exposing the *hub* behind auth carries only the data-leak risk this plan's §2
+inventories. `watch.py` is the other surface: it carries six human-authorised
+write routes (`WRITE_ROUTE_HANDLERS`, dispatched from `do_POST` at
+`watch.py:11651`) — `/answer`, `/ask`, `/comment`, `/command`, `/tint`,
+`/run-mode` — and every one of them appends to a durable file the loop reads
+back and acts on. **`/command` with `do-now` is remote steering of an
+autonomous coding agent**, and `/run-mode` changes how hard it runs.
+
+**(b) A public write route is the `#288` incident handed to the internet.**
+`#288` proved a same-UID process can kill a live protected service to satisfy
+an invented premise; the human's own `#358` framing names the boundary that
+matters: the body *"can only kill itself"*, never the head. A public
+`/command` makes the credential the head's equal — a stolen session cookie
+becomes the ability to point the agent at arbitrary work, up to commit / push /
+deploy, through exactly the authority surface `#288` surfaced. Read-only
+publicly bounds the worst case of a compromised credential to **data leak**;
+read+write publicly bounds it to **agent takeover**. That is not a trade-off a
+v1 should make.
+
+**Answer: read-only publicly.** The public/LAN surface serves reads only;
+writes stay loopback / trusted-LAN / ssh-tunnel (the transports where the
+operator's device is already authenticated). This is C3 restated as a ruling,
+and it is the safe default regardless of which identity option (`#360` 1–3)
+lands. A future read+write public surface is a separate, larger design that
+would need its own per-route authorisation, a CSRF story beyond the existing
+Host+Origin check, and a human ruling — none of which this task authorises.
+
+### 11.2 Q5 — may a redacted `/summary.json` ship before any public serve? → **yes, and it is the blocker**
+
+This plan's C2 says `/data.json` leaks full documents. **Verified against the
+live `collect()` (`watch.py:10756`)**, the payload is worse than "full
+documents": it is the loop's whole operating state, including the operator's
+unfinished thinking. The fields, classified by sensitivity:
+
+- **Most sensitive — the operator's words and private direction.**
+  `files.DREAMWORK.md` (full project goals/config), `files.questions.md`
+  (**the operator's typed questions, answers and notes, in full** — unfinished
+  thinking, the ceiling of what a public design must protect), `files.lessons.md`
+  (full lessons file), `questions_open` / `answered_entries` (parsed question
+  bodies), `answers_open` / `answers_answered` (the `/answers` channel — his
+  questions *to* the loop), `pending_handoffs` (landed-work records), `dreams` /
+  `dreams_archive` (agent working-state transcripts).
+- **Operational state — reveals pace, volume and where the loop is blocked.**
+  `status` (full `status.json`: queue, current tasks, agent ownership, deployed
+  pid), `git` (recent commits), `burndown` (historical task-count time series),
+  `deployed` (serving revision).
+- **Counts / health / metadata — safe to expose.** `target`, `generated`,
+  `open_questions` (a count), `questions_health` / `answers_health`,
+  `linkable_paths`, `tint`, `run_mode`, `posture`, `plugin_commands`,
+  `skill_identity`, `files.skill-version`.
+- **Reviews** — the design artifacts. Arguably meant-to-be-shared proposals,
+  but each carries the operator's decision context, so they are **not** safe by
+  default; a `/summary.json` should link them rather than inline them.
+
+**Answer: yes.** A redacted `/summary.json` keeps the counts, health, and
+operational metadata and **drops every full-text and parsed-entry field** —
+no `files.*` document bodies, no `questions_open`/`answered_entries`, no
+`answers_*`, no `pending_handoffs`, no `dreams*`. It is the blocker for any
+public or trusted-LAN exposure whatever else is chosen: the existing
+`/data.json` is unfit to expose, and a session cookie (or any credential)
+should not gate a route that then leaks `DREAMWORK.md` / `questions.md` /
+`lessons.md` in full. `#360`'s option 2 already carries this as a hard
+prerequisite; Q5 makes it its own shippable task, decoupled from the auth
+choice. **Rec: yes, design and ship `/summary.json` as its own task before any
+non-loopback serve.**
+
+### 11.3 Q6 — who besides you should ever reach this hub? → **you only, for v1**
+
+Measured against what the surface exposes and what multi-identity costs.
+
+- **The data is the operator's private thinking.** §11.2 shows the public
+  surface (even redacted) carries the loop's working state, and any
+  non-redacted path carries his questions, answers and dream transcripts.
+  Adding a second identity is not a mechanical act — it is a decision to share
+  that, which is the operator's, not the loop's.
+- **`#360`'s option 2 makes a second identity mechanically cheap** (one
+  `ssh … issue-session` per device, per-device revocable), so the *allowlist*
+  does not need to be designed up front for more than one entry. v1
+  single-operator keeps it trivially "the operator's session" and avoids both
+  the multi-identity code and the "whose data is this" question entirely.
+- **The cost of guessing wrong is low in one direction only.** Starting at
+  "you only" and widening later is one issue-command; starting at "anyone
+  authed by the IdP" and narrowing later is a revocation and a data-leak
+  already happened. The safe default is the narrow one.
+
+**Answer: you only, for v1.** The authorisation list is one identity (or one
+ssh key / one session cookie). No multi-identity code, no role model, no shared
+surface — and the path to a second person is documented (`#360` option 2 +
+one issue-session) rather than designed speculatively.
+
+### 11.4 The IGC, against the goals that actually discriminate
+
+Per the brief: binary goals, `✘` with the decisive error written out, against
+*no inbound port on his machine* · *no third-party IdP holding his data* ·
+*works on a phone away from the LAN* · *a compromised credential does not grant
+write access to the loop*. The candidate boundaries for a self-hosted hub:
+
+| boundary | no inbound port | no 3rd-party IdP | phone off-LAN | stolen cred ≠ write |
+|---|---|---|---|---|
+| **ssh tunnel** (`#360` opt 1) | ✔ | ✔ | ✘ phone needs an ssh app + a reachable sshd off-LAN (Tailscale/WG or a jump host) | ✔ hub holds no credential |
+| **ssh session key** (`#360` opt 2) | ✘ the `#233` LAN bind is an inbound port on his machine | ✔ ssh is the root, Caddy is local | ✔ phone is just a browser on the LAN | ✔ read-only publicly (Q3) |
+| **user/password** (`#360` opt 3) | ✘ LAN bind | ✔ | ✔ | ✘ a sniffed/reused password over HTTP-on-LAN reaches the write routes unless TLS sits in front — and TLS fronting it makes this redundant |
+| **hosted IdP** (CF Access / Tailscale Funnel) | ✘ | ✘ the IdP's control plane holds identity — the redirect `#360` exists to make | ✔ | ✔ (read-only) but fails the second goal |
+| **SQRL** (`#360` opt 4) | ✘ | ✔ | ✘ no alive client ecosystem | ✔ but moot — Ed25519 not in stdlib |
+
+**What survives:** nothing passes all four. The ssh **tunnel** passes three and
+fails only the phone-off-LAN convenience (and even there, a Tailscale mesh to
+the sshd recovers it without a public port). The **ssh session key** behind a
+local Caddy passes three and fails only "no inbound port" — and that port is a
+loopback-or-LAN bind the operator already chose to open (`#233`), fronted by a
+local proxy, not a public WAN listener. **Those two are the design.** User/pw
+fails the credential goal standalone; the hosted IdP is the superseded one;
+SQRL is dead. So the recommendation is not "one boundary" but an **order**:
+document the tunnel now (`#360` §6, zero code), and if the phone-without-ssh
+case is real, build the ssh session key behind a local Caddy, read-only
+publicly, redacted `/summary.json` first, operator-only allowlist. The three
+sub-decisions above are the ruling that gates it.
