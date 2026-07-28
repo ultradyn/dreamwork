@@ -3400,6 +3400,21 @@ Next id: **425**
   arriving, is a transition like any other, and this repo's rule has no size floor
   · needs `watch-design.md` updated in the same commit as any code, per the styleguide contract
   · related: **#367**
+  · **IN PROGRESS 2026-07-28 17:28** — `ccc @glm52`, `.worktrees/417`, brief
+  `417-burndown-commits-proposal.md`. **Proposal only: it commits the artifact and NO `watch.py`
+  change**, and may modify `watch.py` uncommitted purely to render the candidates. That split is the
+  `#367` lesson applied before it costs anything — what ships is what gets argued with, and a
+  provisional treatment in the tree becomes the default by inertia
+  · four candidates priced, `copy only` included deliberately as the option that spends nothing and
+  that every other has to beat. Two costs a screenshot cannot show are demanded per candidate: which
+  break the panel's **constant-height premise** that its guard measures, and which need a **new
+  motion idiom** under `transitions.md`
+  · **the runner cannot see and that is fine here** — the artifact's job is to put pixels in front of
+  *him*, not the lane. Renders come from the live ledger history rather than a fixture, because a
+  treatment that survives three tidy buckets and fails on the real distribution is what this exercise
+  exists to catch
+  · note for whoever reads the panel next: `#218`'s median line landed in it at 17:19, so it is
+  fuller than the last person to look at it remembers
 
 - **#418** — a `#264` in any rendered text should be hoverable for its info and clickable to its
   task page · P2 · Web UI/cross-cutting · origin: **human** · **human via watch `add-idea`
