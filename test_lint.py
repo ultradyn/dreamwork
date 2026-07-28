@@ -1680,6 +1680,43 @@ class TestStatusTaskIds:
         t = self.build(tmp_path, task="t", current_task_ids=[True])
         assert self.rows(t, lint.ERROR)
 
+    def test_a_string_sub_id_is_accepted_not_rejected(self, tmp_path):
+        """#402b — a sub-id like ``"392a"`` is a LEGITIMATE task id.
+
+        The contract the code already implies (status_sync keeps the string
+        form by design, #402a): a plain id is an int, a sub-id is a string,
+        and only a *quoted plain* id is wrong. Today lint rejects every
+        string, which rejects a legitimate sub-id — the live symptom.
+
+        Precondition (asserted, not trusted): the field carries an int AND a
+        str at once, so the test's meaning needs both types present. The
+        sub-id must look like a real sub-id (digits then one letter), the way
+        a lane's task actually reads.
+        """
+        ids = [263, "392a"]
+        assert {type(i) for i in ids} == {int, str}, \
+            "precondition: an int and a str coexist — both types present"
+        assert any(isinstance(i, str) and re.match(r"^\d+[a-z]$", i) for i in ids), \
+            "precondition: at least one string sub-id of the N+letter shape"
+        t = self.build(tmp_path, task="on #263 and #392a",
+                       current_task_ids=ids)
+        assert not self.rows(t, lint.ERROR), \
+            "a legitimate sub-id must lint clean (the #402b fix)"
+
+    def test_a_quoted_plain_id_is_still_an_error(self, tmp_path):
+        """#402b NEGATIVE — widening must not remove the check that earned it.
+
+        The widening accepts sub-id strings (``"392a"``); it must STILL reject
+        a *quoted plain* id (``"263"``), which is the silent-data-loss shape
+        this check exists for: it looks right, reads right to a human, and
+        matches no task row. A widening with no negative test has removed a
+        check rather than improved it.
+        """
+        t = self.build(tmp_path, task="t", current_task_ids=["263"])
+        errs = self.rows(t, lint.ERROR)
+        assert errs, "a quoted plain id must remain an ERROR after the widening"
+        assert "263" in errs[0]
+
 
 class TestReviewArtifacts:
     """#329 — lint WARNs when a built review artifact's frame is stale.
@@ -2452,6 +2489,68 @@ class TestHandoffs:
     def test_the_check_is_registered_in_run_checks(self):
         import inspect
         assert "check_handoffs(dw, watch, rep)" in inspect.getsource(lint.run_checks)
+
+    def test_a_two_sha_handoff_is_recognised_not_malformed(self, tmp_path):
+        """#415 — a task landing in two commits is the ordinary case.
+
+        #411 landed as two commits (the fix `54c68e8` plus the lint count
+        `25a3fe4`); the lane honestly wrote both as ``landed `54c68e8`
+        `25a3fe4``` and lint reported *a hand-off entry the grammar does not
+        recognise*. The lane was right and the format was wrong. This test
+        uses the REAL two-sha line recovered from git history (`f7d5bea`),
+        not a fixture invented to fail — a red from a defect that really
+        existed is worth more than a synthetic one.
+
+        The task is already landed in the ledger here, so the delivery WARN
+        does not fire; the assertion is that the line is NOT malformed.
+        """
+        import subprocess
+        got = subprocess.run(
+            ["git", "-C", str(Path(lint.__file__).parent),
+             "show", "f7d5bea:.dreamwork/handoffs.md"],
+            capture_output=True, text=True)
+        if got.returncode != 0:
+            pytest.skip("history not present (zip install); the fixture "
+                        "test below still covers it")
+        # Recover the REAL #411 two-sha line from history, matching by its
+        # stable two-sha prefix rather than copying the whole long line.
+        two_sha_line = None
+        for ln in got.stdout.splitlines():
+            if "landed `54c68e8` `25a3fe4`" in ln and ln.lstrip().startswith("- **#411**"):
+                two_sha_line = ln
+                break
+        assert two_sha_line is not None, \
+            "the real #411 two-sha line is no longer at f7d5bea — recover it"
+        # Precondition (derived at runtime): the line carries TWO backticked
+        # shas after `landed`, which is the shape the single-sha grammar
+        # rejects. Counting, not a literal, so the test's meaning survives.
+        after_landed = two_sha_line.split("landed", 1)[1].split("·", 1)[0]
+        sha_count = after_landed.count("`") // 2
+        assert sha_count >= 2, "precondition: two shas present, not one"
+        # #411 is landed in the live ledger, so the delivery WARN is silent;
+        # only the malformed WARN would fire today.
+        handoffs = ("# Hand-offs\n\n## Pending\n\n" + two_sha_line +
+                    "\n\n## Folded\n")
+        warns = self._warns(tmp_path, self.LEDGER, handoffs)
+        malformed = [w for w in warns if "grammar" in w]
+        assert malformed == [], \
+            "a two-sha hand-off must not be malformed (#415): %s" % malformed
+
+    def test_a_zero_sha_pending_handoff_is_still_malformed(self, tmp_path):
+        """#415 NEGATIVE — widening the sha count must not swallow zero.
+
+        The grammar widens from one sha to one-or-more. A Pending line with
+        NO sha at all — `· landed · ...` — is still malformed: it states no
+        commit, so the delivery signal (which commit landed) is empty. A
+        widening with no negative test has removed a check rather than
+        improved it, and the easy failure of a sha-count widening is
+        accepting the empty case.
+        """
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed · 2026-07-28 14:30 · by "
+                    "dreamer-5 — the fix\n\n## Folded\n")
+        warns = self._warns(tmp_path, self.LEDGER, handoffs)
+        assert any("#5" in w and "grammar" in w for w in warns), warns
 
 
 class TestCitedShas:

@@ -1224,19 +1224,44 @@ def check_status(dw: Path, rep: Report) -> None:
     rep.add(OK, "status.json", detail)
 
 
-def _bad_ids(value: object) -> list[str]:
-    """The non-integer members of a task-id list, rendered for a human.
+# #402b — the id vocabulary. A plain id is an integer (`263`); a sub-id is a
+# string of digits then one letter (`"392a"`); a quoted plain id (`"263"`) is
+# always wrong. This mirrors the hand-off id grammar (`watch.HANDOFF_ID_TOKEN`,
+# `#401`) — `\d+[a-z]?` — so there is ONE sub-id shape across the two surfaces
+# rather than a second definition a future writer must keep aligned. A live
+# set legitimately holds int and str at once (status_sync._normalise_live keeps
+# the string form by design, #402a), so this accepts the sub-id and rejects
+# only the quoted-plain shape that matches no task row.
+SUB_ID = re.compile(r"^\d+[a-z]$")
 
+
+def _is_sub_id(v: object) -> bool:
+    """True for a legitimate sub-id string (``"392a"``), False otherwise."""
+    return isinstance(v, str) and SUB_ID.match(v) is not None
+
+
+def _bad_ids(value: object) -> list[str]:
+    """The ill-typed members of a task-id list, rendered for a human.
+
+    A member is BAD when it is neither a plain int nor a sub-id string: a
+    quoted plain id (``"263"``), a bool, a float, or a malformed string.
     `type(v) is not int` rather than `isinstance` on purpose: `isinstance(True,
     int)` is True in Python, so the natural spelling waves a bool through. That
     is not a hypothetical here — the sibling field `in_flight` was written as a
     bool by this very loop, and the dashboard rendered `doing: true` for forty
     minutes before #327 caught it. A bool arriving in this list is the same
     writer making the same slip one key over.
+
+    A sub-id string (``"392a"``) is NOT bad: `current_task_ids` can
+    legitimately carry one (#402b), because a lane may be `#392a` and
+    `status_sync` derives the field from that `task` value. Only a quoted PLAIN
+    id (``"263"``) is bad — it looks right, reads right to a human, and matches
+    no task row, silently.
     """
     if not isinstance(value, list):
         return []          # the list-ness of the field is STATUS_TYPES' job
-    return [repr(v) for v in value if type(v) is not int]
+    return [repr(v) for v in value
+            if type(v) is not int and not _is_sub_id(v)]
 
 
 def check_status_task_ids(dw: Path, rep: Report) -> None:
@@ -1287,7 +1312,9 @@ def check_status_task_ids(dw: Path, rep: Report) -> None:
 
     if problems:
         rep.add(ERROR, "status.json", "; ".join(problems) +
-                " — ids are integers; a quoted id matches no task row, silently")
+                " — a plain id is an integer (263) and a sub-id is a string "
+                "(\"392a\"); a quoted plain id (\"263\") matches no task row, "
+                "silently")
 
 
 def check_status_agrees_with_ledger(dw: Path, watch, rep: Report) -> None:
@@ -2396,11 +2423,34 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
         return  # the parser lives in watch; without it this check cannot run
     pending, folded_ids, malformed = watch.parse_handoffs(text)
 
+    # #415 — a task landing in two commits is the ordinary case. The parser's
+    # Pending grammar (`watch.HANDOFF_PENDING_RE`) matches a SINGLE backticked
+    # sha, so an honest `· landed \`54c68e8\` \`25a3fe4\` ·` lands in `malformed`
+    # even though every required field is present. Recognise that shape here
+    # and reclassify it: it is a valid multi-sha hand-off, not a garbled line.
+    # The grammar lives in watch.py (held by another lane); this is a lint-local
+    # widening on top of `malformed`, the same bucket, so it does not touch the
+    # parser's return shape. A line with ONE sha parses cleanly and never reaches
+    # malformed, so this only ever admits the two-or-more case.
+    #
+    # The pattern mirrors the single-sha grammar's shape: the id bold head, then
+    # `landed`, then one-or-more backticked shas, then `· <ts> · by <claimer>`.
+    # It is anchored on the `by <claimer>` tail so a line missing that field (the
+    # zero-sha case, `· landed ·`) does NOT match — that stays malformed.
+    multi_sha_handoff = re.compile(
+        r"^-\s+\*\*#" +                       # the bold id head (bare, any id)
+        r"[\w/]+\*\*\s*·\s*landed\s+" +       # `· landed `
+        r"(?:`[^`\n]+`\s*){2,}" +             # two-or-more backticked shas
+        r"·\s*.+?\s*·\s*by\s+.+?\s*$")        # `· <ts> · by <claimer> — what`
+    truly_malformed = [(nid, line) for nid, line in malformed
+                       if not multi_sha_handoff.match(line.strip())]
+    multi_sha_count = len(malformed) - len(truly_malformed)
+
     # Format: an entry head the grammar does not recognise, or one in the wrong
     # section (#401/#406). Always named — never silenced by a same-id fold
     # record. A Pending-shaped line under `## Folded` is the #406 defect; a
     # fold for the same id must not hide it (that was the silent path).
-    for nid, line in malformed:
+    for nid, line in truly_malformed:
         rep.add(
             WARN, "handoffs.md",
             f"#{nid} has a hand-off entry the grammar does not recognise "
@@ -2410,10 +2460,14 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
 
     # Coverage (#395 idiom / #401): how many of each bucket the parser saw.
     # A check that counts what it examined cannot silently stop examining.
-    rep.add(
-        OK, "handoffs.md",
-        f"{len(pending)} pending, {len(folded_ids)} folded, "
-        f"{len(malformed)} malformed")
+    # The multi-sha count is derived at runtime from `malformed`, never a
+    # literal — and it is named separately so a recognised two-sha hand-off
+    # cannot hide inside `malformed` counting as a defect (#415).
+    coverage = (f"{len(pending)} pending, {len(folded_ids)} folded, "
+                f"{len(truly_malformed)} malformed")
+    if multi_sha_count:
+        coverage += f", {multi_sha_count} multi-sha hand-off(s) recognised"
+    rep.add(OK, "handoffs.md", coverage)
 
     ledger_path = dw / "tasks.md"
     if not ledger_path.exists():

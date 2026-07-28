@@ -243,7 +243,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 |---|---|---|---|
 | `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | One `- **#N**` entry per task; a combined head `- **#N/#M**` is a single entry naming every id in its ids-only bold span, and both ledger readers (`watch.parse_ledger`, `lint.check_ledger_sections`) count every id — so `#7/#8` is two ids in one entry, not one. `Next id: **N**` in the header. Ids are **permanent**, so a duplicate is unrecoverable and `Next id` must exceed every id present. Origin is recorded forward-only from #216 — the section below | `lint.py` |
 | `.dreamwork/status.json` | `watch.py`'s status reader; **`dreamhub.py`** | Valid JSON, and now an interface — see below | `lint.py` |
-| `.dreamwork/handoffs.md` | the coordinator's tick; `watch.py`'s status panel; `lint.py` | Append-only. **Section order is `## Folded` then `## Pending`** so an EOF append lands under Pending (the instruction is true). Id grammar: plain `#N`, sub-id `#Na`, or combined `#N/#M` in the bold head. Pending line: `- **#…** · landed \`<sha>\` · <ts> · by <claimer> — what`. Folded line: `- **#…** → folded (ts): …`. Nothing moves; correlation normalises sub-id/combined to parent digit id(s) against `## Open`. A bolded-id line in the wrong section or with an unrecognised head is malformed (loud), never silent | `lint.py` |
+| `.dreamwork/handoffs.md` | the coordinator's tick; `watch.py`'s status panel; `lint.py` | Append-only. **Section order is `## Folded` then `## Pending`** so an EOF append lands under Pending (the instruction is true). Id grammar: plain `#N`, sub-id `#Na`, or combined `#N/#M` in the bold head. Pending line: `- **#…** · landed \`<sha>\` [\\\`<sha>\\\`…] · <ts> · by <claimer> — what` — one **or more** backticked shas (#415); a task landing in two commits is the ordinary case. Folded line: `- **#…** → folded (ts): …`. Nothing moves; correlation normalises sub-id/combined to parent digit id(s) against `## Open`. A bolded-id line in the wrong section or with an unrecognised head is malformed (loud), never silent | `lint.py` |
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
 | `.dreamwork/run-mode` | `watch.py` dashboard + the coordinator/main dreamer on tick and via `watch-events.log` | One line: one name from `watch.py`'s `RUN_MODES` (`lackadaisical`, `hot`, `assisted`). Absent/unknown → `lackadaisical`. Machine-local, **gitignored** — operational posture, not a portable project default. `status.json` may mirror it later but never owns it | `lint.py` |
@@ -501,6 +501,56 @@ ledger writer has not folded yet, and inferring liveness from surviving
 artefacts is the wrong answer #363 proved by building it (#381). The
 dashboard reads the file; the coordinator's tick reads the file; lint reads
 the file. Three readers, one writer-append-each, no inference.
+
+### Multi-sha hand-off (#415)
+
+A task landing in **two commits is the ordinary case**: the fix plus a
+follow-up (a lint count, a doc, a test the brief demanded). `#411` landed as
+`54c68e8` (the fix) and `25a3fe4` (the lint count); the lane honestly wrote
+both as ``landed `54c68e8` `25a3fe4``` and lint reported *a hand-off entry
+the grammar does not recognise*. **The lane was right and the format was
+wrong.** It was hand-normalised to the final sha with the other in prose,
+which loses the structure: a tool can find the first commit no longer, only
+a human reading the sentence.
+
+The Pending line therefore accepts **one or more** backticked shas after
+`landed`, space-separated:
+
+```text
+- **#411** · landed `54c68e8` `25a3fe4` · 2026-07-28 14:08 · by grok (wt/411) — …
+```
+
+Three decisions, each stated because the grammar is now a widening:
+
+- **Order is written-order (landing first), not enforced.** The lane writes
+  the shas in the order it made them, and nothing here reorders them. The
+  first sha is the one that did the work; a later sha is a follow-up. lint
+  does not assert the order — a hand-off is a report, and a reader that
+  needed a specific order would be reading the wrong field (the ledger's
+  `Recently landed` is where order is recoverable from `git log`).
+- **No cap.** Two is ordinary; three has happened; capping at a number would
+  re-introduce the exact defect this exists to fix (an honest N-sha landing
+  rejected as malformed). A hand-off with no `by <claimer>` tail is still
+  malformed, and that anchor — not a sha count — is what distinguishes a
+  real entry from a garbled one.
+- **A zero-sha hand-off is still malformed.** ``· landed · … · by <claimer>``
+  states no commit, so the delivery signal (which commit landed) is empty.
+  The widening admits two-or-more shas precisely because each names a real
+  commit; zero names none. (One sha parses cleanly through the single-sha
+  grammar and never reaches the widening path at all.)
+
+`lint.py`'s `check_handoffs` recognises the multi-sha shape **on top of the
+parser's `malformed` bucket** — the grammar itself lives in `watch.py`
+(`HANDOFF_PENDING_RE`, single-sha) and the parser still returns a multi-sha
+line as malformed. lint reclassifies it (counted separately as
+`multi-sha hand-off(s) recognised` in the coverage row), so it neither WARNs
+nor vanishes. When the watch lane widens its own grammar, the lint widening
+becomes a no-op: the line will parse cleanly and never reach `malformed`.
+The decision to keep the widening lint-local follows the ownership rule
+(this lane owns `lint.py`; `watch.py` is held by another), and the
+`HANDOFF_BARE_RE` fallback that already catches any bolded-id head means a
+reclassified line was already LOUD — it was mis-classified as a defect, not
+silent.
 
 ## `.dreamwork/tasks.md` — what marks a task landed (#399, #399b)
 
@@ -1017,8 +1067,8 @@ running still has to appear in the hub. Writers should provide the core:
 |---|---|---|
 | `task` | string | one line: what the loop is doing right now |
 | `goal` | string | the session goal this serves |
-| `agents` | array of objects, each with at least `name` | live subagents; a reader shows the count and the names. Optional per agent: `in_flight` (one line: what it is doing right now — **the one subfield with two readers**, promoted into `watch.py`'s agent glance and republished by `dreamhub.py` in `/hub.json`, so treat it as load-bearing); `owns` (array of strings — the files it holds; `dreamhub.py` renders it as `name (owns)`, and a non-list renders as none); `task_ids` (array of **ints** — which tasks THIS agent holds, the per-agent half of `current_task_ids` below, and linted the same way: integers, never quoted, never bools); `kind` (`utility` when it is not a dreamer); and `awaiting_result` when it was dispatched and has not reported — a dispatched-but-silent agent is otherwise legible only from the coordinator's memory, which is exactly how two deliverables were lost (#144). **This list is a menu, not a whitelist** (#310): `watch.py` folds every agent key it does not name into "the rest" on purpose — *"Whatever is LEFT, not a second known list"* — so an unlisted field is still shown, and nothing here is safe to prune on the grounds that no reader names it |
-| `current_task_ids` | array of **ints** | the task ids this names, as integers (#332). `task` above says what the loop is doing in a sentence; this says *which rows* it is doing it to, and prose is not a substitute because one sentence routinely names several ids in different states ("folding #281's answer, #326 next"). `/tasks` (#281) badges a row "in progress" from this, so a quoted `"#281"` or `"281"` is worse than an absent field: it looks right, lints past the type table, and matches no row at all — silently. `lint.py`'s `check_status_task_ids` ERRORs on a non-integer member, bools included |
+| `agents` | array of objects, each with at least `name` | live subagents; a reader shows the count and the names. Optional per agent: `in_flight` (one line: what it is doing right now — **the one subfield with two readers**, promoted into `watch.py`'s agent glance and republished by `dreamhub.py` in `/hub.json`, so treat it as load-bearing); `owns` (array of strings — the files it holds; `dreamhub.py` renders it as `name (owns)`, and a non-list renders as none); `task_ids` (array of **ints and sub-id strings** — which tasks THIS agent holds, the per-agent half of `current_task_ids` below, and linted the same way: a plain id is an int, a sub-id is a `"392a"` string, and a quoted plain id `"263"` is always wrong — #402b); `kind` (`utility` when it is not a dreamer); and `awaiting_result` when it was dispatched and has not reported — a dispatched-but-silent agent is otherwise legible only from the coordinator's memory, which is exactly how two deliverables were lost (#144). **This list is a menu, not a whitelist** (#310): `watch.py` folds every agent key it does not name into "the rest" on purpose — *"Whatever is LEFT, not a second known list"* — so an unlisted field is still shown, and nothing here is safe to prune on the grounds that no reader names it |
+| `current_task_ids` | array of **ints and sub-id strings** | the task ids this names (#332, #402b). `task` above says what the loop is doing in a sentence; this says *which rows* it is doing it to, and prose is not a substitute because one sentence routinely names several ids in different states ("folding #281's answer, #326 next"). `/tasks` (#281) badges a row "in progress" from this, so a quoted `"#281"` or `"281"` is worse than an absent field: it looks right, lints past the type table, and matches no row at all — silently. **The id vocabulary** (#402b, mirroring the hand-off grammar at `#401`): a **plain** id is an integer (`263`), a **sub-id** is a string of digits then one letter (`"392a"`), and a **quoted plain** id (`"263"`) is always wrong. A live set legitimately holds int and str at once — a lane may be `#392a`, and `status_sync` derives this field from that `task` value, keeping the string form by design (`#402a`). `lint.py`'s `check_status_task_ids` ERRORs on anything that is neither a plain int nor a sub-id string — bools included |
 | `queue` | object, integer `in_progress` and `pending` | queue depth |
 | `awaiting_human` | array of strings | **non-empty means the human is the bottleneck.** The one field a reader must never bury (#130, #141) |
 | `last_tick`, `last_commit` | string | freshness; a stale `last_tick` is how a stalled loop is spotted |
