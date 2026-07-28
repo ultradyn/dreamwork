@@ -1882,6 +1882,93 @@ def check_guards_registered(root: Path, rep: Report) -> None:
                 f"{len(registered)} guard(s) registered, each with a file")
 
 
+# #471 — registration is not execution. A guard in DEFAULT_GUARDS gates
+# nothing if it never reaches an assertion: the #471 guards threw in
+# serveVerified (the shared port was held by a server for a different
+# target) before any ok() call, so each got a recipe-level FAIL line,
+# GATED NOTHING for 3.5 hours, and the suite reported "N registered" the
+# whole time. The signal that a guard ACTUALLY ran and judged lives in its
+# own output, not in the recipe's exit-branch: every guard — the
+# report.mjs users AND the guards that inline the same idiom — emits
+# genuine `PASS <name>` / `FAIL <name>` verdict lines via ok()/present(),
+# and marks a pre-judgment death with the crash sentinel below. That
+# sentinel is the marker for "did not judge", NOT a verdict, so "ran and
+# judged" is defined as: at least one verdict line that is not the
+# sentinel. A guard that asserts zero is indistinguishable from one that
+# found nothing (CLAUDE.md: "a check that examines nothing looks identical
+# to one that found nothing"), so zero-assertion == not-judged by
+# construction — which is what makes the #471 shape (threw before any
+# ok()) count as "did not execute" even though the recipe printed a line.
+_CRASH_SENTINEL = "FAIL the guard threw before finishing its checks"
+_GUARD_VERDICT = re.compile(r"^(PASS|FAIL) .*$", re.MULTILINE)
+
+
+def ran_and_judged(log_text: str) -> bool:
+    """True iff a guard's log shows it reached at least one real assertion.
+
+    The complement of serveVerified-style death (#471): a guard that threw
+    before its first ok() has no genuine verdict — only the crash sentinel,
+    or an ``Error:`` stack and nothing. Genuine = a ``^(PASS|FAIL) `` line
+    that is not exactly the sentinel. Tested on the real production line:
+    this is the function ``guard-execution`` calls per guard log, not a
+    fixture-built copy of the decision (the #469/#471 hollowness shape).
+    """
+    for m in _GUARD_VERDICT.finditer(log_text or ""):
+        if m.group(0) != _CRASH_SENTINEL:
+            return True
+    return False
+
+
+# The subcommand the `guards` recipe invokes after its per-guard loop. Named
+# once so the recipe (justfile), the dispatcher (main), and the structural
+# lint check all agree on the handle; a rename reddens check_guards_execution
+# _accounting, which is the point.
+GUARD_EXECUTION_HOOK = "guard-execution"
+
+
+def check_guards_execution_accounting(root: Path, rep: Report) -> None:
+    """The guard runner must compare executed vs registered, not just run.
+
+    `check_guards_registered` measures REGISTRATION (a file exists for each
+    name) — that is the row that reported "N registered" while eight guards
+    idled. The live measurement (which guards ran AND judged) can only be
+    taken during a run, so it lives in the `guards` recipe, which calls
+    ``lint.py guard-execution``. lint cannot watch a run; what it CAN do is
+    refuse to let that measurement be silently deleted (the "became hollow"
+    shape CLAUDE.md warns of): this reads the justfile and errors if the
+    recipe no longer invokes the comparison.
+
+    The can-it-be-skipped axis settles where the red lives and why both
+    halves exist: the recipe comparison cannot be skipped inside a
+    `just guards`/`just test` run — it feeds the exit code — and this check
+    cannot be skipped inside a `just lint`/`just test` run, so deleting the
+    measurement reddens one of the two gates a lane always runs.
+    """
+    justfile = root / "justfile"
+    if not justfile.exists():
+        return
+    text = justfile.read_text(encoding="utf-8")
+    if not GUARDS_LIST.search(text):
+        return  # check_guards_registered already warned about the missing list
+    # The recipe must INVOKE the comparison as a command (not merely name it
+    # in a comment) AND wire it to the exit code. Either alone can pass over a
+    # deletion: a commented-out hook with `fail=` elsewhere, or a hook that
+    # prints but never fails.
+    invoked = re.search(rf"\blint\.py\s+{GUARD_EXECUTION_HOOK}\b", text) is not None
+    wired = re.search(
+        rf"{GUARD_EXECUTION_HOOK}.*\bfail=", text, re.MULTILINE) is not None
+    if not invoked or not wired:
+        rep.add(ERROR, "justfile",
+                "the `guards` recipe no longer compares executed vs registered "
+                f"guards (missing `lint.py {GUARD_EXECUTION_HOOK}` wired to "
+                "`fail`) — a registered guard that never judges gates nothing, "
+                "which is exactly what #471 hid for 3.5h; registration is not "
+                "execution")
+        return
+    rep.add(OK, "justfile",
+            "guard runner compares executed vs registered and fails on a gap")
+
+
 def _future_skew(stamp: str):
     """Seconds by which `stamp` is ahead of now, or None if unparseable.
 
@@ -3792,9 +3879,71 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are
     # the tool's own, so this only says anything when linting this repo.
     check_guards_registered(dw.parent, rep)
+    check_guards_execution_accounting(dw.parent, rep)
+
+
+def _guard_execution_main(argv: list[str]) -> int:
+    """``lint.py guard-execution <OUT> <guard> [<guard> ...]``.
+
+    Reads each guard's run log at ``<OUT>/<guard>.log`` and reports how many
+    of the requested (registered) guards ran AND judged, failing when any did
+    not. Invoked by the `guards` recipe after the per-guard loop, because a
+    recipe-level FAIL line (the #471 shape: the guard threw in serveVerified
+    before any ok()) GATES NOTHING unless the executed set is compared to the
+    registered set.
+
+    Preconditions are asserted at runtime, not assumed: a comparison of two
+    sets is vacuous if either is empty, and a broken OUT (zero logs) must not
+    read as "everything ran" — that is the #471 failure mode inverted.
+    """
+    ap = argparse.ArgumentParser(
+        prog="lint guard-execution",
+        description="Report which requested guards ran-and-judged; fail on a gap (#471).")
+    ap.add_argument("out", help="the recipe's OUT tempdir holding <guard>.log files")
+    ap.add_argument("guards", nargs="+", help="the requested (registered) guard names")
+    a = ap.parse_args(argv)
+    out = Path(a.out)
+    # Plain identifiers only — the names come from the recipe's own list, but
+    # a stray path segment must never reach `out / f"{g}.log"`.
+    ident = re.compile(r"^[A-Za-z0-9_-]+$")
+    requested = list(dict.fromkeys(g for g in a.guards if ident.match(g)))
+    executed = []
+    missing = []
+    seen_log = 0
+    for g in requested:
+        log = out / f"{g}.log"
+        text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
+        if text:
+            seen_log += 1
+        (executed if ran_and_judged(text) else missing).append(g)
+    if not requested:
+        print("guard-execution: no guards requested — comparison is vacuous",
+              file=sys.stderr)
+        return 2
+    if seen_log == 0:
+        print(f"guard-execution: read 0 logs under {out} — expected <guard>.log "
+              f"files for {len(requested)} guard(s); a broken OUT reads as "
+              f"'everything ran', which is #471's failure mode inverted",
+              file=sys.stderr)
+        return 2
+    n_reg = len(requested)
+    n_exec = len(executed)
+    if missing:
+        print(f"  FAIL guards: {len(missing)} of {n_reg} registered guard(s) did "
+              f"NOT run-and-judge: {', '.join(missing)}")
+        print("        each printed no genuine PASS/FAIL verdict — died before "
+              "judging (the #471 shape: registered, gated nothing)")
+        return 1
+    # Both counts on the OK row: a single number cannot show a gap, and the
+    # row that hid this bug ("N registered") carried exactly one.
+    print(f"  OK    guards: {n_exec} of {n_reg} registered guard(s) ran and judged")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw = sys.argv[1:] if argv is None else list(argv)
+    if raw and raw[0] == GUARD_EXECUTION_HOOK:
+        return _guard_execution_main(raw[1:])
     ap = argparse.ArgumentParser(
         prog="lint",
         description="Check a dreamwork target's .dreamwork/ files against the shapes their readers require.",

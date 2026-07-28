@@ -329,3 +329,155 @@ already embody), `#203` (the orphan-squatter class `serveVerified` exists to
 refuse), `#428` (the suite under concurrent lanes — this is a deterministic
 cousin, not a load flake), `#310` (the "guard believed to gate that did not"
 worry — **does not apply**: these guards fail loud).
+
+---
+
+# #471 successor — the suite must report which guards RAN, not which are registered
+
+`#471`'s port fix (`80ac4b5`) made the eight affected guards run again, but the
+**reporting hole it went through is still open**: `lint` says *"N guard(s)
+registered, each with a file"* — that measures REGISTRATION. Nothing measures
+EXECUTION. So a guard can be registered, have a file, be believed to gate, and
+never run, which is `#310`'s family for the second time. This section is the
+close on that hole.
+
+## What "executed" means, and the discriminator
+
+**A guard executed iff its run log shows it reached at least one real
+assertion** — a `^(PASS|FAIL) ` verdict line that is NOT the crash sentinel
+`FAIL the guard threw before finishing its checks`.
+
+Every guard shares that output contract: the 38 that import `report.mjs` get it
+from the module, and the 22 that do not (counted: `dashboard dismiss draft
+gitrow history identity indicator morph morphhold motion plugcmd prominence
+provenance qorder qsec revieworder reviewsplit runmode serving staleremedy
+submitlog subslog`) inline the identical idiom — `const ok = (n,c) =>
+checks.push(\`${c?'PASS':'FAIL'} ${n}\`)` and the same `process.on('exit')`
+sentinel. `dismiss`/`revieworder` lack the inline sentinel but still use `ok()`,
+so judging produces verdicts and a pre-judgment crash produces none — they are
+classified correctly by the same rule.
+
+This is the crux the brief names, and the definition resolves it: **"ran and
+judged" vs "died before judging."** A guard that judged-and-found-a-failure
+(genuine `FAIL <name>`) executed; a guard that threw in `serveVerified` before
+any `ok()` (#471's exact shape) produced zero genuine verdicts and the sentinel
+as its only FAIL-ish line, so it did **not** execute. A guard that judged and
+*then* crashed still executed — at least one genuine verdict precedes the
+sentinel. The recipe's per-guard `PASS/FAIL $g` line could not tell these apart
+(it branches on exit code, and a judged-failure and a pre-judgment death both
+exit 1), which is precisely why "did the recipe print a line for it" was the
+naive test the brief warned against.
+
+## Where the failure surfaces, and the can-it-be-skipped axis
+
+**The comparison lives in the `guards` recipe (justfile)**, invoked once after
+the per-guard loop as `python3 lint.py guard-execution "$OUT" $GUARDS || fail=1`.
+lint reads files and cannot watch a run; the recipe is the only component that
+runs the guards and is therefore the only place the executed set can be
+measured. On the can-it-be-skipped axis this settles it: the comparison cannot
+be skipped inside a `just guards`/`just test` run — it feeds `fail`, so a
+missing guard reddens the run. A focused `DREAMWORK_GUARDS="a b"` run compares
+against the *requested* set (the honest comparison — you can only be held to
+what you asked to run), so in a full run requested == registered and the row
+reads `N of N`.
+
+**lint's role is the backstop, not the measurement.** `check_guards_execution
+_accounting` reads the justfile and errors if the recipe no longer invokes the
+comparison (the "became hollow" shape — a check that passed at birth and was
+later deleted). It cannot be skipped inside a `just lint`/`just test` run, so
+deleting the measurement reddens one of the two gates a lane always runs. Two
+independent things are asserted, because either alone can pass over a deletion:
+the recipe invokes `lint.py guard-execution` as a command (not merely names it
+in a comment) AND wires it to `fail`.
+
+## Zero-assertion guard: a failure
+
+Yes. A guard that reports zero genuine verdicts is, by definition, not executed,
+and the run fails — *"a check that examines nothing looks identical to one that
+found nothing"* (CLAUDE.md). This is not a separate rule: it falls out of the
+definition, because executed ⟺ ≥1 genuine verdict. The #471 guards asserted
+zero for 3.5h; treating a zero-assertion guard as "executed" would hide exactly
+that shape.
+
+## The red, the production line it names, and that the injection reached it
+
+The red is by synthetic run record (the brief's sanctioned alternative to
+editing a real guard file, which is not ours): a guard log in the exact #471
+shape (`Error: serve: …` + the crash sentinel, zero genuine verdicts) is placed
+among judged guards, and the REAL CLI — which reads the file and calls the REAL
+`ran_and_judged` — must name it and exit 1. **Production line named:** the
+sentinel-exclusion in `lint.ran_and_judged`. Remove it (make any `PASS/FAIL`
+line count, including the sentinel — the "naive did-we-print-a-line" test) and
+`TestRanAndJudged.test_the_crash_sentinel_alone_is_not_judged` and
+`TestGuardExecutionCLI.test_a_471_shape_guard_is_named_and_fails` go red; the
+latter's runtime precondition (`{good1: True, died471: True}` — both judged)
+catches the break before the CLI call, which is the "green red-run is a finding"
+guard working. **The injection reaches the code:** there is no hand-built
+classification in the test — it writes a log file and invokes the production CLI
+on it. A second red, against the structural check: deleting the
+`guard-execution` line from the real justfile makes both
+`TestGuardsExecutionAccounting.test_this_repo_wires_the_comparison` and
+`lint.py --target .` ERROR with the named message.
+
+## Runtime-derived preconditions
+
+`guard-execution` asserts, not assumes: (a) the requested set is non-empty
+(else exit 2 — a vacuous comparison), and (b) at least one log was read under
+OUT (else exit 2 — a broken OUT must not read as "everything ran", which is
+#471's failure mode inverted). The test fixture's discriminating power is
+itself derived at runtime via the real classifier (`{good1: judged, died471:
+not}` — both shapes present, or the assertion proves nothing).
+
+## Both counts on the OK row
+
+`OK    guards: <executed> of <registered> registered guard(s) ran and judged` —
+two numbers, so a gap is visible. The row that hid this bug (`N registered`)
+carried one. A focused run prints `executed of requested`, which equals
+registered in a full run.
+
+## Verification
+
+- `python3 -m pytest test_lint.py -q -p no:randomly` — the 15 new tests pass;
+  the dogfood test passes once `lint.py` + `justfile` share a HEAD (the snapshot
+  at HEAD then carries the hook — see below).
+- `python3 lint.py --target .` — clean (0 errors; 1 pre-existing status.json
+  warning). The new structural row is `OK`.
+- Real-recipe smoke: `DREAMWORK_GUARDS="identity gitrow" just guards` — a
+  single-/two-guard run of own-server guards (impossible before `80ac4b5`) now
+  runs, both judge, and the accounting row reports both counts.
+- Two genuine red runs performed and restored (classifier break; recipe
+  deletion). Neither was green while the bug was in place.
+- Not run: the full `just test` (eight lanes share this machine). Scoped pytest
+  to `test_lint.py` (the owned file) to avoid the `watch.py` lane and contention.
+
+### Note for the coordinator: the dogfood test now also gates the wiring
+
+`test_this_repo_passes_its_own_linter` lints a snapshot at HEAD through the LIVE
+`lint.py`, so it now evaluates `check_guards_execution_accounting` against the
+HEAD justfile. That means `lint.py` and `justfile` must land in the **same
+commit** — if the hook is missing at the HEAD the snapshot reads, the dogfood
+test errors (verified: pre-commit, the snapshot justfile has 0 `guard-execution`
+and the test fails; post-commit, both are at HEAD and it passes). This is
+desirable, not a regression: the dogfood test is now a third guard that the
+wiring cannot be removed at HEAD. `Lane-owns:` notes the same single-commit
+obligation for `justfile`.
+
+### `file-formats.md` paragraph wanted (file not owned — for the coordinator)
+
+> **Guard run-log verdict contract.** Every guard in `dev/capture/` (whether it
+> imports `report.mjs` or inlines the idiom) writes its verdicts to stdout as
+> one line per assertion: `PASS <name>` or `FAIL <name>`, separated from
+> coverage/notes by a line containing only `----`. A guard that exits before
+> its first assertion emits the crash sentinel `FAIL the guard threw before
+> finishing its checks` as its only FAIL-ish line — this marks *did-not-judge*,
+> not a verdict. The `guards` recipe captures each guard's combined
+> stdout+stderr to `<OUT>/<guard>.log`. `lint.py guard-execution <OUT>
+> <guard>…` classifies each log: a guard *ran and judged* iff its log has ≥1
+> `^(PASS|FAIL) ` line that is not the sentinel; the recipe fails the run when
+> any requested guard did not run-and-judge (#471: registration is not
+> execution).
+
+Related: `#471` (the port fix this builds on), `#461` (the regression source),
+`#310` (the "guard believed to gate that did not" family — this is its second
+instance, now with a detector), `#192` (the `report.mjs` contract this reads),
+`#428` (the snapshot the dogfood test uses, which now also gates this wiring).
