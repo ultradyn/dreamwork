@@ -2757,6 +2757,24 @@ Next id: **476**
   · **`TestCitedShas` failed 3× under random order** (`OSError: File too large`) and passes in
   isolation and under `-p no:randomly` (1011 passed). Consistent with four lanes running `git`
   against the live repo at once — the known interaction, not a defect
+  · **lane H is COMPLETE: H2 landed and merged (`b2fc6be` + `b547ca6` + `25fc789`, merged into master).** The
+  cutover takes an exclusive lease, **closes the current generation to new receipts**, drains until in-flight
+  receipts at that generation reach terminal, and only then stamps the irreversible `generation.cutover`
+  watermark. A drained request **completes under its own generation** — the lane's argument for that over
+  retry-under-the-new-one is the right one: retrying would either orphan a receipt the client already holds or
+  mint a second durable truth for one request, which is exactly the second derived truth `#264` exists to
+  remove. Lease steal-after-expiry reuses increment 7's B5 shape rather than a second mechanism. Two real
+  processes; **temp targets only**, because running the watermark against a live target is migration and
+  migration is not authorised
+  · **the closure was a coordinator steer, not the lane's design, and it was load-bearing:** stamping the
+  generation server-side inside `BEGIN IMMEDIATE` leaves the drain a time-of-check/time-of-use window — a
+  request entering `receive()` just after the drain reads the in-flight set joins the old generation behind its
+  back, so the watermark can land while that request is live, or the drain never converges. Red-proved by the
+  coordinator on both production lines independently of the lane's report: deleting the drain wait
+  (`while self.in_flight(from_gen) > 0`) reds exactly the two tests named for it, and deleting the closure
+  (`if lease_row is not None and lease_row[0] > now`) reds the spanning-request test. Injections confirmed
+  present, then removed
+  · **so `#294`'s cutover is now gated on `#352` alone** — lane H was the other half, and it is done
   · related: **#426, #461**
 
   · **SECOND GATE OPEN 2026-07-29 01:37 — *"ack good to go"*.** Lanes **E** (HTTP `202`), **G** (browser)
@@ -3616,6 +3634,22 @@ Next id: **476**
   · **whatever it becomes obeys `transitions.md`** — a new series appearing, or a hover readout
   arriving, is a transition like any other, and this repo's rule has no size floor
   · needs `watch-design.md` updated in the same commit as any code, per the styleguide contract
+  · **→ LANDED and merged `a839c57` (lane `burndown`, `66b8bbc` + `ef5e94d`), built to his 06:23 ruling:
+  c3 + c4 + a per-column hover.** The hover reads `N open · A↑ L↓ · C commits · stamp` and names **open
+  first**, so the level line's primary meaning is never left implied — which was the thing he said he was
+  unsure of, and the reason his hover is a better answer than the coordinator's visual rejection of `c3` was.
+  `c4`'s copy is shortened to `N median commits/period · peak P · Q empty` and no longer ellipsises at 1100px
+  or 390px, which was his condition. Panel height measured **constant at 196px** across a data change, derived
+  at runtime rather than compared to a literal; the tip is `position:absolute` inside `.bd`. Zero commits maps
+  to **1px, below** the 2–6px range, so quiet stays distinguishable from one. Transition idiom reused from
+  `rundesc` (blur+drift, pose in / ease out), sampled mid-frame, reduced-motion parity intact; the accent is
+  still not spent here and the guard asserts it
+  · **the lane caught a hollow check in its own work before trusting it**, which is worth more than the
+  feature: the hover and `c4` assertions used `includes()`, so `"999… · 1 empty"` satisfied median=1 and
+  `"99 open · 4↑"` satisfied open=4. Replaced with positional parses and the reds re-run
+  · **owed: the review artifact is now stale against his ruling** — `.dreamwork/review/417-burndown-commits.html`
+  still presents `c3` as rejected and `c4` alone as the rec. The lane reported it rather than editing a file it
+  did not own, correctly. Rebuild it
   · related: **#367**
   · **IN PROGRESS 2026-07-28 17:28** — `ccc @glm52`, `.worktrees/417`, brief
   `417-burndown-commits-proposal.md`. **Proposal only: it commits the artifact and NO `watch.py`
