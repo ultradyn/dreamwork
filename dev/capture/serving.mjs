@@ -200,9 +200,27 @@ let servedRev;
   // were HEAD, "behind" and "current" would render the same words
   ok('...HEAD has really moved past the served revision (or this is vacuous)',
      head !== servedRev);
+  // #462 appended a deploy remedy to the behind line only
+  // (` — just deploy to update` via .gservact). textContent flattens the
+  // button, so the pre-#462 exact equality against SERVE_TEXT.behind alone
+  // fails on a correct page. Assert the load-bearing prefix (how far behind
+  // + which rev) and that the remedy is present — both derived from what
+  // the page actually rendered, not a frozen full string.
+  const behindCore =
+    `this page is 2 watch.py commits behind · serving ${servedRev}`;
   ok('a page behind HEAD says so, and by how much',
      !!r.present &&
-     r.text === `this page is 2 watch.py commits behind · serving ${servedRev}`);
+     typeof r.text === 'string' &&
+     r.text.startsWith(behindCore) &&
+     r.text.includes(servedRev));
+  // Precondition for the remedy claim: the line is the behind state (else
+  // "just deploy" on an unknown/current line would be a different defect).
+  ok('precondition: behind line carries the derived behind core (or remedy is vacuous)',
+     !!r.present && typeof r.text === 'string' && r.text.startsWith(behindCore));
+  // #462: the remedy appears ONLY when genuinely behind — contract replacing
+  // the pre-remedy exact string this guard used to pin.
+  ok('...and offers the #462 deploy remedy on a behind page',
+     !!r.present && /just deploy/.test(r.text || '') && /to update/.test(r.text || ''));
   ok('...as a fault, on the rail, in --warn', !!r.present &&
      r.stale && r.rail === '2px' && r.railColour === r.warn);
   // detail is ranked, never withheld: the summary is the line and the
