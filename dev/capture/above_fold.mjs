@@ -53,20 +53,26 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 // THE FOLD HE ACTUALLY SEES IS NOT THE VIEWPORT, and this was measured on the
 // real surface rather than assumed. Artifacts are served to him inside an iframe
 // on the dashboard's `/review` route (raw at `/reviewraw?p=`, for style
-// isolation), so the shell's chrome eats the top and bottom of the page:
+// isolation), so the shell's chrome eats the top (and, before #434, a large
+// empty band under a fixed 60vh frame) of the page:
 //
-//   viewport 1280x900 -> iframe 740px tall at top=120  -> effective fold 738
-//   viewport  390x844 -> iframe 506px tall at top=135  -> effective fold 504
+//   viewport 1280x900 -> iframe ~740px tall at top≈120  -> effective fold 738
+//   viewport  390x844 -> iframe ~708px tall at top≈120  -> effective fold 706
 //
-// Mobile is the one that matters: 504 against 844 is a **40% overstatement**. An
-// ask sitting at 600px passes a naive 844 check and is invisible where he reads
-// it. So `fold` below is the effective height, not `innerHeight`, and the
-// viewport is still set to the real device size because layout depends on WIDTH.
-// Measured 2026-07-28; if the shell's chrome changes these move, which is why
-// `#432` wants the checker to derive them from the live route instead.
+// (#434 reclaimed the mobile dead space: the frame was 506px / fold 504 under
+// a fixed 60vh; it now uses fitReview's measured --rvh, fills the window, and
+// tightens the review-route bottom pad to 1rem on the stacked layout.)
+// Mobile is still the one that matters: 706 against 844 is an ~16%
+// overstatement of what a naive innerHeight check would claim. An ask sitting
+// at 780px passes a naive 844 check and is invisible where he reads it. So
+// `fold` below is the effective height, not `innerHeight`, and the viewport is
+// still set to the real device size because layout depends on WIDTH.
+// Measured 2026-07-28 (post-#434); if the shell's chrome changes these move,
+// which is why `#432` wants the checker to derive them from the live route
+// instead.
 const VIEWPORTS = [
   { label: 'desktop', width: 1280, height: 900, fold: 738 },
-  { label: 'mobile', width: 390, height: 844, fold: 504 },
+  { label: 'mobile', width: 390, height: 844, fold: 706 },
 ];
 
 function usage(msg) {

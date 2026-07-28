@@ -109,7 +109,14 @@ carries a `+` command opener (steer the loop without a chat turn).
   the latest sample immediately. The graph hugs the right-hand wall — the
   canvas is narrower than the readout text beside it, so `margin-left:auto`
   pins its right edge to the text's right edge rather than parking at the
-  box's left.
+  box's left. **The project wordmark yields the overlay's column on a wide
+  window** (#435): mounting the overlay sets `body.dev`, and `.hproj` takes
+  a right margin equal to the overlay's reserved `min-width` plus its right
+  inset, so the two never paint on top of each other. Below 720px that same
+  margin wraps the title bar, so the overlay drops under the chrome instead
+  and the wordmark keeps the trailing edge. The counter stays either way.
+  Settled chrome, not a gesture — no transition, reduced-motion parity free.
+  Guard: `dev/capture/devoverlay.mjs`.
 
 ## Design contract (per web-artisan-core, minimalized)
 
@@ -448,6 +455,21 @@ you could not do the second while looking at the first.
   to name each of them, and after #326 they are one element's property.
   Checked at 700px and at a 390px phone, where the pane hangs 0px off the side
   and the answer box is 358px wide in the page rather than floating over it.
+- **The mobile frame fills the window, not a fraction of it** (#434). Below
+  900px the two-column pane is gone, and the artifact used to take a fixed
+  `60vh` — 506px of a 844px phone, with ~200px of empty viewport under it
+  (`scrollHeight === innerHeight`, so not off-screen content). That was the
+  reading surface for every review decision. The narrow layout now reuses
+  `fitReview`'s measured `--rvh` for `#reviewdoc`, so the frame takes the
+  height the window actually gives under the chrome, and on the review route
+  alone the body's bottom pad tightens from 2.5rem to 1rem (desktop keeps
+  2.5rem / its accepted ~40px foot — the 40px "waste" on desktop *is* that
+  pad). A docked question stacks below and the page scrolls (the narrow
+  layout's own rule); with no dock the frame ends near the page foot and the
+  dead space is under 24px. Desktop's two-column measured pane is unchanged.
+  No height transition — measured layout, not a gesture. The fold constant
+  in `dev/capture/above_fold.mjs` moves with this measurement. Guard:
+  `dev/capture/devoverlay.mjs` (frame dead-space half).
 
 Motion for all of it — the keyed step travelling while the drag does not, the
 hairline arriving rather than blinking on, and both fades crossing rather than

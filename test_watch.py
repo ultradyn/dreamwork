@@ -2867,6 +2867,35 @@ class TestAppShell(unittest.TestCase):
                       '/reviewraw', 'linkifyReview'):
             self.assertIn(token, watch.PAGE)
 
+    def test_narrow_review_frame_uses_measured_rvh_not_60vh(self):
+        # #434 — production lines: the narrow #reviewdoc height, and the
+        # review-route bottom-pad tighten. Restoring `height:60vh` is the
+        # injection that fails the dead-space half of devoverlay.mjs; this
+        # unit check names the same line so a greppable regression cannot
+        # land without a red pytest either.
+        # Precondition: the narrow media query that stacks the pane must
+        # still exist, or "no 60vh" is vacuously true of a deleted layout.
+        self.assertIn("@media (max-width:900px)", watch.PAGE)
+        self.assertIn("#reviewdoc { height:var(--rvh,", watch.PAGE)
+        self.assertIn("body.review { padding-bottom:1rem; }", watch.PAGE)
+        self.assertNotIn("#reviewdoc { height:60vh", watch.PAGE)
+        self.assertNotIn("height:60vh", watch.PAGE)
+
+    def test_dev_overlay_marks_body_so_wordmark_yields(self):
+        # #435 — production lines: body.dev class on mount, and the CSS
+        # yield on .hproj (wide) / drop under chrome (narrow). Removing the
+        # class or the yield rule is the injection that fails the overlap
+        # half of devoverlay.mjs (a probe that requires rendered rects, not
+        # a <script> containing the letters "fps").
+        self.assertIn("doc.body.classList.add('dev')", watch.PAGE)
+        self.assertIn("body.dev .hproj", watch.PAGE)
+        self.assertIn("margin-right:calc(12.5rem", watch.PAGE)
+        self.assertIn("@media (max-width:720px)", watch.PAGE)
+        # the overlay itself must still mount — we fix the collision, we do
+        # not remove the counter
+        self.assertIn("box.id = 'devbox'", watch.PAGE)
+        self.assertIn("/*DEV*/false", watch.PAGE)
+
     def test_every_route_has_its_own_atmosphere_and_title(self):
         # #302: the contract (watch-design.md: "Add a view by adding a builder
         # + a routeOf/TINT/SEED entry"; transitions.md: every destination has

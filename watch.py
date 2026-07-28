@@ -1068,13 +1068,32 @@ STYLE = """<style>
   #dreambg { position:fixed; inset:0; z-index:-1; width:100vw;
              height:100vh; }
   #devbox { position:fixed; top:.6rem; right:.8rem; z-index:10;
-            color:var(--dimmer); font-size:.7rem; text-align:right; }
+            color:var(--dimmer); font-size:.7rem; text-align:right;
+            /* min-width is the reservation the wordmark yields (#435): the
+               longest readout is ~"NNN.Nms avg · NNNN.Nms worst", and without
+               a floor the box shrinks to whatever one sample printed and the
+               yield would under-reserve on a quiet frame. */
+            min-width:12.5rem; pointer-events:none; }
   /* the sparkline is narrower than the readout text beside it, so the
      box is text-width and the canvas parks at its LEFT edge by default —
      a gap to the wall. margin-left:auto absorbs the slack and pins the
      graph's right edge to the text's right edge (the wall side). */
   #devbox canvas { display:block; margin-top:.25rem; margin-left:auto;
                     opacity:.55; }
+  /* #435: the --dev overlay and the project wordmark both claim the trailing
+     top corner on a wide window. The wordmark YIELDS the overlay's column —
+     margin-right equal to the overlay's reserved width plus its right inset
+     plus a hair of air — rather than the overlay moving or the counter being
+     removed. Settled chrome, not a gesture: no transition, reduced-motion
+     parity is free (identical settled layout). The yield is wide-only: on a
+     phone the same margin wraps the title bar and shoves the review frame
+     down, so below 720px the overlay instead drops under the chrome and the
+     wordmark keeps the trailing edge. */
+  body.dev .hproj { margin-right:calc(12.5rem + .8rem + .4rem); }
+  @media (max-width:720px) {
+    body.dev .hproj { margin-right:0; }
+    #devbox { top:4.75rem; }
+  }
   #layerhint { position:fixed; bottom:1rem; right:1rem; z-index:10;
     color:var(--accent); background:rgba(17,24,39,.82);
     border:1px solid var(--line); border-radius:var(--radius);
@@ -1296,10 +1315,27 @@ STYLE = """<style>
      natural heights, the page scrolls, and the bar is gone rather than
      present-but-useless (display:none takes it out of the tab order too). */
   @media (max-width:900px) {
+    /* #434: body padding is 2.5rem top and bottom (40px). Desktop keeps that
+       as its accepted ~40px foot; on a phone the same pad was sitting under
+       a 60vh frame that had already thrown away 200px, so reclaiming the
+       frame without also tightening the foot left 40px of "empty" that the
+       brief's <24px bar still fails. The review route alone drops the bottom
+       pad to 1rem on the stacked layout — the top pad and every other route
+       keep 2.5rem. fitReview reads paddingBottom, so --rvh grows with it. */
+    body.review { padding-bottom:1rem; }
     #reviewwrap { grid-template-columns:minmax(0,1fr); height:auto;
                   min-height:0; }
     .rsplit { display:none; }
-    #reviewdoc { height:60vh; }
+    /* #434: 60vh was a fixed fraction of the WINDOW, not of the room left
+       under the chrome — at 390x844 that is 506px of frame and ~200px of
+       empty viewport (scrollHeight === innerHeight; nothing off-screen).
+       fitReview already measures the remaining height into --rvh for the
+       desktop pane; the narrow layout reuses that same variable so the
+       frame fills the window rather than a third of it. A docked question,
+       when present, stacks below and the page scrolls — the narrow layout's
+       own rule. No height transition: the pane is measured layout, not a
+       gesture (transitions.md); reduced-motion parity is free. */
+    #reviewdoc { height:var(--rvh, calc(100dvh - 12rem)); min-height:12rem; }
     #reviewframe { height:100%; }
     /* no inner scroller, so nothing is glued and nothing passes under the
        box: both would be lying about a column that is now just a document.
@@ -7086,6 +7122,11 @@ function mountDreambg(win, cv, opts) {
     gpuQuery = null; gpuPending = false; gpuOpen = false;
   }
   if (opts.dev) {
+    // body.dev is the yield signal for the project wordmark (#435): the CSS
+    // rule that cedes the overlay's column keys on it, so removing this class
+    // (or never setting it) is the production line that makes the overlap
+    // guard fail. The overlay itself still mounts exactly as before.
+    doc.body.classList.add('dev');
     const box = doc.createElement('div');
     box.id = 'devbox';
     fpsEl = doc.createElement('div');
