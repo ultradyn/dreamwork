@@ -11,6 +11,20 @@ dreamwork-version: 5853e1789929
     compaction, a fresh agent. What it knew, it still knows.
   - The dashboard is how you check on it and steer it without a chat
     turn, and it is worth looking at.
+    - **Dreamhub is the successor surface, not a second window** (his
+      words, 2026-07-29 05:54, answering `#275` Q3): *"dreamhub should
+      entirely replace watch.py for normal day-to-day use. All features
+      from watch.py should be ported over. or watch.py should be
+      refactored into modules and then they can be imported to use in
+      dreamhub."* So dreamhub is **read+write**, and the two routes he
+      named are a port or an extraction — `#368` is the extraction and
+      is therefore enabling work, not tidying. A port that reimplements
+      each feature is a second truth, which is the error `#294` R2 and
+      `#264` both refuse.
+    - **This says nothing about where it listens.** Public/WAN serving
+      stays forbidden pending a reviewed design; a writable hub raises
+      that bar, because the write routes steer a loop that acts on this
+      machine.
   - **Nothing fails quietly** (folded 2026-07-25 from what the loop
     learned, not from a stated ask — say if you disagree). "Safe" turns
     out to mean legible: on one day this loop found a questions.md that

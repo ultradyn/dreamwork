@@ -117,6 +117,9 @@
     they were indistinguishable from his.
     **This question is genuinely open and has never been answered.**
 
+
+## Answered
+
 - **P2 · 2026-07-27 — #275 Dreamhub auth: three calls left of the original six**
 
   **Sub-decisions:** `Q3`, `Q5`, `Q6`
@@ -136,7 +139,21 @@
   **`Q6` who else ever reaches this hub?** Rec **you only, v1**.
 
   Accepted answers: `rec` (takes all three) · per-question (`Q3: …`) · free text · `not yet`.
-## Answered
+  → answered (2026-07-29 05:56): **Q3 REFUTES the rec — read+write**, and the reason is much larger than
+    the question: *"dreamhub should entirely replace watch.py for normal day-to-day use. All features
+    from watch.py should be ported over. or watch.py should be refactored into modules and then they
+    can be imported to use in dreamhub."* So dreamhub is not a read-only window onto the loop, it is
+    the successor surface — which makes `#368`'s extraction the enabling work rather than a cleanup.
+    **Q5 yes** — redacted `/summary.json` ships first. **Q6 `rec`** — him only for v1, multi-user
+    hubs later. Recorded on `#275`, `#368` and `DREAMWORK.md`.
+    **This does NOT lift the public-serving gate:** he answered what dreamhub should DO, not where it
+    may listen. Public/WAN serving stays forbidden pending a reviewed design, and read+write raises
+    that bar rather than lowering it.
+  - **Answer (via watch, 2026-07-29 05:54):** 3. read+write. dreamhub
+    should entirely replace watch.py for normal day-to-day use. All
+    features from watch.py should be ported over. or watch.py should be
+    refactored into modules and then they can be imported to use in
+    dreamhub. 5. sure 6. rec (multi-user hubs can come later)
 
 - **P1 · 2026-07-29 05:00 — #294: the SQLite ledger migration — five calls on how the loop's own memory moves**
   **Artifact:** `.dreamwork/review/294-ledger-sqlite.html` — the design, the IGC, and what each option costs.

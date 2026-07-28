@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **471**
+Next id: **472**
 
 ## Open
 - **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
@@ -203,6 +203,30 @@ Next id: **471**
   `- **` bullet, ERROR and say where it must go. Assert the precondition at runtime — the check is vacuous
   unless the fixture's marker really is unreachable, so derive that from the parser rather than trusting the
   fixture's layout · related: **#411, #366**
+- **#471** — a single guard cannot be run on its own, and I cannot explain why the full run disagrees · P2 ·
+  loop-tooling/verification · origin: **loop** · **found while verifying `#269`, 2026-07-29 05:5x**
+  · `DREAMWORK_GUARDS=<one-self-serving-guard> just guards` **always fails**, for `reviewdraft` and for
+  `identity` alike: the recipe pre-starts a server on `{{port}}` serving `$OUT/target` and then passes that
+  same port to the guard as `argv[3]`, so the guard's `serveVerified(DIR, PORT)` finds the port held by a
+  server for a **different** directory and correctly throws — *"a stale server holds the port and every
+  assertion after this would grade the wrong target"*
+  · **and the part I cannot explain, which is why this is a task and not a fix:** `identity` **passed** in the
+  full `just test` run at 05:33 with that same shared port and the same own-directory shape. So either
+  something in a full run frees `{{port}}` before the self-serving guards are reached, or those guards
+  differ in a way I have not found. **Both of my "reproductions" were single-guard runs**, so I have no
+  evidence any self-serving guard fails in a full run — the first draft of this finding claimed exactly that
+  and it was not supported
+  · so the concrete deliverable is **not** a port change: it is to explain the disagreement, and only then
+  decide whether the bug is in the recipe (passing a shared port to guards that serve their own target), in
+  `reviewdraft`'s hardcoded `39894`, or in nothing at all
+  · **why it matters beyond convenience:** a guard nobody can run in isolation cannot be red-proved after the
+  fact, and this repo's rule is that a check is not verification until it has been red. `#310` is the same
+  family — a guard believed to gate that did not
+  · 8 of 57 registered guards call `serveVerified`: `fileimg filehead identity gitrow fileview reviewdraft
+  staleremedy serving`. `staleremedy` is the only one that ignores `argv[3]` entirely (`await freePort()`),
+  which may be the intended pattern or may be an accident
+  · blocked on nothing · related: **#310, #428, #203**
+
 - **#470** — the hook plugin ships behaviour into his harness and nothing measures whether it still fires ·
   **P2** · verification/plugins · origin: **loop** · filed 2026-07-29 while looking for work disjoint from
   `watch.py`
@@ -525,7 +549,7 @@ Next id: **471**
   lane dispatched from suite start to `REAL_EXIT`, idle verified with a **self-excluding** process check
   (see the `pgrep` aside above), repeated until the failure rate is a number. Everything else is a
   fourth anecdote
-  · related: **#424, #423, #442, #469**
+  · related: **#424, #423, #442, #469, #471**
   · **a THIRD instance, and this one has a named cause rather than a suspicion (2026-07-29 04:55, eight lanes
   out).** `test_lint.py::TestTheBugItWasBuiltFor::test_this_repo_passes_its_own_linter` **FAILED** in the full
   run and **passed alone** seconds later, with `lint.py --target .` clean both before and after. The cause is
@@ -858,6 +882,7 @@ Next id: **471**
   `version` verb plus a recorded baseline), so every later step is measured against it rather
   than argued about
   · related: **#425, #426, #439**
+  · **PROMOTED BY HIS `#275` ANSWER, 2026-07-29 05:54 — this stops being a cleanup and becomes enabling work.** His words: *"dreamhub should entirely replace watch.py for normal day-to-day use. All features from watch.py should be ported over. **or watch.py should be refactored into modules and then they can be imported to use in dreamhub**."* That names this task as one of the two routes to a product goal, so the extraction now has a consumer instead of only a rationale. **The coordinator's parallelism argument for this was the weaker one** and is now secondary: tonight lanes queued repeatedly because ~12k lines of UI live in one file that exactly one lane can hold. True, but internal. His reason is that the port is otherwise a **second implementation of every feature**, which is the same two-truths error `#264` and `#294` R2 both refused. Note `#443` already constrains the shape: `deprecated/watch.py` keeps the monolith and `watch.py` becomes a **symlink** until the new entry point is proven, so a client that starts before the split still works.
 
 - **#367** — Tabbed pointers to a review's essentials, with next/prev · P2 ·
   review tooling/UX · origin: **human** · **human via watch `add-idea` 2026-07-28 02:36**,
@@ -1810,6 +1835,7 @@ Next id: **471**
   **still open on this entry**: Q3 read-only vs read+write, Q5 the redacted
   `/summary.json`, Q6 the allowlist. Q4's identity provider question is now #359's, since
   the self-hosted half has no IdP at all under his direction
+  · **Q3/Q5/Q6 ANSWERED 2026-07-29 05:54, and Q3 REFUTED THE REC.** Not read-only: **read+write**, because *"dreamhub should entirely replace watch.py for normal day-to-day use. All features from watch.py should be ported over. or watch.py should be refactored into modules and then they can be imported to use in dreamhub."* The rec was reasoned from dreamhub's **present** surface (GET-only, and watch.py's write routes being agent-steering per `#288`) — which was true and beside the point: he was answering about what dreamhub is FOR, and the loop asked as though the current shape were the constraint. **Q5 yes** — the redacted `/summary.json` ships first, so the `/data.json` full-content leak stays the blocker. **Q6 `rec`** — him only for v1, multi-user hubs explicitly later. **What this does NOT authorise, stated because read+write makes it sharper:** he answered what dreamhub should DO, not where it may listen. **Public/WAN serving remains forbidden pending a reviewed design**, and a writable hub raises that bar rather than lowering it — the write routes steer a loop that acts on this machine.
 
 - **#298** — Explain each burndown column on hover, focus and touch · P2 ·
   Web UI feature · 25m · origin: **human** · **human via watch `add-idea`
@@ -7424,7 +7450,7 @@ Next id: **471**
   hole its own note pointed at: `is_deployed` was printed and never consulted,
   so a deployed dashboard with a deleted cwd was sweepable — red-proved and
   closed · **the port-0 half remains open**, see #319
-  · related: **#424, #461**
+  · related: **#424, #461, #471**
 
 - **#317** — `qorder.mjs` is the fifth instance of the frame-count assertion ·
   P2 · guard craft · ~20m · origin: **loop** · goal: a guard must not go red for
@@ -7802,7 +7828,7 @@ Next id: **471**
   field list is a menu, not a whitelist, and that is now stated where someone
   would otherwise prune it · audit kept at
   `.dreamwork/review/evidence/310-hub-drift-audit.md`
-  · related: **#470**
+  · related: **#470, #471**
 - **#248** — Decide whether answers records need persisted IDs · P3 · design ·
   origin: **loop** · landed 2026-07-27 (`1fc4bc7`) · **ruling: defer, with a
   trigger** · a ccc glm-5.2 subagent measured rather than speculated — 0 Open,
