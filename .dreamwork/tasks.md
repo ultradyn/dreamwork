@@ -2545,6 +2545,29 @@ Next id: **465**
   resolve the listener's pid from `ss -ltnp` and require it to equal the pid I started. A probe that
   does not verify *whose* server answered can report any result at all — the network equivalent of the
   fixture that stands in front of the code
+  · **lane E batch 2 landed on its branch — `E4` `0024ad2`, `E5` `a67f308` — and I am HOLDING THE MERGE.**
+  Both increments are correct against the plan and both red-proved on the named lines (`E4`: the
+  `_journal_record_health` call, plus the absence of a re-raise in `log_submission`; `E5`: the `send_error(400)`
+  in `_read_json`). `E4`'s seam is real — `submissions.log` made a **directory**, so `IsADirectoryError` comes
+  from the filesystem rather than a patched `open`. Closed reason set `REJECTION_REASONS =
+  ("malformed_json", "schema_invalid", "domain_invalid")` in `user_events/sqlite.py`, where a parser finds it
+  · **why the merge is held: `E5` turns a refused write into one the browser reads as successful, and his text
+  is what pays.** A rejected body now answers `202` with `{"ok": false, "rejected": true}` — and `202` makes
+  `res.ok` **true**. Every browser check is `res.ok` across 9 sites, which is exactly why Q3 could call
+  `200 → 202` a non-event; that reasoning holds for a *successful* write and breaks for a rejected one
+  · **measured, not read**: against a lane server whose pid I asserted, `POST /ask {"nope": …}` returned
+  `202 {"ok": false, "rejected": true, "reason": "schema_invalid"}`. At `watch.py:3109` the ask path is
+  `if (res && res.ok) { liveBox.value = ''; liveMsg.textContent = 'asked'; }` — so the box empties and the page
+  says **asked** for a question that was durably **rejected**. `:3526` and `:3570` are the same shape for
+  answers and notes, where `dwDraft.clear()` follows, and his standing rule is that a draft clears only on
+  **durable success**
+  · that rule is not inferred — `:3527`'s own comment says *"confirming a write that did not happen is the one
+  thing worse than the 409 itself"* (`#136`), and `#269`'s whole point is that his words survive. So `E5` does
+  not violate a preference, it violates the invariant two earlier tasks exist to protect
+  · **`E6` is where visibility was scheduled, and that is the scheduling error.** `E6` makes `shadow_failed`
+  visible; nothing in the plan makes *rejection* visible, because the plan assumed `res.ok` stayed truthful.
+  So the successor is not "do E6 sooner" — it is **`E5b`: no write surface may confirm a rejected receipt**,
+  and `E5` merges with it or not at all
   · out of that batch and still open as the successor: **E4** (best-effort), **E5** (reject after
   receipt — `_read_json` at `watch.py:8354`; pre-E5 an invalid `kind` is still a synchronous `400` by
   design, which is *not* a cutover defect), **E6** (visible — a browser/motion increment, so it needs
