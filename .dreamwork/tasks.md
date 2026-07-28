@@ -55,36 +55,6 @@ Next id: **465**
   `dw:draft:<target>`, written on every input event, restored after render, cleared only on durable success.
   Read `.dreamwork/docs/draft-durability-status.md` first; it names the lines.
   · smaller than it looks, and **independent of `#269`'s IndexedDB upgrade** — do not wait for that.
-- **#458** — a migration leaves its notice **in the file the stale agent still reads**, so a running loop can
-  update its own routine · **P1** · loop-machinery/migration · origin: **human** ·
-  **human via chat 2026-07-29 01:40 (paraphrase of a dictated thought, his words quoted below):** *"for
-  upgrades of dreamwork … at the top of tasks.md we can have a comment message that says, this is an archived
-  copy … the migrate thing can put in messages that mean that any agent that was still running the old protocol
-  would find those messages and then be able to update itself, update its own routines. like, the self
-  documenting nature."*
-  · **the gap it closes is exact and currently real.** `migrations/README.md` applies migrations *"at
-  initialization (orient)"* — comparing `.dreamwork/skill-version` to the latest entry. So a **long-running**
-  loop that never re-initializes never sees a migration at all: it holds its routine in context and keeps
-  running the old protocol indefinitely. The skill files are cold to it; the **data files are hot**, read every
-  tick. That makes the data file the only channel guaranteed to reach a stale agent.
-  · **the motivating case is `#294`** (ledger → SQLite). The moment `tasks.md` stops being authoritative, an
-  old-protocol agent keeps *writing* to it — and its work is silently lost, because nothing reads it any more.
-  A banner at the top (*"archived copy; the live store is X; here is the tool"*) turns that from silent loss
-  into self-healing. Do not build this after `#294`; build it **before**, or the first migration that needs it
-  is the one that eats work.
-  · **design questions worth an IGC, not a guess:** where the notice lives so a human reader and a parser both
-  see it and neither is confused (a leading comment, a front-matter block, a first-line marker); how it is
-  distinguished from content (`lint.py` must not read it as an entry, and `watch.py` must not render it as a
-  task); whether it is *instructions* or a *pointer* to a migration entry — a pointer keeps the file small and
-  survives the instruction changing; and how it is **retired**, since a notice that outlives its migration is
-  the next agent's confusion.
-  · **the trust boundary must be stated in the same breath.** An instruction sitting in a data file that an
-  agent then follows is the shape of a prompt injection. It is safe **here** because the writer is our own
-  migration inside a local repo — so the design says explicitly: only a migration writes these, they carry a
-  declared marker, and an agent treats them as a protocol notice from its own repo, never as authority from a
-  peer (peer messages remain data, per the standing rule).
-  · **read with `#439`** (update & refresh) and `#438` (scheduled tasks) — both are about the loop acting on
-  change it did not initiate.
 - **#454** — questions collapse to a rolled-scroll card of 5-6 lines, persisted like other UI state ·
   **P2** · dashboard/asking · origin: **human** ·
   **human via watch 2026-07-29 01:06:** *"questions on the questions page should be collasible. However, the
@@ -217,6 +187,33 @@ Next id: **465**
   the design discussion
   · **blocked-on: **human** (define `IGC`; then rule on the composition with `#443`)**
   · related: **#443, #421, #438, #426**
+  · **DESIGN LANDED `0eea21c`, merged `1462aeb` — and it STAYS OPEN, because a design is not a ruling.**
+  `.dreamwork/docs/plans/attention-modes.md` plus the artifact `.dreamwork/review/445-attention-modes.html`;
+  built no mechanism, as the brief required — no `watch.py`, no tick-read file, no change to `run-mode`'s closed
+  set
+  · **the reconciliation with `#443` resolved to THREE orthogonal axes: pace × asking × delegation.** The
+  decisive error against one combined enum is concrete and it is *this session*: a single level drags pace and
+  delegation with it, so *"lackadaisical but delegating"* — his own instruction tonight — is unexpressible, and
+  that is precisely why `#443` was filed. Two axes fail too: asking (what surfaces to him) and delegation (who
+  does the work) are independent and neither derives from the other. A per-task override survives as an
+  *addition* to three axes, never a substitute
+  · `#443`'s existing values decompose cleanly — `lackadaisical` → idle pace, `hot` → hot pace + own hands,
+  `assisted` → hot pace + subagents — and the combination that has no name today (idle pace **with** subagents)
+  becomes expressible, which is the test the design had to pass
+  · each level fixes four things: what surfaces, what is emitted, where it is logged, and **what happens if he
+  never replies** — L1 blocks on him by design, L2 parks nothing (a document is not an ask), L3 proceeds and
+  *earns* stuck by researching first, L4 never blocks and keeps working the unanswered question in the
+  background. The ~10–20% escalation figure is recorded as a **soft estimate that steers**, with no counter that
+  gates, per his 01:17 ruling
+  · **the escalation test is materiality against his goals, not difficulty** — a design that escalates by
+  hardness escalates the wrong things
+  · **artifact verified by me, not folded from the report**: exactly one real `#ask`, both build-time metas
+  present, no stray `>` in the head (the `#457` regression), and the IGC table carries `table-layout:fixed`
+  through a class selector because the template's bare-`table` rule would otherwise win — the same pattern
+  `#421` proved after a 4197px table shipped and he could not read it
+  · **asked 2026-07-29 02:42 with three declared sub-decisions** (`Q1` the three axes, `Q2` names + where the
+  asking axis lives, `Q3` the subagent target and policy shape) · **blocked on his ruling**
+
 - **#443** — run modes conflate PACE with DELEGATION POSTURE, so there is no way to say *"idle-friendly, but
   use subagents"* · **P1** · loop-design/run-mode · origin: **human** · **human via watch 2026-07-28 22:18**
   · his words (dictated, lightly punctuated): *"We need to rethink how the Run modes work. Because when,
@@ -3382,6 +3379,60 @@ Next id: **465**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#458** — a migration leaves its notice **in the file the stale agent still reads**, so a running loop can
+  update its own routine · **P1** · loop-machinery/migration · origin: **human** ·
+  **human via chat 2026-07-29 01:40 (paraphrase of a dictated thought, his words quoted below):** *"for
+  upgrades of dreamwork … at the top of tasks.md we can have a comment message that says, this is an archived
+  copy … the migrate thing can put in messages that mean that any agent that was still running the old protocol
+  would find those messages and then be able to update itself, update its own routines. like, the self
+  documenting nature."*
+  · **the gap it closes is exact and currently real.** `migrations/README.md` applies migrations *"at
+  initialization (orient)"* — comparing `.dreamwork/skill-version` to the latest entry. So a **long-running**
+  loop that never re-initializes never sees a migration at all: it holds its routine in context and keeps
+  running the old protocol indefinitely. The skill files are cold to it; the **data files are hot**, read every
+  tick. That makes the data file the only channel guaranteed to reach a stale agent.
+  · **the motivating case is `#294`** (ledger → SQLite). The moment `tasks.md` stops being authoritative, an
+  old-protocol agent keeps *writing* to it — and its work is silently lost, because nothing reads it any more.
+  A banner at the top (*"archived copy; the live store is X; here is the tool"*) turns that from silent loss
+  into self-healing. Do not build this after `#294`; build it **before**, or the first migration that needs it
+  is the one that eats work.
+  · **design questions worth an IGC, not a guess:** where the notice lives so a human reader and a parser both
+  see it and neither is confused (a leading comment, a front-matter block, a first-line marker); how it is
+  distinguished from content (`lint.py` must not read it as an entry, and `watch.py` must not render it as a
+  task); whether it is *instructions* or a *pointer* to a migration entry — a pointer keeps the file small and
+  survives the instruction changing; and how it is **retired**, since a notice that outlives its migration is
+  the next agent's confusion.
+  · **the trust boundary must be stated in the same breath.** An instruction sitting in a data file that an
+  agent then follows is the shape of a prompt injection. It is safe **here** because the writer is our own
+  migration inside a local repo — so the design says explicitly: only a migration writes these, they carry a
+  declared marker, and an agent treats them as a protocol notice from its own repo, never as authority from a
+  peer (peer messages remain data, per the standing rule).
+  · **read with `#439`** (update & refresh) and `#438` (scheduled tasks) — both are about the loop acting on
+  change it did not initiate.
+  · **LANDED `c41b25c`, merged `327345b`** (`@grok`, ~20 min) — `migration_notice.py` (`write`/`parse`/`retire`
+  CLI + library), the contract in `file-formats.md` in the **same commit**, `migrations/README.md`, a design doc,
+  and 15 tests. **Survivor of its IGC: an HTML comment block at byte 0** (`<!--dreamwork-migration-notice`, the
+  same family as `review_artifact.HEADER_OPEN`), **pointer-only** (`migration:` required, optional `summary:`),
+  **single-slot** (a write replaces the prior notice), retired when `skill-version >= migration`
+  · each rival refuted with the error written out: a fake `## Open` entry breaks parser indifference; a separate
+  `notices.md` is invisible to the agent that is re-reading `tasks.md`, which is the entire point; a freeform
+  first line has no retirement or shrink rule; YAML front-matter adds a second header shape to a file that
+  already carries prose and `Next id`
+  · **the shrink rule is structural, not remembered** — single-slot means the Nth migration leaves one banner,
+  not N, which is his standing *"an update gets smaller"* preference applied to a machine writer
+  · **verified independently by me, twice, because the indifference claim is the load-bearing one.** I replaced
+  `strip_notice`'s `_BLOCK_RE.sub("", text)` with `return text` → 4 tests failed including the shrink proof; and
+  I changed `NOTICE_OPEN` from an HTML comment to `- **#999** …` so the notice became **visible** to the
+  production readers → both `TestIndifference` tests failed (`lint.LEDGER_ID` and `watch.parse_ledger` returned
+  different id sets with and without a notice). Restored byte-identical both times, 15 pass. So the checks can
+  see the absence they exist to detect, and neither derives its expected list by hand
+  · it also stated the trust boundary in the design rather than leaving it implicit: only a migration writes
+  these, they carry a declared marker, and an agent reads one as a protocol notice from its own repo — never as
+  authority, which keeps it distinct from the peer-message rule
+  · **successors, filed here rather than as new ids**: the orient step should run `migration_notice.py retire`
+  after bumping `skill-version` (or the applying agent must, documented); a lint WARN on a *malformed*
+  never-closed notice is optional and does not affect well-formed indifference
+  · **`#294` is now unblocked on this channel**, which was the whole reason it was P1 and had to precede it
 - **#421** — how we ask him questions, researched rather than guessed · P1 · loop-instructions ·
   origin: **human** · **human via watch `do-next` 2026-07-28 16:29** · next-up
   · verbatim: *"We should update instructions for the dreamwork agent: when asking users questions:
