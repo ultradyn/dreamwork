@@ -25,6 +25,31 @@
   `~/.local/state/cc-w/ccc/runs/<run>/output.txt` is **zero bytes** for a 401. I now capture
   stderr on every dispatch, which is how this got diagnosed at all.
 
+  **Follow-up 2026-07-28 12:58 — re-measured, and now it needs a decision from you, not a
+  refresh.** Still 401, verbatim the same error, so this is stable and not a blip. I have read
+  your `~/.config/ccc/config.toml` and the cause is exact: `[aliases.grok]` is
+  `runner = "grok"`, `model = "grok-4.5"` with **no provider**, so it authenticates to xAI
+  directly with the expired key; `[aliases.glm52]` is the **same runner binary** with
+  `provider = "llmp"`, which has its own key and works. One credential, one alias.
+  **The decision.** You told me to use `ccc @grok` and `ccc @glm52` and *only* those. One of
+  them has been dead all day, so I have been running a **single lane** — for #399b, and now for
+  #331 — where you sized the fleet at up to four each. Everything since 05:52 has therefore been
+  one runner's behaviour measured twice, which is a much weaker answer to the "which models and
+  providers are best for us" half of what you set me than it looks.
+  Three ways out, in the order I would pick them:
+  1. **Point `@grok` at a working provider** — e.g. `provider = "llmp"` with one of
+     `gpt-5.6-terra` / `gpt-5.6-luna` / `gpt-5.6-sol`. Keeps your two-alias instruction intact,
+     gives me a genuinely different model to compare against glm-5.2, and needs no credential.
+     **This is my recommendation**, and terra is the one I would try first since your own
+     `cx-reviewer` alias already trusts that family.
+  2. **Refresh the xAI key** so `grok-4.5` itself comes back. Best if you specifically want
+     grok-4.5 in the comparison; only you can do it.
+  3. **Let me use `@glm51`** (your existing opencode + zai-coding-plan alias). Available right
+     now, but it is a third alias you did not name, and glm-5.1 next to glm-5.2 is the least
+     informative pairing of the three.
+  I have not changed your config and will not — say which, or say "keep going on one lane" and
+  I will, and record the comparison as single-runner rather than implying otherwise.
+
 - **P2 · 2026-07-28 — one word: may I add `GIT_OPTIONAL_LOCKS=0` to `~/.claude/settings.json`?**
   `~/CLAUDE.md`'s git-index-lock entry says that setting is already there "for all Claude
   sessions". It is not — `settings.json`'s `env` has no such key, and `echo
