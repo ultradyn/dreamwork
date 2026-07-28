@@ -24,9 +24,24 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **460**
+Next id: **461**
 
 ## Open
+- **#460** — a tool that replays the `task_event` `.jsonl` log and reconstructs the database · **P3** ·
+  tooling/recovery · origin: **human** · **blocked-on: #294** (which creates the log) ·
+  **human via watch 2026-07-29 01:43, answering `#264` Q2:** *"We can add a future task (low priority for now)
+  to write a tool to process this and reconstruct the DB. that way we know it'll work + we can run tests
+  against fixtures and ensure determinism, etc. that will at least allow us to set a consistent rule for how to
+  merge event streams."*
+  · **he named the priority himself — low — and the reason it exists is not recovery, it is proof.** *"That way
+  we know it'll work"*: a log nobody has ever replayed is a backup nobody has ever restored. The tool is how
+  the `(c)` ruling stays safe.
+  · **three properties he asked for, each testable:** replay is **deterministic** (same log → byte-identical
+  DB, tested against fixtures); the log carries **enough detail** to reconstruct — which is the real
+  acceptance test of `#264`'s log schema, not of this tool; and it establishes **a consistent rule for merging
+  event streams**, which is what makes the future dreamhub multi-agent case tractable.
+  · so this task is also the **falsifier for `#264`'s "capture enough detail"** — if replay cannot rebuild the
+  DB, the log schema is wrong and that is a finding about `#294`, not about this tool.
 - **#459** — two typing boxes keep no draft: `#askbox` and the popout `#ptext` · **P2** ·
   dashboard/durability · origin: **loop** (draftcheck lane, verifying `#269`) ·
   · **found while checking what draft durability actually covers** (`6a6ddff`). The review dock, the
@@ -2415,6 +2430,24 @@ Next id: **460**
   · **the broad research half remains open** — the primitive comparison and the #294 migration
   script, cutover and rollback. This task answered the evidence question, not that one
   · related: **#397, #402, #405, #419**
+  · **RATIFIED 2026-07-29 01:43 — Q1 `rec`, and Q2 answered `(c)`, overriding my rec of `(b)`.** The
+  boundary stands: a task transition is one row in an append-only `task_event` log in `#263`'s SQLite
+  database, in the same transaction as the CAS on `task_state`; burndown and the dashboard become
+  **queries**, so neither can be stale.
+  · **Q2 as he actually ruled it, which is not either option as I posed them:** *"(c) — in the future the
+  way we deal with this is via the dreamhub. Right now we can assume it's running locally only. or at
+  least in serial … we should keep a .jsonl log I think, that way it's as flexible as we need it to be
+  and we just need to be sure to capture enough detail and we'll be able to recover no matter what."*
+  · **coordinator's reading, stated because it is an interpretation and not his words:** the `.jsonl` is
+  **machine-local (gitignored)**, since a *committed* export would simply be `(b)`. So v1 accepts the loss
+  of cross-clone burndown history, and the log exists for **recovery and reprocessing**, not portability.
+  The upgrade path is cheap and worth noting: if he later wants cross-clone history, committing that same
+  log **is** `(b)` — so `(c)` here is not a door closing. Say so if this reading is wrong.
+  · **"capture enough detail" is the load-bearing requirement** and it belongs in the design before code:
+  the log must carry whatever a reconstruction needs, which is only provable by `#460` replaying it into
+  an identical DB. Design the log against that test, not against what is convenient to write.
+  · **ratifying built nothing.** The migration, cutover ordering, whether git's 331 revisions become
+  synthetic events, rollback, and the mixed-writer freeze remain `#294`'s and still need their own grant.
 - **#263** — Design a durable user-event inbox and replay CLI · P0/P1 · design ·
   origin: **human** · **human via watch 16:05** · immutable disk event before
   acknowledgement; monitor only wakes dreamer; early-loop replayable/idempotent
