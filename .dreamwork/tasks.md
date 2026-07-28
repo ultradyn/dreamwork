@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **474**
+Next id: **475**
 
 ## Open
 - **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
@@ -221,6 +221,36 @@ Next id: **474**
   settle **one** way of writing it so the next ask is not a coin flip. `file-formats.md` is where that shape
   belongs
   · blocked on nothing · related: **#473**
+  · **FIXED `f0ca86e` (lane `wt/qsignal`, merge `aa9581f`, 2026-07-29 06:46) — and there were TWO defects, as suspected.** `mdSpans` had **no `[text](url)` handler at all**, and `linkifyReview` only matched the backticked `.dreamwork/review/x.html` form — so his markdown link matched nothing. **Separately the path was also wrong:** `../review/` does not resolve from `/questions`, so even a rendered link would have 404'd. A link that renders and 404s is the same defect wearing a fix's clothes, which is why the guard asserts the href **fetches**, not that an `<a>` exists. Shape settled on the corpus majority (backticked `.dreamwork/review/x.html`) **plus** tolerance for markdown links so his live `#417` entry works rather than waiting on a corpus migration nobody asked for.
+
+- **#474** — `docktarget` and `noteprop` fail on master and passed at this session's first commit · **P1** ·
+  regression/dashboard · origin: **loop** · **found 2026-07-29 06:45 while discharging the guard debt `#471`
+  exposed**
+  · **the measurement, and it is solid:** at `b9fa1a4` (this session's starting commit) both PASS; on master
+  both FAIL, **deterministically at load 28-38**, which rules out the frame-sampling flake that everything else
+  in that load band looks like. Re-tested `b9fa1a4` twenty-five minutes later and it still PASSED, so the
+  signal is code-dependent and not the passage of time
+  · failing assertions, verbatim: `docktarget` — *"note: dock visibly remains original after in-memory
+  reorder"* and the same for `answer`; `noteprop` — *"normal motion: the dock stays on the same stable target"*
+  and *"the textarea resize and scroll survive"*, in **both** normal and reduced motion
+  · **prime suspect, not confirmed: `a63930a` (`#463`/`#464`)**, because `#463` changed how review artifacts
+  **sort** (created time rather than modified) and both guards are about the dock **after a reorder**. Against
+  it: its parent `3564a1f` also fails, so if `a63930a` is the cause something before it fails too — or the
+  bisect that produced that pair was malformed (it was; see below)
+  · **two failed attempts to bisect this, and the second failure is the reusable lesson:** (1) hand-picking
+  commits gave a contradictory answer because I assumed `2b50801` was `a63930a`'s parent and it is not;
+  (2) `git bisect start 3564a1f 2b50801` accepted a *"good"* that is **not an ancestor** of the *"bad"*, so it
+  explored 445 revisions of a divergent graph and blamed `0dd136e`, a **dream-file commit**, which cannot break
+  a browser guard. **A bisect verdict naming a commit that could not possibly cause the failure is evidence the
+  RANGE is wrong, not the code** — check ancestry before trusting a bisect, and treat an absurd culprit as a
+  finding about the method
+  · so: bisect properly with `--first-parent` over `b9fa1a4..master` (a well-formed range), and note the
+  runner needs `git bisect reset` to actually take — a stale `bisect log` served the previous run's verdict
+  · **why this was invisible:** the suite reports `60 guard(s) registered` and, until `#471`'s successor landed
+  minutes ago, never whether one **ran**. The coordinator reported the tree green all session on **pytest +
+  lint + individually-invoked guards**, and a full `just test` never completed — one run was killed by an
+  external sweep mid-guards. So a dock regression rode along inside a merge that was called verified
+  · blocked on nothing · related: **#471, #463**
 
 - **#473** — a question can be updated and he has no way to notice · **P1** · dashboard/questions ·
   origin: **human** ·
@@ -244,6 +274,7 @@ Next id: **474**
   half should reuse `watch-events.log` rather than inventing a second channel — noting that channel is
   best-effort and lossy by design, which is a real limit on (b) and may make it the weaker half
   · blocked on nothing · related: **#472, #419, #467**
+  · **LANDED `b9c1051` (lane `wt/qsignal`, merge `aa9581f`, 2026-07-29 06:46), with the weaker half labelled as weak.** *Updated* is a **per-entry content digest** in `.dreamwork/question-sigs.json` — explicitly not the file mtime, and the lane wrote down what it rejected and why: git history (commit lag — the coordinator commits minutes after writing), a format marker (would change a parsed contract it did not own), and mtime (a neighbour's answer rewrites the whole file). Granularity suppresses a difference `ageStr` cannot show, reusing `#463`'s lesson rather than an exact inequality. **Half (b) is honestly derated:** the `watch-events.log` notification landed but that channel is **best-effort and lossy by design**, so the *display* half is the reliable deliverable — which is the right way round, since a notification he cannot trust is worse than none.
 
 - **#471** — a single guard cannot be run on its own, and I cannot explain why the full run disagrees · P2 ·
   loop-tooling/verification · origin: **loop** · **found while verifying `#269`, 2026-07-29 05:5x**
@@ -267,7 +298,7 @@ Next id: **474**
   · 8 of 57 registered guards call `serveVerified`: `fileimg filehead identity gitrow fileview reviewdraft
   staleremedy serving`. `staleremedy` is the only one that ignores `argv[3]` entirely (`await freePort()`),
   which may be the intended pattern or may be an accident
-  · blocked on nothing · related: **#310, #428, #203**
+  · blocked on nothing · related: **#310, #428, #203, #474**
   · **CORRECTION 2026-07-29 06:12 — Observation B was FALSE and the lane refuted it in its first milestone.** I wrote that `identity`, `gitrow` and `serving` **passed** in the 05:33 full run. They did not: the recorded output has `FAIL identity`, `FAIL serving`, `FAIL gitrow` and `FAIL reviewdraft`, **all four with the identical `serve: :39899 is serving …/target, not …/<guard>/…` message** — four occurrences of that string in one run. **So the two observations never disagreed**, and the escape hatch this entry offered (*"I have no evidence any self-serving guard fails in a full run"*) was itself the unsupported claim.
   · **how I got it wrong, because it is the same error twice tonight:** I read a **partially written** log as a complete one. The run was still going; those guards had not been reached yet, so their absence from an early `FAIL` list was absence of *evidence*, and I reported it as evidence of *absence* — exactly the shape of the `#469` empty-glob mistake, where a command that never ran was read as proof. A file being appended to is not a result.
   · **so the original finding stands and it is a `#310`-class defect:** guards that serve their own target are handed the recipe's shared port as `argv[3]`, `serveVerified` correctly refuses, and their assertions **never run**. At least four confirmed; eight call `serveVerified`. `reviewdraft`'s 20 draft checks and the new `burndownmock` are both in that set, so work verified tonight is **not** gated by the suite even though both are registered. The guard count on the OK row measures registration, not execution — which is precisely what `#310` was about.
@@ -3657,7 +3688,7 @@ Next id: **474**
   · note *ctime* in his sense is **creation**, which POSIX `st_ctime` is not (it is inode change) — decide the
   source of truth (birth time via `statx` where available, else the artifact's own build stamp or first commit)
   and say what happens when it is unavailable, rather than shipping `st_ctime` and calling it created
-  · related: **#456**
+  · related: **#456, #474**
   · **LANDED `e1db28d`, merged `a63930a`** — birth via `statx stx_btime` (`st_birthtime` on BSD), never
   POSIX `st_ctime`; `created unknown` is a named state that sorts after every known artifact rather than a
   silent fall back to mtime; the secondary is dimmer and dot-separated per `#456`
