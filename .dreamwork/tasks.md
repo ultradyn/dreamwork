@@ -2458,7 +2458,7 @@ Next id: **421**
   inside itself** — the body-digest predicate lived in two places, so deleting the copy under test
   changed nothing — and consolidating to one line. That is what `proved` should mean
   · **so A, B, C, D and F are all landed and the second gate's condition — his 05:43 *"until A-D
-  are proved"* — is MET.** Filed as a question 2026-07-28 16:30 rather than acted on: opening it is
+  are proved"* — is MET.** Filed as a question 2026-07-28 16:24 rather than acted on: opening it is
   his, and the nine hours it sat shut with no ask is the `#419` hole he named at 15:19
   · **`B7`'s red came back GREEN, and that is the finding of the batch.** Removing
   `UNIQUE(client_action_id)` left the whole suite passing. **I reproduced it: 12 passed with the

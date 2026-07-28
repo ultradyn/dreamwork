@@ -110,7 +110,7 @@ coverage counts and what that means for `#353`; and the real `just test` exit co
 
 ---
 
-## AMENDMENT, 2026-07-28 16:26 — your `#371` fixture is poisoned, and it is my fault
+## AMENDMENT, 2026-07-28 16:23 — your `#371` fixture is poisoned, and it is my fault
 
 **Read this before you build direction 2.** If you have already built it against `#371`, re-check it
 against what follows; if you have already reported, say in the inbox whether this changes your
