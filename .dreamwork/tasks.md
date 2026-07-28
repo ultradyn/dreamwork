@@ -24,9 +24,31 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **415**
+Next id: **416**
 
 ## Open
+
+- **#415** — the hand-off grammar allows ONE sha, and a task landing in two commits is the
+  ordinary case · P3 · loop-tooling/format · origin: **loop** · found when the `#411` lane
+  reported honestly and lint called it malformed
+  · **what happened.** `#411` landed as `54c68e8` (the fix) + `25a3fe4` (the lint count), so the
+  lane wrote `· landed \`54c68e8\` \`25a3fe4\` ·`. `file-formats.md:246` specifies
+  `· landed \`<sha>\` ·` — singular — so `lint` reported *"a hand-off entry the grammar does not
+  recognise"*. **The lane was right and the format was wrong**: two commits is what the work was
+  · normalised by hand to the final sha with the other in the prose, which loses the structure —
+  a tool can no longer find the first commit, only a human reading the sentence
+  · **this is `#401` one field over.** That task widened the hand-off *id* vocabulary to accept
+  plain / sub-id / combined because the loop's ids were richer than the grammar. The *sha* field
+  has the identical defect and the same fix shape: accept a run of backticked shas, keep the
+  first-and-last distinction if it is worth anything, and state it in `file-formats.md` in the
+  same commit
+  · **the cheap red is available without an injection**: today's `#411` line, before
+  normalisation, is a real failing input — put it in the fixture and assert the grammar accepts
+  it, then narrow the pattern back to one sha and watch it fail
+  · low priority: the WARN is loud, correct, and the workaround is one edit. Filed so the next
+  two-commit lane does not rediscover it — this is the third time today a lane has been marked
+  wrong by a checker that was itself too narrow (`qacard`, the dock guards, now this)
+  · related: **#401**
 
 - **#414** — a motion guard's pass condition depends on the browser's FRAME RATE, and it does
   not say so · P2 · verification/motion · origin: **loop** · found by the only failure in the
@@ -3658,7 +3680,7 @@ Next id: **415**
   · **`ENTRY_ID` deliberately unchanged**, blast radius documented: it is the atom for
   `parse_ledger`, `_open_ids`, `_landed_ids`, related, origins and lint's entry walk. That is
   **#399**'s neighbourhood
-  · related: **#381, #399, #395, #402, #406, #409**
+  · related: **#381, #399, #395, #402, #406, #409, #415**
 
 - **#406** — `handoffs.md` instructs an append that **structurally cannot** put the line where it
   is required · **P1** · handoffs/format · origin: **loop** · found by watching a live lane obey
