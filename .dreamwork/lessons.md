@@ -3083,3 +3083,19 @@ this shape and convert opportunistically.)
   the lane it reviews is one model agreeing with itself**, which is the specific value
   the split exists to buy; and **a model attribution is history, so it is never
   guessed** — where the log is gone, the honest record is *unknown*.
+
+- **In fish, one non-matching glob aborts the whole command — so a multi-path search
+  can never run, and the empty output reads exactly like "it is not there."** Looking for
+  ccc's alias→model config I ran `grep -rn glm52 ~/.config/ccc* ~/.ccc*`. Fish answered
+  `no matches found: /home/xertrov/.ccc*` and ran **nothing** — the `~/.config/ccc*` half
+  was never evaluated. I read that as evidence the config did not exist, said so in a P1,
+  and wrote a brief telling a lane the registry *"is not in an obvious ~/.config/ccc"*.
+  The lane found it immediately at **`~/.config/ccc/config.toml`**, with
+  `[aliases.glm52] runner="grok" provider="llmp" model="glm-5.2"` — the exact answer, in
+  the first place I claimed to have looked. **Evidence of the mechanism, not just the
+  miss:** the error names only the failing pattern, so the output looks like a completed
+  search with no hits; a `grep` that ran and found nothing and a `grep` that never ran
+  are indistinguishable at a glance. Two habits: **one path per search when any path
+  might not exist**, and treat "no output" from a compound command as *unknown* until the
+  command's exit is checked. This is the same shape as a check that examines nothing —
+  absence of a finding is not a finding, and here it manufactured a false one.
