@@ -3117,3 +3117,13 @@ this shape and convert opportunistically.)
   a lane spending its first minutes reporting a phantom problem, and one did exactly that. The cost is real
   because the alternative it might reach for is worse: merging `master` mid-increment to "fix" it moves a
   working tree for no reason. Evidence: `94e0582` committed after the worktree at `wt/premerge` was created.
+
+- **Two briefs must never grant the same LINE, not just the same file — and `DEFAULT_GUARDS` is one line every
+  guard-adding lane wants.** I granted the `justfile` `DEFAULT_GUARDS` line to `mockups` (#417) and
+  `summaryjson` (#275) at once. `mockups` registered first, taking it to 58; had the second lane also edited
+  it, the merge would have conflicted on a single line two agents were each told they owned. The disjointness
+  invariant is about the text, not the path, and a one-line grant reads as harmless precisely because it is
+  small. Fix applied: guard registration is now **centralised at merge** — a lane builds and red-proofs its
+  guard, runs it directly (`node dev/capture/<g>.mjs <outdir> <port>`), and REPORTS the name; the coordinator
+  registers it. Say in the ledger that the guard was unregistered at the lane's commit, or its branch reads as
+  gating when it does not. Evidence: the correction relayed to `summaryjson` at 06:00, before it wrote.
