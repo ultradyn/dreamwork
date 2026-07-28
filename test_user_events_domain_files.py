@@ -277,5 +277,90 @@ class TestDomainFileOneWrite(unittest.TestCase):
                 "the recovery write landed its new body")
 
 
+# A receipt marker in the same shape the application layer writes (apply.py's
+# _marker_for), so the marker search is exercised against the real format. The
+# search itself is marker-format-agnostic — it hunts a literal string — but a
+# realistic marker keeps the fixture honest about what it represents.
+_MARKER = "<!-- dreamwork:/answer:receipt-fold -->"
+
+
+class TestDomainFileMarkers(unittest.TestCase):
+    """Increment 14 (C4 markers): a marker is found anywhere in a valid file,
+    across BOTH the literal ``Open`` and ``Answered`` sections.
+
+    The loop folds an answered entry from ``## Open`` to ``## Answered``; a
+    marker that was in Open moves with it. A search that scans only one section
+    loses the marker after the fold — so the scan must cover both."""
+
+    def _questions_body(self, marker_section):
+        """A two-section questions body with the marker in exactly one section.
+
+        ``marker_section`` is ``"Open"`` or ``"Answered"``. Produced as the BODY
+        of a store-managed file (via domain_files.write), never hand-written as
+        a managed file — so the digest and lineage come from the store.
+        """
+        open_entry = ("- an open question\n"
+                      "  " + _MARKER + "\n") if marker_section == "Open" else ""
+        answered_entry = ("- a folded answer\n"
+                          "  " + _MARKER + "\n") if marker_section == "Answered" else ""
+        return ("# Questions for the dreamer\n"
+                "\n"
+                "## Open\n"
+                "\n"
+                + open_entry + "\n"
+                "## Answered\n"
+                "\n"
+                + answered_entry)
+
+    def test_a_fold_between_sections_cannot_hide_a_marker(self):
+        # PRODUCTION LINE WHOSE DELETION FAILS THIS TEST:
+        #   the second entry in _MANAGED_SECTIONS ("Answered") inside
+        #   domain_files. Remove it and a marker that has been folded into
+        #   ## Answered is no longer scanned — find_marker returns False for
+        #   the Answered fixture while the Open fixture stays True.
+        with tempfile.TemporaryDirectory() as d:
+            path_a = os.path.join(d, "answered.md")
+            path_b = os.path.join(d, "open.md")
+
+            # Two store-produced valid files, identical bodies except for which
+            # section holds the marker.
+            domain_files.write(path_a, self._questions_body("Answered"),
+                               generation=1, applied="recv|/answer|app")
+            domain_files.write(path_b, self._questions_body("Open"),
+                               generation=1, applied="recv|/answer|app")
+            text_a = open(path_a, encoding="utf-8").read()
+            text_b = open(path_b, encoding="utf-8").read()
+            self.assertTrue(domain_files.validate(text_a),
+                            "precondition: fixture A is a valid managed file")
+            self.assertTrue(domain_files.validate(text_b),
+                            "precondition: fixture B is a valid managed file")
+
+            # PRECONDITION, derived at runtime via the SAME section parser the
+            # search uses: the two fixtures differ in which section holds the
+            # marker. A fixture that puts it in both is vacuous (the plan's
+            # explicit warning). Asserting the gap — never a literal — so the
+            # test fails loudly the day the fixture stops differing.
+            a_open = domain_files._section_text(text_a, "Open")
+            a_ans = domain_files._section_text(text_a, "Answered")
+            b_open = domain_files._section_text(text_b, "Open")
+            b_ans = domain_files._section_text(text_b, "Answered")
+            self.assertIsNotNone(a_ans, "precondition: A has an Answered section")
+            self.assertIsNotNone(b_open, "precondition: B has an Open section")
+            self.assertNotIn(_MARKER, a_open or "",
+                             "precondition: A's marker is NOT in Open")
+            self.assertIn(_MARKER, a_ans,
+                          "precondition: A's marker IS in Answered")
+            self.assertIn(_MARKER, b_open,
+                          "precondition: B's marker IS in Open")
+            self.assertNotIn(_MARKER, b_ans or "",
+                             "precondition: B's marker is NOT in Answered")
+
+            # The whole point: both are found, regardless of section.
+            self.assertTrue(domain_files.find_marker(text_a, _MARKER),
+                            "a marker folded into Answered must be found")
+            self.assertTrue(domain_files.find_marker(text_b, _MARKER),
+                            "a marker still in Open must be found")
+
+
 if __name__ == "__main__":
     unittest.main()

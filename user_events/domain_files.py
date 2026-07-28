@@ -238,6 +238,82 @@ def validate(text):
 
 
 # ---------------------------------------------------------------------------
+# Markers — whole-file marker search across BOTH literal Open and Answered
+# sections (increment 14, C4).
+#
+# The loop folds an answered entry from ``## Open`` to ``## Answered`` (see
+# watch.py: append_answer moves the entry and its marker below the ``##
+# Answered`` header). A receipt marker travels with the entry it belongs to, so
+# the same receipt's marker can sit in EITHER section depending on whether the
+# fold has happened. A scan that looked only under ``## Open`` would lose the
+# marker the moment the fold moved it — and the proof would then mis-read an
+# applied receipt as not-applied and duplicate its effect. The search therefore
+# scans every section a marker can legitimately live in, and the section list
+# is the single place those sections are named.
+# ---------------------------------------------------------------------------
+
+# The literal section headers a managed marker may live under, in the form
+# ``## <name>``. Order is stable and irrelevant to a union search; what matters
+# is that BOTH are present. This tuple is the C4 red line: delete the
+# ``"Answered"`` entry and a marker the fold has moved below ``## Answered`` is
+# no longer scanned, so find_marker returns False for the folded fixture while
+# the still-open fixture stays True — a discriminating failure, not a suite
+# that moves together.
+_MANAGED_SECTIONS = ("Open", "Answered")
+
+
+def _section_header_re(section):
+    """Anchored regex matching the ``## <section>`` header line.
+
+    Anchored and strip-equal (``^[ \\t]*## <name>[ \\t]*$``), matching
+    watch.py's ``LEDGER_SEC_OPEN`` / ``LEDGER_SEC_LANDED`` and lint.py's own
+    ``heads`` rule. An unanchored ``text.split("## Open")`` once let an entry
+    *say* ``## Open`` masquerade as a section boundary (watch.py:7642); the
+    anchored form is the one-correct-answer that keeps this reader, watch and
+    lint from disagreeing about where a section begins.
+    """
+    return re.compile(r"^[ \t]*## " + re.escape(section) + r"[ \t]*$", re.M)
+
+
+def _section_text(text, section):
+    """The text of one ``## <section>``: from its header to the next ``## ``
+    header at column 0 or EOF.
+
+    ``None`` when the file carries no such section (so a caller can tell
+    "absent section" from "empty section"). The body returned excludes the
+    header line itself and any text before it, and stops at the next top-level
+    ``## `` heading — which is exactly the region an entry under that section
+    occupies, and exactly where a marker the fold placed there would sit.
+    """
+    pattern = _section_header_re(section)
+    m = pattern.search(text)
+    if m is None:
+        return None
+    body = text[m.end():]
+    nxt = re.search(r"(?m)^## ", body)
+    if nxt is None:
+        return body
+    return body[:nxt.start()]
+
+
+def find_marker(text, marker):
+    """True iff ``marker`` appears within ANY managed section of ``text``.
+
+    Searches the union of the sections named in ``_MANAGED_SECTIONS`` rather
+    than the whole file, so a marker is found whether it sits under ``## Open``
+    (before the fold) or under ``## Answered`` (after the fold). A marker that
+    appears nowhere in those sections is absent — including a marker whose only
+    occurrence is outside any section header, which is not a receipt the store
+    would recognise.
+    """
+    for section in _MANAGED_SECTIONS:
+        region = _section_text(text, section)
+        if region is not None and marker in region:
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # One write — effect, marker, generation and digest land in a single atomic
 # durable replace under the lock, or none of them do (design law 5).
 #
