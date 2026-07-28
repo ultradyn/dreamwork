@@ -1,0 +1,421 @@
+<!doctype html>
+<!--Built from the dreamwork review template v1+95ee67a8 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
+<meta name="dreamwork-review-template" content="v1+95ee67a8">
+<title>"#421 · How the loop should ask you things · four options, one rejected"</title>
+<style>
+/* Offline-clean by construction: no fetches, no external fonts, no images.
+   Tokens are watch.py's, value for value, because this is read inside the
+   dashboard's own iframe. */
+:root{
+  color-scheme:dark;
+  --bg:#090d16;--bg2:#0c1220;--panel:#111827;--panel2:#162033;
+  --line:#1f2937;--border:#334155;--text:#cbd5e1;--bright:#f4f7fb;
+  --lit:#e5e7eb;--muted:#98a3b5;--dim:#697589;--dimmer:#4b5568;
+  --accent:#a5b4fc;--accent2:#7dd3fc;--ok:#86efac;--warn:#fcd34d;
+  --bad:#fda4af;--ink:#050810;--radius:5px;
+  --ease:cubic-bezier(.32,.1,.2,1);--measure:78ch
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--dimmer) transparent}
+*::selection{background:rgba(165,180,252,.24);color:var(--bright)}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--dimmer);border-radius:4px}
+html{background:var(--bg);scroll-padding-top:5.5rem}
+body{margin:0;background:
+  radial-gradient(ellipse 68rem 34rem at 46% -14rem,rgba(99,102,241,.13),transparent 68%),
+  radial-gradient(ellipse 34rem 24rem at 92% 12%,rgba(14,165,233,.045),transparent 70%),
+  linear-gradient(180deg,var(--bg),#0a0f19 55%,var(--bg));
+  color:var(--text);font-family:ui-monospace,"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  font-size:.82rem;line-height:1.7;overflow-wrap:anywhere}
+a{color:var(--accent);text-underline-offset:.22em;text-decoration-thickness:1px}
+a:hover{color:var(--bright)}
+code{color:var(--lit);background:rgba(22,32,51,.72);padding:.03rem .32ch;border-radius:3px}
+pre{margin:.75rem 0;padding:.9rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.52);color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+/* syntax highlighting tokens (#339) — emitted at build time by
+   review_artifact.py as <span class="tok-…"> inside pre>code. No script in
+   the artifact; if a rule is ever lost the token takes the block's own
+   colour, so highlighting never breaks the code itself. Scoped to pre code
+   so an inline <code> snippet is never coloured by accident. */
+pre code .tok-kw{color:var(--accent)}
+pre code .tok-str{color:var(--ok)}
+pre code .tok-num{color:var(--warn)}
+pre code .tok-com{color:var(--dimmer);font-style:italic}
+pre code .tok-fn{color:var(--accent2)}
+pre code .tok-typ{color:var(--warn)}
+pre code .tok-dec{color:var(--accent)}
+pre code .tok-op{color:var(--muted)}
+pre code .tok-tag{color:var(--accent)}
+pre code .tok-attr{color:var(--accent2)}
+pre code .tok-var{color:inherit}
+strong{font-weight:inherit;color:var(--bright)}em{color:var(--lit)}
+p{margin:.62rem 0}ul,ol{margin:.55rem 0;padding-left:2.4ch}li{margin:.34rem 0}
+h1,h2,h3,h4{margin:0;font:inherit;font-weight:normal;color:var(--bright)}
+h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit);margin-top:1.4rem}
+.wrap{width:min(calc(100% - 2rem),1120px);margin:0 auto}.read{max-width:var(--measure)}
+.skip{position:fixed;z-index:99;top:.6rem;left:.6rem;transform:translateY(-180%);display:inline-flex;align-items:center;min-height:44px;padding:.6rem 1ch;background:var(--bright);color:var(--ink);border-radius:var(--radius);text-decoration:none}
+.skip:focus{transform:none;transition:transform .35s var(--ease)}
+.toprail{position:sticky;top:0;z-index:20;background:rgba(9,13,22,.91);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
+.toprail-in{width:min(calc(100% - 2rem),1120px);min-height:58px;margin:auto;display:flex;align-items:center;gap:1rem;justify-content:space-between}
+.identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
+main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
+.label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
+.quiet{color:var(--muted)}.dim{color:var(--dim)}.dimmer{color:var(--dimmer)}
+.kicker{display:flex;gap:1ch;align-items:baseline;flex-wrap:wrap}.proposal{color:var(--warn)}
+.sub{color:var(--dim);margin:.25rem 0 1.7rem}
+.lead{font-size:.9rem;line-height:1.78;color:var(--lit);max-width:76ch}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(240px,.45fr);gap:2.5rem;align-items:end}
+/* The one rule this template adds to the artifact it was cut from, and the
+   only entry in test_review_artifact.py's TEMPLATE_ONLY: tasks-page.html
+   always carries an aside, a template has to render without one. */
+.hero-grid.solo{grid-template-columns:minmax(0,1fr)}
+.version-mark{border-left:1px solid var(--accent);padding:.2rem 0 .2rem 1.25rem}
+.version-mark .big{display:block;color:var(--bright);font-size:2.4rem;line-height:1;letter-spacing:-.07em}
+.version-mark small{color:var(--dim)}
+.call{margin:1.2rem 0;padding:1rem 1.2ch;background:linear-gradient(90deg,rgba(165,180,252,.09),transparent);border-left:2px solid var(--accent);max-width:84ch}
+.notice{margin:1rem 0;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--warn);color:var(--muted);max-width:84ch}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:1.1rem 0}
+.fact{background:var(--bg2);padding:.95rem}.fact .number{display:block;color:var(--bright);font-size:1.3rem;line-height:1.1}.fact .caption{display:block;color:var(--dim);margin-top:.3rem;font-size:.72rem}
+table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem;min-width:max-content}
+th,td{text-align:left;vertical-align:top;padding:.62rem .72ch;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-size:.66rem;text-transform:uppercase;letter-spacing:.065em;font-weight:normal}
+td:first-child{color:var(--lit)}.pass{color:var(--ok)}.unknown{color:var(--warn)}.fail{color:var(--bad)}
+.row-accent td{background:rgba(165,180,252,.045)}
+.scroller{overflow-x:auto}
+.summary-line{display:grid;grid-template-columns:17ch minmax(0,1fr);gap:1.5ch;padding:.5rem 0;border-top:1px solid var(--line)}
+.summary-line:last-child{border-bottom:1px solid var(--line)}
+.key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.68rem}
+.deltas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line)}
+.delta{display:grid;grid-template-columns:3.2ch minmax(0,1fr);gap:1ch;padding:.8rem 1rem .8rem 0;border-bottom:1px solid var(--line)}
+.delta b{color:var(--accent);font-weight:normal}.delta span{color:var(--muted)}
+figure{margin:1rem 0 1.7rem}.figscroll{overflow-x:auto}
+svg{display:block;height:auto}svg text{font-family:ui-monospace,"JetBrains Mono",monospace}
+figcaption{color:var(--dim);font-size:.72rem;margin-top:.4rem}
+
+/* ── the drawn page ───────────────────────────────────────────────────── */
+.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem;align-items:start}
+.frame{border:1px solid var(--border);background:rgba(9,13,22,.8);min-width:0;box-shadow:0 22px 60px rgba(0,0,0,.19)}
+.framebar{display:flex;align-items:center;flex-wrap:wrap;gap:0 1ch;min-height:42px;padding:.35rem 1ch;border-bottom:1px solid var(--line);color:var(--dim);font-size:.72rem}
+.framebar b{font-weight:normal;color:var(--lit);white-space:nowrap}
+.framebody{padding:.9rem 1.1ch}
+.mockhead{display:flex;align-items:center;gap:1ch;margin-bottom:.2rem}
+.opener{color:var(--accent)}
+.mocktitle{color:var(--bright)}
+.crumbs{color:var(--dim);font-size:.72rem;margin-bottom:1rem}
+.ctl{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.2rem 0 .7rem}
+.searchbox{flex:1;min-width:15ch;display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.searchbox span{padding:.3rem .8ch;color:var(--lit)}
+.searchbox i{font-style:normal;color:var(--dimmer);padding:.3rem .8ch;margin-left:auto}
+.sgroup{display:inline-flex;border:1px solid transparent;gap:.15rem}
+.sgbtn{padding:.22rem .7ch;color:var(--dim);border:1px solid transparent;border-radius:var(--radius);white-space:nowrap}
+.sgbtn.on{color:var(--lit);border-color:var(--border)}
+.countline{color:var(--dim);font-size:.72rem;border-bottom:1px solid var(--line);padding-bottom:.5rem;margin-bottom:.2rem}
+.countline b{color:var(--lit);font-weight:normal}
+.tk{display:block;padding:.5rem 0 .52rem;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.tk-1{display:flex;gap:1ch;align-items:baseline}
+.tkid{color:var(--dim);font-weight:normal;flex:none}
+.tkt{color:var(--text);min-width:0;flex:1}
+.tkp{flex:none;color:var(--dim);font-size:.72rem}
+.tkp.p01{color:var(--bright)}.tkp.p2{color:var(--text)}.tkp.p3{color:var(--dim)}
+.tk-2{display:block;color:var(--dim);font-size:.7rem;padding-left:5.5ch}
+.tk.claimed{border-left:2px solid var(--accent);padding-left:.9ch;margin-left:-1.1ch}
+.tk.claimed .tkt{color:var(--bright)}
+.tk.claimed .tk-2 em{color:var(--accent);font-style:normal}
+.tk.blocked .tkt{color:var(--muted)}
+.tk.landed .tkt,.tk.landed .tkid{color:var(--dim)}.tk.landed .tk-2{color:var(--dimmer)}
+.tk.unknownstate .tkt{color:var(--muted)}
+.tk.unknownstate .tk-2 em{color:var(--warn);font-style:normal}
+.tk-2 .stale{color:var(--warn);font-style:normal}
+.hilite{background:rgba(165,180,252,.16);color:var(--bright)}
+.warnline{border-left:2px solid var(--warn);padding:.45rem 0 .45rem 1ch;color:var(--muted);margin:.5rem 0}
+.warnline b{color:var(--warn);font-weight:normal}
+.calmline{color:var(--dim);padding:.45rem 0}
+.detgrid{display:grid;grid-template-columns:13ch minmax(0,1fr);gap:.05rem 1.3ch;font-size:.75rem}
+.detgrid dt{color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-size:.66rem;padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd{margin:0;color:var(--text);padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd em{font-style:normal;color:var(--dim)}
+.mockbody{color:var(--muted);font-size:.75rem;margin-top:1rem;border-top:1px solid var(--line);padding-top:.7rem}
+.peek{color:var(--dim);font-size:.72rem;border-top:1px solid var(--line);margin-top:.8rem;padding-top:.55rem}
+.annot{display:grid;grid-template-columns:3.5ch minmax(0,1fr);gap:.7ch;font-size:.72rem;color:var(--muted);margin:.45rem 0}
+.annot b{color:var(--accent2);font-weight:normal}
+
+/* ── prose furniture ──────────────────────────────────────────────────── */
+.spine{margin:1.4rem 0}
+.spine-row{display:grid;grid-template-columns:15ch 2.4rem minmax(0,1fr);align-items:stretch;min-height:88px}
+.spine-key{padding:.85rem 1rem .85rem 0;color:var(--lit);text-align:right}
+.spine-rail{position:relative}
+.spine-rail::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border)}
+.spine-row:first-child .spine-rail::before{top:50%}
+.spine-row:last-child .spine-rail::before{bottom:50%}
+.spine-dot{position:absolute;z-index:1;left:50%;top:1.15rem;width:9px;height:9px;transform:translateX(-50%);border-radius:50%;background:var(--bg);border:1px solid var(--accent);box-shadow:0 0 0 5px var(--bg)}
+.spine-body{padding:.7rem 0 .85rem 1rem;border-top:1px solid var(--line)}
+.spine-body p{color:var(--muted);margin:.2rem 0;max-width:var(--measure)}
+.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1.6rem}
+.check{padding:.55rem 0;border-top:1px solid var(--line)}
+.check b{font-weight:normal;color:var(--bad)}.check span{color:var(--ok)}
+.stages{counter-reset:stage}
+.stage{counter-increment:stage;display:grid;grid-template-columns:3.4ch minmax(0,1fr);gap:1ch;padding:.68rem 0;border-top:1px solid var(--line)}
+.stage::before{content:counter(stage,decimal-leading-zero);color:var(--accent)}
+.stage b{color:var(--lit);font-weight:normal}.stage span{color:var(--muted)}
+details{border-top:1px solid var(--line);margin:.65rem 0}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;min-height:44px;padding:.6rem 0;color:var(--muted);outline:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+ ";color:var(--dim);white-space:pre}
+details[open]>summary{color:var(--lit);padding-top:1rem}
+details[open]>summary::before{content:"\2212 "}
+.details-in{padding:0 0 1rem 1.5ch;color:var(--muted)}
+details::details-content{block-size:0;opacity:0;filter:blur(3px);overflow:hidden;transition:block-size .72s var(--ease),opacity .45s ease,filter .45s ease;transition-behavior:allow-discrete}
+details[open]::details-content{block-size:auto;opacity:1;filter:none}
+@starting-style{details[open]::details-content{block-size:0;opacity:0;filter:blur(3px)}}
+#decision{scroll-margin-top:4.75rem}
+.choice{padding:1rem 0;border-top:1px solid var(--line)}
+.choice:last-of-type{border-bottom:1px solid var(--line)}
+.choice-grid{display:grid;grid-template-columns:4.5ch minmax(0,1fr);gap:1ch}
+.choice-grid>div{max-width:var(--measure)}
+.choice-tag{color:var(--accent);font-size:1rem}
+.answer{margin-top:.4rem;color:var(--lit)}
+.approval{padding:1rem;background:linear-gradient(90deg,rgba(165,180,252,.1),transparent);color:var(--lit);margin-top:1.2rem}
+footer{margin-top:3.5rem;padding:1.2rem 0 2rem;border-top:1px solid var(--line);color:var(--dimmer)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+
+/* ── essential marks (#367) — the lawyer's flag rail, above the cliff only ──
+   A mark is a flag at a HEIGHT, not a decoration on a box: the tab anchors to
+   the reading column's right edge at the passage's top. The artifact is
+   offline-clean (no script), so this is CSS-only — each tab is a child of its
+   marked element, positioned absolutely against it; the marked element becomes
+   the positioning ancestor (.is-marked). The tab's OUTER box (.marktab)
+   inherits the body font deliberately, so `left:calc(var(--measure) + .4ch)`
+   resolves `--measure:78ch` in BODY ch (the reading column's own unit) rather
+   than the tab's smaller font — a single-element tab would place the flag at
+   the wrong column. The visible postit (.markflag) carries the .66rem size.
+   "Current" is :target (the passage navigated to); next/prev are real fragment
+   links, so the whole thing is keyboard-operable and offline-honest. Below the
+   measured cliff the rail is display:none — absent, not broken (the strip
+   below the cliff is increment 2b and his call, not this one). */
+.is-marked{position:relative;scroll-margin-top:5.5rem}
+.marktab{position:absolute;top:0;left:calc(var(--measure) + .4ch);z-index:15;display:flex;align-items:baseline;gap:.35ch;line-height:1.25;opacity:.6;transition:opacity .45s var(--ease)}
+.is-marked:target .marktab{opacity:1}
+.markflag{font-size:.66rem;line-height:1.25;padding:.28em .55em;max-width:11.5rem;background:var(--accent);color:var(--ink);border-radius:2px 4px 4px 2px;letter-spacing:-.01em;font-weight:normal;white-space:normal;hyphens:none;word-break:normal;overflow-wrap:normal;box-shadow:0 1px 0 rgba(0,0,0,.25);text-decoration:none;color:var(--ink);display:inline-block}
+.markflag:hover{color:var(--ink)}
+.marknav{display:none;align-items:baseline;gap:.15ch;font-size:.66rem}
+.is-marked:target .marknav{display:inline-flex}
+.marknav a{color:var(--ink);text-decoration:none;padding:0 .25ch;opacity:.75;border-radius:2px}
+.marknav a:hover{opacity:1}
+.marknav a:focus-visible{outline:1px solid var(--ink);outline-offset:1px}
+/* two marks closer than a tab height (a section and its first marked child —
+   the measured 29px densest pair against a 32px tab): stagger the nested tab
+   down so the flags read as two, not one chrome mass. The renderer's problem,
+   not the author's (#367). */
+.marktab[data-stagger]{margin-top:1.05rem}
+@media(max-width:859.98px){
+  /* BELOW THE CLIFF: render nothing. The worst-case ~6-word two-line tab
+     (~184px, max-width:11.5rem) fits inside .wrap down to ~830px (measured:
+     dev/capture/marktab-geometry.mjs); 860 is the existing breakpoint and
+     leaves ~26px of margin there. dev/capture/markrail.mjs re-proves the fit
+     in pixels. */
+  .marktab{display:none!important}
+}
+@media(max-width:860px){
+  .hero-grid,.frames,.deltas,.checks{grid-template-columns:1fr}
+  .facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .version-mark{border-left:0;border-top:1px solid var(--line);padding:.7rem 0 0;display:flex;align-items:baseline;gap:1rem}
+  .version-mark .big{flex:none;font-size:1.4rem;letter-spacing:-.04em}
+  .identity span{display:none}.topactions .full{display:none}.topactions{min-width:0}
+  .spine-row{grid-template-columns:9ch 1.8rem minmax(0,1fr)}.spine-key{font-size:.72rem;padding-right:.4rem}
+  .summary-line{grid-template-columns:1fr;gap:.05rem}
+  .detgrid{grid-template-columns:1fr}.detgrid dd{border-top:0;padding-top:0}
+}
+@media(max-width:480px){
+  body{font-size:.79rem}.facts{grid-template-columns:1fr}
+  .tk-2{padding-left:0}.choice-grid{grid-template-columns:3.4ch minmax(0,1fr)}
+  .topactions .status{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;transition-delay:0s!important;filter:none!important}
+  .skip:focus{transition:none}
+}
+@media print{
+  :root{color-scheme:light;--bg:#fff;--bg2:#fff;--panel:#f4f4f5;--panel2:#fff;--line:#bbb;--border:#777;--text:#111;--bright:#000;--lit:#111;--muted:#333;--dim:#444;--dimmer:#555;--accent:#273fa2;--accent2:#075985;--ok:#166534;--warn:#7c4a03;--bad:#991b1b}
+  body{background:#fff}.toprail{position:static;background:#fff;backdrop-filter:none}.topactions{display:none}
+  .frame{box-shadow:none}details::details-content{block-size:auto;opacity:1;filter:none}
+  .frame,.call,.notice,.choice{break-inside:avoid}a{color:#111;text-decoration:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href=""#ask"">Skip to the ask</a>
+<nav class="toprail" aria-label="Artifact navigation">
+  <div class="toprail-in">
+    <div class="identity"><b>question options</b><span>task #421 · decision</span></div>
+    <div class="topactions"><span class="status">awaiting review</span><a class="full" href="#options">A · B · C · D</a><a href="#evidence">evidence</a></div>
+  </div>
+</nav>
+
+<main class="wrap" id="top">
+
+<header>
+  <div class="hero-grid">
+    <div>
+      <div class="kicker"><h1>Four ways to ask. The corpus says the size of the ask barely matters.</h1><span class="proposal">options only — nothing changes until you rule</span></div>
+      <div class="sub">task #421 · 28 July 2026 · every corpus figure re-derived today from questions.md</div>
+      <div id="ask" class="ask-block">
+        <div class="label">Ask</div>
+        <p class="ask-q">Any combination of <strong>A, B, C, D</strong> &mdash; or <code>rec</code> for
+        <strong>A + B + D</strong> with <strong>C</strong> kept as a soft target. Free text is always
+        fine, and <em>&ldquo;none of these&rdquo;</em> is a real answer.</p>
+        <p class="ask-answers"><span class="key">accepted answers</span>
+        <code>rec</code> &nbsp;&middot;&nbsp; <code>A</code> &nbsp;&middot;&nbsp; <code>B</code>
+        &nbsp;&middot;&nbsp; <code>C</code> &nbsp;&middot;&nbsp; <code>D</code> &nbsp;&middot;&nbsp;
+        any combination &nbsp;&middot;&nbsp; free text</p>
+        <p class="ask-rejected"><span class="key">rejected, by the corpus</span>
+        one decision per entry &mdash; <strong class="x-rej">15 of 16</strong> answered multi-part
+        entries closed complete.</p>
+      </div>
+      <div class="call"><strong>Recommendation.</strong> <strong>A + B + D</strong>, and <strong>C</strong> as a
+      <em>reported soft target</em> rather than a hard cap. A and D are conventions costing a line each
+      and they attack the measured defect &mdash; the weak coupling between the size of the ask and the
+      size of the writing. B is the only option fixing a live defect (<code>#275</code>'s unanswered
+      sub-decisions) and it composes with <code>#419</code>. C stays soft because the failure mode of a
+      hard cap &mdash; evidence behind a click &mdash; is worse than the failure mode of a long entry.</div>
+    </div>
+    <div class="version-mark" aria-label="At a glance">
+      <span class="big">307 / 455</span>
+      <small>words in the two &ldquo;one word: may I&hellip;&rdquo; entries<br>against a corpus median of <strong>308</strong><br>re-derived today, n=58</small>
+    </div>
+  </div>
+</header>
+
+<style>
+/* Page-local. Tokens only — no hex (watch-design.md / template contract). */
+.ask-block{
+  border-left:2px solid var(--accent);
+  padding:.35rem 0 .35rem 1.3ch;
+  margin:.4rem 0 .2rem;
+}
+.ask-block .label{margin:0 0 .4rem;color:var(--accent)}
+.ask-block .ask-q{font-size:.92rem;line-height:1.6;color:var(--lit);margin:.15rem 0 .55rem}
+.ask-block .ask-answers,.ask-block .ask-rejected{margin:.3rem 0;font-size:.78rem;color:var(--muted)}
+.ask-block .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.ask-block .x-rej{color:var(--bad)}
+.ask-block code{color:var(--lit)}
+.selfref{margin:.2rem 0 1.4rem;color:var(--dim);font-size:.74rem}
+.selfref b{color:var(--muted);font-weight:normal}
+.opt-tbl th:nth-child(1){width:11ch}
+.opt-tbl td:nth-child(1){color:var(--bright)}
+.opt-tbl .opt-tag{color:var(--accent)}
+.opt-tbl .risk{color:var(--warn)}
+.method{font-size:.74rem;color:var(--dim)}
+.method code{color:var(--lit)}
+</style>
+
+<p class="selfref"><b>This page demonstrates options A and D on itself.</b> The ask and its accepted
+answers sit above this sentence, before any argument &mdash; that is option A. Stating the literal
+accepted answers (<code>rec</code>, <code>A</code>, free text&hellip;) is option D. The evidence
+for those options is ranked below them, not in front of them.</p>
+
+<section id="options" aria-labelledby="opt-t">
+  <div class="label" id="opt-t">The four options &mdash; each with what it reduces, what it costs, and its risk</div>
+  <div class="scroller"><table class="opt-tbl">
+    <thead><tr><th>option</th><th>reduces</th><th>costs</th><th>risk</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="opt-tag">A</span> &middot; the ask comes first, in its own line</td>
+        <td>Time to <em>find</em> the decision. Not length &mdash; the entry stays the same size, the decision just rises to the top of it.</td>
+        <td>One convention. <code>lint</code> can check that the first body line carries an <code>Ask:</code> marker.</td>
+        <td class="risk">An <code>Ask:</code> line that merely restates the title adds a line and no information. The check must require it to <strong>name the accepted answers</strong>, not merely exist.</td>
+      </tr>
+      <tr>
+        <td><span class="opt-tag">B</span> &middot; an unanswered sub-decision is recorded, and lint errors</td>
+        <td>The <strong>2</strong> durable partials in the corpus, and &mdash; more usefully &mdash; the recurrence rather than the instances.</td>
+        <td>A format rule in <code>file-formats.md</code> plus a lint <strong>ERROR</strong>. Composes with <code>#419</code>'s blocked-on-human marker (same shape, one door over) rather than duplicating it.</td>
+        <td class="risk">The only option here with a real implementation cost, and it does nothing about length.</td>
+      </tr>
+      <tr>
+        <td><span class="opt-tag">C</span> &middot; a length budget, evidence in the artifact</td>
+        <td>Length directly. Corpus median <strong>308</strong> &rarr; &le;250; max <strong>1252</strong> &rarr; capped.</td>
+        <td>A lint <em>warning</em> on over-budget entries; more weight on review artifacts being opened.</td>
+        <td class="risk"><strong>Load-bearing.</strong> An artifact he does not open makes the evidence <em>less</em> visible than a long entry does. Today's <code>#263</code> correction lived in the entry and he could read it without a click &mdash; a cap would have pushed it behind one. This is the argument against the coordinator's own tidiest idea, so C is left <em>soft</em>.</td>
+      </tr>
+      <tr>
+        <td><span class="opt-tag">D</span> &middot; state what a valid answer looks like</td>
+        <td>The cost of <em>answering</em>, not of reading.</td>
+        <td>Nearly nothing.</td>
+        <td class="risk">A stated answer set that omits the option he actually wants is worse than none, so it must always admit a free-text answer explicitly &mdash; as the ask at the top of this page does.</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <p class="method">Source for all four: <code>.dreamwork/docs/plans/question-instruction-options.md</code>.
+  Research behind it: <code>.dreamwork/docs/research/2026-07-28-question-instruction-design.md</code>
+  (<code>ccc @grok</code>, <code>bae566d</code>). Where a figure below disagrees with the plan, the
+  plan was measured against a smaller corpus and the re-derivation is the one to trust.</p>
+</section>
+
+<section id="rejected" aria-labelledby="rej-t">
+  <div class="label" id="rej-t">Rejected, and the number that kills it</div>
+  <div class="notice"><strong>One decision per entry.</strong> The obvious port from
+  <code>i-have-adhd</code>'s one-clarifying-question rule, and <strong>our own data refutes it</strong>:
+  <strong class="x-rej">15 of 16</strong> answered multi-part entries closed <strong>complete</strong>
+  &mdash; often same-day, often on a bare <code>rec</code>. Durable partials number <strong>2</strong>
+  across the whole corpus. Splitting every multi-part ask would multiply the count of items on his
+  desk to solve a problem occurring <strong>2 of 58</strong> times. Recorded as rejected with its
+  reason so it is not re-proposed.</div>
+</section>
+
+<section id="evidence" aria-labelledby="ev-t">
+  <div class="label" id="ev-t">The measurement that carries the argument</div>
+  <p class="read">One comparison is more persuasive than the whole distribution, because it is
+  counter-intuitive and one number makes it: the two entries whose <em>titles</em> promise a one-word
+  answer &mdash; <em>&ldquo;one word: may I add <code>GIT_OPTIONAL_LOCKS=0</code>&hellip;&rdquo;</em>
+  and <em>&ldquo;one word: may I run <code>install.py --apply</code>?&rdquo;</em> &mdash; are
+  <strong>307 and 455 words</strong>. The corpus median is <strong>308</strong>. So a one-word
+  decision gets a median-length essay (or a half-again-longer one). The size of what we write is
+  weakly coupled to the size of what we are asking &mdash; and <em>that</em>, not the number of
+  sub-questions, is the defect the corpus actually shows.</p>
+
+  <div class="facts">
+    <div class="fact"><span class="number">308</span><span class="caption">corpus median, words (title + body) &mdash; n = 58 entries</span></div>
+    <div class="fact"><span class="number">307 / 455</span><span class="caption">the two &ldquo;one word: may I&hellip;&rdquo; entries &mdash; one on the median, one 47% above</span></div>
+    <div class="fact"><span class="number">15 / 16</span><span class="caption">answered multi-part entries that closed <em>complete</em> &mdash; the number that kills the rejected option</span></div>
+    <div class="fact"><span class="number">18 / 58</span><span class="caption">entries carrying &ge;2 sub-decisions &mdash; common, and usually handled in one answer</span></div>
+  </div>
+
+  <details>
+    <summary>The full distribution, the per-bucket medians, and the exact command (re-derived today)</summary>
+    <div class="details-in">
+      <p>Size distribution, words, n = 58: min <strong>29</strong>, p25 <strong>126</strong>,
+      median <strong>308</strong>, p75 <strong>452</strong>, max <strong>1252</strong>. Median
+      length rises with sub-decision count: <strong>142</strong> at 0 sub-decisions,
+      <strong>412</strong> at 3, <strong>805</strong> at 4, <strong>1095</strong> at 7 &mdash;
+      composition cost, not proof of human cost.</p>
+      <p>Every figure above was re-derived from <code>.dreamwork/questions.md</code> with the loop's
+      own production parsers, in the command the page is bound to:</p>
+<pre><code class="language-bash">python3 -c "
+import watch, statistics
+from pathlib import Path
+t = Path<span class="tok-op">(</span><span class="tok-str">'.dreamwork/questions.md'</span><span class="tok-op">)</span>.read_text<span class="tok-op">()</span>
+q = watch.parse_open_questions<span class="tok-op">(</span>t<span class="tok-op">)</span> + watch.parse_answered<span class="tok-op">(</span>t<span class="tok-op">)</span>
+w = [len<span class="tok-op">((</span>it[<span class="tok-str">'title'</span>] or <span class="tok-str">''</span><span class="tok-op">)</span>+<span class="tok-str">'\n'</span>+<span class="tok-op">(</span>it.get<span class="tok-op">(</span><span class="tok-str">'body'</span><span class="tok-op">)</span> or <span class="tok-str">''</span><span class="tok-op">))</span>.split<span class="tok-op">())</span> <span class="tok-kw">for</span> it <span class="tok-kw">in</span> q]
+print<span class="tok-op">(</span><span class="tok-str">'n'</span>, len<span class="tok-op">(</span>q<span class="tok-op">)</span>, <span class="tok-str">'median'</span>, int<span class="tok-op">(</span>statistics.median<span class="tok-op">(</span>w<span class="tok-op">))</span>,
+      <span class="tok-str">'min'</span>, min<span class="tok-op">(</span>w<span class="tok-op">)</span>, <span class="tok-str">'max'</span>, max<span class="tok-op">(</span>w<span class="tok-op">))</span>
+"</code></pre>
+      <p class="method">Sub-decisions per entry are derived with the corpus grammar from the research
+      (<code>**Q1 &mdash;</code> / numbered <code>1. **</code> markers, falling back to a single
+      decision if the body carries a <code>?</code>). <code>15 / 16</code> is hand-verified against
+      each answered multi-part entry's fold head: one (<code>#281</code>) closed six-of-seven with a
+      re-ask, the rest closed as complete rulings. The brief asked for the <em>command in the page</em>
+      rather than a figure copied from the plan; two of the plan's figures were measured against a
+      smaller corpus and have moved &mdash; see the report for the exact disagreements.</p>
+    </div>
+  </details>
+</section>
+
+<footer>Plan: <code>.dreamwork/docs/plans/question-instruction-options.md</code> &middot; research: <code>2026-07-28-question-instruction-design.md</code> &middot; the open question this answers is the top entry of <code>.dreamwork/questions.md</code> <span class="dimmer">· built from review template v1+95ee67a8</span></footer>
+
+</main>
+</body>
+</html>

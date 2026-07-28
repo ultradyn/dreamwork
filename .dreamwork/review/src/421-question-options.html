@@ -1,0 +1,163 @@
+<!--dreamwork-review-source
+title: "#421 · How the loop should ask you things · four options, one rejected"
+identity: question options
+context: task #421 · decision
+status: awaiting review
+headline: Four ways to ask. The corpus says the size of the ask barely matters.
+tag: options only — nothing changes until you rule
+sub: task #421 · 28 July 2026 · every corpus figure re-derived today from questions.md
+skip: Skip to the ask
+skip_href: "#ask"
+-->
+<!--#nav-->
+<a class="full" href="#options">A · B · C · D</a><a href="#evidence">evidence</a>
+<!--#lead-->
+<div id="ask" class="ask-block">
+  <div class="label">Ask</div>
+  <p class="ask-q">Any combination of <strong>A, B, C, D</strong> &mdash; or <code>rec</code> for
+  <strong>A + B + D</strong> with <strong>C</strong> kept as a soft target. Free text is always
+  fine, and <em>&ldquo;none of these&rdquo;</em> is a real answer.</p>
+  <p class="ask-answers"><span class="key">accepted answers</span>
+  <code>rec</code> &nbsp;&middot;&nbsp; <code>A</code> &nbsp;&middot;&nbsp; <code>B</code>
+  &nbsp;&middot;&nbsp; <code>C</code> &nbsp;&middot;&nbsp; <code>D</code> &nbsp;&middot;&nbsp;
+  any combination &nbsp;&middot;&nbsp; free text</p>
+  <p class="ask-rejected"><span class="key">rejected, by the corpus</span>
+  one decision per entry &mdash; <strong class="x-rej">15 of 16</strong> answered multi-part
+  entries closed complete.</p>
+</div>
+<!--#call-->
+<div class="call"><strong>Recommendation.</strong> <strong>A + B + D</strong>, and <strong>C</strong> as a
+<em>reported soft target</em> rather than a hard cap. A and D are conventions costing a line each
+and they attack the measured defect &mdash; the weak coupling between the size of the ask and the
+size of the writing. B is the only option fixing a live defect (<code>#275</code>'s unanswered
+sub-decisions) and it composes with <code>#419</code>. C stays soft because the failure mode of a
+hard cap &mdash; evidence behind a click &mdash; is worse than the failure mode of a long entry.</div>
+<!--#aside-->
+<span class="big">307 / 455</span>
+<small>words in the two &ldquo;one word: may I&hellip;&rdquo; entries<br>against a corpus median of <strong>308</strong><br>re-derived today, n=58</small>
+<!--#body-->
+<style>
+/* Page-local. Tokens only — no hex (watch-design.md / template contract). */
+.ask-block{
+  border-left:2px solid var(--accent);
+  padding:.35rem 0 .35rem 1.3ch;
+  margin:.4rem 0 .2rem;
+}
+.ask-block .label{margin:0 0 .4rem;color:var(--accent)}
+.ask-block .ask-q{font-size:.92rem;line-height:1.6;color:var(--lit);margin:.15rem 0 .55rem}
+.ask-block .ask-answers,.ask-block .ask-rejected{margin:.3rem 0;font-size:.78rem;color:var(--muted)}
+.ask-block .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.ask-block .x-rej{color:var(--bad)}
+.ask-block code{color:var(--lit)}
+.selfref{margin:.2rem 0 1.4rem;color:var(--dim);font-size:.74rem}
+.selfref b{color:var(--muted);font-weight:normal}
+.opt-tbl th:nth-child(1){width:11ch}
+.opt-tbl td:nth-child(1){color:var(--bright)}
+.opt-tbl .opt-tag{color:var(--accent)}
+.opt-tbl .risk{color:var(--warn)}
+.method{font-size:.74rem;color:var(--dim)}
+.method code{color:var(--lit)}
+</style>
+
+<p class="selfref"><b>This page demonstrates options A and D on itself.</b> The ask and its accepted
+answers sit above this sentence, before any argument &mdash; that is option A. Stating the literal
+accepted answers (<code>rec</code>, <code>A</code>, free text&hellip;) is option D. The evidence
+for those options is ranked below them, not in front of them.</p>
+
+<section id="options" aria-labelledby="opt-t">
+  <div class="label" id="opt-t">The four options &mdash; each with what it reduces, what it costs, and its risk</div>
+  <div class="scroller"><table class="opt-tbl">
+    <thead><tr><th>option</th><th>reduces</th><th>costs</th><th>risk</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="opt-tag">A</span> &middot; the ask comes first, in its own line</td>
+        <td>Time to <em>find</em> the decision. Not length &mdash; the entry stays the same size, the decision just rises to the top of it.</td>
+        <td>One convention. <code>lint</code> can check that the first body line carries an <code>Ask:</code> marker.</td>
+        <td class="risk">An <code>Ask:</code> line that merely restates the title adds a line and no information. The check must require it to <strong>name the accepted answers</strong>, not merely exist.</td>
+      </tr>
+      <tr>
+        <td><span class="opt-tag">B</span> &middot; an unanswered sub-decision is recorded, and lint errors</td>
+        <td>The <strong>2</strong> durable partials in the corpus, and &mdash; more usefully &mdash; the recurrence rather than the instances.</td>
+        <td>A format rule in <code>file-formats.md</code> plus a lint <strong>ERROR</strong>. Composes with <code>#419</code>'s blocked-on-human marker (same shape, one door over) rather than duplicating it.</td>
+        <td class="risk">The only option here with a real implementation cost, and it does nothing about length.</td>
+      </tr>
+      <tr>
+        <td><span class="opt-tag">C</span> &middot; a length budget, evidence in the artifact</td>
+        <td>Length directly. Corpus median <strong>308</strong> &rarr; &le;250; max <strong>1252</strong> &rarr; capped.</td>
+        <td>A lint <em>warning</em> on over-budget entries; more weight on review artifacts being opened.</td>
+        <td class="risk"><strong>Load-bearing.</strong> An artifact he does not open makes the evidence <em>less</em> visible than a long entry does. Today's <code>#263</code> correction lived in the entry and he could read it without a click &mdash; a cap would have pushed it behind one. This is the argument against the coordinator's own tidiest idea, so C is left <em>soft</em>.</td>
+      </tr>
+      <tr>
+        <td><span class="opt-tag">D</span> &middot; state what a valid answer looks like</td>
+        <td>The cost of <em>answering</em>, not of reading.</td>
+        <td>Nearly nothing.</td>
+        <td class="risk">A stated answer set that omits the option he actually wants is worse than none, so it must always admit a free-text answer explicitly &mdash; as the ask at the top of this page does.</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <p class="method">Source for all four: <code>.dreamwork/docs/plans/question-instruction-options.md</code>.
+  Research behind it: <code>.dreamwork/docs/research/2026-07-28-question-instruction-design.md</code>
+  (<code>ccc @grok</code>, <code>bae566d</code>). Where a figure below disagrees with the plan, the
+  plan was measured against a smaller corpus and the re-derivation is the one to trust.</p>
+</section>
+
+<section id="rejected" aria-labelledby="rej-t">
+  <div class="label" id="rej-t">Rejected, and the number that kills it</div>
+  <div class="notice"><strong>One decision per entry.</strong> The obvious port from
+  <code>i-have-adhd</code>'s one-clarifying-question rule, and <strong>our own data refutes it</strong>:
+  <strong class="x-rej">15 of 16</strong> answered multi-part entries closed <strong>complete</strong>
+  &mdash; often same-day, often on a bare <code>rec</code>. Durable partials number <strong>2</strong>
+  across the whole corpus. Splitting every multi-part ask would multiply the count of items on his
+  desk to solve a problem occurring <strong>2 of 58</strong> times. Recorded as rejected with its
+  reason so it is not re-proposed.</div>
+</section>
+
+<section id="evidence" aria-labelledby="ev-t">
+  <div class="label" id="ev-t">The measurement that carries the argument</div>
+  <p class="read">One comparison is more persuasive than the whole distribution, because it is
+  counter-intuitive and one number makes it: the two entries whose <em>titles</em> promise a one-word
+  answer &mdash; <em>&ldquo;one word: may I add <code>GIT_OPTIONAL_LOCKS=0</code>&hellip;&rdquo;</em>
+  and <em>&ldquo;one word: may I run <code>install.py --apply</code>?&rdquo;</em> &mdash; are
+  <strong>307 and 455 words</strong>. The corpus median is <strong>308</strong>. So a one-word
+  decision gets a median-length essay (or a half-again-longer one). The size of what we write is
+  weakly coupled to the size of what we are asking &mdash; and <em>that</em>, not the number of
+  sub-questions, is the defect the corpus actually shows.</p>
+
+  <div class="facts">
+    <div class="fact"><span class="number">308</span><span class="caption">corpus median, words (title + body) &mdash; n = 58 entries</span></div>
+    <div class="fact"><span class="number">307 / 455</span><span class="caption">the two &ldquo;one word: may I&hellip;&rdquo; entries &mdash; one on the median, one 47% above</span></div>
+    <div class="fact"><span class="number">15 / 16</span><span class="caption">answered multi-part entries that closed <em>complete</em> &mdash; the number that kills the rejected option</span></div>
+    <div class="fact"><span class="number">18 / 58</span><span class="caption">entries carrying &ge;2 sub-decisions &mdash; common, and usually handled in one answer</span></div>
+  </div>
+
+  <details>
+    <summary>The full distribution, the per-bucket medians, and the exact command (re-derived today)</summary>
+    <div class="details-in">
+      <p>Size distribution, words, n = 58: min <strong>29</strong>, p25 <strong>126</strong>,
+      median <strong>308</strong>, p75 <strong>452</strong>, max <strong>1252</strong>. Median
+      length rises with sub-decision count: <strong>142</strong> at 0 sub-decisions,
+      <strong>412</strong> at 3, <strong>805</strong> at 4, <strong>1095</strong> at 7 &mdash;
+      composition cost, not proof of human cost.</p>
+      <p>Every figure above was re-derived from <code>.dreamwork/questions.md</code> with the loop's
+      own production parsers, in the command the page is bound to:</p>
+<pre><code class="language-bash">python3 -c "
+import watch, statistics
+from pathlib import Path
+t = Path('.dreamwork/questions.md').read_text()
+q = watch.parse_open_questions(t) + watch.parse_answered(t)
+w = [len((it['title'] or '')+'\n'+(it.get('body') or '')).split()) for it in q]
+print('n', len(q), 'median', int(statistics.median(w)),
+      'min', min(w), 'max', max(w))
+"</code></pre>
+      <p class="method">Sub-decisions per entry are derived with the corpus grammar from the research
+      (<code>**Q1 &mdash;</code> / numbered <code>1. **</code> markers, falling back to a single
+      decision if the body carries a <code>?</code>). <code>15 / 16</code> is hand-verified against
+      each answered multi-part entry's fold head: one (<code>#281</code>) closed six-of-seven with a
+      re-ask, the rest closed as complete rulings. The brief asked for the <em>command in the page</em>
+      rather than a figure copied from the plan; two of the plan's figures were measured against a
+      smaller corpus and have moved &mdash; see the report for the exact disagreements.</p>
+    </div>
+  </details>
+</section>
+<!--#footer-->
+Plan: <code>.dreamwork/docs/plans/question-instruction-options.md</code> &middot; research: <code>2026-07-28-question-instruction-design.md</code> &middot; the open question this answers is the top entry of <code>.dreamwork/questions.md</code>
