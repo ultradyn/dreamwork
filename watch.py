@@ -9741,10 +9741,18 @@ def _expected_disconnect(exc):
             errno.EPIPE, errno.ECONNRESET, errno.ECONNABORTED))
 
 
-def make_handler(target, dev=False, authority=None):
+def make_handler(target, dev=False, authority=None, journal_shadow=True):
     page = PAGE.replace("/*DEV*/false", "true") if dev else PAGE
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        # E2 shadow phase toggle: when True (production default) every
+        # well-formed write request commits a shadow journal receipt whose
+        # failure is swallowed. Tests disable it to capture the pre-journal
+        # baseline and assert the journal changed exactly the receipt count
+        # and nothing observable. Set below from the constructor argument
+        # (a class-body `journal_shadow = journal_shadow` shadows the param).
+        journal_shadow = True
+
         def handle(self):
             # #299: a client that cancels its poll (usually /mtime) after we
             # committed to a response breaks the pipe under any write —
@@ -10016,7 +10024,7 @@ def make_handler(target, dev=False, authority=None):
             # the same fields the digest length-frames. Runs after the
             # truncated check so an over-limit body (still 413) is not
             # receipted as a complete envelope.
-            if not truncated:
+            if not truncated and self.journal_shadow:
                 self._journal_receive(target)
             # ...and only now may a request be turned away. An over-long body
             # is still refused — the cap is what makes the read bounded — but
@@ -10228,6 +10236,7 @@ def make_handler(target, dev=False, authority=None):
         def log_message(self, *_args):
             pass
 
+    Handler.journal_shadow = journal_shadow
     return Handler
 
 

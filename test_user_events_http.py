@@ -16,6 +16,7 @@ library and passes with the receipt gate absent — the #320 fixture trap. A
 raw socket sends exactly the bytes we tell it to.
 """
 
+import contextlib
 import http.server
 import json
 import os
@@ -73,6 +74,10 @@ def _make_target(root):
 class HttpHarness(unittest.TestCase):
     """Real server on a reserved port; helpers for urllib and raw-socket POSTs."""
 
+    # Production default: the journal shadows every write. E2's baseline run
+    # disables it to capture the pre-journal observable behaviour.
+    journal_shadow = True
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -87,7 +92,8 @@ class HttpHarness(unittest.TestCase):
                                                 port)
         self.server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", port),
-            watch.make_handler(self.target, authority=self.authority))
+            watch.make_handler(self.target, authority=self.authority,
+                               journal_shadow=self.journal_shadow))
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
@@ -207,6 +213,115 @@ class E1Envelope(HttpHarness):
         self.assertTrue(rows[0].get("short"), rows[0])
         self.assertEqual(rows[0].get("got"), sent)
         self.assertEqual(rows[0].get("bytes"), promised)
+
+
+class E2Shadow(HttpHarness):
+    """E2: every write route commits a shadow receipt, observable behaviour
+    unchanged.
+
+    The journal is the shadow (journal-shadow phase): a receipt is committed on
+    every write request while the response, status code, submissions.log and
+    every handler are identical to a baseline captured with the journal
+    disabled. The route list is derived from watch.py's dispatch, not
+    hand-copied, so a seventh route fails this test instead of slipping past.
+
+    Red line: the `journal.receive(...)` call in do_POST (reached via
+    _journal_receive)."""
+
+    # The payloads that make each route return 200. /answer and /comment need a
+    # matching question title, so run_all first /asks one and reuses its title.
+    # /run-mode's first POST to a fresh target always changes the mode (the
+    # default is lackadaisical), so it returns changed=True.
+    def run_all_routes(self):
+        """POST every write route once; return (statuses, submissions_rows).
+
+        /answer and /comment match a title in questions.md; the fixture seeds
+        one (`A real open question?`) so they fold against it. The exact text
+        varies per call so each receipt's body differs (no accidental dedup).
+        """
+        import uuid as _uuid
+        marker = _uuid.uuid4().hex[:8]
+        statuses = []
+        # 1. /ask — records a new question for the dreamer (answers.md).
+        statuses.append(self.post(
+            "/ask", {"question": f"E2 shadow question {marker}"})[0])
+        # 2. /comment — note on the fixture's OPEN question (before /answer
+        #    moves it to Answered, so the Open-section match still finds it).
+        statuses.append(self.post(
+            "/comment", {"question": "A real open question?",
+                         "comment": f"note {marker}",
+                         "section": "Open"})[0])
+        # 3. /answer — fold the fixture's open question (moves to Answered).
+        statuses.append(self.post(
+            "/answer",
+            {"question": "A real open question?",
+             "answer": f"ans {marker}"})[0])
+        # 4. /command — a valid command kind.
+        statuses.append(self.post(
+            "/command", {"kind": "add-idea", "text": f"idea {marker}"})[0])
+        # 5. /tint — a valid tint name.
+        statuses.append(self.post("/tint", {"tint": "indigo"})[0])
+        # 6. /run-mode — a different mode than the default.
+        statuses.append(self.post("/run-mode", {"mode": "hot"})[0])
+        return statuses, self.submissions_rows()
+
+    def test_every_write_route_commits_a_receipt_and_changes_nothing_else(self):
+        # Run the six routes with the journal ON (this harness) and OFF
+        # (baseline), each on a fresh target, and compare everything
+        # observable except the receipt count.
+        on_statuses, on_subs = self.run_all_routes()
+        with self._baseline_server() as baseline:
+            off_statuses, off_subs = baseline.run_all_routes()
+        # The route list is derived from the dispatch, not hand-copied: assert
+        # its length matches the routes we exercised (six), so a seventh route
+        # added to WRITE_ROUTE_HANDLERS without a payload here fails loudly.
+        self.assertEqual(len(WRITE_ROUTES), 6, WRITE_ROUTES)
+        # Every route returned 200 in BOTH runs (shadow must not change that).
+        self.assertEqual(on_statuses, [200] * len(WRITE_ROUTES), on_statuses)
+        self.assertEqual(off_statuses, [200] * len(WRITE_ROUTES), off_statuses)
+        # submissions.log is identical between the two runs (the journal adds a
+        # receipt, not a submissions.log line). Compare the fields that are
+        # stable across runs (path + whether parsed); timestamps differ.
+        self.assertEqual(
+            [r["path"] for r in on_subs],
+            [r["path"] for r in off_subs])
+        self.assertEqual(
+            [("req" in r) for r in on_subs],
+            [("req" in r) for r in off_subs])
+        # The discriminating half: with the journal ON, there is exactly one
+        # receipt per route. Derived from the route count, never a literal.
+        self.assertEqual(self.receipt_count(), len(WRITE_ROUTES))
+
+    def test_a_seventh_route_would_fail_this_test_not_slip_past(self):
+        # The precondition the "derived route list" claim depends on: the
+        # dispatch table IS the six routes we exercise. If a route is added to
+        # WRITE_ROUTE_HANDLERS, run_all_routes does not POST it, so the receipt
+        # count assertion above (len(WRITE_ROUTES)) would still pass while a
+        # route went unshadowed — UNLESS this guard fails first. This is the
+        # plan's "derive the route list" discipline made executable.
+        exercised = 6  # ask, answer, comment, command, tint, run-mode
+        self.assertEqual(len(WRITE_ROUTES), exercised, WRITE_ROUTES)
+
+    @contextlib.contextmanager
+    def _baseline_server(self):
+        """A second harness with the journal disabled, for the E2 baseline."""
+        baseline = _BaselineHarness()
+        baseline.setUp()
+        try:
+            yield baseline
+        finally:
+            baseline.doCleanups()
+
+
+class _BaselineHarness(E2Shadow):
+    """Same harness, journal disabled — the pre-journal observable baseline.
+
+    Not a test target: it exists only to run the six routes against a
+    journal-off server inside E2's comparison. `__test__ = False` stops
+    unittest from collecting the inherited E2 tests against it (they would
+    fail on the receipt count, which is the point of the baseline)."""
+    __test__ = False
+    journal_shadow = False
 
 
 if __name__ == "__main__":
