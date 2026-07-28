@@ -3019,3 +3019,34 @@ this shape and convert opportunistically.)
   produced against the code as it stood before the diff?** If reaching the failure
   required a parameter, flag or seam the same change introduced, the proof is
   circular — and it will look most convincing exactly when the change is largest.
+
+- **An exactness the reader cannot see is not a difference.** `#463` asked for a
+  secondary *"modified X ago"* on a review artifact *"when ctime != mtime"*, and the
+  literal implementation of *differs* — `created_ns != mtime_ns` — is true for **24
+  of this repo's 28 artifacts**, because writing a file sets birth and the content
+  write then moves mtime a few hundred microseconds later. Nothing was edited; the
+  page would simply have printed `3d old · modified 3d ago` on nearly every row,
+  which is the exact inverse of the rule. **Evidence it was not a fixture artifact:**
+  the lane's own test asserted equality on an unedited file and failed, and the same
+  measurement on the real corpus gives 24/28 at nanosecond exactness and 0/28 at
+  display resolution. The fix is where the *rule* lives, not where the data does: a
+  "when they differ" condition compares **the figures a reader sees** — so the
+  server marks a candidate and the client decides beside its own formatter. Two
+  corollaries earned the same hour: mirroring the formatter on the other side to
+  decide there would be a second copy of the thing whose output *is* the criterion;
+  and a fixture that demonstrates *"modified long after created"* by pushing mtime
+  hours past birth pushes it into the **future**, where the age reads `0s` and the
+  row proves nothing — birth is always now, so age the created side instead.
+
+- **When an external sweep kills a lane, its report is gone but its work is not —
+  commit the worktree before anything else.** Both lanes were killed mid-task at
+  03:42; the harness output files were **0 bytes**, so every claim they would have
+  made about verification died with them, while 407 and 373 lines of real work sat
+  uncommitted in their worktrees, one `git checkout` away from nothing. **Evidence
+  the reports were the only loss that mattered:** the surviving record was the
+  coordinator inbox's per-milestone lines — which is exactly why the handshake
+  protocol writes progress to a file as it goes rather than reporting once at the
+  end. Order of operations: commit each worktree as an explicit `wip(#N)` on its own
+  branch **saying it is unverified**, then verify from the diff rather than from a
+  report that no longer exists. A lane's death is not evidence its work is bad; it
+  is evidence nobody has checked it.
