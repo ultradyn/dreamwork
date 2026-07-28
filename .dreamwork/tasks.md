@@ -55,6 +55,32 @@ Next id: **415**
   · **and the general form is worth a sweep**: every guard asserting "N distinct intermediate
   values" carries this hidden precondition. `grep -l 'requestAnimationFrame' dev/capture/*.mjs`
   and check each for a stated sample floor
+  · **SWEPT, and the answer already exists in this repo.** 34 guards sample with
+  `requestAnimationFrame`; only three assertions use the frame-rate-dependent form
+  (`new Set(xs).size >= N`): `confirmation.mjs` ×3 (now precondition-guarded) and
+  **`prominence.mjs:183`** — *"...continuously, rather than in a couple of jumps"*,
+  `new Set(tops.map(Math.round)).size >= 6`. Prominence has an anti-vacuity check beside it
+  (`total >= 8`, that the card travelled at all) but that measures **distance, not sample
+  count**, so a starved trace fails it the same way. Second site, same defect, unguarded
+  · **`reviewsplit.mjs` already solved this and says so in a comment**, which makes it the fix
+  rather than a nice idea: `travel()` computes `mid` = *"the number of frames strictly BETWEEN
+  the two ends"* (`ws.filter(v => v > lo && v < hi).length`, endpoints ±1) and its comment names
+  our exact problem — *"A snap has none of those however slowly the machine is drawing, while
+  `positions` is capped by how many frames a loaded SwiftShader box managed"*
+  · **so the real fix is a formulation change, not a threshold.** *Count frames that landed
+  part-way, not distinct values.* A snap has **zero** mid-frames at any frame rate; a genuine
+  transition has ≥1 provided a single frame lands mid-flight. That is a **rank-1** requirement
+  instead of a rank-4 one, which is why it survives a busy machine. The precondition I added is
+  a diagnostic, not the cure, and should stay as one — it names the count when starvation does
+  bite
+  · **one direction NOT to copy blindly**: `reviewsplit` also asserts `distinct(head) === 1`
+  (that something did NOT move). Starvation makes that assertion **more** likely to pass, so its
+  failure mode is a false GREEN, which no precondition on this task's side would catch. Out of
+  scope here, worth its own look
+  · deliverables: adopt the `mid` formulation in `confirmation.mjs` (3 assertions) and
+  `prominence.mjs` (1); keep the sample-count preconditions as diagnostics; red-prove each by
+  removing the transition so mid-frames go to zero
+  · related: **#413**
   · related: **#413**
 
 - **#413** — a guard can encode a SUPERSEDED contract, and nothing measures that · P2 ·
