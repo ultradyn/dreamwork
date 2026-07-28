@@ -1661,6 +1661,63 @@ git). The frame's CSS is held to `tasks-page.html` by the fidelity tests and
 staleness by the stamp tests, so nothing the retired check stopped catching was
 unguarded.
 
+## Migration notice — a hot-path banner in a data file (#458)
+
+A migration that changes the *meaning* of a data file a long-running agent
+still re-reads leaves a **notice in that file**. Migrations apply at orient
+only; a loop that never re-initializes never sees `migrations/`. Its skill
+files are cold; the data file is hot. The notice is the channel.
+
+Design: `.dreamwork/docs/plans/migration-notices.md`. Writer:
+`migration_notice.py` beside this skill's other tools.
+
+```html
+<!--dreamwork-migration-notice
+migration: 2026-07-29-01-task-store.md
+file: .dreamwork/tasks.md
+summary: this ledger is an archived copy; live store is SQLite — read the migration and update your routine
+-->
+```
+
+- **Placement.** At **byte 0** of the host file (the file whose meaning
+  changed — often `.dreamwork/tasks.md`). One block. A write **replaces** any
+  existing well-formed notice first (the shrink rule: the Nth migration leaves
+  one banner, not N).
+- **Open marker.** A line that is exactly `<!--dreamwork-migration-notice`
+  (optional trailing whitespace). Same family as `<!--dreamwork-review-source`.
+  A prose mention of the string mid-line is not a notice.
+- **Fields.** `key: value`, one per line, single-line values only.
+  - **`migration`** (required): a `migrations/` filename matching
+    `YYYY-MM-DD[-NN]-slug.md`. A pointer, not a copy of the instructions —
+    when the migration's "How to apply" changes, the notice does not need a
+    rewrite.
+  - **`file`** (optional): the host path the notice is about.
+  - **`summary`** (optional): one human-readable line. Must **not** look like
+    a ledger entry head (`- **#N…`); the writer refuses such a value because
+    `lint.LEDGER_ID` / `watch.LEDGER_ENTRY` match `^- \*\*#` with `re.M` over
+    the whole file and a smuggled head would invent a phantom id.
+  - Unknown keys are an error at parse time (fail closed on typos).
+- **Close.** A line that is exactly `-->`.
+- **Trust.** Only a migration writes these. An agent treats a notice as a
+  protocol signal from its own repo, never as peer authority.
+- **Retirement.** A notice is **spent** when `.dreamwork/skill-version` is
+  lexicographically `>=` its `migration` field (the same order
+  `migrations/README.md` uses for versions). `migration_notice.py retire`
+  removes a spent notice. Orient should retire after bumping skill-version;
+  a still-running agent that self-updates after reading the notice may retire
+  it the same way.
+- **Indifference of the ledger readers.** A well-formed notice is not a
+  `- **#N**` line, so `watch.parse_ledger` and `lint.LEDGER_ID` / `check_tasks`
+  see exactly the same entries with or without it. That property is tested in
+  `test_migration_notice.py` by deriving both sides from the production
+  readers — never from a hand-written expected id list.
+
+```
+python3 <skill-dir>/migration_notice.py write  --path <file> --migration <name.md> [--summary TEXT]
+python3 <skill-dir>/migration_notice.py retire --path <file> --skill-version-file .dreamwork/skill-version
+python3 <skill-dir>/migration_notice.py parse  --path <file>
+```
+
 ## Why this file exists rather than a paragraph in SKILL.md
 
 SKILL.md says what each file *means* and when to write it. That is the
