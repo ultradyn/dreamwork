@@ -65,29 +65,25 @@
   **So: `rec` is still `c4` (with the copy shortened), and if you want the per-period shape the answer
   is `c2`, not `c3`.**
 
-- **P1 · 2026-07-28 — #421: how the loop should ask you things. Four options, one rejected.**
-  **Ask: any combination of A, B, C, D — or `rec` for A+B+D with C soft.** Free text always fine;
-  *"none of these"* is a real answer.
-  **A** — the ask comes first, in its own line, with the accepted answers. **B** — an unanswered
-  sub-decision gets recorded, and `lint` errors when a fold drops one. **C** — a ~250-word budget,
-  evidence moving to the artifact. **D** — state what a valid answer looks like.
-  **Rec: A + B + D, C soft.** B is the only one with a live defect behind it: `#275`'s Q3/Q5/Q6 have
-  been unanswered since 2026-07-25 and nothing notices. C stays soft because a hard cap pushes
-  evidence behind a click.
-  **Rejected, by your own data: one decision per entry** — the obvious port from `i-have-adhd`, and
-  **15 of 16** of your answered multi-part questions closed complete.
-  **The defect is not what I assumed.** The two entries titled *"one word: may I…"* are **300 and
-  448 words** against a corpus median of **300** — one *at* the median, one ~50% above. (I first
-  wrote *"both above 302"*; the corpus grew two entries — including this one — and the lane building
-  the artifact re-derived 307/455 against 308. **Two methods, both agreeing the literal claim fails
-  and the coupling is weak.**) What we write is barely coupled to the size of the decision.
-  Optional: artifact `.dreamwork/review/421-question-options.html` (being built), plan
-  `question-instruction-options.md`, research `2026-07-28-question-instruction-design.md`, both under
-  `.dreamwork/docs/`. Two corrections are recorded there.
-  **This entry has been redrafted four times and I published a wrong word count twice** — 249 for a
-  real 342, then 232 for 256 — in the entry about writing more than the ask needs. **I am no longer
-  quoting a count for it**, because a self-referential figure is wrong the moment anything above it
-  changes, and that is itself an argument for option C being a reported target rather than a claim.
+- **P1 · 2026-07-28 — #421: how the loop should ask you things (A/B/D live; C withdrawn on your note)**
+
+  **One-minute version: `.dreamwork/review/421-qs-opts-short.html`.** Long page and corpus
+  figures: `421-question-options.html`.
+
+  **A** — the ask comes first, with the accepted answers. **B** — an unanswered sub-decision is
+  recorded and `lint` errors when a fold drops one. **D** — state what a valid answer looks like.
+  **Rec: A + B + D.** B is the only one with a live defect behind it — `#275`'s Q3/Q5/Q6 have been
+  unanswered since 2026-07-25 and nothing notices.
+
+  **Rejected, by your own data: one decision per entry** — **15 of 16** of your multi-part answers
+  closed complete, so it would multiply items on your desk for a rare problem.
+
+  ~~C — a ~250-word budget~~ **withdrawn 01:13 on your note**: *"don't quote word counts or whatever.
+  like things like that which become errors too easily (are brittle)."* The intent survives without
+  the number — evidence belongs on the artifact, judged by whether the ask reads short, not counted.
+
+  Accepted answers: `rec` · any combination of `A`/`B`/`D` · free text · *"none of these"*.
+  Note `#445` (your four attention levels) may retire this entry outright — say so if it does.
 
 - **P1 · 2026-07-28 — #263: the second gate's condition is met, verified this time. Open it?**
   **Ask: `rec` for "open E and H, split `#368` first" — or answer Q1/Q2/Q3 separately.** Free text

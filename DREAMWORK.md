@@ -74,6 +74,14 @@ dreamwork-version: 5853e1789929
   were overridden** and earned their place. Two of four is the ratio to beat,
   and the test before writing an ask is *"would I be surprised by any answer
   other than my rec?"* — if not, it is not a question.
+- **No brittle numeric thresholds in our contracts** (human-set 2026-07-29
+  01:13, withdrawing `#421`'s option C): *"don't quote word counts or whatever.
+  like things like that which become errors too easily (are brittle)."* A count
+  in a prose contract fails the moment the corpus shifts — `#421`'s own
+  word-count claim had already broken twice against its own data before he
+  ruled. Keep the intent, drop the number: require *what a thing must answer*,
+  refuse on **absence** rather than on size, and where a threshold genuinely is
+  needed in code, derive it at runtime with the precondition asserted (`#441`).
 - **An updated question must get smaller** (human-set 2026-07-29 00:54):
   *"it would have been nice to know q1 didn't matter earlier. like when you
   update these, it's probably better to comment out the stuff that doesn't
