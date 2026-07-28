@@ -2830,3 +2830,39 @@ this shape and convert opportunistically.)
   load-bearing, because `top < innerHeight` alone passes a block that begins one pixel up with every
   word below. When a mechanical criterion becomes unsatisfiable, the usual cause is that it encoded a
   proxy; recover the intent and re-encode it, rather than dropping the check or exempting the page.
+- **A claim about a running process, stored as prose, is false the moment the process changes and
+  nothing can contradict it.** `status.json` said *"deploy = current — … Independently verified by this
+  coordinator at 16:05, not taken on report."* Every clause was true at 16:05. `#218` landed at 16:44,
+  and from then until 18:05 he was served a snapshot from **15:49** — so the median line the loop had
+  recorded as *delivered* was not on the page he was looking at, **while he used that page to decide the
+  `#263` gate.** **Evidence the phrasing made it worse:** *"independently verified, not taken on report"*
+  is exactly the wording that earns trust, and it is what stopped anyone re-checking. A timestamped
+  verification does not cover any later moment, and prose has no mechanism to notice. **The fix is that
+  a claim about live state must be computed when it is read, not written down** — `dev/deploy_state.py`
+  (`e135335`) replaces the sentence, and its output carries the clock it was taken at.
+- **"The file is right" and "he is seeing the file" are two questions, and answering the first reads as
+  answering both.** The first version of `deploy_state.py` compared the snapshot's bytes to
+  `HEAD:watch.py` and stopped. **Its own docstring named the gap it was leaving** — *"a running process
+  could still be serving from memory after its file changed underneath it"* — and I shipped it anyway.
+  **Evidence, from two minutes later, inside its own red-proof:** overwriting the snapshot made
+  `--autoreload` re-exec the server into old code; after I restored the file the script reported
+  **current** while the served page was provably pre-`#218` (no `bdmed`, panel back to 158px). So the
+  discriminating signal is not the file, the pid, or the process start time — a re-exec keeps its pid
+  *and* its start time. It is `GENERATION`, set at module import and re-set on every import. **When you
+  write down a limitation, that is not a disclosure, it is a bug you have chosen not to fix yet.**
+- **The stale thing may be your reference, not the thing you are checking.** The `#417` lane's artifact
+  said the burndown panel is **177px**; I measured **158px** live and was one sentence from reporting
+  the lane wrong. 177 − 158 = **19px** = exactly the line `#218` adds, and the lane was right: my
+  reference was a server running two-hour-old code. **Evidence it was nearly a wrong accusation:** the
+  lane could not have defended itself — it had reverted its uncommitted `watch.py` as its brief
+  required, so its renders were unreproducible from the tree by design. **Before disbelieving a lane's
+  measurement, establish that your own instrument is current** — especially when it is a long-running
+  process, which is the one kind of instrument that goes stale silently.
+- **`pkill -f <name>` matches every process whose command line mentions the name, including yours.**
+  `just deploy` does `pkill -f ud-dreamwork-watch.py` and killed the shell running the deploy — exit
+  **144** (128+16, SIGTERM), the recipe cut off partway, on the one recipe whose half-completion leaves
+  his dashboard down. **Evidence it is unreportable from the inside:** `pkill` has already killed the
+  process that would have logged it, so it fails silently by construction. It had never bitten because
+  it only fires when the *caller's* command line contains the basename, which a bare `just deploy` does
+  not — mine did, because I had assigned the path to a variable. **Kill by pid; a pattern that must not
+  match the caller will one day match the caller.** (`#431`)
