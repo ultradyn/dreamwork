@@ -2615,3 +2615,44 @@ this shape and convert opportunistically.)
   doc sitting beside a *stale* check. So when a lane and a check disagree here, **the prior should
   be that the check is stale**, not that the lane erred — that is now 3-for-3 — and the first
   question is "what changed since this check was written?", not "what did the lane break?"
+
+- **A worst-case extrapolation, restated once, becomes a measurement — and I handed one to the
+  human inside a question he was ruling on.** `#367`'s entry told him option A costs *"~214px"*
+  of chrome at seven marks. Built and measured, it is **167.9px**. The 214 was arithmetic —
+  a 180px worst-case tab, times three rows, plus gaps — and every step of it was defensible; it
+  was simply never observed, and realistic mixed labels pack tighter than seven copies of the
+  worst case. By the time it reached him it carried no trace of being derived.
+  **The number was also the entire decision**: A versus C is 214-vs-32 in prose and 168-vs-32 in
+  fact, and the second framing is materially kinder to the option I was arguing against. He
+  asked to see the previews *before* ruling, which is the only reason it was caught.
+  So: **in anything a human decides on, a figure that was computed rather than observed says so
+  in the same sentence.** "~214px (extrapolated from the 180px worst-case tab, not measured)"
+  costs nine words and cannot mislead. And when the decision turns on the number, build the
+  thing and measure it before asking — the artifact took a lane thirteen minutes.
+
+- **Two edits in one hour damaged sectioned Markdown by searching the whole file for a boundary
+  the sections define.** `s.index("## Recently landed")` matched a **prose mention** two thousand
+  lines above the real heading, and filed two closed tasks into the middle of `## Open`. Then
+  cutting an entry from `## Open` to *"the next `- **` anywhere in the file"* ran past the end of
+  the section and **swallowed the `## Answered` heading itself**.
+  Both are the day's dominant class one more time — a lookup that reports on something other than
+  the thing you cared about — and neither raised an error: the first was caught because
+  `parse_ledger` said open went 136→137 when it should have gone to 135, the second because a
+  count of open entries came back 6 when it should have been 0. **The file looked fine both times.**
+  Two rules, and they cost one line each: **anchor the heading match** (`^## X$` with `re.M`) and
+  **assert it matches exactly once** — `tasks.md` has seven unanchored matches and one real
+  heading; and **scope the entry search to the section you already sliced**, never to the whole
+  file. Then cross-check with the production parser before committing, because that is what
+  caught both.
+
+- **The dispatch recipe makes lanes write the hand-off line twice, and the second copy blocks the
+  merge.** Briefs give the **absolute** path `/…/ud-dreamwork/.dreamwork/handoffs.md` — the main
+  checkout — so a report survives whatever happens to the worktree. But the same brief tells the
+  lane to *commit* that line. In a worktree those are two different files, so the line lands
+  uncommitted in main **and** committed on the branch, and `git merge` refuses with *"local
+  changes would be overwritten"* on a file whose two versions are byte-identical.
+  Harmless once understood and confusing at exactly the wrong moment — it arrives after the work
+  is done, looking like a conflict. The fix is to say which copy is authoritative: **write the
+  report to the absolute inbox path (main checkout, uncommitted, always readable) and commit the
+  hand-off line inside the worktree only.** Until the template says so, the coordinator's merge
+  step is `git checkout -- .dreamwork/handoffs.md` first, after checking the two are identical.
