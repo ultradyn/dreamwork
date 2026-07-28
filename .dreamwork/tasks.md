@@ -24,9 +24,26 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **453**
+Next id: **454**
 
 ## Open
+- **#453** — restore the liquify with a moved or layered noise texture instead of two live SVG filters ·
+  **P2** · dashboard/motion · origin: **human** · **blocked-on: #449** (which disables the mist) ·
+  **human via watch 2026-07-29 00:53:** *"could we generate the flowingness by just having a single texture
+  (which i presume causes displacement) and then just like moving it? or layering and having 2 interfering? we
+  can also tile them or whatever too if that is cheaper."*
+  · **this is the successor to `#449`'s temporary removal**, and the word *temporarily* in his 01:05 ruling is
+  what makes it a real task rather than a wish. `#449` leaves the filters defined behind one named switch with
+  its measurements beside them, so restoring is one edit once a cheaper mechanism exists.
+  · **what `#449` measured, and the constraint it puts on this:** the cost was **not** noise regeneration
+  (freezing `baseFrequency`, and freezing all six per-frame attribute writes, both measured ≈ baseline) and
+  **not** filtered area (a 42% clamp changed nothing). It was **two SVG filter rasterisations per frame**
+  contending with the shader — a threshold, since removing either alone bought nothing and removing both gave
+  +128% frames. **So a cheaper texture is only a win if it removes a rasterisation, not if it merely makes one
+  cheaper.** One cached field translated, tiled, or two layers interfering must be measured against that bar,
+  not against the old animated filter.
+  · **acceptance is comparative, on this host, in one run** — `#449`'s harness exists; reuse it rather than
+  re-deriving a baseline, and state the numbers next to the ones it recorded.
 - **#452** — focus a single question on its own page · **P2** · dashboard/asking · origin: **human** ·
   **human via watch 2026-07-29 01:04:** *"should be able to focus on a question, like open up to a page showing
   only that question. useful if other qs are being updated etc"*

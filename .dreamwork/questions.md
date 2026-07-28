@@ -1,28 +1,7 @@
 # Questions for the human
 
 ## Open
-- **P1 · 2026-07-29 01:03 — #449 framey dissolve: the mist itself is the cost, and it is all-or-nothing**
 
-  **V1 is refuted — sorry, your call was sound and the measurement killed it.**
-  Clamping the mist to the viewport cut 42% of the filtered area (553×1557 →
-  553×900) and changed nothing: 13.7 → 13.7 frames, worst frame 184.9 → 187.4ms.
-
-  **What the lane actually found**, and it is a threshold, not a gradient: removing
-  **either** filter alone ≈ baseline; removing **both** → frames 12 → 28 (+128%),
-  worst frame 262 → 129ms. Freezing every per-frame attribute write ≈ baseline. So
-  the cost is two SVG filter rasterisations per frame contending with the shader —
-  and **any** amount of mist costs the same as all of it.
-
-  **So the only lever left is the gesture, which is yours, not mine.** Options, and
-  I have no rec I trust yet: **M1** mist the departing ghost only and bring the
-  incoming view in on a cheap CSS blur (one filter — but "either alone ≈ baseline"
-  says that may buy nothing, so it needs measuring before you pick it); **M2** keep
-  the mist and accept the frames on tall pages; **M3** drop to CSS blur both ways —
-  fast, and a real loss of the liquify. Accepted answers: `M1` · `M2` · `M3` ·
-  *"measure M1 first"* (rec if you want one) · free text.
-
-  ~~Q1 freeze `baseFrequency`~~ withdrawn 00:52 · ~~V1 viewport-clamp~~ refuted
-  01:00, both by measurement. Full numbers in `#449` in the ledger.
 
 - **P1 · 2026-07-29 — #269 draft durability: two calls (C1/C2)**
 
@@ -310,6 +289,39 @@
     redaction be designed now), Q6 (who besides you). Q4 moved to #359.
 
 ## Answered
+- **P1 · 2026-07-29 01:03 — #449 framey dissolve: the mist itself is the cost, and it is all-or-nothing**
+
+  → answered (2026-07-29 01:05): **M3, framed as temporary** — *"let's try temporarily
+  disabling the svg filter. we can make up for it as best we can with css."* Relayed to the
+  `mistperf` lane: both filters off (its measured +128% frames, worst frame 262 → 129ms),
+  CSS carrying as much of the gesture as it can, the mist left recoverable behind one named
+  switch with the measurements beside it, and `transitions.md` + `watch-design.md` updated in
+  the same commit. Successor candidate, filed not built: his moving/tiled-texture idea.
+
+  **V1 is refuted — sorry, your call was sound and the measurement killed it.**
+  Clamping the mist to the viewport cut 42% of the filtered area (553×1557 →
+  553×900) and changed nothing: 13.7 → 13.7 frames, worst frame 184.9 → 187.4ms.
+
+  **What the lane actually found**, and it is a threshold, not a gradient: removing
+  **either** filter alone ≈ baseline; removing **both** → frames 12 → 28 (+128%),
+  worst frame 262 → 129ms. Freezing every per-frame attribute write ≈ baseline. So
+  the cost is two SVG filter rasterisations per frame contending with the shader —
+  and **any** amount of mist costs the same as all of it.
+
+  **So the only lever left is the gesture, which is yours, not mine.** Options, and
+  I have no rec I trust yet: **M1** mist the departing ghost only and bring the
+  incoming view in on a cheap CSS blur (one filter — but "either alone ≈ baseline"
+  says that may buy nothing, so it needs measuring before you pick it); **M2** keep
+  the mist and accept the frames on tall pages; **M3** drop to CSS blur both ways —
+  fast, and a real loss of the liquify. Accepted answers: `M1` · `M2` · `M3` ·
+  *"measure M1 first"* (rec if you want one) · free text.
+
+  ~~Q1 freeze `baseFrequency`~~ withdrawn 00:52 · ~~V1 viewport-clamp~~ refuted
+  01:00, both by measurement. Full numbers in `#449` in the ledger.
+  - **Answer (via watch, 2026-07-29 01:05):** let's try temporarily
+    disabling the svg filter. we can make up for it as best we can with
+    css.
+
 - **P1 · 2026-07-28 — #254: authorise implementation of the threaded-notes design?**
 
   → answered (2026-07-29 01:01): **Approve I1** — *"yes"*. Implementation authorised
