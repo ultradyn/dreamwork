@@ -1,70 +1,27 @@
 # Questions for the human
 
 ## Open
-- **P1 · 2026-07-29 00:47 — #449 framey dissolve: the liquify is not on the collapsible sections, so which cost may I spend?**
+- **P1 · 2026-07-29 00:47 — #449 framey dissolve: one live call, the mist's edge**
 
-  Your report (dashboard composer, 00:39) attributed the framiness to *"the additions
-  that were made for expanding and contracting, like collapsible sections, so that
-  they had the liquify effect as well."*
+  Shrunk 00:56 on your feedback — refuted material moved out of your way; the
+  trail is in `#449` in the ledger and in `.dreamwork/lessons.md`.
 
-  **That attribution does not hold, and you should know before the fix lands.** The
-  page defines exactly three SVG filters — `dissolveOut`, `dissolveIn`, `departMist`
-  — and all three are route/ghost gestures. **No collapsible section carries a
-  liquify filter.** So the cost is not "a lot of elements each filtered"; it is one
-  filter over one very large element.
+  **Measured:** the cost is the turbulence filter's **area**, not its animation. The
+  ghost is pinned to the **outgoing** box, so leaving a question view (1723px tall)
+  mists 1723px × 150% of surface while review is only 900px. Stripping the filter
+  gave +69% rAF and −40% long stalls; freezing `baseFrequency` gave nothing.
 
-  **What I think it actually is** (the `mistperf` lane is measuring, so treat this as
-  a hypothesis): `crossfade()` filters a full-page ghost clone, and `stepFx`
-  animates `feTurbulence`'s `baseFrequency` every frame (0.009 → 0.018). Unlike
-  `scale` and `stdDeviation`, changing `baseFrequency` invalidates the noise field,
-  so the entire fractal texture is regenerated per frame — over a 150%×150% filter
-  region on an element whose area scales with **page height**. Review is the tallest
-  and widest view, which is exactly the transition you named. Your other guess —
-  reflow — is still live and the lane is told to check it.
+  **Settled by you (00:53):** V1 first — clamp the mist to the viewport. Relayed to
+  the lane. Your texture idea (one cached noise field, moved; or two layers
+  interfering; tiled) is queued behind it as *how the flow keeps evolving once the
+  area is cut*, not as a second perf fix.
 
-  **The ask is which cost I may spend**, because every candidate fix trades a little
-  of the gesture for frames and `transitions.md` says that trade is not mine to make
-  silently:
+  **The one thing still yours:** clamping puts the mist's edge **at the fold**
+  rather than the page edge. On a tall page that edge is visible as the dissolve
+  passes it. Accepted answers: `fine` · *"feather it"* · *"show me first"* · free text.
 
-  **Q1 — the mist field.** Rec **F1**: freeze `baseFrequency` and let `scale` alone
-  carry the "field tightens, it flows" reading — nearly free, but the swirl stops
-  *evolving* mid-dissolve. Alt **F2**: keep the evolution and buy frames elsewhere
-  only (region + area), accepting a smaller win.
-
-  **Q2 — off-screen mist.** Rec **V1**: mist only what is in the viewport, since a
-  tall review page currently mists surface you cannot see. Your own words —
-  *"remove them from the page if they're not going to make a difference at that
-  point"* — read as approving this; I want it explicit because the edge of the
-  mist would then sit at the fold rather than at the page edge.
-
-  Accepted answers: `rec` · `F1`/`F2` · `V1` or `no` · free text · *"whatever
-  measures best"* (a real answer — it hands the trade to the numbers).
-
-  **Note (loop, 2026-07-29 00:52) — Q1's premise is refuted by measurement; Q2 is
-  now the whole answer.** The `mistperf` lane measured before touching anything, and
-  **freezing `baseFrequency` performed the same as baseline** — so my noise-field
-  hypothesis was wrong and `F1` buys nothing. Removing the filter entirely gave
-  **+69% rAF callbacks and −40% long stalls**, so the cost is the turbulence
-  filter's *area*, not its animation.
-
-  And the area is worse than I described: the ghost is pinned to the **outgoing**
-  page's box, and the question page measures **1723px tall (130 elements)** against
-  review's **900px (43 elements)**. So leaving a question view mists 1723px × 150%
-  of surface — most of it far below the fold — which is why *this* direction is the
-  framey one. Your instinct was right and mine was the wrong mechanism.
-
-  **So Q1 is withdrawn** (freezing the field is free of benefit, not free of cost)
-  and **`V1` — clamp the mist to the viewport — is the fix**, not an extra. The
-  question that remains is only the one Q2 already asked: the mist's edge then sits
-  at the fold instead of the page edge. Lane is refining the metric (a
-  multiple-rAF-per-frame artifact) before naming the cause; numbers may move, the
-  direction will not.
-  - **Note (human, via watch, 2026-07-29 00:53):** try v1 first. also coudl
-    we generate the flowingness by just having a single texture (which i
-    presume causes displacement) and then just like moving it? or layering
-    and having 2 interfering? we can also tile them or whatever too if that
-    is cheaper.
-
+  ~~Q1 — freeze `baseFrequency` vs keep the evolution~~ — **withdrawn 00:52**,
+  measurement refuted the premise; it buys nothing.
 
 - **P1 · 2026-07-29 — #269 draft durability: two calls (C1/C2)**
 

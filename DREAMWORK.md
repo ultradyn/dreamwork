@@ -74,6 +74,16 @@ dreamwork-version: 5853e1789929
   were overridden** and earned their place. Two of four is the ratio to beat,
   and the test before writing an ask is *"would I be surprised by any answer
   other than my rec?"* — if not, it is not a question.
+- **An updated question must get smaller** (human-set 2026-07-29 00:54):
+  *"it would have been nice to know q1 didn't matter earlier. like when you
+  update these, it's probably better to comment out the stuff that doesn't
+  matter anymore … you should update those protocols to prefer always making
+  questions smaller if possible to reduce the need for attention."* This is the
+  ask-him-less rule applied to an ask already written: **his attention is the
+  scarce thing, and a correction that appends is a correction that spends
+  it.** Strike the dead sub-question, keep the live one, and park our reasoning
+  in the ledger or `lessons.md`. Protocol updated in `SKILL.md` and
+  `file-formats.md`.
 - **A known deficiency, noted, beats an expensive defence built early**
   (human-set 2026-07-29 00:50, answering #288's contain-vs-detect): *"don't do
   anything too expensive or time consuming. just plan for it and make sure the

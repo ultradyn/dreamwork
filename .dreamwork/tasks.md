@@ -78,22 +78,6 @@ Next id: **451**
   · **read together with `#445`** (four question/attention modes) and `#421` — a questionnaire is the surface
   those modes would ask through, and *"cut back on any superfluous elements"* is the design constraint he
   stated up front rather than a later review note.
-- **#447** — bundle the `use-igcs` skill with dreamwork, and make the loop reach for it before any design
-  judgement · **P1** · loop-machinery/decision-method · origin: **human** ·
-  **human via chat 2026-07-29 00:33:** *"re blocking #445: see /use-igcs the skill. we should bundle that skill
-  in with dreamwork and the ud-dreamwork skill should instruct the agent to use it before and decision making /
-  design judgement is required."*
-  · **this unblocks `#445`**, whose four levels all name an "evaluation table" and an **IGC** the repo could not
-  define. It is defined: **IGC = (Idea, Goal, Context)**, the Critical Fallibilism method — binary
-  non-refuted/refuted cells rather than scoring, an `All` rollup, breakpoints instead of maximisation, and the
-  decisive error written under each ✘. Source of truth: `/home/xertrov/.llm-general/skills/use-igcs/SKILL.md`
-  plus `references/cf-concepts.md`.
-  · **scope:** bundle (so a dreamwork install carries it, rather than depending on this host's skill set) and a
-  `SKILL.md` instruction at the point where judgement happens — selection, design, and any lane brief that asks
-  a subagent to choose. The obvious sibling is that a **review artifact's option table becomes an IGC matrix**,
-  which is `#445`'s and `#421`'s currency.
-  · **open:** vendor-copy vs declared dependency is a real fork with a staleness cost either way — decide it
-  with an IGC, and note the answer is itself the first dogfood of the method.
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
@@ -3272,6 +3256,24 @@ Next id: **451**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#447** — bundle the `use-igcs` skill with dreamwork, and make the loop reach for it before any design
+  judgement · **P1** · loop-machinery/decision-method · origin: **human** ·
+  **human via chat 2026-07-29 00:33:** *"re blocking #445: see /use-igcs the skill. we should bundle that skill
+  in with dreamwork and the ud-dreamwork skill should instruct the agent to use it before and decision making /
+  design judgement is required."*
+  · **this unblocks `#445`**, whose four levels all name an "evaluation table" and an **IGC** the repo could not
+  define. It is defined: **IGC = (Idea, Goal, Context)**, the Critical Fallibilism method — binary
+  non-refuted/refuted cells rather than scoring, an `All` rollup, breakpoints instead of maximisation, and the
+  decisive error written under each ✘. Source of truth: `/home/xertrov/.llm-general/skills/use-igcs/SKILL.md`
+  plus `references/cf-concepts.md`.
+  · **scope:** bundle (so a dreamwork install carries it, rather than depending on this host's skill set) and a
+  `SKILL.md` instruction at the point where judgement happens — selection, design, and any lane brief that asks
+  a subagent to choose. The obvious sibling is that a **review artifact's option table becomes an IGC matrix**,
+  which is `#445`'s and `#421`'s currency.
+  · **open:** vendor-copy vs declared dependency is a real fork with a staleness cost either way — decide it
+  with an IGC, and note the answer is itself the first dogfood of the method.
+  · landed \`d387ba3\` — IGC vendored as \`igc-method.md\` + \`igc-concepts.md\` (option D of four, chosen by IGC: A fails because a verbatim nested skill keeps its own \`name:\` frontmatter and a loader sees a second installable skill; B fails on a machine without use-igcs installed; C loses cf-concepts). Staleness detected by upstream path + sha256 in each vendored file. SKILL.md instructs IGC at four judgement sites, incl. dispatch — a lane that must choose is handed \`igc-method.md\` in its brief. Lint check declined with reasons (semantic "presents options" cannot be matched reliably; would restate the clause it reads).
+
 - **#288** — Prevent isolated agents from killing protected live services to
   satisfy invented test premises · P0/P1 · tooling/authority incident · origin:
   **loop** · 2026-07-26 21:16 · #221 guard-only subagent was explicitly told

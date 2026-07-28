@@ -394,7 +394,14 @@ results, no ceremony.
   accumulate inside an entry and folds move the whole thread, and a
   follow-up landing on an *Answered* entry is a potential amendment —
   re-evaluate the fold, it may reopen the question or redirect in-flight
-  work. **Whose words they are is never in doubt**, which is why the
+  work. **An update must make the entry smaller, not longer** (human-set
+  2026-07-29 00:54): when part of an ask stops mattering — refuted by a
+  measurement, settled by an earlier answer — **strike it out or remove
+  it** rather than appending a note that explains it away. Every line
+  left standing is a line he must read to find the live question, so the
+  correction that grows the entry has spent his attention to record our
+  own reasoning. Keep the durable trail in the ledger, the plan, or
+  `lessons.md`; leave only what is still his to decide. **Whose words they are is never in doubt**, which is why the
   author tags exist; their exact forms are in `file-formats.md`, because
   a parser reads them. **Its shape is a contract, not a style** —
   `watch.py` matches `## Open` and `## Answered` literally, and a file

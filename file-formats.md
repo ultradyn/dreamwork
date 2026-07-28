@@ -70,7 +70,13 @@ leave the file byte-identical and no `.questions.md.*.tmp` behind.
   become links.
   - **Note (human, via watch, 2026-07-25 09:00):** a threaded note.
     Continuation lines belong to the note, not the body.
-  - **Follow-up (loop, 2026-07-25 09:01):** one from the loop.
+  - **Follow-up (loop, 2026-07-25 09:01):** one from the loop. A loop
+    follow-up that *retires* part of the ask rewrites the body smaller
+    instead of appending — `~~struck~~` for a withdrawn sub-question,
+    with one line saying when and why, and the reasoning parked
+    elsewhere (human-set 2026-07-29 00:54; a `#449` amendment grew the
+    entry to 4368 characters to explain a refuted premise, and the live
+    question was below it).
   - **Answer (via watch, 2026-07-25 09:02):** answered from the page,
     awaiting the loop's fold.
 
