@@ -1078,6 +1078,56 @@ class TestCollector(unittest.TestCase):
             self.assertEqual([b["landed"] for b in r["buckets"]], [0, 1, 1])
             # the open count is a LEVEL, not a count of events
             self.assertEqual([b["open"] for b in r["buckets"]], [2, 2, 1])
+            # #417: ledger-touching commits per period — one rev per fixture
+            # commit, so each non-empty hour that received a ledger commit
+            # counts 1. The three revs land in buckets 0, 1, 2.
+            self.assertEqual([b["commits"] for b in r["buckets"]], [1, 1, 1],
+                             "each ledger rev is one commit in its bucket")
+            self.assertEqual(r["commit_total"], 3)
+            self.assertEqual(r["commit_max"], 1)
+            self.assertEqual(r["commit_median"], 1)
+            self.assertEqual(r["commit_quiet"], 0)
+
+    def test_ledger_series_counts_commits_per_period(self):
+        """#417. Commits-per-period is the same revs walk, not a second one.
+
+        A quiet hour between two ledger commits must read 0 commits, not
+        inherit the previous count — commits are events, unlike open which
+        is a level. Peak / median / quiet are derived over the buckets the
+        chart draws, so the c4 copy line cannot invent numbers.
+        """
+        LED = "## Open\n\n{open}\n## Recently landed\n\n{done}\n"
+        entry = "- **#{i}** — task {i} · P2 · task\n"
+        T = 1784900000
+        watch._LEDGER_SNAPS.clear()
+        with tempfile.TemporaryDirectory() as d:
+            # three revs: t=0, t=2h, t=2h+ε is not possible in one step —
+            # two revs in the first hour requires two commits in that hour.
+            # Plant: hour0 has 2 commits (two revs inside the hour), hour1
+            # is quiet (no rev), hour2 has 1.
+            self._ledger_repo(d, [
+                (LED.format(open=entry.format(i=1), done=""), T),
+                (LED.format(open=entry.format(i=1) + entry.format(i=2),
+                            done=""), T + 600),           # still hour 0
+                # content must change or git refuses the commit; #3 arrives
+                # in hour 2 so the middle hour stays quiet
+                (LED.format(open=entry.format(i=1) + entry.format(i=2) +
+                            entry.format(i=3), done=""), T + 2 * 3600),
+            ])
+            r = watch.ledger_series(d, now=T + 2 * 3600)
+            self.assertEqual(r["state"], watch.BURN_OK)
+            commits = [b["commits"] for b in r["buckets"]]
+            # precondition: the planted shape really is 2, 0, 1 — a flat
+            # list would make peak/quiet/median assertions vacuous.
+            self.assertEqual(commits, [2, 0, 1],
+                             "events per bucket, not a carried level")
+            self.assertNotEqual(commits[0], commits[1],
+                                "quiet hour must differ from the busy one")
+            self.assertEqual(r["commit_total"], 3)
+            self.assertEqual(r["commit_max"], 2)
+            self.assertEqual(r["commit_quiet"], 1)
+            # median of [0,1,2] = 1
+            self.assertEqual(r["commit_median"], 1)
 
     def test_ledger_series_lands_every_id_in_a_combined_head(self):
         """#301/#399: ledger_series counts a combined landed HEAD as two ids.

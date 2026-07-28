@@ -735,7 +735,9 @@ STYLE = """<style>
      commits panel is (#151), so fresh data changes bars and never moves the
      page — which is what lets the bars animate on a data change without
      dragging four panels with them. */
-  .bd { margin:.1rem 0 .9rem; }
+  /* position:relative so the per-column hover tip can float without
+     changing layout height (#417). */
+  .bd { margin:.1rem 0 .9rem; position:relative; }
   /* ONE LINE, ELLIPSISED — #151's mechanism for #151's reason, one panel
      down: the numbers in here change, and a head that wraps to two lines
      changes the panel's height, which is the premise that lets the bars
@@ -747,8 +749,33 @@ STYLE = """<style>
   .bdnet { height:30px; }
   .bdflow { height:34px; margin-top:9px; }
   .bdcol { flex:1 1 0; min-width:0; display:flex; flex-direction:column;
-           justify-content:flex-end; }
+           justify-content:flex-end; outline:none; }
+  /* #417 hover: a column is focusable so keyboard/touch reach the same
+     readout pointer hover does. No accent, no fill — the panel's rule is
+     that nothing here waits on him; focus only lifts the level cap one
+     ramp step so the active column is findable. */
+  .bdnet .bdcol:focus-visible .bdlevel { border-top-color:var(--muted); }
+  .bdnet .bdcol:hover .bdlevel { border-top-color:var(--muted); }
   .bdflow .bdcol { justify-content:stretch; }
+  /* #417 per-column readout — an ARRIVAL, not a native title. Floats over
+     the chart so it never changes the panel's height (constant-height
+     premise). Reuses the rundesc atmospheric blur+drift (pose → ease in,
+     depart → ease out). Accent is not spent. Reduced motion snaps. */
+  .bdtip { position:absolute; left:0; right:0; top:0; z-index:2;
+           pointer-events:none; font-size:.7rem; color:var(--dim);
+           background:color-mix(in srgb, var(--bg) 88%, transparent);
+           padding:.15rem .4rem; white-space:nowrap; overflow:hidden;
+           text-overflow:ellipsis; border-radius:2px;
+           transition:opacity .42s ease, filter .42s ease,
+                      transform .42s cubic-bezier(.32,.1,.2,1); }
+  .bdtip[hidden] { display:none; }
+  .bdtip.pose { transition:none !important; opacity:0;
+    filter:blur(6px); transform:translateY(3px); }
+  .bdtip.depart { opacity:0; filter:blur(6px); transform:translateY(-3px); }
+  .bdtip .bdnum { color:var(--lit); }
+  @media (prefers-reduced-motion: reduce) {
+    .bdtip { transition:none; }
+  }
   .bdhalf { flex:1 1 0; display:flex; }
   .bdtop { align-items:flex-end; }
   /* the standing opacity transition is what `.dreamin` needs to ease BACK
@@ -764,8 +791,15 @@ STYLE = """<style>
      100 percent of the tallest. A 2px cap on a transparent box of the same
      height is the same number and reads as the staircase it is. Dimmest on
      the ramp besides, because it is the DERIVED series — the two it comes
-     from sit above it. */
-  .bdlevel { border-top:2px solid var(--dimmer); }
+     from sit above it.
+     #417 c3: the cap's WEIGHT (border-top-width 2–6px) carries ledger
+     commits-per-period. Height still means open count; thickness means
+     how busy the period was. Zero commits is 1px (below the 2px floor) so
+     a quiet period is distinguishable from a single-commit one; the peak
+     is always 6px. The mapping is learned, so the per-column hover names
+     the exact numbers. Width changes travel with the bar's height on the
+     same .85s curve (regroupBars), not a snap. */
+  .bdlevel { border-top:2px solid var(--dimmer); box-sizing:border-box; }
   .bdup { background:var(--dim); align-self:flex-end; }
   .bddown { background:var(--muted); }
   .bdrule { height:1px; background:var(--line); flex:0 0 1px; }
@@ -790,6 +824,17 @@ STYLE = """<style>
   .bdmed { color:var(--dim); font-size:.7rem; max-width:66ch; margin:.3rem 0 0;
            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .bdmed .bdnum { color:var(--lit); }
+  /* #417 c4: commits-per-period figure in the panel's voice (the #218
+     median treatment one element down). SHORTENED so it fits at 358px —
+     his condition, not a preference: the first render truncated to
+     "…3 periods with n…" and an ellipsis there reads as broken rather
+     than terse. NO ellipsis: the copy is short enough that overflow is
+     not the plan. Fixed-height one line, so the +19px is a deliberate
+     one-time allowance in the panel's constant layout, not a growth on
+     data change. NO MOTION, accent not spent — same contract as .bdmed. */
+  .bdcommit-copy { color:var(--dim); font-size:.7rem; max-width:66ch;
+                   margin:.3rem 0 0; white-space:nowrap; overflow:hidden; }
+  .bdcommit-copy .bdnum { color:var(--lit); }
   /* the provenance coverage (#217): who filed each task, by FIRST SIGHT —
      three counts and a denominator, with the historical unknown drawn as
      itself and never folded into loop. THE ACCENT IS NOT SPENT (the
@@ -3094,8 +3139,11 @@ const gitRow = c => `<details class="commit${
    marking what needs him. Same rule the status panel follows (#130). */
 const BURN_SERIES = [['open', 'bdlevel'], ['arrived', 'bdup'],
                      ['landed', 'bddown']];
+/* #417: commits rides the gate too — a weight-only change is still a
+   series change, even when open/arrived/landed are flat. */
 const burnKey = d => ((d && d.burndown && d.burndown.buckets) || [])
-  .map(b => `${b.t0}:${b.arrived}:${b.landed}:${b.open}`).join(' ');
+  .map(b => `${b.t0}:${b.arrived}:${b.landed}:${b.open}:${b.commits || 0}`)
+  .join(' ');
 const BURN_STEP_NAME = { 3600: 'hourly', 14400: 'every four hours',
                          86400: 'daily', 604800: 'weekly',
                          2419200: 'every four weeks' };
@@ -3107,9 +3155,26 @@ const bstamp = (t, step) => {
     ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 };
-const bdbar = (b, k, cls, max) =>
-  `<div class="bdbar ${cls}" data-bk="${b.t0}" data-series="${k}"` +
-  ` style="height:${max ? Math.round((b[k] / max) * 100) : 0}%"></div>`;
+/* #417 c3: map ledger commits → level-line cap weight.
+   0 commits → 1px (below the floor, so quiet ≠ one).
+   1..peak  → 2..6px linear. Peak is always 6px; a lone commit is 2px. */
+const CAP_ZERO = 1, CAP_MIN = 2, CAP_MAX = 6;
+const commitCap = (n, peak) => {
+  const c = Math.max(0, n | 0), p = Math.max(0, peak | 0);
+  if (c <= 0) return CAP_ZERO;
+  if (p <= 1) return CAP_MIN;
+  return Math.round(CAP_MIN + (CAP_MAX - CAP_MIN) * (c - 1) / (p - 1));
+};
+const bdbar = (b, k, cls, max, peakCommits) => {
+  const h = max ? Math.round((b[k] / max) * 100) : 0;
+  let style = `height:${h}%`;
+  // level line only: open-count height + commits weight
+  if (k === 'open')
+    style += `;border-top-width:${commitCap(b.commits || 0, peakCommits)}px`;
+  return `<div class="bdbar ${cls}" data-bk="${b.t0}" data-series="${k}"` +
+    ` data-commits="${b.commits || 0}"` +
+    ` style="${style}"></div>`;
+};
 /* the provenance coverage (#217). THREE COUNTS AND A DENOMINATOR, read
    from the ledger's first sightings (#216): who filed each task at its
    ARRIVAL, which no later edit can reclassify. The historical unknown is
@@ -3196,6 +3261,27 @@ function medianBlock(s) {
     `<span class="bdnum">${esc(dur)}</span> median time finished work ` +
     `took to land · over ${n} ${n === 1 ? 'pair' : 'pairs'}</div>`;
 }
+/* #417 c4: ledger-commits-per-period as one figure line. SHORTENED so it
+   does not ellipsise at either viewport (his condition): the long form
+   ("16 median ledger commits per period · 59 peak · 3 periods with none")
+   clipped at mobile. The short form keeps the three facts — median, peak,
+   empty periods — and names "commits/period" once so the unit is not
+   lost. NO MOTION: settled text, reduced-motion parity free. */
+function commitFigBlock(s) {
+  if (!s || s.state !== 'ok') return '';
+  const med = (typeof s.commit_median === 'number') ? s.commit_median : 0;
+  const peak = (typeof s.commit_max === 'number') ? s.commit_max : 0;
+  const quiet = (typeof s.commit_quiet === 'number') ? s.commit_quiet : 0;
+  const total = (typeof s.commit_total === 'number') ? s.commit_total : 0;
+  if (!total && !peak)
+    return `<div class="bdcommit-copy">no ledger commits in these periods</div>`;
+  const aria = `ledger commits per period: median ${med}, peak ${peak}` +
+    (quiet ? `, ${quiet} period${quiet === 1 ? '' : 's'} with none` : '') +
+    ` (${total} total)`;
+  return `<div class="bdcommit-copy" role="img" aria-label="${esc(aria)}">` +
+    `<span class="bdnum">${med}</span> median commits/period · peak ${peak}` +
+    (quiet ? ` · ${quiet} empty` : '') + `</div>`;
+}
 function burnPanel(d) {
   const s = (d && d.burndown) || null;
   if (!s || !s.state) return '';
@@ -3209,27 +3295,47 @@ function burnPanel(d) {
   const bs = s.buckets || [];
   const flowMax = Math.max(1, ...bs.map(b => Math.max(b.arrived, b.landed)));
   const levelMax = Math.max(1, ...bs.map(b => b.open));
-  const col = b =>
-    `<div class="bdcol" title="${esc(bstamp(b.t0, s.step))} · ${b.arrived} arrived · ` +
-    `${b.landed} landed · ${b.open} open">`;
+  const peakCommits = (typeof s.commit_max === 'number') ? s.commit_max
+    : Math.max(0, ...bs.map(b => b.commits || 0));
+  /* #417: columns carry the exact numbers the hover/focus readout names
+     (open + flow + commits). Level-track columns are keyboard-focusable so
+     the mapping is learnable without a pointer. title= remains the
+     weakest fallback (touch-unfriendly) for the same numbers. */
+  const col = (b, focusable) => {
+    const stamp = bstamp(b.t0, s.step);
+    const c = b.commits || 0;
+    const title = `${stamp} · ${b.open} open · ${b.arrived} arrived · ` +
+      `${b.landed} landed · ${c} commit${c === 1 ? '' : 's'}`;
+    const focus = focusable
+      ? ` tabindex="0" role="listitem"` +
+        ` data-open="${b.open}" data-arrived="${b.arrived}"` +
+        ` data-landed="${b.landed}" data-commits="${c}"` +
+        ` data-stamp="${esc(stamp)}"`
+      : '';
+    return `<div class="bdcol"${focus} title="${esc(title)}"` +
+      ` aria-label="${esc(title)}">`;
+  };
   // The head states the three totals it is a picture of, so a chart too
   // small to read is still a fact. `open` is the CURRENT count and it comes
   // from the same walk the columns do, not from a second reading.
   let h = label('burndown') + `<div class="bd">` +
+    `<div class="bdtip" hidden role="status" aria-live="polite"></div>` +
     `<div class="bdhead"><span class="bdnum">${s.open}</span> open · ` +
     `${s.arrived} arrived · ${s.landed} landed · ` +
     `${BURN_STEP_NAME[s.step] || 'bucketed'}</div>` +
-    `<div class="bdtrack bdnet">` +
-      bs.map(b => col(b) + bdbar(b, 'open', 'bdlevel', levelMax) + `</div>`)
+    `<div class="bdtrack bdnet" role="list" ` +
+      `aria-label="open count per period; line weight is ledger commits">` +
+      bs.map(b => col(b, true) +
+        bdbar(b, 'open', 'bdlevel', levelMax, peakCommits) + `</div>`)
         .join('') + `</div>` +
     `<div class="bdtrack bdflow">` +
-      bs.map(b => col(b) +
+      bs.map(b => col(b, false) +
         `<div class="bdhalf bdtop">${bdbar(b, 'arrived', 'bdup', flowMax)}</div>` +
         `<div class="bdrule"></div>` +
         `<div class="bdhalf bdbot">${bdbar(b, 'landed', 'bddown', flowMax)}</div>` +
         `</div>`).join('') + `</div>` +
     `<div class="bdaxis"><span>${esc(bstamp(s.from, s.step))}</span>` +
-      `<span>arrivals above · landed below</span>` +
+      `<span>arrivals above · landed below · weight is commits</span>` +
       `<span>${esc(bstamp(s.to, s.step))}</span></div>`;
   /* WHO FILED EACH TASK, said honestly (#217). The old panel reported its
      own coverage (`sourced N/M`) because the ledger could not answer the
@@ -3254,6 +3360,11 @@ function burnPanel(d) {
      no transition and reduced-motion parity is the identical settled
      visual — the same contract provenance holds one block up. */
   h += medianBlock(s);
+  /* #417 c4 — commits-per-period figure. After the median, same voice:
+     one fixed line in the panel's surrounding copy. The +19px is a
+     deliberate one-time allowance baked into the panel's constant
+     height, not a growth that moves the page on a data change. */
+  h += commitFigBlock(s);
   return h + `</div>`;
 }
 function buildDashboard(d) {
@@ -6511,21 +6622,29 @@ function regroupCards(before, toggled, list, restated) {
 function snapshotBars() {
   const m = new Map();
   document.querySelectorAll('.bd .bdbar[data-bk]').forEach(el =>
-    m.set(el.dataset.bk + '/' + el.dataset.series,
-          el.getBoundingClientRect().height));
+    m.set(el.dataset.bk + '/' + el.dataset.series, {
+      h: el.getBoundingClientRect().height,
+      // #417 c3: weight travels with height so a commits-only change does
+      // not snap. parseFloat of computed border-top-width is the px value.
+      cap: parseFloat(getComputedStyle(el).borderTopWidth) || 0,
+    }));
   return m;
 }
 function regroupBars(before) {
   if (rmr || !before || !before.size) return;
   document.querySelectorAll('.bd .bdbar[data-bk]').forEach(el => {
     const was = before.get(el.dataset.bk + '/' + el.dataset.series);
-    const now = el.getBoundingClientRect().height;
+    const nowH = el.getBoundingClientRect().height;
+    const nowCap = parseFloat(getComputedStyle(el).borderTopWidth) || 0;
     if (was === undefined) {          // a new bucket: snap, then ease in
       el.classList.add('dreamin');
       requestAnimationFrame(() => el.classList.remove('dreamin'));
       return;
     }
-    if (Math.abs(was - now) < 1) return;
+    const hMoved = Math.abs(was.h - nowH) >= 1;
+    const capMoved = el.classList.contains('bdlevel') &&
+                     Math.abs(was.cap - nowCap) >= 0.5;
+    if (!hMoved && !capMoved) return;
     /* RESTORE THE PERCENTAGE, NEVER CLEAR THE HEIGHT. Every other travel on
        this page clears its inline height at the end because those elements
        get their size from layout — a bar gets its size from an inline
@@ -6536,21 +6655,113 @@ function regroupBars(before) {
        laundered by something unrelated. Found by the guard's quiet-tick
        check, which measured the bars at 2px before the tick it was about. */
     const pct = el.style.height;
+    const capEnd = el.style.borderTopWidth;
     el.style.transition = 'none';     // the enter-snap rule, again
     // border-box for `travelCard`'s reason: `now` came from
     // getBoundingClientRect, which is a BORDER box, and `.bdlevel` is a 2px
     // rule with no fill — left content-box the travel aims 2px past where it
     // ends and snaps when the percentage comes back.
     el.style.boxSizing = 'border-box';
-    el.style.height = was + 'px';
+    if (hMoved) el.style.height = was.h + 'px';
+    if (capMoved) el.style.borderTopWidth = was.cap + 'px';
     void el.offsetWidth;
-    el.style.transition = 'height .85s cubic-bezier(.32,.1,.2,1)';
-    el.style.height = now + 'px';
+    el.style.transition = 'height .85s cubic-bezier(.32,.1,.2,1),' +
+      'border-top-width .85s cubic-bezier(.32,.1,.2,1)';
+    if (hMoved) el.style.height = nowH + 'px';
+    if (capMoved) el.style.borderTopWidth = nowCap + 'px';
     setTimeout(() => {
-      el.style.transition = ''; el.style.boxSizing = ''; el.style.height = pct;
+      el.style.transition = ''; el.style.boxSizing = '';
+      el.style.height = pct;
+      // restore the rendered width (inline style from bdbar) rather than
+      // clearing it — clearing would snap back to the CSS default 2px.
+      if (capEnd) el.style.borderTopWidth = capEnd;
+      else if (capMoved) el.style.borderTopWidth = nowCap + 'px';
     }, CARD_MS + 150);
   });
 }
+/* #417 per-column hover/focus readout. Shows open + arrived + landed +
+   commits so the level line's two meanings (height = open, weight =
+   commits) are never left implied. The tip is an arrival: rundesc's
+   atmospheric pose → ease-in / depart, never a native title blink.
+   Height of .bd is unchanged — the tip floats. Accent is not spent. */
+let bdtipCol = null;
+let bdtipHideTimer = null;
+function bdtipReduced() {
+  try { return matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  catch (e) { return false; }
+}
+function bdtipText(col) {
+  const stamp = col.dataset.stamp || '';
+  const open = col.dataset.open;
+  const arrived = col.dataset.arrived;
+  const landed = col.dataset.landed;
+  const commits = col.dataset.commits;
+  // open named first: he asked "which I think is what the line is, right?"
+  // — answer it before naming the weight's meaning.
+  return `<span class="bdnum">${esc(open)}</span> open · ` +
+    `${esc(arrived)}↑ ${esc(landed)}↓ · ` +
+    `<span class="bdnum">${esc(commits)}</span> commit` +
+    `${commits === '1' ? '' : 's'}` +
+    (stamp ? ` · ${esc(stamp)}` : '');
+}
+function hideBdTip(immediate) {
+  const tip = document.querySelector('.bd .bdtip');
+  if (!tip || tip.hidden) { bdtipCol = null; return; }
+  if (bdtipHideTimer) { clearTimeout(bdtipHideTimer); bdtipHideTimer = null; }
+  const rm = !!immediate || bdtipReduced();
+  const finish = () => {
+    tip.hidden = true; tip.classList.remove('depart', 'pose');
+    tip.innerHTML = ''; bdtipCol = null;
+  };
+  if (rm) { finish(); return; }
+  tip.classList.remove('pose');
+  tip.classList.add('depart');
+  bdtipHideTimer = setTimeout(finish, 450);
+}
+function showBdTip(col) {
+  const bd = col && col.closest && col.closest('.bd');
+  const tip = bd && bd.querySelector('.bdtip');
+  if (!tip || !col || !col.dataset || col.dataset.open === undefined) return;
+  if (bdtipHideTimer) { clearTimeout(bdtipHideTimer); bdtipHideTimer = null; }
+  const same = bdtipCol === col && !tip.hidden;
+  bdtipCol = col;
+  tip.innerHTML = bdtipText(col);
+  if (same) { tip.classList.remove('depart', 'pose'); return; }
+  const rm = bdtipReduced();
+  tip.hidden = false;
+  tip.classList.remove('depart');
+  if (rm) { tip.classList.remove('pose'); return; }
+  // enter-snap: pose at opacity 0, reflow, then ease in
+  tip.classList.add('pose');
+  void tip.offsetWidth;
+  requestAnimationFrame(() => tip.classList.remove('pose'));
+}
+// pointer + focus, delegated — columns are rebuilt every tick
+addEventListener('pointerover', e => {
+  const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
+  if (col) showBdTip(col);
+});
+addEventListener('pointerout', e => {
+  const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
+  if (!col) return;
+  const to = e.relatedTarget;
+  if (to && col.contains(to)) return;
+  if (to && to.closest && to.closest('.bdnet .bdcol[data-open]') === col) return;
+  // leave the tip up while focus stays on the column
+  if (document.activeElement === col) return;
+  hideBdTip(false);
+});
+addEventListener('focusin', e => {
+  const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
+  if (col) showBdTip(col);
+});
+addEventListener('focusout', e => {
+  const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
+  if (!col) return;
+  const to = e.relatedTarget;
+  if (to && to.closest && to.closest('.bdnet .bdcol[data-open]')) return;
+  hideBdTip(false);
+});
 /* switching a card's mode: the indicator slides, the placeholder follows,
    and the field keeps whatever is typed in it — the text is the point, the
    mode is only where it goes. */
@@ -9965,13 +10176,19 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
     last = max(revs[-1][1], int(now if now is not None else time.time()))
     step = _burn_step(last - first)
     n = int((last - first) // step) + 1
-    buckets = [{"t0": first + i * step, "arrived": 0, "landed": 0, "open": 0}
+    buckets = [{"t0": first + i * step, "arrived": 0, "landed": 0,
+                "open": 0, "commits": 0}
                for i in range(n)]
     idx = lambda t: min(n - 1, max(0, int((t - first) // step)))  # noqa: E731
     for t in arrived.values():
         buckets[idx(t)]["arrived"] += 1
     for t in landed.values():
         buckets[idx(t)]["landed"] += 1
+    # ledger-touching commits per period (#417): the same `revs` walk the
+    # panel already owns — no second walk (#218's one-source-of-truth rule).
+    # These are commits that touched the ledger path, not repo-wide commits.
+    for _rev, ct in revs:
+        buckets[idx(ct)]["commits"] += 1
     # the open count is a LEVEL, not a count of events: each bucket carries
     # the last reading inside it, and a bucket with no commits inherits the
     # one before rather than reading as a drop to zero
@@ -9987,6 +10204,23 @@ def ledger_series(target, path=LEDGER_PATH, now=None):
     out["from"] = first
     out["to"] = last
     out.pop("from_", None)
+    # #417 c4: summary figures for the copy line — median / peak / empty
+    # periods over the same buckets the chart draws. Integer median for an
+    # even population (mean of the two middles, then floor) so the line
+    # never needs a decimal.
+    ccounts = [b["commits"] for b in buckets]
+    ccounts_sorted = sorted(ccounts)
+    cn = len(ccounts_sorted)
+    if cn == 0:
+        cmed = 0
+    elif cn % 2:
+        cmed = ccounts_sorted[cn // 2]
+    else:
+        cmed = (ccounts_sorted[cn // 2 - 1] + ccounts_sorted[cn // 2]) // 2
+    out["commit_total"] = sum(ccounts)
+    out["commit_max"] = max(ccounts) if ccounts else 0
+    out["commit_median"] = cmed
+    out["commit_quiet"] = sum(1 for c in ccounts if c == 0)
     # How long finished work took, from the pairs the walk already holds
     # (#218). An id in `arrived` but not `landed` is still open and has no
     # duration, so the median is over the INTERSECTION — the ids that have
