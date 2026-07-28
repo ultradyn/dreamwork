@@ -324,6 +324,159 @@ def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
         f"{sample}{more} (#411)")
 
 
+# ── a fold must not drop a sub-decision (#421 B) ─────────────────────
+# The defect this exists for, stated in the ask that granted it: `#275`'s
+# Q3/Q5/Q6 sat unanswered for days with nothing noticing, because a multi-
+# part ask can be HALF answered, the entry folded on the strength of the
+# parts that were, and the remainder becomes invisible — nothing ever
+# re-reads a folded entry. His ruling (`#421`, 2026-07-29 01:17, `rec`:
+# A+B+D) made "lint errors when a fold drops a sub-decision" the buildable
+# half (B), and this is it.
+#
+# RECOGNISING A SUB-DECISION MUST NOT BE A GUESS FROM PROSE. The corpus
+# labels decisions `Q1`/`Q2`, `M1`/`M2`/`M3`, `S1`–`S4`, `C1`–`C4`,
+# `H1`/`H2`, `I1`, `R1`–`R3`, … — 49 distinct `**L<n>**` forms across 139
+# lines, all declared in FREEFORM PROSE (`**Q1 — open the gate…**`,
+# `**Ask: \`C1\`, \`C2\`…**`). Deriving "which tokens are decisions" from
+# that is the half-working-regex failure this repo has paid for most, so
+# the contract instead gives the ask ONE canonical declaration line and
+# the check reads ONLY that line — stated in `file-formats.md` in the same
+# commit as this code (the format never ships ahead of the parser).
+SUBDEC_DECL = re.compile(r"\*\*\s*Sub-decisions:\s*\*\*\s*(.+)")
+# A declared sub-decision is a backticked `<Letter><digits>` token, matching
+# the `**Ask: \`C1\`, \`C2\`, \`C3\`, \`C4\`**` backtick-comma style already
+# in the corpus. Letter-then-digits is narrow on purpose: it excludes
+# `#264`, `P1` (a priority band, not a decision) and bare numbers.
+SUBDEC_LABEL = re.compile(r"`([A-Z]\d+)`")
+
+
+def check_subdecisions(dw: Path, watch, rep: Report) -> None:
+    """#421 B: a folded entry that drops a declared sub-decision is an ERROR.
+
+    A multi-part ask can be half-answered, and half is the dangerous state:
+    the entry gets folded on the strength of the parts that WERE answered,
+    and the unanswered remainder becomes invisible because nothing ever re-
+    reads a folded entry. `#275`'s Q3/Q5/Q6 sat open for days exactly that
+    way. This check makes a fold that drops a declared sub-decision loud.
+
+    **Recognising a sub-decision is declared, not guessed.** The corpus
+    labels decisions in freeform prose (`Q1`, `M1`, `S1`…), and inferring
+    them is the half-working-regex failure mode this repo distrusts most.
+    So the contract gives an ask ONE canonical declaration — a bold line
+    opening `**Sub-decisions:**` then backticked `Q1`, `Q2`, `Q3` — and
+    this reads ONLY that line, never prose. The form is documented in
+    `file-formats.md` (the ask contract, clause B) in the same commit as
+    this code.
+
+    **History handling: the marker is its own content-resolved cutoff.**
+    An entry that does NOT declare its sub-decisions is not examined — so
+    the entire historical corpus (which predates the marker) is silent,
+    and the live tree stays clean on day one. The marker's PRESENCE is the
+    claim "these sub-decisions were declared under the rule and must be
+    resolved at fold", which makes scope content-resolved without a sha
+    pinned by hand (immune to rebase, cherry-pick and shallow clone — the
+    objections that made `#405` refuse a hand-pinned cutoff).
+
+    **A fold resolves a declared label** if the label appears as a token
+    (word-bounded `<Letter><digits>`) anywhere in the folded entry OUTSIDE
+    the declaration line — covering the `→ answered`/`→ resolved` head (which
+    names labels in plain text as often as bold: `→ answered (…): D1` is a
+    real shape), a `Rec **Q1**` decision, and an `Answer (…)` bullet in one
+    rule. The precision concern that runs through this file — *recognising*
+    a sub-decision — is held by the DECLARATION (only a declared label is
+    checked, never prose), so a token match against the fold of a short
+    decision record is honest. A declared label that appears in NONE of
+    those zones was dropped, and that is the ERROR his ruling names.
+
+    The recording half of B ("an unanswered sub-decision is recorded") is
+    satisfied by the SAME rule: a fold that carries a sub-decision forward
+    NAMES it in the head (`→ answered (…): rec on Q1; Q2/Q3 carried
+    forward`), so naming-it is both the resolution and the record. There
+    is no second store.
+    """
+    if watch is None:
+        return                          # parse_answered belongs to watch.py
+    path = dw / "questions.md"
+    if not path.exists():
+        return                          # check_questions owns the absent case
+    try:
+        raw = path.read_text()
+        items = watch.parse_answered(raw)
+    except Exception:
+        return                          # check_questions owns unparseable
+    # The dormancy discipline (#430): a check whose data has not been adopted
+    # yet CANNOT go red, so it rots unnoticed. The count must be VISIBLE once
+    # there is a subject, never an error on zero. The subject is "a
+    # declaration marker exists anywhere in this file" — scanning the raw text
+    # (open AND answered), because a marker on an OPEN entry (#275 today) is a
+    # future subject for this check even though the check's ERROR domain is
+    # the fold. Pre-adoption (no marker anywhere) the check is SILENT, the
+    # same convention every other clean questions.md check follows
+    # (check_answered_resolution_dates, check_author_tags): a clean file shows
+    # exactly one OK row, from check_questions, and a second row here would
+    # break that invariant on every target. The marker's presence is the
+    # switch: silent until a declaration exists, visible the moment one lands.
+    has_subject = SUBDEC_DECL.search(raw) is not None
+    examined = 0
+    declared_total = 0
+    for it in items:
+        body = it.get("body", "") or ""
+        dm = SUBDEC_DECL.search(body)
+        if not dm:
+            continue                    # no declaration -> not under the rule
+        declared = SUBDEC_LABEL.findall(dm.group(1))
+        if not declared:
+            continue                    # declaration present but label-free:
+                                        # malformed, not a dropped decision;
+                                        # check_questions' shape rules own it
+        declared_total += len(dict.fromkeys(declared))
+        examined += 1
+        # The resolution evidence is the WHOLE folded entry — title, body
+        # with the declaration line removed, and every retained follow-up
+        # (Answer/Note/Follow-up bullets are lifted into `follows` for
+        # Answered entries, not kept in `body`). The declaration line is
+        # excluded so a label that appears ONLY in its own declaration is
+        # not mistaken for resolved. `dm.start()`..`dm.end()` spans the
+        # whole `**Sub-decisions:** …` match on line-joined body text.
+        follows_text = " ".join(f.get("text", "") for f in it.get("follows", []))
+        evidence = (it.get("title", "") + " "
+                    + body[:dm.start()] + body[dm.end():] + " "
+                    + follows_text)
+        resolved = set()
+        for lab in declared:
+            # Word-bounded token match: accepts `rec on Q1` (plain) in the
+            # head, `**Q1**` (bold), `` `Q1` `` (backtick) and `Q1 yes` in
+            # a retained Answer follow-up. THE production line whose change
+            # reds the check — make this unconditionally True and a dropped
+            # label stops erroring (the dropped-subdecision red proves it).
+            if re.search(rf"\b{re.escape(lab)}\b", evidence):
+                resolved.add(lab)
+        dropped = [lab for lab in dict.fromkeys(declared) if lab not in resolved]
+        if dropped:
+            title = (it.get("title") or "").strip()
+            short = title[:56] + ("…" if len(title) > 56 else "")
+            rep.add(
+                ERROR, "questions.md",
+                f"{short} was folded but drops declared sub-decision(s) "
+                f"{', '.join(dropped)} — a multi-part ask can be half-"
+                f"answered and the remainder becomes invisible once folded "
+                f"(#421 B): name each carried-forward label in the "
+                f"`→ answered` head, or leave it open",
+            )
+    # Coverage is emitted when a declaration marker exists anywhere in the
+    # file (open or answered) — so the check is VISIBLE once it has a
+    # subject (#430), but silent pre-adoption alongside every other clean
+    # questions.md check. Never ERROR on zero: a check that fails because a
+    # convention is unadopted blocks commits for an unrelated reason. The
+    # counts are the folded-side examination, derived at runtime.
+    if has_subject and not rep.failed:
+        rep.add(
+            OK, "questions.md",
+            f"{examined} folded entr{'y' if examined == 1 else 'ies'} "
+            f"examined, {declared_total} declared sub-decision"
+            f"{'s' if declared_total != 1 else ''} checked (#421 B)")
+
+
 def check_answers(dw: Path, watch, rep: Report) -> None:
     """Optional channel from the human to the dreamer."""
     path = dw / "answers.md"
@@ -2990,6 +3143,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     """
     check_questions(dw, watch, rep)
     check_answered_resolution_dates(dw, watch, rep)
+    check_subdecisions(dw, watch, rep)
     check_answers(dw, watch, rep)
     check_author_tags(dw, watch, rep)
     check_unfolded_answers(dw, watch, rep)
