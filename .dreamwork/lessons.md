@@ -2986,3 +2986,20 @@ this shape and convert opportunistically.)
   status asserts something narrower than its name claims. When a contract changes
   which status carries a failure, every fake pinned to the old one silently stops
   covering it — and nothing in the guard output says so.
+
+- **Proving the fix works is not evidence the defect existed.** `#461` began from a
+  real vulnerability in `health.mjs` — fixed port from `argv`, no check on the
+  responder, `sleep(2500)` — and the brief generalised it to "the own-server
+  guards". A rollout converted sixteen; measuring them afterwards showed **three**
+  were ever vulnerable. The property needs two halves that had not been counted
+  together: a **fixed** port, so a squatter can pre-hold it, **and** no check on
+  which server answered. Eight of them ignore the port argument entirely and pick
+  an ephemeral one, so the failure cannot occur; all eight also verified their
+  responder inline already. **Evidence:** the coordinator's own squatter proof on
+  `gitrow` exited 1 and looked like a confirmation — but it exercised the *new*
+  code, and `gitrow` had an inline target check all along, so the old code would
+  have failed too. Only reading the pre-merge blob settled it. So a red-proof
+  against the *fix* answers "does the check work"; it never answers "was anything
+  broken", and those get conflated exactly when a plausible story is already in
+  hand. Measure the pre-state from history, per subject, before generalising one
+  finding into a sweep.
