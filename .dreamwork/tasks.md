@@ -24,9 +24,27 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **476**
+Next id: **477**
 
 ## Open
+- **#476** — a guard that THROWS on a changed contract reports "did not judge", not "failed" · P2 ·
+  verification/guards · origin: **loop** · **found 2026-07-29 08:07 while red-proofing `#475`'s draft fix**
+  · **the measurement:** changing the production key builder (`'dw:draft:v1:'` → `'dw:draft:v2:'`,
+  `watch.py:5856`) makes `dev/capture/draft.mjs` **throw before its first assertion** instead of failing one.
+  Sensitivity to the key is confirmed — the guard is not blind to it — but the *verdict* it produces is the
+  crash sentinel, which `#471`'s accounting classifies as **did-not-judge**
+  · **why that matters and is not pedantry:** the two classes are read differently on purpose. A FAIL says *the
+  contract broke*; a sentinel says *this guard gated nothing*, which is what `#471` was built to surface. A
+  guard that dies on the very change it exists to catch reports itself as broken tooling rather than as a found
+  defect, and the reader chases the guard instead of the change
+  · **the shape of the fix, not yet designed:** a guard should resolve the contract it depends on and **assert**
+  it before using it — read the key, fail with the key it found and the key it expected — rather than
+  dereferencing something absent and dying. Likely a shared helper in `dev/capture/dom.mjs` rather than a
+  per-guard fix, since any guard reading a keyed store has the same exposure
+  · **not urgent, and deliberately not folded into `#475`:** `#475` is about ten guards being red, and this is
+  about how a guard *reports* — mixing them would bury it
+  · blocked on nothing · related: **#475, #471**
+
 - **#475** — ten guards are red on master and load is not why · **P1** · regression/verification ·
   origin: **loop** · **found 2026-07-29 07:40 by the first full `just test` to complete in this session**
   · **the run:** pytest and `lint` green; guards **48 PASS / 14 FAIL** of 60 (plus `hub`, `contract`).
@@ -86,7 +104,7 @@ Next id: **476**
   · **remaining four**, lane `motion` still out: `oneinput`, `wisp`, `qsec`, `posture`
   · **one low follow-up the lane reported and correctly did not build:** hold a refusal's `.qerr` against a tick
   the way a success holds its morph, if that race reappears under extreme load — a page change, so not theirs
-  · blocked on nothing · related: **#471, #474, #269, #459**
+  · blocked on nothing · related: **#471, #474, #269, #459, #476**
 
 - **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
   **P1** · loop-machinery/containment · origin: **loop** · found 2026-07-29 03:32 when the `#263` merge aborted:
@@ -331,7 +349,7 @@ Next id: **476**
   · 8 of 57 registered guards call `serveVerified`: `fileimg filehead identity gitrow fileview reviewdraft
   staleremedy serving`. `staleremedy` is the only one that ignores `argv[3]` entirely (`await freePort()`),
   which may be the intended pattern or may be an accident
-  · blocked on nothing · related: **#310, #428, #203, #474, #475**
+  · blocked on nothing · related: **#310, #428, #203, #474, #475, #476**
   · **CORRECTION 2026-07-29 06:12 — Observation B was FALSE and the lane refuted it in its first milestone.** I wrote that `identity`, `gitrow` and `serving` **passed** in the 05:33 full run. They did not: the recorded output has `FAIL identity`, `FAIL serving`, `FAIL gitrow` and `FAIL reviewdraft`, **all four with the identical `serve: :39899 is serving …/target, not …/<guard>/…` message** — four occurrences of that string in one run. **So the two observations never disagreed**, and the escape hatch this entry offered (*"I have no evidence any self-serving guard fails in a full run"*) was itself the unsupported claim.
   · **how I got it wrong, because it is the same error twice tonight:** I read a **partially written** log as a complete one. The run was still going; those guards had not been reached yet, so their absence from an early `FAIL` list was absence of *evidence*, and I reported it as evidence of *absence* — exactly the shape of the `#469` empty-glob mistake, where a command that never ran was read as proof. A file being appended to is not a result.
   · **so the original finding stands and it is a `#310`-class defect:** guards that serve their own target are handed the recipe's shared port as `argv[3]`, `serveVerified` correctly refuses, and their assertions **never run**. At least four confirmed; eight call `serveVerified`. `reviewdraft`'s 20 draft checks and the new `burndownmock` are both in that set, so work verified tonight is **not** gated by the suite even though both are registered. The guard count on the OK row measures registration, not execution — which is precisely what `#310` was about.
