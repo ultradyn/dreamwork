@@ -105,3 +105,31 @@ shas; which guards you deliberately left and why; the squatter red-proof per bat
 any guard that went red on adoption and what that revealed; the exact list of unconverted guards; the trailer you
 chose; and confirmation you edited no assertion, left nothing listening (`ss -ltnp` output checked), did not
 touch :35110, and did not run the full `just test`.
+
+---
+
+## Batch 2 addendum (2026-07-29 03:07) — the remaining eight, and one measured trap
+
+Batch 1 landed (`53a8484` / `aec8adc` / `54f8fcd`, merged `8e7ea50`): `pushhealth`, `reviewdraft`, `fileimg`,
+`fileview`, `identity`, `filehead`, `gitrow`, `serving`. **Your list is exactly these eight, by name rather than
+by count:**
+
+`above_fold` · `burndown` · `dashboard` · `devoverlay` · `morph` · `morphhold` · `motion` · `projtitle`
+
+Two guards are deliberately NOT on it and must stay off: **`provenance`** boots with `-c` rather than `watch.py`
+in argv, so it is not an own-server guard; **`revieworder`** already uses an ephemeral port (`0`) and is immune by
+construction. Re-derive the list anyway and say if it differs from mine.
+
+**The trap, measured on the merged tree and it cost me a false green:** *the port arithmetic is per-guard.* I
+squatted 39782 to red-prove `gitrow` and got a clean pass, because `gitrow` takes its port argument **directly**
+(`const PORT = process.argv[3] ? +process.argv[3] : await freePort()`) rather than through the
+`ports[name] = ++port` idiom the defect was originally described in terms of. The proof measured an unused
+socket. On 39781 it exits 1 and names the wrong target.
+
+So for **every** guard in this batch: read how it derives the port it actually serves on, squat **that** socket,
+and say in your report which arithmetic each guard uses. A red-proof aimed at the wrong port is indistinguishable
+from a guard that does not verify — and this batch includes the motion guards, where a stale server would produce
+the most convincing wrong answers in the repo.
+
+`serve.mjs` also now supports a guard that serves several targets at once (`serveAllVerified`, which kills every
+child it started if any one fails to verify) — several in this batch serve more than one.
