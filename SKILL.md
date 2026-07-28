@@ -107,16 +107,39 @@ human responses are durable because they land in `questions.md`, and human
 questions are durable because they land in `answers.md`; the command channel
 is not.
 
-**Run mode (#290).** On tick start (and when an events line matches
-`run-mode via watch`), re-read `.dreamwork/run-mode` — that file is
-authoritative, gitignored, and one of `lackadaisical` (default), `hot`,
+**Run mode (#290) and posture (#445).** On tick start (and when an events
+line matches `run-mode via watch`), re-read `.dreamwork/run-mode` — that file
+is authoritative, gitignored, and one of `lackadaisical` (default), `hot`,
 or `assisted`. The dashboard arms a 10s shared cooldown before writing it
-and emits one events line only on a real change. Treat the mode as
-selection/policy posture for this host (idle-friendly vs continuous vs a
-few helpers under existing ownership rules); do **not** claim hierarchical
-fan-out, and do not invent kill/sandbox authority from the mode alone
-(#288). This session only changes scheduling when its own
-monitored-event / skill protocol applies the file.
+and emits one events line only on a real change.
+
+`run-mode` bundles three independent decisions — **pace** (how often the
+loop acts), **asking** (how much surfaces to the human), and **delegation**
+(whether it works through subagents) — and `#443` measured that the bundle
+is the defect: *"lackadaisical but delegating"* was unexpressible. His `#445`
+ruling ratified **three orthogonal axes: pace × asking × delegation**, and
+deferred widening `run-mode`. Today's vocabulary lives in `lint.py`
+(`POSTURE_STOPS_PACE` / `POSTURE_STOPS_ASKING` / the delegation target):
+
+- **pace** — `idle` / `steady` / `hot`: how fast the loop works.
+- **asking** — `ask` / `inform` / `near-auto` / `auto`: how much surfaces
+  to the human, in his own four dictated levels. `ask` surfaces every
+  material choice as a question; `inform` mostly emits documentation;
+  `near-auto` journals each choice silently; `auto` never blocks on a reply.
+- **delegation** — an **average-concurrency target** (an integer: `0` =
+  occasional, `1` = assist, `2+` = delegate), never a cap or a refusal
+  (`#445` Q3). Two subagents may pair on one worktree, talking via
+  `subagent-protocols`.
+
+**Absent posture → derived from run-mode** (the mapping lives in
+`lint.derive_posture`, the single source): `lackadaisical` → idle pace;
+`hot` → hot pace, own hands; `assisted` → hot pace, assist. All three
+derive asking = `ask`, because today the loop asks on ~every material
+choice — deriving `inform` would be a silent behaviour change. A present
+`.dreamwork/posture` file overrides any one axis independently. Read it on
+every tick alongside run-mode; it is the same per-tick-re-read contract
+(`#426`). Treat the posture as **selection/policy posture for this host**;
+do **not** invent kill/sandbox authority from it alone (`#288`).
 
 ## Selecting the next task
 
@@ -462,6 +485,12 @@ results, no ceremony.
   dashboard after a 10s arm, dual-written with one `watch-events.log` line
   on change. Authoritative over any status mirror; machine-local /
   gitignored. See `file-formats.md`.
+- `.dreamwork/posture` — three-axis posture override (#445, ratifies #443):
+  `pace:` / `asking:` / `delegation:`, one axis per line. Absent → derived
+  from run-mode via `lint.derive_posture` (no silent change); present →
+  overrides any axis independently. Pace and asking are closed sets; delegation
+  is an average-concurrency target (steers, never gates). Machine-local /
+  gitignored, re-read every tick like run-mode. See `file-formats.md`.
 - `.dreamwork/status.json` — live loop status for the watch.py dashboard,
   rewritten each tick. Its timestamps come from the system clock, never
   from memory — a dashboard whose whole thesis is liveness must not

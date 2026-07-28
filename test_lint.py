@@ -4629,3 +4629,169 @@ class TestLaneContainmentBackstop:
         (t / "watch.py").write_text("# stray, but unknowable\n", encoding="utf-8")
         rep = self._rows(t)
         assert [w for _, w, _ in rep.rows if w == "lane-containment"] == [], rep.render()
+
+
+class TestPostureFile:
+    """The three-axis posture override file (#445).
+
+    `.dreamwork/posture` is a sibling to run-mode carrying pace/asking/
+    delegation. Pace and asking are closed sets (ERROR on unknown); delegation
+    is a number that steers (WARN on nonsense, never gates on the fleet size).
+    """
+
+    def _rows(self, dw, level=None):
+        rep = lint.Report()
+        lint.check_posture(dw, None, rep)
+        return [d for lvl, w, d in rep.rows
+                if w == "posture" and (level is None or lvl == level)]
+
+    def test_absent_is_silent(self, tmp_path):
+        # Absent is the default — posture derives from run-mode. The check must
+        # produce no rows, because the derivation happens elsewhere (derive_posture),
+        # and a present-file check saying something about an absent file would
+        # cry wolf on every fresh target.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        assert self._rows(dw) == [], self._rows(dw)
+
+    def test_all_three_valid_axes_is_clean_with_a_count(self, tmp_path):
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text(
+            "pace: hot\nasking: inform\ndelegation: 1\n")
+        rows = self._rows(dw)
+        assert len(rows) == 1, rows
+        assert "3 of 3" in rows[0], rows[0]
+        assert "pace=hot" in rows[0] and "asking=inform" in rows[0], rows[0]
+
+    def test_unknown_pace_errors_loud(self, tmp_path):
+        # THE closed-set red: an unknown pace must ERROR, not silently fall
+        # back. Production line that reds it: the `pace not in
+        # POSTURE_STOPS_PACE` membership test in check_posture — make it
+        # unconditionally skip and this stops erroring.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text("pace: warp9\nasking: ask\ndelegation: 0\n")
+        errs = self._rows(dw, lint.ERROR)
+        assert len(errs) == 1, errs
+        assert "warp9" in errs[0], errs[0]
+        assert "pace" in errs[0], errs[0]
+
+    def test_unknown_asking_errors_loud(self, tmp_path):
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text("pace: idle\nasking: chatty\ndelegation: 0\n")
+        errs = self._rows(dw, lint.ERROR)
+        assert len(errs) == 1, errs
+        assert "chatty" in errs[0] and "asking" in errs[0], errs[0]
+
+    def test_all_four_asking_stops_are_accepted(self, tmp_path):
+        # His four dictated levels are a CLOSED set — all four must parse
+        # clean AND all four must be present. The set-membership is asserted
+        # explicitly (not just iterated), because iterating over a narrowed
+        # constant passes over the narrowing — the hollow-check trap. If the
+        # set were ever narrowed (e.g. near-auto/auto merged), this reds.
+        # Production line: POSTURE_STOPS_ASKING.
+        assert set(lint.POSTURE_STOPS_ASKING) == \
+            {"ask", "inform", "near-auto", "auto"}, lint.POSTURE_STOPS_ASKING
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        for stop in lint.POSTURE_STOPS_ASKING:
+            (dw / "posture").write_text(
+                f"pace: idle\nasking: {stop}\ndelegation: 0\n")
+            assert not self._rows(dw, lint.ERROR), \
+                f"asking={stop!r} should be valid: {self._rows(dw, lint.ERROR)}"
+
+    def test_delegation_non_integer_is_a_warning_not_an_error(self, tmp_path):
+        # Delegation is a TARGET number, not a closed set — nonsense WARNs
+        # (steer, not gate), never ERRORs. Production line: the ValueError
+        # branch in the delegation parse.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text(
+            "pace: idle\nasking: ask\ndelegation: sometimes\n")
+        warns = self._rows(dw, lint.WARN)
+        errs = self._rows(dw, lint.ERROR)
+        assert errs == [], errs
+        assert any("sometimes" in w for w in warns), warns
+
+    def test_delegation_negative_is_a_warning(self, tmp_path):
+        # 0 means occasional (not forbidden); below 0 is nonsense and WARNs.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text(
+            "pace: idle\nasking: ask\ndelegation: -1\n")
+        warns = self._rows(dw, lint.WARN)
+        errs = self._rows(dw, lint.ERROR)
+        assert errs == [], errs
+        assert any("-1" in w for w in warns), warns
+
+    def test_delegation_zero_is_valid_and_means_own(self, tmp_path):
+        # 0 is occasional/own, NOT forbidden — his #445 Q3. It must parse
+        # clean and derive the "own" label.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text(
+            "pace: idle\nasking: ask\ndelegation: 0\n")
+        rows = self._rows(dw)
+        assert any("3 of 3" in r and "own" in r for r in rows), rows
+
+    def test_a_present_but_empty_file_is_inert_not_clean(self, tmp_path):
+        # A file that parsed to nothing must not look the same as one that
+        # found nothing wrong (#380 — count on the OK row). It WARNs that the
+        # file is inert; posture stays derived.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text("# just a comment\n\n")
+        warns = self._rows(dw, lint.WARN)
+        assert any("inert" in w for w in warns), warns
+        assert not self._rows(dw, lint.OK), "an inert file must not get a clean bill"
+
+
+class TestDerivePosture:
+    """The run-mode → three-axis conversion (#445 Q2).
+
+    The mapping must cover every RUN_MODE and preserve today's asking
+    behaviour (level 1 = ask), because the brief requires no silent change for
+    a loop that has not been restarted.
+    """
+
+    def test_every_run_mode_has_a_derivation(self):
+        # PRECONDITION: the mapping covers the whole closed set read from
+        # watch.py. A mode that lands in the mapping by accident (because the
+        # dict was hand-written against a stale copy) is the drift this catches.
+        import watch
+        for mode in watch.RUN_MODES:
+            derived = lint.derive_posture(mode)
+            assert derived is not None, \
+                f"run-mode {mode!r} has no posture derivation"
+
+    def test_asking_is_ask_for_every_run_mode(self):
+        # THE behaviour-preservation red: today's loop asks on ~every material
+        # decision (108 resolutions, 28 artifacts), so every derived posture
+        # must carry asking=ask. If any derivation said `inform`, the loop
+        # would stop asking on upgrade — the silent regression. Production
+        # line: the RUN_MODE_TO_POSTURE values.
+        import watch
+        for mode in watch.RUN_MODES:
+            derived = lint.derive_posture(mode)
+            assert derived["asking"] == "ask", \
+                f"{mode!r} derives asking={derived['asking']!r} — that is a " \
+                "behaviour change (today the loop asks on ~every material choice)"
+
+    def test_delegation_matches_the_old_modes_meaning(self):
+        assert lint.derive_posture("lackadaisical")["delegation"] == 0
+        assert lint.derive_posture("hot")["delegation"] == 0
+        # assisted = "a few disjoint helpers" → 1 (assist), per #290's contract.
+        assert lint.derive_posture("assisted")["delegation"] == 1
+
+    def test_pace_for_assisted_is_continuous(self):
+        # watch.py describes both hot and assisted as "continuous work"; only
+        # lackadaisical is "idle-friendly". So assisted derives hot pace —
+        # unpacking a bundle, not inventing a decision (#443).
+        assert lint.derive_posture("lackadaisical")["pace"] == "idle"
+        assert lint.derive_posture("hot")["pace"] == "hot"
+        assert lint.derive_posture("assisted")["pace"] == "hot"
+
+    def test_unrecognised_mode_returns_none(self):
+        assert lint.derive_posture("nonexistent") is None
