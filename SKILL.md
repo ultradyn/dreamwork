@@ -139,7 +139,8 @@ monitored-event / skill protocol applies the file.
    ...).....................................................................
    (The dots are intentional: explicit thinking time. Let the idea surface
    before reading on.) If a good idea comes: do it (scope gate applies).
-   Multiple ideas: add them all to the task list, then pick the best.
+   Multiple ideas: add them all to the task list, then pick with IGC
+   (see Guardrails) — not by feel.
 3. **Still nothing:**
    1. **Brainstorm (rare).** Only when few actionable ideas remain (fewer
       than ~3 pending unblocked tasks) and no brainstorm has run recently:
@@ -187,7 +188,12 @@ Two kinds, nothing in between:
   task's context, and **the active chain** — the task's goal, the
   session goal, and the DREAMWORK.md goal above them. A dreamer holds
   the same scope gate we do; without the chain it would have to invent
-  the middle link, which the gate defines as the refusal. When a dreamer finishes, if it had anything to say
+  the middle link, which the gate defines as the refusal. A dreamer that must
+  **choose between rival options** is told to use IGC and is handed
+  `<skill-dir>/igc-method.md` in its brief — it does not inherit this file's
+  Guardrails, so the method is a dispatch-time hand-off, not an assumption
+  (this is the highest-leverage site: most choosing now happens in lanes).
+  When a dreamer finishes, if it had anything to say
   beyond its direct result — insights, surprises, out-of-scope ideas,
   warnings — it writes `.dreamwork/dreams/<date>-<time>-<slug>.md` (e.g.
   `2026-07-25-0140-export-panel-jank.md`). Nothing to say → no file; empty
@@ -405,7 +411,11 @@ results, no ceremony.
   read a plan, a design or an analysis and rule on it, it gets a
   self-contained HTML artifact (inline everything — charts, math,
   styles; offline-clean) as `<slug>.html`, paired with the questions.md
-  entry that asks. Not "when it seems sizeable" — that judgement was
+  entry that asks. When the ruling is a **choice between options**, the
+  options are an IGC matrix — ideas down the side, goals across the top,
+  the decisive error written under each ✘, no score column (see
+  Guardrails) — because a choice he can only score is a choice he cannot
+  actually make. Not "when it seems sizeable" — that judgement was
   the loop's and it got it wrong: dreamhub's stage-1 plan went to him
   as prose in a questions entry, and it was the largest design decision
   of the day. watch.py lists and serves them; archive alongside the
@@ -562,6 +572,22 @@ if Max is away).
   all because the comparison errored and the error was swallowed. When a
   check and the code disagree, suspect the check.
 - Experiments are feature-gated.
+- **Judgement between rivals uses IGC.** Choosing between rival options —
+  candidate tasks, designs, libraries, approaches, the options laid out in
+  a review — is an IGC evaluation, not a score or a gut pick: ideas down
+  the side, goals (binary, or a breakpoint of *enough*) across the top,
+  ✔/✘/? per cell, an All column that rolls up, and the decisive error
+  written under each ✘. The method is bundled at `<skill-dir>/igc-method.md`
+  (depth on *why* binary beats scoring: `igc-concepts.md`), so an install
+  without the separate `use-igcs` skill still has it — load it at the
+  moment of the choice, not as background. **Buy:** a single decisive
+  error refutes an option no matter how attractive it looks elsewhere,
+  and scoring hides exactly that. **Cost:** a matrix on a trivial choice
+  is waste, so scale it to the decision (a 2×2 in a sentence for a small
+  one; lay the table out for a real fork) and skip it where the options
+  are not rivals of each other. Zero survivors means fix the framing,
+  not pick a refuted option; two means find the real differentiating
+  goal, never break the tie by scoring.
 - Compaction-safe: durable state lives in files — DREAMWORK.md,
   `.dreamwork/` (dreams, docs, plans), and commits — never only in
   conversation, and never only in a session-scoped task backend. When a
