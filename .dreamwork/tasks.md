@@ -3703,7 +3703,7 @@ Next id: **466**
   it, and the warning rendered next to a harness in the UI. Sequencing: the doc half is startable now; the UI
   half touches `watch.py`/`dreamhub.py` and waits for a free lane.
   · landed \`9544f9e\` — containment deficiency stated per his \`#288\` ruling: per-harness capability table, trusted-nodes-only precondition, the seams that keep later isolation possible, and the warning copy. **No mechanism built.** Carries his reframe — whoever supplies the API key can supply the harness, so it is not our seam. UI half (the warning rendered next to a harness) remains, needs \`watch.py\`.
-
+  · related: **#465**
 - **#456** — day-age needs a `·` separator, and the pad zero should be near-invisible · **P2** ·
   dashboard/type · origin: **human** · **next-up** ·
   **human via watch 2026-07-29 01:18:** *"with the day age on questions (\"2026-07-28 01d ago\"), please: add
@@ -4091,7 +4091,7 @@ Next id: **466**
   is not its arguments*, this one is *the argument order is not a contract*. `^ccc @` silently
   encodes "no flags between binary and alias". Match the alias wherever it appears, or resolve the
   lane from `dreamers[].pid` with `kill -0`, which is exact and needs no pattern
-  · related: **#401, #264, #403, #405, #410, #423, #440**
+  · related: **#401, #264, #403, #405, #410, #423, #440, #465**
   · **it demonstrated itself at 14:56, while I was dispatching the lane to fix it.** Two lanes
   were live (`ccc --yolo @glm52`, `ccc --yolo @grok`) and `status_sync.py` printed
   *"already in sync (135 open, 0 live)"*. Not reconstructed from logs — observed in the same
