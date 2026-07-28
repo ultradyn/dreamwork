@@ -2603,3 +2603,15 @@ this shape and convert opportunistically.)
   directly with input that would tempt the failure, *and* pair it with a positive control — a
   reader that returns `None` for everything sails through a bait check alone. Both directions now
   discriminate: narrow fails the recoveries, greedy fails the bait, correct passes both.
+- **Three times in one day a careful lane was marked wrong by a checker that was itself too
+  narrow.** `qacard` demanded a two-figure age after `#392a` had deliberately made date-only
+  entries show one; the dock guards compared a raw title against a headline `#385` had put a live
+  age inside; the hand-off grammar allowed one sha while `#411` honestly landed in two. In every
+  case the failing signal was read as *"the work is wrong"* — twice by me, in briefs, for six
+  hours — when it meant *"the contract moved and the check did not."*
+  The shape is specific enough to act on: **a check encodes a contract at the moment it was
+  written, and the thing it checks keeps evolving.** `just audit-styleguide` measures
+  code-against-doc; nothing measures check-against-doc, and all three of these had a *correct*
+  doc sitting beside a *stale* check. So when a lane and a check disagree here, **the prior should
+  be that the check is stale**, not that the lane erred — that is now 3-for-3 — and the first
+  question is "what changed since this check was written?", not "what did the lane break?"
