@@ -2,6 +2,33 @@
 
 ## Open
 
+- **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of every repo's commits?**
+  → the guard landed (`ef5db01`) and is **inert until enabled**, because `core.hooksPath` is machine-local
+  and not committed. Enabling it is one command; the reason it is an ask is what that command reaches.
+
+  **The measurement that makes this your call:** your `core.hooksPath` is **global** —
+  `~/.config/git/hooks` — and it already holds a `pre-commit` symlinked to `~/src/c2c/scripts/git-hooks/pre-commit`.
+  So installing there means the lane guard runs on **every commit in every repo on this machine**, not just
+  this one. The lane built for that honestly: it **chains** rather than clobbers (renames your hook to
+  `pre-commit.prev`, writes a wrapper that runs yours first, then the guard) and refuses outright if a
+  chained predecessor already exists. It also exits 0 immediately in any repo with no `wt/*` worktrees, so
+  it should be invisible elsewhere.
+
+  **What I do not want to hand you silently:** *should* is not *is*. A bug in the guard is a bug in front of
+  every commit you make, and the failure mode is a refused commit rather than a bad one — recoverable, but
+  disruptive at exactly the wrong moment. `DREAMWORK_LANE_GUARD_BYPASS=1` is the documented escape.
+
+  **Ask: `Q1`**
+
+  - **Q1** — install it? **`rec`: yes, chained**, on the reasoning that the realised harm has already
+    happened once tonight (a lane's stray edit aborted a verified merge that had been held half an hour) and
+    the guard is a no-op wherever no lane is out. If you would rather it not sit in the global path, the
+    alternative is a repo-local `core.hooksPath` for this repo only — which **loses your c2c hooks here**,
+    so it is a trade rather than a strictly safer option, and I would want to chain those too before doing it.
+
+  **If you say nothing:** the guard stays committed and inert, `#465` remains landed-but-unenabled, and the
+  protection does not exist — which is the status quo that cost the held merge, so this one does decay.
+
 - **P2 · 2026-07-28 — #417: four ways to put commits-per-period on the burndown, priced. Which, if any?**
   **Ask: `C1`, `C2`, `C3`, `C4`, or `none` — and `rec` takes C4.**
   Artifact: [`417-burndown-commits.html`](../review/417-burndown-commits.html) (`5fe331a`) — ten real
