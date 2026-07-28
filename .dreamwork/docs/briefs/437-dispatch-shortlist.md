@@ -3,7 +3,9 @@
 Repo: `ud-dreamwork`. **Work in the main checkout, READ-ONLY. Create no worktree, no branch, and change
 no tracked file except the one output below.**
 **Never use `attn` under any circumstances.** Report by appending **once** to the absolute path
-`/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`, and **state which model you are** at
+`/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`. **Do not write
+`.dreamwork/handoffs.md`** — the coordinator writes that at merge time, and this lane is read-only besides.
+**State which model you are** at
 the top — a lane report today was labelled `grok` when `glm52` was dispatched and I am tracking that.
 
 ## Why this exists
