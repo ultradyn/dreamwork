@@ -276,6 +276,40 @@ def coverage(status: dict, skipped: bool = False) -> str:
             % (kind, list(DERIVED), untouched))
 
 
+def _read_status(spath: Path):
+    """Read status.json defensively (#402).
+
+    The file is gitignored ephemera written by more than one hand (the
+    coordinator at dispatch, the syncer at reap, the dashboard on tick), so
+    a file that is absent, empty, truncated mid-write, or structurally wrong
+    is the NORMAL case rather than an exception — the brief's own words:
+    *"a check that hard-fails on it is worse than none"*. A syncer that
+    CRASHES on it (uncaught ``JSONDecodeError`` / ``AttributeError``) stops
+    protecting everything after it; a syncer that OVERWRITES it with freshly
+    derived fields destroys the author-written ones (``deployed``, ``task``,
+    ``monitors``, ``owed_verifications``, …) it could not read. Neither is
+    acceptable, so this does neither.
+
+    Returns ``(status, None)`` for a readable object, or ``(None, reason)``
+    for anything else, and the caller refuses to write. The ledger and
+    ``submissions.log`` are the durable sources a coordinator rebuilds from;
+    a projection is not rebuildable by the syncer without losing what its
+    author held.
+    """
+    raw = spath.read_text()
+    if raw.strip() == "":
+        return None, "status.json is empty"
+    try:
+        status = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return None, ("status.json is unparseable (truncated/corrupt at "
+                      "line %d): %s" % (exc.lineno, exc.msg))
+    if not isinstance(status, dict):
+        return None, ("status.json top level is %s, not an object"
+                      % type(status).__name__)
+    return status, None
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", default=".", help="target project directory")
@@ -290,7 +324,19 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
 
-    status = json.loads(spath.read_text())
+    # Read status.json defensively (#402): it is gitignored ephemera, so a
+    # truncated/empty/non-object file is the normal case, not an exception.
+    # Refuse to write rather than crash (which stops protecting everything
+    # after it) or overwrite (which destroys the author-written fields the
+    # broken file could not yield). The ledger + submissions.log rebuild it.
+    status, why = _read_status(spath)
+    if status is None:
+        print("status_sync: %s — leaving it untouched; the ledger and "
+              "submissions.log are the durable sources, and overwriting a "
+              "broken projection would destroy the author-written fields it "
+              "could not read" % why, file=sys.stderr)
+        return 2
+
     ids = open_ids(lpath.read_text())
     if not ids:
         # An unreadable ledger and an empty one look identical to a parser, so

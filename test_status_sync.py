@@ -534,3 +534,103 @@ class TestNormaliseOnWrite:
         finally:
             live_proc.kill()
             live_proc.wait()
+
+
+# ── 10. status.json is ephemera: read it defensively (#402) ────────────
+#
+# The brief's third deliverable, verbatim: "status.json is gitignored and
+# ephemeral. Read it defensively: absent, truncated, or listing a lane that
+# died is the NORMAL case, and a check that hard-fails on it is worse than
+# none." Absent and "listing a lane that died" are handled above; this class
+# closes the remaining half — a status.json that is PRESENT but not a
+# readable object (truncated mid-write, empty, or a non-object JSON value).
+#
+# A syncer that crashes on it (uncaught JSONDecodeError / AttributeError)
+# stops protecting everything after it. A syncer that overwrites it with
+# freshly-derived fields destroys the author-written fields (deployed, task,
+# monitors, owed_verifications, …) it could not read — the file has more than
+# one writer. So the contract is neither crash nor recover: report loudly,
+# leave the bytes untouched, and let the coordinator rebuild from the durable
+# sources (the ledger, submissions.log).
+
+class TestReadsStatusJsonDefensively:
+    """A present-but-unreadable status.json is refused cleanly, never crashed
+    on, never overwritten.
+
+    Production line whose reversion reds each test: the defensive read in
+    ``_read_status`` (called from ``main``). Reverting ``main`` to a bare
+    ``status = json.loads(spath.read_text())`` lets ``JSONDecodeError``
+    propagate as a traceback on the truncated/empty cases, and lets
+    ``status.get(...)`` raise ``AttributeError`` on the non-object case — so
+    the ``rc = status_sync.main(...)`` call below raises instead of returning
+    2, and the test errors rather than passing.
+    """
+
+    def _run_raw(self, tmp_path: Path, raw_status: str, ledger: str):
+        """Write a RAW status.json (not json.dumps'd) and invoke the real main.
+
+        The shared ``_run`` helper round-trips status through ``json.dumps``,
+        which repairs exactly the broken bytes these tests need to feed in.
+        """
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir(exist_ok=True)
+        (dw / "status.json").write_text(raw_status)
+        (dw / "tasks.md").write_text(ledger)
+        before = (dw / "status.json").read_bytes()
+        out_s, err_s = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out_s), contextlib.redirect_stderr(err_s):
+            rc = status_sync.main(["--target", str(tmp_path)])
+        return rc, out_s.getvalue(), err_s.getvalue(), before, dw / "status.json"
+
+    def test_truncated_status_json_is_left_untouched(self, tmp_path):
+        # A file cut off mid-write: a valid prefix, no closing brace. The
+        # realistic shape of "the process died writing it".
+        truncated = '{"task": "on #7", "deployed": {"pid": 123}, "dreamers": ['
+        # Precondition, asserted at runtime: the bytes are genuinely
+        # unparseable, not a valid file that merely looks truncated.
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(truncated)
+
+        rc, out, err, before, spath = self._run_raw(tmp_path, truncated,
+                                                    _ledger(7))
+
+        assert rc == 2, err                       # refused to write (input unusable)
+        assert spath.read_bytes() == before       # byte-identical — not overwritten
+        assert "unparseable" in err.lower(), err
+        assert "untouched" in err.lower(), err
+
+    def test_empty_status_json_is_left_untouched(self, tmp_path):
+        # A zero-byte / whitespace-only file — the other shape a crashed
+        # writer leaves behind. ``json.loads("")`` raises JSONDecodeError.
+        rc, out, err, before, spath = self._run_raw(tmp_path, "   \n  ",
+                                                    _ledger(7))
+        with pytest.raises(json.JSONDecodeError):
+            json.loads("   \n  ")                 # precondition: genuinely empty
+
+        assert rc == 2, err
+        assert spath.read_bytes() == before
+        assert "empty" in err.lower(), err
+
+    def test_non_object_status_json_is_left_untouched(self, tmp_path):
+        # Parses as JSON, but the top level is an array, not an object — so
+        # ``status.get`` would raise AttributeError without the defensive
+        # read. A different malformation than truncation, same contract.
+        rc, out, err, before, spath = self._run_raw(tmp_path, "[]", _ledger(7))
+        # Precondition: it IS valid JSON, just not an object.
+        assert json.loads("[]") == []
+
+        assert rc == 2, err
+        assert spath.read_bytes() == before
+        assert "not an object" in err.lower(), err
+
+    def test_refusal_does_not_silently_match_a_clean_run(self, tmp_path):
+        # Anti-vacuity: the refused (rc 2) path must be distinguishable from
+        # a clean sync. A readable object with one open task and no live
+        # lanes returns 0, not 2 — so the defensive-read refusal is a real
+        # verdict rather than a default the broken case happens to share.
+        good = json.dumps({"dreamers": [], "current_task_ids": [],
+                           "queue": {"in_progress": 0, "pending": 1},
+                           "task": "t"})
+        rc, out, err, before, spath = self._run_raw(tmp_path, good, _ledger(1))
+        assert rc == 0, err                        # clean — distinct from the rc==2 refusals
+        assert "coverage:" in out

@@ -1408,6 +1408,21 @@ protecting everything after it. Entries that are not a dict, carry no
 reported on stderr** (`skipped N malformed dreamer entr…`), and the sync
 continues for the survivors. A junk entry never reaches `live_lanes`.
 
+**Read the file itself defensively.** `status.json` is gitignored ephemera
+written by more than one hand (the coordinator at dispatch, the syncer at
+reap, the dashboard on tick), so a file that is absent, empty, truncated
+mid-write, or a non-object JSON value is the NORMAL case, not an exception
+— the brief's own words: *"a check that hard-fails on it is worse than
+none"*. `status_sync._read_status` therefore neither crashes on such a file
+(an uncaught `JSONDecodeError`/`AttributeError` stops protecting everything
+after it) nor overwrites it with freshly derived fields (that would destroy
+the author-written `deployed` / `task` / `monitors` / `owed_verifications`
+the broken file could not yield). It reports the reason on stderr, leaves
+the bytes untouched, and returns a distinct refusal; the coordinator
+rebuilds from the durable sources — the ledger and `submissions.log` —
+never from a projection. This is the file-level half of "never crash"; the
+entry-level half is the paragraph above.
+
 **Nothing else about a survivor changes** — the entry is kept verbatim
 apart from task-id normalisation, so ownership, agent, and any other field
 the coordinator wrote are preserved.
