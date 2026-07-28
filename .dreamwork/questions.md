@@ -75,6 +75,12 @@
 
   **So: `rec` is still `c4` (with the copy shortened), and if you want the per-period shape the answer
   is `c2`, not `c3`.**
+  · **Mockups built, 2026-07-29 06:03 — `5a6c964`.** The renders already existed; what was missing was a
+  way to compare them, so `417-burndown-commits.html` now opens with a **five-up strip (reference + c1–c4)
+  at one scale**, all real renders of the real panel against the live ledger. Nothing is drawn or
+  approximated. A guard asserts the strip covers every option **as a set** rather than counting to four,
+  that every render decodes to the same width (a comparison at two scales is not one), and that none is
+  blank — verified independently by deleting one option's cell, which reds exactly that set check.
   - **Note (human, via watch, 2026-07-29 05:51):** show me mockups of all 4
     options please.
 
