@@ -4103,6 +4103,15 @@ Next id: **475**
   noticing. **C is dead**: no length gate, ever — steer style with descriptors and keep any number
   advisory (his 01:13 + 01:17 notes, folded into DREAMWORK.md).
   · answered and **B landed** \`40ca81f\` + \`01c9bd7\` — A and D are conventions now written into `file-formats.md`\x27s ask contract; **B** is a `lint.py` ERROR when a folded entry drops a declared sub-decision. Recognition is **declared, not guessed**: one canonical `**Sub-decisions:** \`Q1\`, \`Q2\`` line, and the marker is its own content-resolved cutoff so history is silent and no sha is pinned. `#275`\x27s Q3/Q5/Q6 **verified** still open — the defect is real and current. Coordinator added the pending-declarations clause so `0 folded, 0 checked` cannot read as "no subject" when it means "waiting for a fold", red-proved on `_answered_split`. C withdrawn on his brittleness ruling: no length gate, ever. Adoption is live — `#275` carries the marker.
+  · **the visual verdict this entry owed is discharged (coordinator, 2026-07-29 07:30, three viewport
+  captures at 1200px plus one at 420px): PASS.** The page puts the ask and its accepted answers above
+  any argument, ranks the evidence below rather than in front of it, and gives all four options one
+  table of reduces/costs/risk; the rejected option carries the number that kills it. Zero page errors,
+  and **no horizontal overflow at 420px** (measured `scrollWidth - clientWidth === 0`). One thing I
+  checked and am NOT reporting as a defect: content smears faintly through the sticky `.toprail`
+  (`rgba(9,13,22,.91)` + `blur(14px)`). I suspected the capture rather than the page and tested it —
+  `backdrop-filter` IS honoured under swiftshader (identical output with and without the flag), so the
+  smear is the intended blur at 9% transparency, not sharp text bleeding through
 
 - **#436** — `#ask` is not a required element, so 19 of 22 artifacts cannot be measured at all · P2 ·
   loop-tooling/review-artifacts · origin: **loop** · **split out of `#432` on 2026-07-28 19:57**, which
