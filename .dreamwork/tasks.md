@@ -370,24 +370,6 @@ Next id: **469**
   after 21:00, so this is filed now and designed then. Do not start building it
   · **blocked-on: **human** (brainstorm scheduled after 21:00 2026-07-28)**
   · related: **#443, #445**
-- **#439** — the staleness banner says the page is behind but offers no way to act on it · P2 ·
-  watch-ui/deploy · origin: **human** · **human via watch 2026-07-28 20:34**
-  · his words: *"re: \"this page is 2 watch.py commits behind · serving bfc3222\", we should have after
-  that a link/btn like 'update & refresh' that triggers watch.py to shutdown + self-reload (this should be
-  made as a proper python module in preparation for refactoring all the python code to something more
-  modular and maintainable)."*
-  · the banner exists because `deploy_state.py` already answers *is the file right* and *is the process
-  running that file* separately, and `#426` has just added `skill_identity()` alongside it — so the
-  **detection** half is done and this is the **action** half
-  · **two pieces, and the second is the larger one.** (a) the control: a button that triggers the
-  shutdown+self-reload, which `watch.py` can already do via `os.exec` with its `GENERATION` stamp
-  re-set. (b) his stated purpose for it: **`watch.py` becomes a proper python module**, as the first step
-  of making the python side modular. (b) is a refactor of a 6,000+ line file and wants its own entry once
-  scoped — do not smuggle it in behind the button
-  · **`transitions.md` binds**: the banner changing state, the button appearing, and the page coming back
-  after a reload are all transitions with no size floor. The reload especially — a page that vanishes and
-  reappears is the largest gesture on the surface and must not be the one that snaps
-  · related: **#431**
 - **#428** — the guard suite fails under concurrent lanes and passes alone, twice now · P2 ·
   loop-tooling/orchestration · origin: **loop** · found by the coordinator's own suite run at 17:29
   · **`subslog` FAILED in the full run** on *"…and says so, with the status the server gave"*, with
@@ -767,7 +749,7 @@ Next id: **469**
   · blocked on #352 and the CLI existing · rec when it starts: move the benchmark first (a
   `version` verb plus a recorded baseline), so every later step is measured against it rather
   than argued about
-  · related: **#425, #426**
+  · related: **#425, #426, #439**
 
 - **#367** — Tabbed pointers to a review's essentials, with next/prev · P2 ·
   review tooling/UX · origin: **human** · **human via watch `add-idea` 2026-07-28 02:36**,
@@ -2618,7 +2600,7 @@ Next id: **469**
   an arrival, not a pop, and *"it is only a small toggle"* is how a page ends up with one gesture that snaps
   · the hard half is not the button: a reload that restarts the server he is reading must not lose his drafts
   (`#269` keys them per target) nor his place, and it must say what happened if the restart fails
-  · related: **#461**
+  · related: **#461, #439**
   · **increment 1 LANDED `f7781a5`, merged `b1551b1` — and `#462` STAYS OPEN on his consent call.** The
   staleness row now carries its own remedy: the exact command, present **only** when behind, copyable on click,
   confirming through the page's single `#fmsg` lifecycle, with the text selectable as the clipboard fallback.
@@ -3416,6 +3398,36 @@ Next id: **469**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#439** — the staleness banner says the page is behind but offers no way to act on it · P2 ·
+  watch-ui/deploy · origin: **human** · **human via watch 2026-07-28 20:34**
+  · his words: *"re: \"this page is 2 watch.py commits behind · serving bfc3222\", we should have after
+  that a link/btn like 'update & refresh' that triggers watch.py to shutdown + self-reload (this should be
+  made as a proper python module in preparation for refactoring all the python code to something more
+  modular and maintainable)."*
+  · the banner exists because `deploy_state.py` already answers *is the file right* and *is the process
+  running that file* separately, and `#426` has just added `skill_identity()` alongside it — so the
+  **detection** half is done and this is the **action** half
+  · **two pieces, and the second is the larger one.** (a) the control: a button that triggers the
+  shutdown+self-reload, which `watch.py` can already do via `os.exec` with its `GENERATION` stamp
+  re-set. (b) his stated purpose for it: **`watch.py` becomes a proper python module**, as the first step
+  of making the python side modular. (b) is a refactor of a 6,000+ line file and wants its own entry once
+  scoped — do not smuggle it in behind the button
+  · **`transitions.md` binds**: the banner changing state, the button appearing, and the page coming back
+  after a reload are all transitions with no size floor. The reload especially — a page that vanishes and
+  reappears is the largest gesture on the surface and must not be the one that snaps
+  · related: **#431, #462, #368**
+  · **SUPERSEDED, closed 2026-07-29 04:20 — this is `#462` under an earlier date.** He asked for the same
+  thing twice, at 20:34 (*"a link/btn like 'update & refresh'"*) and again at 02:30 (*"an 'update & reload'
+  button/link"*), and the second time it was filed fresh as `#462` without anyone noticing the first. Part
+  **(a)**, the control, landed as `#462` increment 1 (`b1551b1`) and its action half is out now
+  · **part (b) is not lost and does not belong here:** *"this should be made as a proper python module in
+  preparation for refactoring all the python code"* is `#368`, whose constraint `#425` already governs
+  (the monolith moves to `deprecated/watch.py` and `watch.py` becomes a symlink, so a running client does
+  not break). This entry's own words were *"do not smuggle it in behind the button"*, and closing it here
+  is that instruction being kept rather than broken
+  · **the duplication is the finding**: two entries, filed six hours apart from the same voice, and the
+  only reason it surfaced was picking work by file-disjointness rather than by title
+
 - **#463** — review artifacts sort and age by the wrong timestamp · P2 · UI/review · origin: **human** ·
   **human via watch 2026-07-29 02:30:** *"fix the assets for review sorting — they should use ctime not mtime.
   And the age should show since ctime, not mtime. However, when ctime != mtime, we can show a 'modified X ago'
