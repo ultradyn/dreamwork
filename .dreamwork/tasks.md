@@ -391,239 +391,6 @@ Next id: **413**
   readability
   · related: **#394, #405**
 
-- **#399** — any bare bolded id in a landed entry marks that task landed, so **7 open tasks are
-  reported as landed** · P1 · ledger-parser/correctness · origin: **loop** · found because a lint
-  WARN told me to fold **his unanswered question**
-  · `watch._landed_ids` (`:7648`) takes every **ids-only bold span** anywhere in `## Recently
-  landed`. Its docstring states the intent — *"`**#96 stage 1**` (a prose reference) does not land
-  #96"* — and that exclusion only works when prose puts **words inside the bold**. **This ledger's
-  natural voice is `filed as **#392**`**, a bare bolded id, which lands it
-  · **measured: `parse_ledger` returns 7 ids in BOTH sets** — `353, 367, 378, 387, 392, 393, 394`.
-  Each traced to its source: `#367` from a reciprocity marker naming it; `#393`/`#394` from *"gaps filed
-  rather than absorbed: **#393** … and **#394**"*; `#353` and `#392` from `filed as **#N**`
-  · **a third trap, met while writing this entry, and it is a real gap in `#395`'s fix:** `#395`
-  anchored the marker pattern to line-start or a `·` separator so prose could not manufacture a
-  phantom. But **quoting the marker *accurately* means quoting its separator too**, and that is
-  exactly what an entry describing the marker does — this entry produced **two** phantom markers and
-  a lint ERROR before it was reworded. The anchoring fix protects against casual mention and not
-  against precise citation, which is the mention most likely to appear in a ledger about itself
-  · **the first half is a direct tension between two checks, and obeying one corrupts the other.**
-  `lint.check_related_markers` **requires** a landed entry to name its open counterpart —
-  *"an entry is read alone"* — and `_landed_ids` then reads that very marker as a landing. So the
-  more correctly the ledger is cross-referenced, the more open tasks are reported landed. Neither
-  check is wrong alone; they share an input and disagree about what a bold id means
-  · **consequence 1, which is how I found it and is the reason this is P1:** `lint` WARNed *"open
-  ask names only landed task(s) #367 — fold the ask, or reopen the task"*. `#367` is **under
-  `## Open`**, and its ask is the **strip-below-the-cliff question he has not answered**. The check
-  instructed me to close an open question of his. A coordinator following lint would lose it
-  · **consequence 2, and it closes an audit item that was left uncertain:** the dashboard audit
-  (`d348122`) reported *"burndown arrived/landed per-bucket series not reproduced by open-id set
-  diffs … uncertain, not filed as a hard bug"*. An inflated landed set is exactly that symptom.
-  **The audit's honest non-finding was this bug** — treat it as corroboration, and re-derive the
-  series once this is fixed rather than assuming
-  · **rec:** a landing is claimed by an entry **HEAD**, the way `_open_ids` already works — not by a
-  mention anywhere in the body. `_open_ids` reads `LEDGER_ENTRY` heads and is not affected, which is
-  both the proof the shape works and the fix's model. If body mentions must keep meaning something,
-  they need a distinct vocabulary, and that is a `file-formats.md` change
-  · **red-first note:** the red is free and needs no fixture — assert `parse_ledger` returns
-  **disjoint** sets on the **live** ledger. That assertion fails today with those 7 ids and no
-  synthetic input at all. Derive the overlap at runtime; do not pin the list of 7, because it grows
-  every time the ledger is cross-referenced correctly
-  · blocked: `watch.py` is held by **#392a**
-  · **NEXT-UP, and for a reason that is new: this defect makes the repo's own test suite RED.**
-  `test_lint.py::TestLandedAsks::test_this_repo_has_no_forgotten_folds` **fails on master** —
-  measured on the merged tree, **496 passed / 1 failed** — because `check_landed_asks` WARNs that the
-  `#367` open ask *"names only landed task(s) #367"*, which is `_landed_ids` misreading a reciprocity
-  marker. So this is not merely a misleading WARN: **`just test` does not pass**, and has not since
-  `#367`'s question was filed at 07:54
-  · **I missed that for hours, and the reason is worth more than the fix.** I ran `python3 lint.py`
-  — exit **0**, because it is a WARN and not an ERROR — and *targeted* pytest selections
-  (`-k "cutoff or grandfather or handoff"`), which never included this test. **A selection that
-  excludes the failing test is indistinguishable from a green suite.** The `#401` lane ran the whole
-  file and reported it in one line as "pre-existing"
-  · so the acceptance criterion for whoever takes this is **`just test` green**, not "the WARN is
-  gone"
-  · **MERGED `8e37db3` (`3344e43`) AND NOT DONE — it traded one red for another.** `just test` is
-  **still failing**, now on the **burndown guard** instead of `forgotten_folds`. Proved causally by
-  bisect, not inferred: the burndown guard **PASSES at `c42af82`** (the merge's first parent) and
-  **FAILS at HEAD**. Before `#399`: `forgotten_folds` red, burndown green. After: the reverse. **The
-  suite has never been green today**
-  · the two failing assertions are `dev/capture/burndown.mjs:183,185` — *"the head states the three
-  totals it is a picture of"* and *"...a completion **GROOMED OUT** of the landed section still
-  counts (#1, #2 and #3 were pruned)"*
-  · **the cause, and it is the neighbour the brief failed to name.** The guard builds its own git
-  history inline (`:91-107`) and writes landed entries in the **inline-mention** form —
-  `**#1** landed (aaa1111).` — **not** as `- **#N**` entry heads. Under the new heads-plus-
-  `also-landed:` rule those read as **zero landed ids**
-  · **and that form is not the guard being unrealistic — it is the ledger's own history.**
-  `ledger_series` walks **old revisions** of `tasks.md`, and the old landed shape was exactly that
-  inline mention; the pre-`#399` docstring said so outright (*"an id under `## Recently landed` is
-  named inline in prose … two shapes because the file has two"*). **`#399` fixed the present and
-  lost the past.** A burndown that silently drops historical completions is `#136`'s failure shape —
-  the chart reads as though the loop completed less than it did
-  · **rec, smaller than what landed and probably right:** exclude ids that sit inside a **known
-  field** (`related:`, and anything else field-anchored) rather than excluding **all** mentions.
-  That kills the `#367` false landing — which was a `related:` marker — without discarding the
-  historical inline form. Keep `also-landed:`; it is a good addition and costs nothing
-  · **THE PREMISE IS CONFIRMED INDEPENDENTLY, and the shape of the loss is worse than "some
-  entries".** Walked all **435** revisions of `.dreamwork/tasks.md`, sampling twelve, counting entry
-  heads (`- **#N**`) against bold mentions in the landed section:
-    heads = `- **#N**` entry heads · mentions = bold ids in the landed section
-    2026-07-25 93246fe   heads=  0   mentions=  0
-    2026-07-25 0fbea84   heads=  0   mentions= 24
-    2026-07-26 2627df0   heads=  0   mentions= 63     <- two days, ZERO heads
-    2026-07-27 4c18941   heads=  6   mentions= 71     <- the convention changes here
-    2026-07-27 cab5cc7   heads= 42   mentions= 71
-    2026-07-28 bb85450   heads= 86   mentions= 86
-    2026-07-28 d2a9566   heads= 95   mentions=109
-  **For the project's first two days the entry-head rule finds nothing at all** — not "fewer", zero.
-  So post-`#399` the burndown does not merely under-count history, it renders the loop's first two
-  days as **having completed nothing**, which is precisely `#136`'s failure shape and precisely what
-  the guard's assertion says. The pre-`#399` docstring was not being sloppy; it was describing the
-  file. **The convention changed mid-history on 2026-07-27**, so any correct reader must handle both
-  forms — a fix that picks one era is a fix for half the chart
-  · **and writing that table cost a lint ERROR worth one line:** I wrote it as a fenced code block,
-  the fence sat at column 0, and **an unindented line silently ends a ledger entry** — so `#399`'s
-  own `related:` line fell outside `#399` and four reciprocity pairs broke at once. `lint.py` caught
-  it in the same breath as the commit, which is the check doing exactly its job. Tables inside an
-  entry are indented lines, never fences
-  · **so a fifth gate item, and it is the one the unit tests cannot fake:** after the fix, walk those
-  same revisions and assert the landed count is **non-zero for the 07-25/07-26 revisions**. That is
-  an assertion about real history, derived at runtime, and no fixture can satisfy it accidentally
-  · **THE STRUCTURE OF THE BUG, derived independently at 11:21 so the lane's report can be judged
-  against it rather than believed.** Exactly **two** callers consume the landed half of
-  `parse_ledger`; the other three `lint.py` call sites discard it (`_landed`, `_`):
-    - `lint.check_landed_asks` (`lint.py:791`) — reads **today's** ledger, to decide whether a human
-      ask names a finished task and can be folded. A false landing **closes a question he has not
-      answered**. It wants PRECISION and must fail closed.
-    - `watch.ledger_series` (`watch.py:7913`) — reads **every historical revision**, for the burndown.
-      A missed landing renders the loop as having achieved nothing. It wants RECALL and must fail
-      open.
-  **So one function serves two callers whose error preferences are opposite**, and that is the whole
-  bug stated properly. `#399` optimised for precision — correct for the first caller, fatal for the
-  second. It is not that the rule was "too narrow"; it is that a single rule cannot be right for both
-  unless it raises precision **without** costing recall
-  · **which is exactly why field-exclusion is the right shape and reverting is not.** Excluding
-  `related:` removes false positives (precision up) while leaving every bare historical mention
-  intact (recall unchanged). Head-only traded one for the other; mention-everything traded the other
-  way. **If the lane proposes two functions instead, that is a legitimate answer** and the brief says
-  so — but then each caller must be named with which one it takes, or the split just moves the
-  question
-  · **MY OWN RECOMMENDATION IS INSUFFICIENT, measured 11:25, and it would REINTRODUCE the P1.**
-  Field-exclusion removes `related:` markers — but **six open tasks are mentioned in landed entries
-  as ordinary prose, in no field at all**: `#367, #393, #399, #404, #405, #409`. Examples verbatim:
-  *"gaps filed rather than absorbed: **#393**"*, *"see **#405**, which is the plan's own
-  alternative"*, and — perfectly — *"(**#409**, open)"*. So a field-exclusion fix still lands
-  **#367**, which is the precise false landing that made lint tell the coordinator to close his
-  unanswered question. **The brief the lane is holding recommends a fix that does not work.**
-  · **THE RULE THAT DOES WORK, and it came out of the data rather than out of me.** Compare the two
-  populations: a genuine landing is **sentence-initial** — `**#111** answered questions collapse and
-  stay findable (a8f6b7f).` — while a reference is **mid-sentence**, preceded by a word. That is
-  positional anchoring, the same discipline as field anchoring, and it is what the ledger's authors
-  were actually doing. Measured over the 81 contested ids, accepting only a bold ids-only span
-  preceded by start-of-bullet or a sentence end:
-    caught 65 of 68 genuine landings · caught **0 of 11** references · landed = **160**
-    both-open-and-landed = **0** — `#399`'s win is preserved, which field-exclusion loses
-  · **and the three it misses are instructive rather than damaging.** `#101` and `#97` sit in a
-  comma-joined run (`**#91** composer tweaks and **#101** scrollbar styling (2026-07-25), **#97**
-  durable task ledger`); `#270` follows a closing backtick. All three are cheap to add — accept
-  after `, `, ` and `, and `` ` `` — and each addition should be re-measured against the false set
-  rather than assumed safe
-  · **a SECOND fictional-id class, found the same way as `#5`: `#501` and `#502` do not exist.**
-  Next id is 412. They appear because a landed entry quotes a **test fixture** — *"Probed on a temp
-  fixture: form A `related: **#501**, **#502**` → 3 ERRORs"*. The positional rule rejected both
-  automatically, which is a point in its favour: **it excludes example ids without needing to know
-  they are examples.** Any allowlist-of-fields approach has to enumerate this class; positional
-  anchoring gets it for free
-  · **THE LANE BEAT ME ON THIS, and the measurement is unambiguous (11:27, mid-run).** It found the
-  same hole in my recommendation independently — *"prose references to OPEN ids in entry bodies
-  (`found **#399**`, `see **#405**`, `fold (**#409**, open)`) … count-all-bare-mentions breaks
-  disjointness"* — and then reached a **different discriminator than mine and a better one**:
-  **column 0**. Its observation: historical inline landings are written at column 0, while every
-  prose reference to an open id lives on an **indented continuation line**. Scored on the same 81
-  contested ids:
-    column-0 (lane) : catches **68**, false **0**, landed **163**, open∩landed **0**
-    sentence-initial (mine) : catches **65**, false **0**, landed **160**, open∩landed **0**
-  **The lane's rule is a strict superset of mine** — it catches everything mine does plus exactly
-  the three I had identified as misses (`#97`, `#101`, `#270`) and adds no false positive. Not a
-  close call; adopt the lane's rule
-  · **it also refused the brief's framing where the framing was wrong.** I wrote that two callers
-  want opposite things and may need two functions; the lane checked and concluded *"the two readers
-  don't genuinely differ — `#399`'s strict rule under-counted the current snapshot too"*, and took
-  one wide rule. That is the right answer and I had not tested it
-  · **worth reconciling at review, not a conflict:** the lane reports a 149-set and 55 historical
-  inline landings where I compute 163 and 68. Different counting bases or field lists. Ask which,
-  and do not merge until the two numbers are explained by something other than "roughly the same"
-  · **and the lane's rule is pre-verified against the guard itself, predicted before it runs.**
-  Reproduced `burndown.mjs`'s fixture builder in isolation and applied column-0 to all six of its
-  commits: it reads exactly the fixture's `done` list at **every step**, and the cumulative set
-  across history is `1,2,3,4,5` — so **`#1`, `#2` and `#3`, which the fixture deliberately grooms
-  out of the final ledger, are still counted.** That is the guard's load-bearing property and the
-  assertion `#399` broke. The guard should pass; if it does not, the fix is not the rule
-  · **and it corrected my scoring of its own rule, 11:29.** I measured column-0 against the **real
-  ledger** and reported it as sufficient on its own. The lane checked a population I did not — the
-  **existing tests** — and found `test_a_bare_bolded_id_in_a_landed_entry_is_not_landed` uses a
-  one-line head carrying `related:` and `filed as` **inline at column 0**. So col0 alone does not
-  exclude them and **field-exclusion remains independently load-bearing**; likewise `also-landed:`
-  must be excluded from the generic pass, since `ALSO_LANDED_MARKER` counts that form separately.
-  Its design is col0 **and** field-exclusion, and that is right. **My rule looked sufficient only
-  because the real ledger happens to put field markers on indented lines** — a property of today's
-  file, not of the format. Same discipline I keep writing into briefs, and I missed it: a
-  measurement over one population is not a rule
-  · **it also caught the pipefail trap unprompted** — *"the `| tail` masked the real exit code
-  (exactly the trap the brief warns about)"* — re-ran to a file, and confirmed the baseline
-  precisely: `forgotten_folds` **GREEN**, burndown **RED** with both named assertions failing. That
-  is the brief's warning being used rather than read
-  · **GATE RUN AGAINST THE LANE'S COMMITTED TIP, 11:42 — 7 of 8 pass, and the eighth is real.**
-  Two commits on `wt/399b`: `d80e072` (the fix) and `8810309` (its tests). Scored:
-    landed **150** (was 95 broken, 176 pre-`#399`) · open∩landed **0** · `#5`/`#501`/`#502` do not
-    land · the six prose-mentioned open tasks do not land · early revisions now report
-    **1, 9, 24, 26, 29, 47** landings where they reported 0 · `dev/capture/` untouched
-  The burndown guard **PASSES** in isolation, real exit 0, non-piped
-  · **the one residual, and it is a smaller instance of the same bug:** `LEDGER_COMBINED_MENTION`
-  is `\*\*(#\d+(?:/#\d+)*)\*\*` — **slash-separated only**. The historical ledger also writes
-  **space-separated** multi-id landings: `**#107 #108 #110** the travelling heading, the ghost-pinned
-  width glide, the clamped opener (2026-07-25, 3f786fc)`, `**#141 #149** (2bf61da, 6099998)`,
-  `**#132 #151 #154** (2c42da1)`, `**#102 #106**`, `**#104 #77**`, `**#109 #116**`. Every id after
-  the first in such a span is still dropped. **Not a merge blocker** — master is red now and this
-  fix recovers the bulk of history — but it is a real, named loss and it is roughly one character
-  class (`(?:[ /]#\d+)*`). File as follow-up, do not hand-fix
-  · **and TWO faults in my own gate, both the day's theme, both found only because I re-ran it:**
-  (a) I appended the multi-id check **after** `sys.exit()`, so it never executed and the gate printed
-  **GATE PASSED** — a check that cannot run reports success; (b) the gate read
-  `.worktrees/399b/watch.py`, the **mutable worktree file**, while the lane was mid red-proof with
-  the old behaviour injected, and scored the lane's fix at **176** — the very number it was
-  injecting. **A running lane's worktree is mutable by definition; its branch tip is the artifact.**
-  The gate now defaults to `git show wt/399b:watch.py` and asserts the source is non-empty
-  · **THE MERGE GATE, written 11:19 BEFORE the lane reports, so it cannot be shaped by what the
-  lane says it achieved.** Measured now, both parsers run against today's ledger:
-    - deployed/pre-`#399` logic: **136 open, 176 landed**
-    - master/post-`#399` logic: **136 open, 95 landed**
-    - ids the old logic calls landed and the new one does not: **81**
-    - ids the old logic reports as **both open and landed: 10** (`#367, #378, #387, #392, #393,
-      #399, #404, #405, #409, #411`). New logic: **0**
-  Spot-checking those 81 shows both populations are real, which is the whole tension: `**#91**
-  composer tweaks and **#101** scrollbar styling (2026-07-25), **#97** durable task ledger` are
-  **genuine historical landings** in the inline form, while `related: **#367**` and prose like
-  *"the same question that found **#399**"* are **references**. So **176 is too high and 95 is too
-  low**, and the fix must land between them.
-  **Therefore the gate, and all four must hold:** `just test` green · both-open-and-landed stays
-  **0** (that is `#399`'s win and must not regress) · landed count comes back **well above 95** ·
-  and the burndown guard passes without its fixture being edited
-  · **a neighbour NOBODY enumerated, and field-exclusion alone does not catch it: the ledger
-  contains prose ABOUT id syntax, and that prose parses as ids.** `#5` is counted landed because a
-  landed entry documents the shapes the parser cannot see — literally `no bold (- #5 …), no #
-  (- **5** …), a different list marker (* **#5**)`. Those are *examples in a sentence*, inside no
-  field at all, so excluding `related:` will not exclude them. **Check this specific id when
-  reviewing the lane's work**; if `#5` still counts as landed the fix is incomplete, and if the lane
-  found it independently that is a strong signal about the lane
-  · **do not revert.** `8e37db3` fixed a real P1 and its tests are sound; the defect is that its
-  landed-id rule is too narrow for the history walker. The follow-up is additive
-  · **my error, stated plainly: I merged on `pytest` alone while `just test` was still running**,
-  forty minutes after recording the lesson that a selection is not the suite. The lane's own brief
-  made `just test` green the acceptance criterion and I merged without it
-  · related: **#392, #401, #405, #411, #412**
-
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
   dashboard/transitions · origin: **loop** · from **#381's own caveat**, probed rather than accepted
   · `#381` surfaced pending hand-offs by adding a span to the existing `stfacts` row, which is the
@@ -3218,6 +2985,267 @@ Next id: **413**
   **blocked**: human pick
 
 ## Recently landed
+- **#399** — any bare bolded id in a landed entry marks that task landed, so **7 open tasks are
+  reported as landed** · P1 · ledger-parser/correctness · origin: **loop** · found because a lint
+  WARN told me to fold **his unanswered question**
+  · `watch._landed_ids` (`:7648`) takes every **ids-only bold span** anywhere in `## Recently
+  landed`. Its docstring states the intent — *"`**#96 stage 1**` (a prose reference) does not land
+  #96"* — and that exclusion only works when prose puts **words inside the bold**. **This ledger's
+  natural voice is `filed as **#392**`**, a bare bolded id, which lands it
+  · **measured: `parse_ledger` returns 7 ids in BOTH sets** — `353, 367, 378, 387, 392, 393, 394`.
+  Each traced to its source: `#367` from a reciprocity marker naming it; `#393`/`#394` from *"gaps filed
+  rather than absorbed: **#393** … and **#394**"*; `#353` and `#392` from `filed as **#N**`
+  · **a third trap, met while writing this entry, and it is a real gap in `#395`'s fix:** `#395`
+  anchored the marker pattern to line-start or a `·` separator so prose could not manufacture a
+  phantom. But **quoting the marker *accurately* means quoting its separator too**, and that is
+  exactly what an entry describing the marker does — this entry produced **two** phantom markers and
+  a lint ERROR before it was reworded. The anchoring fix protects against casual mention and not
+  against precise citation, which is the mention most likely to appear in a ledger about itself
+  · **the first half is a direct tension between two checks, and obeying one corrupts the other.**
+  `lint.check_related_markers` **requires** a landed entry to name its open counterpart —
+  *"an entry is read alone"* — and `_landed_ids` then reads that very marker as a landing. So the
+  more correctly the ledger is cross-referenced, the more open tasks are reported landed. Neither
+  check is wrong alone; they share an input and disagree about what a bold id means
+  · **consequence 1, which is how I found it and is the reason this is P1:** `lint` WARNed *"open
+  ask names only landed task(s) #367 — fold the ask, or reopen the task"*. `#367` is **under
+  `## Open`**, and its ask is the **strip-below-the-cliff question he has not answered**. The check
+  instructed me to close an open question of his. A coordinator following lint would lose it
+  · **consequence 2, and it closes an audit item that was left uncertain:** the dashboard audit
+  (`d348122`) reported *"burndown arrived/landed per-bucket series not reproduced by open-id set
+  diffs … uncertain, not filed as a hard bug"*. An inflated landed set is exactly that symptom.
+  **The audit's honest non-finding was this bug** — treat it as corroboration, and re-derive the
+  series once this is fixed rather than assuming
+  · **rec:** a landing is claimed by an entry **HEAD**, the way `_open_ids` already works — not by a
+  mention anywhere in the body. `_open_ids` reads `LEDGER_ENTRY` heads and is not affected, which is
+  both the proof the shape works and the fix's model. If body mentions must keep meaning something,
+  they need a distinct vocabulary, and that is a `file-formats.md` change
+  · **red-first note:** the red is free and needs no fixture — assert `parse_ledger` returns
+  **disjoint** sets on the **live** ledger. That assertion fails today with those 7 ids and no
+  synthetic input at all. Derive the overlap at runtime; do not pin the list of 7, because it grows
+  every time the ledger is cross-referenced correctly
+  · blocked: `watch.py` is held by **#392a**
+  · **NEXT-UP, and for a reason that is new: this defect makes the repo's own test suite RED.**
+  `test_lint.py::TestLandedAsks::test_this_repo_has_no_forgotten_folds` **fails on master** —
+  measured on the merged tree, **496 passed / 1 failed** — because `check_landed_asks` WARNs that the
+  `#367` open ask *"names only landed task(s) #367"*, which is `_landed_ids` misreading a reciprocity
+  marker. So this is not merely a misleading WARN: **`just test` does not pass**, and has not since
+  `#367`'s question was filed at 07:54
+  · **I missed that for hours, and the reason is worth more than the fix.** I ran `python3 lint.py`
+  — exit **0**, because it is a WARN and not an ERROR — and *targeted* pytest selections
+  (`-k "cutoff or grandfather or handoff"`), which never included this test. **A selection that
+  excludes the failing test is indistinguishable from a green suite.** The `#401` lane ran the whole
+  file and reported it in one line as "pre-existing"
+  · so the acceptance criterion for whoever takes this is **`just test` green**, not "the WARN is
+  gone"
+  · **MERGED `8e37db3` (`3344e43`) AND NOT DONE — it traded one red for another.** `just test` is
+  **still failing**, now on the **burndown guard** instead of `forgotten_folds`. Proved causally by
+  bisect, not inferred: the burndown guard **PASSES at `c42af82`** (the merge's first parent) and
+  **FAILS at HEAD**. Before `#399`: `forgotten_folds` red, burndown green. After: the reverse. **The
+  suite has never been green today**
+  · the two failing assertions are `dev/capture/burndown.mjs:183,185` — *"the head states the three
+  totals it is a picture of"* and *"...a completion **GROOMED OUT** of the landed section still
+  counts (#1, #2 and #3 were pruned)"*
+  · **the cause, and it is the neighbour the brief failed to name.** The guard builds its own git
+  history inline (`:91-107`) and writes landed entries in the **inline-mention** form —
+  `**#1** landed (aaa1111).` — **not** as `- **#N**` entry heads. Under the new heads-plus-
+  `also-landed:` rule those read as **zero landed ids**
+  · **and that form is not the guard being unrealistic — it is the ledger's own history.**
+  `ledger_series` walks **old revisions** of `tasks.md`, and the old landed shape was exactly that
+  inline mention; the pre-`#399` docstring said so outright (*"an id under `## Recently landed` is
+  named inline in prose … two shapes because the file has two"*). **`#399` fixed the present and
+  lost the past.** A burndown that silently drops historical completions is `#136`'s failure shape —
+  the chart reads as though the loop completed less than it did
+  · **rec, smaller than what landed and probably right:** exclude ids that sit inside a **known
+  field** (`related:`, and anything else field-anchored) rather than excluding **all** mentions.
+  That kills the `#367` false landing — which was a `related:` marker — without discarding the
+  historical inline form. Keep `also-landed:`; it is a good addition and costs nothing
+  · **THE PREMISE IS CONFIRMED INDEPENDENTLY, and the shape of the loss is worse than "some
+  entries".** Walked all **435** revisions of `.dreamwork/tasks.md`, sampling twelve, counting entry
+  heads (`- **#N**`) against bold mentions in the landed section:
+    heads = `- **#N**` entry heads · mentions = bold ids in the landed section
+    2026-07-25 93246fe   heads=  0   mentions=  0
+    2026-07-25 0fbea84   heads=  0   mentions= 24
+    2026-07-26 2627df0   heads=  0   mentions= 63     <- two days, ZERO heads
+    2026-07-27 4c18941   heads=  6   mentions= 71     <- the convention changes here
+    2026-07-27 cab5cc7   heads= 42   mentions= 71
+    2026-07-28 bb85450   heads= 86   mentions= 86
+    2026-07-28 d2a9566   heads= 95   mentions=109
+  **For the project's first two days the entry-head rule finds nothing at all** — not "fewer", zero.
+  So post-`#399` the burndown does not merely under-count history, it renders the loop's first two
+  days as **having completed nothing**, which is precisely `#136`'s failure shape and precisely what
+  the guard's assertion says. The pre-`#399` docstring was not being sloppy; it was describing the
+  file. **The convention changed mid-history on 2026-07-27**, so any correct reader must handle both
+  forms — a fix that picks one era is a fix for half the chart
+  · **and writing that table cost a lint ERROR worth one line:** I wrote it as a fenced code block,
+  the fence sat at column 0, and **an unindented line silently ends a ledger entry** — so `#399`'s
+  own `related:` line fell outside `#399` and four reciprocity pairs broke at once. `lint.py` caught
+  it in the same breath as the commit, which is the check doing exactly its job. Tables inside an
+  entry are indented lines, never fences
+  · **so a fifth gate item, and it is the one the unit tests cannot fake:** after the fix, walk those
+  same revisions and assert the landed count is **non-zero for the 07-25/07-26 revisions**. That is
+  an assertion about real history, derived at runtime, and no fixture can satisfy it accidentally
+  · **THE STRUCTURE OF THE BUG, derived independently at 11:21 so the lane's report can be judged
+  against it rather than believed.** Exactly **two** callers consume the landed half of
+  `parse_ledger`; the other three `lint.py` call sites discard it (`_landed`, `_`):
+    - `lint.check_landed_asks` (`lint.py:791`) — reads **today's** ledger, to decide whether a human
+      ask names a finished task and can be folded. A false landing **closes a question he has not
+      answered**. It wants PRECISION and must fail closed.
+    - `watch.ledger_series` (`watch.py:7913`) — reads **every historical revision**, for the burndown.
+      A missed landing renders the loop as having achieved nothing. It wants RECALL and must fail
+      open.
+  **So one function serves two callers whose error preferences are opposite**, and that is the whole
+  bug stated properly. `#399` optimised for precision — correct for the first caller, fatal for the
+  second. It is not that the rule was "too narrow"; it is that a single rule cannot be right for both
+  unless it raises precision **without** costing recall
+  · **which is exactly why field-exclusion is the right shape and reverting is not.** Excluding
+  `related:` removes false positives (precision up) while leaving every bare historical mention
+  intact (recall unchanged). Head-only traded one for the other; mention-everything traded the other
+  way. **If the lane proposes two functions instead, that is a legitimate answer** and the brief says
+  so — but then each caller must be named with which one it takes, or the split just moves the
+  question
+  · **MY OWN RECOMMENDATION IS INSUFFICIENT, measured 11:25, and it would REINTRODUCE the P1.**
+  Field-exclusion removes `related:` markers — but **six open tasks are mentioned in landed entries
+  as ordinary prose, in no field at all**: `#367, #393, #399, #404, #405, #409`. Examples verbatim:
+  *"gaps filed rather than absorbed: **#393**"*, *"see **#405**, which is the plan's own
+  alternative"*, and — perfectly — *"(**#409**, open)"*. So a field-exclusion fix still lands
+  **#367**, which is the precise false landing that made lint tell the coordinator to close his
+  unanswered question. **The brief the lane is holding recommends a fix that does not work.**
+  · **THE RULE THAT DOES WORK, and it came out of the data rather than out of me.** Compare the two
+  populations: a genuine landing is **sentence-initial** — `**#111** answered questions collapse and
+  stay findable (a8f6b7f).` — while a reference is **mid-sentence**, preceded by a word. That is
+  positional anchoring, the same discipline as field anchoring, and it is what the ledger's authors
+  were actually doing. Measured over the 81 contested ids, accepting only a bold ids-only span
+  preceded by start-of-bullet or a sentence end:
+    caught 65 of 68 genuine landings · caught **0 of 11** references · landed = **160**
+    both-open-and-landed = **0** — `#399`'s win is preserved, which field-exclusion loses
+  · **and the three it misses are instructive rather than damaging.** `#101` and `#97` sit in a
+  comma-joined run (`**#91** composer tweaks and **#101** scrollbar styling (2026-07-25), **#97**
+  durable task ledger`); `#270` follows a closing backtick. All three are cheap to add — accept
+  after `, `, ` and `, and `` ` `` — and each addition should be re-measured against the false set
+  rather than assumed safe
+  · **a SECOND fictional-id class, found the same way as `#5`: `#501` and `#502` do not exist.**
+  Next id is 412. They appear because a landed entry quotes a **test fixture** — *"Probed on a temp
+  fixture: form A `related: **#501**, **#502**` → 3 ERRORs"*. The positional rule rejected both
+  automatically, which is a point in its favour: **it excludes example ids without needing to know
+  they are examples.** Any allowlist-of-fields approach has to enumerate this class; positional
+  anchoring gets it for free
+  · **THE LANE BEAT ME ON THIS, and the measurement is unambiguous (11:27, mid-run).** It found the
+  same hole in my recommendation independently — *"prose references to OPEN ids in entry bodies
+  (`found **#399**`, `see **#405**`, `fold (**#409**, open)`) … count-all-bare-mentions breaks
+  disjointness"* — and then reached a **different discriminator than mine and a better one**:
+  **column 0**. Its observation: historical inline landings are written at column 0, while every
+  prose reference to an open id lives on an **indented continuation line**. Scored on the same 81
+  contested ids:
+    column-0 (lane) : catches **68**, false **0**, landed **163**, open∩landed **0**
+    sentence-initial (mine) : catches **65**, false **0**, landed **160**, open∩landed **0**
+  **The lane's rule is a strict superset of mine** — it catches everything mine does plus exactly
+  the three I had identified as misses (`#97`, `#101`, `#270`) and adds no false positive. Not a
+  close call; adopt the lane's rule
+  · **it also refused the brief's framing where the framing was wrong.** I wrote that two callers
+  want opposite things and may need two functions; the lane checked and concluded *"the two readers
+  don't genuinely differ — `#399`'s strict rule under-counted the current snapshot too"*, and took
+  one wide rule. That is the right answer and I had not tested it
+  · **worth reconciling at review, not a conflict:** the lane reports a 149-set and 55 historical
+  inline landings where I compute 163 and 68. Different counting bases or field lists. Ask which,
+  and do not merge until the two numbers are explained by something other than "roughly the same"
+  · **and the lane's rule is pre-verified against the guard itself, predicted before it runs.**
+  Reproduced `burndown.mjs`'s fixture builder in isolation and applied column-0 to all six of its
+  commits: it reads exactly the fixture's `done` list at **every step**, and the cumulative set
+  across history is `1,2,3,4,5` — so **`#1`, `#2` and `#3`, which the fixture deliberately grooms
+  out of the final ledger, are still counted.** That is the guard's load-bearing property and the
+  assertion `#399` broke. The guard should pass; if it does not, the fix is not the rule
+  · **and it corrected my scoring of its own rule, 11:29.** I measured column-0 against the **real
+  ledger** and reported it as sufficient on its own. The lane checked a population I did not — the
+  **existing tests** — and found `test_a_bare_bolded_id_in_a_landed_entry_is_not_landed` uses a
+  one-line head carrying `related:` and `filed as` **inline at column 0**. So col0 alone does not
+  exclude them and **field-exclusion remains independently load-bearing**; likewise `also-landed:`
+  must be excluded from the generic pass, since `ALSO_LANDED_MARKER` counts that form separately.
+  Its design is col0 **and** field-exclusion, and that is right. **My rule looked sufficient only
+  because the real ledger happens to put field markers on indented lines** — a property of today's
+  file, not of the format. Same discipline I keep writing into briefs, and I missed it: a
+  measurement over one population is not a rule
+  · **it also caught the pipefail trap unprompted** — *"the `| tail` masked the real exit code
+  (exactly the trap the brief warns about)"* — re-ran to a file, and confirmed the baseline
+  precisely: `forgotten_folds` **GREEN**, burndown **RED** with both named assertions failing. That
+  is the brief's warning being used rather than read
+  · **GATE RUN AGAINST THE LANE'S COMMITTED TIP, 11:42 — 7 of 8 pass, and the eighth is real.**
+  Two commits on `wt/399b`: `d80e072` (the fix) and `8810309` (its tests). Scored:
+    landed **150** (was 95 broken, 176 pre-`#399`) · open∩landed **0** · `#5`/`#501`/`#502` do not
+    land · the six prose-mentioned open tasks do not land · early revisions now report
+    **1, 9, 24, 26, 29, 47** landings where they reported 0 · `dev/capture/` untouched
+  The burndown guard **PASSES** in isolation, real exit 0, non-piped
+  · **the one residual, and it is a smaller instance of the same bug:** `LEDGER_COMBINED_MENTION`
+  is `\*\*(#\d+(?:/#\d+)*)\*\*` — **slash-separated only**. The historical ledger also writes
+  **space-separated** multi-id landings: `**#107 #108 #110** the travelling heading, the ghost-pinned
+  width glide, the clamped opener (2026-07-25, 3f786fc)`, `**#141 #149** (2bf61da, 6099998)`,
+  `**#132 #151 #154** (2c42da1)`, `**#102 #106**`, `**#104 #77**`, `**#109 #116**`. Every id after
+  the first in such a span is still dropped. **Not a merge blocker** — master is red now and this
+  fix recovers the bulk of history — but it is a real, named loss and it is roughly one character
+  class (`(?:[ /]#\d+)*`). File as follow-up, do not hand-fix
+  · **and TWO faults in my own gate, both the day's theme, both found only because I re-ran it:**
+  (a) I appended the multi-id check **after** `sys.exit()`, so it never executed and the gate printed
+  **GATE PASSED** — a check that cannot run reports success; (b) the gate read
+  `.worktrees/399b/watch.py`, the **mutable worktree file**, while the lane was mid red-proof with
+  the old behaviour injected, and scored the lane's fix at **176** — the very number it was
+  injecting. **A running lane's worktree is mutable by definition; its branch tip is the artifact.**
+  The gate now defaults to `git show wt/399b:watch.py` and asserts the source is non-empty
+  · **THE MERGE GATE, written 11:19 BEFORE the lane reports, so it cannot be shaped by what the
+  lane says it achieved.** Measured now, both parsers run against today's ledger:
+    - deployed/pre-`#399` logic: **136 open, 176 landed**
+    - master/post-`#399` logic: **136 open, 95 landed**
+    - ids the old logic calls landed and the new one does not: **81**
+    - ids the old logic reports as **both open and landed: 10** (`#367, #378, #387, #392, #393,
+      #399, #404, #405, #409, #411`). New logic: **0**
+  Spot-checking those 81 shows both populations are real, which is the whole tension: `**#91**
+  composer tweaks and **#101** scrollbar styling (2026-07-25), **#97** durable task ledger` are
+  **genuine historical landings** in the inline form, while `related: **#367**` and prose like
+  *"the same question that found **#399**"* are **references**. So **176 is too high and 95 is too
+  low**, and the fix must land between them.
+  **Therefore the gate, and all four must hold:** `just test` green · both-open-and-landed stays
+  **0** (that is `#399`'s win and must not regress) · landed count comes back **well above 95** ·
+  and the burndown guard passes without its fixture being edited
+  · **a neighbour NOBODY enumerated, and field-exclusion alone does not catch it: the ledger
+  contains prose ABOUT id syntax, and that prose parses as ids.** `#5` is counted landed because a
+  landed entry documents the shapes the parser cannot see — literally `no bold (- #5 …), no #
+  (- **5** …), a different list marker (* **#5**)`. Those are *examples in a sentence*, inside no
+  field at all, so excluding `related:` will not exclude them. **Check this specific id when
+  reviewing the lane's work**; if `#5` still counts as landed the fix is incomplete, and if the lane
+  found it independently that is a strong signal about the lane
+  · **do not revert.** `8e37db3` fixed a real P1 and its tests are sound; the defect is that its
+  landed-id rule is too narrow for the history walker. The follow-up is additive
+  · **my error, stated plainly: I merged on `pytest` alone while `just test` was still running**,
+  forty minutes after recording the lesson that a selection is not the suite. The lane's own brief
+  made `just test` green the acceptance criterion and I merged without it
+  · **CLOSED 2026-07-28 12:25 — merged at `0595b13`, and verified on the MERGED tree, not the
+  lane's branch.** That distinction mattered: the lane's worktree carries the ledger as it was at
+  `56f5871`, while `test_lint.py` reads the **real** ledger and I had rewritten it heavily all
+  morning — so its own green could not have proved the merge green. Built `premerge399` = master +
+  `wt/399b` and ran there: **pytest 991 passed, 57 subtests**, `lint.py` clean, **`PASS burndown`**
+  · **the fix is the lane's, and it is better than the one I briefed.** I recommended excluding
+  `related:` markers; that reintroduces the P1, because six OPEN tasks are named in landed entries
+  as plain prose in no field at all (`see **#405**`, and literally `(**#409**, open)`). The lane
+  found that independently and reached **column 0** instead — historical landings sit at column 0,
+  prose cross-refs live on indented continuation lines. It then found what my scoring of its OWN
+  rule had missed: existing tests put `related:`/`filed as` inline **at column 0**. Final rule is
+  col0 **and** field-exclusion by name, both load-bearing, each with its own test
+  · **numbers, derived by the coordinator before the lane reported:** landed **95 → 150**
+  (pre-`#399` over-counted at 176); open∩landed **0**; the 07-25/07-26 revisions now report **1, 9,
+  24, 26, 29, 47** landings where they reported **zero**. `#5`, `#501`, `#502` — prose about id
+  syntax and a quoted test fixture, none of them real tasks — correctly do not land
+  · **`just test` is exit 1 and I am not calling it green.** 48 pass, 3 fail: `qacard`,
+  `docktarget`, `noteprop`. **The lane declined to claim criterion 1 and said so plainly** — worth
+  more than the fix. I verified rather than accepted: run focused against master with the change
+  absent, all three fail **identically, same sub-assertions**, at load 29
+  · **a correction I owe the record: `master` was never fully green today.** I said the red was
+  `#399`; in fact `#399` added `burndown` to an **already-failing set of three**, and my bisect ran
+  only `burndown` focused so I never saw them. `qacard` is `#392`'s own bug (`#385 age text is the
+  XXa YYb form`) — the format he asked for at 05:41. This merge takes master from **4 failures to
+  3**
+  · **one residual, filed as `#412`, not a regression:** `LEDGER_COMBINED_MENTION` is
+  slash-separated only, so 7 space-separated spans naming 16 ids (`**#107 #108 #110**`) are still
+  dropped — landed reads 150 where complete is 166. My brief never named the case; the lane met it
+  · related: **#392, #401, #405, #411, #412**
+
 - **#340** — His answer renders as raw prose in `## Answered`, tag showing, on more
   than half of them · **P1** · UI correctness · origin: **loop** · from #254's design
   agent, verified independently by the coordinator · in `## Answered` the parser runs

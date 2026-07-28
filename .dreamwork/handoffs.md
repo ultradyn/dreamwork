@@ -18,6 +18,7 @@ Required: the task id (plain `#N`, sub-id `#Na`, or combined `#N/#M`), the
 append — never a deletion — so a folded hand-off is not flagged twice.
 
 ## Folded
+- **#399** → folded (2026-07-28 12:24): merged `0595b13` into `## Recently landed`; burndown green on the merged tree, and the 3 remaining `just test` failures verified pre-existing on master; residual space-separated multi-id gap filed as #412
 - **#398** → folded (2026-07-28 09:31): folded into `## Recently landed` citing `9f2012a`; verification owed
 - **#397** → folded (2026-07-28 09:52): folded into `## Recently landed` citing `1b508b0`; recommendation (do-not-extract) accepted, no ruling requested, worktree alternative filed as #405
 - **#401** → folded (2026-07-28 09:58): audit half folded into the `#401` entry citing `f2c950e`; fix half stays open, still needs `watch.py`
