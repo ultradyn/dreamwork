@@ -2541,3 +2541,16 @@ this shape and convert opportunistically.)
   (a gate, two red-proofs, three commits) and dense work feels long. The rule is already
   written for `status.json`; it applies to **anything a reader will date**, and the cost of
   obeying it is `date '+%H:%M'`.
+- **"Pre-existing" is a claim about time that gets read as a claim about severity — and it is how
+  a real signal becomes paperwork.** Three guards had been failing since morning. I wrote them
+  into three consecutive lane briefs as *"known pre-existing on master, you are not required to
+  fix them"*, with a load-flake hypothesis I had never tested — it came from seeing them fail
+  once at load 29. All three were real: `qacard` was **inverted** (green with the bug present),
+  and `docktarget`/`noteprop` were bisected to `#385` putting a live age inside the question
+  headline, which broke every check that identified a question by its rendered text. Six hours,
+  three lanes, and each lane dutifully re-confirmed the failures and moved on — because that is
+  what I told them the failures meant. **A failure excused in a brief must carry a cause and an
+  owner, or the excuse is doing the work the investigation should have done.** The tell was
+  available from the first run and I did not read it: four failures across two guards were all
+  **one invariant**, and the *reduced-motion* arm failed beside the animated one, which no
+  timing flake explains.

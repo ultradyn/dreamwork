@@ -72,6 +72,28 @@ Next id: **414**
   time that gets read as a claim about severity**
   · the dock half deserves its own entry once the bisect names the commit: it is a live product
   bug on `master`, not verification debt like the rest of this task
+  · **RESOLVED for all three, and none was a flake** (`7007d5b`, `e15b0c0`). Bisect named
+  `0dd136e` (`#385`, 07-28 07:00): it puts a live age **inside** the question headline —
+  `qtHtml` emits the span *between* the date and the ` — ` separator — so the raw title stopped
+  being a contiguous substring of `#qdock .qt` and four display assertions across two guards
+  went red on a page that was behaving correctly
+  · **no product bug, and the assertion that proves it is the one that stayed green**:
+  `request targets visibly docked question after reorder (#266)` reads `posted.question` from
+  **data**, not from rendered text. Identity that must survive presentation was already in the
+  right place; only the checks were reading pixels
+  · so the three shared a class after all — **guards encoding a superseded contract** — which is
+  the opposite of the shared cause I had assumed. `docktarget`, `noteprop` and `qacard` all pass;
+  the suite has no known reds left
+  · **the fix is one copy of the rule**, `dev/capture/dom.mjs`'s `dockHeadline`, imported by both
+  guards: it removes the age **node** rather than regex-stripping text, so it survives two-figure,
+  one-figure and `today` alike. Each guard gained a runtime precondition so an empty headline or
+  empty expected title cannot pass by vacuity. Red-proved by pointing each at a title that is not
+  the docked question — all four fail — then restored from `cp` snapshots with the injection count
+  verified back to zero
+  · `watch-design.md` now states the contract: **a question headline is no longer its title**
+  · **what remains of this task is the meta half**, which is unfixed: nothing measures
+  guard-against-doc, and a red excused in a brief still goes invisible. Six hours here, across
+  three lanes, on a signal that was correct the whole time
   · related: **#392**
 
 - **#411** — two answered entries carry a perfectly good date and the page throws it away, because
