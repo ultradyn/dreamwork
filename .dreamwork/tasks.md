@@ -4456,6 +4456,10 @@ Next id: **475**
   is now state, so #118's tick-survival applies to it · fires on every
   newline, so it is the most frequent animation on the page
   · **LANDED `95a83fb` + `e0600d5` (2026-07-29 00:00, lanes `wt/autogrow` then a recovery lane).** Both boxes grow with content to **his** ceilings and scroll past them, and the ceilings stay deliberately different — composer 2–3 → 10–15, answer/note 2 → 6 — because a 15-line box inside a question card would shove the list. Guard `dev/capture/autogrow.mjs` registered in `DEFAULT_GUARDS`; PASS at load 46.1. The `#118` tick-survival half is real work rather than a formality: on a **restore** (tick, draft) `fitText` snaps to the target height and *then* restores the standing transition, so a status tick does not re-grow the box under him mid-typing while the next keystroke still travels. **Process finding, and the reason this took two lanes: the first lane exited without reporting and with its second half uncommitted** — the guard, the justfile registration and the `fitText` fix all sat dirty in the worktree. It was recovered by dispatching a fresh lane into the same worktree to verify and land it, which worked; but this is the second occurrence of the same failure in one day and the recovery only worked because the coordinator inspected the worktree instead of trusting the branch. **The recovery lane's own note, worth keeping**: the guard's tick-survival step cannot isolate `restoreCardState`'s fit line because `restoreAnswerDrafts` masks it, so if either restore-fit path is ever removed the guard needs a second step that exercises the other in isolation — otherwise the redundancy is silently relied upon. Recorded in `watch-design.md`.
+  · **`resize:none` here is load-bearing for the guards, not only for him** (`#474`): because autosize owns
+  the height, a guard that seeds a height and demands it back is asserting against this entry's own
+  contract. `noteprop` did exactly that and failed in both motion modes on correct behaviour for two days.
+  · related: **#474**
 
 - **#402** — `status.json`'s `dreamers` array has no stated shape, and the tool that reads it goes
   stale in the one direction that costs parallelism · P2 · loop-tooling/durability · origin:
@@ -4538,7 +4542,7 @@ Next id: **475**
   is not its arguments*, this one is *the argument order is not a contract*. `^ccc @` silently
   encodes "no flags between binary and alias". Match the alias wherever it appears, or resolve the
   lane from `dreamers[].pid` with `kill -0`, which is exact and needs no pattern
-  · related: **#401, #264, #403, #405, #410, #423, #440, #465, #474**
+  · related: **#401, #264, #403, #405, #410, #423, #440, #465**
   · **it demonstrated itself at 14:56, while I was dispatching the lane to fix it.** Two lanes
   were live (`ccc --yolo @glm52`, `ccc --yolo @grok`) and `status_sync.py` printed
   *"already in sync (135 open, 0 live)"*. Not reconstructed from logs — observed in the same
