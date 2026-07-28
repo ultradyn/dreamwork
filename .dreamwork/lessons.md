@@ -2710,3 +2710,25 @@ this shape and convert opportunistically.)
   Worth noticing about the shape of the error: I diagnosed it correctly the first time, wrote the
   lesson, and then chose a fix that moved the collision instead of removing it. **A fix that relocates
   a conflict looks like a fix exactly once.**
+
+- **"He answered it" and "we may build it" are different facts, and an affirmative answer is
+  the most convincing way to confuse them.** 2026-07-28: his *"Q2 yes"* amended `#263`'s design
+  law; the implementation of that amendment is increment 20, which is lane **E**, which his same
+  answer withheld behind a second gate. I read the "yes", cleared `#371`'s blocker, and dispatched
+  a lane into work he had explicitly withheld — caught only while writing that lane's merge gate.
+  **Evidence it was avoidable:** the plan states both facts in one table row (*"landed in the
+  design … Increment 20 implements it — behind the second gate"*), and the ledger entry I was
+  editing already carried the same distinction about the previous approval (*"the approval covers
+  the CONTRACT, not #263's implementation"*). So the trap is not missing information; it is that
+  an answer's **tone** reads as permission while its **scope** is a separate question nobody
+  prompts you to ask. **Before acting on an answer: name what it authorises, and find the sentence
+  that says so.** If the only sentence you can point at is the answer itself, you have its scope
+  from its mood.
+- **A finished prerequisite does not open a gate, and nobody is watching the gap.** The same
+  incident, second half: lanes A–D landed at 07:25 and the gate's condition (*"until A–D are
+  proved"*) was met for nine hours with **no question asking him to open it** — and lane D was
+  never recorded in the ledger entry the gate reads from, so the entry could not show its own
+  condition was met. **Evidence:** I discovered the gate was openable by walking into it, not by
+  checking. A gate whose condition is satisfiable by our own work needs the ask filed **when the
+  condition is met**, which means recording the thing that met it. This is `#419`'s invariant
+  arriving from the direction nobody wrote it for.

@@ -2449,6 +2449,17 @@ Next id: **421**
   · **lane B second batch DONE, `@grok`, ~25 minutes, all four** — `B7` `5f729dc`, `B5` `bc731cf`,
   `B6` `30947d7`, `B8` `fec80be`. 12/12 green in its file, and it took the priority order it was
   given (`B7` first)
+  · **lane D (application) DONE, `6cd9f95`, 2026-07-28 07:25 — and it went nine hours unrecorded
+  here, which is the reason `#371` was mishandled.** All four increments in one commit, new files
+  only (`user_events/apply.py` 383 lines + `test_user_events_apply.py` 485): `D1` ternary `Proof`
+  (a torn or drifted file proves `UNKNOWN`, never `NOT_APPLIED`), `D2` one-provisional-successor
+  reservation before mutation, `D3` reconcile via real `os._exit` children at two seams, `D4` five
+  adapters that cannot read each other's format. **Its own message reports finding a hollow red
+  inside itself** — the body-digest predicate lived in two places, so deleting the copy under test
+  changed nothing — and consolidating to one line. That is what `proved` should mean
+  · **so A, B, C, D and F are all landed and the second gate's condition — his 05:43 *"until A-D
+  are proved"* — is MET.** Filed as a question 2026-07-28 16:30 rather than acted on: opening it is
+  his, and the nine hours it sat shut with no ask is the `#419` hole he named at 15:19
   · **`B7`'s red came back GREEN, and that is the finding of the batch.** Removing
   `UNIQUE(client_action_id)` left the whole suite passing. **I reproduced it: 12 passed with the
   constraint deleted.** `BEGIN IMMEDIATE` plus `B2`'s SELECT-before-insert already serialise the

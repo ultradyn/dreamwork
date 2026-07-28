@@ -1,6 +1,45 @@
 # Questions for the human
 
 ## Open
+- **P1 · 2026-07-28 — #263: A-D and F are all landed. Open the second gate, or don't?**
+  Artifact: `.dreamwork/review/263-second-gate.html` (being built; the plan's own artifact
+  `.dreamwork/review/user-event-journal-implementation.html` predates the lanes landing and does not
+  show this). Plan: `.dreamwork/docs/plans/user-event-journal-implementation.md`.
+  **Why this exists, and it is not a happy reason.** At 16:14 I dispatched a lane onto `#371`,
+  which is increment 20 = `E1 envelope` = **lane E** — work your own 05:43 answer withheld. I had
+  read your *"Q2 yes"* as authorisation when it amended the design. Killed at 16:20 with nothing
+  committed, retracted at `6ea8f6b`. The honest consequence is that **the gate has been shut on
+  finished prerequisites for nine hours with no question asking you to open it**, which is exactly
+  the `#419` hole you named at 15:19 — and I found it by walking into it rather than by checking.
+  **The condition you set is met.** Your 05:43 ruling: *"E, the HTTP cutover, and H, the
+  mixed-version gate, stay behind a second gate **until A-D are proved**."* All four are landed on
+  `master`, each red-proved per increment:
+  **A** (digest, 2/2) `aad1d8d` · **B** (journal, 8/8 across two batches) `6a865e4`..`bc731cf` ·
+  **C** (domain files, 3/3) `3f1a6af`, `8c1bb60` · **D** (application, 4/4) `6cd9f95` — `Proof`
+  ternary, one-successor reservation, post-crash reconcile, five adapters, in
+  `user_events/apply.py` + 485 lines of test · **F** (CLI, 4/4) `2386345`. Lane D's own message
+  reports finding and consolidating a hollow red inside itself, which is the kind of evidence
+  *"proved"* should mean.
+  **Q1 — open the second gate for lane E (increments 20-25)?** This is the HTTP cutover: the
+  journal commit, not the handler, authorises the response (`202` + `Location` + receipt identity),
+  with a shadow-write increment before it and `shadow_failed` health after. **Rec: yes, but see Q3
+  first** — the work is ready and `#371` (a P1: `do_POST` witnesses an interrupted body as complete)
+  cannot be fixed without it.
+  **Q2 — open it for lane H (34-35), the mixed-version gate?** Its fixture is *two server versions
+  and a request spanning a quiesced cutover*. The plan notes *"code and temp targets only; running
+  it against a live target is migration"*. **Rec: yes for the code, and I will not run it against
+  your live target without asking again.**
+  **Q3 — does `#368` (the modular split) land first? This is the one I would most like your call
+  on.** Your plan says: *"lanes E and G both live inside the one 8,647-line `watch.py`, so they are
+  a single lane in practice. That is an argument for `#368` landing before the second gate opens."*
+  That was your own note, not mine. Six increments of lane E inside one 8.6k-line file means **no
+  parallelism and a large blast radius** on the file the dashboard is; splitting first costs a
+  batch and buys parallel lanes for E and G both. **Rec: split first** — but it delays `#371`, so
+  if you would rather have the P1 fixed than the file split, say so and I will run E serially.
+  **What opening the gate does NOT authorise:** lane G (30-33) was never in G1 and stays withheld
+  regardless; increment 18's purge and 19's PostgreSQL half stay `UNPLACEABLE` per your Q4; and no
+  migration of a live target.
+
 
 - **P1 · 2026-07-28 — #264: ratify the task-transition boundary, and one deployment call
   only you can make.** Artifact: `.dreamwork/review/task-transition-boundary.html` (open it from
