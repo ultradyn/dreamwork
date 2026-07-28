@@ -256,6 +256,8 @@ Next id: **471**
   rather than asserted** ten `handoffs.md` rows reading *"by grok"* — it could not recover each dispatch alias
   retroactively, and a model attribution is history, so those stay **unknown** unless the dispatch is
   recoverable. That restraint is the right call and it is why this entry is still open
+  · **SWEEP DONE 2026-07-29 05:16, and it turned out not to be a row-by-row edit.** Looking for the rows to correct, there are none: `axes` and `contain` never wrote a model name into `tasks.md` or `handoffs.md` — the wrong attributions lived in this entry's own prose and in the lanes' reports, not in the durable record. What **is** in the record is ten `by grok (wt/…)` rows that a later reader will take for a model, so the sweep is a **notice at the top of `handoffs.md`** rather than a back-fill: `by grok` names the harness, both aliases run the grok CLI, a lane cannot know its own model, and the rows predating the notice mean *grok harness, model unknown*. Deliberately **not** back-filled — the dispatch alias is not recoverable after the fact and a model attribution is history, which this repo does not guess (`origin: **unknown**` exists for exactly this class). The notice goes in the **hot file a stale agent still reads**, per `#458`'s self-migration philosophy, rather than in a plan nobody opens; the forward rule is stated where the next row gets written: the dispatcher records the alias it passed and derives the model from config.
+
 - **#468** — the lane-containment backstop, and the briefs that predate the rule · **P2** ·
   tooling/lane-safety · origin: **loop** · successor to `#465`, named in its design doc
   · **two halves, both small.** (1) **R2, the pre-merge assertion**: walk the main tree's *dirty* paths,

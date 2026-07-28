@@ -11,6 +11,22 @@ rewrite would not (#381).
 **Section order (#406):** `## Folded` first, then `## Pending`, so an EOF
 append lands under Pending and the instruction is true without a rewrite.
 
+**Provenance notice (#469, 2026-07-29). `by grok` in a row below names the
+HARNESS, not the model.** `ccc`'s `runner` field is the CLI harness: both
+`@grok` (grok-4.5) and `@glm52` (glm-5.2) run the grok CLI, and the harness
+exports only `CCC_PROVIDER` to the child — never the alias, never the model.
+So **a lane cannot know what model it is**, and every self-reported model
+name is a guess the harness's system prompt supplied. Two `@glm52` lanes
+introduced themselves as *"grok-4.5 (xAI)"*.
+
+Rows written before this notice therefore mean *the grok harness, model
+unknown*, and they are deliberately **not** being back-filled: the dispatch
+alias is not recoverable after the fact and a model attribution is history,
+which is never guessed here. From now on **the dispatcher records the alias
+it passed** — it owns that argument — and the model is derived from
+`~/.config/ccc/config.toml`. Write `by ccc @glm52 (glm-5.2)`, never a name a
+lane reported about itself.
+
 One line per landing, mirroring the inbox's one-line-per-report shape.
 Required: the task id (plain `#N`, sub-id `#Na`, or combined `#N/#M`), the
 **sha** (what landed), who is claiming it, and a one-line `what`. The
