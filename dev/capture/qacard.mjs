@@ -223,6 +223,10 @@ ok('switching to note rewrites textarea + send aria-label (#273)',
           date,
           hasAge: !!age,
           ct: age ? age.dataset.ct : null,
+          // #392a: `data-day="1"` marks a DAY-precision timestamp. The FIGURE
+          // COUNT is the precision signal, so the guard has to read the signal
+          // to check it -- see the assertion below.
+          day: age ? (age.dataset.day === '1') : null,
           text: age ? age.textContent.trim() : null,
           // age sits after the date in the headline, not elsewhere
           afterDate: (() => {
@@ -246,8 +250,32 @@ ok('switching to note rewrites textarea + send aria-label (#273)',
       const gap = Math.abs(parseFloat(a.ct) - parseFloat(b2.ct));
       ok(`#385 fixture ages differ (gap ${gap}s; dates ${a.date} vs ${b2.date})`,
          gap > 86400 && a.text !== b2.text);
-      ok('#385 age text is the XXa YYb form (two units)',
-         withAge.every(a => /^\d{2}[a-z] \d{2}[a-z] ago$/.test(a.text)));
+      // #385 fixed the SHAPE (zero-padded two-digit figures + unit letter);
+      // #392a fixed what the shape is allowed to CLAIM. Two figures means we
+      // know the time, one figure means we know only the day, and `today` is
+      // the same-day case. Asserting "always two units" -- which this line did
+      // until #392a landed -- now asserts the bug: every questions entry is
+      // date-only, so the old form could only pass by lying about precision.
+      // Check the CORRESPONDENCE, per node, against the signal in the DOM.
+      const TWO = /^\d{2}[a-z] \d{2}[a-z] ago$/, ONE = /^\d{2}[a-z] ago$/;
+      const badForm = withAge.filter(a => !(TWO.test(a.text) || ONE.test(a.text)
+                                            || a.text === 'today'));
+      ok(`#385 every age is a known form (${badForm.length} unrecognised)`,
+         badForm.length === 0);
+      const mismatched = withAge.filter(a => a.day
+        ? !(ONE.test(a.text) || a.text === 'today')
+        : !TWO.test(a.text));
+      ok('#392a figure count encodes precision (day-precision -> one figure or '
+         + `today, timed -> two; ${mismatched.length} mismatched)`,
+         mismatched.length === 0);
+      // Anti-vacuity for the line above: it is satisfied trivially if NOTHING
+      // is day-precision, and today every entry is. Assert the population the
+      // assertion is about actually exists, derived at runtime rather than
+      // assumed -- a fixture that loses its date-only entry would otherwise
+      // turn this check green by emptying it.
+      ok(`#392a precondition: a day-precision age is present to test `
+         + `(${withAge.filter(a => a.day).length} of ${withAge.length})`,
+         withAge.some(a => a.day));
     } else {
       ok('#385 fixture ages differ (no ages to compare)', false);
       ok('#385 age text is the XXa YYb form (no ages to compare)', false);
