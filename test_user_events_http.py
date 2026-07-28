@@ -28,7 +28,7 @@ import urllib.error
 import urllib.request
 
 import watch
-from user_events.sqlite import open_journal
+from user_events.sqlite import open_journal, RECEIPT_HEALTH
 
 # The six write routes `do_POST` dispatches, derived from the dispatch itself
 # (the Handler class's WRITE_ROUTE_HANDLERS keys) so a seventh route added
@@ -426,6 +426,64 @@ class _BaselineHarness(E2Shadow):
     fail on the receipt count, which is the point of the baseline)."""
     __test__ = False
     journal_shadow = False
+
+
+class E4BestEffort(HttpHarness):
+    """E4: a submissions.log failure is shadow_failed health on a durable
+    receipt, not a refusal.
+
+    The shadow (submissions.log) is best-effort (design decision 3, step 4):
+    it is written AFTER the journal receipt commits, and its failure records
+    health against that receipt — the request was already accepted, so the
+    response must still be 202.
+
+    Red lines: the `record_health("shadow_failed", ...)` call, and separately
+    the absence of a re-raise (log_submission must return False, not propagate
+    the OSError)."""
+
+    def test_a_shadow_write_failure_still_returns_202_and_records_health(self):
+        # Make submissions.log a DIRECTORY so the append raises a real
+        # OSError (IsADirectoryError). Do NOT patch `open` — that would also
+        # break the journal write (sqlite3.connect uses os.open internally),
+        # so the test would pass for the wrong reason and would keep passing
+        # if the ordering inverted (plan's "must not fake" clause).
+        subs = os.path.join(self.target, ".dreamwork", "submissions.log")
+        os.makedirs(subs)
+        # Precondition: submissions.log is now a directory, not a file — the
+        # OSError is genuine, not mocked.
+        self.assertTrue(os.path.isdir(subs), subs)
+        # The closed set a parser reads: shadow_failed is the only health
+        # status today. A fixture that adds one without updating the tuple
+        # should fail loudly here.
+        self.assertIn("shadow_failed", RECEIPT_HEALTH, RECEIPT_HEALTH)
+        status, headers, body = self.post(
+            "/command", {"kind": "add-idea", "text": "shadow failure test"})
+        # The response is 202 — the receipt committed, and a shadow failure
+        # cannot turn acceptance into a refusal.
+        self.assertEqual(status, 202, status)
+        payload = json.loads(body)
+        rid = payload["receipt"]["receipt_id"]
+        # The receipt is durable (it exists in the journal).
+        with open_journal(self._journal_path()) as j:
+            row = j.get_receipt(rid)
+        self.assertIsNotNone(row, rid)
+        # shadow_failed health is recorded against it — the discriminating
+        # half. Removing the record_health call leaves the receipt healthy.
+        with open_journal(self._journal_path()) as j:
+            health = j.get_receipt_health(rid)
+        self.assertEqual(health, "shadow_failed", health)
+
+    def test_a_healthy_shadow_records_no_health(self):
+        # The positive half: a normal submissions.log write records NO health
+        # event. Without this, `return None` from get_receipt_health would
+        # pass the test above for the wrong reason.
+        status, _, body = self.post(
+            "/command", {"kind": "add-idea", "text": "healthy shadow"})
+        self.assertEqual(status, 202)
+        rid = json.loads(body)["receipt"]["receipt_id"]
+        with open_journal(self._journal_path()) as j:
+            health = j.get_receipt_health(rid)
+        self.assertIsNone(health, health)
 
 
 if __name__ == "__main__":

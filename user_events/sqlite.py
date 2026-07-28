@@ -138,6 +138,13 @@ _TRANSITION_EDGES = {
     ("received", "rejected"),
 }
 
+# Closed set of health statuses a receipt can carry (E4).  ``shadow_failed``
+# is health, not application state: it says the best-effort witness shadow
+# could not be written, NOT that the receipt is bad.  A parser (test, CLI
+# ``health``, dashboard E6) reads this tuple to know the vocabulary; a new
+# status adds an entry here and nowhere else.
+RECEIPT_HEALTH = ("shadow_failed",)
+
 def _h0(journal_id: str) -> str:
     """H_0 = SHA-256(journal_id || schema_version)."""
     material = f"{journal_id}{SCHEMA_VERSION}".encode("utf-8")
@@ -172,6 +179,41 @@ def _canonical_receipt_created(
         digest,
         body,
     )
+
+
+def _canonical_receipt_health(
+    receipt_id: str,
+    health: str,
+    detail: str = "",
+) -> bytes:
+    """Canonical bytes for a receipt.health journal event (E4).
+
+    Health is not application state — ``shadow_failed`` does not move the
+    receipt out of ``received``.  It is a canonical chained event so the
+    dashboard (E6) and CLI (F4) can surface it without parsing free text.
+    """
+    return length_framed(
+        "receipt.health",
+        receipt_id,
+        health,
+        detail,
+    )
+
+
+def _parse_framed_fields(payload: bytes) -> list:
+    """Inverse of :func:`length_framed` — split a framed blob back into fields.
+
+    Used by health-readback (tests, CLI, dashboard) so they do not hold a
+    private copy of the framing format.
+    """
+    fields = []
+    i = 0
+    while i + 8 <= len(payload):
+        n = int.from_bytes(payload[i:i + 8], "big")
+        i += 8
+        fields.append(payload[i:i + n])
+        i += n
+    return fields
 
 SCHEMA_VERSION = 1
 # Bounded busy timeout in milliseconds. The durability boundary claims a
@@ -671,6 +713,56 @@ class Journal:
         except Exception:
             self.conn.execute("ROLLBACK")
             raise
+
+    def record_health(
+        self,
+        receipt_id: str,
+        health: str,
+        detail: str = "",
+    ) -> None:
+        """Record a health event against a receipt (E4).
+
+        Health is not a state transition — ``shadow_failed`` does not move
+        the receipt out of ``received``.  It is a canonical chained event so
+        the dashboard (E6) and CLI (F4) can surface it.  ``health`` must be
+        in :data:`RECEIPT_HEALTH` (the closed set); a parser that finds an
+        unknown value treats it as a data-integrity issue, not a new status.
+        """
+        if health not in RECEIPT_HEALTH:
+            raise ValueError(f"unknown health status: {health!r}")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        canonical = _canonical_receipt_health(receipt_id, health, detail)
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            self._append_event(
+                event_kind="receipt.health",
+                receipt_id=receipt_id,
+                at=now,
+                canonical_payload=canonical,
+            )
+            self.conn.execute("COMMIT")
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
+    def get_receipt_health(self, receipt_id: str) -> Optional[str]:
+        """Latest health status recorded against a receipt, or ``None``.
+
+        Read-back path for tests, the CLI ``health`` command, and the
+        dashboard (E6).  Returns the health string (a member of
+        :data:`RECEIPT_HEALTH`), not the raw framed bytes.
+        """
+        row = self.conn.execute(
+            "SELECT canonical_payload FROM events "
+            "WHERE receipt_id = ? AND event_kind = 'receipt.health' "
+            "ORDER BY event_ordinal DESC LIMIT 1",
+            (receipt_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        fields = _parse_framed_fields(bytes(row["canonical_payload"]))
+        # ["receipt.health", receipt_id, health, detail]
+        return fields[2].decode("utf-8") if len(fields) > 2 else None
 
     def claim(
         self,

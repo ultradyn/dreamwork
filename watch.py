@@ -9607,6 +9607,20 @@ def _journal_receive(target, envelope):
         return None
 
 
+def _journal_record_health(target, receipt_id, health, detail=""):
+    """Record a health event against a durably-committed receipt (E4).
+
+    Best-effort: a journal that cannot record health must not refuse a request
+    the receipt already accepted. Health is not application state
+    (shadow_failed does not move the receipt), so a failure here is logged and
+    swallowed — the dashboard (E6) surfaces it from the journal when it can."""
+    try:
+        with open_journal(_journal_path(target)) as journal:
+            journal.record_health(receipt_id, health, detail)
+    except Exception as exc:  # never let health recording refuse a request
+        log_event(target, f"user-events journal health record failed: {exc!r}")
+
+
 def log_submission(target, path, body, nbytes, truncated=False, short=False):
     """His words on disk before anything is allowed to refuse them (#199).
 
@@ -9630,6 +9644,10 @@ def log_submission(target, path, body, nbytes, truncated=False, short=False):
     · It CANNOT RAISE. A logging failure must never be why his answer was
       refused, so every error is swallowed — including the ones that are the
       caller's fault. `log_event`'s rule, on a file where it matters more.
+
+    Returns True if the line was written, False if it could not be (E4: the
+    caller records shadow_failed health against the durable receipt, never a
+    refusal).
 
     Well-formed bodies are stored parsed (`req`) rather than as an escaped
     string, because `json.loads` → `json.dumps` round-trips every value
@@ -9670,7 +9688,7 @@ def log_submission(target, path, body, nbytes, truncated=False, short=False):
     try:
         line = json.dumps(rec, ensure_ascii=False)
     except (TypeError, ValueError):        # a value json cannot render
-        return
+        return False
     try:
         # One append of one line, under a lock, because this server is
         # threaded and two interleaved writes lose both submissions rather
@@ -9679,8 +9697,14 @@ def log_submission(target, path, body, nbytes, truncated=False, short=False):
             with open(os.path.join(target, ".dreamwork", "submissions.log"),
                       "a", encoding="utf-8") as f:
                 f.write(line + "\n")
+        return True
     except OSError:
-        pass
+        # E4: a shadow-write failure is returned to the caller as False so it
+        # can record shadow_failed health against the (already-durable)
+        # receipt. Swallowed, never re-raised — this function's oldest rule
+        # ("CANNOT RAISE") is unchanged: a logging failure must never be why
+        # his answer was refused.
+        return False
 
 
 # Accepted POST /command kinds, derived from the one vocabulary (COMMANDS,
@@ -10069,20 +10093,22 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # a partial marked incomplete is Q2 of #263's open ask, and this
             # only makes the witness truthful, which either answer needs.
             short = len(body) < want
-            log_submission(target, self.path, body, nbytes, truncated, short)
+            self._body = body
             # E1 envelope (#263 lane E): a body that arrived SHORT is a broken
             # transport promise, not a complete envelope. Law 2 of
             # `user-event-journal.md` §Receive and idempotency decides
             # transport-envelope failures BEFORE receipt: an interrupted body
             # remains a client attempt and never creates a journal receipt.
             # `submissions.log` still keeps the partial bytes (marked
-            # incomplete by `short` above), so tightening receipt semantics
-            # does not reduce recoverability — the incomplete-witness
-            # amendment he ruled on at 05:43.
+            # incomplete by `short`), so tightening receipt semantics does not
+            # reduce recoverability — the incomplete-witness amendment he
+            # ruled on at 05:43. The witness runs before the 400 (#199), as it
+            # always has.
             if short:
+                log_submission(target, self.path, body, nbytes, truncated,
+                               short)
                 self.send_error(400)
                 return
-            self._body = body
             # The journal commit authorises the response (E3 cutover): the
             # receipt is committed BEFORE the handler dispatches, so a journal
             # open/commit failure is a 503 with no 202 — the request was never
@@ -10094,6 +10120,24 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 if self.journal_result() is None:
                     self.send_error(503)
                     return
+                # E4 besteffort: submissions.log is a best-effort SHADOW
+                # written AFTER the durable receipt (design step 4, not step
+                # 3). Its failure is shadow_failed health on the receipt,
+                # never a refusal — the receipt already committed, so the
+                # request was accepted and the response must still be 202.
+                shadow_ok = log_submission(target, self.path, body, nbytes,
+                                           truncated=False, short=False)
+                if not shadow_ok:
+                    result = self.journal_result()
+                    if result and result.receipt_id:
+                        _journal_record_health(target, result.receipt_id,
+                                               "shadow_failed")
+            else:
+                # Journal disabled (E2 baseline) or over-long (truncated)
+                # body: submissions.log runs in its pre-cutover position,
+                # before dispatch/refusal. No receipt, no health.
+                log_submission(target, self.path, body, nbytes, truncated,
+                               short)
             # ...and only now may a request be turned away. An over-long body
             # is still refused — the cap is what makes the read bounded — but
             # it is refused with its first MAX_BODY bytes already kept, so a
