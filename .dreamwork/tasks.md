@@ -259,9 +259,14 @@ Next id: **408**
   · **the form the brief did not name**, found as required: `comma_list_one_bold`
   (`related: **#381, #399, #395**`) — the dominant `related:` shape, and it **works**
   · not reached, stated: the full 18×38 cell dump, `dreamhub.py`'s scope, and fixture-level lint
-  reds. The multi-bold `related:` case is classified LOUD from source reading rather than a captured
-  WARN — **treat that one cell as unverified**
-
+  reds
+  · **the one cell the audit left unverified is now VERIFIED, by the coordinator, with a control —
+  and the lane's classification was right.** The multi-bold `related:` case is **LOUD**. Probed on a
+  temp fixture: form **A** `related: **#501**, **#502**` → **3 ERRORs**, the first being `#395`'s
+  dedicated *"two adjacent bold spans — only the first id is read"* which names the true cause; form
+  **B** `related: **#501, #502**` → **0** and the OK coverage line. Precondition asserted first: the
+  probe confirmed the second span really is dropped before drawing any conclusion, so it was testing
+  the real thing rather than a fixture that agreed with it
 
 - **#400** — `lessons.md` has outgrown being read, and the briefs that tell lanes to read it are
   cargo cult · P2 · loop/memory · origin: **loop** · found by **measuring receipt instead of

@@ -2268,3 +2268,23 @@ this shape and convert opportunistically.)
   is done and is not. **Neither the artefact nor the agent's own word settles it — the harness
   does.**
 
+- **A parser that detects a shape it knows is broken should treat it as naming NOTHING, not as
+  naming what it managed to read. Partial trust is the mechanism that makes a drop silent.**
+  · **The constructive counterpart to a day of silent-drop findings, and the only check measured
+  today that fails CLOSED.** `lint.check_related_markers` meets `related: **#501**, **#502**` — two
+  adjacent bold spans, of which the regex captures only the first. It does not proceed with `{501}`.
+  It reports the malformed marker **and** treats the entry as naming nothing, so **every** id that
+  should have been named — including `#501`, which it *did* capture — raises a reciprocity ERROR.
+  Measured against a control: the broken form gives **3 ERRORs** (the first naming the true cause),
+  the correct one-span form gives **0** and a coverage line.
+  · Three messages for one defect looks like noise and is not: the first names the cause, and the
+  other two are the blast radius stated explicitly. Compare the alternative — proceed with `{501}`
+  and `#502`'s relation vanishes with **no** message anywhere. That is `#401`, `#399` and `#406` in
+  one line, and it is what partial trust buys.
+  · The rule generalises past parsers: **when validation and extraction disagree, extraction must
+  yield nothing.** A reader that returns its best effort alongside a warning invites every caller to
+  use the effort and ignore the warning — and one of them will be a check.
+  · Worth noting *why* this one is right: `#395`'s author had just been bitten by exactly this class,
+  and built the fail-closed behaviour deliberately. **The design is not an accident, and neither is
+  the fact that it is the only one of its kind here.**
+
