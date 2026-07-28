@@ -11,6 +11,7 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
 import { makeReporter } from './report.mjs';
+import { midFrames, midStates } from './dom.mjs';
 const OUT=process.argv[2], PORT=process.argv[3]||'39887';
 const BASE=`http://127.0.0.1:${PORT}`; mkdirSync(OUT,{recursive:true});
 const { ok, declare, finish, checks, notes, errs } = makeReporter();
@@ -48,8 +49,12 @@ const trace=ms=>`((ms)=>new Promise(res=>{const m=cmdmsg,p=cmdpalette,seen=[],t0
  // look often enough', and those two need opposite responses: one is a bug, the
  // other is a busy machine. Naming the count makes the difference readable.
  ok(`main departure window sampled enough to see motion (${departing.length} frames)`,
-    departing.length>=8);
- ok('main success departs through intermediate opacity and drift',new Set(departing.map(s=>s.op)).size>=4&&new Set(departing.map(s=>s.tf)).size>=3);
+    departing.length>=3);
+ // #414: MID-FRAME form, not distinct-value counting. A snap has zero frames
+ // strictly between its two ends at ANY frame rate; the old `>=4 distinct`
+ // could not hold below 4 samples however correct the animation was.
+ ok('main success departs through intermediate opacity and drift',
+    midFrames(departing.map(s=>s.op))>=1&&midStates(departing.map(s=>s.tf))>=1);
  ok('main success clears instead of remaining forever',seen.at(-1).text==='');
  ok('typing keeps the panel open independently',seen.at(-1).open);
  await c.close();
@@ -108,14 +113,16 @@ const trace=ms=>`((ms)=>new Promise(res=>{const m=cmdmsg,p=cmdpalette,seen=[],t0
   notes.push(`popout arrival opacity=${[...new Set(arrival.map(s=>s.op))].join(',')} transform=${[...new Set(arrival.map(s=>s.tf))].join(',')} first=${first}`);
   // Same precondition as the main window above, for both popout windows.
   ok(`popout arrival window sampled enough to see motion (${arrival.length} frames)`,
-     arrival.length>=8);
+     arrival.length>=3);
   ok(`popout departure window sampled enough to see motion (${departure.length} frames)`,
-     departure.length>=8);
-  ok('popout success arrives through intermediate opacity and drift',new Set(arrival.map(s=>s.op)).size>=4&&new Set(arrival.map(s=>s.tf)).size>=3);
+     departure.length>=3);
+  ok('popout success arrives through intermediate opacity and drift',
+     midFrames(arrival.map(s=>s.op))>=1&&midStates(arrival.map(s=>s.tf))>=1);
   ok('#291 popout is intentionally persistent beyond main courtesy close',
      !pp.isClosed() && seen.some(s=>s.t>=2200&&s.text==='sent to the dream'));
   ok('popout success remains readable for about 5s',success.length&&success.at(-1).t-success[0].t>=4500);
-  ok('popout success departs through intermediate opacity and drift',new Set(departure.map(s=>s.op)).size>=4&&new Set(departure.map(s=>s.tf)).size>=3);
+  ok('popout success departs through intermediate opacity and drift',
+     midFrames(departure.map(s=>s.op))>=1&&midStates(departure.map(s=>s.tf))>=1);
   ok('popout success self-dismisses',seen.at(-1).text==='');
  }
  await c.close();

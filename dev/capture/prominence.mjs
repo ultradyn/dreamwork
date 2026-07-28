@@ -179,6 +179,18 @@ if (thread && fold) {
                `still ${late.toFixed(1)}px from its final place when the ` +
                `travel ended`);
     ok('the card below is carried at all (else vacuous)', total >= 8);
+    /* #414: deliberately NOT converted to the mid-frame form that
+       `confirmation` now uses. That form proves "not a snap", and this
+       assertion claims something strictly stronger -- CONTINUOUS travel, "not
+       a couple of jumps" -- which two jumps would satisfy while a snap would
+       not. A property about smoothness genuinely needs many samples, so the
+       honest fix here is to say so rather than to weaken the claim: the check
+       below is frame-rate coupled by nature, and the precondition names the
+       count when a starved trace makes it unsatisfiable. The neighbouring
+       vacuity check measures DISTANCE travelled, not samples, so it does not
+       cover this. */
+    ok(`sampled enough frames for "continuously" to be decidable ` +
+       `(${tops.length} frames, needs >= 6)`, tops.length >= 6);
     ok('...continuously, rather than in a couple of jumps',
        new Set(tops.map(Math.round)).size >= 6);
     /* The padding-transition failure, stated as the thing it does. If the
