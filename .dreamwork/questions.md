@@ -3,32 +3,30 @@
 ## Open
 
 
-- **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of every repo's commits?**
-  → the guard landed (`ef5db01`) and is **inert until enabled**, because `core.hooksPath` is machine-local
-  and not committed. Enabling it is one command; the reason it is an ask is what that command reaches.
+- **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
+  **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
+  instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
+  file. `#465` is the guard that refuses such a commit — it reads which paths each lane declared and blocks
+  anyone else touching them.
 
-  **The measurement that makes this your call:** your `core.hooksPath` is **global** —
-  `~/.config/git/hooks` — and it already holds a `pre-commit` symlinked to `~/src/c2c/scripts/git-hooks/pre-commit`.
-  So installing there means the lane guard runs on **every commit in every repo on this machine**, not just
-  this one. The lane built for that honestly: it **chains** rather than clobbers (renames your hook to
-  `pre-commit.prev`, writes a wrapper that runs yours first, then the guard) and refuses outright if a
-  chained predecessor already exists. It also exits 0 immediately in any repo with no `wt/*` worktrees, so
-  it should be invisible elsewhere.
+  **You also asked why it needs the global hook path. It does not — I framed that badly.** Your
+  `core.hooksPath` is global (`~/.config/git/hooks`, holding c2c's `pre-commit`/`pre-push` plus a
+  `commit-msg`), and because that setting exists git ignores `.git/hooks` entirely, which is the only reason
+  the global dir came up at all. Setting `core.hooksPath` **repo-locally** overrides it for this repo alone.
 
-  **What I do not want to hand you silently:** *should* is not *is*. A bug in the guard is a bug in front of
-  every commit you make, and the failure mode is a refused commit rather than a bad one — recoverable, but
-  disruptive at exactly the wrong moment. `DREAMWORK_LANE_GUARD_BYPASS=1` is the documented escape.
+  **`Q1` — which install?** New **`rec`: repo-local**, a tracked `.githooks/` here whose `pre-commit` runs
+  c2c's hook first and then the guard. Blast radius is this repo; c2c keeps working here. The honest cost:
+  a repo-local path also shadows `commit-msg` and `pre-push`, so the dir must forward all three or they
+  silently stop applying — that is the work, and it is why the global install looked simpler.
+  Global-and-chained is still available if you would rather have it everywhere.
 
-  **Ask: `Q1`**
+  **Since you last read this, `#468` R2 landed** and needs no hook at all: `lane_guard.py pre-merge <branch>`
+  checks the same preconditions before a merge. So some protection now exists either way.
 
-  - **Q1** — install it? **`rec`: yes, chained**, on the reasoning that the realised harm has already
-    happened once tonight (a lane's stray edit aborted a verified merge that had been held half an hour) and
-    the guard is a no-op wherever no lane is out. If you would rather it not sit in the global path, the
-    alternative is a repo-local `core.hooksPath` for this repo only — which **loses your c2c hooks here**,
-    so it is a trade rather than a strictly safer option, and I would want to chain those too before doing it.
-
-  **If you say nothing:** the guard stays committed and inert, `#465` remains landed-but-unenabled, and the
-  protection does not exist — which is the status quo that cost the held merge, so this one does decay.
+  **If you say nothing:** the guard stays committed and inert, and the stray-edit protection does not exist —
+  the status quo that cost the held merge. `DREAMWORK_LANE_GUARD_BYPASS=1` remains the escape.
+  - **Note (human, via watch, 2026-07-29 05:51):** why can't we enable #465
+    without this? And also, what is 465?
 
 - **P2 · 2026-07-28 — #417: four ways to put commits-per-period on the burndown, priced. Which, if any?**
   **Ask: `C1`, `C2`, `C3`, `C4`, or `none` — and `rec` takes C4.**
@@ -77,6 +75,8 @@
 
   **So: `rec` is still `c4` (with the copy shortened), and if you want the per-period shape the answer
   is `c2`, not `c3`.**
+  - **Note (human, via watch, 2026-07-29 05:51):** show me mockups of all 4
+    options please.
 
 
 
