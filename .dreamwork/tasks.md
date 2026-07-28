@@ -43,25 +43,6 @@ Next id: **457**
   chose and why.
   · **no transition** — `ages()` rewrites this text every second as a pure text update, which
   `transitions.md` explicitly exempts; do not add a gesture to a digit flip.
-- **#455** — every review artifact opens with a context paragraph, enforced at build time · **P1** ·
-  review/asking · origin: **human** ·
-  **human via watch 2026-07-29 01:07, while reading `269-draft-durability.html`:** *"update protocols: when
-  review artifacts are written, they should have a paragraph of text at the top giving context to the artifact
-  for review. Like I feel lost when i read these half the time b/c i have no context."*
-  · **"half the time" is a measurable claim and the artifacts are on disk** — check it rather than assuming, and
-  say what fraction actually open with orientation. The artifact he was reading when he said it is the sample
-  to start from.
-  · **the sibling of `#436` and it should be built the same way.** `#436` made `#ask` a **build-time** contract:
-  `review_artifact.py` refuses to build an artifact whose ask is missing, doubled, or a decoy, with an
-  exemption by declared `<meta>`. A context paragraph is the same shape — a required slot, refused at build,
-  exemptible by declaration — so **reuse that mechanism rather than authoring a second one**.
-  · **what the paragraph must answer** is the part to get right, or it becomes a heading he skips: what this
-  artifact is, what decision it exists to serve, why he is being asked *now*, and what happens if he says
-  nothing. His words are *"i have no context"*, not *"it needs a summary"* — the existing `headline`/`sub`
-  metadata already summarises, and it did not help.
-  · **12 of 24 artifacts have no `src/`** (`#436`'s remainder), so a build-time contract cannot reach them —
-  decide whether they are reconstructed, declared exempt, or left as the reason `#436`'s guard is still
-  unregistered. Do not register a guard that silently passes over half the corpus.
 - **#454** — questions collapse to a rolled-scroll card of 5-6 lines, persisted like other UI state ·
   **P2** · dashboard/asking · origin: **human** ·
   **human via watch 2026-07-29 01:06:** *"questions on the questions page should be collasible. However, the
@@ -148,26 +129,6 @@ Next id: **457**
   protection is therefore absent), the *trusted-nodes-only* precondition stated where a reader would act on
   it, and the warning rendered next to a harness in the UI. Sequencing: the doc half is startable now; the UI
   half touches `watch.py`/`dreamhub.py` and waits for a free lane.
-- **#449** — the question→review dissolve is framey: the mist filter costs too much on the widest, tallest
-  view · **P1** · dashboard/perf · origin: **human** · **next-up** ·
-  **human via watch 2026-07-29 00:39:** *"there is a bit of a performance issue when I changed from a question
-  screen to this screen … the SVG liquify stuff, maybe? … there could be a lot of elements on the page … it's
-  framey when it changes from the question page to the review page … I think it might be a recent addition …
-  the additions that were made for expanding and contracting, like collapsible sections, so that they had the
-  liquify effect as well."*
-  · **coordinator's reading, to be confirmed or refuted, not assumed:** `crossfade()` puts
-  `url(#dissolveOut)` on a **full-page ghost clone** and `url(#dissolveIn)` on the incoming view, then
-  `stepFx` animates **`feTurbulence`'s `baseFrequency`** (0.009→0.018) every frame. A changing
-  `baseFrequency` invalidates the noise field, so the whole turbulence texture is regenerated per frame at a
-  150%×150% filter region over an element whose area scales with page height — and **review is the widest and
-  tallest view**, which is exactly the transition he named. `scale` and `stdDeviation` are the cheap knobs;
-  `baseFrequency` is the expensive one.
-  · **his "recent addition" hypothesis is not confirmed:** grep finds only three filters (`dissolveOut`,
-  `dissolveIn`, `departMist`), all route/ghost gestures, and no turbulence on collapse. Either something in
-  the dissolve path changed recently or the suspicion is misplaced — the lane checks history rather than
-  trusting either account.
-  · **the constraint is `transitions.md`:** the fix is cheaper mist, not less gesture. A route change that
-  stops liquifying to gain frames has traded the thing the page is for.
 - **#448** — a questionnaire feature for asking him things, modelled on `pag-server`'s question form ·
   **P2** · dashboard/asking · origin: **human** · **blocked-on: #294** (SQLite) ·
   **human via watch 2026-07-29 00:34, while reading `421-qs-opts-short.html`:** *"eventually we should add a
@@ -3373,6 +3334,49 @@ Next id: **457**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#455** — every review artifact opens with a context paragraph, enforced at build time · **P1** ·
+  review/asking · origin: **human** ·
+  **human via watch 2026-07-29 01:07, while reading `269-draft-durability.html`:** *"update protocols: when
+  review artifacts are written, they should have a paragraph of text at the top giving context to the artifact
+  for review. Like I feel lost when i read these half the time b/c i have no context."*
+  · **"half the time" is a measurable claim and the artifacts are on disk** — check it rather than assuming, and
+  say what fraction actually open with orientation. The artifact he was reading when he said it is the sample
+  to start from.
+  · **the sibling of `#436` and it should be built the same way.** `#436` made `#ask` a **build-time** contract:
+  `review_artifact.py` refuses to build an artifact whose ask is missing, doubled, or a decoy, with an
+  exemption by declared `<meta>`. A context paragraph is the same shape — a required slot, refused at build,
+  exemptible by declaration — so **reuse that mechanism rather than authoring a second one**.
+  · **what the paragraph must answer** is the part to get right, or it becomes a heading he skips: what this
+  artifact is, what decision it exists to serve, why he is being asked *now*, and what happens if he says
+  nothing. His words are *"i have no context"*, not *"it needs a summary"* — the existing `headline`/`sub`
+  metadata already summarises, and it did not help.
+  · **12 of 24 artifacts have no `src/`** (`#436`'s remainder), so a build-time contract cannot reach them —
+  decide whether they are reconstructed, declared exempt, or left as the reason `#436`'s guard is still
+  unregistered. Do not register a guard that silently passes over half the corpus.
+  · landed \`8a83df1\` — **the audit refuted the brief**: 17 of 27 artifact first screens already answer ≥3 of 4 orientation questions, so a blanket context paragraph was the wrong fix. The structural hole is **"what happens if he says nothing" — 3 of 27**, now a build-time required slot mirroring \`#436\`\x27s ask contract (production line \`enforce_if_silent_contract\`), refused on **absence**, never on length (his 01:13/01:17 ruling). \`269-draft-durability.html\` — the artifact he was reading when he said he felt lost, scoring 1/4 — rewritten as the worked example. All 15 buildable artifacts rebuilt current; the 12 \`src\`-less remain the standing reason the walking guard is unregistered.
+
+- **#449** — the question→review dissolve is framey: the mist filter costs too much on the widest, tallest
+  view · **P1** · dashboard/perf · origin: **human** · **next-up** ·
+  **human via watch 2026-07-29 00:39:** *"there is a bit of a performance issue when I changed from a question
+  screen to this screen … the SVG liquify stuff, maybe? … there could be a lot of elements on the page … it's
+  framey when it changes from the question page to the review page … I think it might be a recent addition …
+  the additions that were made for expanding and contracting, like collapsible sections, so that they had the
+  liquify effect as well."*
+  · **coordinator's reading, to be confirmed or refuted, not assumed:** `crossfade()` puts
+  `url(#dissolveOut)` on a **full-page ghost clone** and `url(#dissolveIn)` on the incoming view, then
+  `stepFx` animates **`feTurbulence`'s `baseFrequency`** (0.009→0.018) every frame. A changing
+  `baseFrequency` invalidates the noise field, so the whole turbulence texture is regenerated per frame at a
+  150%×150% filter region over an element whose area scales with page height — and **review is the widest and
+  tallest view**, which is exactly the transition he named. `scale` and `stdDeviation` are the cheap knobs;
+  `baseFrequency` is the expensive one.
+  · **his "recent addition" hypothesis is not confirmed:** grep finds only three filters (`dissolveOut`,
+  `dissolveIn`, `departMist`), all route/ghost gestures, and no turbulence on collapse. Either something in
+  the dissolve path changed recently or the suspicion is misplaced — the lane checks history rather than
+  trusting either account.
+  · **the constraint is `transitions.md`:** the fix is cheaper mist, not less gesture. A route change that
+  stops liquifying to gain frames has traded the thing the page is for.
+  · landed \`614a668\` — **the mist is shelved, not deleted**, behind \`MIST_ON=false\`; CSS compositor blur carries the dissolve (ghost 0→7px, view 5px→0). Same-run proof at load 49: 12.1 → 27.6 frames (**+128%**), worst frame 262 → 129ms; CSS blur measured free (16.4 vs 14.4 unblurred). **Two hypotheses refuted by measurement first:** animating \`feTurbulence@baseFrequency\` (freezing it, and all six per-frame writes, ≈ baseline) and filtered area (a 42% ghost clamp changed nothing). The cause is a **threshold** — two SVG filter rasterisations per frame contending with the shader; either alone ≈ baseline, both off is the win. Guard \`dev/capture/dissolve.mjs\` red-proven on two injections. Successor: \`#453\` (moved/tiled texture to restore the liquify).
+
 - **#447** — bundle the `use-igcs` skill with dreamwork, and make the loop reach for it before any design
   judgement · **P1** · loop-machinery/decision-method · origin: **human** ·
   **human via chat 2026-07-29 00:33:** *"re blocking #445: see /use-igcs the skill. we should bundle that skill
