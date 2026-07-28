@@ -256,8 +256,22 @@ All subagents report to the coordinator **through a file**, and never use
 `attn`. Give every one of them a path to write to and an inbox to ping —
 a subagent's final message is a channel nobody reads back, and it has
 silently swallowed deliverables here. Dreamers append to the coordinator
-inbox and have never lost one; the fix is to dispatch utilities the same
-way, not to watch harder.
+inbox, and that is still the right channel for judgement — so dispatch
+utilities the same way rather than watching harder.
+
+**But the inbox is not lossless, and this file used to claim it was.**
+Measured across one four-lane batch: the **commit** arrived 4/4, the
+hand-off line 4/4 written but only 3/4 in the right section, and the
+inbox **3/4**. `#392a` landed real work, wrote a hand-off, and never
+reported — its rejected alternatives and its stated uncertainties are
+gone, recoverable only because the diff was small. *"Has never failed"*
+was an absence of observation rather than a property, and its
+counterexample looks exactly like a quiet lane, which is why nobody
+rechecked it for months. **Exactly one channel cannot be skipped: a lane
+cannot land work without committing.** So put what must survive in the
+commit — the message, and any document the work produced — and treat the
+inbox as where richer context *usually* arrives, never as where a
+deliverable lives (#404).
 
 **A subagent that LANDS a commit writes two things, not one** (#394): its
 report to the inbox, and one line to `.dreamwork/handoffs.md`'s
