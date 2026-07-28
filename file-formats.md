@@ -86,6 +86,19 @@ leave the file byte-identical and no `.questions.md.*.tmp` behind.
   comes first in the body, and `answered_at()` reads only that.
 ```
 
+**The resolution head goes in the BODY, never inside the title** — and the
+title is allowed to wrap, which is what makes this a trap rather than a
+typo. `parse_answered` takes the entry's title as its bold span and
+`answered_at()` reads only what follows, so a `→ … (date)` that lands inside
+a wrapped title is structurally invisible: the entry renders as never
+resolved, and the `#411` undated-entry WARN reports it as a *dropped* marker
+when it was in fact written. Three of the five undated entries found on
+2026-07-29 were this, and the repair hit it twice — the first attempt
+inserted the head inside `#264`'s wrapped title and the entry stayed
+undated. `lint.check_resolution_marker_outside_title` ERRORs on it, and
+fires on the marker's **position**, never on the wrap: 30 of 65 titles wrap
+legitimately.
+
 ### Title date and optional time (#392b)
 
 The bold title opens with an optional priority (`P1 · ` / `P2 · ` / `P3 · `),

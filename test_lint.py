@@ -4252,3 +4252,73 @@ def test_the_subdecision_row_names_open_declarations_awaiting_a_fold(tmp_path):
     line = rows[0][-1]
     assert "1 open ask declares sub-decisions" in line, line
     assert "0 folded entries examined" in line, line
+
+
+class TestResolutionMarkerOutsideTitle:
+    """#411: a `→ … (date)` marker inside a WRAPPED bold title is invisible to
+    `answered_at`, which reads only the body. Wrapping itself is ordinary — the
+    live corpus wraps 30 of 65 titles — so the check must fire on the marker's
+    position, never on the wrap."""
+
+    def build(self, tmp_path, entries):
+        # `entries`: list of raw entry text, each starting with `- **`.
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "questions.md").write_text(
+            "# Questions\n\n## Open\n\n## Answered\n\n"
+            + "\n\n".join(entries) + "\n")
+        return t
+
+    def rows(self, t):
+        rep = lint.Report()
+        lint.check_resolution_marker_outside_title(
+            t / ".dreamwork", lint.load_watch(), rep)
+        return [(lvl, d) for lvl, w, d in rep.rows if w == "questions.md"]
+
+    def test_a_marker_inside_a_wrapped_title_errors_and_is_named(self, tmp_path):
+        t = self.build(tmp_path, [
+            # the shape that actually happened: the title runs on to a second
+            # line and the resolution head was inserted before it closed
+            "- **P1 · 2026-07-28 — a question whose title runs on\n"
+            "  → answered (2026-07-28 01:43): the answer.\n"
+            "  and here the title finally closes.** Body prose follows.\n",
+            "- **P2 · 2026-07-28 — a well-formed entry**\n"
+            "  → answered (2026-07-28 02:00): fine.\n",
+        ])
+        rows = self.rows(t)
+        assert rows and rows[0][0] == lint.ERROR, rows
+        assert "INSIDE the wrapped bold title" in rows[0][1]
+        assert "title runs on" in rows[0][1], rows[0][1]
+
+    def test_a_legally_wrapped_title_with_the_marker_in_the_body_is_silent(self, tmp_path):
+        # The precondition this check depends on is that at least one title
+        # wraps -- derived, so it cannot quietly lose its subject. One entry
+        # here wraps WITHOUT a marker in the span, which is the legal case.
+        t = self.build(tmp_path, [
+            "- **P1 · 2026-07-28 — a title that wraps across\n"
+            "  two lines legally.** \n"
+            "  → answered (2026-07-28 01:43): the marker is in the body.\n",
+            "- **P2 · 2026-07-28 — a one-line title**\n"
+            "  → answered (2026-07-28 02:00): also fine.\n",
+        ])
+        # The precondition this check depends on, asserted where it can expire:
+        # exactly one of these two titles wraps, derived rather than trusted, so
+        # the fixture cannot drift into having no subject without failing here.
+        raw = (t / ".dreamwork/questions.md").read_text()
+        import re as _re
+        wraps = [m.group(0).split("\n")[0]
+                 for m in _re.finditer(r"(?m)^- \*\*.*?(?=^- \*\*|\Z)", raw, _re.S)
+                 if m.group(0).split("\n")[0].count("**") < 2]
+        assert len(wraps) == 1, wraps
+        assert self.rows(t) == []
+
+    def test_no_wrapped_title_at_all_is_silent_because_the_defect_is_impossible(self, tmp_path):
+        t = self.build(tmp_path, [
+            "- **P1 · 2026-07-28 — one line**\n"
+            "  → answered (2026-07-28 01:43): fine.\n",
+        ])
+        # Silent, like its sibling: check_questions owns this file's OK row.
+        # With no wrapped title the defect is IMPOSSIBLE rather than merely
+        # unobserved, so silence is honest here and no row is owed.
+        assert self.rows(t) == []

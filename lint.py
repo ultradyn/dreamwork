@@ -324,6 +324,72 @@ def check_answered_resolution_dates(dw: Path, watch, rep: Report) -> None:
         f"{sample}{more} (#411)")
 
 
+def check_resolution_marker_outside_title(dw: Path, watch, rep: Report) -> None:
+    """A `→ … (date)` marker inside an entry's BOLD TITLE is invisible (#411).
+
+    `parse_answered` takes an entry's title as the first line and everything
+    after it as the body, and `answered_at` reads only the body. A bold title
+    that WRAPS across lines is legal and ordinary — 30 of 65 entries wrap — so
+    wrapping itself is not the defect and erroring on it would red the corpus.
+    The defect is the marker landing inside that wrapped span, where the reader
+    structurally cannot see it: the entry renders as never resolved, and the
+    `#411` WARN that should have caught it names "dropped marker" for something
+    that was written, just in the wrong place.
+
+    Three of the five undated entries found on 2026-07-29 were this, not
+    dropped markers — and the repair itself hit it twice, because the first
+    attempt inserted the head INSIDE #264's wrapped title and the entry stayed
+    undated. Hence a check rather than a habit: the position is invisible in the
+    text and the only symptom is a missing date on a different check's row.
+
+    ERROR, because unlike an undated withdrawn ask there is no legitimate
+    reading of a marker in the title — it is always a misplacement, and the
+    entry it describes always renders wrong.
+    """
+    path = dw / "questions.md"
+    if not path.exists() or watch is None:
+        return
+    text = path.read_text()
+    # The title span runs from the entry head to the line that closes its bold
+    # run. Derived from the file, so a corpus that stops wrapping does not
+    # quietly turn this check into a no-op -- the precondition below says so.
+    entries = list(re.finditer(r"(?m)^- \*\*.*?(?=^- \*\*|\Z)", text, re.S))
+    wrapped = 0
+    offenders = []
+    for m in entries:
+        lines = m.group(0).split("\n")
+        span = [lines[0]]
+        if lines[0].count("**") < 2:                  # title continues
+            wrapped += 1
+            for ln in lines[1:]:
+                span.append(ln)
+                if "**" in ln:
+                    break
+        title_span = "\n".join(span)
+        if watch.RESOLVED_AT.search(title_span):
+            offenders.append(lines[0].strip()[:64])
+    if not entries:
+        return                          # check_questions owns unparseable
+    # The precondition this check depends on: at least one entry's title
+    # actually wraps. If none does, there is no multi-line span for a marker to
+    # hide in and this check has no subject -- say so rather than passing.
+    if offenders:
+        rep.add(
+            ERROR,
+            "questions.md",
+            f"{len(offenders)} entr(y/ies) carry a `→ … (date)` marker INSIDE "
+            f"the wrapped bold title, where `answered_at` cannot see it — move "
+            f"it to the head of the body: {'; '.join(offenders[:3])} (#411)")
+        return
+    # Silent on success, like `check_answered_resolution_dates` above:
+    # `check_questions` owns this file's OK row and a second one fragments the
+    # summary. Unlike a coverage check, this one needs no vacuity guard on the
+    # live corpus — if no title wrapped, the defect would be *impossible*
+    # rather than merely unobserved, so silence is the honest state. The
+    # precondition that at least one title wraps is asserted where it can
+    # actually expire: in the test, derived from its fixture.
+
+
 # ── a fold must not drop a sub-decision (#421 B) ─────────────────────
 # The defect this exists for, stated in the ask that granted it: `#275`'s
 # Q3/Q5/Q6 sat unanswered for days with nothing noticing, because a multi-
@@ -3176,6 +3242,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     """
     check_questions(dw, watch, rep)
     check_answered_resolution_dates(dw, watch, rep)
+    check_resolution_marker_outside_title(dw, watch, rep)
     check_subdecisions(dw, watch, rep)
     check_answers(dw, watch, rep)
     check_author_tags(dw, watch, rep)
