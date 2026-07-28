@@ -184,6 +184,25 @@ Next id: **436**
   because *we* are busy trains everyone to discount its reds, which is the expensive failure — and the
   `#218` lane already discounted five of them correctly, which is exactly the habit that will one day
   discount a real one
+  · **fourth run, 2026-07-28 19:06 — and I broke its isolation a fourth time, by the same act.** I
+  dispatched the `frame` and `rail` lanes at ~19:15 while the run I had just called *"the missing arm"*
+  was at roughly guard 20 of 50. So it is a fourth contended point, not the controlled arm. **The
+  failure is not the dispatch — it is that I have now written the words "the experiment still needs
+  running" four times and started a lane through it every time.** The experiment does not need designing;
+  it needs a coordinator who will sit still for fifteen minutes
+  · **what it did show:** 2 failures where the contended 18:22 run had 6, and **both are frame
+  samplers again** — `morph` (*"…and still ends up in the same place"*) and `reviewsplit` (*"…having
+  faded away rather than switched off"*). Four runs, every failure in the sampling subset, zero outside
+  it. That pattern is now well-established independently of the load question
+  · **careful about the probe I then armed, because it repeats the entry's own warning.** Re-running
+  `morph` and `reviewsplit` alone is the 2-guard shape this entry twice calls a confound, so **a green
+  tells us nothing we did not know at 19:00 (6 for 6 alone)**. Its value is one-sided: only a **failure
+  alone on an idle machine** is informative, and it would be decisive — the guards would be broken and
+  `#424`'s lock exonerated. Recorded before reading the result so the read cannot drift
+  · **the arm still missing, stated as a procedure rather than an intention:** full 50-guard suite, no
+  lane dispatched from suite start to `REAL_EXIT`, idle verified with a **self-excluding** process check
+  (see the `pgrep` aside above), repeated until the failure rate is a number. Everything else is a
+  fourth anecdote
   · related: **#424, #423**
 
 - **#426** — an agent must survive its own files changing under it, or be told to reload · P1 ·
