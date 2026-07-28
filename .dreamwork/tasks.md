@@ -24,9 +24,29 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **478**
+Next id: **479**
 
 ## Open
+- **#478** — the cited-sha check declines to run in the full suite, twice, and says so at OK · P2 ·
+  verification/lint · origin: **loop** · **found 2026-07-29 09:05 by the full `just test` after tonight's four
+  merges** — `test_lint.py::TestCitedShas::test_a_dead_cited_sha_warns` failed with a bare `[]`, and
+  `lint.py`'s own docstring records the SAME test failing once before and then passing twenty-five runs in
+  isolation. It passes in isolation now too (11/11)
+  · **what is actually happening, and `#380` predicted it:** the check has four skip exits, and a skip is
+  reported at **OK** when the target is not a readable repository (correctly — a non-repo has done nothing
+  wrong). The test filtered its rows to **WARN**, so a declined run printed as *no warning at all*, which is
+  indistinguishable from a check that ran and found nothing. `#380` added those rows precisely so the next
+  occurrence would name its exit; the assertion threw them away
+  · **fixed the diagnostic, not the cause** (`test_lint.py`, this commit): the assertion now prints every cite
+  row at every level. Red-proved by deleting the fixture's `.git` — WARN goes to `[]`, exactly the observed
+  failure, and the message now reads *"git could not read this tree, so 2 cited commit(s) went unchecked"*
+  · **the cause is still unknown and needs the next occurrence to speak:** the fixture `git init`s its own repo
+  and `rev-parse HEAD` succeeds under `check=True`, so the tree existed at build time. Suspects, untested:
+  suite-order env leakage (`GIT_DIR`/`GIT_WORK_TREE` set by another test), or a short `--batch-check` stream
+  · **why it is P2 and not P1:** it fails CLOSED in the direction that matters — the check never *invents* a
+  dead citation; it goes quiet. But a quiet verification check is the exact thing `#471` and `#380` exist to
+  stop, so it does not get to stay quiet
+  · blocked on nothing · related: **#380, #471, #476**
 - **#477** — the 2s tick TELEPORTS a section it catches mid-open · P1 · bug/motion · origin: **loop**
   · **found 2026-07-29 08:53 by the `motion` lane while clearing `#475`, and it is the one genuine PAGE defect
   in the whole ten-guard batch** · `qsec` fails in the recipe and passes on an isolated fresh server, and the

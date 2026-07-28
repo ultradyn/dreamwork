@@ -2675,7 +2675,14 @@ Next id: **9**
         t, live = self.build(tmp_path, self.LEDGER.replace(
             "landed `LIVE`", "landed `LIVE` and also merged `beefca7`"))
         warns = self.rows(t, lint.WARN)
-        assert len(warns) == 1, warns
+        # #478: report EVERY cite row on failure, not just the WARN ones. This
+        # test has now failed twice in a full suite and passed in isolation both
+        # times, and both times the failure printed a bare `[]` — because a
+        # check that DECLINED to run emits its skip row at OK, which this
+        # filtered view drops. #380 added those rows so the next occurrence
+        # would say which exit it took; the assertion has to show them or that
+        # work is invisible exactly when it is needed.
+        assert len(warns) == 1, (warns, "all cite rows: %r" % (self.rows(t),))
         assert "beefca7" in warns[0]
         # Precondition: the LIVE sha in the same entry must NOT be flagged, or
         # the check is flagging everything rather than discriminating.
