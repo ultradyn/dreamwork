@@ -60,6 +60,11 @@ Next id: **431**
   · so: one `dev/capture/above_fold.mjs` (or similar) that takes ids + viewports, asserts
   `innerWidth`/`innerHeight` match the request before measuring anything, and is the only thing briefs
   cite. Kills the per-lane ad-hoc copy that produced this
+  · **narrowed after measuring, 17:58 — the live bug is mine alone and the repo is clean of it.**
+  `dev/capture/` holds 65 scripts, 60 of which set a viewport, and **none** uses the wrong
+  `viewportSize` key. So this is not a defect in the tree; it is a missing precondition — **2 of 65
+  assert `innerWidth` matches what they asked for.** The repo is one typo away from the failure, not
+  living in it, which lowers the urgency and does not change the fix
   · related: **#429**
 - **#427** — the hand-off grammar is widened in `lint` but not in the parser, so the dashboard still
   cannot read a two-sha line · P3 · loop-tooling/format · origin: **loop** · **named by the `#415`
@@ -3533,6 +3538,18 @@ Next id: **431**
   · the hard part is that commits-per-period is a **second quantity in a different unit** on a chart
   whose whole legibility comes from one line meaning one thing. Density beside a trend is the
   classic way a good chart becomes a busy one
+  · **proposal artifact landed `5fe331a` (glm52, `wt/417`), 2026-07-28 18:09 — four treatments priced,
+  none picked, which is what the brief demanded.** `.dreamwork/review/417-burndown-commits.html`:
+  `C1` faint histogram behind the flow, `C2` sparkline rail beneath the axis, `C3` commit count in the
+  level line's weight, `C4` copy only. One table, every candidate carrying **buys / costs / makes
+  harder to read** plus **guard** and **motion** columns. Ten real renders of the real panel against
+  the live ledger, verified by me as **10 distinct sha256s** at both viewports
+  · **the guard answer is quantified, which is the part a proposal usually leaves vague**: `C1` and
+  `C3` hold the constant-height premise at 177px, `C2` grows the panel to 202px and so **breaks the
+  `burndown` guard**, `C4` costs 19px and inherits `#218`'s treatment with **no new motion idiom**.
+  The other three each need one
+  · **visual verdict still owed** — glm52 cannot see, and pixels in front of him is the whole point
+  · blocked-on: **human** — asked 2026-07-28 18:11
   · candidate treatments to price, not a decision: a faint baseline histogram behind the burndown;
   a thin sparkline rail beneath the axis; encoding it into the existing line (dot size or segment
   weight per period) so no second scale is introduced at all; or on-demand only, in the hover

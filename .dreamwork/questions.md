@@ -1,6 +1,32 @@
 # Questions for the human
 
 ## Open
+- **P2 · 2026-07-28 — #417: four ways to put commits-per-period on the burndown, priced. Which, if any?**
+  **Ask: `C1`, `C2`, `C3`, `C4`, or `none` — and `rec` takes C4.**
+  Artifact: [`417-burndown-commits.html`](../review/417-burndown-commits.html) (`5fe331a`) — ten real
+  renders of the real panel against the live ledger, at desktop and mobile.
+
+  Your words were *"design needs to be considered since we have a pretty good design now and it would
+  be easy to make it worse"*, so this is a proposal and **nothing has been built into the chart.**
+
+  | | what it is | what it costs |
+  |---|---|---|
+  | **C1** | faint commit histogram behind the flow | height holds; the bars share a colour family with arrived/landed, so the chart gains a second thing to disambiguate. New motion idiom |
+  | **C2** | thin sparkline rail beneath the axis | **+25px, which breaks the `burndown` guard's constant-height premise.** New motion idiom |
+  | **C3** | commit count encoded in the level line's weight | no second scale at all, but the level line then means two things at once. New motion idiom |
+  | **C4** | copy only — one figure line in the panel's voice | **+19px, no new motion idiom** — inherits `#218`'s median treatment |
+
+  **`rec: C4`,** and the reasoning is that it is the only option that spends nothing on the chart's
+  legibility, which is the thing you said not to trade. The other three each introduce a new motion
+  gesture, and `transitions.md` has no size floor — so each is a bigger job than it looks. If you want
+  the *shape* of commit activity and not just its size, that is `C1`, and `rec` is wrong for you.
+
+  **One thing you should know before trusting the pixels: nobody has looked at them.** They were
+  rendered by `@glm52`, which cannot see, because grok has been 401 since ~16:50 (the ask above).
+  The geometry is verified — I confirmed the ten renders are ten distinct images at both viewports,
+  and that the panel really is 553px wide at 1280 and 358px at 390 — but *how they look* is unjudged.
+  **`defer` is a reasonable answer** if you would rather a seeing lane review them first.
+
 - **P1 · 2026-07-28 — `ccc @grok` is 401 again, and it is your credential.**
   **Ask: refresh grok's auth when convenient, then say so here (a bare "ok" is enough).** Nothing
   else needed from you.
