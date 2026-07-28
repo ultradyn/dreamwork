@@ -24,9 +24,36 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **413**
+Next id: **414**
 
 ## Open
+
+- **#413** — a guard can encode a SUPERSEDED contract, and nothing measures that · P2 ·
+  verification/meta · origin: **loop** · found by fixing `qacard`, which had been red since
+  `#392a` landed at 09:43 and was being reported as "pre-existing, not our fault" by every lane
+  since
+  · **the case.** `#385` required every question age to match `^\d{2}[a-z] \d{2}[a-z] ago$`.
+  `#392a` then made the figure COUNT the precision signal — two figures means we know the time,
+  one means we know only the day — and every questions entry is date-only, so the guard could
+  only pass by rendering a precision the data does not have
+  · **it was inverted, not merely stale, and only the red-proof showed that.** Injecting `#392`'s
+  exact bug (`if (el.dataset.day === '1')` → `if (false)`) bypasses `paintDayAge` and produces
+  the two-figure form, which is precisely what the old assertion demanded. **Green with the bug
+  present, red with the code correct.** A stale check is noise; an inverted one actively defends
+  the defect, and nothing in the output distinguishes the two — both just say FAIL
+  · **the structural gap.** `just audit-styleguide` measures code-against-doc and is clean.
+  `watch-design.md` had been correct since `#392a` — it documents both rules in adjacent
+  paragraphs. The doc and the code agreed; **only the check disagreed with both**, and no tool
+  looks at that edge. Fixed in `7007d5b`
+  · **what makes it stick, not just noticing harder**: a red guard that a lane is TOLD is
+  pre-existing becomes invisible — three lanes have now been briefed with `qacard docktarget
+  noteprop` as known-failing, which converts a real signal into paperwork. **A failure excused
+  in a brief must carry a reason and an owner, or the excusing is the bug**
+  · **next, and cheap**: `docktarget` and `noteprop` are the other two, both dock-motion, both
+  excused the same way. Check whether either is the same class before assuming load flake — they
+  have been called flaky without anyone injecting anything. Do it at **low load**; the last
+  reading was at load 21-29, where a motion guard proves nothing
+  · related: **#392**
 
 - **#411** — two answered entries carry a perfectly good date and the page throws it away, because
   `answered_at` anchors at position 0 · **P2** · UI correctness / parser · origin: **loop** · found
@@ -434,7 +461,7 @@ Next id: **413**
   (07-26 20:23 → 07-27 12:23) — 111 ids, 110 unique. `lint.check_tasks` has ERRORed on exactly
   that since `b7151ec`, so the check was never the problem; it was not run or not read. **No new
   task filed** — nothing to build
-  · related: **#385, #399, #407**
+  · related: **#385, #399, #407, #413**
 
 
   · **SPLIT 2026-07-28 09:14, because the half that stops the wrongness needs none of the held
