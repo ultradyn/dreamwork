@@ -28,8 +28,20 @@ HOW IT IS FILLED — review_artifact.py, from a source under .dreamwork/review/s
                       edit here makes every older artifact detectably stale
 
 Slots: title identity headline lead body footer are required; context status
-tag sub call aside nav skip skip_href aside_label are optional. The format,
+tag sub call aside nav skip skip_href aside_label no_ask are optional. The format,
 in full, is a parsed contract — see file-formats.md.
+
+THE #ask CONTRACT — every review artifact either asks or is exempt (#436):
+  * A page that asks him to rule wraps the decision in `<... id="ask">` (usually
+    in the lead). The element must carry a real decision — a label and at least
+    one option or question — not be empty. `above_fold.mjs` checks that this
+    block starts above the fold and its first decision is readable.
+  * A page with no decision to make (a design note, a schema with no ruling
+    requested) sets `no_ask: <one-line reason>` in the header scalar instead.
+    The exemption is declared, not carried as a decoy element.
+  * Both, neither, and a decoy (present but empty) are refused at build time.
+    The built artifact records the choice as
+    `<meta name="dreamwork-review-ask" content="ask|exempt: <reason>">`.
 
 THE COMPONENT VOCABULARY the body may use, all styled below, so no artifact
 needs to invent a second one:
