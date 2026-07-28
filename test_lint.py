@@ -2490,6 +2490,68 @@ class TestHandoffs:
         import inspect
         assert "check_handoffs(dw, watch, rep)" in inspect.getsource(lint.run_checks)
 
+    def test_a_two_sha_handoff_is_recognised_not_malformed(self, tmp_path):
+        """#415 — a task landing in two commits is the ordinary case.
+
+        #411 landed as two commits (the fix `54c68e8` plus the lint count
+        `25a3fe4`); the lane honestly wrote both as ``landed `54c68e8`
+        `25a3fe4``` and lint reported *a hand-off entry the grammar does not
+        recognise*. The lane was right and the format was wrong. This test
+        uses the REAL two-sha line recovered from git history (`f7d5bea`),
+        not a fixture invented to fail — a red from a defect that really
+        existed is worth more than a synthetic one.
+
+        The task is already landed in the ledger here, so the delivery WARN
+        does not fire; the assertion is that the line is NOT malformed.
+        """
+        import subprocess
+        got = subprocess.run(
+            ["git", "-C", str(Path(lint.__file__).parent),
+             "show", "f7d5bea:.dreamwork/handoffs.md"],
+            capture_output=True, text=True)
+        if got.returncode != 0:
+            pytest.skip("history not present (zip install); the fixture "
+                        "test below still covers it")
+        # Recover the REAL #411 two-sha line from history, matching by its
+        # stable two-sha prefix rather than copying the whole long line.
+        two_sha_line = None
+        for ln in got.stdout.splitlines():
+            if "landed `54c68e8` `25a3fe4`" in ln and ln.lstrip().startswith("- **#411**"):
+                two_sha_line = ln
+                break
+        assert two_sha_line is not None, \
+            "the real #411 two-sha line is no longer at f7d5bea — recover it"
+        # Precondition (derived at runtime): the line carries TWO backticked
+        # shas after `landed`, which is the shape the single-sha grammar
+        # rejects. Counting, not a literal, so the test's meaning survives.
+        after_landed = two_sha_line.split("landed", 1)[1].split("·", 1)[0]
+        sha_count = after_landed.count("`") // 2
+        assert sha_count >= 2, "precondition: two shas present, not one"
+        # #411 is landed in the live ledger, so the delivery WARN is silent;
+        # only the malformed WARN would fire today.
+        handoffs = ("# Hand-offs\n\n## Pending\n\n" + two_sha_line +
+                    "\n\n## Folded\n")
+        warns = self._warns(tmp_path, self.LEDGER, handoffs)
+        malformed = [w for w in warns if "grammar" in w]
+        assert malformed == [], \
+            "a two-sha hand-off must not be malformed (#415): %s" % malformed
+
+    def test_a_zero_sha_pending_handoff_is_still_malformed(self, tmp_path):
+        """#415 NEGATIVE — widening the sha count must not swallow zero.
+
+        The grammar widens from one sha to one-or-more. A Pending line with
+        NO sha at all — `· landed · ...` — is still malformed: it states no
+        commit, so the delivery signal (which commit landed) is empty. A
+        widening with no negative test has removed a check rather than
+        improved it, and the easy failure of a sha-count widening is
+        accepting the empty case.
+        """
+        handoffs = ("# Hand-offs\n\n## Pending\n\n"
+                    "- **#5** · landed · 2026-07-28 14:30 · by "
+                    "dreamer-5 — the fix\n\n## Folded\n")
+        warns = self._warns(tmp_path, self.LEDGER, handoffs)
+        assert any("#5" in w and "grammar" in w for w in warns), warns
+
 
 class TestCitedShas:
     """#350: a ledger entry that cites a commit which does not exist.
