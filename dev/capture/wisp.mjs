@@ -37,14 +37,23 @@ declare({
 
 // sample the wisp's two channels every frame for a full cycle and a bit
 const SAMPLE = `(ms => new Promise(res => {
-  const card = document.querySelector('.qa.awaiting');
-  if (!card) { res(null); return; }
-  const tag = card.querySelector('.anstag');
+  if (!document.querySelector('.qa.awaiting')) { res(null); return; }
   const rail = [], drift = [];
   const t0 = performance.now();
   (function step() {
-    rail.push(+getComputedStyle(card, '::before').opacity);
-    drift.push(parseFloat(getComputedStyle(tag).backgroundPosition) || 0);
+    // Re-acquire the awaiting card and its tag EVERY frame. The live tick
+    // re-renders /questions and REPLACES the .qa.awaiting node mid-sample; a
+    // reference cached once detaches, and getComputedStyle on the detached
+    // card's ::before returns a one-directional transient (rail down~0.05,
+    // drift down~1.0) that reads as a sweep on a page that breathes correctly.
+    // Re-querying tracks the live node through the re-render — the same
+    // do-not-cache-across-a-re-render lesson as qsec and oneinput. (#475.)
+    const card = document.querySelector('.qa.awaiting');
+    const tag = card && card.querySelector('.anstag');
+    if (card) rail.push(+getComputedStyle(card, '::before').opacity);
+    else if (rail.length) rail.push(rail.at(-1));
+    if (tag) drift.push(parseFloat(getComputedStyle(tag).backgroundPosition) || 0);
+    else if (drift.length) drift.push(drift.at(-1));
     if (performance.now() - t0 < ms) requestAnimationFrame(step); else res({ rail, drift });
   })();
 }))(6400)`;
