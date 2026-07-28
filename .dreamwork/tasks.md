@@ -24,9 +24,25 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **447**
+Next id: **448**
 
 ## Open
+- **#447** — bundle the `use-igcs` skill with dreamwork, and make the loop reach for it before any design
+  judgement · **P1** · loop-machinery/decision-method · origin: **human** ·
+  **human via chat 2026-07-29 00:33:** *"re blocking #445: see /use-igcs the skill. we should bundle that skill
+  in with dreamwork and the ud-dreamwork skill should instruct the agent to use it before and decision making /
+  design judgement is required."*
+  · **this unblocks `#445`**, whose four levels all name an "evaluation table" and an **IGC** the repo could not
+  define. It is defined: **IGC = (Idea, Goal, Context)**, the Critical Fallibilism method — binary
+  non-refuted/refuted cells rather than scoring, an `All` rollup, breakpoints instead of maximisation, and the
+  decisive error written under each ✘. Source of truth: `/home/xertrov/.llm-general/skills/use-igcs/SKILL.md`
+  plus `references/cf-concepts.md`.
+  · **scope:** bundle (so a dreamwork install carries it, rather than depending on this host's skill set) and a
+  `SKILL.md` instruction at the point where judgement happens — selection, design, and any lane brief that asks
+  a subagent to choose. The obvious sibling is that a **review artifact's option table becomes an IGC matrix**,
+  which is `#445`'s and `#421`'s currency.
+  · **open:** vendor-copy vs declared dependency is a real fork with a staleness cost either way — decide it
+  with an IGC, and note the answer is itself the first dogfood of the method.
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
