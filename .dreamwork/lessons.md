@@ -2732,3 +2732,24 @@ this shape and convert opportunistically.)
   checking. A gate whose condition is satisfiable by our own work needs the ask filed **when the
   condition is met**, which means recording the thing that met it. This is `#419`'s invariant
   arriving from the direction nobody wrote it for.
+
+- **A lane's self-reported `n/n` is a claim about its own brief, never about the plan's lane.**
+  2026-07-28: lane C reported *"DONE, 3/3 green"* and it was true — it built three increments and
+  all three passed. Lane C in the plan is increments **11–15**. So `3/3` was silent about `C4` and
+  `C5`, the ledger recorded *DONE*, and nine hours later I quoted it to the human as *"A–D are all
+  landed, the second gate's condition is met"* — inviting him to open a gate over unproved
+  prerequisites. **Evidence:** `user_events/domain_files.py` has no marker search and no
+  `rebaseline`; `test_user_events_domain_files.py` holds three tests; the plan's lane table was one
+  file away and I did not open it. Caught by a subagent reading the tree, the **fifth** lane that day
+  to refute a figure I derived rather than observed — and every one of the five was a figure I had
+  reasoned to from a document, not measured. **So: reconcile a lane's count against the plan's lane
+  definition before either number is quoted, and treat "DONE" in our own ledger as a lane's word for
+  itself.** A denominator that comes from the same source as the numerator measures nothing.
+- **Read the clock before writing a timestamp, every time, including in prose.** Same day, twice
+  inside twenty minutes and the second time was ten minutes after committing the fix for the first:
+  five timestamps written by counting forward from the heartbeat interval, all in the future by three
+  to twelve minutes. `relay.py` stamps from the clock precisely because this happened four times in
+  one day in July — but it only protects relays, and these were sentences in `questions.md`, a plan
+  and three briefs, where nothing stamps for me. **Evidence it is not cosmetic:** a lane has to decide
+  whether a mid-flight brief amendment predates its own commits, which is exactly the question the
+  `#419` lane was handed. `date '+%H:%M'` costs one line and the habit is the only available fix.
