@@ -2,7 +2,45 @@
 
 ## Open
 
+- **2026-07-28 — Also, can you give be a bit of a rundown on how many subagents you launched v…**
+  Also, can you give be a bit of a rundown on how many subagents you launched via ccc in the last 12 hours or so and what they did, please?
+
 ## Answered
+
+- **2026-07-28 — Did we do the migration to sqlite yet?** → answered
+  (2026-07-28 15:02): **No — nothing is in a database.** `tasks.md` is still the ledger and
+  every tool still parses it. No schema exists, no migration script has been written.
+
+  **What IS built, so the gap is not what it looks like.** `#263`'s journal is largely
+  implemented — lanes **A** (digest), **B** (journal, both batches), **C** (domain files) and
+  **F** (CLI) all landed. `#264`'s transition-boundary **design** landed at `914648c` with its
+  review artifact. `#346`'s design — the entity schema and read-only CLI, the half of `#294`
+  that is *not* gated on `#263` — landed too and narrowed its open questions to four.
+
+  **One thing is on your desk, and it is the only thing of this chain that is.** Ratify
+  `#264`'s design: `.dreamwork/review/task-transition-boundary.html`. It decides where a task
+  transition durably lives, and its answer is **neither of the two options you named** — *"never
+  dual-write two fallible truths"* forbids storing one fact twice, not storing two facts, and
+  *"he asked for this at 14:11"* and *"the loop started #264 at 01:47"* are two facts whose whole
+  relationship is a foreign key. The shape: one row appended to an append-only `task_event` log,
+  in the **same SQLite file** as `#263`'s journal, in the **same transaction** as the CAS that
+  moves `task_state`. Until you rule, building the transition half means designing against an
+  unsettled model — the double migration you have warned about twice.
+
+  **One thing is on ours, and it is NOT blocked, and it has not started.** `#346`'s next
+  increment is eight red-first fixtures, and they can be written before any ruling because each
+  names the production line that must change for it to fail. That is the honest answer to *"what
+  else is required first"*: for the schema half, **nothing** — we simply have not started it.
+  Today went to verification debt (three guards red since 07:00 that turned out to be encoding a
+  superseded contract rather than flaking) and to `#331`/`#411`/`#414`. Worth saying plainly
+  since you marked `#294` next-up at 23:33 yesterday.
+
+  **The order from here:** the eight fixtures now → your `#264` ruling → create the schema →
+  the migration script's parse-and-report half (dry-run, exact counts, digests, conflicts) →
+  verified cutover with rollback, keeping `tasks.md.deprecated`. `#263`'s lanes **E** and **H**
+  stay withheld behind your second gate and the migration does not depend on them.
+
+  **Human:** Did we do the migration to sqlite yet? What else is required first?
 
 - **2026-07-27 — Test question, how you doing?** → answered
   (2026-07-27 11:32): Doing well — hot mode is active. #138/#156 just landed;
