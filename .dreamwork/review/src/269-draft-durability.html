@@ -1,0 +1,156 @@
+<!--dreamwork-review-source
+title: #269 · Durable drafts across reloads and tabs · design
+identity: #269 · draft durability
+context: task #269 · design only · acute fix already landed · no watch.py
+status: awaiting two calls
+headline: The reported loss is fixed. Two calls finish the design.
+tag: design only — no code
+sub: task #269 · 28 July 2026 · IndexedDB later, not first · #263 gate untouched
+skip: Skip to the decisions
+skip_href: #ask
+-->
+<!--#nav-->
+<a href="#ask">your calls</a><a href="#done">already fixed</a><a href="#id">logical id</a><a href="#order">order</a><a class="full" href="#not">not worth it</a>
+<!--#lead-->
+<div id="ask" class="ask-block">
+  <div class="label">Two calls — cross-tab conflict, and how long to keep orphans</div>
+  <p class="ask-q">The rest of the design is settled without you (logical id, clear-on-receipt
+  seam, localStorage-first, no <code>#263</code> lanes). Two policies touch <em>your words</em>
+  and your multi-window habits, so they are yours:</p>
+  <ol class="ask-list">
+    <li><strong>C1 — cross-tab when two unfocused boxes disagree.</strong>
+      <strong>Rec: R1</strong> — never overwrite a focused field; when unfocused texts diverge,
+      offer <em>"updated in another tab — load that version?"</em> rather than silent
+      last-write-wins. <strong>R2</strong> = take the newer store when unfocused (simpler, can
+      drop a blurred half-thought). Focused text is never clobbered either way.</li>
+    <li><strong>C2 — retention for orphan drafts</strong> (question folded/renamed; nothing mounts).
+      <strong>Rec: 30 days</strong> idle GC by <code>updatedAt</code>, plus an explicit
+      forget-this / forget-all-for-project control. Alternatives: 7 days · 90 days · never GC
+      (only explicit forget).</li>
+  </ol>
+  <p class="ask-answers"><span class="key">accepted answers</span>
+  <code>rec</code> &nbsp;&middot;&nbsp; <code>R1</code>/<code>R2</code> + days &nbsp;&middot;&nbsp;
+  free text &nbsp;&middot;&nbsp; <em>"defer, implement the rest"</em> is fine</p>
+</div>
+<!--#call-->
+<div class="call"><strong>Recommendation.</strong> Approve the module contract
+(<code>DraftStore</code>), localStorage-first order, and the <code>#263</code> receipt seam
+<em>as pluggable only</em>. Take <strong>R1 + 30 days</strong>. Do <strong>not</strong> open
+work on IndexedDB or on <code>#263</code> lanes E/G/H from this page — those are later, gated,
+or both. Spec:
+<code>.dreamwork/docs/plans/draft-durability-design.md</code>.</div>
+<!--#aside-->
+<span class="big"><span class="pass">0</span></span>
+<small>lines of <code>watch.py</code> in this lane<br>
+acute half already <code>e383492</code><br>
+first remaining cut = API + two boxes</small>
+<!--#body-->
+<style>
+/* Page-local. Tokens only. Table trap fix (c19107a): template min-width:max-content
+   made tables unreadable at 390px — force wrap-friendly layout. */
+.ask-block{
+  border-left:2px solid var(--accent);
+  padding:.35rem 0 .35rem 1.3ch;
+  margin:.4rem 0 .2rem;
+}
+.ask-block .label{margin:0 0 .4rem;color:var(--accent)}
+.ask-block .ask-q{font-size:.92rem;line-height:1.55;color:var(--lit);margin:.15rem 0 .45rem}
+.ask-block .ask-list{margin:.2rem 0 .5rem;padding-left:1.4rem;color:var(--lit);font-size:.88rem;line-height:1.55}
+.ask-block .ask-list li{margin:.35rem 0}
+.ask-block .ask-answers{margin:.3rem 0;font-size:.78rem;color:var(--muted)}
+.ask-block .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.ask-block code{color:var(--lit)}
+#body table{min-width:0;width:100%;table-layout:fixed}
+#body table th,#body table td{word-wrap:break-word;overflow-wrap:anywhere;hyphens:auto}
+#body table col.c1{width:28%}
+#body table col.c2{width:42%}
+#body table col.c3{width:30%}
+</style>
+
+<section id="done" aria-labelledby="done-t">
+  <div class="label" id="done-t">What already stopped the loss you reported</div>
+  <p class="read">The acute fix (<code>0366706</code>, merged <code>e383492</code>) gave the
+  review-dock answer box the composer's rules: save on every <code>input</code>, restore after
+  every mount (not only load), clear only on successful send, live box outranks storage,
+  storage failures never break the box. Guard <code>reviewdraft.mjs</code> is gating. The
+  remaining work is the <strong>deep module</strong> every later input consumes — not a second
+  fix for the same hole.</p>
+  <div class="notice"><b>IndexedDB is not the first remaining increment.</b> It does not stop
+  a loss that is already stopped. The next useful cut is one API surface plus binding
+  <code>#askbox</code> and <code>#ptext</code>, still on <code>localStorage</code>.</div>
+</section>
+
+<section id="id" aria-labelledby="id-t">
+  <div class="label" id="id-t">Logical id — same box across reload, route, and tab</div>
+  <p class="read"><code>storageKey = dw:draft:v1:&lt;absolute project path&gt;:&lt;kind:scopeKey&gt;</code>.
+  Cards key by <strong>question title</strong> (<code>data-qid</code>), never by positional
+  <code>o0</code>/<code>a0</code>. Restore only into a mounted element that declares that id —
+  orphans sit until GC or forget; <strong>no fuzzy title match</strong> (wrong-box restore is
+  worse than loss).</p>
+  <div class="scroller"><table>
+    <colgroup><col class="c1"><col class="c2"><col class="c3"></colgroup>
+    <thead><tr><th>kind</th><th>scope</th><th>consumer</th></tr></thead>
+    <tbody>
+      <tr><td><code>composer</code></td><td><code>main</code></td><td><code>#cmdtext</code> + every <code>#241</code> mount</td></tr>
+      <tr class="row-accent"><td><code>card</code></td><td>question title</td><td>answer/note box (one draft; mode is routing)</td></tr>
+      <tr><td><code>ask</code> / <code>popout</code></td><td><code>main</code></td><td><code>#askbox</code>, <code>#ptext</code></td></tr>
+      <tr><td><code>chat</code></td><td>conversation id</td><td>future <code>#229</code>/<code>#253</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="cross" aria-labelledby="cross-t">
+  <div class="label" id="cross-t">Cross-tab — focus-wins, not last-write-wins on your caret</div>
+  <p class="read">A focused (or dirty-since-focus) field is never overwritten by another tab's
+  autosave. The store still updates so reload is safe. Peers learn via
+  <code>storage</code> events (BroadcastChannel only if/when IndexedDB lands). Suspended tabs
+  keep last synced save; offline is irrelevant because drafts never leave the browser.</p>
+</section>
+
+<section id="receipt" aria-labelledby="rec-t">
+  <div class="label" id="rec-t">Clear-on-durable-receipt and the #263 gate</div>
+  <p class="read">Drafts clear only when <code>DraftStore.isDurable(response)</code> is true.
+  <strong>Today:</strong> <code>response.ok</code> (same as composer and acute fix).
+  <strong>Later:</strong> a <code>#263</code> receipt id after the HTTP cutover.
+  <strong>Not built here:</strong> lanes <strong>E, G, H</strong> — behind your
+  <strong>second gate</strong> on <code>#263</code>. This design only names the plug.</p>
+</section>
+
+<section id="order" aria-labelledby="ord-t">
+  <div class="label" id="ord-t">Implementation order</div>
+  <div class="scroller"><table>
+    <colgroup><col class="c1"><col class="c2"><col class="c3"></colgroup>
+    <thead><tr><th>#</th><th>increment</th><th>stops / enables</th></tr></thead>
+    <tbody>
+      <tr class="row-accent"><td><span class="pass">0</span></td><td>acute <code>dwDraft</code></td><td><strong>done</strong> — review reload loss</td></tr>
+      <tr><td>1</td><td>extract <code>DraftStore</code></td><td>one policy; dual-read old keys</td></tr>
+      <tr><td>2</td><td>bind ask + popout</td><td>last first-class boxes without drafts</td></tr>
+      <tr><td>3</td><td>cross-tab R1/R2</td><td>multi-window coherence</td></tr>
+      <tr><td>4</td><td>GC + forget UI</td><td>retention promise is real</td></tr>
+      <tr><td>5</td><td>IndexedDB backend</td><td>quota/indexes — when measured need</td></tr>
+      <tr><td>6</td><td><code>isDurable</code> → receipt</td><td><strong>blocked on #263 second gate</strong></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="not" aria-labelledby="not-t">
+  <div class="label" id="not-t">What is not worth doing</div>
+  <ul class="read">
+    <li><strong>IndexedDB first</strong> — does not stop a new loss; async in the input path.</li>
+    <li><strong>Blur-only / beforeunload flush</strong> — misses autoreload mid-sentence (your report).</li>
+    <li><strong>Server or repo drafts</strong> — unsent thought must not publish; <code>#199</code> covers what you sent.</li>
+    <li><strong>CRDT merge</strong> — cost dwarfs two-tabs-one-answer; focus-wins + offer is enough.</li>
+    <li><strong>Building #263 E/G/H from this task</strong> — your gate; half a journal is worse than today's witness.</li>
+  </ul>
+</section>
+
+<section id="seams" aria-labelledby="seams-t">
+  <div class="label" id="seams-t">Seams for open tasks</div>
+  <p class="read"><code>#241</code> mounts all call <code>bind(composer:main)</code> — no private draft key.
+  <code>#177</code> may store height in <code>meta</code>; text durability is not its job.
+  Answer boxes already clear only after durable send; they become the first
+  <code>DraftStore</code> consumers without behaviour change.</p>
+</section>
+<!--#footer-->
+<p>Design only · no <code>watch.py</code> · no <code>#263</code> lanes · full spec in
+<code>.dreamwork/docs/plans/draft-durability-design.md</code></p>

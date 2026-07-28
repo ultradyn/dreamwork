@@ -1,0 +1,414 @@
+<!doctype html>
+<!--Built from the dreamwork review template v1+8ad39ec6 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
+<meta name="dreamwork-review-template" content="v1+8ad39ec6">
+<title>#269 · Durable drafts across reloads and tabs · design</title>
+<style>
+/* Offline-clean by construction: no fetches, no external fonts, no images.
+   Tokens are watch.py's, value for value, because this is read inside the
+   dashboard's own iframe. */
+:root{
+  color-scheme:dark;
+  --bg:#090d16;--bg2:#0c1220;--panel:#111827;--panel2:#162033;
+  --line:#1f2937;--border:#334155;--text:#cbd5e1;--bright:#f4f7fb;
+  --lit:#e5e7eb;--muted:#98a3b5;--dim:#697589;--dimmer:#4b5568;
+  --accent:#a5b4fc;--accent2:#7dd3fc;--ok:#86efac;--warn:#fcd34d;
+  --bad:#fda4af;--ink:#050810;--radius:5px;
+  --ease:cubic-bezier(.32,.1,.2,1);--measure:78ch
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--dimmer) transparent}
+*::selection{background:rgba(165,180,252,.24);color:var(--bright)}
+::-webkit-scrollbar{width:7px;height:7px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--dimmer);border-radius:4px}
+html{background:var(--bg);scroll-padding-top:5.5rem}
+body{margin:0;background:
+  radial-gradient(ellipse 68rem 34rem at 46% -14rem,rgba(99,102,241,.13),transparent 68%),
+  radial-gradient(ellipse 34rem 24rem at 92% 12%,rgba(14,165,233,.045),transparent 70%),
+  linear-gradient(180deg,var(--bg),#0a0f19 55%,var(--bg));
+  color:var(--text);font-family:ui-monospace,"JetBrains Mono","SFMono-Regular",Consolas,monospace;
+  font-size:.82rem;line-height:1.7;overflow-wrap:anywhere}
+a{color:var(--accent);text-underline-offset:.22em;text-decoration-thickness:1px}
+a:hover{color:var(--bright)}
+code{color:var(--lit);background:rgba(22,32,51,.72);padding:.03rem .32ch;border-radius:3px}
+pre{margin:.75rem 0;padding:.9rem 1ch;border-left:1px solid var(--border);background:rgba(17,24,39,.52);color:var(--muted);white-space:pre-wrap;overflow:auto;tab-size:2}
+/* syntax highlighting tokens (#339) — emitted at build time by
+   review_artifact.py as <span class="tok-…"> inside pre>code. No script in
+   the artifact; if a rule is ever lost the token takes the block's own
+   colour, so highlighting never breaks the code itself. Scoped to pre code
+   so an inline <code> snippet is never coloured by accident. */
+pre code .tok-kw{color:var(--accent)}
+pre code .tok-str{color:var(--ok)}
+pre code .tok-num{color:var(--warn)}
+pre code .tok-com{color:var(--dimmer);font-style:italic}
+pre code .tok-fn{color:var(--accent2)}
+pre code .tok-typ{color:var(--warn)}
+pre code .tok-dec{color:var(--accent)}
+pre code .tok-op{color:var(--muted)}
+pre code .tok-tag{color:var(--accent)}
+pre code .tok-attr{color:var(--accent2)}
+pre code .tok-var{color:inherit}
+strong{font-weight:inherit;color:var(--bright)}em{color:var(--lit)}
+p{margin:.62rem 0}ul,ol{margin:.55rem 0;padding-left:2.4ch}li{margin:.34rem 0}
+h1,h2,h3,h4{margin:0;font:inherit;font-weight:normal;color:var(--bright)}
+h1{font-size:1.02rem}h2{font-size:.94rem}h3{color:var(--lit);margin-top:1.4rem}
+.wrap{width:min(calc(100% - 2rem),1120px);margin:0 auto}.read{max-width:var(--measure)}
+.skip{position:fixed;z-index:99;top:.6rem;left:.6rem;transform:translateY(-180%);display:inline-flex;align-items:center;min-height:44px;padding:.6rem 1ch;background:var(--bright);color:var(--ink);border-radius:var(--radius);text-decoration:none}
+.skip:focus{transform:none;transition:transform .35s var(--ease)}
+.toprail{position:sticky;top:0;z-index:20;background:rgba(9,13,22,.91);border-bottom:1px solid var(--line);backdrop-filter:blur(14px)}
+.toprail-in{width:min(calc(100% - 2rem),1120px);min-height:58px;margin:auto;display:flex;align-items:center;gap:1rem;justify-content:space-between}
+.identity{display:flex;align-items:baseline;gap:1ch;min-width:0}.identity b{font-weight:normal;color:var(--bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.identity span{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topactions{display:flex;gap:.35rem;align-items:center}.topactions a{display:inline-flex;align-items:center;min-height:44px;padding:0 .75rem;border:1px solid var(--border);text-decoration:none;border-radius:var(--radius);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.status{color:var(--warn);white-space:nowrap}.status::before{content:"";display:inline-block;width:5px;height:5px;margin-right:.7ch;border-radius:50%;background:var(--warn);box-shadow:0 0 12px rgba(252,211,77,.55)}
+main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
+.label{color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-size:.69rem;margin:0 0 .65rem}
+.quiet{color:var(--muted)}.dim{color:var(--dim)}.dimmer{color:var(--dimmer)}
+.kicker{display:flex;gap:1ch;align-items:baseline;flex-wrap:wrap}.proposal{color:var(--warn)}
+.sub{color:var(--dim);margin:.25rem 0 1.7rem}
+.lead{font-size:.9rem;line-height:1.78;color:var(--lit);max-width:76ch}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(240px,.45fr);gap:2.5rem;align-items:end}
+/* The one rule this template adds to the artifact it was cut from, and the
+   only entry in test_review_artifact.py's TEMPLATE_ONLY: tasks-page.html
+   always carries an aside, a template has to render without one. */
+.hero-grid.solo{grid-template-columns:minmax(0,1fr)}
+.version-mark{border-left:1px solid var(--accent);padding:.2rem 0 .2rem 1.25rem}
+.version-mark .big{display:block;color:var(--bright);font-size:2.4rem;line-height:1;letter-spacing:-.07em}
+.version-mark small{color:var(--dim)}
+.call{margin:1.2rem 0;padding:1rem 1.2ch;background:linear-gradient(90deg,rgba(165,180,252,.09),transparent);border-left:2px solid var(--accent);max-width:84ch}
+.notice{margin:1rem 0;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--warn);color:var(--muted);max-width:84ch}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:1.1rem 0}
+.fact{background:var(--bg2);padding:.95rem}.fact .number{display:block;color:var(--bright);font-size:1.3rem;line-height:1.1}.fact .caption{display:block;color:var(--dim);margin-top:.3rem;font-size:.72rem}
+table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem;min-width:max-content}
+th,td{text-align:left;vertical-align:top;padding:.62rem .72ch;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-size:.66rem;text-transform:uppercase;letter-spacing:.065em;font-weight:normal}
+td:first-child{color:var(--lit)}.pass{color:var(--ok)}.unknown{color:var(--warn)}.fail{color:var(--bad)}
+.row-accent td{background:rgba(165,180,252,.045)}
+.scroller{overflow-x:auto}
+.summary-line{display:grid;grid-template-columns:17ch minmax(0,1fr);gap:1.5ch;padding:.5rem 0;border-top:1px solid var(--line)}
+.summary-line:last-child{border-bottom:1px solid var(--line)}
+.key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.68rem}
+.deltas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line)}
+.delta{display:grid;grid-template-columns:3.2ch minmax(0,1fr);gap:1ch;padding:.8rem 1rem .8rem 0;border-bottom:1px solid var(--line)}
+.delta b{color:var(--accent);font-weight:normal}.delta span{color:var(--muted)}
+figure{margin:1rem 0 1.7rem}.figscroll{overflow-x:auto}
+svg{display:block;height:auto}svg text{font-family:ui-monospace,"JetBrains Mono",monospace}
+figcaption{color:var(--dim);font-size:.72rem;margin-top:.4rem}
+
+/* ── the drawn page ───────────────────────────────────────────────────── */
+.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2rem;align-items:start}
+.frame{border:1px solid var(--border);background:rgba(9,13,22,.8);min-width:0;box-shadow:0 22px 60px rgba(0,0,0,.19)}
+.framebar{display:flex;align-items:center;flex-wrap:wrap;gap:0 1ch;min-height:42px;padding:.35rem 1ch;border-bottom:1px solid var(--line);color:var(--dim);font-size:.72rem}
+.framebar b{font-weight:normal;color:var(--lit);white-space:nowrap}
+.framebody{padding:.9rem 1.1ch}
+.mockhead{display:flex;align-items:center;gap:1ch;margin-bottom:.2rem}
+.opener{color:var(--accent)}
+.mocktitle{color:var(--bright)}
+.crumbs{color:var(--dim);font-size:.72rem;margin-bottom:1rem}
+.ctl{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:.2rem 0 .7rem}
+.searchbox{flex:1;min-width:15ch;display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.searchbox span{padding:.3rem .8ch;color:var(--lit)}
+.searchbox i{font-style:normal;color:var(--dimmer);padding:.3rem .8ch;margin-left:auto}
+.sgroup{display:inline-flex;border:1px solid transparent;gap:.15rem}
+.sgbtn{padding:.22rem .7ch;color:var(--dim);border:1px solid transparent;border-radius:var(--radius);white-space:nowrap}
+.sgbtn.on{color:var(--lit);border-color:var(--border)}
+.countline{color:var(--dim);font-size:.72rem;border-bottom:1px solid var(--line);padding-bottom:.5rem;margin-bottom:.2rem}
+.countline b{color:var(--lit);font-weight:normal}
+.tk{display:block;padding:.5rem 0 .52rem;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+.tk-1{display:flex;gap:1ch;align-items:baseline}
+.tkid{color:var(--dim);font-weight:normal;flex:none}
+.tkt{color:var(--text);min-width:0;flex:1}
+.tkp{flex:none;color:var(--dim);font-size:.72rem}
+.tkp.p01{color:var(--bright)}.tkp.p2{color:var(--text)}.tkp.p3{color:var(--dim)}
+.tk-2{display:block;color:var(--dim);font-size:.7rem;padding-left:5.5ch}
+.tk.claimed{border-left:2px solid var(--accent);padding-left:.9ch;margin-left:-1.1ch}
+.tk.claimed .tkt{color:var(--bright)}
+.tk.claimed .tk-2 em{color:var(--accent);font-style:normal}
+.tk.blocked .tkt{color:var(--muted)}
+.tk.landed .tkt,.tk.landed .tkid{color:var(--dim)}.tk.landed .tk-2{color:var(--dimmer)}
+.tk.unknownstate .tkt{color:var(--muted)}
+.tk.unknownstate .tk-2 em{color:var(--warn);font-style:normal}
+.tk-2 .stale{color:var(--warn);font-style:normal}
+.hilite{background:rgba(165,180,252,.16);color:var(--bright)}
+.warnline{border-left:2px solid var(--warn);padding:.45rem 0 .45rem 1ch;color:var(--muted);margin:.5rem 0}
+.warnline b{color:var(--warn);font-weight:normal}
+.calmline{color:var(--dim);padding:.45rem 0}
+.detgrid{display:grid;grid-template-columns:13ch minmax(0,1fr);gap:.05rem 1.3ch;font-size:.75rem}
+.detgrid dt{color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-size:.66rem;padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd{margin:0;color:var(--text);padding-top:.34rem;border-top:1px solid var(--line)}
+.detgrid dd em{font-style:normal;color:var(--dim)}
+.mockbody{color:var(--muted);font-size:.75rem;margin-top:1rem;border-top:1px solid var(--line);padding-top:.7rem}
+.peek{color:var(--dim);font-size:.72rem;border-top:1px solid var(--line);margin-top:.8rem;padding-top:.55rem}
+.annot{display:grid;grid-template-columns:3.5ch minmax(0,1fr);gap:.7ch;font-size:.72rem;color:var(--muted);margin:.45rem 0}
+.annot b{color:var(--accent2);font-weight:normal}
+
+/* ── prose furniture ──────────────────────────────────────────────────── */
+.spine{margin:1.4rem 0}
+.spine-row{display:grid;grid-template-columns:15ch 2.4rem minmax(0,1fr);align-items:stretch;min-height:88px}
+.spine-key{padding:.85rem 1rem .85rem 0;color:var(--lit);text-align:right}
+.spine-rail{position:relative}
+.spine-rail::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border)}
+.spine-row:first-child .spine-rail::before{top:50%}
+.spine-row:last-child .spine-rail::before{bottom:50%}
+.spine-dot{position:absolute;z-index:1;left:50%;top:1.15rem;width:9px;height:9px;transform:translateX(-50%);border-radius:50%;background:var(--bg);border:1px solid var(--accent);box-shadow:0 0 0 5px var(--bg)}
+.spine-body{padding:.7rem 0 .85rem 1rem;border-top:1px solid var(--line)}
+.spine-body p{color:var(--muted);margin:.2rem 0;max-width:var(--measure)}
+.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1.6rem}
+.check{padding:.55rem 0;border-top:1px solid var(--line)}
+.check b{font-weight:normal;color:var(--bad)}.check span{color:var(--ok)}
+.stages{counter-reset:stage}
+.stage{counter-increment:stage;display:grid;grid-template-columns:3.4ch minmax(0,1fr);gap:1ch;padding:.68rem 0;border-top:1px solid var(--line)}
+.stage::before{content:counter(stage,decimal-leading-zero);color:var(--accent)}
+.stage b{color:var(--lit);font-weight:normal}.stage span{color:var(--muted)}
+details{border-top:1px solid var(--line);margin:.65rem 0}
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;min-height:44px;padding:.6rem 0;color:var(--muted);outline:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+ ";color:var(--dim);white-space:pre}
+details[open]>summary{color:var(--lit);padding-top:1rem}
+details[open]>summary::before{content:"\2212 "}
+.details-in{padding:0 0 1rem 1.5ch;color:var(--muted)}
+details::details-content{block-size:0;opacity:0;filter:blur(3px);overflow:hidden;transition:block-size .72s var(--ease),opacity .45s ease,filter .45s ease;transition-behavior:allow-discrete}
+details[open]::details-content{block-size:auto;opacity:1;filter:none}
+@starting-style{details[open]::details-content{block-size:0;opacity:0;filter:blur(3px)}}
+#decision{scroll-margin-top:4.75rem}
+.choice{padding:1rem 0;border-top:1px solid var(--line)}
+.choice:last-of-type{border-bottom:1px solid var(--line)}
+.choice-grid{display:grid;grid-template-columns:4.5ch minmax(0,1fr);gap:1ch}
+.choice-grid>div{max-width:var(--measure)}
+.choice-tag{color:var(--accent);font-size:1rem}
+.answer{margin-top:.4rem;color:var(--lit)}
+.approval{padding:1rem;background:linear-gradient(90deg,rgba(165,180,252,.1),transparent);color:var(--lit);margin-top:1.2rem}
+footer{margin-top:3.5rem;padding:1.2rem 0 2rem;border-top:1px solid var(--line);color:var(--dimmer)}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
+
+/* ── essential marks (#367) — the lawyer's flag rail, above the cliff only ──
+   A mark is a flag at a HEIGHT, not a decoration on a box: the tab anchors to
+   the reading column's right edge at the passage's top. The artifact is
+   offline-clean (no script), so this is CSS-only — each tab is a child of its
+   marked element, positioned absolutely against it; the marked element becomes
+   the positioning ancestor (.is-marked). The tab's OUTER box (.marktab)
+   inherits the body font deliberately, so `left:calc(var(--measure) + .4ch)`
+   resolves `--measure:78ch` in BODY ch (the reading column's own unit) rather
+   than the tab's smaller font — a single-element tab would place the flag at
+   the wrong column. The visible postit (.markflag) carries the .66rem size.
+   "Current" is :target (the passage navigated to); next/prev are real fragment
+   links, so the whole thing is keyboard-operable and offline-honest. Below the
+   measured cliff the rail is display:none — absent, not broken (the strip
+   below the cliff is increment 2b and his call, not this one). */
+.is-marked{position:relative;scroll-margin-top:5.5rem}
+.marktab{position:absolute;top:0;left:calc(var(--measure) + .4ch);z-index:15;display:flex;align-items:baseline;gap:.35ch;line-height:1.25;opacity:.6;transition:opacity .45s var(--ease)}
+.is-marked:target .marktab{opacity:1}
+.markflag{font-size:.66rem;line-height:1.25;padding:.28em .55em;max-width:11.5rem;background:var(--accent);color:var(--ink);border-radius:2px 4px 4px 2px;letter-spacing:-.01em;font-weight:normal;white-space:normal;hyphens:none;word-break:normal;overflow-wrap:normal;box-shadow:0 1px 0 rgba(0,0,0,.25);text-decoration:none;color:var(--ink);display:inline-block}
+.markflag:hover{color:var(--ink)}
+.marknav{display:none;align-items:baseline;gap:.15ch;font-size:.66rem}
+.is-marked:target .marknav{display:inline-flex}
+.marknav a{color:var(--ink);text-decoration:none;padding:0 .25ch;opacity:.75;border-radius:2px}
+.marknav a:hover{opacity:1}
+.marknav a:focus-visible{outline:1px solid var(--ink);outline-offset:1px}
+/* two marks closer than a tab height (a section and its first marked child —
+   the measured 29px densest pair against a 32px tab): stagger the nested tab
+   down so the flags read as two, not one chrome mass. The renderer's problem,
+   not the author's (#367). */
+.marktab[data-stagger]{margin-top:1.05rem}
+@media(max-width:859.98px){
+  /* BELOW THE CLIFF: render nothing. The worst-case ~6-word two-line tab
+     (~184px, max-width:11.5rem) fits inside .wrap down to ~830px (measured:
+     dev/capture/marktab-geometry.mjs); 860 is the existing breakpoint and
+     leaves ~26px of margin there. dev/capture/markrail.mjs re-proves the fit
+     in pixels. */
+  .marktab{display:none!important}
+}
+@media(max-width:860px){
+  .hero-grid,.frames,.deltas,.checks{grid-template-columns:1fr}
+  .facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .version-mark{border-left:0;border-top:1px solid var(--line);padding:.7rem 0 0;display:flex;align-items:baseline;gap:1rem}
+  .version-mark .big{flex:none;font-size:1.4rem;letter-spacing:-.04em}
+  .identity span{display:none}.topactions .full{display:none}.topactions{min-width:0}
+  .spine-row{grid-template-columns:9ch 1.8rem minmax(0,1fr)}.spine-key{font-size:.72rem;padding-right:.4rem}
+  .summary-line{grid-template-columns:1fr;gap:.05rem}
+  .detgrid{grid-template-columns:1fr}.detgrid dd{border-top:0;padding-top:0}
+}
+@media(max-width:480px){
+  body{font-size:.79rem}.facts{grid-template-columns:1fr}
+  .tk-2{padding-left:0}.choice-grid{grid-template-columns:3.4ch minmax(0,1fr)}
+  .topactions .status{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;transition-delay:0s!important;filter:none!important}
+  .skip:focus{transition:none}
+}
+@media print{
+  :root{color-scheme:light;--bg:#fff;--bg2:#fff;--panel:#f4f4f5;--panel2:#fff;--line:#bbb;--border:#777;--text:#111;--bright:#000;--lit:#111;--muted:#333;--dim:#444;--dimmer:#555;--accent:#273fa2;--accent2:#075985;--ok:#166534;--warn:#7c4a03;--bad:#991b1b}
+  body{background:#fff}.toprail{position:static;background:#fff;backdrop-filter:none}.topactions{display:none}
+  .frame{box-shadow:none}details::details-content{block-size:auto;opacity:1;filter:none}
+  .frame,.call,.notice,.choice{break-inside:avoid}a{color:#111;text-decoration:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#ask">Skip to the decisions</a>
+<nav class="toprail" aria-label="Artifact navigation">
+  <div class="toprail-in">
+    <div class="identity"><b>#269 · draft durability</b><span>task #269 · design only · acute fix already landed · no watch.py</span></div>
+    <div class="topactions"><span class="status">awaiting two calls</span><a href="#ask">your calls</a><a href="#done">already fixed</a><a href="#id">logical id</a><a href="#order">order</a><a class="full" href="#not">not worth it</a></div>
+  </div>
+</nav>
+
+<main class="wrap" id="top">
+
+<header>
+  <div class="hero-grid">
+    <div>
+      <div class="kicker"><h1>The reported loss is fixed. Two calls finish the design.</h1><span class="proposal">design only — no code</span></div>
+      <div class="sub">task #269 · 28 July 2026 · IndexedDB later, not first · #263 gate untouched</div>
+      <div id="ask" class="ask-block">
+        <div class="label">Two calls — cross-tab conflict, and how long to keep orphans</div>
+        <p class="ask-q">The rest of the design is settled without you (logical id, clear-on-receipt
+        seam, localStorage-first, no <code>#263</code> lanes). Two policies touch <em>your words</em>
+        and your multi-window habits, so they are yours:</p>
+        <ol class="ask-list">
+          <li><strong>C1 — cross-tab when two unfocused boxes disagree.</strong>
+            <strong>Rec: R1</strong> — never overwrite a focused field; when unfocused texts diverge,
+            offer <em>"updated in another tab — load that version?"</em> rather than silent
+            last-write-wins. <strong>R2</strong> = take the newer store when unfocused (simpler, can
+            drop a blurred half-thought). Focused text is never clobbered either way.</li>
+          <li><strong>C2 — retention for orphan drafts</strong> (question folded/renamed; nothing mounts).
+            <strong>Rec: 30 days</strong> idle GC by <code>updatedAt</code>, plus an explicit
+            forget-this / forget-all-for-project control. Alternatives: 7 days · 90 days · never GC
+            (only explicit forget).</li>
+        </ol>
+        <p class="ask-answers"><span class="key">accepted answers</span>
+        <code>rec</code> &nbsp;&middot;&nbsp; <code>R1</code>/<code>R2</code> + days &nbsp;&middot;&nbsp;
+        free text &nbsp;&middot;&nbsp; <em>"defer, implement the rest"</em> is fine</p>
+      </div>
+      <div class="call"><strong>Recommendation.</strong> Approve the module contract
+      (<code>DraftStore</code>), localStorage-first order, and the <code>#263</code> receipt seam
+      <em>as pluggable only</em>. Take <strong>R1 + 30 days</strong>. Do <strong>not</strong> open
+      work on IndexedDB or on <code>#263</code> lanes E/G/H from this page — those are later, gated,
+      or both. Spec:
+      <code>.dreamwork/docs/plans/draft-durability-design.md</code>.</div>
+    </div>
+    <div class="version-mark" aria-label="At a glance">
+      <span class="big"><span class="pass">0</span></span>
+      <small>lines of <code>watch.py</code> in this lane<br>
+      acute half already <code>e383492</code><br>
+      first remaining cut = API + two boxes</small>
+    </div>
+  </div>
+</header>
+
+<style>
+/* Page-local. Tokens only. Table trap fix (c19107a): template min-width:max-content
+   made tables unreadable at 390px — force wrap-friendly layout. */
+.ask-block{
+  border-left:2px solid var(--accent);
+  padding:.35rem 0 .35rem 1.3ch;
+  margin:.4rem 0 .2rem;
+}
+.ask-block .label{margin:0 0 .4rem;color:var(--accent)}
+.ask-block .ask-q{font-size:.92rem;line-height:1.55;color:var(--lit);margin:.15rem 0 .45rem}
+.ask-block .ask-list{margin:.2rem 0 .5rem;padding-left:1.4rem;color:var(--lit);font-size:.88rem;line-height:1.55}
+.ask-block .ask-list li{margin:.35rem 0}
+.ask-block .ask-answers{margin:.3rem 0;font-size:.78rem;color:var(--muted)}
+.ask-block .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.ask-block code{color:var(--lit)}
+#body table{min-width:0;width:100%;table-layout:fixed}
+#body table th,#body table td{word-wrap:break-word;overflow-wrap:anywhere;hyphens:auto}
+#body table col.c1{width:28%}
+#body table col.c2{width:42%}
+#body table col.c3{width:30%}
+</style>
+
+<section id="done" aria-labelledby="done-t">
+  <div class="label" id="done-t">What already stopped the loss you reported</div>
+  <p class="read">The acute fix (<code>0366706</code>, merged <code>e383492</code>) gave the
+  review-dock answer box the composer's rules: save on every <code>input</code>, restore after
+  every mount (not only load), clear only on successful send, live box outranks storage,
+  storage failures never break the box. Guard <code>reviewdraft.mjs</code> is gating. The
+  remaining work is the <strong>deep module</strong> every later input consumes — not a second
+  fix for the same hole.</p>
+  <div class="notice"><b>IndexedDB is not the first remaining increment.</b> It does not stop
+  a loss that is already stopped. The next useful cut is one API surface plus binding
+  <code>#askbox</code> and <code>#ptext</code>, still on <code>localStorage</code>.</div>
+</section>
+
+<section id="id" aria-labelledby="id-t">
+  <div class="label" id="id-t">Logical id — same box across reload, route, and tab</div>
+  <p class="read"><code>storageKey = dw:draft:v1:&lt;absolute project path&gt;:&lt;kind:scopeKey&gt;</code>.
+  Cards key by <strong>question title</strong> (<code>data-qid</code>), never by positional
+  <code>o0</code>/<code>a0</code>. Restore only into a mounted element that declares that id —
+  orphans sit until GC or forget; <strong>no fuzzy title match</strong> (wrong-box restore is
+  worse than loss).</p>
+  <div class="scroller"><table>
+    <colgroup><col class="c1"><col class="c2"><col class="c3"></colgroup>
+    <thead><tr><th>kind</th><th>scope</th><th>consumer</th></tr></thead>
+    <tbody>
+      <tr><td><code>composer</code></td><td><code>main</code></td><td><code>#cmdtext</code> + every <code>#241</code> mount</td></tr>
+      <tr class="row-accent"><td><code>card</code></td><td>question title</td><td>answer/note box (one draft; mode is routing)</td></tr>
+      <tr><td><code>ask</code> / <code>popout</code></td><td><code>main</code></td><td><code>#askbox</code>, <code>#ptext</code></td></tr>
+      <tr><td><code>chat</code></td><td>conversation id</td><td>future <code>#229</code>/<code>#253</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="cross" aria-labelledby="cross-t">
+  <div class="label" id="cross-t">Cross-tab — focus-wins, not last-write-wins on your caret</div>
+  <p class="read">A focused (or dirty-since-focus) field is never overwritten by another tab's
+  autosave. The store still updates so reload is safe. Peers learn via
+  <code>storage</code> events (BroadcastChannel only if/when IndexedDB lands). Suspended tabs
+  keep last synced save; offline is irrelevant because drafts never leave the browser.</p>
+</section>
+
+<section id="receipt" aria-labelledby="rec-t">
+  <div class="label" id="rec-t">Clear-on-durable-receipt and the #263 gate</div>
+  <p class="read">Drafts clear only when <code>DraftStore.isDurable(response)</code> is true.
+  <strong>Today:</strong> <code>response.ok</code> (same as composer and acute fix).
+  <strong>Later:</strong> a <code>#263</code> receipt id after the HTTP cutover.
+  <strong>Not built here:</strong> lanes <strong>E, G, H</strong> — behind your
+  <strong>second gate</strong> on <code>#263</code>. This design only names the plug.</p>
+</section>
+
+<section id="order" aria-labelledby="ord-t">
+  <div class="label" id="ord-t">Implementation order</div>
+  <div class="scroller"><table>
+    <colgroup><col class="c1"><col class="c2"><col class="c3"></colgroup>
+    <thead><tr><th>#</th><th>increment</th><th>stops / enables</th></tr></thead>
+    <tbody>
+      <tr class="row-accent"><td><span class="pass">0</span></td><td>acute <code>dwDraft</code></td><td><strong>done</strong> — review reload loss</td></tr>
+      <tr><td>1</td><td>extract <code>DraftStore</code></td><td>one policy; dual-read old keys</td></tr>
+      <tr><td>2</td><td>bind ask + popout</td><td>last first-class boxes without drafts</td></tr>
+      <tr><td>3</td><td>cross-tab R1/R2</td><td>multi-window coherence</td></tr>
+      <tr><td>4</td><td>GC + forget UI</td><td>retention promise is real</td></tr>
+      <tr><td>5</td><td>IndexedDB backend</td><td>quota/indexes — when measured need</td></tr>
+      <tr><td>6</td><td><code>isDurable</code> → receipt</td><td><strong>blocked on #263 second gate</strong></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="not" aria-labelledby="not-t">
+  <div class="label" id="not-t">What is not worth doing</div>
+  <ul class="read">
+    <li><strong>IndexedDB first</strong> — does not stop a new loss; async in the input path.</li>
+    <li><strong>Blur-only / beforeunload flush</strong> — misses autoreload mid-sentence (your report).</li>
+    <li><strong>Server or repo drafts</strong> — unsent thought must not publish; <code>#199</code> covers what you sent.</li>
+    <li><strong>CRDT merge</strong> — cost dwarfs two-tabs-one-answer; focus-wins + offer is enough.</li>
+    <li><strong>Building #263 E/G/H from this task</strong> — your gate; half a journal is worse than today's witness.</li>
+  </ul>
+</section>
+
+<section id="seams" aria-labelledby="seams-t">
+  <div class="label" id="seams-t">Seams for open tasks</div>
+  <p class="read"><code>#241</code> mounts all call <code>bind(composer:main)</code> — no private draft key.
+  <code>#177</code> may store height in <code>meta</code>; text durability is not its job.
+  Answer boxes already clear only after durable send; they become the first
+  <code>DraftStore</code> consumers without behaviour change.</p>
+</section>
+
+<footer><p>Design only · no <code>watch.py</code> · no <code>#263</code> lanes · full spec in
+<code>.dreamwork/docs/plans/draft-durability-design.md</code></p> <span class="dimmer">· built from review template v1+8ad39ec6</span></footer>
+
+</main>
+</body>
+</html>
