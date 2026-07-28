@@ -6299,16 +6299,41 @@ function refocus(ta) {
    `data-keep` rather than by position, and only ever RE-OPENED: the fresh
    render is the default and what he did to it is the addition. Any future
    section that wants the same gets it by carrying the attribute. */
+/* #477: re-opening is not enough when the tick catches the gesture ITSELF.
+   `el.open = true` on the fresh node arrives at full height in ONE frame, and
+   if the section was part-way through its 850ms open when the tick fired, that
+   frame replaces the travel with a teleport — #196's snap re-entering at the
+   surface #196 fixed, every time a tick happens to land inside the gesture.
+
+   What it was mid-gesture is already legible on the page and needs no separate
+   bookkeeping: `travelCard` owns `height` while it runs, so a non-empty inline
+   `height` IS the tell, and it cannot go stale because `travelCard` clears it
+   itself at CARD_MS + 150. The interrupted height is just the old node's rect
+   at snapshot time. */
 function snapshotFolds() {
   const m = new Map();
   document.querySelectorAll('details[data-keep]').forEach(el =>
-    m.set(el.dataset.keep, el.open));
+    m.set(el.dataset.keep, {
+      open: el.open,
+      travelling: el.open && el.style.height !== '',
+      height: el.getBoundingClientRect().height,
+    }));
   return m;
 }
 function restoreFolds(saved) {
   if (!saved) return;
   document.querySelectorAll('details[data-keep]').forEach(el => {
-    if (saved.get(el.dataset.keep)) el.open = true;
+    const was = saved.get(el.dataset.keep);
+    if (!was || !was.open) return;
+    el.open = true;
+    if (!was.travelling || rmr) return;
+    // resume the interrupted open on the node that now exists, through the
+    // SAME two calls the summary's own handler uses — the height travels from
+    // where it got to, the body eases in behind it. Only the height differs
+    // from `now`, so the section does not move: it was never going to.
+    const now = el.getBoundingClientRect();
+    travelCard(el, { left: now.left, top: now.top, height: was.height }, now, false);
+    revealBody(el);
   });
 }
 function cardGroup(el) {

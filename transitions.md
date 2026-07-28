@@ -370,6 +370,26 @@ exception; an element leaving fades rather than vanishing.
     `.wrap`, i.e. last — so one surviving attribute means the next tick reads
     the section as open and re-opens it under him, a second after he shut it.
 
+  **A gesture the tick interrupts must RESUME, not land** (#477). Keeping the
+  open state across the re-render is only half of it: `restoreFolds` re-opened
+  the fresh node with a native `el.open = true`, which arrives at full height
+  in one frame. That is correct for a section that was already open and wrong
+  for one that was still *opening* — the 2s tick lands inside the 850ms
+  gesture often enough that the guard caught it, and what it caught was #196's
+  own snap, at the surface #196 fixed. The rule generalises past this section:
+  **the tick may replace the node carrying a transition, so it must hand the
+  transition to the node that replaces it.** What was mid-gesture is legible
+  without new bookkeeping — `travelCard` owns `height` while it runs, so a
+  non-empty inline `height` is the tell, and it cannot go stale because
+  `travelCard` clears it. `snapshotFolds` records that and the interrupted
+  height; `restoreFolds` continues the travel through the same
+  `travelCard`/`revealBody` pair the summary's own handler uses.
+
+  Its failure signature is worth memorising because four of five checks on the
+  gesture behaved: *the section really grows* **passed** — the span was right —
+  while *grows continuously*, *travels* and *body eases in* failed with
+  `0 of N part-way`. End-state span is exactly what a teleport gets right.
+
   The guard is `dev/capture/qsec.mjs`. Two of its assertions are worth
   copying: the count of distinct positions the panel *below* the section
   visits (a snap visits two, and every other check passes on it), and that no

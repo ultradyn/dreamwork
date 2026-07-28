@@ -24,9 +24,27 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **477**
+Next id: **478**
 
 ## Open
+- **#477** — the 2s tick TELEPORTS a section it catches mid-open · P1 · bug/motion · origin: **loop**
+  · **found 2026-07-29 08:53 by the `motion` lane while clearing `#475`, and it is the one genuine PAGE defect
+  in the whole ten-guard batch** · `qsec` fails in the recipe and passes on an isolated fresh server, and the
+  difference is tick phase, not load: when the dashboard's 2s tick lands inside the ~850ms `travelCard` open,
+  `restoreFolds` (`watch.py:6308`) re-opens the freshly rendered section with a native `el.open = true`, which
+  arrives at **full height in one frame**. The in-flight gesture on the old node is discarded with the node.
+  · **signature:** `the section really grows` PASSES (the span is right) while `grows continuously`, `travels`
+  and `body eases in` FAIL with `0 of N part-way` — a jump, which is `#196`'s snap re-entering by the back door
+  at the very surface `#196` fixed
+  · **independently reproduced by the coordinator** on the merged tree at 08:56 (`just guards 39894`: posture /
+  wisp / oneinput PASS, qsec FAIL, `0 of 71 part-way`), so this is not the lane's environment
+  · **why no guard-side fix exists:** the guard must fail a real teleport, and a `transitionstart`-only check
+  would pass one — the lane was right to refuse to make it green
+  · **the fix, and it needs no new bookkeeping:** `travelCard` owns `height` while it runs, so a non-empty
+  inline `height` on the old node IS the tell that a fold was mid-gesture; `snapshotFolds` records that plus the
+  interrupted height, and `restoreFolds` resumes the travel on the fresh node through `travelCard`/`revealBody`
+  — the same two calls the click handler already uses, per `transitions.md`'s reuse-the-idiom rule
+  · **wants `watch.py`**, so it is coordinator work, not a lane's
 - **#476** — a guard that THROWS on a changed contract reports "did not judge", not "failed" · P2 ·
   verification/guards · origin: **loop** · **found 2026-07-29 08:07 while red-proofing `#475`'s draft fix**
   · **the measurement:** changing the production key builder (`'dw:draft:v1:'` → `'dw:draft:v2:'`,
