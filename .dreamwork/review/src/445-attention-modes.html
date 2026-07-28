@@ -1,0 +1,238 @@
+<!--dreamwork-review-source
+title: #445 · four attention levels, reconciled with #443's run modes · design
+identity: #445 · attention modes
+context: task #445 · design only · no watch.py · no change to run-mode's closed set
+status: awaiting three calls
+headline: Three axes survive; the four levels are the asking axis.
+tag: design only — no code
+sub: task #445 · 29 July 2026 · authority = his 2026-07-28T23:40 dictation
+skip: Skip to your calls
+skip_href: #ask
+-->
+<!--#nav-->
+<a href="#ask">your calls</a><a href="#problem">the problem</a><a href="#igc">IGC</a><a href="#levels">the four levels</a><a href="#subagents">subagents</a><a class="full" href="#goals">goals move</a>
+<!--#lead-->
+<p id="context" class="context">Design page for task <strong>#445</strong>: the four levels for
+how much the loop asks you, reconciled with <strong>#443</strong>'s finding that
+<code>run-mode</code> conflates <em>pace</em> with <em>delegation</em>. Authority = your
+<code>2026-07-28T23:40</code> dictation in <code>watch-events.log</code>. <strong>Design
+only</strong> — no <code>watch.py</code>, no change to <code>run-mode</code>'s closed set
+until you rule.</p>
+
+<div id="ask" class="ask-block">
+  <div class="label">Three calls — axes, level names + home, subagent shape</div>
+  <p class="ask-q">The four levels and the "materiality, not difficulty" escalation test are yours
+  from the dictation and need no ruling. What is genuinely yours:</p>
+  <ol class="ask-list">
+    <li><strong>Q1 — ratify three orthogonal axes (pace × asking × delegation)?</strong>
+      <strong>Rec: yes.</strong> The IGC survivor below; <strong>I1</strong>/<strong>I2</strong>
+      refuted on tonight's session.</li>
+    <li><strong>Q2 — level names + where asking lives.</strong>
+      <strong>Rec:</strong> ratify your four names; <strong>sibling file</strong> (no
+      <code>run-mode</code> migration) vs widening <code>run-mode</code> (<code>Migration:</code> trailer).</li>
+    <li><strong>Q3 — subagent target + policy.</strong>
+      <strong>Rec:</strong> integer <code>&gt;= 1</code> (warn on 0, hard-invalid &lt; 0) + free text, read every tick.</li>
+  </ol>
+  <p class="ask-answers"><span class="key">accepted answers</span>
+  <code>rec</code> &nbsp;&middot;&nbsp; <code>yes</code>/<code>three axes</code> ·
+  <code>sibling</code>/<code>widen</code> · <code>R</code>-options &nbsp;&middot;&nbsp;
+  free text &nbsp;&middot;&nbsp; <em>"defer"</em> is fine</p>
+  <p class="ask-answers"><strong>Sub-decisions:</strong> <code>Q1</code>, <code>Q2</code>, <code>Q3</code></p>
+</div>
+
+<p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> the design stays
+parked — no axis is built, <code>run-mode</code>'s closed set is untouched, nothing else is
+blocked.</p>
+<!--#call-->
+<div class="call"><strong>Recommendation.</strong> Take <strong>three orthogonal axes</strong>,
+your four names in a <strong>sibling file</strong>, and the number-plus-free-text subagent
+policy read every tick. Fold the <em>ask-about-goals</em> move into <code>DREAMWORK.md</code>.
+Build nothing until you rule. Spec: <code>.dreamwork/docs/plans/attention-modes.md</code>.</div>
+<!--#aside-->
+<span class="big"><span class="pass">3</span></span>
+<small>axes survive the IGC<br>
+one All-✔ idea (I3)<br>
+I1/I2 refuted on tonight's session<br>
+I4 = additive, not a rival</small>
+<!--#body-->
+<style>
+/* Page-local. Tokens only. Table trap fix (c19107a): template min-width:max-content made a
+   4197px table unreadable at 390px — force wrap-friendly fixed layout. */
+.orient-block{border-left:2px solid var(--accent);padding:.35rem 0 .35rem 1.3ch;margin:.4rem 0 .2rem}
+.orient-block .label{margin:0 0 .4rem;color:var(--accent)}
+.igc-legend{font-size:.82rem;line-height:1.6;color:var(--muted);margin:.3rem 0 .5rem}
+.igc-legend .g{color:var(--lit);font-weight:600}
+.igc-table{font-size:.86rem}
+.ask-block{border-left:2px solid var(--accent);padding:.35rem 0 .35rem 1.3ch;margin:.4rem 0 .2rem}
+.ask-block .label{margin:0 0 .4rem;color:var(--accent)}
+.ask-block .ask-q{font-size:.92rem;line-height:1.55;color:var(--lit);margin:.15rem 0 .45rem}
+.ask-block .ask-list{margin:.2rem 0 .5rem;padding-left:1.4rem;color:var(--lit);font-size:.88rem;line-height:1.55}
+.ask-block .ask-list li{margin:.35rem 0}
+.ask-block .ask-answers{margin:.3rem 0;font-size:.78rem;color:var(--muted)}
+.ask-block .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.ask-block code{color:var(--lit)}
+/* Override shared template `table{min-width:max-content}` (review-artifact.template.html):
+   that sizes cells to unwrapped content so .scroller scrolls sideways and columns never
+   break — the c19107a defect. Class selector beats the bare `table` rule; per-artifact only. */
+.igc-table{min-width:0;width:100%;table-layout:fixed}
+.igc-table th,.igc-table td{overflow-wrap:anywhere;word-break:normal;min-width:0}
+.igc-table col.ci{width:34%}
+.igc-table col.ca{width:13%}
+.igc-table col.cg{width:13.25%}
+.lvl{margin:.5rem 0}
+.lvl h3{margin:.1rem 0;color:var(--accent);font-size:1rem}
+.lvl .ll{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.notice{border-left:2px solid var(--warn);padding:.3rem 0 .3rem 1.3ch;margin:.5rem 0;color:var(--lit)}
+</style>
+
+<section id="problem" aria-labelledby="problem-t">
+  <div class="label" id="problem-t">The problem (the reconciliation, which is the hard half)</div>
+  <p class="read"><code>run-mode</code> is one line from a closed set —
+  <code>lackadaisical</code> / <code>hot</code> / <code>assisted</code> — and that single axis
+  carries at least two independent decisions: <strong>how often the loop acts (pace)</strong>
+  and <strong>whether it acts through subagents (delegation)</strong>. <code>assisted</code>
+  is the only value that implies helpers, and it also implies a pace, so
+  <em>"lackadaisical but delegating"</em> is unexpressible. Tonight's session was exactly that
+  state, held in conversation rather than the file — so it did not survive a restart. Your
+  <strong>#445</strong> adds a third axis: <strong>how much you are asked (the four
+  levels)</strong>. Whether these are one control or several is decided by the IGC below.</p>
+</section>
+
+<section id="igc" aria-labelledby="igc-t">
+  <div class="label" id="igc-t">IGC — one control or several?</div>
+  <p class="read">Method: <code>igc-method.md</code> (binary goals, ✔/✘/?, <code>All</code>
+  rollup, decisive errors written out — never a score). Four rival shapes for the control,
+  judged on four binary goals.</p>
+  <p class="quiet igc-legend"><strong>Goals.</strong>
+    <span class="g">G1</span> change how much you're asked without changing how fast the loop runs ·
+    <span class="g">G2</span> change delegation without it being coupled to pace (tonight's session) ·
+    <span class="g">G3</span> lives in a tick-re-read file, not conversation ·
+    <span class="g">G4</span> preserves run-mode's contract (no migration)</p>
+  <div class="scroller"><table class="igc-table">
+    <colgroup>
+      <col class="ci"><col class="ca"><col class="cg"><col class="cg"><col class="cg"><col class="cg">
+    </colgroup>
+    <thead><tr><th>Idea</th><th>All</th><th>G1</th><th>G2</th><th>G3</th><th>G4</th></tr></thead>
+    <tbody>
+      <tr><td>I1 · one combined enum</td>
+        <td class="fail">✘</td><td class="fail">✘</td><td class="fail">✘</td><td class="pass">✔</td><td class="fail">✘</td></tr>
+      <tr><td>I2 · two axes (pace × asking)</td>
+        <td class="fail">✘</td><td class="pass">✔</td><td class="fail">✘</td><td class="pass">✔</td><td class="pass">✔</td></tr>
+      <tr class="row-accent"><td>I3 · three axes (pace × asking × delegation)</td>
+        <td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td></tr>
+      <tr><td>I4 · per-task override on a global default</td>
+        <td class="fail">✘</td><td class="pass">✔</td><td class="fail">✘</td><td class="pass">✔</td><td class="pass">✔</td></tr>
+    </tbody>
+  </table></div>
+  <p class="quiet"><strong>Decisive errors.</strong>
+  <strong>I1</strong> ✘G1/G2: a combined enum forces the bundle — choosing a level drags pace
+  and delegation with it, so <em>"lackadaisical + subagents"</em> is unexpressible (tonight's
+  session; your <code>#443</code> words: <em>"be lackadaisical, but also use sub-agents"</em>).
+  <strong>I2</strong> ✘G2: two axes cannot carry three independent decisions — asking (what
+  surfaces to you) and delegation (who does the work) are genuinely different, so neither
+  derives from the other. <strong>I4</strong> ✘G2 as a standalone answer: it fixes
+  granularity, not the pace×delegation conflation; valuable <em>as an addition</em>, not a
+  substitute.</p>
+  <p class="read"><strong>Survivor: I3 — three orthogonal axes.</strong> Your three current
+  <code>run-mode</code> values decompose cleanly: <code>lackadaisical</code> → idle pace;
+  <code>hot</code> → hot pace + own-hands; <code>assisted</code> → hot pace + subagents. The
+  missing combination (idle pace + subagents) becomes expressible; asking rides alongside as
+  the third axis.</p>
+</section>
+
+<section id="levels" aria-labelledby="levels-t">
+  <div class="label" id="levels-t">The four levels — what surfaces / is emitted / is logged / no-reply</div>
+  <p class="read">Two rules run through <strong>all four</strong>, stated once: <strong>(i) the
+  escalation test is materiality against your goals, not difficulty</strong> —
+  <em>"some choices where you have multiple good options … are not very material … unless the
+  user has specifically mentioned something"</em>; and <strong>(ii) the IGC evaluation happens
+  at every level</strong> — shown to you at 1, embedded in the emitted doc at 2, logged
+  unsurfaced at 3, applied silently at 4.</p>
+
+  <div class="lvl">
+    <h3>1 · ask me everything</h3>
+    <p class="read"><span class="ll">surfaces</span> every non-trivial design or architectural
+    choice produces a review document <strong>and you choose</strong>; the IGC is always shown
+    to you. <em>"probably a bit more than you've been asking me, but you do ask me a lot."</em>
+    <br><span class="ll">emitted</span> a review artifact + a <code>questions.md</code>
+    <code>#ask</code> carrying the IGC.
+    <br><span class="ll">logged</span> the <code>questions.md</code> entry.
+    <br><span class="ll">no reply</span> the question stays open; dependent work is blocked and
+    carries <code>blocked-on: human</code> (<code>#419</code>). You are the bottleneck by design.</p>
+  </div>
+
+  <div class="lvl">
+    <h3>2 · keep me informed</h3>
+    <p class="read"><span class="ll">surfaces</span> mostly automatic; each <strong>material</strong>
+    choice emits <strong>documentation, not a question</strong>. <em>"a review for the human's
+    review, but it's not asking them for a choice."</em> ~10–20% of questions escalate — a
+    <strong>soft estimate that steers, never a counter that gates</strong> (your 01:17 ruling).
+    <br><span class="ll">emitted</span> a doc naming <em>what the choice was, why a choice was
+    needed, the details, the other options, and the IGC table</em>; a <code>questions.md</code>
+    ask only where unsure / multiple good options / no good options.
+    <br><span class="ll">no reply</span> nothing parks on you — the doc is not an ask, so work
+    proceeds; only the escalated minority blocks.</p>
+  </div>
+
+  <div class="lvl">
+    <h3>3 · near-automatic</h3>
+    <p class="read"><span class="ll">surfaces</span> nothing, unless genuinely big or stuck.
+    <em>"too much in the noise to actually surface."</em>
+    <br><span class="ll">emitted</span> nothing routinely; the IGC still happens and is
+    <strong>logged to a journal folder</strong> (ADR-shaped; proposed home
+    <code>.dreamwork/docs/journal/</code> — Q2/Q3).
+    <br><span class="ll">no reply</span> nothing parks; proceed with everything.
+    <strong>Stuck is a state you earn</strong> — before declaring a blocker, <em>use a subagent
+    to research the question: has anyone solved it, what are the options.</em> Only a
+    still-stuck-after-research item surfaces, then like L1/L2. <strong>The goals move:</strong>
+    if stuck, ask about your <em>goals</em> rather than the immediate decision.</p>
+  </div>
+
+  <div class="lvl">
+    <h3>4 · full auto</h3>
+    <p class="read"><span class="ll">surfaces</span> nothing routinely. <em>"tasked with figure
+    it out."</em> A question reaches you only for a cheap unblocker you alone can resolve
+    (<em>"do we have a domain?"</em>), raised <strong>as early as possible</strong>.
+    <br><span class="ll">no reply</span> <strong>never blocked on a reply</strong> — every
+    blocker is the loop's to solve; keep working the unanswered question in the background, and
+    don't rabbit-hole while other work exists.
+    <br><span class="ll">cooperation</span> <em>"you still want to cooperate with the user … but
+    you never want to be blocked just because the user hasn't replied."</em> Never contradict
+    your goals — don't buy a domain for a project that already has one.</p>
+  </div>
+</section>
+
+<section id="subagents" aria-labelledby="sub-t">
+  <div class="label" id="sub-t">Subagent target + policy (your stated shape)</div>
+  <p class="read">A <strong>target number</strong> plus <strong>free text</strong> (type, special
+  rules, when to use / not). Validation: <code>&gt;= 1</code> valid, <strong>warn on 0</strong>
+  in the UI, <strong>hard-invalid below 0</strong>. Free text now; standardise later if ever.
+  Two consumers you named: <strong>(a)</strong> sizing automatic task selection to the target;
+  <strong>(b)</strong> <em>showing the subagent policy to the agent every time</em> — a
+  <strong>per-tick read like <code>run-mode</code></strong>, not a start-up read (<code>#426</code>).</p>
+</section>
+
+<section id="goals" aria-labelledby="goals-t">
+  <div class="label" id="goals-t">Proposed DREAMWORK.md wording (the ask-about-goals move)</div>
+  <p class="read">The dictation places this at L3; its reasoning generalises, so it belongs in
+  <code>DREAMWORK.md</code> as a preference that applies at every level. The coordinator owns
+  <code>DREAMWORK.md</code> — this is the proposed wording, not an edit:</p>
+  <blockquote class="read"><strong>When uncertain, ask about goals, not just the immediate
+  decision.</strong> Uncertainty usually means the goals need to be more specific. Knowing his
+  goals lets the loop evaluate not just the current choice but many future ones, so when stuck
+  or torn, prefer a question that sharpens the goals over one that resolves only the immediate
+  call.</blockquote>
+</section>
+
+<section id="not" aria-labelledby="not-t">
+  <div class="label" id="not-t">What this design does NOT do</div>
+  <ul class="read">
+    <li><strong>Builds no mechanism</strong> — no <code>watch.py</code>, no new tick-read file, no change to <code>run-mode</code>'s closed set or <code>file-formats.md</code>.</li>
+    <li><strong>Does not touch <code>:35110</code></strong>, the heartbeat, the monitors, or the loop.</li>
+    <li><strong>Does not edit <code>DREAMWORK.md</code></strong> — proposes wording only.</li>
+  </ul>
+</section>
+<!--#footer-->
+<p>Design only · no <code>watch.py</code> · no <code>run-mode</code> change · authority =
+<code>watch-events.log</code> 2026-07-28T23:40 · full spec in
+<code>.dreamwork/docs/plans/attention-modes.md</code></p>
