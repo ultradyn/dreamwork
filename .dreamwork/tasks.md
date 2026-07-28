@@ -63,6 +63,21 @@ Next id: **476**
   full run completed all session — one was killed mid-guards by an external sweep. Every green claim made
   tonight rested on pytest + `lint` + individually-invoked guards, which is exactly the gap `#471` described
   and this entry is its bill
+  · **PROGRESS — 2 of the 10 fixed, merged `ef67316` (lane `drafts`), and the answer is the reassuring one.**
+  `rejectwrite`'s wording is **not literal**: after a rejected `/answer` the
+  `dw:draft:v1:<target>:card:<title>` key is still present, the box keeps its text, the error voice is right and
+  `isDurable(reject)` is `false`. The composer writes `dw:draft:v1:<target>:composer:main`. Both guards were
+  looking for the **pre-DraftStore** shapes (`dw:draft:<target>`, and a `dw:adraft:*` count that read 0), so
+  `rejectwrite` failed on a store that had not been cleared, only re-keyed. **The fifth and sixth checks tonight
+  to outlive their contract**, after `#474`'s three and `43036f2`'s two; the page was right every time. Both
+  guards now green (12 and 14 checks)
+  · **one finding held back rather than fixed, because it is a different task:** my red-proof changed the
+  production key builder (`'dw:draft:v1:'` at `watch.py:5856`) to `v2`, and `draft` **threw** instead of failing
+  an assertion — the crash sentinel, so it would be reported as *did not judge* rather than *failed*. Sensitivity
+  to the key is therefore confirmed, but the guard cannot **judge** a wrong key, which is precisely the shape
+  `#471`'s accounting exists to flag. Worth a follow-up: a guard should fail on a changed contract, not die on it
+  · **remaining eight**, with lanes `motion` and `surfaces` still out on them at the time of writing:
+  `oneinput`, `wisp`, `qsec`, `posture` (motion) and `health`, `serving`, `answers`, `burndownmock` (surfaces)
   · blocked on nothing · related: **#471, #474, #269, #459**
 
 - **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
