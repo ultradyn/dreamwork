@@ -203,20 +203,41 @@ ok('EXEMPTION CHECK: one line of prose in a blessed skeleton is still a fault',
   ok('the server refuses a write it cannot place', status === 409);
   await p.close();
 }
-{
+/* #413 — a refusal can arrive as a 2xx, and that is the contract this guard
+   was blind to until now. The client write path branches on `res.ok` alone
+   (watch.py:3576, `if (!res || !res.ok)`), so a fake that pins the refusal at
+   409 only ever drives the branch where `res.ok` is FALSE; a 202 refusal slips
+   straight through and the confirm morph runs — the card restates itself
+   answered, his text is cleared, the next tick puts the question back with no
+   explanation. (Production's /answer refusal is 409 TODAY — watch.py:10267 —
+   so the pinned value is not stale; the blindness is the fake's SCOPE: it
+   drives one of the two statuses the client branches on.)
+
+   CONVENTION for the next refusal guard: drive the refusal on a status the
+   client treats as SUCCESS (2xx) as well as one it treats as failure, because
+   the client branches on res.ok and the moved contract is always the 2xx one.
+
+   So this drives BOTH a 4xx and a 2xx refusal. The 202 half is RED against
+   the pre-E5b client BY DESIGN — it is the instrument that goes green when
+   E5b lands its client fix; report the red, do not paper it over. */
+const REFUSAL_STATUSES = [];   // filled by refusedWrite — the coverage fact
+const refusedWrite = async (status, body, label) => {
   const qpath = join(OUT, 'empty', '.dreamwork', 'questions.md');
   writeFileSync(qpath,
     '# Q\n\n## Open\n\n- **A question he is about to answer?** ctx.\n');
   const p = await br.newPage({ viewport: { width: 1100, height: 900 } });
-  p.on('pageerror', e => errs.push(`write2: ${e}`));
-  await p.route('**/answer', r => r.fulfill({ status: 409,
-    contentType: 'application/json', body: '{"ok":false}' }));
+  p.on('pageerror', e => errs.push(`${label}: ${e}`));
+  await p.route('**/answer', r => r.fulfill({ status,
+    contentType: 'application/json', body }));
   await p.goto(`http://127.0.0.1:${ports.empty}/questions`,
                { waitUntil: 'networkidle' });
   await sleep(900);
   const typed = 'an answer to a question that is no longer there';
   await p.fill('.qa.open textarea', typed);
   await p.click('.qa.open .qsend');
+  // sample inside MORPH_HOLD_MS (1250): the morph fires immediately on a 2xx
+  // refusal (res.ok true), so the defect is visible at ~700ms and the live tick
+  // has not yet restored the open state from data.json.
   await sleep(700);
   // addressed by [data-qid], NOT by .qa.open — the bug under test is that the
   // card LEAVES the open state, so a selector that names that state stops
@@ -231,57 +252,45 @@ ok('EXEMPTION CHECK: one line of prose in a blessed skeleton is still a fault',
              kept: ta ? ta.value : null,
              claimedAnswered: !!(card && card.querySelector('.anstag')) };
   });
-  notes.push(`write-refused: card="${after.cls}" err=${JSON.stringify(after.err)}`);
-  ok('a refused write says so, instead of nothing at all',
-     !!after.err && /not written \(409\)/.test(after.err));
-  ok('...and never shows the answered state for a write that did not land',
-     !after.claimedAnswered && /\bopen\b/.test(after.cls || ''));
-  ok('...and keeps his text, which is now the only copy of it',
-     after.kept === typed);
-  await p.screenshot({ path: `${OUT}/write-refused.png`, fullPage: true });
+  REFUSAL_STATUSES.push(status);
+  notes.push(`${label} (${status}): card="${after.cls}" ` +
+             `err=${JSON.stringify(after.err)} kept=${JSON.stringify(after.kept)}`);
+  await p.screenshot({ path: `${OUT}/write-refused-${status}.png`, fullPage: true });
   await p.close();
-}
-/* ── #263 E5b: the same three invariants against a REJECTED 202, not a 409.
-   E5 made body-validation failures 202 + a durable `rejected` transition, and
-   202 makes `res.ok` true — so the two checks above (named for exactly these
-   invariants) passed green over the regression: `route.fulfill` pinned 409, so
-   they were never driven against the 202 the server actually sends. A fake's
-   hardcoded parameter is part of the check's scope. This half closes that. */
-{
-  const qpath = join(OUT, 'empty', '.dreamwork', 'questions.md');
-  writeFileSync(qpath,
-    '# Q\n\n## Open\n\n- **A question he is about to answer?** ctx.\n');
-  const p = await br.newPage({ viewport: { width: 1100, height: 900 } });
-  p.on('pageerror', e => errs.push(`write3: ${e}`));
-  await p.route('**/answer', r => r.fulfill({ status: 202,
-    contentType: 'application/json',
-    body: JSON.stringify({ ok:false, rejected:true, reason:'schema_invalid' }) }));
-  await p.goto(`http://127.0.0.1:${ports.empty}/questions`,
-               { waitUntil: 'networkidle' });
-  await sleep(900);
-  const typed = 'an answer whose body the server rejects';
-  await p.fill('.qa.open textarea', typed);
-  await p.click('.qa.open .qsend');
-  await sleep(700);
-  const after = await p.evaluate(() => {
-    const card = document.querySelector('.qa[data-qid]');
-    const err = card && card.querySelector('.qerr');
-    const ta = card && card.querySelector('textarea');
-    return { cls: card ? card.className : null,
-             err: err ? err.textContent : null,
-             kept: ta ? ta.value : null,
-             claimedAnswered: !!(card && card.querySelector('.anstag')) };
-  });
-  notes.push(`write-rejected202: card="${after.cls}" err=${JSON.stringify(after.err)}`);
-  ok('a REJECTED 202 (res.ok true) still says so, not nothing',
-     !!after.err && /not written \(rejected\)/.test(after.err));
-  ok('...and never shows the answered state for a write that did not land',
-     !after.claimedAnswered && /\bopen\b/.test(after.cls || ''));
-  ok('...and keeps his text, which is now the only copy of it',
-     after.kept === typed);
-  await p.screenshot({ path: `${OUT}/write-rejected202.png`, fullPage: true });
-  await p.close();
-}
+  return { status, after, typed };
+};
+
+const refused409 = await refusedWrite(409, '{"ok":false}', 'refused-409');
+const refused202 = await refusedWrite(202, '{"ok":false,"rejected":true}', 'refused-202');
+
+/* #413 coverage (R5): a refusal guard must drive the refusal on a status the
+   client treats as SUCCESS as well as one it treats as failure — the moved
+   contract is always the 2xx one. Derived from what was driven, not a literal
+   count, so it cannot quietly shrink back to 409-only (the blindness this
+   exists to prevent). */
+ok('COVERAGE #413: refusal driven on a 4xx AND a 2xx (client branches on res.ok)',
+   REFUSAL_STATUSES.some(s => s >= 400 && s < 500) &&
+   REFUSAL_STATUSES.some(s => s >= 200 && s < 300) &&
+   REFUSAL_STATUSES.length >= 2);
+
+// the 4xx path — the existing, green invariants, unchanged
+ok('a refused write says so, instead of nothing at all',
+   !!refused409.after.err && /not written \(409\)/.test(refused409.after.err));
+ok('...and never shows the answered state for a write that did not land',
+   !refused409.after.claimedAnswered && /\bopen\b/.test(refused409.after.cls || ''));
+ok('...and keeps his text, which is now the only copy of it',
+   refused409.after.kept === refused409.typed);
+
+// the 2xx path — E5: a refusal the client treats as success. RED against the
+// pre-E5b client (res.ok true → the morph runs, the card restates answered,
+// the text is cleared); green once E5b distinguishes a rejected 2xx from a
+// successful one.
+ok('E5: a rejected 202 (res.ok true) never shows the answered state for a write that did not land',
+   !refused202.after.claimedAnswered && /\bopen\b/.test(refused202.after.cls || ''));
+ok('E5: ...and keeps his text, which is now the only copy of it',
+   refused202.after.kept === refused202.typed);
+ok('E5: ...and says so rather than nothing (the message, not just the state)',
+   !!refused202.after.err && /not written \(rejected\)/.test(refused202.after.err));
 
 ok('no page errors', errs.length === 0);
 await br.close();
