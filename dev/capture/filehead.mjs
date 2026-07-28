@@ -43,10 +43,10 @@
    usage: node filehead.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { join, dirname } from 'node:path';
 import { makeReporter } from './report.mjs';
+import { serveVerified } from './serve.mjs';
 
 const OUT = process.argv[2];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -67,7 +67,7 @@ const freePort = () => new Promise(res => {
   const s = createServer();
   s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
 });
-const PORT = await freePort();
+const PORT = process.argv[3] ? +process.argv[3] : await freePort();
 
 /* ── the target ───────────────────────────────────────────────────────────
    ONE segment longer than the reading column, on purpose. Chrome offers a
@@ -92,22 +92,10 @@ mkdirSync(dirname(join(DIR, DEEP)), { recursive: true });
 writeFileSync(join(DIR, DEEP), BODY + '\n');
 writeFileSync(join(DIR, ROOT_FILE), BODY + '\n');
 
-const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
-                  { stdio: 'ignore' });
+/* #461: serveVerified replaces poll + hand-check so a stranger cannot be graded. */
+const srv = await serveVerified(DIR, PORT);
 process.on('exit', () => { try { srv.kill(); } catch (e) {} });
 const BASE = `http://127.0.0.1:${PORT}`;
-for (let i = 0; i < 60; i++) {
-  try { if ((await fetch(`${BASE}/`)).ok) break; } catch (e) {}
-  await sleep(250);
-}
-{
-  // it must be OUR server (#203): a stale one would be graded instead
-  const d = await (await fetch(`${BASE}/data.json`)).json();
-  if (d.target !== DIR) {
-    console.log(`FAIL :${PORT} is serving ${d.target}, not ${DIR}`);
-    process.exit(1);
-  }
-}
 
 /* Frames strictly BETWEEN the two ends, with a 3% deadband so a frame that
    really is an end does not read as travel. transitions.md's one idiom,
