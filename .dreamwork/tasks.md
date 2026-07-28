@@ -476,6 +476,25 @@ Next id: **470**
   (see the `pgrep` aside above), repeated until the failure rate is a number. Everything else is a
   fourth anecdote
   · related: **#424, #423, #442, #469**
+  · **a THIRD instance, and this one has a named cause rather than a suspicion (2026-07-29 04:55, eight lanes
+  out).** `test_lint.py::TestTheBugItWasBuiltFor::test_this_repo_passes_its_own_linter` **FAILED** in the full
+  run and **passed alone** seconds later, with `lint.py --target .` clean both before and after. The cause is
+  not load: **that test lints the LIVE working tree**, and during the run the `sweep` lane committed
+  `Lane-owns:` lines to 44 briefs (`1340e05`) while other lanes wrote their own files. So the tree it asserted
+  about changed underneath it
+  · **this is a different failure from the first two.** They were *"passes in isolation"* with no established
+  mechanism — equally consistent with order-dependence or an ordinary flake. This one is **state**
+  sensitivity with a measured mechanism, and it is guaranteed to recur: he asked for up to 8 concurrent lanes,
+  so a test that reads mutable shared state during a lane's commit is a false red **by design**
+  · **why a false red is worse than a missing check here:** there is no CI, so this suite is the only gate. A
+  gate that cries wolf whenever the machine is busy is a gate that gets read as noise, and the next real
+  failure arrives wearing the same clothes. Tonight's run also shows how thin the margin is — the *only*
+  failure in 1193 tests was this one
+  · **the fix is scope, not tolerance.** Options: lint a snapshot (`git stash create` / a temporary clone) so
+  the assertion is about a fixed tree; or skip when a lane is out (`lint._live_lane_worktrees` already answers
+  that, and the skip reason must be *printed*, because a silent skip is how a check stops examining anything);
+  or move it out of pytest into the `just test` gate that runs when the tree is quiet. **Do not simply retry
+  it** — a retry hides the mechanism and keeps the false red for whoever runs it next
 - **#424** — `just test` is a single shared lock, so N concurrent lanes cannot each verify · P2 ·
   loop-tooling/orchestration · origin: **loop** · found when `#419` reported guards blocked at 17:01
   · guards bind **39890-39899** and the recipe hard-aborts if any port in the range is held (the
