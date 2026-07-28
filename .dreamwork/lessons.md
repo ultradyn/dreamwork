@@ -2691,3 +2691,22 @@ this shape and convert opportunistically.)
   The reason it recurs is worth naming: a two-line shell block *looks* sequential-therefore-
   conditional, because that is how the prose in your head reads. It is not. **If the second command
   must not run when the first fails, the shell has to be told, every time.**
+
+- **Both wordings of the hand-off instruction are wrong, and I found the second by hitting it twice.**
+  The original told lanes to append to the **absolute** main-checkout path *and* commit it — so the
+  line landed uncommitted in main and committed on the branch, and `git merge` refused on a file whose
+  two versions were byte-identical. I "fixed" it by telling lanes to commit the hand-off **inside the
+  worktree** instead. That produced a **content conflict on every merge**, twice in twenty minutes,
+  because the coordinator is editing the same file's `## Folded` section while the lane appends to
+  `## Pending`.
+  The mistake was treating this as a path question when it is an **ownership** question, and the
+  skill already answers it: *durable shared state wants a single writer*. `handoffs.md` is durable
+  shared state; `inbox.md` is append-only and per-lane, which is why the inbox has never conflicted.
+  **So: lanes write the report to the absolute `inbox.md` and nothing else. The coordinator writes
+  the hand-off line, from the report, when it merges.** That also removes the one duty lanes most
+  often got wrong (one lane wrote both, one wrote the wrong section, one used a two-sha form the
+  grammar rejected) and it means the hand-off says what the *merge* concluded, not what the lane
+  predicted.
+  Worth noticing about the shape of the error: I diagnosed it correctly the first time, wrote the
+  lesson, and then chose a fix that moved the collision instead of removing it. **A fix that relocates
+  a conflict looks like a fix exactly once.**
