@@ -24,9 +24,25 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **456**
+Next id: **457**
 
 ## Open
+- **#456** — day-age needs a `·` separator, and the pad zero should be near-invisible · **P2** ·
+  dashboard/type · origin: **human** · **next-up** ·
+  **human via watch 2026-07-29 01:18:** *"with the day age on questions (\"2026-07-28 01d ago\"), please: add
+  ` · ` between them, and lower the opacity on the 0 to 50%. Close to invisible."*
+  · **both halves already have a home** — the pad zero is `.agepad` (`watch.py:543`, currently
+  `color:var(--dimmer)`), written by `pushFig` for single digits only and never for a genuine tens digit; the
+  separator belongs where `qtHtml` joins the title date to the age span.
+  · **his reason is legibility of the pair**, not decoration: `2026-07-28 01d ago` reads as one run of digits,
+  so the eye cannot find where the date ends. The `·` is the same separator the rest of the chrome already
+  uses — reuse it rather than introducing a second one.
+  · **opacity vs colour is a real choice:** `.agepad` currently dims by *colour*, and he asked for *opacity*.
+  Opacity composites the pad against whatever is behind it, which on the shader background is not the same as
+  a dimmer token. Do whichever actually reads as *"close to invisible"* on the live page and say which you
+  chose and why.
+  · **no transition** — `ages()` rewrites this text every second as a pure text update, which
+  `transitions.md` explicitly exempts; do not add a gesture to a digit flip.
 - **#455** — every review artifact opens with a context paragraph, enforced at build time · **P1** ·
   review/asking · origin: **human** ·
   **human via watch 2026-07-29 01:07, while reading `269-draft-durability.html`:** *"update protocols: when
