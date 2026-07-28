@@ -4,6 +4,48 @@
 
 ## Answered
 
+- **2026-07-28 — I cannot see any question for #264 in the webui, how am I meant to provide a…** → answered
+  (2026-07-28 15:24): **You are right, it was my failure, and it is fixed two ways.**
+
+  **The question now exists** — `#264: ratify the task-transition boundary, and one deployment call
+  only you can make`, at the top of `/questions`, P1, with the artifact
+  `.dreamwork/review/task-transition-boundary.html` linked from the dashboard's review list. Two
+  questions, not six: ratify the boundary (rec: yes), and the git-portability call that is genuinely
+  yours because a SQLite store is machine-local while today's committed ledger means the burndown
+  works on a fresh clone (rec: gitignore the DB, commit a deterministic text export of the event
+  log). You can rule on both from the composer.
+
+  **How it happened, plainly.** The design landed at `914648c` with its artifact at 01:47 and **the
+  ask was simply never filed.** Then at 15:02 I answered your sqlite question by telling you
+  ratifying `#264` was *"the only thing of this chain on your desk"* — so I named a blocker, told you
+  it was yours, and gave you nothing to act on. The web UI was never the problem: it answers entries
+  that exist, and this one did not exist.
+
+  **Your structural point is filed as `#419`, P1**, and I have written the invariant so it can be
+  checked rather than remembered: *every open task whose blocker is a human decision has a
+  `questions.md` entry that is either **open** or **answered-but-unfolded** — both are legitimate
+  states, **absent is not**, and absent is a lint ERROR.* That is your *"there always has to be an
+  answer in our data"* turned into one assertion.
+  **The honest catch, and it is why `#419` is not a one-liner:** a task cannot currently *say* it is
+  blocked on you. Today that lives in prose — *"awaiting his ruling"*, *"blocked on #264 Q2"*,
+  *"withheld behind a second gate"* — and prose is not checkable. So the marker has to be designed
+  into `file-formats.md` first (a `blocked-on: **human**` field, or a `gate:` naming the question),
+  in the same commit as the check. A check over a field nobody fills would be exactly the hollow
+  check this repo has spent the day learning to distrust.
+  I also added the reverse direction, which is the cheaper error and equally invisible to you: an
+  entry you have already **answered** that sits unfolded is also a stall, and `lint` already has the
+  idiom for it (it derives *"3 of 51 answered entries have no resolution date"* today).
+
+  **One thing I will not claim:** `#419` is filed, not built. Until it is, the guarantee is my
+  discipline rather than a check — so if you ever believe you are blocking something and cannot find
+  the question, that is a bug in the loop and worth telling me exactly as you just did.
+
+  **Human:** I cannot see any question for #264 in the webui, how am I meant to provide a ruling?
+  (Note: we must have a way to do this via the webui, and we should structure things in such a way
+  that it's impossible for us to be blocked on a user decision without a corresponding question or
+  sometihng either pending an answer/ruling, or that question could be answered but waiting for
+  processing, but yea hthere always has to be an answer in our data for these kinds of questions.
+
 - **2026-07-28 — Also, can you give be a bit of a rundown on how many subagents you launched v…** → answered
   (2026-07-28 15:05): **~16 lanes across ~20 dispatch attempts**, all on this repo, two running
   right now. The two ways of counting disagree, and the disagreement is the part worth knowing.
