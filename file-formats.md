@@ -1777,9 +1777,24 @@ ERROR, not a silent pass).
 ``python3 dev/lane_guard.py --install`` chains into the pre-commit hook on the
 main checkout only (it exits 0 in linked worktrees, so lanes commit freely).
 The committed artefacts that protect every checkout regardless of enablement
-are this brief convention (enforced by ``lint``) and the successor pre-merge
-backstop (``check_lane_containment``, recorded in
-``.dreamwork/docs/plans/lane-containment.md`` as the not-yet-built half).
+are this brief convention (enforced by ``lint``) and the pre-merge backstop
+``lint.check_lane_containment_backstop`` (#468), which needs no hook at all.
+
+**The backstop reads the same declaration one step earlier.** It ERRORs when a
+path a live lane owns is **dirty** in the main checkout — staged, unstaged or
+untracked — which is the state that actually did the damage: the `#263` merge
+aborted on dirty files before any commit was attempted, so the pre-commit guard
+would never have fired. Lanes come from git's own worktree registry (a linked
+worktree on a ``wt/*`` branch), never from ``status.json``.
+
+**It degrades to silence, never to an accusation**, in each of the four ways it
+can be unknowable: git unavailable, no linked lane worktrees, git status
+unreadable, or a lane whose brief declares nothing. The last is the subtle one —
+an undeclared lane is *not counted as examined*, because a clean bill that
+included it would claim coverage the check does not have. And the clean-bill row
+is suppressed whenever a finding exists in the same run: a check that prints
+"no owned path is dirty" beside an error naming one gets read as noise and then
+ignored. Both of those were found by red-proofing the check itself.
 
 ## Why this file exists rather than a paragraph in SKILL.md
 

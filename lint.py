@@ -2859,6 +2859,148 @@ def _parse_lane_owns(text: str) -> list[str]:
     return owned
 
 
+
+def _live_lane_worktrees(root: Path) -> list[tuple[str, str]]:
+    """(worktree path, branch) for each dispatched lane, or [] if unknowable.
+
+    Reads git's own worktree registry rather than ``status.json``, which #465
+    measured as carrying no worktree path at all. Returns [] on any git failure
+    so the caller degrades to silence, never to a false accusation.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if out.returncode != 0:
+        return []
+    lanes, path, branch = [], None, None
+
+    def flush():
+        # A lane is a LINKED worktree on a `wt/*` branch. The main checkout and
+        # any unrelated worktree are not lanes, and a detached-HEAD worktree has
+        # no branch line at all — so `branch` may legitimately be None here.
+        if path is None or not branch:
+            return
+        if not branch.startswith("wt/"):
+            return
+        if Path(path).resolve() == root.resolve():
+            return
+        lanes.append((path, branch))
+
+    for line in out.stdout.splitlines() + [""]:
+        if line.startswith("worktree "):
+            flush()
+            path, branch = line[len("worktree "):].strip(), None
+        elif line.startswith("branch "):
+            # `branch refs/heads/wt/deployact` → `wt/deployact`. Strip only the
+            # ref prefix; the branch's own slash is part of its name.
+            ref = line[len("branch "):].strip()
+            branch = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+        elif not line.strip():
+            flush()
+            path, branch = None, None
+    flush()
+    return lanes
+
+
+def _dirty_paths(root: Path) -> list[str] | None:
+    """Repo-relative paths dirty in ``root`` (staged, unstaged or untracked).
+
+    None when git cannot be asked — the caller must then stay silent rather
+    than report a clean tree it never measured. ``--no-optional-locks`` because
+    a background ``git status`` taking the real index.lock is a documented
+    mitigation on this machine.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "--no-optional-locks", "-C", str(root), "status",
+             "--porcelain", "--untracked-files=all"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    paths = []
+    for line in out.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        entry = line[3:]
+        # A rename reads `old -> new`; the destination is the dirty path.
+        if " -> " in entry:
+            entry = entry.split(" -> ", 1)[1]
+        paths.append(entry.strip().strip('"'))
+    return paths
+
+
+def check_lane_containment_backstop(dw: Path, rep: Report) -> None:
+    """A path a dispatched lane owns must not be dirty in the main checkout (#468).
+
+    `#465`'s pre-commit guard refuses the *commit*; this is the backstop it named
+    as its successor, and it catches the state one step earlier — a lane's stray
+    edit sitting in the main working tree, uncommitted. That is the state that
+    actually did the damage: it aborted a verified `#263` merge that had been
+    held for half an hour, before any commit was attempted.
+
+    Silent unless something is wrong. Three ways to be unknowable, each of which
+    degrades to silence rather than to a false accusation: git unavailable, no
+    linked lane worktrees, no brief declaring ownership. A check that accused a
+    clean tree would be disabled within the hour and then protect nothing.
+
+    Precondition asserted at runtime: a lane is only examined when its brief
+    yielded a NON-EMPTY owned set. Without that the intersection is empty by
+    construction and the check would pass vacuously for every lane forever —
+    which is precisely how `#465`'s own premise (`status.json` ownership) failed.
+    """
+    root = dw.parent
+    lanes = _live_lane_worktrees(root)
+    if not lanes:
+        return
+    briefs_dir = dw / "docs" / "briefs"
+    if not briefs_dir.is_dir():
+        return
+    dirty = _dirty_paths(root)
+    if dirty is None:
+        return
+    examined = 0
+    found = False
+    for lane_path, branch in lanes:
+        suffix = branch.split("/", 1)[-1]
+        owned: list[str] = []
+        for brief in sorted(briefs_dir.glob("*.md")):
+            text = brief.read_text(encoding="utf-8", errors="replace")
+            if f"wt/{suffix}" in text or f".worktrees/{suffix}" in text:
+                owned = _parse_lane_owns(text)
+                break
+        if not owned:
+            # Unknowable for this lane, not clean. `check_brief_lane_owns`
+            # is the check that makes the omission loud; this one stays quiet.
+            continue
+        examined += 1
+        contested = sorted(
+            d for d in dirty
+            if any(d == o or d.startswith(o.rstrip("/") + "/") for o in owned)
+        )
+        if contested:
+            found = True
+            rep.add(
+                ERROR, "lane-containment",
+                f"{', '.join(contested)} dirty in the MAIN CHECKOUT but owned by "
+                f"lane {branch} ({lane_path}) — a lane editing the main tree is "
+                f"#465, and it aborts a merge before any commit is attempted; "
+                f"move the edit into the worktree or revert it here (#468)")
+    # The OK row is a CLEAN BILL, so it must not sit beside a finding saying the
+    # opposite — a check that contradicts itself in one run gets read as noise
+    # and then ignored. (Found by the red-proof: the first version printed both.)
+    if examined and not found:
+        rep.add(
+            OK, "lane-containment",
+            f"{examined} of {len(lanes)} live lane(s) declare ownership; "
+            f"no owned path is dirty in the main checkout")
+
 def check_brief_lane_owns(dw: Path, rep: Report) -> None:
     """A worktree-naming brief must declare its owned paths (#465).
 
@@ -3436,6 +3578,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_brief_handoff_obligation(dw, rep)
     check_brief_worktree_abs_inbox(dw, rep)
     check_brief_lane_owns(dw, rep)
+    check_lane_containment_backstop(dw, rep)
     check_related_markers(dw, watch, rep)
     check_status_keys(dw, rep)
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are

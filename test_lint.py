@@ -4500,3 +4500,132 @@ class TestBriefLaneOwns:
                   if lvl == lint.ERROR and w == "briefs"]
         assert len(errors) == 1, rep.render()
         assert "997-empty.md" in errors[0]
+
+
+class TestLaneContainmentBackstop:
+    """#468: a path a live lane owns must not be dirty in the MAIN CHECKOUT.
+
+    #465's pre-commit guard refuses the commit; this catches the state one step
+    earlier — the uncommitted stray edit, which is what actually aborted a held
+    merge. Real git worktrees here, on purpose: the check's whole subject is
+    git's worktree registry and a real working tree's dirtiness, so faking
+    either would put the fake in front of the thing under test.
+
+    Production lines named per test (what must change for it to fail):
+    - the ERROR branch in check_lane_containment_backstop
+    - the `if examined and not found` guard on the clean-bill OK row
+    - _live_lane_worktrees' `branch.startswith("wt/")` lane test
+    """
+
+    def _repo_with_lane(self, tmp_path, owns="watch.py"):
+        import subprocess
+        t = fresh(tmp_path)
+
+        def git(*a, cwd=None):
+            return subprocess.run(
+                ["git", "-C", str(cwd or t), *a],
+                capture_output=True, text=True, check=True)
+
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        (t / "watch.py").write_text("# watch\n", encoding="utf-8")
+        (t / "other.py").write_text("# other\n", encoding="utf-8")
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True, exist_ok=True)
+        (briefs / "900-lane.md").write_text(
+            "# Brief\n\nWorktree: `.worktrees/lane` on `wt/lane`.\n\n"
+            f"Lane-owns: {owns}\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-qm", "base")
+        git("worktree", "add", "-q", "-b", "wt/lane", str(t / ".worktrees" / "lane"))
+        return t, git
+
+    def _rows(self, t):
+        rep = lint.Report()
+        lint.check_lane_containment_backstop(t / ".dreamwork", rep)
+        return rep
+
+    def test_a_lane_owned_path_dirty_in_the_main_checkout_is_an_error(self, tmp_path):
+        """Production line: the ERROR branch in check_lane_containment_backstop.
+
+        Reproduces the #465 incident exactly: the lane's file edited in the main
+        tree, uncommitted.
+        """
+        t, _ = self._repo_with_lane(tmp_path)
+
+        # Precondition, derived: the lane is visible AND declares ownership, or
+        # the intersection below is empty by construction and proves nothing.
+        lanes = lint._live_lane_worktrees(t)
+        assert [b for _, b in lanes] == ["wt/lane"], lanes
+        owned = lint._parse_lane_owns(
+            (t / ".dreamwork" / "docs" / "briefs" / "900-lane.md")
+            .read_text(encoding="utf-8"))
+        assert owned == ["watch.py"], owned
+
+        (t / "watch.py").write_text("# a lane's stray edit\n", encoding="utf-8")
+        assert "watch.py" in (lint._dirty_paths(t) or [])
+
+        rep = self._rows(t)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "lane-containment"]
+        assert len(errors) == 1, rep.render()
+        assert "watch.py" in errors[0] and "wt/lane" in errors[0]
+
+    def test_the_clean_bill_never_appears_beside_a_finding(self, tmp_path):
+        """Production line: the `if examined and not found` guard on the OK row.
+
+        Found by red-proofing the check itself: the first version printed the
+        ERROR and a clean bill saying no owned path was dirty, in one run. A
+        check that contradicts itself gets read as noise.
+        """
+        t, _ = self._repo_with_lane(tmp_path)
+        (t / "watch.py").write_text("# stray\n", encoding="utf-8")
+        rep = self._rows(t)
+        levels = {lvl for lvl, w, _ in rep.rows if w == "lane-containment"}
+        assert lint.ERROR in levels, rep.render()
+        assert lint.OK not in levels, rep.render()
+
+    def test_a_path_no_lane_owns_is_not_flagged_and_earns_the_clean_bill(self, tmp_path):
+        """The ordinary case: the coordinator commits its own files while a lane
+        is out. Frictionless, and the OK row states the coverage.
+        """
+        t, _ = self._repo_with_lane(tmp_path)
+        (t / "other.py").write_text("# coordinator's own work\n", encoding="utf-8")
+
+        # Precondition: something IS dirty, so a pass here is a real pass and
+        # not the empty-tree case wearing the same output.
+        dirty = lint._dirty_paths(t) or []
+        assert "other.py" in dirty and "watch.py" not in dirty, dirty
+
+        rep = self._rows(t)
+        rows = [(lvl, d) for lvl, w, d in rep.rows if w == "lane-containment"]
+        assert [lvl for lvl, _ in rows] == [lint.OK], rep.render()
+        assert "1 of 1" in rows[0][1]
+
+    def test_a_worktree_that_is_not_a_lane_is_ignored(self, tmp_path):
+        """Production line: _live_lane_worktrees' `wt/` branch test. A worktree
+        on an ordinary branch is somebody's checkout, not a dispatched lane, so
+        its files must not become untouchable in the main tree.
+        """
+        t, git = self._repo_with_lane(tmp_path)
+        git("worktree", "add", "-q", "-b", "feature/x", str(t / ".worktrees" / "notalane"))
+        lanes = lint._live_lane_worktrees(t)
+        assert [b for _, b in lanes] == ["wt/lane"], lanes
+
+    def test_a_lane_whose_brief_declares_nothing_is_silence_not_a_clean_bill(
+            self, tmp_path):
+        """A lane the check cannot evaluate must not be reported as safe.
+
+        Production line: the `if not owned: continue` branch together with the
+        `examined` counter — if an undeclared lane were counted, the OK row
+        would claim coverage the check does not have.
+        """
+        t, _ = self._repo_with_lane(tmp_path, owns="")
+        owned = lint._parse_lane_owns(
+            (t / ".dreamwork" / "docs" / "briefs" / "900-lane.md")
+            .read_text(encoding="utf-8"))
+        assert owned == [], owned          # precondition: nothing declared
+        (t / "watch.py").write_text("# stray, but unknowable\n", encoding="utf-8")
+        rep = self._rows(t)
+        assert [w for _, w, _ in rep.rows if w == "lane-containment"] == [], rep.render()
