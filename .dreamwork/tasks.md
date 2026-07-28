@@ -2795,6 +2795,14 @@ Next id: **421**
   arrival/landing pairs and discards them; render the median without a
   velocity score after provenance work
   · **UNBLOCKED — `#217` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): filed-to-landed median over `ledger_series`; the provenance work it needed landed. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
+  · **IN PROGRESS 2026-07-28 16:33** — `ccc @glm52`, `.worktrees/218`, brief
+  `.dreamwork/docs/briefs/218-filed-to-landed-median.md`, owns `watch.py`, `test_watch.py`,
+  `watch-design.md`. Two things the brief makes non-optional: the population is the
+  **intersection** of arrived and landed, so the figure answers *"how long did finished work
+  take"* and the still-open tail is excluded — the label carries that or the number lies quietly;
+  and his *"without a velocity score"* is taken literally, no composite index. Defaulted to **copy
+  rather than a mark on the chart**, because `#417` says the burndown's design is at a quality he
+  does not want traded for an extra series — the lane may argue
 
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
