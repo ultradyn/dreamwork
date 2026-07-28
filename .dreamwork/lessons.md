@@ -2677,3 +2677,17 @@ this shape and convert opportunistically.)
   The damage was contained by luck rather than design: the false claim sat in a brief's *motivation*
   section, so none of the eight criteria depended on it. Had it sat in a criterion, a lane would have
   built to it.
+
+- **Three times today a shell line reported success for a command that had not run, because I put
+  the check and the action next to each other instead of joining them.** `python3 lint.py` then
+  `git commit` on the following line — committed with two lint errors. `cmd > log` then
+  `echo EXIT=$? >> log` — the harness reported *echo's* status, so a failing run showed "exit code
+  0". And `if lint; then git commit …; echo "COMMITTED"; fi` — the commit failed on a gitignored
+  pathspec and **`COMMITTED` printed anyway**, because `;` does not care.
+  Every one of these is the day's dominant class in its smallest form: **a success signal reporting
+  on something other than the thing you care about**. And they are all the same one-character fix —
+  `&&`, not a newline and not `;` — plus the habit of ending a gated sequence with the thing whose
+  status you actually want: `lint && commit && echo OK || echo FAILED`.
+  The reason it recurs is worth naming: a two-line shell block *looks* sequential-therefore-
+  conditional, because that is how the prose in your head reads. It is not. **If the second command
+  must not run when the first fails, the shell has to be told, every time.**
