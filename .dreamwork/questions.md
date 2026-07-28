@@ -145,26 +145,19 @@
 
   **Sub-decisions:** `Q3`, `Q5`, `Q6`
 
-  Shrunk 01:58 on your 00:54 rule. Design: `.dreamwork/docs/plans/hub-public-auth.md`
-  (`4b49ecb`), **superseded on identity** by `#360`'s ssh-rooted design (`4d4e705`).
-  Artifact: `hub-public-auth.html`. **Public/WAN serving stays forbidden until you rule** —
-  nothing implemented, no bind address or flag touched.
+  Shrunk again 05:20 — **all three recs are now measured, not reasoned**, so the argument moved
+  into the artifact and out of here. **Artifact: `275-hub-auth.html`** (rebuilt, offline-clean).
+  Q1/Q2/Q4 are settled or moot; `#360`'s ssh-rooted design supersedes the identity half.
+  **Public/WAN serving stays forbidden until you rule** — nothing implemented, nothing bound.
 
-  ~~Q1 public vs private~~ **settled 2026-07-28 01:39** — you refused the dichotomy and split it
-  into `#359` (hosted SaaS, dependencies allowed) and `#360` (self-hosted, ssh-derived auth,
-  stdlib-only). ~~Q2 reverse proxy~~ **answered yes, 14:53**, then *redirected* by your own point
-  that self-hosted auth depending on a third party's control plane is not self-hosted — `#360`
-  carries that. ~~Q4 identity provider~~ **moot**: ssh is the root of trust, so no Google account.
+  **`Q3` read-only, or read+write?** Rec **read-only**. Measured: watch.py's write routes are
+  agent-steering, not content (`#288`), and dreamhub is GET-only today.
 
-  **`Q3` — read-only, or read+write?** Rec **read-only publicly**, writes staying
-  loopback/trusted-LAN. Confirm, or name which write routes you want exposed and under what guard.
+  **`Q5` ship a redacted `/summary.json` as its own task first?** Rec **yes** — it is the blocker
+  whatever else you choose. Measured at `collect()`: `/data.json` serves questions.md,
+  DREAMWORK.md and lessons.md in full, plus parsed entries, transcripts and status.json.
 
-  **`Q5` — may a redacted `/summary.json` be designed and shipped as its own task before any
-  public serve?** Rec **yes**. Today `/data.json` serves DREAMWORK.md, questions.md and lessons.md
-  in full and is unfit to expose, so this is the blocker whatever else you choose.
-
-  **`Q6` — who besides you should ever reach this hub?** Defines the allowlist and whether
-  multi-identity is worth any complexity. Rec **you only, for v1**.
+  **`Q6` who else ever reaches this hub?** Rec **you only, v1**.
 
   Accepted answers: `rec` (takes all three) · per-question (`Q3: …`) · free text · `not yet`.
 ## Answered
