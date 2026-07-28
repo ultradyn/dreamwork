@@ -24,9 +24,59 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **445**
+Next id: **446**
 
 ## Open
+- **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
+  artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
+  **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
+  `.dreamwork/watch-events.log` at that timestamp and is the authority; this entry is a structuring of it, not
+  a replacement
+  · **this is the answer to `#421`'s question arriving as a design rather than a choice among my four options**,
+  and it supersedes the shape of that ask. It is also the second axis of `#443` (run modes conflating pace with
+  delegation) — read the two together; **whoever designs either must reconcile them or say why they stay
+  separate**
+  · **the four levels, in his order.** (1) **ask me everything** — any non-trivial design or architectural
+  choice produces a review document and *he* chooses between the options; *"probably a bit more than you've
+  been asking me, but you do ask me a lot of stuff"*. (2) **keep me informed** — mostly automatic, but each
+  material choice emits **documentation rather than a question**: what the choice was, why a choice was
+  needed, the details, a brief note on the other options, and the evaluation table. *"a review in the sense
+  that it's for the human's review, but it's not asking them for a choice — so it's a bit different to what we
+  have now."* He put a number on it: **~10–20% of questions escalate**. (3) **near-automatic** — the
+  evaluation is still done and **logged to a journal folder** (ADR-shaped), but nothing is surfaced unless it
+  is genuinely big or he is stuck; *"it's too much in the noise to actually surface"*. (4) **full auto** —
+  *"tasked with figure it out"*; every blocker is the loop's to solve, never blocked on a reply
+  · **the obligation that runs through all four: the IGC evaluation.** Level 1 *always shows it to him*, level
+  2 includes it in the emitted document, level 3 logs it without surfacing. **`IGC` is his term and is not
+  defined anywhere in this repo — do not guess it. Ask him what the three letters are before designing
+  anything that renders the table**, because a mis-guessed axis silently changes every evaluation
+  · **the rule about not-material choices**, which is what makes level 2 workable: *"some choices where you
+  have multiple good options … are not very material. It doesn't really matter to the user's goals. You can
+  just make a choice in that regard … unless the user has specifically mentioned something."* So the escalation
+  test is **materiality against his goals**, not difficulty
+  · **before declaring yourself stuck, research first**: *"you should always use a subagent to research the
+  question, see if anyone's solved it before, what the options are."* Stuck is a state you have to earn
+  · **and the deepest part, which belongs in `DREAMWORK.md` regardless of what gets built**: when uncertain,
+  **ask about his goals rather than about the immediate decision** — *"if you know about their goals, you can
+  evaluate not just the current answer … but you can also do that for many other questions."* Uncertainty
+  usually means the goals need to be more specific. This is the skill's own *"unclear is a goals problem"*
+  stated as an operational instruction, and it should be folded into `DREAMWORK.md` as a durable preference
+  · **level 4's cooperation clause is explicit and must not be lost**: *"you still want to cooperate with the
+  user … but you never want to be blocked just because the user hasn't replied or because you don't have
+  access to something."* Raise the unblocking question **as early as possible**, keep working while it is
+  unanswered, and do not go down a rabbit hole while other work exists. His worked example: don't buy a domain
+  for a project that already has one, but do ask *"do we have a domain?"* early and cheaply
+  · **the configuration also carries subagent policy**, and he specified the shape: a **target number** of
+  subagents plus **free text** for type, special rules, when to use them and when not. Validation: `>= 1`,
+  **warn in the UI on 0**, **hard-invalid below 0**. Free text now, standardise later if ever. Two consumers he
+  named: sizing automatic task selection to the target, and **showing the subagent policy to the agent every
+  time** — which makes it a per-tick read like `run-mode`, not a start-up read (`#426`)
+  · **design first, and it needs an artifact with an `#ask`**: the level names, where the config lives, and how
+  it composes with `run-mode` are all his calls. **Do not change `.dreamwork/run-mode`'s closed set or
+  `file-formats.md` before he rules** — and note the `IGC` question above is a blocker on the artifact, not on
+  the design discussion
+  · **blocked-on: **human** (define `IGC`; then rule on the composition with `#443`)**
+  · related: **#443, #421, #438, #426**
 - **#444** — the new snap detector proves a transition EXISTS, not that it has the right duration · P2 ·
   verification/motion · origin: **loop** · **the cost of `#442`'s fix, recorded at merge rather than
   discovered later**
@@ -73,7 +123,7 @@ Next id: **445**
   migration cost for existing installs (`Migration:` trailer)
   · **design first, with a review artifact and an `#ask`** — this is a restructure of a contract he set and
   the axes are his call, not the loop's. Do not change the file format before he rules
-  · **blocked-on: **human** (after the design lands)** · related: **#290, #288, #426, #438**
+  · **blocked-on: **human** (after the design lands)** · related: **#290, #288, #426, #438, #445**
 - **#441** — `states.mjs`'s new vacuity thresholds are literals with a 3px margin on one of the two
   motions they guard · P3 · verification/motion · origin: **loop** · **found by coordinator inspection of
   `#333` at merge, not by the guard**
@@ -110,7 +160,7 @@ Next id: **445**
   · **brainstorm-gated, deliberately**: he asked for the design conversation to wait for the quota reset
   after 21:00, so this is filed now and designed then. Do not start building it
   · **blocked-on: **human** (brainstorm scheduled after 21:00 2026-07-28)**
-  · related: **#443**
+  · related: **#443, #445**
 - **#439** — the staleness banner says the page is behind but offers no way to act on it · P2 ·
   watch-ui/deploy · origin: **human** · **human via watch 2026-07-28 20:34**
   · his words: *"re: \"this page is 2 watch.py commits behind · serving bfc3222\", we should have after
@@ -282,7 +332,7 @@ Next id: **445**
   and he twice answered a sub-question while its neighbours went unanswered (`#275` Q3/Q5/Q6 still
   open from an entry he answered Q2 of). **Three independent signals that our question format costs
   him more than it should**, and none of them was read as being about the format
-  · blocked on nothing · related: **#422** (research artifacts as a kind), **#419**
+  · blocked on nothing · related: **#422, #445** (research artifacts as a kind), **#419**
   · **research DONE, `ccc @grok`, ~13 minutes — `bae566d`, merged `e50226d`.** Doc:
   `.dreamwork/docs/research/2026-07-28-question-instruction-design.md` (484 lines). Read
   `i-have-adhd` at **its own** revision `c784dcb` — an **upstream** id, not a commit in this
@@ -337,7 +387,6 @@ Next id: **445**
   · remaining on this entry: he rules on A/B/C/D, then `DREAMWORK.md` + `file-formats.md` + `lint.py`
   change. Nothing is built until then
   · **ARTIFACT FIXED `c19107a` (2026-07-28 22:35, lane `tablefix`), on his do-now while he was reading it** — *"I can't read it (reduces and costs columns don't break text lines)"*. The cells were never the problem: they already had `white-space:normal` and `overflow-wrap:anywhere`. The template's `table{min-width:max-content}` let the table size to unwrapped content — **4197px inside a 1120px pane** (reduces ~817px, costs ~1114px, risk ~2197px), so `.scroller` scrolled sideways and every cell was one line. Fixed **per-artifact** (`table-layout:fixed`, 16/24/24/36 columns) rather than in the shared template, which would re-stamp 23 artifacts of which 12 have no `src/` (`#436`). It also restacks each option as a labelled full-width block below 860px, because a four-column comparison is unreadable at 390px however well it wraps. Coordinator-verified: derived fold 740/693, `#ask.top` **218** desktop (up from 266) and 266 mobile, both above. **The question itself is still open and still his.**
-
 - **#422** — a research artifact is a kind we produce and have never specified · P2 ·
   loop-tooling/format · origin: **human** · **human via watch `do-next` 2026-07-28 16:29**, second
   half of the same message
@@ -3746,7 +3795,7 @@ Next id: **445**
   is built twice
   · also names `.dreamwork/run-mode` as prior art: it is re-read on every tick precisely so an on-disk
   change reaches a running loop, and it is the only file in the system with that property today
-  · related: **#425, #368, #263, #431, #443**
+  · related: **#425, #368, #263, #431, #443, #445**
   · **LANDED `ed2d7e1` `2b261f4` (2026-07-28 20:35, lane `wt/reload`).** Design at `.dreamwork/docs/reload-signal-design.md`; increment is `watch.skill_identity()` → `{commit, skill_version}`, exposed via `collect()` so it rides `/data.json`. **Two facts, never one** (the `deploy_state.py` discipline): `commit` moves on every change, `skill_version` only on a migration, so *"my tree changed"* and *"the change affects what I read"* split structurally rather than heuristically. **Lane H decision: do NOT share a mechanism** — same question shape, but different comparand (protocol version in data vs commit of source), trigger site (data-witness vs time boundary) and action (fail-closed refuse-write vs reload-or-report); parallel instances, not nested. Lanes E/G/H not built. Deliberately **not** built: a per-tick `reload-signal` flag file (it re-conflates exactly what the design splits), auto-reloading SKILL.md/CLAUDE.md (the harness reads once; the loop cannot make it re-read), content hashing. **No artifact shipped, on purpose** — the one decision that is his (convention vs flag file) is premature until the convention has been tried, and a decoy ask is worse than none.
 - **#405** — the loop has been managing file contention by hand all session when his standing
   convention already removes it: **worktrees** · **P1** · loop/parallelism · origin: **loop** ·
