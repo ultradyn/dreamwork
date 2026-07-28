@@ -27,34 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **413**
 
 ## Open
-- **#412** — the landed reader still drops **space-separated** multi-id landings: 7 spans, 16 ids,
-  one character class · **P2** · parser/burndown · origin: **loop** · found by the coordinator
-  running #399b's merge gate against the lane's committed tip
-  · `LEDGER_COMBINED_MENTION` is `\*\*(#\d+(?:/#\d+)*)\*\*` — **slash-separated only**. `#399b`
-  restored the historical inline landed form for single ids and for `#138/#156`, but the ledger
-  also writes the space-separated form, and every id in one of those spans is still lost:
-    **#141 #149** (2bf61da, 6099998) · **#132 #151 #154** (2c42da1) · **#121 #123** ·
-    **#104 #77** · **#109 #116** · **#107 #108 #110** the travelling heading, the ghost-pinned
-    width glide, the clamped opener (2026-07-25, 3f786fc) · **#102 #106** prose reflow
-  · **measured on the live ledger against `wt/399b`:** 7 spans naming **16 distinct ids**
-  (`#77 #102 #104 #106 #107 #108 #109 #110 #116 #121 #123 #132 #141 #149 #151 #154`), **all 16
-  absent** from the landed set. So landed reads **150** where a complete reader gives **166**
-  · **not a regression and not #399b's fault** — the brief did not name this case because I did
-  not know about it when I wrote it, and the lane met its brief. It is the same defect one size
-  down: a reader that knows one spelling of a thing the file writes two ways
-  · **the fix looks like `(?:[ /]#\d+)*`, and the danger is precisely there.** Widening to accept
-  a space makes the pattern able to swallow ordinary prose between two bold ids, and `#301`'s
-  whole point was that `**#96 stage 1**` must stay inert. **Red-prove both directions**: a
-  space-separated span lands all its ids, AND `**#96 stage 1**` still lands nothing
-  · **the gate that found this is reusable** and already red-proved in both directions — it lives
-  in the session scratchpad, not the repo; if this is dispatched, port the space-separated check
-  into `test_watch.py` so it survives the session
-  · **`file-formats.md` is honest about this and must stay so.** `#399b` documents the combined
-  head as `**#5/#6**` and says history packs *several landings to a line* — both true, since
-  several *spans* on one line do work. It does not claim the space-separated span works, so
-  there is no doc lie to fix; but when this lands, the doc should state the form explicitly
-  rather than leave a reader to infer it from the slash example
-  · related: **#399**
 
 - **#411** — two answered entries carry a perfectly good date and the page throws it away, because
   `answered_at` anchors at position 0 · **P2** · UI correctness / parser · origin: **loop** · found
@@ -1451,6 +1423,27 @@ Next id: **413**
   it is prose, and a widening that admits trailing words would start reading section
   titles as task ids. Assert that at runtime, in the check, with `**#96 stage 1**` as
   the fixture · red-prove the 19-id case against the real ledger before and after
+  · **re-verified by the coordinator 2026-07-28 12:34, on today's ledger**, after
+  independently rediscovering this gap while closing `#399b` and filing it as `#412` —
+  which is a **strict duplicate of this entry and is withdrawn**. #331 was already here,
+  already had the right number, and already named the right fix; I did not check the
+  ledger before filing. The re-derivation agrees with this entry exactly: all **19** ids
+  are in NEITHER set today, and the list matches character for character
+  · **today's numbers**, which have moved since this was filed: landed reads **151** and a
+  correct fix gives **170**. Derive them again rather than trusting these — `#399` and
+  `#399b` both changed the landed reader after this entry was written
+  · **the third door is now confirmed by measurement, not just predicted.** The same
+  `(?:/#\d+)*` sub-pattern is copied in three files: `watch.LEDGER_COMBINED_MENTION`,
+  `lint.LEDGER_ID` and `status_sync.LEDGER_HEAD` (the last is new since this entry —
+  the fourth door arrived while the task sat open, which is the entry's own argument
+  made for it)
+  · **red-prove both directions**, from #412: a space-joined AND a `+`-joined span land
+  every id they name, AND `**#96 stage 1**` still lands nothing. One direction alone
+  passes for a pattern that is simply too greedy
+  · when it lands, `file-formats.md` should **state the joined form explicitly** — it
+  documents `**#5/#6**` and says history packs several landings to a line, both true,
+  so there is no lie to fix, but a reader can only infer the space and `+` forms
+  · related: **#412**
 
 - **#333** — `states.mjs` is the SIXTH holder of the forbidden count idiom, and
   unconverted · **P2** (raised from P3) · correctness · origin: **loop** · #327
@@ -2985,6 +2978,24 @@ Next id: **413**
   **blocked**: human pick
 
 ## Recently landed
+- **#412** — withdrawn as a duplicate of `#331`, not implemented · P2 · parser/burndown ·
+  origin: **loop** · filed 2026-07-28 12:0x while closing `#399b`, withdrawn 12:34 the same hour
+  · I found the space-separated gap by running #399b's merge gate against the lane's tip, measured
+  it at 16 ids, and filed it as new work. It is not new: **#331** has carried it since #327's drift
+  review, with **19** ids (I missed the `+`-joined `**#157 + #222 + #223**` span entirely), a
+  coordinator verification at `04b9e00`, and a better fix than mine
+  · **#331 explicitly forbids the fix #412 prescribed.** I wrote *"the fix looks like
+  `(?:[ /]#\d+)*`"*; #331 says, in its own words, *"the point of this task is NOT to add `[ /+]`
+  to a third regex"* — because #301 widened the landed reader and #315 widened the open readers,
+  and one more separator patch just moves the defect to the next door. It wants one shared
+  definition every reader consumes
+  · **the lesson is the filing, not the parser**: a residual discovered mid-task is exactly when
+  the ledger is least likely to be consulted, and 136 open entries is far past the size where
+  recognition works. Everything #412 measured was already written down. Grep the ledger for the
+  symbol before filing — `LEDGER_COMBINED_MENTION` would have found #331 in one command
+  · its two genuine additions are folded into #331: today's numbers (151 → 170) and the
+  both-directions red-proof · related: **#331, #399**
+
 - **#399** — any bare bolded id in a landed entry marks that task landed, so **7 open tasks are
   reported as landed** · P1 · ledger-parser/correctness · origin: **loop** · found because a lint
   WARN told me to fold **his unanswered question**
