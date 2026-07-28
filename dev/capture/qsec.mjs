@@ -74,13 +74,26 @@ process.on('exit', () => {
    for ~1s and then removes itself, so an after-the-fact query finds nothing
    and reports a departure that did happen as one that did not. */
 const TRACE = ms => `new Promise(res => {
-  const sec = document.querySelector('.qsec');
-  const below = sec.nextElementSibling;
-  const body = [...sec.children].find(c => c.tagName !== 'SUMMARY');
   const seen = []; let ghost = null;
   const t0 = performance.now();
   (function step() {
     const t = performance.now() - t0;
+    // Re-acquire the section, its sibling and its body EVERY frame. The live
+    // tick re-renders the dashboard through snapshotFolds/restoreFolds, which
+    // REPLACES the .qsec node mid-gesture; a reference cached here at trace
+    // start detaches, and a detached element's getBoundingClientRect() is all
+    // zeros — so the trace reads a section that collapsed to 0 height and a
+    // panel that teleported (the deterministic 17->0, 0-part-way failure).
+    // The page is right: the replacement node is at the section's real height.
+    // The 1500ms bound was meant to sit inside the 2000ms tick, but the bound
+    // is timed from the trace arm and the tick from page load, so the two
+    // clocks drift and the bound does not in fact dodge the tick. Re-querying
+    // per frame survives a tick mid-trace instead of measuring it as a snap —
+    // the same do-not-cache-across-a-re-render lesson as oneinput's indicator.
+    // (#475.)
+    const sec = document.querySelector('.qsec');
+    const below = sec && sec.nextElementSibling;
+    const body = sec && [...sec.children].find(c => c.tagName !== 'SUMMARY');
     const g = document.querySelector('.qaghost');
     if (g && !ghost) ghost = {
       keep: g.getAttribute('data-keep'),
@@ -89,8 +102,8 @@ const TRACE = ms => `new Promise(res => {
       h: g.getBoundingClientRect().height,
     };
     seen.push({ t,
-      below: below.getBoundingClientRect().top + window.scrollY,
-      h: sec.getBoundingClientRect().height,
+      below: below ? below.getBoundingClientRect().top + window.scrollY : null,
+      h: sec ? sec.getBoundingClientRect().height : null,
       op: body ? +getComputedStyle(body).opacity : 1,
       ghosts: document.querySelectorAll('.qaghost').length });
     if (t < ${ms}) requestAnimationFrame(step); else res({ seen, ghost });
