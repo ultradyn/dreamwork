@@ -493,7 +493,7 @@ writeFileSync(QPATH, QGOOD);
   const hueIndigo = await meanHue(p);
   const favIndigo = await favRead();
 
-  ok('POST /tint is accepted for a name in the set', await post('green') === 200);
+  ok('POST /tint is accepted for a name in the set', await post('green') === 202);
   await sleep(400);
   ok('...and persists to .dreamwork/watch-tint',
      readTint().trim() === 'green');

@@ -195,10 +195,10 @@ class E1Envelope(HttpHarness):
     def test_a_complete_body_still_creates_a_receipt(self):
         # The positive half: a complete, well-formed body DOES create a
         # receipt. Without this, `return`-without-receipt would pass the test
-        # above for the wrong reason.
+        # above for the wrong reason. Status is 202 post-cutover (E3).
         status, _, _ = self.post(
             "/command", {"kind": "add-idea", "text": "complete body idea"})
-        self.assertEqual(status, 200)
+        self.assertEqual(status, 202)
         self.assertEqual(self.receipt_count(), 1)
 
     def test_an_interrupted_body_is_still_witnessed_incomplete(self):
@@ -276,8 +276,11 @@ class E2Shadow(HttpHarness):
         # its length matches the routes we exercised (six), so a seventh route
         # added to WRITE_ROUTE_HANDLERS without a payload here fails loudly.
         self.assertEqual(len(WRITE_ROUTES), 6, WRITE_ROUTES)
-        # Every route returned 200 in BOTH runs (shadow must not change that).
-        self.assertEqual(on_statuses, [200] * len(WRITE_ROUTES), on_statuses)
+        # Every route returned 202 with the journal ON (E3 cutover moved the
+        # write-route status) and 200 with the journal OFF (the pre-cutover
+        # baseline, which still uses _send). The shadow must change only the
+        # receipt count and the status code, nothing else.
+        self.assertEqual(on_statuses, [202] * len(WRITE_ROUTES), on_statuses)
         self.assertEqual(off_statuses, [200] * len(WRITE_ROUTES), off_statuses)
         # submissions.log is identical between the two runs (the journal adds a
         # receipt, not a submissions.log line). Compare the fields that are
@@ -311,6 +314,107 @@ class E2Shadow(HttpHarness):
             yield baseline
         finally:
             baseline.doCleanups()
+
+
+class E3Cutover(HttpHarness):
+    """E3: the journal commit, not the handler, authorises the response.
+
+    A committed write route returns 202 + `Location: /user-events/<id>` + the
+    receipt identity (id/sequence/digest) in the body, and the named receipt
+    is `get()`-able from the journal (a hardcoded 202 fails). A same-UUID retry
+    returns one receipt and the same Location. A journal open/commit failure
+    returns no 202 (503), at a real seam (chmod 0500 parent), no mocking.
+
+    Red lines: the `send_response(202)` in _send_receipt, and separately the
+    `if ... is None: 503` guard in do_POST."""
+
+    def _post_command(self, *, client_action_id):
+        return self.post("/command",
+                         {"kind": "add-idea", "text": "cutover idea"},
+                         client_action_id=client_action_id)
+
+    def test_202_names_a_receipt_that_exists(self):
+        # (a) parse the body, get() that id from the journal; a hardcoded 202
+        # with a fabricated id fails the get().
+        status, headers, body = self._post_command(
+            client_action_id="e3-a-receipt-exists")
+        self.assertEqual(status, 202)
+        location = headers.get("Location")
+        self.assertIsNotNone(location, headers)
+        payload = json.loads(body)
+        receipt = payload["receipt"]
+        rid = receipt["receipt_id"]
+        # The Location header names the same receipt id as the body.
+        self.assertEqual(location, f"/user-events/{rid}")
+        # The discriminating half: that receipt really exists in the journal.
+        # A hardcoded 202 mints an id that get() cannot find.
+        with open_journal(self._journal_path()) as j:
+            row = j.get_receipt(rid)
+        self.assertIsNotNone(row, rid)
+        self.assertEqual(row["receipt_id"], rid)
+        # sequence/digest in the body match the journal's row.
+        self.assertEqual(receipt["sequence"], row["sequence"])
+        self.assertEqual(receipt["request_digest"], row["request_digest"])
+
+    def test_retry_of_the_same_uuid_returns_one_receipt_and_the_same_location(self):
+        # (b) idempotency: a same-UUID retry returns one receipt and the same
+        # Location. The journal dedupes same UUID+digest.
+        s1, h1, b1 = self._post_command(client_action_id="e3-b-retry")
+        s2, h2, b2 = self._post_command(client_action_id="e3-b-retry")
+        self.assertEqual(s1, 202)
+        self.assertEqual(s2, 202)
+        self.assertEqual(h1["Location"], h2["Location"])
+        self.assertEqual(
+            json.loads(b1)["receipt"]["receipt_id"],
+            json.loads(b2)["receipt"]["receipt_id"])
+        # Exactly one receipt for the two retries — derived, not a literal.
+        self.assertEqual(self.receipt_count(), 1)
+
+    def test_no_202_when_the_journal_cannot_commit(self):
+        # (c) journal path in a directory chmod 0500 before start, so the open
+        # genuinely fails. No 202, no receipt. NO MOCKING of sqlite3.connect:
+        # real permissions, real failure. (Plan's "must not fake" clause.)
+        # Run in a subprocess-free way: a fresh target whose .dreamwork is
+        # read-only, so open_journal's parent-create / sqlite open fails.
+        import os as _os
+        import shutil as _shutil
+        ro_target = _make_target(_os.path.join(self.tmp.name, "readonly"))
+        dw = _os.path.join(ro_target, ".dreamwork")
+        _os.chmod(dw, 0o500)
+        try:
+            port_probe = http.server.ThreadingHTTPServer(
+                ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+            rport = port_probe.server_address[1]
+            port_probe.server_close()
+            rauth = watch.RequestAuthority(["allowed.test", "127.0.0.1"], rport)
+            rserver = http.server.ThreadingHTTPServer(
+                ("127.0.0.1", rport),
+                watch.make_handler(ro_target, authority=rauth))
+            threading.Thread(target=rserver.serve_forever,
+                             daemon=True).start()
+            try:
+                base = f"http://127.0.0.1:{rport}"
+                host = f"allowed.test:{rport}"
+                body = json.dumps(
+                    {"kind": "add-idea", "text": "should not commit"}).encode()
+                req = urllib.request.Request(
+                    f"{base}/command", data=body,
+                    headers={"Host": host, "Origin": f"http://{host}",
+                             "Content-Type": "application/json"},
+                    method="POST")
+                try:
+                    urllib.request.urlopen(req, timeout=5)
+                    status = 202  # should not reach here
+                except urllib.error.HTTPError as exc:
+                    status = exc.code
+                # No 202: the journal could not commit, so no receipt
+                # authorises the response. 503 is the contract-level failure.
+                self.assertNotEqual(status, 202)
+            finally:
+                rserver.shutdown()
+                rserver.server_close()
+        finally:
+            _os.chmod(dw, 0o700)
 
 
 class _BaselineHarness(E2Shadow):

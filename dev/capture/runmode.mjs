@@ -216,7 +216,7 @@ const idem = await p.evaluate(async () => {
   return { status: r.status, changed: j.changed };
 });
 notes.push('idempotent: ' + JSON.stringify(idem));
-ok('identical final returns 200', idem.status === 200);
+ok('identical final returns 202', idem.status === 202);
 ok('identical final reports changed:false', idem.changed === false);
 if (existsSync(eventsFile)) {
   eventLines = readFileSync(eventsFile, 'utf8').split('\n')

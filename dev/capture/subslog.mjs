@@ -97,7 +97,7 @@ const OKTEXT = 'an answer that lands, witnessed ' + process.pid;
   ok('an accepted answer is recorded', !!r && r.path === '/answer' &&
      r.kind === 'answer');
   ok('...with the outcome it actually had', !!r && r.outcome === 'ok' &&
-     r.status === 200);
+     r.status === 202);
   ok('...and the page it was sent from (#126)', !!r && typeof r.from === 'string');
 }
 

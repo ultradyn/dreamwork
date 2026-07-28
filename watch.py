@@ -9815,6 +9815,72 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             )
             self._journal_result = _journal_receive(target, envelope)
 
+        def journal_result(self):
+            """The committed receipt's ReceiveResult, or None if none committed.
+
+            E3 cutover: the response authorisation. A None means the journal
+            could not commit (open/receive failure) and `do_POST` has already
+            returned 503; a handler that reaches `_send_receipt` therefore has
+            a real receipt to name."""
+            return getattr(self, "_journal_result", None)
+
+        def _send_receipt(self, body, ctype):
+            """Send a write-route success as 202 + Location + receipt identity.
+
+            The journal commit — not the handler — authorises the response
+            (E3 cutover). `body` is the handler's JSON object (e.g. {"ok":
+            True}); the receipt identity (id/sequence/digest) is merged in and a
+            `Location: /user-events/<id>` header is set. A hardcoded 202 without
+            a real receipt fails E3(a): the body's receipt id is `get()`-able
+            from the journal.
+
+            Legacy fallback: when the journal is disabled (journal_shadow=False,
+            the pre-cutover path E2's baseline exercises), this sends the body
+            as a plain 200 via `_send` — no receipt, no Location."""
+            if not self.journal_shadow:
+                self._send(body, ctype)
+                return
+            result = self.journal_result()
+            # result is non-None here: do_POST 503'd if the journal failed. But
+            # parse defensively rather than trusting control flow — a missing
+            # receipt must never mint a 202 with a fabricated id.
+            receipt = self._receipt_body(result) if result is not None else None
+            if receipt is None:
+                self.send_error(503)
+                return
+            payload = self._merge_receipt(body, receipt)
+            out = json.dumps(payload).encode("utf-8")
+            self.send_response(202)
+            self.send_header("Content-Type", ctype + "; charset=utf-8")
+            self.send_header("Content-Length", str(len(out)))
+            self.send_header("Location", f"/user-events/{receipt['receipt_id']}")
+            self.end_headers()
+            self.wfile.write(out)
+
+        def _receipt_body(self, result):
+            """Project a ReceiveResult into the response's receipt fields, or
+            None if the result carries no committed receipt (conflict/kind)."""
+            if not result or not result.receipt_id:
+                return None
+            return {
+                "receipt_id": result.receipt_id,
+                "sequence": result.sequence,
+                "request_digest": result.request_digest,
+            }
+
+        def _merge_receipt(self, body, receipt):
+            """Merge the handler's JSON body with the receipt identity.
+
+            `body` is a JSON string; parse, merge under a `receipt` key, and
+            re-serialise so the handler's own fields (tint, mode, changed) are
+            preserved alongside the receipt."""
+            try:
+                obj = json.loads(body) if isinstance(body, str) else dict(body)
+            except (ValueError, TypeError):
+                obj = {}
+            obj["receipt"] = receipt
+            return obj
+
         def _send(self, body, ctype):
             data = body.encode("utf-8")
             self.send_response(200)
@@ -10017,15 +10083,17 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 self.send_error(400)
                 return
             self._body = body
-            # The journal is the shadow here (journal-shadow phase, pre-cutover):
-            # commit a receipt on every well-formed write request, and swallow any
-            # failure so the existing handlers stay authority until E3. The
-            # envelope's transport fields are decided here, before dispatch —
-            # the same fields the digest length-frames. Runs after the
-            # truncated check so an over-limit body (still 413) is not
-            # receipted as a complete envelope.
+            # The journal commit authorises the response (E3 cutover): the
+            # receipt is committed BEFORE the handler dispatches, so a journal
+            # open/commit failure is a 503 with no 202 — the request was never
+            # durably received. When the journal is disabled (journal_shadow=
+            # False, the pre-cutover legacy path used only by E2's baseline),
+            # no receipt is attempted and the handlers fall back to 200.
             if not truncated and self.journal_shadow:
                 self._journal_receive(target)
+                if self.journal_result() is None:
+                    self.send_error(503)
+                    return
             # ...and only now may a request be turned away. An over-long body
             # is still refused — the cap is what makes the read bounded — but
             # it is refused with its first MAX_BODY bytes already kept, so a
@@ -10067,7 +10135,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 atomic_write_text(path, new_text)
             log_event(target, f'question for dreamer{from_hint(req.get("from"))}: '
                       f'"{one_line(question)}" -> .dreamwork/answers.md')
-            self._send(json.dumps({"ok": True}), "application/json")
+            self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_answer(self):
             req = self._read_json()
@@ -10104,7 +10172,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                       f'answer{from_hint(req.get("from"))}: "{one_line(title)}"'
                       f' -> .dreamwork/questions.md '
                       f'(fold the answer, act, move to Answered)')
-            self._send(json.dumps({"ok": True}), "application/json")
+            self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_comment(self):
             req = self._read_json()
@@ -10138,7 +10206,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             log_event(target,
                       f'follow-up{from_hint(req.get("from"))}: '
                       f'"{one_line(title)}" -> .dreamwork/questions.md {hint}')
-            self._send(json.dumps({"ok": True}), "application/json")
+            self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_command(self):
             req = self._read_json()
@@ -10163,7 +10231,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 self.send_error(400)
                 return
             log_event(target, command_line(kind, text, req.get("from")))
-            self._send(json.dumps({"ok": True}), "application/json")
+            self._send_receipt(json.dumps({"ok": True}), "application/json")
 
         def _handle_tint(self):
             """His colour for this project (#143).
@@ -10188,7 +10256,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             if not write_tint(target, name):
                 self.send_error(500)
                 return
-            self._send(json.dumps({"ok": True, "tint": name}),
+            self._send_receipt(json.dumps({"ok": True, "tint": name}),
                        "application/json")
 
         def _handle_run_mode(self):
@@ -10210,7 +10278,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 return
             current = read_run_mode(target)
             if mode == current:
-                self._send(json.dumps({"ok": True, "mode": mode,
+                self._send_receipt(json.dumps({"ok": True, "mode": mode,
                                        "changed": False}),
                            "application/json")
                 return
@@ -10218,7 +10286,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 self.send_error(500)
                 return
             log_event(target, run_mode_line(mode, req.get("from")))
-            self._send(json.dumps({"ok": True, "mode": mode, "changed": True}),
+            self._send_receipt(json.dumps({"ok": True, "mode": mode, "changed": True}),
                        "application/json")
 
         # The single source of truth for write routes: adding a route here both
