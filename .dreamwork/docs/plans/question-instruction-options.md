@@ -21,9 +21,25 @@ and different from what I would have proposed at 16:29.
 
 **The finding nobody was looking for, and it is the sharpest one.** The two entries whose *titles*
 promise a one-word answer — *"one word: may I add `GIT_OPTIONAL_LOCKS=0`…"* and *"one word: may I run
-`install.py --apply`?"* — are **300 and 448 words**, both **above the corpus median of 302**. So the
-size of what we write is **weakly coupled to the size of what we are asking.** A one-word decision
-gets a median-length essay. That, not the number of sub-questions, is the defect the corpus shows.
+`install.py --apply`?"* — are **300 and 448 words** against a corpus median of **300**: one *at* the
+median, one ~50% above. So the size of what we write is **weakly coupled to the size of what we are
+asking.** A one-word decision gets a median-length-or-longer essay. That, not the number of
+sub-questions, is the defect the corpus shows.
+
+> **Correction, 17:17, and it has an interesting cause.** This paragraph first said *"both above the
+> corpus median of 302"*, measured at n=56. The lane building the artifact re-derived at **n=58** and
+> got **307 and 455 against a median of 308** — so one entry sits *one word under* and the literal
+> *"both above"* fails. It used its own figures and reported the disagreement, correctly. My own
+> re-derivation gives **300 and 448 against 300**. **Two methods disagree on the figures and agree on
+> the conclusion**, which is the useful state: the literal claim fails under both, the weak-coupling
+> finding survives under both. The unresolved gap between the two counts is recorded rather than
+> papered over.
+>
+> **And the cause is worth naming:** the corpus grew by two entries because *I filed two questions in
+> between* — one of them the question that presents this finding. **The corpus we measure is the
+> corpus we write into**, so any figure about our own asks has an observer effect and a shelf life.
+> A claim of the form *"both above the median"* is a hostage to the next thing we file; *"one at the
+> median, one half again as long"* is not.
 
 Two things the count conflates, which the options must keep apart:
 
@@ -123,8 +139,11 @@ rendered element on `/questions` rather than plain text (a `watch.py` change, an
   at 5, one clarifying question. It has **no** rule for silence, partial answers or late replies —
   the one behaviour we actually need — so only its density half transfers.
 - **The measured defect is a weak coupling between the size of the ask and the size of the writing.**
-  Entry length: min 29, p25 112, median 302, p75 517, max 1121 words. The two entries whose titles
-  promise a *one-word* answer are 300 and 448 words — both above the median.
+  Entry length at n=58: min 29, p25 118, median 300, p75 471, max 1121 words. The two entries whose
+  titles promise a *one-word* answer are 300 and 448 words — **one at the median, one ~50% above**.
+  Corrected from *"both above 302"*: the corpus grew two entries because I filed two questions in
+  between, so **the corpus we measure is the corpus we write into** and a figure about our own asks
+  has a shelf life.
 - **A claim of mine was wrong and is corrected here:** the 34 zero-marker entries are single-decision
   asks, not non-asks. 27 contain a question mark and 23 carry a `Rec`.
 - **Four options**, deliberately orthogonal: **A** the ask comes first with its accepted answers;

@@ -27,13 +27,17 @@
   **Rejected, by your own data: one decision per entry** — the obvious port from `i-have-adhd`, and
   **15 of 16** of your answered multi-part questions closed complete.
   **The defect is not what I assumed.** The two entries titled *"one word: may I…"* are **300 and
-  448 words**, against a corpus median of **302**. What we write is barely coupled to the size of
-  the decision.
+  448 words** against a corpus median of **300** — one *at* the median, one ~50% above. (I first
+  wrote *"both above 302"*; the corpus grew two entries — including this one — and the lane building
+  the artifact re-derived 307/455 against 308. **Two methods, both agreeing the literal claim fails
+  and the coupling is weak.**) What we write is barely coupled to the size of the decision.
   Optional: artifact `.dreamwork/review/421-question-options.html` (being built), plan
   `question-instruction-options.md`, research `2026-07-28-question-instruction-design.md`, both under
   `.dreamwork/docs/`. Two corrections are recorded there.
-  **Drafts of this entry ran 342 then 256 words — both above the median it complains about. I claimed
-  a figure twice without measuring it, in the entry about that.** Third draft, measured: 247.
+  **This entry has been redrafted four times and I published a wrong word count twice** — 249 for a
+  real 342, then 232 for 256 — in the entry about writing more than the ask needs. **I am no longer
+  quoting a count for it**, because a self-referential figure is wrong the moment anything above it
+  changes, and that is itself an argument for option C being a reported target rather than a claim.
 
 - **P1 · 2026-07-28 — #263: I told you the gate's condition was met. It is not — lane C is 3 of 5.
   One sequencing call is still genuinely yours.**
