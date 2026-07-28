@@ -3479,3 +3479,217 @@ class TestBriefHandoffObligation:
         rep = lint.Report()
         lint.check_brief_handoff_obligation(t / ".dreamwork", rep)
         assert rep.rows == [], rep.render()
+
+
+class TestHumanBlocker:
+    """#419 — no human blocker without a question.
+
+    He tried to rule on #264 and found no question. The invariant: an open
+    task blocked on a human decision has a questions.md entry, open or
+    answered-but-unfolded. This check makes Direction 1 checkable — a marker
+    `blocked-on: **human**` whose gate has no question. Direction 2 ("he ruled
+    and nobody processed it") is REFUSED (see the docstring and the report):
+    the brief's amendment retracted the #371 specimen, and the live repo shows
+    the prose form fires 11/11 false positives. The amendment's must-NOT-flag
+    case is the first test below.
+    """
+
+    def build(self, tmp_path, tasks, questions=None):
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "tasks.md").write_text(tasks)
+        if questions is not None:
+            (dw / "questions.md").write_text(questions)
+        return t
+
+    def rows(self, t, level=None):
+        rep = lint.Report()
+        lint.check_human_blocker(t / ".dreamwork", lint.load_watch(), rep)
+        return [d for lvl, w, d in rep.rows
+                if w == "tasks.md" and (level is None or lvl == level)]
+
+    TASKS = """# Tasks
+
+Next id: **5**
+
+## Open
+
+- **#1** — a task · P2 · origin: **loop**
+- **#2** — blocked on him · P1 · origin: **loop** · blocked-on: **human**
+- **#3** — gated on a neighbour · P1 · origin: **loop** · blocked-on: **human** · gate: **#9**
+- **#4** — wrong vocab · P1 · origin: **loop** · blocked-on: **approval**
+"""
+
+    OPEN_Q = """# Questions for the human
+
+## Open
+
+- **#5: a question about task five** body
+
+## Answered
+"""
+
+    ANSWERED_Q = """# Questions for the human
+
+## Open
+
+## Answered
+
+- **#2: a question about task two** → answered (2026-07-28): yes
+"""
+
+    def test_a_marker_with_no_question_errors_direction_1(self, tmp_path):
+        # The defect he hit: blocked on him, nothing on the channel. This is
+        # the one direction this check enforces, and it must go red.
+        t = self.build(tmp_path, self.TASKS, self.OPEN_Q)
+        errs = self.rows(t, lint.ERROR)
+        assert any("#2" in e and "no questions.md entry names #2" in e for e in errs), errs
+
+    def test_the_371_prefix_body_does_NOT_flag_this_is_the_amendment(self, tmp_path):
+        # THE amendment's required test (16:23). The pre-fix #371 body is what
+        # the brief originally offered as the Direction-2 red; the amendment
+        # retracted it: "answered ≠ authorised", and #371 is a must-NOT-flag.
+        # #371's body names a #263 question; if a check keyed on "question
+        # answered ⇒ unblock" fired here, it would have told the coordinator to
+        # repeat 7c5fc82's exact mistake. Restore the real body from
+        # `git show 7c5fc82^:.dreamwork/tasks.md` (this constant is verbatim).
+        prefix_371 = (
+            "- **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·\n"
+            "  reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified\n"
+            "  · **what REMAINS is only the policy, and it is his**: whether a short body is refused\n"
+            "  · #263's plan places that half at its increment 20 · **blocked on #263 Q2 only** —\n"
+            "  no longer on `watch.py`, which is free\n"
+        )
+        # Precondition: the body carries the prose phrase a naive D2 would key
+        # on. Without this assertion the test is hollow — it would pass if the
+        # fixture had been edited to remove the trigger. Assert the trigger.
+        assert "blocked on #263" in prefix_371, "fixture lost its trigger phrase"
+        tasks = "# Tasks\n\nNext id: **372**\n\n## Open\n\n" + prefix_371
+        # #263 has an ANSWERED question in the live repo, so a D2 keyed on
+        # "gate answered" would fire. Provide that answered question.
+        t = self.build(tmp_path, tasks, self.ANSWERED_Q.replace("#2:", "#263:").replace(
+            "about task two", "about task 263"))
+        rows = self.rows(t)
+        assert rows == [], (
+            "the pre-fix #371 body must NOT flag (amendment 16:23): 'answered ≠ "
+            "authorised' — a ruling on a decision does not authorise the work; "
+            "got: %r" % rows)
+
+    def test_a_marker_with_an_open_question_is_clean(self, tmp_path):
+        # The happy path: #2 carries the marker and has an open question. A
+        # question on the channel means there IS an answer in our data. Minimal
+        # fixture: only the marked entry, so a stray error can't mask the
+        # happy path.
+        tasks = (
+            "# Tasks\n\nNext id: **3**\n\n## Open\n\n"
+            "- **#2** — blocked on him · P1 · origin: **loop** · blocked-on: **human**\n"
+        )
+        questions = (
+            "# Questions for the human\n\n## Open\n\n"
+            "- **#2: a question about task two** body\n\n## Answered\n"
+        )
+        t = self.build(tmp_path, tasks, questions)
+        errs = self.rows(t, lint.ERROR)
+        assert errs == [], errs
+        oks = self.rows(t, lint.OK)
+        assert any("1 of 1 open entries marked blocked-on-human" in o for o in oks), oks
+
+    def test_a_marker_with_an_answered_question_is_clean(self, tmp_path):
+        # An answered-but-unfolded question still counts as "an answer in our
+        # data". This is the legitimate transient Direction 2 was meant to
+        # catch, and the reason D2 cannot be a check: this very shape is also
+        # the #371 trap when the answer does not authorise the build. Direction
+        # 1 treats it as satisfied (there is data); the fold is a separate
+        # concern, owned by check_unfolded_answers. Minimal fixture: only the
+        # marked entry, so a stray error from another entry can't mask it.
+        tasks = (
+            "# Tasks\n\nNext id: **3**\n\n## Open\n\n"
+            "- **#2** — blocked on him · P1 · origin: **loop** · blocked-on: **human**\n"
+        )
+        t = self.build(tmp_path, tasks, self.ANSWERED_Q)
+        errs = self.rows(t, lint.ERROR)
+        assert errs == [], errs
+
+    def test_gate_redirection_resolves_to_the_named_question(self, tmp_path):
+        # #3 is marked human with gate: #9. #3 has no question, #9 does. The
+        # gate must redirect so the check finds #9's question and is clean —
+        # this is the mechanism that survives a ruling riding a neighbour.
+        t = self.build(tmp_path, self.TASKS, self.OPEN_Q.replace("#5:", "#9:").replace(
+            "task five", "task nine"))
+        errs = self.rows(t, lint.ERROR)
+        assert not any("#3" in e for e in errs), errs  # gate redirected
+
+    def test_transitive_coverage_does_not_count(self, tmp_path):
+        # #2's own id has no question. A neighbour #5 has an open question that
+        # is "about the same decision". That MUST NOT satisfy #2 — a reader on
+        # #2 alone cannot find #5, which is the #371 trap. #2 must ERROR.
+        t = self.build(tmp_path, self.TASKS, self.OPEN_Q)  # #5 has the question, #2 does not
+        errs = self.rows(t, lint.ERROR)
+        assert any("#2" in e and "no questions.md entry names #2" in e for e in errs), errs
+
+    def test_a_wrong_vocabulary_value_errors(self, tmp_path):
+        # blocked-on: **approval** is a claim a reader would have to interpret.
+        # The vocabulary is exactly `human`; anything else is an error, the
+        # same reasoning as the origin marker.
+        t = self.build(tmp_path, self.TASKS, self.OPEN_Q)
+        errs = self.rows(t, lint.ERROR)
+        assert any("#4" in e and "vocabulary is exactly `human`" in e for e in errs), errs
+
+    def test_a_prose_blocked_on_N_does_not_fire_even_when_N_is_answered(self, tmp_path):
+        # The load-bearing negative: the prose form `blocked on #N` where N is
+        # answered is what every task-dependency entry looks like. On the live
+        # repo it fires 11 times, all legitimate. An entry with no marker but a
+        # prose `blocked on #263` (answered) must be SILENT.
+        tasks = (
+            "# Tasks\n\nNext id: **4**\n\n## Open\n\n"
+            "- **#1** — a plain task · P2 · origin: **loop**\n"
+            "  blocked on #2 landing first; this is a normal task dependency\n"
+        )
+        t = self.build(tmp_path, tasks, self.ANSWERED_Q.replace("#2:", "#2:").replace(
+            "about task two", "about task two"))
+        rows = self.rows(t)
+        assert rows == [], (
+            "prose `blocked on #N` must not fire even when N is answered — it "
+            "names a task dependency, not an unprocessed ruling; got: %r" % rows)
+
+    def test_an_entry_with_no_marker_is_not_a_claim(self, tmp_path):
+        # Absence is "no claim", never "unblocked". An unmarked entry is simply
+        # not checked — the marker is forward-only, and 137 open entries carry
+        # none. The check must be silent on them.
+        tasks = (
+            "# Tasks\n\nNext id: **3**\n\n## Open\n\n"
+            "- **#1** — a plain prose-only task · P2 · origin: **loop**\n"
+            "  awaiting his ruling on something\n"
+        )
+        t = self.build(tmp_path, tasks, self.OPEN_Q)
+        assert self.rows(t) == [], self.rows(t)
+
+    def test_silent_when_questions_md_is_missing(self, tmp_path):
+        # Cannot correlate without the question reader — say nothing rather
+        # than claim every marked entry is fine (the hollow-pass this repo
+        # refuses). No questions.md ⇒ the check degrades silently.
+        t = self.build(tmp_path, self.TASKS)  # no questions.md
+        assert self.rows(t) == [], self.rows(t)
+
+    def test_a_hard_wrapped_marker_is_still_read(self, tmp_path):
+        # The loop writes at ~72 columns, so a marker wraps: `blocked-on:`
+        # ends a line, `**human**` opens the next. _metadata_clause joins the
+        # entry's lines before reading, so the wrapped marker must still fire.
+        tasks = (
+            "# Tasks\n\nNext id: **3**\n\n## Open\n\n"
+            "- **#1** — a task · P1 · origin: **loop** · blocked-on:\n"
+            "  **human** · body continues\n"
+        )
+        t = self.build(tmp_path, tasks, self.OPEN_Q)  # #1 has no question
+        errs = self.rows(t, lint.ERROR)
+        assert any("#1" in e and "no questions.md entry names #1" in e for e in errs), errs
+
+    def test_this_repo_passes_its_own_human_blocker_check(self):
+        # Dogfood: the live repo is forward-only (0 markers) so the check is
+        # silent. A red here means a marker landed that has no question, which
+        # would be a real finding — or a misfire, and the coordinator needs to
+        # know which.
+        rep = lint.Report()
+        lint.check_human_blocker(lint.SKILL_DIR / ".dreamwork", lint.load_watch(), rep)
+        assert not any(lvl == lint.ERROR for lvl, _, _ in rep.rows), rep.render()

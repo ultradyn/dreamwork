@@ -644,6 +644,111 @@ deciding that — marker or prose — is its own task. A contract written ahead 
 its evidence, with nothing using it and 29 entries contradicting it, is worse
 than none.
 
+## `.dreamwork/tasks.md` — blocked on a human decision (#419)
+
+He tried to rule on `#264` and found no question to act on. The loop had told
+him it was the only thing on his desk while no `questions.md` entry existed for
+it, so the loop reported itself blocked on him and gave him nothing to rule on.
+His words: *"we should structure things in such a way that it's impossible for
+us to be blocked on a user decision without a corresponding question … there
+always has to be an answer in our data."*
+
+**The invariant (one half of it is checkable; the other half is refused
+below):** every open task whose blocker is a **human decision** has a
+`questions.md` entry that is either **open** (awaiting his ruling) or
+**answered-but-unfolded** (ruled, awaiting the loop's processing). Both are
+legitimate. **Absent is not.** A task cannot be blocked on him with nothing on
+the channel to him.
+
+A task cannot currently SAY this. Entries express it in prose — *"awaiting his
+ruling"*, *"blocked on #264 Q2"*, *"do not start without his ruling on S1/S2/S4"*
+— and prose is not checkable. So this marker exists, and it follows the
+`origin:` / `related:` `key: **value**` idiom because a second idiom for the same
+shape would be a second thing to learn:
+
+```text
+· blocked-on: **human** ·              the blocker is a human decision
+```
+
+**One value: `human`.** It names a *kind* of blocker (his decision), not a
+specific question — a task-blocker (`blocked on #352`) is a different relation
+and stays in prose, which is the gap `depends` (above) is filed to close. A
+`gate:` companion names **where the ruling lives**, when the question does not
+carry the task's own id:
+
+```text
+· blocked-on: **human** · gate: **#263** ·     the ruling rides a neighbour's question
+```
+
+`gate:` is optional and defaults to **the entry's own id**. It exists because a
+ruling can ride inside another entry's question — `#371` waited on Q2, which
+lived inside `#263`'s ask, so an answer there pointed at nothing the loop could
+follow back. A check keyed on *"a question with this task's own id"* would read
+such an entry as having no question at all, so a blocked-on-human entry whose
+ruling lives on a neighbour MUST name that neighbour with `gate:` or the check
+cannot find the data. (The `#371` story is subtler than "blocked, then
+unblocked" — see the refused Direction 2 below — but the gate mechanism is
+exactly what lets an entry point the check at the right channel.)
+
+**Absence means "no claim", never "unblocked".** An entry with no marker is not
+asserted to be unblocked; it is simply not making a machine-readable claim about
+its blocker. Most of history (137 open entries as of this writing) carries no
+marker and is **deliberately left alone** — the marker is forward-only, not a
+retrofit, because retrofitting 137 prose judgements into a closed vocabulary is
+the kind of bulk edit to durable memory this repo has already paid for once
+(`#353`). The honest subset that earns a marker is the one the evidence supports;
+the rest stay prose and the check says nothing about them.
+
+`lint.py` (`check_human_blocker`, inside `check_tasks`) enforces **one
+direction**:
+
+- **Direction 1 — ERROR — "there always has to be an answer in our data."** An
+  open entry carries `blocked-on: **human**`, and **no** `questions.md` entry
+  (open or answered) names the gate id (the `gate:` value, or the entry's own id
+  if absent). This is the defect he hit: blocked on him, nothing on the channel.
+  **Transitive coverage does NOT count.** An entry whose own id has no question
+  is Direction 1 ERROR even if a neighbouring task's question covers the same
+  decision — because a reader landing on the entry alone cannot find it, which is
+  exactly the shape of the #371 trap. Name the neighbour with `gate:` and the
+  check follows it there; leave the gate implicit and the entry owes its own
+  question. (Consequence for `#353`: it forbids starting without his S1/S2/S4
+  ruling and no question names `#353`; an open question about `#264` covers the
+  same ground transitively, but transitive does not count, so `#353` would need
+  either its own question or an explicit `gate:` to satisfy this check if it
+  carried the marker. It carries none today, so the check is silent on it — the
+  coordinator decides whether `#353` earns a marker.)
+
+**Direction 2 — "he ruled and nobody processed it" — is deliberately NOT
+implemented, and this is a refutation the brief invited, grounded in the brief's
+own amendment.** The amendment (`16:23`) retracted the `#371` specimen: a ruling
+that *answers* a decision does not *authorise* the work. His *"Q2 yes"* amended
+the design while the **implementation** of that answer was a separately-gated
+increment, so reading the landed answer as a green light was the very error
+`7c5fc82` made and `6ea8f6b` retracted. That generalises: **"answered ≠
+authorised."** An answer may amend a design whose build is withheld (#371),
+grant a contract while withholding its build (#294, #254's *"design only"*), or
+authorise one scope while a larger one stays open. Checking the amendment's other
+three specimens confirms none is a defect either — `#254` is a deliberate
+partial (design landed, implementation a separate ask), `#367` is in progress,
+`#50` is authorised-but-not-started (a backlog item, not a stall). A Direction-2
+rule built on *"the gate's question is answered"* therefore rests on a false
+equivalence, and the live repo measures the cost directly: the prose form
+`blocked on #N` where `#N` is answered fires on **11 open entries, all 11
+legitimate** — every one is a task dependency on `#N`'s *work* landing, not on
+its question being answered. `#371` itself, the specimen the brief offered, is
+among the eleven. A WARN that fires 11 wrong times and 0 right ones is the
+hollow-check failure this repo has spent a day learning to distrust, so Direction
+2 is refused. Detecting *"ruled but unprocessed"* belongs to a mechanism that
+records **authorisation** (an `authorised:` field, or #263's event journal), not
+one that infers it from a question's section heading.
+
+The correlation set comes from the **real parser** —
+`watch.parse_open_questions` / `watch.parse_answered` for the question titles —
+never a second copy, for the reason every other cross-file check in this file
+gives: two readers of one fact drift. Every count the check prints is **derived
+at runtime**, never a literal: *"N of M open entries marked blocked-on-human all
+have a question"*.
+
 ## `.dreamwork/tasks.md` — an open entry that declares ITSELF completed (#335)
 
 The section above catches the case where *git* says a task landed. This one
