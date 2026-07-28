@@ -27,6 +27,48 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **469**
 
 ## Open
+- **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
+  **P1** · loop-machinery/containment · origin: **loop** · found 2026-07-29 03:32 when the `#263` merge aborted:
+  `error: Your local changes to the following files would be overwritten by merge: dev/capture/health.mjs`
+  · **what happened**: the `#413` lane was dispatched into `.worktrees/superseded` on `wt/superseded` and its
+  brief named the worktree twice, but it edited `dev/capture/health.mjs`, `.dreamwork/docs/doc-map.md` and wrote
+  a new plan file **in the main checkout on `master`**. Its own worktree stayed untouched. The `ccc` invocation
+  ran with the worktree as cwd, so this was not a dispatch error
+  · **two harms, one realised.** Realised: it blocked a verified merge that had been deliberately held for half
+  an hour, and the coordinator cannot fix it by reverting, because reverting under a live agent destroys work in
+  progress — so the merge waits on a subagent's acknowledgement. Unrealised but worse: **a `git commit` by the
+  coordinator would have swept the lane's half-finished edits into a ledger commit under the wrong message**,
+  which is `12f47e3` exactly, and `--only` does not help when the file is one the coordinator is also touching
+  · **the invariant this breaks is the one the whole fan-out rests on** — *"parallel increments only ever touch
+  disjoint files, so there is never a split brain"*. A worktree makes that hold **by construction**, and that
+  guarantee is void the moment a lane writes outside it. The brief cannot enforce it; only a check can
+  · **candidate mechanisms, none built**: a pre-dispatch marker file the lane must find in its cwd and assert;
+  the coordinator asserting a clean main tree before each merge and naming the culprit paths (cheap, catches it
+  late); `git config core.hooksPath` with a pre-commit hook in the main checkout that refuses a commit touching
+  paths a dispatched lane owns (`status.json` already records ownership); or dispatching with the worktree as an
+  explicit `-C` rather than trusting cwd. Decide with an IGC — a mechanism that only warns after the fact fails
+  the goal *"the coordinator never has to ask a subagent's permission to merge"*
+  · **`status.json` already carries what a check would need**: which lanes are out and what files each owns. That
+  was built for a compacted coordinator; it is also the registry a containment check can read
+  · related: **#450, #402, #413, #468**
+  · **LANDED `58e3040`, merged `ef5db01`** — `dev/lane_guard.py` refuses a main-checkout commit touching a
+  dispatched lane's paths, with `lint.check_brief_lane_owns` making a brief that declares nothing loud at
+  write time. `Needs: config` — `core.hooksPath` is machine-local, so the script is committed and enabling
+  is a documented step
+  · **it refuted this brief's own premise by measuring it:** `status.json` carries **no** file-ownership
+  field, so any mechanism reading an ownership list out of it reads nothing and passes vacuously from the
+  day it ships. Ownership comes instead from the brief the lane was actually handed, as a machine-parseable
+  `Lane-owns:` line
+  · **honest about its ceiling:** R5 fails at first **commit**, not first write. The only rival that fails
+  at first write needs the lane's cooperation, which is exactly what already failed — and both harms here
+  were commit-shaped. The pre-merge assertion (R2) is the successor, deliberately unbuilt: `#468`
+  · **STAYS OPEN, landed but UNENABLED.** `core.hooksPath` is machine-local, so the merge shipped a
+  script and a documented step, not protection. Measured at fold time: his `core.hooksPath` is **global**
+  (`~/.config/git/hooks`) and already holds a `pre-commit` symlinked into `~/src/c2c`, so enabling reaches
+  **every repo on the machine**. The guard chains rather than clobbers and no-ops where no `wt/*` worktree
+  exists, but a hook in front of every commit is his call — **asked 2026-07-29 04:10, `rec: yes, chained`**
+  · **blocked-on: **human** (consent to install)**
+
 - **#460** — a tool that replays the `task_event` `.jsonl` log and reconstructs the database · **P3** ·
   tooling/recovery · origin: **human** · **blocked-on: #294** (which creates the log) ·
   **human via watch 2026-07-29 01:43, answering `#264` Q2:** *"We can add a future task (low priority for now)
@@ -3399,41 +3441,6 @@ Next id: **469**
   · **LANDED `a443b33`, merged `a63930a`** — `scrollbar-gutter: stable` on the composer textarea. The lane
   chose the gutter over a permanently visible bar and gave the reason: it removes the reflow he described
   **without** adding furniture to the page. If he meant the literal bar, it is a one-line change
-- **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
-  **P1** · loop-machinery/containment · origin: **loop** · found 2026-07-29 03:32 when the `#263` merge aborted:
-  `error: Your local changes to the following files would be overwritten by merge: dev/capture/health.mjs`
-  · **what happened**: the `#413` lane was dispatched into `.worktrees/superseded` on `wt/superseded` and its
-  brief named the worktree twice, but it edited `dev/capture/health.mjs`, `.dreamwork/docs/doc-map.md` and wrote
-  a new plan file **in the main checkout on `master`**. Its own worktree stayed untouched. The `ccc` invocation
-  ran with the worktree as cwd, so this was not a dispatch error
-  · **two harms, one realised.** Realised: it blocked a verified merge that had been deliberately held for half
-  an hour, and the coordinator cannot fix it by reverting, because reverting under a live agent destroys work in
-  progress — so the merge waits on a subagent's acknowledgement. Unrealised but worse: **a `git commit` by the
-  coordinator would have swept the lane's half-finished edits into a ledger commit under the wrong message**,
-  which is `12f47e3` exactly, and `--only` does not help when the file is one the coordinator is also touching
-  · **the invariant this breaks is the one the whole fan-out rests on** — *"parallel increments only ever touch
-  disjoint files, so there is never a split brain"*. A worktree makes that hold **by construction**, and that
-  guarantee is void the moment a lane writes outside it. The brief cannot enforce it; only a check can
-  · **candidate mechanisms, none built**: a pre-dispatch marker file the lane must find in its cwd and assert;
-  the coordinator asserting a clean main tree before each merge and naming the culprit paths (cheap, catches it
-  late); `git config core.hooksPath` with a pre-commit hook in the main checkout that refuses a commit touching
-  paths a dispatched lane owns (`status.json` already records ownership); or dispatching with the worktree as an
-  explicit `-C` rather than trusting cwd. Decide with an IGC — a mechanism that only warns after the fact fails
-  the goal *"the coordinator never has to ask a subagent's permission to merge"*
-  · **`status.json` already carries what a check would need**: which lanes are out and what files each owns. That
-  was built for a compacted coordinator; it is also the registry a containment check can read
-  · related: **#450, #402, #413, #468**
-  · **LANDED `58e3040`, merged `ef5db01`** — `dev/lane_guard.py` refuses a main-checkout commit touching a
-  dispatched lane's paths, with `lint.check_brief_lane_owns` making a brief that declares nothing loud at
-  write time. `Needs: config` — `core.hooksPath` is machine-local, so the script is committed and enabling
-  is a documented step
-  · **it refuted this brief's own premise by measuring it:** `status.json` carries **no** file-ownership
-  field, so any mechanism reading an ownership list out of it reads nothing and passes vacuously from the
-  day it ships. Ownership comes instead from the brief the lane was actually handed, as a machine-parseable
-  `Lane-owns:` line
-  · **honest about its ceiling:** R5 fails at first **commit**, not first write. The only rival that fails
-  at first write needs the lane's cooperation, which is exactly what already failed — and both harms here
-  were commit-shaped. The pre-merge assertion (R2) is the successor, deliberately unbuilt: `#468`
 - **#413** — a guard can encode a SUPERSEDED contract, and nothing measures that · P2 ·
   verification/meta · origin: **loop** · found by fixing `qacard`, which had been red since
   `#392a` landed at 09:43 and was being reported as "pre-existing, not our fault" by every lane
