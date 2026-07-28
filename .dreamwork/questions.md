@@ -1,6 +1,46 @@
 # Questions for the human
 
 ## Open
+
+- **P1 · 2026-07-28 — #264: ratify the task-transition boundary, and one deployment call
+  only you can make.** Artifact: `.dreamwork/review/task-transition-boundary.html` (open it from
+  the dashboard's review list); design at `.dreamwork/docs/plans/task-transition-boundary.md`,
+  landed design-only at `914648c`. **Nothing is built** — no table, no CLI, no migration.
+  **You are right that this was missing and it was my failure.** I told you in an answer at 15:02
+  that ratifying `#264` was *"the only thing of this chain on your desk"*, and there was **no
+  question here for you to rule on** — so the thing I called your blocker was one you had no way to
+  clear. That is the exact shape you named at 15:19, and the general fix is filed as `#419`.
+  **Q1 — ratify the boundary?** Your question was *"decide whether it shares #263's journal or uses
+  a task-state outbox, but never dual-write two fallible truths."* The design's answer is **neither
+  as posed**, because both options assume a task transition and a user event are the same kind of
+  fact. *"Never dual-write two fallible truths"* forbids storing one fact **twice**, not storing
+  **two** facts — and *"he asked for this at 14:11"* and *"the loop started #264 at 01:47"* are two
+  facts whose whole relationship is a foreign key.
+  The shape: **a task transition is one row appended to its own append-only `task_event` log, in
+  the same SQLite database as #263's journal, in the same transaction as the CAS that moves
+  `task_state`. No outbox, no drain.** Burndown and the dashboard status section become **queries**
+  over that log, so neither can be stale. `task_state` is the only materialised row in the design,
+  and only because a claim needs something to CAS against; it is rebuildable and replay-verified.
+  **Rec: ratify.** It is strictly fewer moving parts than either option you named, and F1 in the
+  doc records that the two truths we have today already disagree by 9.
+  **Q2 — git portability, and this one is genuinely yours because it is a deployment choice.**
+  The ledger is committed project content today, so **the burndown works on a fresh clone — git
+  history *is* the source.** A SQLite store is gitignored and machine-local, so a clone starts with
+  no history. Three ways:
+  **(a) commit the database** — binary and unmergeable, and two agents on two machines will
+  conflict irreconcilably. **(b) gitignore the DB and commit a deterministic append-only text
+  export of `task_event`** — mergeable, and rebuild is *provable* because the event chain
+  re-verifies. **(c) accept machine-local for v1** and lose cross-clone history.
+  **Rec: (b).** It keeps the property you already have without paying for a binary in git, and the
+  canonical byte form is defined in the design's §Ordering — which is what makes this a deployment
+  decision rather than a schema change.
+  **What ratifying does NOT authorise:** nothing is built by it. The migration, its cutover
+  ordering, whether git's 331 revisions become synthetic events, rollback, `tasks.md.deprecated`'s
+  frontmatter and the mixed-writer freeze are all `#294`'s, all after a ruling. Four smaller things
+  stay open in the doc's own §"What stays open" and none of them blocks a start.
+  **`#294` is your stated blocker and this is the last thing in front of it** — `#346`'s next
+  increment (eight red-first fixtures) needs no ruling and is ours to start regardless.
+
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
   You said "defer publishing repo for a bit", which answers an open
   question belonging to the dreamwork instance on **x-game**
