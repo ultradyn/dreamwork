@@ -9,6 +9,20 @@ top. **Do not write `.dreamwork/handoffs.md`** — the coordinator writes that a
 **Do not edit `.dreamwork/tasks.md` or `.dreamwork/questions.md`** — the coordinator is their only writer;
 report the exact lines you want added.
 
+## Two-way channel — do this first, before any work
+
+Load the **`subagent-protocols`** skill (`/home/xertrov/.claude-w/skills/subagent-protocols/SKILL.md`) and
+follow its **`for-subagents.md`**. Your **coordinator inbox is
+`/home/xertrov/.cache/agent-comms/ud-dreamwork/coord-inbox.md`** — it is monitored live, so a line you append
+there reaches me in seconds rather than at my next poll. Send the startup handshake there **before** you start
+working, prefix every line with `[pagsurvey]`, and if you can watch a file as a background monitor, create
+`/home/xertrov/.cache/agent-comms/ud-dreamwork/pagsurvey-inbox.md` and watch it so I can steer you mid-task.
+
+Append a one-line progress note to the coord inbox at each milestone (form found; data model read; table
+drafted; committed). This is not ceremony — **three lanes today exited without reporting after doing correct
+work**, and the coordinator could not tell a working lane from a dead one. Your final report still goes to
+`.dreamwork/inbox.md` as below; the coord inbox is for liveness and steering.
+
 ## The instruction, verbatim
 
 > *"eventually we should add a questionnaire feature (after sqlite so we can rely on structured data). This can
