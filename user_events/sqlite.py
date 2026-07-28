@@ -662,6 +662,28 @@ class Journal:
                 )
 
             # absent → insert one receipt in state received.
+            # received_at is not in the chain canonical form; wall clock is fine.
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            # H2 closure (coordinator steer on the drain's TOCTOU window):
+            # while a cutover drain holds its lease, the current generation is
+            # closed to NEW receipts. Replays and conflicts above still resolve
+            # against the existing row (no new receipt); only a genuinely-new
+            # insert is refused, because it has not yet been witnessed (no 202)
+            # and refusing keeps every stamped generation honest — stamping it
+            # under the next generation instead would mint a receipt in a
+            # generation that may not commit if the drain times out, the same
+            # two-durable-truths shape that decision 2 rejected. ISO-8601 Z
+            # strings compare lexically, like the lease check in cutover().
+            lease_row = self.conn.execute(
+                "SELECT value FROM meta WHERE key = 'cutover_lease_until'"
+            ).fetchone()
+            if lease_row is not None and lease_row[0] > now:
+                # The outer except rolls the BEGIN IMMEDIATE back and re-raises.
+                raise CutoverBusy(
+                    "cutover drain in progress (lease until "
+                    f"{lease_row[0]}); generation closed to new receipts — "
+                    "retry after the cutover completes"
+                )
             # receipt_id is deterministic from client_action_id so the same
             # logical sequence in two journals yields the same chain head
             # (property a); uuid4 would make every head differ for free.
@@ -680,8 +702,6 @@ class Journal:
             # authoritative value at the moment of receive — the request never
             # supplies it and cannot forge a different one.
             received_generation = self.generation()
-            # received_at is not in the chain canonical form; wall clock is fine.
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
             self.conn.execute(
                 """
                 INSERT INTO receipts (
@@ -980,7 +1000,10 @@ class Journal:
            B5's claim/reclaim shape: an active, unexpired lease is refused
            (``CutoverBusy``); an expired lease is reclaimable by a new holder
            (the ``lease_until > now`` predicate from B5, inverted).  A holder
-           that dies mid-drain wedges no one.
+           that dies mid-drain wedges no one.  **Taking the lease also closes
+           gen N to new receipts** — ``receive()`` refuses while the lease is
+           held, so the drain below cannot be overtaken by a brand-new gen-N
+           receipt stamped behind its back (the TOCTOU window).
         2. **Drain** — wait until no receipt is in-flight at the current
            generation, or the ``drain_seconds`` deadline elapses.  This is the
            red line: deleting this wait lets the watermark advance over an

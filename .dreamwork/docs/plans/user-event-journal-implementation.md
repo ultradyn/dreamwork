@@ -743,7 +743,12 @@ migration is not authorised.
    refused (`CutoverBusy`); an expired one is reclaimable — **reusing B5's
    `lease_until > now` predicate** (fixture 12's "dual reclaimer and stale
    claimant ⇒ one CAS winner"), not a second mechanism. A holder that dies
-   mid-drain wedges no one.
+   mid-drain wedges no one. **Taking the lease also closes gen N to new
+   receipts**: `receive()` refuses while the lease is held, so the drain cannot
+   be overtaken by a brand-new gen-N receipt (coordinator steer on the drain's
+   TOCTOU window — close before drain). Refuse, not stamp-N+1: a mid-drain
+   request has not been witnessed (no 202), and stamping N+1 would mint a
+   receipt in a generation that may not commit if the drain times out.
 2. **Drain (the red line)** — `while self.in_flight(from_gen) > 0:` waits until
    no receipt is in flight at the current generation, or `drain_seconds`
    elapses (`CutoverDrainTimeout`, lease released, no watermark). A generation
@@ -760,15 +765,21 @@ migration is not authorised.
    request — the legacy-direct-write class).
 *Two processes, not threads:* the spanning test uses `multiprocessing` spawn
 (parent + child) over one temp target, like B7; the named seam is the genuine
-`received`→`applied` in-flight window, not a synthetic hook. *Red produced:*
-neutralising the drain `while` (one line, `while False and …`) fails the
-spanning test on `in_flight_at_commit == 0` with **the legacy-write mode**
-(`assert 1 == 0; the drain wait is gone`) — the "two receipts" alternative
-belongs to a protocol-version-bumping cutover (digest changes), a different
-shape not built here. *Verified green after restore;* `lint.py --target .`
-clean; `test_user_events_sqlite.py` (18) and `test_user_events_http.py` (15)
-green. SCHEMA_VERSION unchanged (a watermark is not a schema migration);
-`receipts.generation` is additive with an idempotent defensive `ALTER`.
+`received`→`applied` in-flight window, not a synthetic hook, and it also probes
+the closure (a receive attempted *during* the drain is refused and does not join
+gen N). *Reds produced (both, run with closure in place):* (a) neutralising the
+**closure** check (`if False and …`) fails the spanning test on `DID NOT RAISE
+CutoverBusy` — a mid-drain receive is no longer refused and would join gen N;
+(b) neutralising the **drain** `while` fails the same test, surfacing on the
+closure assertion (the cutover finishes before the parent's probe and clears the
+lease), not on `in_flight_at_commit` — the drain wait is still load-bearing
+(closure blocks *new* gen-N receipts; the drain waits for *existing* in-flight
+ones), and `in_flight_at_commit == 0` remains an end-state invariant rather than
+the first-firing discriminator. *Verified green after restore;*
+`lint.py --target .` clean; `test_user_events_sqlite.py` (18) and
+`test_user_events_http.py` (15) green. SCHEMA_VERSION unchanged (a watermark is
+not a schema migration); `receipts.generation` is additive with an idempotent
+defensive `ALTER`.
 
 ---
 

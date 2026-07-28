@@ -1253,6 +1253,12 @@ def test_a_request_spanning_the_cutover_completes_under_the_drained_generation(
     assert j.in_flight(gen_before) == 1, "precondition: request must be in flight"
     j.close()
 
+    # A second, distinct request used to prove the drain CLOSES gen N: a
+    # receive attempted while the drain is active must be refused (it has not
+    # been witnessed yet) and must not join gen N. Defined here so the final
+    # block can show it succeeds once the cutover is done.
+    late_env = _envelope(body=b'{"text":"too-late"}')
+
     ctx = mp.get_context("spawn")
     q = ctx.Queue()
     child = ctx.Process(target=_h2_cutover_child, args=(str(path), q))
@@ -1262,11 +1268,25 @@ def test_a_request_spanning_the_cutover_completes_under_the_drained_generation(
         signal = q.get(timeout=30)
         assert signal[0] == "draining", signal
         # Give the child's drain a moment to be actively polling before we
-        # release the seam, so the wait is genuinely exercised.
+        # probe the closure and release the seam, so the wait is genuinely
+        # exercised.
         time.sleep(0.3)
 
-        # Release the seam: complete the request UNDER generation 1.
         j = open_journal(path)
+        # Coordinator steer: while the drain is active, gen N is CLOSED to new
+        # receipts. A receive attempted now must be refused (CutoverBusy) and
+        # must NOT join gen N — the observable closure that proves the drain's
+        # time-of-check/time-of-use window is shut. One more process
+        # interleaving on the same temp target.
+        with pytest.raises(CutoverBusy):
+            j.receive(late_env)
+        # The refused receive created no receipt (closure is a refuse, not a
+        # stamp-N+1): the count is still the one spanning receipt.
+        assert j.receipt_count() == 1, (
+            f"a receive during the drain must not create a receipt, got "
+            f"{j.receipt_count()}")
+
+        # Release the seam: complete the request UNDER generation 1.
         _finish_received(j, rid)
         assert j.in_flight(gen_before) == 0
         j.close()
@@ -1307,5 +1327,11 @@ def test_a_request_spanning_the_cutover_completes_under_the_drained_generation(
             "cutover advanced over an in-flight request "
             f"(in_flight_at_commit={wm['in_flight_at_commit']}); "
             "the drain wait is gone")
+        # The closure was temporary: with the cutover done (lease cleared),
+        # the same request that was refused mid-drain now succeeds under the
+        # new generation — the close is not a permanent refusal.
+        late_res = j.receive(late_env)
+        assert late_res.kind == "inserted"
+        assert j.receipt_generation(late_res.receipt_id) == gen_after
     finally:
         j.close()
