@@ -126,3 +126,59 @@ Say: the `review_artifact.py check` output verbatim; the result of your own grep
 condition-met language; every number you re-derived with its command, flagging contradictions;
 whether you kept or rebuilt the `#368` comparison; your offline-clean count; and your visual verdict
 on the three points in criterion 6.
+
+---
+
+## AMENDMENT 2, 2026-07-28 17:22 — lane C is now 5 of 5 and the gate's condition IS met
+
+**The page you corrected an hour ago is now wrong in the other direction, and this is the good kind of
+wrong.** `C4` (`f85be1c`) and `C5` (`2cc3537`) landed at 17:21, verified by a merge gate that takes its
+denominator from the plan's own increment table and asserts five rows. So:
+
+**A 2/2 · B 8/8 · C 5/5 · D 4/4 · F 4/4 — his 05:43 condition *"until A–D are proved"* is satisfied,
+and the second gate is now genuinely his to open.**
+
+**Read `.dreamwork/questions.md`'s `#263` entry first — it was rewritten at 17:22 and it is the
+specification.** It is deliberately short and ask-first. Match it; where it and this brief disagree,
+it wins and you should say so.
+
+What changes on the page:
+
+1. **The headline flips.** It is no longer *"I told you the condition was met. It is not"*. It is now
+   *"the condition is met, verified this time. Open it?"* — and **the correction stays visible below
+   the ask**, because the record of having got it wrong at 16:24 is the reason he should trust the
+   claim now. **Do not delete the correction; demote it.**
+2. **Lane C reads `5/5` and joins the complete lanes**, with `C4 markers` `f85be1c` and
+   `C5 rebaseline` `2cc3537` named. The `3/5` treatment goes; the row is no longer the exception.
+3. **Q1 (open E) and Q2 (open H) are promoted back to live asks**, no longer "present, demoted". Q3
+   (`#368` first) stays and keeps its frames and SVG timeline — the recommendation is unchanged and
+   the measured figures (**9,688** lines, **6 of 6** increments in `watch.py`) still hold. **Re-derive
+   them anyway** and report any disagreement.
+4. **The evidence spine gains two things worth their space**, and both are the kind he is judging when
+   he judges whether "proved" means anything:
+   - **the gate's one failure was the coordinator's, not the lane's** — it counted every mention of
+     `committed_lineage` (7 and 11 across two modules) and called it a duplicated drift detector; it
+     is a **parameter name threaded through** and the membership test exists once, at `apply.py:166`.
+     A substring cannot tell a duplicated predicate from a threaded argument.
+   - **the lane disclosed that its own `C5` red is defence-in-depth**, not the sole mechanism: the file
+     after `rebaseline` always sits at `max(committed)+1`, so a caller passing that as
+     `reserved_successor` would see `APPLIED` through the successor half alone and the lineage red
+     would be hollow. Its test passes `max(new_lineage)+1` so the lineage half is load-bearing.
+   - lane B's `B7` hole is **still open** and stays visible. Lane D's hollow red stays. **Lane C's
+     story is now a third kind: a record that was wrong while the code was fine, then completed.**
+5. **The withheld boundary stays exactly as prominent**, updated: lane **G** (30–33) withheld
+   regardless, increment 18's purge and 19's PostgreSQL half `UNPLACEABLE`, no live-target migration.
+   **E and H are no longer in that list** — they are the ask.
+
+**Criterion 2 still binds and is still mechanical**: `#ask` (or whatever carries the decision) must
+measure `getBoundingClientRect().bottom < innerHeight` at 1280×900 and 390×844, **with the
+does-the-page-scroll precondition asserted first**. Print both numbers per viewport. The coordinator
+re-ran that check independently on the `#421` artifact and also **red-proved it** with a 1200px spacer;
+expect the same here.
+
+**Grep your own built output for `3/5`, `3 of 5`, `condition was met`, `is not` and report every hit
+with its surrounding sentence** — not just a count. Five hits of *"condition met"* last time were all
+inside retractions, so a count is not an answer and the polarity is not in the pattern.
+
+**You are `@glm52`** (grok is still 401, `#423`). **The visual verdict is owed, not dropped** — say so
+and do not guess at appearance.
