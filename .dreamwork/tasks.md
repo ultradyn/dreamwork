@@ -393,88 +393,6 @@ Next id: **461**
   recoverable-but-invisible. Fold that into whatever `#423` builds
   · related: **#410, #402, #424, #428**
 
-- **#421** — how we ask him questions, researched rather than guessed · P1 · loop-instructions ·
-  origin: **human** · **human via watch `do-next` 2026-07-28 16:29** · next-up
-  · verbatim: *"We should update instructions for the dreamwork agent: when asking users questions:
-  get a subagnet to write a research artifact about how https://github.com/ayghri/i-have-adhd works
-  (in terms of its instructions). Use that to create some options for how we can change instructions
-  to ask better questions. Then present those options to me as a question."*
-  · **he specified the method, and that is the load-bearing part.** Not *"ask better questions"* —
-  **research a named external artifact, derive options from it, and put the options to him as a
-  question.** So a lane that reads `i-have-adhd` and returns opinions has missed it; the deliverable
-  chain is research doc → options → a `questions.md` entry he can rule on
-  · **why he is asking now, inferred and worth checking with him:** today's questions have been long.
-  The `#264` entry is ~30 lines and the `#263` gate ask is ~35, each carrying three sub-questions,
-  recommendations, evidence and a boundary block. `i-have-adhd` is presumably about instruction
-  design for attention constraints, which would make this a note about **cost to read**, not about
-  correctness. Do not assume that reading; the research decides it
-  · **the loop has evidence of its own on this.** He could not find `#264`'s question at 15:19
-  (`#419`), he asked for previews before ruling on `#367` at 14:52 rather than deciding from prose,
-  and he twice answered a sub-question while its neighbours went unanswered (`#275` Q3/Q5/Q6 still
-  open from an entry he answered Q2 of). **Three independent signals that our question format costs
-  him more than it should**, and none of them was read as being about the format
-  · blocked on nothing · related: **#422, #445** (research artifacts as a kind), **#419**
-  · **research DONE, `ccc @grok`, ~13 minutes — `bae566d`, merged `e50226d`.** Doc:
-  `.dreamwork/docs/research/2026-07-28-question-instruction-design.md` (484 lines). Read
-  `i-have-adhd` at **its own** revision `c784dcb` — an **upstream** id, not a commit in this
-  repo, and `lint`'s cited-sha check was right to flag the earlier wording as a landing that git
-  cannot resolve — quoting its `SKILL.md`, agent configs, hooks and eval rubric.
-  Entry stays **open**: the research is half the ask; the options and the question to him remain
-  · **it refuted the premise this entry was filed with, and the refutation is the useful part.**
-  I wrote *"three independent signals that our question format costs him"*. Measured: **19 of 56**
-  entries carry two or more sub-decisions and **15 of 16** answered multi-sub entries closed
-  **complete**, often the same day, often with a bare `rec`. **Durable partials are 2 in the whole
-  corpus** (`#275` live, `#281` at fold). So multi-sub is not the failure mode and **"ask one thing
-  at a time" is not supported by our own data**
-  · **what IS measured:** length is the tax — median **127** words at zero sub-questions, **738** at
-  four, **897** at seven, open median **480**, max **1121**. And 29 of 56 entries score zero
-  sub-decisions, which is its own finding: **a large share of our "questions" do not ask anything**
-  · **`i-have-adhd` is an output-density style, not an ask protocol** — lead with the action, cap
-  lists at 5, one clarifying question, one end action, with a stated working-memory theory. **It has
-  no rule for silence, partial answers or late replies**, so the thing we most need is precisely
-  what it does not do. The lane named that boundary instead of porting across it
-  · **my own re-derivation disagreed and I was the one who was wrong**: I got 5 multi-sub against its
-  19 because I matched only `Q|S|R|G|T`, and the corpus labels decisions with `M D T B P H V N E A`
-  too — *"Rec `H1`"* against *"`H2`"* for two candidate layouts. It **derived** the alphabet from the
-  corpus; I **assumed** it. Sixth lane refutation today, same shape as the other five: a figure I
-  reasoned to from a document rather than measured
-  · **one refinement the disagreement exposed, and it matters for the options**: the count conflates
-  *options offered inside one decision* (`H1` vs `H2`) with *separate decisions requested* (`S1`–`S4`).
-  Those have different fixes, so the options must say which of the two they reduce
-  · **next, and it is mine not a lane's** (his 05:43: the orchestrator does the planning): write the
-  options to a spec doc, then dispatch the artifact, then file the question
-  · **options artifact DONE, `ccc @glm52`, ~20 minutes, `676345a` (merged 17:18).**
-  `.dreamwork/review/421-question-options.html`, `check` reports `current`, offline-clean 0 (enforced
-  at build time by the builder's own fetch scan), disclosure reusing the template's `<details>` idiom
-  with reduced-motion parity inherited rather than re-implemented
-  · **it passes its own Option A test and that is measurable because grok died.** The criterion was
-  *"visible without scrolling"*, to be judged by eye; reassigned to `@glm52`, which cannot see, it
-  became `getBoundingClientRect().bottom < innerHeight` at two viewports **plus** the anti-vacuity
-  precondition that the page actually scrolls. Verified independently — `#ask.bottom` 363/900 desktop,
-  521/844 mobile, `scrollHeight` 2402 and 3628 — and **red-proved**: a 1200px spacer before `#ask`
-  pushes it to 1569/1727 and the check fails at both. **The mechanical version is strictly better than
-  the verdict it replaced, because an opinion cannot be red-proved**
-  · **it refuted the plan's headline literal and was right.** *"300 and 448 words, both above the
-  corpus median of 302"* was measured at n=56; at n=58 the lane got 307 and 455 against 308, so one
-  sits one word **under** and *"both above"* fails. My own re-derivation gives 300 and 448 against
-  300. **Two methods disagree on the figures and agree on the conclusion** — corrected in the plan
-  with the gap left visible
-  · **the cause is the finding, and it is new:** the corpus grew because **I filed two questions in
-  between**, one of them the question presenting this result. **The corpus we measure is the corpus we
-  write into.** So a claim of the form *"both above the median"* is a hostage to the next thing we
-  file; *"one at the median, one half again as long"* is not
-  · **the visual verdict is OWED, not skipped** — recorded in `status.json`'s `owed_verifications`.
-  `@glm52` refused to guess at appearance, correctly
-  · remaining on this entry: he rules on A/B/C/D, then `DREAMWORK.md` + `file-formats.md` + `lint.py`
-  change. Nothing is built until then
-  · **ARTIFACT FIXED `c19107a` (2026-07-28 22:35, lane `tablefix`), on his do-now while he was reading it** — *"I can't read it (reduces and costs columns don't break text lines)"*. The cells were never the problem: they already had `white-space:normal` and `overflow-wrap:anywhere`. The template's `table{min-width:max-content}` let the table size to unwrapped content — **4197px inside a 1120px pane** (reduces ~817px, costs ~1114px, risk ~2197px), so `.scroller` scrolled sideways and every cell was one line. Fixed **per-artifact** (`table-layout:fixed`, 16/24/24/36 columns) rather than in the shared template, which would re-stamp 23 artifacts of which 12 have no `src/` (`#436`). It also restacks each option as a labelled full-width block below 860px, because a four-column comparison is unreadable at 390px however well it wraps. Coordinator-verified: derived fold 740/693, `#ask.top` **218** desktop (up from 266) and 266 mobile, both above. **The question itself is still open and still his.**
-  · **ANSWERED 2026-07-29 01:17 — `rec`: A + B + D adopted, C withdrawn.** **A** the ask comes first with
-  its accepted answers; **B** an unanswered sub-decision is recorded and `lint` errors when a fold drops
-  one; **D** every ask states what a valid answer looks like. A and D are conventions the coordinator
-  applies when writing asks (`file-formats.md` is where they belong); **B is the buildable half** and the
-  only one with a live defect behind it — `#275`'s Q3/Q5/Q6 unanswered since 2026-07-25 with nothing
-  noticing. **C is dead**: no length gate, ever — steer style with descriptors and keep any number
-  advisory (his 01:13 + 01:17 notes, folded into DREAMWORK.md).
 - **#422** — a research artifact is a kind we produce and have never specified · P2 ·
   loop-tooling/format · origin: **human** · **human via watch `do-next` 2026-07-28 16:29**, second
   half of the same message
@@ -3382,6 +3300,90 @@ Next id: **461**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#421** — how we ask him questions, researched rather than guessed · P1 · loop-instructions ·
+  origin: **human** · **human via watch `do-next` 2026-07-28 16:29** · next-up
+  · verbatim: *"We should update instructions for the dreamwork agent: when asking users questions:
+  get a subagnet to write a research artifact about how https://github.com/ayghri/i-have-adhd works
+  (in terms of its instructions). Use that to create some options for how we can change instructions
+  to ask better questions. Then present those options to me as a question."*
+  · **he specified the method, and that is the load-bearing part.** Not *"ask better questions"* —
+  **research a named external artifact, derive options from it, and put the options to him as a
+  question.** So a lane that reads `i-have-adhd` and returns opinions has missed it; the deliverable
+  chain is research doc → options → a `questions.md` entry he can rule on
+  · **why he is asking now, inferred and worth checking with him:** today's questions have been long.
+  The `#264` entry is ~30 lines and the `#263` gate ask is ~35, each carrying three sub-questions,
+  recommendations, evidence and a boundary block. `i-have-adhd` is presumably about instruction
+  design for attention constraints, which would make this a note about **cost to read**, not about
+  correctness. Do not assume that reading; the research decides it
+  · **the loop has evidence of its own on this.** He could not find `#264`'s question at 15:19
+  (`#419`), he asked for previews before ruling on `#367` at 14:52 rather than deciding from prose,
+  and he twice answered a sub-question while its neighbours went unanswered (`#275` Q3/Q5/Q6 still
+  open from an entry he answered Q2 of). **Three independent signals that our question format costs
+  him more than it should**, and none of them was read as being about the format
+  · blocked on nothing · related: **#422, #445** (research artifacts as a kind), **#419**
+  · **research DONE, `ccc @grok`, ~13 minutes — `bae566d`, merged `e50226d`.** Doc:
+  `.dreamwork/docs/research/2026-07-28-question-instruction-design.md` (484 lines). Read
+  `i-have-adhd` at **its own** revision `c784dcb` — an **upstream** id, not a commit in this
+  repo, and `lint`'s cited-sha check was right to flag the earlier wording as a landing that git
+  cannot resolve — quoting its `SKILL.md`, agent configs, hooks and eval rubric.
+  Entry stays **open**: the research is half the ask; the options and the question to him remain
+  · **it refuted the premise this entry was filed with, and the refutation is the useful part.**
+  I wrote *"three independent signals that our question format costs him"*. Measured: **19 of 56**
+  entries carry two or more sub-decisions and **15 of 16** answered multi-sub entries closed
+  **complete**, often the same day, often with a bare `rec`. **Durable partials are 2 in the whole
+  corpus** (`#275` live, `#281` at fold). So multi-sub is not the failure mode and **"ask one thing
+  at a time" is not supported by our own data**
+  · **what IS measured:** length is the tax — median **127** words at zero sub-questions, **738** at
+  four, **897** at seven, open median **480**, max **1121**. And 29 of 56 entries score zero
+  sub-decisions, which is its own finding: **a large share of our "questions" do not ask anything**
+  · **`i-have-adhd` is an output-density style, not an ask protocol** — lead with the action, cap
+  lists at 5, one clarifying question, one end action, with a stated working-memory theory. **It has
+  no rule for silence, partial answers or late replies**, so the thing we most need is precisely
+  what it does not do. The lane named that boundary instead of porting across it
+  · **my own re-derivation disagreed and I was the one who was wrong**: I got 5 multi-sub against its
+  19 because I matched only `Q|S|R|G|T`, and the corpus labels decisions with `M D T B P H V N E A`
+  too — *"Rec `H1`"* against *"`H2`"* for two candidate layouts. It **derived** the alphabet from the
+  corpus; I **assumed** it. Sixth lane refutation today, same shape as the other five: a figure I
+  reasoned to from a document rather than measured
+  · **one refinement the disagreement exposed, and it matters for the options**: the count conflates
+  *options offered inside one decision* (`H1` vs `H2`) with *separate decisions requested* (`S1`–`S4`).
+  Those have different fixes, so the options must say which of the two they reduce
+  · **next, and it is mine not a lane's** (his 05:43: the orchestrator does the planning): write the
+  options to a spec doc, then dispatch the artifact, then file the question
+  · **options artifact DONE, `ccc @glm52`, ~20 minutes, `676345a` (merged 17:18).**
+  `.dreamwork/review/421-question-options.html`, `check` reports `current`, offline-clean 0 (enforced
+  at build time by the builder's own fetch scan), disclosure reusing the template's `<details>` idiom
+  with reduced-motion parity inherited rather than re-implemented
+  · **it passes its own Option A test and that is measurable because grok died.** The criterion was
+  *"visible without scrolling"*, to be judged by eye; reassigned to `@glm52`, which cannot see, it
+  became `getBoundingClientRect().bottom < innerHeight` at two viewports **plus** the anti-vacuity
+  precondition that the page actually scrolls. Verified independently — `#ask.bottom` 363/900 desktop,
+  521/844 mobile, `scrollHeight` 2402 and 3628 — and **red-proved**: a 1200px spacer before `#ask`
+  pushes it to 1569/1727 and the check fails at both. **The mechanical version is strictly better than
+  the verdict it replaced, because an opinion cannot be red-proved**
+  · **it refuted the plan's headline literal and was right.** *"300 and 448 words, both above the
+  corpus median of 302"* was measured at n=56; at n=58 the lane got 307 and 455 against 308, so one
+  sits one word **under** and *"both above"* fails. My own re-derivation gives 300 and 448 against
+  300. **Two methods disagree on the figures and agree on the conclusion** — corrected in the plan
+  with the gap left visible
+  · **the cause is the finding, and it is new:** the corpus grew because **I filed two questions in
+  between**, one of them the question presenting this result. **The corpus we measure is the corpus we
+  write into.** So a claim of the form *"both above the median"* is a hostage to the next thing we
+  file; *"one at the median, one half again as long"* is not
+  · **the visual verdict is OWED, not skipped** — recorded in `status.json`'s `owed_verifications`.
+  `@glm52` refused to guess at appearance, correctly
+  · remaining on this entry: he rules on A/B/C/D, then `DREAMWORK.md` + `file-formats.md` + `lint.py`
+  change. Nothing is built until then
+  · **ARTIFACT FIXED `c19107a` (2026-07-28 22:35, lane `tablefix`), on his do-now while he was reading it** — *"I can't read it (reduces and costs columns don't break text lines)"*. The cells were never the problem: they already had `white-space:normal` and `overflow-wrap:anywhere`. The template's `table{min-width:max-content}` let the table size to unwrapped content — **4197px inside a 1120px pane** (reduces ~817px, costs ~1114px, risk ~2197px), so `.scroller` scrolled sideways and every cell was one line. Fixed **per-artifact** (`table-layout:fixed`, 16/24/24/36 columns) rather than in the shared template, which would re-stamp 23 artifacts of which 12 have no `src/` (`#436`). It also restacks each option as a labelled full-width block below 860px, because a four-column comparison is unreadable at 390px however well it wraps. Coordinator-verified: derived fold 740/693, `#ask.top` **218** desktop (up from 266) and 266 mobile, both above. **The question itself is still open and still his.**
+  · **ANSWERED 2026-07-29 01:17 — `rec`: A + B + D adopted, C withdrawn.** **A** the ask comes first with
+  its accepted answers; **B** an unanswered sub-decision is recorded and `lint` errors when a fold drops
+  one; **D** every ask states what a valid answer looks like. A and D are conventions the coordinator
+  applies when writing asks (`file-formats.md` is where they belong); **B is the buildable half** and the
+  only one with a live defect behind it — `#275`'s Q3/Q5/Q6 unanswered since 2026-07-25 with nothing
+  noticing. **C is dead**: no length gate, ever — steer style with descriptors and keep any number
+  advisory (his 01:13 + 01:17 notes, folded into DREAMWORK.md).
+  · answered and **B landed** \`40ca81f\` + \`01c9bd7\` — A and D are conventions now written into `file-formats.md`\x27s ask contract; **B** is a `lint.py` ERROR when a folded entry drops a declared sub-decision. Recognition is **declared, not guessed**: one canonical `**Sub-decisions:** \`Q1\`, \`Q2\`` line, and the marker is its own content-resolved cutoff so history is silent and no sha is pinned. `#275`\x27s Q3/Q5/Q6 **verified** still open — the defect is real and current. Coordinator added the pending-declarations clause so `0 folded, 0 checked` cannot read as "no subject" when it means "waiting for a fold", red-proved on `_answered_split`. C withdrawn on his brittleness ruling: no length gate, ever. Adoption is live — `#275` carries the marker.
+
 - **#436** — `#ask` is not a required element, so 19 of 22 artifacts cannot be measured at all · P2 ·
   loop-tooling/review-artifacts · origin: **loop** · **split out of `#432` on 2026-07-28 19:57**, which
   held two tasks: this retrofit and the fold derivation. The fold half is out with a lane; this is not
