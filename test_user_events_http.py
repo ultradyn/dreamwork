@@ -27,6 +27,7 @@ import unittest
 import urllib.error
 import urllib.request
 
+import lint
 import watch
 from user_events.sqlite import open_journal, RECEIPT_HEALTH, REJECTION_REASONS
 
@@ -269,7 +270,21 @@ class E2Shadow(HttpHarness):
         statuses.append(self.post("/tint", {"tint": "indigo"})[0])
         # 6. /run-mode — a different mode than the default.
         statuses.append(self.post("/run-mode", {"mode": "hot"})[0])
-        # 7. /deploy — page-triggered just deploy (#462); runner faked.
+        # 7. /posture — a three-axis triple (#445). Deliberately a pace other
+        #    than the one step 6 just derived from run-mode `hot`, so the
+        #    changed branch (the one that writes and emits) is what gets
+        #    shadowed, not the silent identical-final early return.
+        #    The precondition that makes those literals meaningful: they must
+        #    be members of the closed sets the handler validates against, or
+        #    this route 400s and the receipt it should have committed never
+        #    exists — a renamed stop would otherwise turn this into a test of
+        #    the rejection path wearing the name of the write path.
+        self.assertIn("steady", lint.POSTURE_STOPS_PACE)
+        self.assertIn("inform", lint.POSTURE_STOPS_ASKING)
+        statuses.append(self.post(
+            "/posture", {"pace": "steady", "asking": "inform",
+                         "delegation": 1})[0])
+        # 8. /deploy — page-triggered just deploy (#462); runner faked.
         statuses.append(self.post("/deploy", {})[0])
         return statuses, self.submissions_rows()
 
@@ -283,7 +298,7 @@ class E2Shadow(HttpHarness):
         # The route list is derived from the dispatch, not hand-copied: assert
         # its length matches the routes we exercised, so a new route added to
         # WRITE_ROUTE_HANDLERS without a payload here fails loudly.
-        self.assertEqual(len(WRITE_ROUTES), 7, WRITE_ROUTES)
+        self.assertEqual(len(WRITE_ROUTES), 8, WRITE_ROUTES)
         # Every route returned 202 with the journal ON (E3 cutover moved the
         # write-route status) and 200 with the journal OFF (the pre-cutover
         # baseline, which still uses _send). The shadow must change only the
@@ -310,7 +325,8 @@ class E2Shadow(HttpHarness):
         # count assertion above (len(WRITE_ROUTES)) would still pass while a
         # route went unshadowed — UNLESS this guard fails first. This is the
         # plan's "derive the route list" discipline made executable.
-        exercised = 7  # ask, answer, comment, command, tint, run-mode, deploy
+        exercised = 8  # ask, comment, answer, command, tint, run-mode,
+        #              posture, deploy
         self.assertEqual(len(WRITE_ROUTES), exercised, WRITE_ROUTES)
 
     @contextlib.contextmanager
