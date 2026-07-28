@@ -6,8 +6,10 @@ red proves nothing, and this repo has now caught three checks that were
 passing on their own bug.
 """
 
+import contextlib
 import json
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -88,6 +90,35 @@ def levels(rep, what):
     return [lvl for lvl, w, _ in rep.rows if w == what]
 
 
+@pytest.fixture
+def frozen_tree(tmp_path):
+    """A detached worktree at HEAD — a fixed tree no concurrent lane can move.
+
+    The dogfood test used to lint the LIVE working tree, and under 8 concurrent
+    lanes it false-redred (#428): another lane committed `Lane-owns:` lines to
+    44 briefs mid-run, so the tree the assertion was about changed underneath
+    it. A snapshot at HEAD is immutable for the test's duration, so the
+    assertion is about one SHA rather than about whatever the machine happens to
+    be doing. ~94ms to create (measured); cleaned up in a `finally` so a crash
+    cannot orphan a worktree the lane-containment backstop or reaper would
+    later trip on. If git cannot make the snapshot, the failure surfaces rather
+    than silently falling back to the live tree — that fallback would reintroduce
+    the exact false red this exists to fix.
+    """
+    snap = tmp_path / "frozen-head"
+    subprocess.run(
+        ["git", "worktree", "add", "--detach", str(snap), "HEAD"],
+        check=True, capture_output=True,
+    )
+    try:
+        yield snap
+    finally:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(snap)],
+            capture_output=True,
+        )
+
+
 class TestTheBugItWasBuiltFor:
     def test_the_real_broken_shape_is_an_error(self, tmp_path):
         rep = run(target(tmp_path, **{"questions.md": BROKEN}))
@@ -101,10 +132,34 @@ class TestTheBugItWasBuiltFor:
         detail = next(d for _, w, d in rep.rows if w == "questions.md")
         assert "1 open" in detail and "1 answered" in detail
 
-    def test_this_repo_passes_its_own_linter(self):
+    def test_this_repo_passes_its_own_linter(self, frozen_tree):
         # Dogfood: the file the whole bug was about, checked by the tool
         # written because of it.
-        rep = run(lint.SKILL_DIR)
+        #
+        # The tree is a HEAD snapshot, not the live working tree (#428): under
+        # 8 concurrent lanes another lane's commit moved the live tree mid-run
+        # and the only failure in 1193 tests was this one. The snapshot is fixed
+        # at one SHA, so the assertion is about a tree no lane can move.
+        #
+        # Precondition, derived at runtime: the snapshot must actually carry the
+        # files lint reasons about, or `not rep.failed` proves nothing — an empty
+        # tree has nothing to fail on, which is the hollowness this repo keeps
+        # paying for. A lost `.dreamwork` would pass vacuously.
+        q = frozen_tree / ".dreamwork" / "questions.md"
+        t = frozen_tree / ".dreamwork" / "tasks.md"
+        assert q.is_file() and q.read_text().strip(), \
+            "snapshot carries no questions.md — the dogfood run would examine nothing"
+        assert t.is_file() and t.read_text().strip(), \
+            "snapshot carries no tasks.md — the dogfood run would examine nothing"
+        # And the ledger parses to a non-trivial entry count, so the run is
+        # against a populated tree rather than a stub. `load_watch` is the same
+        # parser loader lint itself uses.
+        watch = lint.load_watch()
+        assert watch is not None, "watch.py unimportable — cannot derive entry count"
+        open_ids, _ = watch.parse_ledger(t.read_text())
+        assert len(open_ids) > 0, \
+            f"snapshot ledger parsed {len(open_ids)} open entries — run is vacuous"
+        rep = run(frozen_tree)
         assert not rep.failed, rep.render()
 
     def test_the_canonical_fixture_passes(self):
