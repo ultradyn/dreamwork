@@ -214,6 +214,27 @@ Next id: **410**
   · **the red is available without an injection**: reinstate a landed lane's entry and assert the
   prune drops it. Assert the precondition too — that at least one entry is live and one is dead,
   derived at runtime, or the test is vacuous the day nothing is running
+  · **BIGGER THAN FILED, and this half is visible to HIM.** `status_sync.py` refreshes `queue` and
+  `current_task_ids` and **silently leaves every other field to rot**. Measured 10:26:
+  **`last_tick` was 133 minutes stale** (`08:13`), `last_commit` was `a6c0732` — **30+ commits
+  behind** HEAD — and `deployed` named rev `b4d4b3e` and **pid `1970752`, which was dead**
+  · **so the browser tab he reads said `· stalled` while the loop was doing its most productive work
+  of the day.** `watch.py:3667` is right — `Date.now() - t > STALE_TICK_MS ? 'stalled' : 'dreaming'`
+  — and its comment at `:3634` says that word is how he tells *whether the LOOP is alive*. **The
+  dashboard did its job; the data lied to it.** Refreshing the three fields flipped the title to
+  `· dreaming`, verified in the browser
+  · **the dead `deployed.pid` is `#363`'s lesson reopened** — the one `pending_handoff_records`'
+  docstring cites as *"inferring liveness from surviving artefacts is the wrong answer"*. A pid
+  field nothing re-reads is exactly such an artefact
+  · **and the tool's own success message is the trap:** `just status-sync` printed
+  *"already in sync (136 open, 1 live)"* **while three fields were stale**. It is in sync on the two
+  it knows about and says nothing about the rest, so the reassuring line is scoped to a subset the
+  reader cannot see. **Whatever fixes this must either own the whole file or NAME the fields it does
+  not touch** — a coverage statement, the same idiom `#395` established for checks, applied to a
+  syncer
+  · deliberately **not** fixed inline: this is the same tool and the same class as the `dreamers`
+  half above, so it belongs to one lane, not to a coordinator patch. The **data** was corrected by
+  hand at 10:26 as tick hygiene; the **tool** is still wrong
   · related: **#401, #264, #403, #405**
 
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·

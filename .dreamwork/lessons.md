@@ -2320,3 +2320,21 @@ this shape and convert opportunistically.)
   continue.** Four errors was a diagnosable state; fourteen was a state I had authored. And
   **restoring is only cheap if the last good version is committed** — the reason to commit small.
 
+- **A partial syncer manufactures the illusion of a synced file, and its success message is the
+  trap.** · `just status-sync` prints *"already in sync (136 open, 1 live)"*. It recomputes exactly
+  two fields — `queue` and `current_task_ids` — from ground truth. Measured today, while it said
+  that: `last_tick` was **133 minutes** stale, `last_commit` was **30+ commits** behind, and
+  `deployed.pid` named a **dead process**. The message is true and scoped to a subset the reader
+  cannot see, which is worse than no message, because a reader who runs a sync tool and is told
+  "in sync" stops looking.
+  · **The consequence reached the human.** His browser tab read `· stalled` for over two hours while
+  the loop was working — and `watch.py` was *correct*: `Date.now() - t > STALE_TICK_MS`, with a
+  comment saying that word is how he tells whether the loop is alive. **The renderer did its job and
+  the data lied to it.** When a display is wrong, check whether it is faithfully displaying something
+  wrong before you go looking in the renderer; I nearly opened `watch.py`.
+  · Same shape as the coverage-number rule, moved from checkers to writers: **a tool that maintains
+  part of a record must either own all of it or name the parts it does not touch.** Silence about
+  scope reads as completeness.
+  · The generalisable diagnostic, and it costs one pass: **for each field in a record, name what
+  writes it and when.** Anything with no writer is decoration that will eventually be believed.
+
