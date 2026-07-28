@@ -282,29 +282,6 @@ Next id: **461**
   after a reload are all transitions with no size floor. The reload especially — a page that vanishes and
   reappears is the largest gesture on the surface and must not be the one that snaps
   · related: **#431**
-- **#436** — `#ask` is not a required element, so 19 of 22 artifacts cannot be measured at all · P2 ·
-  loop-tooling/review-artifacts · origin: **loop** · **split out of `#432` on 2026-07-28 19:57**, which
-  held two tasks: this retrofit and the fold derivation. The fold half is out with a lane; this is not
-  · the criterion and its checker exist (`1dd973f`) and **three** artifacts carry `#ask`: `421`
-  (218/266), `417` (246/315) and `263` (188/266). **The other 19 have no such element**, so
-  `above_fold.mjs` reports `#ask MISSING` and gates nothing about them — a criterion naming a selector
-  most of the corpus lacks is a wish, not a standard
-  · so: make the id a documented requirement in `file-formats.md` and the artifact template, and only
-  **then** register a guard that walks `.dreamwork/review/` — registering it before the retrofit would
-  red the suite over 19 artifacts that predate the contract, which is why `above_fold` sits in
-  `lint.NOT_GUARDS` today with that reason written down
-  · **do not retrofit by adding an empty `#ask` to each page.** The id has to wrap the actual decision
-  or the check passes on a page whose ask is still buried — the same hollowness in a new place. Pages
-  with no decision to make (a design note, a schema) should be **exempt by declaration**, not by
-  carrying a decoy element
-  · **cost is known and it is not small:** touching the template re-stamps every built artifact, and
-  **12 of 23 have no `src/`** and cannot be rebuilt by `review_artifact.py build` — the `#433` lane
-  measured that and refused to migrate them, with per-file evidence (12 distinct hand-rolled
-  stylesheets, none matching the template; 4 with no `<header>` at all). So this task inherits that
-  wall: plan for the 11, and treat the 12 as a separate declared migration or leave them exempt
-  · blocked on nothing · related: **#432, #429, #433**
-  · **CONTRACT LANDED, RETROFIT DONE, GUARD DELIBERATELY NOT REGISTERED — `53078a9` `99b0039` `1a829be` (2026-07-29 00:04, lane `wt/askcontract`, merge `19bf3ac`).** `#ask` is now a **build-time** contract in `review_artifact.py`: a build **refuses** a page carrying neither an `#ask` nor an exemption, refuses one carrying both, and refuses a **decoy** — so the hollowness the entry warned about is rejected at the point of authorship rather than measured afterwards. Exemption is **by declaration** as required: `<meta name="dreamwork-review-ask" content="exempt: <reason>">`. The **8 `src/`-having decision artifacts** carry a real `#ask` and all 11 were rebuilt through the tool — no built file hand-edited. **Still open on purpose**: the walking guard is unregistered because **12 of 23 artifacts have no `src/`** and cannot be rebuilt, so registering it would red the suite over pre-contract pages; `above_fold`'s `lint.NOT_GUARDS` reason was refreshed to say exactly that instead of going stale. The remaining question is what to do with those 12 — reconstruct sources, or declare them exempt in a side-file the guard reads.
-
 - **#428** — the guard suite fails under concurrent lanes and passes alone, twice now · P2 ·
   loop-tooling/orchestration · origin: **loop** · found by the coordinator's own suite run at 17:29
   · **`subslog` FAILED in the full run** on *"…and says so, with the status the server gave"*, with
@@ -3405,6 +3382,30 @@ Next id: **461**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#436** — `#ask` is not a required element, so 19 of 22 artifacts cannot be measured at all · P2 ·
+  loop-tooling/review-artifacts · origin: **loop** · **split out of `#432` on 2026-07-28 19:57**, which
+  held two tasks: this retrofit and the fold derivation. The fold half is out with a lane; this is not
+  · the criterion and its checker exist (`1dd973f`) and **three** artifacts carry `#ask`: `421`
+  (218/266), `417` (246/315) and `263` (188/266). **The other 19 have no such element**, so
+  `above_fold.mjs` reports `#ask MISSING` and gates nothing about them — a criterion naming a selector
+  most of the corpus lacks is a wish, not a standard
+  · so: make the id a documented requirement in `file-formats.md` and the artifact template, and only
+  **then** register a guard that walks `.dreamwork/review/` — registering it before the retrofit would
+  red the suite over 19 artifacts that predate the contract, which is why `above_fold` sits in
+  `lint.NOT_GUARDS` today with that reason written down
+  · **do not retrofit by adding an empty `#ask` to each page.** The id has to wrap the actual decision
+  or the check passes on a page whose ask is still buried — the same hollowness in a new place. Pages
+  with no decision to make (a design note, a schema) should be **exempt by declaration**, not by
+  carrying a decoy element
+  · **cost is known and it is not small:** touching the template re-stamps every built artifact, and
+  **12 of 23 have no `src/`** and cannot be rebuilt by `review_artifact.py build` — the `#433` lane
+  measured that and refused to migrate them, with per-file evidence (12 distinct hand-rolled
+  stylesheets, none matching the template; 4 with no `<header>` at all). So this task inherits that
+  wall: plan for the 11, and treat the 12 as a separate declared migration or leave them exempt
+  · blocked on nothing · related: **#432, #429, #433**
+  · **CONTRACT LANDED, RETROFIT DONE, GUARD DELIBERATELY NOT REGISTERED — `53078a9` `99b0039` `1a829be` (2026-07-29 00:04, lane `wt/askcontract`, merge `19bf3ac`).** `#ask` is now a **build-time** contract in `review_artifact.py`: a build **refuses** a page carrying neither an `#ask` nor an exemption, refuses one carrying both, and refuses a **decoy** — so the hollowness the entry warned about is rejected at the point of authorship rather than measured afterwards. Exemption is **by declaration** as required: `<meta name="dreamwork-review-ask" content="exempt: <reason>">`. The **8 `src/`-having decision artifacts** carry a real `#ask` and all 11 were rebuilt through the tool — no built file hand-edited. **Still open on purpose**: the walking guard is unregistered because **12 of 23 artifacts have no `src/`** and cannot be rebuilt, so registering it would red the suite over pre-contract pages; `above_fold`'s `lint.NOT_GUARDS` reason was refreshed to say exactly that instead of going stale. The remaining question is what to do with those 12 — reconstruct sources, or declare them exempt in a side-file the guard reads.
+  · remainder landed \`75a3488\` — the source-less half is now **explicitly exempt, not silently skipped**: side-file `.dreamwork/review/legacy-contract-exemptions.txt` (one reason per artifact), `corpus_contract_coverage` asserting **as sets** `examined ∪ side_exempt == built`, `examined ∩ side_exempt == ∅` and `{src} − {built} == ∅`, and the walking guard `dev/capture/reviewask.mjs` **registered** (DEFAULT_GUARDS 54). IGC over classes chose exemption over reconstruction for all 12: no template stamp, never built through `review_artifact`, and hand-editing a built file is forbidden. Coordinator-verified independently: guard PASS at load 33.54, and dropping one exemption line yields `unaccounted={tasks-page.html}` plus the equation failure with the missing member named — restored byte-identical, green. `threaded-topic-chats.html` flagged superseded, retirement deferred to the coordinator; `{src} − {built}` is empty today, which the old `|built|−|src|` arithmetic could not have told us.
+
 - **#450** — note the containment deficiency, and warn per harness where interception is impossible ·
   **P2** · docs/safety · origin: **human** · **from `#288`'s answer, 2026-07-29 00:50** ·
   **his ruling, verbatim:** *"don't do anything too expensive or time consuming. just plan for it and make sure
