@@ -7940,9 +7940,11 @@ def _landed_ids(text):
 # Written form is `#367/#392` (hash before each number). Capture normalises to
 # `367/392` so display `#{nid}` stays one hash, not `##367/#392`.
 HANDOFF_ID_TOKEN = r"((?:\d+[a-z]?)(?:/#\d+[a-z]?)*)"
+# One or more backticked shas after `landed` (#415 grammar / #427 parser).
+# Group 2 is the whole `` `sha` [`sha`…] `` run; split with _handoff_pending_shas.
 HANDOFF_PENDING_RE = re.compile(
     r"^-\s+\*\*#" + HANDOFF_ID_TOKEN +
-    r"\*\*\s*·\s*landed\s+`([^`\n]+)`\s*·\s*.+?\s*·\s*by\s+(.+?)\s*$")
+    r"\*\*\s*·\s*landed\s+((?:`[^`\n]+`\s*)+)\s*·\s*.+?\s*·\s*by\s+(.+?)\s*$")
 HANDOFF_FOLDED_RE = re.compile(
     r"^-\s+\*\*#" + HANDOFF_ID_TOKEN + r"\*\*\s*→\s*folded\s*\(([^)]+)\)")
 # ANY bolded head after `- **#…**` — wider than the accepted token so a shape
@@ -7950,11 +7952,55 @@ HANDOFF_FOLDED_RE = re.compile(
 HANDOFF_BARE_RE = re.compile(r"^-\s+\*\*#([^*\n]+)\*\*")
 
 
+class HandoffPending(tuple):
+    """One pending hand-off: unpacks as ``(id, sha, claimer)``.
+
+    ``sha`` is the first (landing) sha so ``lint.check_handoffs``'s
+    ``for nid, sha, claimer in pending`` and existing triple-equality tests
+    stay valid without a lint change. ``shas`` is the full one-or-more list
+    (#427 closes the #415 grammar split: lint already accepted multi-sha;
+    this parser now does too).
+    """
+
+    def __new__(cls, nid, shas, claimer):
+        if isinstance(shas, str):
+            shas = (shas,)
+        else:
+            shas = tuple(shas)
+        if not shas:
+            raise ValueError("hand-off requires at least one sha")
+        inst = tuple.__new__(cls, (nid, shas[0], claimer))
+        inst._all_shas = shas
+        return inst
+
+    @property
+    def id(self):
+        return self[0]
+
+    @property
+    def sha(self):
+        return self[1]
+
+    @property
+    def claimer(self):
+        return self[2]
+
+    @property
+    def shas(self):
+        return self._all_shas
+
+
 def _normalise_handoff_id_token(raw):
     """Strip per-segment `#` so `#367/#392` capture becomes `367/392`."""
     if not raw:
         return raw
     return "/".join(p.lstrip("#") for p in raw.split("/"))
+
+
+def _handoff_pending_shas(match):
+    """All backticked shas from a HANDOFF_PENDING_RE match (group 2)."""
+    return tuple(s.strip() for s in re.findall(r"`([^`\n]+)`", match.group(2))
+                 if s.strip())
 
 
 def handoff_parent_ids(token):
@@ -7986,11 +8032,14 @@ def handoff_parent_ids(token):
 def parse_handoffs(text):
     """`(pending, folded_ids, malformed)` from `.dreamwork/handoffs.md`.
 
-    `pending` is a list of `(id, sha, claimer)` triples (ids as strings, no
-    leading `#`; plain/sub-id/combined tokens kept as written); `folded_ids`
-    is the set of id tokens a fold record names; `malformed` is `(id, line)`
-    for entry heads the grammar does not recognise **or** that sit in the
-    wrong section (#401 / #406). Format validation is what lint acts on.
+    `pending` is a list of `HandoffPending` rows — each unpacks as
+    `(id, sha, claimer)` (ids as strings, no leading `#`; plain/sub-id/
+    combined tokens kept as written; `sha` is the **first** landing sha) and
+    also exposes `.shas` for the full one-or-more list (#415 / #427).
+    `folded_ids` is the set of id tokens a fold record names; `malformed` is
+    `(id, line)` for entry heads the grammar does not recognise **or** that
+    sit in the wrong section (#401 / #406). Format validation is what lint
+    acts on.
 
     Sections match literally — `## Pending` and `## Folded` — the way
     `## Open` does. A well-formed Pending line belongs under `## Pending` and
@@ -8012,9 +8061,17 @@ def parse_handoffs(text):
         m_fold = HANDOFF_FOLDED_RE.match(ln)
         m_bare = HANDOFF_BARE_RE.match(ln)
         if section == "P" and m_pend:
-            pending.append((_normalise_handoff_id_token(m_pend.group(1)),
-                            m_pend.group(2).strip(),
-                            m_pend.group(3).strip()))
+            shas = _handoff_pending_shas(m_pend)
+            if not shas:
+                # Zero-sha should not match the RE; if it somehow does, loud.
+                if m_bare:
+                    raw = m_bare.group(1).strip()
+                    malformed.append((_normalise_handoff_id_token(raw), ln))
+                continue
+            pending.append(HandoffPending(
+                _normalise_handoff_id_token(m_pend.group(1)),
+                shas,
+                m_pend.group(3).strip()))
         elif section == "F" and m_fold:
             folded_ids.add(_normalise_handoff_id_token(m_fold.group(1)))
         elif m_bare:
@@ -8034,10 +8091,19 @@ def pending_handoff_records(text):
     dashboard reads what was WRITTEN, not what a process claims. A pending
     hand-off is one whose id has no fold record. Returns `[]` when the file is
     absent or empty, the way a fresh target is.
+
+    Each record carries ``sha`` (first / landing) and ``shas`` (one-or-more,
+    written order) so a multi-commit landing surfaces every commit (#427).
     """
     pending, folded_ids, _malformed = parse_handoffs(text)
-    return [{"id": nid, "sha": sha, "claimer": claimer}
-            for nid, sha, claimer in pending if nid not in folded_ids]
+    out = []
+    for row in pending:
+        if row.id in folded_ids:
+            continue
+        shas = list(row.shas)
+        out.append({"id": row.id, "sha": shas[0], "shas": shas,
+                    "claimer": row.claimer})
+    return out
 
 
 def _burn_step(span):
