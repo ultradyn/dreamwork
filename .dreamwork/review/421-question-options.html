@@ -305,10 +305,52 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 .ask-block code{color:var(--lit)}
 .selfref{margin:.2rem 0 1.4rem;color:var(--dim);font-size:.74rem}
 .selfref b{color:var(--muted);font-weight:normal}
-.opt-tbl th:nth-child(1){width:11ch}
+/* Override shared template `table{min-width:max-content}` (review-artifact.template.html):
+   that sizes every cell to unwrapped content (~4200px here) so .scroller only
+   scrolls sideways and the reduces/costs columns never break lines. Per-artifact
+   only — do not restamp the template (#436: 12 artifacts have no src/). */
+.opt-tbl{
+  min-width:0;
+  width:100%;
+  table-layout:fixed;
+}
+.opt-tbl th,.opt-tbl td{
+  overflow-wrap:anywhere;
+  word-break:normal;
+  min-width:0;
+}
+/* Option lead stays tight; reduces/costs/risk share the rest so prose wraps. */
+.opt-tbl th:nth-child(1),.opt-tbl td:nth-child(1){width:16%}
+.opt-tbl th:nth-child(2),.opt-tbl td:nth-child(2){width:24%}
+.opt-tbl th:nth-child(3),.opt-tbl td:nth-child(3){width:24%}
+.opt-tbl th:nth-child(4),.opt-tbl td:nth-child(4){width:36%}
 .opt-tbl td:nth-child(1){color:var(--bright)}
 .opt-tbl .opt-tag{color:var(--accent)}
 .opt-tbl .risk{color:var(--warn)}
+/* Below the review pane's stack breakpoint a 4-col comparison is unreadable
+   even with wrap — restack each option as a labelled block. No transition:
+   media-query layout only (transitions.md: no gesture introduced). */
+@media (max-width:860px){
+  .opt-tbl,.opt-tbl thead,.opt-tbl tbody,.opt-tbl tr,.opt-tbl th,.opt-tbl td{display:block}
+  .opt-tbl th:nth-child(1),.opt-tbl td:nth-child(1),
+  .opt-tbl th:nth-child(2),.opt-tbl td:nth-child(2),
+  .opt-tbl th:nth-child(3),.opt-tbl td:nth-child(3),
+  .opt-tbl th:nth-child(4),.opt-tbl td:nth-child(4){width:100%}
+  .opt-tbl thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  .opt-tbl tr{padding:.85rem 0;border-bottom:1px solid var(--line)}
+  .opt-tbl tr:last-child{border-bottom:0}
+  .opt-tbl td{padding:.28rem 0;border-bottom:0}
+  .opt-tbl td:nth-child(1){padding-bottom:.45rem;font-size:.82rem}
+  .opt-tbl td:not(:first-child)::before{
+    content:attr(data-col);
+    display:block;
+    color:var(--dim);
+    font-size:.66rem;
+    text-transform:uppercase;
+    letter-spacing:.065em;
+    margin-bottom:.15rem;
+  }
+}
 .method{font-size:.74rem;color:var(--dim)}
 .method code{color:var(--lit)}
 </style>
@@ -325,27 +367,27 @@ for those options is ranked below them, not in front of them.</p>
     <tbody>
       <tr>
         <td><span class="opt-tag">A</span> &middot; the ask comes first, in its own line</td>
-        <td>Time to <em>find</em> the decision. Not length &mdash; the entry stays the same size, the decision just rises to the top of it.</td>
-        <td>One convention. <code>lint</code> can check that the first body line carries an <code>Ask:</code> marker.</td>
-        <td class="risk">An <code>Ask:</code> line that merely restates the title adds a line and no information. The check must require it to <strong>name the accepted answers</strong>, not merely exist.</td>
+        <td data-col="reduces">Time to <em>find</em> the decision. Not length &mdash; the entry stays the same size, the decision just rises to the top of it.</td>
+        <td data-col="costs">One convention. <code>lint</code> can check that the first body line carries an <code>Ask:</code> marker.</td>
+        <td class="risk" data-col="risk">An <code>Ask:</code> line that merely restates the title adds a line and no information. The check must require it to <strong>name the accepted answers</strong>, not merely exist.</td>
       </tr>
       <tr>
         <td><span class="opt-tag">B</span> &middot; an unanswered sub-decision is recorded, and lint errors</td>
-        <td>The <strong>2</strong> durable partials in the corpus, and &mdash; more usefully &mdash; the recurrence rather than the instances.</td>
-        <td>A format rule in <code>file-formats.md</code> plus a lint <strong>ERROR</strong>. Composes with <code>#419</code>'s blocked-on-human marker (same shape, one door over) rather than duplicating it.</td>
-        <td class="risk">The only option here with a real implementation cost, and it does nothing about length.</td>
+        <td data-col="reduces">The <strong>2</strong> durable partials in the corpus, and &mdash; more usefully &mdash; the recurrence rather than the instances.</td>
+        <td data-col="costs">A format rule in <code>file-formats.md</code> plus a lint <strong>ERROR</strong>. Composes with <code>#419</code>'s blocked-on-human marker (same shape, one door over) rather than duplicating it.</td>
+        <td class="risk" data-col="risk">The only option here with a real implementation cost, and it does nothing about length.</td>
       </tr>
       <tr>
         <td><span class="opt-tag">C</span> &middot; a length budget, evidence in the artifact</td>
-        <td>Length directly. Corpus median <strong>308</strong> &rarr; &le;250; max <strong>1252</strong> &rarr; capped.</td>
-        <td>A lint <em>warning</em> on over-budget entries; more weight on review artifacts being opened.</td>
-        <td class="risk"><strong>Load-bearing.</strong> An artifact he does not open makes the evidence <em>less</em> visible than a long entry does. Today's <code>#263</code> correction lived in the entry and he could read it without a click &mdash; a cap would have pushed it behind one. This is the argument against the coordinator's own tidiest idea, so C is left <em>soft</em>.</td>
+        <td data-col="reduces">Length directly. Corpus median <strong>308</strong> &rarr; &le;250; max <strong>1252</strong> &rarr; capped.</td>
+        <td data-col="costs">A lint <em>warning</em> on over-budget entries; more weight on review artifacts being opened.</td>
+        <td class="risk" data-col="risk"><strong>Load-bearing.</strong> An artifact he does not open makes the evidence <em>less</em> visible than a long entry does. Today's <code>#263</code> correction lived in the entry and he could read it without a click &mdash; a cap would have pushed it behind one. This is the argument against the coordinator's own tidiest idea, so C is left <em>soft</em>.</td>
       </tr>
       <tr>
         <td><span class="opt-tag">D</span> &middot; state what a valid answer looks like</td>
-        <td>The cost of <em>answering</em>, not of reading.</td>
-        <td>Nearly nothing.</td>
-        <td class="risk">A stated answer set that omits the option he actually wants is worse than none, so it must always admit a free-text answer explicitly &mdash; as the ask at the top of this page does.</td>
+        <td data-col="reduces">The cost of <em>answering</em>, not of reading.</td>
+        <td data-col="costs">Nearly nothing.</td>
+        <td class="risk" data-col="risk">A stated answer set that omits the option he actually wants is worse than none, so it must always admit a free-text answer explicitly &mdash; as the ask at the top of this page does.</td>
       </tr>
     </tbody>
   </table></div>
