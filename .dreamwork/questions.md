@@ -2,52 +2,6 @@
 
 ## Open
 
-- **P2 · 2026-07-29 02:56 — #462: may the dashboard run `just deploy` when you click it?**
-  → asked after your 02:30 request for an 'update & reload' control. The lane built the affordance and then
-  hit a consent question it will not answer for you.
-
-  **What it found, and it is the reason the button cannot just be built:** the deployed dashboard serves a
-  **snapshot** taken by `just deploy`, not your working tree. So neither cheap option does anything — a
-  browser reload re-fetches the same snapshot bytes, and `watch.py`'s own `--autoreload` re-exec is
-  byte-identical for a deployed server because its `__file__` *is* the snapshot, outside the repo. "Update"
-  can only mean **re-snapshot from HEAD and restart**, which is exactly `just deploy`.
-
-  So the question is not technical. It is whether a page may run that.
-
-  **Sub-decisions:** `Q1`, `Q2`
-
-  - **Q1** — may the page trigger `just deploy` on click? It means an unauthenticated, loopback-bound HTTP
-    request runs deploy machinery on your box. Failure *is* visible (the loaded page keeps polling and says
-    so when the new generation never arrives) and your drafts survive it, so the objection is authority,
-    not safety. **`rec`: yes**, loopback-only and behind the existing confirmation idiom.
-  - **Q2** — if no: keep what is landing now, which is the command surfaced on the staleness row, copyable
-    on click. Or would you rather it not appear at all?
-
-  **If you say nothing:** the copy-the-command version ships and nothing runs itself — you keep the one
-  extra step you have today, and the row at least tells you what to type.
-
-- **P1 · 2026-07-29 02:42 — #445: ratify the four attention levels, and how they sit beside the run modes**
-  **Artifact:** `.dreamwork/review/445-attention-modes.html` — context, the problem, the IGC, and a
-  recommendation. Design only; nothing is built.
-
-  Your dictation gave four levels for how much the loop asks you. Designing them turned up a structural
-  finding worth your ruling before anything is built: **`run-mode` today carries three independent decisions
-  in one word.** The decisive evidence is this session — you told me *"be lackadaisical, but also use
-  sub-agents"* in prose, twice, because no control could express it. One enum cannot; the design resolves to
-  **three axes: pace × asking × delegation**.
-
-  **Sub-decisions:** `Q1`, `Q2`, `Q3`
-
-  - **Q1** — ratify three orthogonal axes (pace × asking × delegation)? Or collapse them differently.
-  - **Q2** — your four level names as the closed set, and **where the asking axis lives**: a sibling file (no
-    migration) — recommended — or widen `run-mode` into a multi-field file (needs a `Migration:`).
-  - **Q3** — the subagent target and policy: an integer target `>= 1`, warn on `0`, hard-invalid below `0`, plus
-    free text, read every tick like `run-mode`. Or amend.
-
-  **If you say nothing:** nothing is built and nothing blocks — the design sits in
-  `.dreamwork/docs/plans/attention-modes.md` and the loop keeps its current posture, which is your prose
-  instruction rather than a control. `#443` stays open, since it is the same knot.
-
 - **P2 · 2026-07-28 — #417: four ways to put commits-per-period on the burndown, priced. Which, if any?**
   **Ask: `C1`, `C2`, `C3`, `C4`, or `none` — and `rec` takes C4.**
   Artifact: [`417-burndown-commits.html`](../review/417-burndown-commits.html) (`5fe331a`) — ten real
@@ -162,6 +116,82 @@
 
   Accepted answers: `rec` (takes all three) · per-question (`Q3: …`) · free text · `not yet`.
 ## Answered
+
+- **P2 · 2026-07-29 02:56 — #462: may the dashboard run `just deploy` when you click it?**
+  → answered (2026-07-29 03:52): **Q1 `rec` — yes, the page may run `just deploy`.** So the staleness row
+    becomes an action, not a copyable command: loopback-only, behind the existing confirmation idiom, and it
+    must say what happened when the new generation never arrives. Recorded on `#462`; the surface work is
+    queued behind the lane that currently holds `watch.py`.
+  → asked after your 02:30 request for an 'update & reload' control. The lane built the affordance and then
+  hit a consent question it will not answer for you.
+
+  **What it found, and it is the reason the button cannot just be built:** the deployed dashboard serves a
+  **snapshot** taken by `just deploy`, not your working tree. So neither cheap option does anything — a
+  browser reload re-fetches the same snapshot bytes, and `watch.py`'s own `--autoreload` re-exec is
+  byte-identical for a deployed server because its `__file__` *is* the snapshot, outside the repo. "Update"
+  can only mean **re-snapshot from HEAD and restart**, which is exactly `just deploy`.
+
+  So the question is not technical. It is whether a page may run that.
+
+  **Sub-decisions:** `Q1`, `Q2`
+
+  - **Q1** — may the page trigger `just deploy` on click? It means an unauthenticated, loopback-bound HTTP
+    request runs deploy machinery on your box. Failure *is* visible (the loaded page keeps polling and says
+    so when the new generation never arrives) and your drafts survive it, so the objection is authority,
+    not safety. **`rec`: yes**, loopback-only and behind the existing confirmation idiom.
+  - **Q2** — if no: keep what is landing now, which is the command surfaced on the staleness row, copyable
+    on click. Or would you rather it not appear at all?
+
+  **If you say nothing:** the copy-the-command version ships and nothing runs itself — you keep the one
+  extra step you have today, and the row at least tells you what to type.
+  - **Answer (via watch, 2026-07-29 03:46):** rec
+
+- **P1 · 2026-07-29 02:42 — #445: ratify the four attention levels, and how they sit beside the run modes**
+  → answered (2026-07-29 03:50): **ratified with amendments.** Q1 `rec` — three orthogonal axes stand.
+    Q2 — widen `run-mode` eventually but *not yet*: convert today's three values into the new vocabulary first,
+    and give each axis its own control with about **three stops**, the exact stops left to the loop. Q3 — the
+    subagent number is an **average-concurrency target, not a cap**: `0` means occasional (use one when it is
+    necessary or a particularly good choice; average below 0.5 running), `1` means an average between 0.5 and
+    1.5, and so on — interdependence still governs, and **two agents may pair on a single worktree**, talking
+    to each other via `subagent-protocols`. He also asked that skill be bundled with dreamwork (`#466`).
+  **Artifact:** `.dreamwork/review/445-attention-modes.html` — context, the problem, the IGC, and a
+  recommendation. Design only; nothing is built.
+
+  Your dictation gave four levels for how much the loop asks you. Designing them turned up a structural
+  finding worth your ruling before anything is built: **`run-mode` today carries three independent decisions
+  in one word.** The decisive evidence is this session — you told me *"be lackadaisical, but also use
+  sub-agents"* in prose, twice, because no control could express it. One enum cannot; the design resolves to
+  **three axes: pace × asking × delegation**.
+
+  **Sub-decisions:** `Q1`, `Q2`, `Q3`
+
+  - **Q1** — ratify three orthogonal axes (pace × asking × delegation)? Or collapse them differently.
+  - **Q2** — your four level names as the closed set, and **where the asking axis lives**: a sibling file (no
+    migration) — recommended — or widen `run-mode` into a multi-field file (needs a `Migration:`).
+  - **Q3** — the subagent target and policy: an integer target `>= 1`, warn on `0`, hard-invalid below `0`, plus
+    free text, read every tick like `run-mode`. Or amend.
+
+  **If you say nothing:** nothing is built and nothing blocks — the design sits in
+  `.dreamwork/docs/plans/attention-modes.md` and the loop keeps its current posture, which is your prose
+  instruction rather than a control. `#443` stays open, since it is the same knot.
+  - **Answer (via watch, 2026-07-29 03:45):** 1. rec 2. widen it, but we
+    don't need to do that yet. We can just convert the current modes
+    into the new values. we should add controls for the new values and
+    their dimensions. We can have like 3 stops on each axis maybe? IDK
+    that i will leave up to you, but we get 3 dimensions of input is the
+    point. 3. I had a thought about this: 0 can mean that subagents
+    aren't necessarily banned or w/e, but they should only be used when
+    a subagent is necessary or a particularly good choice. So like
+    occasional subagent use. Another way to look at it is that the avg
+    number of subagents running at any one time is <0.5. if the setting
+    is 1, then the avg number of subagents should be 0.5 < x < 1.5. or
+    the target number of subagents running at any one time is that. ofc
+    we still need to be aware of interdependent work and all that, but
+    should be fine. we can get agents to work on a single worktree as a
+    pair, too. they can talk to eachother via /subagent-protocols
+    (another skill we should bundle with dreamwork, btw, please add that
+    as a task)
+
 - **P2 · 2026-07-29 01:14 — #269: build it? (authorisation only, no design content)**
 
   → answered (2026-07-29 01:43): **granted, conditionally** — *"yes, provided no good reasons

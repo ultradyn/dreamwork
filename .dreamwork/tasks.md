@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **466**
+Next id: **468**
 
 ## Open
 - **#460** — a tool that replays the `task_event` `.jsonl` log and reconstructs the database · **P3** ·
@@ -134,6 +134,31 @@ Next id: **466**
   · **read together with `#445`** (four question/attention modes) and `#421` — a questionnaire is the surface
   those modes would ask through, and *"cut back on any superfluous elements"* is the design constraint he
   stated up front rather than a later review note.
+- **#466** — bundle the `subagent-protocols` skill with dreamwork, so a lane's two-way channel is part of the
+  loop rather than a path a brief happens to name · **P2** · packaging/subagents · origin: **human** ·
+  **human via watch 2026-07-29 03:45**, inside his `#445` answer
+  · his words: *"they can talk to eachother via /subagent-protocols (another skill we should bundle with
+  dreamwork, btw, please add that as a task)"* — said while ruling that **two agents may pair on a single
+  worktree**, which is what makes the channel load-bearing rather than convenient
+  · **why it matters now.** Every brief this session hand-wrote the path
+  `/home/xertrov/.claude-w/skills/subagent-protocols/SKILL.md` and the handshake obligation, and a lane that
+  never loaded it would have no inbox — the coordinator's only mid-task steering channel. A dependency stated
+  in prose in each brief is a dependency that goes missing the first time a brief is written in a hurry
+  · **this is the same shape as `#372`'s `use-igcs` bundling** — read them together and reuse whatever
+  mechanism that lands, rather than authoring a second one · related: **#445, #372**
+- **#467** — a `- **Answer …` bullet in a questions.md body truncates the parsed entry, so a `→ answered`
+  marker written after it is invisible to every reader · **P1** · tooling/lint · origin: **loop**
+  · **measured, 2026-07-29 03:50**, folding his `#445` answer: the marker was appended after his answer and
+  `watch.answered_at` returned `None`. Cause: the dashboard writes his answer as `  - **Answer (via watch,
+  …):**`, and entry splitting treats a `- **` bullet as a boundary — so everything after it, marker included,
+  lands outside the body the readers see. Moving the marker **above** his answer line fixed it immediately
+  · **this is `#411`'s family, third instance.** A marker dropped (`#264`, `#263`), a marker trapped inside a
+  wrapped title, and now a marker orphaned past a nested bullet — each time the fold looked done, lint's
+  date check was the only thing that noticed, and it only notices *absence*, never *misplacement*
+  · **the fix is a check, not a habit:** if a body contains a `→ answered` marker positioned after a nested
+  `- **` bullet, ERROR and say where it must go. Assert the precondition at runtime — the check is vacuous
+  unless the fixture's marker really is unreachable, so derive that from the parser rather than trusting the
+  fixture's layout · related: **#411, #366**
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
@@ -186,7 +211,7 @@ Next id: **466**
   `file-formats.md` before he rules** — and note the `IGC` question above is a blocker on the artifact, not on
   the design discussion
   · **blocked-on: **human** (define `IGC`; then rule on the composition with `#443`)**
-  · related: **#443, #421, #438, #426**
+  · related: **#443, #421, #438, #426, #466**
   · **DESIGN LANDED `0eea21c`, merged `1462aeb` — and it STAYS OPEN, because a design is not a ruling.**
   `.dreamwork/docs/plans/attention-modes.md` plus the artifact `.dreamwork/review/445-attention-modes.html`;
   built no mechanism, as the brief required — no `watch.py`, no tick-read file, no change to `run-mode`'s closed
@@ -213,7 +238,19 @@ Next id: **466**
   `#421` proved after a 4197px table shipped and he could not read it
   · **asked 2026-07-29 02:42 with three declared sub-decisions** (`Q1` the three axes, `Q2` names + where the
   asking axis lives, `Q3` the subagent target and policy shape) · **blocked on his ruling**
-
+  · **HIS RULING, 2026-07-29 03:45 (via watch) — Q1 `rec`, Q2 amended, Q3 amended.** The three orthogonal
+  axes (**pace × asking × delegation**) are ratified. **Q2:** widening `run-mode` into a multi-field file is
+  approved *in principle but deferred* — *"we don't need to do that yet. We can just convert the current modes
+  into the new values"*. So the first increment is a **vocabulary conversion**, not a format change: today's
+  three values are re-expressed as points in the new space, and **each axis gets its own control** with about
+  **three stops** — *"IDK that I will leave up to you, but we get 3 dimensions of input is the point"*, so the
+  stops are the loop's call and the three dimensions are not. **Q3:** the subagent number is an
+  **average-concurrency target, not a cap or a quota** — `0` means *occasional*, i.e. a subagent when one is
+  necessary or a particularly good choice (average below 0.5 running); `1` means an average strictly between
+  0.5 and 1.5; and so on. Interdependent work still governs, and **two agents may pair on one worktree**,
+  coordinating through `subagent-protocols` (`#466`)
+  · **no longer blocked-on human** — the design is ratified and the axes are settled; what remains is
+  implementation, and it starts with the conversion plus the controls
 - **#443** — run modes conflate PACE with DELEGATION POSTURE, so there is no way to say *"idle-friendly, but
   use subagents"* · **P1** · loop-design/run-mode · origin: **human** · **human via watch 2026-07-28 22:18**
   · his words (dictated, lightly punctuated): *"We need to rethink how the Run modes work. Because when,
@@ -243,6 +280,11 @@ Next id: **466**
   · **design first, with a review artifact and an `#ask`** — this is a restructure of a contract he set and
   the axes are his call, not the loop's. Do not change the file format before he rules
   · **blocked-on: **human** (after the design lands)** · related: **#290, #288, #426, #438, #445**
+  · **RESOLVED BY `#445`'s RULING, 2026-07-29 03:45.** The conflation is settled as **three** axes — pace,
+  asking, delegation — not the four this entry proposed: **quota posture** collapses into delegation plus pace
+  rather than standing alone, and **autonomy** is the asking axis under another name. The file format does not
+  change yet (his Q2: convert the current values into the new vocabulary first), so `#290`'s contract and the
+  *re-read every tick* property survive untouched for now. **No longer blocked-on human**
 - **#438** — a generic scheduled-tasks facility, so maintenance and inbound-scanning work is filed rather
   than done ad hoc · P2 · feature/scheduling · origin: **human** · **human via watch 2026-07-28 20:34**
   · his words: *"we should add support for task scheduling (probably managed through dreamhub). central
@@ -2534,6 +2576,11 @@ Next id: **466**
   `revealStaleAction()` call failed exactly the two motion checks and nothing else
   · **remaining and on his desk**: may the page run `just deploy` itself? Asked 02:56 with `Q1`/`Q2` declared;
   the objection is authority, not safety
+  · **AUTHORISED, 2026-07-29 03:46 (via watch): `rec` — yes, the page may run `just deploy`.** So the
+  staleness row is an **action**, not a copyable command: loopback-only, behind the existing confirmation
+  idiom, and it must report the case where the new generation never arrives (the lane's own finding: a
+  deployed dashboard serves a snapshot, so a reload and an `--autoreload` re-exec are both byte-identical —
+  "update" can only mean re-snapshot from HEAD and restart). **Queued behind the lane holding `watch.py`**
 - **#463** — review artifacts sort and age by the wrong timestamp · P2 · UI/review · origin: **human** ·
   **human via watch 2026-07-29 02:30:** *"fix the assets for review sorting — they should use ctime not mtime.
   And the age should show since ctime, not mtime. However, when ctime != mtime, we can show a 'modified X ago'
@@ -5099,7 +5146,7 @@ Next id: **466**
   it, which is how these two got written in the first place
   · **`watch.py` is owned by the `#399b` lane right now** — do not dispatch this into that file
   until it merges
-  · related: **#399, #340**
+  · related: **#399, #340, #467**
   · **MEASURED 13:08 before writing any brief, and the recorded fix direction is INSUFFICIENT
   as stated.** `RESOLVED_AT` is `\A\s*→[^:]*?\((\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*\)`
   — it begins with **`\A`**, so `.search` is **identical** to `.match` here and swapping them
@@ -6362,7 +6409,7 @@ Next id: **466**
   · measured on the shipped `task-transition-boundary.html` at 390px: **16 → 0** mid-word cell
   breaks, and the scroller went from `358 = 358` (not scrolling at all) to `3976 vs 358`
   · checked with #347's word-`Range` instrument, because a break inside a cell is invisible to
-  any end-state assertion · related: **#347**
+  any end-state assertion · related: **#347, #466**
 
 - **#364** — The #346 artifact still asks four questions he has already answered ·
   **closed `405092f`** · P2 · docs/accuracy · origin: **loop** · the page he opens to rule on
@@ -6472,7 +6519,7 @@ Next id: **466**
   cannot say whether a bullet was an answer or a note. The reader hides the one fact the check
   needs · it is the **interim half of #357**: it fires when someone runs lint, and he asked for
   ambient
-
+  · related: **#467**
 - **#336** — `/file` must show an image, not its bytes as mojibake · **closed `203ee06`** · **P1** ·
   **next-up** · dashboard bug · origin: **human** · **human via watch `do-next`
   2026-07-27 23:00**, typed from the page it happened on
