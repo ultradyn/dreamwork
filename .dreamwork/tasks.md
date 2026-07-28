@@ -2596,6 +2596,23 @@ Next id: **465**
   alone passes over the failure
   · rollout is the successor: `health.mjs` is the first adopter; the rest adopt individually
   · related: **#203, #263, #462**
+  · **rollout batch 1 DONE and merged** (`@grok`, three commits `53a8484` / `aec8adc` / `54f8fcd`) — **8 of 18
+  own-server guards adopted**: `pushhealth`, `reviewdraft`, `fileimg`, `fileview`, `identity`, `filehead`,
+  `gitrow`, `serving`. The lane derived the set itself (`spawn(python3, […watch.py…])` **or** an import of
+  `serve.mjs`, so a mere mention in a comment does not count) and reported the expression: **own-server 18,
+  verified 1, blind 17** before it started
+  · one honest exclusion worth keeping: **`provenance` boots with `-c` rather than `watch.py` in argv**, so it is
+  not an own-server guard by this definition, and **`revieworder` already uses an ephemeral port (`0`)** and is
+  immune by construction. Neither was converted and both were named
+  · **remaining, as a list rather than a count** (the successor): `above_fold`, `burndown`, `dashboard`,
+  `devoverlay`, `morph`, `morphhold`, `motion`, `projtitle`
+  · **verified independently by me on the merged tree, and my first proof came back GREEN** — I squatted 39782
+  while `gitrow` serves on **39781**, because it takes the port argument *directly* rather than via the
+  `++port` idiom the defect was described in terms of. So the green measured nothing. Squatting 39781 gave
+  `exit=1` and `serve: :39781 is serving …/squat2`, one FAIL line, and nothing left listening. **The port
+  arithmetic is per-guard, and a rollout proof that assumes one idiom checks the wrong socket** — worth knowing
+  for the remaining eight
+  · **merged `8e7ea50`; `#461` STAYS OPEN for the remaining eight guards** named above
 - **#462** — the dashboard says it is N commits behind but gives him no way to act on it · **P1** ·
   feature/dashboard · origin: **human** · **human via watch 2026-07-29 02:30, next-up, delegate soon:** *"re
   'this page is 3 watch.py commits behind · serving f9bb49e' on dashboard, we should have a task for adding an
@@ -2610,6 +2627,27 @@ Next id: **465**
   · the hard half is not the button: a reload that restarts the server he is reading must not lose his drafts
   (`#269` keys them per target) nor his place, and it must say what happened if the restart fails
   · related: **#461**
+  · **increment 1 LANDED `f7781a5`, merged `b1551b1` — and `#462` STAYS OPEN on his consent call.** The
+  staleness row now carries its own remedy: the exact command, present **only** when behind, copyable on click,
+  confirming through the page's single `#fmsg` lifecycle, with the text selectable as the clipboard fallback.
+  Label is the command itself rather than his two-verb phrasing, per the styleguide voice. `serving_report`'s
+  `missing` is reused verbatim — no second computation of the gap
+  · **the lane's IGC refuted every cheaper option, and the decisive error on self-restart is the one worth
+  keeping.** `watch.py`'s `--autoreload` re-execs on `__file__`'s mtime — and for a **deployed** server
+  `__file__` *is* the snapshot, outside the repo, which a tree commit does not touch. So `os.execv` re-serves
+  byte-identical bytes and the staleness is unchanged **by construction**. A browser reload fails the same way.
+  "Update" can therefore only mean *re-snapshot from HEAD and restart*, i.e. `just deploy`
+  · it also **withdrew its own first refutation** after I pushed back: it had argued a failed redeploy leaves the
+  failure invisible *"because the page that would report it is the page the restart destroys"*, which is false —
+  a restart destroys the server, not the loaded document, and that is precisely why `#269`'s drafts survive one.
+  The corrected refutation is about bytes, not page death, and it is right
+  · **guard `staleremedy` registered (55 today) and verified by me on the merged tree**: 11 checks pass,
+  including gating, a **sampled** arrival (not an end-state assertion), intermediate-opacity easing, the copy,
+  the confirmation lifecycle, and reduced-motion parity — plus a runtime-derived precondition that the state
+  really moved current→behind, so the arrival cannot be vacuous. My own red: deleting the single
+  `revealStaleAction()` call failed exactly the two motion checks and nothing else
+  · **remaining and on his desk**: may the page run `just deploy` itself? Asked 02:56 with `Q1`/`Q2` declared;
+  the objection is authority, not safety
 - **#463** — review artifacts sort and age by the wrong timestamp · P2 · UI/review · origin: **human** ·
   **human via watch 2026-07-29 02:30:** *"fix the assets for review sorting — they should use ctime not mtime.
   And the age should show since ctime, not mtime. However, when ctime != mtime, we can show a 'modified X ago'
