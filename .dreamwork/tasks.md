@@ -446,6 +446,39 @@ Next id: **421**
   empty before it gets there. **Fixing the pattern makes the TypeError appear**, so the first
   green after fixing bug 1 is a crash, not a pass. Two bugs in series where the second is
   invisible until the first is fixed
+  · **THE SYNCER HALF LANDED `f1f269b`** (lane `#402a`, `ccc @glm52`, ~40 min): an
+  order-independent detector, `dreamers` pruned by that same liveness test, a failed probe that
+  leaves fields **byte-identical** rather than writing a derived empty, a **coverage line** naming
+  every field it does not own (derived from the file's keys, so a field added next month appears
+  without anyone remembering), and mixed `str`/`int`/sub-id task ids
+  · **verified on the real dashboard, not only on a fixture**: the first post-merge run reported
+  `current_task_ids [] -> ['172', '420']` — it found both live lanes, **pruned the dead `402a`
+  entry**, and listed all 26 author-owned fields. `gate402a.py` PASSED against the merged tree with
+  the pre-merge baseline
+  · **the mixed-type fix HAD to ship in the same commit**, and this is the general shape worth
+  keeping: the `TypeError` was **masked** by the pgrep bug, because `live` was empty before
+  `sorted()` ever saw the ids. Fixing the pattern is what makes the crash reachable, so the two
+  bugs were in series with the second invisible until the first was fixed. Splitting them would
+  have shipped a commit whose first real use crashes
+  · **the lane refuted the premise of one of my gate's checks, by experiment, and it was right.**
+  I demanded that a lane whose recorded pid died but whose argv is live still be found — encoding
+  `live_tasks`' old docstring (*"ccc re-execs and the recorded pid is the wrapper's, not the
+  survivor's"*). Measured: after an `exec` the **pid is preserved and the argv is what vanishes**.
+  So the pid is the exact signal and the brief path is the fragile fallback — the reverse of the
+  docstring, which it fixed in the same commit. **Fourth lane today to be right where a check
+  disagreed**; the prior in `lessons.md` is now 4-for-4
+  · **the residual risk this creates, recorded because nothing checks it**: correctness now depends
+  on the dispatch recipe recording the **surviving** pid. A recipe whose recorded pid is a wrapper
+  that exits early would prune a **live** lane — and over-pruning is the dangerous direction, since
+  the coordinator then edits files a live lane owns. Today's `setsid bash -c "… ccc …"` is safe
+  because bash execs into `ccc`, so the recorded pid *is* `ccc` (`comm=ccc`, measured). Any change
+  to how lanes are launched must re-check that
+  · **WHAT REMAINS OF THIS ENTRY, narrowed 15:40:** (a) the `dreamers` row in `file-formats.md` plus
+  the `lint.py` check it implies — deliberately withheld from the lane as `#402b`; and (b)
+  `awaiting_human` is **still hand-written**: the post-merge coverage line lists it under
+  author-owned, so the 4-vs-5 drift this entry recorded can recur. It wants deriving from
+  `watch.parse_open_questions`, which is now a three-line change against a tool that already has
+  the idiom
 
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
   P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
