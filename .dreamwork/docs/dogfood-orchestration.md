@@ -1367,3 +1367,78 @@ reach, available the whole time.**
 - **The visual verdict has an owner and it is the coordinator.** Not owed, not deferred, not grok's.
 - **The matched experiment is still unrun**, and it is still the only thing that would turn the
   capability comparison from association into evidence.
+
+## The host is shared and never idle, which changes what orchestration can measure (20:00)
+
+This is the finding of the evening and it is not about either runner.
+
+`#428` — a dozen guards assert that a transition *happened* by sampling frames, and they fail
+intermittently, always from that subset and never outside it. Four separate full-suite runs went looking
+for the cause, each meant to be "the suite on an idle machine". I recorded all four as confounded because
+I had dispatched a lane through them, and wrote *"the experiment still needs running"* four times, the
+last time adding that it needed "a coordinator who will sit still for fifteen minutes".
+
+Then I measured the thing I had been assuming: **load 29.9 on 16 cores with zero lanes of mine running.**
+`ccm` at 78%, `herdr` at 66%, `codex` at 35%, `pi` at 32%, and four other `claude` processes. None mine.
+
+So:
+
+- **"No lane of mine is running" was never the same claim as "the machine is idle."** I had been treating
+  them as one, which is why every run came back ambiguous and why the self-blame was misplaced. My two
+  lanes are a rounding error against a baseline near 30; serialising them could not have produced the arm
+  the experiment wanted, and no amount of discipline would have.
+- **There is no idle arm available on this host at all**, so the experiment as designed is unrunnable
+  rather than merely unrun. Four attempts at an impossible measurement is what happens when a premise
+  goes unchecked because it feels like background.
+- **The remedy is to instrument, not isolate.** Every guard verdict now carries the load average and
+  failing lines carry it before and after, so the correlation accumulates over ordinary use with no
+  reserved window. A sampler red at load 30 and one at load 3 are different findings, and the output
+  could not previously tell them apart.
+
+### What this changes about running lanes here
+
+- **Lane count is not free, but it is also not the dominant term.** Adding two lanes to a box already at
+  28 moves it a little; the honest reason to bound concurrency is file ownership and my own attention,
+  not CPU.
+- **Any timing-shaped acceptance criterion in a brief is unreliable on this host** and should say so.
+  Briefs asking a lane to prove motion by per-frame sampling are asking for a measurement whose noise
+  floor is set by other people's sessions.
+- **Distrust a "verified idle" claim in any report, including mine.** It is cheap to write and, here,
+  almost always false.
+
+## Coordinator inspection caught what both lanes' own checks passed (20:00)
+
+Both lanes tonight were strong and both shipped a defect their own green checks could not see. This is
+the argument for the standing rule that delegation never replaces coordinator inspection.
+
+- **`grok` / `#434`** measured the phone frame height and *reported it as a range* — 693..708 — then set
+  the fold constant to **706**, the top of it. Correct measurement, convenient reading. A fold must take
+  the floor or it calls clipped content visible, and the lane's own guard passed because it measured a
+  single short-named fixture artifact and never saw the shorter frame.
+- **My own follow-up was wrong too, in the same direction**, and this is the more useful half. I set the
+  floor to **691**, measured in `.worktrees/frame` — but the project name in the title bar *is the target
+  directory's basename*, and it shares that line with the artifact name. The worktree renders `frame`
+  (5 chars); his dashboard renders `ud-dreamwork` (12) and wraps one line further. Real floor **672**,
+  fold **670**. **A value verified in a worktree is not verified for the surface he uses.**
+- It was caught only because the check I had just written re-measures the real target in place instead of
+  trusting its own comment. Binding a constant to a check that re-derives it is what made a second
+  mistake visible within minutes instead of at the next redesign.
+
+### And a brief of mine specified a measurement blind to its own bug
+
+For `#433` I required the lane to prove the rail fixed by comparing the rail's `scrollWidth` against its
+client width. `railOverflow` was **false in all 13 artifacts, before and after** — the collision is two
+children overlapping *inside* a rail that never overflows. The lane said so and my own probe confirmed it.
+
+**So red-prove an acceptance criterion before shipping it as the standard**, exactly as we red-prove a
+check. A criterion that cannot go red on the current bug is a wish, and it puts the lane in the position
+of having to notice on the coordinator's behalf — which this one did, and should not have had to.
+
+### A routing anomaly worth tracking
+
+The `#433` lane was dispatched with `ccc --yolo @glm52` and its report header reads **`grok (wt/rail)`**.
+Either the agent misidentified itself or `ccc` routed elsewhere. It matters for this whole comparison:
+every capability claim in the sections above is keyed to which runner did the work. Lanes are now asked to
+**state which model they are** at the top of the report, so the attribution is the lane's own claim rather
+than my assumption about the dispatch. Until a few reports come back, treat the runner attribution in this
+document as *dispatch-intent*, not confirmed identity.
