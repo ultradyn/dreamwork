@@ -2920,35 +2920,41 @@ is where he actually answers the loop, and it had only #118's IN-MEMORY snapshot
 reload, exactly the loss he reported ("never lose work on an autoreload of a
 page"). The reload is the one `tick` performs on him the moment the server's
 generation bumps (a restart, a redeploy, an edit under `--autoreload`), so it
-strikes mid-thought. `dwDraft` is the answer box's equivalent of the composer's
-store, by the *same* rules verbatim — save on `input` with no debounce, restore
-after every render that recreates the box (not only at load), clear on durable
-success only, a live box outranks storage, and every storage call is wrapped —
-so there is one policy for a half-typed thought, not two. It is the seed of
-#269's project-partitioned store rather than a throwaway: the first consumer.
+strikes mid-thought. **`DraftStore`** is now the one module every text surface
+consumes (extract + `#459`, still `localStorage` — IndexedDB deferred because
+sync write on `input` must not become an async hazard mid-keystroke). `dwDraft`
+remains a thin façade over `DraftStore.id('card', title)` so existing call
+sites keep the title-keyed shape. Rules, verbatim across every consumer: save
+on `input` with no debounce, restore only into a mounted element that declares
+its logical id (never fuzzy-match), clear only when `DraftStore.isDurable`
+says the write landed (today: `writeVerdict.landed` when attached, else
+`res.ok`; `#263` receipt is a later body for that one function), a live box
+outranks storage (#118), every storage call is try/catch.
 
-Keyed by the question's **title** — its `data-qid` identity, stable across a
-re-render (the title is a property of the question, not its position), a re-sort
-(it follows the question) and the re-index between sections that answering
-performs (`o3`→`a0`, title unchanged), where the positional key (`o0`) is none
-of those, which is why the card already carries `data-qid` separately from
-`data-qkey` (#77/#266). Partitioned by `data.target` for the same reason the
-composer is. The store runs *after* the in-memory snapshot has had its say, so
-the snapshot (the more recent live state) wins and storage is the backstop —
-which is the whole point: #118 carries text across a tick, `dw:adraft:` carries
-it across the reload #118 cannot. It restores silently and before paint, so the
-text is part of the first frame rather than arriving into an empty box (no new
-gesture — it is the same silent restore as the composer and as #118).
+Logical id is `kind:scopeKey` inside the `data.target` partition. Primary key
+`dw:draft:v1:<target>:<logicalId>`; dual-read of the pre-module keys
+(`dw:adraft:<target>:<title>`, `dw:draft:<target>`) so an existing browser
+draft is not orphaned by the extract. On save through the new API the old key
+is removed after the new one is written. Consumers today: `card:<title>`
+(answer/note boxes), `composer:main` (`#cmdtext`), **`ask:main` (`#askbox`)**,
+**`popout:main` (`#ptext`)** — the last two had no persistence at all and are
+the discriminating proof the module is a module. Cross-tab (C1 offer-to-load)
+and 30-day GC leave seams only.
+
+Cards key by the question's **title** — its `data-qid` identity, stable across
+a re-render, a re-sort and the re-index between sections (`o3`→`a0`), where the
+positional key is none of those. The store runs *after* the in-memory snapshot
+has had its say, so the snapshot wins and storage is the backstop: #118 across
+a tick, DraftStore across the reload #118 cannot. Restores silently and before
+paint (no new gesture — the text in the box is the statement).
 
 The diagnosis mattered and is recorded for the agent that generalises this: the
 report named the *live re-render* as the probable cause, but reproducing both
 modes showed the tick was already covered by #118 and the **reload** was the
 real loss — a fix verified only against the tick would have left his reported
-bug untouched. `dev/capture/reviewdraft.mjs` drives *both* modes, proves the
-box was genuinely recreated (the textarea is tagged before the re-render and
-the guard asserts the tag is gone after, so a re-render that never happened
-cannot make the check pass over the bug), asserts the partition key at runtime
-from both `data.target` and `data-qid`, and checks the contract both ways.
+bug untouched. `dev/capture/reviewdraft.mjs` drives *both* modes for the dock,
+proves dual-read of a planted legacy key (old-key precondition asserted at
+runtime), and proves `#askbox` / `#ptext` survive a real reload.
 
 **Every submission is witnessed by the client too** (#175). #199 gave the
 *server* a verbatim record of everything it received; this is the witness for

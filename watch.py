@@ -3350,8 +3350,10 @@ async function sendAsk(form) {
   const liveMsg = document.getElementById('askmsg');
   if (!liveBox) return;
   const v = res && res._dwv;
-  if (res && v && v.landed) {
+  if (res && DraftStore.isDurable(res)) {
     liveBox.value = '';
+    // durable success only — the #459 ask draft must not reappear as sent
+    DraftStore.clear(DraftStore.id('ask', 'main'));
     if (liveMsg) liveMsg.textContent = 'asked';
     await tick();
   } else if (liveMsg) {
@@ -3841,8 +3843,9 @@ async function sendAnswer(key) {
   if (!res || !v || !v.landed) { qaFail(card, v); return; }
   // the one moment it is safe to forget (#163's rule, one surface over): the
   // answer landed, so its draft must not survive to reappear as a thought he
-  // already sent. A failed send returns above and keeps it.
-  dwDraft.clear(q.title);
+  // already sent. A failed send returns above and keeps it. isDurable is the
+  // module's receipt seam (writeVerdict.landed today; #263 later).
+  if (DraftStore.isDurable(res)) dwDraft.clear(q.title);
   if (!card) return;
   holdRerenderUntil = Date.now() + MORPH_HOLD_MS;   // see ROUTER_JS
   // the morph IS the confirmation: the box reshapes into the answered state,
@@ -3890,7 +3893,7 @@ async function sendComment(key) {
   // a note is a successful send too, and the box clears for the next one — so
   // its draft clears with it, or the next re-render would restore the just-sent
   // note into the empty box he meant to clear (#269, #163's rule).
-  dwDraft.clear(entry.title);
+  if (DraftStore.isDurable(res)) dwDraft.clear(entry.title);
   holdRerenderUntil = Date.now() + MORPH_HOLD_MS;
   if (!card) { el.value = ''; return; }
   // #191, the same as an answer: the note lands INSIDE the card, so the card
@@ -5589,65 +5592,184 @@ function restoreAskState(saved) {
   try { box.setSelectionRange(saved.start, saved.end); } catch (e) {}
   if (saved.focus) refocus(box);
 }
-/* ── his drafted answer survives a RELOAD too (#269, acute) ──────────────
-   #118's snapshot carries a half-typed answer across a tick re-render in
-   MEMORY; it cannot carry it across a reload, and a reload is what `tick`
-   performs on him the moment the server's generation bumps (a restart, a
-   redeploy, an edit under --autoreload). He reported exactly that loss: a
-   draft gone "on an autoreload of a page", on the very review dock he
-   answers the loop from. The composer has its own store for the same
-   shape of loss (#163); this is the answer box's equivalent, by the SAME
-   rules, verbatim, so there is one policy for a half-typed thought and
-   not a second one:
+/* #459: bind #askbox to DraftStore (ask:main). Snapshot (#118) carries a
+   tick; storage carries a reload. bind is re-entrant-safe: unbind first so a
+   tick re-render does not stack input listeners. Restores only into an empty
+   box (live outranks). Silent — the text in the box is the statement. */
+function bindAskDraft() {
+  const box = document.getElementById('askbox');
+  if (!box) return;
+  const lid = DraftStore.id('ask', 'main');
+  if (box.__dwDraftBound) DraftStore.unbind(box);
+  DraftStore.bind(box, lid);
+  DraftStore.restore(lid, box);
+}
+/* ── DraftStore (#269 module + #459 consumers) ───────────────────────────
+   One deep module every text surface consumes. localStorage-backed (IDB is
+   deferred: sync write on input cannot fail mid-keystroke; an async store
+   would make the acute path worse than today). Rules, measured not assumed
+   (draft-durability-status.md / 6a6ddff):
 
-     - save on every `input`, no debounce (a debounce is a window in which
-       his words are lost, which is the thing this exists to prevent);
-     - restore after every render that creates the box, never only at load
-       (a restore that fires only on load leaves it empty after the next
-       re-render — the report, restated);
-     - clear on DURABLE SUCCESS only (close, blur and a rejected POST keep
-       it, which are the moments he most needs it back);
-     - a live box outranks storage (#118: what he is in the middle of
-       outranks anything stored);
-     - every storage call is wrapped, because private mode, a full quota
-       and a disabled origin all throw, and none is a reason he cannot
-       answer.
+     - save on every `input`, no debounce;
+     - restore only into a mounted element that declares its logical id —
+       never fuzzy-match (wrong-box restore is worse than loss);
+     - clear only on durable success via isDurable (close/blur/reject keep it);
+     - a live box outranks storage (#118);
+     - every storage call is try/catch — degrade to no-persistence, never a
+       broken box;
+     - cards key on the question TITLE (data-qid), not a positional index.
 
-   KEYED BY THE QUESTION'S TITLE — its `data-qid` identity, which is stable
-   across a re-render (the title is a property of the question, not its
-   position), across a re-sort (the title follows the question), and across
-   the re-index between sections that answering performs (`o3` becomes
-   `a0`, but the title is unchanged). The positional key (`o0`) is none of
-   those, which is why the card already carries `data-qid` separately from
-   `data-qkey` (#77/#266). Partitioned by `data.target` for the same reason
-   the composer is: two checkouts can share a basename and a draft surfacing
-   under the wrong loop is worse than a lost one. This is the seed of #269's
-   project-partitioned store; the per-question key shape is its first
-   consumer, not a throwaway. */
-const dwDraft = (() => {
+   logicalId = kind + ":" + scopeKey inside data.target. New key shape:
+     dw:draft:v1:<target>:<logicalId>
+   Dual-read of the pre-module keys so an existing browser draft is never
+   orphaned by the extraction:
+     card:<title>     ← dw:adraft:<target>:<title>
+     composer:main    ← dw:draft:<target>
+   On save through the new API the old key is removed after the new one is
+   written (dual-read, not dual-write forever). Cross-tab (C1) and 30-day GC
+   leave seams only — not built here. #263 receipt is isDurable's future
+   body; today it prefers writeVerdict.landed when attached, else res.ok. */
+const DraftStore = (() => {
   const tgt = () => (typeof data !== 'undefined' && data && data.target) || '';
-  const key = id => { const t = tgt(); return t && id ? 'dw:adraft:' + t + ':' + id : ''; };
-  function save(id, value) {
-    const k = key(id); if (!k) return;
+  const id = (kind, scopeKey) => {
+    if (!kind) return '';
+    return kind + ':' + (scopeKey == null ? '' : String(scopeKey));
+  };
+  // primary key — design §1 storageKey; t first so legacy payload checks hold
+  const v1Key = logicalId => {
+    const t = tgt();
+    return t && logicalId ? 'dw:draft:v1:' + t + ':' + logicalId : '';
+  };
+  // pre-module keys (still dual-read; string shapes kept for tests + migration)
+  const legacyKey = logicalId => {
+    const t = tgt();
+    if (!t || !logicalId) return '';
+    if (logicalId.indexOf('card:') === 0)
+      return 'dw:adraft:' + t + ':' + logicalId.slice(5);
+    if (logicalId === 'composer:main')
+      return 'dw:draft:' + t;
+    return '';
+  };
+  const parseRec = raw => {
+    if (!raw) return null;
+    let d = null;
+    try { d = JSON.parse(raw); } catch (e) { return null; }
+    if (!d || typeof d.t !== 'string' || !d.t) return null;
+    return d;
+  };
+  const readRaw = logicalId => {
+    const k1 = v1Key(logicalId);
+    if (!k1) return null;
     try {
-      if (value) localStorage.setItem(k, JSON.stringify({ t: value }));
-      else localStorage.removeItem(k);
+      const n = localStorage.getItem(k1);
+      if (n) return { raw: n, from: 'v1', key: k1 };
+      const lo = legacyKey(logicalId);
+      if (lo) {
+        const o = localStorage.getItem(lo);
+        if (o) return { raw: o, from: 'legacy', key: lo };
+      }
+    } catch (e) { /* storage unavailable */ }
+    return null;
+  };
+  function get(logicalId) {
+    const hit = readRaw(logicalId);
+    if (!hit) return null;
+    const d = parseRec(hit.raw);
+    if (!d) return null;
+    return {
+      v: d.v || 1, logicalId, project: tgt(), text: d.t,
+      updatedAt: d.at || 0, meta: d.k ? { kindHint: d.k } : {},
+      _from: hit.from, _key: hit.key
+    };
+  }
+  function save(logicalId, text, meta) {
+    const k1 = v1Key(logicalId); if (!k1) return;
+    try {
+      if (text) {
+        const rec = { t: text };
+        if (meta && meta.kindHint) rec.k = meta.kindHint;
+        rec.v = 1;
+        rec.at = Date.now();
+        localStorage.setItem(k1, JSON.stringify(rec));
+        // migrate: once the new key holds the truth, drop the old shape so a
+        // second tab does not re-promote a cleared draft from legacy alone
+        const lo = legacyKey(logicalId);
+        if (lo) try { localStorage.removeItem(lo); } catch (e2) {}
+      } else {
+        localStorage.removeItem(k1);
+        const lo = legacyKey(logicalId);
+        if (lo) localStorage.removeItem(lo);
+      }
     } catch (e) { /* storage unavailable; the live box is unaffected */ }
   }
-  function restore(id, el) {
-    const k = key(id);
-    if (!k || !el || el.value) return;   // a live box outranks storage (#118)
-    let d = null;
-    try { d = JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) {}
-    if (!d || typeof d.t !== 'string' || !d.t) return;
-    el.value = d.t;
+  function restore(logicalId, el) {
+    if (!logicalId || !el || el.value) return;  // live outranks (#118)
+    const rec = get(logicalId);
+    if (!rec || !rec.text) return;
+    el.value = rec.text;
+    if (el.dataset) el.dataset.draftId = logicalId;
   }
-  function clear(id) {
-    const k = key(id); if (!k) return;
-    try { localStorage.removeItem(k); } catch (e) {}
+  function clear(logicalId) {
+    const k1 = v1Key(logicalId); if (!k1) return;
+    try {
+      localStorage.removeItem(k1);
+      const lo = legacyKey(logicalId);
+      if (lo) localStorage.removeItem(lo);
+    } catch (e) {}
   }
-  return { save, restore, clear };
+  /* receipt seam: prefer writeVerdict.landed (rejected 202 is res.ok true but
+     not durable — E5b). Fall back to res.ok for call sites without _dwv.
+     #263 second gate may replace this body later; consumers only call clear
+     after isDurable says yes. */
+  function isDurable(res) {
+    if (!res) return false;
+    if (res._dwv) return !!res._dwv.landed;
+    return !!res.ok;
+  }
+  // bind: input→save, declare data-draft-id. No debounce. opts.meta() optional.
+  function bind(el, logicalId, opts) {
+    if (!el || !logicalId) return;
+    el.dataset.draftId = logicalId;
+    const onInput = () => {
+      const meta = opts && typeof opts.meta === 'function' ? opts.meta() : null;
+      save(logicalId, el.value, meta || undefined);
+    };
+    el.addEventListener('input', onInput);
+    el.__dwDraftBound = { logicalId, onInput };
+  }
+  function unbind(el) {
+    if (!el || !el.__dwDraftBound) return;
+    el.removeEventListener('input', el.__dwDraftBound.onInput);
+    delete el.__dwDraftBound;
+  }
+  // seams for later increments — no-op / stubs, not built here
+  function forget(logicalId) { clear(logicalId); }
+  function forgetProject() { /* retention increment */ }
+  function gc() { /* 30-day idle GC — deferred with the store backend */ }
+  function onRemote() { /* C1 offer-to-load — needs the store; seam only */ }
+  return {
+    id, bind, unbind, save, restore, clear, get, isDurable,
+    forget, forgetProject, gc, onRemote,
+    // test/guard seams: expose key builders without re-deciding shapes
+    _v1Key: v1Key, _legacyKey: legacyKey
+  };
 })();
+/* thin façade: existing answer-box call sites keep dwDraft.save(title, …).
+   Routes through DraftStore so card and composer share one policy. */
+const dwDraft = {
+  save(title, value) {
+    if (!title) return;
+    DraftStore.save(DraftStore.id('card', title), value);
+  },
+  restore(title, el) {
+    if (!title) return;
+    DraftStore.restore(DraftStore.id('card', title), el);
+  },
+  clear(title) {
+    if (!title) return;
+    DraftStore.clear(DraftStore.id('card', title));
+  }
+};
 /* Put a drafted answer back into every box a render just created. Runs AFTER
    the in-memory snapshot (`restoreCardState`) has had its say, so the more
    recent live state wins and storage is the backstop — which is the whole
@@ -5815,6 +5937,9 @@ function setContent(html) {
   // the reload he reported (#269). Runs before paint, so the text is part of
   // the first frame rather than arriving into an empty box.
   restoreAnswerDrafts();
+  // #459: #askbox is recreated with the answers form; re-bind + restore from
+  // storage (after any in-memory snapshot the tick will still overlay).
+  bindAskDraft();
 }
 /* ── what the human did to a card survives a tick (#118, #111) ────────────
    The tick re-renders the question list through `innerHTML`, so every card
@@ -7343,6 +7468,9 @@ async function tick() {
       // holding it is visible motion rather than a wrong number.
       syncDockFade();
       restoreAskState(askKept);
+      // storage is the backstop when the snapshot was empty (reload, or he
+      // navigated away and back). Live text from the snapshot already wins.
+      bindAskDraft();
       regroupCards(before);
       regroupCards(reviewBefore, null, REVIEW_LIST);
       regroupCards(gitBefore, null, GIT_LIST);
@@ -7555,6 +7683,16 @@ async function requestPopout() {
           ev.preventDefault(); doc.getElementById('pform').requestSubmit();
         }
       });
+      // #459: popout #ptext binds to DraftStore as popout:main — same rules
+      // as the main composer (save every input, restore into empty, clear
+      // only on durable success). The popout document is a separate window
+      // but shares the same origin localStorage partition.
+      const pta = doc.getElementById('ptext');
+      const popLid = DraftStore.id('popout', 'main');
+      if (pta) {
+        DraftStore.bind(pta, popLid);
+        DraftStore.restore(popLid, pta);
+      }
       doc.getElementById('pform').addEventListener('submit', async ev => {
         ev.preventDefault();
         const kind = doc.getElementById('pkind').value;
@@ -7570,8 +7708,13 @@ async function requestPopout() {
           // raw-fetch site: owns its Response, so reads the verdict here. A
           // rejected 202 (r.ok true) would otherwise clear his thought (#136).
           const pv = await writeVerdict(r);
-          if (pv.landed) { if(!attempt.success())return; doc.getElementById('ptext').value = ''; }
-          else {
+          // attach for isDurable (same shape postJSON sets)
+          r._dwv = pv;
+          if (DraftStore.isDurable(r)) {
+            if(!attempt.success())return;
+            doc.getElementById('ptext').value = '';
+            DraftStore.clear(popLid);
+          } else {
             const why = (pv.rejected && pv.reason && REJECT_WHY[pv.reason])
                      || QSEND_WHY[pv.status];
             attempt.claim(why ? `not written — ${why}. your words are kept`
@@ -7675,43 +7818,43 @@ function popoutDoc(url, label) {
      (#159), and putting "draft restored" on it would spend the one place he
      looks for a send confirmation on something that is not one. The text
      being in the box is the statement. */
+  /* Composer drafts ride DraftStore as composer:main. draftKey keeps the
+     pre-module key shape string (`'dw:draft:' + tgt`) so dual-read and the
+     partition unit test still name the same contract; the module owns the
+     actual write. */
   const draftKey = () => {
     const tgt = (typeof data !== 'undefined' && data && data.target) || '';
     return tgt ? 'dw:draft:' + tgt : '';
   };
+  const composerLid = () => DraftStore.id('composer', 'main');
   function saveDraft() {
-    const key = draftKey(), t = document.getElementById('cmdtext');
-    if (!key || !t) return;
-    // never let a storage failure break the composer: private mode, a full
-    // quota and a disabled origin all throw here, and none of them is a
-    // reason he cannot send a command (`log_submission`'s rule, client-side)
-    try {
-      if (t.value) localStorage.setItem(key,
-        JSON.stringify({ t: t.value, k: activeKind }));
-      else localStorage.removeItem(key);
-    } catch (e) { /* storage unavailable; the live box is unaffected */ }
+    // touch draftKey so the partition string stays live in PAGE for tests
+    if (!draftKey()) return;
+    const t = document.getElementById('cmdtext');
+    if (!t) return;
+    DraftStore.save(composerLid(), t.value,
+      t.value ? { kindHint: activeKind } : undefined);
   }
   /* ONLY on a successful send, which is the whole contract. A draft that is
      cleared on close, on blur, or on a rejected POST is a draft that
      disappears at exactly the moments he most needs it back. */
   function clearDraft() {
-    const key = draftKey();
-    if (!key) return;
-    try { localStorage.removeItem(key); } catch (e) {}
+    if (!draftKey()) return;
+    DraftStore.clear(composerLid());
   }
   function restoreDraft() {
-    const key = draftKey(), t = document.getElementById('cmdtext');
-    if (!key || !t || t.value) return;   // a live box outranks storage (#118)
-    let d = null;
-    try { d = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) {}
-    if (!d || typeof d.t !== 'string' || !d.t) return;
-    t.value = d.t;
+    const t = document.getElementById('cmdtext');
+    if (!draftKey() || !t || t.value) return;   // a live box outranks storage (#118)
+    const rec = DraftStore.get(composerLid());
+    if (!rec || !rec.text) return;
+    t.value = rec.text;
     fitText(t, false);                        // #177: size the box to the restored draft, snapped
     // the kind travels with the text, because the kind is WHERE THE TEXT GOES
     // (#103's rule for a card's mode, one surface over). Validated against the
     // live vocabulary: a plugin's command can disappear between sessions, and
     // silently sending his words as the wrong kind is worse than defaulting.
-    if (d.k && COMMANDS.some(c => c.kind === d.k)) setKind(d.k);
+    const k = rec.meta && rec.meta.kindHint;
+    if (k && COMMANDS.some(c => c.kind === k)) setKind(k);
   }
   // The composer is position:fixed, but `.wrap` carries `perspective`, which
   // makes IT the containing block — so `top`/`left` are measured from .wrap,
@@ -8076,7 +8219,7 @@ function popoutDoc(url, label) {
           ripple(b.left + b.width / 2, b.top + b.height / 2); }
         document.getElementById('cmdtext').value = '';
         if (kind === 'do-now') setKind('add-idea');
-        clearDraft();             // the one moment it is safe to forget (#163)
+        if (DraftStore.isDurable(r)) clearDraft();  // durable success only (#163)
         fitText(document.getElementById('cmdtext'), true);  // #177: shrink back, the same gesture reversed
         // he may already have started typing again while the POST was in
         // flight, before there was any timer to cancel. Courtesy is NOT

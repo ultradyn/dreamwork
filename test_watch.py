@@ -4185,6 +4185,32 @@ class TestAppShell(unittest.TestCase):
         self.assertIn("'dw:draft:' + tgt", watch.PAGE)
         self.assertIn('data.target', watch.PAGE)
 
+    def test_draftstore_module_surface_and_dual_read(self):
+        """#269 extract: one DraftStore every surface routes through.
+
+        Structural: the module names, the dual-read legacy shapes, and the
+        two #459 consumers. Behaviour is reviewdraft.mjs; this pins the
+        extract so a later rename cannot silently re-fork the key policy.
+        """
+        for token in (
+            'const DraftStore',
+            'const id = (kind, scopeKey)',
+            'isDurable',
+            "dw:draft:v1:",
+            # dual-read of pre-module keys (orphaning ban)
+            "'dw:adraft:' + t + ':'",
+            "'dw:draft:' + t",
+            # #459 consumers
+            "id('ask', 'main')",
+            "id('popout', 'main')",
+            'bindAskDraft',
+        ):
+            self.assertIn(token, watch.PAGE, f"missing DraftStore contract token: {token}")
+        # clear only after isDurable — the receipt seam, not bare res.ok
+        self.assertIn('DraftStore.isDurable', watch.PAGE)
+        # no debounce window on the answer save path (still delegated input)
+        self.assertIn('dwDraft.save(title, t.value)', watch.PAGE)
+
     def test_page_has_pip_popout_buttons(self):
         # #83: discoverable PiP-glyph buttons float a doc/review in an
         # identity-headed window, reusing the popout machinery.
