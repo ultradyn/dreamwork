@@ -2288,3 +2288,35 @@ this shape and convert opportunistically.)
   and built the fail-closed behaviour deliberately. **The design is not an accident, and neither is
   the fact that it is the only one of its kind here.**
 
+- **`lint.py` exiting 0 is not a green baseline, and a `-k` selection that excludes the failing test
+  is indistinguishable from a passing suite. `just test` exists for exactly this and I did not run
+  it.** · For hours today `test_lint.py::TestLandedAsks::test_this_repo_has_no_forgotten_folds` was
+  **failing on master** — 496 passed, 1 failed — and I did not know. Two independent reasons, and
+  each alone was sufficient: `python3 lint.py` **exits 0** because the underlying finding is a
+  **WARN**, not an ERROR; and every pytest run I made was a selection
+  (`-k "cutoff or grandfather or handoff"`, `-k "date_only or timed_timestamp"`) that never included
+  it. A **lane** found it in one line by running the whole file.
+  · The shape is the day's recurring one arriving in my own habits: **the output of "nothing is
+  wrong" and "I did not look there" is identical.** A selection is a coverage decision, and a
+  coverage decision with no coverage number is a guess.
+  · Rules, both cheap: **run the project's own full verification before believing a baseline** — here
+  that is `just test`, and it is the repo's only CI. And **when a check has severities, know which
+  ones the exit code reflects**; a WARN that no exit code carries is a finding that only a reader
+  sees, and nobody reads.
+
+- **Moving a ledger entry must not rewrite its `related:` list — and I compounded four edits without
+  running the check between them, turning 4 errors into 14.** · Closing `#401` and `#406` meant
+  moving them from `## Open` to `## Recently landed`. I combined them under one head `#401/#406`,
+  which made every entry relating to either id owe a back-reference to **both**, and then tried to
+  repair the cascade by patching one marker at a time, then by computing a closure whose own id
+  regex (`#[\w/]+`) split `#401/#406` into `#401/` and `#406`. **That is the same
+  narrow-id-vocabulary defect I spent the day filing, committed by me while filing it.**
+  · What worked, after restoring the last clean copy: **move the entry verbatim and leave the marker
+  untouched, positioned last.** The relation graph was already consistent; the move never needed to
+  touch it. Then one edit, one `lint` run, repeat — and the pair count moved by exactly the expected
+  amount each time (42 → 44 for one new two-relation entry), which is the arithmetic that proves the
+  edit did what it claimed.
+  · The generalisable half: **when a repair makes a check worse, stop and restore rather than
+  continue.** Four errors was a diagnosable state; fourteen was a state I had authored. And
+  **restoring is only cheap if the last good version is committed** — the reason to commit small.
+

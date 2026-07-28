@@ -24,9 +24,30 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **409**
+Next id: **410**
 
 ## Open
+- **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
+  right now · P2 · handoffs/correctness · origin: **loop** · **predicted by the `#401` lane in its
+  neighbour table and not filed by it; found in the tree one minute later**
+  · `pending_handoff_records` hides a pending line whose id is in `folded_ids`, and correlation is
+  **by id alone** — so a second landing under the same id is suppressed by the first one's fold. Not
+  hypothetical: the live file has **`#401` pending twice** (`f2c950e`, the audit half, and `e53d70c`,
+  the fix half) and folded **once**. The fix-half landing is invisible to the dashboard
+  · **it is the append-only design's own logic turned against it.** Nothing moves, so both lines
+  persist; a fold marker is a bare id token with no sha, so it cannot say *which* landing it
+  consumed. Every part of that is deliberate, and the combination loses a landing
+  · **and it is the ordinary case, not an exotic one** — a task landing twice is exactly what an
+  audit half plus a fix half looks like, which is how this repo splits work
+  · rec: **correlate a fold by `(id, sha)`**, not by id. The sha is already in the pending line and
+  every fold line already cites one in prose (*"citing `f2c950e`"*), so the data exists and only the
+  parser ignores it. The honest cost is migration: existing fold lines carry the sha in **prose**,
+  not in a parsed field
+  · **the red is in the tree and needs no injection**, as `#406`'s was — but prove it before tidying,
+  and **do not let a fold note claim a state nobody re-checked**; that mistake cost the last lane a
+  restore step
+  · related: **#401, #381**
+
 - **#408** — `CLAUDE.md` documents a `GIT_OPTIONAL_LOCKS` mitigation that is **not in place**, so
   every Claude session takes real index locks · P2 · system/mitigation-drift · origin: **loop** ·
   found while testing **#283**'s closing condition, not by looking for it
@@ -127,36 +148,6 @@ Next id: **409**
   not by file
   · related: **#397, #264, #402, #400, #399, #406**
 
-- **#406** — `handoffs.md` instructs an append that **structurally cannot** put the line where it
-  is required · **P1** · handoffs/format · origin: **loop** · found by watching a live lane obey
-  the instruction literally, then confirmed twice more independently
-  · **the instruction every brief and dispatch prompt carries is** *append only with `cat >>`, never
-  rewrite* — **and `## Pending` is not the last section.** `cat >>` writes at end-of-file, which is
-  **inside `## Folded`**. A lane that obeys exactly puts its landing in the wrong section
-  · **three independent confirmations, none of them planned.** `#392a`'s line sits after `## Folded`
-  in the file right now. The `#401` audit lane hit the same thing, reported it under *"not confident
-  about"* — *"whether `cat >>` alone can ever place a line under Pending while `## Folded` sits
-  below"* — and then **committed a fix for its own line** (`75e6139`). And its matrix ranks the live
-  `#392a` case as its **second** silent reject, reached independently of mine
-  · **triple-invisible, measured.** A Pending-shaped line inside `## Folded` matches neither
-  `HANDOFF_FOLDED_RE` (wrong shape) nor `pending` (wrong section) — and the `malformed` fallback
-  **only runs inside section P**, so it is not reported either. Same end state as **#401** by an
-  entirely different route
-  · **the inversion is the finding: the lanes that got it right DISOBEYED me.** Three of four
-  inserted before `## Folded` — a rewrite, which the instruction forbids. **Compliance with the
-  instruction produces the defect**, so the obligation's own wording selects against the outcome it
-  exists to secure
-  · **and the sections turn out to be redundant.** The two line shapes are already
-  self-distinguishing — `· landed \`sha\`` versus `→ folded (ts):` — and correlation is by id, which
-  is stated in the file's own header. `parse_handoffs` uses the headings only to pick which regex to
-  apply, a choice the line itself already determines
-  · rec, smallest first: **move `## Folded` above `## Pending`** so an EOF append lands correctly and
-  the instruction becomes true. Better but larger: **drop the sections**, parse by line shape, and
-  let append-only mean what it says. Either way the `malformed` fallback must run **outside** any
-  section so a misplaced line is loud
-  · **the red is in the tree and needs no injection** — `#392a`'s misfiled line is the fixture. Do
-  not tidy it away before the check exists
-  · related: **#381, #401, #404, #405**
 
 - **#404** — for a same-tree lane, `git log` is a strictly more reliable landing channel than
   `handoffs.md`, and the tick reads the weaker one first · P2 · loop/design · origin: **loop** ·
@@ -234,65 +225,6 @@ Next id: **409**
   gain a check) is the real question — 11 files is enough that a stale enumeration is a cost
   · related: **#402**
 
-- **#401** — a sub-id hand-off is invisible to **every** reader: the parser drops it, the
-  malformed-validator cannot see it, and the correlation would not match it either · **P1** ·
-  handoffs-parser/correctness · origin: **loop** · found by asking what the grammar accepts of the
-  id vocabulary the ledger actually uses — the same question that found **#399** and **#395**
-  · **live right now, and I caused it.** `#392a`'s brief instructs its lane, verbatim, to append
-  `- **#392a** · landed …`. All three patterns at `watch.py:7706-7709` are `#(\d+)`, so **measured
-  on the real grammar**: a `#392a` line yields `pending=[]`, `malformed=[]` — it is not rendered,
-  and it is not reported as garbled. It reads exactly like an empty file
-  · **the same run drops `- **#367/#392**`**, the ledger's own documented combined-id head form
-  · **`malformed` is the validator built for precisely this and it structurally cannot fire.**
-  Its stated job is *"a Pending entry head the grammar does not recognise"*, but `HANDOFF_BARE_RE`
-  is `#(\d+)` too — so a head neither pattern recognises falls through **both** branches. The
-  fallback that exists to catch an unknown shape shares the assumption that makes the shape
-  unknown. This is the recurring class, now found in production code rather than in a check
-  · **and a second, independent reason it stays quiet:** lint's delivery WARN fires only when the
-  id is in `open_ids`. `#392a` is **not a ledger head** — `grep` finds zero `- **#392a**` in
-  `tasks.md`; the head is `#392`. So even a parser that accepted the id would correlate it against
-  nothing. Two readers, one shared assumption — *ids are the ledger's numeric heads* — and it is
-  invisible because they agree
-  · **this defeats `#381`'s whole purpose, silently.** Its premise is that a landing cannot be lost
-  because the file is append-only; the line does land as text. What is lost is every **reader** of
-  it, which is the half `#381` was built to add. The only thing standing between this and a
-  repeat of `#334`/`#362` is the coordinator reading the file by eye each tick, which is exactly
-  what `#381` existed to stop relying on
-  · **the policy question is real and I have not ruled:** should the grammar **accept** sub-ids and
-  combined ids (mapping `392a → 392` for correlation), or should a hand-off be **required** to name
-  a ledger head, with anything else a loud WARN? The second is smaller and arguably more correct —
-  the ledger head is what gets folded
-  · **but one change is needed either way, and it is the load-bearing one:** `HANDOFF_BARE_RE` must
-  match **any** bolded-id entry head, so an id shape the grammar rejects becomes a WARN rather than
-  silence. Do that first; the policy choice is decidable afterwards and independent
-  · **blocked on `watch.py`** (held by `#392a`), and `lint.py` imports the parser rather than
-  copying it, so the fix is one place. Whoever takes it gets `watch.py`, `test_watch.py`,
-  `lint.py`, `test_lint.py`, and `file-formats.md`, whose hand-off row states the shape
-  · **the red is free and it is about to write itself** — `#392a`'s own hand-off line will be in
-  the file. Do not ask it to change; fold that line by hand and keep it as the fixture
-  · related: **#381, #399, #395, #402, #406**
-  · **audit half LANDED** `f2c950e` (2026-07-28 09:48, `ccc @grok`, brief
-  `.dreamwork/docs/briefs/401-id-grammar-audit.md`) →
-  `.dreamwork/docs/research/2026-07-28-task-id-grammar-audit.md`. **14** id-touching sites × **17**
-  forms derived from the repo, every cell **executed** against the real modules (harness in §3,
-  re-runnable). **7 silent rejects.** This entry's measurement **reproduces exactly**. The fix half
-  stays open and still needs `watch.py`
-  · **the audit found a THIRD form of the defect that is worse than a drop, and it is new here:**
-  `ENTRY_ID` **strips the letter**, so `#392a` parses as **`392`** — a *silently wrong* id rather
-  than a missing one. So the same sub-id is invisible in one reader and **misattributed to its
-  parent** in another; `related: **#392a**` would bind a relation to `#392`, and a landed-section
-  mention of `#392a` would land `#392`. A drop is detectable by a coverage count; this is not
-  · **the form the brief did not name**, found as required: `comma_list_one_bold`
-  (`related: **#381, #399, #395**`) — the dominant `related:` shape, and it **works**
-  · not reached, stated: the full 18×38 cell dump, `dreamhub.py`'s scope, and fixture-level lint
-  reds
-  · **the one cell the audit left unverified is now VERIFIED, by the coordinator, with a control —
-  and the lane's classification was right.** The multi-bold `related:` case is **LOUD**. Probed on a
-  temp fixture: form **A** `related: **#501**, **#502**` → **3 ERRORs**, the first being `#395`'s
-  dedicated *"two adjacent bold spans — only the first id is read"* which names the true cause; form
-  **B** `related: **#501, #502**` → **0** and the OK coverage line. Precondition asserted first: the
-  probe confirmed the second span really is dropped before drawing any conclusion, so it was testing
-  the real thing rather than a fixture that agreed with it
 
 - **#400** — `lessons.md` has outgrown being read, and the briefs that tell lanes to read it are
   cargo cult · P2 · loop/memory · origin: **loop** · found by **measuring receipt instead of
@@ -359,8 +291,20 @@ Next id: **409**
   synthetic input at all. Derive the overlap at runtime; do not pin the list of 7, because it grows
   every time the ledger is cross-referenced correctly
   · blocked: `watch.py` is held by **#392a**
+  · **NEXT-UP, and for a reason that is new: this defect makes the repo's own test suite RED.**
+  `test_lint.py::TestLandedAsks::test_this_repo_has_no_forgotten_folds` **fails on master** —
+  measured on the merged tree, **496 passed / 1 failed** — because `check_landed_asks` WARNs that the
+  `#367` open ask *"names only landed task(s) #367"*, which is `_landed_ids` misreading a reciprocity
+  marker. So this is not merely a misleading WARN: **`just test` does not pass**, and has not since
+  `#367`'s question was filed at 07:54
+  · **I missed that for hours, and the reason is worth more than the fix.** I ran `python3 lint.py`
+  — exit **0**, because it is a WARN and not an ERROR — and *targeted* pytest selections
+  (`-k "cutoff or grandfather or handoff"`), which never included this test. **A selection that
+  excludes the failing test is indistinguishable from a green suite.** The `#401` lane ran the whole
+  file and reported it in one line as "pre-existing"
+  · so the acceptance criterion for whoever takes this is **`just test` green**, not "the WARN is
+  gone"
   · related: **#392, #401, #405**
-
 
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
   dashboard/transitions · origin: **loop** · from **#381's own caveat**, probed rather than accepted
@@ -3014,6 +2958,128 @@ Next id: **409**
   **blocked**: human pick
 
 ## Recently landed
+- **#401** — a sub-id hand-off is invisible to **every** reader: the parser drops it, the
+  malformed-validator cannot see it, and the correlation would not match it either · **P1** ·
+  handoffs-parser/correctness · origin: **loop** · found by asking what the grammar accepts of the
+  id vocabulary the ledger actually uses — the same question that found **#399** and **#395**
+  · **live right now, and I caused it.** `#392a`'s brief instructs its lane, verbatim, to append
+  `- **#392a** · landed …`. All three patterns at `watch.py:7706-7709` are `#(\d+)`, so **measured
+  on the real grammar**: a `#392a` line yields `pending=[]`, `malformed=[]` — it is not rendered,
+  and it is not reported as garbled. It reads exactly like an empty file
+  · **the same run drops `- **#367/#392**`**, the ledger's own documented combined-id head form
+  · **`malformed` is the validator built for precisely this and it structurally cannot fire.**
+  Its stated job is *"a Pending entry head the grammar does not recognise"*, but `HANDOFF_BARE_RE`
+  is `#(\d+)` too — so a head neither pattern recognises falls through **both** branches. The
+  fallback that exists to catch an unknown shape shares the assumption that makes the shape
+  unknown. This is the recurring class, now found in production code rather than in a check
+  · **and a second, independent reason it stays quiet:** lint's delivery WARN fires only when the
+  id is in `open_ids`. `#392a` is **not a ledger head** — `grep` finds zero `- **#392a**` in
+  `tasks.md`; the head is `#392`. So even a parser that accepted the id would correlate it against
+  nothing. Two readers, one shared assumption — *ids are the ledger's numeric heads* — and it is
+  invisible because they agree
+  · **this defeats `#381`'s whole purpose, silently.** Its premise is that a landing cannot be lost
+  because the file is append-only; the line does land as text. What is lost is every **reader** of
+  it, which is the half `#381` was built to add. The only thing standing between this and a
+  repeat of `#334`/`#362` is the coordinator reading the file by eye each tick, which is exactly
+  what `#381` existed to stop relying on
+  · **the policy question is real and I have not ruled:** should the grammar **accept** sub-ids and
+  combined ids (mapping `392a → 392` for correlation), or should a hand-off be **required** to name
+  a ledger head, with anything else a loud WARN? The second is smaller and arguably more correct —
+  the ledger head is what gets folded
+  · **but one change is needed either way, and it is the load-bearing one:** `HANDOFF_BARE_RE` must
+  match **any** bolded-id entry head, so an id shape the grammar rejects becomes a WARN rather than
+  silence. Do that first; the policy choice is decidable afterwards and independent
+  · **blocked on `watch.py`** (held by `#392a`), and `lint.py` imports the parser rather than
+  copying it, so the fix is one place. Whoever takes it gets `watch.py`, `test_watch.py`,
+  `lint.py`, `test_lint.py`, and `file-formats.md`, whose hand-off row states the shape
+  · **the red is free and it is about to write itself** — `#392a`'s own hand-off line will be in
+  the file. Do not ask it to change; fold that line by hand and keep it as the fixture
+  · **audit half LANDED** `f2c950e` (2026-07-28 09:48, `ccc @grok`, brief
+  `.dreamwork/docs/briefs/401-id-grammar-audit.md`) →
+  `.dreamwork/docs/research/2026-07-28-task-id-grammar-audit.md`. **14** id-touching sites × **17**
+  forms derived from the repo, every cell **executed** against the real modules (harness in §3,
+  re-runnable). **7 silent rejects.** This entry's measurement **reproduces exactly**. The fix half
+  stays open and still needs `watch.py`
+  · **the audit found a THIRD form of the defect that is worse than a drop, and it is new here:**
+  `ENTRY_ID` **strips the letter**, so `#392a` parses as **`392`** — a *silently wrong* id rather
+  than a missing one. So the same sub-id is invisible in one reader and **misattributed to its
+  parent** in another; `related: **#392a**` would bind a relation to `#392`, and a landed-section
+  mention of `#392a` would land `#392`. A drop is detectable by a coverage count; this is not
+  · **the form the brief did not name**, found as required: `comma_list_one_bold`
+  (`related: **#381, #399, #395**`) — the dominant `related:` shape, and it **works**
+  · not reached, stated: the full 18×38 cell dump, `dreamhub.py`'s scope, and fixture-level lint
+  reds
+  · **the one cell the audit left unverified is now VERIFIED, by the coordinator, with a control —
+  and the lane's classification was right.** The multi-bold `related:` case is **LOUD**. Probed on a
+  temp fixture: form **A** `related: **#501**, **#502**` → **3 ERRORs**, the first being `#395`'s
+  dedicated *"two adjacent bold spans — only the first id is read"* which names the true cause; form
+  **B** `related: **#501, #502**` → **0** and the OK coverage line. Precondition asserted first: the
+  probe confirmed the second span really is dropped before drawing any conclusion, so it was testing
+  the real thing rather than a fixture that agreed with it
+  · **CLOSED, verified** 2026-07-28 10:20 — `e53d70c`, merged `db4ab8d`. `ccc @grok`, brief
+  `.dreamwork/docs/briefs/401-406-handoff-grammar-fix.md`. **The first lane dispatched into a
+  worktree** (`.worktrees/401-406`); landed together with **#406**
+  · the grammar now accepts the vocabulary the loop actually writes — plain `#N`, sub-id `#Na`,
+  combined `#N/#M` — and correlation against `## Open` goes through a **named, tested**
+  `handoff_parent_ids` (`watch.py:7732`), not `ENTRY_ID`'s incidental letter-strip
+  · **verified independently by the coordinator: four shapes on temp roots, all four LOUD** — a
+  Pending-shaped line in the wrong section (`malformed`, WARN), a sub-id landing (parses and
+  correlates to its open parent), a combined id (parses), a junk id `#zzz` (`malformed`, WARN).
+  **Precondition derived, not assumed**: the live section order was read from the file to establish
+  that a landed line under `## Folded` really is misplaced. **496 passed** on the merged tree
+  · lane's three injected reds each named a distinct failing test with neighbours green, each
+  grep-confirmed and `ast.parse`-confirmed
+  · **it corrected me twice.** `29fe5a6` had moved `#392a`'s line into Pending **nine minutes
+  before** I wrote a fold note calling it a deliberate fixture still under `## Folded`; the lane
+  **restored the fixture** so its own red could fire, then re-tidied. My 09:52 "invisible"
+  measurement was right — the operative cause was the **id grammar alone**, not the section. And it
+  left its hand-off line unstaged (**#394** again), which I committed as ledger writer
+  · **what the widened fallback still cannot see**, stated rather than discovered later: no bold
+  (`- #5 …`), no `#` (`- **5** …`), a different list marker (`* **#5**`), an indented list item —
+  same class, different axis
+  · **`ENTRY_ID` deliberately unchanged**, blast radius documented: it is the atom for
+  `parse_ledger`, `_open_ids`, `_landed_ids`, related, origins and lint's entry walk. That is
+  **#399**'s neighbourhood
+  · related: **#381, #399, #395, #402, #406, #409**
+
+- **#406** — `handoffs.md` instructs an append that **structurally cannot** put the line where it
+  is required · **P1** · handoffs/format · origin: **loop** · found by watching a live lane obey
+  the instruction literally, then confirmed twice more independently
+  · **the instruction every brief and dispatch prompt carries is** *append only with `cat >>`, never
+  rewrite* — **and `## Pending` is not the last section.** `cat >>` writes at end-of-file, which is
+  **inside `## Folded`**. A lane that obeys exactly puts its landing in the wrong section
+  · **three independent confirmations, none of them planned.** `#392a`'s line sits after `## Folded`
+  in the file right now. The `#401` audit lane hit the same thing, reported it under *"not confident
+  about"* — *"whether `cat >>` alone can ever place a line under Pending while `## Folded` sits
+  below"* — and then **committed a fix for its own line** (`75e6139`). And its matrix ranks the live
+  `#392a` case as its **second** silent reject, reached independently of mine
+  · **triple-invisible, measured.** A Pending-shaped line inside `## Folded` matches neither
+  `HANDOFF_FOLDED_RE` (wrong shape) nor `pending` (wrong section) — and the `malformed` fallback
+  **only runs inside section P**, so it is not reported either. Same end state as **#401** by an
+  entirely different route
+  · **the inversion is the finding: the lanes that got it right DISOBEYED me.** Three of four
+  inserted before `## Folded` — a rewrite, which the instruction forbids. **Compliance with the
+  instruction produces the defect**, so the obligation's own wording selects against the outcome it
+  exists to secure
+  · **and the sections turn out to be redundant.** The two line shapes are already
+  self-distinguishing — `· landed \`sha\`` versus `→ folded (ts):` — and correlation is by id, which
+  is stated in the file's own header. `parse_handoffs` uses the headings only to pick which regex to
+  apply, a choice the line itself already determines
+  · rec, smallest first: **move `## Folded` above `## Pending`** so an EOF append lands correctly and
+  the instruction becomes true. Better but larger: **drop the sections**, parse by line shape, and
+  let append-only mean what it says. Either way the `malformed` fallback must run **outside** any
+  section so a misplaced line is loud
+  · **the red is in the tree and needs no injection** — `#392a`'s misfiled line is the fixture. Do
+  not tidy it away before the check exists
+  · **CLOSED, verified** 2026-07-28 10:20 — `e53d70c`, merged `db4ab8d`, same commit as **#401**,
+  whose entry carries the full evidence
+  · **`## Folded` now precedes `## Pending`**, so an EOF `cat >>` lands in the right section and the
+  instruction every brief carries becomes true. `malformed` runs **outside** any section, so a
+  misplaced line is reported rather than dropped
+  · **four of five lanes had to work around the old wording**, two by silently self-correcting
+  (`75e6139`, `29fe5a6`) — which is why it stayed invisible as long as it did
+  · related: **#381, #401, #404, #405**
+
 - **#397** — `watch.py` is the loop's contention bottleneck; propose splitting it · origin: **loop** ·
   closed 2026-07-28 09:52 · `1b508b0`
   · `ccc @glm52`, brief `.dreamwork/docs/briefs/397-client-extraction-design.md`, plan
@@ -3163,7 +3229,7 @@ Next id: **409**
   · the lane also observed, without acting on it, that **the relay is the same bug one layer up** —
   coordinator writes a steer, an idle lane never reads it, nothing wakes it. Same shape, same fix.
   Recorded in `.dreamwork/dreams/2026-07-28-0838-the-nag-that-gets-muted.md`
-  · related: **#393, #394, #363, #401, #404, #406**
+  · related: **#393, #394, #363, #401, #404, #406, #409**
 
 - **#390** — a fresh domain's first answer creates its file · origin: **loop** · closed
   2026-07-28 08:06 · `fa65bce`
