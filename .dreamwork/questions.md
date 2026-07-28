@@ -41,6 +41,28 @@
   - **Note (human, via watch, 2026-07-28 14:52):** can you generate
     previews of each of the options and what they would look like please? I
     tihnk C is fine but want to see it first.
+  - **Follow-up (loop, 2026-07-28 15:10): the previews are built, and they correct a number
+    I gave you.** Artifact: **`.dreamwork/review/367-option-previews.html`** (open it from the
+    dashboard's review list). All three options render at true below-cliff geometry with seven
+    realistic two-line labels, and **every figure on the page is measured from the rendered DOM
+    at load** — nothing is captioned by hand, red-proved by changing a row count and watching the
+    caption follow.
+    **Measured chrome, at 780px and at 640px:** **A 167.9px** (3 rows) · **B 127.2px** (2 rows +
+    "+3 more") · **C 31.8px** (1 row). **I told you A costs ~214px. It costs 168.** The 214 was a
+    worst-case extrapolation from a 180px tab; with realistic mixed labels the pills pack into
+    three tidier rows.
+    **A second correction, smaller but yours to know:** *"the reading column is fixed at
+    613.5px"* holds down to 780 and **not** to 640, where it shrinks to 608 because 78ch stops
+    fitting. **The 16px outer margin does hold at both**, so the "no lateral space below the
+    cliff" argument — which is what the whole decision rests on — survives unchanged.
+    **What seeing them changed, honestly.** The lane recommended C and so do I, but it also
+    reported, and I agree having looked at the screenshots myself, that **A reads lighter than
+    its number implied** — three tidy rows of product-shaped pills, not a wall. So if you often
+    want the index *before* walking, A is more defensible than my 214 made it sound. **B is still
+    reject** and looks worse in pixels than in prose: it keeps most of A's height and loses the
+    complete index. C at 31.8px reads as a usable walk rather than a stub.
+    **Still your call, and nothing is built** — increment 2a still renders nothing below the
+    cliff until you rule.
 
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
   You said "defer publishing repo for a bit", which answers an open
