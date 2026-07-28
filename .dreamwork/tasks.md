@@ -24,9 +24,32 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **442**
+Next id: **443**
 
 ## Open
+- **#442** — `midFrames(...) >= 1` reduces the frame-rate bet but does not remove it, and the guard that
+  proves this is the one that claimed otherwise · P2 · verification/motion · origin: **loop** · **found by
+  coordinator inspection at `#414`'s merge, minutes after the lane argued the problem was gone**
+  · `#414`'s lane converted `prominence.mjs` to `midFrames(tops) >= 1` and concluded *"the conversion IS the
+  resolution … the `mid >= 1` form is frame-rate-free — it needs one part-way frame, which a real non-snap
+  motion produces regardless of load"*, and therefore that no separate entry was needed. The reasoning is
+  good and the conversion is right; the conclusion is too strong
+  · **the counter-evidence was already on disk.** `confirmation.mjs` has been on `midFrames(...)>=1` /
+  `midStates(...)>=1` since `a027ad0` — not the count form — and at merge it **FAILED** `popout success
+  arrives through intermediate opacity and drift` in a two-guard run at load 52.42, then **PASSED solo** at
+  load 53.06. Same tree, same minute, higher load on the passing run. So load is not the variable and the
+  count form is not the cause: **contention within a run is**, which is exactly what `#414` originally
+  observed and parked
+  · **the mechanism to check first**: `mid >= 1` needs one frame landing *strictly between* the endpoints
+  **during the transition window**. Under contention rAF can deliver its frames clustered before and after
+  the CSS transition rather than inside it, so `tops.length >= MIN_SAMPLES` (3) passes while `mid` is 0. The
+  precondition and the assertion measure different things and the gap between them is where this lives
+  · so: decide whether the precondition should assert *frames landed inside the window*, not merely *frames
+  arrived*. That is a smaller and more testable claim than the three options `#414` listed, and it does not
+  require a deterministic clock
+  · **this host is never idle** (~30 ambient, 52 during this merge, from other agents' sessions), so any
+  criterion shaped like *"passes on a quiet machine"* is untestable here — see `#428`
+  · related: **#414, #441, #428, #413**
 - **#441** — `states.mjs`'s new vacuity thresholds are literals with a 3px margin on one of the two
   motions they guard · P3 · verification/motion · origin: **loop** · **found by coordinator inspection of
   `#333` at merge, not by the guard**
@@ -42,6 +65,7 @@ Next id: **442**
   say what each is protecting. **The tick-grow number is the one to look at first**
   · not urgent: the check is correct today and fails safe (a too-high floor reds, it does not pass silently).
   It is filed because the margin is invisible in the guard output
+  · related: **#442**
 - **#438** — a generic scheduled-tasks facility, so maintenance and inbound-scanning work is filed rather
   than done ad hoc · P2 · feature/scheduling · origin: **human** · **human via watch 2026-07-28 20:34**
   · his words: *"we should add support for task scheduling (probably managed through dreamhub). central
@@ -170,8 +194,7 @@ Next id: **442**
   lane dispatched from suite start to `REAL_EXIT`, idle verified with a **self-excluding** process check
   (see the `pgrep` aside above), repeated until the failure rate is a number. Everything else is a
   fourth anecdote
-  · related: **#424, #423**
-
+  · related: **#424, #423, #442**
 - **#424** — `just test` is a single shared lock, so N concurrent lanes cannot each verify · P2 ·
   loop-tooling/orchestration · origin: **loop** · found when `#419` reported guards blocked at 17:01
   · guards bind **39890-39899** and the recipe hard-aborts if any port in the range is held (the
@@ -355,95 +378,6 @@ Next id: **442**
   still returns a multi-sha line as malformed, so `pending_handoff_records` **will not surface its
   shas on the dashboard** until `watch.py`'s grammar widens too. Filed as part of `#427`
 
-- **#414** — a motion guard's pass condition depends on the browser's FRAME RATE, and it does
-  not say so · P2 · verification/motion · origin: **loop** · found by the only failure in the
-  first fully-clean `just test` of the day
-  · **the shape.** `confirmation.mjs` samples `opacity`/`transform` in a `requestAnimationFrame`
-  loop and asserts *"arrives through intermediate opacity and drift"* by requiring **≥4 distinct
-  opacity values and ≥3 distinct transforms inside a 500 ms window**. That is the right way to
-  check a transition — `transitions.md` is explicit that an end-state assertion cannot fail on a
-  motion bug — but **4 distinct values are arithmetically impossible below 4 samples**, and the
-  sample count is the frame rate. At 60 fps the window holds ~30 frames; under load rAF throttles
-  and it starves
-  · **so the check has two failure modes that print the same line**: the motion is wrong, or the
-  machine was busy. Those need opposite responses, and the output could not tell them apart —
-  which is exactly how `docktarget`/`noteprop` spent six hours miscategorised today (#413)
-  · **PARTLY FIXED 2026-07-28 13:44** (`dev/capture/confirmation.mjs`): a precondition now runs first for all
-  three windows and names the count — `popout arrival window sampled enough to see motion
-  (N frames)`, threshold 8, comfortably above the 4 the assertion needs and far below the ~30 a
-  healthy frame rate gives. **Red-proved** by starving the window to 20 ms: it fails with
-  `(1 frames)` *above* the motion assertion, so the diagnosis is now readable in the summary line
-  · **what is NOT fixed, and why this stays open.** The guard still *fails* on a busy machine — it
-  now fails **informatively**, which is a smaller thing than being right. Observed: FAIL inside a
-  full `just test` at load ~30, PASS twice solo at the same load, so contention within the suite
-  is implicated rather than load alone. Deciding between waiting for a quiet frame budget,
-  measuring distinct values over a duration rather than a fixed window, or driving the clock
-  deterministically is a real design call and wants its own increment
-  · **and the general form is worth a sweep**: every guard asserting "N distinct intermediate
-  values" carries this hidden precondition. `grep -l 'requestAnimationFrame' dev/capture/*.mjs`
-  and check each for a stated sample floor
-  · **SWEPT, and the answer already exists in this repo.** 34 guards sample with
-  `requestAnimationFrame`; only three assertions use the frame-rate-dependent form
-  (`new Set(xs).size >= N`): `confirmation.mjs` ×3 (now precondition-guarded) and
-  **`prominence.mjs:183`** — *"...continuously, rather than in a couple of jumps"*,
-  `new Set(tops.map(Math.round)).size >= 6`. Prominence has an anti-vacuity check beside it
-  (`total >= 8`, that the card travelled at all) but that measures **distance, not sample
-  count**, so a starved trace fails it the same way. Second site, same defect, unguarded
-  · **`reviewsplit.mjs` already solved this and says so in a comment**, which makes it the fix
-  rather than a nice idea: `travel()` computes `mid` = *"the number of frames strictly BETWEEN
-  the two ends"* (`ws.filter(v => v > lo && v < hi).length`, endpoints ±1) and its comment names
-  our exact problem — *"A snap has none of those however slowly the machine is drawing, while
-  `positions` is capped by how many frames a loaded SwiftShader box managed"*
-  · **so the real fix is a formulation change, not a threshold.** *Count frames that landed
-  part-way, not distinct values.* A snap has **zero** mid-frames at any frame rate; a genuine
-  transition has ≥1 provided a single frame lands mid-flight. That is a **rank-1** requirement
-  instead of a rank-4 one, which is why it survives a busy machine. The precondition I added is
-  a diagnostic, not the cure, and should stay as one — it names the count when starvation does
-  bite
-  · **one direction NOT to copy blindly**: `reviewsplit` also asserts `distinct(head) === 1`
-  (that something did NOT move). Starvation makes that assertion **more** likely to pass, so its
-  failure mode is a false GREEN, which no precondition on this task's side would catch. Out of
-  scope here, worth its own look
-  · deliverables: adopt the `mid` formulation in `confirmation.mjs` (3 assertions) and
-  `prominence.mjs` (1); keep the sample-count preconditions as diagnostics; red-prove each by
-  removing the transition so mid-frames go to zero
-  · **LANDED `a027ad0` (2026-07-28 14:03).** `midFrames`/`midStates` in `dev/capture/dom.mjs`, shared;
-  `confirmation.mjs`'s three assertions converted; sampling preconditions kept as **diagnostics**
-  and dropped 8 → 3 frames, which is where a mid-frame stops being arithmetically possible rather
-  than merely unlikely
-  · **red-proved on the real pipeline, not just the helper**: injected `transition:none` on
-  `.pmsg` in a scratch worktree ⇒ both popout assertions FAIL **while the sampling preconditions
-  PASS**, so the guard says *the motion is wrong* rather than *we did not look enough*. That
-  discrimination was the entire task. Helpers separately checked both ways (snap → 0, gradual → 2)
-  · **`prominence.mjs` deliberately NOT converted**, and the file says why in place. Its claim is
-  *"continuously, rather than in a couple of jumps"* — strictly stronger than not-a-snap, and two
-  jumps would satisfy a mid-frame test while failing the claim. **A smoothness property genuinely
-  needs many samples**, so weakening it to survive load would be buying green with meaning. It
-  gets the precondition only
-  · **that distinction is the transferable part**: before reaching for the frame-rate-free form,
-  ask what the assertion actually claims. *Not a snap* is rank-1 and converts. *Smooth* is rank-N
-  and cannot — for those, state the precondition and accept that a starved machine cannot decide it
-  · remaining, unchanged: `reviewsplit`'s `distinct(...) === 1` assertions (that something did NOT
-  move) fail **green** under starvation — the opposite direction, uncovered by anything here
-  · related: **#413**
-  · **the ORIGINAL SYMPTOM IS FIXED, measured 14:31-14:50.** A full `just test` ran to completion
-  under its own contention: **51 guards, 0 failures, real exit 0** — the first fully green suite of
-  the day — and `confirmation`, the guard this entry was filed for, **passed under full-suite
-  load**, which is precisely the condition it used to fail in while passing solo. So `a027ad0`'s
-  frame-counting conversion holds where the distinct-value form did not
-  · **what keeps this entry open is the INVERSE hazard, and it is the more dangerous half.**
-  `reviewsplit.mjs` asserts `distinct(head) === 1 && range(head) <= 0.5` to prove a fade did
-  **not** happen under reduced motion. Under starvation a real fade also samples one value — so
-  that assertion **passes when the thing it forbids is occurring**. Frame-rate coupling in the
-  positive direction costs a false red, which is loud; in the negative direction it costs a false
-  green, which is silent, and this repo has spent a day on exactly that asymmetry
-  · so the remaining work is not "convert the last two". `prominence.mjs:183` stays as it is
-  deliberately (its *"continuously, not a couple of jumps"* is strictly stronger than
-  not-a-snap, and a precondition already states its sampling requirement). The work is: give
-  `reviewsplit`'s reduced-motion assertions a **sample-count precondition** so starvation makes
-  them ABSTAIN rather than pass, and red-prove that by starving them on purpose
-  · narrowed to that single deliverable 15:12; priority unchanged at P2
-
 - **#413** — a guard can encode a SUPERSEDED contract, and nothing measures that · P2 ·
   verification/meta · origin: **loop** · found by fixing `qacard`, which had been red since
   `#392a` landed at 09:43 and was being reported as "pre-existing, not our fault" by every lane
@@ -510,8 +444,7 @@ Next id: **442**
   · **what remains of this task is the meta half**, which is unfixed: nothing measures
   guard-against-doc, and a red excused in a brief still goes invisible. Six hours here, across
   three lanes, on a signal that was correct the whole time
-  · related: **#392, #414, #420**
-
+  · related: **#392, #414, #420, #442**
 - **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
   right now · P2 · handoffs/correctness · origin: **loop** · **predicted by the `#401` lane in its
   neighbour table and not filed by it; found in the tree one minute later**
@@ -3452,25 +3385,6 @@ Next id: **442**
 - **#80** — Pick a second dogfood target (hark or c2c) · P3 · chore · 30m ·
   **blocked**: human pick
 
-- **#416** — a mitigation record is a claim about system state, and nothing re-checks it · P3 ·
-  system/mitigation-drift · origin: **loop** · **split out of `#408`'s rec rather than folded into
-  its closure**, because it applies to bullets `#408` never touched
-  · `~/CLAUDE.md`'s *"System mitigations in place"* section has six bullets. Each names a file or a
-  systemd unit, so each is checkable in **one line**. Three were checked while resolving `#408`
-  (the `settings.json` env key, the fish `--no-optional-locks` function, `git-lock-watch.service`)
-  and **one of the three was false** — the paragraph read as one mitigation and was two-thirds
-  true, which is the shape that defeats reading it
-  · the four unchecked: Brave's `--ozone-platform=x11` flag file, `sccache-server.service`, the
-  amaroo git-wf2 / `pi-powerline-footer` patch (whose own note says *"re-check after package
-  upgrades"*, so it has a stated expiry nobody is watching), and root's `ntp-force-sync.timer`
-  · **the deliverable is the audit and its result written down**, not a tool. A checker for his
-  dotfiles is scope this loop should not take; a dated line saying what held is cheap and is what
-  the next investigation actually needs
-  · one caution learned today: **do not "fix" a drifted mitigation by editing his config.** `#408`
-  changed `settings.json` only because he answered yes to a direct ask. An audit reports, and asks
-  before it repairs
-  · related: **#408, #283**
-
 - **#417** — the burndown should show commits per period, without spending the design it already
   has · P2 · Web UI/dashboard · origin: **human** · **human via watch `add-idea` 2026-07-28 14:58**
   · verbatim: *"burndown chart should show how many commits were made each period. design needs to
@@ -3553,6 +3467,115 @@ Next id: **442**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#416** — a mitigation record is a claim about system state, and nothing re-checks it · P3 ·
+  system/mitigation-drift · origin: **loop** · **split out of `#408`'s rec rather than folded into
+  its closure**, because it applies to bullets `#408` never touched
+  · `~/CLAUDE.md`'s *"System mitigations in place"* section has six bullets. Each names a file or a
+  systemd unit, so each is checkable in **one line**. Three were checked while resolving `#408`
+  (the `settings.json` env key, the fish `--no-optional-locks` function, `git-lock-watch.service`)
+  and **one of the three was false** — the paragraph read as one mitigation and was two-thirds
+  true, which is the shape that defeats reading it
+  · the four unchecked: Brave's `--ozone-platform=x11` flag file, `sccache-server.service`, the
+  amaroo git-wf2 / `pi-powerline-footer` patch (whose own note says *"re-check after package
+  upgrades"*, so it has a stated expiry nobody is watching), and root's `ntp-force-sync.timer`
+  · **the deliverable is the audit and its result written down**, not a tool. A checker for his
+  dotfiles is scope this loop should not take; a dated line saying what held is cheap and is what
+  the next investigation actually needs
+  · one caution learned today: **do not "fix" a drifted mitigation by editing his config.** `#408`
+  changed `settings.json` only because he answered yes to a direct ask. An audit reports, and asks
+  before it repairs
+  · related: **#408, #283**
+  · **LANDED `9d05e3e` (2026-07-28 22:01, lane `mitaudit`, read-only on master).** `.dreamwork/docs/mitigation-audit.md`: **all four unchecked records hold** — Brave's x11 flag (line 4 of the flags file), `sccache-server.service` (active/enabled), the `pi-powerline-footer` patch (line 117 still carries `--no-optional-locks` and the xsm comment), and `ntp-force-sync.timer` (active/enabled, last oneshot 21:38:51 success). No repair entries filed because there is nothing drifted. Two honest gaps rather than guesses: it did **not** query the npm registry, so whether upstream 0.7.0 now carries the flag is unsettled (`npm view` would settle it), and amaroo PR #893 was not grepped in an install. **The rewording finding is the valuable half**: only the git index.lock bullet has the `#408` multi-claim shape, packing five independently falsifiable mitigations into one paragraph — a drop-in split is in the doc, and `~/CLAUDE.md` was correctly left unedited for him to apply. The `pi-powerline-footer` patch still has a stated expiry (*re-check after package upgrades*) with no watcher; this audit is the re-check.
+
+- **#414** — a motion guard's pass condition depends on the browser's FRAME RATE, and it does
+  not say so · P2 · verification/motion · origin: **loop** · found by the only failure in the
+  first fully-clean `just test` of the day
+  · **the shape.** `confirmation.mjs` samples `opacity`/`transform` in a `requestAnimationFrame`
+  loop and asserts *"arrives through intermediate opacity and drift"* by requiring **≥4 distinct
+  opacity values and ≥3 distinct transforms inside a 500 ms window**. That is the right way to
+  check a transition — `transitions.md` is explicit that an end-state assertion cannot fail on a
+  motion bug — but **4 distinct values are arithmetically impossible below 4 samples**, and the
+  sample count is the frame rate. At 60 fps the window holds ~30 frames; under load rAF throttles
+  and it starves
+  · **so the check has two failure modes that print the same line**: the motion is wrong, or the
+  machine was busy. Those need opposite responses, and the output could not tell them apart —
+  which is exactly how `docktarget`/`noteprop` spent six hours miscategorised today (#413)
+  · **PARTLY FIXED 2026-07-28 13:44** (`dev/capture/confirmation.mjs`): a precondition now runs first for all
+  three windows and names the count — `popout arrival window sampled enough to see motion
+  (N frames)`, threshold 8, comfortably above the 4 the assertion needs and far below the ~30 a
+  healthy frame rate gives. **Red-proved** by starving the window to 20 ms: it fails with
+  `(1 frames)` *above* the motion assertion, so the diagnosis is now readable in the summary line
+  · **what is NOT fixed, and why this stays open.** The guard still *fails* on a busy machine — it
+  now fails **informatively**, which is a smaller thing than being right. Observed: FAIL inside a
+  full `just test` at load ~30, PASS twice solo at the same load, so contention within the suite
+  is implicated rather than load alone. Deciding between waiting for a quiet frame budget,
+  measuring distinct values over a duration rather than a fixed window, or driving the clock
+  deterministically is a real design call and wants its own increment
+  · **and the general form is worth a sweep**: every guard asserting "N distinct intermediate
+  values" carries this hidden precondition. `grep -l 'requestAnimationFrame' dev/capture/*.mjs`
+  and check each for a stated sample floor
+  · **SWEPT, and the answer already exists in this repo.** 34 guards sample with
+  `requestAnimationFrame`; only three assertions use the frame-rate-dependent form
+  (`new Set(xs).size >= N`): `confirmation.mjs` ×3 (now precondition-guarded) and
+  **`prominence.mjs:183`** — *"...continuously, rather than in a couple of jumps"*,
+  `new Set(tops.map(Math.round)).size >= 6`. Prominence has an anti-vacuity check beside it
+  (`total >= 8`, that the card travelled at all) but that measures **distance, not sample
+  count**, so a starved trace fails it the same way. Second site, same defect, unguarded
+  · **`reviewsplit.mjs` already solved this and says so in a comment**, which makes it the fix
+  rather than a nice idea: `travel()` computes `mid` = *"the number of frames strictly BETWEEN
+  the two ends"* (`ws.filter(v => v > lo && v < hi).length`, endpoints ±1) and its comment names
+  our exact problem — *"A snap has none of those however slowly the machine is drawing, while
+  `positions` is capped by how many frames a loaded SwiftShader box managed"*
+  · **so the real fix is a formulation change, not a threshold.** *Count frames that landed
+  part-way, not distinct values.* A snap has **zero** mid-frames at any frame rate; a genuine
+  transition has ≥1 provided a single frame lands mid-flight. That is a **rank-1** requirement
+  instead of a rank-4 one, which is why it survives a busy machine. The precondition I added is
+  a diagnostic, not the cure, and should stay as one — it names the count when starvation does
+  bite
+  · **one direction NOT to copy blindly**: `reviewsplit` also asserts `distinct(head) === 1`
+  (that something did NOT move). Starvation makes that assertion **more** likely to pass, so its
+  failure mode is a false GREEN, which no precondition on this task's side would catch. Out of
+  scope here, worth its own look
+  · deliverables: adopt the `mid` formulation in `confirmation.mjs` (3 assertions) and
+  `prominence.mjs` (1); keep the sample-count preconditions as diagnostics; red-prove each by
+  removing the transition so mid-frames go to zero
+  · **LANDED `a027ad0` (2026-07-28 14:03).** `midFrames`/`midStates` in `dev/capture/dom.mjs`, shared;
+  `confirmation.mjs`'s three assertions converted; sampling preconditions kept as **diagnostics**
+  and dropped 8 → 3 frames, which is where a mid-frame stops being arithmetically possible rather
+  than merely unlikely
+  · **red-proved on the real pipeline, not just the helper**: injected `transition:none` on
+  `.pmsg` in a scratch worktree ⇒ both popout assertions FAIL **while the sampling preconditions
+  PASS**, so the guard says *the motion is wrong* rather than *we did not look enough*. That
+  discrimination was the entire task. Helpers separately checked both ways (snap → 0, gradual → 2)
+  · **`prominence.mjs` deliberately NOT converted**, and the file says why in place. Its claim is
+  *"continuously, rather than in a couple of jumps"* — strictly stronger than not-a-snap, and two
+  jumps would satisfy a mid-frame test while failing the claim. **A smoothness property genuinely
+  needs many samples**, so weakening it to survive load would be buying green with meaning. It
+  gets the precondition only
+  · **that distinction is the transferable part**: before reaching for the frame-rate-free form,
+  ask what the assertion actually claims. *Not a snap* is rank-1 and converts. *Smooth* is rank-N
+  and cannot — for those, state the precondition and accept that a starved machine cannot decide it
+  · remaining, unchanged: `reviewsplit`'s `distinct(...) === 1` assertions (that something did NOT
+  move) fail **green** under starvation — the opposite direction, uncovered by anything here
+  · related: **#413, #442**
+  · **the ORIGINAL SYMPTOM IS FIXED, measured 14:31-14:50.** A full `just test` ran to completion
+  under its own contention: **51 guards, 0 failures, real exit 0** — the first fully green suite of
+  the day — and `confirmation`, the guard this entry was filed for, **passed under full-suite
+  load**, which is precisely the condition it used to fail in while passing solo. So `a027ad0`'s
+  frame-counting conversion holds where the distinct-value form did not
+  · **what keeps this entry open is the INVERSE hazard, and it is the more dangerous half.**
+  `reviewsplit.mjs` asserts `distinct(head) === 1 && range(head) <= 0.5` to prove a fade did
+  **not** happen under reduced motion. Under starvation a real fade also samples one value — so
+  that assertion **passes when the thing it forbids is occurring**. Frame-rate coupling in the
+  positive direction costs a false red, which is loud; in the negative direction it costs a false
+  green, which is silent, and this repo has spent a day on exactly that asymmetry
+  · so the remaining work is not "convert the last two". `prominence.mjs:183` stays as it is
+  deliberately (its *"continuously, not a couple of jumps"* is strictly stronger than
+  not-a-snap, and a precondition already states its sampling requirement). The work is: give
+  `reviewsplit`'s reduced-motion assertions a **sample-count precondition** so starvation makes
+  them ABSTAIN rather than pass, and red-prove that by starving them on purpose
+  · narrowed to that single deliverable 15:12; priority unchanged at P2
+  · **LANDED `85310bf` (2026-07-28 22:10, lane `wt/prominence`).** `prominence.mjs`'s `new Set(tops.map(Math.round)).size >= 6` is now `midFrames(tops) >= 1` with a sample-count precondition asserted first and named in its message. It **reused** `dom.mjs`'s existing `midFrames` export — the same helper `confirmation.mjs` imports — so no fourth copy and `dom.mjs` untouched. Red-proved against `watch.py:4981`'s `el.style.transition = CARD_TRAVEL` (the FLIP): neutralised to `'none'` the neighbour snaps with 100 frames and 0 part-way, and the lane noted the arrival check reports `late=0.0` **even on the snap**, so the `mid` check is doing non-redundant work. The two failure modes print distinguishable first lines. It kept `total >= 8` as the *distance* vacuity literal and argued no `#441`-style split is needed because it covers one motion at ~5% of a measured 156px travel — correct reasoning. **On the parked design call it answered: the conversion IS the resolution, landed rather than deferred**, since all three options the brief listed assume the count form is retained. **Coordinator inspection at merge partly refutes that** — see `#442`: `confirmation.mjs` is already on `midFrames>=1` and still failed at load 52 in a two-guard run while passing solo at 53, so the frame-rate coupling is reduced but not removed.
 - **#333** — `states.mjs` is the SIXTH holder of the forbidden count idiom, and
   unconverted · **P2** (raised from P3) · correctness · origin: **loop** · #327
   filed this as a docs-wording slip; measuring it made it a real one · the count
