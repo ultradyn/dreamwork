@@ -2775,3 +2775,24 @@ this shape and convert opportunistically.)
   replace. The criterion produced the right outcome only because the lane also reported honestly.
   **A negative check over natural language needs the polarity in the pattern or a human in the loop —
   say which you are relying on.**
+
+- **The corpus we measure is the corpus we write into.** 2026-07-28: a plan's headline figure —
+  *"the two entries promising a one-word answer are 300 and 448 words, both above the corpus median of
+  302"* — was true when written and **false twenty minutes later**, because between the measurement
+  and the artifact I filed **two more questions into the corpus being measured**, one of them the
+  question presenting the finding. The lane re-derived at n=58 and got 307/455 against 308, so one
+  entry now sits one word *under*. **Evidence the fix is phrasing, not care:** *"both above the
+  median"* is a hostage to the next thing we file; *"one at the median, one half again as long"*
+  survives it, and both sentences describe the same data. So when a figure measures **our own
+  output**, state the claim in a form the next act cannot falsify, and say what n it was taken at.
+  Corollary discovered the same hour: **stop quoting a document's own length inside it.** That count
+  was 342, then 256, then 247, then 191 across four drafts, and I published a wrong figure for the
+  first two.
+- **When two derivations disagree, the useful state is "they disagree and agree on the conclusion."**
+  Same finding: the lane's word counts and mine differ (307/455 vs 300/448, medians 308 vs 300) and
+  **neither of us resolved why**. But both refute the literal claim and both support the
+  weak-coupling conclusion. **Evidence for recording rather than reconciling:** picking one silently
+  would have hidden a real methodological gap, and reconciling it would have cost more than the
+  conclusion is worth. Record the disagreement, act on what survives both, and say the gap is open —
+  a figure with two independent derivations bracketing it is stronger than one with a single
+  authoritative-looking value.

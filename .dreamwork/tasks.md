@@ -110,6 +110,30 @@ Next id: **425**
   Those have different fixes, so the options must say which of the two they reduce
   · **next, and it is mine not a lane's** (his 05:43: the orchestrator does the planning): write the
   options to a spec doc, then dispatch the artifact, then file the question
+  · **options artifact DONE, `ccc @glm52`, ~20 minutes, `676345a` (merged 17:18).**
+  `.dreamwork/review/421-question-options.html`, `check` reports `current`, offline-clean 0 (enforced
+  at build time by the builder's own fetch scan), disclosure reusing the template's `<details>` idiom
+  with reduced-motion parity inherited rather than re-implemented
+  · **it passes its own Option A test and that is measurable because grok died.** The criterion was
+  *"visible without scrolling"*, to be judged by eye; reassigned to `@glm52`, which cannot see, it
+  became `getBoundingClientRect().bottom < innerHeight` at two viewports **plus** the anti-vacuity
+  precondition that the page actually scrolls. Verified independently — `#ask.bottom` 363/900 desktop,
+  521/844 mobile, `scrollHeight` 2402 and 3628 — and **red-proved**: a 1200px spacer before `#ask`
+  pushes it to 1569/1727 and the check fails at both. **The mechanical version is strictly better than
+  the verdict it replaced, because an opinion cannot be red-proved**
+  · **it refuted the plan's headline literal and was right.** *"300 and 448 words, both above the
+  corpus median of 302"* was measured at n=56; at n=58 the lane got 307 and 455 against 308, so one
+  sits one word **under** and *"both above"* fails. My own re-derivation gives 300 and 448 against
+  300. **Two methods disagree on the figures and agree on the conclusion** — corrected in the plan
+  with the gap left visible
+  · **the cause is the finding, and it is new:** the corpus grew because **I filed two questions in
+  between**, one of them the question presenting this result. **The corpus we measure is the corpus we
+  write into.** So a claim of the form *"both above the median"* is a hostage to the next thing we
+  file; *"one at the median, one half again as long"* is not
+  · **the visual verdict is OWED, not skipped** — recorded in `status.json`'s `owed_verifications`.
+  `@glm52` refused to guess at appearance, correctly
+  · remaining on this entry: he rules on A/B/C/D, then `DREAMWORK.md` + `file-formats.md` + `lint.py`
+  change. Nothing is built until then
 
 - **#422** — a research artifact is a kind we produce and have never specified · P2 ·
   loop-tooling/format · origin: **human** · **human via watch `do-next` 2026-07-28 16:29**, second
