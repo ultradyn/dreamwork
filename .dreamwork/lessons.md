@@ -2475,3 +2475,23 @@ this shape and convert opportunistically.)
   resolved ref and assert it reproduces the frozen digest** (so the constant is verified
   rather than fabricated), and guard with `assert not hasattr(old, "<feature>")` so the
   resolver can never silently pick a post-change commit. (#367 inc1, dream 0658)
+
+- **Never judge a running lane's work from its worktree — read its branch tip.** I built a
+  merge gate for `#399b`, red-proved it in both directions, ran it against
+  `.worktrees/399b/watch.py`, and it scored the lane's fix at **176 landed** — which is
+  exactly the pre-fix number. The lane was mid red-proof: it had deliberately injected the
+  old behaviour to prove a test fails, so the file on disk was the bug, not the fix. Had I
+  not recognised the number I would have reported a good fix as a total regression.
+  **A running lane's worktree is mutable by definition — the injection *is* the method we
+  ask for.** Its commits are the artifact. Default any review instrument to
+  `git show <branch>:<file>`, and assert the source is non-empty so a bad ref fails loudly
+  rather than scoring an empty module.
+- **A check appended after `sys.exit()` reports success by not existing.** Same session,
+  same gate: I added an eighth check to the end of the file, below the exit line, and the
+  gate printed **GATE PASSED** while the eighth check had never run — and it was the one
+  that would have failed. This is the day's dominant family — a signal reporting on
+  something other than the thing you care about — but with a twist worth naming: the other
+  members (`cmd | tail`, `lint` exiting 0 on a WARN, `grep -c`) report the *wrong* status,
+  whereas this one reports the status of a *smaller program than you think you wrote*.
+  **After adding a check, confirm the count of checks that ran went up**, not merely that
+  the output still looks right.
