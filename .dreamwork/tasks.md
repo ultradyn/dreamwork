@@ -24,9 +24,47 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **475**
+Next id: **476**
 
 ## Open
+- **#475** — ten guards are red on master and load is not why · **P1** · regression/verification ·
+  origin: **loop** · **found 2026-07-29 07:40 by the first full `just test` to complete in this session**
+  · **the run:** pytest and `lint` green; guards **48 PASS / 14 FAIL** of 60 (plus `hub`, `contract`).
+  `#471`'s new accounting worked on its first real run and named the two that never judged:
+  *"2 of 60 registered guard(s) did NOT run-and-judge: artifactwrap, burndownmock"*
+  · **two were a real cross-lane break and are fixed (`43036f2`)**: `artifactwrap` and `markrail` build their
+  own review sources through `review_artifact.py`, and `#436`'s `ask` gate plus `#455`'s `if-silent` gate made
+  both mandatory — so two GUARD fixtures were locked out and died before their first assertion. Neither gate's
+  author could see that a guard was a consumer
+  · **`morphhold` and `history` recovered on a quiet re-run, so those two were load.** The other ten did not,
+  and that is the finding: **re-run alone at load 24-31 they fail exactly as they did at load 36-44**, so the
+  load explanation I reached for first is **refuted**, not merely unproven
+  · **two hypotheses tested and refuted before filing, so nobody re-tests them:** (1) writes are broken — a
+  direct `POST /posture` against a fixture server returns `202 {"ok": true, "changed": true}` with a receipt,
+  writes `.dreamwork/posture` correctly and appends its `watch-events.log` line; (2) headless Chromium now
+  reports `prefers-reduced-motion: reduce`, which would collapse every normal-motion assertion at once — it
+  reports `false`, and a control transition sampled 20 distinct intermediate widths
+  · **the ten, with the assertion that fails:** `oneinput` (*the indicator LANDS on first paint*; *reduced-motion:
+  the indicator JUMPS, it does not slide*) · `wisp` (*normal: the intensity fades in and OUT — a breath, not a
+  sweep*) · `health` (*a refused write says so, instead of nothing at all*) · `qsec` (four, incl. *0 of 76
+  part-way* and *the section really grows … (17 -> 0, 17px)*) · `draft` (*typing writes a draft for THIS project
+  (keyed by the target path)*) · `serving` (*a page behind HEAD says so, and by how much*) · `answers` (*tick
+  trigger accepted*) · `burndownmock` (*threw before finishing its checks*) · `rejectwrite` (*…and does not
+  clear the draft store (the permanent-loss vector)*) · `posture` (five, headed by *arm bar drain visited mid
+  frames: 0*)
+  · **`posture`'s five are probably ONE failure, and reading them as five would waste the tick:** the head is a
+  motion sample, and the four file assertions below it cascade because the guard never finishes arming the
+  10s bar, so nothing is ever written. Expect other cascades in this list
+  · **the pair worth doing first is `draft` + `rejectwrite`**, because both are about the **draft store** and
+  DraftStore landed tonight (`#269`/`#459`, `ca799f5`). Either two guards assert the pre-DraftStore key shape —
+  the fourth instance tonight of a check outliving its contract — or `rejectwrite`'s wording is literal and
+  there is a real permanent-loss vector. Those deserve opposite reactions, so measure before choosing
+  · **why ten accumulated unseen:** the suite reported registration and never execution until tonight, and no
+  full run completed all session — one was killed mid-guards by an external sweep. Every green claim made
+  tonight rested on pytest + `lint` + individually-invoked guards, which is exactly the gap `#471` described
+  and this entry is its bill
+  · blocked on nothing · related: **#471, #474, #269, #459**
+
 - **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
   **P1** · loop-machinery/containment · origin: **loop** · found 2026-07-29 03:32 when the `#263` merge aborted:
   `error: Your local changes to the following files would be overwritten by merge: dev/capture/health.mjs`
@@ -98,6 +136,7 @@ Next id: **475**
   Read `.dreamwork/docs/draft-durability-status.md` first; it names the lines.
   · smaller than it looks, and **independent of `#269`'s IndexedDB upgrade** — do not wait for that.
   · **CLOSED with `#269`'s extraction `36a1594` (merge `ca799f5`, 2026-07-29 05:31).** Both boxes are now `DraftStore` consumers — `#askbox` as `ask:main`, the popout `#ptext` as `popout:main` — and each is proved against a **real reload** rather than a re-render, `#ptext` across closing and re-opening the popout. They were the right first consumers precisely because they were bare: binding them is what makes the extraction a module rather than a rename, which no test of the review dock alone could have shown.
+  · related: **#475** — the `draft` guard covering these two boxes is red on master; see that entry
 
 - **#454** — questions collapse to a rolled-scroll card of 5-6 lines, persisted like other UI state ·
   **P2** · dashboard/asking · origin: **human** ·
@@ -269,7 +308,7 @@ Next id: **475**
   · 8 of 57 registered guards call `serveVerified`: `fileimg filehead identity gitrow fileview reviewdraft
   staleremedy serving`. `staleremedy` is the only one that ignores `argv[3]` entirely (`await freePort()`),
   which may be the intended pattern or may be an accident
-  · blocked on nothing · related: **#310, #428, #203, #474**
+  · blocked on nothing · related: **#310, #428, #203, #474, #475**
   · **CORRECTION 2026-07-29 06:12 — Observation B was FALSE and the lane refuted it in its first milestone.** I wrote that `identity`, `gitrow` and `serving` **passed** in the 05:33 full run. They did not: the recorded output has `FAIL identity`, `FAIL serving`, `FAIL gitrow` and `FAIL reviewdraft`, **all four with the identical `serve: :39899 is serving …/target, not …/<guard>/…` message** — four occurrences of that string in one run. **So the two observations never disagreed**, and the escape hatch this entry offered (*"I have no evidence any self-serving guard fails in a full run"*) was itself the unsupported claim.
   · **how I got it wrong, because it is the same error twice tonight:** I read a **partially written** log as a complete one. The run was still going; those guards had not been reached yet, so their absence from an early `FAIL` list was absence of *evidence*, and I reported it as evidence of *absence* — exactly the shape of the `#469` empty-glob mistake, where a command that never ran was read as proof. A file being appended to is not a result.
   · **so the original finding stands and it is a `#310`-class defect:** guards that serve their own target are handed the recipe's shared port as `argv[3]`, `serveVerified` correctly refuses, and their assertions **never run**. At least four confirmed; eight call `serveVerified`. `reviewdraft`'s 20 draft checks and the new `burndownmock` are both in that set, so work verified tonight is **not** gated by the suite even though both are registered. The guard count on the OK row measures registration, not execution — which is precisely what `#310` was about.
@@ -2386,6 +2425,8 @@ Next id: **475**
   · **sequencing: `#459` first.** Two boxes (`#askbox`, popout `#ptext`) keep **no** draft at all; a
   missing draft outranks a better-stored one, and `#459` needs none of this design.
   · **EXTRACTION + BOTH BARE BOXES LANDED `36a1594` (lane `wt/draftstore`, merge `ca799f5`, 2026-07-29 05:31), and the IndexedDB half was deliberately NOT built.** His grant was conditional — *"provided no good reasons not to"* — and there is one that changes the shape rather than the answer: the shipped `localStorage` write is **synchronous and cannot fail mid-keystroke**, so swapping in an async store would make the **acute** path he actually lost work on worse than it is. So: `DraftStore` extracted as a module still on `localStorage`, with **dual-read** of the pre-module `dw:adraft`/`dw:draft` keys so no draft in his browser is orphaned by the extraction; `dwDraft` and the composer become facades over it; and **`#459` closes with it** — `#askbox` (`ask:main`) and the popout `#ptext` (`popout:main`) had no persistence at all and now survive a **real reload**, which is the mode he reported and the one the coordinator originally got backwards. Cross-tab (C1) and the 30-day GC are seams only. `reviewdraft.mjs` goes 12 → **20** checks. **Coordinator-verified independently:** the guard green on its own port, then red-proved on the production line — stubbing `legacyKey` to `''` fails *only* `DUAL-READ: a pre-module key restores after reload` while **both** of its preconditions stay green, which is the discriminating shape rather than a whole-file red. 1219 pytest pass, lint clean. **The lane labelled its own check honestly and that is worth recording:** it states in the guard that the dual-read check would *also* pass against pre-diff code, so it is a **regression** guard, not a proof of the diff — the repo keeps paying for checks that quietly claim the stronger thing. **One defect the coordinator found and fixed at `a47f401`:** the composer's `clearDraft()` was wrapped in `isDurable(r)` inside a block already gated on `cv.landed`, so the guard was always true — a guard that cannot fail is worse than none, because the next reader trusts it.
+  · related: **#475** — `draft` and `rejectwrite` are red on master and it is not yet known whether they
+  assert the pre-DraftStore key shape or report a real permanent-loss vector
 
 - **#265** — Add a research command to the composer · P2 · command design ·
   origin: **human** · **human via watch 16:05** · hidden/menu command for
@@ -3673,7 +3714,7 @@ Next id: **475**
   is listed in `dockHeadline`**, and **a guard must never assert a height autosize owns**
   · also fixed a literal that had quietly expired: a test asserted *"at least the three known open questions"* of
   the **live** file and went red today because two had been answered. It derives its subject now
-  · blocked on nothing · related: **#471, #463, #456, #385, #177**
+  · blocked on nothing · related: **#471, #463, #456, #385, #177, #475**
 
 - **#439** — the staleness banner says the page is behind but offers no way to act on it · P2 ·
   watch-ui/deploy · origin: **human** · **human via watch 2026-07-28 20:34**
