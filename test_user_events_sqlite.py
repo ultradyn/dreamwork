@@ -38,7 +38,11 @@ import pytest
 from user_events.sqlite import (
     BUSY_TIMEOUT_MS,
     JOURNAL_BACKENDS,
+    PROTOCOL_VERSION,
+    SCHEMA_VERSION,
+    SUPPORTED_PROTOCOL_VERSIONS,
     Envelope,
+    VersionMismatchError,
     open_journal,
 )
 
@@ -172,6 +176,142 @@ def test_pragmas_are_what_the_durability_boundary_claims(tmp_path: Path):
         assert second.journal_id, "journal_id must be minted at create"
     finally:
         second.close()
+
+
+# ---------------------------------------------------------------------------
+# H1 — mixed-version fail-closed (increment 34)
+# ---------------------------------------------------------------------------
+
+def test_open_refuses_a_schema_version_this_process_cannot_understand(
+    tmp_path: Path,
+):
+    """schema_version is the journal's version marker; mismatch refuses open.
+
+    Production line: the ``stored != SCHEMA_VERSION`` check in
+    ``_bootstrap_meta``.  Drive BOTH a newer and an older stored value, derived
+    at runtime so a literal pair tuned to today's SCHEMA_VERSION cannot go
+    stale, and assert both refuse — a check that only tried one direction
+    would miss "older reader, newer journal" or the reverse.
+    """
+    path = tmp_path / "ver.sqlite3"
+    j = open_journal(path)
+    try:
+        stored = int(
+            j.conn.execute(
+                "SELECT value FROM meta WHERE key = 'schema_version'"
+            ).fetchone()[0]
+        )
+    finally:
+        j.close()
+
+    # Precondition: the two foreign versions must both differ from supported,
+    # and from each other — otherwise the loop below is vacuous.
+    foreign = (SCHEMA_VERSION + 1, SCHEMA_VERSION - 1)
+    assert foreign[0] != SCHEMA_VERSION
+    assert foreign[1] != SCHEMA_VERSION
+    assert foreign[0] != foreign[1], (
+        "newer and older must differ so the check covers both directions"
+    )
+    assert len(set(foreign)) == 2
+
+    refused = []
+    for foreign_ver in foreign:
+        # Re-open, pin the foreign version, close, then open through the
+        # production path — not a raw connect for the refuse check.
+        j = open_journal(path)
+        j.conn.execute(
+            "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+            (str(foreign_ver),),
+        )
+        j.conn.commit()
+        j.close()
+        try:
+            open_journal(path)
+        except VersionMismatchError as exc:
+            refused.append((foreign_ver, str(exc)))
+            # Reset to supported so the next open for the other foreign works.
+            # Direct connection ONLY to repair the fixture after refuse left
+            # the file unreadable via open_journal — the production path is
+            # what we tested; this is fixture surgery, not a second reader.
+            import sqlite3 as _sql
+            c = _sql.connect(str(path))
+            c.execute(
+                "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                (str(SCHEMA_VERSION),),
+            )
+            c.commit()
+            c.close()
+            continue
+        raise AssertionError(
+            f"open_journal accepted schema_version={foreign_ver} "
+            f"(supported={SCHEMA_VERSION}); H1 fail-closed is gone"
+        )
+
+    # Coverage assertion derived at runtime: both directions refused.
+    assert len(refused) == len(foreign), (
+        f"expected {len(foreign)} refusals, got {len(refused)}: {refused}"
+    )
+    refused_versions = {v for v, _ in refused}
+    assert refused_versions == set(foreign), (
+        f"coverage incomplete: refused {refused_versions}, needed {set(foreign)}"
+    )
+
+
+def test_receive_refuses_unknown_protocol_versions_before_inserting(
+    tmp_path: Path, journal_factory,
+):
+    """protocol_version is a closed set; unknowns refuse before any receipt.
+
+    Production line: the ``envelope.protocol_version not in
+    SUPPORTED_PROTOCOL_VERSIONS`` check at the top of ``Journal.receive``.
+    Drive more than one unsupported value and assert coverage at runtime —
+    a single pinned fake is the #413 trap (health.mjs pinned 409).
+    """
+    # Precondition: the supported set is non-empty and the protocol constant
+    # is a member; otherwise the check would refuse every real write.
+    assert SUPPORTED_PROTOCOL_VERSIONS, "supported set must not be empty"
+    assert PROTOCOL_VERSION in SUPPORTED_PROTOCOL_VERSIONS
+    assert PROTOCOL_VERSION == "1"  # matches watch.JOURNAL_PROTOCOL_VERSION
+
+    unsupported = ("999", "0", "not-a-version", "HTTP/1.1")
+    # Derive that each is truly unsupported, rather than trusting the list.
+    for v in unsupported:
+        assert v not in SUPPORTED_PROTOCOL_VERSIONS, (
+            f"{v!r} is now supported — the fixture is stale"
+        )
+    assert len(set(unsupported)) == len(unsupported)
+
+    path = tmp_path / "proto.sqlite3"
+    j = journal_factory(path)
+    try:
+        before = j.receipt_count()
+        refused = []
+        for ver in unsupported:
+            env = _envelope(protocol_version=ver, body=b'{"text":"nope"}')
+            try:
+                j.receive(env)
+            except VersionMismatchError as exc:
+                refused.append((ver, type(exc).__name__))
+                continue
+            raise AssertionError(
+                f"receive accepted protocol_version={ver!r}; "
+                "H1 fail-closed is gone"
+            )
+        after = j.receipt_count()
+        # No receipt for any refused version — refuse, do not witness.
+        assert after == before == 0, (
+            f"receipts grew from {before} to {after} despite refusals"
+        )
+        assert len(refused) == len(unsupported), (
+            f"coverage: refused {len(refused)} of {len(unsupported)}: {refused}"
+        )
+        # Positive half: the supported version still inserts. Without this,
+        # `raise VersionMismatchError` on every path would pass the loop.
+        ok = j.receive(_envelope(protocol_version=PROTOCOL_VERSION))
+        assert ok.kind == "inserted", ok
+        assert j.receipt_count() == 1
+    finally:
+        j.close()
 
 
 def test_same_uuid_same_digest_replays_and_does_not_insert(

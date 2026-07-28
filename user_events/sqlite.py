@@ -157,6 +157,23 @@ RECEIPT_HEALTH = ("shadow_failed",)
 #   domain_invalid  — schema valid but fails a domain rule (unknown kind/tint/mode)
 REJECTION_REASONS = ("malformed_json", "schema_invalid", "domain_invalid")
 
+# Transport protocol version carried on every Envelope and length-framed into
+# the request digest (design §Receive and idempotency).  Closed set: an older
+# process that does not understand a newer protocol must refuse the write,
+# never invent a best-effort interpretation.  ``watch.JOURNAL_PROTOCOL_VERSION``
+# must be a member; a widening lands here first.
+PROTOCOL_VERSION = "1"
+SUPPORTED_PROTOCOL_VERSIONS = (PROTOCOL_VERSION,)
+
+
+class VersionMismatchError(RuntimeError):
+    """Journal or envelope version this process cannot understand (H1).
+
+    Fail-closed: refuse the open or the receive rather than skip, guess, or
+    silently drop events.  Distinct from ordinary ValueError so a caller can
+    surface mixed-version without treating it as a malformed field.
+    """
+
 def _h0(journal_id: str) -> str:
     """H_0 = SHA-256(journal_id || schema_version)."""
     material = f"{journal_id}{SCHEMA_VERSION}".encode("utf-8")
@@ -351,9 +368,15 @@ def _bootstrap_meta(conn: sqlite3.Connection) -> str:
         conn.commit()
         return journal_id
     stored = int(row[0])
+    # H1 fail-closed red line: exact match, never "close enough".  A newer
+    # journal (future writer) and an older one (pre-migration) both refuse
+    # open before any receive can witness a write.  SCHEMA_VERSION is the
+    # journal's version marker today; widening it needs a migration, not a
+    # best-effort reader.
     if stored != SCHEMA_VERSION:
-        raise RuntimeError(
-            f"journal schema_version {stored} != supported {SCHEMA_VERSION}"
+        raise VersionMismatchError(
+            f"journal schema_version {stored} != supported {SCHEMA_VERSION}; "
+            "mixed-version fail-closed: refuse open rather than guess"
         )
     jid = conn.execute(
         "SELECT value FROM meta WHERE key = 'journal_id'"
@@ -506,7 +529,18 @@ class Journal:
         idempotency. The SELECT-then-compare before insert is load-bearing: without
         it a same-UUID retry raises IntegrityError on the unique constraint, which
         is a *different* failure than a clean replay (B2 red line).
+
+        H1: protocol_version is checked BEFORE any write.  An unknown version
+        raises VersionMismatchError with zero receipts inserted — refuse, do not
+        store a record this process cannot later project.
         """
+        # --- H1 red line: protocol_version closed-set check before BEGIN ---
+        if envelope.protocol_version not in SUPPORTED_PROTOCOL_VERSIONS:
+            raise VersionMismatchError(
+                f"envelope protocol_version {envelope.protocol_version!r} "
+                f"not in supported {SUPPORTED_PROTOCOL_VERSIONS}; "
+                "mixed-version fail-closed: refuse receive rather than guess"
+            )
         digest = request_digest(
             protocol_version=envelope.protocol_version,
             method=envelope.method,
