@@ -24,9 +24,51 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **421**
+Next id: **423**
 
 ## Open
+- **#421** — how we ask him questions, researched rather than guessed · P1 · loop-instructions ·
+  origin: **human** · **human via watch `do-next` 2026-07-28 16:29** · next-up
+  · verbatim: *"We should update instructions for the dreamwork agent: when asking users questions:
+  get a subagnet to write a research artifact about how https://github.com/ayghri/i-have-adhd works
+  (in terms of its instructions). Use that to create some options for how we can change instructions
+  to ask better questions. Then present those options to me as a question."*
+  · **he specified the method, and that is the load-bearing part.** Not *"ask better questions"* —
+  **research a named external artifact, derive options from it, and put the options to him as a
+  question.** So a lane that reads `i-have-adhd` and returns opinions has missed it; the deliverable
+  chain is research doc → options → a `questions.md` entry he can rule on
+  · **why he is asking now, inferred and worth checking with him:** today's questions have been long.
+  The `#264` entry is ~30 lines and the `#263` gate ask is ~35, each carrying three sub-questions,
+  recommendations, evidence and a boundary block. `i-have-adhd` is presumably about instruction
+  design for attention constraints, which would make this a note about **cost to read**, not about
+  correctness. Do not assume that reading; the research decides it
+  · **the loop has evidence of its own on this.** He could not find `#264`'s question at 15:19
+  (`#419`), he asked for previews before ruling on `#367` at 14:52 rather than deciding from prose,
+  and he twice answered a sub-question while its neighbours went unanswered (`#275` Q3/Q5/Q6 still
+  open from an entry he answered Q2 of). **Three independent signals that our question format costs
+  him more than it should**, and none of them was read as being about the format
+  · blocked on nothing · related: **#422** (research artifacts as a kind), **#419**
+
+- **#422** — a research artifact is a kind we produce and have never specified · P2 ·
+  loop-tooling/format · origin: **human** · **human via watch `do-next` 2026-07-28 16:29**, second
+  half of the same message
+  · verbatim: *"also, we should support research artifacts in like `.dreamwork/docs/research/` or
+  something. ideally HTML when they are user facing or benefit from visual expression."*
+  · **the directory already exists and the documentation says otherwise.** `.dreamwork/docs/research/`
+  holds one file (`2026-07-28-parallel-lanes-evidence.md`) while `doc-map.md:25` documents the flat
+  form `.dreamwork/docs/research-*.md` — and a third file, `research-window-coords.md`, sits at
+  `docs/` root in that flat form. **Three spellings of one kind**, so the convention is not a
+  convention yet
+  · **the HTML half is the real gap.** `review_artifact.py` builds and checks templated HTML and
+  `watch.py` lists and serves it, but **only under `.dreamwork/review/`**. A user-facing research
+  doc has no path to a rendered page today, which is why `#421`'s options will ship as a *review*
+  artifact even though it is research
+  · so: decide whether research HTML reuses the review pipeline (a second listing surface, one
+  builder) or gets its own, document the directory + naming in the doc-map **and** `file-formats.md`
+  if a tool will parse it, and say what distinguishes research from a measurement
+  (`.dreamwork/docs/measurements/`, also undocumented there) from a plan
+  · blocked on nothing · related: **#421**
+
 
 - **#415** — the hand-off grammar allows ONE sha, and a task landing in two commits is the
   ordinary case · P3 · loop-tooling/format · origin: **loop** · found when the `#411` lane
