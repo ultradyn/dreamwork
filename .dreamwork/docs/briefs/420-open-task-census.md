@@ -3,6 +3,8 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/420`**, branch **`wt/420`**. Do not push, do not merge.
 **Never use `attn`** — report through the inbox path at the bottom.
 
+Lane-owns: .dreamwork/docs/open-task-census.md, .dreamwork/review/src/open-task-census.html
+
 His instruction, verbatim (watch `/answers`, 2026-07-28 15:25):
 
 > *"at some point soon, get a glm52 node to do a complete scan over our tasks and give you a report

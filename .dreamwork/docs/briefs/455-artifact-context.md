@@ -3,6 +3,8 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/context`**, branch **`wt/context`**. Do not push, do not merge.
 **Never use `attn` under any circumstances** — the coordinator is the only party that notifies the human.
 
+Lane-owns: review_artifact.py, review-artifact.template.html, .dreamwork/review/, watch-design.md, test_review_artifact.py
+
 ## Two-way channel — do this first, before any work
 
 Load the **`subagent-protocols`** skill (`/home/xertrov/.claude-w/skills/subagent-protocols/SKILL.md`) and

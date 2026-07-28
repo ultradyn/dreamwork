@@ -3,6 +3,8 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/367p`**, branch **`wt/367p`**. Do not push, do not merge.
 **Never use `attn`** — report through the inbox path at the bottom.
 
+Lane-owns: .dreamwork/review/src/367-option-previews.html, .dreamwork/review/367-option-previews.html, .dreamwork/review/evidence/367-option-previews/
+
 **You were chosen for this because you can see.** The deliverable is judged on rendered pixels
 and the acceptance includes your own visual verdict, not only measurements. Say what the
 screenshots actually look like.

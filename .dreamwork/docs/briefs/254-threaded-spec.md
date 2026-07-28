@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/threaded`**, branch **`wt/threaded
 Report by appending **once** to the absolute path
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`, and **state which model you are**.
 
+Lane-owns: .dreamwork/docs/plans/threaded-notes-spec.md, .dreamwork/docs/doc-map.md, .dreamwork/review/src/254-threaded-notes.html
+
 ## What he approved, and what he did not
 
 Read `#254` in `.dreamwork/tasks.md`. He approved **N1**, for a **WRITTEN DESIGN ONLY** (2026-07-27 23:03,

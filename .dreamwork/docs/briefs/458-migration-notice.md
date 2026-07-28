@@ -3,6 +3,8 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/mignotice`**, branch **`wt/mignotice`**. Do not push, do not merge.
 **Never use `attn` under any circumstances** — the coordinator is the only party that notifies the human.
 
+Lane-owns: migrations/, file-formats.md, lint.py, test_lint.py, .dreamwork/docs/plans/migration-notices.md, .dreamwork/docs/doc-map.md
+
 ## Two-way channel — do this first
 
 Load the **`subagent-protocols`** skill (`/home/xertrov/.claude-w/skills/subagent-protocols/SKILL.md`) and

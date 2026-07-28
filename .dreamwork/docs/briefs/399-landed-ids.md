@@ -1,5 +1,7 @@
 # Brief — #399: a bolded id inside a landed entry is not a landing, and right now the suite is red because of it
 
+Lane-owns: watch.py, test_watch.py, lint.py, test_lint.py, file-formats.md
+
 You are a dreamer on the `ud-dreamwork` skill repo. Read `CLAUDE.md` first; its
 verification rules are the reason this brief exists and they are not optional.
 

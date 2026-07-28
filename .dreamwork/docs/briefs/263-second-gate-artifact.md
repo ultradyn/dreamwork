@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/gate`**, branch **`wt/gate`**. Do 
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`. **Do not write
 `.dreamwork/handoffs.md`** — the coordinator writes that line at merge time.
 
+Lane-owns: .dreamwork/review/src/263-second-gate.html, .dreamwork/review/263-second-gate.html
+
 ## What you are building and why it has to be good
 
 He has to make three authorisation calls on `#263` and there is nothing for him to look at. The ask

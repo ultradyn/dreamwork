@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/sshauth`**, branch **`wt/sshauth`*
 Report by appending **once** to the absolute path
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`, and **state which model you are**.
 
+Lane-owns: .dreamwork/docs/plans/hub-ssh-auth.md, .dreamwork/docs/doc-map.md, .dreamwork/review/src/360-hub-ssh-auth.html
+
 ## What he asked for, and why it redirects a landed design
 
 Read `#360` in `.dreamwork/tasks.md`, and read `#275`'s landed design first — **this contradicts it on purpose.**

@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/floors`**, branch **`wt/floors`**.
 Report by appending **once** to the absolute path
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`, and **state which model you are**.
 
+Lane-owns: dev/capture/states.mjs, transitions.md, dev/capture/dom.mjs
+
 **Read `transitions.md` first** — binding, no size floor.
 
 ## The defect

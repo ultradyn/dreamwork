@@ -3,6 +3,8 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/dayage`**, branch **`wt/dayage`**. Do not push, do not merge.
 **Never use `attn` under any circumstances** — the coordinator is the only party that notifies the human.
 
+Lane-owns: watch.py, test_watch.py
+
 ## Two-way channel — do this first
 
 Load the **`subagent-protocols`** skill (`/home/xertrov/.claude-w/skills/subagent-protocols/SKILL.md`) and

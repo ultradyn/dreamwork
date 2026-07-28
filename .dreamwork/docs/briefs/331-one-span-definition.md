@@ -3,6 +3,8 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/331`**, branch **`wt/331`**. Do not push, do not merge.
 **Never use `attn`** — report through the inbox path at the bottom.
 
+Lane-owns: watch.py, lint.py, status_sync.py, test_watch.py, test_lint.py, file-formats.md
+
 ## What is wrong
 
 The ledger writes a set of task ids as a bold span: `**#5**`, `**#138/#156**`, `**#121 #123**`,

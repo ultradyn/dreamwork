@@ -6,6 +6,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/419`**, branch **`wt/419`**. Do no
 `.dreamwork/handoffs.md` at all** — the coordinator writes that line when it merges. (Earlier briefs
 told lanes to write it; both wordings caused merge conflicts, so the rule changed.)
 
+Lane-owns: file-formats.md, lint.py, test_lint.py
+
 ## Why this exists
 
 He tried to rule on `#264`, found no question, and wrote (watch `/answers`, 15:19):

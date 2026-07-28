@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/duration`**, branch **`wt/duration
 Report by appending **once** to the absolute path
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`, and **state which model you are**.
 
+Lane-owns: dev/capture/dom.mjs, dev/capture/confirmation.mjs, transitions.md
+
 **Read `transitions.md` first** — binding, no size floor, opens with how to check motion.
 
 ## The gap, which is the price of a fix that was right

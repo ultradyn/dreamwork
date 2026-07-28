@@ -1,5 +1,7 @@
 # Brief — #399b: `_landed_ids` fixed the present and lost the past. `master` is red.
 
+Lane-owns: watch.py, test_watch.py, lint.py, test_lint.py, file-formats.md
+
 You are a dreamer on the `ud-dreamwork` skill repo. Read `CLAUDE.md` first; its
 verification rules are the reason this brief exists and they are not optional.
 

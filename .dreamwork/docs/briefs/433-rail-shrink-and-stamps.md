@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/rail`**, branch **`wt/rail`**. Do 
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`. **Do not write
 `.dreamwork/handoffs.md`** — the coordinator writes that line at merge time.
 
+Lane-owns: review-artifact.template.html, .dreamwork/review/
+
 ## The defect, and the fix is already known and verified
 
 `review-artifact.template.html` styles `.identity b` as `white-space:nowrap` with **no**

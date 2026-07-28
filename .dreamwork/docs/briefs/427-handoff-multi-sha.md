@@ -5,6 +5,8 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/handoff`**, branch **`wt/handoff`*
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`. **Do not write
 `.dreamwork/handoffs.md`** — the coordinator writes that line at merge time.
 
+Lane-owns: watch.py, test_watch.py, file-formats.md
+
 ## The defect
 
 `#415` widened `lint.check_handoffs` to accept one-or-more shas on a hand-off line, and **correctly

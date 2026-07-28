@@ -3,6 +3,8 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/402a`**, branch **`wt/402a`**. Do not push, do not merge.
 **Never use `attn`** — report through the inbox path at the bottom.
 
+Lane-owns: status_sync.py, test_status_sync.py
+
 `status_sync.py` is 144 lines and you own all of them. This brief is long because the
 **test** is the hard part here, not the fix: the natural way to test this change is
 structurally incapable of failing, and that has already happened twice in this repo today.
