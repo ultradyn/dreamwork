@@ -27,21 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **458**
 
 ## Open
-- **#457** — the builder emitted `<meta>` tags with no closing `>`, printing a stray `>` at the top of every
-  artifact · **P1** · review/bug · origin: **human** ·
-  **human via watch 2026-07-29 01:26, reading `263-second-gate.html`:** *"bug at top of this page, the artifact
-  has an errant `>`. This is not the first time I've seen it, i suspect the template might have an issue."*
-  · **the template was innocent; the builder was not.** `#436` and `#455` each insert a `<meta>` into the head
-  by anchoring on the tag before it, and all four anchor patterns matched the tag **minus its own closing
-  `>`** — so `sub()` left the old `>` behind and an insertion at `.end()` landed before it. One stray per
-  meta: `#436` made one, `#455` made three.
-  · **his "not the first time" dates the defect**: it arrived with `#436` and worsened with `#455` a few hours
-  later, and neither lane could see it because both checked *that the meta was present*, never that the head
-  stayed well-formed.
-  · **landed** — the four anchors now swallow the close; red-proved by reverting only `ASK_META_RE`'s `\s*>`
-  (the stray returns) and restoring it (it goes). Permanent check
-  `test_no_meta_in_a_built_head_is_missing_its_close`, with a runtime precondition that the corpus actually
-  carries those metas, so it cannot pass over an empty match. All 15 buildable artifacts rebuilt.
 - **#456** — day-age needs a `·` separator, and the pad zero should be near-invisible · **P2** ·
   dashboard/type · origin: **human** · **next-up** ·
   **human via watch 2026-07-29 01:18:** *"with the day age on questions (\"2026-07-28 01d ago\"), please: add
@@ -3349,6 +3334,23 @@ Next id: **458**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#457** — the builder emitted `<meta>` tags with no closing `>`, printing a stray `>` at the top of every
+  artifact · **P1** · review/bug · origin: **human** ·
+  **human via watch 2026-07-29 01:26, reading `263-second-gate.html`:** *"bug at top of this page, the artifact
+  has an errant `>`. This is not the first time I've seen it, i suspect the template might have an issue."*
+  · **the template was innocent; the builder was not.** `#436` and `#455` each insert a `<meta>` into the head
+  by anchoring on the tag before it, and all four anchor patterns matched the tag **minus its own closing
+  `>`** — so `sub()` left the old `>` behind and an insertion at `.end()` landed before it. One stray per
+  meta: `#436` made one, `#455` made three.
+  · **his "not the first time" dates the defect**: it arrived with `#436` and worsened with `#455` a few hours
+  later, and neither lane could see it because both checked *that the meta was present*, never that the head
+  stayed well-formed.
+  · **landed** — the four anchors now swallow the close; red-proved by reverting only `ASK_META_RE`'s `\s*>`
+  (the stray returns) and restoring it (it goes). Permanent check
+  `test_no_meta_in_a_built_head_is_missing_its_close`, with a runtime precondition that the corpus actually
+  carries those metas, so it cannot pass over an empty match. All 15 buildable artifacts rebuilt.
+  · landed \`e38e9be\` — four meta-anchor patterns in \`review_artifact.py\` now swallow the tag close. Red-proved on \`ASK_META_RE\` alone. New check \`test_no_meta_in_a_built_head_is_missing_its_close\` asserts every head `<meta>` closes before the next tag, with a derived precondition that the scanned corpus carries the \`#436\`/\`#455\` metas at all. All 15 buildable artifacts rebuilt; lint clean; 100 tests in that module pass.
+
 - **#455** — every review artifact opens with a context paragraph, enforced at build time · **P1** ·
   review/asking · origin: **human** ·
   **human via watch 2026-07-29 01:07, while reading `269-draft-durability.html`:** *"update protocols: when
