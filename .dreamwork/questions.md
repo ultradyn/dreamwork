@@ -39,41 +39,27 @@
   quoting a count for it**, because a self-referential figure is wrong the moment anything above it
   changes, and that is itself an argument for option C being a reported target rather than a claim.
 
-- **P1 · 2026-07-28 — #263: I told you the gate's condition was met. It is not — lane C is 3 of 5.
-  One sequencing call is still genuinely yours.**
-  Artifact: `.dreamwork/review/263-second-gate.html` — **it carries the same wrong claim and is being
-  corrected**; the corrected build will land before you need it. Plan:
-  `.dreamwork/docs/plans/user-event-journal-implementation.md`.
-  **Correction, 16:35, and it is the second one I owe you on this task today.** At 16:24 this entry
-  said *"A-D and F are all landed"* and *"the second gate's condition is MET"*. **Wrong.** Lane C is
-  increments **11-15** (`C1` lock, `C2` lineage, `C3` one-write, `C4` markers, `C5` rebaseline).
-  **`C4` and `C5` are not built** — `user_events/domain_files.py` has no whole-file marker search and
-  no `rebaseline`, and its test file holds 3 tests. So **A-D are not proved and the gate stays shut,
-  correctly.**
-  How I got it wrong, because the mechanism matters more than the fact: the ledger's own line says
-  *"lane C (domain files) DONE … `C1`, `C2`, `C3` … 3/3 green"*, and I read `3/3` as the lane's
-  scope. **The lane's scope is 5.** `3/3` was true about what it built and silent about what it did
-  not, and I never checked it against the plan's own lane definition one file away. **The lane that
-  built your artifact caught it by reading the tree** — the fifth time today a subagent has refuted a
-  figure I derived instead of observed, and the most consequential, because this one would have had
-  you opening a gate on unproved prerequisites.
-  **What the loop is doing about it without you: building `C4` and `C5`.** Both are inside increments
-  1-19, which your 05:43 `G1` already authorises, so no ruling is needed and none is being requested.
-  When they land I will ask again — with the tree checked rather than the ledger read.
-  **The one live question, and it does not depend on any of the above.**
-  **Q1 — does `#368` (the modular split) land before lane E starts?** This was **your own note** in
-  the plan: *"lanes E and G both live inside the one 8,647-line `watch.py`, so they are a single lane
-  in practice. That is an argument for `#368` landing before the second gate opens."* Measured now:
-  `watch.py` is **9,688 lines** (`wc -l`) — your 8,647 was stale by a thousand — and **6 of lane E's
-  6 production increments touch it**, adding no new module. So lane E is six serial increments inside
-  the largest file in the repo, with lane G queued behind the same lock.
-  **Rec: split first.** It costs a batch and buys parallel E and G plus a smaller blast radius on the
-  file the dashboard *is*. The honest alternative is serial-now, which gets `#371`'s remaining policy
-  half sooner — and `#371` is less urgent than I said at 16:24: its **witness half already landed**
-  (`d33cc2f`, `short: true` + `got:`), so the server no longer records an interrupted body as
-  complete. Only the *policy* — keep it, marked incomplete, and proceed — waits on `E1`.
-  **Answering Q1 does not open the second gate** and is not being read as doing so. It decides what
-  the loop does with `#368` in the meantime, and I will come back for the gate separately.
+- **P1 · 2026-07-28 — #263: the second gate's condition is met, verified this time. Open it?**
+  **Ask: `rec` for "open E and H, split `#368` first" — or answer Q1/Q2/Q3 separately.** Free text
+  fine; *"not yet"* is a real answer.
+  **Q1 — open the gate for lane E** (increments 20–25, the HTTP cutover: the journal commit, not the
+  handler, authorises the response)? **Rec: yes.**
+  **Q2 — open it for lane H** (34–35, the mixed-version gate)? **Rec: yes for the code**; I will not
+  run it against your live target without asking again.
+  **Q3 — does `#368` (the modular split) land before lane E starts? Rec: split first.** Your own note
+  in the plan said so. Measured now: `watch.py` is **9,688** lines — your 8,647 was stale — and **6 of
+  6** of lane E's production increments touch it, adding no new module. Serial-now is the honest
+  alternative and gets `#371`'s remaining half sooner.
+  **What is different from my 16:24 ask, which was wrong.** I told you the condition was met; lane C
+  was **3 of 5**. `C4` and `C5` landed at 17:21, so **A 2/2 · B 8/8 · C 5/5 · D 4/4 · F 4/4** and
+  *"until A–D are proved"* is satisfied. **This time a merge gate asserted it**, taking its
+  denominator from the plan's own increment table rather than from a lane's *"3/3"* — which is
+  precisely the sentence I misread. The gate is red on `master` and passes on the merge, so it can see
+  the absence it checks for.
+  **Opening the gate does not authorise:** lane **G** (30–33, never in `G1`), increment 18's purge or
+  19's PostgreSQL half (your Q4), or any migration of a live target.
+  Optional: artifact `.dreamwork/review/263-second-gate.html` (**being rebuilt** — it still says
+  3 of 5), plan `user-event-journal-implementation.md`.
 
 - **P1 · 2026-07-28 — #264: ratify the task-transition boundary, and one deployment call
   only you can make.** Artifact: `.dreamwork/review/task-transition-boundary.html` (open it from
