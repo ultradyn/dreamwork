@@ -2058,12 +2058,33 @@ const linkify = h => h.replace(
   });
 const preB = t => `<pre>${linkify(esc(t))}</pre>`;
 /* a backticked path to a review artifact docks THIS question onto the
-   review page (carries its title); every other path stays a /file link. */
-const linkifyReview = (escaped, title) => escaped.replace(
-  /`\\.dreamwork\\/review\\/([\\w.-]+\\.html?)`/g,
-  (m, name) => '`<a class="rev" href="/review?p=' + encodeURIComponent(name) +
-    '&q=' + encodeURIComponent(title) + '">.dreamwork/review/' + name +
-    '</a>`');
+   review page (carries its title); every other path stays a /file link.
+   #472: the corpus mostly writes `.dreamwork/review/name.html` in backticks,
+   which this always handled. One outlier wrote a markdown link
+   [`name`](../review/name.html) — mdSpans has no [text](url) pass, and the
+   relative `../review/` path is wrong for /questions — so the artifact was
+   unreachable from the ask. Prefer the backticked shape; ALSO recognise
+   markdown links whose target is a review artifact (basename after
+   `../review/` or `.dreamwork/review/`) so a live entry that used the
+   outlier shape still docks. A bare relative href is never left as-is. */
+const revDock = (name, title, label) =>
+  '<a class="rev" href="/review?p=' + encodeURIComponent(name) +
+  '&q=' + encodeURIComponent(title) + '">' + label + '</a>';
+const linkifyReview = (escaped, title) => {
+  // 1. markdown links to a review artifact — the #417 defect shape.
+  //    Label may itself be backticked (`name`); strip those so the dock
+  //    link is the affordance, not nested code around raw brackets.
+  let h = escaped.replace(
+    /\\[(?:`)?([^\\]`\\n]+?)(?:`)?\\]\\((?:\\.\\.\\/review\\/|\\.dreamwork\\/review\\/)([\\w.-]+\\.html?)\\)/g,
+    (m, text, name) => revDock(name, title, text));
+  // 2. preferred corpus shape: backticked `.dreamwork/review/name.html`
+  //    (link stays inside backticks so mdSpans wraps it in <code>, same as
+  //    every other path linkifier on this page).
+  h = h.replace(
+    /`\\.dreamwork\\/review\\/([\\w.-]+\\.html?)`/g,
+    (m, name) => '`' + revDock(name, title, '.dreamwork/review/' + name) + '`');
+  return h;
+};
 /* ── rendered prose (#102, #158) ──────────────────────────────────────────
    The loop writes its files hard-wrapped at ~72 columns. A <pre> renders
    those breaks literally and the browser re-wraps them again at a narrower

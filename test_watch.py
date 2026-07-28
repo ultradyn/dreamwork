@@ -3504,6 +3504,76 @@ class TestAppShell(unittest.TestCase):
         self.assertNotIn('preB(JSON.stringify(d.status', watch.PAGE)
         self.assertIn('function statusBlock', watch.PAGE)
 
+    def test_review_artifact_links_dock_via_linkifyReview(self):
+        # #472 — production lines: revDock + linkifyReview's two shapes
+        # (preferred backticked `.dreamwork/review/name.html`, and the
+        # markdown-link outlier `[text](../review/name.html)`). mdSpans has
+        # no general [text](url) pass; only review-artifact targets are
+        # rewritten, always to `/review?p=…` so a relative path cannot
+        # 404 from /questions.
+        for token in ('const revDock =', 'const linkifyReview =',
+                      'mdSpans(linkify(linkifyReview(esc(t), title)))',
+                      'mdBReview(q.body.trim(), q.title)'):
+            self.assertIn(token, watch.PAGE)
+        # the preferred shape still matches inside backticks (PAGE is the
+        # assembled JS, so one backslash before each regex meta char)
+        self.assertIn(r'`\.dreamwork\/review\/', watch.PAGE)
+        # the outlier shape is recognised (../review/ OR .dreamwork/review/)
+        self.assertIn(r'\.\.\/review\/', watch.PAGE)
+
+    def test_linkifyReview_renders_both_corpus_shapes_to_working_href(self):
+        # #472 — discriminating half: the *href works*, not merely that an
+        # <a> exists. Run the production linkifyReview + mdSpans chain via
+        # node (the same compose path question bodies use) and assert the
+        # dock href. Then prove /reviewraw serves that basename from a real
+        # artifact — a rendered link to a 404 is the defect wearing a fix's
+        # clothes.
+        #
+        # PRODUCTION LINE whose change reds the JS half: the markdown-link
+        # replace inside linkifyReview (the first h.replace). Deleting it
+        # leaves the #417 shape as raw brackets and this fails. The
+        # preferred-shape replace is the second half — deleting it leaves
+        # the backticked path unlinked.
+        import re, subprocess, textwrap, tempfile
+        m = re.search(r'const revDock = .*?return h;\n\};', watch.PAGE, re.S)
+        self.assertIsNotNone(m, "revDock+linkifyReview block missing from PAGE")
+        block = m.group(0)
+        script = textwrap.dedent("""\
+            %s
+            const esc = t => String(t)
+              .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+              .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            const mdSpans = h => h
+              .replace(/`([^`]+)`/g, '<code>$1</code>');
+            const linkify = h => h;
+            const run = (title, t) => mdSpans(linkify(linkifyReview(esc(t), title)));
+            const title = '2026-07-29 — probe';
+            const md = 'Artifact: [`probe-art.html`](../review/probe-art.html)';
+            const bt = 'Artifact: `.dreamwork/review/probe-art.html`';
+            const outMd = run(title, md);
+            const outBt = run(title, bt);
+            if (!outMd.includes('class="rev"')) process.exit(11);
+            if (!outMd.includes('/review?p=probe-art.html')) process.exit(12);
+            if (outMd.includes('../review/')) process.exit(13);
+            if (outMd.includes('](')) process.exit(14);
+            if (!outBt.includes('/review?p=probe-art.html')) process.exit(15);
+            if (!outBt.includes('class="rev"')) process.exit(16);
+            process.stdout.write('ok');
+        """) % block
+        out = subprocess.check_output(["node", "-e", script], text=True)
+        self.assertEqual(out, "ok")
+        # HTTP half: the basename the link targets really resolves.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            rd = os.path.join(d, ".dreamwork", "review")
+            os.makedirs(rd, exist_ok=True)
+            with open(os.path.join(rd, "probe-art.html"), "w") as f:
+                f.write("<!doctype html><title>probe</title><p>artifact body")
+            base = self._serve(d)
+            status, raw = self._get(base + "/reviewraw?p=probe-art.html")
+            self.assertEqual(status, 200)
+            self.assertIn("artifact body", raw)
+
     def test_commit_age_ticks_off_the_render_path(self):
         # #132. The interesting half is not the format, it is WHERE the update
         # happens: a seconds-resolution clock must not ride the tick's

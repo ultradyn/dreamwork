@@ -1235,6 +1235,20 @@ linkifiers inject `<a>` *inside* the backticks, so code spans convert after
 them and swallow the link; `**` resolves before `*` so a bold pair is never
 read as two emphases.
 
+**Review-artifact references — one shape (#472).** The corpus writes a
+backticked path `` `.dreamwork/review/<name>.html` ``; `linkifyReview` turns
+that into a dock link to `/review?p=<name>&q=<title>` so the originating
+question travels with the artifact. Prefer that shape in every new ask —
+it is what `#294`, `#445` and most of the open set already use. A markdown
+inline link whose target is a review artifact
+(`[label](../review/name.html)` or `[label](.dreamwork/review/name.html)`)
+is also recognised and rewritten to the same dock URL: `mdSpans` has no
+general `[text](url)` pass, and a relative `../review/` path is wrong for
+the `/questions` route, so the outlier form used by `#417` was raw text
+and unreachable. Bare relative paths are never left as navigable hrefs.
+(`file-formats.md` is where the writing rule belongs; this paragraph is
+the page-side contract.)
+
 The parser feeds this: a sub-bullet may itself be hard-wrapped, and its
 continuation lines belong to *it*. Capturing only the first line truncated
 the note mid-phrase **and** spilled its tail into the body as orphaned prose
