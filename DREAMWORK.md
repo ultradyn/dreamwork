@@ -368,6 +368,27 @@ dreamwork-version: 5853e1789929
   two entries whose titles promise a *"one word"* answer are **300 and 448
   words**, both above the corpus median of **302**.
 
+- **An agent must survive its own files changing under it, or be told to
+  reload.** His words, 2026-07-28 17:38: *"the files on disk might be updated
+  while agents are running, so they need to be able to continue running OR be
+  explicitly told (via tooling or which files they read) that they must reload
+  the skill and associated tooling like heartbeat, Monitor for user events,
+  etc."* **Two acceptable states and no third** — continue correctly, or be told
+  to reload. Running against a half-updated tree is what this forbids, and it is
+  the default today: `SKILL.md` and `CLAUDE.md` are read once per session, so a
+  change reaches nobody already running, and this session has been serving
+  `watch.py` from a tree with dozens of commits under it. `.dreamwork/run-mode`
+  is the only file with the right property today — re-read every tick precisely
+  so an on-disk change reaches a running loop. Filed as `#426`; note that
+  `#263`'s lane **H** solves the same problem for the journal, so decide whether
+  they share a mechanism before building it twice.
+- **A migration keeps the old path working for processes that already
+  started.** Same message: when `watch.py` is split, the monolith moves to
+  `deprecated/watch.py` and **`watch.py` becomes a symlink to it**, so *"clients
+  won't break if the files on disk are updated before the new skill is rerun"*.
+  This is a **constraint on `#368`**, not a follow-up to it — the split may not
+  simply leave a smaller `watch.py` behind. Filed as `#425`, and it blocks `#368`.
+
 ## Plugins
 
 - Load: `ud-dreamwork-hooks` (2026-07-28, **human-approved 02:47 — "sure, rec"**,

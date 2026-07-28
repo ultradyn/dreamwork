@@ -24,9 +24,57 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **425**
+Next id: **427**
 
 ## Open
+- **#425** — the `watch.py` split must leave `watch.py` working for clients that are already running ·
+  P1 · loop-tooling/migration · origin: **human** · **human direct, 2026-07-28 17:38** · next-up ·
+  blocks **#368**
+  · verbatim: *"when we migrate watch.py to something more maintanable, we should keep a copy of the
+  monolithic script in like `deprecated/watch.py` but symlink `watch.py` in the main dir so clients
+  won't break if the files on disk are updated before the new skill is rerun and things are properly
+  updated."*
+  · **so this is a constraint on `#368`, not a task after it.** The split cannot simply move code out
+  of `watch.py` and leave a smaller `watch.py` behind: the path itself has to keep working for a
+  **process that started before the split landed** and for tooling that names it. `deprecated/watch.py`
+  holds the monolith; `watch.py` becomes a symlink to it until the new entry point is proven and the
+  skill has been rerun
+  · **it is timely to the hour**: `#263`'s open ask (Q3) asks him whether `#368` lands before lane E
+  starts. If he says split-first, **this is the first increment of that split**, and the ask should say
+  so — folded into that entry
+  · what to check, since a symlink is the kind of thing that works until it does not: does
+  `python3 watch.py` behave identically through the symlink; does the port file, `--target` resolution
+  and `__file__`-relative path handling still resolve (a monolith that computes paths from `__file__`
+  sees the **symlink target's** directory under some invocations); does `just test` still find its
+  guards; and does an **already-running** server survive the swap without its next tick failing
+  · related: **#368, #426**
+
+- **#426** — an agent must survive its own files changing under it, or be told to reload · P1 ·
+  loop-architecture · origin: **human** · **human direct, 2026-07-28 17:38**, stated as a general
+  principle rather than a bug
+  · verbatim: *"In general this should kind of be a principle of ours: the files on disk might be
+  updated while agents are running, so they need to be able to continue running OR be explicitly told
+  (via tooling or which files they read) that they must reload the skill and associated tooling like
+  heartbeat, Monitor for user events, etc."*
+  · **the two acceptable states, and there is no third:** either the running agent **continues
+  correctly** across the on-disk change, or it is **explicitly told to reload** the skill and its
+  tooling (heartbeat, the watch-events monitor, the dashboard server). Silently running against a
+  half-updated tree is the state this forbids, and it is the state we are in by default today
+  · **we have live evidence this session, which is what makes it P1 rather than hygiene.** A brief was
+  amended mid-flight three times today and each time the question *"has the lane already read it?"* had
+  no answer available to either side. `SKILL.md` and `CLAUDE.md` are read once at session start, so a
+  change to either reaches nobody already running. And this session is running `watch.py` as a server
+  from a tree that has had **many** commits under it since it started
+  · so the shape is a **version/identity signal** the running agent can check cheaply — the skill
+  version plus what it read, against what is on disk — and a defined action when they differ. That is
+  adjacent to `#263`'s mixed-version gate (lane **H**, increments 34-35: *"mixed-version fail-closed
+  before witnessing"*), which solves the same problem for the **journal**. **The generalisation is
+  his, and lane H is one instance of it** — worth deciding whether they share a mechanism before either
+  is built twice
+  · also names `.dreamwork/run-mode` as prior art: it is re-read on every tick precisely so an on-disk
+  change reaches a running loop, and it is the only file in the system with that property today
+  · related: **#425, #368, #263**
+
 - **#424** — `just test` is a single shared lock, so N concurrent lanes cannot each verify · P2 ·
   loop-tooling/orchestration · origin: **loop** · found when `#419` reported guards blocked at 17:01
   · guards bind **39890-39899** and the recipe hard-aborts if any port in the range is held (the
@@ -871,6 +919,7 @@ Next id: **425**
   · blocked on #352 and the CLI existing · rec when it starts: move the benchmark first (a
   `version` verb plus a recorded baseline), so every later step is measured against it rather
   than argued about
+  · related: **#425, #426**
 
 - **#367** — Tabbed pointers to a review's essentials, with next/prev · P2 ·
   review tooling/UX · origin: **human** · **human via watch `add-idea` 2026-07-28 02:36**,
@@ -2668,6 +2717,7 @@ Next id: **425**
   · **`TestCitedShas` failed 3× under random order** (`OSError: File too large`) and passes in
   isolation and under `-p no:randomly` (1011 passed). Consistent with four lanes running `git`
   against the live repo at once — the known interaction, not a defect
+  · related: **#426**
 
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report

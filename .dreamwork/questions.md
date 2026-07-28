@@ -56,6 +56,11 @@
   denominator from the plan's own increment table rather than from a lane's *"3/3"* — which is
   precisely the sentence I misread. The gate is red on `master` and passes on the merge, so it can see
   the absence it checks for.
+  **Your 17:38 message lands on Q3 and I have folded it in.** If `#368` goes first, its **first
+  increment is `#425`** — the monolith moves to `deprecated/watch.py` and `watch.py` becomes a symlink,
+  so a client that started before the split keeps working. That makes split-first slightly cheaper than
+  I priced it above (the symlink is the compatibility story, not a later migration), and it is filed as
+  blocking `#368`. The general principle is `#426`.
   **Opening the gate does not authorise:** lane **G** (30–33, never in `G1`), increment 18's purge or
   19's PostgreSQL half (your Q4), or any migration of a live target.
   Optional: artifact `.dreamwork/review/263-second-gate.html` (**being rebuilt** — it still says
