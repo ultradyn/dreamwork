@@ -17,8 +17,12 @@ finding about the test, not relief about the code.
 """
 import ast
 import os
+import signal
+import socket
 import subprocess
 import sys
+import textwrap
+import time as _time
 from pathlib import Path
 
 import pytest
@@ -295,3 +299,327 @@ def test_resolve_snapshot_and_assert_server_cli_wire(monkeypatch, tmp_path, repo
         cwd=str(root), capture_output=True)
     assert r1.returncode == 1
     assert b"not the server module" in r1.stderr
+
+
+# --- #431: stop the process that owns the deploy port, never pkill -f -------
+#
+# The defect: `just deploy` did `pkill -f "$(basename "$snap")"`, and pkill -f
+# matches ANY process whose command line merely *mentions* the pattern — the
+# deploy shell, a pgrep check, a comment. Four times on 2026-07-28, including
+# a coordinator shell with exit 144.
+#
+# The production line whose removal fails the fix tests is
+# `stop_deployed` in dev/deploy_state.py (and the justfile call to
+# `--stop-deployed`). The production line whose REINSTATEMENT fails the
+# justfile pin is `pkill -f "$(basename "$snap")"` in the deploy recipe.
+#
+# Unique pattern per run so these tests can never touch the live dashboard
+# on :35110 (basename `ud-dreamwork-watch.py`).
+
+
+def _unique_snap_name():
+    """A basename no live process on this machine will match by accident."""
+    return f"deploykill431-{os.getpid()}-{os.urandom(3).hex()}-watch.py"
+
+
+def _start_decoy(pattern: str):
+    """A process whose command line merely MENTIONS `pattern`, but is not
+    running a file by that name. The #431 victim class (coordinator shell,
+    pgrep check, a comment — anything pkill -f would hit).
+
+    `python3 -c '… # pattern'` keeps the pattern in argv for the process's
+    whole life. Measured dead ends that look simpler and are not:
+    - bash -c with a comment then sleep: bash optimises the final sleep into
+      an exec and the pattern vanishes from cmdline.
+    - sleep with a trailing arg: GNU sleep sums its args as intervals and
+      rejects a non-number with exit 1.
+    """
+    return subprocess.Popen(
+        [sys.executable, "-c", f"import time; time.sleep(120)  # {pattern}"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+
+
+def _alive(pid: int) -> bool:
+    """True if `pid` is a running (non-zombie) process.
+
+    A zombie still answers `os.kill(pid, 0)` and still has a /proc entry, so
+    kill-success alone is not enough — after SIGTERM a reaped-but-unwaited
+    child looks "alive" forever and the red-proof assertion would lie.
+    """
+    try:
+        with open(f"/proc/{pid}/status") as f:
+            for line in f:
+                if line.startswith("State:"):
+                    # e.g. "State:\tZ (zombie)" — not running.
+                    state = line.split()[1]
+                    return state != "Z"
+    except FileNotFoundError:
+        return False
+    except PermissionError:
+        return True
+    return False
+
+
+def _pgrep_f(pattern: str):
+    """Pids whose command line matches `pattern` (same instrument as the bug)."""
+    r = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True)
+    if r.returncode not in (0, 1):
+        r.check_returncode()
+    return [int(x) for x in r.stdout.split() if x]
+
+
+def test_pkill_f_kills_decoy_that_merely_mentions_pattern():
+    """RED proof of the #431 defect: `pkill -f <pattern>` kills a decoy whose
+    command line only *mentions* the pattern in a comment.
+
+    This test documents the bug and does not call production code. It is the
+    red half the brief requires: reinstate the old form and watch the
+    self-match. Precondition asserted: the decoy is alive AND pgrep -f finds
+    it (matched the pattern) before pkill runs — a check with no decoy
+    passes forever.
+    """
+    pattern = _unique_snap_name()
+    decoy = _start_decoy(pattern)
+    try:
+        # Precondition the check depends on: decoy alive AND pattern-matched.
+        assert _alive(decoy.pid), "decoy failed to start"
+        matched = _pgrep_f(pattern)
+        assert decoy.pid in matched, (
+            f"precondition failed: decoy {decoy.pid} is alive but pgrep -f "
+            f"{pattern!r} did not match it (got {matched}) — without a real "
+            f"match this test cannot prove pkill -f over-kills")
+        # The old production line:
+        subprocess.run(["pkill", "-f", pattern], check=False)
+        # Reap so a zombie does not look alive to /proc.
+        try:
+            decoy.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        assert not _alive(decoy.pid), (
+            f"pkill -f {pattern!r} did not kill decoy {decoy.pid} — the "
+            f"documented defect did not reproduce; the rest of the suite "
+            f"cannot claim to fix it")
+        assert decoy.returncode is not None and decoy.returncode != 0
+    finally:
+        try:
+            os.kill(decoy.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        decoy.wait(timeout=2)
+
+
+def test_stop_deployed_spares_decoy_that_merely_mentions_pattern(tmp_path):
+    """The fix: `stop_deployed` does not kill a process that merely mentions
+    the snap basename. Only the owner of `--port` whose argv is `--snap`.
+
+    Production line whose removal fails this test: `stop_deployed`'s
+    `argv_runs_snap` gate (or replacing the whole function with
+    `pkill -f basename(snap)`). Precondition: decoy alive and pattern-matched
+    *before* the stop step.
+    """
+    pattern = _unique_snap_name()
+    snap = tmp_path / pattern
+    snap.write_text("# not a real server\n")
+    decoy = _start_decoy(pattern)
+    try:
+        assert _alive(decoy.pid), "decoy failed to start"
+        matched = _pgrep_f(pattern)
+        assert decoy.pid in matched, (
+            f"precondition failed: decoy {decoy.pid} alive but not matched by "
+            f"pgrep -f {pattern!r} (got {matched})")
+        # No server on this port — stop should be a quiet no-op, exit 0.
+        # Pick an ephemeral free port so we never touch :35110 or guard ranges.
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            free_port = s.getsockname()[1]
+        rc = ds.stop_deployed(free_port, str(snap))
+        assert rc == 0
+        assert _alive(decoy.pid), (
+            f"stop_deployed killed decoy {decoy.pid} whose cmdline only "
+            f"mentioned {pattern!r} — the #431 fix is not in place")
+    finally:
+        try:
+            os.kill(decoy.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        decoy.wait(timeout=2)
+
+
+def test_stop_deployed_kills_only_the_listener_running_the_snap(tmp_path):
+    """Positive half: a process listening on an ephemeral port whose argv is
+    the snap path IS stopped; a sibling decoy that merely mentions the
+    basename is not.
+
+    Production line: `stop_deployed` → `listening_pid` + `argv_runs_snap` +
+    `os.kill`. Replacing any of those with `pkill -f` makes the decoy die
+    (caught by the assertion below) or fails to free the port.
+    """
+    pattern = _unique_snap_name()
+    snap = tmp_path / pattern
+    # Minimal listener: bind the given port and sleep. argv[0]=python, argv[1]=snap.
+    snap.write_text(textwrap.dedent("""\
+        import socket, sys, time
+        port = int(sys.argv[1])
+        s = socket.socket()
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("127.0.0.1", port))
+        s.listen(1)
+        while True:
+            time.sleep(1)
+    """))
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    # Guard ranges are 39880-39899 / 39880-39889; ephemeral is fine and
+    # must never be :35110 (the live human dashboard — never touch it).
+    assert port != 35110
+    assert not (39880 <= port <= 39899)
+
+    server = subprocess.Popen(
+        [sys.executable, str(snap), str(port)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+    decoy = _start_decoy(pattern)
+    try:
+        # Wait until the port is actually held by our server.
+        deadline = _time.time() + 3
+        owner = None
+        while _time.time() < deadline:
+            owner = ds.listening_pid(port)
+            if owner == server.pid:
+                break
+            _time.sleep(0.05)
+        assert owner == server.pid, (
+            f"precondition failed: expected server pid {server.pid} on "
+            f":{port}, got {owner} — stop would have nothing real to kill")
+        assert _alive(decoy.pid)
+        matched = _pgrep_f(pattern)
+        assert decoy.pid in matched, (
+            f"precondition failed: decoy {decoy.pid} not matched by "
+            f"pgrep -f before stop (got {matched})")
+        assert ds.argv_runs_snap(ds.process_argv(server.pid), str(snap)), (
+            "server must be identifiable as running the snap before stop")
+
+        rc = ds.stop_deployed(port, str(snap), wait_s=3.0)
+        assert rc == 0, "stop_deployed should succeed on our own listener"
+        try:
+            server.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        assert not _alive(server.pid), f"server {server.pid} still alive"
+        assert ds.listening_pid(port) is None
+        assert _alive(decoy.pid), (
+            f"decoy {decoy.pid} was killed — stop was not pid-exact")
+    finally:
+        for p in (server, decoy):
+            try:
+                os.kill(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.wait(timeout=2)
+
+
+def test_stop_deployed_refuses_foreign_listener(tmp_path):
+    """Fail loud: a listener on the port whose argv is NOT the snap is not
+    signalled. Killing nothing and saying so beats killing the shell.
+
+    Production line: the `if not argv_runs_snap` refuse branch in
+    `stop_deployed`. Delete it (fall through to kill) and this fails.
+    """
+    pattern = _unique_snap_name()
+    our_snap = tmp_path / pattern
+    our_snap.write_text("# unused\n")
+    foreign = tmp_path / f"foreign-{os.getpid()}.py"
+    foreign.write_text(textwrap.dedent("""\
+        import socket, sys, time
+        port = int(sys.argv[1])
+        s = socket.socket()
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("127.0.0.1", port))
+        s.listen(1)
+        while True:
+            time.sleep(1)
+    """))
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    assert port != 35110
+    proc = subprocess.Popen(
+        [sys.executable, str(foreign), str(port)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+    try:
+        deadline = _time.time() + 3
+        while _time.time() < deadline and ds.listening_pid(port) != proc.pid:
+            _time.sleep(0.05)
+        assert ds.listening_pid(port) == proc.pid
+        rc = ds.stop_deployed(port, str(our_snap))
+        assert rc == 1, "must refuse a foreign listener"
+        assert _alive(proc.pid), "foreign listener must not be signalled"
+    finally:
+        try:
+            os.kill(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait(timeout=2)
+
+
+def test_justfile_deploy_does_not_use_pkill_f():
+    """Pin the production recipe: `just deploy` must not *run* `pkill -f`.
+
+    Production line: the deploy recipe body in justfile. Reinstate
+    `pkill -f "$(basename "$snap")"` as a command and this goes red — that
+    is the named-line red-run for the wiring half of #431. Comments that
+    *mention* the forbidden form are fine (and expected).
+    """
+    import re
+    root = Path(__file__).resolve().parent
+    text = (root / "justfile").read_text()
+    # Isolate the deploy recipe (from `deploy rev=` to the next top-level recipe).
+    start = text.index("\ndeploy rev=")
+    rest = text[start + 1:]
+    end = len(rest)
+    for i, line in enumerate(rest.splitlines()[1:], start=1):
+        if line and not line[0].isspace() and not line.startswith("#") and ":" in line:
+            offset = 0
+            for j, l in enumerate(rest.splitlines()):
+                if j == i:
+                    end = offset
+                    break
+                offset += len(l) + 1
+            break
+    recipe = rest[:end]
+    # Only non-comment command lines count — a doc comment saying "Never
+    # `pkill -f`" is not the defect.
+    cmd_lines = []
+    for line in recipe.splitlines():
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        cmd_lines.append(stripped)
+    joined = "\n".join(cmd_lines)
+    assert not re.search(r"\bpkill\s+-f\b", joined), (
+        "deploy recipe still runs pkill -f — that is the #431 defect:\n"
+        + joined)
+    assert "--stop-deployed" in joined
+    assert "dev/deploy_state.py" in joined
+
+
+def test_stop_deployed_cli_wire(tmp_path):
+    """CLI verb the justfile calls: --stop-deployed --port N --snap PATH.
+
+    Production line: the `if args.stop_deployed` branch in main().
+    """
+    root = Path(__file__).resolve().parent
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    snap = tmp_path / _unique_snap_name()
+    snap.write_text("# none\n")
+    r = subprocess.run(
+        [sys.executable, "dev/deploy_state.py",
+         "--stop-deployed", "--port", str(port), "--snap", str(snap)],
+        cwd=str(root), capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "nothing to stop" in r.stdout

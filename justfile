@@ -357,17 +357,23 @@ deploy rev="HEAD":
     # blob whose content is the TARGET PATH, so once watch.py becomes a symlink
     # (the #368 plan: watch.py -> deprecated/watch.py), `git show {{rev}}:watch.py`
     # emits the 19-byte string `deprecated/watch.py`, the old `ast.parse` guard
-    # accepted it (it parses as `deprecated / watch.py`), pkill took the good
-    # server down, and the garbage snapshot died on import — leaving his
+    # accepted it (it parses as `deprecated / watch.py`), a bad stop took the
+    # good server down, and the garbage snapshot died on import — leaving his
     # dashboard dark. Both calls below live in dev/deploy_state.py and are the
     # SAME resolver/guard the state report uses, so the recipe and deploy_state
-    # agree by construction. The guard PRECEDES pkill on purpose: a snapshot
+    # agree by construction. The guard PRECEDES the stop on purpose: a snapshot
     # that is not the server is refused with the dashboard still up.
     python3 dev/deploy_state.py --resolve-snapshot {{rev}} > "$snap.tmp"
     python3 dev/deploy_state.py --assert-server "$snap.tmp" \
       || { rm -f "$snap.tmp"; echo "deploy refused: snapshot is not the server (broken link or corrupt {{rev}}) — his dashboard was left running"; exit 1; }
     mv "$snap.tmp" "$snap"
-    pkill -f "$(basename "$snap")" 2>/dev/null || true
+    # #431 — stop ONLY the process listening on $port whose argv is $snap.
+    # Never `pkill -f <basename>`: that matches any process whose command line
+    # merely *mentions* the pattern (the deploy shell, a pgrep, a comment) and
+    # killed a coordinator shell with exit 144. Identify by the listening
+    # socket, verify via /proc/<pid>/cmdline, signal that pid alone.
+    python3 dev/deploy_state.py --stop-deployed --port "$port" --snap "$snap" \
+      || { echo "deploy refused: could not identify the process to stop on :$port — left it alone"; exit 1; }
     sleep 1
     nohup python3 "$snap" --target "$PWD" --dev >"$dir/serve.log" 2>&1 &
     for _ in $(seq 1 20); do
