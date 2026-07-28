@@ -263,12 +263,17 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
     <div>
       <div class="kicker"><h1>The condition is met, verified this time. Open it?</h1><span class="proposal">gate-open · one sequencing call</span></div>
       <div class="sub">task #263 · 28 July 2026 · every figure re-measured at build time</div>
-      <p class="lead"><strong>The ask.</strong> His 05:43 condition was <em>"until A–D are
-      proved"</em>. They are: <strong>A 2/2 · B 8/8 · C 5/5 · D 4/4 · F 4/4</strong>, and this time a
-      merge gate asserted it — taking its denominator from the plan's own increment table rather than from a
-      lane's count. <strong>The second gate is genuinely his to open.</strong> Rec:
-      <code>rec</code> — <strong>open E and H, split <code>#368</code> first</strong> — or answer Q1/Q2/Q3
-      below. Free text fine; <em>"not yet"</em> is a real answer.</p>
+      <div id="ask" class="ask-block">
+        <div class="label">The decision — open the second gate?</div>
+        <p class="ask-q">His 05:43 condition was <em>"until A–D are proved"</em>. They are:
+        <strong>A 2/2 · B 8/8 · C 5/5 · D 4/4 · F 4/4</strong>, and this time a merge gate asserted
+        it — taking its denominator from the plan's own increment table rather than from a lane's
+        count. <strong>The second gate is genuinely his to open.</strong></p>
+        <p class="ask-answers"><span class="key">accepted answers</span>
+        <code>rec</code> &nbsp;&middot;&nbsp; <strong>open E and H, split <code>#368</code>
+        first</strong> &nbsp;&middot;&nbsp; Q1/Q2/Q3 below &nbsp;&middot;&nbsp; free text
+        &nbsp;&middot;&nbsp; <em>"not yet"</em> is a real answer</p>
+      </div>
       <div class="call"><strong>Why trust it now — the correction, kept visible.</strong> At 16:24 this
       page and the questions entry said the condition was met. <strong>Wrong:</strong> lane C was then
       <strong>3 of 5</strong>. The ledger line read <em>"lane C DONE … <code>C1</code>, <code>C2</code>,
@@ -288,8 +293,25 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   </div>
 </header>
 
-<section id="ask" aria-labelledby="ask-t">
-  <div class="label" id="ask-t">The decision — open the second gate?</div>
+<style>
+/* Page-local. Tokens only — no hex (watch-design.md / template contract).
+   .ask-block mirrors the #421 idiom: the decision sits inside the hero, near
+   its top, so #ask starts above the fold on mobile instead of after an 899px
+   header (#429). No transition authored here — a static bordered block. */
+.ask-block{
+  border-left:2px solid var(--accent);
+  padding:.35rem 0 .35rem 1.3ch;
+  margin:.4rem 0 .2rem;
+}
+.ask-block .label{margin:0 0 .4rem;color:var(--accent)}
+.ask-block .ask-q{font-size:.92rem;line-height:1.6;color:var(--lit);margin:.15rem 0 .55rem}
+.ask-block .ask-answers{margin:.3rem 0;font-size:.78rem;color:var(--muted)}
+.ask-block .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.ask-block code{color:var(--lit)}
+</style>
+
+<section id="decisions" aria-labelledby="dec-t">
+  <div class="label" id="dec-t">The three calls in full — open the gate, and split #368?</div>
   <div class="notice"><strong>Condition met, verified this time.</strong> A–D are proved, asserted by
   a gate whose denominator is parsed from the plan's own increment table (five C rows). Opening it
   authorises lanes E and H only. Lane G (30–33), increment 18's purge, 19's PostgreSQL half and any
