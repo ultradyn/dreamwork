@@ -24,9 +24,31 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **410**
+Next id: **411**
 
 ## Open
+- **#410** — `ccc @grok` is 401 and has been silently eating lanes: two died at three seconds
+  with nothing in the tree · **P1** · dogfood/orchestration · origin: **loop** · found by capturing
+  a lane's stderr after the second death
+  · **the error, verbatim:** `Unauthorized (401) from https://cli-chat-proxy.grok.com/v1/responses:
+  Invalid or expired credentials (auth_kind=none, x_xai_token_auth=xai-grok-cli, upstream=
+  Unauthenticated, reason=no auth context)`, `Model: grok-4.5`, ccc version `0.2.112`
+  · **`ccc @glm52` is ALIVE** and answered a probe immediately. It routes through the same runner
+  binary (the warning still says `runner "grok"`) but on a model whose auth works, so this is a
+  per-model credential failure, not the CLI being down. `#399b` was re-dispatched to it
+  · **the reason this cost two lanes and forty minutes is mine, and it is the general lesson.** I
+  dispatched with `> /dev/null 2>&1`, so the 401 went to a discarded stderr and a lane that died
+  before its first token was indistinguishable from one that ran and reported nothing. I diagnosed
+  the FIRST death as a mystery and re-dispatched into the same wall
+  · **and ccc's own run log does not save you:** `~/.local/state/cc-w/ccc/runs/<run>/` exists and
+  holds `output.txt` and `transcript.txt`, but for a 401 death **both are zero bytes**. The error is
+  on stderr only. So the dispatch recipe must redirect stderr to a file the coordinator can read —
+  `> "$LOG" 2>&1` — and that is now the recipe
+  · **owed to him, since he asked which providers work for us:** grok is his fast runner and it is
+  down, so the fleet is one slower runner deep until the credential is refreshed. He is the only
+  one who can refresh it; filed rather than attempted
+  · related: **#402**
+
 - **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
   right now · P2 · handoffs/correctness · origin: **loop** · **predicted by the `#401` lane in its
   neighbour table and not filed by it; found in the tree one minute later**
@@ -248,7 +270,7 @@ Next id: **410**
   · deliberately **not** fixed inline: this is the same tool and the same class as the `dreamers`
   half above, so it belongs to one lane, not to a coordinator patch. The **data** was corrected by
   hand at 10:26 as tick hygiene; the **tool** is still wrong
-  · related: **#401, #264, #403, #405**
+  · related: **#401, #264, #403, #405, #410**
 
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
   P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
