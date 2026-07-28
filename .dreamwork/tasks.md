@@ -3212,6 +3212,8 @@ Next id: **421**
   unblock work he believes he is blocking is a direct cost, and the failure is silent on both sides
   · related: **#264, #294, #289, #420**
 
+## Recently landed
+
 - **#420** — a census of everything not done, because nobody has a view of 138 open entries · P2 ·
   loop-tooling/grooming · origin: **human** · **human via watch `/answers` 2026-07-28 15:25**
   · verbatim: *"at some point soon, get a glm52 node to do a complete scan over our tasks and give
@@ -3237,8 +3239,31 @@ Next id: **421**
   hand-rolled parsers were wrong here today, including two that damaged sectioned files, against a
   file whose production parser was importable every time
   · related: **#419, #413**
-
-## Recently landed
+  · **CLOSED `61354fb`** (lane commit `2d7e242`, `ccc @glm52`, **~14 minutes**, read-only).
+  `.dreamwork/docs/open-task-census.md`
+  · **it paid for itself in one section.** Ten entries said *"blocked on #N"* where `#N` is in the
+  landed set — the composer cluster `#244/#242/#241` all behind a single landed `#238`, `#360`/`#276`
+  behind `#233`, plus `#337`, `#333`, `#249`, `#218` and `#172`. Nine cleared in `30458af` after I
+  re-verified each with `parse_ledger`; `#172` was the tenth and closed on its own. **A blocker that
+  clears is invisible from the blocked side** — nothing re-reads a blocked entry — so this is a class
+  the loop cannot find by working, only by scanning
+  · derived headline: **139 open / 175 landed, 99 startable now**, 5 live on his desk, 24
+  task-blocked, 24 at P1-or-hotter. My brief's *"138"* was already stale when it was written, which
+  is the argument for the no-literal-counts rule it imposed
+  · **it found `#419`'s live cost has moved to the reverse direction.** The no-question half closed
+  when I filed `#419` and the `#264` ask; what remains is **answered-but-unprocessed** — `#254`,
+  `#367`, `#371`, `#50`, with `#371`'s body still saying *"blocked on #263 Q2"* which he answered at
+  05:43. Those four are ready-made red fixtures, and `#419`'s check must cover both directions
+  · one honest ambiguity reported rather than smoothed: `#353` forbids starting without his S1/S2/S4
+  ruling and **no question names `#353`**, though `Q#264` covers it transitively — *"a reader on #353
+  alone cannot tell"*. Medium confidence, flagged as such
+  · **a finding about the ledger itself**: the `type` token is freeform prose with **80 distinct
+  spellings** across 139 entries, so any *"N bugs, M features"* summary would invent a taxonomy the
+  ledger does not keep. It declined to invent one, and that is the cheaper half of the argument for
+  `#346`'s strict schema
+  · used only the production parsers and said so — `parse_ledger` and `ledger_entries` agree on all
+  139 ids, both headings match exactly once. The brief demanded that after four hand-rolled parsers
+  went wrong in one day, and the agreement line is worth having
 
 - **#172** — Put project identity prominently in the title section · P1 ·
   implementation · 25m · **human via watch `do-next` 14:01** · show the
