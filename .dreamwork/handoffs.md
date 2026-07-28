@@ -34,3 +34,5 @@ append — never a deletion — so a folded hand-off is not flagged twice.
 - **#401** · landed `e53d70c` · 2026-07-28 10:09 · by ccc @grok — hand-off id grammar accepts plain/sub-id/combined; malformed outside section; Folded-then-Pending so EOF append works (#401+#406)
 
 - **#399** · landed `ddc6614` · 2026-07-28 12:08 · by dreamer-399b @grok — _landed_ids counts the historical inline form again (col0 + ref-field exclusion keeps #367 closed); burndown + forgotten_folds both green, 3 opposite-direction reds proven; just-test exit 1 is 3 pre-existing/unrelated guards (qacard=#392, docktarget/noteprop=motion flake under load) proven identical on master
+
+- **#331** · landed `ddc4e3e` · 2026-07-28 13:13 · by dreamer-331 — one IDS_ONLY_SPAN core in watch.py, consumed by lint.LEDGER_ID and status_sync.LEDGER_HEAD; landed 152→171, open 135, all 19 joined-span ids recovered; red-proved both directions; the three guard reds (qacard/docktarget/noteprop) reproduce at parent 97becd9 and were fixed on master by 7007d5b+e15b0c0 (guard-contract fixes, not this parser change)
