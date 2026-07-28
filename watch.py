@@ -9048,6 +9048,55 @@ def list_reviews(review_dir):
     return reviews
 
 
+def skill_identity(target=None):
+    """`{commit, skill_version}` — the identity of the SKILL tree this process
+    is running from, so a running agent can tell its own tree moved (#426).
+
+    Two independent facts, never one: `commit` is the short HEAD sha of the
+    skill tree (where this module lives), `skill_version` is the latest filename
+    in `migrations/` (which IS the skill's version, per `migrations/README.md`).
+    The two-question discipline is `dev/deploy_state.py`'s: either alone
+    misleads. `commit` moves on every change; `skill_version` moves only on a
+    migration — so a commit-only delta is "the tree changed, maybe not for me"
+    and a skill_version delta is "the tree changed in a way defined to reach
+    me". A running agent records these at start and compares at increment
+    boundaries; on a skill_version delta it reads the intervening migrations
+    before the next increment.
+
+    Reads the SKILL tree (`__file__`'s directory), never `target` — the target
+    is somebody's project, and its git identity is a different question
+    (`serving_report`). A deployed snapshot is a single file with no sibling
+    `migrations/` and no `.git`, so both are `None` there; its *revision* is
+    answered separately by `serving_report` (byte-compares the running bytes
+    vs the target's history). Collapsing the two would read as reassurance and
+    answer half.
+
+    Never raises: this rides `/data.json`, and a crash takes the page down.
+    `target` is accepted (and ignored) so `collect(target)` can call it
+    uniformly with the other per-request readers; identity is a property of
+    the running process, not the target.
+    """
+    skill_dir = os.path.dirname(os.path.abspath(__file__))
+    out = {"commit": None, "skill_version": None}
+    try:
+        out["commit"] = subprocess.run(
+            ["git", "--no-optional-locks", "-C", skill_dir,
+             "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=10
+        ).stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        mig = os.path.join(skill_dir, "migrations")
+        names = [f for f in os.listdir(mig)
+                 if f.endswith(".md") and f != "README.md"]
+        if names:
+            out["skill_version"] = max(names)   # lexicographic == chronological
+    except OSError:
+        pass
+    return out
+
+
 def collect(target):
     now = time.time()
     dw = os.path.join(target, ".dreamwork")
@@ -9118,6 +9167,15 @@ def collect(target):
         # of `.dreamwork/`, so a plugin loading mid-session reaches the
         # composer on the next tick with no reload and no new channel.
         "plugin_commands": plugin_commands(target),
+        # #426 — the skill tree's identity (commit + latest migration), so a
+        # running agent can tell its own tree moved. Reads the SKILL tree, not
+        # the target; rides /data.json and the /mtime poll so an open page and
+        # a running agent converge on the same identity with no new channel.
+        # The defined action on a delta is per-surface (design:
+        # .dreamwork/docs/reload-signal-design.md): a lane finishes its
+        # current increment then reloads; the server already reloads via
+        # GENERATION on re-deploy.
+        "skill_identity": skill_identity(target),
     }
 
 

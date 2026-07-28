@@ -5723,3 +5723,86 @@ class TestHandoffMultiSha(unittest.TestCase):
         self.assertEqual(len(recs), 1)
         self.assertEqual(recs[0]["shas"], [sha_a, sha_b])
         self.assertEqual(recs[0]["sha"], sha_a)
+
+
+class TestSkillIdentity(unittest.TestCase):
+    """#426 — the identity signal a running agent reads to tell its own tree moved.
+
+    Two independent facts (the same two-question discipline as deploy_state):
+    `commit` (short HEAD sha of the SKILL tree, where watch.py lives) and
+    `skill_version` (the latest migration filename, which IS the skill's version
+    per migrations/README.md). A running agent records these at start and
+    compares at increment boundaries; on a skill_version delta it reads the
+    intervening migrations before the next increment.
+
+    The function reads the SKILL tree (where watch.py lives), never the target —
+    the target is somebody's project, and its git identity is a different
+    question (answered by serving_report). Design:
+    `.dreamwork/docs/reload-signal-design.md`.
+    """
+
+    def _skill_dir(self):
+        return os.path.dirname(os.path.abspath(watch.__file__))
+
+    def test_returns_both_keys_and_never_raises(self):
+        # the shape: both keys present, values are str-or-None. Never raises,
+        # because this rides /data.json and a crash takes the page down.
+        ident = watch.skill_identity()
+        self.assertIsInstance(ident, dict)
+        self.assertEqual(set(ident), {"commit", "skill_version"})
+        for k in ("commit", "skill_version"):
+            v = ident[k]
+            self.assertTrue(
+                v is None or (isinstance(v, str) and len(v) > 0),
+                f"{k} must be a non-empty str or None, got {v!r}")
+
+    def test_commit_and_skill_version_match_the_skill_tree_at_runtime(self):
+        # PRECONDITION (asserted, not assumed): the skill dir is a git checkout
+        # AND carries migrations/. Without both, this check is hollow — a None
+        # return is the right answer for a deployed snapshot (no checkout, no
+        # migrations), and asserting non-None there would be a check with an
+        # invisible expiry. Derive both expected values at runtime so a literal
+        # tuned to today's tree cannot pass.
+        import subprocess
+        skill_dir = self._skill_dir()
+        migrations = os.path.join(skill_dir, "migrations")
+        # assert the precondition the check depends on
+        self.assertTrue(
+            os.path.exists(os.path.join(skill_dir, ".git")) or
+            subprocess.run(["git", "-C", skill_dir, "rev-parse", "--is-inside-work-tree"],
+                           capture_output=True).returncode == 0,
+            "skill dir is not a checkout — commit check is hollow against this tree")
+        names = [f for f in os.listdir(migrations)
+                 if f.endswith(".md") and f != "README.md"] if os.path.isdir(migrations) else []
+        self.assertTrue(names, "no migrations on disk — skill_version check is hollow")
+
+        ident = watch.skill_identity()
+
+        # expected commit: short HEAD sha of the skill tree, derived independently
+        expected_commit = subprocess.run(
+            ["git", "--no-optional-locks", "-C", skill_dir, "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True).stdout.strip()
+        self.assertTrue(expected_commit, "could not derive expected commit — check is hollow")
+        self.assertEqual(ident["commit"], expected_commit)
+
+        # expected skill_version: latest migration by lexicographic sort (README protocol)
+        expected_version = max(names)
+        self.assertEqual(ident["skill_version"], expected_version)
+        # the two values differ in form (sha vs filename) — assert they are not
+        # accidentally the same string, which would mean the function conflated them
+        self.assertNotEqual(ident["commit"], ident["skill_version"],
+                            "commit and skill_version collapsed to one value")
+
+    def test_collect_exposes_skill_identity(self):
+        # rides /data.json and the /mtime poll, so an open page and a running
+        # agent converge on the same identity without a new channel.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            data = watch.collect(d)
+            self.assertIn("skill_identity", data)
+            ident = data["skill_identity"]
+            self.assertIsInstance(ident, dict)
+            # the target is a temp dir (not the skill tree), but identity reads
+            # the skill tree, so both keys must be populated here
+            self.assertIsNotNone(ident.get("commit"))
+            self.assertIsNotNone(ident.get("skill_version"))
