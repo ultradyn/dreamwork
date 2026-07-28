@@ -996,3 +996,40 @@ The ranked list above still holds, and this batch added a fifth that belongs on 
    but noticing two readings disagree: `ls` said six files gone while `lint` said
    `handoffs.md`, `questions.md` and `watch-port` were all fine. A directory cannot be
    half-deleted.
+
+## A prediction, written at 11:22 while the lane is still running
+
+Recording this **before** the outcome so it is a prediction and not an explanation
+invented afterwards.
+
+The `#399b` lane (`@glm52`, glm-5.2, reasoning-effort high) is **20 minutes in with 42
+seconds of CPU and not one byte written** — no commits, clean worktree. Its one flushed
+message, at T+1min, states the diagnosis correctly and completely. So it understood the
+task immediately and has produced nothing since.
+
+**Hypothesis: the brief is too long for this runner.** `399b-landed-history.md` is ~150
+lines and dense — seven acceptance criteria, a discriminating-pair red requirement, five
+enumerated neighbours, a hollow-outcome warning, and a "who calls this" question. That
+shape has worked well on `@grok` (lane B did a three-guard characterisation matrix from a
+brief of similar weight, in 38m). It may be actively wrong for a slower model at high
+reasoning effort: **every criterion is another thing to hold, and holding is what this
+runner is slow at.**
+
+**What would confirm it:** a short brief — the fix, one test, `just test` green, nothing
+else — completing faster on the same runner. **What would refute it:** this lane landing a
+complete answer at ~35 minutes, i.e. the brief was fine and glm-5.2 is simply slow and
+back-loaded (which the 05:58 observability note predicts, since grok-runner lanes write
+nothing until exit).
+
+The second is quite possible and I should not act as though the first is established. The
+distinguishing evidence is CPU: **42 seconds over 20 minutes is not a model thinking
+hard**, it is a model waiting on a slow API. If the brief were the problem I would expect
+CPU to accrue. So on the evidence I have, "slow and back-loaded" is currently the better
+explanation, and the brief-length hypothesis is the one I would test second, not first.
+
+**Either way, one thing is already measured and does not depend on which is right:** the
+coordinator-only mode has left `master` red for over an hour on a P1 whose diagnosis,
+merge gate, and independently-derived analysis were all complete within the first fifteen
+minutes. **The bottleneck is not knowing what to do; it is having someone to do it.** That
+is the most important dogfood result of the session so far, and it is a cost of the mode
+rather than a fault of any runner.
