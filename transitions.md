@@ -590,6 +590,16 @@ exception; an element leaving fades rather than vanishing.
   countdown. Guard: `dev/capture/runmode.mjs` (intermediate bar widths
   under motion, ≤2 under RM, reset, event exactly-once, hierarchical
   disabled).
+- **Burndown column hover (#417).** A per-column readout (`.bdtip`) names
+  open · arrived↑/landed↓ · commits so the level line's two meanings
+  (height = open, weight = commits) are learnable. It is an **arrival** —
+  no size floor — and reuses the rundesc atmospheric envelope rather than
+  a second idiom: start pose (opacity 0, blur, 3px rise) then ease in;
+  departure adds `.depart` and dissolves upward. The tip floats
+  (`position:absolute` inside `.bd`) so it never changes the panel's
+  constant height. Reduced motion snaps both ways. Guard:
+  `dev/capture/burndown.mjs` (numbers derived from served data, mid-frame
+  opacity, RM parity).
 - **Run-mode description morph (#300).** One shared `#rundesc` shell under
   the chips explains the hovered/focused mode. **First arrival** snaps the
   shell to a pose (opacity 0, blur, 4px rise) then eases in on the page's

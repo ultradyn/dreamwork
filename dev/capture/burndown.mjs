@@ -67,12 +67,14 @@ declare({
           'git commit to the planted ledger while the first page is open ' +
           '(the /mtime poll path); POST /command {add-idea} then ' +
           '`tick()` (a re-render that changes no number); a reduced-motion ' +
-          'context on the first target',
+          'context on the first target; pointer hover on a level column ' +
+          'and a reduced-motion hover of the same column',
   traceWindow: '4.2s per motion capture — one /mtime poll (2s) plus the bar ' +
                'travel — deliberately stopping before the next tick could ' +
                'supply the motion being asserted (the regroup.mjs trap); ' +
                '1.2s for the quiet-tick capture; panel-height and ' +
-               'panel-below premises measured across the same 4.2s window'
+               'panel-below premises measured across the same 4.2s window; ' +
+               '0.7s for the hover tip arrival'
 });
 
 // ── a planted ledger history ──────────────────────────────────────────────
@@ -100,7 +102,11 @@ git(['init', '-q'], T0);
 // six hourly steps, with an arrival profile this guard can name. #1 is
 // GROOMED OUT of the landed section at the end — a completion read from the
 // current contents would lose it, and that is the load-bearing property.
+// #417: the first hour gets TWO ledger commits so peak>1 (weight maps to
+// 6px) and a later quiet gap (no rev in that hour) can sit at 0 commits
+// (1px) — the edges the weight mapping must distinguish.
 commit([1, 2, 3], [], T0);
+commit([1, 2, 3, 4], [], T0 + 300);            // still hour 0 — peak ≥ 2
 commit([2, 3, 4, 5], [1], T0 + 3600);
 commit([3, 4, 5, 6, 7, 8], [1, 2], T0 + 2 * 3600);
 commit([4, 5, 6, 7, 8], [2, 3], T0 + 3 * 3600);
@@ -133,6 +139,7 @@ const READ = `(() => {
   if (!bd) return { present: false };
   const bars = [...bd.querySelectorAll('.bdbar[data-bk]')];
   const cols = [...bd.querySelectorAll('.bdnet .bdcol')];
+  const levels = [...bd.querySelectorAll('.bdlevel[data-bk]')];
   const probe = document.createElement('span');
   probe.style.color = 'var(--accent)';
   document.body.appendChild(probe);
@@ -142,6 +149,8 @@ const READ = `(() => {
     const cs = getComputedStyle(b);
     return cs.backgroundColor + '|' + cs.borderTopColor;
   });
+  const copy = bd.querySelector('.bdcommit-copy');
+  const copyCs = copy ? getComputedStyle(copy) : null;
   return {
     present: true,
     head: (bd.querySelector('.bdhead') || {}).textContent || '',
@@ -158,6 +167,21 @@ const READ = `(() => {
     // nothing in this panel does
     accentUsed: paint.some(c => c.includes(accent)),
     titles: cols.map(c => c.getAttribute('title')),
+    // #417 c4
+    commitCopy: copy ? copy.textContent.trim() : '',
+    copyEllipsis: !!(copyCs && copyCs.textOverflow === 'ellipsis'),
+    copyOverflow: !!(copy && copy.scrollWidth > copy.clientWidth + 1),
+    // #417 c3 — per-column cap weights (border-top-width) and data-commits
+    caps: levels.map(b => ({
+      bk: b.dataset.bk,
+      commits: +(b.dataset.commits || 0),
+      px: parseFloat(getComputedStyle(b).borderTopWidth) || 0,
+    })),
+    colData: cols.map(c => ({
+      open: c.dataset.open, arrived: c.dataset.arrived,
+      landed: c.dataset.landed, commits: c.dataset.commits,
+      stamp: c.dataset.stamp || '',
+    })),
   };
 })()`;
 
@@ -184,11 +208,102 @@ ok('the head states the three totals it is a picture of',
    /\b4 open · 9 arrived · 5 landed · hourly\b/.test(r0.head || ''));
 ok('...and a completion GROOMED out of the landed section still counts ' +
    '(#1, #2 and #3 were pruned)', /\b5 landed\b/.test(r0.head || ''));
-ok('a column names its bucket and all three numbers',
+ok('a column names its bucket and all four numbers (open · flow · commits)',
    !!r0.titles && r0.titles.length === r0.cols &&
-   r0.titles.every(t => /arrived · \d+ landed · \d+ open$/.test(t || '')));
+   r0.titles.every(t =>
+     /\d+ open · \d+ arrived · \d+ landed · \d+ commits?$/.test(t || '')));
 ok('the panel spends no accent — nothing in it is waiting on him',
    r0.accentUsed === false);
+
+/* ── #417 c3 + c4, derived from the served series ───────────────────────
+   Never compare against a literal pixel height or a hard-coded copy string
+   tuned to today's fixture — both expire. Figures come from /data.json;
+   the weight mapping is re-derived here the way the renderer does it. */
+{
+  const served = await (await fetch(`${BASE}/data.json`)).json();
+  const bd = served.burndown || {};
+  const buckets = bd.buckets || [];
+  // precondition: the planted history really produced commit counts, or
+  // every c3/c4 check below is vacuous
+  const commits = buckets.map(b => b.commits || 0);
+  const hasShape = commits.some(c => c > 0) && new Set(commits).size >= 1;
+  notes.push(`#417 served commits: total=${bd.commit_total} max=${bd.commit_max} ` +
+             `median=${bd.commit_median} quiet=${bd.commit_quiet} ` +
+             `series=${JSON.stringify(commits)}`);
+  ok('#417 precondition: ledger_series exposed per-bucket commits',
+     hasShape && typeof bd.commit_median === 'number' &&
+     typeof bd.commit_max === 'number');
+
+  // c4 copy — shortened, no ellipsis, figures match the served summary.
+  // Parse the numbers by POSITION in the known template, never substring:
+  // "1 empty" must not satisfy a median of 1 when the median was swapped
+  // to 999 (a green red-run found that hollow form).
+  const copy = r0.commitCopy || '';
+  const copyParts = copy.match(
+    /^(\d+) median commits\/period · peak (\d+)(?: · (\d+) empty)?$/);
+  ok('#417 c4: the figure line carries the served median and peak',
+     !!copyParts &&
+     +copyParts[1] === bd.commit_median &&
+     +copyParts[2] === bd.commit_max &&
+     (bd.commit_quiet
+       ? +copyParts[3] === bd.commit_quiet
+       : !copyParts[3]));
+  ok('#417 c4: the figure line does not ellipsise (his condition)',
+     r0.copyEllipsis === false && r0.copyOverflow === false);
+  // also at mobile width — the long form is what clipped there
+  await p.setViewportSize({ width: 390, height: 844 });
+  await sleep(400);
+  const rMobile = await p.evaluate(READ);
+  const mCopy = (rMobile.commitCopy || '').trim();
+  const mParts = mCopy.match(
+    /^(\d+) median commits\/period · peak (\d+)(?: · (\d+) empty)?$/);
+  notes.push(`#417 c4 mobile copy: "${mCopy}" ` +
+             `overflow=${rMobile.copyOverflow} ellipsis=${rMobile.copyEllipsis}`);
+  ok('#417 c4: …and still does not ellipsise at 390px',
+     rMobile.copyOverflow === false &&
+     !!mParts &&
+     +mParts[1] === bd.commit_median &&
+     +mParts[2] === bd.commit_max);
+  await p.setViewportSize({ width: 1100, height: 1500 });
+  await sleep(400);
+
+  // c3 weight mapping — 0 → 1px, 1..peak → 2..6px linear
+  const peak = bd.commit_max || 0;
+  const capOf = n => {
+    if (n <= 0) return 1;
+    if (peak <= 1) return 2;
+    return Math.round(2 + 4 * (n - 1) / (peak - 1));
+  };
+  const caps = r0.caps || [];
+  const byBk = Object.fromEntries(buckets.map(b => [String(b.t0), b]));
+  const mapped = caps.map(c => {
+    const b = byBk[String(c.bk)];
+    const expect = b ? capOf(b.commits || 0) : null;
+    return { ...c, expect, ok: expect !== null && Math.abs(c.px - expect) < 0.6 };
+  });
+  notes.push(`#417 c3 caps: ${JSON.stringify(mapped.map(m =>
+    ({ c: m.commits, px: m.px, expect: m.expect })))}`);
+  ok('#417 c3: every level bar\'s cap weight matches the served commits',
+     mapped.length === buckets.length && mapped.every(m => m.ok));
+  // edge honesty: zero is distinguishable from one when both exist
+  const zeroCap = mapped.find(m => m.commits === 0);
+  const oneCap = mapped.find(m => m.commits === 1);
+  if (zeroCap && oneCap) {
+    ok('#417 c3: zero commits is thinner than one (honest floor)',
+       zeroCap.px < oneCap.px);
+  } else {
+    notes.push('#417 c3: fixture has no zero+one pair — edge check skipped ' +
+               '(peak/max still asserted via mapping)');
+  }
+  const peakCap = mapped.find(m => m.commits === peak && peak > 0);
+  if (peakCap) {
+    // peak ≤ 1 collapses the range to the floor; only peak ≥ 2 reaches 6px
+    const expectPeak = peak <= 1 ? 2 : 6;
+    ok('#417 c3: the peak period renders at the top of the weight range',
+       Math.abs(peakCap.px - expectPeak) < 0.6);
+  }
+}
+
 /* the provenance coverage is #217's datum and provenance.mjs owns its
    deep checks; what belongs HERE is the property this fixture exists in:
    every planted entry is unmarked, so the honest split is ALL historical
@@ -199,6 +314,84 @@ ok('...and its provenance is honest about the unknown remainder: every ' +
    /human 0 · loop 0 · historical unknown 9/.test((r0.provline || '').trim()) &&
    r0.provsegs === 3 &&
    (r0.provsrc || []).some(s => /9 first sightings in recorded git history/.test(s)));
+
+/* ── #417 per-column hover: numbers match the served bucket ─────────────
+   Assert the FIGURES, not "a tooltip appeared". A tip showing the wrong
+   column's numbers would pass any visibility check. The tip is an
+   arrival (rundesc idiom): sample mid-frames of opacity. */
+{
+  const served = await (await fetch(`${BASE}/data.json`)).json();
+  const buckets = (served.burndown && served.burndown.buckets) || [];
+  // pick the busiest column by commits so the readout is non-trivial
+  let pick = 0, bestC = -1;
+  buckets.forEach((b, i) => {
+    if ((b.commits || 0) > bestC) { bestC = b.commits || 0; pick = i; }
+  });
+  const want = buckets[pick];
+  ok('#417 hover precondition: a level column exists to hover',
+     !!want && (r0.colData || []).length === buckets.length);
+
+  // trace tip opacity across the arrival
+  const tipTrace = p.evaluate(`new Promise(res => {
+    const col = document.querySelectorAll('.bdnet .bdcol[data-open]')[${pick}];
+    if (!col) return res({ err: 'no col' });
+    const seen = [];
+    const t0 = performance.now();
+    let started = false;
+    const tip = () => document.querySelector('.bd .bdtip');
+    tip() && tip().addEventListener('transitionstart', () => { started = true; },
+                                    { once: true });
+    // fire hover after the sampler is armed
+    requestAnimationFrame(() => {
+      col.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    });
+    (function step() {
+      const t = performance.now() - t0;
+      const el = tip();
+      const op = el && !el.hidden
+        ? parseFloat(getComputedStyle(el).opacity) : 0;
+      const text = el && !el.hidden ? (el.textContent || '').trim() : '';
+      seen.push({ t, op, text, hidden: !el || el.hidden });
+      if (t < 700) requestAnimationFrame(step);
+      else res({ seen, started, text: (tip() && !tip().hidden)
+        ? (tip().textContent || '').trim() : '' });
+    })();
+  })`);
+  const tr = await tipTrace;
+  const finalText = tr.text || '';
+  notes.push(`#417 hover col[${pick}] want open=${want.open} arrived=${want.arrived} ` +
+             `landed=${want.landed} commits=${want.commits}; tip="${finalText}"; ` +
+             `transitionstart=${tr.started}; ops=` +
+             `${[...new Set((tr.seen || []).map(s => Math.round(s.op * 100)))].join(',')}`);
+  // THE numbers — parse by role, never bare substring. A tip that shows
+  // "99 open · 4↑ …" would pass includes("4") against open=4 (green red-run).
+  const tipParts = finalText.match(
+    /^(\d+) open · (\d+)↑ (\d+)↓ · (\d+) commits?(?: · .+)?$/);
+  ok('#417 hover: tip names this column\'s open count',
+     !!tipParts && +tipParts[1] === want.open);
+  ok('#417 hover: tip names this column\'s commits',
+     !!tipParts && +tipParts[4] === (want.commits || 0));
+  ok('#417 hover: tip names arrived and landed (the flow)',
+     !!tipParts && +tipParts[2] === want.arrived &&
+     +tipParts[3] === want.landed);
+  // mid-frames: a snap has no opacity strictly between 0 and the end
+  const ops = (tr.seen || []).map(s => s.op);
+  const endOp = ops.length ? ops[ops.length - 1] : 0;
+  const mid = ops.filter(o => o > 0.03 && o < Math.max(0.97, endOp) - 0.03);
+  ok('#417 hover: tip arrives (mid-frame opacity, not a snap)',
+     endOp >= 0.9 && (mid.length >= 1 || tr.started === true));
+  // height still constant across the hover (tip floats)
+  const hHover = await p.evaluate(
+    `Math.round(document.querySelector('.bd').getBoundingClientRect().height)`);
+  ok('#417 hover: panel height unchanged by the tip (floats, no growth)',
+     hHover === r0.h);
+
+  // leave so reduced-motion phase starts clean
+  await p.evaluate(`document.querySelectorAll('.bdnet .bdcol[data-open]')
+    .forEach(c => c.dispatchEvent(new PointerEvent('pointerout',
+      { bubbles: true, relatedTarget: document.body })))`);
+  await sleep(500);
+}
 } else {
   notes.push('panel absent after load — static field checks and motion skipped');
 }
@@ -406,6 +599,44 @@ if (panelOk) {
   ok('reduced motion: the numbers still arrive (function is intact)',
      before.head !== after.head && /\b21 arrived\b/.test(after.head || ''));
   ok('reduced motion: ...in one step, with no travel', !!b && b.partway === 0);
+  // #417 hover under reduced motion: function intact, no travel
+  {
+    const tipTr = await rp.evaluate(`new Promise(res => {
+      const col = document.querySelector('.bdnet .bdcol[data-open]');
+      if (!col) return res({ err: 'no col' });
+      const seen = [];
+      const t0 = performance.now();
+      requestAnimationFrame(() => {
+        col.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      });
+      (function step() {
+        const t = performance.now() - t0;
+        const el = document.querySelector('.bd .bdtip');
+        const op = el && !el.hidden
+          ? parseFloat(getComputedStyle(el).opacity) : 0;
+        seen.push(op);
+        if (t < 500) requestAnimationFrame(step);
+        else res({
+          seen,
+          text: el && !el.hidden ? (el.textContent || '').trim() : '',
+          open: col.dataset.open,
+          commits: col.dataset.commits,
+        });
+      })();
+    })`);
+    const mid = (tipTr.seen || []).filter(o => o > 0.03 && o < 0.97);
+    notes.push(`#417 reduced hover: text="${tipTr.text}" mid=${mid.length} ` +
+               `ops=${[...new Set((tipTr.seen || []).map(o =>
+                 Math.round(o * 100)))].join(',')}`);
+    const rmParts = (tipTr.text || '').match(
+      /^(\d+) open · (\d+)↑ (\d+)↓ · (\d+) commits?(?: · .+)?$/);
+    ok('#417 reduced motion: hover still names open and commits (function)',
+       !!rmParts &&
+       +rmParts[1] === +tipTr.open &&
+       +rmParts[4] === +tipTr.commits);
+    ok('#417 reduced motion: hover tip does not travel (timing only)',
+       mid.length === 0);
+  }
   await rp.screenshot({ path: `${OUT}/burndown-reduced.png`, fullPage: false });
   await ctx.close();
 }
