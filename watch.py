@@ -27,8 +27,11 @@ import textwrap
 import threading
 import time
 import urllib.parse
+import uuid
 from dataclasses import dataclass
 import webbrowser
+
+from user_events.sqlite import Envelope, open_journal
 
 # Server generation: a fresh value every time this process (re)starts, so a
 # client can tell "same server, data changed" from "server rebuilt, reload
@@ -9562,6 +9565,48 @@ MAX_BODY = 20_000
 SUBMIT_LOCK = threading.Lock()
 
 
+# --- Durable user-event journal (lane E, #263) -------------------------------
+# The journal is one SQLite file per target under .dreamwork/, opened with WAL +
+# synchronous=FULL so a committed receipt survives crash/reboot (design
+# `user-event-journal.md` Durability boundary). `submissions.log` stays the
+# best-effort witness until the cutover; the journal is the shadow now and
+# becomes authority at E3. The transport protocol version is part of the
+# receipt digest (law: request_digest length-frames it), so it is a named
+# constant rather than a literal at each call site.
+JOURNAL_PROTOCOL_VERSION = "1"
+JOURNAL_FILENAME = "user-events.sqlite3"
+
+
+def _journal_path(target):
+    return os.path.join(target, ".dreamwork", JOURNAL_FILENAME)
+
+
+def _target_id(target):
+    """Stable short id for the target, for the receipt's target_id field.
+
+    The journal stores which target a receipt belongs to; an absolute path is
+    machine-specific and leaks structure, so a SHA-1 prefix is used — stable
+    across restarts, not a secret (it is in a local-only database)."""
+    return hashlib.sha1(os.path.abspath(target).encode("utf-8")).hexdigest()[:12]
+
+
+def _journal_receive(target, envelope):
+    """Receive one envelope into the target's journal (#263 lane E).
+
+    Opens the per-target journal, receives, closes — one connection per
+    request, so threaded requests never share a SQLite handle (busy_timeout
+    serialises contention across them). A journal failure here is logged and
+    swallowed: until the cutover (E3) the journal is a *shadow* and a receipt
+    miss must never refuse a request the existing handlers accept. Returns the
+    ReceiveResult, or None on any open/receive failure."""
+    try:
+        with open_journal(_journal_path(target)) as journal:
+            return journal.receive(envelope)
+    except Exception as exc:  # shadow phase: never let this refuse his words
+        log_event(target, f"user-events journal receive failed: {exc!r}")
+        return None
+
+
 def log_submission(target, path, body, nbytes, truncated=False, short=False):
     """His words on disk before anything is allowed to refuse them (#199).
 
@@ -9736,6 +9781,31 @@ def make_handler(target, dev=False, authority=None):
                     self.send_error(403, "origin not allowed")
                     return False
             return True
+
+        def _journal_receive(self, target):
+            """Commit one shadow receipt for this POST (journal-shadow phase).
+
+            Builds the transport envelope from the request the handler already
+            validated (authority, method, route, media type, the complete
+            bounded body) and receives it. The client_action_id is the
+            idempotency key: the browser will send one (lane G, #269) and the
+            journal dedupes same UUID+digest. CLI/curl sends none, so the
+            server mints a per-request UUID — a CLI retry is then a distinct
+            intentional action, which is the design's rule for a client with no
+            attempt store. Until E3 a journal failure is swallowed (shadow)."""
+            client_action_id = (
+                self.headers.get("X-Client-Action-Id")
+                or str(uuid.uuid4()))
+            envelope = Envelope(
+                client_action_id=client_action_id,
+                protocol_version=JOURNAL_PROTOCOL_VERSION,
+                method=self.command or "POST",
+                route=self.path,
+                content_type=self.headers.get("Content-Type", ""),
+                body=self._body,
+                target_id=_target_id(target),
+            )
+            self._journal_result = _journal_receive(target, envelope)
 
         def _send(self, body, ctype):
             data = body.encode("utf-8")
@@ -9926,6 +9996,28 @@ def make_handler(target, dev=False, authority=None):
             # only makes the witness truthful, which either answer needs.
             short = len(body) < want
             log_submission(target, self.path, body, nbytes, truncated, short)
+            # E1 envelope (#263 lane E): a body that arrived SHORT is a broken
+            # transport promise, not a complete envelope. Law 2 of
+            # `user-event-journal.md` §Receive and idempotency decides
+            # transport-envelope failures BEFORE receipt: an interrupted body
+            # remains a client attempt and never creates a journal receipt.
+            # `submissions.log` still keeps the partial bytes (marked
+            # incomplete by `short` above), so tightening receipt semantics
+            # does not reduce recoverability — the incomplete-witness
+            # amendment he ruled on at 05:43.
+            if short:
+                self.send_error(400)
+                return
+            self._body = body
+            # The journal is the shadow here (journal-shadow phase, pre-cutover):
+            # commit a receipt on every well-formed write request, and swallow any
+            # failure so the existing handlers stay authority until E3. The
+            # envelope's transport fields are decided here, before dispatch —
+            # the same fields the digest length-frames. Runs after the
+            # truncated check so an over-limit body (still 413) is not
+            # receipted as a complete envelope.
+            if not truncated:
+                self._journal_receive(target)
             # ...and only now may a request be turned away. An over-long body
             # is still refused — the cap is what makes the read bounded — but
             # it is refused with its first MAX_BODY bytes already kept, so a
@@ -9933,19 +10025,14 @@ def make_handler(target, dev=False, authority=None):
             if truncated:
                 self.send_error(413)
                 return
-            self._body = body
-            if self.path == "/answer":
-                self._handle_answer()
-            elif self.path == "/ask":
-                self._handle_ask()
-            elif self.path == "/comment":
-                self._handle_comment()
-            elif self.path == "/command":
-                self._handle_command()
-            elif self.path == "/tint":
-                self._handle_tint()
-            elif self.path == "/run-mode":
-                self._handle_run_mode()
+            # The write-route dispatch is ONE table, derived from itself, so a
+            # seventh route added later is both handled here and covered by E2's
+            # "every write route commits a receipt" test (rather than slipping
+            # past a hand-copied list). `WRITE_ROUTE_HANDLERS` is a class
+            # attribute defined below the handler methods.
+            handler = self.WRITE_ROUTE_HANDLERS.get(self.path)
+            if handler is not None:
+                handler(self)
             else:
                 self.send_error(404)
 
@@ -10125,6 +10212,18 @@ def make_handler(target, dev=False, authority=None):
             log_event(target, run_mode_line(mode, req.get("from")))
             self._send(json.dumps({"ok": True, "mode": mode, "changed": True}),
                        "application/json")
+
+        # The single source of truth for write routes: adding a route here both
+        # dispatches it and exposes it (E2 derives its route list from these
+        # keys, so a seventh route fails that test instead of slipping past it).
+        WRITE_ROUTE_HANDLERS = {
+            "/answer": _handle_answer,
+            "/ask": _handle_ask,
+            "/comment": _handle_comment,
+            "/command": _handle_command,
+            "/tint": _handle_tint,
+            "/run-mode": _handle_run_mode,
+        }
 
         def log_message(self, *_args):
             pass

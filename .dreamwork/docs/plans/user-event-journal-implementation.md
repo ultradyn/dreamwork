@@ -575,6 +575,21 @@ sends `Content-Length: 500` and then 100 bytes and closes.
 *Red line:* the `len(body) != nbytes` check — which does **not exist today**
 (measured above), so this increment's red is available immediately and against
 real production behaviour, not against a placeholder.
+**WRONG, and lane E found it by obeying it** (amended 2026-07-29, lane E batch 1):
+the `#371` incomplete-witness work landed **after** that measurement, so
+`short = len(body) < want` already exists at `do_POST` and is documented in
+`file-formats.md` lines 1084–1096. The prescribed red came back **green** against
+it — deleting the computation makes the *witness-honesty* test fail (the log no
+longer marks the partial `short`) but does not by itself stop a receipt, because
+the check and the gate that uses it are two lines. This is the **fourth** wrong
+red line in this plan (after `B1`'s pragma, `B7`'s `UNIQUE`, row 15's predicate).
+The real load-bearing line is the gate that *uses* `short` to skip receipt:
+`if short: self.send_error(400); return` in `do_POST`. Deleting that gate alone
+fails `test_an_interrupted_body_creates_no_receipt` (`1 != 0`, a receipt
+appears), verified by the lane. The plan measurement (`watch.py:8387`) and the
+"does not exist today" claim were both true at measurement time and are stale
+now; `file-formats.md` already documents the `short`+`got` marker, so no
+`file-formats.md` change is needed for E1.
 *Must not fake:* `urllib` cannot express this. It always sends a complete body.
 A test that uses `urllib` and a short `Content-Length` header is testing the
 library, and it will pass with the check absent.
