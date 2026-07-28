@@ -551,6 +551,13 @@ STYLE = """<style>
      sits between date and age in the markup, so no left margin here — the
      separator carries the gap (was .35rem when the join was bare). */
   .qt .qage { margin-left:0; font-size:.7rem; }
+  /* #463 — secondary "modified X ago" on a review row, and the named
+     "created unknown" state when birth is unavailable. Same ` · `
+     separator #456 reused for date/age (chrome's own middot), never a
+     second idiom. Dimmer than the primary age so the two facts coexist
+     without competing. No left margin: the separator owns the gap. */
+  .age.rmod, .age.ageunk { color:var(--dimmer); margin-left:0; }
+  .rsep { color:var(--dimmer); }
   pre { white-space:pre-wrap; color:var(--muted); margin:.4rem 0 .8rem 1ch;
         border-left:1px solid var(--line); padding-left:1ch; }
   /* ── the file view's image and binary surfaces (#336) ─────────────────
@@ -1497,10 +1504,17 @@ STYLE = """<style>
      per-surface contract carried as `data-max-rows` (composer 15, answer 6 —
      see fitText); reduced motion keeps the growth (function) and drops only
      the timing, the page's standing rule. */
+  /* #464 — reserve the scrollbar gutter so the text never reflows when the
+     box grows tall enough to hold every line and the bar would vanish.
+     `scrollbar-gutter:stable` is the gutter-without-furniture reading of
+     "always show": the reflow is the reported distraction, and a permanent
+     bar would add chrome the rest of the page deliberately avoids. Overflow
+     still scrolls past the 15-row ceiling; reduced-motion only drops the
+     height timing (above) and does not touch the gutter. */
   #cmdform textarea { width:100%; box-sizing:border-box;
     background:var(--panel); color:var(--text); border:1px solid var(--line);
     border-radius:var(--radius); font:inherit; padding:.4rem; margin:.3rem 0;
-    min-height:3.4rem; resize:none; overflow:auto;
+    min-height:3.4rem; resize:none; overflow:auto; scrollbar-gutter:stable;
     transition:height .85s cubic-bezier(.32,.1,.2,1); }
   /* command selection: a button group whose background indicator SLIDES to
      the active option. The one piece of crisp motion in the composer, kept
@@ -3085,10 +3099,27 @@ function buildDashboard(d) {
   h += qSection(d);
   h += `<div class="dim"><a href="/answers">questions for the dreamer · ${d.answers_open.length} open</a></div>`;
   if (d.reviews.length) {
-    h += label('reviews') + d.reviews.map(r =>
-      `<div data-review="${esc(r.name)}"><a href="/review?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` +
-      pipBtn('/reviewraw?p=' + encodeURIComponent(r.name), r.name) +
-      `<span class="age" data-mt="${r.mtime}"></span></div>`).join('');
+    /* #463 — primary age is *created* (birth), not mtime. When birth is
+       unavailable the row says so by name rather than lying with mtime.
+       Secondary "modified X ago" only when created is known and differs;
+       the chrome's ` · ` is the same separator #456 used for date/age. */
+    h += label('reviews') + d.reviews.map(r => {
+      let age = '';
+      if (r.created_known && r.created != null) {
+        age = `<span class="age" data-mt="${r.created}"></span>`;
+        if (r.show_modified)
+          age += `<span class="rsep"> · </span>` +
+                 `<span class="age rmod" data-mt="${r.mtime}" data-cr="${r.created}"` +
+                 ` data-review-mod="${esc(r.name)}"></span>`;
+      } else {
+        age = `<span class="age ageunk">created unknown</span>` +
+              `<span class="rsep"> · </span>` +
+              `<span class="age rmod" data-mt="${r.mtime}" data-review-mod="${esc(r.name)}"></span>`;
+      }
+      return `<div data-review="${esc(r.name)}"><a href="/review?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` +
+        pipBtn('/reviewraw?p=' + encodeURIComponent(r.name), r.name) +
+        age + `</div>`;
+    }).join('');
   }
   h += label('files') +
        ['DREAMWORK.md','questions.md','lessons.md'].map(n =>
@@ -3544,8 +3575,33 @@ addEventListener('scroll', e => {
    times a minute, forever, to move one digit. `setContent` re-runs this after
    every swap, so a fresh render is filled in before it paints. */
 function ages() {
-  document.querySelectorAll('.age[data-mt]').forEach(el =>
-    el.textContent = ageStr(parseFloat(el.dataset.mt)) + ' old');
+  /* data-mt: a FILE (or review *created*) is `5m old`. #463 adds `.rmod` for
+     the secondary "modified X ago" on a review whose created ≠ mtime — same
+     attribute, different grammar, so a single forEach branches on class. */
+  document.querySelectorAll('.age[data-mt]').forEach(el => {
+    const s = ageStr(parseFloat(el.dataset.mt));
+    if (!el.classList.contains('rmod')) { el.textContent = s + ' old'; return; }
+    /* #463 — the secondary earns its place only if it SAYS something the
+       primary does not. `data-cr` is the created figure the row already shows;
+       when both render to the same string the modification is invisible at
+       this resolution, so the pair is dropped rather than printing
+       `3d old · modified 3d ago`. Server-side exact inequality flagged 24 of
+       28 real artifacts (create, then write content — sub-millisecond), which
+       is why the verdict is here, beside the formatter, and not a threshold
+       someone has to tune. Runs inside ages(), which setContent calls BEFORE
+       paint, so the pair is absent from the first frame rather than vanishing
+       out of a painted one (transitions.md — nothing disappears). */
+    const cr = el.dataset.cr;
+    if (cr !== undefined && ageStr(parseFloat(cr)) === s) {
+      const sep = el.previousElementSibling;
+      if (sep && sep.classList.contains('rsep')) sep.hidden = true;
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    el.hidden = false;
+    el.textContent = 'modified ' + s + ' ago';
+  });
   /* #392a: a `.age[data-ct]` node is TWO figures (timed — a commit's real
      timestamp) UNLESS it carries `data-day="1"`, which marks it DAY-precision
      (a question title's date-only midnight). One figure when we know only the
@@ -3569,6 +3625,42 @@ function ages() {
   applyTitle();     // the liveness word drifts with the clock, not with disk
   applyFavicon();   // ...and the orbit advances one frame per second on it
   applyTint();      // ...and his colour arrives from whichever window set it
+}
+/* #463 — a "modified X ago" that appears when a review's mtime pulls away
+   from its birth is an ARRIVAL (transitions.md: no size floor). Track which
+   review-mod keys we have already settled; a newly-present `.rmod` gets the
+   one-shot `.dreamin` enter-snap, then eases in. First paint and reduced
+   motion settle fully lit (function, no pose) — the same contract as
+   revealNewOpenAsks / revealStaleAction. Pure ages() digit flips stay
+   exempt; this only fires when the secondary *node* appears. */
+let knownReviewMods = null;
+function revealReviewMods() {
+  // Only the dashboard reviews list carries these; leave any other route
+  // with a clean slate so the next dashboard paint settles, not re-arrives.
+  if (view.name !== 'dashboard') { knownReviewMods = null; return; }
+  /* `:not([hidden])` because ages() drops a secondary whose figure reads the
+     same as the primary (#463). A hidden node is not on the page, so treating
+     it as an arrival would animate nothing and, worse, would record it as
+     known — so the row's REAL first modification would then be a no-op. */
+  const nodes = [...document.querySelectorAll(
+    '.age.rmod[data-review-mod]:not([hidden])')];
+  const now = new Set(nodes.map(el => el.dataset.reviewMod));
+  if (knownReviewMods === null || window.__dwSkipReviewModArrival) {
+    nodes.forEach(el => el.classList.remove('dreamin'));
+    knownReviewMods = now;
+    return;
+  }
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  for (const el of nodes) {
+    if (knownReviewMods.has(el.dataset.reviewMod)) continue;
+    if (reduce) continue;
+    el.classList.add('dreamin');
+    void el.offsetWidth;
+    requestAnimationFrame(() => {
+      if (el.isConnected) el.classList.remove('dreamin');
+    });
+  }
+  knownReviewMods = now;
 }
 /* one field, two destinations: the mode group under the box picks which
    (#103). Everything downstream — the morph, the ripple, the re-render hold
@@ -4970,6 +5062,7 @@ function setContent(html) {
   ages();
   revealNewOpenAsks();
   revealStaleAction();
+  revealReviewMods();
   // #290: innerHTML destroys the arm bar nodes; resume shared pending (or
   // re-sync the committed selection) without inventing a new deadline.
   syncRunModeFromData();
@@ -6311,8 +6404,9 @@ async function tick() {
       const reviewFrame = snapshotReviewFrame();
       const folds = snapshotFolds();
       const before = snapshotCards();
-      // Exact artifact mtimes can reorder these rows on any data tick. Keep
-      // their filename identity and reuse the list FLIP rather than snapping.
+      // Exact artifact *created* times can reorder these rows on any data
+      // tick (#463). Keep their filename identity and reuse the list FLIP
+      // rather than snapping.
       const reviewBefore = view.name === 'dashboard'
         ? snapshotCards(REVIEW_LIST) : null;
       // #151: the commits panel animates on a NEW COMMIT, never on a tick.
@@ -9451,19 +9545,151 @@ def plugin_commands(target):
     return out
 
 
+# ── #463: review "created" is filesystem birth time, never st_ctime ──────
+# POSIX st_ctime is *inode change time* (chmod, rename, hardlink, write of
+# mtime itself) — shipping it as "created" is wrong exactly where he cares.
+# Linux fills stx_btime via statx when the filesystem knows it; when the
+# mask lacks STATX_BTIME or the seconds are zero, created is UNAVAILABLE as
+# a named state — never silently degraded to mtime (that was the bug).
+
+
+def _statx_birth_ns(path):
+    """Return birth time in nanoseconds, or None when unavailable.
+
+    Stdlib-only: ctypes against libc.statx. Missing symbol, non-Linux,
+    errno, or a mask without btime all return None — never a lie.
+    """
+    try:
+        import ctypes
+        import ctypes.util
+    except ImportError:
+        return None
+    libname = ctypes.util.find_library("c")
+    if not libname:
+        return None
+    try:
+        libc = ctypes.CDLL(libname, use_errno=True)
+        statx = libc.statx
+    except (AttributeError, OSError):
+        return None
+
+    class _Ts(ctypes.Structure):
+        _fields_ = [("tv_sec", ctypes.c_int64),
+                    ("tv_nsec", ctypes.c_uint32),
+                    ("__reserved", ctypes.c_int32)]
+
+    class _Statx(ctypes.Structure):
+        _fields_ = [
+            ("stx_mask", ctypes.c_uint32),
+            ("stx_blksize", ctypes.c_uint32),
+            ("stx_attributes", ctypes.c_uint64),
+            ("stx_nlink", ctypes.c_uint32),
+            ("stx_uid", ctypes.c_uint32),
+            ("stx_gid", ctypes.c_uint32),
+            ("stx_mode", ctypes.c_uint16),
+            ("__spare0", ctypes.c_uint16),
+            ("stx_ino", ctypes.c_uint64),
+            ("stx_size", ctypes.c_uint64),
+            ("stx_blocks", ctypes.c_uint64),
+            ("stx_attributes_mask", ctypes.c_uint64),
+            ("stx_atime", _Ts),
+            ("stx_btime", _Ts),
+            ("stx_ctime", _Ts),
+            ("stx_mtime", _Ts),
+            ("stx_rdev_major", ctypes.c_uint32),
+            ("stx_rdev_minor", ctypes.c_uint32),
+            ("stx_dev_major", ctypes.c_uint32),
+            ("stx_dev_minor", ctypes.c_uint32),
+            ("stx_mnt_id", ctypes.c_uint64),
+            ("__spare2", ctypes.c_uint64),
+            ("__spare3", ctypes.c_uint64 * 12),
+        ]
+
+    AT_FDCWD = -100
+    STATX_BTIME = 0x00000800
+    # BASIC | BTIME — ask for what we need; the mask says what we got.
+    mask_req = 0x000007ff | STATX_BTIME
+    buf = _Statx()
+    path_b = os.fsencode(path)
+    statx.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
+                      ctypes.c_uint, ctypes.POINTER(_Statx)]
+    statx.restype = ctypes.c_int
+    if statx(AT_FDCWD, path_b, 0, mask_req, ctypes.byref(buf)) != 0:
+        return None
+    if not (buf.stx_mask & STATX_BTIME):
+        return None
+    sec = int(buf.stx_btime.tv_sec)
+    nsec = int(buf.stx_btime.tv_nsec)
+    if sec <= 0:
+        return None
+    return sec * 1_000_000_000 + nsec
+
+
+def file_created_ns(path):
+    """Created time for a review artifact: birth when known, else None.
+
+    Also tries `st_birthtime` (BSD/macOS) when the platform exposes it, so
+    a non-Linux host with real birth time is not forced through statx.
+    """
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return None
+    birth = getattr(st, "st_birthtime", None)
+    if birth is not None and birth > 0:
+        # Prefer nanoseconds when present; else seconds × 1e9.
+        bns = getattr(st, "st_birthtime_ns", None)
+        if bns is not None and bns > 0:
+            return int(bns)
+        return int(birth * 1_000_000_000)
+    return _statx_birth_ns(path)
+
+
 def list_reviews(review_dir):
+    """Review artifacts newest-created first (#463).
+
+    Sort and primary age use filesystem *birth* (created), not mtime.
+    mtime is kept so the secondary "modified X ago" can appear when it
+    differs. When birth is unavailable the row carries
+    `created_known: false` and sorts after every known-created artifact —
+    never silently under mtime as if that were created.
+    """
     reviews = []
     for name in os.listdir(review_dir):
         if not name.endswith(".html"):
             continue
+        path = os.path.join(review_dir, name)
         try:
-            stat = os.stat(os.path.join(review_dir, name))
+            stat = os.stat(path)
         except FileNotFoundError:
             # An atomic writer may replace/remove an entry after listdir.
             continue
-        reviews.append({"name": name, "mtime_ns": stat.st_mtime_ns,
-                        "mtime": stat.st_mtime_ns / 1_000_000_000})
-    reviews.sort(key=lambda review: (-review["mtime_ns"], review["name"]))
+        created_ns = file_created_ns(path)
+        known = created_ns is not None
+        mtime_ns = stat.st_mtime_ns
+        reviews.append({
+            "name": name,
+            "mtime_ns": mtime_ns,
+            "mtime": mtime_ns / 1_000_000_000,
+            "created_ns": created_ns,
+            "created": (created_ns / 1_000_000_000) if known else None,
+            "created_known": known,
+            # A CANDIDATE for the secondary, not the verdict. Exact inequality
+            # is the wrong test and measurably so: writing a file sets birth,
+            # then the content write moves mtime, so 24 of this repo's 28
+            # artifacts differ by under a millisecond and would every one of
+            # them claim "modified" beside an identical age. His rule is *when
+            # they differ*, and what differs to a reader is the rendered
+            # figure — so the verdict belongs where the formatter is (ages()),
+            # and no threshold has to be invented here.
+            "show_modified": known and mtime_ns > created_ns,
+        })
+    # Known created first (newest-first), unknowns last, name as tie-break.
+    reviews.sort(key=lambda r: (
+        0 if r["created_known"] else 1,
+        -(r["created_ns"] or 0),
+        r["name"],
+    ))
     return reviews
 
 

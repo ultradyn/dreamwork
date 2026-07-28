@@ -61,13 +61,27 @@ carries a `+` command opener (steer the loop without a chat turn).
   carries it across the reload instead, see "The answer box's half-typed
   draft" below), while the artifact iframe browsing
   context stays mounted at its current URL and scroll. Dashboard review
-  artifacts are ordered by filesystem mtime newest-first, with ascending
-  filename as the deterministic exact-mtime tie-break. The displayed
-  age seconds are derived from that same exact nanosecond result, so ordering
-  and visible recency cannot disagree. A live mtime reorder keys each stable
-  review row by filename and runs it through the existing list FLIP: normal
-  motion travels without overshoot, while reduced motion places rows instantly.
-  Same-origin artifacts
+  artifacts are ordered by filesystem **birth / created** newest-first (#463),
+  with ascending filename as the deterministic exact-created tie-break.
+  POSIX `st_ctime` is *not* used — it is inode-change time, not creation.
+  Birth comes from Linux `statx` `stx_btime` (or `st_birthtime` on BSD);
+  when unavailable the row is a named state (`created unknown`) and sorts
+  after every known-created artifact — never silently under mtime. The
+  displayed primary age seconds are derived from that same birth ns; mtime
+  is kept only so a secondary *"modified X ago"* (dimmer, chrome ` · `
+  separator, same idiom as #456) can appear when created ≠ modified — and
+  "differs" means **the rendered figures differ**, not the nanoseconds. Writing
+  a file sets birth and then the content write moves mtime, so 24 of this
+  repo's 28 artifacts differ sub-millisecond and exact inequality would print
+  `3d old · modified 3d ago` on nearly every row. The server therefore marks a
+  **candidate** (`show_modified`: birth known and mtime later) and `ages()`
+  decides, beside `ageStr` itself, so no threshold is invented and the
+  formatter is never mirrored. A suppressed secondary is dropped inside
+  `ages()`, which `setContent` runs **before paint** — so it is absent from the
+  first frame rather than vanishing out of a painted one. A live
+  created reorder keys each stable review row by filename and runs it through
+  the existing list FLIP: normal motion travels without overshoot, while
+  reduced motion places rows instantly. Same-origin artifacts
   additionally permit explicit scroll restoration; cross-origin access is
   caught and treated as opaque, so it never prevents the dock refresh. `dev/capture/noteprop.mjs` proves propagation using
   two separate Chromium processes and a `/questions` control (#271). No websockets. `/mtime` is
@@ -2647,6 +2661,17 @@ arithmetic non-obvious, and both are load-bearing:
 
 Nothing under the buttons is reserved: `.cmdmsg:empty` collapses, so the
 panel grows downward only when there is something to say.
+
+**The scrollbar gutter is reserved, always (#464).** His report: the bar
+appearing and vanishing as the box grows *"causes text to reflow… a bit
+distracting."* The reflow is a width change when the scrollbar leaves, so
+**reserving the gutter** removes it. `#cmdform textarea` carries
+`scrollbar-gutter:stable` — the gutter-without-furniture reading of *"always
+show"*, not a permanently-visible bar. Both fix the reflow; the gutter does
+it without adding chrome this page deliberately keeps scarce. Overflow still
+scrolls past the 15-row ceiling; reduced motion only drops the height-travel
+timing and leaves the gutter. The answer box is not in scope: he named the
+command composer.
 
 **The box grows with what he types, then scrolls (#177).** His numbers are the
 contract: the composer starts at 2–3 rows and grows to **15**, then scrolls

@@ -2564,39 +2564,147 @@ class TestCollector(unittest.TestCase):
             self.assertEqual([r["name"] for r in data["reviews"]],
                              ["plan-review.html"])
 
-    def test_collect_orders_reviews_by_exact_mtime_ns_then_filename(self):
+    def test_collect_orders_reviews_by_exact_created_ns_then_filename(self):
+        # #463 — sort by *created* (birth), not mtime. utime changes mtime
+        # without changing birth, so the pre-#463 mtime sort would still
+        # reorder after a touch; created sort must not.
         with tempfile.TemporaryDirectory() as d:
             make_target(d)
             rd = os.path.join(d, ".dreamwork", "review")
             os.makedirs(rd)
-            # These adjacent epoch nanoseconds collapse to the same float.
-            # Their names deliberately demand the opposite lexical order.
-            mtimes = {
-                "a-older.html": 1_700_000_000_000_000_000,
-                "z-newer.html": 1_700_000_000_000_000_001,
-                "z-tied.html": 1_700_000_002_000_000_003,
-                "a-tied.html": 1_700_000_002_000_000_003,
-            }
-            for name, mtime_ns in mtimes.items():
+            # Create in a known order with short sleeps so birth times
+            # differ on filesystems that only resolve birth to 1s.
+            order_created = ["a-first.html", "m-mid.html", "z-last.html"]
+            for name in order_created:
                 path = os.path.join(rd, name)
                 with open(path, "w") as f:
                     f.write("<!doctype html><p>x")
-                os.utime(path, ns=(mtime_ns, mtime_ns))
+                time.sleep(0.02)
+            # Touch the oldest so mtime would put it first if we still
+            # sorted by mtime — the production-line trap this check reds.
+            old = os.path.join(rd, "a-first.html")
+            now_ns = time.time_ns()
+            os.utime(old, ns=(now_ns, now_ns))
 
             reviews = watch.collect(d)["reviews"]
+            # Runtime precondition: birth is available here, otherwise the
+            # created-sort half of the check has no subject.
+            known = [r for r in reviews if r["created_known"]]
+            self.assertGreaterEqual(
+                len(known), 3,
+                "need birth time on ≥3 fixtures for created-order (statx "
+                "btime unavailable would put every row in the unknown band)")
+            names = [r["name"] for r in reviews]
+            # Newest created first: z-last, m-mid, a-first — even though
+            # a-first now has the newest mtime.
+            self.assertEqual(names[:3],
+                             ["z-last.html", "m-mid.html", "a-first.html"])
+            # PRODUCTION LINE: list_reviews sort key uses created_ns. If it
+            # falls back to mtime, a-first (touched) would lead.
+            self.assertNotEqual(names[0], "a-first.html")
+            # Age seconds for created come from the same ns when known.
+            for r in known:
+                self.assertEqual(r["created"], r["created_ns"] / 1_000_000_000)
+                self.assertEqual(r["mtime"], r["mtime_ns"] / 1_000_000_000)
 
-            self.assertEqual([r["name"] for r in reviews], [
-                "a-tied.html", "z-tied.html", "z-newer.html", "a-older.html",
-            ])
-            self.assertEqual(
-                [r["mtime_ns"] for r in reviews],
-                [mtimes[r["name"]] for r in reviews],
-            )
-            # Age seconds is derived from that same authoritative exact ns.
-            self.assertEqual(
-                [r["mtime"] for r in reviews],
-                [r["mtime_ns"] / 1_000_000_000 for r in reviews],
-            )
+    def test_review_show_modified_only_when_created_differs(self):
+        # #463 part 3 — secondary "modified X ago" only when created ≠ mtime.
+        # PRODUCTION LINE: show_modified = known and created_ns != mtime_ns
+        # in list_reviews. A fixture with equal times must not claim modified;
+        # one we construct with unequal times must.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            rd = os.path.join(d, ".dreamwork", "review")
+            os.makedirs(rd)
+            same = os.path.join(rd, "same.html")
+            with open(same, "w") as f:
+                f.write("<!doctype html><p>same")
+            diff = os.path.join(rd, "diff.html")
+            with open(diff, "w") as f:
+                f.write("<!doctype html><p>diff")
+            time.sleep(0.05)
+            # Pull mtime away from birth on diff only.
+            later = time.time_ns() + 5_000_000_000
+            os.utime(diff, ns=(later, later))
+
+            reviews = {r["name"]: r for r in watch.collect(d)["reviews"]}
+            # Runtime-derived precondition: the inequality we constructed.
+            self.assertTrue(reviews["diff.html"]["created_known"])
+            self.assertNotEqual(
+                reviews["diff.html"]["created_ns"],
+                reviews["diff.html"]["mtime_ns"],
+                "precondition: constructed created ≠ mtime on diff.html")
+            self.assertTrue(reviews["diff.html"]["show_modified"])
+            # same.html is the case that killed exact inequality: a file that
+            # was never edited still has mtime a few hundred microseconds past
+            # birth (create, then write the content), so it IS a candidate —
+            # and the row must still not say "modified", which ages() decides
+            # by rendered figure. Assert the candidate/verdict split rather
+            # than a false equality this filesystem does not give us.
+            same = reviews["same.html"]
+            if same["created_known"]:
+                self.assertGreaterEqual(same["mtime_ns"], same["created_ns"])
+                self.assertLess(
+                    same["mtime_ns"] - same["created_ns"], 1_000_000_000,
+                    "precondition: an unedited file's mtime sits within a "
+                    "second of birth, which is why exact inequality is wrong")
+                # That both figures RENDER the same, and that the pair is
+                # therefore absent, is ageStr's business and belongs where
+                # ageStr runs: dev/capture/revieworder.mjs asserts it in the
+                # browser. Mirroring the formatter here would be a second copy
+                # of it, which is the defect this fix exists to avoid.
+
+    def test_review_created_unknown_does_not_silently_use_mtime(self):
+        # #463 — missing birth must be a named state, never mtime-as-created.
+        # PRODUCTION LINE: file_created_ns returning None → created_known
+        # False and created null; sort key puts unknowns after knowns.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            rd = os.path.join(d, ".dreamwork", "review")
+            os.makedirs(rd)
+            known_path = os.path.join(rd, "known.html")
+            with open(known_path, "w") as f:
+                f.write("<!doctype html><p>k")
+            unk_path = os.path.join(rd, "unknown.html")
+            with open(unk_path, "w") as f:
+                f.write("<!doctype html><p>u")
+            real = watch.file_created_ns
+
+            def fake_created(path):
+                if path.endswith("unknown.html"):
+                    return None
+                return real(path)
+
+            with unittest.mock.patch.object(
+                    watch, "file_created_ns", side_effect=fake_created):
+                reviews = watch.list_reviews(rd)
+            by = {r["name"]: r for r in reviews}
+            self.assertFalse(by["unknown.html"]["created_known"])
+            self.assertIsNone(by["unknown.html"]["created"])
+            self.assertIsNone(by["unknown.html"]["created_ns"])
+            self.assertFalse(by["unknown.html"]["show_modified"])
+            # Unknown sorts after known (even if mtime is newer).
+            names = [r["name"] for r in reviews]
+            if by["known.html"]["created_known"]:
+                self.assertLess(names.index("known.html"),
+                                names.index("unknown.html"))
+
+    def test_page_emits_created_age_and_modified_secondary(self):
+        # Static guard on the production render path for #463 parts 2+3.
+        # PRODUCTION LINES: buildDashboard's review age HTML, and ages()'
+        # branch on .rmod. A revert of either fails one of these tokens.
+        page = watch.PAGE
+        self.assertIn("show_modified", page)
+        self.assertIn("created_known", page)
+        self.assertIn("created unknown", page)
+        self.assertIn("class=\"age rmod\"", page)
+        self.assertIn("modified ' + s + ' ago'", page)
+        self.assertIn("function revealReviewMods(", page)
+        # Separator is the chrome's middot, not a second idiom.
+        self.assertIn('class="rsep"> · </span>', page)
+        self.assertRegex(
+            page, r'\.age\.rmod\s*,\s*\.age\.ageunk\s*\{[^}]*'
+                  r'color\s*:\s*var\(--dimmer\)')
 
     def test_list_reviews_skips_an_entry_that_vanishes_before_stat(self):
         with tempfile.TemporaryDirectory() as rd:
@@ -4725,6 +4833,44 @@ class TestAppShell(unittest.TestCase):
                         {"kind": "do-now", "text": ""}):
                 status, _ = self._post(base + "/command", bad)
                 self.assertEqual(status, 202)
+
+    def test_composer_textarea_reserves_scrollbar_gutter(self):
+        # #464 — the command composer's text reflowed when the scrollbar
+        # vanished as the box grew tall enough to hold every line. The fix
+        # is reserving the gutter (`scrollbar-gutter:stable`), not a
+        # permanently-visible bar: both remove the reflow; the gutter does
+        # it without adding furniture.
+        #
+        # PRODUCTION LINE whose change reds this test: the
+        # `#cmdform textarea { … scrollbar-gutter:stable; … }` declaration
+        # in STYLE. Removing that one property fails the body assert; a
+        # rule on a different selector fails the match. No new seam — the
+        # pre-diff code simply lacks the property, so a red run against
+        # HEAD-before-the-diff is the same failure.
+        # The reduced-motion block also names `#cmdform textarea` (to kill
+        # the height transition only). Match the LAYOUT rule by requiring
+        # min-height — that property lives only on the real box rule.
+        matches = re.findall(r'#cmdform\s+textarea\s*\{([^}]*)\}', watch.PAGE)
+        self.assertTrue(matches, "STYLE has no #cmdform textarea rule")
+        body = next((b for b in matches if re.search(r'min-height\s*:', b)), None)
+        self.assertIsNotNone(
+            body,
+            f"no #cmdform textarea layout rule (min-height) among {matches!r}")
+        self.assertRegex(
+            body, r'scrollbar-gutter\s*:\s*stable\b',
+            f"#cmdform textarea must reserve its scrollbar gutter so "
+            f"overflow on/off never reflows the draft; rule body was "
+            f"{body!r}")
+        # Autogrow still owns height: overflow:auto stays so past-ceiling
+        # still scrolls, and reduced-motion only zeros the height transition
+        # (a separate rule), never the gutter.
+        self.assertRegex(body, r'overflow\s*:\s*auto\b')
+        self.assertRegex(
+            watch.PAGE,
+            r'\.qfield\s+textarea\s*,\s*#cmdform\s+textarea\s*\{[^}]*'
+            r'transition\s*:\s*none',
+            "reduced-motion must still drop the height travel on the "
+            "composer (function stays; timing goes)")
 
 
 class TestSubmissionLog(unittest.TestCase):
