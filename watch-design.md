@@ -2648,6 +2648,17 @@ arithmetic non-obvious, and both are load-bearing:
 Nothing under the buttons is reserved: `.cmdmsg:empty` collapses, so the
 panel grows downward only when there is something to say.
 
+**The scrollbar gutter is reserved, always (#464).** His report: the bar
+appearing and vanishing as the box grows *"causes text to reflow… a bit
+distracting."* The reflow is a width change when the scrollbar leaves, so
+**reserving the gutter** removes it. `#cmdform textarea` carries
+`scrollbar-gutter:stable` — the gutter-without-furniture reading of *"always
+show"*, not a permanently-visible bar. Both fix the reflow; the gutter does
+it without adding chrome this page deliberately keeps scarce. Overflow still
+scrolls past the 15-row ceiling; reduced motion only drops the height-travel
+timing and leaves the gutter. The answer box is not in scope: he named the
+command composer.
+
 **The box grows with what he types, then scrolls (#177).** His numbers are the
 contract: the composer starts at 2–3 rows and grows to **15**, then scrolls
 past that. The answer/note box on every question card starts at 2 and grows to

@@ -1497,10 +1497,17 @@ STYLE = """<style>
      per-surface contract carried as `data-max-rows` (composer 15, answer 6 —
      see fitText); reduced motion keeps the growth (function) and drops only
      the timing, the page's standing rule. */
+  /* #464 — reserve the scrollbar gutter so the text never reflows when the
+     box grows tall enough to hold every line and the bar would vanish.
+     `scrollbar-gutter:stable` is the gutter-without-furniture reading of
+     "always show": the reflow is the reported distraction, and a permanent
+     bar would add chrome the rest of the page deliberately avoids. Overflow
+     still scrolls past the 15-row ceiling; reduced-motion only drops the
+     height timing (above) and does not touch the gutter. */
   #cmdform textarea { width:100%; box-sizing:border-box;
     background:var(--panel); color:var(--text); border:1px solid var(--line);
     border-radius:var(--radius); font:inherit; padding:.4rem; margin:.3rem 0;
-    min-height:3.4rem; resize:none; overflow:auto;
+    min-height:3.4rem; resize:none; overflow:auto; scrollbar-gutter:stable;
     transition:height .85s cubic-bezier(.32,.1,.2,1); }
   /* command selection: a button group whose background indicator SLIDES to
      the active option. The one piece of crisp motion in the composer, kept

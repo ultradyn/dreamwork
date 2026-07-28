@@ -4726,6 +4726,44 @@ class TestAppShell(unittest.TestCase):
                 status, _ = self._post(base + "/command", bad)
                 self.assertEqual(status, 202)
 
+    def test_composer_textarea_reserves_scrollbar_gutter(self):
+        # #464 — the command composer's text reflowed when the scrollbar
+        # vanished as the box grew tall enough to hold every line. The fix
+        # is reserving the gutter (`scrollbar-gutter:stable`), not a
+        # permanently-visible bar: both remove the reflow; the gutter does
+        # it without adding furniture.
+        #
+        # PRODUCTION LINE whose change reds this test: the
+        # `#cmdform textarea { … scrollbar-gutter:stable; … }` declaration
+        # in STYLE. Removing that one property fails the body assert; a
+        # rule on a different selector fails the match. No new seam — the
+        # pre-diff code simply lacks the property, so a red run against
+        # HEAD-before-the-diff is the same failure.
+        # The reduced-motion block also names `#cmdform textarea` (to kill
+        # the height transition only). Match the LAYOUT rule by requiring
+        # min-height — that property lives only on the real box rule.
+        matches = re.findall(r'#cmdform\s+textarea\s*\{([^}]*)\}', watch.PAGE)
+        self.assertTrue(matches, "STYLE has no #cmdform textarea rule")
+        body = next((b for b in matches if re.search(r'min-height\s*:', b)), None)
+        self.assertIsNotNone(
+            body,
+            f"no #cmdform textarea layout rule (min-height) among {matches!r}")
+        self.assertRegex(
+            body, r'scrollbar-gutter\s*:\s*stable\b',
+            f"#cmdform textarea must reserve its scrollbar gutter so "
+            f"overflow on/off never reflows the draft; rule body was "
+            f"{body!r}")
+        # Autogrow still owns height: overflow:auto stays so past-ceiling
+        # still scrolls, and reduced-motion only zeros the height transition
+        # (a separate rule), never the gutter.
+        self.assertRegex(body, r'overflow\s*:\s*auto\b')
+        self.assertRegex(
+            watch.PAGE,
+            r'\.qfield\s+textarea\s*,\s*#cmdform\s+textarea\s*\{[^}]*'
+            r'transition\s*:\s*none',
+            "reduced-motion must still drop the height travel on the "
+            "composer (function stays; timing goes)")
+
 
 class TestSubmissionLog(unittest.TestCase):
     """#199 — his words are on disk before anything can refuse them.
