@@ -506,6 +506,25 @@ Next id: **412**
   automatically, which is a point in its favour: **it excludes example ids without needing to know
   they are examples.** Any allowlist-of-fields approach has to enumerate this class; positional
   anchoring gets it for free
+  · **THE LANE BEAT ME ON THIS, and the measurement is unambiguous (11:27, mid-run).** It found the
+  same hole in my recommendation independently — *"prose references to OPEN ids in entry bodies
+  (`found **#399**`, `see **#405**`, `fold (**#409**, open)`) … count-all-bare-mentions breaks
+  disjointness"* — and then reached a **different discriminator than mine and a better one**:
+  **column 0**. Its observation: historical inline landings are written at column 0, while every
+  prose reference to an open id lives on an **indented continuation line**. Scored on the same 81
+  contested ids:
+    column-0 (lane) : catches **68**, false **0**, landed **163**, open∩landed **0**
+    sentence-initial (mine) : catches **65**, false **0**, landed **160**, open∩landed **0**
+  **The lane's rule is a strict superset of mine** — it catches everything mine does plus exactly
+  the three I had identified as misses (`#97`, `#101`, `#270`) and adds no false positive. Not a
+  close call; adopt the lane's rule
+  · **it also refused the brief's framing where the framing was wrong.** I wrote that two callers
+  want opposite things and may need two functions; the lane checked and concluded *"the two readers
+  don't genuinely differ — `#399`'s strict rule under-counted the current snapshot too"*, and took
+  one wide rule. That is the right answer and I had not tested it
+  · **worth reconciling at review, not a conflict:** the lane reports a 149-set and 55 historical
+  inline landings where I compute 163 and 68. Different counting bases or field lists. Ask which,
+  and do not merge until the two numbers are explained by something other than "roughly the same"
   · **THE MERGE GATE, written 11:19 BEFORE the lane reports, so it cannot be shaped by what the
   lane says it achieved.** Measured now, both parsers run against today's ledger:
     - deployed/pre-`#399` logic: **136 open, 176 landed**
