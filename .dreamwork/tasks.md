@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **469**
+Next id: **470**
 
 ## Open
 - **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
@@ -201,6 +201,27 @@ Next id: **469**
   `- **` bullet, ERROR and say where it must go. Assert the precondition at runtime — the check is vacuous
   unless the fixture's marker really is unreachable, so derive that from the parser rather than trusting the
   fixture's layout · related: **#411, #366**
+- **#469** — `ccc @glm52` runs **grok**, so every lane tonight was one model and the ledger says otherwise ·
+  **P1** · loop-orchestration/dispatch · origin: **loop** · measured 2026-07-29 04:24
+  · **the measurement.** `ccc --yolo @glm52 "reply with the model name and provider you are"` answers
+  **`Grok (xAI)`**, and `ccc` prints `warning: runner "grok"` on the way in. Every lane log in this session's
+  scratchpad shows `runner "grok"` — including `421a-glm.log`, a dispatch addressed to glm on purpose. The
+  `axes` lane dispatched `@glm52` at 04:22 self-reported **grok-4.5** in its own handshake
+  · **why it matters, and it is his instruction not being honoured.** His standing orchestrator framing is
+  *"only `ccc @grok` (fast, multimodal) and `ccc @glm52` (slower, often more capable) subagents, up to 4 of
+  each"* — two models, chosen for different strengths. If the alias resolves to one runner, the second
+  opinion is the first opinion, and a review lane "confirming" another lane's work is the same model agreeing
+  with itself. That is the specific value the two-model split exists to buy
+  · **the ledger is wrong in several places**, because I recorded `glm-4.6 via ccc @glm52` from the alias I
+  typed rather than from what answered. A model attribution taken from the dispatch is a guess; the lane's own
+  handshake is the measurement, and this is exactly why briefs require *"state which model you are"*
+  · **do not fix by guessing.** Find how `@glm52` is defined (`ccc` is a compiled binary at
+  `~/.cargo/bin/ccc`; the agent registry was not where I looked) and establish whether a GLM runner exists on
+  this host at all. If it does not, the honest outcome is to stop claiming two models and tell him, not to
+  keep typing an alias that does nothing
+  · **then sweep the attributions** — grep the ledger and `dispatch-shortlist.md` for `glm52` and correct
+  every claim that a glm lane did the work, or mark it unknown where the log is gone. Never guess history
+  · blocked on nothing · related: **#428**
 - **#468** — the lane-containment backstop, and the briefs that predate the rule · **P2** ·
   tooling/lane-safety · origin: **loop** · successor to `#465`, named in its design doc
   · **two halves, both small.** (1) **R2, the pre-merge assertion**: walk the main tree's *dirty* paths,
@@ -438,7 +459,7 @@ Next id: **469**
   lane dispatched from suite start to `REAL_EXIT`, idle verified with a **self-excluding** process check
   (see the `pgrep` aside above), repeated until the failure rate is a number. Everything else is a
   fourth anecdote
-  · related: **#424, #423, #442**
+  · related: **#424, #423, #442, #469**
 - **#424** — `just test` is a single shared lock, so N concurrent lanes cannot each verify · P2 ·
   loop-tooling/orchestration · origin: **loop** · found when `#419` reported guards blocked at 17:01
   · guards bind **39890-39899** and the recipe hard-aborts if any port in the range is held (the

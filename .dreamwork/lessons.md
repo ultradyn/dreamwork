@@ -3050,3 +3050,21 @@ this shape and convert opportunistically.)
   branch **saying it is unverified**, then verify from the diff rather than from a
   report that no longer exists. A lane's death is not evidence its work is bad; it
   is evidence nobody has checked it.
+
+- **A dispatch alias is a claim about which model you got; the lane's handshake is the
+  measurement.** His orchestrator framing names two runners for different strengths —
+  `ccc @grok` (fast) and `ccc @glm52` (slower, often more capable) — and the whole
+  point of the pair is that a second lane is a *different* judgement. **Evidence it
+  was not:** `ccc --yolo @glm52 "reply with the model name and provider you are"`
+  answers **`Grok (xAI)`**; `ccc` prints `warning: runner "grok"` on the way in; and
+  every lane log in one long session shows `runner "grok"`, including one file named
+  `421a-glm.log` for a dispatch addressed to glm deliberately. So several ledger
+  entries and `status.json` rows recorded `glm-4.6 via ccc @glm52` — taken from the
+  alias typed, never from what answered. The failure is silent by construction: the
+  alias is accepted, the work gets done, the output is good, and nothing anywhere
+  contradicts the attribution. It surfaced only because a lane obeyed the brief's
+  *"state which model you are"* and its answer disagreed with the command I ran.
+  Two consequences worth keeping: **a review lane that is secretly the same model as
+  the lane it reviews is one model agreeing with itself**, which is the specific value
+  the split exists to buy; and **a model attribution is history, so it is never
+  guessed** — where the log is gone, the honest record is *unknown*.
