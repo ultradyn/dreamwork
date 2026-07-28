@@ -2006,3 +2006,35 @@ def test_the_if_silent_meta_sits_beside_the_ask_meta_in_head(template):
     assert silent_pos < head_end, "the if-silent meta is outside <head>"
     assert abs(silent_pos - ask_pos) < 250, \
         "the if-silent meta is far from the ask meta — not 'beside' it"
+
+
+def test_no_meta_in_a_built_head_is_missing_its_close():
+    """#436 and #455 each add a `<meta>` to the head by anchoring on the tag
+    before it. Both anchors matched the tag *minus its own closing `>`*, so a
+    substitution left the old `>` behind and an insertion at `.end()` landed
+    before it — one stray `>` per meta, rendered as text at the top of the
+    page. He reported it twice before it was traced, and suspected the
+    template; the template was innocent. Production line: the `\\s*>` at the
+    end of `ASK_META_RE` / `IF_SILENT_META_RE` and the two inline
+    template-stamp anchors.
+    """
+    import glob
+    built = sorted(glob.glob(os.path.join(HERE, ".dreamwork", "review", "*.html")))
+    # PRECONDITION, derived: there is a corpus, and its artifacts actually
+    # carry the metas whose insertion caused this. A pass over zero files, or
+    # over files predating #436/#455, means nothing.
+    assert built, "no built artifacts found to check"
+    with_metas = [p for p in built
+                  if ra.ASK_META_NAME in open(p, encoding="utf-8").read()]
+    assert with_metas, (
+        "no built artifact carries the #436 ask meta — this check has no "
+        "subject and would pass forever (%d built files scanned)" % len(built))
+    for path in with_metas:
+        text = open(path, encoding="utf-8").read()
+        head = text[:text.index("<title")]
+        unclosed = re.findall(r"<meta[^<>]*(?=<)", head)
+        assert unclosed == [], (
+            "%s has a <meta> with no closing '>': %r" % (path, unclosed))
+        assert ">>" not in head, (
+            "%s head carries a stray '>' — the meta-anchor regexes must "
+            "swallow the tag close (see ASK_META_RE)" % path)

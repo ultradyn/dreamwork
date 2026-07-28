@@ -1043,8 +1043,13 @@ def inject_mark_rail(document):
 
 ASK_ID = "ask"
 ASK_META_NAME = "dreamwork-review-ask"
+# The trailing `\s*>` is load-bearing: without it the pattern matches the tag
+# minus its own close, so `sub()` leaves the old `>` behind and an insertion
+# anchored on `.end()` lands *before* it. That shipped a stray `>` into the
+# rendered head of every artifact (he saw it twice before it was traced), and
+# each additional meta added one more.
 ASK_META_RE = re.compile(
-    r'<meta\s+name=["\']%s["\']\s+content=["\']([^"\']*)["\']' % ASK_META_NAME)
+    r'<meta\s+name=["\']%s["\']\s+content=["\']([^"\']*)["\']\s*>' % ASK_META_NAME)
 
 
 def ask_status(document):
@@ -1158,7 +1163,7 @@ def _inject_ask_meta(document, content):
     if ASK_META_RE.search(document):
         return ASK_META_RE.sub(tag, document, count=1)
     stamp = re.search(
-        r'<meta\s+name=["\']dreamwork-review-template["\']\s+content=["\'][^"\']+["\']',
+        r'<meta\s+name=["\']dreamwork-review-template["\']\s+content=["\'][^"\']+["\']\s*>',
         document)
     if stamp:
         return document[:stamp.end()] + "\n" + tag + document[stamp.end():]
@@ -1238,8 +1243,9 @@ def enforce_ask_contract(document, no_ask):
 
 IF_SILENT_ID = "if-silent"
 IF_SILENT_META_NAME = "dreamwork-review-if-silent"
+# `\s*>` for the same reason as ASK_META_RE — see the note there.
 IF_SILENT_META_RE = re.compile(
-    r'<meta\s+name=["\']%s["\']\s+content=["\']([^"\']*)["\']' % IF_SILENT_META_NAME)
+    r'<meta\s+name=["\']%s["\']\s+content=["\']([^"\']*)["\']\s*>' % IF_SILENT_META_NAME)
 
 
 def if_silent_status(document):
@@ -1325,7 +1331,7 @@ def _inject_if_silent_meta(document, content):
     if ask:
         return document[:ask.end()] + "\n" + tag + document[ask.end():]
     stamp = re.search(
-        r'<meta\s+name=["\']dreamwork-review-template["\']\s+content=["\'][^"\']+["\']',
+        r'<meta\s+name=["\']dreamwork-review-template["\']\s+content=["\'][^"\']+["\']\s*>',
         document)
     if stamp:
         return document[:stamp.end()] + "\n" + tag + document[stamp.end():]
