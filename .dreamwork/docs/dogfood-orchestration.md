@@ -1182,3 +1182,64 @@ treat that line as load-bearing rather than courtesy.
 Both are the same shape as the day's dominant class — **a signal that reports on something other
 than the thing you care about** — and both were caught by reading output rather than status. The
 running total for that family today is eight.
+
+## Dispatch 3 — the first honest two-runner comparison, 14:55
+
+Everything above this line was measured while **one alias was dead**. `@grok` returned 401 from
+05:52 until he refreshed the credential at 14:50, so the "runner scorecards" in this document
+compare `@glm52` against `@glm52` under different names more than they compare two models. That
+is stated plainly rather than quietly corrected, because it is the single biggest limitation on
+what this document can claim.
+
+At 14:55 two lanes went out at the same minute, on deliberately different kinds of work:
+
+| | `#402a` → `@glm52` | `#367` previews → `@grok` |
+|---|---|---|
+| kind | text, reasoning-heavy, traps in series | build + render + look at it |
+| why that runner | no vision needed; consistency valued | **vision required** — the acceptance is pixels |
+| brief size | 8 criteria, 3 red-proofs | 8 criteria, 1 red-proof |
+| first artifact | 179-line diff at 14 min, uncommitted | **complete and committed at 13 min** |
+| outcome | still running at 15:10 | landed, merged `98670ae` |
+
+**Routing by capability rather than preference happened for the second time**, and it is the
+cleanest signal in this document: `#367`'s acceptance includes *"say what the screenshots actually
+look like"*, which `@glm52` cannot do at all. When a task's acceptance names a modality, the
+routing decision is made for you — and it is worth writing acceptance criteria that way on
+purpose, because a criterion only one runner can satisfy is also a criterion a text-only lane
+cannot fake.
+
+### What the fast lane produced, and the part that matters
+
+Thirteen minutes bought an artifact, its template source, six screenshots, a rail reference and a
+`measures.json` — and **it corrected a number I had put in front of the human**. My question said
+option A costs ~214px of chrome; it measures 167.9. It also caught that "the reading column is
+fixed at 613.5px" fails at 640px, while confirming the 16px margin claim the whole argument rests
+on.
+
+That is now **seven of the lanes that have refuted something their brief asserted**, and the
+pattern in what gets refuted is sharper than "briefs contain errors": every one of the seven was a
+number or a causal story I had *derived* rather than *observed*, sitting in the passage I had
+worked hardest on. The countermeasure is not more care. It is a habit: **mark computed figures as
+computed**, and where a decision turns on one, spend the thirteen minutes and measure it.
+
+### The speed difference is real and it is not the interesting part
+
+`@grok` finished before `@glm52` committed once, on a task of comparable brief weight. But the
+`@glm52` lane is working on code with two bugs in series where the second is invisible until the
+first is fixed, and thoroughness there is worth more than latency. The useful rule is not "grok is
+faster, prefer it" — it is:
+
+- **acceptance names a modality** (pixels, a rendered page, a visual judgement) → `@grok`, no choice
+- **the work is a build-and-show** where being wrong is cheap and visible → `@grok`, speed compounds
+- **the work is subtle correctness** where being wrong is expensive and invisible → `@glm52`
+- either way, **the two brief lines that bought seven refutations stay in every brief**:
+  *disbelieve a green red-run*, and *you may contradict this brief*.
+
+### A dispatch-recipe defect, found at the merge
+
+Briefs tell a lane to append its report to the **absolute** path in the main checkout (so it
+survives whatever happens to the worktree) *and* to commit the hand-off line. In a worktree those
+are different files, so the identical line lands uncommitted in main **and** committed on the
+branch, and `git merge` refuses on a file whose two versions are byte-identical. It arrives after
+the work is finished, looking like a conflict. Fix the template: report to the absolute inbox path,
+commit the hand-off inside the worktree only.
