@@ -50,7 +50,20 @@ So, for anything in this document:
   *measurement they print* and the floor is a deliberate constant. Both
   halves matter: derive and print the real span so the number in the
   output is today's, and keep the floor a constant so it fails when the
-  subject stops moving.
+  subject stops moving. **One literal PER MOTION, never one shared
+  across motions with different travel** (#441, 2026-07-29): a guard
+  that folds *and* grows held a single `MIN_HEIGHT_SPAN = 20` over a
+  ~193px fold and a ~23px grow, and the margin was invisible in the
+  output — 10x headroom on one, ~0x on the other (the minimum real
+  single-line note grow measured at exactly 20px, so the floor sat *on*
+  the signal, not under it). Splitting gives each motion its own floor
+  with its measurement recorded beside it; the *shape* stays a literal
+  because a floor derived from the span it validates can never fail (any
+  observed span satisfies its own fraction), which is the #444 trap one
+  level down. Span is deterministic on a frozen fixture (a property of
+  its CSS + content); only the sample count varies with load, so a
+  per-motion literal pegged below the minimum real signal holds at every
+  load.
 - **…but never assert an absolute COUNT of distinct positions.** It reads
   as the same rule and it is not: `uniq(positions).length >= 8` says "this
   machine rendered eight frames in 850ms", which is a fact about the box,

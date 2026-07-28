@@ -65,12 +65,45 @@ const span = vals => Math.abs((vals.at(-1) ?? 0) - (vals[0] ?? 0));
    fails with "sampled enough… (N frames)" rather than masquerading as a
    motion bug (#413 / #414). */
 const MIN_SAMPLES = 3;
-/* Height displacement floor for vacuity — well below a real fold/grow on
-   this fixture (measured in the hundreds of px). A card that never moved
-   would otherwise pass between() with zero part-way frames for the wrong
-   reason if we only checked the travel half. Literal by design: transitions.md
-   "a part-way count needs a vacuity precondition… and that one IS a literal." */
-const MIN_HEIGHT_SPAN = 20;
+/* Per-motion vacuity floors — one literal per motion, each with its
+   measurement recorded beside it. #441: a single shared MIN_HEIGHT_SPAN=20
+   covered two motions with ~10x different travel (fold ~193px, tick-grow
+   ~23px), and the margin was invisible in the guard output. Splitting is the
+   fix; the *shape* is still a deliberate constant per transitions.md ("a
+   part-way count needs a vacuity precondition… and that one IS a literal"),
+   NOT a fraction of the observed span.
+
+   Why not a fraction of the span it validates: a floor computed as
+   `k * span(measured)` can never fail — any observed span satisfies its own
+   fraction — so the vacuity check becomes decoration. That is the #444 trap
+   ("a check that restates the value it reads") one level down. The span we
+   PRINT is derived at runtime; the floor we COMPARE against is a fixed
+   literal, and the two come from different sources by construction.
+
+   Span is deterministic on the frozen fixture (a property of its CSS +
+   content); only the per-frame SAMPLE COUNT varies with load. So a literal
+   pegged below the minimum real signal holds across every load. Measured
+   2026-07-29 at load 40-47 on 16 cores, six runs each: fold/unfold 17↔210
+   every time; tick-grow 248→271 every time. */
+
+/* Fold + unfold share one constant because they are the SAME motion in
+   opposite directions over the SAME content (the folded body), and the
+   measurement is identical both ways: 17px ⇄ 210px = 193px, stable across
+   six runs. The pre-split value of 20 (~9.6x under 193px) was never the
+   defect — the fold's headroom was fine — so it is kept unchanged and merely
+   given its own name and its measurement beside it. Literal by design. */
+const MIN_FOLD_SPAN = 20;
+
+/* Tick-grow is a different motion (a note lands, the open card grows) with a
+   much smaller travel. Measured minimum real grow is ONE NOTE LINE = 20px —
+   verified with notes "x", "ok", "a short note" and the fixture's own note,
+   all of which grow exactly 20px; a two-line wrapping note grows 36px. So
+   the old shared floor of 20 had ZERO headroom on tick-grow, not the "3px"
+   the filing estimated from the fixture's single sample: it sat exactly ON
+   the minimum real signal. 6px sits ~3.3x under that 20px signal and ~6x
+   over the ≤1px rounded-rect noise of a frozen fixture, so a real note
+   passes with room and a no-op (note failed to land) still fails. */
+const MIN_GROW_SPAN = 6;
 
 /* Trace every card's geometry and its FLIP signatures per frame, while `act`
    happens. `act` runs in the page and may be async. */
@@ -155,9 +188,9 @@ for (const reduced of [false, true]) {
     // is "we did not look often enough" — opposite responses, one line (#413).
     ok(`${tag}: unfold window sampled enough to see motion (${upH.length} frames)`,
        upH.length >= MIN_SAMPLES);
-    ok(`${tag}: unfolding really changes height (else the travel check is vacuous) `
-     + `(${upH[0]} -> ${upH.at(-1)}, ${span(upH)}px)`,
-       span(upH) >= MIN_HEIGHT_SPAN && upH.at(-1) > upH[0]);
+    ok(`${tag}: unfolding really changes height (vacuity floor ${MIN_FOLD_SPAN}px) `
+     + `(measured ${upH[0]} -> ${upH.at(-1)}, ${span(upH)}px)`,
+       span(upH) >= MIN_FOLD_SPAN && upH.at(-1) > upH[0]);
     ok(`${tag}: unfolding TRAVELS its height (it does not jump open) `
      + `(${between(upH, upH[0], upH.at(-1))} of ${upH.length} part-way)`,
        between(upH, upH[0], upH.at(-1)) >= 1);
@@ -167,9 +200,9 @@ for (const reduced of [false, true]) {
     // ── fold ──────────────────────────────────────────────────────────────
     ok(`${tag}: fold window sampled enough to see motion (${dnH.length} frames)`,
        dnH.length >= MIN_SAMPLES);
-    ok(`${tag}: folding really changes height (else the travel check is vacuous) `
-     + `(${dnH[0]} -> ${dnH.at(-1)}, ${span(dnH)}px)`,
-       span(dnH) >= MIN_HEIGHT_SPAN && dnH.at(-1) < dnH[0]);
+    ok(`${tag}: folding really changes height (vacuity floor ${MIN_FOLD_SPAN}px) `
+     + `(measured ${dnH[0]} -> ${dnH.at(-1)}, ${span(dnH)}px)`,
+       span(dnH) >= MIN_FOLD_SPAN && dnH.at(-1) < dnH[0]);
     ok(`${tag}: folding TRAVELS its height (it does not snap shut) `
      + `(${between(dnH, dnH[0], dnH.at(-1))} of ${dnH.length} part-way)`,
        between(dnH, dnH[0], dnH.at(-1)) >= 1);
@@ -180,8 +213,9 @@ for (const reduced of [false, true]) {
     ok(`${tag}: tick-grow window sampled enough to see motion (${tkH.length} frames)`,
        tkH.length >= MIN_SAMPLES);
     ok(`${tag}: a card the loop grows under him really changes height `
-     + `(else the travel check is vacuous) (${tkH[0]} -> ${tkH.at(-1)}, ${span(tkH)}px)`,
-       span(tkH) >= MIN_HEIGHT_SPAN);
+     + `(vacuity floor ${MIN_GROW_SPAN}px; measured ${tkH[0]} -> ${tkH.at(-1)}, `
+     + `${span(tkH)}px)`,
+       span(tkH) >= MIN_GROW_SPAN);
     ok(`${tag}: a card the loop grows under him travels too `
      + `(${between(tkH, tkH[0], tkH.at(-1))} of ${tkH.length} part-way)`,
        between(tkH, tkH[0], tkH.at(-1)) >= 1);
