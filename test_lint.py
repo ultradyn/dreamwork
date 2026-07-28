@@ -4740,6 +4740,210 @@ class TestLaneContainmentBackstop:
         assert len(errors) == 1, rep.render()
         assert "other.py" in errors[0]
 
+
+def _load_lane_guard():
+    """Load dev/lane_guard.py as a module (dev/ is not a package).
+
+    The pre-merge assertion lives there; these tests exercise it directly. The
+    module is also exercised end-to-end by the CLI smoke in the lane's report,
+    but a test that drives the function reaches the real decision branches.
+    """
+    import importlib.util
+    path = lint.SKILL_DIR / "dev" / "lane_guard.py"
+    spec = importlib.util.spec_from_file_location("lane_guard_under_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestPreMergeAssertion:
+    """#468 R2 — the pre-merge assertion (`dev/lane_guard.py pre-merge`).
+
+    `git merge wt/<lane>` aborts when the main checkout's index or worktree is
+    dirty with someone else's work, and the abort message names files rather
+    than the reason. This is the merge-time gate the lint backstop cannot be
+    (lint takes no branch argument; it fires when run, not at merge time).
+
+    Real git worktrees here, on purpose: the check's whole subject is git's
+    worktree registry and a real working tree's dirtiness, so faking either
+    puts the fake in front of the thing under test. Ownership is REUSED from
+    lint (``lane_owned_paths``) — these tests never re-implement Lane-owns.
+
+    Each test names the production line whose change reds it.
+    """
+
+    def _repo(self, tmp_path, owns="laneowned/"):
+        import subprocess
+        t = fresh(tmp_path)
+
+        def git(*a, cwd=None):
+            return subprocess.run(
+                ["git", "-C", str(cwd or t), *a],
+                capture_output=True, text=True, check=True)
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        (t / "other.py").write_text("# other\n", encoding="utf-8")
+        (t / "laneowned").mkdir()
+        (t / "laneowned" / ".gitkeep").write_text("", encoding="utf-8")
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        briefs.mkdir(parents=True)
+        (briefs / "900-lane.md").write_text(
+            "# Brief\n\nWorktree: `.worktrees/lane` on `wt/lane`.\n\n"
+            f"Lane-owns: {owns}\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-qm", "base")
+        git("worktree", "add", "-q", "-b", "wt/lane", str(t / ".worktrees" / "lane"))
+        return t, git
+
+    def test_clean_main_checkout_passes_and_states_lane_coverage(self, tmp_path, capsys):
+        """The OK path: a lane is out, nothing is dirty. The pass names the lane
+        and the coverage so it cannot look the same as examining nothing.
+
+        Precondition, derived: the lane is registered AND declares ownership, or
+        the OK row's `1 of 1` is a count over an empty subject.
+        """
+        lg = _load_lane_guard()
+        t, _ = self._repo(tmp_path)
+        lanes = lint._live_lane_worktrees(t)
+        assert [b for _, b in lanes] == ["wt/lane"], lanes
+        assert lint.lane_owned_paths(t / ".dreamwork", "wt/lane") == ["laneowned/"]
+
+        rc = lg._pre_merge(t, "wt/lane")
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "pre-merge OK" in out and "wt/lane" in out, out
+        assert "1 of 1 live lane(s) declare ownership" in out, out
+
+    def test_a_lane_owned_dirty_path_refuses_naming_lane_path_and_action(
+            self, tmp_path, capsys):
+        """Production line: ``lint.lane_owned_paths`` (the shared reader).
+
+        An UNTRACKED file under the lane's owned directory isolates the
+        ownership finding from the merge-blocking-tracked dimension: it is in
+        the dirty set the backstop sees (untracked counts), but it is neither
+        staged nor unstaged-tracked, and it is not added by the branch — so the
+        ONLY reason to refuse is lane ownership. Breaking ``lane_owned_paths``
+        to return [] makes this test pass when it should refuse: non-circular,
+        because the reader is the backstop's verbatim logic (the pre-existing
+        ownership decision), not a seam this diff introduced.
+        """
+        lg = _load_lane_guard()
+        t, _ = self._repo(tmp_path)
+        (t / "laneowned" / "stray.txt").write_text("# a lane's stray edit\n",
+                                                   encoding="utf-8")
+        # Precondition: the stray file is dirty, untracked, and not added by the
+        # lane branch — so only ownership can flag it.
+        dirty = lint._dirty_paths(t)
+        assert "laneowned/stray.txt" in dirty, dirty
+        classified = lg._classify_status(t)
+        assert classified is not None
+        staged, unstaged, untracked = classified
+        assert "laneowned/stray.txt" in untracked
+        assert "laneowned/stray.txt" not in staged + unstaged
+        assert "laneowned/stray.txt" not in (lg._merge_added_paths(t, "wt/lane") or [])
+
+        rc = lg._pre_merge(t, "wt/lane")
+        err = capsys.readouterr().err
+        assert rc == 1, err
+        assert "laneowned/stray.txt" in err and "wt/lane" in err, err
+        # The one action #465's resolution was: retire the finished worktree.
+        assert "git worktree remove" in err, err
+        # It must not move the work itself.
+        assert "stash" not in err.lower() and "git reset" not in err.lower(), err
+
+    def test_staged_and_unstaged_coordinator_work_refuses_without_stash(
+            self, tmp_path, capsys):
+        """Production line: the ``blocking_tracked`` branch in ``_pre_merge``
+        (``set(staged) | set(unstaged)``). This dimension is NEW — the lint
+        backstop is silent on the coordinator's own uncommitted work because no
+        lane owns it, yet a merge aborts on it regardless. So the red reaches a
+        branch this diff adds; that is honest, not circular.
+        """
+        lg = _load_lane_guard()
+        t, git = self._repo(tmp_path)
+        # Staged coordinator work + unstaged tracked work, both non-lane-owned.
+        (t / "other.py").write_text("# staged change\n", encoding="utf-8")
+        git("add", "other.py")
+        (t / "other.py").write_text("# and an unstaged change on top\n",
+                                    encoding="utf-8")
+        # Precondition: other.py is non-lane-owned, so ownership stays silent.
+        assert "other.py" not in lint.lane_owned_paths(t / ".dreamwork", "wt/lane")
+
+        rc = lg._pre_merge(t, "wt/lane")
+        err = capsys.readouterr().err
+        assert rc == 1, err
+        assert "other.py" in err, err
+        assert "Commit or unwind" in err, err
+        # It offers NO destructive command — it moves no work. (The word
+        # "stashes" may appear only inside the guarantee "never stashes",
+        # never as an action to take, so assert on the command, not the word.)
+        for cmd in ("git stash", "git reset", "git checkout"):
+            assert cmd not in err, (cmd, err)
+
+    def test_an_untracked_file_the_merge_would_clobber_refuses(self, tmp_path, capsys):
+        """Production line: ``_merge_added_paths`` + the clobber intersection.
+
+        The lane branch adds `clobber.txt`; an untracked `clobber.txt` in the
+        main tree would be overwritten by the merge. Precondition, derived: the
+        branch really does add the path (asked of ``_merge_added_paths``), and
+        the file is untracked — so clobber is the only finding.
+        """
+        lg = _load_lane_guard()
+        t, git = self._repo(tmp_path)
+        wt = t / ".worktrees" / "lane"
+        (wt / "clobber.txt").write_text("from lane\n", encoding="utf-8")
+        git("add", "clobber.txt", cwd=wt)
+        git("commit", "-qm", "add clobber.txt", cwd=wt)
+        (t / "clobber.txt").write_text("untracked in main\n", encoding="utf-8")
+        # Preconditions.
+        assert "clobber.txt" in lg._merge_added_paths(t, "wt/lane")
+        classified = lg._classify_status(t)
+        assert classified is not None and "clobber.txt" in classified[2]  # untracked
+        assert "clobber.txt" not in lint.lane_owned_paths(t / ".dreamwork", "wt/lane")
+
+        rc = lg._pre_merge(t, "wt/lane")
+        err = capsys.readouterr().err
+        assert rc == 1, err
+        assert "clobber.txt" in err and "would be overwritten" in err, err
+
+    def test_a_harmless_untracked_file_does_not_refuse(self, tmp_path, capsys):
+        """An untracked file the merge does NOT touch is not merge-blocking.
+        Precondition: the file is untracked and not added by the branch."""
+        lg = _load_lane_guard()
+        t, _ = self._repo(tmp_path)
+        (t / "harmless-untracked.txt").write_text("ignore me\n", encoding="utf-8")
+        assert "harmless-untracked.txt" not in (lg._merge_added_paths(t, "wt/lane") or [])
+
+        rc = lg._pre_merge(t, "wt/lane")
+        out = capsys.readouterr().out
+        assert rc == 0, out
+        assert "pre-merge OK" in out, out
+
+    def test_a_non_main_checkout_declines(self, tmp_path, capsys):
+        """Production line: the ``is_main_checkout`` gate (pre-existing, #465).
+        Run from a linked worktree, the assertion declines rather than acting on
+        the wrong tree."""
+        lg = _load_lane_guard()
+        t, _ = self._repo(tmp_path)
+        wt = t / ".worktrees" / "lane"
+        assert not lg.is_main_checkout(wt)  # precondition: this is a worktree
+        rc = lg._pre_merge(wt, "wt/lane")
+        err = capsys.readouterr().err
+        assert rc == 2, err
+        assert "MAIN CHECKOUT" in err, err
+
+    def test_a_branch_that_does_not_resolve_fails_loud(self, tmp_path, capsys):
+        """Production line: the ``_merge_added_paths is None`` branch. A typo'd
+        branch name must fail loud naming it, not pass vacuously."""
+        lg = _load_lane_guard()
+        t, _ = self._repo(tmp_path)
+        rc = lg._pre_merge(t, "wt/does-not-exist")
+        err = capsys.readouterr().err
+        assert rc == 2, err
+        assert "wt/does-not-exist" in err and "resolve" in err, err
+
+
 class TestPostureFile:
     """The three-axis posture override file (#445).
 
