@@ -30,38 +30,25 @@
 
 
 - **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
-  You said "defer publishing repo for a bit", which answers an open
-  question belonging to the dreamwork instance on **x-game**
-  (`~/src/ez-feedback-pipeline`), not to this one: *"Publish the repo, so
-  `npx skills add` works?"* — the single open entry in its
-  `questions.md`.
+  **Open four days, and your `#275` answer today gave half of it an owner** — so this is now smaller.
 
-  I asked in chat whether to append it there over ssh or leave it to you,
-  and then failed to record the ask — so this entry exists partly as the
-  fix for that. I have not touched that file: writing into another
-  agent's live state uninvited is the thing this loop keeps telling
-  dreamers not to do.
+  **The general half is decided, recorded not asked:** dreamhub is read+write and replaces watch.py, so
+  cross-machine delivery is a dreamhub concern inheriting `#360`'s ssh-rooted auth — not a per-incident ssh
+  call. It is the surface where a wrong write corrupts another loop's record of what you want.
 
-  **The narrow question**: shall I append your answer to x-game's
-  `questions.md` over ssh, or will you drop it into that dashboard?
+  **`Q1`, the only live question:** an answer of yours from 2026-07-25 (*"defer publishing repo for a bit"*)
+  belongs to the dreamwork loop on **x-game** (`~/src/ez-feedback-pipeline`) and has never reached it. Shall I
+  **append it to that repo's `questions.md` over ssh**, or will you drop it into that dashboard yourself? I
+  have not touched that file — writing into another agent's live state uninvited is what this loop keeps
+  telling dreamers not to do.
 
-  **The general one, which is worth more**: there is currently no way for
-  an answer you give in one place to reach a loop somewhere else. Today
-  that is a one-line ssh append; with dreamhub and the ssh swarm it
-  becomes routine, and it is exactly the surface where a wrong write
-  corrupts another loop's record of what you want. Worth deciding as a
-  rule rather than per-incident. Related: #96 stage 2+, #144, #150.
-  - **Follow-up (loop, 2026-07-25 17:24):** submissions attached to this
-    entry at 14:34-14:35 have been REMOVED. They were never his: they are
-    verbatim guard strings — `dev/capture/regroup.mjs:67` and
-    `dev/capture/oneinput.mjs:139,153` — that reached the real
-    `questions.md` because a guard ran against the live target instead of
-    the fixture (the runner gap, fixed in 7be4a22). They were previously
-    kept on the reasoning that they were his words; they are not. He asked
-    at 17:23 whether three answers had been forgotten, and on the page
-    they were indistinguishable from his.
-    **This question is genuinely open and has never been answered.**
+  That loop may not still be running after four days, in which case the append is harmless bookkeeping.
 
+  **If you say nothing:** the answer stays undelivered, and the general rule is already recorded, so nothing
+  else blocks.
+  - **Follow-up (loop, 2026-07-25 17:24):** three submissions once attached here were REMOVED — not his
+    words but verbatim guard strings, from a guard that ran against the live target instead of the fixture
+    (fixed in `7be4a22`). **This question has never been answered.**
 
 ## Answered
 
