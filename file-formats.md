@@ -128,7 +128,31 @@ an ask has silently failed here:
 - **B — an unanswered sub-decision is recorded, and a fold that drops one is an
   error.** A multi-part ask (C1/C2, Q1/Q2) can be half-answered, and half is
   the dangerous state: `#275`'s Q3/Q5/Q6 have been unanswered since 2026-07-25
-  with nothing noticing. `lint.py` owns making that loud.
+  with nothing noticing. `lint.py` owns making that loud. Recognising a
+  sub-decision is **declared, not guessed from prose** — the corpus labels
+  decisions `Q1`/`M1`/`S1`/`C1` in freeform text, and inferring them is the
+  half-working-regex failure this repo distrusts most. So a multi-part ask
+  carries ONE canonical declaration line, and only that line is read:
+
+  ```text
+  **Sub-decisions:** `Q1`, `Q2`, `Q3`
+  ```
+
+  Backticked `<Letter><digits>` tokens, comma-separated (the same backtick-
+  comma shape `**Ask: \`C1\`, \`C2\`…**` already uses). `lint.check_subdecisions`
+  reads **only** that line — never prose — and **ERRORs** when a folded
+  (Answered) entry's resolution does not name every declared label. A label is
+  resolved if it appears backticked or bold anywhere in the folded entry
+  outside the declaration line, which covers the `→ answered`/`→ resolved`
+  head, a `Rec **Q1**` decision, and an `Answer (…)` bullet in one rule. A
+  fold that carries a sub-decision forward NAMES it in the head
+  (`→ answered (…): rec on Q1; Q2/Q3 carried forward`), so naming-it is both
+  the resolution and the record — **there is no second store**. History
+  handling is the marker itself: an entry that does not declare is not
+  examined, so the whole pre-rule corpus stays silent and clean, and scope is
+  content-resolved without a sha pinned by hand. `#275`'s own open Q3/Q5/Q6
+  are the motivating defect (they sit unanswered with no nudge to close);
+  this check catches the *future* fold that would drop them.
 - **An update makes the entry smaller** (2026-07-29 00:54). When a sub-question
   dies — refuted, superseded, settled — `~~strike~~` it or cut it, with one
   line saying when and why, and park the reasoning in the ledger or

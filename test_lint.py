@@ -4066,3 +4066,151 @@ Next id: **5**
         rep = lint.Report()
         lint.check_human_blocker(lint.SKILL_DIR / ".dreamwork", lint.load_watch(), rep)
         assert not any(lvl == lint.ERROR for lvl, _, _ in rep.rows), rep.render()
+
+
+class TestSubdecisions:
+    """#421 B: a fold that drops a declared sub-decision is an ERROR.
+
+    The motivating defect is `#275`'s Q3/Q5/Q6 — unanswered for days with
+    nothing noticing, because a multi-part ask can be half-answered and the
+    entry folded on the strength of the parts that were. The buildable half
+    of his ruling is a lint check, and recognising a sub-decision is
+    DECLARED (`**Sub-decisions:**` with backticked `Q1`) rather than guessed
+    from prose
+    — the corpus labels decisions in freeform text, and inferring them is
+    the half-working-regex failure this repo distrusts most.
+    """
+
+    def build(self, tmp_path, answered_entries):
+        """`answered_entries`: list of (title, body) under `## Answered`."""
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        body = "\n\n".join(f"- **{title}**\n{b}" for title, b in answered_entries)
+        (dw / "questions.md").write_text(
+            "# Questions\n\n## Open\n\n## Answered\n\n" + body + "\n")
+        return t
+
+    def rows(self, t):
+        rep = lint.Report()
+        lint.check_subdecisions(t / ".dreamwork", lint.load_watch(), rep)
+        return [d for lvl, w, d in rep.rows if w == "questions.md"]
+
+    def test_a_dropped_subdecision_is_an_error(self, tmp_path):
+        # THE red test: Q1 is resolved by a `Rec **Q1**`, Q2 appears nowhere.
+        # This is the half-answer the check exists for. (Production line whose
+        # change reds it: the `resolved` membership test in check_subdecisions
+        # — make it unconditionally resolve and Q2 stops erroring.)
+        t = self.build(tmp_path, [(
+            "An ask with two sub-decisions",
+            "  **Sub-decisions:** `Q1`, `Q2`\n\n"
+            "  → answered (2026-07-29 01:17): rec on Q1.\n\n"
+            "  Rec **Q1** is the chosen layout.\n",
+        )])
+        rep = lint.Report()
+        lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
+        errs = [d for lvl, w, d in rep.rows
+                if w == "questions.md" and lvl == lint.ERROR]
+        assert any("Q2" in e and "drops declared sub-decision" in e for e in errs), errs
+
+    def test_every_declared_label_named_is_clean(self, tmp_path):
+        # The same entry with Q2 named in the head carries it forward and is
+        # clean — naming-it is both the resolution and the record (no second
+        # store).
+        t = self.build(tmp_path, [(
+            "An ask with two sub-decisions",
+            "  **Sub-decisions:** `Q1`, `Q2`\n\n"
+            "  → answered (2026-07-29 01:17): rec on Q1; Q2 carried "
+            "forward, still open.\n",
+        )])
+        rep = lint.Report()
+        lint.run_checks(t / ".dreamwork", lint.load_watch(), rep)
+        assert not any(lvl == lint.ERROR and w == "questions.md"
+                       for lvl, w, _ in rep.rows), rep.render()
+
+    def test_an_answer_bullet_resolves_a_label(self, tmp_path):
+        # A label named only in an `Answer (via watch…)` follow-up (lifted into
+        # `follows` for Answered entries, not the head, not a Rec) is still
+        # resolved — the evidence scan covers the whole folded entry.
+        t = self.build(tmp_path, [(
+            "An ask",
+            "  **Sub-decisions:** `Q1`\n\n"
+            "  → answered (2026-07-29 01:17): done.\n"
+            "  - **Answer (via watch, 2026-07-29 01:17):** Q1 yes.\n",
+        )])
+        rep = lint.Report()
+        lint.check_subdecisions(t / ".dreamwork", lint.load_watch(), rep)
+        assert not any(lvl == lint.ERROR for lvl, _, _ in rep.rows), rep.render()
+
+    def test_an_entry_without_a_declaration_is_not_examined(self, tmp_path):
+        # History handling: no marker -> not under the rule, so no ERROR and
+        # no coverage row. Pre-adoption silence matches every other clean
+        # questions.md check (one OK row, from check_questions).
+        t = self.build(tmp_path, [(
+            "A legacy multi-part ask",
+            "  → answered (2026-07-25): rec. Q1 settled, Q2 not mentioned.\n",
+        )])
+        rep = lint.Report()
+        lint.check_subdecisions(t / ".dreamwork", lint.load_watch(), rep)
+        assert not any(lvl == lint.ERROR for lvl, _, _ in rep.rows), rep.render()
+        # No coverage row: the fixture has no declaration anywhere.
+        assert not any("#421 B" in d for _, _, d in rep.rows), rep.render()
+
+    def test_pre_adoption_is_silent_one_ok_row(self, tmp_path):
+        # The convention a coordinator's feedback had to reconcile with: a
+        # clean questions.md shows exactly ONE OK row (from check_questions),
+        # and a second row here on every target would break that. Pre-adoption
+        # (no declaration marker anywhere) this check is silent — so a full
+        # run still prints one OK for questions.md, not two.
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "questions.md").write_text(
+            "# Questions\n\n## Open\n\n## Answered\n")
+        rep = lint.Report()
+        lint.run_checks(dw, lint.load_watch(), rep)
+        oks = [lvl for lvl, w, _ in rep.rows if w == "questions.md"
+               and lvl == lint.OK]
+        assert oks == [lint.OK], f"pre-adoption should be exactly one OK: {rep.render()}"
+
+    def test_a_marker_on_an_open_entry_makes_the_check_visible(self, tmp_path):
+        # #430, reconciled with the one-OK-row convention: the coverage row
+        # appears once a declaration marker exists ANYWHERE (open or
+        # answered), so the check is visible the moment it has a subject —
+        # even before any fold. A marker on an OPEN entry (#275 today) is a
+        # future subject; the row reports the folded-side examination (here
+        # zero, because the marker is under ## Open), and never ERRORs.
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "questions.md").write_text(
+            "# Questions\n\n## Open\n\n"
+            "- **An open ask with a marker.**\n"
+            "  **Sub-decisions:** `Q1`, `Q2`\n\n"
+            "## Answered\n")
+        rep = lint.Report()
+        lint.check_subdecisions(dw, lint.load_watch(), rep)
+        assert not any(lvl == lint.ERROR for lvl, _, _ in rep.rows), rep.render()
+        ok_rows = [d for lvl, _, d in rep.rows if lvl == lint.OK]
+        assert any("0 folded" in d and "0 declared" in d for d in ok_rows), ok_rows
+
+    def test_a_label_only_in_the_declaration_is_dropped(self, tmp_path):
+        # Q1 appears ONLY inside `**Sub-decisions:** \`Q1\`` and nowhere else.
+        # The declaration line is excluded from the evidence, so this errors —
+        # a fold cannot satisfy the rule by merely restating what it asked.
+        t = self.build(tmp_path, [(
+            "An ask",
+            "  **Sub-decisions:** `Q1`\n\n"
+            "  → answered (2026-07-29 01:17): rec, no label named.\n",
+        )])
+        errs = self.rows(t)
+        assert any("Q1" in e and "drops declared sub-decision" in e for e in errs), errs
+
+    def test_the_live_repo_is_dormant_not_broken(self, tmp_path):
+        # Dogfood: the live corpus predates the marker (zero declarations), so
+        # the check examines nothing and stays silent — correct pre-adoption.
+        # A red here means a declaration landed and lint must now reason about
+        # it, which is a real finding for the coordinator (who owns the asks).
+        rep = lint.Report()
+        lint.check_subdecisions(lint.SKILL_DIR / ".dreamwork", lint.load_watch(), rep)
+        assert not any(lvl == lint.ERROR for lvl, _, _ in rep.rows), rep.render()
