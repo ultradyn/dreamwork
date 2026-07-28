@@ -3,7 +3,7 @@
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/deployact`**, branch **`wt/deployact`**. Do not push, do not merge.
 **Never use `attn` under any circumstances** — the coordinator is the only party that notifies the human.
 
-**Lane-owns:** `watch.py`, `test_watch.py`, `watch-design.md`, `dev/capture/staleremedy.mjs`
+Lane-owns: watch.py, test_watch.py, watch-design.md, dev/capture/staleremedy.mjs
 
 ## Two-way channel — do this first
 
@@ -12,6 +12,11 @@ follow **`for-subagents.md`**. **Coordinator inbox:
 `/home/xertrov/.cache/agent-comms/ud-dreamwork/coord-inbox.md`** — monitored live. Handshake there **before**
 starting, prefix every line `[deployact]`, and create + watch
 `/home/xertrov/.cache/agent-comms/ud-dreamwork/deployact-inbox.md` so I can steer you mid-task.
+
+Full report goes **once** to
+`/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`; **state which model you are** at the
+top. **Do not write `.dreamwork/handoffs.md`**, `.dreamwork/tasks.md` or `.dreamwork/questions.md` — report
+the lines you want added.
 
 **Report a line per increment as it lands, and commit as you go.** Two lanes were killed by an external
 sweep at 03:42 tonight with everything uncommitted and their final reports lost — the per-milestone inbox
