@@ -2,10 +2,59 @@
 
 ## Open
 
-- **2026-07-28 — Also, can you give be a bit of a rundown on how many subagents you launched v…**
-  Also, can you give be a bit of a rundown on how many subagents you launched via ccc in the last 12 hours or so and what they did, please?
-
 ## Answered
+
+- **2026-07-28 — Also, can you give be a bit of a rundown on how many subagents you launched v…** → answered
+  (2026-07-28 15:05): **~16 lanes across ~20 dispatch attempts**, all on this repo, two running
+  right now. The two ways of counting disagree, and the disagreement is the part worth knowing.
+
+  **The hard count, from `~/.local/state/cc-w/ccc/runs/`: 50 ccc invocations in 13 hours** — 19
+  produced substantial output (≥5k), 19 small, 3 were one-line probes, and **9 died producing
+  nothing at all**. That last bucket is mostly the `grok-4.5` 401 you just fixed.
+  **The caveat is a real gap:** a ccc run directory holds only `output.txt` and `transcript.txt`
+  — **no record of the prompt** — so I cannot separate lanes *I* dispatched from subagents the
+  lanes themselves spawned. 50 is an upper bound on my dispatches, not a count of them.
+
+  **What they did, from the durable record (ledger + `dogfood-orchestration.md`):**
+
+  - **Batch 1, 05:11–05:52 — four lanes, all landed.** `#382` plugcmd race (`@oc-glm52`, 19m),
+    `#383` three motion guards (`@grok`, 38m), `#354` filebytes plan (`@pi-glm52`, 25m, design),
+    `#384` two-line selector (`@pi-glm52`, 18m).
+  - **`#263`'s journal implementation — five lanes.** A/digest (`@grok`, 12m), B/journal
+    (`@grok`, ~20m), C/domain files (`@pi-glm52`, ~45m), F/CLI (`@glm52`, ~35m), B second batch
+    (`@grok`, ~25m). E and H stay withheld behind your second gate.
+  - **`#386`** gitrow 0px-open, and **`#300`** the run-mode hover popover (`@grok`, closed
+    `97c4fac`+`a6959cf`) — that one found that *my* acceptance criterion was unsound.
+  - **`#399b` — four dispatches on one task.** Two killed by the 401 with no artifact, one by my
+    own bad measurement. The most expensive hour of the day, and invisible where I was looking
+    because I dispatched with `> /dev/null 2>&1`.
+  - **`#331`** one ledger-span definition (`@glm52`, landed `cb476a7`, recovering 19 ids that
+    were invisible to every reader) and **`#411`** the `answered_at` anchor (`@glm52`, landed
+    `1f01a95`) — two dispatches, the first stopped by my own harness at ~1 minute.
+  - **Running now:** `#402a` status_sync liveness (`@glm52`) and `#367` the A/B/C previews you
+    asked to see (`@grok`, routed there for vision).
+
+  **Three findings worth your time:**
+
+  1. **Six of the first nine lanes refuted something their brief stated as established** — and
+     each refuted claim sat in the passage I had measured most carefully. Three error classes: a
+     wrong causal story attached to a correct measurement; a check that cannot observe its
+     subject; a red line naming the wrong layer. **Both runners produced work that corrected me**,
+     which is the property worth selecting for. Two brief lines bought that, about thirty words:
+     *disbelieve a green red-run*, and *you may contradict this brief*.
+  2. **From 05:52 to 14:50 the fleet was one alias**, so most of today's "comparison" is one
+     runner measured repeatedly rather than two compared. Your key refresh is what makes the two
+     lanes running now the first honest side-by-side.
+  3. **Parallel lanes are capped by this repo's verification, not by the models.** The guards bind
+     fixed ports and `just test` cannot run twice at once, so lane count is limited by the test
+     harness.
+
+  **Runner shape, tentatively:** `@grok` is markedly faster and is the only multimodal option, so
+  vision work routes there by capability rather than preference. `@glm52` produced the single best
+  artifact of the day. Neither has produced work that was wrong in a way I did not catch.
+
+  **Human:** Also, can you give be a bit of a rundown on how many subagents you launched via ccc
+  in the last 12 hours or so and what they did, please?
 
 - **2026-07-28 — Did we do the migration to sqlite yet?** → answered
   (2026-07-28 15:02): **No — nothing is in a database.** `tasks.md` is still the ledger and
