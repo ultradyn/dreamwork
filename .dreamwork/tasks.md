@@ -479,6 +479,20 @@ Next id: **421**
   author-owned, so the 4-vs-5 drift this entry recorded can recur. It wants deriving from
   `watch.parse_open_questions`, which is now a three-line change against a tool that already has
   the idiom
+  · **`#402b` now has a LIVE symptom, found within a minute of the merge and caused by my own
+  scoping.** `lint.py` errors on *"current_task_ids has non-integer member(s) '172', '420' — ids
+  are integers; a quoted id matches no task row, silently"*. The lane widened the syncer's id
+  vocabulary to carry sub-ids (this entry's own fourth finding: the int field cannot hold `#392a`)
+  and I **withheld `lint.py` from it**, so the two now disagree by construction
+  · **both parties are half right, which is why this is a format decision and not a bug fix.** A
+  genuine sub-id lane *must* be a string, and lint's stated reason is also real — a quoted `"172"`
+  matches no task row in any consumer that compares to an int. So `file-formats.md` has to state
+  the vocabulary (plain id → int; sub-id → string; never a quoted plain id) and `lint.py` has to
+  enforce **that**, in the same commit. Fourth checker today found narrower than the work it
+  describes
+  · immediate data corrected by hand rather than by widening the check: my `dreamers` entries said
+  `"task": "172"` where `172` is a plain integer id, which lint is right to reject. Sub-id lanes
+  like `402a` still need the string form and still have nowhere legitimate to live
 
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
   P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
