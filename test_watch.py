@@ -524,17 +524,15 @@ class TestCollector(unittest.TestCase):
         self.assertEqual(watch.LEDGER_ENTRY.flags, lint.LEDGER_ID.flags)
 
     def test_parse_ledger_reads_both_of_the_files_two_shapes(self):
-        # An id under `## Open` is an entry HEAD; under `## Recently landed`
-        # it is named inline, in prose. Reading the landed section with the
-        # entry-head rule finds NOTHING — which renders as "the loop has
-        # completed nothing", the exact shape of failure #136 is about.
+        # Both sections use entry HEADS (#399 retired prose-mention landing).
+        # A bare bold in a landed body is a reference, not a second landing.
         text = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
                 "- **#7** — a live one · P2 · task\n"
                 "  - a continuation line mentioning **#99** in passing\n"
                 "- **#8** — another · P3 · idea\n\n"
                 "## Recently landed\n\n"
-                "**#5** did a thing (abc1234) (2026-07-25). **#6** did "
-                "another (def5678).\n")
+                "- **#5** — did a thing · landed `abc1234` (2026-07-25)\n"
+                "- **#6** — did another · landed `def5678`\n")
         openids, landed = watch.parse_ledger(text)
         self.assertEqual(openids, {"7", "8"})
         self.assertEqual(landed, {"5", "6"})
@@ -570,7 +568,8 @@ class TestCollector(unittest.TestCase):
                 "    exactly as an entry describing this parser must\n"
                 "- **#8** — another · P3 · idea\n\n"
                 + LANDED + "\n\n"
-                "**#5** did a thing (abc1234). **#6** did another (def5678).\n")
+                "- **#5** — did a thing · landed `abc1234`\n"
+                "- **#6** — did another · landed `def5678`\n")
         openids, landed = watch.parse_ledger(text)
         # RED before the fix: openids == set() and landed swallowed #7/#8,
         # because the split landed inside #7's body.
@@ -583,56 +582,139 @@ class TestCollector(unittest.TestCase):
         self.assertEqual(watch.parse_ledger(text.replace(LANDED + "\n\n", ""))[1],
                          set(), "no landed section should mean no landed ids")
 
-    def test_parse_ledger_lands_every_id_in_a_combined_mention(self):
-        """#301 (landed half): a combined mention like `**#138/#156**` names
-        TWO ids, but the narrow LEDGER_MENTION requires `**` right after the
-        digits and matched NEITHER half — verified directly against the regex.
-        LEDGER_COMBINED_MENTION reads an ids-only bold span, so the three
-        combined mentions in the current ledger's landed section (#138/#156,
-        #250/#251, #292/#293) now contribute all their ids instead of zero.
+    def test_parse_ledger_lands_every_id_in_a_combined_head(self):
+        """#301 (landed half, post-#399): a combined ENTRY HEAD lands every id.
 
-        The open-section half of #301 (combined entry HEADS) is deliberately
-        NOT fixed here — see `test_open_combined_head_still_needs_lint_py`.
+        Pre-#399 this was a bare combined *mention* (`**#5/#6**`); #399 makes
+        landing explicit via heads / also-landed, so the multi-id case is the
+        combined head `- **#5/#6**` (same atom as open). Narrow LEDGER_MENTION
+        still misses the combined form — pinned so that defect stays real.
         """
-        COMBINED_MENTION = "**#5/#6**"
+        COMBINED_HEAD = "- **#5/#6**"
         text = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
                 "- **#9** — a singular live one · P3 · idea\n\n"
                 "## Recently landed\n\n"
-                + COMBINED_MENTION + " did two things (abc1234) (2026-07-25). "
-                "**#2** did another (def5678).\n")
-        # Precondition — a test whose fixture silently lost its combined
-        # mention would pass forever, so assert the fixture holds it.
-        self.assertIn(COMBINED_MENTION, text,
-                      "fixture must hold a combined mention to land")
-        # And the defect is real against the narrow pattern today, not a claim
-        # about a pattern that has since been widened — pin the RED.
-        self.assertEqual(watch.LEDGER_MENTION.findall(COMBINED_MENTION), [],
-                         "narrow LEDGER_MENTION misses the combined mention")
+                + COMBINED_HEAD + " — did two things · landed `abc1234`\n"
+                "- **#2** — did another · landed `def5678`\n")
+        self.assertIn(COMBINED_HEAD, text,
+                      "fixture must hold a combined head to land")
+        self.assertEqual(watch.LEDGER_MENTION.findall("**#5/#6**"), [],
+                         "narrow LEDGER_MENTION misses the combined form")
         _openids, landed = watch.parse_ledger(text)
-        # RED before the fix: landed == {"2"} — the singular mention only —
-        # because the combined mention contributed none of the ids it named.
         self.assertEqual(landed, {"2", "5", "6"},
-                         "a combined mention lands every id it names")
+                         "a combined landed head lands every id it names")
 
     def test_parse_ledger_ignores_a_prose_span_that_only_references_an_id(self):
-        """#301 guard against widening too far: a bold span wrapping prose
-        (`**#96 stage 1**`) is a REFERENCE, not a landing — the span's content
-        is not ids-only, so LEDGER_COMBINED_MENTION leaves it inert. Without
-        this guard the wider read would land every id named in any bold span,
-        which is exactly the `**#96 stage 1**` shape that lives in this repo's
-        own landed section today.
+        """#301/#399: a bold prose span is a REFERENCE, not a landing.
+
+        `**#96 stage 1**` is not ids-only; a bare `**#96**` in prose after a
+        real head is also a reference under #399 (not only the stage-1 form).
         """
         text = ("# Task ledger\n\nNext id: **9**\n\n## Open\n\n"
                 "- **#9** — open\n\n"
                 "## Recently landed\n\n"
-                "**#5** landed (abc1234). The **#96 stage 1** dreamhub work "
-                "relates.\n")
-        # Precondition: the prose-reference span is actually in the fixture.
+                "- **#5** — landed `abc1234`. The **#96 stage 1** dreamhub "
+                "work relates.\n")
         self.assertIn("**#96 stage 1**", text,
                       "fixture must hold a prose-reference span to ignore")
         _openids, landed = watch.parse_ledger(text)
         self.assertEqual(landed, {"5"},
                          "a prose span referencing an id does not land it")
+
+    def test_a_bare_bolded_id_in_a_landed_entry_is_not_landed(self):
+        """#399: `filed as **#392**` / `related: **#367**` do not land the id.
+
+        Pre-fix, LEDGER_COMBINED_MENTION scanned every ids-only bold span in
+        `## Recently landed`, so a related marker or prose bare bold put an
+        still-open task into the landed set — the exact defect that made
+        check_landed_asks tell the coordinator to fold #367's open ask.
+        """
+        text = ("# Task ledger\n\nNext id: **400**\n\n## Open\n\n"
+                "- **#367** — still open · P1 · origin: **human**\n"
+                "- **#392** — still open · P2 · origin: **loop**\n\n"
+                "## Recently landed\n\n"
+                "- **#395** — explicit field · origin: **loop** · related: "
+                "**#367, #392** · filed as **#399** in the same class · "
+                "landed `abc1234`\n")
+        # Precondition: the fixture really holds bare bold ids that the old
+        # scanner would land, and those ids are open.
+        self.assertIn("related: **#367, #392**", text)
+        self.assertIn("filed as **#399**", text)
+        self.assertIn("**#399**", text)
+        openids, landed = watch.parse_ledger(text)
+        self.assertEqual(openids, {"367", "392"})
+        self.assertEqual(landed, {"395"},
+                         "related: and filed-as bare bolds must not land")
+        self.assertNotIn("367", landed)
+        self.assertNotIn("392", landed)
+        self.assertNotIn("399", landed)
+
+    def test_a_landed_entry_head_is_landed(self):
+        """#399: the entry head is what marks a task landed."""
+        text = ("# Task ledger\n\nNext id: **10**\n\n## Open\n\n"
+                "- **#9** — open\n\n"
+                "## Recently landed\n\n"
+                "- **#5** — shipped · landed `abc1234`\n"
+                "- **#7/#8** — combined multi-close · landed `def5678`\n")
+        _open, landed = watch.parse_ledger(text)
+        self.assertEqual(landed, {"5", "7", "8"})
+
+    def test_also_landed_field_lands_additional_ids(self):
+        """#399: multi-close without a combined head uses also-landed:."""
+        text = ("# Task ledger\n\nNext id: **10**\n\n## Open\n\n"
+                "- **#9** — open\n\n"
+                "## Recently landed\n\n"
+                "- **#5** — closed two · origin: **loop** · also-landed: "
+                "**#6, #7** · landed `abc1234`\n"
+                "  · related: **#9** is a reference, not a landing\n")
+        self.assertIn("also-landed: **#6, #7**", text)
+        self.assertIn("related: **#9**", text)
+        _open, landed = watch.parse_ledger(text)
+        self.assertEqual(landed, {"5", "6", "7"},
+                         "also-landed lands extra ids; related: does not")
+        self.assertNotIn("9", landed)
+
+    def test_also_landed_mid_sentence_is_not_a_field(self):
+        """#399 / #395 class: unanchored prose must not claim the field."""
+        text = ("# Task ledger\n\nNext id: **10**\n\n## Open\n\n"
+                "- **#9** — open\n\n"
+                "## Recently landed\n\n"
+                "- **#5** — the form is also-landed: **#6** mid-sentence and "
+                "must not mint a landing · landed `abc1234`\n")
+        # Precondition: the old unanchored pattern would match.
+        unanchored = re.compile(r"also-landed:\s*\*\*([^*]*?)\*\*", re.I)
+        self.assertTrue(unanchored.search(text),
+                        "fixture must hold the mid-sentence phrase")
+        self.assertFalse(
+            watch.ALSO_LANDED_MARKER.search(
+                "the form is also-landed: **#6** mid-sentence"),
+            "field anchor must refuse mid-sentence prose")
+        _open, landed = watch.parse_ledger(text)
+        self.assertEqual(landed, {"5"})
+        self.assertNotIn("6", landed)
+
+    def test_the_real_ledger_has_no_id_both_open_and_landed(self):
+        """#399: open ∩ landed is empty on the real ledger, measured at runtime.
+
+        Precondition: both sections non-empty, or the disjointness assert is
+        vacuous the day the ledger is empty. Overlap count is reported so a
+        silent reintroduction of mention-scanning cannot pass without naming
+        how many ids it re-polluted.
+        """
+        path = os.path.join(os.path.dirname(watch.__file__),
+                            ".dreamwork", "tasks.md")
+        self.assertTrue(os.path.isfile(path), f"real ledger missing at {path}")
+        text = open(path, encoding="utf-8").read()
+        open_ids, landed_ids = watch.parse_ledger(text)
+        self.assertGreater(len(open_ids), 0,
+                           "precondition: real ledger has open ids")
+        self.assertGreater(len(landed_ids), 0,
+                           "precondition: real ledger has landed ids")
+        both = open_ids & landed_ids
+        self.assertEqual(
+            both, set(),
+            f"{len(both)} id(s) in BOTH open and landed sets: "
+            f"{sorted(both, key=lambda x: int(x) if x.isdigit() else x)}")
 
     def test_open_combined_head_reads_every_id_now_that_lint_widens_in_step(self):
         """#315 (the open half of #301, no longer deferred): a combined entry
@@ -719,11 +801,11 @@ class TestCollector(unittest.TestCase):
                             done=""), T),
                 # t=1h: #3 arrives, #1 lands
                 (LED.format(open=entry.format(i=2) + entry.format(i=3),
-                            done="**#1** did it (aaa1111) (2026-07-25)."),
+                            done="- **#1** — did it · landed `aaa1111`\n"),
                  T + 3600),
                 # t=2h: #2 lands, and #1 is GROOMED OUT of the landed section
                 (LED.format(open=entry.format(i=3),
-                            done="**#2** did it (bbb2222) (2026-07-25)."),
+                            done="- **#2** — did it · landed `bbb2222`\n"),
                  T + 7200),
             ])
             r = watch.ledger_series(d, now=T + 7200)
@@ -740,36 +822,28 @@ class TestCollector(unittest.TestCase):
             # the open count is a LEVEL, not a count of events
             self.assertEqual([b["open"] for b in r["buckets"]], [2, 2, 1])
 
-    def test_ledger_series_lands_every_id_in_a_combined_mention(self):
-        """#301: ledger_series calls parse_ledger per snapshot, so a combined
-        mention that parse_ledger missed was never counted as landed at ANY
-        commit — the burndown under-counted landings silently across the
-        whole history walk. Settles #301's hypothesis: the combined form was
-        never read as singular at any snapshot, because the narrow reader
-        lost it everywhere, not just at HEAD.
+    def test_ledger_series_lands_every_id_in_a_combined_head(self):
+        """#301/#399: ledger_series counts a combined landed HEAD as two ids.
+
+        Pre-#399 the fixture was a bare combined mention; after #399 landing
+        is heads / also-landed only, so the multi-id case is `- **#2/#3**`.
         """
         LED = "## Open\n\n{open}\n## Recently landed\n\n{done}\n"
         T = 1784900000
         one_open = "- **#1** — one · P2 · task\n"
         t0 = LED.format(open=one_open, done="")
         t1 = LED.format(open=one_open,
-                        done="**#2/#3** did it together (abc1234) (2026-07-25).")
-        # Precondition: the landed snapshot actually held a combined mention —
-        # a fixture whose combined form silently became singular would test a
-        # different rule than the one filed.
-        self.assertIn("**#2/#3**", t1,
-                      "fixture must hold a combined mention to land")
+                        done="- **#2/#3** — did it together · landed `abc1234`\n")
+        self.assertIn("- **#2/#3**", t1,
+                      "fixture must hold a combined head to land")
         watch._LEDGER_SNAPS.clear()
         with tempfile.TemporaryDirectory() as d:
             self._ledger_repo(d, [(t0, T), (t1, T + 3600)])
             r = watch.ledger_series(d, now=T + 3600)
             self.assertEqual(r["state"], watch.BURN_OK)
-            # RED before the fix: arrived == 1 and landed == 0 — parse_ledger
-            # saw neither id named in `**#2/#3**`, so two completed tasks left
-            # no trace in the burndown at all, at HEAD or in history.
             self.assertEqual(r["arrived"], 3, "the combined ids arrived")
             self.assertEqual(r["landed"], 2,
-                             "a combined mention lands every id it names")
+                             "a combined head lands every id it names")
             self.assertEqual(r["open"], 1)
 
     def test_ledger_series_carries_a_level_across_an_empty_bucket(self):

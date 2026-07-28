@@ -7538,8 +7538,9 @@ LEDGER_PATH = ".dreamwork/tasks.md"
 # already learned this the hard way today (3073055), holding a wider copy of
 # the priority-marker rule than the parser and blessing three typos.
 LEDGER_ENTRY = re.compile(r"^- \*\*(#\d+(?:/#\d+)*)\*\*", re.M)
-# ...and in `## Recently landed` an id is named inline, in prose, so the
-# entry-head shape does not apply there.
+# Pre-#399 landed readers: bare bold spans anywhere in `## Recently landed`.
+# Kept for regression reconstructions in tests; `_landed_ids` no longer uses
+# them (#399). A bare `**#N**` is a REFERENCE (related:, filed-as, prose).
 LEDGER_MENTION = re.compile(r"\*\*#(\d+)\*\*")
 # LEDGER_ENTRY is combined-aware: its bold span is ids only (`#7` or
 # `#7/#8`), so a combined entry HEAD (`- **#7/#8**`) names EVERY id in it,
@@ -7557,10 +7558,15 @@ LEDGER_MENTION = re.compile(r"\*\*#(\d+)\*\*")
 # still pins the two patterns identical; it did not need editing.
 #
 # LEDGER_MENTION stays narrow: it is the pre-#304 landed reader, reconstructed
-# verbatim in test_lint.py's regression, and the landed half of #301 is owned
-# by LEDGER_COMBINED_MENTION below (ids-only bold span: `#7` or `#138/#156`,
-# so `**#96 stage 1**` stays inert). parse_ledger reads landed ids through it.
+# verbatim in test_lint.py's regression. LEDGER_COMBINED_MENTION is the
+# pre-#399 landed half of #301 (ids-only bold span anywhere). #399 retired
+# both as production landed readers: mention-scanning treated `related:` and
+# `filed as **#N**` as landings, so open tasks appeared landed.
 LEDGER_COMBINED_MENTION = re.compile(r"\*\*(#\d+(?:/#\d+)*)\*\*")
+# #399: additional ids closed by the same landed entry, explicit like related:.
+# Field-anchored so mid-sentence "also-landed: **#9**" prose is not a claim.
+ALSO_LANDED_MARKER = re.compile(
+    r"(?:^|[·])\s*also-landed:\s*\*\*([^*]*?)\*\*", re.I)
 # A SECTION is opened by a heading LINE and by nothing else (#304). These were
 # once located with an unanchored `text.split("## Open", 1)`, which let any
 # entry whose PROSE quoted a heading become the split point — and that is not
@@ -7646,17 +7652,13 @@ def entry_origins(text):
 def parse_ledger(text):
     """One ledger snapshot as `(open ids, landed ids)`.
 
-    An id under `## Open` is an entry HEAD; an id under `## Recently landed`
-    is named inline in prose. Two shapes because the file has two, and
-    reading the landed section with the entry-head rule finds nothing at all
-    — which would render as "the loop has completed nothing", the exact shape
-    of failure #136 is about.
-
-    Both reads are combined-aware: an entry head like `- **#7/#8**` and a
-    landed mention like `**#138/#156**` each name EVERY id in their ids-only
-    bold span, while a prose span like `**#96 stage 1**` stays inert (#301
-    for landed, #315 for open). The open read widens in lockstep with
-    lint.check_ledger_sections — see LEDGER_ENTRY's comment.
+    An id under `## Open` is an entry HEAD. An id under `## Recently landed`
+    lands only when it is that section's entry HEAD or named in an
+    `also-landed:` field (#399) — not because prose, `related:`, or
+    `filed as **#N**` bolded it. Both reads are combined-aware: a head
+    like `- **#7/#8**` names EVERY id in its ids-only bold span, while a
+    prose span like `**#96 stage 1**` stays inert. The open read widens in
+    lockstep with lint.check_ledger_sections — see LEDGER_ENTRY's comment.
     """
     if not text:
         return set(), set()
@@ -7683,15 +7685,30 @@ def _open_ids(text):
 
 
 def _landed_ids(text):
-    """Every id named in this landed section's `**#…**` mentions, combined-aware.
+    """Ids this landed section marks as done: entry heads + `also-landed:`.
 
-    A combined mention (`**#138/#156**`) names two ids; LEDGER_COMBINED_MENTION
-    matches an ids-only bold span so `**#96 stage 1**` (a prose reference) does
-    not land #96. Returns strings, matching the shape LEDGER_MENTION.findall
-    returned — `ledger_series` and the origin walk key on string ids throughout.
+    #399: a bare bold id in a landed entry is a REFERENCE, not a landing.
+    `lint.check_related_markers` *requires* landed entries to name open
+    counterparts in `related: **#N**`; scanning every bold span then read
+    those markers as landings, so the more correctly the ledger was
+    cross-referenced the more open tasks appeared done — and
+    `check_landed_asks` told the coordinator to fold the human's still-open
+    `#367` ask. The two checks share the ledger and must not share a
+    definition of "bold id means landed".
+
+    What lands an id:
+      - the entry head (`- **#N**` or combined `- **#N/#M**`)
+      - an explicit `· also-landed: **#X, #Y**` field for additional ids
+        closed by the same commit (multi-close without a combined head)
+
+    Everything else — `related:`, `filed as **#N**`, prose — is a reference.
+    Returns strings, matching the shape `ledger_series` and the origin walk
+    key on throughout.
     """
     ids = set()
-    for m in LEDGER_COMBINED_MENTION.finditer(text):
+    for m in LEDGER_ENTRY.finditer(text):
+        ids.update(ENTRY_ID.findall(m.group(1)))
+    for m in ALSO_LANDED_MARKER.finditer(text):
         ids.update(ENTRY_ID.findall(m.group(1)))
     return ids
 
