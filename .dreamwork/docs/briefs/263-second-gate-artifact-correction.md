@@ -131,6 +131,8 @@ on the three points in criterion 6.
 
 ## AMENDMENT 2, 2026-07-28 17:22 — lane C is now 5 of 5 and the gate's condition IS met
 
+**Your worktree is `.worktrees/gate2`, branch `wt/gate2`** — the header at the top of this file names `.worktrees/gate`, which was removed after its lane merged. Ignore the header; use `gate2`. The previous artifact is already on `master`, so you are editing files that exist in your worktree.
+
 **The page you corrected an hour ago is now wrong in the other direction, and this is the good kind of
 wrong.** `C4` (`f85be1c`) and `C5` (`2cc3537`) landed at 17:21, verified by a merge gate that takes its
 denominator from the plan's own increment table and asserts five rows. So:
