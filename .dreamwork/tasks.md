@@ -24,9 +24,23 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **432**
+Next id: **433**
 
 ## Open
+- **#432** — `#ask` is not a required element, so 19 artifacts cannot be measured at all · P2 ·
+  loop-tooling/review-artifacts · origin: **loop** · **the half of `#429` that is a retrofit, not a fix**
+  · The criterion and its checker exist (`1dd973f`) and three artifacts carry `#ask`: `421` (218/266),
+  `417` (246/315) and now `263` (188/266). **The other 19 have no such element**, so
+  `above_fold.mjs` reports `#ask MISSING` and gates nothing about them
+  · so: make the id a documented requirement in `file-formats.md` / the artifact template, and only
+  then register a guard that walks `.dreamwork/review/` — registering it before the retrofit would red
+  the suite over 19 artifacts that predate the contract, which is why `above_fold` sits in
+  `lint.NOT_GUARDS` today with that reason written down
+  · **do not retrofit by adding an empty `#ask` to each page.** The id has to wrap the actual decision
+  or the check passes on a page whose ask is still buried — the same hollowness in a new place. Pages
+  with no decision to make (a design note, a schema) should be **exempt by declaration**, not by
+  carrying a decoy element
+  · related: **#429, #430**
 - **#431** — `just deploy`'s `pkill -f` kills any process whose command line merely mentions the
   snapshot, including the shell running the deploy · P1 · loop-tooling/deploy · origin: **loop**
   · **it killed my own shell mid-deploy, 2026-07-28 18:16**
@@ -45,25 +59,6 @@ Next id: **432**
   mention is not a match. Prefer the pid: a pattern that must not match the caller is a pattern that
   will one day match the caller
   · related: **#426**
-- **#429** — the above-fold criterion we put in every review brief is unenforceable on 20 of 22
-  artifacts · P1 · loop-tooling/review-artifacts · origin: **loop** · **measured, 2026-07-28 17:52**
-  · Every brief that asks him to rule says the ask must satisfy
-  `getBoundingClientRect().bottom < innerHeight`. **`#ask` exists on 2 of 22 built artifacts.** On the
-  other 20 the criterion cannot be evaluated at all, so it has been silently unenforced since it was
-  written — a lane either invented the id, or didn't, and nothing noticed either way
-  · **the two that have it disagree about the answer, which is the useful part.**
-  `421-question-options` passes (`ask.top` 218 desktop / 266 mobile) because it puts the ask **inside
-  the hero**; `263-second-gate` fails (594 / **1006**) because it puts the ask after the hero. So the
-  working pattern already exists in the corpus and is undocumented
-  · **the criterion's letter is also wrong for a multi-question ask.** 263's `#ask` is 870px tall
-  because it holds three decisions; `bottom < innerHeight` is unachievable for it at any viewport and
-  demanding it would mean splitting a coherent decision block. The measurable intent is *the ask
-  **starts** above the fold and its first decision is readable* — `top < innerHeight`, plus the first
-  sub-decision's `top < innerHeight`
-  · so: make `#ask` a documented required element in `file-formats.md` / the artifact template, restate
-  the criterion as above in `watch-design.md`, and give it **one shared checker** instead of each lane
-  writing its own mjs
-  · related: **#430, #325**
 - **#427** — the hand-off grammar is widened in `lint` but not in the parser, so the dashboard still
   cannot read a two-sha line · P3 · loop-tooling/format · origin: **loop** · **named by the `#415`
   lane rather than left to be found**
@@ -3595,6 +3590,32 @@ Next id: **432**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#429** — the above-fold criterion we put in every review brief is unenforceable on 20 of 22
+  artifacts · P1 · loop-tooling/review-artifacts · origin: **loop** · **measured, 2026-07-28 17:52**
+  · Every brief that asks him to rule says the ask must satisfy
+  `getBoundingClientRect().bottom < innerHeight`. **`#ask` exists on 2 of 22 built artifacts.** On the
+  other 20 the criterion cannot be evaluated at all, so it has been silently unenforced since it was
+  written — a lane either invented the id, or didn't, and nothing noticed either way
+  · **the two that have it disagree about the answer, which is the useful part.**
+  `421-question-options` passes (`ask.top` 218 desktop / 266 mobile) because it puts the ask **inside
+  the hero**; `263-second-gate` fails (594 / **1006**) because it puts the ask after the hero. So the
+  working pattern already exists in the corpus and is undocumented
+  · **the criterion's letter is also wrong for a multi-question ask.** 263's `#ask` is 870px tall
+  because it holds three decisions; `bottom < innerHeight` is unachievable for it at any viewport and
+  demanding it would mean splitting a coherent decision block. The measurable intent is *the ask
+  **starts** above the fold and its first decision is readable* — `top < innerHeight`, plus the first
+  sub-decision's `top < innerHeight`
+  · so: make `#ask` a documented required element in `file-formats.md` / the artifact template, restate
+  the criterion as above in `watch-design.md`, and give it **one shared checker** instead of each lane
+  writing its own mjs
+  · related: **#430, #325, #432**
+  · **→ folded 2026-07-28 18:21 — landed `1dd973f` + `a54d162`.** The defect as stated is closed:
+  the criterion is restated to something satisfiable (`top < innerHeight` for the block *and* its
+  first decision, not `bottom < innerHeight` for a 870px three-decision block), it has one shared
+  checker instead of a per-lane copy, and the single artifact that failed it now passes at 188/266.
+  **What is NOT done is the retrofit**, and it is deliberately a separate increment: 19 artifacts
+  still carry no `#ask`, so the checker cannot speak about them. That is `#432`
+
 - **#430** — a viewport-setting check must assert the viewport was applied, because mine didn't · P1 ·
   loop-tooling/verification · origin: **loop** · **caught in my own hands, 2026-07-28 17:47**
   · I measured the `#263` artifact with `newPage({viewportSize:…})`. Playwright's option is
@@ -3614,7 +3635,7 @@ Next id: **432**
   `viewportSize` key. So this is not a defect in the tree; it is a missing precondition — **2 of 65
   assert `innerWidth` matches what they asked for.** The repo is one typo away from the failure, not
   living in it, which lowers the urgency and does not change the fix
-  · related: **#429**
+  · related: **#429, #432**
   · **→ folded 2026-07-28 18:14 — landed `1dd973f`.** The shared checker exists with all three
   preconditions red-proved, and is declared a tool rather than a guard in `lint.NOT_GUARDS` with the
   reason it gates nothing yet. Making it *gate* the corpus needs `#ask` to be a contract first, which
