@@ -1,12 +1,13 @@
 <!doctype html>
-<!--Built from the dreamwork review template v1+14f0e44f (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
+<!--Built from the dreamwork review template v1+c6a57f20 (review-artifact.template.html). Edit the source in .dreamwork/review/src/ and rebuild; edits here are lost.-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
-<meta name="dreamwork-review-template" content="v1+14f0e44f"
-<meta name="dreamwork-review-ask" content="ask">>
+<meta name="dreamwork-review-template" content="v1+c6a57f20"
+<meta name="dreamwork-review-ask" content="ask"
+<meta name="dreamwork-review-if-silent" content="if-silent">>>
 <title>#346 · Task store schema · what the ledger actually contains</title>
 <style>
 /* Offline-clean by construction: no fetches, no external fonts, no images.
@@ -80,6 +81,10 @@ main{padding:3rem 0 5rem}section{margin:0 0 3.4rem}
 .version-mark small{color:var(--dim)}
 .call{margin:1.2rem 0;padding:1rem 1.2ch;background:linear-gradient(90deg,rgba(165,180,252,.09),transparent);border-left:2px solid var(--accent);max-width:84ch}
 .notice{margin:1rem 0;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--warn);color:var(--muted);max-width:84ch}
+/* #455 — cost of silence: one sentence, not a second summary. Quieter than
+   the ask's accent rail; sits with the lead, not the status chip. */
+#if-silent,.if-silent{margin:.55rem 0 1rem;padding:.15rem 0 .15rem 1.3ch;border-left:1px solid var(--border);color:var(--muted);max-width:var(--measure);font-size:.84rem;line-height:1.6}
+#if-silent .key,.if-silent .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
 .facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:1.1rem 0}
 .fact{background:var(--bg2);padding:.95rem}.fact .number{display:block;color:var(--bright);font-size:1.3rem;line-height:1.1}.fact .caption{display:block;color:var(--dim);margin-top:.3rem;font-size:.72rem}
 table{width:100%;border-collapse:collapse;margin:.7rem 0;font-size:.75rem;min-width:max-content}
@@ -269,6 +274,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       smaller than #294 claimed</strong>, and the part that is not gated is designed here — the
       task entity, its read-only CLI, and the migration's report half. Nothing is built. The full
       design is <code>.dreamwork/docs/plans/task-store-schema.md</code>.</p>
+      <p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> the schema stays design-only — the sqlite migration does not start, and #263 E1 remains the gate.</p>
       <div id="ask" class="ask-block">
         <div class="label">The decisions &mdash; S1 to S4</div>
         <p class="ask-q"><strong>S1</strong> split the combined entries, <strong>S2</strong> closed
@@ -443,7 +449,7 @@ task (id PK, entry_id -&gt; entry, ordinal)</code></pre>
   production line that must change for it to fail.</div>
 </section>
 
-<footer>task #346 · design only · <code>.dreamwork/docs/plans/task-store-schema.md</code> <span class="dimmer">· built from review template v1+14f0e44f</span></footer>
+<footer>task #346 · design only · <code>.dreamwork/docs/plans/task-store-schema.md</code> <span class="dimmer">· built from review template v1+c6a57f20</span></footer>
 
 </main>
 </body>

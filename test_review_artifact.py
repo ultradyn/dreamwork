@@ -71,6 +71,15 @@ MARK_RAIL_TOKENS = (
 )
 TEMPLATE_ONLY |= set(MARK_RAIL_TOKENS)
 
+# #455 — the if-silent one-sentence slot. New CSS beyond the hand-rolled
+# reference (tasks-page.html has no cost-of-silence line). Grouped so a
+# selector the template gains for #455 is declared here, not invented.
+IF_SILENT_TOKENS = (
+    "#if-silent,.if-silent",
+    "#if-silent .key,.if-silent .key",
+)
+TEMPLATE_ONLY |= set(IF_SILENT_TOKENS)
+
 # A body may use these without inventing anything, so the template must carry
 # them. Without this, a fidelity failure could be "fixed" by deleting the rule.
 CORE_SELECTORS = (
@@ -78,7 +87,7 @@ CORE_SELECTORS = (
     ".skip", ".toprail", ".toprail-in", ".identity", ".topactions", ".status",
     "main", "section", ".label", ".quiet", ".dim", ".dimmer", ".kicker",
     ".proposal", ".sub", ".lead", ".hero-grid", ".version-mark", ".call",
-    ".notice", ".facts", ".fact", "table", "th", "td", ".scroller",
+    ".notice", "#if-silent", ".facts", ".fact", "table", "th", "td", ".scroller",
     ".summary-line", ".key", "figure", "figcaption", ".spine", ".spine-row",
     ".checks", ".check", ".stages", ".stage", "details", "summary",
     ".details-in", "details::details-content", ".choice", ".choice-grid",
@@ -96,6 +105,7 @@ sub: task #999 · 27 July 2026
 skip: Skip to the decisions
 skip_href: #decision
 no_ask: fixture — a synthetic minimal artifact with no decision to make
+no_if_silent: fixture — no decision to park; silence costs nothing
 -->
 <!--#nav-->
 <a href="#decision">decisions</a>
@@ -1215,13 +1225,14 @@ def test_a_no_marks_artifact_renders_no_rail_tab_or_controls(template):
             "resolved ref %s already carries essential marks — the resolver "
             "picked the wrong commit, so the comparison would be new-vs-new "
             "and prove nothing" % ref)
-        # The pre-change builder predates the #ask contract (#436), so it does
-        # not know the `no_ask` header scalar. Strip it before handing the
-        # fields over: the comparison is about the BODY, and `no_ask` is a
-        # header concern the old builder never had, so leaving it in would
-        # make the old builder refuse on an unknown slot rather than render.
+        # The pre-change builder predates the #ask (#436) and if-silent (#455)
+        # contracts, so it does not know those header scalars. Strip them
+        # before handing the fields over: the comparison is about the BODY,
+        # and leaving either in would make the old builder refuse on an
+        # unknown slot rather than render.
         old_fields = old.parse_source(SOURCE)
         old_fields.pop("no_ask", None)
+        old_fields.pop("no_if_silent", None)
         pre = _body_region(
             old.render(old_fields, template=template))
         assert pre == _body_region(new), (
@@ -1863,3 +1874,135 @@ def test_the_ask_meta_sits_beside_the_template_stamp_in_head(template):
     # reader scanning metas sees provenance before the ask contract)
     assert abs(ask_meta_pos - stamp_pos) < 200, \
         "the ask meta is far from the stamp meta — not 'beside' it"
+
+
+# ── the if-silent contract (#455) ─────────────────────────────────────────
+#
+# Audit: ~16/27 first screens already answer ≥3 of 4 orientation questions;
+# Q4 (cost of silence) is the structural hole (~4/27). The voice contract
+# wants all four; the build enforces only Q4 — one sentence, refused when
+# absent or empty, never on a word count. Same shape as #ask (#436).
+#
+# Production line: `enforce_if_silent_contract`'s three raise branches.
+
+
+def test_a_source_with_no_if_silent_and_no_exemption_is_refused(template):
+    """Neither a real if-silent sentence nor an exemption is a refusal.
+
+    Production line: the `if not present: raise` branch in
+    `enforce_if_silent_contract`. Drop it and a source with neither builds,
+    planting no if-silent meta — the wish, not the standard.
+    """
+    fields = ra.parse_source(SOURCE)
+    fields.pop("no_if_silent", None)
+    assert "no_if_silent" not in fields, "fixture lost its exemption — test is vacuous"
+    with pytest.raises(ra.ArtifactError, match="neither"):
+        ra.render(fields, template=template)
+
+
+def test_a_source_with_both_if_silent_and_an_exemption_is_refused(template):
+    """Both is the same hollowness as neither, in a new place (#455).
+
+    Production line: the `if no_if_silent and present: raise` branch.
+    """
+    fields = ra.parse_source(SOURCE)
+    assert "no_if_silent" in fields, "fixture carries no exemption — cannot add both"
+    fields["lead"] += (
+        '\n<p id="if-silent"><span class="key">if you say nothing</span> '
+        "the fixture parks — no default is taken.</p>")
+    with pytest.raises(ra.ArtifactError, match="both"):
+        ra.render(fields, template=template)
+
+
+def test_an_empty_or_decoy_if_silent_is_refused(template):
+    """A decoy if-silent — present but empty — is the hollowness #455 ends.
+
+    Production line: `scan_if_silent`'s non-empty text settlement, read by
+    the `if not meaningful: raise` branch. Collapse meaningful to present
+    and this passes while the reader still does not know the cost of silence.
+    Refuse on ABSENCE of text, never on a word or character count.
+    """
+    fields = ra.parse_source(SOURCE)
+    fields.pop("no_if_silent", None)
+    for decoy, why in [
+        ('<p id="if-silent"></p>', "empty"),
+        ('<p id="if-silent">   </p>', "whitespace-only"),
+        ('<p id="if-silent"><br></p>', "element but no text"),
+    ]:
+        f = dict(fields)
+        f["lead"] += "\n" + decoy
+        with pytest.raises(ra.ArtifactError, match="empty|whitespace") as caught:
+            ra.render(f, template=template)
+        assert "if-silent" in str(caught.value).lower() or "silence" in str(caught.value).lower(), (
+            "the refusal for %r did not name if-silent: %r" % (why, caught.value))
+
+
+def test_a_meaningful_if_silent_builds_and_carries_the_meta(template):
+    """Happy path: one real sentence and the built artifact records it.
+
+    Production line: `enforce_if_silent_contract` returns `"if-silent"`,
+    `_inject_if_silent_meta` plants it. Drop either and the meta is absent.
+    """
+    fields = ra.parse_source(SOURCE)
+    fields.pop("no_if_silent", None)
+    fields["lead"] += (
+        '\n<p id="if-silent"><span class="key">if you say nothing</span> '
+        "the fixture parks — no default is taken.</p>")
+    doc = ra.render(fields, template=template)
+    assert ra.if_silent_status(doc) == "if-silent", "the if-silent meta was not written"
+    present, meaningful = ra.scan_if_silent(doc)
+    assert present and meaningful, "scan_if_silent did not find the sentence"
+
+
+def test_an_exempt_if_silent_builds_and_carries_the_exempt_meta(template):
+    """Exemption: `no_if_silent:` and the built meta carries the reason."""
+    fields = ra.parse_source(SOURCE)
+    assert fields["no_if_silent"], "fixture carries no exemption — test is vacuous"
+    doc = ra.render(fields, template=template)
+    assert ra.if_silent_status(doc) == "exempt: " + fields["no_if_silent"], \
+        "the exempt meta was not written or lost the reason"
+
+
+def test_an_untemplated_artifact_has_no_if_silent_meta_and_is_not_asked_to_have_one():
+    """Src-less artifacts cannot be rebuilt. A future walking guard reads
+    `classify` first: `untemplated` is skipped by class. Verified against the
+    real corpus so the test cannot pass over an empty directory.
+    """
+    import glob
+    untemplated = None
+    for path in sorted(glob.glob(os.path.join(HERE, ".dreamwork", "review", "*.html"))):
+        with open(path, encoding="utf-8") as handle:
+            if ra.classify(handle.read()) == "untemplated":
+                untemplated = path
+                break
+    assert untemplated, \
+        "no untemplated artifact found in the corpus — the test is vacuous"
+    with open(untemplated, encoding="utf-8") as handle:
+        assert ra.if_silent_status(handle.read()) is None, \
+            "%s is untemplated but carries an if-silent meta" % untemplated
+
+
+def test_if_silent_contract_precondition_at_least_one_src_is_checked():
+    """Precondition: at least one buildable source exists under review/src/.
+
+    A check that matches nothing passes forever. Derived at runtime so a
+    fixture count cannot go stale.
+    """
+    src = os.path.join(HERE, ".dreamwork", "review", "src")
+    assert os.path.isdir(src), "review/src/ is missing — the contract has no corpus"
+    sources = [name for name in os.listdir(src) if name.endswith(".html")]
+    assert sources, (
+        "review/src/ has no .html sources — enforce_if_silent_contract would "
+        "match nothing and pass forever")
+
+
+def test_the_if_silent_meta_sits_beside_the_ask_meta_in_head(template):
+    """If-silent meta is planted beside the ask meta / stamp, in `<head>`."""
+    fields = ra.parse_source(SOURCE)
+    doc = ra.render(fields, template=template)
+    head_end = doc.index("</head>")
+    silent_pos = doc.index(ra.IF_SILENT_META_NAME)
+    ask_pos = doc.index(ra.ASK_META_NAME)
+    assert silent_pos < head_end, "the if-silent meta is outside <head>"
+    assert abs(silent_pos - ask_pos) < 250, \
+        "the if-silent meta is far from the ask meta — not 'beside' it"

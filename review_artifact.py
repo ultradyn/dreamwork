@@ -71,7 +71,7 @@ TEMPLATE_DOC_RE = re.compile(r"<!--dreamwork-review-template:.*?-->\n?", re.S)
 
 REQUIRED = ("title", "identity", "headline", "lead", "body", "footer")
 OPTIONAL = ("context", "status", "tag", "sub", "call", "aside", "nav",
-            "skip", "skip_href", "aside_label", "no_ask")
+            "skip", "skip_href", "aside_label", "no_ask", "no_if_silent")
 # Filled by the builder from the others; an author who sets one is corrected
 # rather than quietly overridden.
 DERIVED = ("TEMPLATE_STAMP", "hero_solo")
@@ -1202,6 +1202,175 @@ def enforce_ask_contract(document, no_ask):
     return "ask"
 
 
+# ── the if-silent contract (#455) ─────────────────────────────────────────
+#
+# Audit of the 27 built artifacts (2026-07-29, context lane) found the brief's
+# premise half-refuted: about 16/27 first screens already answer ≥3 of the
+# four orientation questions (what / decision / why-now / if-silent). The
+# structural hole is Q4 — "what happens if he says nothing" — present on only
+# ~4/27. That is the most decision-relevant of the four (it tells him whether
+# ignoring the page costs anything) and the one nobody writes unprompted.
+#
+# So the *voice* contract (watch-design.md) still asks authors to answer all
+# four. The *build* contract enforces only Q4: one sentence, required, same
+# shape as the #ask contract (#436). A full orientation paragraph on every
+# artifact would bulk up the 16 that already orient — against the standing
+# preference that surfaces get smaller, not longer.
+#
+# A source declares EXACTLY ONE of:
+#   * a meaningful `<... id="if-silent">` element (one sentence, usually in
+#     the lead beside the ask), or
+#   * a `no_if_silent: <one-line reason>` header scalar (a page with no
+#     decision to park, or already settled — reason carried for a future
+#     guard).
+#
+# Both, neither, and a decoy (empty / too short) are refused. The builder
+# records `<meta name="dreamwork-review-if-silent" content="if-silent|exempt: …">`.
+#
+# "Meaningful" is non-whitespace text. The build refuses ABSENCE and empty
+# decoys — never a word or character count (brittle, 2026-07-29 preference).
+# Nested structure is not required; one sentence in a `<p>` is the form.
+#
+# The ~12 of 27 built artifacts with no `src/` cannot be reached by a
+# build-time contract. Same decision as #436: leave the walking guard
+# unregistered rather than register one that silently passes over the
+# src-less half. Reconstructing those is a successor task.
+
+IF_SILENT_ID = "if-silent"
+IF_SILENT_META_NAME = "dreamwork-review-if-silent"
+IF_SILENT_META_RE = re.compile(
+    r'<meta\s+name=["\']%s["\']\s+content=["\']([^"\']*)["\']' % IF_SILENT_META_NAME)
+
+
+def if_silent_status(document):
+    """`'if-silent'`, `'exempt: <reason>'`, or `None` (no meta — untemplated / pre-#455)."""
+    match = IF_SILENT_META_RE.search(document)
+    return match.group(1) if match else None
+
+
+class _IfSilentScan(html.parser.HTMLParser):
+    """Find `id="if-silent"` and whether its text is a real sentence.
+
+    Depth-tracked like `_AskScan`. `convert_charrefs=True` so entity-encoded
+    whitespace reads as whitespace rather than opaque text.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.present = False
+        self.meaningful = False
+        self._depth_marker = None
+        self._depth = 0
+        self._text_inside = []
+
+    def _see(self, tag, attrs, self_closing):
+        table = dict(attrs)
+        opening = (table.get("id", "").strip() == IF_SILENT_ID
+                   and self._depth_marker is None)
+        if opening:
+            self.present = True
+            self._depth_marker = self._depth
+
+    def handle_starttag(self, tag, attrs):
+        self._see(tag, attrs, False)
+        if tag not in _VOID:
+            self._depth += 1
+
+    def handle_startendtag(self, tag, attrs):
+        self._see(tag, attrs, True)
+
+    def handle_endtag(self, tag):
+        if tag in _VOID:
+            return
+        if self._depth:
+            self._depth -= 1
+        if self._depth_marker is not None and self._depth <= self._depth_marker:
+            text = re.sub(r"\s+", " ", "".join(self._text_inside)).strip()
+            if text:
+                self.meaningful = True
+            self._depth_marker = None
+            self._text_inside = []
+
+    def handle_data(self, data):
+        if self._depth_marker is not None:
+            self._text_inside.append(data)
+
+    def close(self):
+        super().close()
+        if self._depth_marker is not None and not self.meaningful:
+            text = re.sub(r"\s+", " ", "".join(self._text_inside)).strip()
+            if text:
+                self.meaningful = True
+
+
+def scan_if_silent(document):
+    """`(present, meaningful)` for the `id="if-silent"` element."""
+    scan = _IfSilentScan()
+    scan.feed(document)
+    scan.close()
+    return scan.present, scan.meaningful
+
+
+def _if_silent_meta_tag(content):
+    return ('<meta name="%s" content="%s">'
+            % (IF_SILENT_META_NAME, html.escape(content, quote=True)))
+
+
+def _inject_if_silent_meta(document, content):
+    """Plant the if-silent meta beside the ask meta / template stamp."""
+    tag = _if_silent_meta_tag(content)
+    if IF_SILENT_META_RE.search(document):
+        return IF_SILENT_META_RE.sub(tag, document, count=1)
+    ask = ASK_META_RE.search(document)
+    if ask:
+        return document[:ask.end()] + "\n" + tag + document[ask.end():]
+    stamp = re.search(
+        r'<meta\s+name=["\']dreamwork-review-template["\']\s+content=["\'][^"\']+["\']',
+        document)
+    if stamp:
+        return document[:stamp.end()] + "\n" + tag + document[stamp.end():]
+    return document[:document.index("<head")] + tag + document[document.index("<head"):] \
+        if "<head" in document else tag + document
+
+
+def enforce_if_silent_contract(document, no_if_silent):
+    """Refuse a source that is neither a real if-silent sentence nor an exemption.
+
+    Returns the meta `content` (`'if-silent'` or `'exempt: <reason>'`).
+    Production line the red tests name: each of the three raise branches.
+    """
+    no_if_silent = (no_if_silent or "").strip()
+    present, meaningful = scan_if_silent(document)
+    if no_if_silent and present:
+        raise ArtifactError(
+            "source declares both a `no_if_silent:` exemption and an "
+            "`id=\"if-silent\"` element — pick one. `no_if_silent` is for a "
+            "page with no parked decision (already settled, pure record); "
+            "`id=\"if-silent\"` is the one sentence that says what happens "
+            "if he says nothing. Carrying both is the same hollowness as "
+            "carrying neither (#455).")
+    if no_if_silent:
+        return "exempt: " + no_if_silent
+    if not present:
+        raise ArtifactError(
+            "source declares neither an `id=\"if-silent\"` element nor a "
+            "`no_if_silent:` exemption. Every review artifact that asks him "
+            "to rule must say, in one sentence, what happens if he says "
+            "nothing — work blocked, a default taken, or parked. Wrap that "
+            "sentence in `<... id=\"if-silent\">` (usually in the lead, "
+            "beside the ask) or set `no_if_silent: <reason>` for a page "
+            "with no decision to park. See watch-design.md (Review "
+            "artifacts / orientation) (#455).")
+    if not meaningful:
+        raise ArtifactError(
+            "the `id=\"if-silent\"` element is empty or whitespace-only. A "
+            "decoy passes a presence-only check while the reader still does "
+            "not know the cost of silence, which is the hollowness #455 "
+            "exists to end. Write one sentence: blocked, default taken, or "
+            "parked — and which.")
+    return "if-silent"
+
+
 # ── the build ─────────────────────────────────────────────────────────────
 
 
@@ -1362,6 +1531,15 @@ def render(fields, template=None, warn=None):
     # artifacts with the reason named, rather than carrying a decoy element.
     ask_content = enforce_ask_contract(out, fields.get("no_ask", ""))
     out = _inject_ask_meta(out, ask_content)
+    # #455 — the if-silent contract (Q4): same shape as #ask. The voice
+    # contract still wants all four orientation answers; the build enforces
+    # only the structural hole (what if he says nothing). Production line
+    # the red tests name: `enforce_if_silent_contract`'s three raise
+    # branches. Precondition the suite asserts: at least one src/ is
+    # checked, or the check matches nothing forever.
+    if_silent_content = enforce_if_silent_contract(
+        out, fields.get("no_if_silent", ""))
+    out = _inject_if_silent_meta(out, if_silent_content)
     return out
 
 

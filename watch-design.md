@@ -206,6 +206,33 @@ A decision artifact shows each option beside its alternative rather than
 only the recommendation: the human is being asked to decide, not to
 ratify.
 
+**Orientation before the ask (#455).** He typed from inside a review
+artifact: *"I feel lost when i read these half the time b/c i have no
+context."* Headline and sub already summarise every page, and they did not
+stop that — so a second summary line is the wrong fix. What orients is a
+small set of answers a cold reader can take from the first screen:
+
+1. **what this is** — design, analysis, plan, go/no-go;
+2. **which decision** it serves, named by task id, in one clause;
+3. **why he is being asked now** — what triggered it, what is waiting;
+4. **what happens if he says nothing** — blocked, a default taken, or
+   parked.
+
+An audit of the built corpus found about half the first screens already
+answer three of those four. The structural hole is (4): almost nobody
+writes the cost of silence unprompted, and it is the most decision-
+relevant of the four. So the *voice* contract is all four answers; the
+*build* contract enforces only (4) — one sentence in
+`<... id="if-silent">`, refused when absent or empty, exemptible by
+`no_if_silent: <reason>` for a page with no parked decision. Same shape
+as the `#ask` contract (#436). No word-count rule: refuse on absence,
+never on size. The header scalar `context:` remains the short toprail
+crumb and is a different thing.
+
+Worked example: `269-draft-durability.html` (the page he was reading when
+he felt lost). Low scorers on the first-screen audit are a follow-up list,
+not a bulk rewrite — surfaces get smaller, not longer.
+
 ### Essential marks — the flag rail (#367)
 
 His idea, typed from a twenty-screen review: *"pointer labels at the most
@@ -3072,6 +3099,13 @@ apologising: `question was refused — your words are kept`,
 the idiom's own punctuation — a state, then its consequence for him. Success is
 shorter than failure because it needs no consequence: `path copied`, `asked`,
 `sent to the dream`.
+
+**Review-artifact orientation** is not a second summary. Headline and sub
+already summarise; what he is missing is consequence and situating — see
+*Review artifacts / Orientation before the ask (#455)*. The one sentence
+the build requires is the cost of silence (`#if-silent`): blocked, default,
+or parked. Do not pad the other three answers into every page that already
+carries them.
 
 ## Non-goals
 

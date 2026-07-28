@@ -19,6 +19,7 @@ event are the same kind of fact. They are not. Your constraint forbids storing <
 fact</strong> twice — it does not forbid storing <strong>two facts</strong> and joining them
 with a foreign key. Full design at
 <code>.dreamwork/docs/plans/task-transition-boundary.md</code>.</p>
+<p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> the task_event boundary stays design-only — no second history is written.</p>
 <div id="ask" class="ask-block">
   <div class="label">The decisions &mdash; T1 to T4</div>
   <p class="ask-q"><strong>T1</strong> take the append-only <code>task_event</code> boundary;
