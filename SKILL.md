@@ -247,6 +247,16 @@ build state, so where the toolchain has a shared cache (compiler cache,
 shared target/store dirs), set it up; if the project lacks one, suggest it
 (questions.md). Storage ballooning is real.
 
+**A worktree brief declares what it owns** (#465). The disjointness rule is
+void the moment a lane edits the main checkout instead of its worktree —
+and a brief cannot enforce it on its own, because the incident's brief
+named the worktree twice and was ignored. So the brief carries a
+machine-parseable `Lane-owns:` line (one or more, comma-separated repo
+paths — `file-formats.md` for the shape), which the lane-containment guard
+(`dev/lane_guard.py`) reads to refuse a main-checkout commit touching them.
+`lint.check_brief_lane_owns` errors on a worktree brief that declares none,
+so the omission is loud at dispatch rather than a silent no-op at commit.
+
 **Inbox and hand-off paths given to a worktree lane are absolute.** A lane
 in `.worktrees/x` told to append to `.dreamwork/inbox.md` writes its own
 copy, and the coordinator never sees it (`inbox.md` is often untracked, so

@@ -2827,6 +2827,172 @@ def check_brief_worktree_abs_inbox(dw: Path, rep: Report) -> None:
         )
 
 
+LANE_OWNS_MARKER = "lane-owns:"
+WORKTREE_BRIEF_MARKER_KNOWN = WORKTREE_BRIEF_MARKER  # alias for clarity below
+
+
+def _brief_names_worktree(text: str) -> bool:
+    """A brief is a dispatched-lane brief when it names a worktree path."""
+    return WORKTREE_BRIEF_MARKER_KNOWN in text
+
+
+def _parse_lane_owns(text: str) -> list[str]:
+    """The ``Lane-owns:`` paths declared in a brief, in declaration order.
+
+    A line ``Lane-owns: watch.py, dev/capture/`` yields ``["watch.py",
+    "dev/capture/"]``. Comma-separated, backtick-stripped, POSIX-normalised.
+    Empty payload (``Lane-owns:`` alone) is treated as absent: a declared but
+    empty ownership list protects nothing and reads as a forgotten fill-in.
+    """
+    owned: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line.lower().startswith(LANE_OWNS_MARKER.lower()):
+            continue
+        payload = line.split(":", 1)[1].strip()
+        for token in payload.split(","):
+            token = token.strip().strip("`").strip()
+            if token:
+                norm = token.replace("\\", "/")
+                if norm not in owned:
+                    owned.append(norm)
+    return owned
+
+
+def check_brief_lane_owns(dw: Path, rep: Report) -> None:
+    """A worktree-naming brief must declare its owned paths (#465).
+
+    The lane-containment guard (``dev/lane_guard.py``) refuses a main-checkout
+    commit touching a dispatched lane's owned paths — but it can only do that
+    when the lane's brief declares them. A worktree brief with no ``Lane-owns:``
+    line is a lane the guard cannot protect, so this check makes the omission
+    loud at brief-write time rather than a silent no-op at commit time.
+
+    Scope: briefs whose body names a worktree (``.worktrees/``) and were written
+    after the rule landed in SKILL.md. History before the rule is grandfathered
+    (the lane-containment guard did not exist, so neither did the obligation).
+    The cutoff is content-resolved from ``LANE_OWNS_PHRASE`` — a hollow
+    no-cutoff is an ERROR, never a silent pass (#405's shape).
+
+    Coverage on the OK line: worktree-naming count, in-scope, grandfathered —
+    so a check that stops matching cannot look the same as one that examined
+    them all. Precondition the live tests assert: at least one worktree-naming
+    brief exists (a check that silently matches nothing passes forever).
+    """
+    root = dw.parent
+    briefs_dir = dw / "docs" / "briefs"
+    if not briefs_dir.is_dir():
+        return
+    if not (root / "SKILL.md").exists():
+        return
+    # Precondition for the check's meaning: if no brief names a worktree, the
+    # rule has nothing to examine. Silence, not OK coverage.
+    wt_briefs = [
+        p for p in briefs_dir.glob("*.md")
+        if p.is_file() and _brief_names_worktree(
+            p.read_text(encoding="utf-8", errors="replace"))
+    ]
+    if not wt_briefs:
+        return
+
+    cutoff = _resolve_lane_owns_cutoff(root)
+    if not cutoff:
+        rep.add(
+            ERROR, "briefs",
+            "could not resolve the lane-owns cutoff from SKILL.md content "
+            f"(phrase {LANE_OWNS_PHRASE!r}) — every worktree brief would have "
+            "been left unchecked; a reworded phrase or missing history is a "
+            "loud failure, never a silent pass (#465)",
+        )
+        return
+    cutoff_t = _commit_unix_time(root, cutoff)
+    if cutoff_t is None:
+        rep.add(
+            ERROR, "briefs",
+            f"lane-owns cutoff `{cutoff[:7]}` resolved but has no commit time "
+            f"— cannot classify briefs; refusing to pass over them (#465)",
+        )
+        return
+
+    in_scope: list[str] = []
+    grandfathered: list[str] = []
+    missing: list[str] = []
+    for path in sorted(wt_briefs):
+        brief_t = _brief_commit_time(root, path)
+        if brief_t is None or brief_t < cutoff_t:
+            grandfathered.append(path.name)
+            continue
+        in_scope.append(path.name)
+        owned = _parse_lane_owns(
+            path.read_text(encoding="utf-8", errors="replace"))
+        if not owned:
+            missing.append(path.name)
+    for name in missing:
+        rep.add(
+            ERROR, "briefs",
+            f"{name} names a worktree (`.worktrees/`) but declares no "
+            f"`Lane-owns:` paths — the lane-containment guard cannot protect a "
+            f"lane whose brief does not say what it owns (#465)",
+        )
+    if wt_briefs and not missing:
+        rep.add(
+            OK, "briefs",
+            f"{len(wt_briefs)} worktree-naming brief(s), {len(in_scope)} in "
+            f"scope after lane-owns rule, {len(grandfathered)} grandfathered "
+            f"(#465)",
+        )
+
+
+LANE_OWNS_PHRASE = "Lane-owns:"
+
+
+def _resolve_lane_owns_cutoff(root: Path) -> str | None:
+    """Commit that introduced the ``Lane-owns:`` obligation into SKILL.md."""
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(root), "log", "-S", LANE_OWNS_PHRASE,
+             "--format=%H", "--", "SKILL.md"],
+            stderr=subprocess.DEVNULL, text=True, timeout=30,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return None
+    shas = out.split()
+    if not shas:
+        return None
+    return shas[-1]
+
+
+def _commit_unix_time(root: Path, sha: str) -> float | None:
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(root), "show", "-s", "--format=%ct", sha],
+            stderr=subprocess.DEVNULL, text=True, timeout=20,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return None
+    out = out.strip()
+    try:
+        return float(out) if out else None
+    except ValueError:
+        return None
+
+
+def _brief_commit_time(root: Path, path: Path) -> float | None:
+    rel = path.relative_to(root) if path.is_absolute() else path
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(root), "log", "-1", "--format=%ct", "--", str(rel)],
+            stderr=subprocess.DEVNULL, text=True, timeout=20,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return None
+    out = out.strip()
+    try:
+        return float(out) if out else None
+    except ValueError:
+        return None
+
+
 def check_handoffs(dw: Path, watch, rep: Report) -> None:
     """The delivery half of the single-writer rule (#381).
 
@@ -3269,6 +3435,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_handoffs(dw, watch, rep)
     check_brief_handoff_obligation(dw, rep)
     check_brief_worktree_abs_inbox(dw, rep)
+    check_brief_lane_owns(dw, rep)
     check_related_markers(dw, watch, rep)
     check_status_keys(dw, rep)
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are
