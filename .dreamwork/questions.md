@@ -2,29 +2,25 @@
 
 ## Open
 - **P1 · 2026-07-28 — #421: how the loop should ask you things. Four options, one rejected.**
-  **Ask: pick any combination of A, B, C, D — or reply `rec` for A+B+D with C soft.** Free text
-  always fine; *"none of these"* is a real answer and I will say what I learn from it.
-  Artifact: `.dreamwork/review/421-question-options.html` (being built) · plan:
-  `.dreamwork/docs/plans/question-instruction-options.md` · research:
-  `.dreamwork/docs/research/2026-07-28-question-instruction-design.md`.
-  **This entry is deliberately short, because a long question arguing our questions are too long
-  would answer itself.** Everything below is optional reading; the ask above is the whole decision.
-  **A — the ask comes first**, in its own line, with the accepted answers, before any context.
-  **B — an unanswered sub-decision gets recorded**, and `lint` errors when a fold drops one silently.
-  **C — a length budget** (~250 words), evidence moving to the artifact. **D — say what a valid
-  answer looks like** (`rec`, `A`, `B`, `defer`, `no`).
-  **Rejected, and your data killed it: one decision per entry.** It is the obvious port from
-  `i-have-adhd` and **15 of 16** of your answered multi-part questions closed complete, often
-  same-day on a bare `rec`. Recorded so nobody proposes it again.
-  **The measured defect turned out not to be what I assumed.** Not multi-part questions — the two
-  entries whose titles promise a *"one word"* answer are **300 and 448 words**, both above the corpus
-  median of **302**. What we write is barely coupled to how big the decision is.
-  **Rec: A + B + D, C soft.** B is the only one with a live defect behind it — `#275`'s Q3/Q5/Q6 have
-  been unanswered since 2026-07-25 and nothing in the loop notices. C stays soft because a hard cap
-  pushes evidence behind a click, and a long entry is the lesser failure.
-  **Two corrections I owe you here:** the research refuted the premise I filed this task with, and a
-  claim I made at 16:47 — that 34 entries *"don't ask anything"* — was wrong; they are single-decision
-  asks, 27 with a question mark and 23 with a `Rec`.
+  **Ask: any combination of A, B, C, D — or `rec` for A+B+D with C soft.** Free text always fine;
+  *"none of these"* is a real answer.
+  **A** — the ask comes first, in its own line, with the accepted answers. **B** — an unanswered
+  sub-decision gets recorded, and `lint` errors when a fold drops one. **C** — a ~250-word budget,
+  evidence moving to the artifact. **D** — state what a valid answer looks like.
+  **Rec: A + B + D, C soft.** B is the only one with a live defect behind it: `#275`'s Q3/Q5/Q6 have
+  been unanswered since 2026-07-25 and nothing notices. C stays soft because a hard cap pushes
+  evidence behind a click.
+  **Rejected, by your own data: one decision per entry** — the obvious port from `i-have-adhd`, and
+  **15 of 16** of your answered multi-part questions closed complete.
+  **The defect is not what I assumed.** The two entries titled *"one word: may I…"* are **300 and
+  448 words**, against a corpus median of **302**. What we write is barely coupled to the size of
+  the decision.
+  Everything else is optional: artifact `.dreamwork/review/421-question-options.html` (being built),
+  plan `.dreamwork/docs/plans/question-instruction-options.md`, research
+  `.dreamwork/docs/research/2026-07-28-question-instruction-design.md`. Two corrections are recorded
+  there: the research refuted this task's premise, and my *"34 entries don't ask anything"* was wrong.
+  **First draft of this entry was 342 words — above the median it complains about. This one is under
+  250, measured.** The redraft is the argument for C.
 
 - **P1 · 2026-07-28 — #263: I told you the gate's condition was met. It is not — lane C is 3 of 5.
   One sequencing call is still genuinely yours.**
