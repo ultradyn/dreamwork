@@ -80,6 +80,24 @@ Next id: **415**
   · deliverables: adopt the `mid` formulation in `confirmation.mjs` (3 assertions) and
   `prominence.mjs` (1); keep the sample-count preconditions as diagnostics; red-prove each by
   removing the transition so mid-frames go to zero
+  · **LANDED `a027ad0` (2026-07-28 14:03).** `midFrames`/`midStates` in `dev/capture/dom.mjs`, shared;
+  `confirmation.mjs`'s three assertions converted; sampling preconditions kept as **diagnostics**
+  and dropped 8 → 3 frames, which is where a mid-frame stops being arithmetically possible rather
+  than merely unlikely
+  · **red-proved on the real pipeline, not just the helper**: injected `transition:none` on
+  `.pmsg` in a scratch worktree ⇒ both popout assertions FAIL **while the sampling preconditions
+  PASS**, so the guard says *the motion is wrong* rather than *we did not look enough*. That
+  discrimination was the entire task. Helpers separately checked both ways (snap → 0, gradual → 2)
+  · **`prominence.mjs` deliberately NOT converted**, and the file says why in place. Its claim is
+  *"continuously, rather than in a couple of jumps"* — strictly stronger than not-a-snap, and two
+  jumps would satisfy a mid-frame test while failing the claim. **A smoothness property genuinely
+  needs many samples**, so weakening it to survive load would be buying green with meaning. It
+  gets the precondition only
+  · **that distinction is the transferable part**: before reaching for the frame-rate-free form,
+  ask what the assertion actually claims. *Not a snap* is rank-1 and converts. *Smooth* is rank-N
+  and cannot — for those, state the precondition and accept that a starved machine cannot decide it
+  · remaining, unchanged: `reviewsplit`'s `distinct(...) === 1` assertions (that something did NOT
+  move) fail **green** under starvation — the opposite direction, uncovered by anything here
   · related: **#413**
 
 - **#413** — a guard can encode a SUPERSEDED contract, and nothing measures that · P2 ·
