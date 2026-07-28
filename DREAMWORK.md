@@ -74,6 +74,18 @@ dreamwork-version: 5853e1789929
   were overridden** and earned their place. Two of four is the ratio to beat,
   and the test before writing an ask is *"would I be surprised by any answer
   other than my rec?"* — if not, it is not a question.
+- **A known deficiency, noted, beats an expensive defence built early**
+  (human-set 2026-07-29 00:50, answering #288's contain-vs-detect): *"don't do
+  anything too expensive or time consuming. just plan for it and make sure the
+  deficiency is noted. We are just going to be testing with our own trusted
+  nodes first, so provided we can implement isolation layers later, then we
+  can … we'll just have a warning next to it that it lacks certain
+  protections."* The obligations this creates are **document the gap where a
+  reader would act on it**, **keep later isolation possible**, and **state the
+  trusted-nodes precondition** — not build the mechanism. And the reframe worth
+  reusing: *whoever supplies the API key can supply the harness*, so a
+  protection that must live inside someone else's harness is **not our seam**
+  rather than our unbuilt work.
 - **The coordinator plans; subagents execute a written brief** (human-set
   2026-07-28 05:43, granting #263's lanes): *"I expect you main opus 5 claude
   orchestrator to do all the planning around this and to prepare precise

@@ -60,26 +60,6 @@
   multiple-rAF-per-frame artifact) before naming the cause; numbers may move, the
   direction will not.
 
-- **P1 · 2026-07-29 — #288 contain vs detect: is the wall worth wiring, or are the positive invariants the whole defence?**
-
-  Artifact: `.dreamwork/review/288-containment.html` · Spec:
-  `.dreamwork/docs/plans/subagent-containment.md` · Prototype:
-  `dev/containment_falsify.py`
-
-  **A (rec):** ship the positive PID/health invariants as the whole defence —
-  `GENERATION` ≥ snapshot mtime **and** snapshot bytes == HEAD bytes, sampled each
-  tick, with a subagent's "PASS" downgraded to *suspect* on contradiction. That
-  catches the `#288` class completely, within a tick, at negligible cost.
-
-  **B:** spend the integration cost to route tool calls through a real wall —
-  knowing it is `#358`-shaped, because the harness owns both the API call and tool
-  execution in one process, so a wall around the harness contains the API key too.
-
-  The wall itself works: all three incident vectors HELD at ~22ms per contained
-  process on this host. The finding is that **the seam to cut is not ours** — so
-  this is a build-authorisation question, not a feasibility one.
-
-  Accepted answers: `rec` · `A` · `B` · free text · `not yet`.
 
 - **P1 · 2026-07-29 — #269 draft durability: two calls (C1/C2)**
 
@@ -386,6 +366,41 @@
     redaction be designed now), Q6 (who besides you). Q4 moved to #359.
 
 ## Answered
+- **P1 · 2026-07-29 — #288 contain vs detect: is the wall worth wiring, or are the positive invariants the whole defence?**
+
+  → answered (2026-07-29 00:50): **A, trimmed further — plan it, do not build it.**
+  Positive invariants are the defence; the wall stays prototyped and unwired. Note the
+  deficiency explicitly and warn per harness where interception is impossible. Trusted
+  nodes only until isolation exists. Filed as `#450`.
+
+  Artifact: `.dreamwork/review/288-containment.html` · Spec:
+  `.dreamwork/docs/plans/subagent-containment.md` · Prototype:
+  `dev/containment_falsify.py`
+
+  **A (rec):** ship the positive PID/health invariants as the whole defence —
+  `GENERATION` ≥ snapshot mtime **and** snapshot bytes == HEAD bytes, sampled each
+  tick, with a subagent's "PASS" downgraded to *suspect* on contradiction. That
+  catches the `#288` class completely, within a tick, at negligible cost.
+
+  **B:** spend the integration cost to route tool calls through a real wall —
+  knowing it is `#358`-shaped, because the harness owns both the API call and tool
+  execution in one process, so a wall around the harness contains the API key too.
+
+  The wall itself works: all three incident vectors HELD at ~22ms per contained
+  process on this host. The finding is that **the seam to cut is not ours** — so
+  this is a build-authorisation question, not a feasibility one.
+
+  Accepted answers: `rec` · `A` · `B` · free text · `not yet`.
+  - **Answer (via watch, 2026-07-29 00:50):** don't do anything too
+    expensive or time consuming. just plan for it and make sure the
+    deficiency is noted. We are just going to be testing with our own
+    trusted nodes first, so provided we can implement isolation layers
+    later, then we can. Re claude code, we can have that kind of thing
+    where we can't do tools or intercepts or whatever, we'll just have a
+    warning next to it that it lacks certain protections. but i mean
+    that's fine, if someone else is providing the api key then they can
+    probably provide the harness, too.
+
 - **P1 · 2026-07-28 — `ccc @grok` is 401 again, and it is your credential.**
   → answered (2026-07-28 19:15): *"note grok should be working again"* — confirmed by probe, `ALIVE`
   at 19:16, and a lane (`#434`/`#435`) is running on it now. Down ~16:50 to ~19:15, the second outage
