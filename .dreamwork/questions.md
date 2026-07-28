@@ -2,6 +2,30 @@
 
 ## Open
 
+- **P2 · 2026-07-29 02:56 — #462: may the dashboard run `just deploy` when you click it?**
+  → asked after your 02:30 request for an 'update & reload' control. The lane built the affordance and then
+  hit a consent question it will not answer for you.
+
+  **What it found, and it is the reason the button cannot just be built:** the deployed dashboard serves a
+  **snapshot** taken by `just deploy`, not your working tree. So neither cheap option does anything — a
+  browser reload re-fetches the same snapshot bytes, and `watch.py`'s own `--autoreload` re-exec is
+  byte-identical for a deployed server because its `__file__` *is* the snapshot, outside the repo. "Update"
+  can only mean **re-snapshot from HEAD and restart**, which is exactly `just deploy`.
+
+  So the question is not technical. It is whether a page may run that.
+
+  **Sub-decisions:** `Q1`, `Q2`
+
+  - **Q1** — may the page trigger `just deploy` on click? It means an unauthenticated, loopback-bound HTTP
+    request runs deploy machinery on your box. Failure *is* visible (the loaded page keeps polling and says
+    so when the new generation never arrives) and your drafts survive it, so the objection is authority,
+    not safety. **`rec`: yes**, loopback-only and behind the existing confirmation idiom.
+  - **Q2** — if no: keep what is landing now, which is the command surfaced on the staleness row, copyable
+    on click. Or would you rather it not appear at all?
+
+  **If you say nothing:** the copy-the-command version ships and nothing runs itself — you keep the one
+  extra step you have today, and the row at least tells you what to type.
+
 - **P1 · 2026-07-29 02:42 — #445: ratify the four attention levels, and how they sit beside the run modes**
   **Artifact:** `.dreamwork/review/445-attention-modes.html` — context, the problem, the IGC, and a
   recommendation. Design only; nothing is built.
