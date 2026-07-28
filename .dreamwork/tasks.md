@@ -459,73 +459,6 @@ Next id: **466**
   still returns a multi-sha line as malformed, so `pending_handoff_records` **will not surface its
   shas on the dashboard** until `watch.py`'s grammar widens too. Filed as part of `#427`
 
-- **#413** — a guard can encode a SUPERSEDED contract, and nothing measures that · P2 ·
-  verification/meta · origin: **loop** · found by fixing `qacard`, which had been red since
-  `#392a` landed at 09:43 and was being reported as "pre-existing, not our fault" by every lane
-  since
-  · **the case.** `#385` required every question age to match `^\d{2}[a-z] \d{2}[a-z] ago$`.
-  `#392a` then made the figure COUNT the precision signal — two figures means we know the time,
-  one means we know only the day — and every questions entry is date-only, so the guard could
-  only pass by rendering a precision the data does not have
-  · **it was inverted, not merely stale, and only the red-proof showed that.** Injecting `#392`'s
-  exact bug (`if (el.dataset.day === '1')` → `if (false)`) bypasses `paintDayAge` and produces
-  the two-figure form, which is precisely what the old assertion demanded. **Green with the bug
-  present, red with the code correct.** A stale check is noise; an inverted one actively defends
-  the defect, and nothing in the output distinguishes the two — both just say FAIL
-  · **the structural gap.** `just audit-styleguide` measures code-against-doc and is clean.
-  `watch-design.md` had been correct since `#392a` — it documents both rules in adjacent
-  paragraphs. The doc and the code agreed; **only the check disagreed with both**, and no tool
-  looks at that edge. Fixed in `7007d5b`
-  · **what makes it stick, not just noticing harder**: a red guard that a lane is TOLD is
-  pre-existing becomes invisible — three lanes have now been briefed with `qacard docktarget
-  noteprop` as known-failing, which converts a real signal into paperwork. **A failure excused
-  in a brief must carry a reason and an owner, or the excusing is the bug**
-  · **next, and cheap**: `docktarget` and `noteprop` are the other two, both dock-motion, both
-  excused the same way. Check whether either is the same class before assuming load flake — they
-  have been called flaky without anyone injecting anything. Do it at **low load**; the last
-  reading was at load 21-29, where a motion guard proves nothing
-  · **MEASURED 12:55, and the "load flake" story is WRONG — two of the three are a real
-  regression.** I ran all three at load ~20. `docktarget` and `noteprop` fail on **four
-  assertions that are all the same invariant**: *"dock visibly remains original after in-memory
-  reorder"* (note + answer modes) and *"the dock stays on the same stable target"* (normal +
-  **reduced** motion). One behaviour, four ways, and the reduced-motion arm failing beside the
-  animated one rules out a motion-timing flake outright
-  · **bounded by measurement, not guessed.** Both PASS at `d306b10` (07-27 22:42) *and* at its
-  parent, so `#324`'s reporter conversion — which is what made me suspicious, since the three
-  failing guards are **exactly** the three converted in its batch 1 — neither caused them nor
-  merely revealed them. The break is in the 408 commits since; a bisect is running. `qacard` is
-  a different cause entirely and is now fixed (`7007d5b`): it passed at `d306b10` only because
-  `#392a` had not landed yet
-  · **so the three were never one thing, and calling them one thing is what kept them alive.**
-  I have carried "3 known pre-existing failures, possibly load flake" into three briefs. The
-  flake hypothesis was never tested against anything — it came from having seen them fail at
-  load 29 once. **A shared symptom is not a shared cause, and "pre-existing" is a claim about
-  time that gets read as a claim about severity**
-  · the dock half deserves its own entry once the bisect names the commit: it is a live product
-  bug on `master`, not verification debt like the rest of this task
-  · **RESOLVED for all three, and none was a flake** (`7007d5b`, `e15b0c0`). Bisect named
-  `0dd136e` (`#385`, 07-28 07:00): it puts a live age **inside** the question headline —
-  `qtHtml` emits the span *between* the date and the ` — ` separator — so the raw title stopped
-  being a contiguous substring of `#qdock .qt` and four display assertions across two guards
-  went red on a page that was behaving correctly
-  · **no product bug, and the assertion that proves it is the one that stayed green**:
-  `request targets visibly docked question after reorder (#266)` reads `posted.question` from
-  **data**, not from rendered text. Identity that must survive presentation was already in the
-  right place; only the checks were reading pixels
-  · so the three shared a class after all — **guards encoding a superseded contract** — which is
-  the opposite of the shared cause I had assumed. `docktarget`, `noteprop` and `qacard` all pass;
-  the suite has no known reds left
-  · **the fix is one copy of the rule**, `dev/capture/dom.mjs`'s `dockHeadline`, imported by both
-  guards: it removes the age **node** rather than regex-stripping text, so it survives two-figure,
-  one-figure and `today` alike. Each guard gained a runtime precondition so an empty headline or
-  empty expected title cannot pass by vacuity. Red-proved by pointing each at a title that is not
-  the docked question — all four fail — then restored from `cp` snapshots with the injection count
-  verified back to zero
-  · `watch-design.md` now states the contract: **a question headline is no longer its title**
-  · **what remains of this task is the meta half**, which is unfixed: nothing measures
-  guard-against-doc, and a red excused in a brief still goes invisible. Six hours here, across
-  three lanes, on a signal that was correct the whole time
-  · related: **#392, #414, #420, #442, #444, #461**
 - **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
   right now · P2 · handoffs/correctness · origin: **loop** · **predicted by the `#401` lane in its
   neighbour table and not filed by it; found in the tree one minute later**
@@ -2636,7 +2569,7 @@ Next id: **466**
   the goal *"the coordinator never has to ask a subagent's permission to merge"*
   · **`status.json` already carries what a check would need**: which lanes are out and what files each owns. That
   was built for a compacted coordinator; it is also the registry a containment check can read
-  · related: **#450, #402**
+  · related: **#450, #402, #413**
 - **#464** — the command composer's scrollbar appears and disappears, reflowing his text as he types · P2 ·
   UI/polish · origin: **human** · **human via watch 2026-07-29 02:30:** *"make the scroll bar in the command
   composer always show. It causes text to reflow when it disappears after the text box grows large enough to
@@ -3417,6 +3350,96 @@ Next id: **466**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#413** — a guard can encode a SUPERSEDED contract, and nothing measures that · P2 ·
+  verification/meta · origin: **loop** · found by fixing `qacard`, which had been red since
+  `#392a` landed at 09:43 and was being reported as "pre-existing, not our fault" by every lane
+  since
+  · **the case.** `#385` required every question age to match `^\d{2}[a-z] \d{2}[a-z] ago$`.
+  `#392a` then made the figure COUNT the precision signal — two figures means we know the time,
+  one means we know only the day — and every questions entry is date-only, so the guard could
+  only pass by rendering a precision the data does not have
+  · **it was inverted, not merely stale, and only the red-proof showed that.** Injecting `#392`'s
+  exact bug (`if (el.dataset.day === '1')` → `if (false)`) bypasses `paintDayAge` and produces
+  the two-figure form, which is precisely what the old assertion demanded. **Green with the bug
+  present, red with the code correct.** A stale check is noise; an inverted one actively defends
+  the defect, and nothing in the output distinguishes the two — both just say FAIL
+  · **the structural gap.** `just audit-styleguide` measures code-against-doc and is clean.
+  `watch-design.md` had been correct since `#392a` — it documents both rules in adjacent
+  paragraphs. The doc and the code agreed; **only the check disagreed with both**, and no tool
+  looks at that edge. Fixed in `7007d5b`
+  · **what makes it stick, not just noticing harder**: a red guard that a lane is TOLD is
+  pre-existing becomes invisible — three lanes have now been briefed with `qacard docktarget
+  noteprop` as known-failing, which converts a real signal into paperwork. **A failure excused
+  in a brief must carry a reason and an owner, or the excusing is the bug**
+  · **next, and cheap**: `docktarget` and `noteprop` are the other two, both dock-motion, both
+  excused the same way. Check whether either is the same class before assuming load flake — they
+  have been called flaky without anyone injecting anything. Do it at **low load**; the last
+  reading was at load 21-29, where a motion guard proves nothing
+  · **MEASURED 12:55, and the "load flake" story is WRONG — two of the three are a real
+  regression.** I ran all three at load ~20. `docktarget` and `noteprop` fail on **four
+  assertions that are all the same invariant**: *"dock visibly remains original after in-memory
+  reorder"* (note + answer modes) and *"the dock stays on the same stable target"* (normal +
+  **reduced** motion). One behaviour, four ways, and the reduced-motion arm failing beside the
+  animated one rules out a motion-timing flake outright
+  · **bounded by measurement, not guessed.** Both PASS at `d306b10` (07-27 22:42) *and* at its
+  parent, so `#324`'s reporter conversion — which is what made me suspicious, since the three
+  failing guards are **exactly** the three converted in its batch 1 — neither caused them nor
+  merely revealed them. The break is in the 408 commits since; a bisect is running. `qacard` is
+  a different cause entirely and is now fixed (`7007d5b`): it passed at `d306b10` only because
+  `#392a` had not landed yet
+  · **so the three were never one thing, and calling them one thing is what kept them alive.**
+  I have carried "3 known pre-existing failures, possibly load flake" into three briefs. The
+  flake hypothesis was never tested against anything — it came from having seen them fail at
+  load 29 once. **A shared symptom is not a shared cause, and "pre-existing" is a claim about
+  time that gets read as a claim about severity**
+  · the dock half deserves its own entry once the bisect names the commit: it is a live product
+  bug on `master`, not verification debt like the rest of this task
+  · **RESOLVED for all three, and none was a flake** (`7007d5b`, `e15b0c0`). Bisect named
+  `0dd136e` (`#385`, 07-28 07:00): it puts a live age **inside** the question headline —
+  `qtHtml` emits the span *between* the date and the ` — ` separator — so the raw title stopped
+  being a contiguous substring of `#qdock .qt` and four display assertions across two guards
+  went red on a page that was behaving correctly
+  · **no product bug, and the assertion that proves it is the one that stayed green**:
+  `request targets visibly docked question after reorder (#266)` reads `posted.question` from
+  **data**, not from rendered text. Identity that must survive presentation was already in the
+  right place; only the checks were reading pixels
+  · so the three shared a class after all — **guards encoding a superseded contract** — which is
+  the opposite of the shared cause I had assumed. `docktarget`, `noteprop` and `qacard` all pass;
+  the suite has no known reds left
+  · **the fix is one copy of the rule**, `dev/capture/dom.mjs`'s `dockHeadline`, imported by both
+  guards: it removes the age **node** rather than regex-stripping text, so it survives two-figure,
+  one-figure and `today` alike. Each guard gained a runtime precondition so an empty headline or
+  empty expected title cannot pass by vacuity. Red-proved by pointing each at a title that is not
+  the docked question — all four fail — then restored from `cp` snapshots with the injection count
+  verified back to zero
+  · `watch-design.md` now states the contract: **a question headline is no longer its title**
+  · **what remains of this task is the meta half**, which is unfixed: nothing measures
+  guard-against-doc, and a red excused in a brief still goes invisible. Six hours here, across
+  three lanes, on a signal that was correct the whole time
+  · **LANDED `4966d9c`, merged `ac6bcf3`** (`@glm52`) — and the measurement came first, as asked: **6 fakes
+  inventoried, 4 stale values, 1 blind to a moved contract (`health.mjs`), 1 category match, and `0`
+  unverifiable.** Three had pinned values the check did not actually depend on, which is why a
+  grep-for-stale-literals approach would have reported work that was not work
+  · **its refutation of my brief's framing is the better analysis and I am recording it as such.** Production's
+  `/answer` refusal **is** `409` today (`watch.py:10267`), so the pinned value was never stale. The blindness was
+  the fake's **scope**: the client branches on `res.ok`, and the fake only ever drove one side of that branch.
+  A stale-value checker would therefore have passed over the exact instance that motivated the task
+  · **the surviving idea (its `R5`) is an in-guard coverage assertion derived at runtime**, plus a stated
+  convention: *a refusal guard must drive the refusal on a status the client treats as SUCCESS as well as one it
+  treats as failure, because the moved contract is always the 2xx one.* `REFUSAL_STATUSES` is filled by the
+  helper that does the driving, so the fake cannot quietly shrink back to 409-only
+  · **two lanes widened `health.mjs` for the same fact** — `E5b` added a hardcoded 202 block, this lane built the
+  parameterised version — and I warned this lane about exactly that and it went ahead. Resolved as a union taking
+  the parameterised structure (it subsumes the block and adds the coverage assertion) plus `E5b`'s message
+  assertion, which the parameterised version had dropped
+  · **verified by me on the resolved tree: 20 PASS, exit 0.** Then I reinstated the original blindness — drive
+  only the 409, as before — and **`exit=1` with the coverage check and the message check failing**. The two
+  *state* assertions did **not** fail, because a `409` also keeps his text and also does not claim answered:
+  that is why they were blind on their own, and it is the empirical case for `R5` being the load-bearing part
+  rather than the extra status
+  · **FOLDED 2026-07-29 03:41.** The stale-value half (its `R4`) is recorded in the plan and not built — nothing
+  in the inventory needs it today, and building it would be a checker in search of a defect
+  · related: **#392, #414, #420, #442, #444, #461, #465**
 - **#400** — `lessons.md` has outgrown being read, and the briefs that tell lanes to read it are
   cargo cult · P2 · loop/memory · origin: **loop** · found by **measuring receipt instead of
   assuming it**, the same instrument that caught the relay
