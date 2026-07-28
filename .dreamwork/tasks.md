@@ -48,7 +48,14 @@ Next id: **419**
   · low priority: the WARN is loud, correct, and the workaround is one edit. Filed so the next
   two-commit lane does not rediscover it — this is the third time today a lane has been marked
   wrong by a checker that was itself too narrow (`qacard`, the dock guards, now this)
-  · related: **#401**
+  · related: **#401, #367**
+  · **a second instance of the same narrowness, found 15:10 and worth folding in here rather than
+  filed separately:** `lint` cannot tell a merge that lands an *increment* of a multi-increment
+  task from a merge that *closes* it, so `#367` — open by design, awaiting his ruling — reports as
+  *"under `## Open` but git already has a close/merge commit"*. The hand-off grammar has the
+  matching gap: `· landed \`<sha>\` ·` says *landed*, with no way to say *increment 2 of n
+  landed*. Both are the same missing distinction, so whoever widens the sha field should widen
+  this too
 
 - **#414** — a motion guard's pass condition depends on the browser's FRAME RATE, and it does
   not say so · P2 · verification/motion · origin: **loop** · found by the only failure in the
@@ -750,7 +757,7 @@ Next id: **419**
   artifact — and it is the one that makes the frame change safe to ship before any artifact
   adopts it
 
-  · related: **#396, #417**
+  · related: **#396, #417, #415**
   · **INCREMENT 2a LANDED** `d4cbba8` `a818bf8` (+ `markrail` registered in the `justfile`, which the
   brief had failed to grant — ratified by relay). `ccc @glm52`. The rail, the flag, next/prev, above
   the cliff only; **below 860px nothing renders**, deliberately, because 2b is his call
@@ -770,7 +777,25 @@ Next id: **419**
   body font plus an inner visible postit
   · **probing its caveat found #396 (P1)** — see that entry. The caveat's own axis was clean at three
   densities; the axis it held constant was the element type
-  · **still open for 2b**: the strip below the cliff, awaiting his ruling on the artifact
+  · **still open for 2b**: the strip below the cliff, awaiting his ruling on the artifact  · **PREVIEWS LANDED `98670ae` (increment only; #367 STAYS OPEN awaiting his ruling)** — he asked
+  at 14:52 to see A/B/C before deciding. `ccc @grok`, **13 minutes** end to end:
+  `.dreamwork/review/367-option-previews.html` + source + six screenshots + a rail reference +
+  `measures.json`, every figure measured from the rendered DOM at load and red-proved by changing
+  a row count and watching the caption follow
+  · **it corrected a number I had given HIM**: the entry said option A costs ~214px of chrome at
+  seven marks; measured it is **167.9px** in 3 rows (B 127.2, C 31.8, unchanged at 640). The 214
+  was extrapolated from a 180px worst-case tab and never observed. Also *"the reading column is
+  fixed at 613.5px"* is true at 780 and false at 640 (608 — 78ch stops fitting); **the 16px outer
+  margin does hold at both**, so the no-lateral-space argument the decision rests on is intact
+  · **the rec survives but its shape changed**, and both the lane and I say so independently after
+  looking at the pixels: **A reads lighter than its number implied** — three tidy rows of
+  product-shaped pills — so if he wants the index before walking, A is more defensible than my
+  figure made it sound. B looks worse in pixels than in prose. C reads as a usable walk, not a stub
+  · **the two lint WARNs naming this entry are correct and are a grammar gap, not a mistake**: a
+  merge commit that lands an *increment* of a multi-increment task is indistinguishable from one
+  that closes it, so `#367` reads as "open but already merged". Same class as `#415` — a checker
+  narrower than the work it describes. Recorded there rather than silenced here
+
 - **#378** — One `.fact` sits outside any `.facts` grid, in a file with no source · P3 ·
   review tooling · origin: **loop** · 10m · found by #365's measurement and verified
   independently: `protected-service-boundary-288.html` has `containers=0 facts=1`, so that
