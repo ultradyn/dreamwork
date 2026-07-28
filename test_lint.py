@@ -4214,3 +4214,41 @@ class TestSubdecisions:
         rep = lint.Report()
         lint.check_subdecisions(lint.SKILL_DIR / ".dreamwork", lint.load_watch(), rep)
         assert not any(lvl == lint.ERROR for lvl, _, _ in rep.rows), rep.render()
+
+
+def test_the_subdecision_row_names_open_declarations_awaiting_a_fold(tmp_path):
+    """`0 folded, 0 checked` reads as "nothing here" when it means "adopted,
+    waiting for a fold" — two different facts, and a reader needs both. On the
+    day the convention landed the row was exactly 0/0, so the pending count is
+    what says the check has a future subject rather than no subject at all.
+
+    Production line: `_answered_split`, whose offset defines the open half.
+    Sabotaging it to a byte before the marker drops the clause; that is the
+    change that reds this test.
+    """
+    dw = tmp_path / ".dreamwork"
+    dw.mkdir()
+    # PRECONDITION, derived: the fixture puts the declaration in the OPEN half
+    # and nothing in the answered half, so a wrong split cannot pass by luck.
+    raw = (
+        "# Questions for the human\n\n## Open\n"
+        "- **P2 · 2026-07-29 — a multi-part ask**\n\n"
+        "  **Sub-decisions:** `Q1`, `Q2`\n\n"
+        "  body prose.\n\n"
+        "## Answered\n\n"
+        "- **P3 · 2026-07-29 — an unrelated fold** → answered (2026-07-29): done.\n"
+    )
+    (dw / "questions.md").write_text(raw)
+    split = lint._answered_split(raw)
+    assert split > 0, "fixture has no anchored `## Answered` heading"
+    assert raw.index("**Sub-decisions:**") < split, (
+        "fixture precondition broken: the declaration must sit in the OPEN "
+        "half for this test to distinguish a right split from a wrong one")
+
+    rep = lint.Report()
+    lint.check_subdecisions(dw, lint.load_watch(), rep)
+    rows = [r for r in rep.rows if "#421 B" in r[-1]]
+    assert rows, "no #421 B coverage row emitted for a file with a declaration"
+    line = rows[0][-1]
+    assert "1 open ask declares sub-decisions" in line, line
+    assert "0 folded entries examined" in line, line

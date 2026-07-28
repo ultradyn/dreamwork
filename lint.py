@@ -350,6 +350,19 @@ SUBDEC_DECL = re.compile(r"\*\*\s*Sub-decisions:\s*\*\*\s*(.+)")
 SUBDEC_LABEL = re.compile(r"`([A-Z]\d+)`")
 
 
+
+def _answered_split(raw: str) -> int:
+    """Offset of the literal `## Answered` heading, or 0 if absent.
+
+    Anchored (`^…$`, MULTILINE) rather than a substring search: the phrase
+    appears inside entry prose in this corpus, and an unanchored split has
+    corrupted this repo's sectioned files twice — once writing 130 lines into
+    the wrong half of tasks.md. Returns 0 when absent so callers fall back to
+    the whole file rather than silently seeing an empty open half.
+    """
+    m = re.search(r"^## Answered[ \t]*$", raw, re.M)
+    return m.start() if m else 0
+
 def check_subdecisions(dw: Path, watch, rep: Report) -> None:
     """#421 B: a folded entry that drops a declared sub-decision is an ERROR.
 
@@ -470,11 +483,25 @@ def check_subdecisions(dw: Path, watch, rep: Report) -> None:
     # convention is unadopted blocks commits for an unrelated reason. The
     # counts are the folded-side examination, derived at runtime.
     if has_subject and not rep.failed:
+        # The row also names the OPEN declarations, because `0 folded, 0
+        # checked` reads as "nothing here" when it actually means "adopted,
+        # waiting for a fold". Adoption progress and examination coverage are
+        # different facts and a reader needs both: on the day the convention
+        # landed this row is 0/0 with a pending count, and the pending count
+        # is what says the check has a future subject rather than no subject.
+        # Derived from the open half at runtime, never a literal.
+        open_half = raw[:_answered_split(raw)] if _answered_split(raw) else raw
+        pending = sum(1 for m in SUBDEC_DECL.finditer(open_half)
+                      if SUBDEC_LABEL.findall(m.group(1)))
         rep.add(
             OK, "questions.md",
             f"{examined} folded entr{'y' if examined == 1 else 'ies'} "
             f"examined, {declared_total} declared sub-decision"
-            f"{'s' if declared_total != 1 else ''} checked (#421 B)")
+            f"{'s' if declared_total != 1 else ''} checked"
+            + (f"; {pending} open ask{'s' if pending != 1 else ''} declare"
+               f"{'' if pending != 1 else 's'} sub-decisions and will be "
+               f"checked at fold" if pending else "")
+            + " (#421 B)")
 
 
 def check_answers(dw: Path, watch, rep: Report) -> None:
