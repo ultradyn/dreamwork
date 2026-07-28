@@ -2635,12 +2635,24 @@ class TestCollector(unittest.TestCase):
                 reviews["diff.html"]["mtime_ns"],
                 "precondition: constructed created ≠ mtime on diff.html")
             self.assertTrue(reviews["diff.html"]["show_modified"])
-            # same.html: if birth is known and equals mtime, no secondary.
-            if reviews["same.html"]["created_known"]:
-                self.assertEqual(
-                    reviews["same.html"]["created_ns"],
-                    reviews["same.html"]["mtime_ns"])
-                self.assertFalse(reviews["same.html"]["show_modified"])
+            # same.html is the case that killed exact inequality: a file that
+            # was never edited still has mtime a few hundred microseconds past
+            # birth (create, then write the content), so it IS a candidate —
+            # and the row must still not say "modified", which ages() decides
+            # by rendered figure. Assert the candidate/verdict split rather
+            # than a false equality this filesystem does not give us.
+            same = reviews["same.html"]
+            if same["created_known"]:
+                self.assertGreaterEqual(same["mtime_ns"], same["created_ns"])
+                self.assertLess(
+                    same["mtime_ns"] - same["created_ns"], 1_000_000_000,
+                    "precondition: an unedited file's mtime sits within a "
+                    "second of birth, which is why exact inequality is wrong")
+                # That both figures RENDER the same, and that the pair is
+                # therefore absent, is ageStr's business and belongs where
+                # ageStr runs: dev/capture/revieworder.mjs asserts it in the
+                # browser. Mirroring the formatter here would be a second copy
+                # of it, which is the defect this fix exists to avoid.
 
     def test_review_created_unknown_does_not_silently_use_mtime(self):
         # #463 — missing birth must be a named state, never mtime-as-created.

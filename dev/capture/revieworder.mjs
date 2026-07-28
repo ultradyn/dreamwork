@@ -5,7 +5,7 @@
    artifact birth times.
    usage: node revieworder.mjs <outdir> <ignored-port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
-import { cpSync, mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, renameSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 const OUT = process.argv[2];
@@ -228,5 +228,74 @@ try {
   } catch (error) {
     if (!String(error).includes('before causal expected setData')) throw error;
   }
+  await secondary();
 } finally { srv.kill(); }
 console.log(checks.join('\n')); process.exitCode=checks.some(x=>x.startsWith('FAIL'))?1:0;
+
+/* #463 part 3 — the secondary "modified X ago" says something the primary does
+   not, or it is not there at all.
+   Why this lives in the browser and not test_watch.py: the verdict is
+   `ageStr(created) === ageStr(mtime)`, and ageStr is client code. A python
+   mirror of it would be a second copy of the formatter, which is the very
+   defect being fixed — the server flagged 24 of 28 real artifacts as
+   "modified" because it compared nanoseconds the reader never sees.
+   The unedited row is the load-bearing half: `a.html` was written, not edited,
+   so its mtime sits microseconds past birth and the SERVER marks it a
+   candidate. Only the rendered-figure test suppresses it. */
+async function secondary() {
+  /* Both rows are built by MOVING MTIME ONLY, because utimes cannot move birth
+     and birth is always "now" — so pushing mtime hours ahead would put it in
+     the FUTURE, where ageStr reads `0s` and the row proves nothing. Instead:
+       untouched.html — mtime a millisecond past birth. This is the shape 24 of
+         28 real artifacts have (create, then write content). The SERVER calls
+         it modified; the rendered figures are identical, so the row must not.
+       edited.html — created, then left to age, then touched. Created and
+         modified now render different figures, which is the only difference a
+         reader can see and therefore the only one worth printing. */
+  const edited = 'edited.html', untouched = 'untouched.html';
+  recreate(edited);
+  recreate(untouched);
+  const ubirth = statSync(join(rd, untouched)).birthtime;
+  const uplus = new Date(ubirth.getTime() + 1);
+  utimesSync(join(rd, untouched), uplus, uplus);
+  // Let created age past ageStr's resolution, then touch mtime to now.
+  await new Promise(r => setTimeout(r, 2200));
+  const now = new Date();
+  utimesSync(join(rd, edited), now, now);
+  const br = await chromium.launch({args:['--use-gl=swiftshader']});
+  try {
+    const p = await br.newPage({viewport:{width:1000,height:1100}});
+    await p.goto(base, {waitUntil:'networkidle'});
+    await p.waitForFunction(() => document.querySelector('[data-review="untouched.html"]')
+                                 && document.querySelector('[data-review="edited.html"]'));
+    const seen = await p.evaluate(async () => {
+      const payload = await (await fetch('/data.json')).json();
+      const read = name => {
+        const row = document.querySelector(`[data-review="${name}"]`);
+        if (!row) return null;
+        const mod = row.querySelector('.age.rmod');
+        const sep = row.querySelector('.rsep');
+        const primary = row.querySelector('.age:not(.rmod)');
+        return {
+          present: !!mod, hidden: mod ? mod.hidden : null,
+          sepHidden: sep ? sep.hidden : null,
+          text: mod ? mod.textContent : '', primary: primary ? primary.textContent : '',
+        };
+      };
+      return { edited: read('edited.html'), plain: read('untouched.html'),
+               payload: (payload.reviews || []).map(r => ({ n: r.name, cand: r.show_modified })) };
+    });
+    // Precondition, derived: the server must have called BOTH rows candidates,
+    // or the suppression half of this check has no subject and passes forever.
+    const cand = new Map(seen.payload.map(r => [r.n, r.cand]));
+    ok('COVERAGE #463: server marks the unedited row a candidate too (else the render-side suppression is untested)',
+       cand.get('edited.html') === true && cand.get('untouched.html') === true);
+    ok('#463: an artifact modified after creation shows the secondary, in his words',
+       !!seen.edited && seen.edited.present && seen.edited.hidden === false
+       && /^modified .+ ago$/.test(seen.edited.text.trim()));
+    ok('#463: and it is a second figure, not a restatement of the first',
+       !!seen.edited && seen.edited.text.trim() !== '' && !seen.edited.text.includes(seen.edited.primary.trim()));
+    ok('#463: an artifact never edited shows no secondary and no orphan separator',
+       !!seen.plain && (!seen.plain.present || (seen.plain.hidden === true && seen.plain.sepHidden === true)));
+  } finally { await br.close(); }
+}

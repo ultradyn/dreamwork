@@ -69,7 +69,16 @@ carries a `+` command opener (steer the loop without a chat turn).
   after every known-created artifact — never silently under mtime. The
   displayed primary age seconds are derived from that same birth ns; mtime
   is kept only so a secondary *"modified X ago"* (dimmer, chrome ` · `
-  separator, same idiom as #456) can appear when created ≠ modified. A live
+  separator, same idiom as #456) can appear when created ≠ modified — and
+  "differs" means **the rendered figures differ**, not the nanoseconds. Writing
+  a file sets birth and then the content write moves mtime, so 24 of this
+  repo's 28 artifacts differ sub-millisecond and exact inequality would print
+  `3d old · modified 3d ago` on nearly every row. The server therefore marks a
+  **candidate** (`show_modified`: birth known and mtime later) and `ages()`
+  decides, beside `ageStr` itself, so no threshold is invented and the
+  formatter is never mirrored. A suppressed secondary is dropped inside
+  `ages()`, which `setContent` runs **before paint** — so it is absent from the
+  first frame rather than vanishing out of a painted one. A live
   created reorder keys each stable review row by filename and runs it through
   the existing list FLIP: normal motion travels without overshoot, while
   reduced motion places rows instantly. Same-origin artifacts

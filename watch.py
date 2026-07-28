@@ -3109,7 +3109,8 @@ function buildDashboard(d) {
         age = `<span class="age" data-mt="${r.created}"></span>`;
         if (r.show_modified)
           age += `<span class="rsep"> · </span>` +
-                 `<span class="age rmod" data-mt="${r.mtime}" data-review-mod="${esc(r.name)}"></span>`;
+                 `<span class="age rmod" data-mt="${r.mtime}" data-cr="${r.created}"` +
+                 ` data-review-mod="${esc(r.name)}"></span>`;
       } else {
         age = `<span class="age ageunk">created unknown</span>` +
               `<span class="rsep"> · </span>` +
@@ -3579,9 +3580,27 @@ function ages() {
      attribute, different grammar, so a single forEach branches on class. */
   document.querySelectorAll('.age[data-mt]').forEach(el => {
     const s = ageStr(parseFloat(el.dataset.mt));
-    el.textContent = el.classList.contains('rmod')
-      ? ('modified ' + s + ' ago')
-      : (s + ' old');
+    if (!el.classList.contains('rmod')) { el.textContent = s + ' old'; return; }
+    /* #463 — the secondary earns its place only if it SAYS something the
+       primary does not. `data-cr` is the created figure the row already shows;
+       when both render to the same string the modification is invisible at
+       this resolution, so the pair is dropped rather than printing
+       `3d old · modified 3d ago`. Server-side exact inequality flagged 24 of
+       28 real artifacts (create, then write content — sub-millisecond), which
+       is why the verdict is here, beside the formatter, and not a threshold
+       someone has to tune. Runs inside ages(), which setContent calls BEFORE
+       paint, so the pair is absent from the first frame rather than vanishing
+       out of a painted one (transitions.md — nothing disappears). */
+    const cr = el.dataset.cr;
+    if (cr !== undefined && ageStr(parseFloat(cr)) === s) {
+      const sep = el.previousElementSibling;
+      if (sep && sep.classList.contains('rsep')) sep.hidden = true;
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    el.hidden = false;
+    el.textContent = 'modified ' + s + ' ago';
   });
   /* #392a: a `.age[data-ct]` node is TWO figures (timed — a commit's real
      timestamp) UNLESS it carries `data-day="1"`, which marks it DAY-precision
@@ -3619,7 +3638,12 @@ function revealReviewMods() {
   // Only the dashboard reviews list carries these; leave any other route
   // with a clean slate so the next dashboard paint settles, not re-arrives.
   if (view.name !== 'dashboard') { knownReviewMods = null; return; }
-  const nodes = [...document.querySelectorAll('.age.rmod[data-review-mod]')];
+  /* `:not([hidden])` because ages() drops a secondary whose figure reads the
+     same as the primary (#463). A hidden node is not on the page, so treating
+     it as an arrival would animate nothing and, worse, would record it as
+     known — so the row's REAL first modification would then be a no-op. */
+  const nodes = [...document.querySelectorAll(
+    '.age.rmod[data-review-mod]:not([hidden])')];
   const now = new Set(nodes.map(el => el.dataset.reviewMod));
   if (knownReviewMods === null || window.__dwSkipReviewModArrival) {
     nodes.forEach(el => el.classList.remove('dreamin'));
@@ -9650,8 +9674,15 @@ def list_reviews(review_dir):
             "created_ns": created_ns,
             "created": (created_ns / 1_000_000_000) if known else None,
             "created_known": known,
-            # Server decides inequality so the client never compares floats.
-            "show_modified": known and created_ns != mtime_ns,
+            # A CANDIDATE for the secondary, not the verdict. Exact inequality
+            # is the wrong test and measurably so: writing a file sets birth,
+            # then the content write moves mtime, so 24 of this repo's 28
+            # artifacts differ by under a millisecond and would every one of
+            # them claim "modified" beside an identical age. His rule is *when
+            # they differ*, and what differs to a reader is the rendered
+            # figure — so the verdict belongs where the formatter is (ages()),
+            # and no threshold has to be invented here.
+            "show_modified": known and mtime_ns > created_ns,
         })
     # Known created first (newest-first), unknowns last, name as tie-break.
     reviews.sort(key=lambda r: (
