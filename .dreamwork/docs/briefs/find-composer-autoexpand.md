@@ -1,7 +1,7 @@
 # Brief — find the composer auto-expand task
 
 Repo: `ud-dreamwork`. **READ-ONLY in the main checkout. No worktree, no branch, change NO tracked file.**
-**Never use `attn`.** Report by appending **once** to the absolute path
+**Never use `attn`.** **Do not write `.dreamwork/handoffs.md`** — the coordinator writes that at merge time, and this lane is read-only besides. Report by appending **once** to the absolute path
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`, and **state which model you are**.
 
 ## The task
