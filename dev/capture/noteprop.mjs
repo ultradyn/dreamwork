@@ -48,19 +48,47 @@ await Promise.all([questions, review, reduced].map(p => p.waitForFunction(() => 
 // Seed every #269-compatible piece of human-owned composer state, plus iframe
 // position. Both motion modes must replace the dock card without disturbing it.
 async function seedReviewState(page) {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const ta = document.querySelector('#qdock textarea');
     const frame = document.querySelector('iframe');
     const card = document.querySelector('#qdock .qa');
     const details = document.querySelector('#qdock details');
     ta.value = Array(12).fill('draft kept across remote note').join('\n');
-    ta.style.height = '80px'; ta.scrollTop = 30;
+    // #474: let AUTOGROW set the height, then assert the tick does not change
+    // it. This used to force `ta.style.height = '80px'` and require exactly
+    // that back, which #177/#464 made wrong on purpose: the box is
+    // `resize:none` *because autosize owns the height*, and fitText's restore
+    // branch re-fits it on every tick by design. So the literal asserted a
+    // contract the styleguide had already replaced, and both motion modes went
+    // red on correct behaviour. The invariant that survived the change is the
+    // one worth checking -- a tick must not resize the box under him -- and it
+    // is derived from the production path rather than named.
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    // #474: and WAIT for the .85s height travel to land before touching
+    // scrollTop. A textarea clamps scrollTop to its CURRENT scrollable range,
+    // so seeding it mid-transition records a clamp against a box that is still
+    // short (measured: 160 in normal motion, 109 in reduced, for identical
+    // content) -- and after the travel finishes the browser re-clamps to 109
+    // and the comparison fails on a scroll position nothing actually lost.
+    // Reduced motion never saw it because there is no travel to race.
+    await new Promise(res => {
+      const want = parseFloat(ta.style.height);
+      const t0 = performance.now();
+      const spin = () => {
+        const settled = Math.abs(ta.getBoundingClientRect().height - want) < 0.5;
+        if (settled || performance.now() - t0 > 2000) res(settled);
+        else requestAnimationFrame(spin);
+      };
+      requestAnimationFrame(spin);
+    });
+    ta.scrollTop = 30;
     if (details) details.open = !details.open;
     card.classList.add('guard-fold-state');
     card.dataset.guardOld = 'yes';
     ta.focus(); ta.setSelectionRange(6, 10, 'forward');
     frame.contentWindow.scrollTo(0, 40);
     return { src: frame.src, frameY: frame.contentWindow.scrollY, scroll: ta.scrollTop,
+      height: ta.style.height,
       detailsOpen: details?.open ?? null, cardClass: card.classList.contains('guard-fold-state') };
   });
 }
@@ -121,8 +149,23 @@ async function checkPreservedReviewState(page, seeded, phase) {
      preserved.value === Array(12).fill('draft kept across remote note').join('\n'));
   ok(`${phase}: the textarea selection survives`,
      preserved.start === 6 && preserved.end === 10 && preserved.dir === 'forward');
-  ok(`${phase}: the textarea resize and scroll survive`,
-     preserved.height === '80px' && preserved.scroll === seeded.scroll);
+  // #474: split, because a compound assertion cannot say WHICH half broke --
+  // this one went red and the message named both. And the scroll half needs a
+  // derived precondition: `ta.scrollTop = 30` silently does nothing if the box
+  // is not scrollable at that moment, and then `preserved.scroll === 0 ===
+  // seeded.scroll` passes while measuring nothing.
+  ok(`${phase}: precondition -- the seeded scroll actually took`,
+     seeded.scroll > 0);
+  // and autogrow must actually have sized the box, or "the height survives"
+  // compares two empty strings and proves nothing.
+  ok(`${phase}: precondition -- autogrow gave the box a height to preserve`,
+     /^\d+(\.\d+)?px$/.test(seeded.height || ''));
+  ok(`${phase}: the autogrown height survives the tick`,
+     preserved.height === seeded.height);
+  ok(`${phase}: the textarea scroll survives`, preserved.scroll === seeded.scroll);
+  notes.push(`${phase}: height=${JSON.stringify(preserved.height)} ` +
+             `(seeded ${JSON.stringify(seeded.height)}) ` +
+             `scroll=${preserved.scroll} (seeded ${seeded.scroll})`);
   ok(`${phase}: focus survives in the textarea`, preserved.focused);
 }
 await checkPreservedReviewState(review, seeded, 'normal motion');

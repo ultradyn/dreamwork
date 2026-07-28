@@ -2892,7 +2892,18 @@ stored draft into a fresh box, so a tick's height survives either path
 independently. `dev/capture/autogrow.mjs` reds on tick-survival only when
 BOTH are removed (93px → 45px floor); removing the snapshot path alone stays
 green because the draft path masks it — the check is not hollow (it reds
-when survival is genuinely broken) but it cannot isolate the snapshot line. `dev/capture/autogrow.mjs`
+when survival is genuinely broken) but it cannot isolate the snapshot line.
+
+Because autosize owns the height, **a guard must never assert a height it set
+itself** (#474). `noteprop` seeded `ta.style.height = '80px'` and required
+exactly that back after a tick; `fitText`'s restore branch correctly re-fit the
+box to 96px and the guard went red in both motion modes on behaviour this
+styleguide had already specified. It now dispatches `input`, lets autogrow
+choose, and asserts *that* height survives — the invariant that outlived the
+change. The same guard also has to wait for the .85s travel to LAND before
+seeding `scrollTop`, because a textarea clamps scroll to its current scrollable
+range: seeded mid-travel it recorded 160 in normal motion and 109 in reduced for
+identical content, and the post-travel re-clamp then read as lost scroll. `dev/capture/autogrow.mjs`
 guards growth, both ceilings, scroll-past-ceiling, shrink, reduced-motion parity,
 and that the growth carries the cards below rather than teleporting them.
 
