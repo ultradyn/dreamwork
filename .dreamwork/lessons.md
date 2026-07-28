@@ -3108,3 +3108,12 @@ this shape and convert opportunistically.)
   it** — the same reason a bolded `Lane-owns:` was invisible to `dev/lane_guard.py` (`#468`) and a nested
   `- **Answer (via watch…)**` bullet terminated a parsed entry (`#467`). Discuss a marker by describing it,
   never by spelling it.
+
+- **Commit the brief BEFORE creating the lane's worktree, or the lane's branch does not contain its own
+  brief.** Done in the wrong order twice tonight (`draftstore`, `premerge`): the worktree was branched from
+  `master` and the brief committed a moment later, so the file exists in the main checkout and is absent
+  from the lane's tree. The lane still reads it by absolute path and `dev/lane_guard.py` still enforces
+  ownership — the guard runs in the main checkout, which has the brief — so nothing breaks. What it costs is
+  a lane spending its first minutes reporting a phantom problem, and one did exactly that. The cost is real
+  because the alternative it might reach for is worse: merging `master` mid-increment to "fix" it moves a
+  working tree for no reason. Evidence: `94e0582` committed after the worktree at `wt/premerge` was created.
