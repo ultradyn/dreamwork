@@ -3051,8 +3051,23 @@ this shape and convert opportunistically.)
   report that no longer exists. A lane's death is not evidence its work is bad; it
   is evidence nobody has checked it.
 
-- **A dispatch alias is a claim about which model you got; the lane's handshake is the
-  measurement.** His orchestrator framing names two runners for different strengths —
+- **Two agreeing signals are not corroboration when both come from the same misreading.**
+  Filed at 04:24 as a routing bug — *"`ccc @glm52` runs grok"* — on two pieces of
+  evidence: `ccc` printing `warning: runner "grok"`, and a direct probe answering
+  *"Grok (xAI)"* when asked its own identity. The human corrected it 23 minutes later:
+  **`@glm52` uses the grok CLI harness with the glm-5.2 model.** So the runner label
+  names the *harness* and never claimed anything about the model, and the self-report was
+  a model's account of itself under a harness that supplies an identity. Each signal was
+  wrong on its own, and they were believed because they matched. The confidence came
+  entirely from the agreement, and the agreement came from measuring one wrong thing
+  twice. **What would have caught it costs nothing: ask the human, or read the config
+  that did the dispatching, before writing a P1 that says his instruction is not being
+  honoured.** Corollary for provenance: record a lane's model from **what dispatched
+  it**, never from the process's own account — and treat *"state which model you are"* in
+  a brief as a courtesy field, not evidence.
+
+- **A dispatch alias is a claim about which model you got; the lane's handshake is NOT the
+  measurement either** (superseding the first version of this entry, which said it was).** His orchestrator framing names two runners for different strengths —
   `ccc @grok` (fast) and `ccc @glm52` (slower, often more capable) — and the whole
   point of the pair is that a second lane is a *different* judgement. **Evidence it
   was not:** `ccc --yolo @glm52 "reply with the model name and provider you are"`
