@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **420**
+Next id: **421**
 
 ## Open
 
@@ -212,7 +212,7 @@ Next id: **420**
   · **what remains of this task is the meta half**, which is unfixed: nothing measures
   guard-against-doc, and a red excused in a brief still goes invisible. Six hours here, across
   three lanes, on a signal that was correct the whole time
-  · related: **#392, #414**
+  · related: **#392, #414, #420**
 
 - **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
   right now · P2 · handoffs/correctness · origin: **loop** · **predicted by the `#401` lane in its
@@ -3195,7 +3195,33 @@ Next id: **420**
   was absent, not that the surface is missing. Worth stating so nobody builds a second surface
   · **P1 because it is a loop-integrity property, not a feature**: every hour he spends unable to
   unblock work he believes he is blocking is a direct cost, and the failure is silent on both sides
-  · related: **#264, #294, #289**
+  · related: **#264, #294, #289, #420**
+
+- **#420** — a census of everything not done, because nobody has a view of 138 open entries · P2 ·
+  loop-tooling/grooming · origin: **human** · **human via watch `/answers` 2026-07-28 15:25**
+  · verbatim: *"at some point soon, get a glm52 node to do a complete scan over our tasks and give
+  you a report on everything not done so you have a concise view on it"*
+  · **IN PROGRESS 2026-07-28 15:29** — `ccc @glm52` (his named runner) in `.worktrees/420`, brief
+  `.dreamwork/docs/briefs/420-open-task-census.md`, owning only
+  `.dreamwork/docs/open-task-census.md` and optionally a review artifact source. **Read-only
+  otherwise**, which is why it runs beside two live implementation lanes with no ownership conflict
+  · **the problem is real and measurable**: `tasks.md` is over 250,000 characters with 138 open
+  entries, and entries are long by design — the detail is what makes them useful individually and
+  unreadable collectively. The coordinator selects work from the part it happens to remember
+  · the brief's highest-value section is **not** the summary: it is the cross-check that every entry
+  whose prose says *blocked on him* has a `questions.md` entry that is open or answered-but-unfolded.
+  That is `#419`'s invariant measured by hand once, before the check exists — and `#264` proves the
+  failure is live rather than theoretical
+  · **also asked for, because both have bitten today**: entries the ledger and reality disagree about
+  (claimed open but actually done, or genuinely unstarted while a NEIGHBOUR landed and can be
+  mistaken for it — `#172` is that specimen), and duplicates found by **overlapping symbol** rather
+  than overlapping words, which is how `#412` escaped notice against `#331`
+  · every count must be derived at runtime and shown with the test that produced it; **no literal
+  counts**, since a literal is wrong the day after it is written
+  · told to use `watch.parse_ledger` rather than any hand-rolled reader, with the reason: four
+  hand-rolled parsers were wrong here today, including two that damaged sectioned files, against a
+  file whose production parser was importable every time
+  · related: **#419, #413**
 
 ## Recently landed
 
