@@ -979,6 +979,7 @@ Next id: **421**
   the landed design's boundary survives with its identity component swapped for the
   ssh-issued session key. Acting on that reading and said so on the entry; correctable in a
   sentence if he meant otherwise
+  · **UNBLOCKED — `#233` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): the base LAN mode this waited on is in. The ssh-issued session-key design is also unblocked from the other side: his 14:53 ruling settled Q2 (a reverse proxy is acceptable, and a local Caddy satisfies the self-hosted constraint), so **both** of this entry's blockers are gone. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
 
 - **#357** — A CLI warning layer that surfaces incomplete data and what is waiting ·
   P1 · tooling/feature · origin: **human** · **human via watch 2026-07-28 01:23**, inside his
@@ -1581,7 +1582,7 @@ Next id: **421**
   it · obeys `transitions.md` for the mode change itself, which already has an
   idiom (#300 morphs the run-mode descriptions through one popover) · blocked on
   `watch.py` being free; sequence after #336, which is his newer and higher steer
-
+  · **UNBLOCKED — `#336` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): the `do next` → `add idea` fallback's prerequisite landed. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
 
 - **#333** — `states.mjs` is the SIXTH holder of the forbidden count idiom, and
   unconverted · **P2** (raised from P3) · correctness · origin: **loop** · #327
@@ -1604,6 +1605,7 @@ Next id: **421**
   is the opposite assertion and must stay a count · `dev/capture/states.mjs` is
   currently held by `ccc-glm52-324`, whose brief covers report.mjs adoption only,
   so sequence this after #324 lands to avoid two agents in one file
+  · **UNBLOCKED — `#324` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): the reporter conversion landed, so the sixth `states.mjs` count-idiom holder is reachable — and `#414` has since changed what the right idiom IS, so read that before starting. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
 
 - **#328** — Add `/tasks2`, the wide two-pane task triage layout · P2 · dashboard
   feature · origin: **human** · **human via watch 2026-07-27 21:47** · his answer
@@ -2100,7 +2102,7 @@ Next id: **421**
   LAN mode · design token generation/storage/rotation, browser entry/persistence,
   header/query avoidance, CSRF/Origin interplay, logs/redaction, revocation and
   migration before implementation · blocked on #233 base LAN mode
-
+  · **UNBLOCKED — `#233` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): bearer-token LAN auth was queued behind the base LAN mode, which landed. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
 
 - **#274** — Make duplicate Web UI submissions idempotent end to end · P0/P1 ·
   bug · origin: **loop** · witnesses: at 17:48 one #233 action produced two
@@ -2529,7 +2531,7 @@ Next id: **421**
   overhead · keep per-frame measurement/aggregation correct when display is
   slower; persist/sync under #228 project settings · transitions/reduced-motion
   and perf guard required · blocked on #245 and #228
-
+  · **UNBLOCKED — `#245` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): dev-overlay sampling cadence; `#228` is landed too, so neither named blocker stands. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
 
 - **#246** — Keep Grok usefully occupied when work is available · P2 · routine
   · origin: **human** · **human via watch 14:33** · proactively assign
@@ -2544,6 +2546,8 @@ Next id: **421**
   opt-in; ignored/generated/vendor/cache advanced-off; binary listed with
   type/size but not rendered; symlinks never escape target · review artifact
   required; prerequisite to #243; blocked behind #238
+  · **UNBLOCKED — `#238` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): **composer cluster**: three queued UI tasks sat behind one landed prerequisite. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
+
 - **#243** — Add a sticky animated repository file tree · P2 · feature ·
   several increments · origin: **human** · **human via watch 14:29** · thin
   left sticky tree on `/file`, expandable folders, active-file auto reveal /
@@ -2555,6 +2559,7 @@ Next id: **421**
   confined `/file` links; deleted paths must not promise a readable current
   file (plain deleted status or historical-intent affordance) · reuse existing
   route/link idioms and transitions · blocked behind #238
+  · **UNBLOCKED — `#238` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): **composer cluster**, same landing. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
 
 - **#241** — Extract one composer mount contract · P2 · task · 30m ·
   origin: **human** · implication of **human via watch 14:25** · make the
@@ -2562,6 +2567,8 @@ Next id: **421**
   `window.open` fallback without duplicating command vocabulary, plugin
   refresh, per-project draft/settings, submission witness, keyboard behavior,
   transitions or styling · prerequisite to #240; blocked behind #238
+  · **UNBLOCKED — `#238` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): **composer cluster**, same landing — and this one is the contract the other two want, so it is the natural first of the three. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
+
 - **#240** — Bring the full composer and dream field into popouts · P2 · UI ·
   45m · origin: **human** · **human via watch 14:25** · retire legacy
   dropdown; reuse main button-group composer while retaining `+ command ·
@@ -2724,6 +2731,8 @@ Next id: **421**
   origin: **loop** · blocked on #217 · `ledger_series` already computes
   arrival/landing pairs and discards them; render the median without a
   velocity score after provenance work
+  · **UNBLOCKED — `#217` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): filed-to-landed median over `ledger_series`; the provenance work it needed landed. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
+
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
