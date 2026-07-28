@@ -41,8 +41,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+# #331: the ids-only bold span has ONE definition, in watch.py. Consume it
+# here rather than restating it — this was the third unpinned copy of the
+# rule, and it matched the other two only by luck. The head form is pinned
+# identical to watch.LEDGER_ENTRY and lint.LEDGER_ID by a test.
+import watch
+
 # A ledger entry head names one or more ids in a single bold span.
-LEDGER_HEAD = re.compile(r"^- \*\*(#\d+(?:/#\d+)*)\*\*", re.M)
+LEDGER_HEAD = re.compile(rf"^- \*\*({watch.IDS_ONLY_SPAN})\*\*", re.M)
 ENTRY_ID = re.compile(r"#(\d+)")
 
 

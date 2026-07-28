@@ -519,9 +519,100 @@ class TestCollector(unittest.TestCase):
         # wider copy of the priority-marker rule than the parser and blessed
         # three typos. Compared as a PATTERN, not by both finding the same
         # count on today's file — two different rules agree on most inputs.
+        #
+        # #331: the rule is now ONE core (`IDS_ONLY_SPAN`) shared by THREE
+        # head readers — watch.LEDGER_ENTRY, lint.LEDGER_ID and
+        # status_sync.LEDGER_HEAD — and the mention reader
+        # (watch.LEDGER_COMBINED_MENTION) is built from the same core. This
+        # test pins all of them; a fourth reader cannot be written wrong
+        # without one of these assertions going red. Comparing patterns, never
+        # "both find the same count on today's file" — that is exactly the
+        # agreement-this-exists-to-catch.
         import lint
-        self.assertEqual(watch.LEDGER_ENTRY.pattern, lint.LEDGER_ID.pattern)
+        import status_sync
+        head = watch.LEDGER_ENTRY.pattern
+        # All three heads share one pattern and one flags value.
+        self.assertEqual(lint.LEDGER_ID.pattern, head)
+        self.assertEqual(status_sync.LEDGER_HEAD.pattern, head)
         self.assertEqual(watch.LEDGER_ENTRY.flags, lint.LEDGER_ID.flags)
+        self.assertEqual(watch.LEDGER_ENTRY.flags, status_sync.LEDGER_HEAD.flags)
+        # Both surface forms are BUILT FROM the single core, not restated.
+        core = watch.IDS_ONLY_SPAN
+        self.assertEqual(head, rf"^- \*\*({core})\*\*")
+        self.assertEqual(watch.LEDGER_COMBINED_MENTION.pattern,
+                         rf"\*\*({core})\*\*")
+
+    def test_ids_only_span_admits_three_joiners_and_rejects_prose(self):
+        """#331: a span is ids-only or it is prose, and the distinction is the
+        whole hazard. The core admits `/`, `+` and a blank run as joiners, and
+        nothing else: comma is NOT a joiner (`**#392, #401**` is a prose list),
+        a word after an id is prose (`**#96 stage 1**` is a section title), and
+        a sub-id letter is prose (`**#392a**`). Each of these is in the live
+        ledger and must stay inert at the pattern level — never relying on a
+        column-0 or column-indent guard to save it.
+        """
+        core_re = rf"\*\*({watch.IDS_ONLY_SPAN})\*\*"
+        mention = re.compile(core_re)
+        # The three joiners that the live ledger uses and were lost (#331).
+        self.assertEqual(mention.findall("**#5/#6**"), ["#5/#6"])
+        self.assertEqual(mention.findall("**#121 #123**"), ["#121 #123"])
+        self.assertEqual(mention.findall("**#157 + #222 + #223**"),
+                         ["#157 + #222 + #223"])
+        # Every hazard the brief names — all must land NOTHING.
+        inert = [
+            "**#96 stage 1**",                      # section title, not ids
+            "**#392, #401, #405, #411, #412**",     # comma-joined prose list
+            "**#388, #387 and #386**",              # comma + the word "and"
+            "**#351 collides with this precisely**",  # id then prose
+            "**#346's artifact was deliberately NOT marked `language-sql`**",
+            "**#392a**",                            # a sub-id, not an id
+            "**#501, #502**",                       # fictional test ids
+        ]
+        for span in inert:
+            self.assertEqual(mention.findall(span), [],
+                             f"inert span matched (must land nothing): {span!r}")
+        # Comma is explicitly not a joiner — assert it as its own case, because
+        # admitting a comma is the easiest widening to reach for.
+        self.assertEqual(mention.findall("**#392, #401**"), [],
+                         "comma-joined span must stay inert at the pattern level")
+        # #5, #501, #502 are prose/fictional ids the ledger documents as syntax
+        # examples; they must never enter the landed set via a span match.
+        self.assertEqual(mention.findall("**#5**"), ["#5"])
+        self.assertEqual(mention.findall("**#501, #502**"), [])
+
+    def test_live_ledger_recovers_the_nineteen_joined_ids(self):
+        """#331: the live ledger writes 19 ids in space- and `+`-joined bold
+        spans that the old `/`-only reader dropped entirely. Each must now be
+        in the LANDED set (the spans live under `## Recently landed`), and the
+        open set must be unchanged and disjoint.
+
+        Membership is tested PER ID against parse_ledger's real landed set —
+        not by re-deriving the spans with a second regex, which disagreed (it
+        said 9). Per-id set membership is the authoritative test.
+        """
+        live = os.path.join(os.path.dirname(os.path.abspath(watch.__file__)),
+                            ".dreamwork", "tasks.md")
+        if not os.path.exists(live):
+            self.skipTest("no live .dreamwork/tasks.md in this tree")
+        with open(live, encoding="utf-8") as fh:
+            text = fh.read()
+        open_ids, landed = watch.parse_ledger(text)
+        open_ids, landed = set(open_ids), set(landed)
+        # The 19 ids the brief names, derived from the ledger's own joined
+        # spans. Asserted as a set so a fixture change can't hollow the count.
+        wanted = {"77", "102", "104", "106", "107", "108", "109", "110",
+                  "116", "121", "123", "132", "141", "149", "151", "154",
+                  "157", "222", "223"}
+        missing = sorted(wanted - landed, key=int)
+        self.assertEqual(missing, [],
+                         f"#331 joined-span ids missing from landed: {missing}")
+        # Disjointness: an id is open OR landed, never both.
+        self.assertEqual(open_ids & landed, set(),
+                         "open and landed are not disjoint")
+        # The inert ids must NOT have leaked in via a too-greedy span.
+        for bogus in ("5", "501", "502"):
+            self.assertNotIn(bogus, landed,
+                             f"#{bogus} entered landed — span too greedy")
 
     def test_parse_ledger_reads_both_of_the_files_two_shapes(self):
         # Both sections use entry HEADS (#399 retired prose-mention landing).

@@ -545,6 +545,35 @@ neither is a bare `**#N**` that lives in an indented body.
 
 `watch.parse_ledger` is the single reader of this rule (`_landed_ids`).
 
+## `.dreamwork/tasks.md` — the ids-only bold span has ONE definition (#331)
+
+The ledger packs several ids into one bold span three ways, and all three
+have always been valid prose:
+
+```text
+**#5/#6**            slash
+**#121 #123**        a blank run
+**#157 + #222 + #223**   a plus, spaced
+```
+
+For a year only `/` was parsed, so every id in a space- or `+`-joined span
+was invisible to every reader — 19 ids lost. `/` was widened twice (#301,
+#315) and the defect simply moved to the next door, because three readers
+each held their own copy. **Comma is not a joiner**: `**#392, #401, #405**`
+is a prose list, not three ids, and it stays inert at the pattern level.
+So does `**#96 stage 1**` (a section title), `**#392a**` (a sub-id), and
+`**#501, #502**` (fictional ids quoted from a fixture).
+
+The shape has **one definition**: `watch.IDS_ONLY_SPAN` is the ids-only
+core, and every reader builds from it — `watch.LEDGER_ENTRY` (the entry
+head), `watch.LEDGER_COMBINED_MENTION` (the same span, anywhere), and the
+imports `lint.LEDGER_ID` and `status_sync.LEDGER_HEAD`. `lint.py` and
+`status_sync.py` import the core rather than restating it, so a fourth
+reader cannot be written wrong; `test_ledger_entry_rule_has_exactly_one_copy`
+pins all three heads to one pattern and asserts both surface forms build
+from the same core. Joiners are `[ \t]`, never `\s` — the ledger is
+line-structured, and a span that could cross a newline would be a new bug.
+
 ## `.dreamwork/tasks.md` — `related:`, the relation that used to be a slash (#353)
 
 For a year the ledger said "these two tasks are one piece of work" by writing

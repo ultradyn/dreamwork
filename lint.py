@@ -36,12 +36,24 @@ import subprocess
 import sys
 from pathlib import Path
 
+# #331: the ids-only bold span has ONE definition, in watch.py. We import it
+# here rather than restating it, so this reader cannot drift from the parser's.
+# `check_ledger_sections` already did `import watch` at function scope; this
+# makes the module-level `LEDGER_ID` consume the same single core.
+import watch
+
 SKILL_DIR = Path(__file__).resolve().parent
 
 ERROR, WARN, OK = "ERROR", "WARN", "OK"
 
 DREAM_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}-[a-z0-9-]+\.md$")
-LEDGER_ID = re.compile(r"^- \*\*(#\d+(?:/#\d+)*)\*\*", re.M)
+# Built from watch.IDS_ONLY_SPAN (#331): one definition of an ids-only bold
+# span, shared with watch.LEDGER_ENTRY and status_sync.LEDGER_HEAD. The head
+# form (`^- **(<span>)**`) is pinned identical across all three readers by
+# `test_ledger_entry_rule_has_exactly_one_copy`. Combined-aware: the span is
+# ids only, so a head like `- **#7/#8**` names BOTH ids — callers extract
+# each with ENTRY_ID rather than int() on the span (#315).
+LEDGER_ID = re.compile(rf"^- \*\*({watch.IDS_ONLY_SPAN})\*\*", re.M)
 NEXT_ID = re.compile(r"^Next id: \*\*(\d+)\*\*", re.M)
 # #323: the repo keeps `close(#N):` / `merge(#N):` rigorously, so a commit
 # subject is a usable signal that a task shipped. The trailing character class
