@@ -29,7 +29,7 @@ date they plainly carry:
 The pattern starts with **`\A`**, which anchors to the start of the string regardless of which
 method calls it. I verified this on the live file: `RESOLVED_AT.search(body)` finds nothing for
 either entry. **An edit that only swaps the method is a no-op that looks like a fix and passes any
-test asserting "the date is still right for the 43 that work".**
+test asserting "the date is still right for the 44 that work".**
 
 The edit is the **anchor**: `\A` → `^` with **`re.M`**, then `.search`. Keep the rest of the pattern
 exactly as it is.
@@ -106,4 +106,4 @@ Append once, at the end, to the **absolute** path
 `/home/xertrov/.llm-general/skills/ud-dreamwork/.dreamwork/inbox.md`.
 
 Say: the real `just test` exit code and how you got it; both red-proofs with exact test names; the
-before/after `None` count; and confirmation that the 43 existing dates are unchanged.
+before/after `None` count; and confirmation that the 44 existing dates are unchanged.
