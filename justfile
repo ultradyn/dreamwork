@@ -290,6 +290,18 @@ guards port="39899":
     if [ "$fail" -ne 0 ] && grep -q "Cannot find module" "$OUT"/*.log 2>/dev/null; then
       echo "guards: playwright not resolvable — the structural half did NOT run"
     fi
+    # #471 — registration is not execution. The loop above printed PASS/FAIL
+    # per guard, but a guard that died before its first assertion (the #471
+    # shape: serveVerified refused the shared port, the guard threw an Error:
+    # and ran zero ok() checks) still got a FAIL line and GATED NOTHING for
+    # 3.5h while the suite reported "N registered". So compare the guards
+    # that ran AND judged against the requested set and fail when they
+    # disagree. "Judged" = a genuine PASS/FAIL verdict (NOT the crash sentinel
+    # "the guard threw before finishing its checks", which marks did-not-judge);
+    # every guard shares that output contract (report.mjs users and the guards
+    # that inline the same idiom). See lint.ran_and_judged / `lint.py
+    # guard-execution`. This cannot be skipped inside a run: it feeds `fail`.
+    python3 lint.py guard-execution "$OUT" $GUARDS || fail=1
     exit $fail
 
 # #330 — deliberately refresh the committed provenance evidence plates.

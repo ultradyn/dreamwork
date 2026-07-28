@@ -10,6 +10,7 @@ import contextlib
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -3404,6 +3405,190 @@ class TestGuardsRegistered:
         detail = next(d for lvl, w, d in rep.rows
                       if w == "justfile" and lvl == lint.OK)
         assert str(len(names)) in detail, detail
+
+
+class TestRanAndJudged:
+    """#471 — "executed" must mean ran AND judged, not "the recipe printed a line".
+
+    A guard that died before its first assertion still earned a recipe-level
+    FAIL line, and that is what hid #471 for 3.5h. The signal that it did NOT
+    judge is the crash sentinel — the reporter's marker for did-not-finish —
+    which is explicitly NOT a verdict.
+
+    Production line named (what must change for these to fail): the
+    sentinel-exclusion in `lint.ran_and_judged` (`if m.group(0) !=
+    _CRASH_SENTINEL`). Delete that guard and a sentinel-only log reads as
+    judged — the exact misread #471 survived on.
+    """
+
+    def test_a_genuine_pass_verdict_is_judged(self):
+        assert lint.ran_and_judged("----\nPASS a real check\n") is True
+
+    def test_a_genuine_fail_verdict_is_also_judged(self):
+        # A guard that ran, judged, and FOUND a failure did execute; its FAIL
+        # is a verdict, not a death. The recipe's per-guard FAIL line could
+        # not tell these apart — the crux the brief names.
+        assert lint.ran_and_judged("----\nFAIL a real failure\n") is True
+
+    def test_the_crash_sentinel_alone_is_not_judged(self):
+        log = ("Error: serve: :39899 is serving /x, not /y\n"
+               "[coverage] NONE DECLARED\n"
+               "----\n"
+               + lint._CRASH_SENTINEL + "\n")
+        assert lint.ran_and_judged(log) is False
+
+    def test_an_error_stack_with_no_verdicts_is_not_judged(self):
+        assert lint.ran_and_judged("") is False
+        assert lint.ran_and_judged(
+            "Error: serve: :39899 never answered\n    at f (...)\n") is False
+
+    def test_a_guard_that_judged_then_crashed_is_judged(self):
+        # The line between "ran and judged" and "died before judging": a guard
+        # that reached ok() at least once judged, even if it threw afterwards.
+        assert lint.ran_and_judged(
+            "PASS judged first\n" + lint._CRASH_SENTINEL + "\n") is True
+
+
+class TestGuardExecutionCLI:
+    """#471 — `lint.py guard-execution` compares executed vs requested and
+    fails when a registered guard did not run-and-judge.
+
+    This is the red-proof by synthetic run record (the brief's sanctioned
+    alternative to editing a real guard file, which is not ours): a guard log
+    in the exact #471 shape (died before judging) is placed among judged
+    guards, and the REAL CLI — which reads the file and calls the REAL
+    `ran_and_judged` — must name it and exit non-zero. There is no hand-built
+    classification standing in front of the decision; the injection reaches
+    the production line.
+    """
+
+    JUDGED = "----\nPASS a\nPASS b\n"
+    JUDGED_FAIL = "----\nFAIL a real failure\n"
+    DIED_471 = ("Error: serve: :39899 is serving /x, not /died/y\n"
+                "[coverage] NONE DECLARED\n----\n"
+                + lint._CRASH_SENTINEL + "\n")
+
+    @staticmethod
+    def _logs(out: Path, **name_text):
+        out.mkdir(parents=True, exist_ok=True)
+        for name, text in name_text.items():
+            (out / f"{name}.log").write_text(text)
+
+    def test_all_judged_is_green_with_both_counts(self, tmp_path, capsys):
+        out = tmp_path / "OUT"
+        self._logs(out, good1=self.JUDGED, good2=self.JUDGED_FAIL)
+        rc = lint.main(["guard-execution", str(out), "good1", "good2"])
+        captured = capsys.readouterr().out
+        assert rc == 0, captured
+        assert "OK" in captured
+        # Both counts on the row — a single number cannot show a gap, and the
+        # row that hid this bug ("N registered") carried exactly one.
+        assert "2 of 2" in captured, captured
+
+    def test_a_471_shape_guard_is_named_and_fails(self, tmp_path, capsys):
+        out = tmp_path / "OUT"
+        self._logs(out, good1=self.JUDGED, died471=self.DIED_471)
+        # Runtime precondition: the fixture must contain BOTH a judged guard
+        # and a not-judged one, or the assertion proves nothing (a fixture of
+        # all-not-judged would pass a broken "always fail" check). Derived via
+        # the real classifier, not assumed.
+        verdicts = {g: lint.ran_and_judged((out / f"{g}.log").read_text())
+                    for g in ("good1", "died471")}
+        assert any(verdicts.values()) and not all(verdicts.values()), verdicts
+        rc = lint.main(["guard-execution", str(out), "good1", "died471"])
+        captured = capsys.readouterr().out
+        assert rc == 1, captured
+        assert "FAIL" in captured
+        assert "died471" in captured, "the not-judged guard must be named"
+        assert "good1" not in captured, "a judged guard must not be reported"
+        assert "1 of 2" in captured, captured  # executed-of-registered
+
+    def test_a_guard_with_no_log_did_not_run(self, tmp_path, capsys):
+        out = tmp_path / "OUT"
+        self._logs(out, good1=self.JUDGED)
+        rc = lint.main(["guard-execution", str(out), "good1", "neverran"])
+        captured = capsys.readouterr().out
+        assert rc == 1, captured
+        assert "neverran" in captured
+
+    def test_zero_logs_read_is_a_vacuity_failure_not_a_pass(self, tmp_path, capsys):
+        # A broken OUT (no logs) must not read as "everything ran" — that is
+        # #471's failure mode inverted. Exit 2, never 0.
+        rc = lint.main(["guard-execution", str(tmp_path / "nope"),
+                        "good1", "good2"])
+        err = capsys.readouterr().err
+        assert rc == 2, err
+        assert "0 logs" in err, err
+
+    def test_the_cli_is_reachable_as_a_subprocess(self, tmp_path):
+        # Proves the `__main__` dispatch wiring the recipe depends on, not just
+        # main() called in-process: `python3 lint.py guard-execution ...`.
+        out = tmp_path / "OUT"
+        self._logs(out, good1=self.JUDGED)
+        r = subprocess.run(
+            [sys.executable, "lint.py", "guard-execution", str(out), "good1"],
+            cwd=str(lint.SKILL_DIR), capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "1 of 1" in r.stdout, r.stdout
+
+
+class TestGuardsExecutionAccounting:
+    """#471 — lint cannot watch a run, but it can refuse to let the live
+    execution-comparison be deleted from the recipe (the "became hollow"
+    shape: a check that passed at birth and was later removed).
+
+    Production line named: the `invoked`/`wired` regexes in
+    `check_guards_execution_accounting`. Remove the `lint.py guard-execution`
+    line — or its `|| fail=` wiring — from the recipe and this errors.
+    """
+
+    @staticmethod
+    def _rep(tmp_path, body):
+        (tmp_path / "justfile").write_text(body, encoding="utf-8")
+        rep = lint.Report()
+        lint.check_guards_execution_accounting(tmp_path, rep)
+        return rep
+
+    def test_this_repo_wires_the_comparison(self):
+        rep = lint.Report()
+        lint.check_guards_execution_accounting(lint.SKILL_DIR, rep)
+        assert lint.ERROR not in levels(rep, "justfile"), rep.render()
+        assert lint.OK in levels(rep, "justfile"), rep.render()
+
+    def test_a_recipe_without_the_hook_is_an_error(self, tmp_path):
+        body = ('guards port="1":\n'
+                '    DEFAULT_GUARDS="alpha"\n'
+                '    echo ran\n'
+                '    exit 0\n')
+        rep = self._rep(tmp_path, body)
+        assert lint.ERROR in levels(rep, "justfile"), rep.render()
+        detail = next(d for lvl, w, d in rep.rows
+                      if w == "justfile" and lvl == lint.ERROR)
+        assert "guard-execution" in detail, detail
+
+    def test_a_hook_present_but_not_wired_to_fail_is_an_error(self, tmp_path):
+        # Present yet toothless: it prints and can never red. That is the
+        # deletion that matters — a comparison that cannot fail gates nothing.
+        body = ('guards port="1":\n'
+                '    DEFAULT_GUARDS="alpha"\n'
+                '    python3 lint.py guard-execution "$OUT" $GUARDS\n'
+                '    exit 0\n')
+        rep = self._rep(tmp_path, body)
+        assert lint.ERROR in levels(rep, "justfile"), rep.render()
+
+    def test_a_wired_hook_is_ok(self, tmp_path):
+        body = ('guards port="1":\n'
+                '    DEFAULT_GUARDS="alpha"\n'
+                '    python3 lint.py guard-execution "$OUT" $GUARDS || fail=1\n'
+                '    exit $fail\n')
+        rep = self._rep(tmp_path, body)
+        assert lint.ERROR not in levels(rep, "justfile"), rep.render()
+        assert lint.OK in levels(rep, "justfile"), rep.render()
+
+    def test_a_target_without_a_justfile_is_silent(self, tmp_path):
+        rep = lint.Report()
+        lint.check_guards_execution_accounting(tmp_path, rep)
+        assert levels(rep, "justfile") == [], rep.render()
 
 
 class TestBriefHandoffObligation:
