@@ -24,9 +24,23 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **452**
+Next id: **453**
 
 ## Open
+- **#452** — focus a single question on its own page · **P2** · dashboard/asking · origin: **human** ·
+  **human via watch 2026-07-29 01:04:** *"should be able to focus on a question, like open up to a page showing
+  only that question. useful if other qs are being updated etc"*
+  · **the reason he gives is the requirement**: the loop rewrites `questions.md` while he is reading it, so a
+  list view can shift under him mid-answer — tonight `#449`'s entry was rewritten three times in fifteen
+  minutes while he was looking at it. A focused page is a surface the loop's churn cannot move.
+  · **route shape already exists to copy:** `/review?p=<artifact>` is the single-document view, and
+  `crossfade()` treats it as a distinct body class. A `/question?…` route is the same pattern, so the work is
+  identification (a stable per-question key) plus the view, not new machinery.
+  · **the stable key is the real design question** — titles change (this one's did, twice tonight), so a
+  title-derived key breaks the link exactly when the entry is edited, which is the case the feature exists for.
+  `#269` settled a title-keyed logical id for drafts and `#294` plans `question_id`; read both before choosing.
+  · **transitions apply**: entering and leaving a focused question is a route change and uses the existing
+  gesture (`transitions.md`), not a new one.
 - **#451** — authorisation asks are a distinct queue, surfaced in the title bar opposite the composer ·
   **P2** · dashboard/asking · origin: **human** ·
   **human via watch 2026-07-29 01:02:** *"when a question is just an authorization request, we should have a
