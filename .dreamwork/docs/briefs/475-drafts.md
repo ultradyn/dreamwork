@@ -59,7 +59,7 @@ fourteen alone at load 24â€“31 **ten still fail exactly as they did at load 36â€
 Two systemic explanations were tested and refuted; **do not re-test them**:
 
 1. **Writes are not broken.** A direct `POST /posture` against a fixture server returns
-   `202 {{"ok": true, "changed": true}}` with a receipt, writes `.dreamwork/posture`, and appends its
+   `202 {"ok": true, "changed": true}` with a receipt, writes `.dreamwork/posture`, and appends its
    `watch-events.log` line.
 2. **Headless Chromium is not reporting `prefers-reduced-motion: reduce`** (which would collapse every
    normal-motion assertion at once). It reports `false`, and a control transition sampled 20 distinct
