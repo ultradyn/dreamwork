@@ -236,10 +236,26 @@ guards port="39899":
       exit 1
     fi
     fail=0
+    # LOAD IS RECORDED PER GUARD, and it is not decoration (#428). Roughly a
+    # dozen guards assert that a transition HAPPENED by sampling frames, and they
+    # fail intermittently — always from that subset, never outside it. Four runs
+    # went looking for the cause by trying to run the suite on an "idle" machine,
+    # and all four failed for the same reason: this host is a shared workstation
+    # running several agent sessions, so its load average sits near 30 on 16
+    # cores whether or not this loop has a lane out. There is no idle arm to
+    # measure against, and "no lane of mine is running" was never the same claim
+    # as "the machine is idle" — treating them as one is what wasted the four
+    # runs. So stop trying to isolate the variable and instrument it instead:
+    # every guard's load travels with its verdict, and the correlation
+    # accumulates over ordinary use with no reserved window at all.
+    _loadavg() { cut -d' ' -f1 /proc/loadavg 2>/dev/null || echo '?'; }
+    _cores=$(nproc 2>/dev/null || echo '?')
+    echo "  (load $( _loadavg ) on $_cores cores at suite start)"
     for g in $GUARDS; do
       # Reset the target before EVERY guard — see the header. The server
       # re-reads from disk per request, so no restart is needed.
       rm -rf "$OUT/target" && cp -r dev/capture/fixture "$OUT/target"
+      _l0=$(_loadavg)
       if timeout --kill-after=5s "$GUARD_TIMEOUT" \
           node "dev/capture/$g.mjs" "$OUT/$g" {{port}} \
           >"$OUT/$g.log" 2>&1; then
@@ -247,7 +263,10 @@ guards port="39899":
       else
         code=$?
         fail=1
-        echo "  FAIL $g${code:+ (exit $code)}"
+        # The failing lines carry load because that is the whole point: a
+        # frame-sampler red at load 30 and one at load 3 are different findings,
+        # and previously the output could not tell them apart.
+        echo "  FAIL $g${code:+ (exit $code)} [load $_l0->$(_loadavg) / $_cores cores]"
         grep -E "^(FAIL|Error)" "$OUT/$g.log" | head -5 | sed 's/^/        /'
       fi
     done
