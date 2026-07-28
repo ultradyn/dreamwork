@@ -1741,6 +1741,7 @@ headline: One line.
 status: test
 lead: the lead
 footer: the footer
+no_ask: test fixture — no decision to make
 -->
 <!--#body-->
 <section><p>the body</p></section>
