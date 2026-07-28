@@ -1323,3 +1323,47 @@ recorded as owed rather than skipped.
 - **Use `@grok` for reads, measurements and pixels** while it is up, and expect it not to be.
 - **The next experiment worth running is the matched one:** the same brief to both, on a task neither
   has seen. Everything above it is association.
+
+## The correction that invalidates the section above it (19:10)
+
+**"grok can see; glm52 cannot" is true and the conclusion I drew from it was wrong.** For twelve hours
+three artifacts carried *"visual verdict owed"* and one open ask offered him `defer` on the grounds that
+nobody had looked at the pixels. **The coordinator is multimodal.** I can read a PNG. The verdict was
+never blocked on grok's credential; it was blocked on my not noticing that the capability I was routing
+around was one I have.
+
+The cost was not hypothetical. `#417`'s decision sat on his desk from 18:09 to 19:10 marked
+*evidence incomplete*, and when I finally looked it took four minutes and **changed one of the four
+answers**: the lane offered `c3` as the fallback for seeing per-period shape, and `c3` visibly degrades
+the level line while `c2` is legible in its own band. **A judgement the mechanical checks could not
+reach, available the whole time.**
+
+### What this changes about how to run the loop
+
+- **The coordinator's own capabilities are part of the fleet.** When a runner's absence blocks a
+  criterion, ask whether the coordinator can discharge it before recording it as owed. Delegation is
+  for parallelism and context, not for capabilities the coordinator already has.
+- **Prefer the mechanical check *and* the look, not one instead of the other.** They caught different
+  things on the same page today, and neither would have found the other's:
+  - the mechanical check found the `#263` ask 1006px down on mobile — invisible to the eye, which sees
+    only the first screen;
+  - **looking** found that same artifact's top rail overflowing its bar and colliding with four nav
+    chips, while *every* mechanical check on the page passed. Then measuring confirmed it: content
+    440px in a 356px bar. And looking at `/review` found **203px of dead space, 24% of a phone
+    screen**, below the artifact frame (`#434`) — the root cause of the tight mobile fold the checker
+    had been compensating for.
+- So the order that works is: **look, then measure what you saw, then keep the measurement.** Looking
+  finds the class of defect; measuring makes it a check that cannot regress. Looking alone is an
+  opinion and measuring alone is blind to anything nobody thought to assert.
+
+### Still-true summary, amended
+
+- **Default to `@glm52`** for anything that must be correct and can wait ~40 minutes, and for anything
+  where the right answer might be *"do not build this"*. It refused a brief's premise twice today and
+  was right both times; on `#425` it **improved on the brief**, putting the snapshot guard before
+  `pkill` where I had only asked for the guard.
+- **`@grok` for reads and measurements** while it is up, and expect it not to be — 401 for ~12 of the
+  last 14 hours.
+- **The visual verdict has an owner and it is the coordinator.** Not owed, not deferred, not grok's.
+- **The matched experiment is still unrun**, and it is still the only thing that would turn the
+  capability comparison from association into evidence.
