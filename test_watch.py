@@ -1420,28 +1420,55 @@ class TestCollector(unittest.TestCase):
     def test_first_sight_grammar_has_exactly_one_copy(self):
         # #217 reads the ledger's first sightings with #213/#216's grammar,
         # so "what counts as an entry and what counts as an origin claim"
-        # must be ONE rule. watch.py is a single file by design (the deploy
-        # snapshot depends on it) and cannot import lint, so it holds a
-        # VERBATIM copy — pinned here, the same way LEDGER_ENTRY is.
+        # must be ONE rule. Pre-#352 that rule lived as a VERBATIM copy in
+        # watch.py pinned equal to lint's — a test that two copies agree,
+        # which is a test that should not need to exist. #352 made the
+        # grammar one MODULE (ledger_parse) that watch, lint and
+        # task_origins all import, so the pin is now IDENTITY: there are no
+        # two copies left whose drift a test could catch.
+        import ledger_parse
         import lint
-        self.assertEqual(watch.ENTRY_HEAD.pattern, lint.ENTRY_HEAD.pattern)
-        self.assertEqual(watch.ENTRY_ID.pattern, lint.ENTRY_ID.pattern)
-        self.assertEqual(watch.ORIGIN_MARK.pattern, lint.ORIGIN_MARK.pattern)
-        self.assertEqual(watch.ENTRY_HEAD.flags, lint.ENTRY_HEAD.flags)
-        self.assertEqual(watch.ORIGIN_MARK.flags, lint.ORIGIN_MARK.flags)
+        import task_origins
+        for name in ("ENTRY_HEAD", "ENTRY_ID", "ORIGIN_MARK",
+                     "ledger_entries"):
+            self.assertIs(getattr(watch, name), getattr(ledger_parse, name),
+                          f"watch.{name} is not ledger_parse's")
+            self.assertIs(getattr(lint, name), getattr(ledger_parse, name),
+                          f"lint.{name} is not ledger_parse's")
+        for name in ("KNOWN_ORIGINS", "entry_origins"):
+            self.assertIs(getattr(watch, name), getattr(ledger_parse, name),
+                          f"watch.{name} is not ledger_parse's")
+        self.assertIs(lint.open_section_text, ledger_parse.open_section_text)
+        # task_origins consumed the grammar THROUGH lint before #352; its
+        # module handle must be the shared one now, not lint's re-export.
+        self.assertIs(task_origins.ledger_parse, ledger_parse)
         self.assertEqual(set(watch.KNOWN_ORIGINS),
                          set(lint.ORIGIN_VALUES) - {"unknown"})
-        # and the entry walker itself agrees on a hostile input, not only
-        # on the patterns: a wrapped marker, a combined entry, a body
-        # cross-reference and landed prose all parse identically
+
+    def test_ledger_entries_reads_the_hostile_shapes(self):
+        # The pre-#352 pin asserted watch's and lint's COPIES of
+        # ledger_entries agreed on this fixture; with one module that would
+        # compare the function to itself. What still needs pinning is the
+        # BEHAVIOUR on the hostile shapes: a hard-wrapped marker, a
+        # combined head, a body cross-reference, and landed prose that is
+        # not an entry.
+        import ledger_parse
         hostile = (
             "## Open\n\n"
             "- **#250/#251** — combined · P2 · task · origin:\n"
             "  **loop** · wrapped marker\n"
             "- **#252** — body mentions #250 in passing · origin: **human**\n"
             "\n## Recently landed\n\n**#9** landed prose, not an entry.\n")
-        self.assertEqual(watch.ledger_entries(hostile),
-                         lint.ledger_entries(hostile))
+        self.assertEqual(ledger_parse.ledger_entries(hostile), [
+            ([250, 251],
+             "- **#250/#251** — combined · P2 · task · origin:\n"
+             "  **loop** · wrapped marker"),
+            ([252],
+             "- **#252** — body mentions #250 in passing · origin: **human**"
+             "\n"),
+        ])
+        self.assertEqual(ledger_parse.entry_origins(hostile),
+                         [([250, 251], "loop"), ([252], "human")])
 
     def test_ledger_provenance_counts_first_sightings_exactly(self):
         # #217. The panel draws three counts — human, loop, historical

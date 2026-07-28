@@ -25,9 +25,10 @@ Reading rules, each deliberate:
 - A malformed snapshot cannot crash the walk; at worst its affected entry
   reads `unknown`, which is what an unreadable claim IS.
 
-The entry and marker grammar is IMPORTED from lint.py (the #213 contract's
-one copy — a second copy of one rule is how the priority-marker check
-drifted, 3073055). Nothing here is re-derived.
+The entry and marker grammar is IMPORTED from ledger_parse.py (#352 — the
+one copy of the #213 contract that lint.py and watch.py also import; a
+second copy of one rule is how the priority-marker check drifted,
+3073055). Nothing here is re-derived.
 
 CLI:
 
@@ -61,15 +62,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import lint  # the #213 entry/marker grammar — imported, never re-copied  # noqa: E402
+import ledger_parse  # the #213 entry/marker grammar — imported, never re-copied  # noqa: E402
 
 DEFAULT_PATH = ".dreamwork/tasks.md"
 GIT_TIMEOUT = 15
-
-# `human` and `loop` are claims about who filed the task. `unknown` — the
-# only other value in lint.ORIGIN_VALUES — is the absence of such a claim,
-# so every unreadable case folds into it rather than being invented.
-KNOWN_ORIGINS = ("human", "loop")
 
 
 class TaskOriginsError(Exception):
@@ -105,24 +101,21 @@ def _git(repo: Path, *args: str) -> str:
 def _classify(entry_text: str) -> str:
     """The origin of one entry, from that entry alone, fail-closed.
 
-    Exactly one marker whose value is human or loop is a claim; anything
-    else — none, several, an out-of-vocabulary value — is unknown. This is
-    the linter's own vocabulary decision, minus the error reporting.
+    The rule itself is ledger_parse.classify_origin (#352); the try/except
+    is this walk's own promise that a malformed snapshot fails closed
+    rather than crashing the history.
     """
     try:
-        marks = [v.strip() for v in lint.ORIGIN_MARK.findall(entry_text)]
+        return ledger_parse.classify_origin(entry_text)
     except Exception:
         return "unknown"
-    if len(marks) == 1 and marks[0] in KNOWN_ORIGINS:
-        return marks[0]
-    return "unknown"
 
 
 def _title(entry_text: str) -> str:
     """The entry's first line minus its leading `- **#…**` token — enough
     context for a renderer (#217) without re-parsing the file."""
     first = entry_text.split("\n", 1)[0].strip()
-    return lint.ENTRY_HEAD.sub("", first, count=1).lstrip(" —·").strip()
+    return ledger_parse.ENTRY_HEAD.sub("", first, count=1).lstrip(" —·").strip()
 
 
 def task_origins(repo, path: str = DEFAULT_PATH) -> dict:
@@ -169,7 +162,7 @@ def task_origins(repo, path: str = DEFAULT_PATH) -> dict:
             # the same call watch.py's ledger_series makes.
             continue
         try:
-            entries = lint.ledger_entries(text)
+            entries = ledger_parse.ledger_entries(text)
         except Exception:
             continue  # a malformed snapshot fails closed, never the walk
         for ids, body in entries:

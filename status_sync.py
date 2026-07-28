@@ -59,7 +59,9 @@ import watch
 
 # A ledger entry head names one or more ids in a single bold span.
 LEDGER_HEAD = re.compile(rf"^- \*\*({watch.IDS_ONLY_SPAN})\*\*", re.M)
-ENTRY_ID = re.compile(r"#(\d+)")
+# #352: ENTRY_ID was a third hand-written copy of `#(\d+)`; the grammar's
+# one home is ledger_parse now.
+from ledger_parse import ENTRY_ID  # noqa: E402
 
 
 # The three top-level keys this tool owns. Everything else in status.json is

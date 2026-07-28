@@ -72,7 +72,8 @@ COMPLETION_MARK = re.compile(
 )
 
 # ── task provenance, forward-only from the cutoff (#213) ──────────────
-# The origin rule reads WHOLE entries (ENTRY_HEAD/ENTRY_ID below), not head
+# The origin rule reads WHOLE entries (ENTRY_HEAD/ENTRY_ID, from
+# ledger_parse below), not head
 # lines, so combined entries (`- **#250/#251**`) are governed on either id.
 # LEDGER_ID is pinned identical to watch.py's LEDGER_ENTRY by a test and is
 # combined-aware for the same reason (#315): its bold span is ids only
@@ -80,12 +81,13 @@ COMPLETION_MARK = re.compile(
 # extract every id in the span — see check_tasks and check_ledger_sections.
 ORIGIN_CUTOFF = 216
 ORIGIN_VALUES = ("human", "loop", "unknown")
-ENTRY_HEAD = re.compile(r"^- \*\*([^*]+?)\*\*")
-ENTRY_ID = re.compile(r"#(\d+)")
-# An origin claim is `origin: **value**`; the entry's lines are joined
-# before matching, so a hard-wrapped marker (`origin:` ending a line, the
-# value opening the next — #288 and #252 both do this) still reads.
-ORIGIN_MARK = re.compile(r"origin:\s*\*\*\s*([^*]+?)\s*\*\*")
+# #352: the entry/origin grammar — ENTRY_HEAD, ENTRY_ID, ORIGIN_MARK,
+# ledger_entries — is ledger_parse.py's, imported, never re-copied (the
+# drift lesson of 3073055). The names stay importable from lint for the
+# callers that already read them here. `open_section_text` is the Open
+# slice two checks below once wrote out by hand.
+from ledger_parse import (ENTRY_HEAD, ENTRY_ID, ORIGIN_MARK, ledger_entries,
+                          open_section_text)
 
 # #419: a blocked-on-human claim, same `key: **value**` idiom as origin/related.
 # The marker names a KIND of blocker (a human decision), not a specific question
@@ -96,31 +98,6 @@ BLOCKED_ON_HUMAN_MARK = re.compile(r"blocked-on:\s*\*\*\s*([^*]+?)\s*\*\*")
 # carries this decision), for the case the question does not carry the entry's
 # own id — the #371 trap. Optional; absent defaults to the entry's own id.
 GATE_MARK = re.compile(r"gate:\s*\*\*\s*([^*]+?)\s*\*\*")
-
-
-def ledger_entries(text: str) -> list[tuple[list[int], str]]:
-    """Each ledger entry as (its ids, its full text).
-
-    An entry is a list item opening `- **#…**`; its text is that line plus
-    the following blank or indented lines. A line at column 0 that does not
-    open an entry ENDS it — the prose summaries under Recently landed are
-    not entries and never join one. Only the leading bold token numbers the
-    entry: combined entries list every id (`- **#138/#156**`), while a
-    `#264` in the body is a cross-reference, not the entry's number.
-    """
-    entries: list[tuple[list[int], list[str]]] = []
-    cur: tuple[list[int], list[str]] | None = None
-    for ln in text.split("\n"):
-        m = ENTRY_HEAD.match(ln)
-        if m:
-            ids = [int(x) for x in ENTRY_ID.findall(m.group(1))]
-            cur = (ids, [ln])
-            entries.append(cur)
-        elif cur is not None and (not ln.strip() or ln[0] in " \t"):
-            cur[1].append(ln)
-        else:
-            cur = None
-    return [(ids, "\n".join(lines)) for ids, lines in entries]
 
 
 def _metadata_clause(entry_text: str) -> str:
@@ -955,20 +932,12 @@ def check_landed_still_open(dw: Path, text: str, rep: Report) -> None:
         return
 
     # Slice the Open section rather than teaching `ledger_entries` about
-    # headings: it is a shared helper with its own pinned tests, and a second
-    # caller's need is a poor reason to widen it.
-    lines = text.splitlines()
-    start = end = None
-    for n, ln in enumerate(lines):
-        if ln.strip().startswith("## "):
-            if ln.strip() == "## Open":
-                start = n + 1
-            elif start is not None:
-                end = n
-                break
-    if start is None:
+    # headings: it is a shared helper (ledger_parse.open_section_text, #352)
+    # with its own pinned tests, and a second caller's need is a poor reason
+    # to widen it.
+    open_text = open_section_text(text)
+    if open_text is None:
         return
-    open_text = "\n".join(lines[start:end])
 
     stale: list[str] = []
     acknowledged = 0
@@ -1305,20 +1274,12 @@ def check_human_blocker(dw: Path, watch, rep: Report) -> None:
     tpath = dw / "tasks.md"
     if not tpath.exists():
         return
-    # Slice the Open section once, the idiom check_landed_still_open uses, so
-    # only OPEN entries are governed — a landed entry is not "blocked on him".
-    lines = tpath.read_text().splitlines()
-    start = end = None
-    for n, ln in enumerate(lines):
-        if ln.strip().startswith("## "):
-            if ln.strip() == "## Open":
-                start = n + 1
-            elif start is not None:
-                end = n
-                break
-    if start is None:
+    # Slice the Open section once, the shared ledger_parse idiom (#352) that
+    # check_landed_still_open also uses, so only OPEN entries are governed —
+    # a landed entry is not "blocked on him".
+    open_text = open_section_text(tpath.read_text())
+    if open_text is None:
         return
-    open_text = "\n".join(lines[start:end])
 
     open_ids, answered_ids = _question_id_sets(watch, dw / "questions.md")
     if open_ids is None:
