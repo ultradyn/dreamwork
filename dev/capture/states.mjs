@@ -43,6 +43,34 @@ declare({
 });
 
 const uniq = a => [...new Set(a)];
+/* Frames strictly BETWEEN the two ends, 3% deadband — the frame-rate-free
+   form of "it travelled". A snap has none of these at any frame rate, so the
+   floor is ONE and the assertion is not a bet on how many frames this box
+   drew. Same helper `reviewsplit.mjs`/`headertravel.mjs`/`qsec.mjs`/
+   `morph.mjs` use; deliberately not a second idiom (#311, transitions.md
+   "Checking a transition").
+
+   It replaces `uniq(h).length >= 6` (three live counts on the unfold / fold /
+   tick-grow heights below), which asserted THIS MACHINE drew six distinct
+   heights inside the trace window — a fact about the box, not the motion.
+   #333; confirmation.mjs #414 for the sample-count precondition that must
+   sit first so a starved window and a real snap print different lines. */
+const between = (vals, a, b) => {
+  const lo = Math.min(a, b), hi = Math.max(a, b), eps = (hi - lo) * 0.03;
+  return vals.filter(v => v > lo + eps && v < hi - eps).length;
+};
+const span = vals => Math.abs((vals.at(-1) ?? 0) - (vals[0] ?? 0));
+/* Minimum samples for a part-way frame to be decidable: start, at least one
+   intermediate draw, end. Named in the precondition so a starved rAF window
+   fails with "sampled enough… (N frames)" rather than masquerading as a
+   motion bug (#413 / #414). */
+const MIN_SAMPLES = 3;
+/* Height displacement floor for vacuity — well below a real fold/grow on
+   this fixture (measured in the hundreds of px). A card that never moved
+   would otherwise pass between() with zero part-way frames for the wrong
+   reason if we only checked the travel half. Literal by design: transitions.md
+   "a part-way count needs a vacuity precondition… and that one IS a literal." */
+const MIN_HEIGHT_SPAN = 20;
 
 /* Trace every card's geometry and its FLIP signatures per frame, while `act`
    happens. `act` runs in the page and may be async. */
@@ -121,18 +149,44 @@ for (const reduced of [false, true]) {
   notes.push(`${tag}: tick-grow h ${tkH[0]}→${tkH.at(-1)} steps=${uniq(tkH).length}`);
 
   if (!reduced) {
-    ok(`${tag}: unfolding TRAVELS its height (it does not jump open)`,
-       uniq(upH).length >= 6 && upH.at(-1) > upH[0]);
+    // ── unfold ────────────────────────────────────────────────────────────
+    // #414 PRECONDITION first: rAF density IS the frame rate. Without this
+    // line a starved window reports "the motion is wrong" when what happened
+    // is "we did not look often enough" — opposite responses, one line (#413).
+    ok(`${tag}: unfold window sampled enough to see motion (${upH.length} frames)`,
+       upH.length >= MIN_SAMPLES);
+    ok(`${tag}: unfolding really changes height (else the travel check is vacuous) `
+     + `(${upH[0]} -> ${upH.at(-1)}, ${span(upH)}px)`,
+       span(upH) >= MIN_HEIGHT_SPAN && upH.at(-1) > upH[0]);
+    ok(`${tag}: unfolding TRAVELS its height (it does not jump open) `
+     + `(${between(upH, upH[0], upH.at(-1))} of ${upH.length} part-way)`,
+       between(upH, upH[0], upH.at(-1)) >= 1);
     ok(`${tag}: the revealed body eases in rather than being wiped up`,
        anyFrame(up, f => f.revealing > 0));
-    ok(`${tag}: folding TRAVELS its height (it does not snap shut)`,
-       uniq(dnH).length >= 6 && dnH.at(-1) < dnH[0]);
+
+    // ── fold ──────────────────────────────────────────────────────────────
+    ok(`${tag}: fold window sampled enough to see motion (${dnH.length} frames)`,
+       dnH.length >= MIN_SAMPLES);
+    ok(`${tag}: folding really changes height (else the travel check is vacuous) `
+     + `(${dnH[0]} -> ${dnH.at(-1)}, ${span(dnH)}px)`,
+       span(dnH) >= MIN_HEIGHT_SPAN && dnH.at(-1) < dnH[0]);
+    ok(`${tag}: folding TRAVELS its height (it does not snap shut) `
+     + `(${between(dnH, dnH[0], dnH.at(-1))} of ${dnH.length} part-way)`,
+       between(dnH, dnH[0], dnH.at(-1)) >= 1);
     ok(`${tag}: the departing body FADES rather than blanking`,
        anyFrame(down, f => f.clipped > 0));
-    ok(`${tag}: a card the loop grows under him travels too`,
-       uniq(tkH).length >= 6);
 
-    // the mechanism's own property, which is what covers the whole matrix
+    // ── tick-grow ─────────────────────────────────────────────────────────
+    ok(`${tag}: tick-grow window sampled enough to see motion (${tkH.length} frames)`,
+       tkH.length >= MIN_SAMPLES);
+    ok(`${tag}: a card the loop grows under him really changes height `
+     + `(else the travel check is vacuous) (${tkH[0]} -> ${tkH.at(-1)}, ${span(tkH)}px)`,
+       span(tkH) >= MIN_HEIGHT_SPAN);
+    ok(`${tag}: a card the loop grows under him travels too `
+     + `(${between(tkH, tkH[0], tkH.at(-1))} of ${tkH.length} part-way)`,
+       between(tkH, tkH[0], tkH.at(-1)) >= 1);
+
+    // the outcome's own property, which is what covers the whole matrix
     /* The property that covers the whole matrix is the one HE sees: anything
        that ended somewhere else got there continuously.
 
@@ -142,17 +196,27 @@ for (const reduced of [false, true]) {
        is carried by the layout as that height animates, continuously and
        welded to the card it is following, with no transform of its own. That
        is the better motion, and the mechanism check would have forbidden it.
-       So: count intermediate positions, not implementation traces. */
+       So: frames strictly part-way between the ends, not implementation
+       traces. (The old form counted distinct positions — the same frame-rate
+       claim #333 retired on the three height assertions above.) */
     const MOVE = 2;      // regroupCards ignores sub-pixel drift; so do we
-    const track = (frames, id, k) =>
-      uniq(frames.map(f => f.at[id] && f.at[id][k]).filter(v => v !== undefined));
+    const seriesOf = (frames, id, k) =>
+      frames.map(f => f.at[id] && f.at[id][k]).filter(v => v !== undefined);
     const mech = [up, down, tick].map(frames => {
       const first = frames[0].at, last = frames.at(-1).at;
       const pick = k => Object.keys(last).filter(id => first[id] &&
         Math.abs(first[id][k] - last[id][k]) >= MOVE);
-      const jumped = pick('top').filter(id => track(frames, id, 'top').length < 6);
-      const snapped = pick('h').filter(id => track(frames, id, 'h').length < 6);
+      // zero part-way frames = jump/snap, at any frame rate
+      const jumped = pick('top').filter(id => {
+        const vs = seriesOf(frames, id, 'top');
+        return between(vs, vs[0], vs.at(-1)) < 1;
+      });
+      const snapped = pick('h').filter(id => {
+        const vs = seriesOf(frames, id, 'h');
+        return between(vs, vs[0], vs.at(-1)) < 1;
+      });
       return { n: pick('top').length + pick('h').length, jumped, snapped,
+               samples: frames.length,
                scaled: frames.some(f =>
                  Object.values(f.at).some(c => /scale\(/.test(c.tf))),
                flipped: frames.some(f => Object.values(f.at).some(c => c.tf)) };
@@ -160,7 +224,11 @@ for (const reduced of [false, true]) {
     notes.push(`${tag}: changed per phase = ${mech.map(m => m.n)}` +
                ` | jumped = ${JSON.stringify(mech.map(m => m.jumped.length))}` +
                ` | snapped = ${JSON.stringify(mech.map(m => m.snapped.length))}` +
+               ` | samples = ${JSON.stringify(mech.map(m => m.samples))}` +
                ` | flip used = ${mech.map(m => m.flipped)}`);
+    ok(`${tag}: matrix phases sampled enough to decide continuous travel `
+     + `(${mech.map(m => m.samples).join('/')} frames)`,
+       mech.every(m => m.samples >= MIN_SAMPLES));
     ok(`${tag}: EVERY card that ended elsewhere got there continuously`,
        mech.every(m => m.n > 0 && m.jumped.length === 0));
     ok(`${tag}: EVERY card that changed size changed it continuously`,
@@ -171,7 +239,14 @@ for (const reduced of [false, true]) {
        mech.some(m => m.flipped));
     await p.screenshot({ path: `${OUT}/states.png`, fullPage: true });
   } else {
-    // timing changes, function does not: the same folding happens, at once
+    // timing changes, function does not: the same folding happens, at once.
+    // These STAY as absolute counts (the OPPOSITE assertion of the travel
+    // checks above): reduced motion must NOT animate, so few distinct heights
+    // is the contract. Converting them to between()===0 would be correct too,
+    // but the brief for #333 names this pair as the legitimate count that
+    // must not be touched — a starved normal window and an instant reduced
+    // step both produce few distinct values for different reasons, and this
+    // half is "did it stay still enough", not "did it travel".
     ok(`${tag}: unfolding is one step`, uniq(upH).length <= 3 && upH.at(-1) > upH[0]);
     ok(`${tag}: folding is one step`, uniq(dnH).length <= 3 && dnH.at(-1) < dnH[0]);
     ok(`${tag}: no card is ever FLIPped`,
