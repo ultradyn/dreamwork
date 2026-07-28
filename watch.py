@@ -317,6 +317,13 @@ RUN_MODES = ("lackadaisical", "hot", "assisted")
 RUN_MODE_DEFAULT = "lackadaisical"
 RUN_MODES_PLANNED = ("hierarchical",)
 RUN_ARM_MS = 10_000
+# #462 — after POST /deploy lands, how long the loaded document waits for a
+# new GENERATION before naming the failure. just deploy's own readiness is
+# sleep 1 + up to 5s of curl probes (~6s healthy); 30s is ~3× that budget so
+# a contended box is not a false timeout, and still short enough that a hung
+# deploy does not leave a spinner forever. Copy decision as much as timing:
+# the page must say something, in the styleguide voice, when nothing arrives.
+DEPLOY_WAIT_MS = 30_000
 # #300 — one shared hover/focus description per mode. Copy is the behavioural
 # contract (file-formats.md / SKILL.md run-mode paragraph), never marketing.
 # hierarchical is not selectable; its line names why it stays disabled.
@@ -788,16 +795,12 @@ STYLE = """<style>
      clears the staleness is a re-snapshot from HEAD plus a restart, which is
      `just deploy`; the GENERATION bump it causes already reloads this tab.
 
-     WHY THE REMEDY IS THE COMMAND AND NOT A BUTTON THAT RUNS IT. A button
-     that triggered the deploy from the page would work — failure stays
-     visible (this loaded tab polls /mtime and can say "restart didn't take"
-     when no new generation returns), drafts survive it (#269), and it would
-     stop the dashboard pid, not the loop. But it grants an unauthenticated,
-     host-bound web request the authority to run deploy machinery on his box,
-     and that is a consent question for him, not a refusal to make for him.
-     Until that call is made, naming the command is honest and complete: it is
-     copyable, and the text is selectable so a refused clipboard still leaves
-     him the exact thing to run.
+     AUTHORISED ACTION (2026-07-29 03:46, `rec`). The row used to copy the
+     command; he consented to the page running it — loopback-only, behind the
+     existing confirmation idiom, single-flight. The click arms for RUN_ARM_MS
+     (the #290 run-mode arm, reused rather than a second cooldown), then POST
+     /deploy. Success is a new GENERATION (full reload); failure and a deploy
+     that never finishes both speak on #fmsg, never a spinner forever.
 
      MOTION. The row is re-rendered through innerHTML every tick, so .dreamin
      is applied only on the current→behind transition by revealStaleAction()
@@ -806,7 +809,9 @@ STYLE = """<style>
      the pose entirely), never baked in and never replayed on a tick where
      the affordance was already present. Behind→current is a redeploy = a new
      process = a generation change = a full reload, so the affordance departs
-     with it and needs no departure motion of its own. */
+     with it and needs no departure motion of its own. Arming/running are
+     class toggles on the same control (paintStaleDeployUI after setContent),
+     not a second arrival gesture. */
   .gservact { font:inherit; color:inherit; background:none; border:0;
     margin-left:.4ch; padding:0; cursor:pointer;
     transition:opacity .55s ease, filter .55s ease, transform .55s ease;
@@ -814,7 +819,9 @@ STYLE = """<style>
     text-underline-offset:2px; }
   .gservact:hover { text-decoration-style:solid; }
   .gservact:focus-visible { outline:1px solid var(--warn); outline-offset:2px; }
-  .gservact.copied { text-decoration-style:solid; }
+  .gservact.arming { text-decoration-style:solid; color:var(--warn); }
+  .gservact.running { text-decoration-style:solid; cursor:wait;
+    opacity:.7; pointer-events:none; }
   /* the dashboard's questions fold (#141). `> summary` and not `summary`:
      the child combinator is what keeps this from being one of the catch-alls
      above — a question card inside carries its OWN <details><summary>, and a
@@ -2475,7 +2482,11 @@ async function writeVerdict(res) {
   try { j = await res.json(); } catch (e) { j = null; }
   const rejected = !!(j && j.rejected === true);
   return { landed: res.ok && !rejected, rejected,
-           reason: (j && j.reason) || null, status: res.status };
+           reason: (j && j.reason) || null,
+           // `detail` narrows a closed-set reason for copy only (#462): several
+           // distinct refusals share one contract reason, and a route that can
+           // say which one must be able to. Never gated on — `landed` is.
+           detail: (j && j.detail) || null, status: res.status };
 }
 const postJSON = async (url, body) => {
   const id = await subsRecord(url, body);
@@ -2512,6 +2523,12 @@ const QSEND_WHY = {
    Closed set, paired with REJECTION_REASONS in user_events/sqlite.py — a code
    outside the set falls through to the status line, never an unrecognised
    string. Voice is watch-design.md's: a state, an em dash, what he can do. */
+/* #462 — per-route narrowing of a closed-set reason, for copy only. In his
+   voice: what happened and what it means for him, never a code. */
+const DEPLOY_WHY = {
+  in_flight: 'this page will pick up the new one when it lands',
+  not_local: 'the update only runs from the machine serving the page',
+};
 const REJECT_WHY = {
   malformed_json: 'the request body could not be read',
   schema_invalid: 'a required field was missing or the wrong shape',
@@ -2843,14 +2860,14 @@ function servingLine(d) {
     ? ` title="${esc(missing.map(([h, sub]) => `${h}  ${sub}`).join('\\n'))}"`
     : '';
   // #462 — the remedy appears ONLY when the row is genuinely behind. The
-  // command is the affordance: it is the exact thing to run (`just deploy`
-  // re-snapshots from HEAD and restarts, and the generation bump reloads this
-  // tab), copyable via data-copy, selectable as the clipboard fallback. It is
-  // never baked with .dreamin — revealStaleAction() applies that start pose
-  // once, on the current→behind transition only (see setContent).
+  // action runs `just deploy` (re-snapshot from HEAD + restart; the generation
+  // bump reloads this tab), behind the #290 arm and the page's one confirmation
+  // lifecycle. Never baked with .dreamin — revealStaleAction() applies that
+  // start pose once, on the current→behind transition only (see setContent).
   const remedy = s.state === 'behind'
     ? ` — <button class="gservact" type="button" ` +
-      `data-copy="just deploy">just deploy</button> to update`
+      `aria-label="update this page via just deploy">just deploy</button>` +
+      ` to update`
     : '';
   return `<div class="gserve${loud ? ' stale' : ''}"${title}>` +
          `${say({ ...s, missing })}${remedy}</div>`;
@@ -5062,6 +5079,9 @@ function setContent(html) {
   ages();
   revealNewOpenAsks();
   revealStaleAction();
+  // #462: the remedy is re-created by innerHTML; re-apply arm/running classes
+  // and label so a mid-arm tick does not reset the control to idle copy.
+  paintStaleDeployUI();
   revealReviewMods();
   // #290: innerHTML destroys the arm bar nodes; resume shared pending (or
   // re-sync the committed selection) without inventing a new deadline.
@@ -6090,29 +6110,179 @@ async function copyFilePath() {
     c.note('copy was blocked — the path beside it is selectable', false);
   }
 }
-/* #462 — the staleness row's remedy copies the deploy command on click, on
-   the page's ONE confirmation lifecycle (the same #fmsg the file-path copy
-   uses, so there is still exactly one polite-confirmation idiom rather than a
-   second). The command is read from the button's data-copy — where the render
-   put it — so it has one source. A refused clipboard leaves the command
-   selectable in the button text, the same fallback the file path relies on. */
-async function copyStaleCommand(btn) {
-  const cmd = (btn && btn.dataset.copy) || '';
-  const c = fileConfirmation();
-  if (!cmd) { c.note('there is no command to copy', false); return; }
-  try {
-    if (!navigator.clipboard || !navigator.clipboard.writeText)
-      throw new Error('no clipboard');
-    await navigator.clipboard.writeText(cmd);
-    btn.classList.add('copied');
-    c.note('copied — run it to update this page', true);
-  } catch (e) {
-    c.note('copy was blocked — the command is selectable', false);
+/* #462 — the staleness row's remedy RUNS `just deploy` (authorised 03:46).
+   Confirmation and failure speak on the page's ONE lifecycle (#fmsg), the
+   same confirmationFor the file-path copy uses. The arm is #290's RUN_ARM_MS
+   idiom reused: first click arms, re-click cancels, only the deadline POSTs,
+   so two clicks do not start two deploys. Concurrent with an in-flight deploy
+   is refused client-side and single-flight server-side.
+
+   After a landed POST the server may die (that is the point of redeploy). The
+   loaded document keeps polling /mtime; a new GENERATION is success (tick
+   reloads). DEPLOY_WAIT_MS with no generation change is the named failure —
+   never a spinner forever. Drafts ride #269's localStorage and survive the
+   reload by construction (the restart destroys the server, not the document's
+   storage). */
+let staleDeployGen = 0;
+let staleDeployPhase = null;   // null | 'arming' | 'running'
+let staleDeployUntil = 0;
+let staleDeployTimer = null;
+let staleDeployTick = null;
+let staleDeployWait = null;
+
+function paintStaleDeployUI() {
+  const btn = document.querySelector('.gservact');
+  if (!btn) return;
+  const arming = staleDeployPhase === 'arming';
+  const running = staleDeployPhase === 'running';
+  btn.classList.toggle('arming', arming);
+  btn.classList.toggle('running', running);
+  btn.setAttribute('aria-busy', running ? 'true' : 'false');
+  if (arming) {
+    const s = Math.max(0, Math.ceil((staleDeployUntil - Date.now()) / 1000));
+    btn.textContent = s > 0 ? `arms in ${s}s` : 'updating…';
+  } else if (running) {
+    btn.textContent = 'updating…';
+  } else {
+    btn.textContent = 'just deploy';
   }
+}
+
+function clearStaleDeployArm() {
+  if (staleDeployTimer) { clearTimeout(staleDeployTimer); staleDeployTimer = null; }
+  if (staleDeployTick) { clearInterval(staleDeployTick); staleDeployTick = null; }
+  staleDeployUntil = 0;
+  if (staleDeployPhase === 'arming') staleDeployPhase = null;
+  paintStaleDeployUI();
+}
+
+function cancelStaleDeployArm() {
+  staleDeployGen++;
+  clearStaleDeployArm();
+}
+
+function armStaleDeploy() {
+  const c = fileConfirmation();
+  const until = Date.now() + RUN_ARM_MS;
+  staleDeployGen++;
+  const gen = staleDeployGen;
+  staleDeployPhase = 'arming';
+  staleDeployUntil = until;
+  paintStaleDeployUI();
+  const remainingMs = () => Math.max(0, staleDeployUntil - Date.now());
+  c.note(
+    `arms in ${Math.ceil(remainingMs() / 1000)}s — then this page updates`,
+    true);
+  const setCount = () => {
+    if (gen !== staleDeployGen) return;
+    paintStaleDeployUI();
+    const left = Math.ceil(remainingMs() / 1000);
+    if (left > 0)
+      c.note(`arms in ${left}s — then this page updates`, true);
+  };
+  if (staleDeployTick) clearInterval(staleDeployTick);
+  staleDeployTick = setInterval(setCount, 250);
+  if (staleDeployTimer) clearTimeout(staleDeployTimer);
+  // Remaining, not a fixed RUN_ARM_MS — same as #290 armRunModeUI, so a
+  // mid-arm rebuild and the guard's compressed clock both land correctly.
+  staleDeployTimer = setTimeout(() => {
+    if (gen !== staleDeployGen) return;
+    if (staleDeployTick) { clearInterval(staleDeployTick); staleDeployTick = null; }
+    staleDeployTimer = null;
+    fireStaleDeploy(gen);
+  }, remainingMs());
+}
+
+async function fireStaleDeploy(gen) {
+  if (gen !== staleDeployGen) return;
+  staleDeployPhase = 'running';
+  paintStaleDeployUI();
+  const c = fileConfirmation();
+  c.note('updating — waiting for the new page', true);
+  let landed = false;
+  try {
+    const res = await fetch('/deploy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: location.pathname + location.search }),
+    });
+    // raw-fetch site: owns its Response, gates on writeVerdict — never res.ok
+    // alone (#263 E5b). A rejected 202 would otherwise look like success.
+    const rv = await writeVerdict(res);
+    landed = rv.landed;
+    if (!landed) {
+      staleDeployPhase = null;
+      paintStaleDeployUI();
+      /* The two ways this route refuses are both `domain_invalid`, so the
+         generic copy ("the value was not one the server accepts") is wrong for
+         both — and these are the ONLY two refusals he can provoke. `detail`
+         names which. The old `res.status === 403` branch was dead: since the
+         202 cutover (#263 E5) a refusal is 202 + rejected, never 403, so the
+         "only runs from this machine" line could never have printed. */
+      const why = DEPLOY_WHY[rv.detail]
+        || (rv.rejected && rv.reason && REJECT_WHY[rv.reason])
+        || null;
+      c.note(
+        rv.detail === 'in_flight'
+          ? `already updating — ${why}`
+          : `update was refused — ${why || 'try again in a moment'}`,
+        false);
+      return;
+    }
+  } catch (e) {
+    staleDeployPhase = null;
+    paintStaleDeployUI();
+    c.note('update was refused — the page could not reach the server', false);
+    return;
+  }
+  if (gen !== staleDeployGen) return;
+  // Landed: the server may already be dying. Watch for a new generation;
+  // if none arrives by DEPLOY_WAIT_MS, name the failure.
+  // window.__dwDeployWaitMs is the guard's short-deadline inject (mirrors
+  // __dwSkipStaleArrival): production never sets it; the default is the
+  // styleguide constant.
+  const waitMs = (typeof window.__dwDeployWaitMs === 'number')
+    ? window.__dwDeployWaitMs : DEPLOY_WAIT_MS;
+  const startedAt = Date.now();
+  const baseline = serverGen;
+  if (staleDeployWait) clearInterval(staleDeployWait);
+  staleDeployWait = setInterval(() => {
+    if (gen !== staleDeployGen) {
+      clearInterval(staleDeployWait); staleDeployWait = null; return;
+    }
+    // tick() reloads on generation change; if we are still here past the
+    // deadline, the new generation never came.
+    if (serverGen && baseline && serverGen !== baseline) {
+      clearInterval(staleDeployWait); staleDeployWait = null;
+      return; // reload is in flight or done
+    }
+    if (Date.now() - startedAt >= waitMs) {
+      clearInterval(staleDeployWait); staleDeployWait = null;
+      staleDeployPhase = null;
+      paintStaleDeployUI();
+      c.note(
+        'update never finished — this page is still the old one',
+        false);
+    }
+  }, 400);
+}
+
+function onStaleActionClick() {
+  const c = fileConfirmation();
+  if (staleDeployPhase === 'running') {
+    c.note('update already in flight — waiting for the new page', false);
+    return;
+  }
+  if (staleDeployPhase === 'arming') {
+    cancelStaleDeployArm();
+    c.note('update cancelled', true);
+    return;
+  }
+  armStaleDeploy();
 }
 addEventListener('click', e => {
   const stale = e.target.closest && e.target.closest('.gservact');
-  if (stale) { copyStaleCommand(stale); return; }
+  if (stale) { onStaleActionClick(); return; }
   const btn = e.target.closest && e.target.closest('.fcopy');
   if (btn) copyFilePath();
 });
@@ -7772,6 +7942,7 @@ PAGE = page_shell('dreamwork watch', APP_BODY,
                   + "const RUN_MODES_PLANNED = "
                   + json.dumps(list(RUN_MODES_PLANNED)) + ";\n"
                   + "const RUN_ARM_MS = " + json.dumps(RUN_ARM_MS) + ";\n"
+                  + "const DEPLOY_WAIT_MS = " + json.dumps(DEPLOY_WAIT_MS) + ";\n"
                   + "const RUN_MODE_DESC = "
                   + json.dumps(RUN_MODE_DESC, ensure_ascii=True) + ";\n"
                   + COMPONENTS_JS + VIEWS_JS + FAVICON_JS + SHADER_JS
@@ -8160,6 +8331,90 @@ def serving_cached(target):
         _SERVE_CACHE.clear()          # only one target, only one live HEAD
         _SERVE_CACHE[key] = serving_report(target)
     return _SERVE_CACHE[key]
+
+
+# ── page-triggered deploy (#462 increment 2) ──────────────────────────────
+#
+# He authorised the dashboard to run `just deploy` (2026-07-29 03:46, `rec`).
+# The loaded document keeps polling /mtime; success is a new GENERATION, not
+# the POST response — the server may die mid-flight when the deploy stops the
+# listening snap. Failure of the runner (or a deploy that never restarts)
+# surfaces as DEPLOY_WAIT_MS with no generation change on the client.
+#
+# Loopback only: trusted-LAN serving exists, and this action must refuse a
+# non-loopback peer. Single-flight: two clicks must not run two deploys.
+# Tests inject `_deploy_runner` so a check never actually runs `just deploy`.
+
+_deploy_lock = threading.Lock()
+_deploy_inflight = False
+# Optional override: callable(target) -> None. Tests set this; production
+# leaves it None and runs `just deploy` from the watched target.
+_deploy_runner = None
+
+
+def peer_is_loopback(client_address):
+    """True when the TCP peer is a loopback address (IPv4 or IPv6).
+
+    The deploy action is host-bound: only the machine running the dashboard
+    may trigger it. Trusted-LAN Host/Origin gates are not authentication, so
+    this is the additional peer check for a command that restarts the server.
+    """
+    host = (client_address or ("", 0))[0]
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except (ValueError, TypeError):
+        return False
+
+
+def _default_deploy_runner(target):
+    """Run `just deploy` in `target` (the watched project: justfile + port).
+
+    May kill this process — that is the recipe's job. stdout/stderr are
+    captured for diagnostics on the rare path where the process survives.
+    """
+    try:
+        subprocess.run(
+            ["just", "deploy"],
+            cwd=str(target),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def start_deploy(target):
+    """Claim the single-flight slot and start the runner in a daemon thread.
+
+    Returns True if the runner was scheduled, False if a deploy is already
+    in flight. The POST returns before the runner finishes (and possibly
+    before this process dies).
+    """
+    global _deploy_inflight
+    with _deploy_lock:
+        if _deploy_inflight:
+            return False
+        _deploy_inflight = True
+
+    def run():
+        global _deploy_inflight
+        try:
+            runner = _deploy_runner if _deploy_runner is not None \
+                else _default_deploy_runner
+            runner(target)
+        finally:
+            with _deploy_lock:
+                _deploy_inflight = False
+
+    threading.Thread(target=run, daemon=True, name="watch-deploy").start()
+    return True
+
+
+def deploy_inflight():
+    """Whether a deploy is currently claimed (tests + diagnostics)."""
+    with _deploy_lock:
+        return _deploy_inflight
 
 
 # ── the ledger as a time series (#142) ────────────────────────────────────
@@ -10343,8 +10598,18 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             self.end_headers()
             self.wfile.write(data)
 
-        def _reject(self, reason_code):
+        def _reject(self, reason_code, detail=None):
             """Record a durable rejection and respond 202 (E5).
+
+            `detail` is an OPTIONAL free-form discriminator for copy, and it is
+            deliberately not part of the closed set: `REJECTION_REASONS` is a
+            contract three values wide, while a route may refuse for several
+            distinct reasons that all map to one of them. #462 is the motivating
+            case — "a deploy is already running" and "you are not on this
+            machine" are both `domain_invalid`, and telling him "the value was
+            not one the server accepts" for either is wrong in the only two
+            cases he will ever hit. Widening the closed set would change a
+            contract and its journal; adding a copy hint does not.
 
             The receipt already committed in do_POST; rejection is durable,
             not synchronous. The reason is from REJECTION_REASONS (closed set
@@ -10354,10 +10619,10 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             result = self.journal_result()
             if result and result.receipt_id and self.journal_shadow:
                 _journal_reject(target, result.receipt_id, reason_code)
-            self._send_receipt(
-                json.dumps({"ok": False, "rejected": True,
-                            "reason": reason_code}),
-                "application/json")
+            body = {"ok": False, "rejected": True, "reason": reason_code}
+            if detail:
+                body["detail"] = detail
+            self._send_receipt(json.dumps(body), "application/json")
 
         def _send_bytes(self, full, rel, *, inline):
             """Serve `full` as raw bytes (#336), streamed (#354).
@@ -10512,11 +10777,13 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # configured trusted-LAN authority: /answer folds his answer;
             # /ask records his question for the dreamer; /comment threads his
             # note; /command records steering; /tint saves project colour;
-            # /run-mode commits main-dreamer pace (#290). Answer/ask/comment/
-            # command wake the loop through watch-events.log; /run-mode does
-            # too, but only when the mode actually changes (identical final is
-            # silent). Tint does not wake, because it is presentation state.
-            # Every other POST path is rejected.
+            # /run-mode commits main-dreamer pace (#290); /deploy runs
+            # `just deploy` (#462, loopback peer only, single-flight).
+            # Answer/ask/comment/command wake the loop through
+            # watch-events.log; /run-mode does too, but only when the mode
+            # actually changes (identical final is silent). Tint and deploy
+            # do not wake: tint is presentation state; deploy restarts the
+            # dashboard process. Every other POST path is rejected.
             #
             # THE BODY IS READ AND PERSISTED HERE, BEFORE ANY OF THAT (#199).
             # One call site rather than four: a handler added later gets the
@@ -10558,7 +10825,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 self.send_error(400)
                 return
             # The write-route dispatch is ONE table, derived from itself, so a
-            # seventh route added later is both handled here and covered by E2's
+            # new route added later is both handled here and covered by E2's
             # "every write route commits a receipt" test (rather than slipping
             # past a hand-copied list). `WRITE_ROUTE_HANDLERS` is a class
             # attribute defined below the handler methods.
@@ -10778,9 +11045,39 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             self._send_receipt(json.dumps({"ok": True, "mode": mode, "changed": True}),
                        "application/json")
 
+        def _handle_deploy(self):
+            """Page-triggered `just deploy` (#462).
+
+            Loopback peer only (trusted-LAN Host/Origin is not enough: this
+            restarts the server). Single-flight: a second POST while one is
+            running is a durable rejection, not a second runner. The POST
+            returns as soon as the runner is scheduled; success for the
+            loaded document is a new GENERATION on /mtime, not this body —
+            the process may die when the deploy stops the listening snap.
+            Body is ignored (no schema); empty `{}` is fine.
+            """
+            # Optional body parse: ignore content; malformed JSON is not a
+            # hard requirement for an action with no fields — but if a body
+            # was sent and is not JSON, refuse rather than guess.
+            if self._body and self._body.strip():
+                req = self._read_json()
+                if req is None:
+                    self._reject("malformed_json"); return
+            if not peer_is_loopback(self.client_address):
+                # A refusal, not a silent no-op: durable rejected receipt so
+                # writeVerdict.landed is false (never res.ok alone).
+                self._reject("domain_invalid", "not_local"); return
+            if not start_deploy(target):
+                # Not an error he did anything wrong — a deploy is already
+                # running, most likely from his other tab.
+                self._reject("domain_invalid", "in_flight"); return
+            self._send_receipt(
+                json.dumps({"ok": True, "started": True}),
+                "application/json")
+
         # The single source of truth for write routes: adding a route here both
         # dispatches it and exposes it (E2 derives its route list from these
-        # keys, so a seventh route fails that test instead of slipping past it).
+        # keys, so an eighth route fails that test instead of slipping past it).
         WRITE_ROUTE_HANDLERS = {
             "/answer": _handle_answer,
             "/ask": _handle_ask,
@@ -10788,6 +11085,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             "/command": _handle_command,
             "/tint": _handle_tint,
             "/run-mode": _handle_run_mode,
+            "/deploy": _handle_deploy,
         }
 
         def log_message(self, *_args):

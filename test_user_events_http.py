@@ -30,11 +30,11 @@ import urllib.request
 import watch
 from user_events.sqlite import open_journal, RECEIPT_HEALTH, REJECTION_REASONS
 
-# The six write routes `do_POST` dispatches, derived from the dispatch itself
-# (the Handler class's WRITE_ROUTE_HANDLERS keys) so a seventh route added
-# later fails E2 instead of slipping past it — exactly the discipline the
-# plan's "must not fake" clause demands. Built fresh from make_handler so the
-# test never holds a hand-copied list.
+# The write routes `do_POST` dispatches, derived from the dispatch itself
+# (the Handler class's WRITE_ROUTE_HANDLERS keys) so a new route added later
+# fails E2 instead of slipping past it — exactly the discipline the plan's
+# "must not fake" clause demands. Built fresh from make_handler so the test
+# never holds a hand-copied list.
 _HANDLER_CLS = watch.make_handler("/unused-e2e-route-derivation",
                                    authority=watch.RequestAuthority(
                                        ["127.0.0.1"], 9))
@@ -82,6 +82,11 @@ class HttpHarness(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.target = _make_target(self.tmp.name)
+        # #462 /deploy must never run the real recipe in a unit check.
+        watch._deploy_runner = lambda _t: None
+        watch._deploy_inflight = False
+        self.addCleanup(lambda: setattr(watch, "_deploy_runner", None))
+        self.addCleanup(lambda: setattr(watch, "_deploy_inflight", False))
         # Reserve a real port, then bind the tested server to it so the
         # authority checks the actual port its Host header must carry.
         probe = http.server.ThreadingHTTPServer(
@@ -223,7 +228,7 @@ class E2Shadow(HttpHarness):
     every write request while the response, status code, submissions.log and
     every handler are identical to a baseline captured with the journal
     disabled. The route list is derived from watch.py's dispatch, not
-    hand-copied, so a seventh route fails this test instead of slipping past.
+    hand-copied, so a new route fails this test instead of slipping past.
 
     Red line: the `journal.receive(...)` call in do_POST (reached via
     _journal_receive)."""
@@ -232,6 +237,7 @@ class E2Shadow(HttpHarness):
     # matching question title, so run_all first /asks one and reuses its title.
     # /run-mode's first POST to a fresh target always changes the mode (the
     # default is lackadaisical), so it returns changed=True.
+    # /deploy's runner is faked in HttpHarness.setUp — never `just deploy`.
     def run_all_routes(self):
         """POST every write route once; return (statuses, submissions_rows).
 
@@ -263,19 +269,21 @@ class E2Shadow(HttpHarness):
         statuses.append(self.post("/tint", {"tint": "indigo"})[0])
         # 6. /run-mode — a different mode than the default.
         statuses.append(self.post("/run-mode", {"mode": "hot"})[0])
+        # 7. /deploy — page-triggered just deploy (#462); runner faked.
+        statuses.append(self.post("/deploy", {})[0])
         return statuses, self.submissions_rows()
 
     def test_every_write_route_commits_a_receipt_and_changes_nothing_else(self):
-        # Run the six routes with the journal ON (this harness) and OFF
+        # Run every write route with the journal ON (this harness) and OFF
         # (baseline), each on a fresh target, and compare everything
         # observable except the receipt count.
         on_statuses, on_subs = self.run_all_routes()
         with self._baseline_server() as baseline:
             off_statuses, off_subs = baseline.run_all_routes()
         # The route list is derived from the dispatch, not hand-copied: assert
-        # its length matches the routes we exercised (six), so a seventh route
-        # added to WRITE_ROUTE_HANDLERS without a payload here fails loudly.
-        self.assertEqual(len(WRITE_ROUTES), 6, WRITE_ROUTES)
+        # its length matches the routes we exercised, so a new route added to
+        # WRITE_ROUTE_HANDLERS without a payload here fails loudly.
+        self.assertEqual(len(WRITE_ROUTES), 7, WRITE_ROUTES)
         # Every route returned 202 with the journal ON (E3 cutover moved the
         # write-route status) and 200 with the journal OFF (the pre-cutover
         # baseline, which still uses _send). The shadow must change only the
@@ -295,14 +303,14 @@ class E2Shadow(HttpHarness):
         # receipt per route. Derived from the route count, never a literal.
         self.assertEqual(self.receipt_count(), len(WRITE_ROUTES))
 
-    def test_a_seventh_route_would_fail_this_test_not_slip_past(self):
+    def test_a_new_route_would_fail_this_test_not_slip_past(self):
         # The precondition the "derived route list" claim depends on: the
-        # dispatch table IS the six routes we exercise. If a route is added to
+        # dispatch table IS the routes we exercise. If a route is added to
         # WRITE_ROUTE_HANDLERS, run_all_routes does not POST it, so the receipt
         # count assertion above (len(WRITE_ROUTES)) would still pass while a
         # route went unshadowed — UNLESS this guard fails first. This is the
         # plan's "derive the route list" discipline made executable.
-        exercised = 6  # ask, answer, comment, command, tint, run-mode
+        exercised = 7  # ask, answer, comment, command, tint, run-mode, deploy
         self.assertEqual(len(WRITE_ROUTES), exercised, WRITE_ROUTES)
 
     @contextlib.contextmanager

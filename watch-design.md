@@ -35,21 +35,24 @@ carries a `+` command opener (steer the loop without a chat turn).
   bind defaults to itself only when explicitly allowlisted, otherwise it also
   requires an allowed `--url-host`. IPv6 uses an AF_INET6 server and bracketed
   advertised URL.
-- **Read-only, six explicit write exceptions** (all human-authorized under
+- **Read-only, seven explicit write exceptions** (all human-authorized under
   loopback or explicit trusted-LAN authority): POST `/answer` appends an answer
   to the matching Open entry in `questions.md`; `/ask` appends a human question
   to `answers.md`; `/comment` appends a human note to an Open or Answered
   question; `/command` appends source-tagged steering to
   `.dreamwork/watch-events.log`; `/tint` persists the project colour in
   `.dreamwork/watch-tint`; `/run-mode` commits the main-dreamer pace into
-  `.dreamwork/run-mode` (#290). Answer, ask, comment and command always append
-  one line to `watch-events.log`, waking the loop. `/run-mode` dual-writes the
-  file and appends **one** events line only when the mode actually changes
-  (identical final is silent). Tint deliberately does not wake: it is
-  presentation state that cross-window mtime polling propagates, not work for
-  an agent. Every other POST is rejected; every other route reads. All file
-  access goes through `resolve_confined()` (rejects absolute, `~`, traversal);
-  `/filedata`, `/filebytes` (#336) and `/reviewraw` are all behind it.
+  `.dreamwork/run-mode` (#290); `/deploy` schedules `just deploy` (#462,
+  **loopback peer only**, single-flight — trusted-LAN Host/Origin is not
+  enough for a command that restarts the server). Answer, ask, comment and
+  command always append one line to `watch-events.log`, waking the loop.
+  `/run-mode` dual-writes the file and appends **one** events line only when
+  the mode actually changes (identical final is silent). Tint and deploy
+  deliberately do not wake: tint is presentation state; deploy restarts the
+  dashboard process. Every other POST is rejected; every other route reads.
+  All file access goes through `resolve_confined()` (rejects absolute, `~`,
+  traversal); `/filedata`, `/filebytes` (#336) and `/reviewraw` are all
+  behind it.
 - **Port** persisted to `.dreamwork/watch-port` (random 3000–63000 once)
   so bookmarks survive restarts; port-in-use error names the port.
 - **Live reload**: poll `/mtime` ~2s → re-fetch `/data.json` → re-render
@@ -1630,7 +1633,7 @@ the draft store cleared too — the only copy of what he typed, gone. A
 rejected receipt is a write the server refused from the other end, so a
 write surface treats it as exactly that. **One verdict decides it**:
 `writeVerdict(res)` reads the body once (a `Response` body is read once, so
-it is the single reader) and returns `{landed, rejected, reason, status}`,
+it is the single reader) and returns `{landed, rejected, reason, detail, status}`,
 where `landed` is `res.ok && !rejected` — the one thing `/ask`, `/answer`,
 `/comment`, `/command`, `/tint` and `/run-mode` gate on, never `res.ok`
 alone. The reason is named in his voice through a closed map (`REJECT_WHY`)
@@ -2576,24 +2579,55 @@ Detail is ranked, never withheld: the summary is the line, and the individual
 missing commits are in its `title`, so hovering gives the whole list without
 the panel growing to hold it — the hub's arrangement, one surface over.
 
-**The remedy is on the page (#462).** The row named the fault; without more it
-told him something was wrong and gave him no way to act on it. So a `behind`
-row carries the exact command — `just deploy` — as a copyable control directly
-after the summary, present only when the row is genuinely behind and absent
-when current. Click copies it to the clipboard and confirms on the page's one
-polite-confirmation lifecycle (`#fmsg`, the same `confirmationFor` the
-file-path copy uses — still exactly one confirmation idiom), and the text is
-selectable so a refused clipboard leaves him the command anyway. What "update"
-means is stated by what the running process IS: `just deploy` snapshots
-`watch.py` from HEAD and restarts, and the `GENERATION` bump reloads this tab,
-so the command IS the action. A button that ran the deploy from the page would
-work (failure stays visible: this loaded tab polls `/mtime` and can say
-"restart didn't take" when no new generation returns; drafts survive it in
-`localStorage`; it stops the dashboard pid, not the loop), but it grants an
-unauthenticated host-bound web request the authority to run deploy machinery,
-and that is a consent question for him rather than a refusal to make for him —
-so the shipped action copies the command, and a page-triggered deploy is his
-call to file.
+**The remedy is on the page (#462), and it runs the deploy.** The row named the
+fault; without more it told him something was wrong and gave him no way to act
+on it. Increment 1 shipped a copyable `just deploy` pending his consent.
+**Authorised 2026-07-29 03:46 (`rec`)**: a `behind` row carries `just deploy`
+as an **action** — loopback peer only, single-flight, behind the existing
+confirmation idiom. What "update" means is stated by what the running process
+IS: `just deploy` snapshots `watch.py` from HEAD and restarts, and the
+`GENERATION` bump reloads this tab.
+
+**Arm, then POST — #290's cooldown, not a second one.** First click arms for
+`RUN_ARM_MS` (10s, the run-mode arm reused); re-click cancels; only the deadline
+POSTs `/deploy`. The server refuses a non-loopback peer and a second deploy
+while one is in flight (durable `rejected`, so `writeVerdict.landed` is false
+— never `res.ok` alone, E5b). The POST returns as soon as the runner is
+scheduled; the process may die when the deploy stops the listening snap.
+
+**What the page shows.** On the page's one confirmation lifecycle (`#fmsg`,
+same `confirmationFor` as the file-path copy):
+
+| state | copy |
+|---|---|
+| arming | `arms in Ns — then this page updates` |
+| running | `updating — waiting for the new page` |
+| refused (another machine) | `update was refused — the update only runs from the machine serving the page` |
+| refused (already running) | `already updating — this page will pick up the new one when it lands` |
+| never finishes | `update never finished — this page is still the old one` |
+| success | a new `GENERATION` → full `location.reload()` (the page *is* the new one) |
+
+**Why two refusal rows, and the general rule they establish.** Both refusals are
+`domain_invalid`, because `REJECTION_REASONS` is a three-wide contract and this
+route can refuse for two unrelated causes. Reusing the generic `REJECT_WHY` copy
+said *"the value was not one the server accepts"* for both — and since these are
+the only two refusals he can provoke, that copy was wrong every time it appeared.
+So a rejection may carry an **optional `detail`**, narrowing the reason **for copy
+only**: `DEPLOY_WHY` maps it, `writeVerdict` carries it through beside `reason`,
+and nothing ever gates on it — `landed` remains the only verdict. Widening the
+closed set would change the journal contract; a copy hint does not. Any route with
+several refusals behind one reason takes this idiom rather than a second one.
+(The dead branch this replaced tested `res.status === 403`, which the 202 cutover
+had made unreachable, so its "only runs from this machine" line could never print.)
+
+**Deadline: `DEPLOY_WAIT_MS` = 30s.** `just deploy`'s own readiness is sleep 1
++ up to 5s of curl probes (~6s healthy); 30s is ~3× that budget so a contended
+box is not a false timeout, and still short enough that a hung deploy is not a
+spinner forever. The message is a copy decision as much as a timing one.
+
+**Drafts survive the restart.** #269 keys them in `localStorage` per target;
+a restart destroys the *server*, not the loaded document's storage. The
+generation-bump reload restores them through the existing draft path.
 
 **The line itself still has no new motion; the remedy arrives.** The line's
 *presence* can only change when HEAD moves, which is already the commits
@@ -2605,10 +2639,13 @@ exactly when the page falls behind, which is an **arrival**, and it obeys
 idiom mirrored from `revealNewOpenAsks` (`revealStaleAction`): the start pose
 is applied only on the genuine current→behind transition, never on first paint
 (which settles visible), never replayed on a tick where it was already
-present, and never under reduced motion (function, no pose). `dev/capture/
-staleremedy.mjs` guards the arrival by sampling mid-transition opacity
-(`midFrames`) with `transitionstart` as the load-independent snap detector,
-plus reduced-motion parity and a runtime-derived current→behind precondition.
+present, and never under reduced motion (function, no pose). Arming/running
+are class toggles on the same control (`paintStaleDeployUI` after `setContent`),
+not a second arrival gesture. `dev/capture/staleremedy.mjs` guards the arrival
+by sampling mid-transition opacity (`midFrames`) with `transitionstart` as the
+load-independent snap detector, reduced-motion parity, a runtime-derived
+current→behind precondition, the rejected-POST path, the never-finished
+deadline, and draft survival across reload.
 
 The Python half is cached on HEAD (`serving_cached`) because the `behind`
 walk costs one `git show` per revision of `watch.py` — 75 today and growing

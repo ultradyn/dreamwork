@@ -1,26 +1,24 @@
-/* #462 — the staleness row's remedy: a copyable `just deploy` appears when the
-   page falls behind, arrives atmospherically (one-shot .dreamin), and is
-   absent when current.
+/* #462 — the staleness row's remedy: when the page falls behind, `just deploy`
+   arrives atmospherically (one-shot .dreamin) and RUNS the deploy (authorised
+   2026-07-29 03:46) behind the #290 arm and writeVerdict, never as a bare
+   copy.
 
-   The row already named the fault (#140); the missing thing was the action.
-   This guard covers the three behaviours that decide whether the affordance
-   is usable:
+   Covers:
 
      1. ONLY WHEN TRUE — present when behind, absent when current.
-     2. ARRIVES, DOES NOT POP — the current→behind transition eases the
-        remedy in through the .dreamin start pose, sampled mid-transition
-        (never an end-state assert), with reduced-motion parity.
-     3. ACTS — a click copies the deploy command and confirms on the page's
-        one confirmation lifecycle.
+     2. ARRIVES, DOES NOT POP — current→behind eases through .dreamin,
+        sampled mid-transition, reduced-motion parity.
+     3. ARMS then ACTS — click arms for RUN_ARM_MS (reused, not a second
+        cooldown); a landed POST gates on writeVerdict; a rejected 202 does
+        not claim success; a deploy that never finishes is named.
+     4. DRAFTS SURVIVE a reload — #269 localStorage keys outlive the
+        generation-triggered reload the action relies on.
 
    IT BUILDS ITS OWN TARGET (like serving.mjs) because the state under test is
    a relationship between the RUNNING bytes and a repo's watch.py history, and
-   it drives the arrival through a real TICK (a target commit bumps
-   .git/logs/HEAD mtime → /mtime changes → tick re-renders →
-   revealStaleAction), because a full reload SETTLES first paint and would
-   never show the arrival. The server is started with serveVerified (#461) so
-   the responder is provably ours — two orphaned servers made a correct change
-   read as broken tonight.
+   it drives the arrival through a real TICK. The server is started with
+   serveVerified (#461). The deploy command is NEVER actually run — routes
+   are fulfilled. Both success (landed) and failure (rejected) are driven.
 
    usage: node staleremedy.mjs <outdir> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
@@ -94,17 +92,15 @@ const READ = `(() => {
     text: el ? el.textContent : '',
     hasAction: !!act,
     actionText: act ? act.textContent : '',
-    actionCopy: act ? act.dataset.copy : '',
+    arming: !!(act && act.classList.contains('arming')),
+    running: !!(act && act.classList.contains('running')),
   };
 })()`;
 
 /* A rAF trace of .gservact's opacity from before the arrival through its
    settle, plus the transition events for opacity ON the affordance (captured
    at the document with capture, since transitionstart's target is the node
-   itself). transitionstart is the load-independent snap detector (#442): a
-   compositor-driven opacity transition can draw zero rAF samples inside its
-   window under load, so `ran` asks the browser whether it animated, and
-   midFrames is the motion evidence only when the sampler caught the window. */
+   itself). transitionstart is the load-independent snap detector (#442). */
 const TRACE = ms => `((ms)=>new Promise(res=>{
   const frames=[], events=[];
   let done=false; const finish=()=>{if(!done){done=true;res({frames,events})}};
@@ -150,9 +146,6 @@ let beforeState;
   p.on('pageerror', e => errs.push(String(e)));
   await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
   await sleep(900);
-  // install the trace, then evolve to behind: a target commit bumps
-  // .git/logs/HEAD mtime, the next tick re-renders, revealStaleAction fires
-  // the arrival (knownStaleAction was false from this page's first paint).
   const traceP = p.evaluate(TRACE(6000));
   await sleep(200);
   commitWatch(Buffer.from('# a newer dashboard he cannot see\n'),
@@ -170,48 +163,156 @@ let beforeState;
              `present frames=${present.length} op range=` +
              `${ops.length ? Math.min(...ops) + '-' + Math.max(...ops) : 'n/a'} ` +
              `transition ran=${win.ran} inside=${inside}/${present.length}`);
-  // PRECONDITION, derived at runtime — never a literal tuned to this tree: a
-  // genuine current→behind transition. Without it the arrival check below is
-  // vacuous (settling on a page that was already behind never poses).
+  // PRECONDITION, derived at runtime — never a literal tuned to this tree.
   ok('...the state really moved current→behind (or the arrival is vacuous)',
      beforeState === 'current' && after.state === 'behind' &&
      (after.missing || []).length >= 1);
-  ok('behind: the remedy is present and names the deploy command',
-     present.length > 0 && (await p.evaluate(READ)).actionCopy === 'just deploy');
-  // #442 SNAP DETECTOR: the browser registered a CSS opacity transition for
-  // the arrival. A snap (.dreamin never removed, or the pose baked in) fires
-  // none. This line cannot be defeated by frame rate.
+  ok('behind: the remedy is present and names just deploy',
+     present.length > 0 && /just deploy/.test((await p.evaluate(READ)).actionText
+       || (await p.evaluate(READ)).text));
   ok('behind: the remedy arrives via a CSS transition, not a snap', win.ran);
-  // MOTION: when the trace sampled inside the window, an intermediate opacity
-  // is direct evidence; under contention transitionstart already proved it.
   ok('behind: the arrival eases through intermediate opacity',
      win.ran && (sampled ? midFrames(ops) >= 1 : true));
   await ctx.close();
 }
 
-// ── 3. a click copies the command and confirms on the one lifecycle ──────
+// ── 3. click arms (RUN_ARM_MS idiom), re-click cancels ───────────────────
+// Production line: armStaleDeploy / onStaleActionClick cancel branch.
+// Red: delete the arming class toggle or the cancel path.
 {
-  const ctx = await br.newContext({
-    viewport: { width: 1100, height: 1000 },
-    permissions: ['clipboard-read', 'clipboard-write'],
-  });
+  const ctx = await br.newContext({ viewport: { width: 1100, height: 1000 } });
   const p = await ctx.newPage();
   p.on('pageerror', e => errs.push(String(e)));
   await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
   await p.waitForSelector('.gservact');
   await p.click('.gservact');
-  await sleep(300);
-  const note = (await p.locator('#fmsg').textContent()) || '';
-  const clip = await p.evaluate(() => navigator.clipboard.readText().catch(() => ''));
-  notes.push(`copy: note=${JSON.stringify(note)} clip=${JSON.stringify(clip)}`);
-  ok('click copies the deploy command to the clipboard', clip === 'just deploy');
-  ok('click confirms on the page\'s one lifecycle', /copied/.test(note) && /update/.test(note));
+  await sleep(200);
+  const armed = await p.evaluate(READ);
+  const armNote = (await p.locator('#fmsg').textContent()) || '';
+  notes.push(`arm: arming=${armed.arming} text=${JSON.stringify(armed.actionText)} ` +
+             `note=${JSON.stringify(armNote)}`);
+  ok('arm: first click arms the control (RUN_ARM_MS idiom)',
+     armed.arming === true && /arms in/.test(armed.actionText + armNote));
+  // re-click cancels — same as re-selecting the committed run mode
+  await p.click('.gservact');
+  await sleep(200);
+  const cancelled = await p.evaluate(READ);
+  const cancelNote = (await p.locator('#fmsg').textContent()) || '';
+  notes.push(`cancel: arming=${cancelled.arming} note=${JSON.stringify(cancelNote)}`);
+  ok('arm: re-click cancels before the POST',
+     cancelled.arming === false && /cancelled/.test(cancelNote));
   await ctx.close();
 }
 
-// ── 4. reduced motion — the remedy still appears, never ramps ────────────
+// ── 4. a REJECTED deploy does not claim success (writeVerdict) ───────────
+// Production line: fireStaleDeploy's writeVerdict gate. Red: gate on res.ok
+// alone (E5b) or delete the refused note. Fires the production function
+// directly (the arm is checked above) so the 10s wait is not the subject.
 {
-  // reset to current so the same transition can run under reduced motion
+  const ctx = await br.newContext({ viewport: { width: 1100, height: 1000 } });
+  const p = await ctx.newPage();
+  p.on('pageerror', e => errs.push(String(e)));
+  await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await p.waitForSelector('.gservact');
+  let posted = 0;
+  await p.route('**/deploy', async route => {
+    posted++;
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: false, rejected: true, reason: 'domain_invalid',
+      }),
+    });
+  });
+  await p.evaluate(async () => {
+    staleDeployGen = 1;
+    staleDeployPhase = 'running';
+    await fireStaleDeploy(1);
+  });
+  await sleep(400);
+  const note = (await p.locator('#fmsg').textContent()) || '';
+  const r = await p.evaluate(READ);
+  notes.push(`rejected: posted=${posted} note=${JSON.stringify(note)} ` +
+             `running=${r.running}`);
+  ok('rejected: the page POSTed /deploy (not a silent no-op)', posted >= 1);
+  ok('rejected: writeVerdict refuses a 202+rejected body',
+     /refused|not one the server accepts|try again/i.test(note));
+  ok('rejected: the control is not left spinning as running', !r.running);
+  await ctx.close();
+}
+
+// ── 5. a landed deploy that never finishes is named ──────────────────────
+// Production line: the DEPLOY_WAIT_MS timeout branch and its copy.
+// Red: delete the 'update never finished' note.
+// window.__dwDeployWaitMs shortens the deadline (guard inject; production
+// never sets it) so this is not a 30s sleep.
+{
+  const ctx = await br.newContext({ viewport: { width: 1100, height: 1000 } });
+  const p = await ctx.newPage();
+  p.on('pageerror', e => errs.push(String(e)));
+  await p.addInitScript(() => { window.__dwDeployWaitMs = 800; });
+  await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await p.waitForSelector('.gservact');
+  let posted = 0;
+  await p.route('**/deploy', async route => {
+    posted++;
+    await route.fulfill({
+      status: 202,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, started: true }),
+    });
+  });
+  await p.evaluate(async () => {
+    window.__dwDeployWaitMs = 800;
+    staleDeployGen = 1;
+    staleDeployPhase = 'running';
+    await fireStaleDeploy(1);
+  });
+  await sleep(1500);
+  const note = (await p.locator('#fmsg').textContent()) || '';
+  notes.push(`timeout: posted=${posted} note=${JSON.stringify(note)}`);
+  ok('timeout: POST landed (started:true)', posted >= 1);
+  ok('timeout: the page names a deploy that never finishes',
+     /never finished/.test(note) && /still the old one/.test(note));
+  await ctx.close();
+}
+
+// ── 6. drafts survive a reload (the generation-bump path #462 relies on) ─
+// Production line: dw:adraft: localStorage partition (#269). Red: nothing in
+// this guard's production code — the claim is that a restart destroys the
+// server, not storage; we prove storage outlives location.reload().
+{
+  const ctx = await br.newContext({ viewport: { width: 1100, height: 1000 } });
+  const p = await ctx.newPage();
+  p.on('pageerror', e => errs.push(String(e)));
+  await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await sleep(500);
+  const planted = await p.evaluate(() => {
+    const t = document.body.dataset.target
+      || (window.data && window.data.target) || '';
+    // data.target is on the server payload; read from the live data binding.
+    const target = (typeof data !== 'undefined' && data && data.target) || '';
+    if (!target) return { ok: false, why: 'no target' };
+    const key = 'dw:adraft:' + target + ':guard-question-title';
+    localStorage.setItem(key, 'half-typed words that must survive');
+    return { ok: true, key, target };
+  });
+  notes.push(`draft plant: ${JSON.stringify(planted)}`);
+  ok('draft: precondition — a partitioned draft key was planted',
+     planted.ok === true);
+  await p.reload({ waitUntil: 'networkidle' });
+  await sleep(400);
+  const survived = await p.evaluate((key) => localStorage.getItem(key),
+                                    planted.key);
+  notes.push(`draft after reload: ${JSON.stringify(survived)}`);
+  ok('draft: the half-typed words survive a full reload',
+     survived === 'half-typed words that must survive');
+  await ctx.close();
+}
+
+// ── 7. reduced motion — the remedy still appears, never ramps ────────────
+{
   commitWatch(RUNNING, 'feat: back to the running revision');
   const ctx = await br.newContext({
     viewport: { width: 1100, height: 1000 }, reducedMotion: 'reduce',
@@ -236,9 +337,6 @@ let beforeState;
              `transition ran=${win.ran}`);
   ok('reduced: the remedy still appears when behind', present.length > 0 &&
      after.state === 'behind');
-  // reduced-motion is a hard contract: timing changes, never function or
-  // legibility. The pose is never applied, so no opacity transition fires and
-  // every frame is at the settled value.
   ok('reduced: the remedy never ramps opacity', !win.ran &&
      ops.every(o => o >= 95));
   await ctx.close();

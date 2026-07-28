@@ -5560,6 +5560,192 @@ class TestRunMode(unittest.TestCase):
             self.assertIn("/run-mode", paths)
 
 
+class TestDeployAction(unittest.TestCase):
+    """#462 increment 2 — page-triggered `just deploy`.
+
+    Loopback-only, single-flight, runner is faked so a check never runs the
+    real recipe. Both success and failure of the schedule path are driven;
+    the browser half (arm, generation wait, timeout copy) lives in
+    staleremedy.mjs.
+    """
+
+    def setUp(self):
+        # Reset single-flight + runner between tests so order never leaks.
+        watch._deploy_inflight = False
+        watch._deploy_runner = None
+
+    def tearDown(self):
+        watch._deploy_inflight = False
+        watch._deploy_runner = None
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _post_raw(self, url, obj, peer=None):
+        """POST and return (status, body dict). peer unused on live server
+        (always loopback); non-loopback uses _post_as_peer."""
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read().decode())
+        except urllib.error.HTTPError as e:
+            body = e.read().decode()
+            try:
+                return e.code, json.loads(body)
+            except ValueError:
+                return e.code, {"raw": body}
+
+    def _post_as_peer(self, target, peer_host, body=b"{}"):
+        """Drive one /deploy with a chosen client_address (loopback gate)."""
+        authority = watch.RequestAuthority(["127.0.0.1"], 9)
+        handler_cls = watch.make_handler(target, authority=authority)
+        # StreamRequestHandler needs a connection that can sendall.
+        request_bytes = (
+            b"POST /deploy HTTP/1.1\r\n"
+            b"Host: 127.0.0.1:9\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"\r\n" + body
+        )
+
+        class Conn:
+            def __init__(self, data):
+                self._rfile = io.BytesIO(data)
+                self.writes = []
+
+            def makefile(self, mode, _bufsize=-1):
+                assert "r" in mode
+                return self._rfile
+
+            def sendall(self, data):
+                self.writes.append(data)
+
+        conn = Conn(request_bytes)
+        handler_cls(conn, (peer_host, 43210), unittest.mock.Mock())
+        raw = b"".join(conn.writes)
+        # First write is headers; later may be body. Join and parse.
+        head, _, rest = raw.partition(b"\r\n\r\n")
+        status_line = head.split(b"\r\n", 1)[0].decode()
+        status = int(status_line.split()[1])
+        try:
+            payload = json.loads(rest.decode() or "{}")
+        except ValueError:
+            payload = {"raw": rest.decode("utf-8", "replace")}
+        return status, payload
+
+    def test_peer_is_loopback_names_loopback_and_not(self):
+        # Production line: peer_is_loopback itself. Red: return True always.
+        self.assertTrue(watch.peer_is_loopback(("127.0.0.1", 1)))
+        self.assertTrue(watch.peer_is_loopback(("::1", 1)))
+        self.assertFalse(watch.peer_is_loopback(("192.168.1.20", 1)))
+        self.assertFalse(watch.peer_is_loopback(("10.0.0.2", 9)))
+        self.assertFalse(watch.peer_is_loopback(("not-an-ip", 1)))
+
+    def test_loopback_schedules_runner_and_returns_started(self):
+        # PRECONDITION derived: runner was not already inflight.
+        self.assertFalse(watch.deploy_inflight())
+        hit = threading.Event()
+        seen = []
+
+        def fake(target):
+            seen.append(os.path.abspath(target))
+            hit.set()
+            # Hold the lock briefly so concurrency test can collide if needed.
+            time.sleep(0.05)
+
+        watch._deploy_runner = fake
+        with tempfile.TemporaryDirectory() as d:
+            t = make_target(d)
+            base = self._serve(t)
+            status, body = self._post_raw(base + "/deploy", {})
+            self.assertEqual(status, 202, body)
+            self.assertTrue(body.get("ok") is True, body)
+            self.assertTrue(body.get("started") is True, body)
+            self.assertTrue(hit.wait(2), "runner never called")
+            self.assertEqual(seen, [os.path.abspath(t)])
+        # Production line whose change reds this: delete start_deploy's
+        # runner call, or return without _send_receipt started.
+
+    def test_non_loopback_peer_is_refused_not_silent(self):
+        # A non-loopback peer must get a durable rejection (landed false),
+        # never a silent 200/202 ok. Red: drop the peer_is_loopback gate.
+        called = []
+        watch._deploy_runner = lambda t: called.append(t)
+        with tempfile.TemporaryDirectory() as d:
+            t = make_target(d)
+            status, body = self._post_as_peer(t, "192.168.1.50")
+            self.assertEqual(status, 202, body)
+            self.assertTrue(body.get("rejected") is True, body)
+            self.assertEqual(body.get("reason"), "domain_invalid")
+            self.assertFalse(body.get("ok", True))
+            # Give a moment in case a silent schedule raced.
+            time.sleep(0.1)
+            self.assertEqual(called, [], "runner must not run for LAN peer")
+
+    def test_second_deploy_while_inflight_is_refused(self):
+        # Single-flight: two concurrent schedules must not both start.
+        # Red: remove the _deploy_inflight claim in start_deploy.
+        release = threading.Event()
+        started = []
+
+        def fake(target):
+            started.append(1)
+            release.wait(2)
+
+        watch._deploy_runner = fake
+        with tempfile.TemporaryDirectory() as d:
+            t = make_target(d)
+            base = self._serve(t)
+            s1, b1 = self._post_raw(base + "/deploy", {})
+            self.assertEqual(s1, 202, b1)
+            self.assertTrue(b1.get("started"), b1)
+            # Second while first holds the slot.
+            deadline = time.time() + 1
+            while not watch.deploy_inflight() and time.time() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(watch.deploy_inflight(),
+                            "precondition: first deploy still inflight")
+            s2, b2 = self._post_raw(base + "/deploy", {})
+            self.assertEqual(s2, 202, b2)
+            self.assertTrue(b2.get("rejected") is True, b2)
+            self.assertEqual(b2.get("reason"), "domain_invalid")
+            release.set()
+            deadline = time.time() + 2
+            while watch.deploy_inflight() and time.time() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(len(started), 1, started)
+
+    def test_page_wires_arm_writeverdict_and_deadline(self):
+        # Client contract: reuses RUN_ARM_MS, gates on writeVerdict.landed,
+        # names the never-finished case. Red: delete fireStaleDeploy's
+        # writeVerdict call or the DEPLOY_WAIT_MS timeout copy.
+        for token in (
+            "function armStaleDeploy(",
+            "function fireStaleDeploy(",
+            "function onStaleActionClick(",
+            "fetch('/deploy'",
+            "writeVerdict(res)",
+            "DEPLOY_WAIT_MS",
+            "update never finished — this page is still the old one",
+            "arms in ",
+            "paintStaleDeployUI",
+        ):
+            self.assertIn(token, watch.PAGE, token)
+        self.assertIn(
+            "const DEPLOY_WAIT_MS = " + json.dumps(watch.DEPLOY_WAIT_MS),
+            watch.PAGE)
+        # Deploy is a registered write route (E2 derives from the table).
+        self.assertIn('"/deploy": _handle_deploy',
+                      inspect.getsource(watch.make_handler))
+
+
 class TestQuestionPriority(unittest.TestCase):
     """#197 — priority, then oldest, decided once in the parse."""
 
@@ -6256,3 +6442,70 @@ class TestSkillIdentity(unittest.TestCase):
             # the skill tree, so both keys must be populated here
             self.assertIsNotNone(ident.get("commit"))
             self.assertIsNotNone(ident.get("skill_version"))
+
+
+class TestDeployRefusalCopy(unittest.TestCase):
+    """#462 — the two ways /deploy refuses must be distinguishable to the reader.
+
+    Both are `domain_invalid` because REJECTION_REASONS is a three-wide
+    contract, so before this the page said "the value was not one the server
+    accepts" for BOTH — for a deploy already running, and for a request from
+    another machine. Those are the only two refusals he can provoke, so the
+    generic copy was wrong 100% of the time it appeared.
+
+    The fix adds an OPTIONAL `detail` beside the reason. This class exists to
+    hold the line that it stays optional and additive: widening the closed set
+    would change the journal contract, which is not what this increment is for.
+    """
+
+    def test_the_closed_set_of_reasons_is_unchanged(self):
+        """Precondition, and the constraint: `detail` must NOT have widened the
+        contract. Production line: REJECTION_REASONS. If a later change adds a
+        reason here, that is a contract change and it needs its own migration —
+        this test is where it gets noticed.
+        """
+        from user_events.sqlite import REJECTION_REASONS
+        self.assertEqual(
+            tuple(REJECTION_REASONS),
+            ("malformed_json", "schema_invalid", "domain_invalid"))
+
+    def test_reject_omits_detail_when_none_is_given(self):
+        """Production line: the `if detail:` guard in _reject. Every other route
+        must keep its body byte-for-byte, or this "additive" change is not.
+        """
+        import inspect
+        src = inspect.getsource(watch.make_handler)
+        self.assertIn('body = {"ok": False, "rejected": True, "reason": reason_code}', src)
+        self.assertIn('if detail:', src)
+        self.assertIn('body["detail"] = detail', src)
+
+    def test_the_two_deploy_refusals_carry_different_details(self):
+        """Production lines: the two `_reject("domain_invalid", …)` calls in
+        _handle_deploy. Reversing or merging them reds this.
+        """
+        import inspect, re
+        src = inspect.getsource(watch.make_handler)
+        body = src[src.index("def _handle_deploy"):]
+        body = body[:body.index("WRITE_ROUTE_HANDLERS")]
+        details = re.findall(r'_reject\("domain_invalid",\s*"(\w+)"\)', body)
+        # Derived precondition: two refusals exist AND they differ. A literal
+        # pair would keep passing if one were changed to match the other.
+        self.assertEqual(len(details), 2, details)
+        self.assertNotEqual(details[0], details[1], details)
+        self.assertEqual(set(details), {"not_local", "in_flight"})
+
+    def test_the_page_names_each_refusal_in_his_voice(self):
+        """Production lines: DEPLOY_WHY and the `in_flight` branch of the note.
+        Also holds the dead branch deleted: since the 202 cutover a refusal is
+        202+rejected, never 403, so a 403 test could never fire.
+        """
+        page = watch.PAGE
+        self.assertIn("const DEPLOY_WHY = {", page)
+        self.assertIn("this page will pick up the new one when it lands", page)
+        self.assertIn("the update only runs from the machine serving the page", page)
+        self.assertIn("already updating —", page)
+        # The dead 403 branch and its unreachable copy are gone.
+        self.assertNotIn("deploy only runs from this machine", page)
+        self.assertNotRegex(page, r"rv\.status === 403")
+        # writeVerdict must carry detail through, or the copy can never select.
+        self.assertRegex(page, r"detail:\s*\(j && j\.detail\)")
