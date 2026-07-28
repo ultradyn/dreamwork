@@ -114,6 +114,33 @@ entry / ~1.7s for the full file and is wrong for `/data.json`.
 The title date is still not a sort key (priority alone sorts; see #197). The
 time is for the age display only.
 
+**What an ask must contain (#421, answered 2026-07-29 01:17 — `rec`: A+B+D).**
+These are contract, not style, because each one exists to stop a specific way
+an ask has silently failed here:
+
+- **A — the ask comes first.** The decision and its accepted answers lead the
+  entry; evidence follows. An ask whose question sits below its reasoning gets
+  read as a report, and he answers what he found first.
+- **D — state what a valid answer looks like.** Every entry ends with its
+  accepted answers (`rec` · named options · free text · `not yet`). Answering
+  should not require inventing the shape of the reply. `rec` is only offered
+  where a recommendation is actually stated.
+- **B — an unanswered sub-decision is recorded, and a fold that drops one is an
+  error.** A multi-part ask (C1/C2, Q1/Q2) can be half-answered, and half is
+  the dangerous state: `#275`'s Q3/Q5/Q6 have been unanswered since 2026-07-25
+  with nothing noticing. `lint.py` owns making that loud.
+- **An update makes the entry smaller** (2026-07-29 00:54). When a sub-question
+  dies — refuted, superseded, settled — `~~strike~~` it or cut it, with one
+  line saying when and why, and park the reasoning in the ledger or
+  `lessons.md`. Every line left standing is a line he must read to find the
+  live question.
+- **No length gate, ever** (2026-07-29 01:13/01:17). Steer style with
+  descriptors — precise, detailed, concise, dense — and plan the words in
+  advance so an ask *can* be short. A word estimate is advisory
+  (*"aim for under 200 words"*); nothing passes or fails on length, and no
+  check measures it. `#421`'s own word-count claim had already broken twice
+  against its own corpus before it was withdrawn.
+
 Load-bearing details, each of which was a bug at some point:
 
 - **The section headings are literal.** The reader matches
