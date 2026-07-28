@@ -314,6 +314,16 @@ Next id: **412**
   · deliberately **not** fixed inline: this is the same tool and the same class as the `dreamers`
   half above, so it belongs to one lane, not to a coordinator patch. The **data** was corrected by
   hand at 10:26 as tick hygiene; the **tool** is still wrong
+  · **another derived-in-two-places field, found 11:16: `awaiting_human`.** It is a hand-written
+  list and `questions.md` is the source; they had drifted to **4 vs 5** — the panel was missing
+  `#408` and `#410` (both asked today) and carried `#371/#263 Q2`, which is **not an open question
+  at all**. So his dashboard said "waiting on you" for something he had never been asked, while two
+  things he HAD been asked were absent from the panel. `status_sync.py` derives `queue` and
+  `current_task_ids`; `awaiting_human` wants the same treatment, from `parse_open_questions`
+  · **and my hand-rolled regex for it was wrong too** — `^- \*\*(.+?)\*\*\s*$` returned 4 because one
+  title wraps across lines. Third hand-rolled parser to be wrong today, against a file whose
+  production parser was importable the whole time. **`status_sync` should call `watch.parse_*`, never
+  re-implement it**
   · related: **#401, #264, #403, #405, #410**
 
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
@@ -556,6 +566,12 @@ Next id: **412**
   `shutdown(SHUT_WR)`), because urllib will not lie about `Content-Length` and a mocked read
   proves nothing about the read
   · **what REMAINS is only the policy, and it is his**: whether a short body is refused, or
+  · **NOTE 11:16 — he has never actually been asked this.** It sat in `status.json`'s
+  `awaiting_human` panel, so the dashboard reported it as waiting on him, but there is **no open
+  `questions.md` entry** for `#263` Q2 and therefore no way for him to answer it. Removed from the
+  panel (the panel now mirrors the five real open questions); the block stays recorded here. **To
+  actually unblock this P1, Q2 must be asked** — deliberately not asked yet: five questions are
+  already open and unanswered, and `#263`'s E/H lanes are behind a second gate he has not opened
   kept as a partial witness marked incomplete and allowed to proceed. That is **Q2 of #263's
   ask**, filed 2026-07-28 and unanswered · the behaviour is deliberately unchanged until he
   rules, and the witness is now truthful either way, so his answer is implementable in one

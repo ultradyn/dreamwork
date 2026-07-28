@@ -1,7 +1,7 @@
 # Questions for the human
 
 ## Open
-- **P1 · 2026-07-28 — `ccc @grok` is 401 and only you can refresh it; half the fleet is down.**
+- **P2 · 2026-07-28 — `ccc @grok` (only `grok-4.5`) is 401; the other eleven models are fine.**
   Two lanes died at three seconds today with nothing in the tree. Verbatim:
   `Unauthorized (401) from https://cli-chat-proxy.grok.com/v1/responses: Invalid or expired
   credentials (auth_kind=none, x_xai_token_auth=xai-grok-cli, upstream=Unauthenticated,
