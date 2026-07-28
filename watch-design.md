@@ -2468,6 +2468,23 @@ for six hours, and because the failures were inherited by every lane as
 in **data** — `posted.question` (#266) reads the question id path, never the
 headline, and it stayed correct throughout.
 
+**So every piece of headline chrome is a NODE with a class, and that class is
+listed in `dockHeadline`** (#474). Not a rule of tidiness — the strip is the
+only reason a rendered-text identity check can work at all, and text cannot be
+stripped by node. `#456` added its ` · ` between the date and the age as **bare
+text**, so removing the age node left the middot behind, the raw title stopped
+being a substring of the result, and `docktarget` and `noteprop` failed for two
+days on a page that was behaving correctly — the second instance of exactly the
+failure the paragraph above warned about, and the reason `#473`'s separator is
+already an `.rsep` node. Both middots are now `.rsep`, which also settles a
+cosmetic inconsistency: one of the two used to be dim and the other title-bright.
+
+The list in `dockHeadline` still has to be extended by hand when chrome is
+added, so the guards **derive the precondition** rather than trusting it: they
+read raw and stripped textContent and assert the two **differ**. A strip that
+removes nothing is indistinguishable from one that works, right up until the
+headline changes shape — that is what makes the assertion worth its one line.
+
 **The number of figures IS the precision, and that is a deliberate departure
 from #385's always-two-figures grammar** (#392a). A question title carries a
 DAY and no TIME, so its midnight `ct` cannot honestly produce the hour figure

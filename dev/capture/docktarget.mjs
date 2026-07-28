@@ -10,7 +10,7 @@ import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-scr
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
-import { dockHeadline } from './dom.mjs';
+import { dockHeadlineParts } from './dom.mjs';
 
 const OUT = process.argv[2], PORT = process.argv[3] || '39887';
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -41,13 +41,14 @@ async function openPhase(mode) {
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));
   await page.goto(url, { waitUntil: 'networkidle' });
-  const shownBefore = await dockHeadline(page);
+  const before = await dockHeadlineParts(page);
+  const shownBefore = before.stable;
   let posted = null;
   await page.route(`**/${mode === 'note' ? 'comment' : 'answer'}`, async route => {
     posted = JSON.parse(route.request().postData() || '{}');
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
-  return { mode, page, errors, shownBefore, posted: () => posted };
+  return { mode, page, errors, before, shownBefore, posted: () => posted };
 }
 
 // Both pages render A with o0 before the fixture changes. This keeps answer and
@@ -63,13 +64,14 @@ const injected = '- **P1 · 2026-07-26 — injected reorder sentinel.**\n' +
 writeFileSync(questions, source.replace('## Open\n\n', `## Open\n\n${injected}`));
 
 for (const phase of phases) {
-  const { mode, page, errors, shownBefore } = phase;
+  const { mode, page, errors, before, shownBefore } = phase;
   // Wait for tick() to replace lexical `data`; a server-side reorder alone is
   // insufficient and would let the guard pass without exercising the bug.
   await page.waitForFunction(title =>
     typeof data !== 'undefined' && data.questions_open[0].title !== title,
     original.title, { timeout: 7000 });
-  const shownAfter = await dockHeadline(page);
+  const after = await dockHeadlineParts(page);
+  const shownAfter = after.stable;
   if (mode === 'note') await page.locator('#qdock .qmode[data-mode="note"]').click();
   const text = `stable ${mode} target sentinel`;
   await page.locator('#qdock textarea').fill(text);
@@ -88,6 +90,14 @@ for (const phase of phases) {
   // empty ORIGINAL title would make both sides trivially true. Derive it.
   ok(`${mode}: precondition -- a non-empty original title to match against`,
      typeof original.title === 'string' && original.title.length > 10);
+  // #474: and the strip must have REMOVED something, before and after. A
+  // no-op strip passes the compare above for as long as the headline happens
+  // to be bare, then fails on a correct page the moment chrome changes shape
+  // -- which is exactly what #456's bare-text separator did for two days.
+  // Both sides derived at runtime; a literal would silently expire.
+  ok(`${mode}: precondition -- stripping chrome changed the headline both times`,
+     typeof after.raw === 'string' && after.raw !== after.stable &&
+     typeof before.raw === 'string' && before.raw !== before.stable);
   ok(`${mode}: request was made`, !!posted);
   ok(`${mode}: request targets visibly docked question after reorder (#266)`,
      posted?.question === original.title);

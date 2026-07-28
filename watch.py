@@ -2393,7 +2393,19 @@ const qtHtml = title => {
      sweep (data-ut). ages() writes pure text — no transition on the
      second-by-second digit flip (the ages() contract). The NODE's first
      appearance is an arrival (revealQuestionUpdates → .dreamin). */
-  return `${esc(prio || '')}${when} · ` +
+  /* #474: the separator is a NODE, not bare text, and that is load-bearing
+     rather than tidy. Everything in this headline that is not the question's
+     title has to be removable as a node, because two guards ask "is this
+     still the question I docked?" of the headline minus its chrome — see
+     dockHeadline in dev/capture/dom.mjs. #456 added this ` · ` as bare text
+     between the date and the age span, so stripping the age node left the
+     middot behind and the raw title stopped being a substring of the result.
+     Both dock guards went red on a page that was behaving correctly, which
+     is exactly the failure dom.mjs's own comment predicted. It is `.rsep`
+     because #473's separator two functions down already is — one idiom, and
+     the two middots in one headline now match instead of one being dimmer
+     than the other. */
+  return `${esc(prio || '')}${when}<span class="rsep"> · </span>` +
     `<span class="age qage" data-ct="${ct}"${dayAttr}></span>` +
     `${esc(sep)}${esc(rest)}`;
 };

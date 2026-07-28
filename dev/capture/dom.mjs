@@ -25,12 +25,32 @@ export async function dockHeadline(page) {
     if (!qt) return null;
     const clone = qt.cloneNode(true);
     // `.qage` is the age #385 injects; `.age` covers the shared painter's
-    // other placements. Removing the NODE (not regex-stripping the text)
-    // means this keeps working whatever format the age is rendered in --
-    // two figures, one figure, or `today` after #392a.
-    clone.querySelectorAll('.qage, .age').forEach(n => n.remove());
+    // other placements; `.qup` is #473's "updated X ago"; `.rsep` is the
+    // chrome separator in front of each of them. Removing the NODE (not
+    // regex-stripping the text) means this keeps working whatever format the
+    // age is rendered in -- two figures, one figure, or `today` after #392a.
+    //
+    // #474: `.rsep` was missing here and #456's separator was bare text, so
+    // stripping the age left ` · ` behind and both dock guards failed on a
+    // correct page for two days. The rule the strip depends on, now stated in
+    // watch-design.md: any headline chrome that is not the title is a node,
+    // and that node's class is listed here. A future addition still has to be
+    // added to this list -- which is why the callers assert that the strip
+    // actually REMOVED something rather than trusting it silently.
+    clone.querySelectorAll('.qage, .age, .qup, .rsep').forEach(n => n.remove());
     return clone.textContent;
   });
+}
+
+/** `{raw, stable}` for the same headline: the rendered textContent and the
+ *  chrome-stripped one. A caller wanting to prove the strip is not a no-op
+ *  needs both -- `raw !== stable` is the runtime precondition that this
+ *  headline actually HAD chrome in it, and it is what would have caught #474
+ *  the day #456 landed. Returns nulls when the dock is empty. */
+export async function dockHeadlineParts(page) {
+  const raw = await page.evaluate(() =>
+    document.querySelector('#qdock .qt')?.textContent ?? null);
+  return { raw, stable: await dockHeadline(page) };
 }
 
 /* ── frame-rate-free motion assertions (#414) ──────────────────────────────

@@ -4144,8 +4144,16 @@ class TestAppShell(unittest.TestCase):
         # to the date-less plain-text branch or is dropped.
         text = open('.dreamwork/questions.md', encoding='utf-8').read()
         qs = watch.parse_open_questions(text)
-        self.assertGreaterEqual(len(qs), 3,
-                                "expected the three known open questions")
+        # The subject count is DERIVED, not a literal: this asserted "at least
+        # the three known open questions" and went red on 2026-07-29 for the
+        # honest reason that two had been answered. A literal tuned to the live
+        # corpus is a check with an expiry date nobody can see (#474). What
+        # this test can actually prove is that every open entry the parser
+        # returns still produces an age node — plus that there IS one, or the
+        # loop below passes over nothing.
+        self.assertTrue(qs,
+                        "no open questions in the live file — this check needs "
+                        "a subject; the loop below would pass over nothing")
         # every open title carries a date, so every one gains a .age qage span
         for q in qs:
             self.assertIn('class="age qage" data-ct=',
@@ -4292,10 +4300,19 @@ class TestAppShell(unittest.TestCase):
         html = self._qt_html(title)
         # separator sits BETWEEN the date and the age span — not after the
         # whole title, not inside the span. Chrome's ` · ` (U+00B7, spaces).
+        # #474: and it is a `.rsep` NODE, not bare text. That is the load-
+        # bearing half: `dockHeadline` identifies a docked question by the
+        # headline MINUS its chrome, and it can only remove nodes — a bare-text
+        # middot survived the strip and reddened both dock guards for two days
+        # on a correct page. Asserting the node here is what keeps the strip's
+        # premise true, so this regex must not be loosened back to bare text.
         self.assertRegex(
             html,
-            re.escape(date) + r' · <span class="age qage" data-ct="',
-            f"date and age must be joined by chrome ` · `; got {html!r}")
+            re.escape(date) + r'<span class="rsep"> · </span>'
+            r'<span class="age qage" data-ct="',
+            f"date and age must be joined by a `.rsep` chrome node carrying "
+            f"` · ` — bare text would survive dockHeadline's strip (#474); "
+            f"got {html!r}")
         self.assertIn('data-day="1"', html,
                       "date-only path must still mark data-day (precision)")
         # age content is unchanged by the join: still one figure via ages()

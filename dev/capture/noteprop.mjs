@@ -5,7 +5,7 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync } from 'node:fs';
 import { makeReporter } from './report.mjs';
-import { dockHeadline } from './dom.mjs';
+import { dockHeadlineParts } from './dom.mjs';
 const OUT = process.argv[2], PORT = process.argv[3] || '39951';
 const BASE = `http://127.0.0.1:${PORT}`;
 mkdirSync(OUT, { recursive: true });
@@ -101,11 +101,18 @@ async function checkPreservedReviewState(page, seeded, phase) {
       replaced: !document.querySelector('#qdock .qa')?.dataset.guardOld };
   });
   // headline minus its live age -- see dom.mjs; #385's age broke the raw compare
-  const target = await dockHeadline(page);
+  const { raw, stable: target } = await dockHeadlineParts(page);
   ok(`${phase}: the review dock card was genuinely rerendered`, preserved.replaced);
   ok(`${phase}: the dock stays on the same stable target`, !!target && target.includes(title));
   ok(`${phase}: precondition -- the docked headline is non-empty`,
      typeof target === 'string' && target.length > 10);
+  // #474: the strip is the only reason the compare above can pass, and a strip
+  // that removes nothing is indistinguishable from one that works -- until
+  // headline chrome changes shape and the compare fails on a correct page,
+  // which is what #456 did for two days. Derive both at runtime and assert the
+  // gap; a literal would have an expiry date nobody can see.
+  ok(`${phase}: precondition -- stripping chrome actually changed the headline`,
+     typeof raw === 'string' && raw !== target);
   ok(`${phase}: the iframe URL survives the tick`, preserved.src === seeded.src);
   ok(`${phase}: the iframe scroll survives the tick`, preserved.frameY === seeded.frameY);
   ok(`${phase}: the dock disclosure/fold state survives`, preserved.detailsOpen === seeded.detailsOpen);
