@@ -109,15 +109,23 @@ export function midStates(values) {
  *  confirmation's success has two opacity transitions — arrival (0→100) and
  *  departure (100→0) — and the caller isolates the one under test with
  *  `afterT` and `pick`. Returns `{ran, start, end, dur}`; `ran` is false
- *  when no matching transitionstart fired. */
+ *  when no matching transitionstart fired.
+ *
+ *  `end` is the first end at-or-after the chosen `start`, never
+ *  `ends.at(idx)` independently of `start`. An opacity transition that
+ *  *started* before `afterT` can still *end* after it; pairing last-start
+ *  with last-end independently then yields a negative `dur` (measured
+ *  #444: popout departure −68…−178ms while `ran` stayed true). `dur` is a
+ *  diagnostic note only — see transitions.md #444; existence (`ran`) is the
+ *  snap detector. */
 export function transitionWindow(events, prop, afterT = -Infinity, pick = 'last') {
-  const idx = pick === 'first' ? 0 : -1;
   const starts = events.filter(e => e.type === 'start' && e.prop === prop && e.t >= afterT);
   const ends = events.filter(e => e.type === 'end' && e.prop === prop && e.t >= afterT);
-  const start = starts.at(idx)?.t ?? null;
-  const end = ends.at(idx)?.t ?? null;
-  return { ran: start !== null, start, end,
-           dur: start !== null && end !== null ? end - start : null };
+  if (!starts.length) return { ran: false, start: null, end: null, dur: null };
+  const start = pick === 'first' ? starts[0].t : starts.at(-1).t;
+  const end = ends.find(e => e.t >= start)?.t ?? null;
+  return { ran: true, start, end,
+           dur: end !== null ? end - start : null };
 }
 
 /** Count trace frames whose timestamps fall inside a transition window.

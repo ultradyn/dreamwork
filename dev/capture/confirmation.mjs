@@ -52,6 +52,14 @@ const trace=ms=>`((ms)=>new Promise(res=>{const m=cmdmsg,p=cmdpalette,seen=[],t0
  const win=transitionWindow(events,'opacity',first!==null?first+4000:-Infinity);
  const inside=framesInWindow(departing,win), sampled=inside>=2;
  notes.push(`main race first=${first} last=${last} final="${frames.at(-1).text}" open=${frames.at(-1).open}`);
+ // #444: `dur` is DIAGNOSTIC only — logged so a future reader can re-measure.
+ // Do NOT assert it against the declared .35s on .cmdmsg. Measured 2026-07-28
+ // at load 36–42 on 16 cores (6 confirmation runs, main departure):
+ //   durs ms = [239.4, 371.4, 354.0, 328.8, 307.4, 348.2]  (declared 350)
+ // #442 under 8 burners: 289–665ms for the same gesture. A ±20% band around
+ // 350 (280–420) fails the green set on 239.4; a band wide enough for 665
+ // only excludes pathologies the STYLE constant already forbids. Existence
+ // (win.ran) + the styleguide's single-source rule is the contract.
  notes.push(`main departure: transition ran=${win.ran} dur=${win.dur}ms; ${inside}/${departing.length} frames inside window`);
  ok('main success appears after typing during POST',first!==null);
  ok('main success remains readable for about 5s',first!==null&&last-first>=4500);
@@ -70,6 +78,7 @@ const trace=ms=>`((ms)=>new Promise(res=>{const m=cmdmsg,p=cmdpalette,seen=[],t0
  // never fires transitionstart. This line cannot be defeated by frame rate
  // because it asks the browser whether it animated, not how many frames the
  // sampler caught — the load-independent half of #414's snap detection.
+ // #444: deliberately NO duration floor beside this. See notes above.
  ok('main departure runs a CSS transition rather than snapping',win.ran);
  ok('main success clears instead of remaining forever',frames.at(-1).text==='');
  ok('typing keeps the panel open independently',frames.at(-1).open);
@@ -132,6 +141,9 @@ const trace=ms=>`((ms)=>new Promise(res=>{const m=cmdmsg,p=cmdpalette,seen=[],t0
   const awin=transitionWindow(pevents,'opacity',0,'first');
   const dwin=transitionWindow(pevents,'opacity',first!==null?first+4000:-Infinity);
   const aIn=framesInWindow(arrival,awin), dIn=framesInWindow(departure,dwin);
+  // #444: dur diagnostic-only here too (same refusal as main). Pre-pair-fix
+  // popout departure reported negative durs (−68, −70, −178) when an orphan
+  // end from a pre-afterT transition was paired with a later start.
   notes.push(`popout arrival: transition ran=${awin.ran} dur=${awin.dur}ms; ${aIn}/${arrival.length} frames inside window`);
   notes.push(`popout departure: transition ran=${dwin.ran} dur=${dwin.dur}ms; ${dIn}/${departure.length} frames inside window`);
   // #442: same snap-detector + sampled/unsampled motion structure as main.
@@ -147,6 +159,7 @@ const trace=ms=>`((ms)=>new Promise(res=>{const m=cmdmsg,p=cmdpalette,seen=[],t0
      dwin.ran&&(dIn>=2
        ?midFrames(departure.map(s=>s.op))>=1&&midStates(departure.map(s=>s.tf))>=1
        :true));
+  // #444: no duration floor — existence only, as on main.
   ok('popout departure runs a CSS transition rather than snapping',dwin.ran);
   ok('popout success self-dismisses',pframes.at(-1).text==='');
  }
