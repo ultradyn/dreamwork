@@ -31,3 +31,5 @@ append — never a deletion — so a folded hand-off is not flagged twice.
 - **#401** · landed `f2c950e` · 2026-07-28 09:47 · by ccc @grok — research: executed id-grammar matrix (14 patterns × 17 forms); #401 silent drop reproduces; 7 silent rejects ranked
 - **#392a** · landed `159917b` · 2026-07-28 09:43 · by ccc @glm52 — date-only question ages show ONE figure (paintDayAge, data-day flag); today reads "today"; timed commits keep two figures
 - **#401** · landed `e53d70c` · 2026-07-28 10:09 · by ccc @grok — hand-off id grammar accepts plain/sub-id/combined; malformed outside section; Folded-then-Pending so EOF append works (#401+#406)
+
+- **#399** · landed `ddc6614` · 2026-07-28 12:08 · by dreamer-399b @grok — _landed_ids counts the historical inline form again (col0 + ref-field exclusion keeps #367 closed); burndown + forgotten_folds both green, 3 opposite-direction reds proven; just-test exit 1 is 3 pre-existing/unrelated guards (qacard=#392, docktarget/noteprop=motion flake under load) proven identical on master

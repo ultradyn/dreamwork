@@ -7557,12 +7557,21 @@ LEDGER_MENTION = re.compile(r"\*\*#(\d+)\*\*")
 # in one commit or not at all. `test_ledger_entry_rule_has_exactly_one_copy`
 # still pins the two patterns identical; it did not need editing.
 #
-# LEDGER_MENTION stays narrow: it is the pre-#304 landed reader, reconstructed
-# verbatim in test_lint.py's regression. LEDGER_COMBINED_MENTION is the
-# pre-#399 landed half of #301 (ids-only bold span anywhere). #399 retired
-# both as production landed readers: mention-scanning treated `related:` and
-# `filed as **#N**` as landings, so open tasks appeared landed.
+# LEDGER_MENTION stays narrow and test-only: it is the pre-#304 landed reader,
+# reconstructed verbatim in test_lint.py's regression. LEDGER_COMBINED_MENTION
+# (ids-only bold span anywhere) is a production landed reader again from #399b:
+# `_landed_ids` walks it but skips an entry's INDENTED body and any
+# `related:`/`filed as`/`also-landed:` field (LANDED_REF_FIELD), so the
+# historical column-0 inline form lands while a `related:` marker (#367) does
+# not. #399 had retired it as too wide; the body+field guard is what makes the
+# width safe, and the discriminating-pair reds prove neither side slides.
 LEDGER_COMBINED_MENTION = re.compile(r"\*\*(#\d+(?:/#\d+)*)\*\*")
+# #399b: `·`-fields whose bold id is a REFERENCE, not a landing. `related:`
+# (lint.check_related_markers requires it; #367) and `filed as` (a filing
+# cross-ref) never land. `also-landed:` is listed so the generic mention pass
+# skips it — its ids land via ALSO_LANDED_MARKER, `·`-anchored, and
+# mid-sentence "also-landed: **#9**" prose must not mint one (#395 class).
+LANDED_REF_FIELD = re.compile(r"\b(?:related|also-landed)\s*:|\bfiled\s+as\b", re.I)
 # #399: additional ids closed by the same landed entry, explicit like related:.
 # Field-anchored so mid-sentence "also-landed: **#9**" prose is not a claim.
 ALSO_LANDED_MARKER = re.compile(
@@ -7653,9 +7662,13 @@ def parse_ledger(text):
     """One ledger snapshot as `(open ids, landed ids)`.
 
     An id under `## Open` is an entry HEAD. An id under `## Recently landed`
-    lands only when it is that section's entry HEAD or named in an
-    `also-landed:` field (#399) — not because prose, `related:`, or
-    `filed as **#N**` bolded it. Both reads are combined-aware: a head
+    lands when it is that section's entry HEAD, a `· also-landed:` field
+    (#399), or a BARE inline mention at the start of a line — the
+    historical `**#N** <prose> (sha)` form that `ledger_series` walks in old
+    revisions (#399b). It does NOT land because an entry's indented body
+    bolded it: `related:`, `filed as **#N**`, and prose cross-refs are
+    references, and #399b reads that body as reference territory so the
+    `#367` false landing stays closed. Both reads are combined-aware: a head
     like `- **#7/#8**` names EVERY id in its ids-only bold span, while a
     prose span like `**#96 stage 1**` stays inert. The open read widens in
     lockstep with lint.check_ledger_sections — see LEDGER_ENTRY's comment.
@@ -7685,28 +7698,47 @@ def _open_ids(text):
 
 
 def _landed_ids(text):
-    """Ids this landed section marks as done: entry heads + `also-landed:`.
+    """Ids this landed section marks as done.
 
-    #399: a bare bold id in a landed entry is a REFERENCE, not a landing.
-    `lint.check_related_markers` *requires* landed entries to name open
-    counterparts in `related: **#N**`; scanning every bold span then read
-    those markers as landings, so the more correctly the ledger was
-    cross-referenced the more open tasks appeared done — and
-    `check_landed_asks` told the coordinator to fold the human's still-open
-    `#367` ask. The two checks share the ledger and must not share a
-    definition of "bold id means landed".
+    Three shapes land an id, and ONLY these:
+      - the entry head (`- **#N**` or combined `- **#N/#M**`);
+      - a `· also-landed: **#X, #Y**` field — extra ids closed by the same
+        commit (#399), `·`-anchored so mid-sentence prose cannot claim one;
+      - a BARE inline mention at the START OF A LINE — the HISTORICAL form,
+        `**#N** <prose> (sha)` written as a column-0 paragraph with no entry
+        heads and no `·`-fields. `ledger_series` walks these old revisions,
+        so a landed reader that misses them makes the burndown lose every
+        completion older than the last groom.
 
-    What lands an id:
-      - the entry head (`- **#N**` or combined `- **#N/#M**`)
-      - an explicit `· also-landed: **#X, #Y**` field for additional ids
-        closed by the same commit (multi-close without a combined head)
+    #399 closed a real hole, and #399b keeps it closed while reopening that
+    historical form. A `related: **#367**` marker in a landed entry is a
+    CROSS-REFERENCE, and the pre-#399 reader scanned every bold span, so
+    `#367` appeared landed and `check_landed_asks` told the coordinator to
+    fold the human's still-open ask. #399's answer — entry heads only — went
+    too far: it read the historical inline form as zero landings too. #399b
+    threads the needle by reading an entry's INDENTED body as reference
+    territory. That body is where `related:`, `filed as`, and prose
+    cross-refs ("see **#N**") live, and the historical form has no such body
+    — it is pure column-0 prose, so every mention in it lands. A `related:` /
+    `filed as` / `also-landed:` marker is excluded BY NAME as well, so a
+    head line that carries one inline (`- **#N** — … · related: **#X**`)
+    cannot re-open the `#367` hole, and `also-landed:` is left to its own
+    field-anchored marker below.
 
-    Everything else — `related:`, `filed as **#N**`, prose — is a reference.
     Returns strings, matching the shape `ledger_series` and the origin walk
     key on throughout.
     """
     ids = set()
-    for m in LEDGER_ENTRY.finditer(text):
+    for m in LEDGER_COMBINED_MENTION.finditer(text):
+        line_start = text.rfind("\n", 0, m.start()) + 1
+        # An entry's indented continuation body is reference territory —
+        # `related:`, `filed as`, "see #N" — never a bare landing.
+        if text[line_start] in " \t":
+            continue
+        # A `·`-field on a head line is a reference (related:/filed as) or
+        # owned by its own marker (also-landed:), never a bare landing.
+        if LANDED_REF_FIELD.search(text[line_start:m.start()]):
+            continue
         ids.update(ENTRY_ID.findall(m.group(1)))
     for m in ALSO_LANDED_MARKER.finditer(text):
         ids.update(ENTRY_ID.findall(m.group(1)))

@@ -502,31 +502,46 @@ artefacts is the wrong answer #363 proved by building it (#381). The
 dashboard reads the file; the coordinator's tick reads the file; lint reads
 the file. Three readers, one writer-append-each, no inference.
 
-## `.dreamwork/tasks.md` — what marks a task landed (#399)
+## `.dreamwork/tasks.md` — what marks a task landed (#399, #399b)
 
-A task is **landed** when its id appears as an entry head under
-`## Recently landed`, or as an additional id declared on such an entry:
+A task is **landed** when its id appears under `## Recently landed` in one of
+three shapes:
 
 ```text
-- **#395** — … · landed `abc1234` ·          the head lands #395
+- **#395** — … · landed `abc1234` ·          the entry head lands #395
 - **#5/#6** — … · landed `…` ·               a combined head lands both
 - **#5** — … · also-landed: **#6, #7** ·     head + explicit multi-close
+**#142** the ledger's own history, drawn (bb56f19) — …   historical inline
 ```
 
+The fourth line is the **historical form**: a column-0 prose paragraph,
+`**#N** <what landed> (sha)`, with no entry head and no `·`-fields, sometimes
+several landings to a line. The ledger's older revisions are written this
+way, and `ledger_series` walks them to draw the burndown, so a landed reader
+that misses the form loses every completion older than the last groom — which
+is how #399 re-reddened master, and why #399b reads it again.
+
 **Every other bold id in a landed entry is a reference, not a landing.**
-That includes `related: **#367**`, `filed as **#392**`, and prose. The
-old reader scanned every ids-only `**#N**` span in the section, so the
-more correctly a landed entry cross-referenced still-open work, the more
-open tasks were reported done — and `check_landed_asks` told the
-coordinator to fold the human's unanswered `#367` ask. `related:` and
-landing must read **different fields** or they disagree by construction.
+That means `related: **#367**`, `filed as **#392**`, and a prose
+cross-reference in an entry's **indented body** (`see **#N**`,
+`corrected (**#N**)`). #399 closed the hole those opened — the pre-#399
+reader scanned every ids-only `**#N**` span, so the more correctly a landed
+entry cross-referenced still-open work, the more open tasks it reported
+done, and `check_landed_asks` told the coordinator to fold the human's
+unanswered `#367` ask. `#399b` keeps that closed while reopening the
+historical form: an entry's **indented continuation body is reference
+territory** — that is where `related:`, `filed as`, and prose cross-refs
+live, and the historical form has no such body, so it is pure column-0 prose
+and every mention in it lands. A `related:` / `filed as` / `also-landed:`
+field is excluded **by name** as well, so a marker written inline on a
+one-line head (`- **#N** — … · related: **#X**`) cannot re-open the `#367`
+hole. `related:` and landing read **different fields** or they disagree by
+construction.
 
 `also-landed:` follows the same field idiom as `related:` / `origin:`:
 `·`-anchored, one bold span, comma-separated ids inside it. Mid-sentence
-prose that merely *mentions* the words is not a claim (#395's class).
-Historical column-0 prose summaries (`**#5** shipped…` without a
-`- **#5**` head) no longer mint landings; re-record multi-close via a
-combined head or `also-landed:` if the burndown must count them.
+prose that merely *mentions* the words is not a claim (#395's class), and
+neither is a bare `**#N**` that lives in an indented body.
 
 `watch.parse_ledger` is the single reader of this rule (`_landed_ids`).
 
