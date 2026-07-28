@@ -24,9 +24,27 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **434**
+Next id: **435**
 
 ## Open
+- **#434** — the `/review` route wastes 24% of a phone screen below the artifact frame · P2 ·
+  Web UI/dashboard · origin: **loop** · **found by looking at the page, measured after, 2026-07-28 19:12**
+  · At **390x844** the artifact iframe is `135..641` — **506px** — and the **203px** beneath it holds
+  **zero rendering elements**. `document.scrollHeight` equals `innerHeight`, so the page does not scroll:
+  that quarter-screen is not off-screen content, it is **empty**. Desktop wastes only 40px (4%), so this
+  is a mobile-only defect
+  · **the cost is compounding, which is why it is worth more than 203px.** Everything he reads a
+  decision in — the ask, its accepted answers, the recommendation — competes for 506px instead of 709px.
+  Fixing it is a **40% increase in reading area** on the surface where every review artifact is judged
+  · **and it is the root cause of a constraint I just tightened elsewhere.** `above_fold.mjs` compares
+  against an effective fold of **504** on mobile precisely because of this frame; with the dead space
+  reclaimed the fold moves to ~707 and artifacts stop having to fight for the top 500px. Better to fix
+  the frame than to keep compensating in the checker (`#432` wants the fold derived at runtime, which
+  would then pick this up for free)
+  · likely a fixed/calculated frame height rather than a flexed one — read the `/review` shell's layout
+  before assuming. **`transitions.md` applies**: the route change onto `/review` is the reference gesture
+  in this repo, so a height change must not introduce a second idiom
+  · related: **#430, #432**
 - **#433** — the artifact rail's identity crumb cannot shrink, and fixing it re-stamps 23 artifacts
   of which 12 cannot be rebuilt · P3 · Web UI/review-artifacts · origin: **loop**
   · **found by looking at the rendered page, 2026-07-28 18:50 — every mechanical check passed while the
@@ -68,7 +86,7 @@ Next id: **434**
   because `innerHeight` overstates the visible area by **40%** on mobile — he reads artifacts inside
   a frame, not as pages. Those two numbers are dated constants: a change to the shell's chrome moves
   the fold and nothing would notice. Measure the frame at runtime
-  · related: **#429, #430**
+  · related: **#429, #430, #434**
 - **#431** — `just deploy`'s `pkill -f` kills any process whose command line merely mentions the
   snapshot, including the shell running the deploy · P1 · loop-tooling/deploy · origin: **loop**
   · **it killed my own shell mid-deploy, 2026-07-28 18:16**
@@ -3733,7 +3751,7 @@ Next id: **434**
   `viewportSize` key. So this is not a defect in the tree; it is a missing precondition — **2 of 65
   assert `innerWidth` matches what they asked for.** The repo is one typo away from the failure, not
   living in it, which lowers the urgency and does not change the fix
-  · related: **#429, #432**
+  · related: **#429, #432, #434**
   · **→ folded 2026-07-28 18:14 — landed `1dd973f`.** The shared checker exists with all three
   preconditions red-proved, and is declared a tool rather than a guard in `lint.NOT_GUARDS` with the
   reason it gates nothing yet. Making it *gate* the corpus needs `#ask` to be a contract first, which
