@@ -333,8 +333,21 @@ deploy rev="HEAD":
     dir=~/.cache/dreamwork/deployed
     mkdir -p "$dir"
     snap="$dir/$(basename "$PWD")-watch.py"
-    git show {{rev}}:watch.py > "$snap"
-    python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$snap"
+    # #425 — resolve the link BEFORE snapshotting, then PROVE the snapshot is
+    # the server BEFORE touching the live process. Git stores a symlink as a
+    # blob whose content is the TARGET PATH, so once watch.py becomes a symlink
+    # (the #368 plan: watch.py -> deprecated/watch.py), `git show {{rev}}:watch.py`
+    # emits the 19-byte string `deprecated/watch.py`, the old `ast.parse` guard
+    # accepted it (it parses as `deprecated / watch.py`), pkill took the good
+    # server down, and the garbage snapshot died on import — leaving his
+    # dashboard dark. Both calls below live in dev/deploy_state.py and are the
+    # SAME resolver/guard the state report uses, so the recipe and deploy_state
+    # agree by construction. The guard PRECEDES pkill on purpose: a snapshot
+    # that is not the server is refused with the dashboard still up.
+    python3 dev/deploy_state.py --resolve-snapshot {{rev}} > "$snap.tmp"
+    python3 dev/deploy_state.py --assert-server "$snap.tmp" \
+      || { rm -f "$snap.tmp"; echo "deploy refused: snapshot is not the server (broken link or corrupt {{rev}}) — his dashboard was left running"; exit 1; }
+    mv "$snap.tmp" "$snap"
     pkill -f "$(basename "$snap")" 2>/dev/null || true
     sleep 1
     nohup python3 "$snap" --target "$PWD" --dev >"$dir/serve.log" 2>&1 &

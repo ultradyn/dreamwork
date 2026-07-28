@@ -51,9 +51,11 @@ the process is running code older than the file on disk, whatever the file says.
 Both must pass. Either alone reads as reassurance and answers half.
 """
 import argparse
+import ast
 import hashlib
 import json
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -67,9 +69,136 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+# --- symlink-safe blob resolution (#425) -----------------------------------
+#
+# Git stores a symlink as a blob whose CONTENT is the target path. So once
+# watch.py becomes a symlink (the #368 plan: `watch.py -> deprecated/watch.py`),
+# `git show HEAD:watch.py` emits the 19-byte string `deprecated/watch.py`,
+# which `ast.parse` accepts (it parses as `deprecated / watch.py`). That is the
+# measured blocker: the deploy recipe snapshotted those bytes, its syntax guard
+# passed them, pkill took the good server down, and the garbage snapshot died
+# on import — leaving his dashboard dark. (Reproduced in the #425 report; the
+# 19 bytes and the accepted parse are quoted there.)
+#
+# The two functions below are the single source of truth for "what are
+# watch.py's bytes at a rev, link-resolved" and "is this snapshot the server".
+# `deploy` (the justfile recipe) and the HEAD comparison below BOTH call them,
+# so the recipe and deploy_state agree by construction — there is no second
+# implementation in bash to drift. The resolver is rev-aware (it inspects
+# `git ls-tree <rev>`, not the working index) so a deploy of a non-HEAD rev
+# still resolves correctly.
+SYMLINK_MODE = "120000"
+
+
+def _ls_tree_entry(repo, rev, path):
+    """`(mode, sha)` of `path` at `rev`, or `(None, None)` if it is absent.
+
+    `git ls-tree` is the rev-aware way to read a blob's mode; `git ls-files`
+    would read the working index instead and lie about a rev the deploy is
+    snapshotting. The format is `<mode> <type> <sha>\t<path>`.
+    """
+    res = subprocess.run(
+        ["git", "ls-tree", rev, "--", path],
+        cwd=str(repo), capture_output=True, text=True, check=True)
+    line = res.stdout.rstrip("\n")
+    if not line:
+        return None, None
+    meta = line.split("\t", 1)[0]
+    mode, _type, sha = meta.split()
+    return mode, sha
+
+
+def resolve_blob(rev="HEAD", path="watch.py", repo=ROOT) -> bytes:
+    """The bytes of `path` at `rev`, following in-tree symlinks.
+
+    For a regular file this is identical to `git show <rev>:<path>`. For a
+    symlink it is the TARGET'S bytes — the real module — not the 19-byte link
+    string. Symlink targets are resolved relative to the link's own directory
+    (git stores the raw link text), and a chain is followed up to a cap so a
+    cycle aborts instead of hanging. The #368 link (`watch.py ->
+    deprecated/watch.py`, root-relative) resolves in one step; the loop is for
+    generality and is cheap (one `ls-tree` per hop, and only when there is a
+    link to follow).
+    """
+    seen = set()
+    for _ in range(20):                       # cap: a cycle must abort, not hang
+        mode, sha = _ls_tree_entry(repo, rev, path)
+        if sha is None:
+            raise RuntimeError(
+                f"{path!r} is not tracked at {rev} in {repo}")
+        if mode != SYMLINK_MODE:
+            return subprocess.run(
+                ["git", "cat-file", "blob", sha],
+                cwd=str(repo), capture_output=True, check=True).stdout
+        # mode 120000: the blob's content is the link target path string.
+        target = subprocess.run(
+            ["git", "cat-file", "blob", sha],
+            cwd=str(repo), capture_output=True, check=True
+        ).stdout.decode("utf-8", "replace").rstrip("\n")
+        if not target:
+            raise RuntimeError(f"symlink at {path!r} has an empty target")
+        link_dir = posixpath.dirname(path)
+        path = (posixpath.normpath(posixpath.join(link_dir, target))
+                if link_dir else target)
+        if path in seen:
+            raise RuntimeError(f"symlink cycle detected resolving {path!r}")
+        seen.add(path)
+    raise RuntimeError(f"symlink chain at {path!r} too deep (>20 hops)")
+
+
+# The two markers a snapshot must define to BE the server, not merely parse.
+# Both are module-level in watch.py and both are load-bearing: `main` is the
+# entry point the deploy recipe execs, and `GENERATION` is the /mtime field
+# this file probes to tell "the file is right" from "he is seeing the file".
+# A path string (`deprecated/watch.py`), an empty file, or a truncated blob
+# all parse as Python but define NEITHER — a path string is a single division
+# expression with no top-level statements at all — so asserting both present
+# rejects exactly the inputs the old `ast.parse`-only guard waved through.
+SERVER_TOPLEVEL_MAIN = "main"
+SERVER_TOPLEVEL_GENERATION = "GENERATION"
+
+
+def assert_is_server(src: bytes) -> None:
+    """Prove `src` is the watch.py server module.
+
+    Raises `SyntaxError` if it is not valid Python, `ValueError` if it parses
+    but does not define both server markers at module top level. Returns None
+    on success. This is the guard that replaced `ast.parse(open(snap).read())`
+    in the deploy recipe: a syntax check measures the wrong property, because
+    the thing that broke deploy (`deprecated/watch.py`) is valid syntax.
+    """
+    try:
+        tree = ast.parse(src)
+    except SyntaxError as exc:
+        raise SyntaxError(
+            f"snapshot does not parse as Python: {exc.msg}") from exc
+    has_main = any(isinstance(n, ast.FunctionDef)
+                   and n.name == SERVER_TOPLEVEL_MAIN for n in tree.body)
+    has_generation = False
+    for n in tree.body:
+        if isinstance(n, ast.Assign):
+            if any(isinstance(t, ast.Name) and t.id == SERVER_TOPLEVEL_GENERATION
+                   for t in n.targets):
+                has_generation = True
+        elif isinstance(n, ast.AnnAssign):
+            if isinstance(n.target, ast.Name) and n.target.id == SERVER_TOPLEVEL_GENERATION:
+                has_generation = True
+    missing = [name for name, present in (
+        (f"def {SERVER_TOPLEVEL_MAIN}", has_main),
+        (f"{SERVER_TOPLEVEL_GENERATION} =", has_generation)) if not present]
+    if missing:
+        raise ValueError(
+            "snapshot parsed but is not the server module — missing top-level "
+            + " and ".join(missing)
+            + ". A symlink target string, a truncated file, or the wrong blob "
+              "all parse; this guard rejects them.")
+
+
 def head_watch() -> bytes:
-    return subprocess.run(["git", "show", "HEAD:watch.py"], cwd=ROOT,
-                          capture_output=True, check=True).stdout
+    """HEAD's watch.py bytes, link-resolved — the same bytes `just deploy`
+    snapshots, so the comparison below is apples to apples once watch.py
+    becomes a symlink."""
+    return resolve_blob("HEAD", "watch.py", ROOT)
 
 
 def listening_pid(port: int):
@@ -84,9 +213,43 @@ def listening_pid(port: int):
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--json", action="store_true")
+    ap = argparse.ArgumentParser(
+        description="Report whether the deployed dashboard is current. Also "
+                    "the single source of truth the deploy recipe uses to "
+                    "resolve a (possibly symlinked) watch.py and to prove the "
+                    "snapshot is the server (#425).")
+    ap.add_argument("--json", action="store_true",
+                    help="emit the state report as JSON")
+    # #425 — the two verbs `just deploy` calls. They share the resolver/guard
+    # with the HEAD comparison below, so the recipe and this report can never
+    # disagree about what "HEAD's watch.py" means when watch.py is a symlink.
+    actions = ap.add_mutually_exclusive_group()
+    actions.add_argument(
+        "--resolve-snapshot", metavar="REV", default=None,
+        help="write watch.py's bytes at REV to stdout, following in-tree "
+             "symlinks (the real module, not the link string). Used by "
+             "`just deploy` to snapshot the server safely.")
+    actions.add_argument(
+        "--assert-server", metavar="FILE", default=None,
+        help="prove FILE is the watch.py server module (parses AND defines "
+             "`main` and `GENERATION`); exit 1 if not. Used by `just deploy` "
+             "BEFORE it touches the live process, so a broken snapshot is "
+             "rejected with the dashboard still up.")
     args = ap.parse_args()
+
+    if args.resolve_snapshot is not None:
+        # Binary-safe: the module is bytes, and a redirect in the recipe
+        # captures them verbatim.
+        sys.stdout.buffer.write(
+            resolve_blob(args.resolve_snapshot, "watch.py", ROOT))
+        return 0
+    if args.assert_server is not None:
+        try:
+            assert_is_server(open(args.assert_server, "rb").read())
+        except (ValueError, SyntaxError) as exc:
+            print(f"snapshot guard failed: {exc}", file=sys.stderr)
+            return 1
+        return 0
 
     st = {"current": False}
     portfile = os.path.join(ROOT, ".dreamwork", "watch-port")
