@@ -531,6 +531,20 @@ Next id: **412**
   across history is `1,2,3,4,5` — so **`#1`, `#2` and `#3`, which the fixture deliberately grooms
   out of the final ledger, are still counted.** That is the guard's load-bearing property and the
   assertion `#399` broke. The guard should pass; if it does not, the fix is not the rule
+  · **and it corrected my scoring of its own rule, 11:29.** I measured column-0 against the **real
+  ledger** and reported it as sufficient on its own. The lane checked a population I did not — the
+  **existing tests** — and found `test_a_bare_bolded_id_in_a_landed_entry_is_not_landed` uses a
+  one-line head carrying `related:` and `filed as` **inline at column 0**. So col0 alone does not
+  exclude them and **field-exclusion remains independently load-bearing**; likewise `also-landed:`
+  must be excluded from the generic pass, since `ALSO_LANDED_MARKER` counts that form separately.
+  Its design is col0 **and** field-exclusion, and that is right. **My rule looked sufficient only
+  because the real ledger happens to put field markers on indented lines** — a property of today's
+  file, not of the format. Same discipline I keep writing into briefs, and I missed it: a
+  measurement over one population is not a rule
+  · **it also caught the pipefail trap unprompted** — *"the `| tail` masked the real exit code
+  (exactly the trap the brief warns about)"* — re-ran to a file, and confirmed the baseline
+  precisely: `forgotten_folds` **GREEN**, burndown **RED** with both named assertions failing. That
+  is the brief's warning being used rather than read
   · **THE MERGE GATE, written 11:19 BEFORE the lane reports, so it cannot be shaped by what the
   lane says it achieved.** Measured now, both parsers run against today's ledger:
     - deployed/pre-`#399` logic: **136 open, 176 landed**
