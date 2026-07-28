@@ -40,6 +40,15 @@ const trace=ms=>`((ms)=>new Promise(res=>{const m=cmdmsg,p=cmdpalette,seen=[],t0
  notes.push(`main race first=${first} last=${last} final="${seen.at(-1).text}" open=${seen.at(-1).open}`);
  ok('main success appears after typing during POST',first!==null);
  ok('main success remains readable for about 5s',first!==null&&last-first>=4500);
+ // PRECONDITION. These assertions need >=4 DISTINCT opacity values, which is
+ // arithmetically impossible with fewer than 4 SAMPLES. The sampler is a
+ // requestAnimationFrame loop, so its density is the browser's frame rate --
+ // under system load rAF throttles and the window starves. Without this line a
+ // starved run reports 'the motion is wrong' when what happened is 'we did not
+ // look often enough', and those two need opposite responses: one is a bug, the
+ // other is a busy machine. Naming the count makes the difference readable.
+ ok(`main departure window sampled enough to see motion (${departing.length} frames)`,
+    departing.length>=8);
  ok('main success departs through intermediate opacity and drift',new Set(departing.map(s=>s.op)).size>=4&&new Set(departing.map(s=>s.tf)).size>=3);
  ok('main success clears instead of remaining forever',seen.at(-1).text==='');
  ok('typing keeps the panel open independently',seen.at(-1).open);
@@ -97,6 +106,11 @@ const trace=ms=>`((ms)=>new Promise(res=>{const m=cmdmsg,p=cmdpalette,seen=[],t0
   const success=seen.filter(s=>s.text==='sent to the dream'),first=success[0]?.t??null;
   const arrival=success.filter(s=>first!==null&&s.t-first<500),departure=success.filter(s=>first!==null&&s.t-first>4500);
   notes.push(`popout arrival opacity=${[...new Set(arrival.map(s=>s.op))].join(',')} transform=${[...new Set(arrival.map(s=>s.tf))].join(',')} first=${first}`);
+  // Same precondition as the main window above, for both popout windows.
+  ok(`popout arrival window sampled enough to see motion (${arrival.length} frames)`,
+     arrival.length>=8);
+  ok(`popout departure window sampled enough to see motion (${departure.length} frames)`,
+     departure.length>=8);
   ok('popout success arrives through intermediate opacity and drift',new Set(arrival.map(s=>s.op)).size>=4&&new Set(arrival.map(s=>s.tf)).size>=3);
   ok('#291 popout is intentionally persistent beyond main courtesy close',
      !pp.isClosed() && seen.some(s=>s.t>=2200&&s.text==='sent to the dream'));

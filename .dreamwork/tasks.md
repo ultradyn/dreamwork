@@ -24,9 +24,38 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **414**
+Next id: **415**
 
 ## Open
+
+- **#414** — a motion guard's pass condition depends on the browser's FRAME RATE, and it does
+  not say so · P2 · verification/motion · origin: **loop** · found by the only failure in the
+  first fully-clean `just test` of the day
+  · **the shape.** `confirmation.mjs` samples `opacity`/`transform` in a `requestAnimationFrame`
+  loop and asserts *"arrives through intermediate opacity and drift"* by requiring **≥4 distinct
+  opacity values and ≥3 distinct transforms inside a 500 ms window**. That is the right way to
+  check a transition — `transitions.md` is explicit that an end-state assertion cannot fail on a
+  motion bug — but **4 distinct values are arithmetically impossible below 4 samples**, and the
+  sample count is the frame rate. At 60 fps the window holds ~30 frames; under load rAF throttles
+  and it starves
+  · **so the check has two failure modes that print the same line**: the motion is wrong, or the
+  machine was busy. Those need opposite responses, and the output could not tell them apart —
+  which is exactly how `docktarget`/`noteprop` spent six hours miscategorised today (#413)
+  · **PARTLY FIXED 2026-07-28 13:44** (`dev/capture/confirmation.mjs`): a precondition now runs first for all
+  three windows and names the count — `popout arrival window sampled enough to see motion
+  (N frames)`, threshold 8, comfortably above the 4 the assertion needs and far below the ~30 a
+  healthy frame rate gives. **Red-proved** by starving the window to 20 ms: it fails with
+  `(1 frames)` *above* the motion assertion, so the diagnosis is now readable in the summary line
+  · **what is NOT fixed, and why this stays open.** The guard still *fails* on a busy machine — it
+  now fails **informatively**, which is a smaller thing than being right. Observed: FAIL inside a
+  full `just test` at load ~30, PASS twice solo at the same load, so contention within the suite
+  is implicated rather than load alone. Deciding between waiting for a quiet frame budget,
+  measuring distinct values over a duration rather than a fixed window, or driving the clock
+  deterministically is a real design call and wants its own increment
+  · **and the general form is worth a sweep**: every guard asserting "N distinct intermediate
+  values" carries this hidden precondition. `grep -l 'requestAnimationFrame' dev/capture/*.mjs`
+  and check each for a stated sample floor
+  · related: **#413**
 
 - **#413** — a guard can encode a SUPERSEDED contract, and nothing measures that · P2 ·
   verification/meta · origin: **loop** · found by fixing `qacard`, which had been red since
@@ -94,7 +123,7 @@ Next id: **414**
   · **what remains of this task is the meta half**, which is unfixed: nothing measures
   guard-against-doc, and a red excused in a brief still goes invisible. Six hours here, across
   three lanes, on a signal that was correct the whole time
-  · related: **#392**
+  · related: **#392, #414**
 
 - **#411** — two answered entries carry a perfectly good date and the page throws it away, because
   `answered_at` anchors at position 0 · **P2** · UI correctness / parser · origin: **loop** · found
