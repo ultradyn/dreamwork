@@ -250,7 +250,35 @@ Next id: **475**
   minutes ago, never whether one **ran**. The coordinator reported the tree green all session on **pytest +
   lint + individually-invoked guards**, and a full `just test` never completed — one run was killed by an
   external sweep mid-guards. So a dock regression rode along inside a merge that was called verified
-  · blocked on nothing · related: **#471, #463**
+  · **→ closed 2026-07-29 07:15. Both halves landed and the code was correct both times; the checks were
+  wrong.** Bisected properly at last: `git merge-base --is-ancestor` first, then `--first-parent` over
+  `b9fa1a4..master` **restricted to the paths that could matter** (`watch.py` and the two guards), which cut 841
+  first-parent commits to 55 — six steps, 25s a probe. First bad is `0dd136e`, **the same commit the malformed
+  bisect named**: I had dismissed it as a dream-file commit by reading its `dream(#385)` *subject* instead of its
+  diffstat, and it changes `watch.py`, a guard and two docs. It was right the first time
+  · **half one, the headline (landed `dfce438`):** `#385` puts a live age *inside* the question headline, so
+  `dockHeadline` identifies a docked question by the headline **minus its chrome** — and it can only remove
+  **nodes**. `#456` added its ` · ` between the date and the age span as bare **text**, which survived the strip,
+  so the raw title stopped being a substring of the result and both guards failed for two days on a page that was
+  behaving correctly. The `#266` invariant they exist for (`posted.question`, read from data) stayed green
+  throughout. Fix: the separator is an `.rsep` node (the idiom `#473`'s separator already used), `dockHeadline`
+  also strips `.qup`/`.rsep` — `#473`'s pair was a second latent break — and both guards now **derive** the
+  precondition the strip rests on: raw and stripped textContent must differ
+  · **half two, the height (landed `5bcaf58`):** `noteprop` seeded `ta.style.height = '80px'` and demanded it
+  back after a tick. `#177`/`#464` made that wrong deliberately — the box is `resize:none` *because autosize owns
+  the height*, and `fitText`'s restore branch re-fits it every tick so it does not re-grow under him. It now lets
+  autogrow choose and asserts *that* height survives. Splitting the compound assertion (which could not say which
+  half failed) surfaced a third thing: the scroll comparison was **racing the .85s height travel**, since a
+  textarea clamps `scrollTop` to its current scrollable range — seeded mid-travel it recorded 160 in normal motion
+  and 109 in reduced for identical content, and the post-travel re-clamp read as lost scroll. Reduced motion never
+  saw it because there is no travel to race
+  · both red-proved on the production line (`dockHeadline`'s `querySelectorAll` made a no-op; `fitText`'s restore
+  `ta.style.height = target + 'px'` made `target + 7`), injections confirmed present and then removed. Full
+  `pytest` 1266 passed, `lint` clean. Rules recorded in `watch-design.md`: **headline chrome is a node whose class
+  is listed in `dockHeadline`**, and **a guard must never assert a height autosize owns**
+  · also fixed a literal that had quietly expired: a test asserted *"at least the three known open questions"* of
+  the **live** file and went red today because two had been answered. It derives its subject now
+  · blocked on nothing · related: **#471, #463, #456, #385, #177**
 
 - **#473** — a question can be updated and he has no way to notice · **P1** · dashboard/questions ·
   origin: **human** ·
@@ -4139,7 +4167,7 @@ Next id: **475**
   · **no transition** — `ages()` rewrites this text every second as a pure text update, which
   `transitions.md` explicitly exempts; do not add a gesture to a digit flip.
   · landed \`f9bb49e\` — day-age reads `2026-07-28 · 01d ago`; pad zero at `opacity:.5` (opacity, not the dim token, because it composites against the shader). Second defect found and fixed on the way: `.qage`'s `margin-left` was carrying the gap, so the separator would have doubled it. watch-design.md age contract updated in the same commit.
-  · related: **#463**
+  · related: **#463, #474**
 - **#457** — the builder emitted `<meta>` tags with no closing `>`, printing a stray `>` at the top of every
   artifact · **P1** · review/bug · origin: **human** ·
   **human via watch 2026-07-29 01:26, reading `263-second-gate.html`:** *"bug at top of this page, the artifact
@@ -4510,7 +4538,7 @@ Next id: **475**
   is not its arguments*, this one is *the argument order is not a contract*. `^ccc @` silently
   encodes "no flags between binary and alias". Match the alias wherever it appears, or resolve the
   lane from `dreamers[].pid` with `kill -0`, which is exact and needs no pattern
-  · related: **#401, #264, #403, #405, #410, #423, #440, #465**
+  · related: **#401, #264, #403, #405, #410, #423, #440, #465, #474**
   · **it demonstrated itself at 14:56, while I was dispatching the lane to fix it.** Two lanes
   were live (`ccc --yolo @glm52`, `ccc --yolo @grok`) and `status_sync.py` printed
   *"already in sync (135 open, 0 live)"*. Not reconstructed from logs — observed in the same
@@ -6307,7 +6335,7 @@ Next id: **475**
   · **but the third gap was closed only client-side, and the coordinator found it on the deployed
   page 15 minutes later:** the age is measured from **midnight** of the entry's date because that
   is all the data carries. Filed as **#392**; the lane built what was asked and the criterion did
-  not ask for accuracy · related: **#392**
+  not ask for accuracy · related: **#392, #474**
   · **one correction to my own brief:** criterion 2 predicted the failure would show *a day count*
   above 99. With the week rung present it shows a **week** count. The lane's test is right and my
   arithmetic was not
