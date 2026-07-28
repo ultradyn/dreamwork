@@ -2440,6 +2440,22 @@ and an empty `.age.qage[data-ct]` filled by the standing `ages()` sweep, so
 No date in the title stays plain text. The date is day-resolution only, so
 `ct` is local midnight of that day.
 
+**An updated question also says so (#473).** "Updated" is a *per-entry
+content change* — body, notes or answers — not the file mtime of
+`questions.md` (a neighbour's answer rewrites the same file). The server
+tracks a content digest per entry in machine-local
+`.dreamwork/question-sigs.json`; first sight records the digest with no
+stamp, a later change stamps `updated_at` and appends a best-effort
+`question-updated via watch: …` line to `watch-events.log` (that channel is
+lossy by design, so the display half is the reliable deliverable). The
+title line then carries ` · updated X ago` via `.age.qup[data-ut]`, the
+same chrome separator and ages() sweep as #456 / #463. Honesty reuses
+#463's rule: ages() suppresses the secondary when `ageStr(updated)` equals
+the created figure — exact inequality produced 24 false positives of 28
+there. Digit flips are pure text (no transition); the *node's* first
+appearance is an arrival (`.dreamin` via `revealQuestionUpdates`), with
+reduced-motion settling fully lit. Guard: `dev/capture/qsignal.mjs`.
+
 **A question headline is therefore no longer its title.** `qtHtml` emits the
 age span *between* the date and the ` — ` separator, so `.qt`'s textContent is
 not the raw title with something appended — the title is **interrupted**, and a

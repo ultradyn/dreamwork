@@ -605,7 +605,7 @@ STYLE = """<style>
      separator #456 reused for date/age (chrome's own middot), never a
      second idiom. Dimmer than the primary age so the two facts coexist
      without competing. No left margin: the separator owns the gap. */
-  .age.rmod, .age.ageunk { color:var(--dimmer); margin-left:0; }
+  .age.rmod, .age.ageunk, .age.qup { color:var(--dimmer); margin-left:0; }
   .rsep { color:var(--dimmer); }
   pre { white-space:pre-wrap; color:var(--muted); margin:.4rem 0 .8rem 1ch;
         border-left:1px solid var(--line); padding-left:1ch; }
@@ -2388,10 +2388,24 @@ const qtHtml = title => {
   const when = esc(date) + (time ? esc(' ' + time) : '');
   /* #456: chrome's ` · ` between date and age so the eye finds where the
      date ends — bare adjacency made `2026-07-28 01d ago` one continuous
-     digit run. Same glyph/spacing as every other chrome separator. */
+     digit run. Same glyph/spacing as every other chrome separator.
+     #473: an optional "updated X ago" rides the same separator + ages()
+     sweep (data-ut). ages() writes pure text — no transition on the
+     second-by-second digit flip (the ages() contract). The NODE's first
+     appearance is an arrival (revealQuestionUpdates → .dreamin). */
   return `${esc(prio || '')}${when} · ` +
     `<span class="age qage" data-ct="${ct}"${dayAttr}></span>` +
     `${esc(sep)}${esc(rest)}`;
+};
+/* #473 — optional secondary after the created age. Emitted only when the
+   server stamped updated_at (a real content change after first sight).
+   ages() decides whether the figure is honest enough to show (#463 lesson:
+   suppress when ageStr(updated) === ageStr(created)). */
+const qUpdatedHtml = q => {
+  const u = q && q.updated_at;
+  if (u == null || !(u > 0)) return '';
+  return `<span class="rsep"> · </span>` +
+    `<span class="age qup" data-ut="${u}" data-q-upd="${esc(q.title || '')}"></span>`;
 };
 const qaInner = (q, key) => {
   const st = qaState(q, key);
@@ -2440,11 +2454,17 @@ const qaInner = (q, key) => {
      through the wrapper (`cardBody`) and no dock card is ever folded. */
   const foot = followThread(settled, true) + answer + followThread(since, false);
   const compose = qaCompose(key, st, q.title);
+  /* #473: updated-ago sits on the title line beside the created age, so it
+     is part of the headline chrome rather than a second fact buried in the
+     body. Folded entries carry it in the summary for the same reason the
+     created age is there — a settled entry that cannot be found again has
+     simply been hidden. */
+  const up = qUpdatedHtml(q);
   if (st === 'folded')
-    return `<details class="qfold"><summary class="qt">${qtHtml(q.title)}` +
+    return `<details class="qfold"><summary class="qt">${qtHtml(q.title)}${up}` +
       (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : '') +
       `</summary><div class="qbody">${body}${foot}</div>${compose}</details>`;
-  return `<div class="qbody"><div class="qt">${qtHtml(q.title)}</div>` +
+  return `<div class="qbody"><div class="qt">${qtHtml(q.title)}${up}</div>` +
          `${body}${foot}</div>${compose}`;
 };
 /* Two identities, deliberately. `data-qkey` ADDRESSES the entry in live data
@@ -3763,12 +3783,63 @@ function ages() {
      history takes the short one. */
   document.querySelectorAll('.age[data-at]').forEach(el =>
     el.textContent = ageStr(parseFloat(el.dataset.at)) + ' ago');
+  /* #473 — "updated X ago" on a question whose content changed after first
+     sight. Same honesty rule as #463's review secondary: only show when the
+     rendered figure says something the created age does not. Pure text —
+     ages() never transitions digit flips. */
+  document.querySelectorAll('.age.qup[data-ut]').forEach(el => {
+    const u = parseFloat(el.dataset.ut);
+    if (!(u > 0)) { el.hidden = true; el.textContent = ''; return; }
+    const s = ageStr(u);
+    // pair with the created age on the same .qt, if present
+    const qt = el.closest('.qt');
+    const crEl = qt && qt.querySelector('.age.qage[data-ct]');
+    if (crEl) {
+      const cr = parseFloat(crEl.dataset.ct);
+      if (cr > 0 && ageStr(cr) === s) {
+        const sep = el.previousElementSibling;
+        if (sep && sep.classList.contains('rsep')) sep.hidden = true;
+        el.hidden = true;
+        el.textContent = '';
+        return;
+      }
+    }
+    el.hidden = false;
+    el.textContent = 'updated ' + s + ' ago';
+  });
   const upd = document.getElementById('upd');
   if (upd && fetchedAt) upd.textContent =
     `updated ${ageStr(fetchedAt/1000)} ago`;
   applyTitle();     // the liveness word drifts with the clock, not with disk
   applyFavicon();   // ...and the orbit advances one frame per second on it
   applyTint();      // ...and his colour arrives from whichever window set it
+}
+/* #473 — an "updated X ago" that first appears is an ARRIVAL (transitions.md:
+   no size floor). Mirror revealReviewMods: track known keys, one-shot
+   .dreamin, first paint + reduced motion settle fully lit. Digit flips stay
+   pure text via ages(). */
+let knownQuestionUps = null;
+function revealQuestionUpdates() {
+  const nodes = [...document.querySelectorAll(
+    '.age.qup[data-ut]:not([hidden])')];
+  const now = new Set(nodes.map(el => el.dataset.qUpd || el.dataset.ut));
+  if (knownQuestionUps === null || window.__dwSkipQuestionUpArrival) {
+    nodes.forEach(el => el.classList.remove('dreamin'));
+    knownQuestionUps = now;
+    return;
+  }
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  for (const el of nodes) {
+    const k = el.dataset.qUpd || el.dataset.ut;
+    if (knownQuestionUps.has(k)) continue;
+    if (reduce) continue;
+    el.classList.add('dreamin');
+    void el.offsetWidth;
+    requestAnimationFrame(() => {
+      if (el.isConnected) el.classList.remove('dreamin');
+    });
+  }
+  knownQuestionUps = now;
 }
 /* #463 — a "modified X ago" that appears when a review's mtime pulls away
    from its birth is an ARRIVAL (transitions.md: no size floor). Track which
@@ -5947,6 +6018,7 @@ function setContent(html) {
   // and label so a mid-arm tick does not reset the control to idle copy.
   paintStaleDeployUI();
   revealReviewMods();
+  revealQuestionUpdates();  // #473: updated-ago arrival, after ages() hides dishonest ones
   // #290: innerHTML destroys the arm bar nodes; resume shared pending (or
   // re-sync the committed selection) without inventing a new deadline.
   syncRunModeFromData();
@@ -10918,12 +10990,111 @@ def skill_identity(target=None):
     return out
 
 
+# #473 — per-entry "updated" is a content change, not file mtime. The store
+# is machine-local (like watch-events.log): digests of each entry's content
+# plus the wall-clock of the last observed change. First sight records the
+# digest with updated_at=None (no false "updated" on an entry he has always
+# seen). A later digest change stamps now and appends a best-effort
+# question-updated line to watch-events.log. Git history was rejected (needs
+# a commit, and the coordinator commits minutes later); a format marker was
+# rejected (changes the parsed ledger shape; file-formats.md is not this
+# lane's). Exact nanosecond inequality is not used for display — ages()
+# suppresses a secondary whose ageStr equals the created figure (#463).
+QUESTION_SIGS = "question-sigs.json"
+
+
+def _entry_content_digest(entry):
+    """Stable digest of one questions.md entry's visible content."""
+    payload = {
+        "title": entry.get("title") or "",
+        "body": entry.get("body") or "",
+        "follows": entry.get("follows") or [],
+        "answers": entry.get("answers") or [],
+        "answer": entry.get("answer"),
+    }
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
+
+
+def _title_sig_key(title):
+    return hashlib.sha256((title or "").encode("utf-8")).hexdigest()[:16]
+
+
+def track_question_updates(target, entries):
+    """Stamp per-entry updated_at from content digests; emit event on change.
+
+    Mutates each entry in place with `updated_at` (float epoch seconds, or
+    None). Best-effort: a store or log failure never raises into collect().
+    Returns the same list for chaining.
+    """
+    if not entries:
+        return entries
+    path = os.path.join(target, ".dreamwork", QUESTION_SIGS)
+    store = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            loaded = json.load(f)
+        if isinstance(loaded, dict):
+            store = loaded
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        store = {}
+
+    dirty = False
+    for e in entries:
+        key = _title_sig_key(e.get("title"))
+        dig = _entry_content_digest(e)
+        prev = store.get(key)
+        if not isinstance(prev, dict):
+            prev = None
+        if prev is None:
+            store[key] = {
+                "digest": dig,
+                "updated_at": None,
+                "title": (e.get("title") or "")[:120],
+            }
+            e["updated_at"] = None
+            dirty = True
+        elif prev.get("digest") != dig:
+            now = time.time()
+            store[key] = {
+                "digest": dig,
+                "updated_at": now,
+                "title": (e.get("title") or "")[:120],
+            }
+            e["updated_at"] = now
+            log_event(
+                target,
+                "question-updated via watch: "
+                + one_line((e.get("title") or "")[:100]),
+            )
+            dirty = True
+        else:
+            u = prev.get("updated_at")
+            e["updated_at"] = float(u) if isinstance(u, (int, float)) else None
+
+    if dirty:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(store, f, indent=0, sort_keys=True)
+            os.replace(tmp, path)
+        except OSError:
+            pass
+    return entries
+
+
 def collect(target):
     now = time.time()
     dw = os.path.join(target, ".dreamwork")
     questions = read_text(os.path.join(dw, "questions.md"))
     q_open = parse_open_questions(questions)
     q_answered = parse_answered(questions)
+    # #473: stamp updated_at per entry before the payload leaves. Open first
+    # (what he is looking at); answered second so a folded rewrite also
+    # signals. One store covers both sections.
+    track_question_updates(target, q_open)
+    track_question_updates(target, q_answered)
     answers = read_text(os.path.join(dw, "answers.md"))
     a_open = parse_open_answers(answers)
     a_answered = parse_answered_answers(answers)

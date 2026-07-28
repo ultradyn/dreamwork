@@ -451,6 +451,79 @@ class TestCollector(unittest.TestCase):
             self.assertIsNone(data["status"])       # no status.json
             self.assertEqual(data["git"], [])       # not a git repo
 
+    def test_question_update_stamp_is_per_entry_not_file_mtime(self):
+        # #473 — "updated" means THIS entry's content changed after first
+        # sight, not that questions.md was rewritten (a neighbour's answer
+        # rewrites the same file). Derive the precondition at runtime: first
+        # collect has updated_at None; after a body rewrite the same entry
+        # has a stamp; a second entry left alone still has None.
+        #
+        # PRODUCTION LINE whose change reds this: track_question_updates's
+        # digest-compare branch (or _entry_content_digest omitting body).
+        # Deleting the body field from the digest payload makes a rewrite
+        # invisible and leaves updated_at None.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            qpath = os.path.join(d, ".dreamwork", "questions.md")
+            base = (
+                "# Questions for the human\n\n## Open\n\n"
+                "- **2026-07-01 — alpha entry**\n"
+                "  alpha body original\n\n"
+                "- **2026-07-01 — beta entry**\n"
+                "  beta body stays\n\n"
+                "## Answered\n"
+            )
+            with open(qpath, "w") as f:
+                f.write(base)
+            first = watch.collect(d)
+            by = {e["title"]: e for e in first["questions_open"]}
+            self.assertIn("2026-07-01 — alpha entry", by)
+            self.assertIn("2026-07-01 — beta entry", by)
+            # PRECONDITION: both are first-sight, no updated_at
+            self.assertIsNone(by["2026-07-01 — alpha entry"].get("updated_at"))
+            self.assertIsNone(by["2026-07-01 — beta entry"].get("updated_at"))
+            # rewrite ONLY alpha
+            with open(qpath, "w") as f:
+                f.write(base.replace("alpha body original",
+                                     "alpha body REWRITTEN " + str(time.time())))
+            second = watch.collect(d)
+            by2 = {e["title"]: e for e in second["questions_open"]}
+            alpha_u = by2["2026-07-01 — alpha entry"].get("updated_at")
+            beta_u = by2["2026-07-01 — beta entry"].get("updated_at")
+            self.assertIsInstance(alpha_u, float)
+            self.assertGreater(alpha_u, 0)
+            # PRECONDITION derived: the two entries now differ on the stamp
+            self.assertIsNone(beta_u,
+                              "a neighbour rewrite must not stamp an untouched entry")
+            self.assertNotEqual(alpha_u, beta_u)
+            # event is best-effort; when the store can write, it is there
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            with open(log, encoding="utf-8") as f:
+                text = f.read()
+            self.assertIn("question-updated via watch:", text)
+            self.assertIn("alpha entry", text)
+            # third collect, no further change: stamp is stable
+            third = watch.collect(d)
+            by3 = {e["title"]: e for e in third["questions_open"]}
+            self.assertEqual(
+                by3["2026-07-01 — alpha entry"]["updated_at"], alpha_u)
+            # only one event for the one change
+            with open(log, encoding="utf-8") as f:
+                lines = [ln for ln in f if "question-updated" in ln]
+            self.assertEqual(len(lines), 1)
+
+    def test_question_updated_ago_page_wiring(self):
+        # #473 — structural: the display rides ages() + data-ut, reuses the
+        # #456/#463 separator idiom, and arrives via revealQuestionUpdates.
+        for token in ('const qUpdatedHtml =', 'data-ut=',
+                      "querySelectorAll('.age.qup[data-ut]')",
+                      "updated ' + s + ' ago",
+                      'function revealQuestionUpdates',
+                      'revealQuestionUpdates()'):
+            self.assertIn(token, watch.PAGE)
+        # pure text ages() — no transition on the digit flip
+        self.assertIn(".age.qup", watch.PAGE)
+
     def test_the_dashboard_shows_pending_handoffs(self):
         # #381: a foreign session that lands work appends to handoffs.md; the
         # dashboard surfaces the pending count in the status panel so a
@@ -2702,9 +2775,11 @@ class TestCollector(unittest.TestCase):
         self.assertIn("function revealReviewMods(", page)
         # Separator is the chrome's middot, not a second idiom.
         self.assertIn('class="rsep"> · </span>', page)
+        # #473 added .age.qup to the same dimmer rule (updated-ago shares
+        # the secondary idiom with modified / created-unknown).
         self.assertRegex(
-            page, r'\.age\.rmod\s*,\s*\.age\.ageunk\s*\{[^}]*'
-                  r'color\s*:\s*var\(--dimmer\)')
+            page, r'\.age\.rmod\s*,\s*\.age\.ageunk(?:\s*,\s*\.age\.qup)?'
+                  r'\s*\{[^}]*color\s*:\s*var\(--dimmer\)')
 
     def test_list_reviews_skips_an_entry_that_vanishes_before_stat(self):
         with tempfile.TemporaryDirectory() as rd:
