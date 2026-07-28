@@ -1,22 +1,6 @@
 # Questions for the human
 
 ## Open
-- **P2 · 2026-07-29 01:14 — #269: build it? (authorisation only, no design content)**
-
-  You just settled C1 (`R1`) and C2 (30 days), so `.dreamwork/docs/plans/draft-durability-design.md`
-  has no open design decision. This is only the build grant — the same shape as `#254`'s,
-  which is the pattern `#451` wants queued separately.
-
-  Scope if yes: per-field IndexedDB drafts keyed by the title-derived logical id, restore
-  on load, the cross-tab prompt, 30-day idle GC, explicit forget. Out: anything touching
-  `questions.md` on disk.
-
-  Accepted answers: `yes` · `yes, but …` · `not yet`.
-  - **Answer (via watch, 2026-07-29 01:43):** yes, provided no good
-    reasons not to.
-
-
-
 
 
 - **P2 · 2026-07-28 — #417: four ways to put commits-per-period on the burndown, priced. Which, if any?**
@@ -196,6 +180,28 @@
     redaction be designed now), Q6 (who besides you). Q4 moved to #359.
 
 ## Answered
+- **P2 · 2026-07-29 01:14 — #269: build it? (authorisation only, no design content)**
+
+  → answered (2026-07-29 01:43): **granted, conditionally** — *"yes, provided no good reasons
+  not to."* There is one reason worth knowing and it changes the shape, not the answer: the shipped
+  `localStorage` path is **synchronous and cannot fail mid-keystroke**, while IndexedDB is async and
+  a wedged store is a hazard `watch.py:2300` already races with a timeout. So a straight swap could
+  make the **acute** path worse. Recorded plan: keep `localStorage` as the synchronous write, add
+  IndexedDB as the durable / GC / cross-tab layer beside it. And `#459` (two boxes with no draft at
+  all) is sequenced **first** — a missing draft outranks a better-stored one.
+
+  You just settled C1 (`R1`) and C2 (30 days), so `.dreamwork/docs/plans/draft-durability-design.md`
+  has no open design decision. This is only the build grant — the same shape as `#254`'s,
+  which is the pattern `#451` wants queued separately.
+
+  Scope if yes: per-field IndexedDB drafts keyed by the title-derived logical id, restore
+  on load, the cross-tab prompt, 30-day idle GC, explicit forget. Out: anything touching
+  `questions.md` on disk.
+
+  Accepted answers: `yes` · `yes, but …` · `not yet`.
+  - **Answer (via watch, 2026-07-29 01:43):** yes, provided no good
+    reasons not to.
+
 - **P1 · 2026-07-28 — #264: ratify the task-transition boundary, and one deployment call
   only you can make.** Artifact: `.dreamwork/review/task-transition-boundary.html` (open it from
   the dashboard's review list); design at `.dreamwork/docs/plans/task-transition-boundary.md`,

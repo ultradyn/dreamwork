@@ -2320,6 +2320,15 @@ Next id: **461**
   **(b) partly shipped** — acute durability live since `0366706`. **Remaining and still authorised:**
   the IndexedDB upgrade, cross-tab `R1`, 30-day GC, **and two boxes that are not covered at all —
   `#askbox` and the popout `#ptext`** (`#459`).
+  · **BUILD GRANTED 2026-07-29 01:43, conditionally** — *"yes, provided no good reasons not to."* Taking that
+  condition seriously, there is **one** and it changes the shape rather than the answer: the shipped
+  `localStorage` write is **synchronous and cannot fail mid-keystroke**, whereas IndexedDB is async and a
+  wedged store is a real hazard the code already races with a timeout (`watch.py:2300`). **A straight swap
+  would risk making the acute path worse than it is today** — and the acute path is the one his standing
+  rule is about. **So: keep `localStorage` as the synchronous write, add IndexedDB beside it** as the
+  durable, GC-able, cross-tab layer. Belt and braces, not a replacement.
+  · **sequencing: `#459` first.** Two boxes (`#askbox`, popout `#ptext`) keep **no** draft at all; a
+  missing draft outranks a better-stored one, and `#459` needs none of this design.
 - **#265** — Add a research command to the composer · P2 · command design ·
   origin: **human** · **human via watch 16:05** · hidden/menu command for
   primary-source feasibility research on features/subprojects · distinguish
