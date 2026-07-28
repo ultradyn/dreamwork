@@ -1,4 +1,4 @@
-/* reviewdraft — #269 acute: a drafted answer never leaves him on an autoreload.
+/* reviewdraft — #269 acute + #269/#459 DraftStore extract + unbound boxes.
 
    His report, verbatim into the composer: "draft answers to questions on
    review pages can be lost ... we must have persistence and never lose work
@@ -35,12 +35,18 @@
    rather than filled with "null" or "undefined" — the vacuous-pass trap, at
    the feature.
 
-   THE PARTITION IS ASSERTED AT RUNTIME, not against a literal. The key is
-   `dw:adraft:<target>:<title>` — partitioned by the absolute project path
-   (so two checkouts sharing a basename stay apart) AND by the question's
-   title identity. Both halves are DERIVED from the live page (data.target +
-   data-qid), and the guard asserts the stored key matches both, so a check
-   tuned to today's fixture does not read green against tomorrow's.
+   THE PARTITION IS ASSERTED AT RUNTIME, not against a literal. Post-extract
+   the key is `dw:draft:v1:<target>:card:<title>` (DraftStore); dual-read of
+   the pre-module `dw:adraft:<target>:<title>` is proved by planting an OLD
+   key, asserting it exists in the old shape, then asserting the box restores
+   it after reload. Both halves are DERIVED from the live page (data.target +
+   data-qid).
+
+   #459 DISCRIMINATING CHECKS (the extract's reason to exist beyond a rename):
+   `#askbox` and popout `#ptext` had NO draft at all. Prove each survives a
+   REAL reload — the mode he reported, not only a re-render. A check that
+   only re-proves the review dock would pass identically before and after the
+   extract and prove nothing about the module.
 
    Shape: own target and own server on the guard's exclusive port (39894),
    because the clear-on-success phase POSTs a real answer and mutates the
@@ -62,9 +68,9 @@ mkdirSync(OUT, { recursive: true });
 const r = makeReporter();
 const { ok, present, declare, finish, checks, notes, errs } = r;
 declare({
-  drives: '/review route — types into the docked answer box; forces a tick ' +
-          're-render by bumping .dreamwork mtime; reloads the page; POSTs a ' +
-          'real answer and a forced-failure send',
+  drives: '/review dock answer box (tick + reload + reject/success); ' +
+          'DraftStore dual-read of a planted legacy dw:adraft key; ' +
+          '/answers #askbox reload survival; popout #ptext reload survival',
   traceWindow: 'polls up to ~6s for the textarea node identity to change after ' +
                'each forced mtime bump — the natural 2s /mtime poll is the ' +
                're-render trigger, so the window must cover at least one'
@@ -133,17 +139,25 @@ const boxValue = () => p.evaluate(() => {
 // `data` is a top-level `let` in the page script (a lexical global, NOT on
 // window — `window.data` is undefined), so it is read as a bare identifier
 // with the same typeof guard the composer's draftKey uses.
+// Post-#269-extract primary key is dw:draft:v1:<target>:card:<title>; legacy
+// dw:adraft: is still dual-read (proved separately by planting one).
 const stored = () => p.evaluate(() => {
   const tgt = (typeof data !== 'undefined' && data && data.target) || '';
   const card = document.querySelector('#qdock .qa[data-qid]');
   const qid = card ? card.dataset.qid : '';
-  const prefix = 'dw:adraft:' + tgt + ':';
+  const title = qid ? decodeURIComponent(qid) : '';
+  const v1 = tgt && title ? 'dw:draft:v1:' + tgt + ':card:' + title : '';
+  const legacy = tgt && title ? 'dw:adraft:' + tgt + ':' + title : '';
   let found = null;
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (k && k.indexOf(prefix) === 0) { found = { key: k, raw: localStorage.getItem(k) }; break; }
+  if (v1) {
+    const raw = localStorage.getItem(v1);
+    if (raw) found = { key: v1, raw, shape: 'v1' };
   }
-  return { tgt, qid, prefix, found };
+  if (!found && legacy) {
+    const raw = localStorage.getItem(legacy);
+    if (raw) found = { key: legacy, raw, shape: 'legacy' };
+  }
+  return { tgt, qid, title, v1, legacy, found };
 });
 const typeReal = async text => {
   await p.click('#qdock textarea[id^="qi"]');
@@ -208,17 +222,62 @@ const TEXT = 'half-typed answer beside the artifact, mid-thought and';
 // ── the partition: key derived from BOTH target and question title ───────
 {
   const s = await stored();
-  notes.push(`partition: prefix=${JSON.stringify(s.prefix)} qid=${JSON.stringify(s.qid)}`);
+  notes.push(`partition: v1=${JSON.stringify(s.v1)} found=${JSON.stringify(s.found && s.found.key)}`);
   ok('a draft is stored at all (the save-on-input fired)',
      !!(s.found && s.found.raw));
-  ok('the draft key is partitioned by the absolute target path ' +
-     '(dw:adraft:<target>:…)', !!(s.found && s.found.key.indexOf(s.prefix) === 0));
+  ok('the draft key is the DraftStore v1 shape partitioned by target ' +
+     '(dw:draft:v1:<target>:card:…)',
+     !!(s.found && s.found.key === s.v1));
   ok('...and by the question\'s title identity (data-qid), never the positional ' +
      'key, so a re-sort or a re-index cannot put it under the wrong question',
-     !!(s.found && s.qid && s.found.key === s.prefix + decodeURIComponent(s.qid)));
+     !!(s.found && s.title && s.found.key.endsWith(':card:' + s.title)));
   ok('the stored payload is the JSON the helper writes (not a bare string, so ' +
      'a future field can be added without a second format)',
      !!(s.found && /^\{"t":/.test(s.found.raw)));
+}
+
+// ── dual-read of a pre-module key (old-key precondition asserted first) ──
+/* The extract must not orphan a draft already in his browser. Plant ONLY a
+   legacy `dw:adraft:<target>:<title>` key (the shape before DraftStore),
+   assert it is present in that shape, clear any v1 key, reload, and require
+   the box to restore. Production line that reds this: DraftStore.readRaw's
+   legacyKey branch (or get/restore dual-read). Reachable against pre-diff
+   code? No — pre-diff only reads legacy, so planting legacy and restoring
+   would also pass; the discriminating half is that AFTER the extract writes
+   v1 on input, dual-read still lifts a *legacy-only* key that no save has
+   rewritten. The precondition (legacy key present, v1 absent) is derived
+   at runtime so a hollow check cannot pass on an empty store. */
+{
+  await p.evaluate(`localStorage.clear()`);
+  await load();
+  const planted = await p.evaluate((text) => {
+    const tgt = (typeof data !== 'undefined' && data && data.target) || '';
+    const card = document.querySelector('#qdock .qa[data-qid]');
+    const qid = card ? card.dataset.qid : '';
+    const title = qid ? decodeURIComponent(qid) : '';
+    const legacy = tgt && title ? 'dw:adraft:' + tgt + ':' + title : '';
+    const v1 = tgt && title ? 'dw:draft:v1:' + tgt + ':card:' + title : '';
+    if (!legacy) return { ok: false, why: 'no target/title' };
+    localStorage.setItem(legacy, JSON.stringify({ t: text }));
+    localStorage.removeItem(v1);
+    return {
+      ok: true,
+      legacy, v1,
+      legacyPresent: localStorage.getItem(legacy) !== null,
+      v1Present: localStorage.getItem(v1) !== null
+    };
+  }, 'legacy-only dual-read draft for review dock');
+  notes.push(`dual-read plant: ${JSON.stringify(planted)}`);
+  ok('DUAL-READ precondition: a legacy dw:adraft key was planted and is present',
+     !!(planted && planted.ok && planted.legacyPresent));
+  ok('DUAL-READ precondition: no v1 key exists yet (else restore could come from v1)',
+     !!(planted && planted.ok && planted.v1Present === false));
+  await p.reload({ waitUntil: 'networkidle' });
+  await sleep(1300);
+  const v = await boxValue();
+  notes.push(`dual-read: box holds ${JSON.stringify(v)} after reload from legacy-only key`);
+  ok('DUAL-READ: a pre-module dw:adraft key restores into the dock after reload',
+     v === 'legacy-only dual-read draft for review dock');
 }
 
 // ── the contract, asserted both ways ─────────────────────────────────────
@@ -259,6 +318,135 @@ const TEXT = 'half-typed answer beside the artifact, mid-thought and';
              `longer open, so a fresh card may be absent — the key is what counts)`);
   ok('a SUCCESSFUL answer clears the draft (no key remains for the question)',
      !(s.found && s.found.raw));
+}
+
+// ── #459: #askbox survives a real reload ─────────────────────────────────
+/* Discriminating for the extract: before #459 this box stored nothing.
+   Production line that reds this: bindAskDraft / DraftStore.bind for ask:main,
+   or the input→save path. Pre-diff code had no save for #askbox, so a reload
+   left it empty — the check is reachable against pre-diff without needing a
+   seam the extract invented. */
+{
+  await p.evaluate(`localStorage.clear()`);
+  await p.goto(`${BASE}/answers`, { waitUntil: 'networkidle' });
+  await sleep(1300);
+  const has = await present(p, '#askbox', 'the /answers #askbox');
+  if (has) {
+    const ASK = 'askbox half-typed question for the dreamer mid-thought';
+    await p.click('#askbox');
+    await p.fill('#askbox', '');
+    await p.type('#askbox', ASK, { delay: 1 });
+    await sleep(150);
+    // precondition: a store key exists before we trust the reload
+    const pre = await p.evaluate(() => {
+      const tgt = (typeof data !== 'undefined' && data && data.target) || '';
+      const k = tgt ? 'dw:draft:v1:' + tgt + ':ask:main' : '';
+      return { k, raw: k ? localStorage.getItem(k) : null };
+    });
+    notes.push(`askbox pre-reload store: ${JSON.stringify(pre)}`);
+    ok('#askbox precondition: typing wrote a DraftStore key (save-on-input)',
+       !!(pre.raw && pre.raw.indexOf(ASK) >= 0));
+    await p.reload({ waitUntil: 'networkidle' });
+    await sleep(1300);
+    const v = await p.evaluate(() => {
+      const b = document.getElementById('askbox');
+      return b ? b.value : null;
+    });
+    notes.push(`askbox after reload: ${JSON.stringify(v)}`);
+    ok('#askbox: typed text survives a full page reload (#459)', v === ASK);
+  }
+}
+
+// ── #459: popout #ptext survives a real reload of the popout document ────
+/* Popout is a separate window sharing origin storage. Type into #ptext,
+   plant is via real input; close and re-open popout OR reload the popout
+   document and assert restore. Document PiP may be unavailable under
+   headless; requestPopout falls back to window.open. Production line:
+   DraftStore.bind on #ptext in requestPopout's fill. Pre-diff: no bind. */
+{
+  await p.evaluate(`localStorage.clear()`);
+  await p.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await sleep(1000);
+  // ensure data.target is known so DraftStore can key
+  await p.evaluate(async () => {
+    if (typeof ensureData === 'function') await ensureData();
+  });
+  const pop = await p.evaluate(async () => {
+    // open the real popout path
+    if (typeof requestPopout !== 'function') return { ok: false, why: 'no requestPopout' };
+    const w = await requestPopout();
+    if (!w) return { ok: false, why: 'popout null' };
+    return { ok: true };
+  });
+  notes.push(`popout open: ${JSON.stringify(pop)}`);
+  // Playwright: the popout is a new page; find it
+  const pages = br.contexts()[0].pages();
+  let popPage = null;
+  for (const pg of pages) {
+    if (pg === p) continue;
+    try {
+      if (await pg.$('#ptext')) { popPage = pg; break; }
+    } catch (e) {}
+  }
+  if (popPage) {
+    const PT = 'popout half-typed command thought for the dream';
+    await popPage.click('#ptext');
+    await popPage.fill('#ptext', '');
+    await popPage.type('#ptext', PT, { delay: 1 });
+    await sleep(150);
+    const pre = await popPage.evaluate(() => {
+      // popout shares the opener's storage; data may be only on opener
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf('popout:main') >= 0) keys.push({ k, raw: localStorage.getItem(k) });
+      }
+      return keys;
+    });
+    // also check from main page (same origin)
+    const preMain = await p.evaluate(() => {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf('popout:main') >= 0) keys.push({ k, raw: localStorage.getItem(k) });
+      }
+      return keys;
+    });
+    notes.push(`ptext store keys: pop=${JSON.stringify(pre)} main=${JSON.stringify(preMain)}`);
+    const hit = (preMain && preMain[0]) || (pre && pre[0]);
+    ok('#ptext precondition: typing wrote a popout:main DraftStore key',
+       !!(hit && hit.raw && hit.raw.indexOf(PT) >= 0));
+    // close and re-open — a full reload of the popout shell
+    await popPage.close();
+    await p.evaluate(async () => {
+      if (typeof requestPopout === 'function') await requestPopout();
+    });
+    await sleep(400);
+    const pages2 = br.contexts()[0].pages();
+    let pop2 = null;
+    for (const pg of pages2) {
+      if (pg === p) continue;
+      try {
+        if (await pg.$('#ptext')) { pop2 = pg; break; }
+      } catch (e) {}
+    }
+    if (pop2) {
+      const v = await pop2.evaluate(() => {
+        const t = document.getElementById('ptext');
+        return t ? t.value : null;
+      });
+      notes.push(`ptext after re-open: ${JSON.stringify(v)}`);
+      ok('#ptext: typed text survives closing and re-opening the popout (#459)',
+         v === PT);
+      try { await pop2.close(); } catch (e) {}
+    } else {
+      ok('#ptext: re-opened popout after close (found #ptext)', false);
+    }
+  } else {
+    notes.push('popout page not found — window.open may have been blocked');
+    ok('#ptext: popout window opened with #ptext (precondition for bind test)',
+       false);
+  }
 }
 
 ok('no page errors', errs.length === 0);
