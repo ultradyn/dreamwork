@@ -24,9 +24,47 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **438**
+Next id: **440**
 
 ## Open
+- **#438** — a generic scheduled-tasks facility, so maintenance and inbound-scanning work is filed rather
+  than done ad hoc · P2 · feature/scheduling · origin: **human** · **human via watch 2026-07-28 20:34**
+  · his words: *"we should add support for task scheduling (probably managed through dreamhub). central
+  idea is that we can use this for maintenance jobs and things like scanning github for issues/prs and
+  adding tasks to process them (those workers shouldn't process directly). so this is basically a generic
+  scheduled tasks / cron style implementation. When we do design it, we should make sure that it's
+  compatible with best practices and user-scheduled tasks (like can they set a cron-job on a server to
+  start a dream worker) and that kind of thing. Will require some brainstorming, but we can leave that
+  for after 9pm when quota resets."*
+  · **the load-bearing constraint is his parenthesis**: a scanning worker **files** tasks, it does not
+  **process** them. That keeps the ledger the single arbiter of what gets worked on, and it is the same
+  single-writer rule the queue already runs on — a scheduled job that acted directly would be a second
+  writer with no id, no origin marker and no reflection beat
+  · two audiences that must not be conflated: the loop's **own** maintenance rotation (already a concept
+  in `SKILL.md`) and a **user-scheduled** entry point (an operator's crontab starting a dream worker on a
+  server). The second implies a headless start path with no interactive human, which is where the
+  answers/questions channels stop working and something has to give
+  · **brainstorm-gated, deliberately**: he asked for the design conversation to wait for the quota reset
+  after 21:00, so this is filed now and designed then. Do not start building it
+  · **blocked-on: **human** (brainstorm scheduled after 21:00 2026-07-28)**
+- **#439** — the staleness banner says the page is behind but offers no way to act on it · P2 ·
+  watch-ui/deploy · origin: **human** · **human via watch 2026-07-28 20:34**
+  · his words: *"re: \"this page is 2 watch.py commits behind · serving bfc3222\", we should have after
+  that a link/btn like 'update & refresh' that triggers watch.py to shutdown + self-reload (this should be
+  made as a proper python module in preparation for refactoring all the python code to something more
+  modular and maintainable)."*
+  · the banner exists because `deploy_state.py` already answers *is the file right* and *is the process
+  running that file* separately, and `#426` has just added `skill_identity()` alongside it — so the
+  **detection** half is done and this is the **action** half
+  · **two pieces, and the second is the larger one.** (a) the control: a button that triggers the
+  shutdown+self-reload, which `watch.py` can already do via `os.exec` with its `GENERATION` stamp
+  re-set. (b) his stated purpose for it: **`watch.py` becomes a proper python module**, as the first step
+  of making the python side modular. (b) is a refactor of a 6,000+ line file and wants its own entry once
+  scoped — do not smuggle it in behind the button
+  · **`transitions.md` binds**: the banner changing state, the button appearing, and the page coming back
+  after a reload are all transitions with no size floor. The reload especially — a page that vanishes and
+  reappears is the largest gesture on the surface and must not be the one that snaps
+  · related: **#431**
 - **#436** — `#ask` is not a required element, so 19 of 22 artifacts cannot be measured at all · P2 ·
   loop-tooling/review-artifacts · origin: **loop** · **split out of `#432` on 2026-07-28 19:57**, which
   held two tasks: this retrofit and the fold derivation. The fold half is out with a lane; this is not
@@ -66,7 +104,7 @@ Next id: **438**
   idiom `dev/deploy_state.py` already uses) and `kill` that, or add `pkill -f "^python3 .*<snap>"` so a
   mention is not a match. Prefer the pid: a pattern that must not match the caller is a pattern that
   will one day match the caller
-  · related: **#426, #425**
+  · related: **#426, #425, #439**
 - **#428** — the guard suite fails under concurrent lanes and passes alone, twice now · P2 ·
   loop-tooling/orchestration · origin: **loop** · found by the coordinator's own suite run at 17:29
   · **`subslog` FAILED in the full run** on *"…and says so, with the status the server gave"*, with
