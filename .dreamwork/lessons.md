@@ -3147,3 +3147,12 @@ this shape and convert opportunistically.)
   concluding anything from a log, establish that the producer EXITED; a tail is a snapshot of progress, and
   `grep -c FAIL` on it measures how far it got. Evidence: `#471`'s correction, four `is serving` messages in
   one run against my claim of three passes.
+
+- **A bisect verdict naming a commit that could not possibly cause the failure is evidence the RANGE is wrong,
+  not the code.** Hunting the `#474` dock regression I ran `git bisect start <bad> <good>` with a "good" that was
+  **not an ancestor** of the "bad". Bisect accepted it, reported *"445 revisions left"* for what should have been
+  a handful, and blamed a **dream-file commit** — a markdown note that cannot break a browser guard. Two checks
+  make this cheap: confirm ancestry (`git merge-base --is-ancestor good bad`) before starting, and treat an
+  absurd culprit as a finding about the method rather than a surprise about the code. Also: `git bisect reset`
+  must actually take — a stale `bisect log` served the previous run's verdict and I nearly read it as the new
+  one. Evidence: `#474`, where hand-picked commits gave a contradictory answer first for the same reason.
