@@ -24,9 +24,27 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **435**
+Next id: **436**
 
 ## Open
+- **#435** — the `--dev` perf overlay draws text on top of the wordmark · P3 · Web UI/dashboard ·
+  origin: **loop** · **seen in a screenshot, then measured, 2026-07-28 19:14**
+  · At **1280x900** the overlay's third line — `683.3ms avg · 1233.3ms worst`, spanning `1079..1267` at
+  `y38..52` — overlaps the **`ud-dreamwork` wordmark** (`1149..1264`, `y43..64`) by **115x9px**. Text on
+  text. Mobile is clear: the overlay ends at `y52` and the wordmark starts at `y51` in a disjoint column
+  · **he sees it**, which is the only reason it is filed at all: `just deploy` starts the server with
+  `--dev`, so the overlay is not a developer-only artifact of local runs. Either the overlay reserves its
+  own space, or the wordmark yields, or `deploy` stops passing `--dev` — **that last one is a question
+  for him, not a call for the loop**, because the fps counter on his own dashboard may be wanted
+  · cosmetic and bounded — 9px of vertical collision on one label in one mode. Filed so it is not
+  rediscovered, not because it is urgent
+  · **worth noting how nearly it was missed**: my first probe searched for an element whose text matched
+  `/fps/` and hit a `<script>` tag containing those letters, whose rect is `0x0` — so it reported
+  *"overlap: none"*, a false negative, on a collision plainly visible in the screenshot. Fixed by
+  requiring the element to actually render (`width>2 && height>2`, tag not in `SCRIPT/STYLE/...`).
+  **Fourth instance today of an assertion aimed at the wrong element**, and the first one caught in
+  under a minute because the pattern is now named
+  · related: **#434**
 - **#434** — the `/review` route wastes 24% of a phone screen below the artifact frame · P2 ·
   Web UI/dashboard · origin: **loop** · **found by looking at the page, measured after, 2026-07-28 19:12**
   · At **390x844** the artifact iframe is `135..641` — **506px** — and the **203px** beneath it holds
@@ -44,7 +62,7 @@ Next id: **435**
   · likely a fixed/calculated frame height rather than a flexed one — read the `/review` shell's layout
   before assuming. **`transitions.md` applies**: the route change onto `/review` is the reference gesture
   in this repo, so a height change must not introduce a second idiom
-  · related: **#430, #432**
+  · related: **#430, #432, #435**
 - **#433** — the artifact rail's identity crumb cannot shrink, and fixing it re-stamps 23 artifacts
   of which 12 cannot be rebuilt · P3 · Web UI/review-artifacts · origin: **loop**
   · **found by looking at the rendered page, 2026-07-28 18:50 — every mechanical check passed while the
