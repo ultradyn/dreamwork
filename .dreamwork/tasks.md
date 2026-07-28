@@ -107,6 +107,20 @@ Next id: **478**
   `rejectwrite` failed on a store that had not been cleared, only re-keyed. **The fifth and sixth checks tonight
   to outlive their contract**, after `#474`'s three and `43036f2`'s two; the page was right every time. Both
   guards now green (12 and 14 checks)
+  · **ALL TEN NOW FIXED, and nine of them were the guard. 2026-07-29 09:0x.** Lane `surfaces` took
+  `burndownmock`/`serving`/`answers`/`health` (merged, 4/4 PASS); lane `motion` took
+  `posture`/`oneinput`/`wisp`/`qsec` (merged `f07d144`). **`posture`'s five WERE one — but not the one I
+  predicted:** the cascade came from a **port collision** (`#461`'s `argv[3]` again, the ninth guard bitten by
+  it), which made posture grade the recipe's server for a DIFFERENT target; the drain was a genuinely separate
+  second defect, fixed the `#442` way. **Three shared a single cause I had not considered at all:** `oneinput`,
+  `wisp` and `qsec` each cached a DOM reference at trace start and sampled it across the live tick's
+  re-render, which REPLACES the node — and a detached element's rect is all-zeros, so each measured a defect
+  that was not on the page. One line each, re-acquire per frame
+  · **exactly ONE of the fourteen was the page, and it is `#477`:** `qsec`'s residual is a real teleport when the
+  tick lands mid-open. Split out, fixed, verified — the guard was right and no guard-side fix existed
+  · **the score for the night, which is the point of this entry:** thirteen of fourteen red guards were checks
+  that had outlived a contract, cached a stale reference, or collided on a port — against **one** page defect.
+  `#471`'s accounting is what made that legible instead of a vague "the suite is flaky"
   · **one finding held back rather than fixed, because it is a different task:** my red-proof changed the
   production key builder (`'dw:draft:v1:'` at `watch.py:5856`) to `v2`, and `draft` **threw** instead of failing
   an assertion — the crash sentinel, so it would be reported as *did not judge* rather than *failed*. Sensitivity
