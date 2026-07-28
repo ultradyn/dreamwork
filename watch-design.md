@@ -61,13 +61,18 @@ carries a `+` command opener (steer the loop without a chat turn).
   carries it across the reload instead, see "The answer box's half-typed
   draft" below), while the artifact iframe browsing
   context stays mounted at its current URL and scroll. Dashboard review
-  artifacts are ordered by filesystem mtime newest-first, with ascending
-  filename as the deterministic exact-mtime tie-break. The displayed
-  age seconds are derived from that same exact nanosecond result, so ordering
-  and visible recency cannot disagree. A live mtime reorder keys each stable
-  review row by filename and runs it through the existing list FLIP: normal
-  motion travels without overshoot, while reduced motion places rows instantly.
-  Same-origin artifacts
+  artifacts are ordered by filesystem **birth / created** newest-first (#463),
+  with ascending filename as the deterministic exact-created tie-break.
+  POSIX `st_ctime` is *not* used — it is inode-change time, not creation.
+  Birth comes from Linux `statx` `stx_btime` (or `st_birthtime` on BSD);
+  when unavailable the row is a named state (`created unknown`) and sorts
+  after every known-created artifact — never silently under mtime. The
+  displayed primary age seconds are derived from that same birth ns; mtime
+  is kept only so a secondary *"modified X ago"* (dimmer, chrome ` · `
+  separator, same idiom as #456) can appear when created ≠ modified. A live
+  created reorder keys each stable review row by filename and runs it through
+  the existing list FLIP: normal motion travels without overshoot, while
+  reduced motion places rows instantly. Same-origin artifacts
   additionally permit explicit scroll restoration; cross-origin access is
   caught and treated as opaque, so it never prevents the dock refresh. `dev/capture/noteprop.mjs` proves propagation using
   two separate Chromium processes and a `/questions` control (#271). No websockets. `/mtime` is

@@ -1,8 +1,11 @@
-/* revieworder — #221: a live filesystem-mtime reorder travels by keyed FLIP.
-   Own target/server because this guard must drive real artifact mtimes.
+/* revieworder — #221/#463: a live filesystem-CREATED reorder travels by
+   keyed FLIP. #463 switched the sort from mtime to birth (created); utimes
+   cannot move birth, so a reorder is driven by atomic recreate (new inode
+   → new btime). Own target/server because this guard must drive real
+   artifact birth times.
    usage: node revieworder.mjs <outdir> <ignored-port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
-import { cpSync, mkdirSync, readdirSync, statSync, writeFileSync, utimesSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 const OUT = process.argv[2];
@@ -12,15 +15,32 @@ cpSync(new URL('./fixture', import.meta.url), target, { recursive: true });
 const rd = join(target, '.dreamwork', 'review');
 writeFileSync(join(rd, 'a.html'), '<!doctype html><p>a');
 writeFileSync(join(rd, 'z.html'), '<!doctype html><p>z');
-const stamp = (name, seconds) => utimesSync(join(rd, name), seconds, seconds);
+/* #463: birth only moves on a new inode. Atomic replace (tmp + rename) is
+   how review_artifact.py writes and how we make "this one is newest now". */
+const recreate = (name, body = null) => {
+  const path = join(rd, name);
+  const content = body ?? `<!doctype html><p>${name}`;
+  const tmp = path + '.tmp';
+  writeFileSync(tmp, content);
+  renameSync(tmp, path);
+};
 // Preserve nanoseconds in Node: JSON numbers cannot carry this 64-bit oracle.
 // The browser proves that the server payload and settled DOM keep this sequence.
-const orderedReviewNames = reviews => reviews.sort((a,b) => a.mtimeNs===b.mtimeNs
-  ? a.name.localeCompare(b.name) : a.mtimeNs>b.mtimeNs ? -1 : 1).map(review => review.name);
-const expectedReviewNames = () => orderedReviewNames(readdirSync(rd).filter(name=>name.endsWith('.html')).map(name => ({
-  name, mtimeNs: statSync(join(rd, name), { bigint:true }).mtimeNs
-})));
-stamp('a.html', 1_700_000_000); stamp('z.html', 1_700_000_100);
+// Sort key matches list_reviews: known created newest-first, name tie-break.
+const orderedReviewNames = reviews => reviews.sort((a, b) => {
+  if (a.createdNs === b.createdNs) return a.name.localeCompare(b.name);
+  return a.createdNs > b.createdNs ? -1 : 1;
+}).map(review => review.name);
+const expectedReviewNames = () => orderedReviewNames(
+  readdirSync(rd).filter(name => name.endsWith('.html')).map(name => {
+    const st = statSync(join(rd, name), { bigint: true });
+    return { name, createdNs: st.birthtimeNs };
+  }));
+// a first (older birth), then z (newer) — z leads the list.
+recreate('a.html');
+// tiny pause so birth resolves as distinct on 1s-granularity filesystems
+await new Promise(r => setTimeout(r, 50));
+recreate('z.html');
 const srv = spawn('python3', ['-u', 'watch.py', '--target', target, '--port', '0'], { stdio: ['ignore', 'pipe', 'inherit'] });
 const line = await new Promise((resolve, reject) => { let s=''; srv.stdout.on('data', b => { s += b; const m=s.match(/http:\/\/[^:]+:(\d+)/); if(m) resolve(m[1]); }); srv.on('exit', reject); });
 const base = `http://127.0.0.1:${line}`;
@@ -59,7 +79,7 @@ async function run(reduced, sabotage='none') {
       const ys=rows.map(n=>n.getBoundingClientRect().top);
       return rows.every(n=>n.dataset.review) && ys.every((y,i)=>i===0 || y>ys[i-1]);
     });
-    const nextStamp = reduced ? 1_700_000_500 : 1_700_000_300;
+    // Make a.html the newest by birth so the list reorders under him.
     const capture = p.evaluate(({epsilon}) => new Promise((resolve, reject) => {
       const frames=[]; let oldOrder=null, oldGeometry=null, natural=null, stableBefore=0, stableAfter=0, changedFrame=-1;
       let previous=null, causal=null, firstChanged=null, done=false;
@@ -136,7 +156,7 @@ async function run(reduced, sabotage='none') {
       requestAnimationFrame(frame);
     }), {epsilon:EPS}).then(value=>({value}),error=>({error}));
     await p.waitForFunction(() => window.__reviewGuardReady===true);
-    stamp('a.html', nextStamp);
+    recreate('a.html');   // new birth → a becomes newest
     const expected=expectedReviewNames();
     await p.evaluate(expected => window.__armExpectedReviews(expected), expected);
     if (sabotage==='wrong-order') await p.evaluate(() => { window.__corruptNextReviewOrder = true; });
@@ -180,11 +200,14 @@ async function run(reduced, sabotage='none') {
   } finally { await br.close(); }
 }
 try {
+  // Baseline: z newest. Each run() recreates a.html to pull it to the top.
   await run(false);
-  stamp('z.html',1_700_000_400); await run(true);
-  stamp('a.html',1_700_000_000); stamp('z.html',1_700_000_100);
+  // Reset so z is newest again, then reduced-motion run.
+  recreate('z.html'); await new Promise(r => setTimeout(r, 50));
+  await run(true);
+  recreate('z.html'); await new Promise(r => setTimeout(r, 50));
   if (await run(false, 'regroup')) throw new Error('self-test: disabled review regroup incorrectly passed normal motion guard');
-  stamp('a.html',1_700_000_000); stamp('z.html',1_700_000_100);
+  recreate('z.html'); await new Promise(r => setTimeout(r, 50));
   try {
     await run(false, 'wrong-order');
     throw new Error('self-test: smoothly wrong review order incorrectly passed expected-order guard');
@@ -194,11 +217,11 @@ try {
   const adjacentNs = 1_700_000_000_000_000_000n;
   if (Number(adjacentNs)!==Number(adjacentNs+1n)) throw new Error('self-test: adjacent-nanosecond fixture does not expose Number collision');
   const adjacentOrder=orderedReviewNames([
-    {name:'a.html',mtimeNs:adjacentNs},
-    {name:'z.html',mtimeNs:adjacentNs+1n}
+    {name:'a.html',createdNs:adjacentNs},
+    {name:'z.html',createdNs:adjacentNs+1n}
   ]).join('|');
-  if (adjacentOrder!=='z.html|a.html') throw new Error('self-test: exact mtime oracle collapsed adjacent nanoseconds');
-  stamp('a.html',1_700_000_000); stamp('z.html',1_700_000_100);
+  if (adjacentOrder!=='z.html|a.html') throw new Error('self-test: exact created oracle collapsed adjacent nanoseconds');
+  recreate('z.html'); await new Promise(r => setTimeout(r, 50));
   try {
     await run(false, 'early-reorder');
     throw new Error('self-test: unrelated early DOM reorder incorrectly passed causal guard');
