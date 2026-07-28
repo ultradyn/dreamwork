@@ -30,11 +30,14 @@
    width equality (one cell cannot fail "widths differ"); image count is
    asserted before non-blank. A green red-run is a finding.
 
-   PORT DISCIPLINE: `process.argv[3]` when present; `freePort()` only when
-   absent. Never hardcode an exclusive port. Refuse 39880–39899 and :35110
-   when freePort hands one back.
+   PORT DISCIPLINE: own-server guard — ALWAYS ephemeral freePort(); argv[3]
+   is deliberately ignored. Taking argv[3] (the recipe's shared {{port}}) made
+   listen() throw EADDRINUSE before any assertion, so the guard registered but
+   never judged (#471 named it: "did NOT run-and-judge"). Same root as #461's
+   eight: the recipe always passes a port already held by the shared server.
+   Refuse 39880–39899 and :35110 when freePort hands one back.
 
-   usage: node burndownmock.mjs <outdir> [port] */
+   usage: node burndownmock.mjs <outdir> [port, ignored] */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { createServer } from 'node:http';
 import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
@@ -60,8 +63,11 @@ const freePort = () => new Promise(res => {
   });
 });
 
+// OWN-SERVER GUARD: the port is ALWAYS ephemeral; argv[3] is deliberately
+// ignored. Adopting argv[3] forced listen() onto the recipe's shared port
+// (already held) → EADDRINUSE → "threw before finishing its checks" with zero
+// genuine PASS/FAIL (#471). Registration is not execution.
 async function pickPort() {
-  if (process.argv[3]) return +process.argv[3];
   let p;
   do { p = await freePort(); }
   while ((p >= GUARD_LO && p <= GUARD_HI) || p === LIVE_DASH);
@@ -86,8 +92,7 @@ if (!existsSync(ARTIFACT)) {
 const html = readFileSync(ARTIFACT, 'utf8');
 const PORT = await pickPort();
 notes.push(`serving ${ARTIFACT} on 127.0.0.1:${PORT}`);
-if (process.argv[3]) notes.push(`port from argv[3]: ${process.argv[3]}`);
-else notes.push(`port from freePort() (argv[3] absent): ${PORT}`);
+notes.push(`port from freePort() (argv[3] ignored; own-server — see #461/#471): ${PORT}`);
 
 // Minimal static server: only the one artifact, so a missing compare cannot
 // be papered over by another page.
