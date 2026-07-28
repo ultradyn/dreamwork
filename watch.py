@@ -4824,7 +4824,9 @@ function snapshotCardState() {
       start: typed ? ta.selectionStart : 0, end: typed ? ta.selectionEnd : 0,
       dir: typed ? ta.selectionDirection : 'none',
       scroll: typed ? ta.scrollTop : 0,
-      height: typed ? ta.style.height : '', // #177: the autosize box's grown height
+      // #177's box height is re-fit from the restored content (`fitText` in
+      // restoreCardState), so it is not carried here — recomputing is the same
+      // value and cannot drift from the content the snapshot also restored.
     });
   });
   return m;
@@ -5367,8 +5369,15 @@ function fitText(ta, animate) {
     ta.style.height = oldH + 'px';
     void ta.offsetWidth;
     ta.style.transition = '';                 // the CSS height transition reapplies
+    ta.style.height = target + 'px';
+  } else {
+    // a restore (tick, draft): snap to the target and THEN restore the
+    // standing transition, so the box does not re-grow under him on every
+    // tick yet the next input he types still travels.
+    ta.style.height = target + 'px';
+    void ta.offsetWidth;
+    ta.style.transition = '';
   }
-  ta.style.height = target + 'px';
 }
 /* snap a box to its floor — used after a send clears it, where the CARD's own
    regroup already owns the height travel and a second transition on the

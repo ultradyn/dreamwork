@@ -747,8 +747,10 @@ failure that loses nothing.**
 
 Two seams exist; extend one rather than adding a third.
 `snapshotCardState`/`restoreCardState` carries a card's text, caret, focus,
-scroll, box height, destination mode and every `<details>` inside it (#118,
-#111), keyed by `data-qid`. `snapshotFolds`/`restoreFolds` carries a section's
+scroll, destination mode and every `<details>` inside it (#118, #111), keyed
+by `data-qid`. The box's grown **height** (#177) is not carried — it is
+re-fit from the restored content (`fitText(ta, false)` in `restoreCardState`,
+snapped), so it cannot drift from the text the snapshot also restored. `snapshotFolds`/`restoreFolds` carries a section's
 `open`, keyed by `data-keep` (#141) — a new section opts in by carrying the
 attribute. Answered disclosures on `/answers` opt in the same way (#238), with
 `data-keep` equal to their content-stable `aid` (not list index). Both run
@@ -2586,9 +2588,18 @@ Shrinking back (a deletion, a cleared send) is the same gesture reversed, never
 a snap. `resize:none` because autosize owns the height — a manual drag and a
 content fit fighting over it is a box that loses his resize on the next
 keystroke. Reduced motion keeps the growth (function) and drops only the timing.
-The box's height is now **state**, so `#118`'s tick-survival applies to it: the
-snapshot already carried `height`, and `restoreCardState` re-fits it **snapped**
-so the tick never re-grows a box he is mid-thought in. `dev/capture/autogrow.mjs`
+The box's height is now **state**, so `#118`'s tick-survival applies to it:
+`restoreCardState` re-fits the box from its restored content **snapped**
+(`fitText(ta, false)`), so the tick never re-grows a box he is mid-thought
+in. The height is not carried in the snapshot — recomputing it from the
+content is the same value and cannot drift from the text the snapshot also
+restored. There is a second, redundant restore-fit: `restoreAnswerDrafts`
+(the `dw:adraft:` reload backstop, #269) also calls `fitText` when it puts a
+stored draft into a fresh box, so a tick's height survives either path
+independently. `dev/capture/autogrow.mjs` reds on tick-survival only when
+BOTH are removed (93px → 45px floor); removing the snapshot path alone stays
+green because the draft path masks it — the check is not hollow (it reds
+when survival is genuinely broken) but it cannot isolate the snapshot line. `dev/capture/autogrow.mjs`
 guards growth, both ceilings, scroll-past-ceiling, shrink, reduced-motion parity,
 and that the growth carries the cards below rather than teleporting them.
 
