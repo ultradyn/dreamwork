@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **416**
+Next id: **417**
 
 ## Open
 
@@ -190,36 +190,6 @@ Next id: **416**
   three lanes, on a signal that was correct the whole time
   · related: **#392, #414**
 
-- **#410** — `ccc @grok` is 401 and has been silently eating lanes: two died at three seconds
-  with nothing in the tree · **P1** · dogfood/orchestration · origin: **loop** · found by capturing
-  a lane's stderr after the second death
-  · **the error, verbatim:** `Unauthorized (401) from https://cli-chat-proxy.grok.com/v1/responses:
-  Invalid or expired credentials (auth_kind=none, x_xai_token_auth=xai-grok-cli, upstream=
-  Unauthenticated, reason=no auth context)`, `Model: grok-4.5`, ccc version `0.2.112`
-  · **`ccc @glm52` is ALIVE** and answered a probe immediately. It routes through the same runner
-  binary (the warning still says `runner "grok"`) but on a model whose auth works, so this is a
-  per-model credential failure, not the CLI being down. `#399b` was re-dispatched to it
-  · **the reason this cost two lanes and forty minutes is mine, and it is the general lesson.** I
-  dispatched with `> /dev/null 2>&1`, so the 401 went to a discarded stderr and a lane that died
-  before its first token was indistinguishable from one that ran and reported nothing. I diagnosed
-  the FIRST death as a mystery and re-dispatched into the same wall
-  · **and ccc's own run log does not save you:** `~/.local/state/cc-w/ccc/runs/<run>/` exists and
-  holds `output.txt` and `transcript.txt`, but for a 401 death **both are zero bytes**. The error is
-  on stderr only. So the dispatch recipe must redirect stderr to a file the coordinator can read —
-  `> "$LOG" 2>&1` — and that is now the recipe
-  · **CORRECTED 11:12 — "the fleet is one runner deep" was backwards.** `grok models` now returns
-  **twelve** models and `Default model: llmp-glm-5-2`; at 05:52 it returned `grok-4.5` alone, which
-  is why the dogfood doc recorded `@glm52` as *"BROKEN — cannot work"*. `llmp` became reachable
-  through the grok CLI during the day with no config change, so the fleet got **wider** during the
-  outage. One model of twelve is out, not half the fleet
-  · **the routing table's strongest claim was its least true one.** *"BROKEN — cannot work"* had a
-  shelf life of five hours, and I lost two lanes to the row beside it. A routing verdict is a
-  measurement with a timestamp — anything saying *cannot* gets re-probed before it is believed, and
-  `grok models` costs one second. The table now carries both timestamps rather than one verdict
-  · **owed to him, since he asked which providers work for us:** only he can refresh the `grok-4.5`
-  credential. Not urgent now that eleven other models answer; filed rather than attempted
-  · related: **#402**
-
 - **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
   right now · P2 · handoffs/correctness · origin: **loop** · **predicted by the `#401` lane in its
   neighbour table and not filed by it; found in the tree one minute later**
@@ -240,32 +210,6 @@ Next id: **416**
   and **do not let a fold note claim a state nobody re-checked**; that mistake cost the last lane a
   restore step
   · related: **#401, #381**
-
-- **#408** — `CLAUDE.md` documents a `GIT_OPTIONAL_LOCKS` mitigation that is **not in place**, so
-  every Claude session takes real index locks · P2 · system/mitigation-drift · origin: **loop** ·
-  found while testing **#283**'s closing condition, not by looking for it
-  · `~/CLAUDE.md`'s git-index-lock entry states: *"`~/.claude/settings.json` env sets
-  `GIT_OPTIONAL_LOCKS=0` for all Claude sessions"*. **Measured: it is not there.** `settings.json`'s
-  `env` keys are `API_TIMEOUT_MS`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`, `DISABLE_AUTOUPDATER`,
-  three `x`-prefixed (disabled) keys, and `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. No `GIT_OPTIONAL_LOCKS`
-  · **confirmed from the other end too**, which matters because a value could arrive by another
-  route: `echo $GIT_OPTIONAL_LOCKS` in this session prints nothing. It is genuinely unset
-  · **so the mitigation's own stated purpose is unmet for the noisiest git client on the box.**
-  Today's watcher log shows **6,093** lock events in this checkout — this session runs `git`,
-  `lint.py` and `status_sync.py` many times per tick, and every one takes a **real** `.git/index.lock`
-  rather than skipping it. `#283` was opened because that class of churn blocked a commit
-  · **two honest resolutions and they are not equivalent.** Either the setting is added — which
-  **`CLAUDE.md` says requires his consent**, so it is asked rather than done — or `CLAUDE.md` stops
-  claiming it. **Doing neither is the only wrong answer**, because a documented mitigation that is
-  absent is worse than no mitigation: the next investigation will rule it out as a cause
-  · **the class, which is why this is worth an entry rather than a fix:** a mitigation record is a
-  claim about system state, and nothing re-checks it. The fish-function half **is** in place
-  (verified) and the systemd watcher **is** active (verified) — so this entry drifted alone, and
-  reading the paragraph would never have revealed which third of it was false
-  · rec: **audit every mitigation bullet in `CLAUDE.md` the same way** — each names a file or a unit,
-  so each is checkable in one line. Doing it once and writing down what held is cheap; three were
-  checked here and one failed
-  · related: **#283**
 
 - **#407** — `/questions` has **no** timed ages, so the one-figure precision signal has nothing on
   the page to be read against · P3 · dashboard/design-rationale · origin: **loop** · found by
@@ -1979,7 +1923,7 @@ Next id: **416**
   **not** a reopening of the attribution
   · **separately, a documented mitigation is ABSENT — see #408**, and it means this session's own git
   activity is part of the 6,093
-  · related: **#408**
+  · related: **#408, #416**
 
 - **#282** — Link task references to rich hover previews · P1 · task-navigation
   feature · origin: **human** · **human via watch 18:22** · whenever `#229`-style
@@ -3064,7 +3008,104 @@ Next id: **416**
 - **#80** — Pick a second dogfood target (hark or c2c) · P3 · chore · 30m ·
   **blocked**: human pick
 
+- **#416** — a mitigation record is a claim about system state, and nothing re-checks it · P3 ·
+  system/mitigation-drift · origin: **loop** · **split out of `#408`'s rec rather than folded into
+  its closure**, because it applies to bullets `#408` never touched
+  · `~/CLAUDE.md`'s *"System mitigations in place"* section has six bullets. Each names a file or a
+  systemd unit, so each is checkable in **one line**. Three were checked while resolving `#408`
+  (the `settings.json` env key, the fish `--no-optional-locks` function, `git-lock-watch.service`)
+  and **one of the three was false** — the paragraph read as one mitigation and was two-thirds
+  true, which is the shape that defeats reading it
+  · the four unchecked: Brave's `--ozone-platform=x11` flag file, `sccache-server.service`, the
+  amaroo git-wf2 / `pi-powerline-footer` patch (whose own note says *"re-check after package
+  upgrades"*, so it has a stated expiry nobody is watching), and root's `ntp-force-sync.timer`
+  · **the deliverable is the audit and its result written down**, not a tool. A checker for his
+  dotfiles is scope this loop should not take; a dated line saying what held is cheap and is what
+  the next investigation actually needs
+  · one caution learned today: **do not "fix" a drifted mitigation by editing his config.** `#408`
+  changed `settings.json` only because he answered yes to a direct ask. An audit reports, and asks
+  before it repairs
+  · related: **#408, #283**
+
 ## Recently landed
+
+- **#408** — `CLAUDE.md` documents a `GIT_OPTIONAL_LOCKS` mitigation that is **not in place**, so
+  every Claude session takes real index locks · P2 · system/mitigation-drift · origin: **loop** ·
+  found while testing **#283**'s closing condition, not by looking for it
+  · `~/CLAUDE.md`'s git-index-lock entry states: *"`~/.claude/settings.json` env sets
+  `GIT_OPTIONAL_LOCKS=0` for all Claude sessions"*. **Measured: it is not there.** `settings.json`'s
+  `env` keys are `API_TIMEOUT_MS`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`, `DISABLE_AUTOUPDATER`,
+  three `x`-prefixed (disabled) keys, and `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. No `GIT_OPTIONAL_LOCKS`
+  · **confirmed from the other end too**, which matters because a value could arrive by another
+  route: `echo $GIT_OPTIONAL_LOCKS` in this session prints nothing. It is genuinely unset
+  · **so the mitigation's own stated purpose is unmet for the noisiest git client on the box.**
+  Today's watcher log shows **6,093** lock events in this checkout — this session runs `git`,
+  `lint.py` and `status_sync.py` many times per tick, and every one takes a **real** `.git/index.lock`
+  rather than skipping it. `#283` was opened because that class of churn blocked a commit
+  · **two honest resolutions and they are not equivalent.** Either the setting is added — which
+  **`CLAUDE.md` says requires his consent**, so it is asked rather than done — or `CLAUDE.md` stops
+  claiming it. **Doing neither is the only wrong answer**, because a documented mitigation that is
+  absent is worse than no mitigation: the next investigation will rule it out as a cause
+  · **the class, which is why this is worth an entry rather than a fix:** a mitigation record is a
+  claim about system state, and nothing re-checks it. The fish-function half **is** in place
+  (verified) and the systemd watcher **is** active (verified) — so this entry drifted alone, and
+  reading the paragraph would never have revealed which third of it was false
+  · rec: **audit every mitigation bullet in `CLAUDE.md` the same way** — each names a file or a unit,
+  so each is checkable in one line. Doing it once and writing down what held is cheap; three were
+  checked here and one failed
+  · related: **#283, #416**
+  · **ANSWERED "yes" 2026-07-28 14:48, and applied.** `~/.claude/settings.json`'s `env` gained
+  `"GIT_OPTIONAL_LOCKS": "0"` — a one-key diff, nothing reformatted — verified by re-reading the
+  file as JSON rather than by the write returning success. **It binds new Claude sessions, not
+  this one**, so this session keeps taking real index locks until it restarts; the 6,093 figure
+  will not move today, and that is expected rather than a failed fix
+  · `~/CLAUDE.md` needed no edit: the paragraph that was false is now true as written. Closing the
+  drift by making the claim accurate was available only because he said yes — had he said no, the
+  same entry would have closed by deleting the sentence, and the two are equally honest
+  · the audit half of the rec is `#416`, filed rather than folded into this closure: it applies to
+  four bullets this entry never touched, and one of the three checked here was already false
+
+
+- **#410** — `ccc @grok` is 401 and has been silently eating lanes: two died at three seconds
+  with nothing in the tree · **P1** · dogfood/orchestration · origin: **loop** · found by capturing
+  a lane's stderr after the second death
+  · **the error, verbatim:** `Unauthorized (401) from https://cli-chat-proxy.grok.com/v1/responses:
+  Invalid or expired credentials (auth_kind=none, x_xai_token_auth=xai-grok-cli, upstream=
+  Unauthenticated, reason=no auth context)`, `Model: grok-4.5`, ccc version `0.2.112`
+  · **`ccc @glm52` is ALIVE** and answered a probe immediately. It routes through the same runner
+  binary (the warning still says `runner "grok"`) but on a model whose auth works, so this is a
+  per-model credential failure, not the CLI being down. `#399b` was re-dispatched to it
+  · **the reason this cost two lanes and forty minutes is mine, and it is the general lesson.** I
+  dispatched with `> /dev/null 2>&1`, so the 401 went to a discarded stderr and a lane that died
+  before its first token was indistinguishable from one that ran and reported nothing. I diagnosed
+  the FIRST death as a mystery and re-dispatched into the same wall
+  · **and ccc's own run log does not save you:** `~/.local/state/cc-w/ccc/runs/<run>/` exists and
+  holds `output.txt` and `transcript.txt`, but for a 401 death **both are zero bytes**. The error is
+  on stderr only. So the dispatch recipe must redirect stderr to a file the coordinator can read —
+  `> "$LOG" 2>&1` — and that is now the recipe
+  · **CORRECTED 11:12 — "the fleet is one runner deep" was backwards.** `grok models` now returns
+  **twelve** models and `Default model: llmp-glm-5-2`; at 05:52 it returned `grok-4.5` alone, which
+  is why the dogfood doc recorded `@glm52` as *"BROKEN — cannot work"*. `llmp` became reachable
+  through the grok CLI during the day with no config change, so the fleet got **wider** during the
+  outage. One model of twelve is out, not half the fleet
+  · **the routing table's strongest claim was its least true one.** *"BROKEN — cannot work"* had a
+  shelf life of five hours, and I lost two lanes to the row beside it. A routing verdict is a
+  measurement with a timestamp — anything saying *cannot* gets re-probed before it is believed, and
+  `grok models` costs one second. The table now carries both timestamps rather than one verdict
+  · **owed to him, since he asked which providers work for us:** only he can refresh the `grok-4.5`
+  credential. Not urgent now that eleven other models answer; filed rather than attempted
+  · related: **#402**
+  · **ANSWERED 2026-07-28 14:48: *"ccc @grok now working again"* — he refreshed the xAI key.**
+  Probed before believing it: `ccc --yolo @grok` returned *"PROBE OK, Grok 4.5"* at 14:50. This
+  entry's own lesson is that a routing verdict is a measurement with a timestamp, so accepting
+  *"it works now"* unprobed would have been the same mistake pointing the other way
+  · **what it cost, stated plainly because it is half of what he set me to find out:** from 05:52
+  to 14:50 the fleet was one alias. Every comparison recorded in that window is **one runner
+  measured repeatedly**, not two runners compared, and the dogfood doc now says so rather than
+  implying a breadth it did not have
+  · the `llmp-*` fleet stays reachable as a fallback and needs no decision from him
+
+
 - **#411** — two answered entries carry a perfectly good date and the page throws it away, because
   `answered_at` anchors at position 0 · **P2** · UI correctness / parser · origin: **loop** · found
   while checking a stray note that said "6 of 49"; the note was right and the cause was not
