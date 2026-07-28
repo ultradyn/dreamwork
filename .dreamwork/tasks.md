@@ -58,7 +58,7 @@ Next id: **433**
   idiom `dev/deploy_state.py` already uses) and `kill` that, or add `pkill -f "^python3 .*<snap>"` so a
   mention is not a match. Prefer the pid: a pattern that must not match the caller is a pattern that
   will one day match the caller
-  · related: **#426**
+  · related: **#426, #425**
 - **#427** — the hand-off grammar is widened in `lint` but not in the parser, so the dashboard still
   cannot read a two-sha line · P3 · loop-tooling/format · origin: **loop** · **named by the `#415`
   lane rather than left to be found**
@@ -111,7 +111,25 @@ Next id: **433**
   and `__file__`-relative path handling still resolve (a monolith that computes paths from `__file__`
   sees the **symlink target's** directory under some invocations); does `just test` still find its
   guards; and does an **already-running** server survive the swap without its next tick failing
-  · related: **#368, #426**
+  · **MEASURED BLOCKER, 2026-07-28 18:24 — the symlink as specified takes his dashboard down on the
+  next `just deploy`, and the recipe's own safety check waves it through.** The recipe does
+  `git show HEAD:watch.py > "$snap"` and then `ast.parse` on the snapshot. **Git stores a symlink as a
+  blob whose content is the target path**, verified in a scratch repo: `git show HEAD:watch.py` prints
+  `deprecated/watch.py` and the index mode is `120000`. And **`ast.parse("deprecated/watch.py")` parses
+  clean** — it is a valid expression, `deprecated / watch.py`, a division with an attribute access. So
+  the syntax guard that exists precisely to catch a broken snapshot **passes on a 19-byte file that is
+  not a server**
+  · the failure order is what makes it bite: `pkill` kills the working server **first**, then the
+  garbage snapshot is written, passes `ast.parse`, is started, dies on import, and only the final
+  `curl` notices — so the recipe correctly reports *"deploy failed"* **with his dashboard already down
+  and staying down**. (`./deprecated/watch.py` as a target would at least fail `ast.parse`, but relying
+  on that is relying on a syntax accident)
+  · so `#425` must fix the **deploy path** too, not only the tree: resolve the link before snapshotting
+  (`git show HEAD:$(git symlink target)`) or, better, stop snapshotting a single file — after `#368`
+  the dashboard is a package and `deploy` has to copy a tree. **Whichever way, the `ast.parse` guard
+  needs to assert the snapshot is a module that defines the server**, not merely that it parses; a
+  syntax check that passes on a path string is measuring the wrong property
+  · related: **#368, #426, #431**
 
 - **#426** — an agent must survive its own files changing under it, or be told to reload · P1 ·
   loop-architecture · origin: **human** · **human direct, 2026-07-28 17:38**, stated as a general
