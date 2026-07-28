@@ -37,11 +37,19 @@ exactly as it is.
 ## The harder half: five entries MUST keep returning `None`
 
 `answered_at`'s docstring is the contract — *"a wrong date is worse than no date — so this never
-guesses"*. After your change, **5 of 49** answered entries must still return `None`:
+guesses"*. After your change, **3 of 49** answered entries must still return `None`:
+
+> **Corrected after the fact.** This section originally said *"5 of 49 must still return None"*,
+> which flatly contradicts criterion 3 below (`None` count goes 5 → 3) in the same brief. It also
+> said three entries predate the marker convention when only **one** does, and criterion 2 said 43
+> dated entries when there are **44**. The lane caught all three, followed the measurable criteria,
+> and reported the prose rather than guessing which half was authoritative — the right call, and
+> every correction verified. Left visible rather than silently patched: a brief that states the
+> same fact in prose and in criteria will drift, and the drift is invisible to its author.
 
 - `#194` and the **dreamhub URL space** ask were ***withdrawn*** — decided by the loop, never
   answered, so there is no answer time to report. A date here would be a fabrication.
-- Three more predate the marker convention.
+- **One** more (`Four early asks, all applied`) predates the marker convention.
 
 **A change that gives any of these a date is a regression, not an improvement**, even though it
 would make the dashboard look more complete. If you find yourself widening the pattern to catch a
@@ -54,7 +62,7 @@ Numbers are the coordinator's at `563eb84`; derive your own and report the disag
 adjusting to match.
 
 1. **The two recover**, with exactly those timestamps.
-2. **All 43 entries that already have a date are byte-identical before and after.** Derive both
+2. **All 44 entries that already have a date are byte-identical before and after.** Derive both
    sets at runtime and compare them as a whole — this is the check that makes the change safe, and
    it is the one that is easy not to think of.
 3. **`None` count goes 5 → 3.** The remaining 3 are the withdrawn/pre-convention entries above and

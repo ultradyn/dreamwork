@@ -190,65 +190,6 @@ Next id: **416**
   three lanes, on a signal that was correct the whole time
   · related: **#392, #414**
 
-- **#411** — two answered entries carry a perfectly good date and the page throws it away, because
-  `answered_at` anchors at position 0 · **P2** · UI correctness / parser · origin: **loop** · found
-  while checking a stray note that said "6 of 49"; the note was right and the cause was not
-  · **`answered_at(body)` is `RESOLVED_AT.match(body)`** — `.match`, so the resolution head must be
-  the FIRST thing in the body. Measured on the live file: **6 of 49** answered entries return
-  `None`, and they are **not one fault, they are three**:
-    - **2 are a real bug.** `#233 LAN binding` and `#229 threaded topic chats` both begin with an
-      artifact-pointer line and carry the head on the SECOND line — `The threat-model review is at`
-      then `→ answered (2026-07-26 17:49): …`. The timestamp is present, unambiguous, and dropped
-      for a purely positional reason.
-    - **2 are honest.** `#194` and the dreamhub-URL-space ask were *withdrawn* — `→ decided by the
-      loop, and withdrawn as an ask` carries no timestamp because there was no answer. `None` is
-      correct and the docstring earns it: *"a wrong date is worse than no date."*
-    - **2 predate the convention** (`Four early asks`, and the user-event-journal grant whose body
-      opens mid-sentence). History, not a defect.
-  · **the page confirms the count from the other side, which is why this is worth believing:** the
-  deployed `/questions` renders **43** `span.qwhen` stamps against **49** answered entries. 49−43=6.
-  Two independent instruments, same six — the parse count is not measuring itself
-  · **the fix is NOT `.search`.** That is the trap this ledger has paid for twice today: I split
-  `tasks.md` on the literal `## Recently landed` an hour ago and hit a PROSE mention on line 355,
-  and `#399` exists because mention-scanning read `related:` markers as landings. A `→ answered (…)`
-  quoted deeper in a body would become that entry's date. **Line-anchored, and only within the head
-  block** (before the first blank line) — same discipline as `ALSO_LANDED_MARKER` being
-  field-anchored
-  · **the silence is the actual defect, and it outlives whichever fix is chosen.** Two entries lose
-  a date they own and nothing anywhere says so. Wanted either way: a `lint.py` line reporting how
-  many answered entries have no parseable resolution date, with the withdrawn ones distinguished
-  from the unparseable ones — a count cannot silently stop counting. **Derive it; never pin 6**
-  · decide, and say which: widen the parser to a head *block*, or declare the two entries malformed
-  and correct the file. The second is smaller and `file-formats.md` already claims the head is
-  prefixed to the body — but it makes a hand-authored ordering load-bearing with nothing enforcing
-  it, which is how these two got written in the first place
-  · **`watch.py` is owned by the `#399b` lane right now** — do not dispatch this into that file
-  until it merges
-  · related: **#399, #340**
-  · **MEASURED 13:08 before writing any brief, and the recorded fix direction is INSUFFICIENT
-  as stated.** `RESOLVED_AT` is `\A\s*→[^:]*?\((\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*\)`
-  — it begins with **`\A`**, so `.search` is **identical** to `.match` here and swapping them
-  changes nothing. This entry says the fix "must be line-anchored, not `.search`", which is right
-  about the destination and would still have sent a lane to a no-op if it read the second half as
-  the instruction. The real edit is `\A` → `^` **with `re.M`**, then `.search`
-  · **the population, derived not assumed**: 49 answered entries, **6** had no date. Under a
-  line-anchored pattern **2 recover** — `#233 LAN binding` (2026-07-26 17:49) and `#229 threaded
-  topic chats` (2026-07-26 17:11), both of which carry the marker on the SECOND body line because
-  an artifact link precedes it — and **0 of the 43 that already have a date change**. That last
-  number is the one that makes the change safe, and it is the one a lane will not think to check
-  · **a third was not a parser bug at all and is already fixed** (`46de3da`): his 05:43 entry
-  had its title truncated after `journal:` and its closing `**` dropped while I folded it, so the
-  `**` opening his answer closed the title and swallowed the whole `→ answered (…)` marker into
-  it. The date was not lost, it was **misfiled**, and the page was showing a question he never
-  asked. So the count is now **5** with no date
-  · **the remaining 5 are honest** and must stay `None`: `#194` and the dreamhub-URL-space ask
-  were *withdrawn* (no answer, so no timestamp), and the rest predate the marker convention.
-  **A fix that gives them a date is wrong** — this is why `answered_at`'s docstring says it never
-  guesses, and any lane touching it should be told so
-  · so the brief writes itself and it is small: change the anchor, keep the never-guess rule, and
-  **assert both directions** — the 2 recover AND the 43 are byte-identical before and after.
-  Derive the 43 at runtime; a literal is a check with an expiry date
-
 - **#410** — `ccc @grok` is 401 and has been silently eating lanes: two died at three seconds
   with nothing in the tree · **P1** · dogfood/orchestration · origin: **loop** · found by capturing
   a lane's stderr after the second death
@@ -3124,6 +3065,86 @@ Next id: **416**
   **blocked**: human pick
 
 ## Recently landed
+- **#411** — two answered entries carry a perfectly good date and the page throws it away, because
+  `answered_at` anchors at position 0 · **P2** · UI correctness / parser · origin: **loop** · found
+  while checking a stray note that said "6 of 49"; the note was right and the cause was not
+  · **`answered_at(body)` is `RESOLVED_AT.match(body)`** — `.match`, so the resolution head must be
+  the FIRST thing in the body. Measured on the live file: **6 of 49** answered entries return
+  `None`, and they are **not one fault, they are three**:
+    - **2 are a real bug.** `#233 LAN binding` and `#229 threaded topic chats` both begin with an
+      artifact-pointer line and carry the head on the SECOND line — `The threat-model review is at`
+      then `→ answered (2026-07-26 17:49): …`. The timestamp is present, unambiguous, and dropped
+      for a purely positional reason.
+    - **2 are honest.** `#194` and the dreamhub-URL-space ask were *withdrawn* — `→ decided by the
+      loop, and withdrawn as an ask` carries no timestamp because there was no answer. `None` is
+      correct and the docstring earns it: *"a wrong date is worse than no date."*
+    - **2 predate the convention** (`Four early asks`, and the user-event-journal grant whose body
+      opens mid-sentence). History, not a defect.
+  · **the page confirms the count from the other side, which is why this is worth believing:** the
+  deployed `/questions` renders **43** `span.qwhen` stamps against **49** answered entries. 49−43=6.
+  Two independent instruments, same six — the parse count is not measuring itself
+  · **the fix is NOT `.search`.** That is the trap this ledger has paid for twice today: I split
+  `tasks.md` on the literal `## Recently landed` an hour ago and hit a PROSE mention on line 355,
+  and `#399` exists because mention-scanning read `related:` markers as landings. A `→ answered (…)`
+  quoted deeper in a body would become that entry's date. **Line-anchored, and only within the head
+  block** (before the first blank line) — same discipline as `ALSO_LANDED_MARKER` being
+  field-anchored
+  · **the silence is the actual defect, and it outlives whichever fix is chosen.** Two entries lose
+  a date they own and nothing anywhere says so. Wanted either way: a `lint.py` line reporting how
+  many answered entries have no parseable resolution date, with the withdrawn ones distinguished
+  from the unparseable ones — a count cannot silently stop counting. **Derive it; never pin 6**
+  · decide, and say which: widen the parser to a head *block*, or declare the two entries malformed
+  and correct the file. The second is smaller and `file-formats.md` already claims the head is
+  prefixed to the body — but it makes a hand-authored ordering load-bearing with nothing enforcing
+  it, which is how these two got written in the first place
+  · **`watch.py` is owned by the `#399b` lane right now** — do not dispatch this into that file
+  until it merges
+  · related: **#399, #340**
+  · **MEASURED 13:08 before writing any brief, and the recorded fix direction is INSUFFICIENT
+  as stated.** `RESOLVED_AT` is `\A\s*→[^:]*?\((\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s*\)`
+  — it begins with **`\A`**, so `.search` is **identical** to `.match` here and swapping them
+  changes nothing. This entry says the fix "must be line-anchored, not `.search`", which is right
+  about the destination and would still have sent a lane to a no-op if it read the second half as
+  the instruction. The real edit is `\A` → `^` **with `re.M`**, then `.search`
+  · **the population, derived not assumed**: 49 answered entries, **6** had no date. Under a
+  line-anchored pattern **2 recover** — `#233 LAN binding` (2026-07-26 17:49) and `#229 threaded
+  topic chats` (2026-07-26 17:11), both of which carry the marker on the SECOND body line because
+  an artifact link precedes it — and **0 of the 43 that already have a date change**. That last
+  number is the one that makes the change safe, and it is the one a lane will not think to check
+  · **a third was not a parser bug at all and is already fixed** (`46de3da`): his 05:43 entry
+  had its title truncated after `journal:` and its closing `**` dropped while I folded it, so the
+  `**` opening his answer closed the title and swallowed the whole `→ answered (…)` marker into
+  it. The date was not lost, it was **misfiled**, and the page was showing a question he never
+  asked. So the count is now **5** with no date
+  · **the remaining 5 are honest** and must stay `None`: `#194` and the dreamhub-URL-space ask
+  were *withdrawn* (no answer, so no timestamp), and the rest predate the marker convention.
+  **A fix that gives them a date is wrong** — this is why `answered_at`'s docstring says it never
+  guesses, and any lane touching it should be told so
+  · so the brief writes itself and it is small: change the anchor, keep the never-guess rule, and
+  **assert both directions** — the 2 recover AND the 43 are byte-identical before and after.
+  Derive the 43 at runtime; a literal is a check with an expiry date
+  · **LANDED `54c68e8` + `25a3fe4`, merged `1f01a95` (2026-07-28 14:28), by a `ccc @glm52` lane.**
+  `RESOLVED_AT`'s anchor `\A` → `^` with `re.M`, then `.search`; the rest of the pattern
+  byte-for-byte. `#233 LAN binding` (2026-07-26 17:49) and `#229 threaded topic chats` (17:11)
+  recover the date they own; **44 dated entries byte-identical**; None 5 → 3, and the three
+  that remain are correct — two withdrawn asks and one pre-convention entry
+  · plus a **derived** lint count naming the undated entries, WARN not ERROR because a `None`
+  naming a withdrawn ask is right and an ERROR on a legitimate state teaches the reader to mute
+  · **verified against a gate built before the lane reported, red-proved in THREE directions**:
+  narrow fails the recoveries, over-greedy fails a bait probe, correct passes both
+  · **THE BRIEF WAS WRONG THREE TIMES AND THE LANE CAUGHT ALL THREE.** It said 43 dated (44);
+  its prose said *"5 of 49 must still return None"* while its own criteria said 5 → 3 — flatly
+  contradictory; and it said three entries predate the convention when **one** does. The lane
+  followed the measurable criteria, which were right, and reported the prose rather than
+  quietly picking one. I re-derived all three afterwards: **the lane is correct on every one**
+  · **and it declined a red it could have claimed.** Red-proof 2 was framed as *"the
+  withdrawn-entries test fails"*; those bodies contain no date at all, so dropping the `→`
+  requirement cannot manufacture one for them. It said so and pointed at the case that does
+  discriminate. **That is the identical hollowness my own gate hit** — independently found, by
+  the party with the least incentive to find it
+  · residual: none. `#415` (hand-off grammar allows one sha, this landed in two) was filed
+  while folding this and is unrelated to the fix
+
 - **#331** — One shared notion of "an ids-only bold span", instead of a fourth
   one-separator patch · P2 · correctness/refactor · origin: **loop** · from #327's
   drift review, challenged by the coordinator, then substantiated and re-measured ·
