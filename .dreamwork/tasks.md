@@ -436,6 +436,27 @@ Next id: **412**
   field** (`related:`, and anything else field-anchored) rather than excluding **all** mentions.
   That kills the `#367` false landing — which was a `related:` marker — without discarding the
   historical inline form. Keep `also-landed:`; it is a good addition and costs nothing
+  · **THE PREMISE IS CONFIRMED INDEPENDENTLY, and the shape of the loss is worse than "some
+  entries".** Walked all **435** revisions of `.dreamwork/tasks.md`, sampling twelve, counting entry
+  heads (`- **#N**`) against bold mentions in the landed section:
+```
+  2026-07-25 93246fe   heads=  0   mentions=  0
+  2026-07-25 0fbea84   heads=  0   mentions= 24
+  2026-07-26 2627df0   heads=  0   mentions= 63     <- two days, ZERO heads
+  2026-07-27 4c18941   heads=  6   mentions= 71     <- the convention changes here
+  2026-07-27 cab5cc7   heads= 42   mentions= 71
+  2026-07-28 bb85450   heads= 86   mentions= 86
+  2026-07-28 d2a9566   heads= 95   mentions=109
+```
+  **For the project's first two days the entry-head rule finds nothing at all** — not "fewer", zero.
+  So post-`#399` the burndown does not merely under-count history, it renders the loop's first two
+  days as **having completed nothing**, which is precisely `#136`'s failure shape and precisely what
+  the guard's assertion says. The pre-`#399` docstring was not being sloppy; it was describing the
+  file. **The convention changed mid-history on 2026-07-27**, so any correct reader must handle both
+  forms — a fix that picks one era is a fix for half the chart
+  · **so a fifth gate item, and it is the one the unit tests cannot fake:** after the fix, walk those
+  same revisions and assert the landed count is **non-zero for the 07-25/07-26 revisions**. That is
+  an assertion about real history, derived at runtime, and no fixture can satisfy it accidentally
   · **THE MERGE GATE, written 11:19 BEFORE the lane reports, so it cannot be shaped by what the
   lane says it achieved.** Measured now, both parsers run against today's ledger:
     - deployed/pre-`#399` logic: **136 open, 176 landed**
