@@ -4322,3 +4322,181 @@ class TestResolutionMarkerOutsideTitle:
         # With no wrapped title the defect is IMPOSSIBLE rather than merely
         # unobserved, so silence is honest here and no row is owed.
         assert self.rows(t) == []
+
+
+class TestBriefLaneOwns:
+    """#465: a worktree-naming brief must declare its owned paths.
+
+    The lane-containment guard (dev/lane_guard.py) refuses a main-checkout
+    commit touching a dispatched lane's owned paths — but only when the lane's
+    brief declares them. A worktree brief with no `Lane-owns:` line is a lane
+    the guard cannot protect, so the omission is loud at brief-write time.
+
+    Production lines named per test (what must change for it to fail):
+    - flagged: the `if not owned` branch in check_brief_lane_owns that adds the
+      ERROR for a worktree brief declaring no Lane-owns paths
+    - cutoff content: _resolve_lane_owns_cutoff + LANE_OWNS_PHRASE
+    - precondition: live tree has at least one brief containing `.worktrees/`
+      (a check that silently matches nothing passes forever)
+    """
+
+    PHRASE = lint.LANE_OWNS_PHRASE
+
+    def _git_repo(self, tmp_path):
+        import subprocess
+        t = fresh(tmp_path)
+
+        def git(*a, check=True):
+            return subprocess.run(
+                ["git", "-C", str(t), *a],
+                capture_output=True, text=True, check=check)
+
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        return t, git
+
+    def _brief_with_worktree(self, briefs_dir, name, owns=None):
+        briefs_dir.mkdir(parents=True, exist_ok=True)
+        body = "# Brief\n\nWorktree: `.worktrees/x` on `wt/x`.\n\n"
+        if owns is not None:
+            body += f"Lane-owns: {owns}\n"
+        (briefs_dir / name).write_text(body, encoding="utf-8")
+
+    def test_a_post_cutoff_worktree_brief_without_lane_owns_is_flagged(
+            self, tmp_path):
+        """Production line: the missing-ownership ERROR in
+        check_brief_lane_owns — a post-cutoff brief that names `.worktrees/`
+        but declares no `Lane-owns:` must be named by basename.
+        """
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "lane-owns rule lands")
+        time.sleep(1.1)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        # THE defect: worktree named, no Lane-owns line at all.
+        self._brief_with_worktree(briefs, "999-wt-noown.md")
+        git("add", ".dreamwork/docs/briefs/999-wt-noown.md")
+        git("commit", "-qm", "worktree brief, no Lane-owns")
+
+        # Precondition, derived: the brief is a worktree brief AND after cutoff
+        # AND declares no ownership — the three facts the ERROR depends on.
+        text = (briefs / "999-wt-noown.md").read_text(encoding="utf-8")
+        assert lint._brief_names_worktree(text)
+        assert lint._parse_lane_owns(text) == []
+
+        rep = lint.Report()
+        lint.check_brief_lane_owns(t / ".dreamwork", rep)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "briefs"]
+        assert len(errors) == 1, rep.render()
+        assert "999-wt-noown.md" in errors[0], errors[0]
+        assert "Lane-owns" in errors[0], errors[0]
+
+    def test_a_post_cutoff_worktree_brief_with_lane_owns_is_clean(
+            self, tmp_path):
+        """Production line: the `if not owned` branch is NOT taken when the
+        brief declares ownership — the OK coverage line fires instead.
+        """
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "lane-owns rule lands")
+        time.sleep(1.1)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        self._brief_with_worktree(briefs, "998-wt-own.md",
+                                  owns="watch.py, dev/capture/")
+        git("add", ".dreamwork/docs/briefs/998-wt-own.md")
+        git("commit", "-qm", "worktree brief, declares ownership")
+
+        # Precondition, derived: ownership actually parses to a non-empty set.
+        text = (briefs / "998-wt-own.md").read_text(encoding="utf-8")
+        owned = lint._parse_lane_owns(text)
+        assert owned == ["watch.py", "dev/capture/"], owned
+
+        rep = lint.Report()
+        lint.check_brief_lane_owns(t / ".dreamwork", rep)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "briefs"]
+        assert errors == [], rep.render()
+
+    def test_a_pre_cutoff_worktree_brief_is_grandfathered(self, tmp_path):
+        """Production line: the time-based grandfather branch in
+        check_brief_lane_owns — a worktree brief written before the rule
+        landed in SKILL.md is not flagged.
+        """
+        import time
+        t, git = self._git_repo(tmp_path)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        self._brief_with_worktree(briefs, "100-old-wt.md")
+        (t / "SKILL.md").write_text("# skill\n\nno lane-owns rule yet\n",
+                                    encoding="utf-8")
+        git("add", "SKILL.md", ".dreamwork/docs/briefs/100-old-wt.md")
+        git("commit", "-qm", "worktree brief before rule")
+        time.sleep(1.1)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "lane-owns rule lands later")
+
+        rep = lint.Report()
+        lint.check_brief_lane_owns(t / ".dreamwork", rep)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "briefs"]
+        assert errors == [], rep.render()
+
+    def test_no_worktree_naming_brief_is_silent_not_a_clean_pass(
+            self, tmp_path):
+        """Silence is honest here: with no worktree-naming brief, the rule has
+        nothing to examine. (A check that matched nothing would pass forever,
+        so the live-tree precondition is asserted in the coverage line.)
+        """
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "lane-owns rule lands")
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        # A brief that does NOT name a worktree — not a dispatched lane.
+        briefs.mkdir(parents=True)
+        (briefs / "123-shared.md").write_text(
+            "# Brief\n\nWork in the shared tree.\n", encoding="utf-8")
+
+        rep = lint.Report()
+        lint.check_brief_lane_owns(t / ".dreamwork", rep)
+        rows = [d for lvl, w, d in rep.rows if w == "briefs"]
+        assert rows == [], rep.render()
+
+    def test_an_empty_lane_owns_payload_is_treated_as_absent(self, tmp_path):
+        """A declared-but-empty `Lane-owns:` (no paths after the colon) is a
+        forgotten fill-in, not a deliberate empty ownership — so it flags like
+        a missing line. Production line: _parse_lane_owns returning [] on an
+        empty payload, which the ERROR branch then catches.
+        """
+        import time
+        t, git = self._git_repo(tmp_path)
+        (t / "SKILL.md").write_text(
+            f"# skill\n\n{self.PHRASE}\n", encoding="utf-8")
+        git("add", "SKILL.md")
+        git("commit", "-qm", "lane-owns rule lands")
+        time.sleep(1.1)
+        briefs = t / ".dreamwork" / "docs" / "briefs"
+        self._brief_with_worktree(briefs, "997-empty.md", owns="")
+        git("add", ".dreamwork/docs/briefs/997-empty.md")
+        git("commit", "-qm", "worktree brief, empty Lane-owns")
+
+        # Precondition: the empty payload parses to no owned paths.
+        text = (briefs / "997-empty.md").read_text(encoding="utf-8")
+        assert lint._parse_lane_owns(text) == []
+
+        rep = lint.Report()
+        lint.check_brief_lane_owns(t / ".dreamwork", rep)
+        errors = [d for lvl, w, d in rep.rows
+                  if lvl == lint.ERROR and w == "briefs"]
+        assert len(errors) == 1, rep.render()
+        assert "997-empty.md" in errors[0]

@@ -1,0 +1,500 @@
+#!/usr/bin/env python3
+"""Lane-containment pre-commit guard (#465).
+
+A lane dispatched into a worktree (``.worktrees/<name>`` on ``wt/<name>``) can
+edit the **main checkout** instead of its worktree, and nothing notices until a
+merge fails — or worse, a coordinator commit sweeps the lane's half-finished
+edits into a ledger commit under the wrong message (``12f47e3`` in this repo's
+history). The invariant the whole fan-out rests on — *parallel increments only
+ever touch disjoint files* — is void the moment a lane writes outside its
+worktree, and a brief cannot enforce it (the incident's brief named the worktree
+twice and was ignored). Only a check can.
+
+This is the **early-failing half** of the layered answer (see
+``.dreamwork/docs/plans/lane-containment.md`` for the full IGC). It refuses a
+commit landing in the **main checkout** when a dispatched lane is out and the
+staged paths intersect that lane's declared ownership. It catches the defect at
+the commit boundary — where it becomes dangerous — and needs no cooperation from
+the lane: it reads ownership from the lane's own brief, and lane presence from
+the registered worktrees.
+
+WHY A COMMIT-TIME GUARD, NOT A FIRST-WRITE GUARD
+-----------------------------------------------
+The realised harm was a merge failing on dirty files; the unrealised worse harm
+was a coordinator commit sweeping lane edits. Both are commit-shaped. A
+first-write guard with no lane cooperation is not achievable on this harness
+(the only candidate needs the lane to read and echo a marker, and "a rule a
+brief states is what already failed"). The commit boundary is the honest place
+this defect becomes dangerous, and the successor — a pre-merge assertion — is
+the cannot-be-bypassed backstop for edits that land between commits.
+
+WHY OWNERSHIP FROM THE BRIEF, NOT status.json
+---------------------------------------------
+``status.json``'s ``dreamers`` entry is ``{"task", "pid", "brief"}`` — it
+carries the task id and the dispatch pid, but **no file ownership and no
+worktree path**. A guard that read an ownership list out of ``status.json``
+would read nothing. The brief is the one document the lane was actually handed,
+it is committed under ``.dreamwork/docs/briefs/``, and every brief already
+carries a prose "Yours: …" list. Declaring ownership as a machine-parseable
+``Lane-owns:`` line (see ``file-formats.md``) makes the brief the single source
+of what the lane was told it owns — no second store, no drift.
+
+WHAT IT DOES
+------------
+1. Detects it is in the **main checkout**: ``git rev-parse --git-dir`` resolves
+   to the common dir (the path contains no ``/worktrees/`` segment). In a linked
+   worktree it exits 0 immediately — lanes commit freely from their own trees.
+2. Enumerates dispatched lanes from ``git worktree list --porcelain``, skipping
+   the main entry and any worktree whose branch is not ``wt/*``.
+3. Reads each lane's owned paths from the ``Lane-owns:`` lines in its brief.
+4. Intersects the staged paths with each live lane's owned set. On any overlap
+   it refuses (exit 1), naming the lane, the contested paths, and the remedy.
+5. No-ops cleanly when no lane is out, when nothing is staged, or when no lane
+   declares ownership — the ordinary solo case costs a few git calls.
+
+MACHINE-LOCAL
+-------------
+``core.hooksPath`` is machine-local and not committed, so enabling is manual:
+``python3 dev/lane_guard.py --install`` symlinks this script into the resolved
+hook path, chaining to any pre-existing pre-commit rather than clobbering it. An
+un-enabled checkout is unprotected until it runs ``--install``; the committed
+artefacts that protect every checkout are the brief convention (``Lane-owns:``,
+enforced by ``lint``) and the successor backstop.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+# Emergency escape hatch, documented in the refusal message. A lane's stray
+# edit should be committed from the worktree, not force-landed on master; but a
+# hook that cannot be bypassed in a genuine emergency is a hook that gets
+# disabled, and a disabled hook protects nothing.
+BYPASS_ENV = "DREAMWORK_LANE_GUARD_BYPASS"
+
+# Worktrees live under .worktrees/<name> on branch wt/<name>. The branch prefix
+# is the discriminator a registered lane worktree carries.
+LANE_BRANCH_PREFIX = "wt/"
+
+# The git-dir of a linked worktree contains this segment; the main checkout's
+# git-dir (the common dir) does not.
+WORKTREE_GITDIR_SEGMENT = "/worktrees/"
+
+
+class GuardError(Exception):
+    """Raised when a precondition the guard depends on is unmet.
+
+    A guard that cannot evaluate its inputs must fail loud rather than fail
+    open: a merge blocked by an error message is recoverable; a merge that
+    proceeds because the guard silently declined is the silent-wrong-state this
+    repo documents. Callers print the message and exit 1.
+    """
+
+
+def _run_git(args: list[str], cwd: Path) -> str:
+    """Run git, returning stdout. Raises GuardError on non-zero / missing git."""
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:  # git itself missing
+        raise GuardError(f"git not found on PATH ({exc})") from exc
+    if result.returncode != 0:
+        raise GuardError(
+            f"git {' '.join(args)} failed (exit {result.returncode}): "
+            f"{result.stderr.strip() or '(no stderr)'}"
+        )
+    return result.stdout
+
+
+def is_main_checkout(repo_root: Path) -> bool:
+    """True when this commit is landing in the main checkout, not a worktree.
+
+    The main checkout's git-dir is the common dir (``.git``); a linked
+    worktree's is ``.git/worktrees/<name>``. The segment discriminator is robust
+    to absolute vs relative git-dir resolution.
+    """
+    try:
+        git_dir = _run_git(["rev-parse", "--git-dir"], repo_root).strip()
+    except GuardError:
+        # If we cannot tell, we are not the main checkout for the purpose of
+        # this guard — decline to act rather than risk a false refusal in a tree
+        # we do not understand.
+        return False
+    return WORKTREE_GITDIR_SEGMENT not in git_dir
+
+
+def repo_root(cwd: Path) -> Path:
+    """The work-tree root for cwd, as an absolute path."""
+    root = _run_git(["rev-parse", "--show-toplevel"], cwd).strip()
+    return Path(root)
+
+
+def _parse_worktree_list(repo_root: Path) -> list[tuple[Path, str]]:
+    """Return ``[(worktree_path, branch)]`` for registered lane worktrees.
+
+    Skips the main entry and any worktree whose branch does not start with
+    ``wt/``. ``git worktree list --porcelain`` is the reliable lane registry —
+    NOT ``status.json``, which carries no worktree path (see module docstring).
+    """
+    out = _run_git(["worktree", "list", "--porcelain"], repo_root)
+    lanes: list[tuple[Path, str]] = []
+    cur_path: Path | None = None
+    cur_branch: str | None = None
+    for line in out.splitlines():
+        if not line.strip():
+            # End of a record.
+            if cur_path is not None and cur_branch is not None:
+                if cur_branch.startswith(LANE_BRANCH_PREFIX):
+                    lanes.append((cur_path, cur_branch))
+            cur_path, cur_branch = None, None
+            continue
+        key, _, value = line.partition(" ")
+        if key == "worktree":
+            cur_path = Path(value)
+        elif key == "branch":
+            # value is like refs/heads/wt/contain
+            cur_branch = value.split("refs/heads/", 1)[-1] if "refs/heads/" in value else value
+    # A trailing record without a blank line.
+    if cur_path is not None and cur_branch is not None:
+        if cur_branch.startswith(LANE_BRANCH_PREFIX):
+            lanes.append((cur_path, cur_branch))
+    return lanes
+
+
+def _main_checkout_root(repo_root: Path) -> Path:
+    """The main checkout's root, given any tree sharing its git common dir.
+
+    ``git rev-parse --git-common-dir`` resolves to ``.git`` for both the main
+    checkout and linked worktrees (the common dir is shared). Its parent is the
+    main checkout's root. This lets a lane worktree's owned paths be read from
+    the main checkout's briefs dir, where the coordinator writes them.
+    """
+    common = _run_git(["rev-parse", "--git-common-dir"], repo_root).strip()
+    common_path = (repo_root / common).resolve() if not Path(common).is_absolute() else Path(common)
+    # common is <main_root>/.git → main root is its parent.
+    return common_path.parent
+
+
+def _brief_for_lane(main_root: Path, lane_branch: str) -> Path | None:
+    """The brief this lane was dispatched with, if one is recorded.
+
+    A lane's brief lives in the **main checkout's** ``.dreamwork/docs/briefs/``
+    (the coordinator writes it there; the worktree, branched before the brief
+    was written, does not carry it). The lane is matched by its worktree name
+    suffix (the segment after ``wt/``), which appears in the brief as
+    ``.worktrees/<suffix>`` or ``wt/<suffix>``. A ``.lane-brief`` marker in the
+    worktree (holding the brief's absolute path) is the fast path if a dispatch
+    writes one; the scan is the resilient path. Both read the brief the lane was
+    actually given, never ``status.json`` (which carries no worktree path).
+    """
+    # Fast path: an explicit marker the dispatch may write into the worktree.
+    # Not relied upon (no dispatch writes it today), but cheap to honour.
+    suffix = lane_branch.split("/", 1)[-1] if "/" in lane_branch else lane_branch
+    main_briefs = main_root / ".dreamwork" / "docs" / "briefs"
+    if not main_briefs.is_dir():
+        return None
+    for b in sorted(main_briefs.glob("*.md")):
+        try:
+            text = b.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if f"wt/{suffix}" in text or f".worktrees/{suffix}" in text:
+            return b
+    return None
+
+
+def _owned_paths_for_lane(main_root: Path, lane_branch: str) -> set[str]:
+    """Paths a lane was told it owns, from its brief's ``Lane-owns:`` lines.
+
+    Returns repo-relative POSIX paths. Empty set if the brief declares nothing
+    (the guard then no-ops for that lane, and ``lint.check_brief_lane_owns``
+    elsewhere errors so an empty set is never silently load-bearing).
+    """
+    brief = _brief_for_lane(main_root, lane_branch)
+    if brief is None or not brief.exists():
+        return set()
+    try:
+        text = brief.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return set()
+    owned: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line.lower().startswith("lane-owns:"):
+            continue
+        payload = line.split(":", 1)[1].strip()
+        # Comma-separated paths, POSIX-normalised.
+        for token in payload.split(","):
+            token = token.strip().strip("`").strip()
+            if token:
+                owned.add(token.replace("\\", "/"))
+    return owned
+
+
+def _staged_paths(repo_root: Path) -> set[str]:
+    """Paths staged for the commit about to land, POSIX-normalised."""
+    out = _run_git(["diff", "--cached", "--name-only", "--diff-filter=ACMR"], repo_root)
+    return {line.strip().replace("\\", "/") for line in out.splitlines() if line.strip()}
+
+
+def _contested(staged: set[str], owned: set[str]) -> set[str]:
+    """Paths in both sets, treating directory ownership as a prefix.
+
+    A lane that owns ``dev/capture/`` owns every path under it; a lane that
+    owns ``watch.py`` owns exactly that file.
+    """
+    contested: set[str] = set()
+    for s in staged:
+        for o in owned:
+            if s == o or s.startswith(o.rstrip("/") + "/"):
+                contested.add(s)
+                break
+    return contested
+
+
+def check(root: Path) -> int:
+    """Run the guard against a commit landing in ``root``. Returns an exit code.
+
+    0 = allow (no lane out, or no overlap); 1 = refuse (contested path); 2 =
+    guard could not evaluate its inputs (fail loud).
+    """
+    if not is_main_checkout(root):
+        # A linked worktree commits freely; the guard only acts on the main
+        # checkout, which is where a lane's stray edits become dangerous.
+        return 0
+    lanes = _parse_worktree_list(root)
+    if not lanes:
+        # No dispatched lane: the ordinary solo case. Frictionless.
+        return 0
+    staged = _staged_paths(root)
+    if not staged:
+        # Nothing to commit (e.g. ``--amend`` with no changes, or a hook fired
+        # by something other than a content commit). Nothing to guard.
+        return 0
+    findings: list[str] = []
+    main_root = _main_checkout_root(root)
+    for lane_root, branch in lanes:
+        owned = _owned_paths_for_lane(main_root, branch)
+        if not owned:
+            # No declared ownership → nothing to protect for this lane. The
+            # lint companion (check_brief_lane_owns) ensures this is loud at
+            # brief-write time rather than a silent no-op at commit time.
+            continue
+        contested = _contested(staged, owned)
+        if contested:
+            findings.append(
+                f"  lane {branch} ({lane_root}) owns: "
+                f"{', '.join(sorted(owned))}\n"
+                f"    contested staged paths: {', '.join(sorted(contested))}"
+            )
+    if not findings:
+        return 0
+    sys.stderr.write(
+        "lane-containment guard (#465): refusing commit in the MAIN CHECKOUT.\n"
+        "A dispatched lane owns one or more of the staged paths. Committing\n"
+        "them on master would reproduce the #465 defect — a lane editing the\n"
+        "main checkout instead of its worktree. Either commit from the lane's\n"
+        "worktree, or unstage the contested paths on master.\n\n"
+        + "\n".join(findings)
+        + "\n\nEmergency bypass: "
+        f"{BYPASS_ENV}=1 git commit ... (then fix the root cause)\n"
+    )
+    return 1
+
+
+def hook_path() -> Path:
+    """Resolve the pre-commit hook path from ``core.hooksPath``."""
+    try:
+        hpd = _run_git(["config", "core.hooksPath"], Path.cwd()).strip()
+    except GuardError:
+        hpd = ""
+    if not hpd:
+        # Fall back to the default .git/hooks relative to the common dir.
+        hpd = str(_run_git(["rev-parse", "--git-common-dir"], Path.cwd()).strip()) + "/hooks"
+    p = Path(hpd)
+    if not p.is_absolute():
+        p = (Path.cwd() / p).resolve()
+    return p / "pre-commit"
+
+
+def _install() -> int:
+    """Symlink this guard into the pre-commit hook, chaining to any existing one.
+
+    Refuses to clobber a pre-existing pre-commit that is not already this guard;
+    instead it writes a small wrapper that runs the existing hook then this one.
+    """
+    hp = hook_path()
+    hp.parent.mkdir(parents=True, exist_ok=True)
+    target = Path(__file__).resolve()
+    existing = hp.exists() or hp.is_symlink()
+    is_us = False
+    if existing:
+        try:
+            is_us = hp.resolve() == target
+        except OSError:
+            is_us = False
+    if is_us:
+        print(f"lane-guard: already installed at {hp}")
+        return 0
+    if existing:
+        # Chain: rename the existing hook aside and write a wrapper. A guard
+        # that silently replaced an existing hook would be the silent breakage
+        # this repo documents.
+        chain = hp.with_suffix(hp.suffix + ".prev")
+        if chain.exists() or chain.is_symlink():
+            print(
+                f"lane-guard: refusing to install — a chained predecessor "
+                f"{chain} already exists. Inspect it and resolve manually.",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            hp.rename(chain)
+        except OSError as exc:
+            print(f"lane-guard: could not move existing hook aside: {exc}", file=sys.stderr)
+            return 1
+        wrapper = hp
+        wrapper.write_text(
+            "#!/usr/bin/env bash\n"
+            "# lane-guard pre-commit wrapper — runs the previous hook, then the\n"
+            "# lane-containment guard (#465). Installed by `dev/lane_guard.py --install`.\n"
+            "# To uninstall and restore the previous hook alone:\n"
+            "#   python3 dev/lane_guard.py --uninstall\n"
+            "set -euo pipefail\n"
+            f'prev="$(cd "$(dirname "$0")" && pwd)/{chain.name}"\n'
+            'if [ -x "$prev" ]; then "$prev" "$@"; fi\n'
+            f'DREAMWORK_LANE_GUARD_ROOT="${{DREAMWORK_LANE_GUARD_ROOT:-}}" \\\n'
+            f'python3 "{target}" hook "$@"\n',
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o755)
+        print(
+            f"lane-guard: chained at {hp} (previous hook preserved as {chain.name})"
+        )
+    else:
+        try:
+            if hp.is_symlink():
+                hp.unlink()
+            hp.symlink_to(target)
+            hp.chmod(0o755)
+        except OSError as exc:
+            print(f"lane-guard: could not symlink: {exc}", file=sys.stderr)
+            return 1
+        print(f"lane-guard: installed at {hp}")
+    print(
+        "lane-guard: active on the MAIN CHECKOUT only. Lanes commit freely from\n"
+        "            their worktrees. Test: python3 dev/lane_guard.py selftest"
+    )
+    return 0
+
+
+def _uninstall() -> int:
+    """Remove the guard, restoring a chained predecessor if one exists."""
+    hp = hook_path()
+    chain = hp.with_suffix(hp.suffix + ".prev")
+    if chain.exists() or chain.is_symlink():
+        try:
+            if hp.exists() or hp.is_symlink():
+                hp.unlink()
+            chain.rename(hp)
+            print(f"lane-guard: removed; restored previous hook to {hp}")
+        except OSError as exc:
+            print(f"lane-guard: could not restore predecessor: {exc}", file=sys.stderr)
+            return 1
+        return 0
+    target = Path(__file__).resolve()
+    is_us = False
+    if hp.exists() or hp.is_symlink():
+        try:
+            is_us = hp.resolve() == target
+        except OSError:
+            is_us = False
+    if is_us:
+        try:
+            hp.unlink()
+            print(f"lane-guard: removed {hp}")
+        except OSError as exc:
+            print(f"lane-guard: could not remove: {exc}", file=sys.stderr)
+            return 1
+        return 0
+    print(f"lane-guard: nothing to remove at {hp}", file=sys.stderr)
+    return 1
+
+
+def _selftest() -> int:
+    """A no-side-effect smoke check that the guard evaluates on this tree.
+
+    Reports the detected main-checkout status, the enumerated lanes, and each
+    lane's declared ownership. Does NOT refuse — this is introspection, not the
+    commit gate. Useful to confirm the guard sees what it should before relying
+    on it.
+    """
+    root = repo_root(Path.cwd())
+    main = is_main_checkout(root)
+    print(f"root: {root}")
+    print(f"is_main_checkout: {main}")
+    lanes = _parse_worktree_list(root)
+    print(f"lanes: {len(lanes)}")
+    main_root = _main_checkout_root(root)
+    for lane_root, branch in lanes:
+        owned = _owned_paths_for_lane(main_root, branch)
+        print(f"  {branch} ({lane_root}): owns {sorted(owned) if owned else '(none declared)'}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Lane-containment pre-commit guard (#465). See module docstring."
+    )
+    parser.add_argument(
+        "mode",
+        nargs="?",
+        default="hook",
+        choices=["hook", "install", "uninstall", "selftest"],
+        help="hook = run as a pre-commit guard (default); install/uninstall wire it; "
+        "selftest = introspect without refusing",
+    )
+    parser.add_argument(
+        "rest",
+        nargs=argparse.REMAINDER,
+        help="passed by git when invoked as a hook (ignored)",
+    )
+    args = parser.parse_args(argv)
+
+    if args.mode == "install":
+        return _install()
+    if args.mode == "uninstall":
+        return _uninstall()
+    if args.mode == "selftest":
+        return _selftest()
+
+    # mode == "hook"
+    if os.environ.get(BYPASS_ENV):
+        # Documented emergency escape. A hook that cannot be bypassed is a hook
+        # that gets disabled; a disabled hook protects nothing.
+        return 0
+    root = repo_root(Path.cwd())
+    try:
+        return check(root)
+    except GuardError as exc:
+        # Fail loud: a guard that cannot evaluate its inputs must not silently
+        # allow a contested commit through.
+        sys.stderr.write(f"lane-containment guard: cannot evaluate ({exc}); refusing\n")
+        sys.stderr.write(
+            "Investigate before using the bypass. A refused commit is recoverable;\n"
+            "a silent allow is the state this guard exists to prevent.\n"
+        )
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

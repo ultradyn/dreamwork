@@ -1731,6 +1731,56 @@ python3 <skill-dir>/migration_notice.py retire --path <file> --skill-version-fil
 python3 <skill-dir>/migration_notice.py parse  --path <file>
 ```
 
+## `.dreamwork/docs/briefs/*.md` — a worktree brief declares its owned paths (#465)
+
+A lane dispatched into a worktree (``.worktrees/<name>`` on ``wt/<name>``) can
+edit the **main checkout** instead of its worktree, and nothing notices until a
+merge fails — or worse, a coordinator commit sweeps the lane's half-finished
+edits into a ledger commit under the wrong message (``12f47e3``). The
+invariant the whole fan-out rests on — *parallel increments only ever touch
+disjoint files* — is void the moment a lane writes outside its worktree, and a
+brief cannot enforce it (the incident's brief named the worktree twice and was
+ignored). Only a check can.
+
+**A worktree-naming brief declares what files the lane owns**, so the
+lane-containment guard (``dev/lane_guard.py``) has a non-empty ownership set
+to protect. The line follows the ``origin:`` / ``related:`` ``key: value``
+idiom:
+
+```text
+Lane-owns: watch.py, dev/capture/, test_watch.py
+```
+
+- **Comma-separated repo-relative paths.** A path ending ``/`` owns the whole
+  directory (prefix match); a bare path owns exactly that file.
+- **One or more ``Lane-owns:`` lines** — repeatable, unioned. The guard
+  normalises backslashes and strips backticks, so `` `watch.py` `` and
+  ``watch.py`` are the same.
+- **The brief the lane was actually given is the source.** Not ``status.json``
+  (whose ``dreamers`` entry carries ``{task, pid, brief}`` and **no file
+  ownership and no worktree path** — the brief's premise that it did was the
+  drift the "assert the precondition at runtime" rule exists to catch), not a
+  second registry. The brief is committed under ``.dreamwork/docs/briefs/`` and
+  already carries a prose "Yours: …" list; this makes that list
+  machine-parseable.
+
+`lint.check_brief_lane_owns` **ERRORs** when a brief that names a worktree
+(``.worktrees/``) declares no ``Lane-owns:`` paths — so the omission is loud at
+brief-write time rather than a silent no-op at commit time. A guard over an
+empty ownership set protects nothing, and the check refuses to let that state
+stand. History before the rule landed in SKILL.md is grandfathered by commit
+time (content-resolved cutoff, never a pinned sha — a hollow no-cutoff is an
+ERROR, not a silent pass).
+
+**The guard is machine-local** (``core.hooksPath`` is not committed), so the
+*script* is committed and *enabling* is a documented step:
+``python3 dev/lane_guard.py --install`` chains into the pre-commit hook on the
+main checkout only (it exits 0 in linked worktrees, so lanes commit freely).
+The committed artefacts that protect every checkout regardless of enablement
+are this brief convention (enforced by ``lint``) and the successor pre-merge
+backstop (``check_lane_containment``, recorded in
+``.dreamwork/docs/plans/lane-containment.md`` as the not-yet-built half).
+
 ## Why this file exists rather than a paragraph in SKILL.md
 
 SKILL.md says what each file *means* and when to write it. That is the
