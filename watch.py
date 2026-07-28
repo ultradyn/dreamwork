@@ -2482,7 +2482,11 @@ async function writeVerdict(res) {
   try { j = await res.json(); } catch (e) { j = null; }
   const rejected = !!(j && j.rejected === true);
   return { landed: res.ok && !rejected, rejected,
-           reason: (j && j.reason) || null, status: res.status };
+           reason: (j && j.reason) || null,
+           // `detail` narrows a closed-set reason for copy only (#462): several
+           // distinct refusals share one contract reason, and a route that can
+           // say which one must be able to. Never gated on — `landed` is.
+           detail: (j && j.detail) || null, status: res.status };
 }
 const postJSON = async (url, body) => {
   const id = await subsRecord(url, body);
@@ -2519,6 +2523,12 @@ const QSEND_WHY = {
    Closed set, paired with REJECTION_REASONS in user_events/sqlite.py — a code
    outside the set falls through to the status line, never an unrecognised
    string. Voice is watch-design.md's: a state, an em dash, what he can do. */
+/* #462 — per-route narrowing of a closed-set reason, for copy only. In his
+   voice: what happened and what it means for him, never a code. */
+const DEPLOY_WHY = {
+  in_flight: 'this page will pick up the new one when it lands',
+  not_local: 'the update only runs from the machine serving the page',
+};
 const REJECT_WHY = {
   malformed_json: 'the request body could not be read',
   schema_invalid: 'a required field was missing or the wrong shape',
@@ -6203,12 +6213,19 @@ async function fireStaleDeploy(gen) {
     if (!landed) {
       staleDeployPhase = null;
       paintStaleDeployUI();
-      const why = (rv.rejected && rv.reason && REJECT_WHY[rv.reason])
-        || (rv.status === 403
-            ? 'deploy only runs from this machine'
-            : null);
+      /* The two ways this route refuses are both `domain_invalid`, so the
+         generic copy ("the value was not one the server accepts") is wrong for
+         both — and these are the ONLY two refusals he can provoke. `detail`
+         names which. The old `res.status === 403` branch was dead: since the
+         202 cutover (#263 E5) a refusal is 202 + rejected, never 403, so the
+         "only runs from this machine" line could never have printed. */
+      const why = DEPLOY_WHY[rv.detail]
+        || (rv.rejected && rv.reason && REJECT_WHY[rv.reason])
+        || null;
       c.note(
-        `update was refused — ${why || 'try again in a moment'}`,
+        rv.detail === 'in_flight'
+          ? `already updating — ${why}`
+          : `update was refused — ${why || 'try again in a moment'}`,
         false);
       return;
     }
@@ -10581,8 +10598,18 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             self.end_headers()
             self.wfile.write(data)
 
-        def _reject(self, reason_code):
+        def _reject(self, reason_code, detail=None):
             """Record a durable rejection and respond 202 (E5).
+
+            `detail` is an OPTIONAL free-form discriminator for copy, and it is
+            deliberately not part of the closed set: `REJECTION_REASONS` is a
+            contract three values wide, while a route may refuse for several
+            distinct reasons that all map to one of them. #462 is the motivating
+            case — "a deploy is already running" and "you are not on this
+            machine" are both `domain_invalid`, and telling him "the value was
+            not one the server accepts" for either is wrong in the only two
+            cases he will ever hit. Widening the closed set would change a
+            contract and its journal; adding a copy hint does not.
 
             The receipt already committed in do_POST; rejection is durable,
             not synchronous. The reason is from REJECTION_REASONS (closed set
@@ -10592,10 +10619,10 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             result = self.journal_result()
             if result and result.receipt_id and self.journal_shadow:
                 _journal_reject(target, result.receipt_id, reason_code)
-            self._send_receipt(
-                json.dumps({"ok": False, "rejected": True,
-                            "reason": reason_code}),
-                "application/json")
+            body = {"ok": False, "rejected": True, "reason": reason_code}
+            if detail:
+                body["detail"] = detail
+            self._send_receipt(json.dumps(body), "application/json")
 
         def _send_bytes(self, full, rel, *, inline):
             """Serve `full` as raw bytes (#336), streamed (#354).
@@ -11039,9 +11066,11 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             if not peer_is_loopback(self.client_address):
                 # A refusal, not a silent no-op: durable rejected receipt so
                 # writeVerdict.landed is false (never res.ok alone).
-                self._reject("domain_invalid"); return
+                self._reject("domain_invalid", "not_local"); return
             if not start_deploy(target):
-                self._reject("domain_invalid"); return
+                # Not an error he did anything wrong — a deploy is already
+                # running, most likely from his other tab.
+                self._reject("domain_invalid", "in_flight"); return
             self._send_receipt(
                 json.dumps({"ok": True, "started": True}),
                 "application/json")

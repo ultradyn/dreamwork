@@ -1633,7 +1633,7 @@ the draft store cleared too — the only copy of what he typed, gone. A
 rejected receipt is a write the server refused from the other end, so a
 write surface treats it as exactly that. **One verdict decides it**:
 `writeVerdict(res)` reads the body once (a `Response` body is read once, so
-it is the single reader) and returns `{landed, rejected, reason, status}`,
+it is the single reader) and returns `{landed, rejected, reason, detail, status}`,
 where `landed` is `res.ok && !rejected` — the one thing `/ask`, `/answer`,
 `/comment`, `/command`, `/tint` and `/run-mode` gate on, never `res.ok`
 alone. The reason is named in his voice through a closed map (`REJECT_WHY`)
@@ -2602,9 +2602,23 @@ same `confirmationFor` as the file-path copy):
 |---|---|
 | arming | `arms in Ns — then this page updates` |
 | running | `updating — waiting for the new page` |
-| refused | `update was refused — <reason>` |
+| refused (another machine) | `update was refused — the update only runs from the machine serving the page` |
+| refused (already running) | `already updating — this page will pick up the new one when it lands` |
 | never finishes | `update never finished — this page is still the old one` |
 | success | a new `GENERATION` → full `location.reload()` (the page *is* the new one) |
+
+**Why two refusal rows, and the general rule they establish.** Both refusals are
+`domain_invalid`, because `REJECTION_REASONS` is a three-wide contract and this
+route can refuse for two unrelated causes. Reusing the generic `REJECT_WHY` copy
+said *"the value was not one the server accepts"* for both — and since these are
+the only two refusals he can provoke, that copy was wrong every time it appeared.
+So a rejection may carry an **optional `detail`**, narrowing the reason **for copy
+only**: `DEPLOY_WHY` maps it, `writeVerdict` carries it through beside `reason`,
+and nothing ever gates on it — `landed` remains the only verdict. Widening the
+closed set would change the journal contract; a copy hint does not. Any route with
+several refusals behind one reason takes this idiom rather than a second one.
+(The dead branch this replaced tested `res.status === 403`, which the 202 cutover
+had made unreachable, so its "only runs from this machine" line could never print.)
 
 **Deadline: `DEPLOY_WAIT_MS` = 30s.** `just deploy`'s own readiness is sleep 1
 + up to 5s of curl probes (~6s healthy); 30s is ~3× that budget so a contended

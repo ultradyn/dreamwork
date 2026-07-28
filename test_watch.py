@@ -6442,3 +6442,70 @@ class TestSkillIdentity(unittest.TestCase):
             # the skill tree, so both keys must be populated here
             self.assertIsNotNone(ident.get("commit"))
             self.assertIsNotNone(ident.get("skill_version"))
+
+
+class TestDeployRefusalCopy(unittest.TestCase):
+    """#462 — the two ways /deploy refuses must be distinguishable to the reader.
+
+    Both are `domain_invalid` because REJECTION_REASONS is a three-wide
+    contract, so before this the page said "the value was not one the server
+    accepts" for BOTH — for a deploy already running, and for a request from
+    another machine. Those are the only two refusals he can provoke, so the
+    generic copy was wrong 100% of the time it appeared.
+
+    The fix adds an OPTIONAL `detail` beside the reason. This class exists to
+    hold the line that it stays optional and additive: widening the closed set
+    would change the journal contract, which is not what this increment is for.
+    """
+
+    def test_the_closed_set_of_reasons_is_unchanged(self):
+        """Precondition, and the constraint: `detail` must NOT have widened the
+        contract. Production line: REJECTION_REASONS. If a later change adds a
+        reason here, that is a contract change and it needs its own migration —
+        this test is where it gets noticed.
+        """
+        from user_events.sqlite import REJECTION_REASONS
+        self.assertEqual(
+            tuple(REJECTION_REASONS),
+            ("malformed_json", "schema_invalid", "domain_invalid"))
+
+    def test_reject_omits_detail_when_none_is_given(self):
+        """Production line: the `if detail:` guard in _reject. Every other route
+        must keep its body byte-for-byte, or this "additive" change is not.
+        """
+        import inspect
+        src = inspect.getsource(watch.make_handler)
+        self.assertIn('body = {"ok": False, "rejected": True, "reason": reason_code}', src)
+        self.assertIn('if detail:', src)
+        self.assertIn('body["detail"] = detail', src)
+
+    def test_the_two_deploy_refusals_carry_different_details(self):
+        """Production lines: the two `_reject("domain_invalid", …)` calls in
+        _handle_deploy. Reversing or merging them reds this.
+        """
+        import inspect, re
+        src = inspect.getsource(watch.make_handler)
+        body = src[src.index("def _handle_deploy"):]
+        body = body[:body.index("WRITE_ROUTE_HANDLERS")]
+        details = re.findall(r'_reject\("domain_invalid",\s*"(\w+)"\)', body)
+        # Derived precondition: two refusals exist AND they differ. A literal
+        # pair would keep passing if one were changed to match the other.
+        self.assertEqual(len(details), 2, details)
+        self.assertNotEqual(details[0], details[1], details)
+        self.assertEqual(set(details), {"not_local", "in_flight"})
+
+    def test_the_page_names_each_refusal_in_his_voice(self):
+        """Production lines: DEPLOY_WHY and the `in_flight` branch of the note.
+        Also holds the dead branch deleted: since the 202 cutover a refusal is
+        202+rejected, never 403, so a 403 test could never fire.
+        """
+        page = watch.PAGE
+        self.assertIn("const DEPLOY_WHY = {", page)
+        self.assertIn("this page will pick up the new one when it lands", page)
+        self.assertIn("the update only runs from the machine serving the page", page)
+        self.assertIn("already updating —", page)
+        # The dead 403 branch and its unreachable copy are gone.
+        self.assertNotIn("deploy only runs from this machine", page)
+        self.assertNotRegex(page, r"rv\.status === 403")
+        # writeVerdict must carry detail through, or the copy can never select.
+        self.assertRegex(page, r"detail:\s*\(j && j\.detail\)")
