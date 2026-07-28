@@ -90,95 +90,32 @@
     they were indistinguishable from his.
     **This question is genuinely open and has never been answered.**
 
-- **P2 · 2026-07-27 — #275 public Dreamhub auth: six calls, and the first one
-  rewrites the rest.** You asked for this via answer at 17:48. The artifact is
-  `.dreamwork/review/hub-public-auth.html` (open it from the dashboard's review
-  list); the design is `.dreamwork/docs/plans/hub-public-auth.md`, landed
-  design-only at `4b49ecb`. Public/WAN serving stays forbidden until you rule —
-  nothing was implemented, no bind address or flag was touched.
+- **P2 · 2026-07-27 — #275 Dreamhub auth: three calls left of the original six**
 
-  **The research corrected the premise.** shoo.dev is not a tunnel or expose
-  tool: it is a hosted Google-OAuth PKCE broker returning an ES256-signed
-  id_token, so identity is Google-only. Its GitHub repo returns **404** (I
-  re-checked: still 404), the site says "SUPER EARLY WIP", and no security
-  review or threat model exists — so its server is unauditable. And this hub is
-  stdlib-only Python, which cannot verify ES256 in-process; that needs
-  third-party `cryptography`.
+  **Sub-decisions:** `Q3`, `Q5`, `Q6`
 
-  **The recommendation:** keep the hub read-only and loopback-bound behind a
-  mature authenticating reverse proxy (Cloudflare Access or Tailscale Funnel
-  first) that owns TLS, identity and session, with your allowlist at the proxy
-  and a redacted `/summary.json` replacing `/data.json` — which today serves
-  DREAMWORK.md, questions.md and lessons.md in full and is unfit to expose.
-  shoo fits later as an optional IdP *behind* the proxy, not as the boundary.
+  Shrunk 01:58 on your 00:54 rule. Design: `.dreamwork/docs/plans/hub-public-auth.md`
+  (`4b49ecb`), **superseded on identity** by `#360`'s ssh-rooted design (`4d4e705`).
+  Artifact: `hub-public-auth.html`. **Public/WAN serving stays forbidden until you rule** —
+  nothing implemented, no bind address or flag touched.
 
-  The six questions, as the dreamer wrote them:
+  ~~Q1 public vs private~~ **settled 2026-07-28 01:39** — you refused the dichotomy and split it
+  into `#359` (hosted SaaS, dependencies allowed) and `#360` (self-hosted, ssh-derived auth,
+  stdlib-only). ~~Q2 reverse proxy~~ **answered yes, 14:53**, then *redirected* by your own point
+  that self-hosted auth depending on a third party's control plane is not self-hosted — `#360`
+  carries that. ~~Q4 identity provider~~ **moot**: ssh is the root of trust, so no Google account.
 
-  1. **Public or private remote?** Is the real goal public access (any browser,
-     anywhere, with auth) or private remote access (your devices only)? If the
-     latter, Tailscale/WireGuard is strictly safer and "public" is not needed.
-     This single answer rewrites the rest of the design.
-  2. **Is one reverse-proxy component acceptable** (Cloudflare Access,
-     Tailscale Funnel, or Caddy), given it keeps the hub itself stdlib-only and
-     adds no auth code? If the hub itself must do auth, the design changes
-     substantially and shoo-direct or a hosted IdP re-enters scope.
-  3. **Read-only, or read+write?** The design recommends read-only publicly,
-     writes staying loopback/trusted-LAN. Confirm, or name which write routes
-     you want exposed and under what extra guard.
-  4. **Which identity provider**, and are you willing to depend on a Google
-     account? shoo is Google-only and pre-release; CF Access / Tailscale /
-     oauth2-proxy also support GitHub, email OTP, SAML.
-  5. **May a redacted `/summary.json` be designed and shipped** as a separate
-     task before any public serve is enabled?
-  6. **Who besides you should ever reach this hub?** Defines the allowlist and
-     whether multi-identity is worth any complexity.
+  **`Q3` — read-only, or read+write?** Rec **read-only publicly**, writes staying
+  loopback/trusted-LAN. Confirm, or name which write routes you want exposed and under what guard.
 
-  Not confident about, and flagged in the doc rather than smoothed over: CF
-  Access free-tier current limits, Caddy `forward_auth` exact current semantics,
-  and shoo-as-custom-OIDC-behind-CF-Access (plausible via shoo's OIDC
-  discovery, not verified end to end).
-  - **Note (human, via watch, 2026-07-28 01:39):** okay we should separate
-    two concepts here: 1. self-hosted with a tunnel or over a shared mesh
-    or lan -- we should aim for simpler auth methods; ssh tunnel, session
-    key auth'd via ssh (magic-link esq), user/pw, sqrl if possible, etc. 2.
-    a service that is provided as a subscription that allows you to
-    register dreamwork agents against a central dreamhub that you can log
-    into and use and pay like $2/mo for. wrt stdlib only, that only applies
-    for self-hosted stuff. for the SaaS frontend, we can include
-    dependencies where required.
-  - **Follow-up (loop, 2026-07-28 01:44):** filed as **#359** (the hosted service)
-    and **#360** (self-hosted, ssh-derived auth). Your split answers Q1 by refusing
-    its dichotomy and it settles the constraint that shaped the whole design —
-    stdlib-only was always a property of the self-hosted binary, so the SaaS is
-    free of it. Q2 is **redirected, not answered**: the landed design put a mature
-    reverse proxy at the boundary, and you are right that a self-hosted tool whose
-    auth depends on a third party's control plane is not self-hosted. Of your four
-    methods the second is the one worth building — a session key issued over ssh
-    makes ssh's existing authentication the hub's without the hub verifying
-    anything; user/pw needs a KDF, and `hashlib.scrypt` keeps even that in stdlib.
-    SQRL I will check for a live client before designing against it.
-    **Still open on this entry, and cheap to answer:** Q3 read-only or read+write,
-    Q5 whether the redacted `/summary.json` may be designed now, Q6 who besides
-    you should ever reach it. Q4 moved to #359 — the self-hosted half has no
-    identity provider under your direction.
-  - **Note (human, via watch, 2026-07-28 14:53):** Q2: yes a reverse proxy
-    component is acceptable
-  - **Follow-up (loop, 2026-07-28 14:57):** **Q2 answered yes**, and it dissolves the
-    objection I raised at 01:44 rather than overriding it. That objection was never to
-    reverse proxies — it was to *Cloudflare Access and Tailscale Funnel specifically*, whose
-    control plane is a third party's, which is a strange dependency for the **self-hosted**
-    half you had just split out. **Caddy is a local binary and has that property for free**,
-    so "yes to a proxy" and "self-hosted means self-hosted" are both satisfiable at once, and
-    the landed design's boundary survives with its identity component swapped.
-    **The assumption I am acting on, so you can correct it cheaply:** Caddy (or equivalent
-    local proxy) with `forward_auth` for **#360** self-hosted, terminating the ssh-issued
-    session key; CF Access / Tailscale stay perfectly good options for **#359** the hosted
-    service, where a third-party control plane is not a contradiction. If you meant CF Access
-    for the self-hosted half too, say so and #360's auth design gets simpler, not harder.
-    Q2 now costs no further research either way — this needed a ruling, not a study.
-    **Still open on this entry:** Q3 (read-only or read+write), Q5 (may `/summary.json`
-    redaction be designed now), Q6 (who besides you). Q4 moved to #359.
+  **`Q5` — may a redacted `/summary.json` be designed and shipped as its own task before any
+  public serve?** Rec **yes**. Today `/data.json` serves DREAMWORK.md, questions.md and lessons.md
+  in full and is unfit to expose, so this is the blocker whatever else you choose.
 
+  **`Q6` — who besides you should ever reach this hub?** Defines the allowlist and whether
+  multi-identity is worth any complexity. Rec **you only, for v1**.
+
+  Accepted answers: `rec` (takes all three) · per-question (`Q3: …`) · free text · `not yet`.
 ## Answered
 - **P2 · 2026-07-29 01:14 — #269: build it? (authorisation only, no design content)**
 
