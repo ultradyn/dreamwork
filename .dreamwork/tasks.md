@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **465**
+Next id: **466**
 
 ## Open
 - **#460** — a tool that replays the `task_event` `.jsonl` log and reconstructs the database · **P3** ·
@@ -2594,6 +2594,30 @@ Next id: **465**
   source of truth (birth time via `statx` where available, else the artifact's own build stamp or first commit)
   and say what happens when it is unavailable, rather than shipping `st_ctime` and calling it created
   · related: **#456**
+- **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
+  **P1** · loop-machinery/containment · origin: **loop** · found 2026-07-29 03:32 when the `#263` merge aborted:
+  `error: Your local changes to the following files would be overwritten by merge: dev/capture/health.mjs`
+  · **what happened**: the `#413` lane was dispatched into `.worktrees/superseded` on `wt/superseded` and its
+  brief named the worktree twice, but it edited `dev/capture/health.mjs`, `.dreamwork/docs/doc-map.md` and wrote
+  a new plan file **in the main checkout on `master`**. Its own worktree stayed untouched. The `ccc` invocation
+  ran with the worktree as cwd, so this was not a dispatch error
+  · **two harms, one realised.** Realised: it blocked a verified merge that had been deliberately held for half
+  an hour, and the coordinator cannot fix it by reverting, because reverting under a live agent destroys work in
+  progress — so the merge waits on a subagent's acknowledgement. Unrealised but worse: **a `git commit` by the
+  coordinator would have swept the lane's half-finished edits into a ledger commit under the wrong message**,
+  which is `12f47e3` exactly, and `--only` does not help when the file is one the coordinator is also touching
+  · **the invariant this breaks is the one the whole fan-out rests on** — *"parallel increments only ever touch
+  disjoint files, so there is never a split brain"*. A worktree makes that hold **by construction**, and that
+  guarantee is void the moment a lane writes outside it. The brief cannot enforce it; only a check can
+  · **candidate mechanisms, none built**: a pre-dispatch marker file the lane must find in its cwd and assert;
+  the coordinator asserting a clean main tree before each merge and naming the culprit paths (cheap, catches it
+  late); `git config core.hooksPath` with a pre-commit hook in the main checkout that refuses a commit touching
+  paths a dispatched lane owns (`status.json` already records ownership); or dispatching with the worktree as an
+  explicit `-C` rather than trusting cwd. Decide with an IGC — a mechanism that only warns after the fact fails
+  the goal *"the coordinator never has to ask a subagent's permission to merge"*
+  · **`status.json` already carries what a check would need**: which lanes are out and what files each owns. That
+  was built for a compacted coordinator; it is also the registry a containment check can read
+  · related: **#450, #402**
 - **#464** — the command composer's scrollbar appears and disappears, reflowing his text as he types · P2 ·
   UI/polish · origin: **human** · **human via watch 2026-07-29 02:30:** *"make the scroll bar in the command
   composer always show. It causes text to reflow when it disappears after the text box grows large enough to
