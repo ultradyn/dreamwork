@@ -8219,7 +8219,8 @@ function popoutDoc(url, label) {
           ripple(b.left + b.width / 2, b.top + b.height / 2); }
         document.getElementById('cmdtext').value = '';
         if (kind === 'do-now') setKind('add-idea');
-        if (DraftStore.isDurable(r)) clearDraft();  // durable success only (#163)
+        clearDraft();  // unguarded ON PURPOSE: already inside cv.landed, and
+        // an isDurable() here would read as a gate while gating nothing (#163)
         fitText(document.getElementById('cmdtext'), true);  // #177: shrink back, the same gesture reversed
         // he may already have started typing again while the POST was in
         // flight, before there was any timer to cancel. Courtesy is NOT
