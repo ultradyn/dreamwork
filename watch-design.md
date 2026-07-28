@@ -1235,6 +1235,20 @@ linkifiers inject `<a>` *inside* the backticks, so code spans convert after
 them and swallow the link; `**` resolves before `*` so a bold pair is never
 read as two emphases.
 
+**Review-artifact references — one shape (#472).** The corpus writes a
+backticked path `` `.dreamwork/review/<name>.html` ``; `linkifyReview` turns
+that into a dock link to `/review?p=<name>&q=<title>` so the originating
+question travels with the artifact. Prefer that shape in every new ask —
+it is what `#294`, `#445` and most of the open set already use. A markdown
+inline link whose target is a review artifact
+(`[label](../review/name.html)` or `[label](.dreamwork/review/name.html)`)
+is also recognised and rewritten to the same dock URL: `mdSpans` has no
+general `[text](url)` pass, and a relative `../review/` path is wrong for
+the `/questions` route, so the outlier form used by `#417` was raw text
+and unreachable. Bare relative paths are never left as navigable hrefs.
+(`file-formats.md` is where the writing rule belongs; this paragraph is
+the page-side contract.)
+
 The parser feeds this: a sub-bullet may itself be hard-wrapped, and its
 continuation lines belong to *it*. Capturing only the first line truncated
 the note mid-phrase **and** spilled its tail into the body as orphaned prose
@@ -2425,6 +2439,22 @@ and an empty `.age.qage[data-ct]` filled by the standing `ages()` sweep, so
 `2026-07-28 · 01d ago` is two phrases rather than one continuous digit run.
 No date in the title stays plain text. The date is day-resolution only, so
 `ct` is local midnight of that day.
+
+**An updated question also says so (#473).** "Updated" is a *per-entry
+content change* — body, notes or answers — not the file mtime of
+`questions.md` (a neighbour's answer rewrites the same file). The server
+tracks a content digest per entry in machine-local
+`.dreamwork/question-sigs.json`; first sight records the digest with no
+stamp, a later change stamps `updated_at` and appends a best-effort
+`question-updated via watch: …` line to `watch-events.log` (that channel is
+lossy by design, so the display half is the reliable deliverable). The
+title line then carries ` · updated X ago` via `.age.qup[data-ut]`, the
+same chrome separator and ages() sweep as #456 / #463. Honesty reuses
+#463's rule: ages() suppresses the secondary when `ageStr(updated)` equals
+the created figure — exact inequality produced 24 false positives of 28
+there. Digit flips are pure text (no transition); the *node's* first
+appearance is an arrival (`.dreamin` via `revealQuestionUpdates`), with
+reduced-motion settling fully lit. Guard: `dev/capture/qsignal.mjs`.
 
 **A question headline is therefore no longer its title.** `qtHtml` emits the
 age span *between* the date and the ` — ` separator, so `.qt`'s textContent is
