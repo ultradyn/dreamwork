@@ -3175,3 +3175,19 @@ this shape and convert opportunistically.)
   time that check has fired on a real breach rather than a rehearsal. Evidence: `#263` H2's merge, where the
   lane reported the breach and the two commands took under a minute.
 
+
+- **Never cache a DOM reference across the live tick — it does not mutate the node, it REPLACES it.** The
+  dashboard re-renders on a 2s phase that is independent of load, through `innerHTML`, so a reference taken at
+  the start of a 6-second sample points at a **detached** node by the middle of it. That is not a stale value:
+  a detached element's `getBoundingClientRect()` is all-zeros and its `getComputedStyle` reads a one-directional
+  transient, so a trace does not go quiet — it **invents a defect**. Three guards read a snap, a sweep and a
+  collapse-instead-of-grow off perfectly correct pages this way, and each was one line: re-acquire the reference
+  every frame. What makes it expensive is that it looks like the page misbehaving and reproduces only where the
+  tick phase collides, so it passes solo and fails in the suite — the shape everyone here reaches for "load" to
+  explain. Evidence: `#475`'s `oneinput`/`wisp`/`qsec`, diagnosed by the `motion` lane with a probe that sampled
+  the cached and a per-frame reference side by side (cached `drift down=1.00` FAIL vs fresh `0.57` PASS, 4/4).
+- **And the mirror of it, which is a real page bug: the tick can replace the node CARRYING a transition.**
+  Keeping the open state across the re-render is only half the contract; the fresh node also has to inherit the
+  *gesture*, or a native `el.open = true` lands it at full height in one frame. Read the two together — the same
+  re-render that invalidates a guard's reference invalidates the page's own in-flight animation, and only one of
+  those two was ever fixed. Evidence: `#477`.
