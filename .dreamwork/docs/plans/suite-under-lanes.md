@@ -133,3 +133,199 @@ fix that keeps the assertion honest at full strength.
 graded whatever held its port — the same *"the test measured somebody else's
 state"* shape, one layer up), `#413` (a guard encoding a superseded contract —
 the inverse failure mode, a silent green).
+
+---
+
+# #471 — why a self-serving guard cannot run alone, and why the "full run
+disagrees" premise is false
+
+This is an investigation, not a patch. The brief's own honest admission — *"I
+do not know why these two observations disagree"* — is the thing to resolve,
+and the resolution is that **they do not disagree, because Observation B is
+false**. Stated plainly so the ledger stops implying otherwise: **no registered
+guard fails to gate in a full run by being silent about it; the self-serving
+guards fail LOUDLY (exit 1, named message) in every run, single or full.**
+
+## The two observations, rechecked against the cited evidence
+
+- **Observation A** (true): `DREAMWORK_GUARDS=identity just guards` and
+  `DREAMWORK_GUARDS=reviewdraft just guards` both fail with
+  `serve: :39899 is serving …/target, not …/<guard>/…`.
+- **Observation B** (false): *"identity PASSED in the full `just test` run at
+  05:33."* The brief points at
+  `/tmp/claude-1000/…/scratchpad/justtest.txt` as *"a real record of one full
+  run — read it before running anything."* That file shows, verbatim:
+
+  ```
+  FAIL identity (exit 1) [load 52.41->52.41 / 16 cores]
+        FAIL the guard threw before finishing its checks
+        Error: serve: :39899 is serving /tmp/tmp.DXeQJ0ghBL/target, not /tmp/tmp.DXeQJ0ghBL/identity/alpha-loop …
+  FAIL reviewdraft (exit 1) [load 57.62->57.62 / 16 cores]
+        Error: serve: :39899 is serving …/target, not …/reviewdraft/target …
+  FAIL serving (exit 1) [load 49.62->49.62 / 16 cores]
+        Error: serve: :39899 is serving …/target, not …/serving/target …
+  FAIL gitrow (exit 1) [load 49.62->49.62 / 16 cores]
+        Error: serve: :39899 is serving …/target, not …/gitrow/target …
+  ```
+
+  `dashboard` and `morph` (both ephemeral-port guards) **PASS** in the same run.
+  So the file cited in support of Observation B refutes it: identity did **not**
+  pass; it failed with the identical port error. The first draft of #471's
+  finding (*"the claim that some of the 57 guards silently do not gate is
+  unsupported"*) is correct to retract that claim — and this investigation goes
+  further: **the guards fail loud, not silent, so the `#310`/`#413` "guard
+  believed to gate that did not" worry does not apply here at all.** A future
+  reader of the ledger should not carry that worry forward from #471.
+
+  (One caveat recorded rather than smoothed: the 05:33 run and `justtest.txt`
+  may not be the same run. But no post-#461 full run can show identity PASSING —
+  see the mechanism below — so any run that did was either pre-#461 or a
+  misread. `justtest.txt` is post-#461 — its lint output reports `next id 471` —
+  and it shows identity failing.)
+
+## Which of the brief's four possibilities is true: #4, "something else"
+
+The "something else" is that **Observation B is wrong**, full stop. Concretely:
+
+1. *Something frees `{{port}}` before the self-serving guards are reached* —
+   **false**. Nothing frees it. The shared server holds 39899 for the whole run,
+   and the self-serving guards fail in the full run too (`justtest.txt`).
+2. *Those guards differ from `reviewdraft` in a way not found* — **false**. They
+   are identical in the load-bearing respect: all adopt `argv[3]`.
+3. *`DREAMWORK_GUARDS=<one>` changes recipe behaviour beyond the guard list* —
+   **false**. The recipe always starts the shared server on `{{port}}` and always
+   passes `{{port}}` as `argv[3]` to every guard, regardless of `DREAMWORK_GUARDS`.
+   Setting it to one guard only narrows the loop; the shared server still starts.
+4. *Something else* — **true**: Observation B is a misread; both observations
+   are the same observation.
+
+## The mechanism, measured not reasoned
+
+`#461` (`aec8adc` then `54f8fcd`) converted the own-server guards to
+`serveVerified`. For six of them it **also** changed the port source from
+`const PORT = await freePort()` (ignore `argv[3]`, pick an ephemeral port) to
+`const PORT = process.argv[3] ? +process.argv[3] : await freePort()` (adopt the
+shared port when handed one). Verified per guard against the pre-conversion
+blob:
+
+| guard | pre-#461 `PORT` | post-#461 `PORT` | fails in full run? |
+|---|---|---|---|
+| `fileimg`  | `await freePort()` | `argv[3] ? +argv[3] : freePort()` | yes (would; run SIGTERM'd first) |
+| `fileview` | `await freePort()` | `argv[3] ? +argv[3] : freePort()` | yes (would; run SIGTERM'd first) |
+| `identity` | `await freePort()` | `argv[3] ? +argv[3] : freePort()` | **yes — seen in `justtest.txt`** |
+| `filehead` | `await freePort()` | `argv[3] ? +argv[3] : freePort()` | yes (would; run SIGTERM'd first) |
+| `gitrow`   | `await freePort()` | `argv[3] ? +argv[3] : freePort()` | **yes — seen in `justtest.txt`** |
+| `serving`  | `await freePort()` | `argv[3] ? +argv[3] : freePort()` | **yes — seen in `justtest.txt`** |
+| `reviewdraft` | `+(argv[3] \|\| 39894)` | (unchanged by #461) | **yes — seen in `justtest.txt`** |
+| `staleremedy` | `await freePort()` (ignores `argv[3]`) | (unchanged) | **no — immune** |
+
+`justtest.txt` shows 4 of 7 because the run was **terminated by signal 15** at
+`burndown` (after `gitrow`/`serving`), so it never reached
+`filehead`/`fileview`/`fileimg`. Those three share the identical code shape and
+would fail identically — the run simply did not get there.
+
+**This is `#461`'s own stated principle violated on its own batch 1.** The
+entry records that batch 2 (8 ephemeral-port guards) was *rejected* because
+*"adding an `argv[3]` pin takes eight guards that chose their own ephemeral
+port and aims them at a socket that is guaranteed occupied … merging it would
+have reddened eight guards in `just test`."* Batch 1 did precisely that to six
+guards, and the predicted reddening is exactly what `justtest.txt` records.
+
+## The cheapest discriminating experiment (run, load-independent)
+
+`DREAMWORK_GUARDS="identity gitrow" just guards`, at load 53.77 / 16 cores:
+
+```
+FAIL identity (exit 1) [load 53.77->53.77]
+      Error: serve: :39899 is serving …/target, not …/identity/alpha-loop …
+FAIL gitrow (exit 1) [load 53.77->54.43]
+      Error: serve: :39899 is serving …/target, not …/gitrow/target …
+```
+
+Both fail with the named port error. This is **not** a frame-sampling flake
+(those move with load and print "0 of N part-way"); it is a deterministic
+collision that throws before any browser work. The brief's trap — *"a guard
+failing is not evidence of your hypothesis unless the failure message is about
+the port or the target"* — is respected: every failure here is the port/target
+message.
+
+## Where the fix belongs — and where it does not
+
+**`dev/capture/serve.mjs`: NO CHANGE.** `serveVerified` refusing a port held by
+a server for a *different* target is correct; that refusal is `#461`'s entire
+contract (*"assert the responder's identity, not just that something
+responded"*). The brief floats an alternative — *"the guard should be told to
+pick its own port when the shared one is not its own"* — and it was weighed and
+rejected: (a) auto-fallback to an ephemeral port inside `serveVerified` would
+violate the caller's explicit port request and silently mask the `#461`
+stranger-squatter case the module was built to refuse; (b) returning a "port
+taken, you decide" signal still requires every guard to handle it, so it does
+not reduce the fix surface; (c) `#461`'s batch-2 rejection already names the
+right answer — these guards should pick an ephemeral port, and `serve.mjs`
+should keep refusing. Changing `serve.mjs` to be lenient would re-open the
+defect it exists to close.
+
+**The guards (NOT owned here): revert to `await freePort()`, keep
+`serveVerified`.** The fix is one line per guard, restoring the pre-#461 port
+source while retaining the readiness/identity check `#461` added. The reported
+diff (for the coordinator, who owns these files and the recipe):
+
+```diff
+- const PORT = process.argv[3] ? +process.argv[3] : await freePort();
++ const PORT = await freePort();
+```
+
+applied to `fileimg`, `fileview`, `identity`, `filehead`, `gitrow`, `serving`.
+`reviewdraft` is the special case below. **What it fixes:** the seven
+self-serving guards stop colliding with the shared server and each gets its own
+ephemeral server (immune to squatters by construction, per `#461` batch 2).
+**What it risks:** nothing behavioural — this is the exact code that ran before
+`aec8adc`/`54f8fcd`, and `serveVerified` still proves each guard's own server
+came up. A guard run standalone (`node dev/capture/identity.mjs OUT`) already
+took the `freePort()` arm, so the standalone path is unchanged.
+
+**`justfile`: NO CHANGE.** The recipe is correct: it starts one shared server
+and passes `{{port}}` to every guard. Guards that want the shared server use
+it; guards that serve their own target must ignore `argv[3]`. That is the
+contract the header comment already documents (*"identity … (OUT) only"*,
+*"serving … OWN TARGET + OWN EPHEMERAL PORT"*) — the code drifted from the
+comment, not the other way round.
+
+**`reviewdraft`'s hardcoded `39894`: a separate latent defect, not the #471
+cause.** `reviewdraft` uses `+(process.argv[3] || 39894)`. In a full run
+`argv[3]=39899`, so it takes 39899 and collides with the shared server — that
+is the #471 failure for it, identical to the other six. The hardcoded `39894`
+only applies when `argv[3]` is absent (standalone). It is nonetheless a defect:
+`39894` is *inside* the reserved watch-guard range `39890–39899`, and it is a
+fixed exclusive port, which `#319` ("guard servers should bind port 0") exists
+to remove. Reported, not fixed (another lane owns `reviewdraft.mjs`); the #471
+fix for `reviewdraft` is the same `await freePort()` revert as the other six,
+and the hardcoded `39894` should go with it.
+
+## Verification done here
+
+- `DREAMWORK_GUARDS="identity gitrow" just guards` — both FAIL with the named
+  port/target error at load 53.77 (deterministic, load-independent).
+- Read `justtest.txt` (the cited full run) end to end: 4 self-serving guards
+  fail with the port error; run SIGTERM'd before the other 3.
+- `git show <pre-461>:dev/capture/<g>.mjs` for all eight self-serving guards —
+  confirms the `freePort()` → `argv[3]` regression set exactly.
+- **Not run:** the full `just test` (eight lanes share this machine); nothing
+  bound in 39880–39899 left behind (the pair-run's shared server is reaped by
+  the recipe's trap); `:35110` untouched; no `pkill -f`.
+
+## Why it matters beyond convenience
+
+A guard that cannot run in isolation cannot be red-proved after the fact, and
+this repo's rule is that a check is not verification until it has been red.
+The fix above restores isolation for seven guards at once, by reverting the
+`#461` batch-1 port regression while keeping its identity check — so the
+property `#461` was built for (never grade a stranger's server) survives, and
+the property `#319` was built for (never collide on a fixed port) is restored.
+
+Related: `#461` (the regression source, whose batch-2 rejection already named
+the right answer), `#319` (bind port 0 — the durable fix these guards should
+already embody), `#203` (the orphan-squatter class `serveVerified` exists to
+refuse), `#428` (the suite under concurrent lanes — this is a deterministic
+cousin, not a load flake), `#310` (the "guard believed to gate that did not"
+worry — **does not apply**: these guards fail loud).
