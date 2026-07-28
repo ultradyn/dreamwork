@@ -24,9 +24,39 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **458**
+Next id: **459**
 
 ## Open
+- **#458** — a migration leaves its notice **in the file the stale agent still reads**, so a running loop can
+  update its own routine · **P1** · loop-machinery/migration · origin: **human** ·
+  **human via chat 2026-07-29 01:40 (paraphrase of a dictated thought, his words quoted below):** *"for
+  upgrades of dreamwork … at the top of tasks.md we can have a comment message that says, this is an archived
+  copy … the migrate thing can put in messages that mean that any agent that was still running the old protocol
+  would find those messages and then be able to update itself, update its own routines. like, the self
+  documenting nature."*
+  · **the gap it closes is exact and currently real.** `migrations/README.md` applies migrations *"at
+  initialization (orient)"* — comparing `.dreamwork/skill-version` to the latest entry. So a **long-running**
+  loop that never re-initializes never sees a migration at all: it holds its routine in context and keeps
+  running the old protocol indefinitely. The skill files are cold to it; the **data files are hot**, read every
+  tick. That makes the data file the only channel guaranteed to reach a stale agent.
+  · **the motivating case is `#294`** (ledger → SQLite). The moment `tasks.md` stops being authoritative, an
+  old-protocol agent keeps *writing* to it — and its work is silently lost, because nothing reads it any more.
+  A banner at the top (*"archived copy; the live store is X; here is the tool"*) turns that from silent loss
+  into self-healing. Do not build this after `#294`; build it **before**, or the first migration that needs it
+  is the one that eats work.
+  · **design questions worth an IGC, not a guess:** where the notice lives so a human reader and a parser both
+  see it and neither is confused (a leading comment, a front-matter block, a first-line marker); how it is
+  distinguished from content (`lint.py` must not read it as an entry, and `watch.py` must not render it as a
+  task); whether it is *instructions* or a *pointer* to a migration entry — a pointer keeps the file small and
+  survives the instruction changing; and how it is **retired**, since a notice that outlives its migration is
+  the next agent's confusion.
+  · **the trust boundary must be stated in the same breath.** An instruction sitting in a data file that an
+  agent then follows is the shape of a prompt injection. It is safe **here** because the writer is our own
+  migration inside a local repo — so the design says explicitly: only a migration writes these, they carry a
+  declared marker, and an agent treats them as a protocol notice from its own repo, never as authority from a
+  peer (peer messages remain data, per the standing rule).
+  · **read with `#439`** (update & refresh) and `#438` (scheduled tasks) — both are about the loop acting on
+  change it did not initiate.
 - **#456** — day-age needs a `·` separator, and the pad zero should be near-invisible · **P2** ·
   dashboard/type · origin: **human** · **next-up** ·
   **human via watch 2026-07-29 01:18:** *"with the day age on questions (\"2026-07-28 01d ago\"), please: add
