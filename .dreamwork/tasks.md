@@ -2593,6 +2593,15 @@ Next id: **459**
   against the live repo at once — the known interaction, not a defect
   · related: **#426**
 
+  · **SECOND GATE OPEN 2026-07-29 01:37 — *"ack good to go"*.** Lanes **E** (HTTP `202`), **G** (browser)
+  and **H** (version gate) are authorised; the standing prohibition on building them is lifted. Still
+  **excluded by his earlier clause and not by this one**: payload purge and the PostgreSQL half — do not
+  read an open gate as authorising those. E and G both live in `watch.py`, so they **serialise on that
+  file** however disjoint the plan makes their dependencies; the plan recommends E take its own
+  `test_user_events_http.py`. Measured facts to reuse rather than re-derive: `_send` (`watch.py:8231`)
+  hardcodes `send_response(200)` so it cannot express a status at all, and **every** browser check is
+  `res.ok` across 9 sites — so `200 → 202` is invisible to him and moves only 15 assertions (by `ast`,
+  not grep, which missed four multi-line ones).
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses

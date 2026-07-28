@@ -67,32 +67,7 @@
 
 
 
-- **P1 · 2026-07-28 — #263: the second gate's condition is met, verified this time. Open it?**
-  **Ask: `rec` for "open E and H, split `#368` first" — or answer Q1/Q2/Q3 separately.** Free text
-  fine; *"not yet"* is a real answer.
-  **Q1 — open the gate for lane E** (increments 20–25, the HTTP cutover: the journal commit, not the
-  handler, authorises the response)? **Rec: yes.**
-  **Q2 — open it for lane H** (34–35, the mixed-version gate)? **Rec: yes for the code**; I will not
-  run it against your live target without asking again.
-  **Q3 — does `#368` (the modular split) land before lane E starts? Rec: split first.** Your own note
-  in the plan said so. Measured now: `watch.py` is **9,688** lines — your 8,647 was stale — and **6 of
-  6** of lane E's production increments touch it, adding no new module. Serial-now is the honest
-  alternative and gets `#371`'s remaining half sooner.
-  **What is different from my 16:24 ask, which was wrong.** I told you the condition was met; lane C
-  was **3 of 5**. `C4` and `C5` landed at 17:21, so **A 2/2 · B 8/8 · C 5/5 · D 4/4 · F 4/4** and
-  *"until A–D are proved"* is satisfied. **This time a merge gate asserted it**, taking its
-  denominator from the plan's own increment table rather than from a lane's *"3/3"* — which is
-  precisely the sentence I misread. The gate is red on `master` and passes on the merge, so it can see
-  the absence it checks for.
-  **Your 17:38 message lands on Q3 and I have folded it in.** If `#368` goes first, its **first
-  increment is `#425`** — the monolith moves to `deprecated/watch.py` and `watch.py` becomes a symlink,
-  so a client that started before the split keeps working. That makes split-first slightly cheaper than
-  I priced it above (the symlink is the compatibility story, not a later migration), and it is filed as
-  blocking `#368`. The general principle is `#426`.
-  **Opening the gate does not authorise:** lane **G** (30–33, never in `G1`), increment 18's purge or
-  19's PostgreSQL half (your Q4), or any migration of a live target.
-  Optional: artifact `.dreamwork/review/263-second-gate.html` (**being rebuilt** — it still says
-  3 of 5), plan `user-event-journal-implementation.md`.
+
 
 - **P1 · 2026-07-28 — #264: ratify the task-transition boundary, and one deployment call
   only you can make.** Artifact: `.dreamwork/review/task-transition-boundary.html` (open it from
@@ -256,6 +231,38 @@
     redaction be designed now), Q6 (who besides you). Q4 moved to #359.
 
 ## Answered
+- **P1 · 2026-07-28 — #263: the second gate's condition is met, verified this time. Open it?**
+  **Ask: `rec` for "open E and H, split `#368` first" — or answer Q1/Q2/Q3 separately.** Free text
+  fine; *"not yet"* is a real answer.
+  **Q1 — open the gate for lane E** (increments 20–25, the HTTP cutover: the journal commit, not the
+  handler, authorises the response)? **Rec: yes.**
+  **Q2 — open it for lane H** (34–35, the mixed-version gate)? **Rec: yes for the code**; I will not
+  run it against your live target without asking again.
+  **Q3 — does `#368` (the modular split) land before lane E starts? Rec: split first.** Your own note
+  in the plan said so. Measured now: `watch.py` is **9,688** lines — your 8,647 was stale — and **6 of
+  6** of lane E's production increments touch it, adding no new module. Serial-now is the honest
+  alternative and gets `#371`'s remaining half sooner.
+  **What is different from my 16:24 ask, which was wrong.** I told you the condition was met; lane C
+  was **3 of 5**. `C4` and `C5` landed at 17:21, so **A 2/2 · B 8/8 · C 5/5 · D 4/4 · F 4/4** and
+  *"until A–D are proved"* is satisfied. **This time a merge gate asserted it**, taking its
+  denominator from the plan's own increment table rather than from a lane's *"3/3"* — which is
+  precisely the sentence I misread. The gate is red on `master` and passes on the merge, so it can see
+  the absence it checks for.
+  **Your 17:38 message lands on Q3 and I have folded it in.** If `#368` goes first, its **first
+  increment is `#425`** — the monolith moves to `deprecated/watch.py` and `watch.py` becomes a symlink,
+  so a client that started before the split keeps working. That makes split-first slightly cheaper than
+  I priced it above (the symlink is the compatibility story, not a later migration), and it is filed as
+  blocking `#368`. The general principle is `#426`.
+  **Opening the gate does not authorise:** lane **G** (30–33, never in `G1`), increment 18's purge or
+  19's PostgreSQL half (your Q4), or any migration of a live target.
+  Optional: artifact `.dreamwork/review/263-second-gate.html` (**being rebuilt** — it still says
+  3 of 5), plan `user-event-journal-implementation.md`.
+  - **Note (human, via watch, 2026-07-29 01:22):** for this artifact page,
+    please add to the top of it: - a paragraph explaining the context - an
+    explanation of the problem - the IGC goals, ideas, and table. - your
+    recommendation. be concise.
+  - **Answer (via watch, 2026-07-29 01:37):** ack good to go
+
 - **P1 · 2026-07-28 — #421: how the loop should ask you things (A/B/D live; C withdrawn on your note)**
 
   → answered (2026-07-29 01:17): **`rec` — A + B + D adopted**, C withdrawn. Plus the
