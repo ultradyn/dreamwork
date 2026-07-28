@@ -1553,6 +1553,19 @@ NOT_GUARDS = frozenset({
     # yet to gate — #367 increment 2 has no shipped CSS. When that lands, its real
     # guard is a separate file and this stays a measurement. (#367)
     "marktab-geometry",
+    # A tool, not a guard: it takes a path and measures whichever artifact you
+    # hand it, so it has no fixed subject to gate and binds no port. It is the one
+    # shared above-the-fold check that review briefs now cite, replacing the inline
+    # copy each lane used to write -- `#ask` existed on 2 of 22 built artifacts, so
+    # the criterion every brief demanded was unevaluable on the other 20 and had
+    # been silently unenforced since it was written.
+    #
+    # It SHOULD gate something eventually, and deliberately does not yet: turning
+    # it into a guard means first making `#ask` a required element, which is #429's
+    # other half. Registering it now would red the suite over 20 artifacts that
+    # predate the contract. When that lands, the guard is a separate file that
+    # walks the directory, and this stays the tool it calls. (#429, #430)
+    "above_fold",
 })
 
 
