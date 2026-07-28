@@ -5560,6 +5560,258 @@ class TestRunMode(unittest.TestCase):
             self.assertIn("/run-mode", paths)
 
 
+class TestPosture(unittest.TestCase):
+    """#445 increment 2 — three-axis posture controls on the dashboard.
+
+    Closed sets imported from lint (never restated). Single shared 10s arm
+    over a whole posture edit; one POST /posture; one events line only on a
+    real change. Asking keeps four stops; delegation is a non-negative
+    integer TARGET, not a cap.
+    """
+
+    def _serve(self, target):
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), watch.make_handler(target))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def _post(self, url, obj):
+        req = urllib.request.Request(
+            url, data=json.dumps(obj).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    def _lines(self, d):
+        path = os.path.join(d, ".dreamwork", "submissions.log")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return [json.loads(ln) for ln in f if ln.strip()]
+
+    def test_vocabulary_is_imported_from_lint_not_restated(self):
+        """Production line: watch.POSTURE_STOPS_* is lint's object (is, not ==).
+
+        Restating the closed set as a fresh tuple would pass an equality
+        check and re-open the #413 double-copy defect. Identity is the red.
+        """
+        import lint
+        self.assertIs(watch.POSTURE_STOPS_PACE, lint.POSTURE_STOPS_PACE)
+        self.assertIs(watch.POSTURE_STOPS_ASKING, lint.POSTURE_STOPS_ASKING)
+        self.assertIs(watch.DELEGATION_POSTURES, lint.DELEGATION_POSTURES)
+        self.assertIs(watch.derive_posture, lint.derive_posture)
+        self.assertIs(watch.delegation_posture, lint.delegation_posture)
+        # Asymmetry is load-bearing: asking has four, pace three.
+        self.assertEqual(len(watch.POSTURE_STOPS_PACE), 3)
+        self.assertEqual(len(watch.POSTURE_STOPS_ASKING), 4)
+        self.assertEqual(set(watch.POSTURE_STOPS_ASKING),
+                         {"ask", "inform", "near-auto", "auto"})
+
+    def test_resolve_derives_when_absent_and_overlays_file(self):
+        """Production lines: resolve_posture → derive_posture / read_posture_file."""
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["source"], "derived")
+            # Default run-mode is lackadaisical → idle/ask/0
+            derived = watch.derive_posture(watch.RUN_MODE_DEFAULT)
+            self.assertEqual(r["pace"], derived["pace"])
+            self.assertEqual(r["asking"], derived["asking"])
+            self.assertEqual(r["delegation"], derived["delegation"])
+            self.assertEqual(r["delegation_label"],
+                             watch.delegation_posture(r["delegation"]))
+            self.assertTrue(watch.write_posture(d, "steady", "near-auto", 2))
+            r2 = watch.resolve_posture(d)
+            self.assertEqual(r2["source"], "file")
+            self.assertEqual(r2["pace"], "steady")
+            self.assertEqual(r2["asking"], "near-auto")
+            self.assertEqual(r2["delegation"], 2)
+            self.assertEqual(r2["delegation_label"], "delegate")
+
+    def test_write_refuses_outside_closed_sets_and_negative(self):
+        """Production line: write_posture membership / n < 0 guards."""
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            self.assertFalse(watch.write_posture(d, "warp", "ask", 0))
+            self.assertFalse(watch.write_posture(d, "idle", "chatty", 0))
+            self.assertFalse(watch.write_posture(d, "idle", "ask", -1))
+            self.assertFalse(
+                os.path.exists(os.path.join(d, ".dreamwork", "posture")))
+            self.assertTrue(watch.write_posture(d, "hot", "auto", 0))
+            self.assertEqual(watch.read_posture_file(d),
+                             {"pace": "hot", "asking": "auto", "delegation": 0})
+
+    def test_posture_line_is_one_line_and_from_safe(self):
+        self.assertEqual(
+            watch.posture_line("hot", "ask", 1),
+            "posture via watch: pace=hot asking=ask delegation=1")
+        self.assertEqual(
+            watch.posture_line("hot", "ask", 1, "/"),
+            "posture via watch [/]: pace=hot asking=ask delegation=1")
+        # free text cannot forge a second events line
+        self.assertEqual(
+            watch.posture_line("hot\nforged", "ask", 1, "/"),
+            "posture via watch [/]: pace=hot forged asking=ask delegation=1")
+        self.assertEqual(
+            watch.posture_line("hot", "ask", 1, "]\nforged"),
+            "posture via watch: pace=hot asking=ask delegation=1")
+
+    def test_collect_exposes_posture(self):
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            data = watch.collect(d)
+            self.assertIn("posture", data)
+            self.assertEqual(data["posture"]["source"], "derived")
+            self.assertTrue(watch.write_posture(d, "hot", "inform", 1))
+            p = watch.collect(d)["posture"]
+            self.assertEqual(p["source"], "file")
+            self.assertEqual(p["asking"], "inform")
+            self.assertEqual(p["delegation"], 1)
+            self.assertEqual(p["delegation_label"], "assist")
+
+    def test_post_writes_file_and_one_event_on_change(self):
+        """Production line: _handle_posture write + log_event on real change."""
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(
+                self._post(base + "/posture", {
+                    "pace": "hot", "asking": "inform",
+                    "delegation": 1, "from": "/",
+                }), 202)
+            self.assertEqual(watch.read_posture_file(d), {
+                "pace": "hot", "asking": "inform", "delegation": 1,
+            })
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            with open(log, encoding="utf-8") as f:
+                lines = [ln for ln in f if "posture" in ln]
+            self.assertEqual(len(lines), 1, lines)
+            self.assertIn(
+                "posture via watch [/]: pace=hot asking=inform delegation=1",
+                lines[0])
+            # identical final is idempotent: 202, no second event
+            self.assertEqual(
+                self._post(base + "/posture", {
+                    "pace": "hot", "asking": "inform", "delegation": 1,
+                }), 202)
+            with open(log, encoding="utf-8") as f:
+                lines = [ln for ln in f if "posture" in ln]
+            self.assertEqual(len(lines), 1)
+
+    def test_post_rejects_unknown_pace_asking_and_negative(self):
+        """Production line: domain_invalid branches in _handle_posture."""
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(
+                self._post(base + "/posture", {
+                    "pace": "warp", "asking": "ask", "delegation": 0,
+                }), 202)
+            self.assertEqual(
+                self._post(base + "/posture", {
+                    "pace": "idle", "asking": "chatty", "delegation": 0,
+                }), 202)
+            self.assertEqual(
+                self._post(base + "/posture", {
+                    "pace": "idle", "asking": "ask", "delegation": -3,
+                }), 202)
+            self.assertFalse(
+                os.path.exists(os.path.join(d, ".dreamwork", "posture")))
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            if os.path.exists(log):
+                with open(log, encoding="utf-8") as f:
+                    self.assertEqual(
+                        [ln for ln in f if "posture" in ln], [])
+
+    def test_asking_axis_accepts_all_four_stops(self):
+        """Asymmetry: every asking stop is writable. Production: POSTURE_STOPS_ASKING."""
+        # Precondition derived at runtime — if the set shrinks, this fails first.
+        stops = list(watch.POSTURE_STOPS_ASKING)
+        self.assertEqual(len(stops), 4, stops)
+        self.assertIn("near-auto", stops)
+        self.assertIn("auto", stops)
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            for stop in stops:
+                self.assertEqual(
+                    self._post(base + "/posture", {
+                        "pace": "idle", "asking": stop, "delegation": 0,
+                    }), 202, stop)
+                self.assertEqual(
+                    watch.read_posture_file(d)["asking"], stop, stop)
+
+    def test_page_carries_vocabulary_wiring_and_arm(self):
+        self.assertIn(
+            "const POSTURE_STOPS_PACE = "
+            + json.dumps(list(watch.POSTURE_STOPS_PACE)),
+            watch.PAGE)
+        self.assertIn(
+            "const POSTURE_STOPS_ASKING = "
+            + json.dumps(list(watch.POSTURE_STOPS_ASKING)),
+            watch.PAGE)
+        for token in (
+            'function posturePicker(', 'function pickPostureAxis(',
+            'function stepPostureDelegation(', "fetch('/posture'",
+            'dw:posture-pending:', 'pbarfill', 'prefers-reduced-motion',
+            'id="posture"', 'near-auto',
+            'target, not a cap',
+            'POSTURE_STOPS_ASKING.map',
+            "pickPostureAxis('asking'",
+            "pickPostureAxis('pace'",
+        ):
+            self.assertIn(token, watch.PAGE, token)
+        # Asking axis is driven from the four-stop closed set (not a
+        # hardcoded three-chip list). Production line: the .map over
+        # POSTURE_STOPS_ASKING in posturePicker — compress to three by
+        # slicing and this reds.
+        idx = watch.PAGE.index('function posturePicker(')
+        end = watch.PAGE.index('function showPostDesc(', idx) \
+            if 'function showPostDesc(' in watch.PAGE[idx:] \
+            else idx + 4000
+        # showPostDesc is after posturePicker; bound the picker body.
+        picker_end = watch.PAGE.find('/* Shared description for posture', idx)
+        body = watch.PAGE[idx:picker_end if picker_end > idx else end]
+        self.assertIn('POSTURE_STOPS_ASKING.map', body)
+        self.assertIn('POSTURE_STOPS_PACE.map', body)
+        # Must not compress asking: no .slice(0, 3) on the asking set.
+        self.assertNotIn('POSTURE_STOPS_ASKING.slice', body)
+        # Registered write route
+        import inspect
+        self.assertIn('"/posture": _handle_posture',
+                      inspect.getsource(watch.make_handler))
+
+    def test_post_path_is_witnessed_like_other_writes(self):
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(
+                self._post(base + "/posture", {
+                    "pace": "hot", "asking": "ask", "delegation": 0,
+                }), 202)
+            paths = [ln["path"] for ln in self._lines(d)]
+            self.assertIn("/posture", paths)
+
+    def test_desc_tables_cover_every_stop_and_hover_does_not_write(self):
+        """Contract copy present; showPostDesc never arms/POSTs."""
+        for stop in watch.POSTURE_STOPS_PACE:
+            self.assertIn(stop, watch.POSTURE_PACE_DESC)
+            self.assertTrue(watch.POSTURE_PACE_DESC[stop].strip())
+        for stop in watch.POSTURE_STOPS_ASKING:
+            self.assertIn(stop, watch.POSTURE_ASKING_DESC)
+            self.assertTrue(watch.POSTURE_ASKING_DESC[stop].strip())
+        for lab in watch.DELEGATION_POSTURES:
+            self.assertIn(lab, watch.POSTURE_DELEGATION_DESC)
+        idx = watch.PAGE.index('function showPostDesc(')
+        end = watch.PAGE.index('document.addEventListener(\'pointerover\'', idx)
+        body = watch.PAGE[idx:end]
+        self.assertNotIn('armPostureDraft(', body)
+        self.assertNotIn("fetch('/posture'", body)
+        self.assertNotIn('writePostPending(', body)
+        self.assertNotIn('commitPosture(', body)
+
+
 class TestDeployAction(unittest.TestCase):
     """#462 increment 2 — page-triggered `just deploy`.
 

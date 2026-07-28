@@ -35,21 +35,23 @@ carries a `+` command opener (steer the loop without a chat turn).
   bind defaults to itself only when explicitly allowlisted, otherwise it also
   requires an allowed `--url-host`. IPv6 uses an AF_INET6 server and bracketed
   advertised URL.
-- **Read-only, seven explicit write exceptions** (all human-authorized under
+- **Read-only, eight explicit write exceptions** (all human-authorized under
   loopback or explicit trusted-LAN authority): POST `/answer` appends an answer
   to the matching Open entry in `questions.md`; `/ask` appends a human question
   to `answers.md`; `/comment` appends a human note to an Open or Answered
   question; `/command` appends source-tagged steering to
   `.dreamwork/watch-events.log`; `/tint` persists the project colour in
   `.dreamwork/watch-tint`; `/run-mode` commits the main-dreamer pace into
-  `.dreamwork/run-mode` (#290); `/deploy` schedules `just deploy` (#462,
-  **loopback peer only**, single-flight — trusted-LAN Host/Origin is not
+  `.dreamwork/run-mode` (#290); `/posture` commits the three-axis posture
+  override into `.dreamwork/posture` (#445); `/deploy` schedules `just deploy`
+  (#462, **loopback peer only**, single-flight — trusted-LAN Host/Origin is not
   enough for a command that restarts the server). Answer, ask, comment and
   command always append one line to `watch-events.log`, waking the loop.
-  `/run-mode` dual-writes the file and appends **one** events line only when
-  the mode actually changes (identical final is silent). Tint and deploy
-  deliberately do not wake: tint is presentation state; deploy restarts the
-  dashboard process. Every other POST is rejected; every other route reads.
+  `/run-mode` and `/posture` dual-write their file and append **one** events
+  line only when the value actually changes (identical final is silent). Tint
+  and deploy deliberately do not wake: tint is presentation state; deploy
+  restarts the dashboard process. Every other POST is rejected; every other
+  route reads.
   All file access goes through `resolve_confined()` (rejects absolute, `~`,
   traversal); `/filedata`, `/filebytes` (#336) and `/reviewraw` are all
   behind it.
@@ -1786,6 +1788,60 @@ stable box across every chip, zero arm/file/event side effects on
 hover/focus/Escape (including pending localStorage and the countdown text,
 because a 10s arm is silent to POST for ten seconds), per-frame morph
 `between()` intermediates, reduced-motion parity, and hover≡focus text.
+
+### The three-axis posture (#445)
+
+The fine-grained override of run-mode's bundled decisions. His words: *"we
+should add controls for the new values and their dimensions. We can have like
+3 stops on each axis maybe? IDK that i will leave up to you, but we get 3
+dimensions of input is the point."* Increment 1 landed the vocabulary
+(`.dreamwork/posture`, sibling of run-mode); this surface is the control.
+
+**Three orthogonal axes, one file.** `pace` × `asking` × `delegation`,
+written as three `axis: value` lines in `.dreamwork/posture` (gitignored,
+machine-local). An **absent** file is derived from run-mode via
+`lint.derive_posture` (single source — the dashboard imports, never restates,
+the closed sets and the conversion). A **present** file is an explicit
+override. `collect()` exposes `posture` so every open window converges on the
+existing `/mtime` poll.
+
+**Asymmetry is honest, not tidied.** Pace has three stops (`idle` / `steady`
+/ `hot`). Asking keeps **all four** of the levels he dictated (`ask` /
+`inform` / `near-auto` / `auto`) — near-auto still journals an ADR-shaped
+record per material choice, auto does not, so merging them would delete a
+behaviour he specified. His "3 stops maybe" was about the control, not a
+licence to drop a level. Delegation is an **integer average-concurrency
+target**, not a chip and not a cap (his Q3): `0` means *occasional* (avg
+below 0.5 — not forbidden), `1` means avg between 0.5 and 1.5, `2+`
+delegates. The derived label (`own` / `assist` / `delegate`) is display only.
+Two agents may pair on one worktree. The stepper's UI max is a control
+affordance, not a fleet limit.
+
+**One shared 10s arm over the whole triple.** Three independent arms would be
+three ceremonies for one file and one events line. Any axis change resets
+`RUN_ARM_MS` (the #290 arm, reused); only the final triple POSTs `/posture`.
+Identical final is silent. Re-selecting the fully committed triple cancels.
+Cross-tab pending rides `localStorage` keyed by `data.target`
+(`dw:posture-pending:`), same owner/orphan-reclaim shape as run-mode. The
+control is the standing sliding group for pace and asking; the stepper is a
+quiet − / value / + with the derived label beside it. Active stop takes
+`--accent` (live loop control). Reduced motion hides the bar and keeps the
+second-by-second text and the same application time.
+
+**Source note.** A dim line under the axes says whether the painted values
+are `derived from run mode` or an `override · .dreamwork/posture`, so a
+glance never confuses the two. Hover/focus description reuses the rundesc
+blur/drift idiom and never arms, POSTs, or touches localStorage.
+
+**Consumption honesty.** The file + the events line
+(`posture via watch[ /path]: pace=… asking=… delegation=…`) are how an agent
+learns the override. The loop re-reads on tick (#426); this dashboard does
+not, by itself, change a running session's scheduler.
+
+`dev/capture/posture.mjs` is the browser guard: stop counts (including the
+four-stop asking axis), arm drain sampled mid-bar via `between()`, one POST
++ one events line on change, cancel on re-select, reduced-motion text path,
+hover side-effect free, hard-refresh follows the file.
 
 ### The project tint
 
