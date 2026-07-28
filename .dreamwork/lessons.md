@@ -3148,11 +3148,18 @@ this shape and convert opportunistically.)
   `grep -c FAIL` on it measures how far it got. Evidence: `#471`'s correction, four `is serving` messages in
   one run against my claim of three passes.
 
-- **A bisect verdict naming a commit that could not possibly cause the failure is evidence the RANGE is wrong,
-  not the code.** Hunting the `#474` dock regression I ran `git bisect start <bad> <good>` with a "good" that was
-  **not an ancestor** of the "bad". Bisect accepted it, reported *"445 revisions left"* for what should have been
-  a handful, and blamed a **dream-file commit** — a markdown note that cannot break a browser guard. Two checks
-  make this cheap: confirm ancestry (`git merge-base --is-ancestor good bad`) before starting, and treat an
-  absurd culprit as a finding about the method rather than a surprise about the code. Also: `git bisect reset`
-  must actually take — a stale `bisect log` served the previous run's verdict and I nearly read it as the new
-  one. Evidence: `#474`, where hand-picked commits gave a contradictory answer first for the same reason.
+- **A malformed bisect range is worth two checks, and "that culprit is absurd" is not one of them.** Hunting
+  the `#474` dock regression I ran `git bisect start <bad> <good>` with a "good" that was **not an ancestor** of
+  the "bad". Bisect accepted it and reported *"445 revisions left"* where a well-formed range had 55, so:
+  confirm ancestry with `git merge-base --is-ancestor good bad` before starting, restrict to the paths that
+  could possibly matter (`-- watch.py dev/capture/<guard>.mjs` cut 841 first-parent commits to 55, six steps at
+  25s), and know that `git bisect reset` must actually take — a stale `bisect log` served the previous run's
+  verdict and I nearly read it as the new one.
+  **The part I got wrong is the more useful half.** I dismissed the first verdict as *"a dream-file commit that
+  cannot break a browser guard"* — because I read the commit **subject** (`dream(#385): …`) instead of its
+  diffstat. `dream(` is this repo's message prefix for dream-journal *work*, not a marker that a commit only
+  touches dream files: `0dd136e` changes `watch.py`, `test_watch.py`, `watch-design.md` and a guard. The
+  well-formed bisect returned **the same commit**, and it was right the first time. So: an absurd-looking
+  culprit indicts your reading of the commit before it indicts the method — run `git show --stat` on it, which
+  costs one command, before concluding the range is broken. Evidence: `#474`, where that misreading cost two
+  extra bisects and a lesson that had to be rewritten.
