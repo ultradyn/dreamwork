@@ -74,6 +74,15 @@ dreamwork-version: 5853e1789929
   were overridden** and earned their place. Two of four is the ratio to beat,
   and the test before writing an ask is *"would I be surprised by any answer
   other than my rec?"* — if not, it is not a question.
+- **Anything likely to take more than ~15 seconds runs in the background**
+  (human-set 2026-07-29 01:24): *"any command that will likely take more than
+  15 seconds to run, you should ALWAYS run it in the bg so you can progress in
+  parallel and process any other incoming msgs etc to keep your queue clear."*
+  Aimed at the coordinator specifically: a foreground `pytest` (~2 min here)
+  blocks the whole channel, so his dashboard commands and lane reports queue up
+  behind a test run. Subagent dispatch obeys the same rule — as tracked
+  background jobs, never `nohup`, so the harness can show them, stop them, and
+  wake the coordinator when one exits.
 - **No brittle numeric thresholds in our contracts** (human-set 2026-07-29
   01:13, withdrawing `#421`'s option C): *"don't quote word counts or whatever.
   like things like that which become errors too easily (are brittle)."* A count
