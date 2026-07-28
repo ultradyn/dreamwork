@@ -340,6 +340,33 @@ dreamwork-version: 5853e1789929
   and where the choice hinges on it, spend the thirteen minutes.
   His answer then improved on both options — C with a collapsible index —
   which he could only have seen with both on screen.
+- **A research artifact is a kind of deliverable, not a note to himself.**
+  His words via watch, 2026-07-28 16:29: *"get a subagnet to write a research
+  artifact about how https://github.com/ayghri/i-have-adhd works (in terms of
+  its instructions). Use that to create some options ... Then present those
+  options to me as a question. also, we should support research artifacts in
+  like `.dreamwork/docs/research/` or something. ideally HTML when they are
+  user facing or benefit from visual expression."*
+  Three things, and the first is the one easiest to skip: **he specified the
+  method, not just the goal.** Research a named external artifact, derive
+  options from it, put the options to him. A lane that reads the source and
+  returns opinions has not done the task. Second, **the coordinator derives
+  the options** — his 05:43 preference — and the lane supplies the material.
+  Third, `.dreamwork/docs/research/` is the home, **HTML when user-facing**,
+  which nothing builds or serves yet (`#422`), so research ships as markdown
+  and the *options* ship as a review artifact through the existing pipeline.
+- **The research is allowed to kill the premise, and that is the value.**
+  `#421` was filed asserting *"three signals that our question format costs
+  him"*. Measured: **19 of 56** entries carry two or more sub-decisions and
+  **15 of 16** answered multi-part entries closed **complete**, often
+  same-day on a bare `rec`. Durable partials: **2**. So *"ask one thing at a
+  time"* is refuted by his own answering record, and it was the obvious port
+  from the source he named. Recorded as rejected-with-reasons so nobody
+  proposes it again.
+  The defect that *is* measured is different and I would not have guessed it:
+  **what we write is barely coupled to the size of what we are asking.** The
+  two entries whose titles promise a *"one word"* answer are **300 and 448
+  words**, both above the corpus median of **302**.
 
 ## Plugins
 
