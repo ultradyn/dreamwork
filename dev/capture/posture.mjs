@@ -15,10 +15,28 @@
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { mkdirSync, readFileSync, existsSync, writeFileSync, rmSync, cpSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { makeReporter } from './report.mjs';
 
-const OUT = process.argv[2], PORT = process.argv[3] || '39892';
+const OUT = process.argv[2];
+/* #475/#461: posture starts its OWN watch.py for a scratch target, so it
+   must take a free port and IGNORE argv[3]. The `guards` recipe always passes
+   {{port}} (its own shared server's port) to every guard, and this guard
+   `spawn`s watch.py on that same port — which dies "address in use" silently,
+   leaving the guard grading the recipe's server (a DIFFERENT target). The
+   arm bar's drain then samples the OTHER target's page (its posture section is
+   inert) and the POST writes the OTHER target's posture file, so the file the
+   guard opens here is empty. The five cascading failures (mid-frames=0, file
+   not written, three axis checks) are all this one port collision — verified
+   by a controlled collision (file="") and by a clean solo run (32/32 PASS,
+   mid-frames=77). The `await freePort()` idiom is the #461 fix staleremedy,
+   reviewdraft, identity and friends already use. */
+const freePort = () => new Promise(res => {
+  const s = createServer();
+  s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
+});
+const PORT = await freePort();
 const BASE = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
@@ -142,11 +160,35 @@ ok('hover left events log posture lines unchanged',
 await p.click('.paxis-chips[data-axis="pace"] .pchip[data-stop="steady"]');
 await sleep(200);
 
+/* The drain is a 10s `width` CSS transition on #pbarfill (watch.py
+   `.pbarfill { transition:width 10s linear }`). width transitions repaint on
+   the MAIN thread, so under concurrent-guard load the main thread stalls, the
+   transition stops repainting, and the rAF sampler reads the SAME width frame
+   after frame — mid-frames reads 0 over a perfect drain. That is the #442
+   compositor/main-thread-starvation gap, and the load-independent snap
+   detector is `transitionstart`: it fires iff the browser registered and began
+   a width transition for the bar, however few frames the sampler caught. The
+   assertion is the #442 shape — `ran || mid >= 1` — so a real drain passes
+   either way (the event fired, or the trace caught it part-way), and a snap
+   (transition removed from CSS) fails both. (#475.) */
 const armSample = await p.evaluate(() => {
   const fill = document.getElementById('pbarfill');
   const count = document.getElementById('pcount');
   const bar = document.getElementById('pbar');
   const widths = [];
+  const events = [];
+  let ranWidth = false;
+  const onT = e => {
+    if (e.propertyName !== 'width') return;
+    const t = e.target;
+    if (t && t.id === 'pbarfill') {
+      events.push({ type: e.type, t: Math.round(performance.now() * 1000) / 1000 });
+      if (e.type === 'transitionstart') ranWidth = true;
+    }
+  };
+  document.addEventListener('transitionrun', onT, true);
+  document.addEventListener('transitionstart', onT, true);
+  document.addEventListener('transitionend', onT, true);
   return new Promise(resolve => {
     const t0 = performance.now();
     const tick = () => {
@@ -154,6 +196,8 @@ const armSample = await p.evaluate(() => {
       if (performance.now() - t0 < 2500) requestAnimationFrame(tick);
       else resolve({
         widths,
+        ranWidth,
+        events,
         count: count ? count.textContent : '',
         barHidden: bar ? bar.hidden : true,
         first: widths[0],
@@ -164,14 +208,17 @@ const armSample = await p.evaluate(() => {
   });
 });
 notes.push('arm sample: first=' + armSample.first + ' last=' + armSample.last
-  + ' n=' + armSample.widths.length + ' count=' + armSample.count);
+  + ' n=' + armSample.widths.length + ' ranWidth=' + armSample.ranWidth
+  + ' widthEvents=' + JSON.stringify(armSample.events) + ' count=' + armSample.count);
 
 // Precondition: bar is visible and has a measurable span.
 const span = Math.abs((armSample.first || 0) - (armSample.last || 0));
 ok(`arm bar span measured ${span.toFixed(1)}px (floor 20)`,
    !armSample.barHidden && span >= 20);
 const mid = between(armSample.widths, armSample.first, armSample.last);
-ok(`arm bar drain visited mid frames: ${mid} (between())`, mid >= 1);
+ok(`arm bar drain visited mid frames: ${mid} (between())` +
+   ` · transitionstart=${armSample.ranWidth}`,
+   armSample.ranWidth || mid >= 1);
 ok('arm countdown text names the pending pace',
    /arms in \d+s/.test(armSample.count) && /steady/.test(armSample.count));
 ok('no POST yet during the arm', posts.length === 0);
