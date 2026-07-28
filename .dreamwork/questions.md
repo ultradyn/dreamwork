@@ -322,6 +322,7 @@
     **This question is genuinely open and has never been answered.**
 
 - **P1 · 2026-07-28 — implementation authority for the user-event journal:
+  lanes A–D and F now, the cutover behind a second gate?**
   → answered (2026-07-28 05:43): **`rec` — all four.** So: **G1 granted** (lanes
   A–D and F may be implemented; **E, the HTTP cutover, and H, the mixed-version
   gate, stay behind a second gate** until A–D are proved), **Q2 yes** (amend law 2
