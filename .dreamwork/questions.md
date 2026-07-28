@@ -1,73 +1,6 @@
 # Questions for the human
 
 ## Open
-- **P2 · 2026-07-28 — `ccc @grok` (only `grok-4.5`) is 401; the other eleven models are fine.**
-  Two lanes died at three seconds today with nothing in the tree. Verbatim:
-  `Unauthorized (401) from https://cli-chat-proxy.grok.com/v1/responses: Invalid or expired
-  credentials (auth_kind=none, x_xai_token_auth=xai-grok-cli, upstream=Unauthenticated,
-  reason=no auth context)`, `Model: grok-4.5`, ccc `0.2.112`.
-  **`ccc @glm52` is fine** — same runner binary, and it answered a probe instantly, so this is
-  one model's credential and not the CLI. Work is continuing on glm52; `#399b` (the burndown
-  regression that has `master` red) is running there now.
-  **Correction, 11:12 — I had this backwards and the news is good.** `grok models` now lists
-  **twelve** models and prints `Default model: llmp-glm-5-2`. At 05:52 that same command
-  returned `grok-4.5` and nothing else, which is why this morning's dogfood note recorded
-  `@glm52` as *"BROKEN — cannot work"*. The `llmp` provider became reachable through the grok
-  CLI at some point today — your config never changed — so the fleet got **wider** during the
-  outage: `grok-4.5, llmp-gpt-5-6-{luna,terra,sol}, llmp-gpt-5-{5,4-mini}, llmp-glm-{4-7,
-  5-turbo,5-1,5-2,5,4-5-air}`. The CLI says the `llmp-*` models use a separate API key, which
-  is why they work while `grok-4.5` does not.
-  **So nothing is blocked and nothing is narrower** — one model of twelve is out. Worth your
-  refresh whenever convenient, not urgent. I am not touching the credential; that is yours.
-  Filed as `#410`.
-  Worth knowing for the provider question you set me: the outage was **invisible** for two
-  lanes because I was dispatching with `> /dev/null 2>&1`. ccc's own run log does not help —
-  `~/.local/state/cc-w/ccc/runs/<run>/output.txt` is **zero bytes** for a 401. I now capture
-  stderr on every dispatch, which is how this got diagnosed at all.
-
-  **Follow-up 2026-07-28 12:43 — re-measured, and now it needs a decision from you, not a
-  refresh.** Still 401 (probed 12:41), verbatim the same error, so this is stable and not a blip. I have read
-  your `~/.config/ccc/config.toml` and the cause is exact: `[aliases.grok]` is
-  `runner = "grok"`, `model = "grok-4.5"` with **no provider**, so it authenticates to xAI
-  directly with the expired key; `[aliases.glm52]` is the **same runner binary** with
-  `provider = "llmp"`, which has its own key and works. One credential, one alias.
-  **The decision.** You told me to use `ccc @grok` and `ccc @glm52` and *only* those. One of
-  them has been dead all day, so I have been running a **single lane** — for #399b, and now for
-  #331 — where you sized the fleet at up to four each. Everything since 05:52 has therefore been
-  one runner's behaviour measured twice, which is a much weaker answer to the "which models and
-  providers are best for us" half of what you set me than it looks.
-  Three ways out, in the order I would pick them:
-  1. **Point `@grok` at a working provider** — e.g. `provider = "llmp"` with one of
-     `gpt-5.6-terra` / `gpt-5.6-luna` / `gpt-5.6-sol`. Keeps your two-alias instruction intact,
-     gives me a genuinely different model to compare against glm-5.2, and needs no credential.
-     **This is my recommendation**, and terra is the one I would try first since your own
-     `cx-reviewer` alias already trusts that family.
-  2. **Refresh the xAI key** so `grok-4.5` itself comes back. Best if you specifically want
-     grok-4.5 in the comparison; only you can do it.
-  3. **Let me use `@glm51`** (your existing opencode + zai-coding-plan alias). Available right
-     now, but it is a third alias you did not name, and glm-5.1 next to glm-5.2 is the least
-     informative pairing of the three.
-  I have not changed your config and will not — say which, or say "keep going on one lane" and
-  I will, and record the comparison as single-runner rather than implying otherwise.
-
-- **P2 · 2026-07-28 — one word: may I add `GIT_OPTIONAL_LOCKS=0` to `~/.claude/settings.json`?**
-  `~/CLAUDE.md`'s git-index-lock entry says that setting is already there "for all Claude
-  sessions". It is not — `settings.json`'s `env` has no such key, and `echo
-  $GIT_OPTIONAL_LOCKS` in this session prints nothing. The other two thirds of that same
-  mitigation paragraph **are** in place (the fish function has `--no-optional-locks`,
-  `git-lock-watch.service` is active), so this one drifted alone and reading the paragraph
-  would not tell you which third was false.
-  It matters more than a stale doc: today's watcher log has **6,093** lock events in this
-  checkout, because this session runs `git`, `lint.py` and `status_sync.py` many times a tick
-  and each takes a **real** `.git/index.lock` instead of skipping it. `#283` was opened
-  because that churn blocked a commit, and there is a live zero-byte orphan in
-  `~/src/amaroo/.git/index.lock` right now (left alone — deleting another repo's lock on a
-  guess is not a change I will make).
-  **Yes** and I add the key. **No** and I correct `CLAUDE.md` instead so the next
-  investigation does not rule this out as a cause. Either is fine; doing neither is the only
-  wrong answer. Filed as `#408`, which also proposes auditing the other mitigation bullets the
-  same way — each names a file or a unit, so each is one line to check.
-
 - **P2 · 2026-07-28 — #367: what do 5–7 marks become below the cliff?**
   Artifact: `.dreamwork/review/367-strip-below-cliff.html` (one decision, three
   options, ~2 screens). It has the specimen that makes the case in one glance.
@@ -211,8 +144,90 @@
     you should ever reach it. Q4 moved to #359 — the self-hosted half has no
     identity provider under your direction.
 
-
 ## Answered
+
+- **P2 · 2026-07-28 — `ccc @grok` (only `grok-4.5`) is 401; the other eleven models are fine.**
+  → answered (2026-07-28 14:48): **option 2 — he refreshed the xAI key**, and I
+  verified it rather than taking the claim: `ccc --yolo @grok` returned *"PROBE OK, Grok 4.5"*
+  at 14:50. So `grok-4.5` is back and the fleet is the two aliases he named, with no config
+  change of mine. The dogfood consequence is the point: everything measured between 05:52 and
+  now was **one runner twice**, and from here a grok lane and a glm52 lane can run side by side
+  on comparable work — recorded in `.dreamwork/docs/dogfood-orchestration.md`. The wider
+  `llmp-*` fleet stays available as a fallback and needs no decision.
+  Two lanes died at three seconds today with nothing in the tree. Verbatim:
+  `Unauthorized (401) from https://cli-chat-proxy.grok.com/v1/responses: Invalid or expired
+  credentials (auth_kind=none, x_xai_token_auth=xai-grok-cli, upstream=Unauthenticated,
+  reason=no auth context)`, `Model: grok-4.5`, ccc `0.2.112`.
+  **`ccc @glm52` is fine** — same runner binary, and it answered a probe instantly, so this is
+  one model's credential and not the CLI. Work is continuing on glm52; `#399b` (the burndown
+  regression that has `master` red) is running there now.
+  **Correction, 11:12 — I had this backwards and the news is good.** `grok models` now lists
+  **twelve** models and prints `Default model: llmp-glm-5-2`. At 05:52 that same command
+  returned `grok-4.5` and nothing else, which is why this morning's dogfood note recorded
+  `@glm52` as *"BROKEN — cannot work"*. The `llmp` provider became reachable through the grok
+  CLI at some point today — your config never changed — so the fleet got **wider** during the
+  outage: `grok-4.5, llmp-gpt-5-6-{luna,terra,sol}, llmp-gpt-5-{5,4-mini}, llmp-glm-{4-7,
+  5-turbo,5-1,5-2,5,4-5-air}`. The CLI says the `llmp-*` models use a separate API key, which
+  is why they work while `grok-4.5` does not.
+  **So nothing is blocked and nothing is narrower** — one model of twelve is out. Worth your
+  refresh whenever convenient, not urgent. I am not touching the credential; that is yours.
+  Filed as `#410`.
+  Worth knowing for the provider question you set me: the outage was **invisible** for two
+  lanes because I was dispatching with `> /dev/null 2>&1`. ccc's own run log does not help —
+  `~/.local/state/cc-w/ccc/runs/<run>/output.txt` is **zero bytes** for a 401. I now capture
+  stderr on every dispatch, which is how this got diagnosed at all.
+
+  **Follow-up 2026-07-28 12:43 — re-measured, and now it needs a decision from you, not a
+  refresh.** Still 401 (probed 12:41), verbatim the same error, so this is stable and not a blip. I have read
+  your `~/.config/ccc/config.toml` and the cause is exact: `[aliases.grok]` is
+  `runner = "grok"`, `model = "grok-4.5"` with **no provider**, so it authenticates to xAI
+  directly with the expired key; `[aliases.glm52]` is the **same runner binary** with
+  `provider = "llmp"`, which has its own key and works. One credential, one alias.
+  **The decision.** You told me to use `ccc @grok` and `ccc @glm52` and *only* those. One of
+  them has been dead all day, so I have been running a **single lane** — for #399b, and now for
+  #331 — where you sized the fleet at up to four each. Everything since 05:52 has therefore been
+  one runner's behaviour measured twice, which is a much weaker answer to the "which models and
+  providers are best for us" half of what you set me than it looks.
+  Three ways out, in the order I would pick them:
+  1. **Point `@grok` at a working provider** — e.g. `provider = "llmp"` with one of
+     `gpt-5.6-terra` / `gpt-5.6-luna` / `gpt-5.6-sol`. Keeps your two-alias instruction intact,
+     gives me a genuinely different model to compare against glm-5.2, and needs no credential.
+     **This is my recommendation**, and terra is the one I would try first since your own
+     `cx-reviewer` alias already trusts that family.
+  2. **Refresh the xAI key** so `grok-4.5` itself comes back. Best if you specifically want
+     grok-4.5 in the comparison; only you can do it.
+  3. **Let me use `@glm51`** (your existing opencode + zai-coding-plan alias). Available right
+     now, but it is a third alias you did not name, and glm-5.1 next to glm-5.2 is the least
+     informative pairing of the three.
+  I have not changed your config and will not — say which, or say "keep going on one lane" and
+  I will, and record the comparison as single-runner rather than implying otherwise.
+  - **Answer (via watch, 2026-07-28 14:48):** ccc @grok now working
+    again
+
+- **P2 · 2026-07-28 — one word: may I add `GIT_OPTIONAL_LOCKS=0` to `~/.claude/settings.json`?**
+  → answered (2026-07-28 14:48): **yes**, and it is done — `~/.claude/settings.json`'s `env`
+  gained `"GIT_OPTIONAL_LOCKS": "0"`, a one-key diff with nothing reformatted, verified by
+  re-reading the file as JSON rather than by the write succeeding. It applies to **new**
+  Claude sessions, not this one, so this session keeps taking real index locks until it
+  restarts. `~/CLAUDE.md`'s mitigation paragraph is now true as written and needs no edit —
+  the drift is closed by making the claim accurate rather than by softening it.
+  `~/CLAUDE.md`'s git-index-lock entry says that setting is already there "for all Claude
+  sessions". It is not — `settings.json`'s `env` has no such key, and `echo
+  $GIT_OPTIONAL_LOCKS` in this session prints nothing. The other two thirds of that same
+  mitigation paragraph **are** in place (the fish function has `--no-optional-locks`,
+  `git-lock-watch.service` is active), so this one drifted alone and reading the paragraph
+  would not tell you which third was false.
+  It matters more than a stale doc: today's watcher log has **6,093** lock events in this
+  checkout, because this session runs `git`, `lint.py` and `status_sync.py` many times a tick
+  and each takes a **real** `.git/index.lock` instead of skipping it. `#283` was opened
+  because that churn blocked a commit, and there is a live zero-byte orphan in
+  `~/src/amaroo/.git/index.lock` right now (left alone — deleting another repo's lock on a
+  guess is not a change I will make).
+  **Yes** and I add the key. **No** and I correct `CLAUDE.md` instead so the next
+  investigation does not rule this out as a cause. Either is fine; doing neither is the only
+  wrong answer. Filed as `#408`, which also proposes auditing the other mitigation bullets the
+  same way — each names a file or a unit, so each is one line to check.
+  - **Answer (via watch, 2026-07-28 14:48):** yes
 
 - **P2 · 2026-07-25 — #194: where does an upgrade check get its commit range,
   → resolved (2026-07-28 06:25): **decided by the loop, and withdrawn as an ask.**
