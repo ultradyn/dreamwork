@@ -1102,6 +1102,7 @@ running still has to appear in the hub. Writers should provide the core:
 | `goal` | string | the session goal this serves |
 | `agents` | array of objects, each with at least `name` | live subagents; a reader shows the count and the names. Optional per agent: `in_flight` (one line: what it is doing right now — **the one subfield with two readers**, promoted into `watch.py`'s agent glance and republished by `dreamhub.py` in `/hub.json`, so treat it as load-bearing); `owns` (array of strings — the files it holds; `dreamhub.py` renders it as `name (owns)`, and a non-list renders as none); `task_ids` (array of **ints and sub-id strings** — which tasks THIS agent holds, the per-agent half of `current_task_ids` below, and linted the same way: a plain id is an int, a sub-id is a `"392a"` string, and a quoted plain id `"263"` is always wrong — #402b); `kind` (`utility` when it is not a dreamer); and `awaiting_result` when it was dispatched and has not reported — a dispatched-but-silent agent is otherwise legible only from the coordinator's memory, which is exactly how two deliverables were lost (#144). **This list is a menu, not a whitelist** (#310): `watch.py` folds every agent key it does not name into "the rest" on purpose — *"Whatever is LEFT, not a second known list"* — so an unlisted field is still shown, and nothing here is safe to prune on the grounds that no reader names it |
 | `current_task_ids` | array of **ints and sub-id strings** | the task ids this names (#332, #402b). `task` above says what the loop is doing in a sentence; this says *which rows* it is doing it to, and prose is not a substitute because one sentence routinely names several ids in different states ("folding #281's answer, #326 next"). `/tasks` (#281) badges a row "in progress" from this, so a quoted `"#281"` or `"281"` is worse than an absent field: it looks right, lints past the type table, and matches no row at all — silently. **The id vocabulary** (#402b, mirroring the hand-off grammar at `#401`): a **plain** id is an integer (`263`), a **sub-id** is a string of digits then one letter (`"392a"`), and a **quoted plain** id (`"263"`) is always wrong. A live set legitimately holds int and str at once — a lane may be `#392a`, and `status_sync` derives this field from that `task` value, keeping the string form by design (`#402a`). `lint.py`'s `check_status_task_ids` ERRORs on anything that is neither a plain int nor a sub-id string — bools included |
+| `dreamers` | array of objects | **one entry per dispatched lane**, reaped by `status_sync` — see the dedicated section below (#402a) |
 | `queue` | object, integer `in_progress` and `pending` | queue depth |
 | `awaiting_human` | array of strings | **non-empty means the human is the bottleneck.** The one field a reader must never bury (#130, #141) |
 | `last_tick`, `last_commit` | string | freshness; a stale `last_tick` is how a stalled loop is spotted |
@@ -1134,6 +1135,62 @@ here), silent when `agents` is absent or empty, and silent when a `queue`
 value is not an integer — that last one belongs to `check_status`, and
 comparing a *partial* sum to the full ledger would report a confident wrong
 gap on a file whose real fault someone else is already naming.
+
+## `.dreamwork/status.json` — the `dreamers` array (#402a)
+
+One entry per dispatched lane. The coordinator writes an entry at dispatch
+time (the lane's task, its dispatch pid, the brief path); `status_sync.py`
+reads the array every run and reaps entries that no longer own files. **A
+stale entry says a free file is owned**, so the coordinator declines a
+dispatch it could have made — `#264` measured file contention as the binding
+constraint on how much runs at once, and stale ownership manufactures that
+constraint from nothing. That is why the array is reaped, not just written.
+
+**Entry shape:**
+
+```json
+{"task": 263, "pid": 1970752, "brief": "/abs/path/to/brief.md"}
+```
+
+| Field | Type | Means |
+|---|---|---|
+| `task` | **int (plain) or str (sub-id)** | the task this lane is working. Mirrors `current_task_ids`' id vocabulary (#402b): a **plain** id is an int (`263`), a **sub-id** is a string of digits then one letter (`"392a"`). A quoted plain id (`"263"`) is always wrong — `status_sync` normalises it to int on write, so a bad value read in does not survive. **Tolerate on read, normalise on write**: the file has more than one writer (the coordinator at dispatch, the syncer at reap), so the syncer accepts either type on read and writes back the canonical form. |
+| `pid` | int | the lane's dispatch process. **The pid is exact** (`kill -0`); a dead pid means a dead lane and the entry is reaped. A lane whose recorded pid is gone but whose argv still names the brief is a live lane whose wrapper exited, and the brief path is the order-independent fallback. |
+| `brief` | string | the absolute path to the lane's brief, used as the fallback liveness signal when no pid is recorded (order-independent: the brief is found *wherever* it appears in argv, so a flag between binary and alias does not hide it). |
+
+**An entry is reaped when EITHER signal says "not an owner":**
+
+1. **Its pid is dead** — `kill -0` returns "no such process". The lane's
+   process is gone, so it owns nothing. This is the case `live_lanes`
+   already handled before #402a landed.
+2. **Its task is no longer under `## Open`** — the coordinator moved the
+   task to `## Recently landed`, so the work finished and the lane no
+   longer owns files. **This is the half #402a added:** previously a
+   landed task with a live pid was a hard STOP (return 2, *"a lane is
+   working on a task the ledger calls closed"*), which blocked the whole
+   sync for one stale entry. Now it is reaped and the sync continues.
+
+Open-ness is asked of the **live system, not memory**:
+`status_sync.open_ids` reads the ledger's `## Open` section through the
+shared `watch.IDS_ONLY_SPAN` pattern (the one-copy head form, #331) —
+never a hand-rolled parser, and never a bare `text.split('## Recently
+landed')`, which also appears in an entry's *prose* and has corrupted the
+file twice. A sub-id (`392a`) compares against its base id (`392`).
+
+**Never crash on a malformed entry.** A syncer that exits 1 stops
+protecting everything after it. Entries that are not a dict, carry no
+`task`, or hold neither a parseable pid nor a brief are **skipped and
+reported on stderr** (`skipped N malformed dreamer entr…`), and the sync
+continues for the survivors. A junk entry never reaches `live_lanes`.
+
+**Nothing else about a survivor changes** — the entry is kept verbatim
+apart from task-id normalisation, so ownership, agent, and any other field
+the coordinator wrote are preserved.
+
+`status_sync.py` is the sole reaper; the coordinator is the sole writer at
+dispatch. `lint.py` does not check the array's contents (it is gitignored
+ephemera describing a running process), so the contract is enforced by the
+reaper itself plus the id-vocabulary check on `current_task_ids`.
 
 ## `.dreamwork/.status-keys` — the only file `lint.py` writes (#303)
 

@@ -245,8 +245,12 @@ class TestMixedIdTypes:
                 (tmp_path / ".dreamwork" / "status.json").read_text())
             cti = result["current_task_ids"]
             assert "392a" in cti, cti               # sub-id kept, not coerced
-            assert 396 in cti and "401" in cti, cti
-            assert cti == sorted([396, "401", "392a"], key=str), cti
+            # Normalise-on-write (#402b): a quoted plain id "401" becomes int
+            # 401; a sub-id "392a" stays a string. The plain int 396 is
+            # already canonical.
+            assert 396 in cti and 401 in cti, cti
+            assert "401" not in cti, cti             # quoted plain id normalised
+            assert cti == sorted([396, 401, "392a"], key=str), cti
         finally:
             for p in procs:
                 p.kill(); p.wait()
@@ -332,3 +336,201 @@ class TestLedgerHeadStillShared:
         assert status_sync.LEDGER_HEAD.pattern == \
             rf"^- \*\*({watch.IDS_ONLY_SPAN})\*\*"
         assert status_sync.LEDGER_HEAD.flags & re.M     # MULTILINE
+
+
+# ── 7. a lane whose TASK has landed is reaped even with a live pid ──────
+#
+# #402(a): the syncer already reaps dead-pid entries (#402a), but an entry
+# whose process is alive while its task has moved to `## Recently landed`
+# was a hard STOP (return 2, "a lane is working on a task the ledger calls
+# closed"). That stop blocks the whole sync for one stale entry — the
+# opposite of "skip, report, keep going". The entry is not an owner: the
+# coordinator moved the task to landed, so its file ownership is stale.
+
+class TestReapLandedTask:
+    """A live-pid entry whose task is NOT under `## Open` is reaped, not a
+    hard stop.
+
+    Production line whose reversion reds this test: the task-openness gate
+    in ``main`` — ``if base is not None and base in ids: pruned.append(d)
+    else: reaped.append(d)``. Reverting to the old ``unknown`` return-2
+    path (or removing the gate so every pid-live entry survives) makes this
+    fail: either rc == 2 (hard stop) or the landed entry survives in the
+    written ``dreamers``.
+    """
+
+    def test_live_pid_landed_task_is_reaped_sync_continues(self, tmp_path):
+        live_proc = _spawn_lane(f"/tmp/brief-402a-landed-{time.time_ns()}.md")
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(live_proc.pid), \
+                "precondition: live pid must be alive"
+            # The entry's task (999) is deliberately NOT in the open ledger.
+            dreamers = [{"task": 999, "pid": live_proc.pid,
+                         "brief": "/no/such/brief.md"}]
+            # Precondition: 999 is not an open id, so the entry is stale.
+            ledger = _ledger(7, 8)            # open: 7, 8 — not 999
+            assert 999 not in status_sync.open_ids(ledger), \
+                "precondition: task 999 must not be open"
+            status = {"dreamers": dreamers, "current_task_ids": [999],
+                      "queue": {"in_progress": 1, "pending": 1}, "task": "t"}
+            rc, out, err = _run(status, ledger, tmp_path)
+            # The sync must NOT hard-stop (old behaviour was return 2).
+            assert rc != 2, err
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            # The landed entry is gone from dreamers.
+            assert result["dreamers"] == [], result["dreamers"]
+            # current_task_ids no longer claims 999 (it landed).
+            assert 999 not in result["current_task_ids"], \
+                result["current_task_ids"]
+            # The sync reported the reap on stderr.
+            assert "reaped" in err.lower() or "not under" in err.lower(), err
+        finally:
+            live_proc.kill()
+            live_proc.wait()
+
+    def test_live_pid_open_task_is_kept(self, tmp_path):
+        live_proc = _spawn_lane(f"/tmp/brief-402a-keep-{time.time_ns()}.md")
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(live_proc.pid)
+            dreamers = [{"task": 7, "pid": live_proc.pid,
+                         "brief": "/no/such/brief.md"}]
+            ledger = _ledger(7, 8)            # 7 IS open
+            assert 7 in status_sync.open_ids(ledger), \
+                "precondition: task 7 must be open"
+            status = {"dreamers": dreamers, "current_task_ids": [],
+                      "queue": {}, "task": "t"}
+            rc, out, err = _run(status, ledger, tmp_path)
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            # The open-task entry survives — live pid, open task.
+            assert len(result["dreamers"]) == 1, result["dreamers"]
+            assert result["dreamers"][0]["task"] == 7
+        finally:
+            live_proc.kill()
+            live_proc.wait()
+
+
+# ── 8. a malformed entry is skipped, not a crash ────────────────────────
+#
+# "A syncer that exits 1 stops protecting everything after it." An entry
+# that is not a dict, or has no task, or has neither pid nor brief, must
+# be skipped and reported — never crash the whole sync.
+
+class TestMalformedEntrySkipped:
+    """Junk entries are skipped + reported; the sync continues for the rest.
+
+    Production line whose reversion reds this test: the pre-filter
+    ``_evaluable`` gate in ``main`` — without it, ``live_lanes`` receives
+    the junk entry and ``d.get("pid")`` raises ``AttributeError`` (non-dict)
+    or ``d["task"]`` raises ``KeyError`` (missing task), crashing the sync.
+    """
+
+    def test_non_dict_entry_does_not_crash(self, tmp_path):
+        dreamers = ["not a dict", {"task": 7, "brief": "/no/such/brief.md"}]
+        status = {"dreamers": dreamers, "current_task_ids": [],
+                  "queue": {}, "task": "t"}
+        ledger = _ledger(7)
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        result = json.loads(
+            (tmp_path / ".dreamwork" / "status.json").read_text())
+        # Junk is gone; the good entry was reaped (brief not in any argv).
+        assert "not a dict" not in str(result["dreamers"])
+        assert "skipped" in err.lower() or "malformed" in err.lower(), err
+
+    def test_missing_task_does_not_crash(self, tmp_path):
+        dreamers = [{"pid": 999999, "brief": "/x.md"},
+                    {"task": 7, "brief": "/no/such/brief.md"}]
+        status = {"dreamers": dreamers, "current_task_ids": [],
+                  "queue": {}, "task": "t"}
+        ledger = _ledger(7)
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        assert "skipped" in err.lower() or "malformed" in err.lower(), err
+
+    def test_neither_pid_nor_brief_does_not_crash(self, tmp_path):
+        # An entry with no pid and no brief: nothing to ask the OS about.
+        # Old behaviour raised LivenessUnknown (abort the whole sync). Now
+        # it is skipped + reported and the sync continues.
+        dreamers = [{"task": 42}, {"task": 7, "brief": "/no/such/brief.md"}]
+        status = {"dreamers": dreamers, "current_task_ids": [],
+                  "queue": {}, "task": "t"}
+        ledger = _ledger(7)
+        rc, out, err = _run(status, ledger, tmp_path)
+        assert rc == 0, err
+        assert "skipped" in err.lower() or "malformed" in err.lower(), err
+
+
+# ── 9. normalise-on-write: a quoted plain id becomes an int ─────────────
+#
+# "Tolerate on read, normalise on write" — the file is written by more than
+# one hand, so the syncer writes back the canonical form. A plain id is an
+# int; a sub-id is a string. A quoted plain id ("172") is always wrong and
+# the syncer fixes it on write.
+
+class TestNormaliseOnWrite:
+    """A quoted plain id in a dreamer entry is normalised to int on write.
+
+    Production line whose reversion reds this test: ``_normalise_task`` in
+    ``main``'s write path — reverting it (writing entries verbatim) leaves
+    ``"172"`` as a string, failing the type assertion.
+    """
+
+    def test_quoted_plain_id_becomes_int_in_dreamers(self, tmp_path):
+        live_proc = _spawn_lane(f"/tmp/brief-402a-norm-{time.time_ns()}.md")
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(live_proc.pid)
+            # "172" is a quoted plain id — wrong, but tolerated on read.
+            dreamers = [{"task": "172", "pid": live_proc.pid,
+                         "brief": f"/tmp/brief-402a-norm-{time.time_ns()}.md"}]
+            status = {"dreamers": dreamers, "current_task_ids": [],
+                      "queue": {}, "task": "t"}
+            ledger = _ledger(172)
+            assert 172 in status_sync.open_ids(ledger), \
+                "precondition: 172 must be open"
+            rc, out, err = _run(status, ledger, tmp_path)
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            # The survivor's task is now an int, not a quoted string.
+            assert len(result["dreamers"]) == 1, result["dreamers"]
+            task = result["dreamers"][0]["task"]
+            assert task == 172, task
+            assert isinstance(task, int) and not isinstance(task, bool), \
+                "plain id must be int, not %s" % type(task).__name__
+            # current_task_ids also carries the int form.
+            assert 172 in result["current_task_ids"], \
+                result["current_task_ids"]
+            assert "172" not in result["current_task_ids"], \
+                "quoted plain id must not survive into current_task_ids"
+        finally:
+            live_proc.kill()
+            live_proc.wait()
+
+    def test_sub_id_stays_string(self, tmp_path):
+        live_proc = _spawn_lane(f"/tmp/brief-402a-sub-{time.time_ns()}.md")
+        try:
+            time.sleep(0.6)
+            assert status_sync._pid_alive(live_proc.pid)
+            dreamers = [{"task": "392a", "pid": live_proc.pid,
+                         "brief": f"/tmp/brief-402a-sub-{time.time_ns()}.md"}]
+            status = {"dreamers": dreamers, "current_task_ids": [],
+                      "queue": {}, "task": "t"}
+            ledger = _ledger(392)          # base id 392 is open
+            rc, out, err = _run(status, ledger, tmp_path)
+            assert rc == 0, err
+            result = json.loads(
+                (tmp_path / ".dreamwork" / "status.json").read_text())
+            assert len(result["dreamers"]) == 1, result["dreamers"]
+            assert result["dreamers"][0]["task"] == "392a", \
+                result["dreamers"]
+            assert isinstance(result["dreamers"][0]["task"], str)
+        finally:
+            live_proc.kill()
+            live_proc.wait()
