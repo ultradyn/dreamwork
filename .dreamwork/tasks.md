@@ -27,65 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **436**
 
 ## Open
-- **#435** — the `--dev` perf overlay draws text on top of the wordmark · P3 · Web UI/dashboard ·
-  origin: **loop** · **seen in a screenshot, then measured, 2026-07-28 19:14**
-  · At **1280x900** the overlay's third line — `683.3ms avg · 1233.3ms worst`, spanning `1079..1267` at
-  `y38..52` — overlaps the **`ud-dreamwork` wordmark** (`1149..1264`, `y43..64`) by **115x9px**. Text on
-  text. Mobile is clear: the overlay ends at `y52` and the wordmark starts at `y51` in a disjoint column
-  · **he sees it**, which is the only reason it is filed at all: `just deploy` starts the server with
-  `--dev`, so the overlay is not a developer-only artifact of local runs. Either the overlay reserves its
-  own space, or the wordmark yields, or `deploy` stops passing `--dev` — **that last one is a question
-  for him, not a call for the loop**, because the fps counter on his own dashboard may be wanted
-  · cosmetic and bounded — 9px of vertical collision on one label in one mode. Filed so it is not
-  rediscovered, not because it is urgent
-  · **worth noting how nearly it was missed**: my first probe searched for an element whose text matched
-  `/fps/` and hit a `<script>` tag containing those letters, whose rect is `0x0` — so it reported
-  *"overlap: none"*, a false negative, on a collision plainly visible in the screenshot. Fixed by
-  requiring the element to actually render (`width>2 && height>2`, tag not in `SCRIPT/STYLE/...`).
-  **Fourth instance today of an assertion aimed at the wrong element**, and the first one caught in
-  under a minute because the pattern is now named
-  · related: **#434**
-- **#434** — the `/review` route wastes 24% of a phone screen below the artifact frame · P2 ·
-  Web UI/dashboard · origin: **loop** · **found by looking at the page, measured after, 2026-07-28 19:12**
-  · At **390x844** the artifact iframe is `135..641` — **506px** — and the **203px** beneath it holds
-  **zero rendering elements**. `document.scrollHeight` equals `innerHeight`, so the page does not scroll:
-  that quarter-screen is not off-screen content, it is **empty**. Desktop wastes only 40px (4%), so this
-  is a mobile-only defect
-  · **the cost is compounding, which is why it is worth more than 203px.** Everything he reads a
-  decision in — the ask, its accepted answers, the recommendation — competes for 506px instead of 709px.
-  Fixing it is a **40% increase in reading area** on the surface where every review artifact is judged
-  · **and it is the root cause of a constraint I just tightened elsewhere.** `above_fold.mjs` compares
-  against an effective fold of **504** on mobile precisely because of this frame; with the dead space
-  reclaimed the fold moves to ~707 and artifacts stop having to fight for the top 500px. Better to fix
-  the frame than to keep compensating in the checker (`#432` wants the fold derived at runtime, which
-  would then pick this up for free)
-  · likely a fixed/calculated frame height rather than a flexed one — read the `/review` shell's layout
-  before assuming. **`transitions.md` applies**: the route change onto `/review` is the reference gesture
-  in this repo, so a height change must not introduce a second idiom
-  · related: **#430, #432, #435**
-- **#433** — the artifact rail's identity crumb cannot shrink, and fixing it re-stamps 23 artifacts
-  of which 12 cannot be rebuilt · P3 · Web UI/review-artifacts · origin: **loop**
-  · **found by looking at the rendered page, 2026-07-28 18:50 — every mechanical check passed while the
-  rail was visibly broken**
-  · `review-artifact.template.html` styles `.identity b` as `white-space:nowrap` with **no**
-  `overflow:hidden` or `text-overflow:ellipsis`, while its own sibling `.identity span` has both. So a
-  long identity cannot shrink and collides with the nav chips instead. **The sibling proves the intent**
-  · **the fix is one declaration and it is verified**: adding `overflow:hidden;text-overflow:ellipsis;
-  min-width:0` to `.identity b` removes the overlap at 390x844 and 1280x900, tested by injecting it at
-  runtime, and the text still renders in full because ellipsis only engages when it must
-  · **but the blast radius is the reason this is a task and not a commit.** The build stamp is derived
-  from the template's hash, so touching it marks **all 23** artifacts `stale` and takes `lint` from 1
-  warning to **12**. Only **11 have a `src/`**; the other 12 — `do-now-urgency-treatment`,
-  `explore-command-contract`, `goal-hierarchies`, `hub-public-auth`, `lan-bind-threat-model`,
-  `protected-service-boundary-288`, `review-datetime-order`, `task-origin-contract`, `tasks-page`,
-  `threaded-topic-chats`, `threaded-topic-chats-v2`, `ud-dreamtask` — **cannot be rebuilt at all**, so
-  the warnings would be permanent. `review_artifact.py`'s docstring already calls migrating them *"a
-  separate call, deliberately"*
-  · so: do this **with** the untemplated migration, or not yet. Measured and reverted rather than landed
-  · scope today was limited to the one artifact on his desk: `263`'s crumb shortened from 56 to 20
-  characters, overflow 440px->390px in a 356px bar. **One overlap survives that**, which is why the
-  template half is real
-  · related: **#325, #429**
 - **#432** — `#ask` is not a required element, so 19 artifacts cannot be measured at all · P2 ·
   loop-tooling/review-artifacts · origin: **loop** · **the half of `#429` that is a retrofit, not a fix**
   · The criterion and its checker exist (`1dd973f`) and three artifacts carry `#ask`: `421` (218/266),
@@ -3692,6 +3633,98 @@ Next id: **436**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+
+- **#434** — the `/review` route wastes 24% of a phone screen below the artifact frame · P2 ·
+  Web UI/dashboard · origin: **loop** · **found by looking at the page, measured after, 2026-07-28 19:12**
+  · At **390x844** the artifact iframe is `135..641` — **506px** — and the **203px** beneath it holds
+  **zero rendering elements**. `document.scrollHeight` equals `innerHeight`, so the page does not scroll:
+  that quarter-screen is not off-screen content, it is **empty**. Desktop wastes only 40px (4%), so this
+  is a mobile-only defect
+  · **the cost is compounding, which is why it is worth more than 203px.** Everything he reads a
+  decision in — the ask, its accepted answers, the recommendation — competes for 506px instead of 709px.
+  Fixing it is a **40% increase in reading area** on the surface where every review artifact is judged
+  · **and it is the root cause of a constraint I just tightened elsewhere.** `above_fold.mjs` compares
+  against an effective fold of **504** on mobile precisely because of this frame; with the dead space
+  reclaimed the fold moves to ~707 and artifacts stop having to fight for the top 500px. Better to fix
+  the frame than to keep compensating in the checker (`#432` wants the fold derived at runtime, which
+  would then pick this up for free)
+  · likely a fixed/calculated frame height rather than a flexed one — read the `/review` shell's layout
+  before assuming. **`transitions.md` applies**: the route change onto `/review` is the reference gesture
+  in this repo, so a height change must not introduce a second idiom
+  · related: **#430, #432, #435**
+  · **landed `5abc4c1`** (grok lane `bfc3222`, coordinator `35ab3ad` + `e3d933c`). Narrow layout used
+  `#reviewdoc { height:60vh }` — a fraction of the WINDOW, not of the room under the chrome. Now reuses
+  fitReview's measured `--rvh`. Verified on six real artifacts: dead space **203 -> 16px**, frame
+  672..708 depending on title wrap; desktop unchanged at 40px. **The fold constant took three goes and
+  each wrong value was optimistic**: 706 (the top of the range), then 691 (the floor measured in a
+  worktree), finally **670** (the floor on his real target, where the project name `ud-dreamwork` is
+  longer than the worktree's `frame` and wraps the title one line further). Now held by `devoverlay`
+  measuring the real corpus in the real chrome, red-proved
+
+- **#433** — the artifact rail's identity crumb cannot shrink, and fixing it re-stamps 23 artifacts
+  of which 12 cannot be rebuilt · P3 · Web UI/review-artifacts · origin: **loop**
+  · **found by looking at the rendered page, 2026-07-28 18:50 — every mechanical check passed while the
+  rail was visibly broken**
+  · `review-artifact.template.html` styles `.identity b` as `white-space:nowrap` with **no**
+  `overflow:hidden` or `text-overflow:ellipsis`, while its own sibling `.identity span` has both. So a
+  long identity cannot shrink and collides with the nav chips instead. **The sibling proves the intent**
+  · **the fix is one declaration and it is verified**: adding `overflow:hidden;text-overflow:ellipsis;
+  min-width:0` to `.identity b` removes the overlap at 390x844 and 1280x900, tested by injecting it at
+  runtime, and the text still renders in full because ellipsis only engages when it must
+  · **but the blast radius is the reason this is a task and not a commit.** The build stamp is derived
+  from the template's hash, so touching it marks **all 23** artifacts `stale` and takes `lint` from 1
+  warning to **12**. Only **11 have a `src/`**; the other 12 — `do-now-urgency-treatment`,
+  `explore-command-contract`, `goal-hierarchies`, `hub-public-auth`, `lan-bind-threat-model`,
+  `protected-service-boundary-288`, `review-datetime-order`, `task-origin-contract`, `tasks-page`,
+  `threaded-topic-chats`, `threaded-topic-chats-v2`, `ud-dreamtask` — **cannot be rebuilt at all**, so
+  the warnings would be permanent. `review_artifact.py`'s docstring already calls migrating them *"a
+  separate call, deliberately"*
+  · so: do this **with** the untemplated migration, or not yet. Measured and reverted rather than landed
+  · scope today was limited to the one artifact on his desk: `263`'s crumb shortened from 56 to 20
+  characters, overflow 440px->390px in a 356px bar. **One overlap survives that**, which is why the
+  template half is real
+  · related: **#325, #429**
+  · **landed `2ade390`** (glm52 lane `9d9c41b`, `46f90dd`). `.identity b` gained the
+  `overflow:hidden;text-overflow:ellipsis;min-width:0` trio its sibling one declaration away already
+  carried. Lane chose **(a)** and refused all 12 untemplated migrations with per-file evidence — 12
+  distinct hand-rolled stylesheets, none matching the template, 4 with no `<header>`. Correct, and it
+  refused exactly where the brief said to
+  · **verified independently**: zero pairwise leaf overlaps across all 13 railed artifacts at both
+  viewports; red-proved on the SHIPPED artifacts by stripping the three declarations at runtime, 0 -> 1
+  overlap with the exact pairs named, and a zero-hit injection made fatal because an injection that
+  never lands looks identical to a fix that works. Diff is 4 lines per artifact: three copies of the
+  template stamp and the one CSS rule, not one prose word
+  · **the brief was wrong twice and the lane caught both.** My criterion "compare the rail's
+  `scrollWidth` against its client width" is **blind to this bug** — `railOverflow` was false in every
+  case before and after, because the collision is intra-rail; confirmed in my own probe. And (a) does
+  not leave lint noisy: lint is silent on `untemplated` by design, so the 12 were never stale
+  · **it also improved on the brief's red-first demand.** No single declaration's removal fails the
+  check, because `overflow:hidden` and `min-width:0` are redundant routes to the same shrink. Naming
+  that, instead of inventing a single culprit to satisfy the instruction, is the discipline working
+
+- **#435** — the `--dev` perf overlay draws text on top of the wordmark · P3 · Web UI/dashboard ·
+  origin: **loop** · **seen in a screenshot, then measured, 2026-07-28 19:14**
+  · At **1280x900** the overlay's third line — `683.3ms avg · 1233.3ms worst`, spanning `1079..1267` at
+  `y38..52` — overlaps the **`ud-dreamwork` wordmark** (`1149..1264`, `y43..64`) by **115x9px**. Text on
+  text. Mobile is clear: the overlay ends at `y52` and the wordmark starts at `y51` in a disjoint column
+  · **he sees it**, which is the only reason it is filed at all: `just deploy` starts the server with
+  `--dev`, so the overlay is not a developer-only artifact of local runs. Either the overlay reserves its
+  own space, or the wordmark yields, or `deploy` stops passing `--dev` — **that last one is a question
+  for him, not a call for the loop**, because the fps counter on his own dashboard may be wanted
+  · cosmetic and bounded — 9px of vertical collision on one label in one mode. Filed so it is not
+  rediscovered, not because it is urgent
+  · **worth noting how nearly it was missed**: my first probe searched for an element whose text matched
+  `/fps/` and hit a `<script>` tag containing those letters, whose rect is `0x0` — so it reported
+  *"overlap: none"*, a false negative, on a collision plainly visible in the screenshot. Fixed by
+  requiring the element to actually render (`width>2 && height>2`, tag not in `SCRIPT/STYLE/...`).
+  **Fourth instance today of an assertion aimed at the wrong element**, and the first one caught in
+  under a minute because the pattern is now named
+  · related: **#434**
+  · **landed `5abc4c1`** (grok lane `bfc3222`). Overlay third line painted across the wordmark at
+  1280x900. Fixed by the **wordmark yielding** (`body.dev .hproj` margin-right), not by removing the
+  counter — whether he wants the counter is his call and was never this task's to make. Zero overlapping
+  pairs at both viewports with a rendering precondition on every pair
+
 - **#425** — the `watch.py` split must leave `watch.py` working for clients that are already running ·
   P1 · loop-tooling/migration · origin: **human** · **human direct, 2026-07-28 17:38** · next-up ·
   blocks **#368**

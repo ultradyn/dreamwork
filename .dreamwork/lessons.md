@@ -2877,3 +2877,46 @@ this shape and convert opportunistically.)
   the *thing the assertion was pointed at*. **Evidence it is cheap to avoid:** each was caught by one
   question — *is this the surface he actually has?* — and answering it took a single measurement of the
   real route. Ask it of every check that renders, fetches, or reads a snapshot.
+- **"No lane of mine is running" is not "the machine is idle", and mistaking one for the other wasted
+  four experiments.** `#428`'s frame-sampling guards fail intermittently; four separate runs tried to
+  catch the cause by running the full suite on an idle machine, and each time I recorded the run as
+  confounded because I had dispatched a lane through it. The fourth time I checked the actual number:
+  **load 29.9 on 16 cores with zero lanes of mine running** — `ccm`, `herdr`, `codex`, `pi` and four
+  other `claude` processes, none of them mine. **Evidence the self-blame was wrong:** my two lanes are a
+  rounding error against a baseline near 30, so serialising them could not have produced the idle arm the
+  experiment needed, and no amount of discipline would have delivered it. **Evidence the fix is to stop
+  isolating:** the variable is unavailable on this host, so the suite now records load per verdict and the
+  correlation accumulates over ordinary use with no reserved window at all. When an experiment keeps
+  coming back confounded, measure the thing you are assuming is constant before designing a fifth run.
+- **A constant derived from a range must take the FLOOR, and three successive attempts at one number were
+  all optimistic in the same direction.** The mobile fold went 706 (the top of the measured range) → 691
+  (the floor, measured in a worktree) → **670** (the floor on his real target). Each wrong value called
+  clipped content visible, which is the one direction that matters for a check whose job is refusing asks
+  he cannot see. **Evidence it is a class and not a slip:** the frame's bottom is pinned but its top is
+  not, and three separate inputs move it — the artifact's name length, the *target directory's* basename
+  (it is the project name, and it shares the title bar), and how the name breaks. A value verified in
+  `.worktrees/frame` is not verified for a dashboard whose target is `ud-dreamwork`, because the longer
+  project name wraps the title one line further. **Prefer deriving it at runtime; if you must hard-code,
+  bind the number to a check that re-measures the real surface** — that check is what caught 691.
+- **A derived length is not a derived layout, and a fixture is not the surface.** Building the worst-case
+  input by padding a stem to the right character count produced `xxxx…`, one unbreakable run with no
+  hyphen to break on where real names have several — so it wrapped to three lines where the real name
+  wraps to two, and demanded a fold no artifact needs. Then the same check, given the *real* longest name,
+  was still wrong: the guard's own target directory is `devoverlay-target`, longer than the real project
+  name and sharing the title bar. **Evidence:** three fixture-based versions gave 651, 672 and 672 against
+  a real 693. **When the property under test is a property of the real corpus in the real chrome, serve
+  the real thing read-only** — hermeticity that measures the wrong layout buys nothing.
+- **The self-matching process check bit a third time, and the match came from the comment explaining the
+  self-match.** After `#431`'s `pkill -f` killed the shell running `just deploy`, and after my
+  `pgrep -af 'ccc --yolo'` idle check matched its own shell, I reached for the `[c]cc` bracket trick — and
+  it still matched, because the literal string `ccc --yolo` appeared in the comment I had written *about*
+  the problem, inside the same command line. **Evidence the trick is not the fix:** the bracket only stops
+  the pattern from matching itself; it cannot stop the rest of the command line from containing the
+  string. Build the pattern from parts at runtime, or match on the executable name without `-f`.
+- **A brief can specify a measurement that is blind to the bug it targets.** I asked the `#433` lane to
+  prove the rail fixed by comparing the rail's `scrollWidth` against its client width. **Evidence it was
+  useless:** `railOverflow` was false in every one of 13 artifacts, before and after the fix, because the
+  collision is *intra*-rail — two children overlapping inside a rail that never overflows. The lane said
+  so, and my own probe confirmed it. **When writing an acceptance criterion, check it goes red on the
+  current bug before shipping it to someone as the standard** — otherwise it is a wish, and the lane has
+  to notice on your behalf.
