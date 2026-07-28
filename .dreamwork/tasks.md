@@ -2960,47 +2960,6 @@ Next id: **421**
   cadences by design (status 5-15s, PR much slower, CI slower still and
   only when a PR exists and is not draft) · PR/CI go through
   `ud-dreamwork-github`, which already owns `gh`
-- **#172** — Put project identity prominently in the title section · P1 ·
-  implementation · 25m · **human via watch `do-next` 14:01** · show the
-  target project name (`ud-dreamwork` here) in a materially more prominent
-  position within the visible title section; queued immediately after #217
-  because both modify the dashboard shell/CSS · keep the earlier invariant
-  principle: **anchor what is invariant to an edge, not to a variable-width
-  neighbour** — the route title varies while repo identity does not, so the
-  identity must not be shoved about by unrelated route changes · document the
-  rule in `watch-design.md`; deterministic desktop/mobile captures and
-  visual-review-and-fix convergence required · do not infer first-sight
-  provenance from this later human priority update (#216) · #153's browser-tab
-  title remains related but does not broaden this visible-title increment ·
-  **read his references first**: `grok-build`, `codename-thin` at
-  `ssh://x-game:src/codename-thin`, on another machine  · **NEXT-UP, human via watch `do-next` 2026-07-28 15:13**, and the tone is earned: *"we have
-  several tasks about putting hte project name in the title line. This has been delayed too long.
-  it's essential and basic. Dispatch a subagent to solve this problem ASAP. (I thought we already
-  did last night but it is still unimplemented)"*
-  · **IN PROGRESS 2026-07-28 15:17** (next-up mark cleared on start) — `ccc @grok` in
-  `.worktrees/172`, brief `.dreamwork/docs/briefs/172-project-identity-in-title.md`, owning
-  `watch.py`, `watch-design.md`, a new `dev/capture` guard, the `justfile` DEFAULT_GUARDS line and
-  `test_watch.py`. Routed to grok for vision: the acceptance includes its own verdict on whether
-  the identity reads as *prominent* rather than merely present
-  · **measured before briefing, and it is smaller than "delayed too long" suggests**: `/data.json`
-  already carries `target`, so nothing needs plumbing — and **`popoutShell` already renders
-  `basename + full path` for every popped-out window**. The popouts have project identity and the
-  main window does not, so the idiom exists in the same file and this is a display change
-  · **his constraint is the substance and is now checkable**: *"anchor what is invariant to an edge,
-  not to a variable-width neighbour"*. Criterion 1 is the identity element's `getBoundingClientRect`
-  on three routes including a long `/review?p=…` param, asserted **identical** — a layout that looks
-  right on the dashboard and slides on a long route passes a screenshot and fails his rule
-  · **a correction I owe this entry**: while briefing I asserted `#172` had been filed under
-  `## Recently landed` without a closing marker — that a P1 had been falsely marked done. **False.**
-  It has been open and unstarted, which is the honest and less flattering account. The error came
-  from splitting `tasks.md` on an **unanchored** `## Recently landed`, which matches a prose mention
-  147k characters early; `parse_ledger` disagreed the moment I asked it. Corrected in the brief in
-  place, left visible there
-  · his *"I thought we already did last night"* is worth taking as data regardless: `#153`
-  (browser-tab title) and `#318` (`TITLE_ROUTE`'s route omission) both landed last night and both
-  touch the title, so **title work did land — just not the half he can see**. That is exactly how a
-  neighbouring landing reads as the wrong thing being done
-
 - **#171** — Ascii vignette at the screen edge, from the loop's own
   words · P3 · idea · 90m · "we will play with some parameters" is an
   instruction about METHOD — ship the axes adjustable, expect to steer ·
@@ -3271,6 +3230,72 @@ Next id: **421**
   · related: **#419, #413**
 
 ## Recently landed
+
+- **#172** — Put project identity prominently in the title section · P1 ·
+  implementation · 25m · **human via watch `do-next` 14:01** · show the
+  target project name (`ud-dreamwork` here) in a materially more prominent
+  position within the visible title section; queued immediately after #217
+  because both modify the dashboard shell/CSS · keep the earlier invariant
+  principle: **anchor what is invariant to an edge, not to a variable-width
+  neighbour** — the route title varies while repo identity does not, so the
+  identity must not be shoved about by unrelated route changes · document the
+  rule in `watch-design.md`; deterministic desktop/mobile captures and
+  visual-review-and-fix convergence required · do not infer first-sight
+  provenance from this later human priority update (#216) · #153's browser-tab
+  title remains related but does not broaden this visible-title increment ·
+  **read his references first**: `grok-build`, `codename-thin` at
+  `ssh://x-game:src/codename-thin`, on another machine  · **NEXT-UP, human via watch `do-next` 2026-07-28 15:13**, and the tone is earned: *"we have
+  several tasks about putting hte project name in the title line. This has been delayed too long.
+  it's essential and basic. Dispatch a subagent to solve this problem ASAP. (I thought we already
+  did last night but it is still unimplemented)"*
+  · **IN PROGRESS 2026-07-28 15:17** (next-up mark cleared on start) — `ccc @grok` in
+  `.worktrees/172`, brief `.dreamwork/docs/briefs/172-project-identity-in-title.md`, owning
+  `watch.py`, `watch-design.md`, a new `dev/capture` guard, the `justfile` DEFAULT_GUARDS line and
+  `test_watch.py`. Routed to grok for vision: the acceptance includes its own verdict on whether
+  the identity reads as *prominent* rather than merely present
+  · **measured before briefing, and it is smaller than "delayed too long" suggests**: `/data.json`
+  already carries `target`, so nothing needs plumbing — and **`popoutShell` already renders
+  `basename + full path` for every popped-out window**. The popouts have project identity and the
+  main window does not, so the idiom exists in the same file and this is a display change
+  · **his constraint is the substance and is now checkable**: *"anchor what is invariant to an edge,
+  not to a variable-width neighbour"*. Criterion 1 is the identity element's `getBoundingClientRect`
+  on three routes including a long `/review?p=…` param, asserted **identical** — a layout that looks
+  right on the dashboard and slides on a long route passes a screenshot and fails his rule
+  · **a correction I owe this entry**: while briefing I asserted `#172` had been filed under
+  `## Recently landed` without a closing marker — that a P1 had been falsely marked done. **False.**
+  It has been open and unstarted, which is the honest and less flattering account. The error came
+  from splitting `tasks.md` on an **unanchored** `## Recently landed`, which matches a prose mention
+  147k characters early; `parse_ledger` disagreed the moment I asked it. Corrected in the brief in
+  place, left visible there
+  · his *"I thought we already did last night"* is worth taking as data regardless: `#153`
+  (browser-tab title) and `#318` (`TITLE_ROUTE`'s route omission) both landed last night and both
+  touch the title, so **title work did land — just not the half he can see**. That is exactly how a
+  neighbouring landing reads as the wrong thing being done
+  · **CLOSED `775022d`** (lane commit `33284c2`, `ccc @grok`, ~24 minutes from an urgent dispatch).
+  `#hproj` is a sibling of `#htitle`, pinned with `margin-left:auto` + `.htitle { flex: 1 }`;
+  basename at heading size and `--bright` so it reads as identity rather than a breadcrumb; **full
+  path on `title=` only**, because two checkouts share a basename and a full path in the bar is what
+  `#284` ruled out. `watch-design.md` gained its section in the same commit
+  · **his constraint is verified, not eyeballed** — the identity box is byte-identical on `/` and
+  `/questions` (730.39, 43.09, 96.02×21) and `trailGap` stays **0** on a long `/review` route where
+  the bar itself widens. Route ink widths were 144 / 86 / 626, so the shove his rule forbids had room
+  to show
+  · guard `dev/capture/projtitle.mjs` registered in `DEFAULT_GUARDS`, red-proved from a `cp` snapshot
+  by forcing `#hproj` empty: six named assertions fail, one of which is *"identity has a real painted
+  box (else same-box is vacuous)"* — the precondition that stops a same-box check passing on a blank
+  element, which is this repo's standing failure and the lane added it unprompted
+  · **it refuted my brief, the eighth lane today to do so, and this one is instructive.** I wrote
+  *"the tab title has no project identity"*. False — `titleWho` has emitted `dreamwork/<project>`
+  since `#153` landed last night. **I had curled the served HTML, read `<title>dreamwork watch</title>`
+  and called that the tab title**; it is the static shell before any JS runs. Measuring the thing
+  adjacent to the thing I cared about, one more time
+  · **and that is the answer to his *"I thought we already did last night"*:** `#153` put the name in
+  the tab, where he saw it, and the visible bar is what was missing. His recollection was right about
+  the evidence he had
+  · it also surfaced a red on master that was mine — an unfolded `#367` hand-off failing
+  `test_lint.py::TestHandoffs` — and correctly declined to fix it as out of scope; fixed in `090ecd0`
+  · reference repos `grok-build` / `codename-thin` at `ssh://x-game:…` were unreachable and were
+  treated as optional per the brief, as intended
 
 - **#408** — `CLAUDE.md` documents a `GIT_OPTIONAL_LOCKS` mitigation that is **not in place**, so
   every Claude session takes real index locks · P2 · system/mitigation-drift · origin: **loop** ·
