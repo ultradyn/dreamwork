@@ -233,12 +233,27 @@ const refusedWrite = async (status, body, label) => {
                { waitUntil: 'networkidle' });
   await sleep(900);
   const typed = 'an answer to a question that is no longer there';
+  // Wait for an open card before typing — the file was rewritten just above,
+  // and a sample taken before the first tick paints the card fills nothing
+  // and click is a no-op (err stays null; "says so" fails for the wrong reason).
+  await p.waitForSelector('.qa.open textarea', { timeout: 5000 });
   await p.fill('.qa.open textarea', typed);
-  await p.click('.qa.open .qsend');
-  // sample inside MORPH_HOLD_MS (1250): the morph fires immediately on a 2xx
-  // refusal (res.ok true), so the defect is visible at ~700ms and the live tick
-  // has not yet restored the open state from data.json.
-  await sleep(700);
+  // Wait on the real premise: the /answer response returned AND the client
+  // painted either a .qerr (refusal said so) or an .anstag (wrongly claimed
+  // answered). A fixed 700ms sleep raced under load — the async sendAnswer
+  // had not yet written .qerr, so err=null read as "says nothing" on a page
+  // that was about to say so. Production line: qaFail → .qerr textContent.
+  await Promise.all([
+    p.waitForResponse(
+      r => r.url().includes('/answer') && r.request().method() === 'POST',
+      { timeout: 8000 }),
+    p.click('.qa.open .qsend'),
+  ]);
+  await p.waitForFunction(() => {
+    const card = document.querySelector('.qa[data-qid]');
+    if (!card) return false;
+    return !!(card.querySelector('.qerr') || card.querySelector('.anstag'));
+  }, null, { timeout: 4000 }).catch(() => {});
   // addressed by [data-qid], NOT by .qa.open — the bug under test is that the
   // card LEAVES the open state, so a selector that names that state stops
   // matching the moment the failure happens and every check on it passes
