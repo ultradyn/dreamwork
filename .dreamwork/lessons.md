@@ -2495,3 +2495,24 @@ this shape and convert opportunistically.)
   whereas this one reports the status of a *smaller program than you think you wrote*.
   **After adding a check, confirm the count of checks that ran went up**, not merely that
   the output still looks right.
+- **A residual found mid-task is filed at the moment the ledger is least likely to be
+  read — and it was already in it.** Closing `#399b` I ran my merge gate, found the
+  landed reader still drops space-joined multi-id spans, measured 16 ids, and filed it as
+  new work (`#412`). `#331` had carried that exact gap for days: same defect, a better
+  count (**19** — I missed the `+`-joined `**#157 + #222 + #223**` span entirely), an
+  independent verification at `04b9e00`, and a fix that mine directly contradicts. I wrote
+  *"the fix looks like `(?:[ /]#\d+)*`"*; `#331` says *"the point of this task is NOT to
+  add `[ /+]` to a third regex"*, because two prior widenings each moved the defect one
+  door along. **Recognition does not scale — 135 open entries is far past the size where
+  "I'd remember if we had this" is true**, and the mid-task moment is exactly when nobody
+  looks. The check costs one command and it is not a title search: **grep the ledger for
+  the SYMBOL** (`LEDGER_COMBINED_MENTION`) before filing anything about code. It finds the
+  entry no title match would, because the duplicate describes the same line of code in
+  entirely different words.
+- **Writing the entry is where the ledger's own rules bite hardest.** Withdrawing `#412`
+  I put `**#331**` in the head line at column 0 — which made `#331` read as *landed*,
+  reintroducing in one prose sentence the precise leak `#399` had just fixed — and I wrote
+  the reciprocal as two adjacent bold spans when the form is one span with a comma. Both
+  in a commit whose subject was tidying the ledger. **Re-run `parse_ledger` and assert
+  `open ∩ landed == ∅` after every ledger edit, not only after parser changes.** Prose
+  about ids is ledger data; the reader cannot tell your commentary from a landing.
