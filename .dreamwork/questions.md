@@ -1,6 +1,24 @@
 # Questions for the human
 
 ## Open
+- **P2 · 2026-07-28 — one word: may I add `GIT_OPTIONAL_LOCKS=0` to `~/.claude/settings.json`?**
+  `~/CLAUDE.md`'s git-index-lock entry says that setting is already there "for all Claude
+  sessions". It is not — `settings.json`'s `env` has no such key, and `echo
+  $GIT_OPTIONAL_LOCKS` in this session prints nothing. The other two thirds of that same
+  mitigation paragraph **are** in place (the fish function has `--no-optional-locks`,
+  `git-lock-watch.service` is active), so this one drifted alone and reading the paragraph
+  would not tell you which third was false.
+  It matters more than a stale doc: today's watcher log has **6,093** lock events in this
+  checkout, because this session runs `git`, `lint.py` and `status_sync.py` many times a tick
+  and each takes a **real** `.git/index.lock` instead of skipping it. `#283` was opened
+  because that churn blocked a commit, and there is a live zero-byte orphan in
+  `~/src/amaroo/.git/index.lock` right now (left alone — deleting another repo's lock on a
+  guess is not a change I will make).
+  **Yes** and I add the key. **No** and I correct `CLAUDE.md` instead so the next
+  investigation does not rule this out as a cause. Either is fine; doing neither is the only
+  wrong answer. Filed as `#408`, which also proposes auditing the other mitigation bullets the
+  same way — each names a file or a unit, so each is one line to check.
+
 - **P2 · 2026-07-28 — #367: what do 5–7 marks become below the cliff?**
   Artifact: `.dreamwork/review/367-strip-below-cliff.html` (one decision, three
   options, ~2 screens). It has the specimen that makes the case in one glance.

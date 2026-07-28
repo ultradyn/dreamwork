@@ -24,9 +24,35 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **408**
+Next id: **409**
 
 ## Open
+- **#408** — `CLAUDE.md` documents a `GIT_OPTIONAL_LOCKS` mitigation that is **not in place**, so
+  every Claude session takes real index locks · P2 · system/mitigation-drift · origin: **loop** ·
+  found while testing **#283**'s closing condition, not by looking for it
+  · `~/CLAUDE.md`'s git-index-lock entry states: *"`~/.claude/settings.json` env sets
+  `GIT_OPTIONAL_LOCKS=0` for all Claude sessions"*. **Measured: it is not there.** `settings.json`'s
+  `env` keys are `API_TIMEOUT_MS`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`, `DISABLE_AUTOUPDATER`,
+  three `x`-prefixed (disabled) keys, and `CLAUDE_CODE_AUTO_COMPACT_WINDOW`. No `GIT_OPTIONAL_LOCKS`
+  · **confirmed from the other end too**, which matters because a value could arrive by another
+  route: `echo $GIT_OPTIONAL_LOCKS` in this session prints nothing. It is genuinely unset
+  · **so the mitigation's own stated purpose is unmet for the noisiest git client on the box.**
+  Today's watcher log shows **6,093** lock events in this checkout — this session runs `git`,
+  `lint.py` and `status_sync.py` many times per tick, and every one takes a **real** `.git/index.lock`
+  rather than skipping it. `#283` was opened because that class of churn blocked a commit
+  · **two honest resolutions and they are not equivalent.** Either the setting is added — which
+  **`CLAUDE.md` says requires his consent**, so it is asked rather than done — or `CLAUDE.md` stops
+  claiming it. **Doing neither is the only wrong answer**, because a documented mitigation that is
+  absent is worse than no mitigation: the next investigation will rule it out as a cause
+  · **the class, which is why this is worth an entry rather than a fix:** a mitigation record is a
+  claim about system state, and nothing re-checks it. The fish-function half **is** in place
+  (verified) and the systemd watcher **is** active (verified) — so this entry drifted alone, and
+  reading the paragraph would never have revealed which third of it was false
+  · rec: **audit every mitigation bullet in `CLAUDE.md` the same way** — each names a file or a unit,
+  so each is checkable in one line. Doing it once and writing down what held is cheap; three were
+  checked here and one failed
+  · related: **#283**
+
 - **#407** — `/questions` has **no** timed ages, so the one-figure precision signal has nothing on
   the page to be read against · P3 · dashboard/design-rationale · origin: **loop** · found by
   measuring the deployed page while verifying **#392a**, not by reading the design
@@ -1882,6 +1908,27 @@ Next id: **408**
   effective · until that restart happens the absence of orphans proves nothing,
   because the unpatched extension is still the one running · `git-lock-watch`
   stays armed as the witness
+  · **closing condition TESTED 2026-07-28 10:10 and it is NOT met — `#283` stays open, and now for a
+  stated reason rather than inertia.** The condition written into this entry is *zero new orphaned
+  locks in a quiet window **after the next pi restart***. **pi has not restarted:** the newest
+  instance started **2026-07-27 04:08**, before this entry's own 22:58 ruling, so the unpatched
+  `pi-powerline-footer` is still the one running and any absence of orphans would prove nothing —
+  exactly as the entry predicted
+  · **and there is not an absence.** A live orphan exists: `~/src/amaroo/.git/index.lock`, **zero
+  bytes**, stamped **21:10:15**, no holder — the same signature as every prior witness. **Left in
+  place deliberately**: it is another repo's, and deleting a lock that something might legitimately
+  hold is not a change to make on a guess
+  · **`git-lock-watch` is armed and logging** (`systemctl --user is-active` → active), and today's
+  log is dominated by **6,093** events in `~/src/dreamwork/.git/` (the symlink to this checkout),
+  then amaroo 950, forum 844
+  · **the KIO/Dolphin candidate is still alive and still doing it** — pid **1246815**, the same pid as
+  the 2026-07-26 witness, `git rev-parse --is-inside-work-tree`, cwd
+  `/run/user/1000/kio-fuse-*/filenamesearch`, parent `systemd --user`, seen again at **10:09:28
+  today**. That pid was *falsified as creator*, so this is unchanged circumstantial evidence and
+  **not** a reopening of the attribution
+  · **separately, a documented mitigation is ABSENT — see #408**, and it means this session's own git
+  activity is part of the 6,093
+  · related: **#408**
 
 - **#282** — Link task references to rich hover previews · P1 · task-navigation
   feature · origin: **human** · **human via watch 18:22** · whenever `#229`-style
