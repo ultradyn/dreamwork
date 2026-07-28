@@ -1049,11 +1049,18 @@ STYLE = """<style>
   .aq > summary { color:var(--muted); cursor:pointer; }
   @media (prefers-reduced-motion:reduce) {
     .aq.open { transition:none; }
+    /* #177: growth is function; under reduced motion the box still fits its
+       content and scrolls past its ceiling, just without the height travel. */
+    .qfield textarea, #cmdform textarea { transition:none !important; }
   }
 
+  /* #177 — same growth gesture as the composer (above), its own ceiling
+     (6 rows, see fitText). A 15-line box inside a question card would shove
+     the list for a ten-second sentence, which is why the two ceilings differ. */
   .qfield textarea { flex:1; min-width:0; background:none; border:0; margin:0;
     box-sizing:border-box; color:var(--text); font:inherit; font-size:.75rem;
-    padding:.4rem .55rem; min-height:44px; resize:vertical; outline:none; }
+    padding:.4rem .55rem; min-height:44px; resize:none; overflow:auto;
+    outline:none; transition:height .85s cubic-bezier(.32,.1,.2,1); }
   /* #273: send is a real control — min 44px touch/pointer target. Flex stretch
      already matches the field height; the floor stops a short single-line box
      from shrinking the button below the a11y floor (review dock and cards). */
@@ -1419,10 +1426,19 @@ STYLE = """<style>
   #cmdpalette.open { visibility:visible; opacity:1; transform:none;
     filter:none; pointer-events:auto; transition-delay:0s; }
   #cmdpalette .label { margin-top:0; }
+  /* #177 — the box grows with what he types, on the page's one height-travel
+     gesture (.85s, the same curve #104's regroup and the card fold use), then
+     scrolls past its own ceiling. `resize:none` because autosize OWNS the
+     height: a manual drag and a content fit fighting over `height` is a box
+     that loses the user's resize on the next keystroke. The ceiling is a
+     per-surface contract carried as `data-max-rows` (composer 15, answer 6 —
+     see fitText); reduced motion keeps the growth (function) and drops only
+     the timing, the page's standing rule. */
   #cmdform textarea { width:100%; box-sizing:border-box;
     background:var(--panel); color:var(--text); border:1px solid var(--line);
     border-radius:var(--radius); font:inherit; padding:.4rem; margin:.3rem 0;
-    min-height:3.4rem; resize:vertical; }
+    min-height:3.4rem; resize:none; overflow:auto;
+    transition:height .85s cubic-bezier(.32,.1,.2,1); }
   /* command selection: a button group whose background indicator SLIDES to
      the active option. The one piece of crisp motion in the composer, kept
      soft (.3s, the dream easing). The selected label glows rather than
@@ -1702,7 +1718,8 @@ APP_BODY = """<canvas id="dreambg"></canvas>
     <div class="cmdmenu" id="cmdmenu" role="menu"></div>
    </div>
   </div>
-  <textarea id="cmdtext" placeholder="a thought for the dream…"></textarea>
+  <textarea id="cmdtext" placeholder="a thought for the dream…"
+            data-max-rows="15"></textarea>
   <div class="cmdrow">
    <button type="submit" id="cmdsend">send</button>
    <button type="button" id="cmdpop"
@@ -2076,6 +2093,7 @@ const qaCompose = (key, st, title) => {
   return `<div class="qcompose" data-mode="${mode}">` +
     `<div class="qfield">` +
     `<textarea id="qi${key}" placeholder="${QPLACE[mode]}"` +
+    ` data-max-rows="6"` +
     ` aria-label="${esc(qaFieldLabel(mode, title))}"></textarea>` +
     `<button type="button" class="qsend"` +
     ` aria-label="${esc(qaSendLabel(mode))}"` +
@@ -3510,6 +3528,7 @@ async function sendComment(key) {
   // trusted to stay inert.
   const before = snapshotCards();
   el.value = '';
+  clearBox(el);                               // #177: snap to the floor; the regroup owns the travel
   // the LAST segment, because what he just wrote is the newest thing in the
   // thread — appending to the first would drop it above an answer written
   // hours earlier, which is the bug this whole split exists to prevent (#128).
@@ -4651,7 +4670,14 @@ function restoreAnswerDrafts() {
     try { title = decodeURIComponent(card.dataset.qid); } catch (e) { return; }
     if (!title) return;
     const ta = card.querySelector('textarea[id^="qi"]');
-    if (ta) dwDraft.restore(title, ta);
+    if (!ta) return;
+    const before = ta.value;
+    dwDraft.restore(title, ta);
+    // #177: a draft restored into a fresh box must size that box, snapped —
+    // the reload path `restoreCardState` does not reach (no in-memory snapshot
+    // survived it), so without this a restored multi-line draft sits in a
+    // 2-row box until the first keystroke.
+    if (ta.value && ta.value !== before) fitText(ta, false);
   });
 }
 function snapshotReviewFrame() {
@@ -4798,7 +4824,9 @@ function snapshotCardState() {
       start: typed ? ta.selectionStart : 0, end: typed ? ta.selectionEnd : 0,
       dir: typed ? ta.selectionDirection : 'none',
       scroll: typed ? ta.scrollTop : 0,
-      height: typed ? ta.style.height : '', // the box is resize:vertical
+      // #177's box height is re-fit from the restored content (`fitText` in
+      // restoreCardState), so it is not carried here — recomputing is the same
+      // value and cannot drift from the content the snapshot also restored.
     });
   });
   return m;
@@ -4842,7 +4870,12 @@ function restoreCardState(saved) {
     const ta = comp && comp.querySelector('textarea');
     if (!ta) return;                       // the state stopped offering a box
     ta.value = s.value;
-    if (s.height) ta.style.height = s.height;
+    // #177: re-fit the box to its restored content, SNAPPED — the tick
+    // re-creates the box at its floor every ~2s, so an animated fit here would
+    // re-grow it under him on every tick while he is mid-thought. The height
+    // the snapshot carried is now derived from the content rather than trusted,
+    // which is the same preference as letting `fitText` recompute on input.
+    fitText(ta, false);
     // the mode is WHERE THE TEXT GOES: a re-render must never silently
     // redirect it. setCardMode declines a mode the new state cannot accept.
     setCardMode(comp, s.mode, true);
@@ -5266,6 +5299,97 @@ addEventListener('click', e => {
   // membership is fixed here, so the indicator slides rather than lands
   setCardMode(btn.closest('.qcompose'), btn.dataset.mode, false);
 });
+/* #177 — a text box grows with what he types, to its own ceiling, then
+   scrolls. The ceiling is a per-surface contract carried as `data-max-rows`
+   (the composer 15, an answer/note box 6); the asymmetry is deliberate, so a
+   long thought in the floating composer never shoves the question list for a
+   ten-second sentence in a card.
+
+   ONE gesture, not a second one. The box's HEIGHT travels on the page's
+   atmospheric height-travel curve (.85s, the same `cubic-bezier(.32,.1,.2,1)`
+   the card fold and #104's regroup use), and what sits below it is CARRIED
+   by that travel rather than teleported: a height transition re-flows the
+   box's containing block every frame, so the cards (or the composer's send
+   row) ride the growth continuously, welded to it — the same outcome #104's
+   FLIP produces for a discrete regroup, reached the way a small, frequent,
+   one-line change reaches it. The plan's literal seam (snapshot → resize →
+   `regroupCards(…, card)`) was the first instinct and is the right gesture,
+   but `travelCard` clamps the host card to its old height with
+   `overflow:hidden` for the travel, which HIDES the line he just typed (and
+   its caret) for the whole .85s on every newline — unacceptable for the most
+   frequent animation on the page. Letting the box itself own the travel keeps
+   the caret in view and carries everything below on the same curve; the
+   gesture is the page's, only the carrier differs.
+
+   `animate=false` is the enter-snap rule again: a restore (the tick putting
+   his text back, a draft surfaced on open) must not re-grow the box every two
+   seconds, so it sets the height with the transition paused. A SEND clears the
+   box through `clearBox` for the same reason — the card's own regroup already
+   owns that height travel, and a second one on the textarea would fight it. */
+function lineHeightOf(ta, cs) {
+  cs = cs || getComputedStyle(ta);
+  const lh = parseFloat(cs.lineHeight);
+  if (isFinite(lh) && lh > 0) return lh;     // a resolved pixel line-height
+  // 'normal' is font-metric-dependent and not a number: measure it with a
+  // probe that inherits the box's own font, so the ceiling tracks the font
+  // rather than a guessed ratio tuned to today's.
+  const p = document.createElement('div');
+  p.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;' +
+    'border:0;padding:0;margin:0;width:0;font:' + cs.font +
+    ';line-height:' + cs.lineHeight;
+  p.textContent = 'M\\nM';
+  document.body.appendChild(p);
+  const h = p.getBoundingClientRect().height / 2;
+  p.remove();
+  return h || (parseFloat(cs.fontSize) * 1.2);
+}
+function fitText(ta, animate) {
+  if (!ta) return;
+  const rows = parseInt(ta.dataset.maxRows, 10);
+  if (!rows) return;                          // no ceiling: leave the box alone
+  const cs = getComputedStyle(ta);
+  if (!ta._lh) ta._lh = lineHeightOf(ta, cs); // constant for the font; cache it
+  // border belongs to the border-box `height` but not to `scrollHeight`, so it
+  // is added back so a 1px-bordered composer box never reads 2px short and
+  // starts scrolling a line early.
+  const bord = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+  const ceil = Math.round(rows * ta._lh + bord);
+  const oldH = ta.getBoundingClientRect().height;
+  // measure the content's TRUE height: shrink first (transition paused) so a
+  // deletion reads back smaller rather than as the box it currently fills —
+  // scrollHeight otherwise returns max(content, client) and never shrinks.
+  ta.style.transition = 'none';
+  ta.style.height = 'auto';
+  const want = ta.scrollHeight + bord;
+  const target = Math.max(ta._lh + bord, Math.min(want, ceil));
+  if (animate) {
+    // the enter-snap rule, inverted: commit the OLD height with no transition,
+    // then set the target with the standing transition restored, so the box
+    // travels from where it was to where its content now needs.
+    ta.style.height = oldH + 'px';
+    void ta.offsetWidth;
+    ta.style.transition = '';                 // the CSS height transition reapplies
+    ta.style.height = target + 'px';
+  } else {
+    // a restore (tick, draft): snap to the target and THEN restore the
+    // standing transition, so the box does not re-grow under him on every
+    // tick yet the next input he types still travels.
+    ta.style.height = target + 'px';
+    void ta.offsetWidth;
+    ta.style.transition = '';
+  }
+}
+/* snap a box to its floor — used after a send clears it, where the CARD's own
+   regroup already owns the height travel and a second transition on the
+   textarea would animate against it. Sets no height, so the CSS `min-height`
+   is the floor. */
+function clearBox(ta) {
+  if (!ta) return;
+  ta.style.transition = 'none';
+  ta.style.height = '';
+  void ta.offsetWidth;
+  ta.style.transition = '';
+}
 /* save a drafted answer as he types (#269 acute). Delegated on `document`
    because the box is recreated by every re-render — a listener bound to the
    node would die with it. Keyed by `data-qid` (the question's title identity),
@@ -5281,6 +5405,7 @@ addEventListener('input', e => {
   let title = null;
   try { title = decodeURIComponent(card.dataset.qid); } catch (er) { return; }
   if (title) dwDraft.save(title, t.value);
+  fitText(t, true);                           // #177: the box grows with what he typed
 });
 /* opening or closing a disclosure INSIDE a card HIMSELF — the folded entry
    (#111) or its settled follow-up thread (#128) — is the same moment as the
@@ -6342,6 +6467,7 @@ function popoutDoc(url, label) {
     try { d = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) {}
     if (!d || typeof d.t !== 'string' || !d.t) return;
     t.value = d.t;
+    fitText(t, false);                        // #177: size the box to the restored draft, snapped
     // the kind travels with the text, because the kind is WHERE THE TEXT GOES
     // (#103's rule for a card's mode, one surface over). Validated against the
     // live vocabulary: a plugin's command can disappear between sessions, and
@@ -6622,7 +6748,10 @@ function popoutDoc(url, label) {
       // NO DEBOUNCE, deliberately: a debounce is a window in which his words
       // are lost, which is the one thing this exists to prevent. The value is
       // a single command, so the write is far too small to be worth batching.
-      if (ev === 'input') saveDraft();
+      if (ev === 'input') {
+        saveDraft();
+        fitText(document.getElementById('cmdtext'), true);  // #177: grow with the thought
+      }
       if (dismissT) cancelDismiss();
     });
   function openCmd() {
@@ -6708,6 +6837,7 @@ function popoutDoc(url, label) {
         document.getElementById('cmdtext').value = '';
         if (kind === 'do-now') setKind('add-idea');
         clearDraft();             // the one moment it is safe to forget (#163)
+        fitText(document.getElementById('cmdtext'), true);  // #177: shrink back, the same gesture reversed
         // he may already have started typing again while the POST was in
         // flight, before there was any timer to cancel. Courtesy is NOT
         // the confirmation hold (#291): that is CMD_CONFIRM_HOLD_MS on the
