@@ -178,6 +178,19 @@ Next id: **410**
   · **the trap to avoid, and it is this repo's own recurring one:** a git sweep that finds nothing
   prints the same as one that ran wrong. Whatever gets built reports **how many commits it
   examined**, not just what it found
+  · **the recommended sweep was RUN by hand and it works — this entry now has a yield number.**
+  Scanned **1,131** commit subjects for `fix|feat|close|perf|refactor(#N):` against the **136** open
+  ids: **6 flagged** whose entry does not cite the sha. That is a **4% review load**, which is
+  tractable rather than noise
+  · **and one of the six is real: `#340`**, fixed at `8009c90` and open ever since, found by this
+  sweep and by nothing else — not by `lint`, not by the hand-off channel, not by me reading the
+  ledger. The other five (`#394`, `#399`, `#275`, `#254`, `#196`) are a mix of partial fixes and
+  work I have not yet folded, so **the sweep needs a suppression convention and one already
+  exists**: `check_landed_still_open` treats a **cited sha** as the entry's evidence that it is
+  deliberately still open. Cite the sha, the row disappears
+  · so the design is settled by measurement rather than argument: **scan subjects, subtract entries
+  that cite the sha, report the remainder with a count.** The count is the part that matters —
+  a sweep that finds nothing must be distinguishable from one that did not run
   · related: **#381, #398, #394, #406**
 
 - **#402** — `status.json`'s `dreamers` array has no stated shape, and the tool that reads it goes
@@ -1343,6 +1356,28 @@ Next id: **410**
   the bullet must not create a second thing able to disagree with it · red-prove with a
   real answered entry and assert at runtime that the `you` label appears AND that the
   raw tag does not
+  · **STOP — this appears to be ALREADY FIXED, and I nearly dispatched a lane at it.** While
+  verifying my own brief's line-number claims before dispatch, the citations proved stale after the
+  `#399` merge — and re-deriving the measurement showed the defect gone. **`8009c90 fix(#340): his
+  answer is a contribution, not unattributed body prose`** exists in history; this entry never cited
+  it and so was never folded
+  · **measured on the live file now:** `parse_answered` returns **49** answered entries, **0** with a
+  raw `**Answer (via …)` tag in the body, **0** with one in a follow, and **36** whose follows carry
+  an explicit `author` field (`'human'` / `'loop'`). The entry's own figure — 17 of 31, ~55% — is
+  from before that commit
+  · **and the fix would NOT have been the one-argument change this entry describes.** There are
+  **two** `lift_answer=False` call sites for `## Answered`: `parse_answered` (`:8449`, reads
+  `questions.md`, where the answer is **his**) and `parse_answered_answers` (`:8299`, reads
+  `answers.md`, where it is the **loop's**). They are different channels, so the change is
+  **asymmetric** — and `answers.md`'s Answered section contains **zero** `Answer (via …)` bullets,
+  only `→ answered` heads. A lane doing "the one-argument fix" symmetrically would have attributed
+  **loop prose to him**, which `#109` makes a correctness fault. Worse than the bug
+  · **not closed yet, deliberately: the evidence is parsed-data, and the defect is about pixels.**
+  Owed: look at `/questions`' Answered section on the deployed page and confirm the `you` label
+  renders and no raw tag shows. Then close citing `8009c90`
+  · **separately, worth a look and NOT part of this:** `answered_at` returns `None` for **6** of the
+  49 answered entries, so those carry no answered-date. Five are real entries; one is *"Four early
+  asks, all applied"*. File it if it survives a look
 
 - **#341** — Two answers on one OPEN entry silently keep only the last · P2 ·
   reliability · origin: **loop** · from #254's design agent · `_parse_entries`

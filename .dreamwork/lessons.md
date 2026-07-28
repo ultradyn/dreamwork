@@ -2338,3 +2338,23 @@ this shape and convert opportunistically.)
   · The generalisable diagnostic, and it costs one pass: **for each field in a record, name what
   writes it and when.** Anything with no writer is decoration that will eventually be believed.
 
+- **Verifying my own brief's citations before dispatch found that the P1 it described was already
+  fixed. The check cost two minutes and saved a lane.** · Writing `#340`'s brief I cited
+  `watch.py:8282` and `:8407`. The `#399` merge had shifted the file, so I re-checked — and the
+  re-check did not just correct two numbers. It found **two** `lift_answer=False` call sites where
+  the entry described one, on **two different channels** whose fix is **asymmetric**; and then that
+  the defect itself was gone, fixed at `8009c90`, with the entry still under `## Open` because it
+  never cited the sha.
+  · **A lane obeying that brief would have done real harm.** The entry called it a one-argument fix;
+  applied symmetrically it would have attributed **loop prose to the human** — the inverse of the
+  bug, and a correctness fault by this repo's own `#109`. The brief was confident, specific, and
+  wrong in three ways.
+  · The habit that caught it is small: **re-derive every line number and every count in a brief
+  against the tree you are dispatching against, not the tree the entry was written against.** A
+  ledger entry is a claim from the day it was written; the file moves under it. This is the third
+  time in one day the inherited-measurement trap has come round, and the first time checking it was
+  free.
+  · Corollary, cheap and general: **when a ledger entry describes a defect, reproduce the defect
+  before commissioning the fix.** Not the diagnosis — the symptom. If it will not reproduce, the
+  task has changed shape and the brief you were about to write is for a different repo.
+
