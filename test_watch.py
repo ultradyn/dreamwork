@@ -4034,9 +4034,16 @@ class TestAppShell(unittest.TestCase):
         # answer had landed, cleared his text, and the next tick put the
         # question back with no explanation anywhere.
         self.assertIn('function qaFail', watch.PAGE)
-        self.assertEqual(
-            watch.PAGE.count('qaFail(card, res ? res.status : 0)'), 2,
-            "both sendAnswer and sendComment surface a refusal")
+        # #263 E5b: the decision is the VERDICT's `landed`, never `res.ok`
+        # alone — a rejected 202 (res.ok true, body rejected:true) is the same
+        # failure, and on /answer+/comment that false confirmation cleared the
+        # draft, the only copy of what he typed. Both paths hand qaFail the
+        # verdict so it can name the reason; both gate on `v.landed`.
+        self.assertGreaterEqual(
+            watch.PAGE.count('qaFail(card, v)'), 2,
+            "both sendAnswer and sendComment surface a refusal via the verdict")
+        self.assertNotIn('!res.ok) { qaFail(card, res ? res.status : 0)',
+                         watch.PAGE)
 
     def test_draft_is_cleared_on_exactly_one_path(self):
         """#163 — the draft is forgotten on a successful send and nowhere else.
