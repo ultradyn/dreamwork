@@ -165,8 +165,11 @@ read, initialization has already happened; return to the loop.
    maintenance item), suggest a bridge plugin via `questions.md` —
    suggesting is free; building needs a yes (see the bridge-plugin
    pattern in `writing-plugins.md`). Then read
-   `.dreamwork/docs/` (living docs maintained by the dreamers), read `.dreamwork/lessons.md` (distilled
-   one-line lessons — the cheapest memory), skim recent
+   `.dreamwork/docs/` (living docs maintained by the dreamers), read the **recent** end of
+   `.dreamwork/lessons.md` and search it on demand thereafter — it is the
+   cheapest memory and also thousands of lines, so "read it" at init means
+   the newest entries plus a grep when a decision touches one, never the
+   whole file (#400). Skim recent
    `.dreamwork/dreams/` entries — they carry memory from earlier sessions
    and subagents — and check `.dreamwork/questions.md` for open questions
    to surface in the opening status. Update check: compare

@@ -620,32 +620,6 @@ Next id: **465**
   · related: **#402**
 
 
-- **#400** — `lessons.md` has outgrown being read, and the briefs that tell lanes to read it are
-  cargo cult · P2 · loop/memory · origin: **loop** · found by **measuring receipt instead of
-  assuming it**, the same instrument that caught the relay
-  · **the file is 2,143 lines and 157 entries.** Every brief lists it under *"Read, do not edit"*.
-  No lane can read that meaningfully, and the evidence says none does
-  · **measured, and the confound is the finding.** Phrases that appear in **both** my briefs and
-  lane reports prove nothing — the lane is echoing the brief. So compare the two: `"neighbour"` is
-  in **20 briefs** and **51 report lines**; `"outside the system"` is in **4 briefs** and **0 report
-  lines**. `lessons.md` itself is named **4** times across ~15 reports. **The lessons that reach a
-  lane are the ones I hand-copy into its brief**, and nothing else does
-  · **which means the mechanism is working — just not the one I thought.** `lessons.md` is the
-  *coordinator's* memory: I accumulate, then select 4-6 relevant ones into each brief's "rules that
-  matter most here". That is a good design and it is worth naming as the design rather than
-  discovering it again. What is wrong is the vestigial *"read `lessons.md`"* line, which implies a
-  lane will find the relevant lesson on its own
-  · **it bears on a stated DREAMWORK.md goal** — *"the loop's memory survives anything that ends a
-  session; what it knew, it still knows"*. Survival is not the failing half; **retrieval** is
-  · rec, and deliberately small: **stop listing `lessons.md` as lane reading**, and keep doing what
-  already works. If more is wanted, a short "start here" index of the load-bearing entries beats
-  restructuring 157 of them — but measure whether the index gets read before growing it, because
-  that is the mistake this entry is about
-  · **do not prune to fix this.** I checked: few of today's entries have graduated into checks —
-  they are principles, not rules with enforcers — so pruning would cost memory without buying
-  readability
-  · related: **#394, #405**
-
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
   dashboard/transitions · origin: **loop** · from **#381's own caveat**, probed rather than accepted
   · `#381` surfaced pending hand-offs by adding a span to the existing `stfacts` row, which is the
@@ -3400,6 +3374,48 @@ Next id: **465**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#400** — `lessons.md` has outgrown being read, and the briefs that tell lanes to read it are
+  cargo cult · P2 · loop/memory · origin: **loop** · found by **measuring receipt instead of
+  assuming it**, the same instrument that caught the relay
+  · **the file is 2,143 lines and 157 entries.** Every brief lists it under *"Read, do not edit"*.
+  No lane can read that meaningfully, and the evidence says none does
+  · **measured, and the confound is the finding.** Phrases that appear in **both** my briefs and
+  lane reports prove nothing — the lane is echoing the brief. So compare the two: `"neighbour"` is
+  in **20 briefs** and **51 report lines**; `"outside the system"` is in **4 briefs** and **0 report
+  lines**. `lessons.md` itself is named **4** times across ~15 reports. **The lessons that reach a
+  lane are the ones I hand-copy into its brief**, and nothing else does
+  · **which means the mechanism is working — just not the one I thought.** `lessons.md` is the
+  *coordinator's* memory: I accumulate, then select 4-6 relevant ones into each brief's "rules that
+  matter most here". That is a good design and it is worth naming as the design rather than
+  discovering it again. What is wrong is the vestigial *"read `lessons.md`"* line, which implies a
+  lane will find the relevant lesson on its own
+  · **it bears on a stated DREAMWORK.md goal** — *"the loop's memory survives anything that ends a
+  session; what it knew, it still knows"*. Survival is not the failing half; **retrieval** is
+  · rec, and deliberately small: **stop listing `lessons.md` as lane reading**, and keep doing what
+  already works. If more is wanted, a short "start here" index of the load-bearing entries beats
+  restructuring 157 of them — but measure whether the index gets read before growing it, because
+  that is the mistake this entry is about
+  · **do not prune to fix this.** I checked: few of today's entries have graduated into checks —
+  they are principles, not rules with enforcers — so pruning would cost memory without buying
+  readability
+  · **re-measured 2026-07-29 03:24 and it is worse, which is the argument for the rec rather than against it**:
+  **3021 lines, 38,407 words — about three hours of reading at 200wpm.** The entry's own count was 2143 lines,
+  so it grew ~900 lines in a day, four of them added tonight by me
+  · **its `do not prune` finding still holds and I checked before acting on the opposite instinct.** I came to
+  this intending to prune graduated lessons; the entry had already established that few have graduated into
+  checks — they are principles, not rules with enforcers — so pruning costs memory and buys no readability. The
+  entry stopped me, which is what a ledger is for
+  · **the rec is now implemented, and in the two places that emit the behaviour rather than describe it.**
+  `SKILL.md`'s dreamer section says plainly that `lessons.md` is the **coordinator's** memory, that a lane gets
+  the four to six selected into its brief, and that citing an entry means quoting it plus its line
+  (`lessons.md:991`); `initialization.md` no longer implies the whole file is read at init — the newest entries
+  plus a grep on demand
+  · evidence the working pattern is already in use: tonight's newest briefs cite specific entries and line
+  numbers, while the older ones still carry the vestigial *"read freely: `lessons.md`"* line. Those are history
+  and are left alone; the fix is forward-only
+  · **FOLDED 2026-07-29 03:24** — deliberately the small version the entry asked for. No index was built,
+  because the entry's own warning is that measuring whether an index gets read must come before growing one
+  · related: **#394, #405**
 - **#461** — an own-server guard grades whatever holds its port, because it never checks whose server answered ·
   **P1** · loop-machinery/verification bug · origin: **loop** · found while verifying `#263`'s `202` cutover
   · **the shared runner is already defended and its comment says the own-server guards are immune. They are

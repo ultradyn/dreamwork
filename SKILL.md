@@ -201,6 +201,17 @@ Two kinds, nothing in between:
   distillation is also appended to `.dreamwork/lessons.md`. The coordinator
   reads new dreams and captures any ideas into the task list.
 
+  **`lessons.md` is the coordinator's memory, not a lane's reading list**
+  (#400, measured). It is thousands of lines; no lane reads it, and the
+  measurement showed the lessons that actually reach a lane are the ones
+  hand-copied into its brief — nothing else does. So **select the four to
+  six that bear on this task and state them in the brief**, and cite an
+  entry by what it says plus its line (`lessons.md:991`) when a lane needs
+  the whole thing. Listing the file under "read, do not edit" implies a
+  lane will find the relevant lesson itself, which is the one thing it
+  cannot do. Survival was never the failing half of *"what it knew, it
+  still knows"* — retrieval is.
+
 Delegation blocks files, not the loop. Record what a dispatched dreamer
 owns (files/dirs) at dispatch; the coordinator stays off those. After
 ~10 minutes of a delegated task running, resume selection over
