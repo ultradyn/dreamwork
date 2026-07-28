@@ -311,6 +311,7 @@ Next id: **443**
   `@glm52` refused to guess at appearance, correctly
   · remaining on this entry: he rules on A/B/C/D, then `DREAMWORK.md` + `file-formats.md` + `lint.py`
   change. Nothing is built until then
+  · **ARTIFACT FIXED `c19107a` (2026-07-28 22:35, lane `tablefix`), on his do-now while he was reading it** — *"I can't read it (reduces and costs columns don't break text lines)"*. The cells were never the problem: they already had `white-space:normal` and `overflow-wrap:anywhere`. The template's `table{min-width:max-content}` let the table size to unwrapped content — **4197px inside a 1120px pane** (reduces ~817px, costs ~1114px, risk ~2197px), so `.scroller` scrolled sideways and every cell was one line. Fixed **per-artifact** (`table-layout:fixed`, 16/24/24/36 columns) rather than in the shared template, which would re-stamp 23 artifacts of which 12 have no `src/` (`#436`). It also restacks each option as a labelled full-width block below 860px, because a four-column comparison is unreadable at 390px however well it wraps. Coordinator-verified: derived fold 740/693, `#ask.top` **218** desktop (up from 266) and 266 mobile, both above. **The question itself is still open and still his.**
 
 - **#422** — a research artifact is a kind we produce and have never specified · P2 ·
   loop-tooling/format · origin: **human** · **human via watch `do-next` 2026-07-28 16:29**, second
