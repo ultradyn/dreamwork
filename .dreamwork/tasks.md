@@ -24,9 +24,31 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **440**
+Next id: **441**
 
 ## Open
+- **#440** — the coordinator hand-rolls a ledger split on every fold, and the unanchored form has now
+  corrupted the file once and produced a nonsense count once · **P1** · loop-tooling/ledger ·
+  origin: **loop** · **found by doing it wrong twice in one hour, with the fix already written down**
+  · `.dreamwork/tasks.md` has exactly one `## Open` and one `## Recently landed`, but the string
+  `## Recently landed` also appears **in the prose of an open entry**. So `t.split('## Recently landed', 1)`
+  splits at the *mention*, not the heading
+  · **what that cost, both times on 2026-07-28.** (1) Folding four landed entries wrote a file with **two**
+  landed headers and 130 lines in the wrong half; `lint` caught it only obliquely, reporting a *reciprocity*
+  error about an unrelated pair (`#395`/`#353`), which took four probe commands to trace back to the
+  structure. (2) Counting open entries for `status.json` returned **33** instead of 142, caught only because
+  the number was absurd
+  · **this is the fifth hand-rolled ledger parser to be wrong here**, two of which damaged a sectioned
+  file, against a file whose production parser (`watch.parse_ledger` / `ledger_entries`) was importable
+  every time. The lesson is recorded, `#437`'s brief warned a lane about this exact defect an hour before
+  it bit, and it bit anyway — which is the argument that a **lesson is not a guardrail**
+  · so: a single supported way to fold an entry. Sketch: `dev/ledger.py fold <id> --note <text>` that moves
+  the entry from Open to the top of Recently landed, appends the note line, bumps nothing it should not, and
+  **asserts both headings match `^## …$` exactly once before and after**. Counting comes free from the same
+  module, which removes the second failure mode as well
+  · **`lint` cannot police a throwaway script**, so the check that matters is that the tool exists and is
+  the only path — the anti-corruption assertions live inside it, not in a linter looking at the aftermath
+  · related: **#402, #353**
 - **#438** — a generic scheduled-tasks facility, so maintenance and inbound-scanning work is filed rather
   than done ad hoc · P2 · feature/scheduling · origin: **human** · **human via watch 2026-07-28 20:34**
   · his words: *"we should add support for task scheduling (probably managed through dreamhub). central
@@ -662,7 +684,7 @@ Next id: **440**
   is not its arguments*, this one is *the argument order is not a contract*. `^ccc @` silently
   encodes "no flags between binary and alias". Match the alias wherever it appears, or resolve the
   lane from `dreamers[].pid` with `kill -0`, which is exact and needs no pattern
-  · related: **#401, #264, #403, #405, #410, #423**
+  · related: **#401, #264, #403, #405, #410, #423, #440**
   · **it demonstrated itself at 14:56, while I was dispatching the lane to fix it.** Two lanes
   were live (`ccc --yolo @glm52`, `ccc --yolo @grok`) and `status_sync.py` printed
   *"already in sync (135 open, 0 live)"*. Not reconstructed from logs — observed in the same
@@ -730,7 +752,6 @@ Next id: **440**
   plain id → **int**, sub-id → **string**, a quoted plain id is **always wrong**. Verified across all
   four cases independently, including the one that matters — `["263"]` is still an ERROR, so the
   widening did not remove the check it widened
-
 - **#403** — `.dreamwork/docs/research/` has no `doc-map.md` row and 11 files sit in it unmapped ·
   P3 · docs/freshness · origin: **loop** · found while checking a new file's ownership obligations
   · the existing row is for root-level `.dreamwork/docs/research-*.md` — a **different** location.
@@ -1516,7 +1537,7 @@ Next id: **440**
   complete: 3 combined entries split, the relation contracted and checked, 4 compound bands
   accounted for, the 6 bandless entries deliberately left as his call
 
-  · related: **#395**
+  · related: **#395, #440**
 - **#352** — Standardize the duplicated ledger parsing before the store migration ·
   P1 · refactor/prerequisite · origin: **human** · **human via watch 2026-07-28 01:05**,
   as a follow-up on the #346 ask: *"before we work on this proper we should standardize the
