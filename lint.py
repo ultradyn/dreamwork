@@ -1943,6 +1943,81 @@ def check_watch_tint(dw: Path, watch, rep: Report) -> None:
         rep.add(OK, "watch-tint", raw)
 
 
+# #445 — the three-axis posture vocabulary (pace × asking × delegation),
+# ratifying #443's finding that run-mode conflated three independent decisions.
+# Pace and asking are closed sets of named stops; delegation carries a NUMBER
+# (an average-concurrency TARGET, never a cap — his #445 Q3), whose posture
+# label is derived for display. The closed sets live here as the single source
+# today; increment 2's dashboard controls must import them rather than
+# restating, the same way this file imports RUN_MODES from watch.py.
+POSTURE_STOPS_PACE = ("idle", "steady", "hot")
+# Asking keeps all FOUR of the levels he dictated at length (#445) — his
+# words, in order. `near-auto` and `auto` differ observably: near-auto still
+# evaluates each material choice and writes it to a journal (ADR-shaped),
+# surfacing nothing; `auto` is "tasked with figure it out" and never blocks on
+# a reply. Merging them would delete a behaviour he specified, so the asking
+# axis has four stops where pace and delegation have three — and that is the
+# honest shape (his "3 stops" was a maybe/IDK about the control, which is a
+# later increment's problem to render, not a reason to drop a level).
+POSTURE_STOPS_ASKING = ("ask", "inform", "near-auto", "auto")
+# Delegation posture labels, shown beside the integer target. The integer is
+# authoritative; the label is a derived display string.
+DELEGATION_POSTURES = ("own", "assist", "delegate")
+POSTURE_AXES = ("pace", "asking", "delegation")
+
+# The conversion of today's run-mode values into the three-axis vocabulary
+# (#445 Q2: "convert the current modes into the new values"). Stated as a
+# mapping, not a rewrite — each old value lands in the new space with NO
+# silent change in behaviour for a loop that has not been restarted.
+#
+# ASKING is `ask` for all three, grounded in measured behaviour, not the
+# middle stop: today's loop writes a questions.md entry AND a review artifact
+# for ~every material decision (108 resolutions, 28 artifacts at the time of
+# writing), and his own #445 words are "you do ask me a lot of stuff." That
+# is level 1 (ask me everything), not level 2 (inform — ~10-20% escalate).
+# Deriving `inform` would make the loop stop asking and start emitting
+# documents instead — the one regression that would cost him immediately.
+#
+# PACE for assisted derives `hot` because watch.py describes BOTH hot and
+# assisted as "continuous work" (vs lackadaisical's "idle-friendly") — the
+# pace is genuinely continuous, so this is unpacking a bundle that was always
+# there, not inventing a decision. It is the one derivation that carries
+# forward a bundled assumption (the very thing #443 identified); the fix is
+# that pace is now independently settable, not that the starting point moves.
+RUN_MODE_TO_POSTURE: dict[str, dict[str, object]] = {
+    "lackadaisical": {"pace": "idle", "asking": "ask", "delegation": 0},
+    "hot": {"pace": "hot", "asking": "ask", "delegation": 0},
+    "assisted": {"pace": "hot", "asking": "ask", "delegation": 1},
+}
+
+
+def derive_posture(mode: str) -> dict[str, object] | None:
+    """Today's run-mode value -> its three-axis posture decomposition (#445).
+
+    Returns None for an unrecognised mode (the derivation falls back to
+    run-mode's own default-handling; `check_run_mode` is what says the file no
+    longer matches). Single source — increment 2's runtime must import this
+    rather than restating the mapping, the way this file imports RUN_MODES.
+    """
+    entry = RUN_MODE_TO_POSTURE.get(mode)
+    if entry is None:
+        return None
+    return dict(entry)
+
+
+def delegation_posture(target: int) -> str:
+    """Avg-concurrency target integer -> its posture label (display only).
+
+    0 is *occasional/own* (avg < 0.5), not forbidden; 1 is *assist* (0.5–1.5);
+    2 and up is *delegate*. The number steers the average; it is never a cap.
+    """
+    if target <= 0:
+        return "own"
+    if target == 1:
+        return "assist"
+    return "delegate"
+
+
 def check_run_mode(dw: Path, watch, rep: Report) -> None:
     """Main-dreamer run mode (#290).
 
@@ -1967,6 +2042,113 @@ def check_run_mode(dw: Path, watch, rep: Report) -> None:
         )
     else:
         rep.add(OK, "run-mode", raw)
+
+
+def check_posture(dw: Path, watch, rep: Report) -> None:
+    """Three-axis posture: pace × asking × delegation (#445, ratifies #443).
+
+    `.dreamwork/posture` is a sibling to run-mode — same physical contract
+    (gitignored, machine-local, re-read every tick). ABSENT is the default:
+    the loop derives posture from run-mode via the conversion mapping in
+    `file-formats.md`, so a loop that has not been restarted behaves
+    identically (the per-tick re-read is load-bearing — #426). PRESENT is an
+    explicit three-axis override.
+
+    Pace and asking are closed sets: an unknown value ERRORs, failing loud
+    the same way run-mode and watch-tint do (a silent fallback that drops his
+    choice is the hazard). Delegation carries a NUMBER — an average-
+    concurrency target, NOT a cap — so a nonsense value (negative, non-
+    integer) only WARNs, and nothing here ever reads the running fleet size:
+    an average is an average, and a checker that flagged a session above or
+    below its target would be wrong most of the time (#445 Q3).
+    """
+    path = dw / "posture"
+    if not path.exists():
+        return
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    values: dict[str, str] = {}
+    seen_any = False
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        m = re.match(r"^([a-z][a-z-]*):\s*(.*?)\s*$", s)
+        if not m:
+            continue
+        seen_any = True
+        k, v = m.group(1), m.group(2)
+        if k not in POSTURE_AXES:
+            rep.add(WARN, "posture",
+                    f"unknown axis {k!r} — recognised: {', '.join(POSTURE_AXES)}")
+            continue
+        if k in values:
+            rep.add(WARN, "posture",
+                    f"axis {k!r} appears more than once — keeping the first")
+            continue
+        values[k] = v
+    # A present file that parsed to nothing is inert: posture stays derived,
+    # so it is not an error, but it is worth knowing the file does nothing.
+    # (The "count on the OK row" rule — #380 — means a parser that matched
+    # nothing must not look the same as one that found nothing wrong.)
+    if not seen_any:
+        rep.add(WARN, "posture",
+                "present but no `axis: value` lines parsed — posture stays "
+                "derived from run-mode; the file is inert")
+        return
+
+    valid = 0
+    # PACE — closed set, fail loud.
+    pace = values.get("pace")
+    if pace is None:
+        rep.add(WARN, "posture", "no `pace:` line — pace stays derived from run-mode")
+    elif pace not in POSTURE_STOPS_PACE:
+        rep.add(ERROR, "posture",
+                f"pace {pace!r} is not one of {', '.join(POSTURE_STOPS_PACE)} "
+                f"— a closed set fails loud, like run-mode")
+    else:
+        valid += 1
+    # ASKING — closed set, fail loud.
+    asking = values.get("asking")
+    if asking is None:
+        rep.add(WARN, "posture", "no `asking:` line — asking stays at the derived default")
+    elif asking not in POSTURE_STOPS_ASKING:
+        rep.add(ERROR, "posture",
+                f"asking {asking!r} is not one of {', '.join(POSTURE_STOPS_ASKING)} "
+                f"— a closed set fails loud, like run-mode")
+    else:
+        valid += 1
+    # DELEGATION — a number (avg-concurrency target), not a gate. Warn on
+    # nonsense only; never on the running fleet size.
+    dlg = values.get("delegation")
+    dlg_label = None
+    if dlg is None:
+        rep.add(WARN, "posture",
+                "no `delegation:` line — delegation stays derived from run-mode")
+    else:
+        try:
+            n = int(dlg)
+        except ValueError:
+            rep.add(WARN, "posture",
+                    f"delegation {dlg!r} is not an integer — an average-"
+                    "concurrency target is a number; warn, not error, because "
+                    "it steers rather than gates")
+        else:
+            if n < 0:
+                rep.add(WARN, "posture",
+                        f"delegation {n} is negative — nonsense; 0 means "
+                        "occasional (avg <0.5), not forbidden")
+            else:
+                valid += 1
+                dlg_label = delegation_posture(n)
+    # Clean bill only when all three axes are valid, and it carries the count
+    # so coverage can never shrink to silence beside a finding (the rule the
+    # lane-containment check follows: a check that contradicts itself in one
+    # run gets read as noise and then ignored).
+    if valid == len(POSTURE_AXES):
+        rep.add(OK, "posture",
+                f"{valid} of {len(POSTURE_AXES)} axes valid · "
+                f"pace={pace} asking={asking} "
+                f"delegation={dlg} ({dlg_label})")
 
 
 PLUGIN_KIND = re.compile(r"^[a-z0-9]+-[a-z0-9-]*[a-z0-9]$")
@@ -3565,6 +3747,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_watch_port(dw, rep)
     check_watch_tint(dw, watch, rep)
     check_run_mode(dw, watch, rep)
+    check_posture(dw, watch, rep)
     check_plugin_commands(dw, watch, rep)
     check_submissions(dw, rep)
     check_skill_version(dw, rep)

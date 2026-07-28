@@ -359,6 +359,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
 | `.dreamwork/run-mode` | `watch.py` dashboard + the coordinator/main dreamer on tick and via `watch-events.log` | One line: one name from `watch.py`'s `RUN_MODES` (`lackadaisical`, `hot`, `assisted`). Absent/unknown → `lackadaisical`. Machine-local, **gitignored** — operational posture, not a portable project default. `status.json` may mirror it later but never owns it | `lint.py` |
+| `.dreamwork/posture` | the coordinator/main dreamer on tick (#445) | Three-axis override of run-mode's posture: `pace:`, `asking:`, `delegation:` — one per line, `#` comments allowed. Absent → derived from run-mode (see § below). Closed sets on pace/asking fail loud; delegation carries a number that steers, never gates | `lint.py` |
 | `.dreamwork/submissions.log` | recovery — the loop, and him, after something failed | One JSON object per line, written as the FIRST act of `do_POST` before any parsing or validation. Append-only, never rewritten. Machine-local, **gitignored** — see below | `lint.py` |
 | `.dreamwork/plugin-commands.json` | `watch.py`'s composer (#86) | `{"commands": [{kind, label, desc, plugin}]}`. Written **whole** by the loop at plugin resolution, never appended — see below. Machine-local, **gitignored** | `lint.py` |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
@@ -1095,6 +1096,118 @@ hot
 
 Checked by `lint.py` (`check_run_mode`), reading the closed set from
 `watch.py` so the checker cannot drift from the page.
+
+## `.dreamwork/posture` — the three-axis posture, overriding run-mode (#445)
+
+`run-mode` is a single word, and `#443` measured that it carries **three
+independent decisions in one**: how fast the loop acts (pace), how much it
+asks the human (asking), and whether it works through subagents (delegation).
+`assisted` is the only value that implies helpers, and it also implies a
+pace, so *"lackadaisical but delegating"* is unexpressible — and that was
+tonight's actual session, held in conversation rather than the file. His
+`#445` ruling ratified **three orthogonal axes: pace × asking × delegation**,
+and deferred widening `run-mode`: today's values convert first, controls come
+in a later increment, and this file is the vocabulary a control can be built
+against. It is the sibling-file shape (no migration).
+
+**Shape** — three lines, one axis per line, optional `#` comments, trailing
+newline:
+
+```
+pace: hot
+asking: inform
+delegation: 1
+```
+
+**A present file is an explicit override; an ABSENT file is derived from
+run-mode** (the conversion, so a loop that has not been restarted behaves
+identically). The mapping lives in code (`lint.RUN_MODE_TO_POSTURE` /
+`derive_posture`) as the single source — increment 2's runtime must import it
+rather than restating:
+
+| run-mode | pace | asking | delegation |
+|---|---|---|---|
+| `lackadaisical` | `idle` | `ask` | `0` (own / occasional) |
+| `hot` | `hot` | `ask` | `0` (own) |
+| `assisted` | `hot` | `ask` | `1` (assist) |
+
+**Asking is `ask` (level 1) for all three, grounded in measured behaviour —
+not the middle stop picked for symmetry.** Today's loop writes a
+`questions.md` entry AND a review artifact for ~every material decision (108
+resolutions and 28 artifacts at the time of writing), and his own `#445`
+words are *"you do ask me a lot of stuff."* That is level 1 (ask me
+everything), not level 2 (inform — where ~10–20% escalate and the rest is
+documentation). Deriving `inform` would make the loop stop asking and start
+emitting documents instead — the one regression that would cost him
+immediately, and it would look like a successful no-op conversion. Asking is
+orthogonal to run-mode (run-mode never encoded it; `#445` added it), so the
+derived asking is the same for every old value: today's behaviour.
+
+**Pace for `assisted` derives `hot`** because `watch.py` describes BOTH `hot`
+and `assisted` as *"continuous work"* (vs `lackadaisical`'s *"idle-
+friendly"*) — the pace is genuinely continuous, so this unpacks a bundle that
+was always there rather than inventing a decision. It is the one derivation
+that carries forward a bundled assumption (the very thing `#443` identified);
+the fix is that pace is now **independently settable**, not that the starting
+point moves. A human who had `assisted` now sees `pace: hot` and can change
+it without touching delegation — which is exactly what they could not do
+before.
+
+An unrecognised run-mode value when deriving is prior art from `#290`: it
+falls back to run-mode's own default handling, and `check_run_mode` is what
+says aloud that the file no longer matches. **The per-tick re-read is load-
+bearing** (`#426`): it is the only way an on-disk change reaches a running
+loop, and this file inherits the same contract.
+
+**The three axes** — pace and asking are closed sets of named stops; the
+delegation axis carries a number whose label is derived for display.
+
+- **`pace`** — how often the loop acts. Three stops: `idle` (idle-friendly,
+  no proactive fan-out), `steady` (continuous bounded work), `hot` (urgent /
+  continuous). His "3 stops maybe" applied here, and three is the honest
+  shape.
+- **`asking`** — how much surfaces to the human. **Four** stops, in his own
+  dictation at length (`#445`), and the four are kept deliberately:
+  `ask` (*ask me everything* — every material choice produces a review and he
+  chooses), `inform` (*keep me informed* — ~10–20% escalate, the rest is
+  documentation), `near-auto` (*near-automatic* — nothing surfaces, but each
+  material choice is still evaluated and written to a journal, ADR-shaped),
+  `auto` (*full auto* — never blocked on a reply). `near-auto` and `auto`
+  differ observably: one produces a durable artifact per material choice, the
+  other does not. Merging them would delete a behaviour he specified; a
+  control that reaches only three of four levels is a control defect in a
+  later increment, not a reason to drop a level from the vocabulary.
+- **`delegation`** — an **average-concurrency target integer**, not a cap
+  (his `#445` Q3). `0` means *occasional* — use a subagent only when it is
+  necessary or a particularly good choice (average below 0.5 running); it is
+  **not forbidden**. `1` means an average between 0.5 and 1.5; `2` and up
+  delegates. The number **steers the average and is never a limit or a
+  refusal** — a checker that forgot that and gated on the running fleet size
+  would be wrong most of the time, because that is what an average means. Two
+  subagents may pair on a single worktree (his `#445`), talking via
+  `subagent-protocols`.
+
+**What lint enforces, and deliberately does not.** Pace and asking are closed
+sets, so an unknown value **ERRORs** — the silent-fallback hazard from
+run-mode / watch-tint, stated as an outcome. Delegation carries a *number*:
+nonsense (a non-integer, or a negative) **WARNs** — steer, not gate — and
+**nothing here ever reads the running fleet size**, because an average is an
+average. The clean-bill row carries the count of valid axes so coverage can
+never shrink to silence beside a finding (the rule `#380` codified after a
+check's OK row disappeared for the thing it was written for). The closed sets
+live in `lint.py` as the single source today; increment 2's dashboard controls
+must **import** them rather than restating, the way this file imports
+`RUN_MODES` from `watch.py` — a second copy of one closed set is a second
+thing able to disagree with the control.
+
+**Machine-local / gitignored**, like run-mode: it is operational posture on
+this host, not a portable project default. **No `Migration:` trailer** — this
+is a new sibling file, not a widening of an existing one, so nothing an
+existing install owns must change.
+
+Checked by `lint.py` (`check_posture`), which reads the closed sets from its
+own constants (the single source) and derives delegation's display label from
+`delegation_posture`.
 
 ## `.dreamwork/submissions.log` — his words, before anything can lose them
 
