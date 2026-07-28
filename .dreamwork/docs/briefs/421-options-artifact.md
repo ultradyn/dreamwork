@@ -137,3 +137,25 @@ observed.
 
 Everything else in the brief stands: the plan is the spec, re-derive every number, the page must pass
 its own Option A test, and the rejected option carries its completion number.
+
+---
+
+## AMENDMENT, 2026-07-28 17:02 — do NOT run `just test`; run `pytest` + `lint` and stop
+
+**This supersedes the `just test` criterion in this brief.** Guards bind **39890-39899** and the
+recipe hard-aborts when any port in the range is held — correctly, it is the `#203` trap. **Three
+lanes are live and one of them holds 39899**, so at most one lane can ever run the suite and the
+others wait or report a blocked one. `#419` waited, refused to force-kill the holder, and was right
+to; the reaper refused too, and I confirmed the holder is a **live** run rather than a leak.
+
+So the instruction was unsatisfiable at fan-out and it was mine — filed as `#424`, rec (b), which is
+this:
+
+- **Run `python3 -m pytest <your test files> -q -p no:randomly` and `python3 lint.py`.** Both must
+  be green and both are yours.
+- **Do not run `just test`. Do not bind any port in 39880-39899. Do not kill a process holding one.**
+- **The coordinator runs the full suite once at merge**, which is the right owner because it is who
+  merges. If your change *should* have a capture guard, still write and register it — just do not
+  execute the guards recipe.
+- **Say in your report that you skipped it and why.** That is correct here and not a gap; a lane that
+  claims a green `just test` while another holds the range has claimed something it cannot have.
