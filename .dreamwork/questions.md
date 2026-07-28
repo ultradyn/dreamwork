@@ -59,6 +59,11 @@
   at the fold instead of the page edge. Lane is refining the metric (a
   multiple-rAF-per-frame artifact) before naming the cause; numbers may move, the
   direction will not.
+  - **Note (human, via watch, 2026-07-29 00:53):** try v1 first. also coudl
+    we generate the flowingness by just having a single texture (which i
+    presume causes displacement) and then just like moving it? or layering
+    and having 2 interfering? we can also tile them or whatever too if that
+    is cheaper.
 
 
 - **P1 · 2026-07-29 — #269 draft durability: two calls (C1/C2)**
