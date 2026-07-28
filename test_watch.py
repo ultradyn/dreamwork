@@ -3712,6 +3712,82 @@ class TestAppShell(unittest.TestCase):
         # the page still renders the whole open list, unfiltered by age/date
         self.assertIn('questions_open.map', watch.PAGE)
 
+    def test_a_timed_question_title_ages_from_its_time_not_midnight(self):
+        # #392b — the red that catches the OFFSET, not presence.
+        # A headline carrying `YYYY-MM-DD HH:MM` has a known clock time; the
+        # age must come from THAT time. Age-from-midnight was the measured
+        # defect (#392): a 07:54 filing read `08h 17m ago` at 08:18 while
+        # being 24 minutes old. #392a stopped fabricating precision for
+        # date-only entries; this half makes a timed entry exact.
+        #
+        # PRODUCTION LINE: `const qtHtml = title =>` in watch.PAGE — the
+        # regex that captures optional ` HH:MM`, the `ct` built from that
+        # local datetime, and the ABSENCE of `data-day` so ages() routes to
+        # paintAgePair (two figures). Reinstating date-only midnight parsing
+        # (or forcing `data-day="1"` on every span) reds this test.
+        import re
+        # Fixed local filing time — the measured defect's numbers, as a
+        # fixture string. Not today's file; live questions.md is not edited.
+        title = 'P2 · 2026-07-28 07:54 — timed fixture for age precision'
+        # ── RUNTIME PRECONDITION: title carries a time that is NOT midnight ──
+        dm = re.search(
+            r'(\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?', title)
+        self.assertIsNotNone(dm, "fixture title carries no date")
+        date, clock = dm.group(1), dm.group(2)
+        self.assertIsNotNone(clock,
+                             "fixture must carry HH:MM — without it this "
+                             "test is a date-only check and cannot fail on "
+                             "midnight-derived ages")
+        h, mi = (int(x) for x in clock.split(':'))
+        gap_from_midnight = h * 3600 + mi * 60
+        self.assertGreater(
+            gap_from_midnight, 0,
+            "true time must differ from midnight by a known amount; "
+            "a 00:00 fixture cannot discriminate midnight from real time")
+        # ── RENDER via the real qtHtml + ages() ──
+        html = self._qt_html(title)
+        self.assertIn('class="age qage" data-ct=', html,
+                      "a timed title must still gain an age span")
+        # no data-day: the number of figures IS the precision (#392a)
+        self.assertNotRegex(
+            html, r'data-day=',
+            f"a timed title must not carry data-day (that forces one-figure "
+            f"day precision); got {html!r}")
+        ct = self._qt_ct(title)
+        # sibling date-only title on the SAME calendar day → midnight ct
+        mid_title = f'P2 · {date} — date-only sibling for the gap assert'
+        mid_ct = self._qt_ct(mid_title)
+        # both derived at runtime; the gap must equal the fixture's clock
+        self.assertEqual(
+            ct - mid_ct, gap_from_midnight,
+            f"timed ct must sit {gap_from_midnight}s after that day's "
+            f"midnight; got ct={ct} mid={mid_ct} gap={ct - mid_ct}")
+        # the measured defect case: 24 minutes after filing → 08:18.
+        # Under an hour the #385 ladder is minutes+seconds (`24m 00s`), not
+        # hours+minutes — that is the format, not a second humanizer.
+        now = ct + 24 * 60
+        [rendered] = self._render_via_ages([{'title': title}], now)
+        self.assertEqual(
+            rendered, '24m 00s ago',
+            f"a 24-minute-old timed entry must read `24m 00s ago` (two "
+            f"figures from its clock time), not a midnight-derived lie; "
+            f"got {rendered!r}")
+        self.assertRegex(rendered, r'^\d{2}m \d{2}s ago$',
+                         f"timed age must keep two figures; got {rendered!r}")
+        # and the midnight-derived age at the same `now` is a different claim
+        mid_age_secs = now - mid_ct
+        true_age_secs = now - ct
+        self.assertNotEqual(
+            mid_age_secs, true_age_secs,
+            "precondition collapsed: midnight age equals true age")
+        self.assertEqual(true_age_secs, 24 * 60)
+        # midnight-derived would be ~8h18m (two figures of hours+minutes);
+        # assert we did not land there or on day-only `today`
+        self.assertNotEqual(rendered, 'today')
+        self.assertNotRegex(
+            rendered, r'^0[89]h \d{2}m ago$',
+            f"rendered age looks midnight-derived, not 24m: {rendered!r}")
+
     def test_commits_panel_is_five_near_the_top_and_regroups_on_a_new_sha(self):
         # #151. Three claims, and the third is the one worth guarding.
         self.assertEqual(watch.GIT_ROWS, 5)

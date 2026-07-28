@@ -64,7 +64,7 @@ leave the file byte-identical and no `.questions.md.*.tmp` behind.
 
 ## Open
 
-- **2026-07-25 — a question, whose bold title may hard-wrap across
+- **2026-07-25 14:32 — a question, whose bold title may hard-wrap across
   source lines and closes its `**` wherever that falls.** The body is
   indented prose. Backticked paths like `.dreamwork/review/x.html`
   become links.
@@ -79,6 +79,34 @@ leave the file byte-identical and no `.questions.md.*.tmp` behind.
 - **A folded question.** → resolved (2026-07-25): the resolution head
   comes first in the body, and `answered_at()` reads only that.
 ```
+
+### Title date and optional time (#392b)
+
+The bold title opens with an optional priority (`P1 · ` / `P2 · ` / `P3 · `),
+then a **date**, then an optional **local clock time**, then ` — ` and the
+rest:
+
+```text
+- **P2 · 2026-07-28 07:54 — how long has this been waiting?**
+- **2026-07-25 — a date-only title still legal**
+```
+
+| shape | written | age the dashboard claims |
+|---|---|---|
+| **timed** | `YYYY-MM-DD HH:MM` | two figures from that local time (`00h 24m ago`) — exact to the minute |
+| **date-only** | `YYYY-MM-DD` | one figure, or the word `today` for same calendar day — honest day precision (#392a) |
+
+**Write the time going forward.** The dashboard ages a question from what is
+in the title; there is no second clock. A date-only title is still legal and
+is not a fabrication — it is just day-resolution — but a fresh ask whose
+wait time matters must carry `HH:MM` (24-hour, local, same shape as the
+`<ts>` already used in note/answer tags). Do not invent a time for history;
+do not rewrite live entries to add one. Do not put a `git log` call on the
+request path to recover a missing time — that was measured at ~18ms per
+entry / ~1.7s for the full file and is wrong for `/data.json`.
+
+The title date is still not a sort key (priority alone sorts; see #197). The
+time is for the age display only.
 
 Load-bearing details, each of which was a bug at some point:
 
