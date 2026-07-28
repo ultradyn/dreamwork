@@ -87,24 +87,6 @@ Next id: **440**
   wall: plan for the 11, and treat the 12 as a separate declared migration or leave them exempt
   · blocked on nothing · related: **#432, #429, #433**
 
-- **#431** — `just deploy`'s `pkill -f` kills any process whose command line merely mentions the
-  snapshot, including the shell running the deploy · P1 · loop-tooling/deploy · origin: **loop**
-  · **it killed my own shell mid-deploy, 2026-07-28 18:16**
-  · The recipe does `pkill -f "$(basename "$snap")"` where the basename is
-  `ud-dreamwork-watch.py`. **`pkill -f` matches the whole command line of every process**, so it kills
-  not just the server but anything that names the file — an agent shell that assigned the path to a
-  variable, an editor, a `grep`. My command line contained the string, so the deploy killed the shell
-  executing it: **exit 144 (128+16, SIGTERM), the recipe cut off partway through.** The server did come
-  back, verified `HTTP 200` at a fresh pid with `bdmed` served, so nothing was left broken — this time
-  · **why it has never bitten before:** it only fires when the caller's own command line mentions the
-  snapshot basename, which a plain `just deploy` does not. So it is rare, silent, and it interrupts the
-  one recipe whose half-completion leaves **the human's dashboard down**. `pkill` cannot report this: it
-  has already killed the process that would have noticed
-  · fix: kill by **pid**, not by pattern — read the listening pid (`ss -ltnp` on the persisted port, the
-  idiom `dev/deploy_state.py` already uses) and `kill` that, or add `pkill -f "^python3 .*<snap>"` so a
-  mention is not a match. Prefer the pid: a pattern that must not match the caller is a pattern that
-  will one day match the caller
-  · related: **#426, #425, #439**
 - **#428** — the guard suite fails under concurrent lanes and passes alone, twice now · P2 ·
   loop-tooling/orchestration · origin: **loop** · found by the coordinator's own suite run at 17:29
   · **`subslog` FAILED in the full run** on *"…and says so, with the status the server gave"*, with
@@ -3581,6 +3563,25 @@ Next id: **440**
 
 ## Recently landed
 
+- **#431** — `just deploy`'s `pkill -f` kills any process whose command line merely mentions the
+  snapshot, including the shell running the deploy · P1 · loop-tooling/deploy · origin: **loop**
+  · **it killed my own shell mid-deploy, 2026-07-28 18:16**
+  · The recipe does `pkill -f "$(basename "$snap")"` where the basename is
+  `ud-dreamwork-watch.py`. **`pkill -f` matches the whole command line of every process**, so it kills
+  not just the server but anything that names the file — an agent shell that assigned the path to a
+  variable, an editor, a `grep`. My command line contained the string, so the deploy killed the shell
+  executing it: **exit 144 (128+16, SIGTERM), the recipe cut off partway through.** The server did come
+  back, verified `HTTP 200` at a fresh pid with `bdmed` served, so nothing was left broken — this time
+  · **why it has never bitten before:** it only fires when the caller's own command line mentions the
+  snapshot basename, which a plain `just deploy` does not. So it is rare, silent, and it interrupts the
+  one recipe whose half-completion leaves **the human's dashboard down**. `pkill` cannot report this: it
+  has already killed the process that would have noticed
+  · fix: kill by **pid**, not by pattern — read the listening pid (`ss -ltnp` on the persisted port, the
+  idiom `dev/deploy_state.py` already uses) and `kill` that, or add `pkill -f "^python3 .*<snap>"` so a
+  mention is not a match. Prefer the pid: a pattern that must not match the caller is a pattern that
+  will one day match the caller
+  · related: **#426, #425, #439**
+  · **LANDED `522d30d` (2026-07-28 20:52, lane `wt/deploykill`, merge `f96c94c`).** The deploy now identifies its own server rather than pattern-matching command lines: `ss -ltnp` gives the pid bound to `.dreamwork/watch-port`, `/proc/<pid>/cmdline` verifies an argv element whose realpath is the snapshot, then SIGTERM with SIGKILL only if it is still listening. Nothing listening exits 0 quietly; a **foreign** listener on the port exits 1 **without signalling** — the fail-loud case that matters, since killing nothing beats killing the shell. The lane argued against a pidfile and I accept the reasoning: the port file already identifies the target, a bare pid is ambiguous after wrap-around or `os.exec`, and a pidfile would still need the same cmdline verification. Red-proved twice — reinstating `pkill -f` in the recipe reds `test_justfile_deploy_does_not_use_pkill_f`, and reinstating it in `stop_deployed` kills the decoy. **Every decoy test asserts its own precondition** (decoy alive and `pgrep -f` actually matching) before the stop step, with a per-run unique pattern so the tests can never match the live dashboard's basename.
 - **#432** — the above-fold checker hard-codes a fold that three separate inputs move · P2 ·
   loop-tooling/review-artifacts · origin: **loop** · **the half of `#429` that is a retrofit, not a fix**
   · The criterion and its checker exist (`1dd973f`) and three artifacts carry `#ask`: `421` (218/266),
