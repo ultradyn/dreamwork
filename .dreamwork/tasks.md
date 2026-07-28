@@ -80,7 +80,26 @@ Next id: **408**
   uncommitted state, and several guards resolve paths from `__file__` or copy the tree to a temp
   target. Verify `just guards` and `just deploy` behave in a worktree **before** a batch depends on
   it. `#397`'s plan already found `deploy` snapshots by `git show rev:`, which is worktree-safe
-  · related: **#397, #264, #402, #400**
+  · **FIRST USE, and it worked: `#392a`'s red was taken in `.worktrees/verify-392a` off `HEAD`**,
+  injuring a copy while the live tree stayed clean throughout. `pytest` runs in a worktree unchanged.
+  `git worktree list` also shows `.worktrees/277-dreamfade` — so the machinery has been used here
+  before and simply never enters the dispatch decision, which is `#405`'s whole point
+  · **but dispatching a LANE into one has two traps the shared tree hides, and both are silent:**
+  **(1) `.dreamwork/inbox.md` is UNTRACKED, so it does not exist in a worktree at all** — a lane
+  appending its report there creates a fresh file in the worktree that the coordinator never reads.
+  That is exactly the loss `#392a` suffered by accident, made structural. **(2)
+  `.dreamwork/handoffs.md` IS committed**, so a lane appends to its own copy and the line is
+  invisible until merge, or becomes a merge conflict
+  · **so the dispatch prompt must give both channels as ABSOLUTE paths into the main checkout**, not
+  repo-relative ones. Every brief written so far says `.dreamwork/inbox.md`, which is correct in the
+  shared tree and silently wrong in a worktree. **Fix the brief template before the second lane, not
+  after**
+  · **and adjacency is a real constraint on how much a worktree buys.** `#399`'s target
+  (`_landed_ids`, `:7685`) and `#401`/`#406`'s (`parse_handoffs`, `:7712`, with the `HANDOFF_*_RE`
+  constants **between** them) are **27 lines apart**. Worktrees remove the *contention*, not the
+  *merge*: two lanes in one region still collide, just later and less visibly. Route by **region**,
+  not by file
+  · related: **#397, #264, #402, #400, #399, #406**
 
 - **#406** — `handoffs.md` instructs an append that **structurally cannot** put the line where it
   is required · **P1** · handoffs/format · origin: **loop** · found by watching a live lane obey
@@ -111,7 +130,7 @@ Next id: **408**
   section so a misplaced line is loud
   · **the red is in the tree and needs no injection** — `#392a`'s misfiled line is the fixture. Do
   not tidy it away before the check exists
-  · related: **#381, #401, #404**
+  · related: **#381, #401, #404, #405**
 
 - **#404** — for a same-tree lane, `git log` is a strictly more reliable landing channel than
   `handoffs.md`, and the tick reads the weaker one first · P2 · loop/design · origin: **loop** ·
@@ -309,7 +328,7 @@ Next id: **408**
   synthetic input at all. Derive the overlap at runtime; do not pin the list of 7, because it grows
   every time the ledger is cross-referenced correctly
   · blocked: `watch.py` is held by **#392a**
-  · related: **#392, #401**
+  · related: **#392, #401, #405**
 
 
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
