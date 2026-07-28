@@ -40,6 +40,26 @@
   Accepted answers: `rec` · `F1`/`F2` · `V1` or `no` · free text · *"whatever
   measures best"* (a real answer — it hands the trade to the numbers).
 
+  **Note (loop, 2026-07-29 00:52) — Q1's premise is refuted by measurement; Q2 is
+  now the whole answer.** The `mistperf` lane measured before touching anything, and
+  **freezing `baseFrequency` performed the same as baseline** — so my noise-field
+  hypothesis was wrong and `F1` buys nothing. Removing the filter entirely gave
+  **+69% rAF callbacks and −40% long stalls**, so the cost is the turbulence
+  filter's *area*, not its animation.
+
+  And the area is worse than I described: the ghost is pinned to the **outgoing**
+  page's box, and the question page measures **1723px tall (130 elements)** against
+  review's **900px (43 elements)**. So leaving a question view mists 1723px × 150%
+  of surface — most of it far below the fold — which is why *this* direction is the
+  framey one. Your instinct was right and mine was the wrong mechanism.
+
+  **So Q1 is withdrawn** (freezing the field is free of benefit, not free of cost)
+  and **`V1` — clamp the mist to the viewport — is the fix**, not an extra. The
+  question that remains is only the one Q2 already asked: the mist's edge then sits
+  at the fold instead of the page edge. Lane is refining the metric (a
+  multiple-rAF-per-frame artifact) before naming the cause; numbers may move, the
+  direction will not.
+
 - **P1 · 2026-07-29 — #288 contain vs detect: is the wall worth wiring, or are the positive invariants the whole defence?**
 
   Artifact: `.dreamwork/review/288-containment.html` · Spec:
