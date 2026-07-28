@@ -217,16 +217,26 @@ produced a one-file commit and left the peer's still staged. One edge:
 `--only <directory>` skips untracked files inside it silently, so a NEW
 file needs `git add <file>` before `git commit --only <file>`.
 
-When disjointness can't be arranged — the work overlaps owned files, or
-the change is large or risky — dispatch the dreamer in a worktree (the
-harness's worktree isolation, or a git worktree under `.worktrees/`,
-gitignored): the invariant then holds by construction. Lifecycle follows
-the human's standing worktree convention (CLAUDE.md) — merge back on
-acceptance, and never force-remove without checking for untracked
-scratch first. One cost that convention does not mention: worktrees
-duplicate build state, so where the toolchain has a shared cache
-(compiler cache, shared target/store dirs), set it up; if the project
-lacks one, suggest it (questions.md). Storage ballooning is real.
+**Worktree is the default for any dreamer that writes files** (#405).
+Dispatch into a git worktree under `.worktrees/` (gitignored) or the
+harness's worktree isolation — not only when disjointness fails, and not
+only for large or risky work. Shared-tree dispatch is the exception and
+needs a reason; a read-only lane is the obvious legitimate one. Lifecycle
+follows the human's standing worktree convention (CLAUDE.md): merge back
+on acceptance, and never force-remove without
+`git status --porcelain --ignored` first (untracked lane scratch is
+exactly what lives in a worktree). **What it costs:** worktrees duplicate
+build state, so where the toolchain has a shared cache (compiler cache,
+shared target/store dirs), set it up; if the project lacks one, suggest it
+(questions.md). Storage ballooning is real.
+
+**Inbox and hand-off paths given to a worktree lane are absolute.** A lane
+in `.worktrees/x` told to append to `.dreamwork/inbox.md` writes its own
+copy, and the coordinator never sees it (`inbox.md` is often untracked, so
+the path does not even exist at branch point). The same trap hits
+`.dreamwork/handoffs.md` when the brief asks the lane to write it. Give
+both as absolute paths into the main checkout — repo-relative paths are
+silently wrong in a worktree.
 
 Dreamers are batches, not careers. A long-lived dreamer's context grows
 until fresh eyes are cheaper — bound its scope to the current batch,
