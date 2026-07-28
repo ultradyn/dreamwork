@@ -258,7 +258,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 <nav class="toprail" aria-label="Artifact navigation">
   <div class="toprail-in">
     <div class="identity"><b>burndown commits</b><span>task #417 · ruled 2026-07-29 06:23 · this page is the record now, not the ask</span></div>
-    <div class="topactions"><span class="status">DECIDED · 2026-07-29 06:23 · c3 + c4 + hover · shipped a839c57</span><a class="full" href="#compare">side by side</a><a href="#candidates">c1 · c2 · c3 · c4</a><a href="#pricing">the price table</a><a href="#method">method</a></div>
+    <div class="topactions"><span class="status">DECIDED 06:23 · c3+c4+hover</span><a class="full" href="#compare">side by side</a><a href="#candidates">c1 · c2 · c3 · c4</a><a href="#pricing">the price table</a><a href="#method">method</a></div>
   </div>
 </nav>
 
@@ -296,10 +296,12 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       <q>pretty good now</q> and easy to make worse. So this page ships a <strong>proposal, not an implementation</strong>: four
       candidate treatments rendered against the <strong>real chart with real data</strong> &mdash; 21 four-hour
       buckets, 492 ledger commits, peaking at 59 in the first bucket &mdash; and each priced
-      three ways. <strong>Nothing here lands in <code>watch.py</code></strong>; the renders were made by modifying
-      <code>watch.py</code> in the worktree only and capturing headless, and <code>git diff --stat watch.py</code> is empty at
-      commit time.</p>
-      <div class="call"><strong>Recommendation: <code>c4</code> (copy only, shortened), <code>c2</code> if you want the shape on the chart.</strong>
+      three ways. <strong>Nothing here landed in <code>watch.py</code></strong> when this page was written; the
+      renders were made by modifying <code>watch.py</code> in the worktree only and capturing headless, and
+      <code>git diff --stat watch.py</code> was empty at commit time. <strong>That changed at 06:23:</strong> he
+      ruled, and <code>c3 + c4 +</code> a per-column hover shipped in <code>a839c57</code>. The renders below are
+      therefore proposals that have since become the panel.</p>
+      <div class="call"><strong>Recommendation as it stood &mdash; SUPERSEDED by his 06:23 ruling, which took <code>c3</code> <em>and</em> <code>c4</code> and answered the objection below with a hover: <code>c4</code> (copy only, shortened), <code>c2</code> if you want the shape on the chart.</strong>
       c4 spends nothing on the chart: one figure line in the panel's own voice, exactly how <code>#218</code>'s filed-to-landed
       median went in (196px, +19px over today), and it is the only candidate that introduces
       <strong>no new motion idiom</strong> &mdash; it inherits <code>#218</code>'s settled-text contract verbatim. c1 and c3 keep
