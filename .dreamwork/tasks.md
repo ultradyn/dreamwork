@@ -545,6 +545,27 @@ Next id: **412**
   (exactly the trap the brief warns about)"* — re-ran to a file, and confirmed the baseline
   precisely: `forgotten_folds` **GREEN**, burndown **RED** with both named assertions failing. That
   is the brief's warning being used rather than read
+  · **GATE RUN AGAINST THE LANE'S COMMITTED TIP, 11:42 — 7 of 8 pass, and the eighth is real.**
+  Two commits on `wt/399b`: `d80e072` (the fix) and `8810309` (its tests). Scored:
+    landed **150** (was 95 broken, 176 pre-`#399`) · open∩landed **0** · `#5`/`#501`/`#502` do not
+    land · the six prose-mentioned open tasks do not land · early revisions now report
+    **1, 9, 24, 26, 29, 47** landings where they reported 0 · `dev/capture/` untouched
+  The burndown guard **PASSES** in isolation, real exit 0, non-piped
+  · **the one residual, and it is a smaller instance of the same bug:** `LEDGER_COMBINED_MENTION`
+  is `\*\*(#\d+(?:/#\d+)*)\*\*` — **slash-separated only**. The historical ledger also writes
+  **space-separated** multi-id landings: `**#107 #108 #110** the travelling heading, the ghost-pinned
+  width glide, the clamped opener (2026-07-25, 3f786fc)`, `**#141 #149** (2bf61da, 6099998)`,
+  `**#132 #151 #154** (2c42da1)`, `**#102 #106**`, `**#104 #77**`, `**#109 #116**`. Every id after
+  the first in such a span is still dropped. **Not a merge blocker** — master is red now and this
+  fix recovers the bulk of history — but it is a real, named loss and it is roughly one character
+  class (`(?:[ /]#\d+)*`). File as follow-up, do not hand-fix
+  · **and TWO faults in my own gate, both the day's theme, both found only because I re-ran it:**
+  (a) I appended the multi-id check **after** `sys.exit()`, so it never executed and the gate printed
+  **GATE PASSED** — a check that cannot run reports success; (b) the gate read
+  `.worktrees/399b/watch.py`, the **mutable worktree file**, while the lane was mid red-proof with
+  the old behaviour injected, and scored the lane's fix at **176** — the very number it was
+  injecting. **A running lane's worktree is mutable by definition; its branch tip is the artifact.**
+  The gate now defaults to `git show wt/399b:watch.py` and asserts the source is non-empty
   · **THE MERGE GATE, written 11:19 BEFORE the lane reports, so it cannot be shaped by what the
   lane says it achieved.** Measured now, both parsers run against today's ledger:
     - deployed/pre-`#399` logic: **136 open, 176 landed**
