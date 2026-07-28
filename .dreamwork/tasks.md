@@ -24,9 +24,24 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **441**
+Next id: **442**
 
 ## Open
+- **#441** — `states.mjs`'s new vacuity thresholds are literals with a 3px margin on one of the two
+  motions they guard · P3 · verification/motion · origin: **loop** · **found by coordinator inspection of
+  `#333` at merge, not by the guard**
+  · `#333` converted the count idiom correctly and its preconditions are real, but the vacuity check uses a
+  **literal** `MIN_HEIGHT_SPAN = 20`, justified in the lane's report as *"well below measured 193px fold /
+  23px tick-grow"*. For the fold that is a 10x margin; **for tick-grow it is 3px**
+  · the repo's own rule is that a literal tuned to today's fixture is a check with an expiry date nobody can
+  see, and this one has two thresholds behind one constant with very different headroom. A chrome change
+  that shaves the tick-grow travel by 15% takes it under the floor and the guard reports a *vacuity* failure
+  for a motion that is merely smaller
+  · so: derive the floor per motion from the measurement rather than sharing one constant — e.g. a fraction
+  of the observed span, asserted against a separately-derived expectation — or split the constant in two and
+  say what each is protecting. **The tick-grow number is the one to look at first**
+  · not urgent: the check is correct today and fails safe (a too-high floor reds, it does not pass silently).
+  It is filed because the margin is invisible in the guard output
 - **#438** — a generic scheduled-tasks facility, so maintenance and inbound-scanning work is filed rather
   than done ad hoc · P2 · feature/scheduling · origin: **human** · **human via watch 2026-07-28 20:34**
   · his words: *"we should add support for task scheduling (probably managed through dreamhub). central
@@ -1863,29 +1878,6 @@ Next id: **441**
   `watch.py` being free; sequence after #336, which is his newer and higher steer
   · **UNBLOCKED — `#336` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): the `do next` → `add idea` fallback's prerequisite landed. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
 
-- **#333** — `states.mjs` is the SIXTH holder of the forbidden count idiom, and
-  unconverted · **P2** (raised from P3) · correctness · origin: **loop** · #327
-  filed this as a docs-wording slip; measuring it made it a real one · the count
-  rule in `transitions.md` says **never assert an absolute count of distinct
-  positions** — `uniq(positions).length >= 8` is a fact about how many frames the
-  machine drew, not about the motion — and names five guards that encoded it,
-  "**all five now converted**" · `dev/capture/states.mjs:114,118,122` holds three
-  more (`uniq(upH).length >= 6`, `uniq(dnH).length >= 6`, `uniq(tkH).length >= 6`),
-  and its line 134 comment instructs *"count intermediate positions"* · **measured
-  2026-07-27: those three are the only LIVE instances left in `dev/capture/`** —
-  every other grep hit is a comment recording its own conversion, so the "five"
-  count was accurate and simply never counted this guard · the document also
-  DESCRIBED them approvingly ("visited many intermediate positions"), so a reader
-  found the banned idiom endorsed 200 lines from the ban and would cite the nearer
-  sentence · **the doc half is done**: `transitions.md` now names the exception in
-  both places and says it is a debt · **remaining**: convert the three to
-  `between()` with the vacuity precondition the rule requires, red-first · note
-  `states.mjs:164-165` uses `<= 3` to assert reduced-motion does NOT animate — that
-  is the opposite assertion and must stay a count · `dev/capture/states.mjs` is
-  currently held by `ccc-glm52-324`, whose brief covers report.mjs adoption only,
-  so sequence this after #324 lands to avoid two agents in one file
-  · **UNBLOCKED — `#324` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): the reporter conversion landed, so the sixth `states.mjs` count-idiom holder is reachable — and `#414` has since changed what the right idiom IS, so read that before starting. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
-
 - **#328** — Add `/tasks2`, the wide two-pane task triage layout · P2 · dashboard
   feature · origin: **human** · **human via watch 2026-07-27 21:47** · his answer
   to #281 Q1: the list-plus-detail wide layout IS wanted, but as a SECOND route,
@@ -3561,6 +3553,30 @@ Next id: **441**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#333** — `states.mjs` is the SIXTH holder of the forbidden count idiom, and
+  unconverted · **P2** (raised from P3) · correctness · origin: **loop** · #327
+  filed this as a docs-wording slip; measuring it made it a real one · the count
+  rule in `transitions.md` says **never assert an absolute count of distinct
+  positions** — `uniq(positions).length >= 8` is a fact about how many frames the
+  machine drew, not about the motion — and names five guards that encoded it,
+  "**all five now converted**" · `dev/capture/states.mjs:114,118,122` holds three
+  more (`uniq(upH).length >= 6`, `uniq(dnH).length >= 6`, `uniq(tkH).length >= 6`),
+  and its line 134 comment instructs *"count intermediate positions"* · **measured
+  2026-07-27: those three are the only LIVE instances left in `dev/capture/`** —
+  every other grep hit is a comment recording its own conversion, so the "five"
+  count was accurate and simply never counted this guard · the document also
+  DESCRIBED them approvingly ("visited many intermediate positions"), so a reader
+  found the banned idiom endorsed 200 lines from the ban and would cite the nearer
+  sentence · **the doc half is done**: `transitions.md` now names the exception in
+  both places and says it is a debt · **remaining**: convert the three to
+  `between()` with the vacuity precondition the rule requires, red-first · note
+  `states.mjs:164-165` uses `<= 3` to assert reduced-motion does NOT animate — that
+  is the opposite assertion and must stay a count · `dev/capture/states.mjs` is
+  currently held by `ccc-glm52-324`, whose brief covers report.mjs adoption only,
+  so sequence this after #324 lands to avoid two agents in one file
+  · **UNBLOCKED — `#324` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): the reporter conversion landed, so the sixth `states.mjs` count-idiom holder is reachable — and `#414` has since changed what the right idiom IS, so read that before starting. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
+  · **LANDED `988de22` (2026-07-28 21:38, lane `wt/states`).** The three `uniq(...).length >= 6` assertions are now three ordered checks each: a frame-rate precondition naming its sample count (the `#414`/`confirmation.mjs` shape), a vacuity check that the height really changes, then `between()` on the motion with the part-way count printed. It also found and converted a **fourth** site the entry did not name — the matrix continuous-size/position checks using `track(...).length < 6`, the same forbidden idiom on the multi-card path — and rewrote the line-134 comment that instructed it. `164-165`'s `<= 3` correctly **stays a count**: it asserts reduced motion does NOT animate, the opposite contract. Red-proved against `watch.py`'s `travelCard` height invert, and the two failure modes print distinguishable first lines — `sampled enough… (2 frames)` for a starved window versus `TRAVELS… (0 of 96 part-way)` for a real snap, which is the ambiguity `#413` was miscategorised on for six hours. Guard re-run green on the merged tree (22 PASS at load 32.3). `transitions.md`'s debt note is spent in the same commit.
+
 - **#440** — the coordinator hand-rolls a ledger split on every fold, and the unanchored form has now
   corrupted the file once and produced a nonsense count once · **P1** · loop-tooling/ledger ·
   origin: **loop** · **found by doing it wrong twice in one hour, with the fix already written down**
