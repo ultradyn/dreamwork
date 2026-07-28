@@ -2753,3 +2753,25 @@ this shape and convert opportunistically.)
   and three briefs, where nothing stamps for me. **Evidence it is not cosmetic:** a lane has to decide
   whether a mid-flight brief amendment predates its own commits, which is exactly the question the
   `#419` lane was handed. `date '+%H:%M'` costs one line and the habit is the only available fix.
+
+- **Write the number from the command's output in the same act, or do not write it.** 2026-07-28, in
+  the space of ten minutes and three commits, all inside the one task about how the loop writes to
+  him: I published a question entry claiming *"249 words"* (it was 342), redrafted claiming *"232"*
+  (it was 256), and only the third draft carried a figure a script had computed and asserted against
+  the parser. Every one of those was typable because the number sat in prose next to a measurement
+  nobody had run. **Evidence this is the day's dominant defect and not a slip:** six lane refutations
+  the same day, and every single one was a figure derived by reasoning from a document rather than
+  observed — `214px` for a measured `167.9`, `8,647` lines for `9,688`, lane C `3/3` for `3 of 5`,
+  `open=138` for `139`, a sub-question alphabet of five letters for one of ten, *"34 entries don't ask
+  anything"* for 34 single-decision asks. **The fix is mechanical, not attentional:** have the script
+  write the figure into the text and then assert the text equals the measurement, so the two cannot
+  drift. Where prose must carry a number by hand, run the command in the same shell command as the
+  edit.
+- **A substring cannot tell an assertion from its retraction.** Same day: I gave a lane the criterion
+  *"grep your built output for `met`, `proved`, `all landed` and say what you found"* to catch a wrong
+  claim surviving an edit. Five hits came back — and all five were inside corrections, the headline
+  being literally *"I told you the condition was met. It is not"*. **Evidence:** resolving it needed
+  reading 160 characters of context around each hit, which is the work the grep was supposed to
+  replace. The criterion produced the right outcome only because the lane also reported honestly.
+  **A negative check over natural language needs the polarity in the pattern or a human in the loop —
+  say which you are relying on.**
