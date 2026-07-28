@@ -1033,3 +1033,63 @@ merge gate, and independently-derived analysis were all complete within the firs
 minutes. **The bottleneck is not knowing what to do; it is having someone to do it.** That
 is the most important dogfood result of the session so far, and it is a cost of the mode
 rather than a fault of any runner.
+
+## Scoring that prediction — it was REFUTED, and by the evidence I already had
+
+I wrote at 11:22 that the dense brief might be wrong for `@glm52`, and named what would
+refute it: *"this lane landing a complete answer at ~35 minutes, i.e. the brief was fine
+and glm-5.2 is simply slow and back-loaded."* That is what happened. **Refuted.**
+
+The lane ran **72 minutes** and produced four commits, a nine-section report, three
+discriminating reds, and a design decision better than the one it was briefed. It was
+slow and almost entirely back-loaded: nothing on disk for 31 minutes, then the fix, tests,
+docs and hand-off in forty.
+
+I should note that I had already reasoned my way to the right answer in the same entry —
+*"42 seconds of CPU over 20 minutes is not a model thinking hard, it is a model waiting on
+a slow API"* — and still filed the brief-length hypothesis first. **Writing the refuting
+evidence down next to the hypothesis is what made this scorable rather than a story I
+could tell either way.** Keep doing that.
+
+### `@glm52` on a hard design task — scored against the bar fixed in advance
+
+- **Primary — did the named check go green?** Yes. `burndown` PASS, `forgotten_folds` PASS,
+  and neither was traded for the other.
+- **Red-proof real?** Yes, and it exceeded the brief: three injections, each from a `cp`
+  snapshot, each grep-confirmed to have reached the code and `ast.parse`d before running.
+  RED A reopened the `#367` hole *and* broke disjointness with nine ids named; RED B zeroed
+  the historical count. Opposite directions, as asked.
+- **Discipline.** Touched only `watch.py`, `test_watch.py`, `file-formats.md` and one
+  hand-off line. Did not touch `dev/capture/**` despite that being the one-line way to make
+  the guard green — and said explicitly *"it is evidence, not scaffolding."*
+- **Cost.** 72 minutes.
+
+**The thing worth more than the fix: it refused to claim its own acceptance criterion.**
+Criterion 1 was `just test` green. It came back exit 1 and the report says, in those words,
+*"criterion 1 (fully green) is NOT met, and I will not claim it is."* It then proved the
+three failures pre-existing by running them against master. I verified that independently —
+identical failures, same sub-assertions — and it held. **A lane that reports a partial
+result accurately is worth more than one that reports a complete result I have to
+re-derive**, and this is the first time in the session that distinction has been tested.
+
+**And it out-designed its brief.** My recommendation — exclude `related:` markers — would
+have reintroduced the P1, because six open tasks are named in landed entries as plain prose
+in no field at all. The lane found that on its own and reached column-0 anchoring instead,
+then found the hole in *my* scoring of *its* rule (existing tests put `related:` inline at
+column 0, so field-exclusion stays load-bearing). **Two corrections to the coordinator, both
+right, both evidenced.** The brief's invitation to push back with reasons earned its place.
+
+### What this says about the coordinator-only mode, now that one hard task is done end to end
+
+The mode's cost is real and it is not the runner's fault: **`master` carried this regression
+for roughly three hours**, while the diagnosis, the merge gate, the historical evidence and
+the two-caller analysis were all complete inside the first fifteen minutes. Four dispatches
+were needed to get one lane running — two lost to a 401 I had discarded the evidence for,
+one to my own `pgrep` misread.
+
+The mode's benefit is equally real and showed up in the same task: because I was not
+implementing, I built an independent gate, red-proved it in both directions, derived the
+expected numbers **before** the lane reported, and caught a residual (`#412`) that neither
+the lane nor the guard would have surfaced. **A coordinator who implements cannot also be
+the independent check on the implementation.** That is the trade, stated honestly: slower
+to green, harder to fool.
