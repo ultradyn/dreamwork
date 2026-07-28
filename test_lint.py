@@ -1680,6 +1680,43 @@ class TestStatusTaskIds:
         t = self.build(tmp_path, task="t", current_task_ids=[True])
         assert self.rows(t, lint.ERROR)
 
+    def test_a_string_sub_id_is_accepted_not_rejected(self, tmp_path):
+        """#402b — a sub-id like ``"392a"`` is a LEGITIMATE task id.
+
+        The contract the code already implies (status_sync keeps the string
+        form by design, #402a): a plain id is an int, a sub-id is a string,
+        and only a *quoted plain* id is wrong. Today lint rejects every
+        string, which rejects a legitimate sub-id — the live symptom.
+
+        Precondition (asserted, not trusted): the field carries an int AND a
+        str at once, so the test's meaning needs both types present. The
+        sub-id must look like a real sub-id (digits then one letter), the way
+        a lane's task actually reads.
+        """
+        ids = [263, "392a"]
+        assert {type(i) for i in ids} == {int, str}, \
+            "precondition: an int and a str coexist — both types present"
+        assert any(isinstance(i, str) and re.match(r"^\d+[a-z]$", i) for i in ids), \
+            "precondition: at least one string sub-id of the N+letter shape"
+        t = self.build(tmp_path, task="on #263 and #392a",
+                       current_task_ids=ids)
+        assert not self.rows(t, lint.ERROR), \
+            "a legitimate sub-id must lint clean (the #402b fix)"
+
+    def test_a_quoted_plain_id_is_still_an_error(self, tmp_path):
+        """#402b NEGATIVE — widening must not remove the check that earned it.
+
+        The widening accepts sub-id strings (``"392a"``); it must STILL reject
+        a *quoted plain* id (``"263"``), which is the silent-data-loss shape
+        this check exists for: it looks right, reads right to a human, and
+        matches no task row. A widening with no negative test has removed a
+        check rather than improved it.
+        """
+        t = self.build(tmp_path, task="t", current_task_ids=["263"])
+        errs = self.rows(t, lint.ERROR)
+        assert errs, "a quoted plain id must remain an ERROR after the widening"
+        assert "263" in errs[0]
+
 
 class TestReviewArtifacts:
     """#329 — lint WARNs when a built review artifact's frame is stale.

@@ -1224,19 +1224,44 @@ def check_status(dw: Path, rep: Report) -> None:
     rep.add(OK, "status.json", detail)
 
 
-def _bad_ids(value: object) -> list[str]:
-    """The non-integer members of a task-id list, rendered for a human.
+# #402b — the id vocabulary. A plain id is an integer (`263`); a sub-id is a
+# string of digits then one letter (`"392a"`); a quoted plain id (`"263"`) is
+# always wrong. This mirrors the hand-off id grammar (`watch.HANDOFF_ID_TOKEN`,
+# `#401`) — `\d+[a-z]?` — so there is ONE sub-id shape across the two surfaces
+# rather than a second definition a future writer must keep aligned. A live
+# set legitimately holds int and str at once (status_sync._normalise_live keeps
+# the string form by design, #402a), so this accepts the sub-id and rejects
+# only the quoted-plain shape that matches no task row.
+SUB_ID = re.compile(r"^\d+[a-z]$")
 
+
+def _is_sub_id(v: object) -> bool:
+    """True for a legitimate sub-id string (``"392a"``), False otherwise."""
+    return isinstance(v, str) and SUB_ID.match(v) is not None
+
+
+def _bad_ids(value: object) -> list[str]:
+    """The ill-typed members of a task-id list, rendered for a human.
+
+    A member is BAD when it is neither a plain int nor a sub-id string: a
+    quoted plain id (``"263"``), a bool, a float, or a malformed string.
     `type(v) is not int` rather than `isinstance` on purpose: `isinstance(True,
     int)` is True in Python, so the natural spelling waves a bool through. That
     is not a hypothetical here — the sibling field `in_flight` was written as a
     bool by this very loop, and the dashboard rendered `doing: true` for forty
     minutes before #327 caught it. A bool arriving in this list is the same
     writer making the same slip one key over.
+
+    A sub-id string (``"392a"``) is NOT bad: `current_task_ids` can
+    legitimately carry one (#402b), because a lane may be `#392a` and
+    `status_sync` derives the field from that `task` value. Only a quoted PLAIN
+    id (``"263"``) is bad — it looks right, reads right to a human, and matches
+    no task row, silently.
     """
     if not isinstance(value, list):
         return []          # the list-ness of the field is STATUS_TYPES' job
-    return [repr(v) for v in value if type(v) is not int]
+    return [repr(v) for v in value
+            if type(v) is not int and not _is_sub_id(v)]
 
 
 def check_status_task_ids(dw: Path, rep: Report) -> None:
@@ -1287,7 +1312,9 @@ def check_status_task_ids(dw: Path, rep: Report) -> None:
 
     if problems:
         rep.add(ERROR, "status.json", "; ".join(problems) +
-                " — ids are integers; a quoted id matches no task row, silently")
+                " — a plain id is an integer (263) and a sub-id is a string "
+                "(\"392a\"); a quoted plain id (\"263\") matches no task row, "
+                "silently")
 
 
 def check_status_agrees_with_ledger(dw: Path, watch, rep: Report) -> None:
