@@ -24,9 +24,33 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **412**
+Next id: **413**
 
 ## Open
+- **#412** — the landed reader still drops **space-separated** multi-id landings: 7 spans, 16 ids,
+  one character class · **P2** · parser/burndown · origin: **loop** · found by the coordinator
+  running #399b's merge gate against the lane's committed tip
+  · `LEDGER_COMBINED_MENTION` is `\*\*(#\d+(?:/#\d+)*)\*\*` — **slash-separated only**. `#399b`
+  restored the historical inline landed form for single ids and for `#138/#156`, but the ledger
+  also writes the space-separated form, and every id in one of those spans is still lost:
+    **#141 #149** (2bf61da, 6099998) · **#132 #151 #154** (2c42da1) · **#121 #123** ·
+    **#104 #77** · **#109 #116** · **#107 #108 #110** the travelling heading, the ghost-pinned
+    width glide, the clamped opener (2026-07-25, 3f786fc) · **#102 #106** prose reflow
+  · **measured on the live ledger against `wt/399b`:** 7 spans naming **16 distinct ids**
+  (`#77 #102 #104 #106 #107 #108 #109 #110 #116 #121 #123 #132 #141 #149 #151 #154`), **all 16
+  absent** from the landed set. So landed reads **150** where a complete reader gives **166**
+  · **not a regression and not #399b's fault** — the brief did not name this case because I did
+  not know about it when I wrote it, and the lane met its brief. It is the same defect one size
+  down: a reader that knows one spelling of a thing the file writes two ways
+  · **the fix looks like `(?:[ /]#\d+)*`, and the danger is precisely there.** Widening to accept
+  a space makes the pattern able to swallow ordinary prose between two bold ids, and `#301`'s
+  whole point was that `**#96 stage 1**` must stay inert. **Red-prove both directions**: a
+  space-separated span lands all its ids, AND `**#96 stage 1**` still lands nothing
+  · **the gate that found this is reusable** and already red-proved in both directions — it lives
+  in the session scratchpad, not the repo; if this is dispatched, port the space-separated check
+  into `test_watch.py` so it survives the session
+  · related: **#399**
+
 - **#411** — two answered entries carry a perfectly good date and the page throws it away, because
   `answered_at` anchors at position 0 · **P2** · UI correctness / parser · origin: **loop** · found
   while checking a stray note that said "6 of 49"; the note was right and the cause was not
@@ -593,7 +617,7 @@ Next id: **412**
   · **my error, stated plainly: I merged on `pytest` alone while `just test` was still running**,
   forty minutes after recording the lesson that a selection is not the suite. The lane's own brief
   made `just test` green the acceptance criterion and I merged without it
-  · related: **#392, #401, #405, #411**
+  · related: **#392, #401, #405, #411, #412**
 
 - **#393** — a pending hand-off's span appears on the status panel with no motion check · P2 ·
   dashboard/transitions · origin: **loop** · from **#381's own caveat**, probed rather than accepted
