@@ -24,9 +24,32 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **433**
+Next id: **434**
 
 ## Open
+- **#433** — the artifact rail's identity crumb cannot shrink, and fixing it re-stamps 23 artifacts
+  of which 12 cannot be rebuilt · P3 · Web UI/review-artifacts · origin: **loop**
+  · **found by looking at the rendered page, 2026-07-28 18:50 — every mechanical check passed while the
+  rail was visibly broken**
+  · `review-artifact.template.html` styles `.identity b` as `white-space:nowrap` with **no**
+  `overflow:hidden` or `text-overflow:ellipsis`, while its own sibling `.identity span` has both. So a
+  long identity cannot shrink and collides with the nav chips instead. **The sibling proves the intent**
+  · **the fix is one declaration and it is verified**: adding `overflow:hidden;text-overflow:ellipsis;
+  min-width:0` to `.identity b` removes the overlap at 390x844 and 1280x900, tested by injecting it at
+  runtime, and the text still renders in full because ellipsis only engages when it must
+  · **but the blast radius is the reason this is a task and not a commit.** The build stamp is derived
+  from the template's hash, so touching it marks **all 23** artifacts `stale` and takes `lint` from 1
+  warning to **12**. Only **11 have a `src/`**; the other 12 — `do-now-urgency-treatment`,
+  `explore-command-contract`, `goal-hierarchies`, `hub-public-auth`, `lan-bind-threat-model`,
+  `protected-service-boundary-288`, `review-datetime-order`, `task-origin-contract`, `tasks-page`,
+  `threaded-topic-chats`, `threaded-topic-chats-v2`, `ud-dreamtask` — **cannot be rebuilt at all**, so
+  the warnings would be permanent. `review_artifact.py`'s docstring already calls migrating them *"a
+  separate call, deliberately"*
+  · so: do this **with** the untemplated migration, or not yet. Measured and reverted rather than landed
+  · scope today was limited to the one artifact on his desk: `263`'s crumb shortened from 56 to 20
+  characters, overflow 440px->390px in a 356px bar. **One overlap survives that**, which is why the
+  template half is real
+  · related: **#325, #429**
 - **#432** — `#ask` is not a required element, so 19 artifacts cannot be measured at all · P2 ·
   loop-tooling/review-artifacts · origin: **loop** · **the half of `#429` that is a retrofit, not a fix**
   · The criterion and its checker exist (`1dd973f`) and three artifacts carry `#ask`: `421` (218/266),
@@ -3647,7 +3670,7 @@ Next id: **433**
   · so: make `#ask` a documented required element in `file-formats.md` / the artifact template, restate
   the criterion as above in `watch-design.md`, and give it **one shared checker** instead of each lane
   writing its own mjs
-  · related: **#430, #325, #432**
+  · related: **#430, #325, #432, #433**
   · **→ folded 2026-07-28 18:21 — landed `1dd973f` + `a54d162`.** The defect as stated is closed:
   the criterion is restated to something satisfiable (`top < innerHeight` for the block *and* its
   first decision, not `bottom < innerHeight` for a 870px three-decision block), it has one shared
@@ -5849,7 +5872,7 @@ Next id: **433**
   proposal source sits unbuilt at `.dreamwork/review/src/325-review-template.html`
   by design — an artifact with no paired question would appear on his dashboard
   from nowhere, and its one open call (migration) is answered
-  · related: **#429**
+  · related: **#429, #433**
 
 - **#192** — Guards printed from a tail handler, so a crash read as a clean
   sheet · P2 · landed 2026-07-27 · chore · ~35m · origin: **loop** · goal: a
