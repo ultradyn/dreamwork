@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **468**
+Next id: **469**
 
 ## Open
 - **#460** — a tool that replays the `task_event` `.jsonl` log and reconstructs the database · **P3** ·
@@ -159,6 +159,16 @@ Next id: **468**
   `- **` bullet, ERROR and say where it must go. Assert the precondition at runtime — the check is vacuous
   unless the fixture's marker really is unreachable, so derive that from the parser rather than trusting the
   fixture's layout · related: **#411, #366**
+- **#468** — the lane-containment backstop, and the briefs that predate the rule · **P2** ·
+  tooling/lane-safety · origin: **loop** · successor to `#465`, named in its design doc
+  · **two halves, both small.** (1) **R2, the pre-merge assertion**: walk the main tree's *dirty* paths,
+  enumerate live worktrees, report when a path no lane owns is dirty in the main checkout while a lane is
+  out. `#465` catches a commit; this catches an edit that has not reached one, which is the state that
+  aborted the held `#263` merge. (2) **retro-fit `Lane-owns:`** — `#465`'s check grandfathers every brief
+  written before the rule, and that is **all 101 of them**, so the guard protects nothing until a brief
+  declares ownership
+  · **do not make the loop's own commits harder** — the constraint that shaped `#465` binds this too
+  · related: **#465**
 - **#445** — question/attention modes: four named levels for how much the loop asks, each with a defined
   artifact obligation, plus a subagent target and policy · **P1** · loop-design/asking · origin: **human** ·
   **human via watch 2026-07-28 23:40, dictated at length while reading `421`** — the full text is in
@@ -2581,51 +2591,6 @@ Next id: **468**
   idiom, and it must report the case where the new generation never arrives (the lane's own finding: a
   deployed dashboard serves a snapshot, so a reload and an `--autoreload` re-exec are both byte-identical —
   "update" can only mean re-snapshot from HEAD and restart). **Queued behind the lane holding `watch.py`**
-- **#463** — review artifacts sort and age by the wrong timestamp · P2 · UI/review · origin: **human** ·
-  **human via watch 2026-07-29 02:30:** *"fix the assets for review sorting — they should use ctime not mtime.
-  And the age should show since ctime, not mtime. However, when ctime != mtime, we can show a 'modified X ago'
-  msg to the right in a slightly different color. separate it from the age with a dot."*
-  · so three changes, and the third is the interesting one: **the two facts coexist** — created-age is the
-  primary, modified-age is secondary and only appears when it differs, dimmer, dot-separated
-  · the dot separator and the age treatment already exist (`#456` landed the day-age separator and found
-  `.qage`'s margin would have doubled the gap) — reuse that idiom rather than authoring a second one
-  · note *ctime* in his sense is **creation**, which POSIX `st_ctime` is not (it is inode change) — decide the
-  source of truth (birth time via `statx` where available, else the artifact's own build stamp or first commit)
-  and say what happens when it is unavailable, rather than shipping `st_ctime` and calling it created
-  · related: **#456**
-- **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
-  **P1** · loop-machinery/containment · origin: **loop** · found 2026-07-29 03:32 when the `#263` merge aborted:
-  `error: Your local changes to the following files would be overwritten by merge: dev/capture/health.mjs`
-  · **what happened**: the `#413` lane was dispatched into `.worktrees/superseded` on `wt/superseded` and its
-  brief named the worktree twice, but it edited `dev/capture/health.mjs`, `.dreamwork/docs/doc-map.md` and wrote
-  a new plan file **in the main checkout on `master`**. Its own worktree stayed untouched. The `ccc` invocation
-  ran with the worktree as cwd, so this was not a dispatch error
-  · **two harms, one realised.** Realised: it blocked a verified merge that had been deliberately held for half
-  an hour, and the coordinator cannot fix it by reverting, because reverting under a live agent destroys work in
-  progress — so the merge waits on a subagent's acknowledgement. Unrealised but worse: **a `git commit` by the
-  coordinator would have swept the lane's half-finished edits into a ledger commit under the wrong message**,
-  which is `12f47e3` exactly, and `--only` does not help when the file is one the coordinator is also touching
-  · **the invariant this breaks is the one the whole fan-out rests on** — *"parallel increments only ever touch
-  disjoint files, so there is never a split brain"*. A worktree makes that hold **by construction**, and that
-  guarantee is void the moment a lane writes outside it. The brief cannot enforce it; only a check can
-  · **candidate mechanisms, none built**: a pre-dispatch marker file the lane must find in its cwd and assert;
-  the coordinator asserting a clean main tree before each merge and naming the culprit paths (cheap, catches it
-  late); `git config core.hooksPath` with a pre-commit hook in the main checkout that refuses a commit touching
-  paths a dispatched lane owns (`status.json` already records ownership); or dispatching with the worktree as an
-  explicit `-C` rather than trusting cwd. Decide with an IGC — a mechanism that only warns after the fact fails
-  the goal *"the coordinator never has to ask a subagent's permission to merge"*
-  · **`status.json` already carries what a check would need**: which lanes are out and what files each owns. That
-  was built for a compacted coordinator; it is also the registry a containment check can read
-  · related: **#450, #402, #413**
-- **#464** — the command composer's scrollbar appears and disappears, reflowing his text as he types · P2 ·
-  UI/polish · origin: **human** · **human via watch 2026-07-29 02:30:** *"make the scroll bar in the command
-  composer always show. It causes text to reflow when it disappears after the text box grows large enough to
-  hold all the text. It's a bit distracting."*
-  · the reflow is the symptom of a width change, so reserving the gutter is the fix; `scrollbar-gutter: stable`
-  is the cheap form, a permanently-visible bar the literal reading — his words say *always show*, so decide
-  which he means and note that a gutter with no bar still removes the reflow
-  · check it against the autogrow behaviour that makes the box tall enough in the first place, and against
-  reduced-motion
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses
@@ -3397,6 +3362,78 @@ Next id: **468**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#463** — review artifacts sort and age by the wrong timestamp · P2 · UI/review · origin: **human** ·
+  **human via watch 2026-07-29 02:30:** *"fix the assets for review sorting — they should use ctime not mtime.
+  And the age should show since ctime, not mtime. However, when ctime != mtime, we can show a 'modified X ago'
+  msg to the right in a slightly different color. separate it from the age with a dot."*
+  · so three changes, and the third is the interesting one: **the two facts coexist** — created-age is the
+  primary, modified-age is secondary and only appears when it differs, dimmer, dot-separated
+  · the dot separator and the age treatment already exist (`#456` landed the day-age separator and found
+  `.qage`'s margin would have doubled the gap) — reuse that idiom rather than authoring a second one
+  · note *ctime* in his sense is **creation**, which POSIX `st_ctime` is not (it is inode change) — decide the
+  source of truth (birth time via `statx` where available, else the artifact's own build stamp or first commit)
+  and say what happens when it is unavailable, rather than shipping `st_ctime` and calling it created
+  · related: **#456**
+  · **LANDED `e1db28d`, merged `a63930a`** — birth via `statx stx_btime` (`st_birthtime` on BSD), never
+  POSIX `st_ctime`; `created unknown` is a named state that sorts after every known artifact rather than a
+  silent fall back to mtime; the secondary is dimmer and dot-separated per `#456`
+  · **the trap fired, and the lane's own test caught it.** Exact `created_ns != mtime_ns` flags **24 of
+  this repo's 28 artifacts** — writing a file sets birth, then the content write moves mtime a few hundred
+  microseconds later — so nearly every row would have read `3d old · modified 3d ago`, the exact inverse of
+  his rule. **An exactness the reader cannot see is not a difference:** the server marks a *candidate* and
+  `ages()` decides beside `ageStr`, dropping the pair when both render the same string. No threshold
+  invented, and the formatter is not mirrored in python — that would be a second copy of the thing whose
+  output is the criterion
+  · **on his corpus the secondary is rare, and that is correct** — 0 of 28 differ at display resolution
+  today, because each artifact is written once. It appears when `review_artifact.py` rebuilds one in place,
+  which is the case he described
+- **#464** — the command composer's scrollbar appears and disappears, reflowing his text as he types · P2 ·
+  UI/polish · origin: **human** · **human via watch 2026-07-29 02:30:** *"make the scroll bar in the command
+  composer always show. It causes text to reflow when it disappears after the text box grows large enough to
+  hold all the text. It's a bit distracting."*
+  · the reflow is the symptom of a width change, so reserving the gutter is the fix; `scrollbar-gutter: stable`
+  is the cheap form, a permanently-visible bar the literal reading — his words say *always show*, so decide
+  which he means and note that a gutter with no bar still removes the reflow
+  · check it against the autogrow behaviour that makes the box tall enough in the first place, and against
+  reduced-motion
+  · **LANDED `a443b33`, merged `a63930a`** — `scrollbar-gutter: stable` on the composer textarea. The lane
+  chose the gutter over a permanently visible bar and gave the reason: it removes the reflow he described
+  **without** adding furniture to the page. If he meant the literal bar, it is a one-line change
+- **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
+  **P1** · loop-machinery/containment · origin: **loop** · found 2026-07-29 03:32 when the `#263` merge aborted:
+  `error: Your local changes to the following files would be overwritten by merge: dev/capture/health.mjs`
+  · **what happened**: the `#413` lane was dispatched into `.worktrees/superseded` on `wt/superseded` and its
+  brief named the worktree twice, but it edited `dev/capture/health.mjs`, `.dreamwork/docs/doc-map.md` and wrote
+  a new plan file **in the main checkout on `master`**. Its own worktree stayed untouched. The `ccc` invocation
+  ran with the worktree as cwd, so this was not a dispatch error
+  · **two harms, one realised.** Realised: it blocked a verified merge that had been deliberately held for half
+  an hour, and the coordinator cannot fix it by reverting, because reverting under a live agent destroys work in
+  progress — so the merge waits on a subagent's acknowledgement. Unrealised but worse: **a `git commit` by the
+  coordinator would have swept the lane's half-finished edits into a ledger commit under the wrong message**,
+  which is `12f47e3` exactly, and `--only` does not help when the file is one the coordinator is also touching
+  · **the invariant this breaks is the one the whole fan-out rests on** — *"parallel increments only ever touch
+  disjoint files, so there is never a split brain"*. A worktree makes that hold **by construction**, and that
+  guarantee is void the moment a lane writes outside it. The brief cannot enforce it; only a check can
+  · **candidate mechanisms, none built**: a pre-dispatch marker file the lane must find in its cwd and assert;
+  the coordinator asserting a clean main tree before each merge and naming the culprit paths (cheap, catches it
+  late); `git config core.hooksPath` with a pre-commit hook in the main checkout that refuses a commit touching
+  paths a dispatched lane owns (`status.json` already records ownership); or dispatching with the worktree as an
+  explicit `-C` rather than trusting cwd. Decide with an IGC — a mechanism that only warns after the fact fails
+  the goal *"the coordinator never has to ask a subagent's permission to merge"*
+  · **`status.json` already carries what a check would need**: which lanes are out and what files each owns. That
+  was built for a compacted coordinator; it is also the registry a containment check can read
+  · related: **#450, #402, #413, #468**
+  · **LANDED `58e3040`, merged `ef5db01`** — `dev/lane_guard.py` refuses a main-checkout commit touching a
+  dispatched lane's paths, with `lint.check_brief_lane_owns` making a brief that declares nothing loud at
+  write time. `Needs: config` — `core.hooksPath` is machine-local, so the script is committed and enabling
+  is a documented step
+  · **it refuted this brief's own premise by measuring it:** `status.json` carries **no** file-ownership
+  field, so any mechanism reading an ownership list out of it reads nothing and passes vacuously from the
+  day it ships. Ownership comes instead from the brief the lane was actually handed, as a machine-parseable
+  `Lane-owns:` line
+  · **honest about its ceiling:** R5 fails at first **commit**, not first write. The only rival that fails
+  at first write needs the lane's cooperation, which is exactly what already failed — and both harms here
+  were commit-shaped. The pre-merge assertion (R2) is the successor, deliberately unbuilt: `#468`
 - **#413** — a guard can encode a SUPERSEDED contract, and nothing measures that · P2 ·
   verification/meta · origin: **loop** · found by fixing `qacard`, which had been red since
   `#392a` landed at 09:43 and was being reported as "pre-existing, not our fault" by every lane
