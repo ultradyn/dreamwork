@@ -40,6 +40,11 @@ Next id: **433**
   or the check passes on a page whose ask is still buried — the same hollowness in a new place. Pages
   with no decision to make (a design note, a schema) should be **exempt by declaration**, not by
   carrying a decoy element
+  · **also derive the fold from the live route rather than hard-coding it.** `above_fold.mjs` now
+  compares against **738** (desktop) and **504** (mobile), measured from the real iframe on `/review`,
+  because `innerHeight` overstates the visible area by **40%** on mobile — he reads artifacts inside
+  a frame, not as pages. Those two numbers are dated constants: a change to the shell's chrome moves
+  the fold and nothing would notice. Measure the frame at runtime
   · related: **#429, #430**
 - **#431** — `just deploy`'s `pkill -f` kills any process whose command line merely mentions the
   snapshot, including the shell running the deploy · P1 · loop-tooling/deploy · origin: **loop**

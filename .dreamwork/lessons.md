@@ -2866,3 +2866,14 @@ this shape and convert opportunistically.)
   it only fires when the *caller's* command line contains the basename, which a bare `just deploy` does
   not — mine did, because I had assigned the path to a variable. **Kill by pid; a pattern that must not
   match the caller will one day match the caller.** (`#431`)
+- **Three times in one day the assertion was right and the surface was wrong, so state it as a rule:
+  measure the product, not the file.** (1) The viewport option key was wrong, so two labelled viewports
+  were one default page. (2) The panel height I used to judge a lane came from a server running
+  two-hour-old code, and I nearly reported the lane wrong. (3) The above-fold check I had just written
+  compared against `innerHeight` — **844 on mobile — while he reads artifacts inside an iframe whose
+  visible height is 504**, a 40% overstatement, so an ask at 600px would have passed while being
+  invisible. **Evidence the three are one failure and not three:** in every case the code under test was
+  correct, the assertion was correct, and reviewing either would have found nothing — what was wrong was
+  the *thing the assertion was pointed at*. **Evidence it is cheap to avoid:** each was caught by one
+  question — *is this the surface he actually has?* — and answering it took a single measurement of the
+  real route. Ask it of every check that renders, fetches, or reads a snapshot.
