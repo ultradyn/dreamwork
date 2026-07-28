@@ -3137,3 +3137,13 @@ this shape and convert opportunistically.)
   the outside — a check that cannot fail, and a probe that never arrived — and this repo has now been bitten by
   each. Read the docstring's named production line and edit *that*. Evidence: `46c3f4c`; the same session
   earlier produced an inconclusive lint probe that also proved nothing and was reported as inconclusive.
+
+- **A log still being appended to is not a result, and reading one as complete is the same error as reading an
+  empty output as proof.** Mid-run I grepped a live `just test` log for failures, saw `identity`/`gitrow`/
+  `serving` absent from the FAIL list, and reported that they PASSED. The run had not reached them. When it
+  did, all three failed — with the identical port error I had just spent two turns calling unexplained — and a
+  lane refuted my claim by reading the very file I had pointed it at. Absence of evidence in a partial file is
+  not evidence of absence, which is precisely the `#469` empty-glob mistake wearing different clothes. Before
+  concluding anything from a log, establish that the producer EXITED; a tail is a snapshot of progress, and
+  `grep -c FAIL` on it measures how far it got. Evidence: `#471`'s correction, four `is serving` messages in
+  one run against my claim of three passes.
