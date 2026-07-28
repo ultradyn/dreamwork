@@ -9,11 +9,19 @@ Repo: `ud-dreamwork`. Worktree: **`.worktrees/172`**, branch **`wt/172`**. Do no
 > too long. it's essential and basic. Dispatch a subagent to solve this problem ASAP. (I thought we
 > already did last night but it is still unimplemented)"*
 
-He is correct on both counts, measured before writing this: `#172` sits in the ledger's
-`## Recently landed` section **with no closing marker at all**, and the served page contains the
-string `ud-dreamwork` **nowhere**. The tab title is the literal `dreamwork watch`. So a P1 he asked
-for was filed as done without being done. Read that as the reason for the tone, not as pressure to
-cut corners — the fix for "it was claimed and not built" is not a faster claim.
+**He is right about the thing that matters**, measured before writing this: the served page contains
+the string `ud-dreamwork` **nowhere**, and the tab title is the literal `dreamwork watch`. `#172` is
+a **P1 that has been open and unstarted**, not work that was done badly.
+
+> **Correction, 15:20, and it was mine.** This paragraph first said `#172` *"sits in `## Recently
+> landed` with no closing marker"* — i.e. that it had been falsely marked done. **That was false and
+> the ledger is fine.** `#172` is under `## Open` where it belongs; I determined otherwise with a
+> section check that split `tasks.md` on an **unanchored** `'## Recently landed'`, which matches a
+> prose mention 147,000 characters before the real heading, so every entry after that point read as
+> "landed". `watch.parse_ledger` says `open? True`. Left visible rather than quietly patched,
+> because it is the second time in one hour that this exact bug has produced a confident false
+> statement here, and the first cost two closed tasks being filed into the middle of `## Open`.
+> **Nothing in the criteria below depended on it** — the code facts were all measured directly.
 
 ## What is true right now, measured at 15:15
 
@@ -88,7 +96,8 @@ unit test — it probably does, since it is a pure string function.
 
 **Not yours:** `status_sync.py` and `test_status_sync.py` — another lane holds those right now.
 Do not touch `.dreamwork/tasks.md` or `.dreamwork/questions.md`; the coordinator is their only
-writer and is fixing `#172`'s ledger placement itself.
+writer. (An earlier draft said it was "fixing #172's ledger placement" — there was nothing to
+fix; see the correction above.)
 
 `#172` also says *"read his references first: `grok-build`, `codename-thin` at
 `ssh://x-game:src/codename-thin`, on another machine"*. **Treat that as optional** — it is on a host
