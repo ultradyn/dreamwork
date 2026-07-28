@@ -1,4 +1,4 @@
-# Brief — #172: the project name is not in the title, and the ledger says it is
+# Brief — #172: the project name is not in the title, anywhere
 
 Repo: `ud-dreamwork`. Worktree: **`.worktrees/172`**, branch **`wt/172`**. Do not push, do not merge.
 **Never use `attn`** — report through the inbox path at the bottom.

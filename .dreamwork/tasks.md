@@ -2925,7 +2925,34 @@ Next id: **419**
   provenance from this later human priority update (#216) · #153's browser-tab
   title remains related but does not broaden this visible-title increment ·
   **read his references first**: `grok-build`, `codename-thin` at
-  `ssh://x-game:src/codename-thin`, on another machine
+  `ssh://x-game:src/codename-thin`, on another machine  · **NEXT-UP, human via watch `do-next` 2026-07-28 15:13**, and the tone is earned: *"we have
+  several tasks about putting hte project name in the title line. This has been delayed too long.
+  it's essential and basic. Dispatch a subagent to solve this problem ASAP. (I thought we already
+  did last night but it is still unimplemented)"*
+  · **IN PROGRESS 2026-07-28 15:17** (next-up mark cleared on start) — `ccc @grok` in
+  `.worktrees/172`, brief `.dreamwork/docs/briefs/172-project-identity-in-title.md`, owning
+  `watch.py`, `watch-design.md`, a new `dev/capture` guard, the `justfile` DEFAULT_GUARDS line and
+  `test_watch.py`. Routed to grok for vision: the acceptance includes its own verdict on whether
+  the identity reads as *prominent* rather than merely present
+  · **measured before briefing, and it is smaller than "delayed too long" suggests**: `/data.json`
+  already carries `target`, so nothing needs plumbing — and **`popoutShell` already renders
+  `basename + full path` for every popped-out window**. The popouts have project identity and the
+  main window does not, so the idiom exists in the same file and this is a display change
+  · **his constraint is the substance and is now checkable**: *"anchor what is invariant to an edge,
+  not to a variable-width neighbour"*. Criterion 1 is the identity element's `getBoundingClientRect`
+  on three routes including a long `/review?p=…` param, asserted **identical** — a layout that looks
+  right on the dashboard and slides on a long route passes a screenshot and fails his rule
+  · **a correction I owe this entry**: while briefing I asserted `#172` had been filed under
+  `## Recently landed` without a closing marker — that a P1 had been falsely marked done. **False.**
+  It has been open and unstarted, which is the honest and less flattering account. The error came
+  from splitting `tasks.md` on an **unanchored** `## Recently landed`, which matches a prose mention
+  147k characters early; `parse_ledger` disagreed the moment I asked it. Corrected in the brief in
+  place, left visible there
+  · his *"I thought we already did last night"* is worth taking as data regardless: `#153`
+  (browser-tab title) and `#318` (`TITLE_ROUTE`'s route omission) both landed last night and both
+  touch the title, so **title work did land — just not the half he can see**. That is exactly how a
+  neighbouring landing reads as the wrong thing being done
+
 - **#171** — Ascii vignette at the screen edge, from the loop's own
   words · P3 · idea · 90m · "we will play with some parameters" is an
   instruction about METHOD — ship the axes adjustable, expect to steer ·
