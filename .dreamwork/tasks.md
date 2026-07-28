@@ -53,6 +53,25 @@ Next id: **414**
   excused the same way. Check whether either is the same class before assuming load flake — they
   have been called flaky without anyone injecting anything. Do it at **low load**; the last
   reading was at load 21-29, where a motion guard proves nothing
+  · **MEASURED 12:55, and the "load flake" story is WRONG — two of the three are a real
+  regression.** I ran all three at load ~20. `docktarget` and `noteprop` fail on **four
+  assertions that are all the same invariant**: *"dock visibly remains original after in-memory
+  reorder"* (note + answer modes) and *"the dock stays on the same stable target"* (normal +
+  **reduced** motion). One behaviour, four ways, and the reduced-motion arm failing beside the
+  animated one rules out a motion-timing flake outright
+  · **bounded by measurement, not guessed.** Both PASS at `d306b10` (07-27 22:42) *and* at its
+  parent, so `#324`'s reporter conversion — which is what made me suspicious, since the three
+  failing guards are **exactly** the three converted in its batch 1 — neither caused them nor
+  merely revealed them. The break is in the 408 commits since; a bisect is running. `qacard` is
+  a different cause entirely and is now fixed (`7007d5b`): it passed at `d306b10` only because
+  `#392a` had not landed yet
+  · **so the three were never one thing, and calling them one thing is what kept them alive.**
+  I have carried "3 known pre-existing failures, possibly load flake" into three briefs. The
+  flake hypothesis was never tested against anything — it came from having seen them fail at
+  load 29 once. **A shared symptom is not a shared cause, and "pre-existing" is a claim about
+  time that gets read as a claim about severity**
+  · the dock half deserves its own entry once the bisect names the commit: it is a live product
+  bug on `master`, not verification debt like the rest of this task
   · related: **#392**
 
 - **#411** — two answered entries carry a perfectly good date and the page throws it away, because
