@@ -1924,6 +1924,37 @@ is suppressed whenever a finding exists in the same run: a check that prints
 "no owned path is dirty" beside an error naming one gets read as noise and then
 ignored. Both of those were found by red-proofing the check itself.
 
+**The merge-time gate is an explicit assertion, not a hook** (#468 R2). The
+backstop is ambient — it fires when `lint` runs — but a lane's stray edit can
+land in the main checkout between two lint runs and live right up to the
+``git merge`` that aborts on it. R2 is the assertion run in front of that merge:
+
+```
+python3 dev/lane_guard.py pre-merge wt/<lane>
+```
+
+It is a **subcommand, not a ``pre-merge-commit`` hook**, for two reasons measured
+against this harness: a ``pre-merge-commit`` hook does not fire on a
+**fast-forward** (the common merge of a lane branch whose base is current HEAD),
+and installing a hook is a separate consent ask whose own half (#465) is still
+un-granted. The honest weakness of a subcommand is that it must be remembered —
+the merge is run with the assertion in front of it, not automatically — and the
+ambient backstop is what covers the lane-owned-dirty case whether R2 is run or
+not. R2 adds the dimensions the backstop cannot reach: the coordinator's **own**
+uncommitted tracked work (no lane owns it, so the backstop is silent, yet a merge
+aborts on it) and an untracked file the merge would **clobber**.
+
+It refuses (exit 1) with the **reason and one action**, never a destructive
+command — it stashes, resets and checks out nothing: a lane's edit in the main
+tree names the lane/path and ``git worktree remove <path>``; the coordinator's
+own work says "commit or unwind"; a clobber says "would be overwritten by merge".
+It declines (exit 2) when it cannot evaluate — not the main checkout, ``git
+status`` unreadable, or a branch that does not resolve — rather than asserting a
+clean tree it never measured. And it **reuses the reader**: ``lint.lane_owned_paths``
+is the single lane-ownership definition, so the backstop and the pre-merge
+assertion share one reader — two callers, one place the parsing can drift, not
+two.
+
 ## Why this file exists rather than a paragraph in SKILL.md
 
 SKILL.md says what each file *means* and when to write it. That is the

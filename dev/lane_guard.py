@@ -457,6 +457,237 @@ def _selftest() -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- #
+# R2 — the pre-merge assertion (#468)                                         #
+# --------------------------------------------------------------------------- #
+# `git merge wt/<lane>` aborts when the main checkout's index or worktree is
+# dirty with someone else's work, and the abort message names FILES rather than
+# the reason, so it reads as a conflict. It happened twice: once staged-but-
+# uncommitted briefs, once a lane's edit in the main checkout. In both the merge
+# was half-done before the cause became clear.
+#
+# WHERE IT LIVES, on the will-it-be-skipped axis. A `pre-merge-commit` hook is
+# the only automatic form and it is ruled out: it does NOT fire on a fast-
+# forward (a hook that silently does not run is worse than no hook), and wiring
+# it needs `Needs: consent` that is a separate open ask (the pre-commit guard's
+# own consent is still un-granted — #465). So R2 is an explicit subcommand the
+# coordinator runs before merging, reusing THIS module's lane registry and the
+# backstop's ownership reader. The one-word habit that closes the "remember" gap
+# is a `just merge-lane <branch>` wrapper (justfile is not this file's to write;
+# the report carries the line). The ambient half is already lint's backstop,
+# which catches lane-owned dirt whenever lint runs; this subcommand adds the
+# merge-time preconditions the backstop does not: full index/worktree cleanliness
+# (a merge aborts on the coordinator's OWN uncommitted work too, which no lane
+# owns), untracked-clobber, and branch identity.
+#
+# It reuses lint's ownership resolution (``lint.lane_owned_paths`` /
+# ``_live_lane_worktrees`` / ``_dirty_paths``) — never a second reader. The
+# import is lazy so the hot pre-commit hook path does not pay lint's import cost
+# (constraint C: nothing may make the loop's own commits harder).
+
+def _import_lint():
+    """Lazy import of the lint module, with the repo root on sys.path.
+
+    lane_guard.py lives in dev/, so `python3 dev/lane_guard.py` puts dev/ on
+    sys.path[0], not the repo root where lint.py sits. The pre-merge path needs
+    lint (the single lane-ownership reader); the hook path never calls this.
+    """
+    import importlib
+    root = Path(__file__).resolve().parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    return importlib.import_module("lint")
+
+
+def _classify_status(root: Path) -> tuple[list[str], list[str], list[str]] | None:
+    """Split ``git status`` into (staged, unstaged_tracked, untracked).
+
+    None when git cannot be asked — the caller must fail loud rather than report
+    a clean tree it never measured. Uses ``--no-optional-locks`` for the same
+    reason lint's ``_dirty_paths`` does: a background ``git status`` taking the
+    real index.lock is a documented mitigation on this machine.
+
+    This is merge-precondition PLUMBING, not an ownership reader: it classifies
+    git's status columns, while ownership comes from lint's Lane-owns parser.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "--no-optional-locks", "-C", str(root), "status",
+             "--porcelain", "--untracked-files=all"],
+            capture_output=True, text=True, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    staged: list[str] = []
+    unstaged: list[str] = []
+    untracked: list[str] = []
+    for line in out.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        x, y = line[0], line[1]
+        entry = line[3:]
+        if " -> " in entry:  # rename: the destination is the path that matters
+            entry = entry.split(" -> ", 1)[1]
+        path = entry.strip().strip('"').replace("\\", "/")
+        if not path:
+            continue
+        if x == "?" and y == "?":
+            untracked.append(path)
+            continue
+        if x not in (" ", "?"):  # index differs from HEAD
+            staged.append(path)
+        if y not in (" ", "?"):  # worktree differs from index
+            unstaged.append(path)
+    return staged, unstaged, untracked
+
+
+def _merge_added_paths(root: Path, branch: str) -> list[str] | None:
+    """Paths the merge of ``branch`` into HEAD would ADD (absent in HEAD).
+
+    Used to detect untracked files the merge would clobber — the other merge-
+    abort cause. None on git failure (caller fails loud). Read-only: ``git diff``
+    writes nothing.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "--no-optional-locks", "-C", str(root), "diff", "--name-only",
+             "--diff-filter=A", "HEAD", branch],
+            capture_output=True, text=True, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return [ln.strip().replace("\\", "/") for ln in out.stdout.splitlines() if ln.strip()]
+
+
+def _pre_merge(root: Path, branch: str) -> int:
+    """Assert the preconditions of ``git merge <branch>`` in the main checkout.
+
+    Returns 0 = safe to merge; 1 = a precondition failed (refused, with the one
+    action that clears it); 2 = could not evaluate (fail loud). Never moves work:
+    it does not stash, reset, checkout or merge — eight lanes have run in this
+    tree, and a helpful automatic cleanup is how a lane's uncommitted hour
+    disappears.
+    """
+    out = sys.stdout
+    err = sys.stderr
+
+    if not is_main_checkout(root):
+        err.write(
+            "pre-merge: run from the MAIN CHECKOUT, not a worktree. A merge of a\n"
+            "lane lands in the main tree, so that is where its preconditions hold.\n"
+        )
+        return 2
+
+    # Normalise the branch argument: accept `wt/foo` or bare `foo`.
+    norm = branch if branch.startswith(LANE_BRANCH_PREFIX) else LANE_BRANCH_PREFIX + branch
+
+    lint = _import_lint()
+    lanes = lint._live_lane_worktrees(root)
+    if lanes is None or not isinstance(lanes, list):
+        # _live_lane_worktrees degrades to [] on git failure; a non-list means
+        # the contract moved underneath us. Fail loud either way.
+        err.write("pre-merge: could not enumerate lane worktrees — refusing\n")
+        return 2
+
+    classified = _classify_status(root)
+    if classified is None:
+        err.write(
+            "pre-merge: `git status` could not be read — cannot assert the merge\n"
+            "preconditions. Investigate before merging; a silent allow is the state\n"
+            "this guard exists to prevent.\n"
+        )
+        return 2
+    staged, unstaged, untracked = classified
+
+    added = _merge_added_paths(root, norm)
+    if added is None:
+        # A branch git cannot resolve is almost always a typo. Fail loud naming
+        # it, which is the branch-identity check's loudest form.
+        err.write(
+            f"pre-merge: could not diff HEAD against `{norm}` — the branch does\n"
+            f"not resolve (typo? not fetched?). Aborting before the merge.\n"
+        )
+        return 2
+    added_set = set(added)
+
+    # Ownership, reusing lint's reader. dirty = staged + unstaged + untracked,
+    # exactly the set the backstop intersects.
+    dirty = lint._dirty_paths(root)
+    if dirty is None:
+        err.write("pre-merge: `git status` dirty-path set unreadable — refusing\n")
+        return 2
+    dw = root / ".dreamwork"
+    findings: list[str] = []
+    examined = 0
+    for lane_path, lbranch in lanes:
+        owned = lint.lane_owned_paths(dw, lbranch)
+        if not owned:
+            continue
+        examined += 1
+        contested = _contested(set(dirty), set(owned))
+        if contested:
+            findings.append(
+                f"  {', '.join(sorted(contested))} dirty in the MAIN CHECKOUT but\n"
+                f"    owned by lane {lbranch} ({lane_path}); #465 — a lane editing\n"
+                f"    the main tree aborts the merge. Retire a FINISHED lane's\n"
+                f"    worktree (`git worktree remove {lane_path}`), or let the\n"
+                f"    lane commit its work there. Do NOT commit the contested\n"
+                f"    paths on master."
+            )
+
+    # Merge-blocking tracked dirt: the coordinator's OWN uncommitted work. No
+    # lane owns it, so the backstop is silent on it, but a merge aborts on it
+    # regardless. Remedy is commit-or-unwind — we do not offer stash/reset.
+    blocking_tracked = sorted(set(staged) | set(unstaged))
+    if blocking_tracked:
+        findings.append(
+            "  index/worktree not clean: " + ", ".join(blocking_tracked) + "\n"
+            "    a merge aborts on local changes to tracked files. Commit or unwind\n"
+            "    your own work in the main checkout first. (This assertion never\n"
+            "    stashes, resets or checks out — it does not move work.)"
+        )
+
+    # Untracked files the merge would overwrite.
+    clobber = sorted(set(untracked) & added_set)
+    if clobber:
+        findings.append(
+            "  untracked, would be overwritten by merge of " + norm + ": "
+            + ", ".join(clobber) + "\n"
+            "    move or remove the untracked file(s) before merging."
+        )
+
+    if findings:
+        err.write(
+            f"pre-merge (#468): refusing to merge `{norm}` into the main checkout.\n"
+            "One or more merge preconditions failed:\n\n"
+            + "\n".join(findings)
+            + "\n"
+        )
+        return 1
+
+    # Branch identity: informational. A non-lane branch may be a legitimate
+    # merge or a typo'd lane name; the ownership check above already covered
+    # every live lane regardless.
+    registered = norm in {b for _, b in lanes}
+    id_note = (
+        f"registered lane `{norm}`" if registered
+        else f"NOTE: `{norm}` is not a registered lane worktree "
+             f"(merging a non-lane branch; ownership still checked against all "
+             f"{len(lanes)} live lane(s))"
+    )
+    out.write(
+        f"pre-merge OK: safe to merge `{norm}`.\n"
+        f"  {id_note}; {examined} of {len(lanes)} live lane(s) declare ownership;\n"
+        f"  index clean (0 staged), worktree clean (0 unstaged-tracked),\n"
+        f"  0 untracked-clobber, 0 lane-owned dirty paths.\n"
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Lane-containment pre-commit guard (#465). See module docstring."
@@ -465,14 +696,16 @@ def main(argv: list[str] | None = None) -> int:
         "mode",
         nargs="?",
         default="hook",
-        choices=["hook", "install", "uninstall", "selftest"],
+        choices=["hook", "install", "uninstall", "selftest", "pre-merge"],
         help="hook = run as a pre-commit guard (default); install/uninstall wire it; "
-        "selftest = introspect without refusing",
+        "selftest = introspect without refusing; "
+        "pre-merge BRANCH = assert the preconditions of `git merge BRANCH` (#468)",
     )
     parser.add_argument(
         "rest",
         nargs=argparse.REMAINDER,
-        help="passed by git when invoked as a hook (ignored)",
+        help="for pre-merge: the branch to merge (wt/<name> or <name>); "
+        "otherwise passed by git when invoked as a hook (ignored)",
     )
     args = parser.parse_args(argv)
 
@@ -482,6 +715,19 @@ def main(argv: list[str] | None = None) -> int:
         return _uninstall()
     if args.mode == "selftest":
         return _selftest()
+    if args.mode == "pre-merge":
+        branch = args.rest[0] if args.rest else ""
+        if not branch:
+            sys.stderr.write(
+                "pre-merge: a branch argument is required "
+                "(e.g. `dev/lane_guard.py pre-merge wt/foo`)\n")
+            return 2
+        root = repo_root(Path.cwd())
+        try:
+            return _pre_merge(root, branch)
+        except GuardError as exc:
+            sys.stderr.write(f"pre-merge: cannot evaluate ({exc}); refusing\n")
+            return 2
 
     # mode == "hook"
     if os.environ.get(BYPASS_ENV):

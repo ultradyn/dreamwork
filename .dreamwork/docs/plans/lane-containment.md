@@ -1,9 +1,12 @@
 # Lane containment — #465
 
-**Status:** design landed; the **early-failing half** (the pre-commit guard) built and
-red-proved. The **pre-merge backstop** is recorded as the successor and deliberately
-not built (it is nearly free, but it catches the same collision late, so it earns its
-keep only once the early half is in place).
+**Status:** design landed; the layered defence is complete. The **early-failing
+half** (the pre-commit guard, R5) is built and red-proved. The **successor**
+landed in two halves under #468: the **ambient backstop** (`lint.check_lane_containment_backstop`,
+which ERRORs a lane-owned dirty path whenever `lint` runs, needs no hook) and the
+**merge-time assertion** (R2, `dev/lane_guard.py pre-merge <branch>`, which refuses
+the merge naming the reason and one action). Both reuse `lint.lane_owned_paths`,
+the single lane-ownership reader — two callers, one definition.
 
 ## What happened, and the invariant
 
@@ -182,18 +185,40 @@ in every brief's prose. Declaring ownership as a machine-parseable
 `Lane-owns:` line in the brief makes the brief the single source: what the lane
 was told it owns is what the guard protects. No second store, no drift.
 
-## What is deliberately not built (the successor)
+## The successor (now landed, in two halves)
 
-**R2 — the coordinator-side pre-merge assertion.** A `lint`-style check
-(`check_lane_containment`) that walks the main tree's dirty paths, enumerates
-live worktrees, and WARNs when a path no lane owns is dirty in the main checkout
-while a lane is out. It is nearly free (reuses `lane_guard.py`'s lane
-enumeration), catches edits that land between commits, and cannot be bypassed by
-`--no-verify` because it is not a hook. It is the **backstop**, not the early
-half: it warns *late* (after the write), so it does not satisfy G1/G2 on its own,
-and building it before the early half would have shipped the weaker mechanism
-first. Recorded here so the coordinator can land it as one increment when the
-early half has bedded in.
+**R2 — the coordinator-side pre-merge assertion — shipped under #468 as a layered
+pair.** The IGC's design-time verdict (R2 ✘ G1/G2 as a *standalone* answer) still
+holds, and is the reason R2 was not built first: a mechanism that only warns late
+does not satisfy the early-fail goals on its own. What landed is the **backstop
+layer** the design always said R2 would be, once the early half had bedded in.
+It split into two halves, each closing the gap a different way:
+
+1. **The ambient backstop** — `lint.check_lane_containment_backstop`. ERRORs when
+   a path a live lane owns is dirty in the main checkout (staged, unstaged or
+   untracked), which is the state that actually did the damage: the `#263` merge
+   aborted on dirty files before any commit was attempted, so the pre-commit guard
+   would never have fired. It is ambient — fires whenever `lint` runs, needs no
+   hook, cannot be bypassed by `--no-verify`. Lanes come from git's own worktree
+   registry, never `status.json`.
+
+2. **The merge-time assertion** — `dev/lane_guard.py pre-merge <branch>`. The gate
+   run in front of `git merge`, so the abort cause is named as a *reason and one
+   action* rather than a bare file list (which read as a conflict). It is an
+   explicit subcommand, not a `pre-merge-commit` hook, because that hook does not
+   fire on a fast-forward (the common lane merge) and installing a hook is a
+   separate consent ask whose own half (#465) is still un-granted. Its honest
+   weakness — it must be remembered — is what the ambient backstop covers. It adds
+   two dimensions the backstop cannot reach (the coordinator's *own* uncommitted
+   tracked work, which no lane owns; and an untracked file the merge would clobber),
+   refuses with one action, and moves no work (no stash/reset/checkout).
+
+**Both reuse `lint.lane_owned_paths`** — the single lane-ownership reader extracted
+so the backstop and the pre-merge assertion share one definition. Two callers, one
+place the parsing can drift, not two. Each was red-proved against its own named
+production line (the shared reader, the tracked-dirt branch, the clobber
+intersection, the is-main-checkout gate, the branch-not-resolve None-source),
+neighbours green for discrimination.
 
 ## How `status.json`'s absence / staleness is handled
 
@@ -261,8 +286,9 @@ non-lane-guard pre-commit. To uninstall: `python3 dev/lane_guard.py --uninstall`
 installed. That is the honest cost of a machine-local hook: a fresh clone, or a
 checkout that never runs `--install`, has no protection. The committed artefacts
 that *do* protect every checkout regardless are the **brief convention**
-(`Lane-owns:` lines, enforced by `lint`) and the **successor backstop** (R2,
-when it lands) — neither of which depends on a hook being wired.
+(`Lane-owns:` lines, enforced by `lint`) and the **successor backstop**
+(`lint.check_lane_containment_backstop`, #468) — neither of which depends on a
+hook being wired.
 
 **Trailer: `Needs: config`** — enabling is manual (a hook is machine-local
 state), so the commit carries `Needs: config` per the repo convention. Not
@@ -270,10 +296,13 @@ state), so the commit carries `Needs: config` per the repo convention. Not
 
 ## Files
 
-- `dev/lane_guard.py` — the guard + `--install` / `--uninstall`.
+- `dev/lane_guard.py` — the guard + `--install` / `--uninstall` + the
+  `pre-merge <branch>` subcommand (#468 R2, the merge-time assertion).
 - `test_lint.py` / `lint.py` — `check_brief_lane_owns` (ERRORs a worktree brief
   that touches files but declares no `Lane-owns:`, so the guard always has a
-  non-empty ownership set to protect), with the contract in `file-formats.md`.
+  non-empty ownership set to protect), `check_lane_containment_backstop` (the
+  ambient dirty-path ERROR, #468), and the shared `lane_owned_paths` reader, with
+  the contract in `file-formats.md`.
 - `file-formats.md` — the `Lane-owns:` line shape (same commit as the code that
   reads it).
 - `SKILL.md` — the delegation paragraph gains one sentence stating the new
