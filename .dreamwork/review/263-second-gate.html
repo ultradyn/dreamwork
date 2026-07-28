@@ -6,9 +6,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dreamwork-artifact-style" content="offline-clean; inline-only; watch token palette">
 <meta name="dreamwork-review-template" content="v1+c6a57f20">
-<meta name="dreamwork-review-ask" content="ask">
-<meta name="dreamwork-review-if-silent" content="if-silent">
-<title>#263 · the second gate's condition is met, verified this time. Open it?</title>
+<meta name="dreamwork-review-ask" content="exempt: decided 2026-07-29 01:37 — second gate answered; page is a record, not a live ask">
+<meta name="dreamwork-review-if-silent" content="exempt: decided — silence no longer parks a live ask; gate already open">
+<title>#263 · second gate · DECIDED — open E and H, split #368 first</title>
 <style>
 /* Offline-clean by construction: no fetches, no external fonts, no images.
    Tokens are watch.py's, value for value, because this is read inside the
@@ -254,11 +254,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 </style>
 </head>
 <body>
-<a class="skip" href="#ask">Skip to the decision</a>
+<a class="skip" href="#decision">Skip to the decision</a>
 <nav class="toprail" aria-label="Artifact navigation">
   <div class="toprail-in">
-    <div class="identity"><b>#263 · open the gate</b><span>task #263 · A–D proved · second gate his to open · C4/C5 landed</span></div>
-    <div class="topactions"><span class="status">awaiting gate-open + #368 sequencing call</span><a href="#ask">open it?</a><a href="#status">lanes</a><a href="#compare">#368</a><a class="full" href="#evidence">evidence</a><a href="#withheld">limits</a></div>
+    <div class="identity"><b>#263 · second gate · decided</b><span>task #263 · second gate · decided 2026-07-29 01:37</span></div>
+    <div class="topactions"><span class="status">DECIDED · 2026-07-29 01:37 · ack good to go</span><a href="#decision">decision</a><a href="#igc">IGC</a><a href="#status">lanes</a><a href="#compare">#368</a><a class="full" href="#evidence">evidence</a><a href="#withheld">limits</a></div>
   </div>
 </nav>
 
@@ -267,29 +267,79 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 <header>
   <div class="hero-grid">
     <div>
-      <div class="kicker"><h1>The condition is met, verified this time. Open it?</h1><span class="proposal">gate-open · one sequencing call</span></div>
-      <div class="sub">task #263 · 28 July 2026 · every figure re-measured at build time</div>
-      <p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> the second gate stays shut — lanes E and H stay behind it, and no default open is taken.</p>
-      <div id="ask" class="ask-block">
-        <div class="label">The decision — open the second gate?</div>
-        <p class="ask-q">His 05:43 condition was <em>"until A–D are proved"</em>. They are:
-        <strong>A 2/2 · B 8/8 · C 5/5 · D 4/4 · F 4/4</strong>, and this time a merge gate asserted
-        it — taking its denominator from the plan's own increment table rather than from a lane's
-        count. <strong>The second gate is genuinely his to open.</strong></p>
-        <p class="ask-answers"><span class="key">accepted answers</span>
-        <code>rec</code> &nbsp;&middot;&nbsp; <strong>open E and H, split <code>#368</code>
-        first</strong> &nbsp;&middot;&nbsp; Q1/Q2/Q3 below &nbsp;&middot;&nbsp; free text
-        &nbsp;&middot;&nbsp; <em>"not yet"</em> is a real answer</p>
+      <div class="kicker"><h1>Second gate open — E and H authorised; #368 first.</h1><span class="proposal">decided · record</span></div>
+      <div class="sub">task #263 · answered 2026-07-29 01:37 · IGC kept as the weighing</div>
+      <p id="context" class="context">This is the decision <strong>record</strong> for task
+        <strong>#263</strong>'s <em>second gate</em>: whether to open lanes <strong>E</strong>
+        (HTTP cutover) and <strong>H</strong> (mixed-version gate), and whether <code>#368</code>
+        (modular split of <code>watch.py</code>) lands before E starts. The 05:43 condition —
+        <em>"until A–D are proved"</em> — was met and re-checked (A 2/2 · B 8/8 · C
+        <strong>5/5</strong> · D 4/4 · F 4/4), after a false claim at 16:24 when C was only 3/5.
+        A merge gate asserted the plan's own five-row C table rather than a lane's
+        <code>3/3</code>. <strong>He answered 2026-07-29 01:37:</strong>
+        <em>"ack good to go"</em> — the gate is open.</p>
+      
+      <div id="problem" class="orient-block">
+        <div class="label">The problem (as it stood)</div>
+        <p class="read">At 05:43 he granted G1: lanes A–D and F now; E and H behind a second gate
+        until A–D are proved. Those lanes completed. Behind the gate: E (increments 20–25:
+        journal commit authorises the response) and H (34–35: refuse-before-witness + quiesced
+        cutover on code/temp fixtures). Lane <strong>G</strong> (30–33), fixture 18 purge, fixture
+        19 PostgreSQL, and any live-target migration were <strong>never</strong> in G1 and stay
+        withheld. The sequencing rival was real: 6 of 6 E production increments touch
+        <code>watch.py</code> alone (<code>wc -l</code> <strong>10,184</strong> at this build; plan
+        8,647 was stale), so opening E without <code>#368</code> first meant six serial edits in
+        the dashboard file with G still sharing that lock later.</p>
       </div>
-      <div class="call"><strong>Why trust it now — the correction, kept visible.</strong> At 16:24 this
-      page and the questions entry said the condition was met. <strong>Wrong:</strong> lane C was then
-      <strong>3 of 5</strong>. The ledger line read <em>"lane C DONE … <code>C1</code>, <code>C2</code>,
-      <code>C3</code> … 3/3 green"</em>, and the coordinator read <code>3/3</code> as the lane's scope when
-      the lane's scope is 5. <code>C4</code> (<code>f85be1c</code>) and <code>C5</code>
-      (<code>2cc3537</code>) landed at 17:04–17:10; the gate that now says <em>met</em> is red on
-      <code>master</code> and passes on the merge, so it can see the absence it checks for. <strong>The
-      record of getting it wrong is the reason to read the next line as checked rather than
-      asserted.</strong></div>
+      
+      <div id="igc" class="orient-block">
+        <div class="label">IGC — what was weighed</div>
+        <p class="read">Method: <code>igc-method.md</code> (binary goals, ✔/✘/?, All rollup,
+        decisive errors — no scores). Kept as the durable record of why I1 was the package
+        he was offered.</p>
+        <p class="quiet igc-legend"><strong>Goals.</strong>
+          <span class="g">G1</span> open only if A–D proved, or stay shut ·
+          <span class="g">G2</span> withheld scope stays closed (G, purge, PG, live migration) ·
+          <span class="g">G3</span> if E runs, path is not six serial monolith edits without a modular split first ·
+          <span class="g">G4</span> H, if opened, is code+temp only — no live migration by this answer ·
+          <span class="g">G5</span> cutover (E) and mixed-version gate (H) open together or neither
+        </p>
+        <div class="scroller"><table class="igc-table">
+          <colgroup>
+            <col class="ci"><col class="ca"><col class="cg"><col class="cg"><col class="cg"><col class="cg"><col class="cg">
+          </colgroup>
+          <thead><tr><th>Idea</th><th>All</th><th>G1</th><th>G2</th><th>G3</th><th>G4</th><th>G5</th></tr></thead>
+          <tbody>
+            <tr class="row-accent"><td>I1 · open E+H, <code>#368</code> first</td>
+              <td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td></tr>
+            <tr><td>I2 · open E+H, serial E now</td>
+              <td class="fail">✘</td><td class="pass">✔</td><td class="pass">✔</td><td class="fail">✘</td><td class="pass">✔</td><td class="pass">✔</td></tr>
+            <tr><td>I3 · keep gate shut (<em>not yet</em>)</td>
+              <td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td></tr>
+            <tr><td>I4 · open E only; hold H</td>
+              <td class="fail">✘</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="pass">✔</td><td class="fail">✘</td></tr>
+            <tr><td>I5 · open E+H+G (or withheld fixtures)</td>
+              <td class="fail">✘</td><td class="pass">✔</td><td class="fail">✘</td><td class="unknown">?</td><td class="fail">✘</td><td class="pass">✔</td></tr>
+          </tbody>
+        </table></div>
+        <ul class="igc-errors read">
+          <li><strong>I2 ✘ G3.</strong> Plan §Lane E: all six production increments edit
+            <code>watch.py</code> only; serial-now is six reviews of a 10k-line file and keeps G
+            one-lane-in-practice on the same lock.</li>
+          <li><strong>I4 ✘ G5.</strong> E cutover without H's refuse-before-witness leaves mixed-version
+            unguarded when the HTTP contract changes; the plan parked both behind the same gate.</li>
+          <li><strong>I5 ✘ G2 (and G4 if live).</strong> G, purge, PostgreSQL, and live migration were
+            excluded by G1 / Q4 — opening them here would authorise what he withheld.</li>
+          <li><strong>Two survivors before his answer: I1 and I3.</strong> Safety goals do not refute
+            waiting. Among packages that open, only I1 survived. He chose to proceed.</li>
+        </ul>
+      </div>
+      <div class="call" id="decision"><strong>Decision taken · 2026-07-29 01:37.</strong>
+        His words: <em>"ack good to go."</em> Recorded as <strong>I1</strong> — open lanes
+        <strong>E</strong> and <strong>H</strong>, land <code>#368</code> before E starts (first
+        cut <code>#425</code> if that path holds). Does <strong>not</strong> authorise lane G,
+        fixture 18 purge, fixture 19 PostgreSQL, or any live-target migration — those stay
+        withheld (see <a href="#withheld">limits</a>). Q1 yes · Q2 yes for the code · Q3 split first.</div>
     </div>
     <div class="version-mark" aria-label="At a glance">
       <span class="big"><span class="pass">5/5</span></span>
@@ -304,60 +354,58 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
 /* Page-local. Tokens only — no hex (watch-design.md / template contract).
    .ask-block mirrors the #421 idiom: the decision sits inside the hero, near
    its top, so #ask starts above the fold on mobile instead of after an 899px
-   header (#429). No transition authored here — a static bordered block. */
+   header (#429). No transition authored here — a static bordered block.
+   Table trap fix (c19107a / #455 era): template min-width:max-content made
+   IGC unreadable at 390px — force wrap-friendly layout on this page's table. */
 .ask-block{
   border-left:2px solid var(--accent);
   padding:.35rem 0 .35rem 1.3ch;
   margin:.4rem 0 .2rem;
 }
 .ask-block .label{margin:0 0 .4rem;color:var(--accent)}
-.ask-block .ask-q{font-size:.92rem;line-height:1.6;color:var(--lit);margin:.15rem 0 .55rem}
+.ask-block .ask-q{font-size:.92rem;line-height:1.55;color:var(--lit);margin:.15rem 0 .45rem}
+.ask-block .ask-list{margin:.2rem 0 .5rem;padding-left:1.4rem;color:var(--lit);font-size:.88rem;line-height:1.55}
+.ask-block .ask-list li{margin:.35rem 0}
 .ask-block .ask-answers{margin:.3rem 0;font-size:.78rem;color:var(--muted)}
 .ask-block .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
 .ask-block code{color:var(--lit)}
+.orient-block{margin:.55rem 0 .35rem}
+.orient-block > .label{margin:0 0 .35rem;color:var(--accent)}
+.context{font-size:.9rem;line-height:1.65;color:var(--lit);max-width:76ch;margin:.2rem 0 .45rem}
+.igc-legend{margin:.25rem 0 .45rem;font-size:.78rem;line-height:1.55}
+.igc-legend .g{color:var(--accent);font-weight:600;margin-right:.15ch}
+.igc-errors{margin:.4rem 0 .2rem;padding-left:1.2rem;font-size:.84rem;line-height:1.5}
+.igc-errors li{margin:.25rem 0}
+#body table.igc-table,#igc table.igc-table,
+.orient-block table.igc-table{
+  min-width:0;width:100%;table-layout:fixed;
+}
+#body table.igc-table th,#body table.igc-table td,
+.orient-block table.igc-table th,.orient-block table.igc-table td{
+  word-wrap:break-word;overflow-wrap:anywhere;hyphens:auto;
+  font-size:.78rem;padding:.28rem .35rem;text-align:center;
+}
+#body table.igc-table th:first-child,#body table.igc-table td:first-child,
+.orient-block table.igc-table th:first-child,.orient-block table.igc-table td:first-child{
+  text-align:left;
+}
+.orient-block table.igc-table col.ci{width:40%}
+.orient-block table.igc-table col.ca{width:10%}
+.orient-block table.igc-table col.cg{width:10%}
+/* IGC lives in the lead (outside #body); still force the trap fix there. */
+.lead table.igc-table,table.igc-table{
+  min-width:0 !important;width:100%;table-layout:fixed;
+}
 </style>
 
 <section id="decisions" aria-labelledby="dec-t">
-  <div class="label" id="dec-t">The three calls in full — open the gate, and split #368?</div>
-  <div class="notice"><strong>Condition met, verified this time.</strong> A–D are proved, asserted by
-  a gate whose denominator is parsed from the plan's own increment table (five C rows). Opening it
-  authorises lanes E and H only. Lane G (30–33), increment 18's purge, 19's PostgreSQL half and any
-  live-target migration are <strong>not</strong> in this ask — see <a href="#withheld">limits</a>.</div>
-
-  <div class="choice" id="q1"><div class="choice-grid"><span class="choice-tag">Q1</span><div>
-    <strong>Open the second gate for lane E (increments 20–25, the HTTP cutover)?</strong>
-    <p class="read">The journal commit, not the handler, would authorise the response:
-    <code>202</code> + <code>Location</code> + receipt identity. All six production increments live in
-    <code>watch.py</code> (now <strong>9,791</strong> lines — see <a href="#compare">#368</a>).</p>
-    <div class="answer"><strong>Rec: yes.</strong></div>
-  </div></div></div>
-
-  <div class="choice" id="q2"><div class="choice-grid"><span class="choice-tag">Q2</span><div>
-    <strong>Open it for lane H (34–35, the mixed-version gate)?</strong>
-    <p class="read">H1 refuse-before-witness on version mismatch; H2 quiesced cutover across two
-    server instances. The fixture is <em>code and temp targets only</em>.</p>
-    <div class="answer"><strong>Rec: yes for the code.</strong> I will not run it against your live
-    target without asking again — that is migration, and it is withheld regardless.</div>
-  </div></div></div>
-
-  <div class="choice" id="q368"><div class="choice-grid"><span class="choice-tag">Q3</span><div>
-    <strong>Does #368 (the modular split) land before lane E starts?</strong>
-    <p class="read">Your own plan note, not the coordinator's: <em>"lanes E and G both live
-    inside the one … <code>watch.py</code>, so they are a single lane in practice. That is an
-    argument for #368 landing before the second gate opens."</em> Measured now:
-    <code>watch.py</code> is <strong>9,791</strong> lines (<code>wc -l watch.py</code>) — the
-    plan's 8,647 is stale by 1,144 — and <strong>6 of lane E's 6 production increments</strong>
-    touch it, naming no new production module. So lane E is six serial increments inside the
-    largest file in the repo, with lane G queued behind the same lock.</p>
-    <div class="answer"><strong>Rec: split first.</strong> It costs one batch and buys parallel
-    E and G plus a smaller blast radius on the file the dashboard <em>is</em>. The honest
-    alternative is serial-now, which gets <code>#371</code>'s remaining <em>policy</em> half
-    sooner — and <code>#371</code> is less urgent than the 16:24 claim: its
-    <strong>witness half already landed</strong> (<code>d33cc2f</code>,
-    <code>short: true</code> + <code>got:</code>), so the server no longer records an interrupted
-    body as complete. Only the policy — keep it, marked incomplete, and proceed — waits on
-    <code>E1</code>.</div>
-  </div></div></div>
+  <div class="label" id="dec-t">Why the “met” claim was checked, not asserted</div>
+  <div class="notice"><strong>Condition was met, verified, then answered.</strong> The decision
+  above authorises E and H only. G, purge, PostgreSQL, and live migration stay out
+  (<a href="#withheld">limits</a>). At 16:24 an earlier draft said met while C was
+  <strong>3 of 5</strong>; C4/C5 then landed. That wrong record is why the gate parsed five C
+  rows from the plan table rather than a lane's <code>3/3</code>. Sequencing detail for the
+  taken Q3: <a href="#compare">#368 compare</a>.</div>
 </section>
 
 <section id="compare" aria-labelledby="cmp-t">
@@ -372,7 +420,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       <div class="framebody">
         <div class="stages">
           <div class="stage"><span><b>Now.</b> #368 starts on the extraction seam; the gate is open, so E can follow.</span></div>
-          <div class="stage"><span><b>+1 batch.</b> <code>watch.py</code> (9,791) loses HTTP / PAGE chunks into modules.</span></div>
+          <div class="stage"><span><b>+1 batch.</b> <code>watch.py</code> (10,184) loses HTTP / PAGE chunks into modules.</span></div>
           <div class="stage"><span><b>Then.</b> E1–E6 and (when authorised) G1–G4 on <em>disjoint</em> files.</span></div>
           <div class="stage"><span><b>Buys.</b> Parallelism · smaller review diffs · G no longer queues behind E's file lock.</span></div>
           <div class="stage"><span><b>Costs.</b> One batch delay before any E commit · #371 policy half waits that batch.</span></div>
@@ -387,7 +435,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
       <div class="framebody">
         <div class="stages">
           <div class="stage"><span><b>Now.</b> No #368 batch; with the gate open, E1 starts in <code>watch.py</code>.</span></div>
-          <div class="stage"><span><b>E1–E6.</b> All six production edits hit the same 9,791-line file.</span></div>
+          <div class="stage"><span><b>E1–E6.</b> All six production edits hit the same 10,184-line file.</span></div>
           <div class="stage"><span><b>G.</b> Still serial behind whoever holds <code>watch.py</code>.</span></div>
           <div class="stage"><span><b>Buys.</b> #371 policy half as soon as the gate opens · cutover visible sooner.</span></div>
           <div class="stage"><span><b>Costs.</b> No parallel fan-out · large review surface · G remains one-lane-in-practice.</span></div>
@@ -428,7 +476,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
         <text x="298" y="150" fill="#86efac" font-size="11">E6</text>
         <rect x="350" y="132" width="90" height="28" fill="#162033" stroke="#fda4af"/>
         <text x="365" y="150" fill="#fda4af" font-size="11">G still waits</text>
-        <text x="16" y="200" fill="#697589" font-size="11">all E boxes above = edits to the same 9,791-line watch.py · measured wc -l · gate open required first</text>
+        <text x="16" y="200" fill="#697589" font-size="11">all E boxes above = edits to the same 10,184-line watch.py · measured wc -l · gate open required first</text>
       </svg>
     </div>
     <figcaption>Side-by-side sequencing for the #368 call only. Green border = E/G work after
@@ -510,10 +558,10 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <p class="read">The plan, the brief, and earlier drafts carried figures that were true when
   written. Below is what the tree is now. Where they disagree, that is a finding.</p>
   <div class="facts">
-    <div class="fact"><span class="number">9,791</span><span class="caption"><code>watch.py</code> lines · <code>wc -l watch.py</code> · plan says <strong>8,647</strong> — stale; the questions entry says <strong>9,688</strong>, also stale (+103)</span></div>
+    <div class="fact"><span class="number">10,184</span><span class="caption"><code>watch.py</code> lines · <code>wc -l watch.py</code> · plan says <strong>8,647</strong> — stale; questions entry 9,688 and prior draft 9,791 also stale</span></div>
     <div class="fact"><span class="number">36</span><span class="caption">lane tests present · <code>rg -c 'def test_'</code> on five <code>test_user_events_*.py</code> · A2+B12+C5+D7+F10</span></div>
     <div class="fact"><span class="number">6 / 6</span><span class="caption">lane E production increments that touch <code>watch.py</code> · plan §Lane E · no new production module</span></div>
-    <div class="fact"><span class="number">27</span><span class="caption"><code>assert*</code> calls with a literal <code>200</code> in <code>test_watch.py</code> · <code>ast</code> walk · plan said <strong>15</strong> (a narrower write-route count); prior draft said 26</span></div>
+    <div class="fact"><span class="number">26</span><span class="caption"><code>assert*</code> calls with a literal <code>200</code> in <code>test_watch.py</code> · <code>ast</code> walk · plan said <strong>15</strong> (narrower); prior draft said 27</span></div>
   </div>
 </section>
 
@@ -625,7 +673,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   <div class="scroller"><table>
   <thead><tr><th>figure</th><th>command / source</th><th>vs plan / entry / prior draft</th></tr></thead>
   <tbody>
-    <tr><td><code>watch.py</code> 9,791 lines</td><td><code>wc -l watch.py</code></td><td class="fail">plan 8,647 · entry 9,688 — both stale</td></tr>
+    <tr><td><code>watch.py</code> 10,184 lines</td><td><code>wc -l watch.py</code></td><td class="fail">plan 8,647 · entry 9,688 · prior 9,791 — all stale</td></tr>
     <tr><td>36 tests (2+12+5+7+10)</td><td><code>rg -c 'def test_'</code> on five test files</td><td class="fail">prior draft 34 — C went 3→5</td></tr>
     <tr><td>A <code>aad1d8d</code> 05:55</td><td><code>git log --format</code></td><td>matches</td></tr>
     <tr><td>B tip <code>fec80be</code> 8/8</td><td><code>git log --oneline --grep='feat(#263/B'</code></td><td>matches</td></tr>
@@ -634,7 +682,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
     <tr><td>F code <code>9263a42</code>..<code>4c918b2</code></td><td><code>git log -- ud-dw-user-events</code></td><td class="unknown"><code>2386345</code> is close-note only</td></tr>
     <tr><td>B7 hole open</td><td><code>git show 5f729dc</code>; schema still has UNIQUE at :192</td><td>known, not closed</td></tr>
     <tr><td>D hollow red closed</td><td><code>git show 6cd9f95</code> body</td><td>matches</td></tr>
-    <tr><td>27 × assert* 200</td><td><code>ast</code> walk of <code>test_watch.py</code> for <code>assert*</code> Call nodes containing Constant 200</td><td class="fail">plan 15 (narrower) · prior draft 26 · this build 27</td></tr>
+    <tr><td>26 × assert* 200</td><td><code>ast</code> walk of <code>test_watch.py</code> for <code>assert*</code> Call nodes containing Constant 200</td><td class="fail">plan 15 (narrower) · prior draft 27 · this build 26</td></tr>
     <tr><td>6/6 E → watch.py</td><td>plan §Lane E rows 20–25</td><td>—</td></tr>
     <tr><td><code>committed_lineage</code> not duplicated</td><td>7 mentions in <code>domain_files.py</code> + 8 in <code>apply.py</code> (<code>grep -c</code>); single membership test at <code>apply.py:166</code>; it is a kwarg threaded through <code>rebaseline()</code></td><td class="fail">the gate counted substring mentions as a duplicated detector</td></tr>
     <tr><td>C5 geometry</td><td><code>domain_files.py:375</code> <code>successor = max(committed_lineage) + 1</code></td><td>lane-disclosed; test passes <code>max(new_lineage)+1</code></td></tr>
@@ -650,10 +698,10 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:1px solid var
   3/5). <code>C4</code> (<code>f85be1c</code>) and <code>C5</code> (<code>2cc3537</code>) then
   landed; the headline now reads <em>met, verified</em>. The 16:24 correction stays on the page,
   demoted, as the reason to trust the claim.</p>
-  <p><b>watch.py size.</b> Plan "8,647-line" and entry "9,688" are both stale; measure is
-  <strong>9,791</strong>.</p>
+  <p><b>watch.py size.</b> Plan "8,647", entry "9,688", and prior draft "9,791" are stale; measure is
+  <strong>10,184</strong>.</p>
   <p><b>200-literal count.</b> Plan 15 (a narrower write-route + browser-guard count) · prior
-  artifact 26 · this build's <code>ast</code> walk: <strong>27</strong> <code>assert*</code> calls
+  artifact 27 · this build's <code>ast</code> walk: <strong>26</strong> <code>assert*</code> calls
   containing a literal 200 in <code>test_watch.py</code>.</p>
   <p><b>committed_lineage gate.</b> The merge gate's one red fired on a substring count of
   <code>committed_lineage</code> and read it as a duplicated drift detector. It is a parameter
