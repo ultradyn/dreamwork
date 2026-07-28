@@ -800,3 +800,86 @@ wakes it — the same class of problem one layer up."* It even offered the fix. 
 observation and did not test the claim, and then spent two hours writing relays. **A lane
 naming a defect in the coordinator's own machinery is the same signal as a lane naming one in
 its own work, and I have a documented rule about the second and none about the first.**
+
+## Worktrees: the constraint I managed by hand all session was already solved (10:00-10:40)
+
+**The finding that should have come first.** File contention on `watch.py` was the binding
+constraint on this whole session: it shelved `#354` inc1, serialised three dispatches, blocked two
+tasks, made me hand-maintain an ownership list in `status.json`, and produced a **459-line design
+document** (`#397`) whose own conclusion was *"the throughput win is captured more cheaply by a
+worktree"*. `CLAUDE.md` names worktrees as the standing preference. `SKILL.md` says explicitly that
+when disjointness cannot be arranged, the dreamer goes in a worktree **and the invariant then holds
+by construction**. `git worktree list` shows `.worktrees/277-dreamfade` — the machinery had been
+used here before.
+
+**Every lane ran in the shared tree, and nothing consulted either rule.** Not a knowledge failure;
+both documents were read at init. A **control-flow** failure: the coordinator checks ownership,
+finds a conflict, and treats it as *do not dispatch*. The queue branch resolves the conflict, so the
+worktree branch is never evaluated. **A rule that only applies after a decision the code makes
+earlier is unreachable, however well documented.**
+
+### What worktrees actually cost and bought, measured over three uses
+
+| | Result |
+|---|---|
+| **Red-proof in isolation** (`#392a`) | Injected into a copy off `HEAD`; the live tree never went dirty. Strictly better than a `cp` snapshot — no restore step to get wrong |
+| **Lane #401/#406** | Landed clean. Merge **conflicted** on `handoffs.md` (the lane reordered sections; main gained lines). Resolvable in one pass |
+| **Lane #399** | Landed clean, **merged with no conflict** — regions 300+ lines apart |
+| **Setup cost** | Negligible here. Pure Python, no build state to duplicate — the cost `SKILL.md` warns about does not apply to this repo |
+
+**Three traps a shared tree hides, all silent:**
+
+1. **`.dreamwork/inbox.md` is untracked, so it does not exist in a worktree.** A lane appending to
+   the relative path creates a file nobody reads. This is the report-loss failure *made structural*.
+2. **`.dreamwork/handoffs.md` is committed**, so a lane appends to its own copy — invisible until
+   merge, or a merge conflict.
+3. **A brief committed after the worktree was created is not in it.** All three are fixed the same
+   way: **absolute paths into the main checkout, in the dispatch prompt.**
+
+**And the constraint worktrees do *not* remove: adjacency.** `#399`'s target (`_landed_ids`) and
+`#401`'s (`parse_handoffs`) are **27 lines apart** with the constants between them. Worktrees remove
+the *contention*, not the *merge* — two lanes in one region still collide, just later and less
+visibly. **Route by region, not by file.**
+
+## A lane died with the work finished and uncommitted — and the worktree is why it survived
+
+`#399`'s lane completed a correct, green, 260-line change and **died before committing or
+reporting**. No report, no hand-off line, no commit. In the shared tree that work would have been
+sitting in a dirty checkout that the next lane or a stray `git checkout` could destroy; in a
+worktree it sat safely on its own branch's working copy until I committed it on the lane's behalf.
+
+**That is an argument for worktrees that `#405` did not make**, and it is probably the strongest one:
+they are a *durability* mechanism, not only a concurrency one.
+
+The verification burden lands entirely on the coordinator when this happens — there is no report to
+fold, so every acceptance criterion must be re-derived. That took about ten minutes and found the
+work sound: 502 passed, sets disjoint, `questions.md` untouched, and an independent red that failed
+five tests including the original master failure.
+
+## Runner scorecard, second batch
+
+| Runner | Lanes | Compliance | Notes |
+|---|---|---|---|
+| `ccc @grok` | 4 | Hand-off 4/4, correct section 4/4, report 3/4 | One lane **noticed and self-corrected** the `#406` section trap and reported it as an uncertainty. One died at the commit step with the work complete |
+| `ccc @glm52` | 2 | Hand-off 2/2, correct section 1/2, report 1/2 | Produced the best single artifact of the day (`#397`'s plan, which refuted my measurement) |
+
+Still a small sample. The one durable signal: **both runners produced work that corrected the
+coordinator**, which is the property worth selecting for. Neither produced work that was wrong in a
+way I did not catch.
+
+## The coordinator's leverage, restated after another five lanes
+
+Ranked by what actually found defects today, unchanged at the top and now with a new entry at #2:
+
+1. **Looking at the deployed page.** Found `#392`, and today found that his browser tab read
+   `· stalled` for two hours while the loop worked — `watch.py` was right and `status.json` was
+   stale. **When a display is wrong, check whether it is faithfully displaying something wrong.**
+2. **Verifying my own brief's citations before dispatch.** Cost two minutes; found that `#340`'s
+   P1 was **already fixed**, that its "one-argument fix" was actually two asymmetric call sites, and
+   that a lane following it would have attributed loop prose to the human — worse than the bug.
+   **Reproduce the symptom before commissioning the fix.**
+3. **Probing what a lane said it was unsure about.** Five for five over the session.
+4. **Running the project's own full verification.** `just test` was **red on master for hours** and I
+   did not know, because `lint.py` exits 0 on a WARN and every pytest run I made was a `-k`
+   selection that excluded the failing test.
+
