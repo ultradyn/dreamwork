@@ -2934,20 +2934,6 @@ Next id: **425**
   secondary affordance and keyboard/touch · red-first, implement in increments
 
 
-- **#218** — Add filed-to-landed median · P2 · task · 20m ·
-  origin: **loop** · blocked on #217 · `ledger_series` already computes
-  arrival/landing pairs and discards them; render the median without a
-  velocity score after provenance work
-  · **UNBLOCKED — `#217` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): filed-to-landed median over `ledger_series`; the provenance work it needed landed. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
-  · **IN PROGRESS 2026-07-28 16:33** — `ccc @glm52`, `.worktrees/218`, brief
-  `.dreamwork/docs/briefs/218-filed-to-landed-median.md`, owns `watch.py`, `test_watch.py`,
-  `watch-design.md`. Two things the brief makes non-optional: the population is the
-  **intersection** of arrived and landed, so the figure answers *"how long did finished work
-  take"* and the still-open tail is excluded — the label carries that or the number lies quietly;
-  and his *"without a velocity score"* is taken literally, no composite index. Defaulted to **copy
-  rather than a mark on the chart**, because `#417` says the burndown's design is at a quality he
-  does not want traded for an extra series — the lane may argue
-
 - **#148** — Two sibling guard dirs, one contract, no shared runner ·
   P3 · chore · 30m · fine while they have different owners, wrong the
   moment they do not; extract when a batch would have used it (#124)
@@ -3392,6 +3378,37 @@ Next id: **425**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#218** — Add filed-to-landed median · P2 · task · 20m ·
+  origin: **loop** · blocked on #217 · `ledger_series` already computes
+  arrival/landing pairs and discards them; render the median without a
+  velocity score after provenance work
+  · **UNBLOCKED — `#217` LANDED and nobody re-triaged this** (found by `#420`'s census, machine-verified against `parse_ledger`, re-verified by the coordinator 2026-07-28 15:53): filed-to-landed median over `ledger_series`; the provenance work it needed landed. **Startable now.** This entry is one of **ten** with the same shape, which is why the census was worth running: a blocker that clears is invisible from the blocked side, so nothing ever re-reads it
+  · **IN PROGRESS 2026-07-28 16:33** — `ccc @glm52`, `.worktrees/218`, brief
+  `.dreamwork/docs/briefs/218-filed-to-landed-median.md`, owns `watch.py`, `test_watch.py`,
+  `watch-design.md`. Two things the brief makes non-optional: the population is the
+  **intersection** of arrived and landed, so the figure answers *"how long did finished work
+  take"* and the still-open tail is excluded — the label carries that or the number lies quietly;
+  and his *"without a velocity score"* is taken literally, no composite index. Defaulted to **copy
+  rather than a mark on the chart**, because `#417` says the burndown's design is at a quality he
+  does not want traded for an extra series — the lane may argue
+  · **DONE, `ccc @glm52`, ~40 minutes, landed `eb02cf8` (merged 17:14).** `ledger_series` now returns
+  `median` + `median_n` from the pairs it already held; **1h 26m over 191 pairs** on the live repo
+  (332 arrived, 191 landed). One line of copy in the burndown panel, not a chart mark — `#417`'s
+  caution quoted back, that the chart's quality is not traded for a series
+  · **the label carries the honesty**: `median time finished work took to land · over N pairs`, with
+  the aria-label adding that still-open work is excluded. The population is the **intersection**, so
+  the figure answers *"how long did finished work take"* and cannot be misread as *"how long does
+  work take"* — the 141 open ids have no duration and folding them in as zero is the bias the brief
+  named
+  · **my own red-proof missed first, and the miss is the lesson.** I pattern-matched the generator
+  the report described; it is written across two lines, so the regex found nothing, pytest passed,
+  and it read as a green. That is *the injection never reaching the code* — CLAUDE.md's named
+  failure. On the real line the bug moved the median from **5201s to 537.5s** and the population from
+  **191 to 332**, failing three named tests
+  · took *"without a velocity score"* literally: one duration on the same `ageParts` ladder the
+  commits use. No new capture guard, and it argued that rather than assuming it
+  · `audit-styleguide`: 32 UI commits, **0 without an entry**
+
 - **#419** — it must be structurally impossible to be blocked on a human decision with no question
   asking for it · **P1** · loop-integrity/format · origin: **human** · **human via watch
   `/answers` 2026-07-28 15:19**
