@@ -2195,3 +2195,179 @@ def test_dropping_a_side_file_entry_leaves_an_unaccounted_artifact(tmp_path):
     assert not result["ok"]
     assert drop in result["unaccounted"], (
         "dropped %s but unaccounted=%r" % (drop, sorted(result["unaccounted"])))
+
+
+# ── #436 askmark residual: seal + pair precondition ───────────────────────
+#
+# Prior lanes landed the build-time contract and the side-file coverage
+# equation. This brief's residual: (1) state what counts as an #ask without
+# requiring sub-decision labels + rec + if-silent inside it; (2) seal the
+# grandfather list so it cannot quietly absorb new artifacts.
+
+
+def test_corpus_derives_both_an_ask_and_a_non_ask_subject():
+    """PRECONDITION the brief names: both branches have a live corpus subject.
+
+    Derive at runtime — a fixture with two hand-written cases that happen to
+    differ today is a check with an invisible expiry date. Counts land on the
+    OK path so a zero-match pass is visible.
+    """
+    review = os.path.join(HERE, ".dreamwork", "review")
+    with_ask = []
+    without_ask = []
+    for name in sorted(ra.list_built_basenames(review)):
+        text = open(os.path.join(review, name), encoding="utf-8").read()
+        present, meaningful = ra.scan_ask(text)
+        if present and meaningful:
+            with_ask.append(name)
+        else:
+            without_ask.append(name)
+    # Counts on the OK row — a silent empty scan would read the same as green.
+    assert with_ask, (
+        "no built artifact carries a meaningful #ask — the positive branch "
+        "has no subject (built=%d)" % len(with_ask + without_ask))
+    assert without_ask, (
+        "every built artifact carries a meaningful #ask — the negative "
+        "branch (side-exempt / no-ask / decided) has no subject")
+    # And the coverage walk still accounts for every basename either way.
+    result = ra.corpus_contract_coverage(review_dir=review)
+    assert result["ok"], "failures: %s" % result["failures"]
+    assert len(with_ask) >= 1 and len(without_ask) >= 1
+    # Put the derived pair size where a hollow check would still print 0 of 0.
+    assert len(with_ask) + len(without_ask) == len(result["built"]), (
+        "pair partition missed basenames: with=%d without=%d built=%d"
+        % (len(with_ask), len(without_ask), len(result["built"])))
+
+
+def test_legacy_exemption_reason_must_open_with_pre_436(tmp_path):
+    """Red-proof: a non-legacy reason is refused at parse time.
+
+    Production line: `load_legacy_exemptions`'s
+    `if not reason.startswith(LEGACY_REASON_PREFIX): raise` branch. Without
+    it the side-file accepts any free-text reason and becomes a quiet landing
+    pad for post-contract pages. A green red-run here is a finding.
+    """
+    path = tmp_path / ra.LEGACY_EXEMPTIONS_NAME
+    path.write_text(
+        "ghost-new.html: post-contract design note; no src/\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ra.ArtifactError, match=re.escape(ra.LEGACY_REASON_PREFIX)):
+        ra.load_legacy_exemptions(str(path))
+
+
+def test_legacy_exemption_with_valid_prefix_still_loads(tmp_path):
+    """Neighbour of the seal: a real pre-#436 reason still parses."""
+    path = tmp_path / ra.LEGACY_EXEMPTIONS_NAME
+    path.write_text(
+        "tasks-page.html: pre-#436 untemplated; the hand-rolled reference\n",
+        encoding="utf-8",
+    )
+    side = ra.load_legacy_exemptions(str(path))
+    assert side == {
+        "tasks-page.html": "pre-#436 untemplated; the hand-rolled reference"
+    }
+
+
+def test_side_file_entry_for_a_src_having_page_reds_coverage(tmp_path):
+    """Red-proof: side-exempting a page that has a builder source fails.
+
+    Production line: `side_with_src = (side_keys & built) & src` in
+    `corpus_contract_coverage`. A page with src/ uses `no_ask:` at build
+    time; listing it here is the quiet-growth path.
+    """
+    review = os.path.join(HERE, ".dreamwork", "review")
+    full = ra.corpus_contract_coverage(review_dir=review)
+    assert full["src"], "no src-having artifacts — seal red-proof has no subject"
+    # Pick a src-having examined page (has ask meta) so the double-check alone
+    # is not what reds — we also need a sourceless twin to keep coverage math
+    # honest. Actually: listing an examined page also hits `double`. To isolate
+    # the src-seal line, list a src-having page that we strip of its ask meta
+    # so it is not examined, then put it in the side-file with a pre-#436 reason.
+    victim = sorted(full["src"] & full["examined"])[0]
+    private = tmp_path / "review"
+    private.mkdir()
+    (private / "src").mkdir()
+    import shutil
+    for name in full["built"]:
+        shutil.copy2(os.path.join(review, name), private / name)
+    for name in full["src"]:
+        shutil.copy2(os.path.join(review, "src", name), private / "src" / name)
+    # Strip ask meta so victim is not examined (else double reds first).
+    victim_text = (private / victim).read_text(encoding="utf-8")
+    stripped = re.sub(
+        r'<meta\s+name=["\']%s["\']\s+content=["\'][^"\']*["\']\s*>\s*'
+        % re.escape(ra.ASK_META_NAME),
+        "",
+        victim_text,
+        count=1,
+    )
+    assert ra.ask_status(stripped) is None, "meta strip failed — wrong branch would red"
+    (private / victim).write_text(stripped, encoding="utf-8")
+    # Append victim to the side-file with a legacy-looking reason.
+    side_src = open(
+        os.path.join(review, ra.LEGACY_EXEMPTIONS_NAME), encoding="utf-8"
+    ).read()
+    (private / ra.LEGACY_EXEMPTIONS_NAME).write_text(
+        side_src + "\n%s: pre-#436 quietly parked a src-having page\n" % victim,
+        encoding="utf-8",
+    )
+    result = ra.corpus_contract_coverage(review_dir=str(private))
+    assert not result["ok"], (
+        "side-exempting src-having %s left corpus ok — production line is wrong"
+        % victim)
+    joined = " ".join(result["failures"])
+    assert victim in joined and ("source" in joined.lower() or "src" in joined.lower()), (
+        "failure did not name the src-having side-exempt: %r" % result["failures"])
+
+
+def test_live_side_file_reasons_all_open_with_legacy_prefix():
+    """Live corpus: every side-file reason is a sealed grandfather entry.
+
+    Derived at runtime from the real file so a new free-text reason cannot
+    land without this failing. Count on the OK row.
+    """
+    path = os.path.join(HERE, ".dreamwork", "review", ra.LEGACY_EXEMPTIONS_NAME)
+    side = ra.load_legacy_exemptions(path)
+    assert side, "side-file empty — seal has no subject"
+    for name, reason in side.items():
+        assert reason.startswith(ra.LEGACY_REASON_PREFIX), (
+            "%s reason %r does not open with %r" % (name, reason, ra.LEGACY_REASON_PREFIX))
+    # side_exempt ⊆ sourceless on the live tree
+    result = ra.corpus_contract_coverage(
+        review_dir=os.path.join(HERE, ".dreamwork", "review"))
+    assert result["side_exempt"] <= result["sourceless"], (
+        "side_exempt not ⊆ sourceless: %r"
+        % sorted(result["side_exempt"] - result["sourceless"]))
+    assert result["ok"], "failures: %s" % result["failures"]
+    # Count on the OK path (hollow check would still print 0).
+    assert len(side) == len(result["side_exempt"]) == len(result["sourceless"])
+
+
+def test_single_decision_ask_is_meaningful_without_sub_decision_labels(template):
+    """What counts as #ask: one decision, no alternatives, still builds.
+
+    Requiring sub-decision labels / rec / if-silent *inside* #ask would force
+    decoys on single-call pages. if-silent is #455 (separate element); rec and
+    multi-option labels are voice, not the build floor.
+    """
+    fields = ra.parse_source(SOURCE)
+    fields.pop("no_ask", None)
+    fields.pop("no_if_silent", None)
+    # Minimal meaningful ask: label + one question, no Q1/Q2, no rec line.
+    fields["lead"] = (
+        '<div id="ask" class="ask-block">'
+        '<div class="label">Ask</div>'
+        '<p class="ask-q">Ship it, or not — free text is fine.</p>'
+        "</div>\n"
+        '<p id="if-silent"><span class="key">if you say nothing</span> '
+        "the page parks; no default is taken.</p>"
+    )
+    doc = ra.render(fields, template=template)
+    assert ra.ask_status(doc) == "ask"
+    present, meaningful = ra.scan_ask(doc)
+    assert present and meaningful
+    # Sub-decision markers and a rec line are voice, not the floor — absent here
+    # and the build still accepts the ask.
+    assert "Sub-decisions" not in doc
+    assert 'class="ask-rec"' not in doc

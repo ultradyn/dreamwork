@@ -1032,6 +1032,19 @@ def inject_mark_rail(document):
 # first child of height >= 8); the build refuses the shapes it could never
 # measure honestly.
 #
+# What counts as an #ask (the build-time floor, deliberately not the voice
+# ceiling). A good artifact tonight often carried three prose parts — sub-
+# decision labels, a `rec`, and an *if you say nothing* line. Only one of those
+# is a structural requirement here:
+#   * FLOOR (enforced): present + meaningful structure. One decision with no
+#     alternatives is a real ask; requiring multi-option labels would force
+#     decoy Q2/Q3 on single-call pages.
+#   * VOICE (not build-enforced): accepted-answers line and a `rec` when the
+#     loop has a preference — conventions in file-formats.md / watch-design.
+#   * if-silent: SEPARATE contract (#455, `id="if-silent"`), not nested inside
+#     `#ask`. Requiring it here would duplicate that check and break settled
+#     pages that correctly put cost-of-silence beside the ask, not inside it.
+#
 # The builder records the choice in the built artifact as
 # `<meta name="dreamwork-review-ask" content="ask|exempt: <reason>">`, beside
 # the template-stamp meta, so the artifact is self-describing: a future walking
@@ -1624,6 +1637,12 @@ def classify(document, template=None):
 LEGACY_EXEMPTIONS_NAME = "legacy-contract-exemptions.txt"
 _EXEMPTION_LINE_RE = re.compile(
     r"^([A-Za-z0-9][A-Za-z0-9._-]*%s)\s*:\s*(.+)$" % re.escape(".html"))
+# Closed-grandfather seal (#436 askmark): a side-file reason must OPEN with
+# this token. New no-decision pages use `no_ask:` in their source header —
+# never this list. A grandfather list that accepts any free-text reason is a
+# quiet landing pad for new artifacts; requiring the legacy marker makes a
+# post-contract addition an intentional lie rather than a silent skip.
+LEGACY_REASON_PREFIX = "pre-#436"
 
 
 def default_review_dir(root=None):
@@ -1654,7 +1673,10 @@ def load_legacy_exemptions(path):
     """Parse the side-file into `{basename: reason}`.
 
     Unknown shape is a refusal (a silent half-parse is the hollow check). A
-    duplicate basename is a refusal. Reasons must be non-empty.
+    duplicate basename is a refusal. Reasons must be non-empty AND open with
+    `LEGACY_REASON_PREFIX` (`pre-#436`) — the production line that seals the
+    list against quiet post-contract growth. A new exemption that is not
+    history belongs in the source as `no_ask:`, not here.
     """
     try:
         text = open(path, encoding="utf-8").read()
@@ -1675,6 +1697,15 @@ def load_legacy_exemptions(path):
         if not reason:
             raise ArtifactError(
                 "%s:%d: exemption for %s has an empty reason" % (path, lineno, name))
+        if not reason.startswith(LEGACY_REASON_PREFIX):
+            # PRODUCTION LINE the non-legacy-reason red-proof names.
+            raise ArtifactError(
+                "%s:%d: exemption for %s is not a legacy grandfather entry — "
+                "reason must start with %r (got %r). The side-file is a CLOSED "
+                "pre-#436 list for source-less untemplated pages only. A new "
+                "page with no decision uses `no_ask: <reason>` in its source "
+                "header, never this file."
+                % (path, lineno, name, LEGACY_REASON_PREFIX, reason))
         if name in out:
             raise ArtifactError(
                 "%s:%d: duplicate exemption for %s" % (path, lineno, name))
@@ -1817,6 +1848,18 @@ def corpus_contract_coverage(review_dir=None, exemptions_path=None):
         failures.append(
             "unaccounted artifact(s) — neither checked (ask meta) nor "
             "side-exempt: %s" % ", ".join(sorted(unaccounted)))
+
+    # Seal: a side-file entry may only cover a SOURCE-LESS page. A page with
+    # a builder source uses `no_ask:` (or a real #ask) at build time — listing
+    # it here is the quiet-growth path this seal closes. Production line the
+    # src-having side-exempt red-proof names.
+    side_with_src = (side_keys & built) & src
+    if side_with_src:
+        failures.append(
+            "side-file lists artifact(s) that have a builder source "
+            "(side_exempt must be ⊆ sourceless = built−src): %s — use "
+            "`no_ask: <reason>` in the source header instead of this list"
+            % ", ".join(sorted(side_with_src)))
 
     # THE COVERAGE EQUATION — sets, not counts. A literal count is wrong the
     # day after it is written; set equality fails the moment one basename
