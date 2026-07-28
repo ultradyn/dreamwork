@@ -245,8 +245,21 @@ ok('switching to note rewrites textarea + send aria-label (#273)',
        withAge.length >= 2 && withAge.every(a => a.afterDate && a.text));
     // anti-vacuity: the two ages MUST differ, derived at runtime from the
     // planted dates — equal ages would make the rest of this check hollow.
-    if (withAge.length >= 2) {
-      const [a, b2] = withAge;
+    // #474: pick the two cards this guard PLANTED, not the first two rendered.
+    // The plant walks FILE order; the page sorts by priority and date, so the
+    // first two cards are whichever entries sort highest -- here a P1 the plant
+    // never touched, one day apart from its neighbour, which fails `gap >
+    // 86400` deterministically while both planted dates sit further down. The
+    // guard was asserting about a pair it had not arranged, so the fixture's
+    // shape and the calendar decided whether it passed.
+    const planted = [oldDate, youngDate]
+      .map(d => withAge.find(x => x.date === d))
+      .filter(Boolean);
+    ok(`#385 precondition: both planted dates are on screen `
+       + `(${planted.length} of 2: ${oldDate}, ${youngDate})`,
+       planted.length === 2);
+    if (planted.length === 2) {
+      const [a, b2] = planted;
       const gap = Math.abs(parseFloat(a.ct) - parseFloat(b2.ct));
       ok(`#385 fixture ages differ (gap ${gap}s; dates ${a.date} vs ${b2.date})`,
          gap > 86400 && a.text !== b2.text);
@@ -277,7 +290,7 @@ ok('switching to note rewrites textarea + send aria-label (#273)',
          + `(${withAge.filter(a => a.day).length} of ${withAge.length})`,
          withAge.some(a => a.day));
     } else {
-      ok('#385 fixture ages differ (no ages to compare)', false);
+      ok('#385 fixture ages differ (planted dates not both on screen)', false);
       ok('#385 age text is the XXa YYb form (no ages to compare)', false);
     }
   }
