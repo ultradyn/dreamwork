@@ -184,9 +184,12 @@ Next id: **461**
   is genuinely big or he is stuck; *"it's too much in the noise to actually surface"*. (4) **full auto** —
   *"tasked with figure it out"*; every blocker is the loop's to solve, never blocked on a reply
   · **the obligation that runs through all four: the IGC evaluation.** Level 1 *always shows it to him*, level
-  2 includes it in the emitted document, level 3 logs it without surfacing. **`IGC` is his term and is not
-  defined anywhere in this repo — do not guess it. Ask him what the three letters are before designing
-  anything that renders the table**, because a mis-guessed axis silently changes every evaluation
+  2 includes it in the emitted document, level 3 logs it without surfacing. **`IGC` is now DEFINED and this no longer
+  blocks** (2026-07-29 00:33, his pointer to the `use-igcs` skill; vendored by `#447` as `igc-method.md` +
+  `igc-concepts.md`): **(Idea, Goal, Context)**, the Critical Fallibilism method — per (idea, goal) in a stated
+  context, `✔` non-refuted / `✘` refuted with the decisive error written out / `?` a TODO, an `All` rollup,
+  breakpoints instead of maximisation, and **never a score**. So "the evaluation table" in every level means an
+  IGC matrix, and `SKILL.md` already instructs it at four judgement sites
   · **the rule about not-material choices**, which is what makes level 2 workable: *"some choices where you
   have multiple good options … are not very material. It doesn't really matter to the user's goals. You can
   just make a choice in that regard … unless the user has specifically mentioned something."* So the escalation
