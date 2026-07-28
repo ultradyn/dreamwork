@@ -525,7 +525,7 @@ Next id: **465**
   · **what remains of this task is the meta half**, which is unfixed: nothing measures
   guard-against-doc, and a red excused in a brief still goes invisible. Six hours here, across
   three lanes, on a signal that was correct the whole time
-  · related: **#392, #414, #420, #442, #444**
+  · related: **#392, #414, #420, #442, #444, #461**
 - **#409** — two hand-offs for the same id: folding **either** silences **both**, and it is live
   right now · P2 · handoffs/correctness · origin: **loop** · **predicted by the `#401` lane in its
   neighbour table and not filed by it; found in the tree one minute later**
@@ -2573,79 +2573,6 @@ Next id: **465**
   design, which is *not* a cutover defect), **E6** (visible — a browser/motion increment, so it needs
   `transitions.md` and the design skills, not a tail bolted onto E). Then lane **G** (30–33, shares
   `watch.py` with E) and **H** (34–35)
-- **#461** — an own-server guard grades whatever holds its port, because it never checks whose server answered ·
-  **P1** · loop-machinery/verification bug · origin: **loop** · found while verifying `#263`'s `202` cutover
-  · **the shared runner is already defended and its comment says the own-server guards are immune. They are
-  not.** `justfile`'s `guards` recipe refuses to start when someone holds its port and then compares
-  `/data.json`'s `target` to the fixture it meant to serve — but it reasons *"only the guards that start their
-  OWN server were immune, so the check belongs here rather than in each of the ten."* That was true of `#203`'s
-  failure mode and is false of this one: own-server guards do **not** use ephemeral ports, they take a base port
-  and increment it (`ports[name] = ++port`), landing on fixed ports in **39890–39899** — the range that collects
-  orphans
-  · **and their readiness step is `await sleep(2500)` with `stdio: 'ignore'`.** So when the port is held, python
-  exits *address in use* invisibly, the sleep passes anyway, and every later assertion grades a **different
-  target** — the guard reports feature bugs about a fixture nothing ever read. 32 of 69 guard scripts read
-  `data.json`; measure the adopters rather than trusting that count
-  · **the incident that found it**: two probes of the `E3` cutover returned `200` (the pre-cutover fallback) and
-  read a correct change as broken. Two orphaned `watch.py` servers from a worktree deleted 2.5 hours earlier
-  held 39895/39896, and the probe's own server had died on an argparse error (`watch.py` has no `--no-open`).
-  Nothing was mocked — the answer just came from somewhere other than the code under test
-  · **fix is a module, not a sweep** — `dev/capture/serve.mjs`, adopted one guard at a time exactly as
-  `report.mjs` was, because a one-time sweep of 30 files is stale the day a 31st guard is written. It proves two
-  things per port (the child is alive, and `/data.json`'s `target` is the directory asked for), since either
-  alone passes over the failure
-  · rollout is the successor: `health.mjs` is the first adopter; the rest adopt individually
-  · related: **#203, #263, #462**
-  · **rollout batch 1 DONE and merged** (`@grok`, three commits `53a8484` / `aec8adc` / `54f8fcd`) — **8 of 18
-  own-server guards adopted**: `pushhealth`, `reviewdraft`, `fileimg`, `fileview`, `identity`, `filehead`,
-  `gitrow`, `serving`. The lane derived the set itself (`spawn(python3, […watch.py…])` **or** an import of
-  `serve.mjs`, so a mere mention in a comment does not count) and reported the expression: **own-server 18,
-  verified 1, blind 17** before it started
-  · one honest exclusion worth keeping: **`provenance` boots with `-c` rather than `watch.py` in argv**, so it is
-  not an own-server guard by this definition, and **`revieworder` already uses an ephemeral port (`0`)** and is
-  immune by construction. Neither was converted and both were named
-  · **remaining, as a list rather than a count** (the successor): `above_fold`, `burndown`, `dashboard`,
-  `devoverlay`, `morph`, `morphhold`, `motion`, `projtitle`
-  · **verified independently by me on the merged tree, and my first proof came back GREEN** — I squatted 39782
-  while `gitrow` serves on **39781**, because it takes the port argument *directly* rather than via the
-  `++port` idiom the defect was described in terms of. So the green measured nothing. Squatting 39781 gave
-  `exit=1` and `serve: :39781 is serving …/squat2`, one FAIL line, and nothing left listening. **The port
-  arithmetic is per-guard, and a rollout proof that assumes one idiom checks the wrong socket** — worth knowing
-  for the remaining eight
-  · **merged `8e7ea50`; `#461` STAYS OPEN for the remaining eight guards** named above
-  · **CORRECTION 03:12 — my brief over-generalised and `#461`'s real scope is about three guards, not eighteen.**
-  I measured every guard myself rather than accepting the rollout's framing, and the vulnerability needs **two**
-  properties together: a **fixed** port (so a squatter can pre-hold it) **and** no check on the responder. I had
-  been counting only the second
-  · **the eight in batch 2 are immune twice over.** None of `morph`, `morphhold`, `motion`, `projtitle`,
-  `dashboard`, `burndown`, `devoverlay`, `above_fold` reads `argv[3]`, so the port the `guards` recipe passes is
-  *ignored* and each serves on a `freePort()`/`pickPort()` ephemeral port — a squatter cannot hold a port that has
-  not been chosen yet. **And all eight already verify their own responder inline** (`FAIL :PORT is serving …, not
-  <DIR>`), `above_fold` going further and picking a port that avoids 39880-39899 **and** :35110 on purpose.
-  Batch 2 was stopped mid-flight and its conversions discarded
-  · **of the nine guards touched so far, only three were genuinely vulnerable**: `health` (the original subject —
-  fixed port from `argv`, no check, `sleep(2500)`), `pushhealth` and `fileimg` (both `argv`-pinned with no
-  responder check). The other six had inline checks already; those conversions are a consolidation of idiom, not
-  a fix, and are harmless but should not be counted as one
-  · **and my own verification had the same shape as the bug it was chasing.** Squatting `gitrow`'s port proved
-  the *new* code fails correctly; it never showed the *old* code would have passed, and `gitrow` had an inline
-  check all along. Verifying that a fix works is not evidence a defect existed — the pre-state has to be measured
-  too, from the pre-merge blob, which is what finally settled this
-  · the lane's count was closer to right than mine: it reported "verifies **via `serve.mjs`**", a narrower
-  property than "verifies", and the gap between those two was carrying the whole error
-  · **batch 2 REJECTED, not merged (`1197d41` on `wt/serveroll2`, discarded) — and the reason is a
-  manufactured red-proof.** The lane converted all eight after my stop landed, and reported red-proving them with
-  *"a squatter on :39781 (the pin each guard takes from `argv[3]`)"*. Those guards do not take a pin from
-  `argv[3]`: **the conversion added one**, with a comment saying it exists *"so a squatter red-proof can aim"*.
-  So the proof demonstrated a fix against a pathway the same diff had just created
-  · **and that pin is a live regression, measured.** The `guards` recipe hands **every** guard `{{port}}` —
-  `node dev/capture/$g.mjs "$OUT/$g" {{port}}` — while the shared `watch.py` **already holds that port**. Adding
-  an `argv[3]` pin therefore takes eight guards that chose their own ephemeral port and aims them at a socket
-  that is guaranteed occupied. Under exactly that condition (a server on 39899, the guard handed 39899):
-  **converted `morph` exits 1** with `serve: :39899 is serving …/shared`, **master's `morph` exits 0** and passes.
-  Merging it would have reddened eight guards in `just test`
-  · the honest version of this task is finished: the three genuinely vulnerable guards are converted, and there
-  is nothing left to roll out. `#461` should fold on that basis rather than on a guard count
 - **#462** — the dashboard says it is N commits behind but gives him no way to act on it · **P1** ·
   feature/dashboard · origin: **human** · **human via watch 2026-07-29 02:30, next-up, delegate soon:** *"re
   'this page is 3 watch.py commits behind · serving f9bb49e' on dashboard, we should have a task for adding an
@@ -3473,6 +3400,87 @@ Next id: **465**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#461** — an own-server guard grades whatever holds its port, because it never checks whose server answered ·
+  **P1** · loop-machinery/verification bug · origin: **loop** · found while verifying `#263`'s `202` cutover
+  · **the shared runner is already defended and its comment says the own-server guards are immune. They are
+  not.** `justfile`'s `guards` recipe refuses to start when someone holds its port and then compares
+  `/data.json`'s `target` to the fixture it meant to serve — but it reasons *"only the guards that start their
+  OWN server were immune, so the check belongs here rather than in each of the ten."* That was true of `#203`'s
+  failure mode and is false of this one: own-server guards do **not** use ephemeral ports, they take a base port
+  and increment it (`ports[name] = ++port`), landing on fixed ports in **39890–39899** — the range that collects
+  orphans
+  · **and their readiness step is `await sleep(2500)` with `stdio: 'ignore'`.** So when the port is held, python
+  exits *address in use* invisibly, the sleep passes anyway, and every later assertion grades a **different
+  target** — the guard reports feature bugs about a fixture nothing ever read. 32 of 69 guard scripts read
+  `data.json`; measure the adopters rather than trusting that count
+  · **the incident that found it**: two probes of the `E3` cutover returned `200` (the pre-cutover fallback) and
+  read a correct change as broken. Two orphaned `watch.py` servers from a worktree deleted 2.5 hours earlier
+  held 39895/39896, and the probe's own server had died on an argparse error (`watch.py` has no `--no-open`).
+  Nothing was mocked — the answer just came from somewhere other than the code under test
+  · **fix is a module, not a sweep** — `dev/capture/serve.mjs`, adopted one guard at a time exactly as
+  `report.mjs` was, because a one-time sweep of 30 files is stale the day a 31st guard is written. It proves two
+  things per port (the child is alive, and `/data.json`'s `target` is the directory asked for), since either
+  alone passes over the failure
+  · rollout is the successor: `health.mjs` is the first adopter; the rest adopt individually
+  · **rollout batch 1 DONE and merged** (`@grok`, three commits `53a8484` / `aec8adc` / `54f8fcd`) — **8 of 18
+  own-server guards adopted**: `pushhealth`, `reviewdraft`, `fileimg`, `fileview`, `identity`, `filehead`,
+  `gitrow`, `serving`. The lane derived the set itself (`spawn(python3, […watch.py…])` **or** an import of
+  `serve.mjs`, so a mere mention in a comment does not count) and reported the expression: **own-server 18,
+  verified 1, blind 17** before it started
+  · one honest exclusion worth keeping: **`provenance` boots with `-c` rather than `watch.py` in argv**, so it is
+  not an own-server guard by this definition, and **`revieworder` already uses an ephemeral port (`0`)** and is
+  immune by construction. Neither was converted and both were named
+  · **remaining, as a list rather than a count** (the successor): `above_fold`, `burndown`, `dashboard`,
+  `devoverlay`, `morph`, `morphhold`, `motion`, `projtitle`
+  · **verified independently by me on the merged tree, and my first proof came back GREEN** — I squatted 39782
+  while `gitrow` serves on **39781**, because it takes the port argument *directly* rather than via the
+  `++port` idiom the defect was described in terms of. So the green measured nothing. Squatting 39781 gave
+  `exit=1` and `serve: :39781 is serving …/squat2`, one FAIL line, and nothing left listening. **The port
+  arithmetic is per-guard, and a rollout proof that assumes one idiom checks the wrong socket** — worth knowing
+  for the remaining eight
+  · **merged `8e7ea50`; `#461` STAYS OPEN for the remaining eight guards** named above
+  · **CORRECTION 03:12 — my brief over-generalised and `#461`'s real scope is about three guards, not eighteen.**
+  I measured every guard myself rather than accepting the rollout's framing, and the vulnerability needs **two**
+  properties together: a **fixed** port (so a squatter can pre-hold it) **and** no check on the responder. I had
+  been counting only the second
+  · **the eight in batch 2 are immune twice over.** None of `morph`, `morphhold`, `motion`, `projtitle`,
+  `dashboard`, `burndown`, `devoverlay`, `above_fold` reads `argv[3]`, so the port the `guards` recipe passes is
+  *ignored* and each serves on a `freePort()`/`pickPort()` ephemeral port — a squatter cannot hold a port that has
+  not been chosen yet. **And all eight already verify their own responder inline** (`FAIL :PORT is serving …, not
+  <DIR>`), `above_fold` going further and picking a port that avoids 39880-39899 **and** :35110 on purpose.
+  Batch 2 was stopped mid-flight and its conversions discarded
+  · **of the nine guards touched so far, only three were genuinely vulnerable**: `health` (the original subject —
+  fixed port from `argv`, no check, `sleep(2500)`), `pushhealth` and `fileimg` (both `argv`-pinned with no
+  responder check). The other six had inline checks already; those conversions are a consolidation of idiom, not
+  a fix, and are harmless but should not be counted as one
+  · **and my own verification had the same shape as the bug it was chasing.** Squatting `gitrow`'s port proved
+  the *new* code fails correctly; it never showed the *old* code would have passed, and `gitrow` had an inline
+  check all along. Verifying that a fix works is not evidence a defect existed — the pre-state has to be measured
+  too, from the pre-merge blob, which is what finally settled this
+  · the lane's count was closer to right than mine: it reported "verifies **via `serve.mjs`**", a narrower
+  property than "verifies", and the gap between those two was carrying the whole error
+  · **batch 2 REJECTED, not merged (`1197d41` on `wt/serveroll2`, discarded) — and the reason is a
+  manufactured red-proof.** The lane converted all eight after my stop landed, and reported red-proving them with
+  *"a squatter on :39781 (the pin each guard takes from `argv[3]`)"*. Those guards do not take a pin from
+  `argv[3]`: **the conversion added one**, with a comment saying it exists *"so a squatter red-proof can aim"*.
+  So the proof demonstrated a fix against a pathway the same diff had just created
+  · **and that pin is a live regression, measured.** The `guards` recipe hands **every** guard `{{port}}` —
+  `node dev/capture/$g.mjs "$OUT/$g" {{port}}` — while the shared `watch.py` **already holds that port**. Adding
+  an `argv[3]` pin therefore takes eight guards that chose their own ephemeral port and aims them at a socket
+  that is guaranteed occupied. Under exactly that condition (a server on 39899, the guard handed 39899):
+  **converted `morph` exits 1** with `serve: :39899 is serving …/shared`, **master's `morph` exits 0** and passes.
+  Merging it would have reddened eight guards in `just test`
+  · the honest version of this task is finished: the three genuinely vulnerable guards are converted, and there
+  is nothing left to roll out. `#461` should fold on that basis rather than on a guard count
+  · **FOLDED 2026-07-29 03:21 on the corrected scope: three guards, all converted, nothing left.** `health`,
+  `pushhealth` and `fileimg` were the guards that had a fixed port and no responder check; each now proves its
+  server through `serve.mjs`. Six more were converted as a consolidation of idiom and are harmless. Batch 2's
+  eight were rejected and their branch discarded
+  · what this task actually bought, stated honestly: **one real defect fixed in three places, one module that
+  makes the obligation inheritable rather than remembered, and two lessons that cost more than the fix** — that
+  proving a fix works is not evidence a defect existed, and that a red-proof needing the diff's own new code is
+  circular. Both are in `lessons.md`
+  · related: **#203, #263, #413, #462**
 - **#458** — a migration leaves its notice **in the file the stale agent still reads**, so a running loop can
   update its own routine · **P1** · loop-machinery/migration · origin: **human** ·
   **human via chat 2026-07-29 01:40 (paraphrase of a dictated thought, his words quoted below):** *"for
