@@ -145,6 +145,18 @@ _TRANSITION_EDGES = {
 # status adds an entry here and nowhere else.
 RECEIPT_HEALTH = ("shadow_failed",)
 
+# Closed set of reason codes for a received→rejected transition (E5).  A
+# malformed or schema/domain-invalid body is still a *received* envelope: it
+# gets a 202 and a durable rejected transition with one of these codes.  The
+# set is bounded because a projection (CLI, dashboard) parses the code, and
+# free-text exception messages would be an unparseable field.  A parser that
+# finds a code outside this set treats it as a data-integrity issue.
+#
+#   malformed_json  — body is not valid JSON (the _read_json failure)
+#   schema_invalid  — valid JSON but missing/wrong-type/empty required fields
+#   domain_invalid  — schema valid but fails a domain rule (unknown kind/tint/mode)
+REJECTION_REASONS = ("malformed_json", "schema_invalid", "domain_invalid")
+
 def _h0(journal_id: str) -> str:
     """H_0 = SHA-256(journal_id || schema_version)."""
     material = f"{journal_id}{SCHEMA_VERSION}".encode("utf-8")
@@ -643,6 +655,7 @@ class Journal:
         receipt_id: str,
         to_state: str,
         expected_revision: int,
+        reason_code: Optional[str] = None,
     ) -> TransitionResult:
         """Append a state transition against expected_revision (CAS).
 
@@ -685,10 +698,12 @@ class Journal:
             self.conn.execute(
                 """
                 INSERT INTO transitions (
-                    transition_id, receipt_id, at, from_state, to_state, revision
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    transition_id, receipt_id, at, from_state, to_state, revision,
+                    reason_code
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (str(uuid.uuid4()), receipt_id, now, from_state, to_state, new_rev),
+                (str(uuid.uuid4()), receipt_id, now, from_state, to_state,
+                 new_rev, reason_code),
             )
             canonical = length_framed(
                 "receipt.transition",
@@ -696,6 +711,7 @@ class Journal:
                 from_state,
                 to_state,
                 str(new_rev),
+                reason_code or "",
             )
             self._append_event(
                 event_kind="receipt.transition",

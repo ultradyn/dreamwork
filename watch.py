@@ -9621,6 +9621,28 @@ def _journal_record_health(target, receipt_id, health, detail=""):
         log_event(target, f"user-events journal health record failed: {exc!r}")
 
 
+def _journal_reject(target, receipt_id, reason_code):
+    """Record a received→rejected transition with a bounded reason (E5).
+
+    Rejection is durable, not synchronous: the receipt already committed in
+    do_POST, so a malformed/schema/domain-invalid body is *received* and then
+    *rejected*. Reads the current revision from the journal (not tracked in
+    the request) because a same-UUID replay may have advanced it. Best-effort:
+    a journal failure here is logged and swallowed — the response is still
+    202, because the receipt committed."""
+    try:
+        with open_journal(_journal_path(target)) as journal:
+            row = journal.get_receipt(receipt_id)
+            if row is None:
+                return
+            if row["state"] == "received":
+                journal.transition(
+                    receipt_id, "rejected", int(row["revision"]),
+                    reason_code=reason_code)
+    except Exception as exc:  # never let rejection recording refuse a request
+        log_event(target, f"user-events journal reject failed: {exc!r}")
+
+
 def log_submission(target, path, body, nbytes, truncated=False, short=False):
     """His words on disk before anything is allowed to refuse them (#199).
 
@@ -9913,6 +9935,22 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             self.end_headers()
             self.wfile.write(data)
 
+        def _reject(self, reason_code):
+            """Record a durable rejection and respond 202 (E5).
+
+            The receipt already committed in do_POST; rejection is durable,
+            not synchronous. The reason is from REJECTION_REASONS (closed set
+            in user_events.sqlite). A complete registered envelope never
+            disappears behind a synchronous 400 — it is received, then
+            rejected, and the response is still 202."""
+            result = self.journal_result()
+            if result and result.receipt_id and self.journal_shadow:
+                _journal_reject(target, result.receipt_id, reason_code)
+            self._send_receipt(
+                json.dumps({"ok": False, "rejected": True,
+                            "reason": reason_code}),
+                "application/json")
+
         def _send_bytes(self, full, rel, *, inline):
             """Serve `full` as raw bytes (#336), streamed (#354).
 
@@ -10046,11 +10084,13 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
 
             It does NOT read the socket: `do_POST` did that, because his words
             have to be on disk before anything here can refuse them (#199).
+            Returns None on a parse failure; E5 moved the 400 to a durable
+            rejection in the caller, so this method no longer sends a
+            response (the red line for increment 24).
             """
             try:
                 return json.loads(self._body)
             except ValueError:
-                self.send_error(400)
                 return None
 
         def do_POST(self):
@@ -10109,6 +10149,23 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                                short)
                 self.send_error(400)
                 return
+            # The write-route dispatch is ONE table, derived from itself, so a
+            # seventh route added later is both handled here and covered by E2's
+            # "every write route commits a receipt" test (rather than slipping
+            # past a hand-copied list). `WRITE_ROUTE_HANDLERS` is a class
+            # attribute defined below the handler methods.
+            handler = self.WRITE_ROUTE_HANDLERS.get(self.path)
+            # E5: an unknown POST path is pre-receipt 404/405, not an event
+            # (design §Receive and idempotency). The receipt must only commit
+            # for a REGISTERED write route. But #199 still holds — his words
+            # are on disk before the refusal — so the witness runs here too;
+            # an unknown path has no journal receipt, and submissions.log is
+            # its only home.
+            if handler is None:
+                log_submission(target, self.path, body, nbytes, truncated,
+                               short)
+                self.send_error(404)
+                return
             # The journal commit authorises the response (E3 cutover): the
             # receipt is committed BEFORE the handler dispatches, so a journal
             # open/commit failure is a 503 with no 202 — the request was never
@@ -10145,32 +10202,21 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             if truncated:
                 self.send_error(413)
                 return
-            # The write-route dispatch is ONE table, derived from itself, so a
-            # seventh route added later is both handled here and covered by E2's
-            # "every write route commits a receipt" test (rather than slipping
-            # past a hand-copied list). `WRITE_ROUTE_HANDLERS` is a class
-            # attribute defined below the handler methods.
-            handler = self.WRITE_ROUTE_HANDLERS.get(self.path)
-            if handler is not None:
-                handler(self)
-            else:
-                self.send_error(404)
+            handler(self)
 
         def _handle_ask(self):
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             try:
                 raw_question = req["question"]
                 if not isinstance(raw_question, str):
                     raise TypeError
                 question = raw_question.strip()
             except (KeyError, TypeError):
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             if not question:
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             path = os.path.join(target, ".dreamwork", "answers.md")
             stamp = time.strftime("%Y-%m-%d")
             with ANSWER_LOCK:
@@ -10184,16 +10230,14 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
         def _handle_answer(self):
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             try:
                 title = str(req["question"]).strip()
                 answer = str(req["answer"]).strip()
             except (KeyError, TypeError):
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             if not title or not answer:
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             qpath = os.path.join(target, ".dreamwork", "questions.md")
             stamp = time.strftime("%Y-%m-%d %H:%M")
             with ANSWER_LOCK:
@@ -10221,17 +10265,15 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
         def _handle_comment(self):
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             try:
                 title = str(req["question"]).strip()
                 note = str(req["comment"]).strip()
                 section = str(req.get("section", "Open")).strip()
             except (KeyError, TypeError):
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             if not title or not note or section not in ("Open", "Answered"):
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             qpath = os.path.join(target, ".dreamwork", "questions.md")
             stamp = time.strftime("%Y-%m-%d %H:%M")
             with ANSWER_LOCK:
@@ -10255,13 +10297,12 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
         def _handle_command(self):
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             try:
                 kind = str(req["kind"]).strip()
                 text = str(req.get("text", "")).strip()
             except (KeyError, TypeError):
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             # The plugin half is read PER REQUEST rather than cached at start
             # (#86): a plugin that resolved a minute ago is sendable a minute
             # ago, and the composer already offers it on the next tick — a
@@ -10269,11 +10310,9 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             # is one small file and this is a human keypress, not a hot path.
             if kind not in COMMAND_KINDS and kind not in {
                     c["kind"] for c in plugin_commands(target)}:
-                self.send_error(400)
-                return
+                self._reject("domain_invalid"); return
             if kind != "do-next" and not text:
-                self.send_error(400)
-                return
+                self._reject("schema_invalid"); return
             log_event(target, command_line(kind, text, req.get("from")))
             self._send_receipt(json.dumps({"ok": True}), "application/json")
 
@@ -10292,11 +10331,10 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             """
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             name = str((req or {}).get("tint", "")).strip()
             if name not in TINTS:
-                self.send_error(400)
-                return
+                self._reject("domain_invalid"); return
             if not write_tint(target, name):
                 self.send_error(500)
                 return
@@ -10315,11 +10353,10 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             """
             req = self._read_json()
             if req is None:
-                return
+                self._reject("malformed_json"); return
             mode = str((req or {}).get("mode", "")).strip()
             if mode not in RUN_MODES:
-                self.send_error(400)
-                return
+                self._reject("domain_invalid"); return
             current = read_run_mode(target)
             if mode == current:
                 self._send_receipt(json.dumps({"ok": True, "mode": mode,
