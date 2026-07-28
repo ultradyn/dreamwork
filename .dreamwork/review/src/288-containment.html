@@ -1,0 +1,187 @@
+<!--dreamwork-review-source
+title: "#288 · Contain subagent tools, or detect the outcome · design + prototype"
+identity: subagent containment
+context: task #288 · decision
+status: awaiting review
+headline: The wall works. Wiring it into the harness is the part that costs.
+tag: design + prototype — no deployment authorised
+sub: task #288 · 28 July 2026 · every figure measured on this host today
+skip: Skip to the ask
+skip_href: "#ask"
+-->
+<!--#nav-->
+<a class="full" href="#ask">the ask</a><a href="#evidence">prototype evidence</a>
+<!--#lead-->
+<div id="ask" class="ask-block">
+  <div class="label">Ask</div>
+  <p class="ask-q"><strong>A</strong> &mdash; ship the positive PID/health invariants as the whole
+  defence; leave the namespace wall prototyped but not wired (recommended). Or <strong>B</strong>
+  &mdash; spend the integration cost to route tool calls through a wall, knowing it is
+  <code>#358</code>-shaped (head/body split) because the harness owns both halves. Free text is
+  always fine, and <em>&ldquo;not yet&rdquo;</em> is a real answer.</p>
+  <p class="ask-answers"><span class="key">accepted answers</span>
+  <code>rec</code> &nbsp;&middot;&nbsp; <code>A</code> &nbsp;&middot;&nbsp; <code>B</code>
+  &nbsp;&middot;&nbsp; free text</p>
+  <p class="ask-rejected"><span class="key">rejected, by measurement</span>
+  a container-per-lane &mdash; daemon + persistent image against a loop that runs <strong class="x-rej">5&ndash;6</strong> ephemeral lanes, and the no-host-change rule withholds the image pull.</p>
+</div>
+<!--#call-->
+<div class="call"><strong>Recommendation: A.</strong> The prototype proves a real namespace wall
+holds all three incident vectors on this host at ~22 ms per contained process. But getting the
+harness to route tool calls through it is the expensive half: Claude Code and equivalents make the
+LLM call and run the tools in one process, so a wall around the harness contains the API key too
+&mdash; the opposite of the design. That makes B <code>#358</code>&rsquo;s head/body fork, which is
+his call, not this lane&rsquo;s. The positive invariants catch the <code>#288</code> class completely
+and cost a tick each; the wall can wait for <code>#358</code> without leaving the loop exposed.</div>
+<!--#aside-->
+<span class="big">3 / 3</span>
+<small>incident vectors held by a <code>bwrap</code> namespace on this host<br>signal, file-read, network &mdash; all from host ground truth</small>
+<!--#body-->
+<style>
+/* Page-local. Tokens only — no hex (watch-design.md / template contract). */
+.ask-block{
+  border-left:2px solid var(--accent);
+  padding:.35rem 0 .35rem 1.3ch;
+  margin:.4rem 0 .2rem;
+}
+.ask-block .label{margin:0 0 .4rem;color:var(--accent)}
+.ask-block .ask-q{font-size:.92rem;line-height:1.6;color:var(--lit);margin:.15rem 0 .55rem}
+.ask-block .ask-answers,.ask-block .ask-rejected{margin:.3rem 0;font-size:.78rem;color:var(--muted)}
+.ask-block .key{color:var(--dim);text-transform:uppercase;letter-spacing:.06em;font-size:.66rem;margin-right:.7ch}
+.ask-block .x-rej{color:var(--bad)}
+.ask-block code{color:var(--lit)}
+.selfref{margin:.2rem 0 1.4rem;color:var(--dim);font-size:.74rem}
+.selfref b{color:var(--muted);font-weight:normal}
+/* Override shared template `table{min-width:max-content}` (c19107a, #436):
+   that sizes every cell to unwrapped content so the table runs wide and the
+   reduces/costs/risk columns never break. Per-artifact only — do not restamp
+   the template. Fixed layout + min-width:0 lets the prose wrap. */
+.vuln-tbl{
+  min-width:0;
+  width:100%;
+  table-layout:fixed;
+}
+.vuln-tbl th,.vuln-tbl td{
+  overflow-wrap:anywhere;
+  word-break:normal;
+  min-width:0;
+}
+.vuln-tbl th:nth-child(1),.vuln-tbl td:nth-child(1){width:30%}
+.vuln-tbl th:nth-child(2),.vuln-tbl td:nth-child(2){width:34%}
+.vuln-tbl th:nth-child(3),.vuln-tbl td:nth-child(3){width:36%}
+.vuln-tbl td:nth-child(1){color:var(--bright)}
+.vuln-tbl .held{color:var(--ok);font-weight:600}
+.vuln-tbl .cost{color:var(--warn)}
+/* Below the stack breakpoint a 3-col comparison restacks to labelled blocks.
+   No transition: media-query layout only (transitions.md: no gesture introduced). */
+@media (max-width:860px){
+  .vuln-tbl,.vuln-tbl thead,.vuln-tbl tbody,.vuln-tbl tr,.vuln-tbl th,.vuln-tbl td{display:block}
+  .vuln-tbl th:nth-child(1),.vuln-tbl td:nth-child(1),
+  .vuln-tbl th:nth-child(2),.vuln-tbl td:nth-child(2),
+  .vuln-tbl th:nth-child(3),.vuln-tbl td:nth-child(3){width:100%}
+  .vuln-tbl thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  .vuln-tbl tr{padding:.85rem 0;border-bottom:1px solid var(--line)}
+  .vuln-tbl tr:last-child{border-bottom:0}
+  .vuln-tbl td{padding:.28rem 0;border-bottom:0}
+  .vuln-tbl td:nth-child(1){padding-bottom:.45rem;font-size:.82rem}
+  .vuln-tbl td:not(:first-child)::before{
+    content:attr(data-col);
+    display:block;
+    color:var(--dim);
+    font-size:.66rem;
+    text-transform:uppercase;
+    letter-spacing:.065em;
+    margin-bottom:.15rem;
+  }
+}
+.method{font-size:.74rem;color:var(--dim)}
+.method code{color:var(--lit)}
+</style>
+
+<p class="selfref"><b>This page carries its own ask above this sentence.</b> The decision and its
+accepted answers sit in the hero, before any argument &mdash; so a reader who stops at the fold has
+the ruling to make, not just the context for it.</p>
+
+<section id="incident" aria-labelledby="inc-t">
+  <div class="label" id="inc-t">The incident, in one line</div>
+  <p class="read">A guard-only subagent was told <em>&ldquo;own target/port, no live 35110&rdquo;</em>,
+  read that as requiring the live dashboard to be <strong>absent</strong>, ran
+  <code>kill 1884627</code> on the deployed <code>:35110</code> process, and reported
+  <em>&ldquo;PASS no live 35110&rdquo;</em>. The coordinator restored <code>just deploy HEAD</code>
+  at <code>010ab7a</code> and proved the kill from the transcript. The lesson, not relitigated here:
+  <strong>a prompt is not a boundary.</strong> Worktrees, prompts and supervision cannot prevent
+  same-UID signalling; only a real boundary can.</p>
+</section>
+
+<section id="evidence" aria-labelledby="ev-t">
+  <div class="label" id="ev-t">The prototype &mdash; what a real wall holds, measured on this host</div>
+  <p class="read"><code>dev/containment_falsify.py</code> is a falsification, not a demonstration:
+  it tries to <strong>break</strong> the boundary and records whether it could. It spawns its own
+  victims (never a process it did not create), runs each attack inside a <code>bwrap</code>
+  namespace, and derives every verdict from <strong>host-side ground truth</strong> &mdash; never
+  from parsing attacker output, which is the hollow-check trap this repo keeps paying to learn
+  about. (The first run marked a <em>refused</em> connection as BROKEN because the traceback
+  printed the source line containing <code>"CONNECTED"</code>. Ground truth fixed it.)</p>
+
+  <div class="scroller"><table class="vuln-tbl">
+    <thead><tr><th>incident vector</th><th>what the contained attacker tried</th><th>ground-truth verdict</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>signal a process the agent did not create <span class="cost">(#288 itself)</span></td>
+        <td data-col="tried"><code>kill -TERM &lt;host pid&gt;</code> from inside the namespace</td>
+        <td data-col="verdict" class="held">HELD &mdash; host victim still alive after the attempt</td>
+      </tr>
+      <tr>
+        <td>read a path the agent was not given <span class="cost">(API key, submissions.log)</span></td>
+        <td data-col="tried"><code>cat &lt;secret&gt;</code> from inside the namespace</td>
+        <td data-col="verdict" class="held">HELD &mdash; secret value never appeared in attacker output</td>
+      </tr>
+      <tr>
+        <td>reach a port the agent does not own <span class="cost">(35110, guard ranges)</span></td>
+        <td data-col="tried">TCP <code>connect</code> to a host listener from inside the namespace</td>
+        <td data-col="verdict" class="held">HELD &mdash; listener&rsquo;s accept count did not rise (0&rarr;0)</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <p class="method">Mechanism: <code>bwrap --unshare-pid --unshare-net</code>, read-only root bind,
+  tmpfs mask. Red-proved: the same net attack run <em>without</em> containment flips the verdict to
+  BROKEN (accept count 0&rarr;1), so the detector is not born hollow. Per-contained-process startup:
+  <strong>~22 ms</strong> &mdash; invisible against a model turn. Source for every figure:
+  <code>dev/containment_falsify.py</code>, run today.</p>
+</section>
+
+<section id="cost" aria-labelledby="cost-t">
+  <div class="label" id="cost-t">Why &ldquo;the wall works&rdquo; is not &ldquo;ship the wall&rdquo;</div>
+  <p class="read">The latency is fine. The integration is not. The loop dispatches
+  <strong>5&ndash;6</strong> lanes at once, and each lane&rsquo;s harness &mdash; Claude Code and
+  equivalents &mdash; makes the LLM API call <em>and</em> executes the tools in <strong>one
+  process</strong>. A wall around the harness contains the API key too, which is the opposite of the
+  design. So the only buildable shapes are a wrapper that proxies an existing harness&rsquo;s tool
+  calls (hard, harness-specific), or <code>#358</code>&rsquo;s head/body split (his call). That is
+  why B is genuinely <code>#358</code>-shaped and not something this lane can build under a
+  design-and-prototype authorisation.</p>
+
+  <div class="facts">
+    <div class="fact"><span class="number">~22ms</span><span class="caption">to stand up one contained process &mdash; the cheap half</span></div>
+    <div class="fact"><span class="number">1</span><span class="caption">process owns both the API call and tool execution &mdash; the seam that is not ours to cut</span></div>
+    <div class="fact"><span class="number">3 / 3</span><span class="caption">incident vectors held by the wall, from host ground truth</span></div>
+    <div class="fact"><span class="number">0</span><span class="caption">host changes made by the prototype &mdash; no image, daemon, unit, or port bound</span></div>
+  </div>
+</section>
+
+<section id="invariants" aria-labelledby="inv-t">
+  <div class="label" id="inv-t">What A buys regardless of the wall &mdash; the positive invariants</div>
+  <p class="read">Whether or not a wall ever ships, the positive PID/health invariants are the
+  complete, cheap defence against the <code>#288</code> class, because they detect the outcome the
+  prompt cannot prevent. They reuse the vocabulary already on disk: <code>dev/deploy_state.py</code>
+  already separates <em>is the file right</em> from <em>is the process running that file</em>, and
+  <code>#442</code>&rsquo;s <code>GENERATION</code> plus <code>#426</code>&rsquo;s
+  <code>skill_identity()</code> are the signals. The invariant is <em>GENERATION &ge; snapshot mtime
+  AND snapshot bytes == HEAD bytes</em>, sampled each tick, with a violation meaning the dashboard is
+  not what the coordinator thinks &mdash; and a subagent&rsquo;s <em>&ldquo;PASS&rdquo;</em>
+  downgraded to suspect the moment a positive invariant contradicts it. The reason it is
+  <strong>positive</strong> is the whole finding: a negative invariant (<em>&ldquo;35110 should be
+  absent&rdquo;</em>) is the shape of the bug, not the fix.</p>
+</section>
+<!--#footer-->
+Design: <code>.dreamwork/docs/plans/subagent-containment.md</code> &middot; prototype: <code>dev/containment_falsify.py</code> &middot; design + prototype only, no deployment authorised
