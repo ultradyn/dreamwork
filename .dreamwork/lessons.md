@@ -2656,3 +2656,24 @@ this shape and convert opportunistically.)
   report to the absolute inbox path (main checkout, uncommitted, always readable) and commit the
   hand-off line inside the worktree only.** Until the template says so, the coordinator's merge
   step is `git checkout -- .dreamwork/handoffs.md` first, after checking the two are identical.
+
+- **I wrote the lesson for a bug and then committed the bug, twenty minutes later, in a brief.**
+  The entry above says to anchor a section-heading match and *"cross-check with the production
+  parser before committing, because that is what caught both."* I then answered the question *"is
+  `#172` open or landed?"* with an **unanchored** split, concluded a P1 had been falsely marked done,
+  and put that in a brief to a running lane **and** in a commit message. `watch.parse_ledger` said
+  `open? True` the moment I finally asked it.
+  **Writing a lesson down does not install it.** What would have caught this is not more resolve —
+  it is that the check was one line and I skipped it because the question felt small ("which section
+  is this entry in?"). The small questions are exactly where a hand-rolled reader gets used, because
+  reaching for the production parser feels like overkill for one boolean.
+  So the operational form, narrower than the lesson it follows: **any claim about which section a
+  ledger or questions entry is in comes from `watch.parse_ledger` / `watch.parse_open_questions`,
+  never from `str.split` or a regex.** Four hand-rolled parsers have been wrong here in one day —
+  `awaiting_human`'s count (4 vs 5, a wrapped title), two section splits, and one more this hour
+  that silently skipped a two-line entry head — against a file whose production parser was
+  importable every time. **The habit worth having is not "be careful with regexes", it is "the
+  parser is one import away".**
+  The damage was contained by luck rather than design: the false claim sat in a brief's *motivation*
+  section, so none of the eight criteria depended on it. Had it sat in a criterion, a lane would have
+  built to it.
