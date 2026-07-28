@@ -2153,21 +2153,33 @@ const qaState = (q, key) =>
 /* #385: the date already lives in the title (`YYYY-MM-DD — …`, optional
    `P1 · ` prefix). Humanized age sits next to that date via the same
    `data-ct` + `paintAgePair` path commits use — one formatter, not a second.
-   Local midnight of the title date: the file only carries a day. No date in
-   the title → plain escape, same as before.
-   #392a: the title date is DAY-precision (no time), so the span carries
+   No date in the title → plain escape, same as before.
+   #392a: a DATE-ONLY title is day-precision, so the span carries
    `data-day="1"` and ages() routes it to `paintDayAge` — one figure, not
-   two. The flag is the precision of the input, read by the dispatch. */
+   two. The flag is the precision of the input, read by the dispatch.
+   #392b: an optional local ` HH:MM` after the date is a TIMED title. Its
+   `ct` is that clock time (not midnight), and there is no `data-day`, so
+   ages() uses paintAgePair — two figures, exact to the minute. Unknown
+   time stays honestly imprecise (#392a); a known time must not fabricate
+   from midnight. Same ` HH:MM` shape note tags already carry. */
 const qtHtml = title => {
   // doubled backslashes: this lives in a Python string; the emitted JS
   // still sees a single backslash before each digit class.
-  const m = /^(P[123] · )?(\\d{4}-\\d{2}-\\d{2})( — )([\\s\\S]*)$/.exec(title || '');
+  const m = /^(P[123] · )?(\\d{4}-\\d{2}-\\d{2})(?: (\\d{2}:\\d{2}))?( — )([\\s\\S]*)$/.exec(title || '');
   if (!m) return esc(title);
-  const [, prio, date, sep, rest] = m;
+  const [, prio, date, time, sep, rest] = m;
   const [Y, Mo, D] = date.split('-').map(Number);
-  const ct = Math.floor(new Date(Y, Mo - 1, D).getTime() / 1000);
-  return `${esc(prio || '')}${esc(date)}` +
-    `<span class="age qage" data-ct="${ct}" data-day="1"></span>` +
+  let ct, dayAttr = '';
+  if (time) {
+    const [h, mi] = time.split(':').map(Number);
+    ct = Math.floor(new Date(Y, Mo - 1, D, h, mi).getTime() / 1000);
+  } else {
+    ct = Math.floor(new Date(Y, Mo - 1, D).getTime() / 1000);
+    dayAttr = ' data-day="1"';
+  }
+  const when = esc(date) + (time ? esc(' ' + time) : '');
+  return `${esc(prio || '')}${when}` +
+    `<span class="age qage" data-ct="${ct}"${dayAttr}></span>` +
     `${esc(sep)}${esc(rest)}`;
 };
 const qaInner = (q, key) => {
