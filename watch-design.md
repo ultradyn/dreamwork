@@ -2178,8 +2178,34 @@ panel's rule (#130) one surface down.
 **The level is a step line, not a filled bar**, and that was decided by
 rendering it: on a ledger whose open count runs 12 to 67 the filled version
 is a near-uniform block, because every column is between 40 and 100 percent
-of the tallest. A 2px cap on a transparent box of the same height is the same
+of the tallest. A cap on a transparent box of the same height is the same
 number and reads as the staircase it is.
+
+**#417 — commits-per-period, without trading the chart away.** He asked for
+how many commits were made each period, and then ruled **`c3` + `c4` + a
+per-column hover** (2026-07-29): the level line's cap weight carries the
+count, a figure line names the summary, and hovering a column shows the
+exact numbers so the weight mapping is learnable rather than argued about.
+
+- **`c3` — weight is commits, height is still open.** Cap `border-top-width`
+  maps ledger-touching commits (the same `revs` walk, no second source) onto
+  **2–6px**, linear over the real range. **Zero is 1px**, below the 2px floor,
+  so a quiet period is distinguishable from a single-commit one; the peak is
+  always 6px. Height still means open count — the line now carries two facts,
+  which is why the hover exists. Weight travels with height on the bar's
+  `.85s` curve (`regroupBars`), not a snap. Accent is not spent.
+- **`c4` — one shortened figure line.** `N median commits/period · peak P ·
+  Q empty`, in the panel's `#218` voice (`.bdcommit-copy`). **No ellipsis**:
+  the long form clipped at mobile and read as broken; the short form is the
+  condition of shipping it. The +19px is a **one-time allowance** baked into
+  the panel's constant height, not a growth on data change. No motion.
+- **Per-column hover — all the facts, not only commits.** Height = open,
+  weight = commits, flow = arrived↑/landed↓; the tip names all of them so the
+  line is never left implying only one meaning. Floats over the chart
+  (`.bdtip`, position absolute inside `.bd`) so it **never changes panel
+  height**. Arrival reuses the rundesc atmospheric blur+drift (`pose` → ease
+  in, `depart` → ease out); reduced motion snaps. Keyboard focus reaches the
+  same readout (`tabindex` on level-track columns). Accent is not spent.
 
 **No velocity score, deliberately.** A rate computed over a day of a loop
 that has been alive for a day is a claim about the future dressed as a
@@ -2296,10 +2322,13 @@ this is a single honest measurement, not the composite that rule refuses.)
     panel's rule (#142) is that nothing in it waits on him, and a median does
     not.
 
-`dev/capture/burndown.mjs` already measures the panel's constant height
-premise; the median line is re-rendered copy in that same panel, so it adds
-no new visual element and earns no guard of its own — a unit test plus the
-existing surface guard is right, and a new capture guard would be noise.
+`dev/capture/burndown.mjs` measures the panel's constant height premise
+(derived at runtime across a real data change — never a literal pixel
+floor), the c3 weight mapping (zero vs one vs peak, against served data),
+the c4 copy (no ellipsis at both widths, figures derived from `/data.json`),
+and the per-column hover (readout numbers match the hovered column's served
+bucket, transition mid-frames, reduced-motion parity). The median and commit
+figure lines are re-rendered copy in that same panel.
 
 **No motion, on purpose.** A live tick commits its DOM instantly
 (transitions.md), and nothing about this datum is a layout change anyone
