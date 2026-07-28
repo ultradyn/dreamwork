@@ -125,6 +125,21 @@ Next id: **434**
   dispatched the `#425` lane mid-run rather than waiting, so it is a third *contended* data point and
   not the controlled arm. Recorded as such rather than counted as evidence — the experiment above still
   needs running, and doing it accidentally three times is not doing it once deliberately
+  · **all 6 flipped to PASS in isolation, 19:00-19:05** — `morphhold` and `qsec` together, then
+  `history`, `plugcmd`, `reviewsplit`, `runmode` together, same commit, same machine, no lane running.
+  **6 for 6**
+  · **but that is not yet the experiment, and the reason is worth keeping.** The isolated runs differ
+  from the failing run in **two** ways, not one: no concurrent lane **and** a 2-or-4-guard suite instead
+  of the full 50. So the result is equally consistent with *"a concurrent lane starves the sampler"* and
+  with *"the full suite starves it by itself"* — and **those have opposite remedies**: serialise lanes
+  around the suite, versus fix the suite. Running the guards in small groups is exactly the confound the
+  entry's own caution was about, and I walked into it once before assuming
+  · **so the missing arm is running: the FULL suite on a verifiably idle machine**, started 19:06. If it
+  goes green, concurrent lanes are implicated. If the same frame-samplers fail with no lane in sight,
+  `#424`'s lock is not the problem and the suite is
+  · **an aside that cost me a deploy today**: my own idle-check `pgrep -af 'ccc --yolo'` matched **its
+  own shell**, because the pattern was in the command line doing the matching. Same shape as `#431`'s
+  `pkill`. A process-pattern check must exclude itself or it can never report zero
   · **the failures grew as the run progressed** (2 at guard 29, 5 at guard 40, 6 at the end), which is
   what a load-dependent cause looks like and is not what order-dependence looks like. Weak evidence,
   stated as weak
