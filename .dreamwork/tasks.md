@@ -3972,8 +3972,17 @@ Next id: **472**
   file; *"one at the median, one half again as long"* is not
   · **the visual verdict is OWED, not skipped** — recorded in `status.json`'s `owed_verifications`.
   `@glm52` refused to guess at appearance, correctly
-  · remaining on this entry: he rules on A/B/C/D, then `DREAMWORK.md` + `file-formats.md` + `lint.py`
-  change. Nothing is built until then
+  · ~~remaining on this entry: he rules on A/B/C/D~~ — **STALE, and it named him as the blocker for five
+  hours after he had already answered.** He ruled **2026-07-29 01:17: `rec`, A + B + D adopted, C
+  withdrawn**, plus the length refinement (steer with descriptors, a soft estimate is fine, *"we just want
+  to steer the soft stuff, not try to measure it"*). **B is built and running**: `lint.py:393` errors when
+  a fold drops a declared sub-decision, and its coverage row reports on every open ask. `DREAMWORK.md` is
+  folded. So what remained was **ours, not his** — and the entry said the opposite.
+  · **why this is worth recording rather than quietly editing:** an entry that names the human as blocked-on
+  when he is not is worse than one that is merely out of date, because the selection algorithm skips it and
+  the dashboard shows him a question he has answered. It survived because the ruling was folded into the
+  *questions* entry and `DREAMWORK.md` but not back into the *ledger* — the fold has three destinations and
+  only two were written. Remaining now: confirm `file-formats.md` states the sub-decision shape B parses.
   · **ARTIFACT FIXED `c19107a` (2026-07-28 22:35, lane `tablefix`), on his do-now while he was reading it** — *"I can't read it (reduces and costs columns don't break text lines)"*. The cells were never the problem: they already had `white-space:normal` and `overflow-wrap:anywhere`. The template's `table{min-width:max-content}` let the table size to unwrapped content — **4197px inside a 1120px pane** (reduces ~817px, costs ~1114px, risk ~2197px), so `.scroller` scrolled sideways and every cell was one line. Fixed **per-artifact** (`table-layout:fixed`, 16/24/24/36 columns) rather than in the shared template, which would re-stamp 23 artifacts of which 12 have no `src/` (`#436`). It also restacks each option as a labelled full-width block below 860px, because a four-column comparison is unreadable at 390px however well it wraps. Coordinator-verified: derived fold 740/693, `#ask.top` **218** desktop (up from 266) and 266 mobile, both above. **The question itself is still open and still his.**
   · **ANSWERED 2026-07-29 01:17 — `rec`: A + B + D adopted, C withdrawn.** **A** the ask comes first with
   its accepted answers; **B** an unanswered sub-decision is recorded and `lint` errors when a fold drops
