@@ -24,9 +24,28 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **455**
+Next id: **456**
 
 ## Open
+- **#455** — every review artifact opens with a context paragraph, enforced at build time · **P1** ·
+  review/asking · origin: **human** ·
+  **human via watch 2026-07-29 01:07, while reading `269-draft-durability.html`:** *"update protocols: when
+  review artifacts are written, they should have a paragraph of text at the top giving context to the artifact
+  for review. Like I feel lost when i read these half the time b/c i have no context."*
+  · **"half the time" is a measurable claim and the artifacts are on disk** — check it rather than assuming, and
+  say what fraction actually open with orientation. The artifact he was reading when he said it is the sample
+  to start from.
+  · **the sibling of `#436` and it should be built the same way.** `#436` made `#ask` a **build-time** contract:
+  `review_artifact.py` refuses to build an artifact whose ask is missing, doubled, or a decoy, with an
+  exemption by declared `<meta>`. A context paragraph is the same shape — a required slot, refused at build,
+  exemptible by declaration — so **reuse that mechanism rather than authoring a second one**.
+  · **what the paragraph must answer** is the part to get right, or it becomes a heading he skips: what this
+  artifact is, what decision it exists to serve, why he is being asked *now*, and what happens if he says
+  nothing. His words are *"i have no context"*, not *"it needs a summary"* — the existing `headline`/`sub`
+  metadata already summarises, and it did not help.
+  · **12 of 24 artifacts have no `src/`** (`#436`'s remainder), so a build-time contract cannot reach them —
+  decide whether they are reconstructed, declared exempt, or left as the reason `#436`'s guard is still
+  unregistered. Do not register a guard that silently passes over half the corpus.
 - **#454** — questions collapse to a rolled-scroll card of 5-6 lines, persisted like other UI state ·
   **P2** · dashboard/asking · origin: **human** ·
   **human via watch 2026-07-29 01:06:** *"questions on the questions page should be collasible. However, the
