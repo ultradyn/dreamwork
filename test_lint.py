@@ -1022,7 +1022,7 @@ class TestLedgerSectionSplit:
         "- **#7** — a live one · P2 · task\n"
         "  · prose quoting `" + LANDED + "` while describing the parser\n"
         "- **#8** — another · P3 · idea\n\n"
-        + LANDED + "\n\n**#5** landed (abc1234).\n"
+        + LANDED + "\n\n- **#5** — landed `abc1234`\n"
     )
 
     def _old_parse_ledger(self, text):
@@ -1085,7 +1085,7 @@ class TestLedgerSectionSplit:
         text = ("# Task ledger\n\nNext id: **9**\n\n" + self.OPEN + "\n\n"
                 + COMBINED_HEAD + " — a combined live one · P2 · task\n"
                 + "- **#9** — a singular live one · P3 · idea\n\n"
-                + self.LANDED + "\n\n**#5** landed (abc1234).\n")
+                + self.LANDED + "\n\n- **#5** — landed `abc1234`\n")
         assert COMBINED_HEAD in text, "fixture must hold a combined head"
         # Runtime precondition is a property of the FIXTURE, not the pattern
         # under test, so derive both ids straight from the head string: a
@@ -1121,7 +1121,8 @@ class TestLandedAsks:
     LEDGER = ("# Task ledger\n\nNext id: **9**\n\n" + "## " + "Open" + "\n\n"
               "- **#7** — still live · P2 · task · origin: **loop**\n\n"
               + "## " + "Recently landed" + "\n\n"
-              "**#5** shipped (abc1234). **#6** shipped (def5678).\n")
+              "- **#5** — shipped · landed `abc1234`\n"
+              "- **#6** — shipped · landed `def5678`\n")
 
     def _q(self, *titles):
         body = "# Questions for the human\n\n## Open\n\n"
