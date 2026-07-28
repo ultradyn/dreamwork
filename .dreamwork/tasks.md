@@ -525,6 +525,12 @@ Next id: **412**
   · **worth reconciling at review, not a conflict:** the lane reports a 149-set and 55 historical
   inline landings where I compute 163 and 68. Different counting bases or field lists. Ask which,
   and do not merge until the two numbers are explained by something other than "roughly the same"
+  · **and the lane's rule is pre-verified against the guard itself, predicted before it runs.**
+  Reproduced `burndown.mjs`'s fixture builder in isolation and applied column-0 to all six of its
+  commits: it reads exactly the fixture's `done` list at **every step**, and the cumulative set
+  across history is `1,2,3,4,5` — so **`#1`, `#2` and `#3`, which the fixture deliberately grooms
+  out of the final ledger, are still counted.** That is the guard's load-bearing property and the
+  assertion `#399` broke. The guard should pass; if it does not, the fix is not the rule
   · **THE MERGE GATE, written 11:19 BEFORE the lane reports, so it cannot be shaped by what the
   lane says it achieved.** Measured now, both parsers run against today's ledger:
     - deployed/pre-`#399` logic: **136 open, 176 landed**
