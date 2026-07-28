@@ -480,6 +480,32 @@ Next id: **412**
   way. **If the lane proposes two functions instead, that is a legitimate answer** and the brief says
   so — but then each caller must be named with which one it takes, or the split just moves the
   question
+  · **MY OWN RECOMMENDATION IS INSUFFICIENT, measured 11:25, and it would REINTRODUCE the P1.**
+  Field-exclusion removes `related:` markers — but **six open tasks are mentioned in landed entries
+  as ordinary prose, in no field at all**: `#367, #393, #399, #404, #405, #409`. Examples verbatim:
+  *"gaps filed rather than absorbed: **#393**"*, *"see **#405**, which is the plan's own
+  alternative"*, and — perfectly — *"(**#409**, open)"*. So a field-exclusion fix still lands
+  **#367**, which is the precise false landing that made lint tell the coordinator to close his
+  unanswered question. **The brief the lane is holding recommends a fix that does not work.**
+  · **THE RULE THAT DOES WORK, and it came out of the data rather than out of me.** Compare the two
+  populations: a genuine landing is **sentence-initial** — `**#111** answered questions collapse and
+  stay findable (a8f6b7f).` — while a reference is **mid-sentence**, preceded by a word. That is
+  positional anchoring, the same discipline as field anchoring, and it is what the ledger's authors
+  were actually doing. Measured over the 81 contested ids, accepting only a bold ids-only span
+  preceded by start-of-bullet or a sentence end:
+    caught 65 of 68 genuine landings · caught **0 of 11** references · landed = **160**
+    both-open-and-landed = **0** — `#399`'s win is preserved, which field-exclusion loses
+  · **and the three it misses are instructive rather than damaging.** `#101` and `#97` sit in a
+  comma-joined run (`**#91** composer tweaks and **#101** scrollbar styling (2026-07-25), **#97**
+  durable task ledger`); `#270` follows a closing backtick. All three are cheap to add — accept
+  after `, `, ` and `, and `` ` `` — and each addition should be re-measured against the false set
+  rather than assumed safe
+  · **a SECOND fictional-id class, found the same way as `#5`: `#501` and `#502` do not exist.**
+  Next id is 412. They appear because a landed entry quotes a **test fixture** — *"Probed on a temp
+  fixture: form A `related: **#501**, **#502**` → 3 ERRORs"*. The positional rule rejected both
+  automatically, which is a point in its favour: **it excludes example ids without needing to know
+  they are examples.** Any allowlist-of-fields approach has to enumerate this class; positional
+  anchoring gets it for free
   · **THE MERGE GATE, written 11:19 BEFORE the lane reports, so it cannot be shaped by what the
   lane says it achieved.** Measured now, both parsers run against today's ledger:
     - deployed/pre-`#399` logic: **136 open, 176 landed**
