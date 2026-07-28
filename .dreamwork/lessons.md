@@ -2954,3 +2954,17 @@ this shape and convert opportunistically.)
   `— YYYY-MM-DD` and the live titles carry the date *before* the em dash, so it
   reached nothing; a green red-run is a finding, and re-running it against the real
   title shape fired the precondition as designed.
+
+- **A probe that does not verify *whose* process answered can report any result at
+  all.** Verifying `#263`'s `E3` cutover, two consecutive probes returned `200
+  {"ok": true}` — the exact legacy `journal_shadow=False` fallback — which read as a
+  failed cutover for a change that had in fact landed correctly. The cause was in the
+  probe: `watch.py` has no `--no-open` flag, so the server I launched died on an
+  argparse error and `urllib` silently reached a **stale lane server already
+  listening on that port**, running pre-merge code. This is the fixture-in-front-of-
+  the-code failure moved to the network: nothing was mocked, and the answer still
+  came from somewhere other than the code under test. **Evidence:** with the listener
+  resolved from `ss -ltnp` and asserted to be my own pid, the same request returned
+  `202` + `Location` + a receipt id present in all three journal tables. Rule:
+  **assert the responder's identity, not just that something responded** — and treat
+  a subprocess you never confirmed came up as a subprocess that did not.

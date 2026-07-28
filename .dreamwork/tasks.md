@@ -2532,6 +2532,27 @@ Next id: **461**
   hardcodes `send_response(200)` so it cannot express a status at all, and **every** browser check is
   `res.ok` across 9 sites — so `200 → 202` is invisible to him and moves only 15 assertions (by `ast`,
   not grep, which missed four multi-line ones).
+  · **lane E batch 1 DONE and merged `df2989e`** — `E1 envelope` `69b8573`, `E2 shadow` `d460947`,
+  `E3 cutover` `38ef409`; new file `test_user_events_http.py`. The cutover's shape: the **journal
+  commit, not the handler, authorises the response** — `_send_receipt` (`watch.py:9827`) sends `202`
+  with `Location: /user-events/<id>` and merges receipt id/sequence/digest into the handler's body,
+  and it refuses to mint a `202` from a missing receipt (`send_error(503)`) rather than fabricating an
+  id. A journal open/commit failure is a `503` with no receipt (`:10088`)
+  · **verified end-to-end by me against a real server, not folded from the report**: `POST /command`
+  `{kind:'add-idea'}` → `202`, `Location: /user-events/43899c46-…`, and that receipt id present in
+  **all three** tables of `.dreamwork/user-events.sqlite3` (`receipts`, `transitions`, `events`)
+  · **and my first two probes were measuring somebody else's process.** They returned `200 {"ok":
+  true}` — the exact legacy `journal_shadow=False` fallback — which read as a failed cutover. The
+  cause was mine: `watch.py` has no `--no-open` flag, so my server exited on an argparse error and
+  `urllib` reached a **stale lane server already listening on that port**. Now asserted in the probe:
+  resolve the listener's pid from `ss -ltnp` and require it to equal the pid I started. A probe that
+  does not verify *whose* server answered can report any result at all — the network equivalent of the
+  fixture that stands in front of the code
+  · out of that batch and still open as the successor: **E4** (best-effort), **E5** (reject after
+  receipt — `_read_json` at `watch.py:8354`; pre-E5 an invalid `kind` is still a synchronous `400` by
+  design, which is *not* a cutover defect), **E6** (visible — a browser/motion increment, so it needs
+  `transitions.md` and the design skills, not a tail bolted onto E). Then lane **G** (30–33, shares
+  `watch.py` with E) and **H** (34–35)
 - **#262** — Make accepted Web UI submissions durably witnessed before 200 · P0 ·
   reliability bug · origin: **loop** · 30m · incident exposed by **human report
   2026-07-26 15:47** · current `log_submission()` catches and suppresses
