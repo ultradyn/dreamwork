@@ -49,6 +49,11 @@ Next id: **413**
   · **the gate that found this is reusable** and already red-proved in both directions — it lives
   in the session scratchpad, not the repo; if this is dispatched, port the space-separated check
   into `test_watch.py` so it survives the session
+  · **`file-formats.md` is honest about this and must stay so.** `#399b` documents the combined
+  head as `**#5/#6**` and says history packs *several landings to a line* — both true, since
+  several *spans* on one line do work. It does not claim the space-separated span works, so
+  there is no doc lie to fix; but when this lands, the doc should state the form explicitly
+  rather than leave a reader to infer it from the slash example
   · related: **#399**
 
 - **#411** — two answered entries carry a perfectly good date and the page throws it away, because
