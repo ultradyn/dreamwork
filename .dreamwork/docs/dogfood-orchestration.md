@@ -1093,3 +1093,42 @@ expected numbers **before** the lane reported, and caught a residual (`#412`) th
 the lane nor the guard would have surfaced. **A coordinator who implements cannot also be
 the independent check on the implementation.** That is the trade, stated honestly: slower
 to green, harder to fool.
+
+## Dispatch 2 — `#331`, and a prediction recorded before the outcome
+
+Dispatched 12:37 to `ccc --yolo @glm52`, pid 1161084, worktree `.worktrees/331`, brief at
+`.dreamwork/docs/briefs/331-one-span-definition.md`. **`@grok` is still 401**, so the fleet
+remains one runner deep and this is not a comparison — it is a second sample of the same runner
+on a task deliberately harder than the last: `#399b` was one function, this is a shared
+definition consumed across three files plus a pinning test.
+
+**Prediction, before any result.** Based on the single prior sample I expect: nothing on disk
+for 25-40 minutes, then a burst; total 60-90 minutes; the fix correct; the *inert set* the
+place it slips, because widening a pattern is the easy half and proving prose stays out is the
+half that needs the fixture placed at column 0. **What would refute this:** an early first
+commit (which would mean the back-loading was task-specific, not a property of the runner), or
+a failure mode in the plumbing — imports, `lint.py` consuming `watch.py` — rather than in the
+regex. I also expect it to push back on something; the last one pushed back twice and was right
+both times.
+
+**What I did differently, and why.** On `#399b` I built the acceptance gate while the lane ran
+and it found a residual (`#412`) that neither the lane nor the guard surfaced. So this time the
+gate was built and **red-proved in both directions before the lane reported** — narrow (master)
+fails the 19-id, arithmetic, one-definition and pinning checks; deliberately over-wide fails all
+six inert checks plus the newline check. That is the coordinator-only mode's actual dividend,
+and it is only available because I am not the one writing the fix.
+
+It paid immediately. Red-proving turned up a fact the brief had wrong: of 27 prose bold spans in
+the landed section, **26 are indented and therefore already inert by the column-0 rule** — only
+`**#96 stage 1**` sits at column 0, where the pattern is the sole guard. So an over-wide pattern
+moves the landed total by **+1**, not by a flood, and one of my own acceptance criteria
+(`#501`/`#502` do not land) passes even under a pattern that is visibly landing them, because
+those ids are indented. **A criterion that cannot fail is not a criterion**, and I had written
+one into the brief. Corrected by addendum at 12:47 (`90f4c87`), before the lane reached it.
+
+**And the day's dominant class caught me for the seventh time**, one hour after I wrote the
+lesson for the sixth: I ran the gate as `python3 gate331.py master | tail -35` and read
+`EXIT=0` — the pipe returns `tail`'s status. What saved it was not the lesson but a design
+choice: the gate prints its own `GATE PASSED` / `GATE FAILED` verdict line, so the output
+contradicted the exit code and the output was right. **Make every check state its verdict in
+its output**, because the exit code is the thing a pipeline silently replaces.
