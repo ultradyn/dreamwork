@@ -2159,12 +2159,27 @@ const qaInner = (q, key) => {
   /* An answer is his words as much as a note is, so it says so in the same
      vocabulary (#109, #128 part b): of two things he wrote, it must not be
      that only one is attributed. The author comes from the tag, so an answer
-     tag nobody recognises gets no label rather than a guessed one. */
-  const answer = st === 'awaiting'
+     tag nobody recognises gets no label rather than a guessed one.
+     #446: a second answer used to overwrite the first at parse time; the
+     parser now retains every one in `answers` (file order). Each gets its own
+     attributed `.anstext` block here, so none of his words vanish on the
+     rail either. With one answer the DOM is byte-identical to before, so the
+     submit-morph's `flipDock` on the first `.anstext` and the wisp guard are
+     unchanged; the first answer stays the resolution anchor the thread is
+     cut around. */
+  const ansBlocks = (st === 'awaiting')
+    ? (q.answers && q.answers.length
+        ? q.answers
+        : (q.answer != null
+            ? [{text: q.answer, when: q.answer_when, by: q.answer_by}]
+            : []))
+    : [];
+  const answer = ansBlocks.length
     ? `<div class="anstag">answered · awaiting fold</div>` +
-      `<div class="anstext">` +
-      (WHO[q.answer_by] ? `<span class="who">${WHO[q.answer_by]}</span>` : '') +
-      stamp(q.answer_when) + `${mdInline(q.answer)}</div>` : '';
+      ansBlocks.map(a => `<div class="anstext">` +
+        (WHO[a.by] ? `<span class="who">${WHO[a.by]}</span>` : '') +
+        stamp(a.when) + `${mdInline(a.text)}</div>`).join('')
+    : '';
   /* WHAT THE QUESTION SAYS IS WRAPPED; THE BOX HE ANSWERS IT WITH IS NOT
      (#326). `.qbody` is the review dock's scrollport, so it holds everything
      that should scroll — the title included, which is what #305 designed and
@@ -8394,7 +8409,7 @@ def _join_title(parts):
 
 
 def _parse_entries(text, section, lift_answer):
-    """Entries under `## {section}` as [{title, body, follows[, answer]}].
+    """Entries under `## {section}` as [{title, body, follows[, answer…]}].
 
     Four invariants, each of which was a bug at some point:
 
@@ -8410,16 +8425,21 @@ def _parse_entries(text, section, lift_answer):
     4. An Answer or Note sub-bullet is never mistaken for an entry, even
        un-indented, so it cannot swallow the entries that follow it.
 
-    `lift_answer` pulls a `- **Answer (via watch…):**` bullet out into
-    `answer` (Open only), so the view can show answered-awaiting-fold
-    distinctly rather than as an ambiguous open question. Lifting it out of
-    the sequence is what makes `answer_at` necessary: it records how many
-    notes preceded the answer, so the card can put the discussion that led to
-    a resolution ABOVE it and any amendment below. Without that the answer was
-    hoisted over every note whenever it was written, and a note from two hours
-    earlier read as a reply to it (#128) — the entry parsed identically with
-    its sub-bullets in either source order, which is the proof that no
-    rendering fix could have reached it.
+    `lift_answer` pulls every `- **Answer (via watch…):**` bullet out of the
+    thread (Open only), so the view can show answered-awaiting-fold
+    distinctly rather than as an ambiguous open question. Each is retained in
+    `answers` — a list of {text, when, by, at} in file order — because a
+    second answer used to overwrite the first at parse time and his earlier
+    words were gone before any render rule ran (#446). The FIRST answer is
+    also projected onto the single fields (`answer`, `answer_when`,
+    `answer_by`, `answer_at`): it is the resolution anchor, so the thread cut
+    (`answer_at`) and every existing caller stay on it, and "discussion that
+    led to the resolution" still sits above an amendment below. A later answer
+    is kept in `answers` but never displaces the anchor at parse time — the
+    loop reconciles amendments at fold. `answer_at` per answer records how
+    many notes preceded THAT answer, the position the lift would otherwise
+    discard and the only thing that says which notes are a reply to it and
+    which it is a reply to (#128).
     """
     items = []
     if not text:
@@ -8460,7 +8480,7 @@ def _parse_entries(text, section, lift_answer):
             cur = {"title": _join_title([seg]), "body": "", "follows": []}
             if lift_answer:
                 cur.update(answer=None, answer_when=None, answer_by=None,
-                           answer_at=None)
+                           answer_at=None, answers=[])
             items.append(cur)
             sub = None
             title_parts = None if closed else [seg]
@@ -8479,13 +8499,31 @@ def _parse_entries(text, section, lift_answer):
                     cur["body"] = rest.strip() + "\n"
             continue
         if is_answer:
-            cur["answer"] = s.split(":**", 1)[-1].strip()
-            cur["answer_when"] = sub_when(s)
-            cur["answer_by"] = answer_by
-            # how many notes preceded it — the position the lift would
-            # otherwise discard, and the only thing that says which notes are
-            # a reply to this answer and which it is a reply to (#128)
-            cur["answer_at"] = len(cur["follows"])
+            # #446: a second Answer bullet used to overwrite the first, so his
+            # earlier words were lost at parse time — before any render rule,
+            # thread rule or dashboard code ran. questions.md is the durable
+            # record of what he decided; the loop cannot know what it forgot.
+            # So EVERY answer is retained in `answers`, in file order, each
+            # with its author tag, timestamp, and place among the notes. The
+            # parser does not rank or interpret (amendment vs correction vs a
+            # re-opened entry); it keeps what he wrote, and the loop reconciles
+            # semantics at fold. This extends the existing thread grammar
+            # (timestamped contributions in file order) rather than inventing
+            # a second one.
+            at = len(cur["follows"])
+            rec = {"text": s.split(":**", 1)[-1].strip(),
+                   "when": sub_when(s), "by": answer_by, "at": at}
+            cur["answers"].append(rec)
+            if len(cur["answers"]) == 1:
+                # The FIRST answer is the resolution anchor — the thread cut
+                # (`answer_at`) and every single-field caller stay on it, so
+                # "discussion that led to the resolution" still sits above and
+                # an amendment below (#128). A later answer is retained in
+                # `answers` but never displaces the anchor at parse time.
+                cur["answer"] = rec["text"]
+                cur["answer_when"] = rec["when"]
+                cur["answer_by"] = rec["by"]
+                cur["answer_at"] = at
             sub = "answer"
         elif author is not None:
             cur["follows"].append(_note_entry(s, author))
@@ -8494,7 +8532,12 @@ def _parse_entries(text, section, lift_answer):
             sub = None                          # a new bullet ends invariant 3
             cur["body"] += line + "\n"
         elif sub == "answer":
-            cur["answer"] += " " + s
+            # a wrapped continuation belongs to the answer being written — the
+            # LAST in `answers` — and, while that is still the first (anchor)
+            # answer, to its single-field projection too.
+            cur["answers"][-1]["text"] += " " + s
+            if len(cur["answers"]) == 1:
+                cur["answer"] += " " + s
         elif sub == "follow":
             cur["follows"][-1]["text"] += " " + s
         else:
