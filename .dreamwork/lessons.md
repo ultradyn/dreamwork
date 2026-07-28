@@ -3163,3 +3163,15 @@ this shape and convert opportunistically.)
   culprit indicts your reading of the commit before it indicts the method — run `git show --stat` on it, which
   costs one command, before concluding the range is broken. Evidence: `#474`, where that misreading cost two
   extra bisects and a lesson that had to be rewritten.
+
+- **A subagent's own claim that it reversed a containment breach is the one thing you must verify yourself, and
+  it takes two commands.** The `quiesce` lane wrote its plan amendment to the **main checkout** by resolving a
+  path against the wrong root, self-caught it, reversed it with a content-anchored edit rather than `git
+  checkout` (correct — a checkout would have discarded whatever else was there), and disclosed it unprompted.
+  All good behaviour, and none of it is evidence: the reversal is a claim about bytes I can read. Verified with
+  `git diff -- <path>` (empty) and `git show --stat HEAD | grep <path>` (absent), the second because the breach
+  window **overlapped a merge of mine** and a dirty file caught in a commit is how `12f47e3` happened. Also
+  worth keeping: `lint`'s lane-containment backstop reported the file dirty while it was, which is the first
+  time that check has fired on a real breach rather than a rehearsal. Evidence: `#263` H2's merge, where the
+  lane reported the breach and the two commands took under a minute.
+
