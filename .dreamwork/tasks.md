@@ -24,9 +24,22 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **459**
+Next id: **460**
 
 ## Open
+- **#459** — two typing boxes keep no draft: `#askbox` and the popout `#ptext` · **P2** ·
+  dashboard/durability · origin: **loop** (draftcheck lane, verifying `#269`) ·
+  · **found while checking what draft durability actually covers** (`6a6ddff`). The review dock, the
+  `/questions` answer boxes and the command composer all persist per keystroke and survive a process restart.
+  **`#askbox` and the popout `#ptext` do not** — text typed there is lost on a reload, a route change or a
+  redeploy.
+  · **his standing rule makes this a defect rather than a gap**: *"we must have persistence and never lose
+  work on an autoreload of a page"* is a property of **any field he can type into**, not of the boxes we
+  happened to fix. `#askbox` is how he files a question; losing that is losing an ask before it exists.
+  · **the mechanism already exists and must be reused, not re-authored** — `dw:adraft:<target>:<id>` /
+  `dw:draft:<target>`, written on every input event, restored after render, cleared only on durable success.
+  Read `.dreamwork/docs/draft-durability-status.md` first; it names the lines.
+  · smaller than it looks, and **independent of `#269`'s IndexedDB upgrade** — do not wait for that.
 - **#458** — a migration leaves its notice **in the file the stale agent still reads**, so a running loop can
   update its own routine · **P1** · loop-machinery/migration · origin: **human** ·
   **human via chat 2026-07-29 01:40 (paraphrase of a dictated thought, his words quoted below):** *"for
@@ -2280,6 +2293,18 @@ Next id: **459**
   load?"*, never swap text under him. C2 = **30 days** idle GC by `updatedAt`, plus explicit *forget this*
   and *forget all for this project*. **No design decision remains open**; the build grant is asked
   separately (an authorisation-only ask, the shape `#451` wants queued apart from design rulings).
+  · **CORRECTION 2026-07-29 01:43 — this entry (and the coordinator) had the shipped state wrong.** He said
+  *"drafts are durable btw, ask a grok subagent to check"*, and the check (`6a6ddff`,
+  `.dreamwork/docs/draft-durability-status.md`) settles it **empirically, not from comments**: typed text
+  **survives a real `watch.py` kill and restart** (pid 1614177 → 1673912 on :39897) in the review dock,
+  the `/questions` answer boxes **and the command composer** — the text reappeared in the fields, not
+  merely in storage. Writes happen on **every input event with no debounce** (`watch.py` 4660,
+  5448-5458, 6824-6828), so there is no lossy tail window; a draft clears **only** on durable success
+  (3527/3571/6915) and a **failed send keeps it**. Storage is `localStorage`, not IndexedDB.
+  · so the coordinator's caution about a redeploy eating his text was **wrong**, and the status is
+  **(b) partly shipped** — acute durability live since `0366706`. **Remaining and still authorised:**
+  the IndexedDB upgrade, cross-tab `R1`, 30-day GC, **and two boxes that are not covered at all —
+  `#askbox` and the popout `#ptext`** (`#459`).
 - **#265** — Add a research command to the composer · P2 · command design ·
   origin: **human** · **human via watch 16:05** · hidden/menu command for
   primary-source feasibility research on features/subprojects · distinguish
