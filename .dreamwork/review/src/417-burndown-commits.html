@@ -1,32 +1,39 @@
 <!--dreamwork-review-source
-title: "#417 · Burndown commits-per-period · four treatments priced, none picked"
+title: "#417 · Burndown commits-per-period · RULED: c3 + c4 + a per-column hover"
 identity: burndown commits
-context: task #417 · design proposal — your call
-status: awaiting review
+context: task #417 · ruled 2026-07-29 06:23 · this page is the record now, not the ask
+status: DECIDED · 2026-07-29 06:23 · c3 + c4 + hover · shipped a839c57
 headline: All four options side by side at one scale — real panel renders, same ledger.
-tag: proposal only — watch.py is unchanged in the commit
+tag: decided and shipped — the panel now carries all three
 sub: task #417 · 28 July 2026 · every render is the live repo's own ledger, both viewports
-skip: Skip to the ask
+skip: Skip to the ruling
 skip_href: "#ask"
 -->
 <!--#nav-->
 <a class="full" href="#compare">side by side</a><a href="#candidates">c1 · c2 · c3 · c4</a><a href="#pricing">the price table</a><a href="#method">method</a>
 <!--#lead-->
-<p id="if-silent" class="if-silent"><span class="key">if you say nothing</span> none of c1–c4 ships — the burndown stays as it is (and "none" is a complete answer).</p>
+<p id="if-silent" class="if-silent"><span class="key">silence is spent</span> it said that saying nothing would ship none of c1&ndash;c4. He did not stay silent &mdash; he ruled at 06:23, so there is nothing left for silence to decide, and this page is kept as the record of that decision.</p>
 <div id="ask" class="ask-block">
-  <div class="label">Ask</div>
-  <p class="ask-q">Pick <strong>one</strong>: <code>c1</code> (histogram behind), <code>c2</code> (sparkline rail),
-  <code>c3</code> (encode into the line), <code>c4</code> (copy only), or <code>none</code> (ship nothing — the
-  tooltip already names commits-per-period on every candidate). Free text is always fine. <em>&ldquo;none&rdquo;</em>
-  is a complete answer to this question; the caution is the requirement.</p>
-  <p class="ask-answers"><span class="key">accepted answers</span>
-  <code>c1</code> &nbsp;&middot;&nbsp; <code>c2</code> &nbsp;&middot;&nbsp; <code>c3</code>
-  &nbsp;&middot;&nbsp; <code>c4</code> &nbsp;&middot;&nbsp; <code>none</code>
-  &nbsp;&middot;&nbsp; free text</p>
-  <p class="ask-rec"><span class="key">loop rec</span>
-  <strong>c4</strong> &mdash; copy only, the #218 precedent, with the figure line shortened so it fits &mdash;
-  and <strong>c2</strong> if you want the per-period <em>shape</em> (not c3: thickness is not a readable quantity).
-  The side-by-side strip is at <a href="#compare">#compare</a>; the price table still prices all four.</p>
+  <div class="label">Ruled &mdash; kept as the record</div>
+  <p class="ask-q"><strong>Ruled 2026-07-29 06:23</strong>, and he overruled both the loop&rsquo;s rec and the
+  coordinator&rsquo;s visual verdict. His words: <em>&ldquo;I think c3 + c4. I like the chunkyness of the line.
+  granted it&rsquo;s not that intuitively connected to the number of tasks (which I think is what the line is,
+  right?) but yeah. it shows density of action still which is kind of nice.&rdquo;</em> &mdash; and, against the
+  objection that <code>c3</code>&rsquo;s mapping is learned rather than obvious: <em>&ldquo;we should show exact
+  numbers for each column on hover of that column. then it&rsquo;s very easy to learn.&rdquo;</em></p>
+  <p class="ask-answers"><span class="key">what shipped</span>
+  <code>c3</code> (commits in the level line&rsquo;s cap weight, 2&ndash;6px, with zero mapped to 1px so quiet
+  stays distinguishable from one) &nbsp;&middot;&nbsp; <code>c4</code> (the figure line, shortened so it no
+  longer truncates at either viewport) &nbsp;&middot;&nbsp; a per-column hover reading
+  <code>N open &middot; A&uarr; L&darr; &middot; C commits &middot; stamp</code>. Merged
+  <code>a839c57</code>; panel height measured constant at 196px across a data change.</p>
+  <p class="ask-rec"><span class="key">superseded rec</span>
+  The loop recommended <strong>c4</strong> alone and the coordinator&rsquo;s visual verdict <strong>rejected
+  <code>c3</code></strong> as an unlearnable mapping. Both were overruled, and his hover is a better answer than
+  the rejection was: it makes the mapping learnable instead of arguing about whether it is. Kept visible because
+  a record that hides what it got wrong is not a record. His own question &mdash; <em>&ldquo;which I think is
+  what the line is, right?&rdquo;</em> &mdash; is answered in the hover itself, which names <strong>open</strong>
+  first: the level line is how many were OPEN, not how many completed.</p>
 </div>
 <p class="read">You said the burndown <q>should show how many commits were made each period</q>, and that the design is
 <q>pretty good now</q> and easy to make worse. So this page ships a <strong>proposal, not an implementation</strong>: four
@@ -163,7 +170,9 @@ per-period commits on every candidate) is the honest floor.</div>
   <code>c3</code> makes the level line chunky without a readable quantity;
   <code>c2</code> is the contender if you want per-period <em>shape</em> (+25px, breaks constant-height);
   <code>c4</code> remains the rec once its copy is shortened so it does not truncate. This strip is so you can
-  check that verdict yourself without hunting.</p>
+  check that verdict yourself without hunting. <strong>Superseded 06:23:</strong> he took <code>c3</code>
+  <em>and</em> <code>c4</code>, and answered the &ldquo;no readable quantity&rdquo; objection with a hover rather
+  than accepting it.</p>
 </section>
 
 <section id="candidates" aria-labelledby="can-t">
@@ -310,7 +319,8 @@ per-period commits on every candidate) is the honest floor.</div>
   <div class="notice"><strong>Visual verdict (coordinator, 19:10) is in the strip caption.</strong> The lane that
   first built these renders could not see; the coordinator later read the pixels and redirected the rec
   (<code>c3</code>&rarr;<code>c2</code> for shape; <code>c1</code> invisible). This rebuild is so you can do the same
-  without scrolling five separate figures.</div>
+  without scrolling five separate figures. <strong>He then overruled that verdict on <code>c3</code></strong>,
+  which is worth keeping visible: the coordinator could see the pixels and still read the design call wrong.</div>
 </section>
 <!--#footer-->
 task #417 · burndown commits-per-period · proposal only · <code>watch.py</code> unchanged · the open question this answers is on <code>.dreamwork/questions.md</code> via the dashboard
