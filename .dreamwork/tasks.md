@@ -50,7 +50,9 @@ Next id: **423**
   · blocked on nothing · related: **#422** (research artifacts as a kind), **#419**
   · **research DONE, `ccc @grok`, ~13 minutes — `bae566d`, merged `e50226d`.** Doc:
   `.dreamwork/docs/research/2026-07-28-question-instruction-design.md` (484 lines). Read
-  `i-have-adhd` at sha `c784dcb`, quoting its `SKILL.md`, agent configs, hooks and eval rubric.
+  `i-have-adhd` at **its own** revision `c784dcb` — an **upstream** id, not a commit in this
+  repo, and `lint`'s cited-sha check was right to flag the earlier wording as a landing that git
+  cannot resolve — quoting its `SKILL.md`, agent configs, hooks and eval rubric.
   Entry stays **open**: the research is half the ask; the options and the question to him remain
   · **it refuted the premise this entry was filed with, and the refutation is the useful part.**
   I wrote *"three independent signals that our question format costs him"*. Measured: **19 of 56**
