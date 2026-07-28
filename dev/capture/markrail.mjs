@@ -83,6 +83,8 @@ title: #367 mark-rail guard fixture
 identity: mark rail · guard
 context: task #367 · the flag rail, above the cliff only
 status: guard fixture
+no_ask: guard fixture — it exercises the mark rail and asks nothing (#436)
+no_if_silent: guard fixture — no decision to park, so there is nothing silence could block (#455)
 headline: The rail lands settled, and it fits.
 skip: Skip to the marks
 skip_href: #long

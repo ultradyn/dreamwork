@@ -65,6 +65,8 @@ context: task #347 + #372 · a deliberately long context line that starves the n
 status: awaiting review
 headline: A fixture that exercises every word the frame must not break.
 tag: guard fixture — not a real review
+no_ask: guard fixture — it exercises the frame's wrapping and asks nothing (#436)
+no_if_silent: guard fixture — no decision to park, so there is nothing silence could block (#455)
 sub: guard fixture · nav anchors and a scroller table at three widths
 skip: Skip to the table
 skip_href: #table
