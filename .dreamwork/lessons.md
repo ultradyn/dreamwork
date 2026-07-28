@@ -2924,3 +2924,33 @@ this shape and convert opportunistically.)
 - **An unanchored split on `## Recently landed` hit a PROSE mention of the heading, not the heading.** Folding four landed entries, `t.split('## Recently landed', 1)` matched an open entry that *quoted* the heading, truncating the open section and writing a file with **two** landed headers — 130 lines moved into the wrong half. lint caught it, but only indirectly: it reported a *reciprocity* error about an unrelated pair (`#395`/`#353`), which cost four probe commands to trace back to the structure. The ledger already records this defect twice about itself and a brief written an hour earlier told a lane to guard against exactly it. Fix: `re.search(r'^## Recently landed$', t, re.M)` plus `assert` that both headings match exactly once — and assert the post-write invariant too, since the symptom appears far from the cause.
 
 - **Unescaped backticks in a double-quoted zsh argument execute, and the ledger silently loses shas.** A `dev/ledger.py fold --note "… `159917b` … lane `wt/qage` …"` call had its backticked spans run as commands (`zsh: command not found: 159917b`), so the note landed missing **two shas and the lane name** — and the opening `**B` of `**BOTH` was consumed too. **`lint.py` cannot catch this**: a note with no sha is legal prose, and its cited-sha check only validates shas that are *present*. The earlier folds that night were undamaged only because they happened to use `\``. Fixes, in order of reliability: pass the note via a **heredoc or a file** rather than an argument, or escape every backtick. And when a shell prints `command not found` for something that was meant to be data, treat the write that followed as suspect and re-read it — the failure is upstream of any check.
+
+- **A perf hypothesis that names the animated attribute is usually wrong; measure
+  what happens when you remove the whole thing.** `#449`'s dissolve was framey and
+  two plausible causes were proposed and both refuted by measurement: the
+  coordinator's (animating `feTurbulence@baseFrequency` invalidates the noise field
+  each frame — freezing it measured ≈ baseline, as did freezing *all six* per-frame
+  attribute writes) and the human's (too much filtered area — a 42% clamp of the
+  ghost box, 553×1557 → 553×900, gave 13.7 → 13.7 frames and worst frame 184.9 →
+  187.4ms). The real shape was a **threshold, not a gradient**: removing *either*
+  of the two SVG filters alone ≈ baseline, removing **both** → frames 12 → 28
+  (+128%), worst frame 262 → 129ms. Two filter rasterisations per frame contending
+  with a main-thread shader cascade into long tasks; one is as bad as two.
+  **Evidence it matters:** the authorised fix (viewport-clamp the mist) was measured
+  to ship no win *before* it was built, because the lane measured the clamp instead
+  of assuming the area story. Had it shipped on the reasoning, the gesture would
+  have been degraded for nothing. Corollary for this repo: bisect by *presence*
+  first (all off, one off, both off), and only then by parameter.
+
+- **A test that selects a fixture loosely and then asserts the fixture's shape
+  fails on new legitimate data, not on the bug it guards.** `#392b`'s check took
+  *any* dated open question from the live `questions.md` and then asserted the title
+  carried no time — correct as an assertion, wrong as a selection, because since
+  `#392b` a title may legally carry ` HH:MM`. The first timed ask filed afterwards
+  (a `#449` entry, minutes later) turned it red on master. Fix: **select on the
+  property you need** (date-only entries), then assert the precondition that *at
+  least one exists* — which is the thing that can actually expire. **Evidence:**
+  the first red-proof of the fix came back green because the injection rewrote only
+  `— YYYY-MM-DD` and the live titles carry the date *before* the em dash, so it
+  reached nothing; a green red-run is a finding, and re-running it against the real
+  title shape fired the precondition as designed.
