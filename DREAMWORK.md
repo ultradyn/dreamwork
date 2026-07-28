@@ -315,6 +315,31 @@ dreamwork-version: 5853e1789929
   before changing the page; keep them current in the same commit as the
   change. `CLAUDE.md` at the skill root carries the rule for anyone
   working on this repo.
+- **A blocker that is his must always have a question he can answer**
+  (2026-07-28 15:19, his words): *"we should structure things in such a way
+  that it's impossible for us to be blocked on a user decision without a
+  corresponding question ... either pending an answer/ruling, or that
+  question could be answered but waiting for processing ... there always
+  has to be an answer in our data for these kinds of questions."*
+  So: **open, or answered-but-unfolded, are both fine; absent is not.**
+  Saying "this is waiting on you" without an entry he can rule on is worse
+  than not saying it, because he then believes he is blocking work he has
+  no way to release. He found this by trying to rule on `#264` and finding
+  nothing — the design had landed with its artifact and the ask was never
+  filed. `#419` makes it a lint ERROR, which needs a machine-readable
+  *blocked-on-human* marker first, since today it lives only in prose.
+  Until that lands the guarantee is discipline, and he has been told so.
+- **When a decision turns on a number, build it and measure it before
+  asking.** `#367` went to him as *"option A costs ~214px"*; he asked to
+  see the options rendered, and A measures **167.9px**. The 214 was
+  arithmetic from a worst-case tab, never observed, and by the time it
+  reached him it carried no trace of being derived. It was also the entire
+  decision — 214-vs-32 in prose, 168-vs-32 in fact. A lane produced the
+  measured previews in **thirteen minutes**. So a computed figure in
+  anything he rules on **says that it is computed, in the same sentence**,
+  and where the choice hinges on it, spend the thirteen minutes.
+  His answer then improved on both options — C with a collapsible index —
+  which he could only have seen with both on screen.
 
 ## Plugins
 
