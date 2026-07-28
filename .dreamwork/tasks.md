@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **417**
+Next id: **418**
 
 ## Open
 
@@ -750,7 +750,7 @@ Next id: **417**
   artifact — and it is the one that makes the frame change safe to ship before any artifact
   adopts it
 
-  · related: **#396**
+  · related: **#396, #417**
   · **INCREMENT 2a LANDED** `d4cbba8` `a818bf8` (+ `markrail` registered in the `justfile`, which the
   brief had failed to grant — ratified by relay). `ccc @glm52`. The rail, the flag, next/prev, above
   the cliff only; **below 860px nothing renders**, deliberately, because 2b is his call
@@ -3043,6 +3043,28 @@ Next id: **417**
   changed `settings.json` only because he answered yes to a direct ask. An audit reports, and asks
   before it repairs
   · related: **#408, #283**
+
+- **#417** — the burndown should show commits per period, without spending the design it already
+  has · P2 · Web UI/dashboard · origin: **human** · **human via watch `add-idea` 2026-07-28 14:58**
+  · verbatim: *"burndown chart should show how many commits were made each period. design needs to
+  be considered since we have a pretty good design now and it would be easy to make it worse."*
+  · **the caution is the requirement, not a politeness.** He is not asking for a bar chart behind
+  the line; he is saying the current burndown is at a quality he does not want traded away for the
+  extra series. So the deliverable is a **design proposal first** — a review artifact showing the
+  candidate treatments against the real chart with real data — and implementation only after he
+  rules. Shipping a provisional version is the failure mode `#367` inc 2a already names: what ships
+  is what gets argued with
+  · the hard part is that commits-per-period is a **second quantity in a different unit** on a chart
+  whose whole legibility comes from one line meaning one thing. Density beside a trend is the
+  classic way a good chart becomes a busy one
+  · candidate treatments to price, not a decision: a faint baseline histogram behind the burndown;
+  a thin sparkline rail beneath the axis; encoding it into the existing line (dot size or segment
+  weight per period) so no second scale is introduced at all; or on-demand only, in the hover
+  readout, where it costs zero permanent ink
+  · **whatever it becomes obeys `transitions.md`** — a new series appearing, or a hover readout
+  arriving, is a transition like any other, and this repo's rule has no size floor
+  · needs `watch-design.md` updated in the same commit as any code, per the styleguide contract
+  · related: **#367**
 
 ## Recently landed
 
