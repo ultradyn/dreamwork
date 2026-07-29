@@ -367,6 +367,72 @@ def check_resolution_marker_outside_title(dw: Path, watch, rep: Report) -> None:
     # actually expire: in the test, derived from its fixture.
 
 
+# Same shape as watch.RESOLVED_AT but unanchored: the stranded marker this
+# check hunts has already been absorbed INTO a sub-bullet's text, so it no
+# longer sits at a line start and the anchored pattern cannot find it.
+_RESOLVED_IN_TEXT = re.compile(r"→[^:\n]*?\(\d{4}-\d{2}-\d{2}")
+
+
+def check_resolution_marker_after_subbullet(dw: Path, watch, rep: Report) -> None:
+    """A `→ answered` marker AFTER a nested `- **` bullet never reaches the
+    body (#467).
+
+    `_parse_entries` invariant 3: a sub-bullet absorbs every following
+    non-bullet line as its own wrapped continuation, and only a blank line
+    (or a plain `- ` bullet) releases it. So a resolution marker written
+    after an `Answer`/`Note` sub-bullet is swallowed into that sub-bullet's
+    text — it never lands in `body`, `answered_at` returns None, the fold
+    looks done, and the #411 WARN reports a *dropped* marker for one that
+    was written, just in the wrong place. Measured 2026-07-29 folding his
+    `#445` answer; moving the marker above the answer line fixed it
+    instantly. Third instance of the #411 family: dropped (`#264`, `#263`),
+    trapped inside a wrapped title, and now orphaned past a nested bullet.
+
+    The unreachable test is the PARSER's, not a position heuristic: an entry
+    offends when `answered_at` sees no marker AND the marker text is found
+    inside a sub-bullet the parser did absorb. That keeps the check honest
+    about the one wrinkle in invariant 3 — a blank line between the bullet
+    and the marker releases the marker back into the body, and that marker
+    is legal here no matter how odd it looks.
+
+    ERROR, because unlike an undated withdrawn ask there is no legitimate
+    reading of a marker the reader structurally cannot see — it is always a
+    misplacement, and the entry it describes always renders wrong.
+    """
+    path = dw / "questions.md"
+    if not path.exists() or watch is None:
+        return
+    try:
+        items = watch.parse_answered(path.read_text())
+    except Exception:
+        return                          # check_questions owns unparseable
+    offenders = []
+    for it in items:
+        if watch.answered_at(it["body"]) is not None:
+            continue                    # the reader sees a marker; legal
+        for f in it.get("follows", []):
+            if _RESOLVED_IN_TEXT.search(f.get("text", "")):
+                offenders.append(it["title"].strip()[:64])
+                break
+    if not offenders:
+        # Silent on success, like its #411 siblings: `check_questions` owns
+        # this file's OK row and a second one fragments the summary. The
+        # precondition (the fixture's marker is genuinely unreachable) is
+        # asserted where it can expire: in the test, derived from the real
+        # parser rather than trusted from the fixture's layout.
+        return
+    sample = "; ".join(offenders[:3])
+    more = "" if len(offenders) <= 3 else f"; +{len(offenders) - 3} more"
+    rep.add(
+        ERROR,
+        "questions.md",
+        f"{len(offenders)} answered entr(y/ies) carry a `→ answered` marker "
+        f"AFTER a nested `- **` sub-bullet, where the parser absorbs it into "
+        f"the sub-bullet and `answered_at` cannot see it — move the marker "
+        f"above the first sub-bullet, to the head of the body: "
+        f"{sample}{more} (#467)")
+
+
 # ── a fold must not drop a sub-decision (#421 B) ─────────────────────
 # The defect this exists for, stated in the ask that granted it: `#275`'s
 # Q3/Q5/Q6 sat unanswered for days with nothing noticing, because a multi-
@@ -3806,6 +3872,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_questions(dw, watch, rep)
     check_answered_resolution_dates(dw, watch, rep)
     check_resolution_marker_outside_title(dw, watch, rep)
+    check_resolution_marker_after_subbullet(dw, watch, rep)
     check_subdecisions(dw, watch, rep)
     check_answers(dw, watch, rep)
     check_author_tags(dw, watch, rep)
