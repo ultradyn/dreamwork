@@ -623,3 +623,349 @@ def test_stop_deployed_cli_wire(tmp_path):
         cwd=str(root), capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     assert "nothing to stop" in r.stdout
+
+
+# --- #480: the snapshot is one file, but the server imports sibling modules --
+#
+# The defect: `just deploy` snapshots ONE file and boots it with
+# `python3 <snap>`. Python puts the SNAPSHOT'S DIRECTORY on sys.path[0], not
+# the repo, so watch.py's repo-local imports (`user_events`, `ledger_parse`
+# at HEAD) cannot resolve from the deployed dir: --assert-server passes (the
+# snapshot IS the server), the old server stops, the new one ImportErrors on
+# boot, and his dashboard is dark. The fix ships every tracked-at-rev sibling
+# beside the snapshot and proves the staged snapshot IMPORTS from that
+# directory — both before the live process is touched.
+
+SIBLING_SERVER = (
+    "import time\n"
+    "from pkg.core import answer\n"
+    "import helper\n"
+    "GENERATION = \"%.6f\" % time.time()\n"
+    "def main(argv=None):\n"
+    "    return 0\n"
+    "if __name__ == \"__main__\":\n"
+    "    main()\n"
+).encode()
+
+
+def sibling_repo(repo):
+    """A scratch repo whose watch.py imports a package AND a flat module."""
+    (repo / "watch.py").write_bytes(SIBLING_SERVER)
+    (repo / "helper.py").write_text("VALUE = 7\n")
+    (repo / "pkg").mkdir()
+    (repo / "pkg" / "__init__.py").write_text("")
+    (repo / "pkg" / "core.py").write_text("answer = 42\n")
+    _commit(repo)
+    return repo
+
+
+def test_import_roots_full_tree_absolute_only():
+    """`import_roots` derives the sibling candidates from the module's own
+    AST: absolute imports at ANY depth. Function-scope imports MUST be
+    included — watch.py's `import lint` lives inside `_posture_vocab()` and
+    the deployed snapshot died on it at page build during the #480 scratch
+    boot (top-level import was clean). Lazy stdlib roots (ctypes) are
+    harmless: the git-tree filter drops what the repo does not track.
+
+    Production line whose removal fails this test: `ast.walk(tree)` in
+    `import_roots` — revert to `tree.body` and `lazy_mod` vanishes."""
+    src = (
+        b"import os\n"
+        b"import ledger_parse\n"
+        b"from user_events.sqlite import Envelope\n"
+        b"def f():\n"
+        b"    import lazy_mod\n"          # lazy, but repo-local => must ship
+        b"if True:\n"
+        b"    pass\n"
+    )
+    roots = ds.import_roots(src)
+    assert roots == ["lazy_mod", "ledger_parse", "os", "user_events"]
+
+
+def test_tracked_sibling_paths_maps_roots_via_git_tree(repo):
+    """The sibling set is whatever the git tree at REV says: a tracked
+    `<root>.py` ships as one file, a tracked `<root>/` ships recursively,
+    and an untracked root (stdlib, site-packages) is left to the interpreter.
+
+    Production line: the two `_ls_tree_entry` lookups and the recursive
+    `ls-tree -r` in `tracked_sibling_paths`. Drop the `<root>.py` probe and
+    `helper` is missed; drop the recursion and `pkg/core.py` is missed."""
+    sibling_repo(repo)
+    paths = ds.tracked_sibling_paths(
+        "HEAD", ["helper", "pkg", "os", "not_tracked_anywhere"], repo)
+    # precondition the check depends on, derived at runtime: the roots cover
+    # one of each class — flat module, package, stdlib, absent.
+    assert paths == ["helper.py", "pkg/__init__.py", "pkg/core.py"]
+
+
+def test_ship_siblings_writes_link_resolved_bytes(repo):
+    """Shipped siblings are the rev's REAL bytes, through the #425 resolver:
+    a sibling that is itself a symlink ships its target's content, not the
+    link string.
+
+    Production line: the `resolve_blob(rev, rel, repo)` call in
+    `ship_siblings`. Replace it with `git show rev:rel` and the symlinked
+    sibling ships its 19-byte link string — caught below."""
+    sibling_repo(repo)
+    real = repo / "real" / "helper_impl.py"
+    real.parent.mkdir()
+    real.write_text("VALUE = 99\n")
+    (repo / "helper.py").unlink()
+    (repo / "helper.py").symlink_to("real/helper_impl.py")
+    _commit(repo)
+    # precondition: the fixture really is a symlink in git.
+    assert subprocess.run(
+        ["git", "-C", str(repo), "ls-tree", "HEAD", "--", "helper.py"],
+        capture_output=True, text=True, check=True).stdout.startswith("120000 ")
+
+    dest = repo / "dest"
+    dest.mkdir()
+    written = ds.ship_siblings("HEAD", str(dest), repo)
+    # the closure includes the seed: lint.py's `import watch` taught us the
+    # snapshot's own module must ship under its real name too.
+    assert set(written) == {"watch.py", "helper.py",
+                            "pkg/__init__.py", "pkg/core.py"}
+    assert (dest / "helper.py").read_text() == "VALUE = 99\n"
+    assert not (dest / "helper.py").is_symlink()
+    assert (dest / "pkg" / "core.py").read_text() == "answer = 42\n"
+    assert (dest / "pkg" / "__init__.py").exists()
+
+
+def test_sibling_closure_is_transitive_and_terminates_cycles(repo):
+    """The closure follows siblings-of-siblings and survives cycles: watch.py
+    imports lint lazily, lint.py does a top-level `import watch` — a cycle
+    the derivation must not hang on, and the reason watch.py itself ships.
+
+    Production line: the queue loop in `sibling_closure`. Ship one level
+    only and `deep_mod.py` is missing; drop the seen set and this test hangs
+    instead of passing."""
+    sibling_repo(repo)
+    (repo / "helper.py").write_text("import deep_mod\nVALUE = 7\n")
+    (repo / "deep_mod.py").write_text("import helper\n")  # a cycle, like lint<->watch
+    _commit(repo)
+    # precondition: the fixture really is cyclic and transitive.
+    assert "deep_mod" in ds.import_roots((repo / "helper.py").read_bytes())
+    assert "helper" in ds.import_roots((repo / "deep_mod.py").read_bytes())
+    paths = ds.sibling_closure("HEAD", repo)
+    assert paths == ["deep_mod.py", "helper.py", "pkg/__init__.py",
+                     "pkg/core.py", "watch.py"]
+
+
+def test_ship_siblings_makes_snapshot_importable_red_then_green(repo, tmp_path):
+    """The whole mechanism in both directions against a real scratch repo:
+    WITHOUT shipped siblings the resolved snapshot does NOT import from the
+    deploy dir (the #480 defect, reproduced), WITH them it does.
+
+    Production line whose removal fails the green half: `ship_siblings`
+    itself (the justfile call is pinned separately). The red half is the
+    precondition, derived at runtime — a green red-run here would mean the
+    check cannot see the defect it names."""
+    sibling_repo(repo)
+    dest = tmp_path / "deployed"
+    dest.mkdir()
+    snap = dest / "snap-watch.py"
+    snap.write_bytes(ds.resolve_blob("HEAD", "watch.py", repo))
+
+    # RED half (precondition): the snapshot IS the server yet cannot boot.
+    ds.assert_is_server(snap.read_bytes())          # the old guard passes...
+    with pytest.raises(RuntimeError, match="does not import"):
+        ds.assert_importable(str(snap))             # ...and the boot fails.
+
+    # the fix:
+    ds.ship_siblings("HEAD", str(dest), repo)
+    ds.assert_importable(str(snap))                 # must not raise
+
+
+def test_assert_importable_runs_toplevel_but_never_main(tmp_path):
+    """The import proof executes module top level (where the sibling imports
+    live) but NOT main() — a server must not boot inside the guard.
+
+    Production line: `_IMPORT_HARNESS` uses spec_from_file_location +
+    exec_module with __name__ != '__main__'. Run the file instead and both
+    marker assertions below fail; skip exec_module and the top-level one
+    fails."""
+    marker_top = tmp_path / "toplevel-ran"
+    marker_main = tmp_path / "main-ran"
+    mod = tmp_path / "mod.py"
+    mod.write_text(
+        "import pathlib\n"
+        f"pathlib.Path({str(marker_top)!r}).write_text('x')\n"
+        "if __name__ == '__main__':\n"
+        f"    pathlib.Path({str(marker_main)!r}).write_text('x')\n"
+    )
+    ds.assert_importable(str(mod))
+    assert marker_top.exists(), "top level did not execute — the guard is hollow"
+    assert not marker_main.exists(), "assert_importable ran main() — it must not"
+
+
+def test_assert_importable_accepts_a_tmp_suffixed_snapshot(tmp_path):
+    """The recipe stages the snapshot as `$snap.tmp` and guards THAT name.
+    spec_from_file_location keys the loader off the suffix and returns None
+    for `.tmp` — a guard built on it refuses every deploy, good snapshot or
+    not (measured: 'NoneType' object has no attribute loader').
+
+    Production line: `SourceFileLoader` + `spec_from_loader` in
+    `_IMPORT_HARNESS`. Revert to spec_from_file_location and this fails."""
+    mod = tmp_path / "snap-watch.py.tmp"          # exactly the recipe's name
+    mod.write_text("VALUE = 1\n")
+    ds.assert_importable(str(mod))                 # must not raise
+
+
+def test_assert_importable_times_out_a_hanging_module(tmp_path):
+    """A module whose import hangs must fail the guard, not hang the deploy.
+
+    Production line: `timeout=timeout` on the subprocess run in
+    `assert_importable`. Remove it and this test hangs instead of failing."""
+    mod = tmp_path / "hang.py"
+    mod.write_text("import time\ntime.sleep(60)\n")
+    with pytest.raises(subprocess.TimeoutExpired):
+        ds.assert_importable(str(mod), timeout=1.0)
+
+
+def test_ship_siblings_and_assert_importable_cli_against_real_head(tmp_path):
+    """End-to-end against the REAL watch.py at HEAD of THIS repo: staging the
+    snapshot alone fails the import guard (the live defect), shipping the
+    siblings fixes it, and the shipped set is derived — not hardcoded.
+
+    This is the named red-run for the defect at HEAD: the first
+    --assert-importable MUST exit 1. If it ever exits 0 with an empty dest,
+    the defect this task fixes no longer reproduces and the fixture is lying.
+    """
+    root = Path(__file__).resolve().parent
+    dest = tmp_path / "deployed"
+    dest.mkdir()
+    snap = dest / "snap-watch.py.tmp"   # the recipe guards the STAGED name
+    snap.write_bytes(subprocess.run(
+        [sys.executable, "dev/deploy_state.py", "--resolve-snapshot", "HEAD"],
+        cwd=str(root), capture_output=True, check=True).stdout)
+
+    # RED at real HEAD: the snapshot is the server but cannot boot alone.
+    r_bad = subprocess.run(
+        [sys.executable, "dev/deploy_state.py", "--assert-importable", str(snap)],
+        cwd=str(root), capture_output=True, text=True)
+    assert r_bad.returncode == 1, (
+        f"the #480 defect did not reproduce: a lone HEAD snapshot imported "
+        f"from an empty dir (stdout={r_bad.stdout!r} stderr={r_bad.stderr!r})")
+    assert "import guard failed" in r_bad.stderr
+
+    # the fix, via the CLI the recipe calls:
+    r_ship = subprocess.run(
+        [sys.executable, "dev/deploy_state.py", "--ship-siblings", "HEAD",
+         "--dest", str(dest)],
+        cwd=str(root), capture_output=True, text=True)
+    assert r_ship.returncode == 0, r_ship.stderr
+
+    shipped = set()
+    for line in r_ship.stdout.splitlines():
+        if line.startswith("shipped "):
+            shipped.add(line[len("shipped "):])
+    # the known-at-HEAD closure, asserted explicitly (a list DERIVED from
+    # the production function would agree with it by construction and prove
+    # nothing). If watch.py's imports change, update this list — the boot
+    # proof below is what makes a stale list fail loud, not silently pass.
+    for rel in ("ledger_parse.py", "lint.py", "watch.py",
+                "user_events/__init__.py", "user_events/sqlite.py"):
+        assert rel in shipped, f"{rel} missing from {sorted(shipped)}"
+    for rel in shipped:
+        assert (dest / rel).exists(), f"sibling {rel} was not shipped"
+    # `import watch` (from lint.py) must resolve to the SAME bytes deployed.
+    assert (dest / "watch.py").read_bytes() == ds.resolve_blob(
+        "HEAD", "watch.py", ds.ROOT)
+
+    # GREEN: the staged snapshot now boots its imports from the deploy dir.
+    r_ok = subprocess.run(
+        [sys.executable, "dev/deploy_state.py", "--assert-importable", str(snap)],
+        cwd=str(root), capture_output=True, text=True)
+    assert r_ok.returncode == 0, r_ok.stderr
+
+    # GREEN, verified not asserted: BOOT the staged snapshot exactly as the
+    # recipe does and GET the page. Import-clean alone proved insufficient
+    # once already — `import lint` fires at page build, not at import — so
+    # the artifact is verified, not the intention.
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    assert port != 35110                    # the live dashboard: never
+    assert not (39880 <= port <= 39899)     # the browser-guard ranges
+    staged = dest / "staged-watch.py"
+    staged.write_bytes(snap.read_bytes())
+    server = subprocess.Popen(
+        [sys.executable, str(staged), "--target", str(root),
+         "--port", str(port), "--dev"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+    try:
+        import urllib.request
+        code = None
+        deadline = _time.time() + 15
+        while _time.time() < deadline:
+            try:
+                with urllib.request.urlopen(
+                        f"http://127.0.0.1:{port}/", timeout=2) as resp:
+                    code = resp.getcode()
+                    break
+            except Exception:                            # noqa: BLE001
+                if server.poll() is not None:
+                    break
+                _time.sleep(0.25)
+        assert code == 200, (
+            f"staged snapshot did not serve a 200 (got {code}, "
+            f"poll={server.poll()}) — the deploy would leave his dashboard "
+            f"dark; this is the check that caught the lazy `import lint`")
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/mtime", timeout=2) as resp:
+            assert float(resp.read().decode().split()[0]) > 0
+    finally:
+        try:
+            os.kill(server.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        server.wait(timeout=3)
+    assert ds.listening_pid(port) is None
+
+
+def test_justfile_deploy_ships_siblings_and_guards_imports_before_stopping():
+    """Pin the recipe wiring: `just deploy` must ship the siblings and prove
+    the snapshot importable BEFORE it stops the live server — the #425
+    refuse-with-dashboard-up contract, extended to the boot failure #480
+    names. Order is the assertion: a guard after --stop-deployed guards
+    nothing.
+
+    Production line: the deploy recipe body in justfile. Delete the
+    --ship-siblings or --assert-importable lines (or move them after
+    --stop-deployed) and this goes red."""
+    root = Path(__file__).resolve().parent
+    text = (root / "justfile").read_text()
+    start = text.index("\ndeploy rev=")
+    rest = text[start + 1:]
+    end = len(rest)
+    for i, line in enumerate(rest.splitlines()[1:], start=1):
+        if line and not line[0].isspace() and not line.startswith("#") and ":" in line:
+            offset = 0
+            for j, l in enumerate(rest.splitlines()):
+                if j == i:
+                    end = offset
+                    break
+                offset += len(l) + 1
+            break
+    recipe = rest[:end]
+    cmd_lines = []
+    for line in recipe.splitlines():
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        cmd_lines.append(stripped)
+    joined = "\n".join(cmd_lines)
+    assert "--ship-siblings" in joined, (
+        "deploy recipe does not ship watch.py's sibling modules beside the "
+        "snapshot — the #480 defect: the snapshot is one file and cannot "
+        "import user_events/ or ledger_parse.py from the deploy dir")
+    assert "--assert-importable" in joined, (
+        "deploy recipe does not prove the snapshot imports from the deploy "
+        "dir before touching the live server")
+    i_ship = joined.index("--ship-siblings")
+    i_import = joined.index("--assert-importable")
+    i_stop = joined.index("--stop-deployed")
+    assert i_ship < i_stop and i_import < i_stop, (
+        "the sibling/import guards must run BEFORE --stop-deployed — a "
+        "guard after the stop leaves his dashboard dark on a bad snapshot")
