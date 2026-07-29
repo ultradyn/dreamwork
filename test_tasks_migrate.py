@@ -67,6 +67,10 @@ Next id: **231**
 
 - **#221** — the open head of a duplicated id · P2 · tooling · origin: **loop**
 
+- **#202** — the first twin of a within-section duplicate · P2 · tooling · origin: **loop**
+
+- **#202** — the second twin of a within-section duplicate · P2 · tooling · origin: **loop**
+
 - **#222** — a compound-band entry · P0/P1 · bug · origin: **human**
 
 - **#223** — an out-of-band entry · P4 · tooling · origin: **loop**
@@ -80,7 +84,7 @@ Next id: **231**
 - **#226** — a post-216 entry with no origin · P3 · tooling
 
 - **#227** — dangling references · P2 · tooling · origin: **loop**
-  · related: **#999** · blocked on #998 until that lands
+  · related: **#999, #220** · blocked on #998 until that lands
 
 - **#228/#229** — a combined entry · P2 · tooling · origin: **loop**
 
@@ -239,9 +243,14 @@ def test_dangling_related_and_blocked_on_reported(module):
         for m in re.finditer(r"blocked on (#\d+)", body, re.I):
             blk_dangling |= {int(m.group(1)[1:])} - d["exists"]
     assert rel_dangling and blk_dangling, "fixture lost its dangling references"
+    assert {220} <= d["exists"] - rel_dangling, (
+        "fixture lost its EXISTING related id — over-flagging would pass unseen")
     a = _analyse(module)
-    assert rel_dangling <= _conflict_ids(a, "related id does not exist")
-    assert blk_dangling <= _conflict_ids(a, "blocked-on id does not exist")
+    # Equality, not subset: a check that flags existing ids (over-reports) or
+    # none (under-reports) must both fail. The first red-proof here was green
+    # because subset passed over a flag-everything injection.
+    assert _conflict_ids(a, "related id does not exist") == rel_dangling
+    assert _conflict_ids(a, "blocked-on id does not exist") == blk_dangling
 
 
 def test_combined_entries_reported(module):
@@ -296,6 +305,20 @@ def test_seed_header_drift_is_a_conflict_not_a_crash(module):
     rc = module.main(["--dry-run", "--ledger", _write(drifted)], out=out)
     assert rc == 0
     assert "seed" in out.getvalue()
+
+
+def test_seed_must_exceed_stray_entry_heads(module):
+    """A stray head above MAX(parsed id)+1 would mint a colliding id (R1)."""
+    text = FIXTURE.replace(
+        "- **#150** — a stray preamble entry",
+        "- **#999** — a stray preamble entry")
+    d = _derived(text)
+    derived = max(d["open"] | d["landed"]) + 1
+    max_head = max(i for ids, _ in d["entries"] for i in ids)
+    assert max_head > derived, "fixture lost the stray-above-seed gap this test is named for"
+    a = _analyse(module, text)
+    assert a["seed"]["ok"] is False
+    assert a["conflicts"].get("seed verification")
 
 
 def _write(text: str, name: str = "tasks.md") -> str:
