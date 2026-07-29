@@ -49,7 +49,7 @@ carries a `+` command opener (steer the loop without a chat turn).
   bind defaults to itself only when explicitly allowlisted, otherwise it also
   requires an allowed `--url-host`. IPv6 uses an AF_INET6 server and bracketed
   advertised URL.
-- **Read-only, eight explicit write exceptions** (all human-authorized under
+- **Read-only, nine explicit write exceptions** (all human-authorized under
   loopback or explicit trusted-LAN authority): POST `/answer` appends an answer
   to the matching Open entry in `questions.md`; `/ask` appends a human question
   to `answers.md`; `/comment` appends a human note to an Open or Answered
@@ -59,8 +59,12 @@ carries a `+` command opener (steer the loop without a chat turn).
   `.dreamwork/run-mode` (#290); `/posture` commits the three-axis posture
   override into `.dreamwork/posture` (#445); `/deploy` schedules `just deploy`
   (#462, **loopback peer only**, single-flight — trusted-LAN Host/Origin is not
-  enough for a command that restarts the server). Answer, ask, comment and
-  command always append one line to `watch-events.log`, waking the loop.
+  enough for a command that restarts the server); `/decide` records a review
+  verdict into the store's `review_decision` table (#289, store-mode targets
+  only — markdown-mode projects have no store and the join degrades to
+  `unlinked`, so the write is refused rather than 500'd). Answer, ask, comment,
+  command and decide always append one line to `watch-events.log`, waking the
+  loop.
   `/run-mode` and `/posture` dual-write their file and append **one** events
   line only when the value actually changes (identical final is silent). Tint
   and deploy deliberately do not wake: tint is presentation state; deploy
