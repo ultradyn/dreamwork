@@ -2107,7 +2107,17 @@ id (`AUTOINCREMENT`, seeded from `MAX(parse_ledger ids)+1` and verified
 against the Markdown `Next id` header — an unseeded or drifted seed is a
 hard `SeedError`, never a silent start-at-1). `task_event` is an append-only
 hash-chained transition log; `related` is symmetric n:n (`a < b`), `depends`
-is directed. The `meta` table carries:
+is directed. **First-sight events** (#294 inc 8): the cutover (and rollback,
+which re-runs forward) writes a `migration:git` first-sight event for EVERY
+task visible in git history — not just the groomed ids `--import-history`
+recovers rows for. Each id gets a `NULL → open` arrival at the first commit
+it appears (open OR landed) and an `open → landed` landing at the first
+commit it appears under `## Recently landed`, matching `ledger_series`'s
+markdown git-walk model exactly so `store_series_raw` reproduces the
+burndown bucket-for-bucket at the flip. An id with no task row (an
+unrecoverable groomed id — bold span only, no entry body in any commit)
+gets NO event: `task_event.task_id` REFERENCES `task(id)`, and fabricating
+one would be dishonest (no row → no first-sight). The `meta` table carries:
 
 - `schema_version` — the store's version marker; a mismatch is a hard open
   refusal (`SchemaVersionError`), the lane-H mixed-version fail-closed.

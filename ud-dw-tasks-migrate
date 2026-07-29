@@ -1363,6 +1363,9 @@ def perform_cutover(target_dir, *, holder: str = "cutover",
     (2) Freeze writers — the lease + version gate make a mixed-version writer
         fail closed before accepting a write.
     (3) Run stages 1-4 (dry-run, backup, import, verify) under the lease.
+        Import includes first-sight events for EVERY task visible in git
+        history (current-entry + groomed), so the store is burndown-complete
+        at the flip (#294 inc 8).
     (4) Flip the reader — write the one-way cutover watermark.
     (5) Rename tasks.md -> tasks.md.deprecated (YAML block) + leave the
         one-line tasks.md shim (#458 notice).
