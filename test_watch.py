@@ -664,10 +664,14 @@ class TestCollector(unittest.TestCase):
         not by re-deriving the spans with a second regex, which disagreed (it
         said 9). Per-id set membership is the authoritative test.
         """
+        # Post-cutover (#294) `.dreamwork/tasks.md` is the #458 one-line shim
+        # — no `## Recently landed`, no parseable entries. This test describes
+        # the FROZEN Markdown ledger, so it reads tasks.md.deprecated, the
+        # same repoint as 135c2e31's test_ledger_store.py repair.
         live = os.path.join(os.path.dirname(os.path.abspath(watch.__file__)),
-                            ".dreamwork", "tasks.md")
+                            ".dreamwork", "tasks.md.deprecated")
         if not os.path.exists(live):
-            self.skipTest("no live .dreamwork/tasks.md in this tree")
+            self.skipTest("no frozen .dreamwork/tasks.md.deprecated in this tree")
         with open(live, encoding="utf-8") as fh:
             text = fh.read()
         open_ids, landed = watch.parse_ledger(text)
@@ -959,9 +963,13 @@ class TestCollector(unittest.TestCase):
         silent reintroduction of mention-scanning cannot pass without naming
         how many ids it re-polluted.
         """
+        # Post-cutover (#294) `.dreamwork/tasks.md` is the #458 shim — empty
+        # of entries, so the disjointness precondition below would fail
+        # vacuously against it. The frozen Markdown ledger this test describes
+        # is tasks.md.deprecated (same repoint as 135c2e31).
         path = os.path.join(os.path.dirname(watch.__file__),
-                            ".dreamwork", "tasks.md")
-        self.assertTrue(os.path.isfile(path), f"real ledger missing at {path}")
+                            ".dreamwork", "tasks.md.deprecated")
+        self.assertTrue(os.path.isfile(path), f"frozen ledger missing at {path}")
         text = open(path, encoding="utf-8").read()
         open_ids, landed_ids = watch.parse_ledger(text)
         self.assertGreater(len(open_ids), 0,
