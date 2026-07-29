@@ -202,6 +202,179 @@ def head_watch() -> bytes:
     return resolve_blob("HEAD", "watch.py", ROOT)
 
 
+# --- sibling modules: the snapshot is one file, the server is not (#480) ----
+#
+# `just deploy` snapshots ONE file and boots it with `python3 <snap>`. Python
+# puts the SNAPSHOT'S DIRECTORY on sys.path[0], not the repo — so watch.py's
+# repo-local imports (`from user_events.sqlite import ...`, `from
+# ledger_parse import ...` at HEAD) cannot resolve from the deployed dir, the
+# new server ImportErrors on boot, and because the stop already happened his
+# dashboard is dark while the curl check reports failure. `--assert-server`
+# could never catch this: it proves the snapshot IS the server module, not
+# that the server's imports resolve.
+#
+# The fix is to SHIP THE SIBLINGS: derive watch.py's repo-local imports from
+# the resolved snapshot's own AST (never a hardcoded list, so the next
+# sibling import is covered on arrival), copy each tracked-at-rev module and
+# package beside the snapshot link-resolved, and then PROVE the staged
+# snapshot imports in exactly the environment it will boot in — both before
+# the live process is touched, so a snapshot that cannot boot is refused
+# with the dashboard still up (the #425 contract, extended from "is the
+# server" to "its imports resolve").
+
+
+def import_roots(src: bytes) -> list:
+    """Every absolute module root `src` imports, at ANY depth, sorted.
+
+    Full-tree walk, not module scope: watch.py's `import lint` lives INSIDE
+    `_posture_vocab()`, and the deployed snapshot still dies on it — at page
+    build during boot — when lint.py is not beside it (measured by the #480
+    scratch boot: top-level import clean, first page build ImportError). The
+    lazy stdlib roots this picks up (e.g. `ctypes`) cost nothing: the git
+    tree filter in `tracked_sibling_paths` discards whatever the repo does
+    not track. Relative imports (`from . import x`) are meaningless in a
+    flat snapshot and excluded.
+    """
+    tree = ast.parse(src)
+    roots = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots.update(a.name.split(".", 1)[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 0 and node.module:
+                roots.add(node.module.split(".", 1)[0])
+    return sorted(roots)
+
+
+def tracked_sibling_paths(rev, roots, repo=ROOT) -> list:
+    """Repo-relative paths at `rev` that provide the given import roots.
+
+    A root is a SIBLING when `<root>.py` is a tracked blob or `<root>` is a
+    tracked tree (a package — every file under it ships, recursively, so
+    `__init__.py` and intra-package imports come along). A root with nothing
+    tracked at `rev` is an environment module (stdlib, site-packages) and is
+    left to the interpreter — this is also what keeps the derivation generic:
+    the sibling set is whatever the git tree says, not a list maintained by
+    hand.
+    """
+    paths = set()
+    for root in roots:
+        mode, _sha = _ls_tree_entry(repo, rev, f"{root}.py")
+        if mode is not None:
+            paths.add(f"{root}.py")
+            continue
+        mode, _sha = _ls_tree_entry(repo, rev, root)
+        if mode is None or mode == SYMLINK_MODE:
+            # absent: an environment module. A symlinked DIRECTORY root is
+            # out of scope (none exists; resolve_blob resolves file links).
+            continue
+        res = subprocess.run(
+            ["git", "ls-tree", "-r", "--format=%(path)", rev, "--", root],
+            cwd=str(repo), capture_output=True, text=True, check=True)
+        paths.update(p for p in res.stdout.splitlines() if p)
+    return sorted(paths)
+
+
+def sibling_closure(rev, repo=ROOT, seed="watch.py") -> list:
+    """Every repo-local module watch.py at `rev` needs beside its snapshot,
+    TRANSITIVELY, seed included.
+
+    One level is not enough: lint.py (which watch.py imports lazily at page
+    build) does a top-level `import watch`, so the closure ships watch.py
+    itself under its real name — the deployed snapshot is
+    `<target>-watch.py`, and `import watch` cannot resolve to it otherwise.
+    Cycles (watch -> lint -> watch, and lint is exactly that) terminate on
+    the seen set. Every file's imports are read through the #425 resolver,
+    so a symlinked module's real bytes are what get walked.
+    """
+    paths = set()
+    queue = [seed]
+    while queue:
+        rel = queue.pop()
+        if rel in paths:
+            continue
+        paths.add(rel)
+        src = resolve_blob(rev, rel, repo)
+        queue.extend(tracked_sibling_paths(rev, import_roots(src), repo))
+    return sorted(paths)
+
+
+def ship_siblings(rev, dest, repo=ROOT) -> list:
+    """Write every sibling module of watch.py at `rev` into `dest`.
+
+    The sibling set is the transitive closure of the RESOLVED snapshot's own
+    imports (the same #425 resolver the recipe snapshots through), and every
+    file's bytes come from `resolve_blob` too, so a symlinked sibling ships
+    its target's real content. Each file is written to a temp name and
+    renamed, so a process that re-imports mid-deploy never reads a partial
+    module. Returns the repo-relative paths written. Stale siblings from
+    earlier deploys are left in place: a module nothing imports is inert,
+    and deleting files a RUNNING older snapshot might still re-import is the
+    dangerous direction.
+    """
+    paths = sibling_closure(rev, repo)
+    written = []
+    for rel in paths:
+        data = resolve_blob(rev, rel, repo)
+        out = os.path.join(dest, rel)
+        parent = os.path.dirname(out)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        tmp = out + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, out)
+        written.append(rel)
+    return written
+
+
+# SourceFileLoader explicitly, not spec_from_file_location: the recipe stages
+# the snapshot as `$snap.tmp`, and spec_from_file_location keys the loader off
+# the file SUFFIX — a `.tmp` name gets a None spec and the guard would refuse
+# every deploy for a reason that has nothing to do with imports.
+_IMPORT_HARNESS = (
+    "import importlib.util, importlib.machinery, os, sys;"
+    "p = os.path.abspath(sys.argv[1]);"
+    "sys.path.insert(0, os.path.dirname(p));"
+    "loader = importlib.machinery.SourceFileLoader('__snap__', p);"
+    "spec = importlib.util.spec_from_loader('__snap__', loader);"
+    "m = importlib.util.module_from_spec(spec);"
+    "loader.exec_module(m)"
+)
+
+
+def assert_importable(path, timeout=30.0) -> None:
+    """Prove the module at `path` IMPORTS with its own directory as
+    sys.path[0] — exactly the environment `python3 <path>` boots in.
+
+    Runs in a subprocess: importing in-process would mutate THIS interpreter
+    (and a module that hangs would hang the deploy), so the proof is a child
+    with a timeout. Module top level executes (that is the point — the
+    sibling imports live there); `main()` does not run. Raises RuntimeError
+    with the child's stderr tail on failure, TimeoutExpired on a hang.
+
+    `-I` (isolated) is load-bearing, not hygiene: plain `python3 -c` puts
+    the caller's CWD on sys.path and honours PYTHONPATH, and the recipe runs
+    this guard FROM THE REPO ROOT — so without `-I` the guard resolves
+    `user_events` from the repo it is about to deploy away from, passes, and
+    the boot still fails. That was caught red-handed by
+    test_ship_siblings_and_assert_importable_cli_against_real_head: the red
+    half came back GREEN from an empty dest. `-I` makes the proof mean "the
+    deploy dir alone provides the local imports".
+    """
+    try:
+        res = subprocess.run(
+            [sys.executable, "-I", "-c", _IMPORT_HARNESS, path],
+            capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise
+    if res.returncode != 0:
+        tail = "\n".join(res.stderr.splitlines()[-8:])
+        raise RuntimeError(
+            f"{path} does not import from its own directory — the deploy "
+            f"would boot-fail the way #480 describes. Import error:\n{tail}")
+
+
 def listening_pid(port: int):
     """The pid actually bound to the port, or None. Never inferred from a file."""
     out = subprocess.run(["ss", "-ltnp"], capture_output=True, text=True).stdout
@@ -353,12 +526,33 @@ def main() -> int:
              "`main` and `GENERATION`); exit 1 if not. Used by `just deploy` "
              "BEFORE it touches the live process, so a broken snapshot is "
              "rejected with the dashboard still up.")
+    # #480 — the two verbs that extend the #425 guard chain from "the
+    # snapshot IS the server" to "the server BOOTS from the deploy dir".
+    # Both run BEFORE --stop-deployed in the recipe, so a snapshot whose
+    # imports cannot resolve is refused with the dashboard still up.
+    actions.add_argument(
+        "--ship-siblings", metavar="REV", default=None,
+        help="write every repo-local module watch.py imports at REV "
+             "(derived transitively from the resolved snapshot's own "
+             "imports, lazy ones included, never hardcoded) into --dest, "
+             "link-resolved, so the deployed snapshot's directory provides "
+             "them at boot.")
+    actions.add_argument(
+        "--assert-importable", metavar="FILE", default=None,
+        help="prove FILE imports with its own directory as sys.path[0] — "
+             "the exact environment `python3 FILE` boots in; exit 1 if its "
+             "imports do not resolve. The boot guard #480 adds: a snapshot "
+             "that cannot import is refused BEFORE the live server stops.")
     actions.add_argument(
         "--stop-deployed", action="store_true",
         help="stop the process listening on --port if and only if its argv "
              "is --snap (the #431 fix: never pkill -f a pattern that can "
              "match the caller). Exit 0 when nothing was listening or the "
              "server was stopped; exit 1 when the port owner is not our snap.")
+    ap.add_argument(
+        "--dest", default=None,
+        help="with --ship-siblings: directory the sibling modules are "
+             "written into (default: the deployed dir, beside the snapshot).")
     ap.add_argument(
         "--port", type=int, default=None,
         help="with --stop-deployed: the deploy port (from .dreamwork/watch-port).")
@@ -378,6 +572,26 @@ def main() -> int:
             assert_is_server(open(args.assert_server, "rb").read())
         except (ValueError, SyntaxError) as exc:
             print(f"snapshot guard failed: {exc}", file=sys.stderr)
+            return 1
+        return 0
+    if args.ship_siblings is not None:
+        dest = args.dest or DEPLOY_DIR
+        os.makedirs(dest, exist_ok=True)
+        try:
+            written = ship_siblings(args.ship_siblings, dest, ROOT)
+        except (RuntimeError, subprocess.CalledProcessError) as exc:
+            print(f"sibling staging failed: {exc}", file=sys.stderr)
+            return 1
+        for rel in written:
+            print(f"shipped {rel}")
+        if not written:
+            print("watch.py has no repo-local sibling imports — nothing to ship")
+        return 0
+    if args.assert_importable is not None:
+        try:
+            assert_importable(args.assert_importable)
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            print(f"import guard failed: {exc}", file=sys.stderr)
             return 1
         return 0
     if args.stop_deployed:

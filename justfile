@@ -378,6 +378,21 @@ deploy rev="HEAD":
     python3 dev/deploy_state.py --resolve-snapshot {{rev}} > "$snap.tmp"
     python3 dev/deploy_state.py --assert-server "$snap.tmp" \
       || { rm -f "$snap.tmp"; echo "deploy refused: snapshot is not the server (broken link or corrupt {{rev}}) — his dashboard was left running"; exit 1; }
+    # #480 — the snapshot is ONE file, but the server is not: Python puts the
+    # snapshot's DIRECTORY on sys.path, not the repo, so watch.py's repo-local
+    # imports (user_events/, ledger_parse.py, and lint.py — imported lazily
+    # at page build — at HEAD; derived transitively from the snapshot's own
+    # imports, never a hardcoded list) must live
+    # beside it or the new server ImportErrors on boot AFTER the old one has
+    # stopped. Ship the siblings, then PROVE the staged snapshot imports in
+    # exactly the environment it will boot in. Both guards PRECEDE the stop,
+    # like --assert-server: a snapshot that cannot boot is refused with his
+    # dashboard still up (the #425 contract, extended from "is the server"
+    # to "its imports resolve").
+    python3 dev/deploy_state.py --ship-siblings {{rev}} --dest "$dir" \
+      || { rm -f "$snap.tmp"; echo "deploy refused: sibling modules could not be staged beside the snapshot — his dashboard was left running"; exit 1; }
+    python3 dev/deploy_state.py --assert-importable "$snap.tmp" \
+      || { rm -f "$snap.tmp"; echo "deploy refused: the snapshot's imports do not resolve from the deploy dir — his dashboard was left running"; exit 1; }
     mv "$snap.tmp" "$snap"
     # #431 — stop ONLY the process listening on $port whose argv is $snap.
     # Never `pkill -f <basename>`: that matches any process whose command line
