@@ -280,6 +280,22 @@ Next id: **492**
   absence-invariant + shim handling for the ledger-content checks), then one
   coordinated act — status.json T2 field deletion + lint patch + `--cutover` +
   deploy.
+  · **LINT PATCH LANDED `ac3a607` (coordinator inline, 2026-07-29 22:00) — dark
+  path, and the coordination hazard evaporated:** dispatching on the watermark
+  means the swap did NOT have to land with the cutover after all. `ledger_view(dw)`
+  synthesizes a two-section projection from the store (verbatim bodies reparse
+  under synthesized headings), so every text-consuming check runs over live store
+  data unchanged. Store mode: `check_ledger_sections` guards the FROZEN
+  `tasks.md.deprecated` with the same two-reader cross-check (a hand-edit of the
+  history desyncs it exactly like #304's original bug — the check stays live, not
+  vacuous); `check_status_agrees_with_ledger` inverts into the retired-fields
+  absence-invariant (ERROR on regrowth); `check_status_task_ids` skips as moot;
+  the `Next id` header requirement is replaced by the store's sequence authority.
+  7 new store-mode tests against a REAL `perform_cutover` scratch artifact;
+  red-proved by disabling `ledger_view`'s dispatch (exactly the two projection
+  tests fail); markdown mode byte-identical (368 test_lint green, live lint
+  clean, deployed). **ONLY THE EXECUTION REMAINS: quiet tree → status.json T2
+  field deletion → `--cutover` → verify the dashboard reads the store → commit.**
 - **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
   dashboard/loop-config · origin: **human** · **human via watch `add-idea` 2026-07-29 17:10:** *"posture
   config (pace, etc) should have a place for text entry of subagent policy where user can put preferred
