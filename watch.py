@@ -14331,10 +14331,14 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                         store.close()
                     except Exception:
                         pass
-            log_event(target,
-                      f'review-decision{from_hint(req.get("from"))}: '
-                      f'"{one_line(artifact)}" {decision} for '
-                      f'"{one_line(question_title)}" -> .dreamwork/ledger.sqlite3')
+            # #342: /decide is a batched kind — wakes only in instant mode,
+            # riding the durable receipt + the tick's cursor read otherwise
+            # (same family as /answer and /comment; #514 F1).
+            if emits_wake("/decide", target):
+                log_event(target,
+                          f'review-decision{from_hint(req.get("from"))}: '
+                          f'"{one_line(artifact)}" {decision} for '
+                          f'"{one_line(question_title)}" -> .dreamwork/ledger.sqlite3')
             self._send_receipt(json.dumps({"ok": True, "decision": decision}),
                                "application/json")
 

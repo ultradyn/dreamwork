@@ -7483,6 +7483,80 @@ class TestDeliveryWakeRouting(unittest.TestCase):
             self.assertTrue(any("question for dreamer" in w for w in wakes),
                             wakes)
 
+    def test_decide_withholds_wake_in_batched(self):
+        """Live: /decide withholds the wake line in batched mode (#515, F1).
+
+        Production line: the `if emits_wake("/decide", target):` gate around
+        the review-decision log_event in _handle_decide. Remove it and the
+        line fires in batched too, silently undoing the toggle for review
+        decisions — the same family as /answer and /comment. The receipt
+        still commits and the decision still lands in the store: withholding
+        the wake IS batching; the cursor drains it.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            _store_target(d)  # store-mode, else /decide refuses (no_store)
+            dw = os.path.join(d, ".dreamwork")
+            # PRECONDITION (the hollow-check rule): the posture file really
+            # carries the batched axis, or delivery_mode reads instant and a
+            # withhold assertion is unmeaningful.
+            self.assertTrue(
+                watch.write_posture(d, "idle", "ask", 0, "batched"))
+            self.assertEqual(watch.read_posture_file(d)["delivery"], "batched")
+            # PRECONDITION: genuinely store-mode, or /decide refuses and never
+            # reaches the wake line — a refusal writes no line either.
+            self.assertEqual(watch.source_of_truth(dw), "store")
+            base = self._serve(d)
+            status = self._post(base + "/decide", {
+                "artifact": "plan.html", "question_title": "ship it?",
+                "decision": "accepted"})
+            # PRECONDITION: the route ran end-to-end (202, not a 500), or a
+            # withheld-line check is vacuous.
+            self.assertEqual(status, 202)
+            # the decision really landed in the store — the route did its job
+            self.assertEqual(
+                watch._review_decisions(dw)["plan.html"],
+                ("accepted", "ship it?"))
+            # the receipt committed (E3 — unconditional) despite no wake
+            self.assertIn("/decide", self._witnessed(d))
+            # F1: NO review-decision wake line in batched mode
+            wakes = self._wake_lines(d)
+            self.assertFalse(any("review-decision" in w for w in wakes), wakes)
+
+    def test_decide_wakes_in_instant_and_default(self):
+        """Live: in instant mode (and absent delivery axis — the default) a
+        /decide writes exactly one review-decision wake line (#515, F1).
+
+        Production line: the review-decision log_event emission inside the
+        emits_wake gate in _handle_decide. Remove the emission and no line
+        fires in any mode — this is the regression guard against over-gating
+        (a /decide that never wakes).
+        """
+        for delivery in ("instant", None):  # None == absent axis => default
+            with tempfile.TemporaryDirectory() as d:
+                _store_target(d)
+                dw = os.path.join(d, ".dreamwork")
+                if delivery is not None:
+                    self.assertTrue(
+                        watch.write_posture(d, "idle", "ask", 0, delivery))
+                    # PRECONDITION: the file carries the axis written.
+                    self.assertEqual(
+                        watch.read_posture_file(d)["delivery"], delivery)
+                else:
+                    # PRECONDITION: no posture file => absent axis => instant
+                    self.assertNotIn("delivery", watch.read_posture_file(d))
+                self.assertEqual(watch.source_of_truth(dw), "store")
+                base = self._serve(d)
+                status = self._post(base + "/decide", {
+                    "artifact": "plan.html", "question_title": "ship it?",
+                    "decision": "accepted"})
+                self.assertEqual(status, 202)
+                # exactly one review-decision wake line (today's behaviour)
+                wakes = [w for w in self._wake_lines(d)
+                         if "review-decision" in w]
+                self.assertEqual(len(wakes), 1, (delivery, wakes))
+                self.assertIn("plan.html", wakes[0])
+                self.assertIn("accepted", wakes[0])
+
 
 class TestDeployAction(unittest.TestCase):
     """#462 increment 2 — page-triggered `just deploy`.
