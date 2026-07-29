@@ -1,0 +1,578 @@
+/* bdinput — #523 + #524: burndown limit input keeps focus across ticks;
+   [-]/[+] steppers with hold-to-repeat, including across a data tick.
+
+   #523: setContent swaps #view's innerHTML every poll; a focused
+   .bdlimit-in is destroyed with it. snapshotViewInputs / restoreViewInputs
+   carry id + value + selection; typed text wins over the fresh markup.
+
+   #524: − / + buttons flank the input; click steps; hold auto-repeats
+   (module-level interval so a re-render mid-hold does not kill it).
+
+   OWN TARGET + OWN EPHEMERAL PORT — same reason as burndown.mjs: the limit
+   control only appears when totalN > 28, so the ledger history is planted
+   long enough that hourly yields more than 28 buckets. Every number the
+   assertions compare is read from the page / data.json at runtime.
+
+   Preconditions derived at runtime (born-hollow rule):
+     - limit input exists (totalN > 28, hourly)
+     - each forced tick actually replaced the input node
+     - hold produces ≥2 value changes; hold-across-tick keeps changing after
+       the swap
+
+   production lines each green depends on (for red-proof injection):
+     (a)(b) restoreViewInputs(viewIn) after setLiveContent in tick()
+     (a)    el.value = saved.value inside restoreViewInputs (typed wins)
+     (c)    bdStepNudge / .bdlimit-step markup
+     (d)    bdStepHoldStart interval arm
+     (e)    pointercancel keep-hold when target.isConnected === false
+
+   usage: node bdinput.mjs <outdir> [port, ignored] */
+import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
+import { mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
+import { spawn, execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { join } from 'node:path';
+import { makeReporter } from './report.mjs';
+
+const OUT = process.argv[2];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+mkdirSync(OUT, { recursive: true });
+const freePort = () => new Promise(res => {
+  const s = createServer();
+  s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); });
+});
+const PORT = await freePort();
+
+const { ok, declare, finish, checks, notes, errs } = makeReporter();
+const nameThrow = (kind, e) => {
+  const msg = e && e.stack ? e.stack : String(e);
+  errs.push(`${kind}: ${msg}`);
+  checks.push(`FAIL the guard threw before finishing its checks: ${String(e)}`);
+};
+process.on('uncaughtException', e => nameThrow('uncaughtException', e));
+process.on('unhandledRejection', e => nameThrow('unhandledRejection', e));
+declare({
+  drives: 'own-server planted ledger (hourly, >28 buckets); focus+type and ' +
+          'select-range on #bdlimit-in across forced tick(); click −/+; ' +
+          'hold + (pointerdown) for repeats; hold + across a mid-hold tick',
+  traceWindow: 'tick survival samples after setLiveContent (node identity); ' +
+               'hold sampled ~1.1s (400ms delay + several 80ms repeats); ' +
+               'hold-across-tick forces one /command + tick mid-hold'
+});
+
+// ── planted ledger long enough for the #499 control ───────────────────────
+const DIR = join(OUT, 'target');
+rmSync(DIR, { recursive: true, force: true });
+cpSync('dev/capture/fixture', DIR, { recursive: true });
+const T0 = Math.floor(Date.now() / 1000) - 6 * 3600;
+const git = (args, at) => execFileSync('git', ['-C', DIR, ...args], {
+  stdio: ['ignore', 'pipe', 'ignore'],
+  env: { ...process.env,
+         GIT_AUTHOR_NAME: 'guard', GIT_AUTHOR_EMAIL: 'g@x',
+         GIT_COMMITTER_NAME: 'guard', GIT_COMMITTER_EMAIL: 'g@x',
+         GIT_AUTHOR_DATE: `@${at} +0000`, GIT_COMMITTER_DATE: `@${at} +0000` },
+}).toString().trim();
+const entry = i => `- **#${i}** — task ${i} · P2 · task\n`;
+const ledger = (open, done) =>
+  `# Task ledger\n\nNext id: **99**\n\n## Open\n\n${open.map(entry).join('')}` +
+  `\n## Recently landed\n\n${done.map(i => `**#${i}** landed (aaa111${i}).`).join(' ')}\n`;
+const commit = (open, done, at, note) => {
+  writeFileSync(join(DIR, '.dreamwork', 'tasks.md'),
+    ledger(open, done) + (note ? `\n<!-- ${note} -->\n` : ''));
+  git(['add', '.dreamwork/tasks.md'], at);
+  git(['commit', '-q', '-m', `ledger at ${at}`], at);
+};
+git(['init', '-q'], T0);
+commit([1, 2, 3], [], T0, 'seed');
+// ~40h of hourly commits before T0 → totalN > 28 under hourly step
+for (let h = 40; h >= 1; h--) {
+  commit([6, 7, 8, 9], [4, 5], T0 - h * 3600, `span ${h}`);
+}
+
+const srv = spawn('python3', ['watch.py', '--target', DIR, '--port', String(PORT)],
+                  { stdio: 'ignore' });
+process.on('exit', () => { try { srv.kill(); } catch (e) {} });
+await sleep(2500);
+const BASE = `http://127.0.0.1:${PORT}`;
+const served = await (await fetch(`${BASE}/data.json`)).json();
+if (served.target !== DIR) {
+  console.log(`FAIL :${PORT} is serving ${served.target}, not ${DIR}`);
+  process.exit(1);
+}
+
+const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
+const p = await br.newPage({ viewport: { width: 1280, height: 900 } });
+p.on('pageerror', e => errs.push(String(e)));
+await p.goto(BASE + '/', { waitUntil: 'networkidle' });
+await sleep(1200);
+
+// Force hourly so the extended history yields >28 buckets (control present).
+await p.evaluate(async () => {
+  for (let i = 0; i < 8; i++) {
+    if ((data && data.burndown && data.burndown.step) === 3600) return;
+    const b = document.querySelector('.bdstep');
+    if (!b) return;
+    b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await new Promise(r => setTimeout(r, 450));
+  }
+});
+await sleep(700);
+
+const pre = await p.evaluate(() => {
+  const inp = document.getElementById('bdlimit-in');
+  const minus = document.querySelector('.bdlimit-step[data-dir="-1"]');
+  const plus = document.querySelector('.bdlimit-step[data-dir="1"]');
+  const totalN = ((data && data.burndown && data.burndown.buckets) || []).length;
+  const step = data && data.burndown && data.burndown.step;
+  return {
+    hasInp: !!inp,
+    hasMinus: !!minus,
+    hasPlus: !!plus,
+    id: inp ? inp.id : null,
+    value: inp ? inp.value : null,
+    min: inp ? inp.min : null,
+    max: inp ? inp.max : null,
+    totalN, step,
+  };
+});
+notes.push(`pre: ${JSON.stringify(pre)}`);
+ok('precondition: hourly step with more than 28 buckets (control present)',
+   pre.step === 3600 && pre.totalN > 28);
+ok('precondition: #bdlimit-in exists with a stable id',
+   pre.hasInp && pre.id === 'bdlimit-in');
+ok('precondition: − and + steppers flank the input',
+   pre.hasMinus && pre.hasPlus);
+ok('precondition: input min/max match the panel contract (0..cap)',
+   pre.min === '0' && Number(pre.max) >= 28);
+
+if (!pre.hasInp || !pre.hasMinus || !pre.hasPlus || pre.totalN <= 28) {
+  await p.screenshot({ path: join(OUT, 'fail-pre.png'), fullPage: true });
+  await br.close();
+  try { srv.kill(); } catch (e) {}
+  finish();
+  process.exit(1);
+}
+
+const CAP = Number(pre.max);
+
+/* ── helpers ──────────────────────────────────────────────────────────── */
+/* Drive the same snapshot → setLiveContent → restore path as tick(), but
+   snapshot FIRST (before any await) so a concurrent poll cannot steal focus
+   between "he is typing" and the capture. Production tick also snapshots
+   after its data fetch — the load-bearing line is restoreViewInputs after
+   the swap; this guard pins that call. */
+const forceTick = async () => {
+  const r = await p.evaluate(async () => {
+    const before = document.getElementById('bdlimit-in');
+    const beforeId = before ? before.id : null;
+    // SNAPSHOT WHILE FOCUS STILL HOLDS — no await above this line.
+    const kept = snapshotCardState();
+    const askKept = snapshotAskState();
+    const reviewFrame = snapshotReviewFrame();
+    const folds = snapshotFolds();
+    const beforeCards = snapshotCards();
+    const viewIn = snapshotViewInputs();
+    const bdHover = snapshotBdHover();
+    const was = burnKey(data);
+    const genBefore = document.getElementById('view')
+      && document.getElementById('view').innerHTML.length;
+
+    await fetch('/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'add-idea', text: 'bdinput tick ' + Date.now() }),
+    });
+    // Mark mtime current + hold the poller so a concurrent auto-tick cannot
+    // re-swap after our restore and steal focus before the guard samples.
+    try {
+      const mt = parseMtime(await (await fetch('/mtime')).text());
+      if (mt && mt.mtime != null) lastMtime = mt.mtime;
+    } catch (e) {}
+    holdRerenderUntil = Date.now() + 8000;
+
+    setData(await (await fetch(typeof dataJsonUrl === 'function'
+      ? dataJsonUrl() : '/data.json')).json());
+    const html = await buildCurrent();
+    setLiveContent(html);
+    restoreBdHover(bdHover);
+    restoreReviewFrame(reviewFrame);
+    restoreFolds(folds);
+    restoreCardState(kept);
+    restoreViewInputs(viewIn);   // production line (a)(b) bind
+    restoreAskState(askKept);
+    bindAskDraft();
+    regroupCards(beforeCards);
+
+    const after = document.getElementById('bdlimit-in');
+    // Sample INSIDE this turn — a later evaluate can lose the race to
+    // anything else that focuses (the failure mode that made (a) red
+    // while (b) green: identical restore, different inter-evaluate delay).
+    return {
+      replaced: !!(before && after && before !== after),
+      beforeId,
+      afterId: after ? after.id : null,
+      genBefore,
+      genAfter: document.getElementById('view')
+        && document.getElementById('view').innerHTML.length,
+      burnChanged: burnKey(data) !== was,
+      snap: viewIn,
+      after: after ? {
+        value: after.value,
+        start: after.selectionStart,
+        end: after.selectionEnd,
+        focused: document.activeElement === after,
+        id: after.id,
+      } : null,
+    };
+  });
+  return r;
+};
+
+/* ── (a) focus + type across a data tick ──────────────────────────────── */
+{
+  const typed = '42';
+  // Type via the real keyboard so the value is his, not applyBurnLimit's;
+  // then re-assert focus+caret in one evaluate so the snapshot in forceTick
+  // cannot race a blur between separate round-trips.
+  await p.evaluate(() => {
+    const inp = document.getElementById('bdlimit-in');
+    inp.focus();
+    inp.value = '';
+  });
+  await p.keyboard.type(typed);
+  await p.keyboard.press('ArrowLeft');
+  const before = await p.evaluate(t => {
+    const inp = document.getElementById('bdlimit-in');
+    // re-seat caret explicitly (ArrowLeft is the gesture; this pins the
+    // precondition so a green cannot be "typed but caret was already lost")
+    if (inp && document.activeElement === inp) {
+      try { inp.setSelectionRange(t.length - 1, t.length - 1); } catch (e) {}
+    }
+    return {
+      value: inp ? inp.value : null,
+      start: inp ? inp.selectionStart : -1,
+      end: inp ? inp.selectionEnd : -1,
+      focused: !!inp && document.activeElement === inp,
+    };
+  }, typed);
+  ok('precondition (a): input is focused with typed value and mid-string caret',
+     before.focused && before.value === typed &&
+     before.start === typed.length - 1 && before.end === before.start);
+  notes.push(`(a) before tick: ${JSON.stringify(before)}`);
+
+  const tickA = await forceTick();
+  // Copy primitives immediately — do not re-read the page.
+  const aVal = tickA && tickA.after && tickA.after.value;
+  const aStart = tickA && tickA.after && tickA.after.start;
+  const aEnd = tickA && tickA.after && tickA.after.end;
+  const aFocus = tickA && tickA.after && tickA.after.focused;
+  notes.push(`(a) tick replaced=${!!tickA.replaced} snap=${JSON.stringify(tickA.snap)} ` +
+             `after={value:${aVal},start:${aStart},end:${aEnd},focused:${aFocus}}`);
+  ok('(a) precondition: the tick really replaced the input node',
+     !!tickA.replaced);
+  ok('(a) precondition: snapshot captured the focused input',
+     !!tickA.snap && tickA.snap.id === 'bdlimit-in' &&
+     tickA.snap.value === typed);
+  ok('(a) typed value survives the data tick (typed text wins over render)',
+     aVal === typed);
+  ok('(a) focus stays in the limit input across the tick',
+     aFocus === true);
+  ok('(a) caret position survives the tick',
+     aStart === typed.length - 1 && aEnd === aStart);
+}
+
+/* ── (b) selection range across a data tick ───────────────────────────── */
+{
+  await p.evaluate(() => {
+    const inp = document.getElementById('bdlimit-in');
+    // a known value with room for a range that is not the whole field
+    inp.focus();
+    inp.value = '128';
+    inp.setSelectionRange(1, 3);   // "28"
+  });
+  const before = await p.evaluate(() => {
+    const inp = document.getElementById('bdlimit-in');
+    return {
+      value: inp.value, start: inp.selectionStart, end: inp.selectionEnd,
+      focused: document.activeElement === inp,
+    };
+  });
+  ok('precondition (b): a non-empty selection range is active',
+     before.focused && before.start === 1 && before.end === 3 &&
+     before.value === '128');
+  const tickB = await forceTick();
+  ok('(b) precondition: the tick really replaced the input node',
+     !!tickB.replaced);
+  const after = tickB.after || {};
+  notes.push(`(b) after: ${JSON.stringify(after)}`);
+  ok('(b) selection range survives the data tick',
+     after.value === '128' && after.start === 1 && after.end === 3);
+  ok('(b) focus survives with the selection',
+     after.focused === true);
+}
+
+/* ── (c) click − / + and clamp at min/max ─────────────────────────────── */
+{
+  // Start from a mid value derived from the input's own max (not a literal
+  // that expires when the cap changes).
+  const mid = Math.min(20, Math.max(2, CAP - 10));
+  await p.evaluate(v => {
+    // clear any leaked hold / suppress from earlier probes
+    if (typeof bdStepHoldStop === 'function') bdStepHoldStop();
+    if (typeof _bdStepSuppressClick !== 'undefined') _bdStepSuppressClick = false;
+    const inp = document.getElementById('bdlimit-in');
+    inp.value = String(v);
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  }, mid);
+  await sleep(600);
+  const base = await p.evaluate(() => ({
+    value: document.getElementById('bdlimit-in').value,
+    display: displayBurnLimitValue(),
+  }));
+  ok('precondition (c): mid value committed before steppers',
+     base.value === String(mid) && base.display === mid);
+
+  // Blur + hold the poller so a stale view-input restore cannot overwrite
+  // a stepped preference mid-assert.
+  await p.evaluate(() => {
+    const inp = document.getElementById('bdlimit-in');
+    if (inp) inp.blur();
+    if (typeof bdStepHoldStop === 'function') bdStepHoldStop();
+    _bdStepSuppressClick = false;
+    holdRerenderUntil = Date.now() + 20000;
+  });
+
+  // One real pointer tap (down+up) on the stepper — same path as (d)/(e).
+  const tap = async (dir) => {
+    const sel = `.bdlimit-step[data-dir="${dir}"]`;
+    const loc = p.locator(sel);
+    await loc.scrollIntoViewIfNeeded();
+    const box = await loc.boundingBox();
+    if (!box) throw new Error('no hit target for ' + sel);
+    await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await p.mouse.down();
+    await p.mouse.up();
+    // allow async rerenderBurnLimit to finish one paint
+    await sleep(700);
+  };
+
+  await tap('1');
+  const up = await p.evaluate(() => ({
+    value: document.getElementById('bdlimit-in')?.value,
+    display: displayBurnLimitValue(),
+  }));
+  notes.push(`(c) after +: ${JSON.stringify(up)}`);
+  ok('(c) [+] increments the limit by one',
+     up.display === mid + 1);
+
+  await tap('-1');
+  const down = await p.evaluate(() => ({
+    value: document.getElementById('bdlimit-in')?.value,
+    display: displayBurnLimitValue(),
+  }));
+  notes.push(`(c) after −: ${JSON.stringify(down)}`);
+  ok('(c) [−] decrements the limit by one',
+     down.display === mid);
+
+  // clamp at max — step must not walk past the input's own max
+  await p.evaluate(cap => {
+    if (typeof bdStepHoldStop === 'function') bdStepHoldStop();
+    burnLimitPref = cap;
+    _burnLimitDidLoad = true;
+    try { localStorage.setItem(burnLimitStorageKey(), String(cap)); } catch (e) {}
+  }, CAP);
+  await p.evaluate(async () => { await rerenderBurnLimit(); });
+  await sleep(400);
+  const beforeMax = await p.evaluate(() => displayBurnLimitValue());
+  await tap('1');
+  const atMax = await p.evaluate(() => displayBurnLimitValue());
+  ok('precondition (c): max clamp starts at cap', beforeMax === CAP);
+  ok('(c) [+] clamps at the input max (no walk past cap)',
+     atMax === CAP);
+
+  // clamp at min (0 = all)
+  await p.evaluate(() => {
+    if (typeof bdStepHoldStop === 'function') bdStepHoldStop();
+    burnLimitPref = 0;
+    _burnLimitDidLoad = true;
+    try { localStorage.setItem(burnLimitStorageKey(), '0'); } catch (e) {}
+  });
+  await p.evaluate(async () => { await rerenderBurnLimit(); });
+  await sleep(400);
+  const beforeMin = await p.evaluate(() => displayBurnLimitValue());
+  await tap('-1');
+  const atMin = await p.evaluate(() => displayBurnLimitValue());
+  ok('precondition (c): min clamp starts at 0', beforeMin === 0);
+  ok('(c) [−] clamps at the input min (0)',
+     atMin === 0);
+  notes.push(`(c) mid=${mid} up=${JSON.stringify(up)} down=${JSON.stringify(down)} ` +
+             `atMax=${atMax} atMin=${atMin} cap=${CAP}`);
+}
+
+/* ── (d) hold [+] — at least 2 repeats after the initial step ─────────── */
+{
+  const startVal = 10;
+  await p.evaluate(v => {
+    if (typeof bdStepHoldStop === 'function') bdStepHoldStop();
+    const inp = document.getElementById('bdlimit-in');
+    inp.value = String(v);
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  }, startVal);
+  await sleep(600);
+  // Playwright real mouse hold — not a synthetic PointerEvent (isTrusted
+  // paths and button defaults differ; the production listener is on the
+  // real pointer sequence).
+  const plus = p.locator('.bdlimit-step[data-dir="1"]');
+  await plus.scrollIntoViewIfNeeded();
+  const box = await plus.boundingBox();
+  ok('precondition (d): [+] button has a hit target', !!box && box.width > 0);
+  const vals = [];
+  vals.push(await p.evaluate(() => displayBurnLimitValue()));
+  await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await p.mouse.down();
+  const t0 = Date.now();
+  while (Date.now() - t0 < 1100) {
+    await sleep(60);
+    vals.push(await p.evaluate(() => displayBurnLimitValue()));
+  }
+  await p.mouse.up();
+  await sleep(100);
+  const maxV = Math.max(...vals.filter(n => Number.isFinite(n)));
+  const deltas = maxV - startVal;
+  notes.push(`(d) hold samples=${JSON.stringify(vals)} delta=${deltas}`);
+  ok('precondition (d): hold started from a value with headroom under cap',
+     startVal + 5 < CAP);
+  ok('(d) hold [+] fires at least 2 repeats (value rises by ≥3)',
+     deltas >= 3);
+}
+
+/* ── (e) hold [+] ACROSS a forced data tick — repeat continues ────────── */
+{
+  const startVal = 15;
+  await p.evaluate(v => {
+    if (typeof bdStepHoldStop === 'function') bdStepHoldStop();
+    const inp = document.getElementById('bdlimit-in');
+    inp.value = String(v);
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  }, startVal);
+  await sleep(600);
+
+  const plus = p.locator('.bdlimit-step[data-dir="1"]');
+  await plus.scrollIntoViewIfNeeded();
+  const box = await plus.boundingBox();
+  ok('precondition (e): [+] hit target present for hold-across-tick',
+     !!box && box.width > 0);
+
+  await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await p.mouse.down();
+  // Wait past the 400ms first-delay so the interval is armed, plus a step.
+  await sleep(700);
+  const midHold = await p.evaluate(() => ({
+    v: displayBurnLimitValue(),
+    holding: !!_bdStepHold,
+    node: !!document.getElementById('bdlimit-in'),
+  }));
+  // Force a node-replacing swap WHILE the mouse button is still down.
+  // Snapshot does not need the limit input (focus is on the button); the
+  // load-bearing claim is that the module-level interval keeps firing.
+  const tickE = await p.evaluate(async () => {
+    const nodeBefore = document.getElementById('bdlimit-in');
+    const held = !!_bdStepHold;
+    await fetch('/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'add-idea', text: 'bdinput hold-tick ' + Date.now() }),
+    });
+    setData(await (await fetch(typeof dataJsonUrl === 'function'
+      ? dataJsonUrl() : '/data.json')).json());
+    const viewIn = snapshotViewInputs();
+    const bdHover = snapshotBdHover();
+    const html = await buildCurrent();
+    setLiveContent(html);
+    restoreBdHover(bdHover);
+    restoreViewInputs(viewIn);
+    const nodeAfter = document.getElementById('bdlimit-in');
+    return {
+      replaced: !!(nodeBefore && nodeAfter && nodeBefore !== nodeAfter),
+      heldBefore: held,
+      heldAfter: !!_bdStepHold,
+      v: displayBurnLimitValue(),
+    };
+  });
+  // Keep holding — sample further rises after the swap.
+  const afterVals = [tickE.v];
+  const t1 = Date.now();
+  while (Date.now() - t1 < 550) {
+    await sleep(50);
+    afterVals.push(await p.evaluate(() => displayBurnLimitValue()));
+  }
+  await p.mouse.up();
+  await sleep(100);
+  const maxAfter = Math.max(...afterVals.filter(n => Number.isFinite(n)));
+  notes.push(`(e) midHold=${JSON.stringify(midHold)} tickE=${JSON.stringify(tickE)} ` +
+             `afterVals=${JSON.stringify(afterVals)} maxAfter=${maxAfter}`);
+  ok('(e) precondition: tick mid-hold really replaced the input node',
+     !!tickE.replaced);
+  ok('(e) precondition: hold had already stepped before the tick',
+     midHold.v > startVal && midHold.holding);
+  ok('(e) hold state survives the swap (module-level interval)',
+     tickE.heldAfter === true);
+  ok('(e) hold [+] continues after a data tick (value keeps rising)',
+     maxAfter > tickE.v);
+}
+
+/* ── screenshots for the visual verdict (desktop + 390px) ─────────────── */
+{
+  // settle at a readable mid value with steppers at rest
+  await p.evaluate(() => {
+    const inp = document.getElementById('bdlimit-in');
+    inp.value = '28';
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await sleep(600);
+  // scroll the burndown into view for a tight crop feel (fullPage too)
+  await p.evaluate(() => {
+    const bd = document.querySelector('.bd');
+    if (bd) bd.scrollIntoView({ block: 'center' });
+  });
+  await p.screenshot({ path: join(OUT, 'stepper-rest-desktop.png'), fullPage: false });
+
+  // mid-hold: real mouse down while interval is running
+  {
+    const plus = p.locator('.bdlimit-step[data-dir="1"]');
+    const box = await plus.boundingBox();
+    if (box) {
+      await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await p.mouse.down();
+      await sleep(500);
+    }
+  }
+  await p.screenshot({ path: join(OUT, 'stepper-hold-desktop.png'), fullPage: false });
+  await p.mouse.up();
+  await sleep(200);
+
+  // mobile width
+  await p.setViewportSize({ width: 390, height: 844 });
+  await sleep(400);
+  await p.evaluate(() => {
+    const bd = document.querySelector('.bd');
+    if (bd) bd.scrollIntoView({ block: 'center' });
+  });
+  await p.screenshot({ path: join(OUT, 'stepper-rest-390.png'), fullPage: false });
+  {
+    const plus = p.locator('.bdlimit-step[data-dir="1"]');
+    const box = await plus.boundingBox();
+    if (box) {
+      await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await p.mouse.down();
+      await sleep(500);
+    }
+  }
+  await p.screenshot({ path: join(OUT, 'stepper-hold-390.png'), fullPage: false });
+  await p.mouse.up();
+}
+
+await br.close();
+try { srv.kill(); } catch (e) {}
+finish();
+process.exit(checks.some(c => c.startsWith('FAIL')) ? 1 : 0);

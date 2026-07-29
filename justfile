@@ -126,6 +126,11 @@ status-sync *args:
 #                so the tick brings a real data change. Two of its checks are
 #                about the premise the panel's motion rests on (the panel
 #                height never changes) rather than about the motion itself.
+#   bdinput      OWN TARGET + OWN EPHEMERAL PORT (#523/#524): planted long
+#                ledger so the #499 limit control is present; asserts focus/
+#                caret/typed-value survival across a real setContent swap,
+#                −/+ step+clamp, hold-to-repeat, and hold across a mid-hold
+#                tick (module-level interval composition with #523).
 #   provenance   OWN TARGETS + OWN EPHEMERAL PORTS (#217), same shape as
 #                burndown and for the same reason: the datum is a property
 #                of a repository's ledger HISTORY. Plants a human filing, a
@@ -197,7 +202,7 @@ status-sync *args:
 guards port="39899":
     #!/usr/bin/env bash
     set -uo pipefail
-    DEFAULT_GUARDS="headertravel headcrumb reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade rundesc markrail devoverlay autogrow dissolve burndownmock bdhover reviewask staleremedy rejectwrite posture summaryjson qsignal qfocus qroll research restcollapse qlinkpip mdquote"
+    DEFAULT_GUARDS="headertravel headcrumb reflow qacard docktarget noteprop oneinput regroup popbg typing wisp states dismiss confirmation thread status health pushhealth dashboard identity projtitle motion morph morphhold prominence qsec submitlog indicator draft reviewdraft subslog history plugcmd qorder revieworder reviewsplit serving gitrow burndown provenance answers runmode hfit filehead fileview fileimg filehl qfade artifactwrap dreamfade rundesc markrail devoverlay autogrow dissolve burndownmock bdhover reviewask staleremedy rejectwrite posture summaryjson qsignal qfocus qroll research restcollapse qlinkpip mdquote bdinput"
     GUARDS=${DREAMWORK_GUARDS:-$DEFAULT_GUARDS}
     # `-` rather than `:-` lets a focused run deliberately set this empty.
     HUB_GUARDS=${DREAMWORK_HUB_GUARDS-"hub contract"}
