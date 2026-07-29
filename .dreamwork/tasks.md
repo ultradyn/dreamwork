@@ -43,7 +43,9 @@ Next id: **481**
   then the recipe must handle siblings. Decide which before the next deploy
   · **verify before the next real deploy:** deploy HEAD to a scratch port and confirm it boots (NOT to 35110),
   because this class is invisible until the process tries to start
-  · blocked on nothing · related: **#263, #352, #425, #368, #431**
+  · blocked on nothing. Cross-refs in prose above: `user_events/` from `#263`, the `ledger_parse` import from
+  `#352` (`b7fd947`), the stop-before-start recipe `#431`, the symlink resolver `#425`, and `#368`'s split,
+  which changes deploy anyway.
 - **#479** — `typing` loses the destination mode across a tick, and it was green two hours ago · P1 ·
   regression/bug · origin: **loop** · **found 2026-07-29 09:12 by the full `just test` that closed `#475`** —
   the ONLY failure in a 60-guard run (59 PASS, 60 of 60 judged), and it was **PASSING** in the 07:40 run, so it
