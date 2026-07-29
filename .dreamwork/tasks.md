@@ -1715,6 +1715,19 @@ Next id: **485**
   only the IGC artifact (`wt/294shape` = `6b872b4b`) survives. So the next increment is **rebuild the flat
   variant** (one `task` table, no `entry`/`task_by_entry` join, seeded+verified AUTOINCREMENT kept from
   `50f4933`'s R1 ruling), red-first, then the import stage (`dreamwork tasks migrate --dry-run`).
+  · **INCREMENT 2 (the rebuild) LANDED — merge of `wt/294flat` (lane work `077d9ec1` + `5be7cc11` +
+  `3d3058ac`, native subagent, 2026-07-29 16:26).** One `task` table (state CHECK, title, free-text body,
+  band FK + uncertain bit per S2, type lookup FK per S4, origin closed-or-NULL, blocked_on prose, digest,
+  source_line); `entry`/`task_by_entry` gone; `related`/`depends`/`review_decision`/`task_event`/`task_state`
+  and all seed/verify machinery unchanged. 18 tests (14 intents ported + 4 new incl. `test_the_entry_split_is_gone`
+  deriving the entity set from `sqlite_master` at runtime). Coordinator independently red-proved: re-adding an
+  `entry` table fails exactly that test, byte-identical restore, 18/18. **The lane also caught and repaired a
+  real coordinator defect (`3d3058ac`):** `a2d58f8a` had filed `#484` ABOVE `## Open` (unanchored first-match
+  on a preamble mention), invisible to `parse_ledger` — the seed-verification tests caught it as designed.
+  Strictness upgrades (`NOT NULL` on priority/origin) and an `owner` column deliberately left out, separable
+  per the artifact.
+  · **next: the import stage** — `dreamwork tasks migrate --dry-run` populating `task` + `related`/`depends`,
+  re-seeding only upward, with exact counts/ids/digests/conflicts reported before any cutover.
   · his two clarifying notes answered in the questions thread (15:50, 16:00): an `entry` is not the event log
   (`task_event` is separate either way); the flat model migrates cleanly because `#353` made every entry
   exactly one task; a task row carries the free-text body where notes/updates accumulate, so tasks update
