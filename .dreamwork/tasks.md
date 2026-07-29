@@ -60,81 +60,6 @@ Next id: **485**
   — the same two calls the click handler already uses, per `transitions.md`'s reuse-the-idiom rule
   · **wants `watch.py`**, so it is coordinator work, not a lane's
   · related: **#479**
-- **#475** — ten guards are red on master and load is not why · **P1** · regression/verification ·
-  origin: **loop** · **found 2026-07-29 07:40 by the first full `just test` to complete in this session**
-  · **the run:** pytest and `lint` green; guards **48 PASS / 14 FAIL** of 60 (plus `hub`, `contract`).
-  `#471`'s new accounting worked on its first real run and named the two that never judged:
-  *"2 of 60 registered guard(s) did NOT run-and-judge: artifactwrap, burndownmock"*
-  · **two were a real cross-lane break and are fixed (`43036f2`)**: `artifactwrap` and `markrail` build their
-  own review sources through `review_artifact.py`, and `#436`'s `ask` gate plus `#455`'s `if-silent` gate made
-  both mandatory — so two GUARD fixtures were locked out and died before their first assertion. Neither gate's
-  author could see that a guard was a consumer
-  · **`morphhold` and `history` recovered on a quiet re-run, so those two were load.** The other ten did not,
-  and that is the finding: **re-run alone at load 24-31 they fail exactly as they did at load 36-44**, so the
-  load explanation I reached for first is **refuted**, not merely unproven
-  · **two hypotheses tested and refuted before filing, so nobody re-tests them:** (1) writes are broken — a
-  direct `POST /posture` against a fixture server returns `202 {"ok": true, "changed": true}` with a receipt,
-  writes `.dreamwork/posture` correctly and appends its `watch-events.log` line; (2) headless Chromium now
-  reports `prefers-reduced-motion: reduce`, which would collapse every normal-motion assertion at once — it
-  reports `false`, and a control transition sampled 20 distinct intermediate widths
-  · **the ten, with the assertion that fails:** `oneinput` (*the indicator LANDS on first paint*; *reduced-motion:
-  the indicator JUMPS, it does not slide*) · `wisp` (*normal: the intensity fades in and OUT — a breath, not a
-  sweep*) · `health` (*a refused write says so, instead of nothing at all*) · `qsec` (four, incl. *0 of 76
-  part-way* and *the section really grows … (17 -> 0, 17px)*) · `draft` (*typing writes a draft for THIS project
-  (keyed by the target path)*) · `serving` (*a page behind HEAD says so, and by how much*) · `answers` (*tick
-  trigger accepted*) · `burndownmock` (*threw before finishing its checks*) · `rejectwrite` (*…and does not
-  clear the draft store (the permanent-loss vector)*) · `posture` (five, headed by *arm bar drain visited mid
-  frames: 0*)
-  · **`posture`'s five are probably ONE failure, and reading them as five would waste the tick:** the head is a
-  motion sample, and the four file assertions below it cascade because the guard never finishes arming the
-  10s bar, so nothing is ever written. Expect other cascades in this list
-  · **the pair worth doing first is `draft` + `rejectwrite`**, because both are about the **draft store** and
-  DraftStore landed tonight (`#269`/`#459`, `ca799f5`). Either two guards assert the pre-DraftStore key shape —
-  the fourth instance tonight of a check outliving its contract — or `rejectwrite`'s wording is literal and
-  there is a real permanent-loss vector. Those deserve opposite reactions, so measure before choosing
-  · **why ten accumulated unseen:** the suite reported registration and never execution until tonight, and no
-  full run completed all session — one was killed mid-guards by an external sweep. Every green claim made
-  tonight rested on pytest + `lint` + individually-invoked guards, which is exactly the gap `#471` described
-  and this entry is its bill
-  · **PROGRESS — 2 of the 10 fixed, merged `ef67316` (lane `drafts`), and the answer is the reassuring one.**
-  `rejectwrite`'s wording is **not literal**: after a rejected `/answer` the
-  `dw:draft:v1:<target>:card:<title>` key is still present, the box keeps its text, the error voice is right and
-  `isDurable(reject)` is `false`. The composer writes `dw:draft:v1:<target>:composer:main`. Both guards were
-  looking for the **pre-DraftStore** shapes (`dw:draft:<target>`, and a `dw:adraft:*` count that read 0), so
-  `rejectwrite` failed on a store that had not been cleared, only re-keyed. **The fifth and sixth checks tonight
-  to outlive their contract**, after `#474`'s three and `43036f2`'s two; the page was right every time. Both
-  guards now green (12 and 14 checks)
-  · **ALL TEN NOW FIXED, and nine of them were the guard. 2026-07-29 09:0x.** Lane `surfaces` took
-  `burndownmock`/`serving`/`answers`/`health` (merged, 4/4 PASS); lane `motion` took
-  `posture`/`oneinput`/`wisp`/`qsec` (merged `f07d144`). **`posture`'s five WERE one — but not the one I
-  predicted:** the cascade came from a **port collision** (`#461`'s `argv[3]` again, the ninth guard bitten by
-  it), which made posture grade the recipe's server for a DIFFERENT target; the drain was a genuinely separate
-  second defect, fixed the `#442` way. **Three shared a single cause I had not considered at all:** `oneinput`,
-  `wisp` and `qsec` each cached a DOM reference at trace start and sampled it across the live tick's
-  re-render, which REPLACES the node — and a detached element's rect is all-zeros, so each measured a defect
-  that was not on the page. One line each, re-acquire per frame
-  · **exactly ONE of the fourteen was the page, and it is `#477`:** `qsec`'s residual is a real teleport when the
-  tick lands mid-open. Split out, fixed, verified — the guard was right and no guard-side fix existed
-  · **the score for the night, which is the point of this entry:** thirteen of fourteen red guards were checks
-  that had outlived a contract, cached a stale reference, or collided on a port — against **one** page defect.
-  `#471`'s accounting is what made that legible instead of a vague "the suite is flaky"
-  · **one finding held back rather than fixed, because it is a different task:** my red-proof changed the
-  production key builder (`'dw:draft:v1:'` at `watch.py:5856`) to `v2`, and `draft` **threw** instead of failing
-  an assertion — the crash sentinel, so it would be reported as *did not judge* rather than *failed*. Sensitivity
-  to the key is therefore confirmed, but the guard cannot **judge** a wrong key, which is precisely the shape
-  `#471`'s accounting exists to flag. Worth a follow-up: a guard should fail on a changed contract, not die on it
-  · **6 of 10 now fixed — `surfaces` merged too (`36b4ad1`, `2ceb904`, `a7a4a11`, `f37c287`).** All four were
-  **guard-side**; the lane wanted **no `watch.py` change at all**, which is the sixth through ninth checks
-  tonight to outlive their contract. `burndownmock` was one of the two guards `#471`'s accounting named as
-  never having judged, and `#417`'s panel changes were indeed what its mock no longer matched. On `health` the
-  page was **not** silent about refusals: an unmatched title still returns `409` and the client paints
-  `not written (409) — …`; the guard's fixed `sleep(700)` was racing `sendAnswer`. Verified here: 4 of 4 ran and
-  judged, all PASS
-  · **remaining four**, lane `motion` still out: `oneinput`, `wisp`, `qsec`, `posture`
-  · **one low follow-up the lane reported and correctly did not build:** hold a refusal's `.qerr` against a tick
-  the way a success holds its morph, if that race reappears under extreme load — a page change, so not theirs
-  · blocked on nothing · related: **#471, #474, #269, #459, #476**
-
 - **#465** — a lane can edit the MAIN CHECKOUT instead of its worktree, and nothing notices until a merge fails ·
   **P1** · loop-machinery/containment · origin: **loop** · found 2026-07-29 03:32 when the `#263` merge aborted:
   `error: Your local changes to the following files would be overwritten by merge: dev/capture/health.mjs`
@@ -3495,6 +3420,82 @@ Next id: **485**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#475** — ten guards are red on master and load is not why · **P1** · regression/verification ·
+  origin: **loop** · **found 2026-07-29 07:40 by the first full `just test` to complete in this session**
+  · **the run:** pytest and `lint` green; guards **48 PASS / 14 FAIL** of 60 (plus `hub`, `contract`).
+  `#471`'s new accounting worked on its first real run and named the two that never judged:
+  *"2 of 60 registered guard(s) did NOT run-and-judge: artifactwrap, burndownmock"*
+  · **two were a real cross-lane break and are fixed (`43036f2`)**: `artifactwrap` and `markrail` build their
+  own review sources through `review_artifact.py`, and `#436`'s `ask` gate plus `#455`'s `if-silent` gate made
+  both mandatory — so two GUARD fixtures were locked out and died before their first assertion. Neither gate's
+  author could see that a guard was a consumer
+  · **`morphhold` and `history` recovered on a quiet re-run, so those two were load.** The other ten did not,
+  and that is the finding: **re-run alone at load 24-31 they fail exactly as they did at load 36-44**, so the
+  load explanation I reached for first is **refuted**, not merely unproven
+  · **two hypotheses tested and refuted before filing, so nobody re-tests them:** (1) writes are broken — a
+  direct `POST /posture` against a fixture server returns `202 {"ok": true, "changed": true}` with a receipt,
+  writes `.dreamwork/posture` correctly and appends its `watch-events.log` line; (2) headless Chromium now
+  reports `prefers-reduced-motion: reduce`, which would collapse every normal-motion assertion at once — it
+  reports `false`, and a control transition sampled 20 distinct intermediate widths
+  · **the ten, with the assertion that fails:** `oneinput` (*the indicator LANDS on first paint*; *reduced-motion:
+  the indicator JUMPS, it does not slide*) · `wisp` (*normal: the intensity fades in and OUT — a breath, not a
+  sweep*) · `health` (*a refused write says so, instead of nothing at all*) · `qsec` (four, incl. *0 of 76
+  part-way* and *the section really grows … (17 -> 0, 17px)*) · `draft` (*typing writes a draft for THIS project
+  (keyed by the target path)*) · `serving` (*a page behind HEAD says so, and by how much*) · `answers` (*tick
+  trigger accepted*) · `burndownmock` (*threw before finishing its checks*) · `rejectwrite` (*…and does not
+  clear the draft store (the permanent-loss vector)*) · `posture` (five, headed by *arm bar drain visited mid
+  frames: 0*)
+  · **`posture`'s five are probably ONE failure, and reading them as five would waste the tick:** the head is a
+  motion sample, and the four file assertions below it cascade because the guard never finishes arming the
+  10s bar, so nothing is ever written. Expect other cascades in this list
+  · **the pair worth doing first is `draft` + `rejectwrite`**, because both are about the **draft store** and
+  DraftStore landed tonight (`#269`/`#459`, `ca799f5`). Either two guards assert the pre-DraftStore key shape —
+  the fourth instance tonight of a check outliving its contract — or `rejectwrite`'s wording is literal and
+  there is a real permanent-loss vector. Those deserve opposite reactions, so measure before choosing
+  · **why ten accumulated unseen:** the suite reported registration and never execution until tonight, and no
+  full run completed all session — one was killed mid-guards by an external sweep. Every green claim made
+  tonight rested on pytest + `lint` + individually-invoked guards, which is exactly the gap `#471` described
+  and this entry is its bill
+  · **PROGRESS — 2 of the 10 fixed, merged `ef67316` (lane `drafts`), and the answer is the reassuring one.**
+  `rejectwrite`'s wording is **not literal**: after a rejected `/answer` the
+  `dw:draft:v1:<target>:card:<title>` key is still present, the box keeps its text, the error voice is right and
+  `isDurable(reject)` is `false`. The composer writes `dw:draft:v1:<target>:composer:main`. Both guards were
+  looking for the **pre-DraftStore** shapes (`dw:draft:<target>`, and a `dw:adraft:*` count that read 0), so
+  `rejectwrite` failed on a store that had not been cleared, only re-keyed. **The fifth and sixth checks tonight
+  to outlive their contract**, after `#474`'s three and `43036f2`'s two; the page was right every time. Both
+  guards now green (12 and 14 checks)
+  · **ALL TEN NOW FIXED, and nine of them were the guard. 2026-07-29 09:0x.** Lane `surfaces` took
+  `burndownmock`/`serving`/`answers`/`health` (merged, 4/4 PASS); lane `motion` took
+  `posture`/`oneinput`/`wisp`/`qsec` (merged `f07d144`). **`posture`'s five WERE one — but not the one I
+  predicted:** the cascade came from a **port collision** (`#461`'s `argv[3]` again, the ninth guard bitten by
+  it), which made posture grade the recipe's server for a DIFFERENT target; the drain was a genuinely separate
+  second defect, fixed the `#442` way. **Three shared a single cause I had not considered at all:** `oneinput`,
+  `wisp` and `qsec` each cached a DOM reference at trace start and sampled it across the live tick's
+  re-render, which REPLACES the node — and a detached element's rect is all-zeros, so each measured a defect
+  that was not on the page. One line each, re-acquire per frame
+  · **exactly ONE of the fourteen was the page, and it is `#477`:** `qsec`'s residual is a real teleport when the
+  tick lands mid-open. Split out, fixed, verified — the guard was right and no guard-side fix existed
+  · **the score for the night, which is the point of this entry:** thirteen of fourteen red guards were checks
+  that had outlived a contract, cached a stale reference, or collided on a port — against **one** page defect.
+  `#471`'s accounting is what made that legible instead of a vague "the suite is flaky"
+  · **one finding held back rather than fixed, because it is a different task:** my red-proof changed the
+  production key builder (`'dw:draft:v1:'` at `watch.py:5856`) to `v2`, and `draft` **threw** instead of failing
+  an assertion — the crash sentinel, so it would be reported as *did not judge* rather than *failed*. Sensitivity
+  to the key is therefore confirmed, but the guard cannot **judge** a wrong key, which is precisely the shape
+  `#471`'s accounting exists to flag. Worth a follow-up: a guard should fail on a changed contract, not die on it
+  · **6 of 10 now fixed — `surfaces` merged too (`36b4ad1`, `2ceb904`, `a7a4a11`, `f37c287`).** All four were
+  **guard-side**; the lane wanted **no `watch.py` change at all**, which is the sixth through ninth checks
+  tonight to outlive their contract. `burndownmock` was one of the two guards `#471`'s accounting named as
+  never having judged, and `#417`'s panel changes were indeed what its mock no longer matched. On `health` the
+  page was **not** silent about refusals: an unmatched title still returns `409` and the client paints
+  `not written (409) — …`; the guard's fixed `sleep(700)` was racing `sendAnswer`. Verified here: 4 of 4 ran and
+  judged, all PASS
+  · **remaining four**, lane `motion` still out: `oneinput`, `wisp`, `qsec`, `posture`
+  · **one low follow-up the lane reported and correctly did not build:** hold a refusal's `.qerr` against a tick
+  the way a success holds its morph, if that race reappears under extreme load — a page change, so not theirs
+  · blocked on nothing · related: **#471, #474, #269, #459, #476**
+  · closed 2026-07-29 15:29, verified by the current coordinator on current master: all ten guards PASS in one run, 10 of 10 judged, at load ~33 — oneinput wisp health qsec draft serving answers burndownmock rejectwrite posture. The entry's final accounting stands: thirteen of fourteen reds were checks that had outlived a contract, cached a stale reference, or collided on a port, against ONE page defect, split out as #477 (which stays open as its own entry — coordinator work on watch.py). Constituent merges: 43036f2 (cross-lane fixture break), ef67316 (drafts), 36b4ad1 + 2ceb904 + a7a4a11 + f37c287 (surfaces), f07d144 (motion). #471's run-and-judged accounting is what made the night legible.
+
 - **#404** — for a same-tree lane, `git log` is a strictly more reliable landing channel than
   `handoffs.md`, and the tick reads the weaker one first · P2 · loop/design · origin: **loop** ·
   found by **noticing I had already run the experiment** — I learned of two landings from `git log`
