@@ -335,3 +335,22 @@ def test_live_ledger_import_acceptance(module, tmp_path):
     seq = conn.execute("SELECT seq FROM sqlite_sequence WHERE name='task'"
                        ).fetchone()[0]
     assert seq + 1 == a["seed"]["seed"]
+
+
+def test_live_groomed_stub_row_fails_verify(module, tmp_path):
+    """A fabricated stub for a groomed id is the exact bug the headless rule
+    exists to catch — inject one, verify must refuse it by name."""
+    from test_tasks_migrate_import import LIVE_LEDGER
+    text = LIVE_LEDGER.read_text()
+    a = module.build_analysis(text, ledger_path=str(LIVE_LEDGER))
+    headless = sorted(c["id"] for c in
+                      a["conflicts"].get("section id without an entry", []))
+    assert headless, "live ledger lost its groomed ids — test has no anchor"
+    db = _scratch(tmp_path)
+    assert module.main(["--import", "--ledger", str(LIVE_LEDGER),
+                        "--to", db], out=io.StringIO()) == 0
+    _tamper(db, "INSERT INTO task(id, state, title, body) "
+                "VALUES (?, 'landed', 'stub', 'stub')", (headless[0],))
+    rc, out = _verify(module, text, db)
+    assert rc == 65
+    assert f"task #{headless[0]}: groomed id has a row" in out
