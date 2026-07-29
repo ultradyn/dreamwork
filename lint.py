@@ -29,6 +29,7 @@ Levels:
 from __future__ import annotations
 
 import argparse
+import difflib
 import importlib.util
 import json
 import re
@@ -3860,6 +3861,161 @@ def check_related_markers(dw: Path, watch, rep: Report) -> None:
             f"{n_unparseable} entries unparseable"))
 
 
+LESSON_DUP_RATIO = 0.78
+LESSON_DUP_JACCARD = 0.50
+_LESSON_STOP = frozenset(
+    "a an the and or of to in on for with by is are was were be been it its "
+    "this that not no never must can could should would from at as so if "
+    "then than when what which who how why your you we our their they them "
+    "he she his her do does did have has had will just only every each any "
+    "all one two three".split())
+
+
+def _load_lessons_index():
+    """Import dev/lessons_index.py for its entry parser — one parser, not two.
+
+    By path, same reasoning as `load_watch`: lint runs from the skill dir
+    against any target, and a second copy of the entry grammar is how this
+    repo's checks drift. Returns None if it is unimportable so the rest of
+    the checks still run — and the caller reports that, because a comparison
+    that could not run must never look like one that ran.
+    """
+    path = SKILL_DIR / "dev" / "lessons_index.py"
+    if not path.exists():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("_lessons_index_for_lint", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        return None
+
+
+def _norm_claim(claim: str) -> str:
+    s = claim.lower()
+    s = re.sub(r"[^a-z0-9 ]", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _claim_tokens(claim: str) -> frozenset:
+    return frozenset(t for t in _norm_claim(claim).split()
+                     if t not in _LESSON_STOP and len(t) > 2)
+
+
+def _head_lessons(dw: Path) -> str | None:
+    """HEAD's lessons.md for the target's repo, or None when unreadable.
+
+    `git show` is read-only plumbing and takes no index lock (the active
+    mitigation on this host is about `git status`). None — not "" — means
+    "no baseline", so a lessons.md that simply is not tracked yet does not
+    read as "every lesson is new".
+    """
+    target = dw.parent
+    try:
+        top = subprocess.run(
+            ["git", "-C", str(target), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=10)
+        if top.returncode != 0:
+            return None
+        rel = (dw / "lessons.md").resolve().relative_to(
+            Path(top.stdout.strip()).resolve())
+        show = subprocess.run(
+            ["git", "-C", str(target), "show", f"HEAD:{rel.as_posix()}"],
+            capture_output=True, text=True, timeout=10)
+        return show.stdout if show.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def check_lesson_near_duplicates(dw: Path, rep: Report) -> None:
+    """A NEW lesson whose first sentence near-duplicates an existing one is
+    the #349 repeat in its file-shaped form.
+
+    The 2026-07-28 repeat was an ACTION, so the retrieval half of #349 is
+    `dev/lessons_index.py`. This is the write-time backstop: had anything
+    compared first sentences, the one true duplicate in the file's history
+    (the "guard assertion whose subject may not exist must never throw"
+    lesson, written twice in one batch — lessons.md:580 ≈ :622) would have
+    been refused. Thresholds are measured, not guessed: over all 44.5k
+    pairs in the current file, exactly that one pair reaches ratio >= 0.78
+    AND token-jaccard >= 0.50; the next-highest pair sits at 0.645. The
+    catch radius is honest — near-verbatim repeats fire, a genuinely
+    re-worded repeat (ratio 0.37-0.63, measured) does not — which is why
+    this check is the backstop and not the fix.
+
+    "New" means the claim is absent from HEAD's lessons.md: the refusal
+    bites at write time, when the loop is appending. A pair already in HEAD
+    is WARN, not ERROR — merging it is his call (the #349 posture forbids
+    pruning without him), and a WARN names it forever rather than going
+    silent. No git baseline (a fixture, a target outside a repo) degrades
+    to WARN-only and SAYS so.
+    """
+    path = dw / "lessons.md"
+    if not path.exists():
+        rep.add(WARN, "lessons.md", "absent — init seeds it; the loop appends it")
+        return
+    lix = _load_lessons_index()
+    if lix is None:
+        rep.add(WARN, "lessons.md",
+                "dev/lessons_index.py unimportable — the near-duplicate check "
+                "cannot run (this row is the refusal to fake having run)")
+        return
+    claims = [(ln, lix.claim_of(body))
+              for ln, body in lix.parse_entries(path.read_text(encoding="utf-8"))]
+    norms = [_norm_claim(c) for _, c in claims]
+    toks = [_claim_tokens(c) for _, c in claims]
+    pairs = []  # (line_a, line_b, ratio)
+    for i in range(len(claims)):
+        for j in range(i + 1, len(claims)):
+            if not norms[i] or not norms[j]:
+                continue
+            sm = difflib.SequenceMatcher(None, norms[i], norms[j])
+            if sm.quick_ratio() < LESSON_DUP_RATIO:
+                continue
+            ratio = sm.ratio()
+            if ratio < LESSON_DUP_RATIO:
+                continue
+            union = toks[i] | toks[j]
+            if union and len(toks[i] & toks[j]) / len(union) >= LESSON_DUP_JACCARD:
+                pairs.append((claims[i][0], claims[j][0], ratio))
+    head = _head_lessons(dw)
+    if head is None:
+        new_lines: set[int] = set()
+    else:
+        head_claims = {_norm_claim(lix.claim_of(b))
+                       for _, b in lix.parse_entries(head)}
+        new_lines = {ln for (ln, _), n in zip(claims, norms)
+                     if n not in head_claims}
+    new_pairs = [p for p in pairs if p[0] in new_lines or p[1] in new_lines]
+    old_pairs = [p for p in pairs if p not in new_pairs]
+    for a, b, ratio in new_pairs[:5]:
+        rep.add(ERROR, "lessons.md", (
+            f"new first sentence near-duplicates an existing lesson "
+            f"(lessons.md:{a} ≈ lessons.md:{b}, ratio {ratio:.2f}) — the "
+            f"repeat #349 exists to refuse; fold the new evidence into the "
+            f"existing entry instead of writing the lesson twice"))
+    if old_pairs:
+        listed = ", ".join(f"lessons.md:{a} ≈ lessons.md:{b}"
+                           for a, b, _ in old_pairs[:5])
+        if head is None:
+            rep.add(WARN, "lessons.md", (
+                f"{len(old_pairs)} near-duplicate first-sentence pair(s): "
+                f"{listed} — no git baseline, so new vs pre-existing is "
+                f"unknowable and the write-time refusal is OFF"))
+        else:
+            rep.add(WARN, "lessons.md", (
+                f"{len(old_pairs)} near-duplicate first-sentence pair(s) "
+                f"already in HEAD: {listed} — merging is his call (#349 "
+                f"posture: no pruning without him)"))
+    if not pairs:
+        baseline = "" if head is not None else (
+            "; no git baseline — write-time refusal OFF (this run could only "
+            "have caught pre-existing pairs)")
+        rep.add(OK, "lessons.md",
+                f"{len(claims)} first sentences, none near-duplicate{baseline}")
+
+
 def run_checks(dw: Path, watch, rep: Report) -> None:
     """Every check, in one place, because a SECOND copy of this list drifted.
 
@@ -3903,6 +4059,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_brief_lane_owns(dw, rep)
     check_lane_containment_backstop(dw, rep)
     check_related_markers(dw, watch, rep)
+    check_lesson_near_duplicates(dw, rep)
     check_status_keys(dw, rep)
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are
     # the tool's own, so this only says anything when linting this repo.
