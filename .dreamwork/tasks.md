@@ -26,6 +26,7 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
 Next id: **485**
 
+## Open
 - **#484** — a listing surface for research HTML, reusing the one builder · P2 ·
   dashboard/research-artifacts · origin: **loop** · **recommended by the `#422` lane, recorded in
   `.dreamwork/docs/research/README.md`** · `#422` settled the kind (directory-canonical markdown,
@@ -40,7 +41,6 @@ Next id: **485**
   kind contract from `#422`, the template-builder drift `#325` ended, and `#436`'s build-time
   artifact contract.
 
-## Open
 - **#477** — the 2s tick TELEPORTS a section it catches mid-open · P1 · bug/motion · origin: **loop**
   · **found 2026-07-29 08:53 by the `motion` lane while clearing `#475`, and it is the one genuine PAGE defect
   in the whole ten-guard batch** · `qsec` fails in the recipe and passes on an isolated fresh server, and the
