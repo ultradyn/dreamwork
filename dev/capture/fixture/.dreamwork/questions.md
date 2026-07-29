@@ -28,9 +28,11 @@
 - **P1 · 2026-07-25 — a second open question, so answering the first leaves
   a neighbour to close the gap.** The regroup guard needs at least one card
   below the one it answers, or there is nothing to watch slide up. Some
-  more prose so this body also wraps: **bold**, *emphasis* and a
-  `backticked/path.md` all appear here so the inline renderer has one of
-  each to render. It is marked `P1`, and it is SECOND in this file on
+  more prose so this body also wraps: **bold**, *emphasis*, a known-internal
+  `.dreamwork/lessons.md` path (exists, so linkify promotes it and #506
+  attaches a pip), an unknown `nosuch/vanished.md` path (not on the closed
+  set — stays code, no link, no pip), and an external `github.com/example/repo`
+  (a link without a pip). It is marked `P1`, and it is SECOND in this file on
   purpose: the sort must be visible as a real permutation, so a renderer
   that ignores priority is not accidentally right (#197).
 

@@ -708,10 +708,22 @@ hunt: `page_shell` (the one HTML shell + `<script>` bundle); `pageHeader`
 links; a `.dreamwork/review/*.html` path becomes a `/review` link that docks
 its question), `qaCard` (**the question card** — its own section below). A
 low-emphasis PiP glyph (`pipBtn`) sits after doc/review affordances
-(file + review headers, the dashboard reviews list, the composer); clicking it
-floats the target in an identity-headed window (`openPopout` → Document
+(file + review headers, the dashboard reviews list, the composer) **and,
+from #506, immediately after every known-internal file link that `linkify`
+emits in prose** (question bodies via `mdBReview`, answers, dreams, `.md`
+peeks — anywhere the closed-set link rule runs). Eligibility is that same
+closed set (`data.linkable_paths`): a path that is not linkable gets no
+link and no pip; external `github.com/…` links get a link and no pip (a
+pip floats a local view). The pip reuses the page's ONE pop-out gesture —
+no second affordance. **Arrival:** always-on, quiet at rest, accent on
+hover/focus — the same card-chrome contract as `.qfocus` / `.qroll` (no
+appear/disappear of its own; it rides the card or surface it sits on).
+Reduced motion drops only the colour transition; the button stays. Clicking
+it floats the target in an identity-headed window (`openPopout` → Document
 Picture-in-Picture, `window.open` fallback) that stays put while the main tab
-navigates and carries the same dreaming field (see Shader). Views are pure builders returning `#view`'s innerHTML
+navigates and carries the same dreaming field (see Shader). `user-select:none`
+on the button so a drag across a card body does not swallow chrome into the
+selection (#505). Views are pure builders returning `#view`'s innerHTML
 (`buildDashboard`, `buildQuestions`, `buildAnswers`, `buildFile`,
 `buildReview`, `buildResearch`); the router swaps them. One `artifactRow`
 factory spells the review/research listing row both surfaces share (#484) —
@@ -1380,6 +1392,15 @@ the `/questions` route, so the outlier form used by `#417` was raw text
 and unreachable. Bare relative paths are never left as navigable hrefs.
 (`file-formats.md` is where the writing rule belongs; this paragraph is
 the page-side contract.)
+
+**Known-internal file links carry a pip (#506).** When `linkify` promotes a
+backticked path because it is in `data.linkable_paths`, it also emits
+`pipBtn('/file?p=…', path)` immediately after the backticked span, both
+inside a `.mdfile` nowrap unit so the glyph never orphans onto the next
+line. The decision is one: the closed set that decides the link decides the
+pip — there is no second allow-list. External links and unknown code spans
+get none. The pip is outside the backticks so `<code>` wraps only the path
+(the link is content; the pip is chrome). Guard: `dev/capture/qlinkpip.mjs`.
 
 The parser feeds this: a sub-bullet may itself be hard-wrapped, and its
 continuation lines belong to *it*. Capturing only the first line truncated

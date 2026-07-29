@@ -2111,11 +2111,22 @@ STYLE = """<style>
     padding:.25rem .8rem; cursor:pointer; }
   #cmdpop { margin-left:auto; color:var(--muted); }
   #cmdpop:hover { color:var(--accent); }
+  /* PiP glyph: always present, quiet at rest, accent on hover/focus — the
+     same card-chrome arrival as .qfocus/.qroll (no appear/disappear of its
+     own; rides the surface it sits on). user-select:none so a drag across
+     prose that contains a body-link pip never swallows the button into the
+     selection (#505; the pip is chrome, not copy). */
   .pipbtn { background:none; border:none; color:var(--dim); cursor:pointer;
     padding:0 .35rem; line-height:1; vertical-align:middle;
-    transition:color .3s ease; }
+    transition:color .3s ease; user-select:none; -webkit-user-select:none; }
   .pipbtn:hover, .pipbtn:focus-visible { color:var(--accent); }
   .pipbtn svg { display:inline-block; vertical-align:-2px; }
+  /* #506: known-internal path + its pip are ONE unbreakable unit. Without
+     nowrap the button orphans onto the next line whenever the path sits
+     near a wrap edge (the path is content; the pip is chrome that must
+     travel with it). The unit is short (a path + 14px glyph); long paths
+     already overflow as one code token. */
+  .mdfile { white-space:nowrap; }
   /* the composer's status arrives and departs on one atmospheric envelope
      (#255). Success remains readable for the hold while the panel stays open;
      the panel's own courtesy-close is separate (~1.5s, #291). Reduced motion
@@ -2135,7 +2146,7 @@ STYLE = """<style>
   @media (prefers-reduced-motion: reduce) {
     #cmdplus, #cmdpalette, #layerhint, .sgind, .sgbtn, .cmdmenu,
     .cmdmenuitem, .cmdmenuitem.qreveal, .cmdmorebtn,
-    .cmdmsg { transition:none; }
+    .cmdmsg, .pipbtn { transition:none; }
   }
 </style>"""
 
@@ -2381,15 +2392,25 @@ const expand = (s, inner, cls='', keep='') => {
 };
 /* Backticked references become links only when the destination is known.
    `github.com/…` is an external URL; target files come from the collector's
-   closed set. Everything else stays code — a broken link is a false promise. */
+   closed set. Everything else stays code — a broken link is a false promise.
+   #506: a known-internal file link also carries the page's ONE pop-out
+   affordance (`pipBtn`) immediately after the backticked span — same closed
+   set as the link itself, never a second list. External and unknown get
+   none: a pip floats a local view, and a pip on a 404 is a false promise.
+   The pip sits OUTSIDE the backticks so mdSpans wraps only the path in
+   <code> and the button stays chrome (not copy, not code); both ride a
+   `.mdfile` nowrap unit so the glyph never orphans onto the next line. */
 const linkify = h => h.replace(
   /`([\\w.-]+(?:\\/[\\w.-]+)+\\/?|[\\w-]+\\.[\\w]{1,8})`/g,
   (m, p) => {
     if (p.startsWith('github.com/'))
       return '`<a href="https://' + p + '">' + p + '</a>`';
     if (data && Array.isArray(data.linkable_paths) &&
-        data.linkable_paths.includes(p))
-      return '`<a href="/file?p=' + encodeURIComponent(p) + '">' + p + '</a>`';
+        data.linkable_paths.includes(p)) {
+      const url = '/file?p=' + encodeURIComponent(p);
+      return '<span class="mdfile">`<a href="' + url + '">' + p + '</a>`' +
+             pipBtn(url, p) + '</span>';
+    }
     return m;
   });
 const preB = t => `<pre>${linkify(esc(t))}</pre>`;
