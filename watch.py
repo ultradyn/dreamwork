@@ -6944,7 +6944,9 @@ function showBdTip(col) {
 // pointer + focus, delegated — columns are rebuilt every tick
 addEventListener('pointerover', e => {
   const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
-  if (col) showBdTip(col);
+  if (!col) return;
+  showBdTip(col);
+  bdinspSchedule(col);             // #298: a hover that dwells inspects
 });
 addEventListener('pointerout', e => {
   const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
@@ -6955,10 +6957,14 @@ addEventListener('pointerout', e => {
   // leave the tip up while focus stays on the column
   if (document.activeElement === col) return;
   hideBdTip(false);
+  bdinspCancel();
+  if (!bdinspPin) hideBdInsp(false);   // a pinned (tapped) reading stays
 });
 addEventListener('focusin', e => {
   const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
-  if (col) showBdTip(col);
+  if (!col) return;
+  showBdTip(col);
+  showBdInsp(col);   // #298: focus is already deliberate — no dwell
 });
 addEventListener('focusout', e => {
   const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
@@ -6966,7 +6972,111 @@ addEventListener('focusout', e => {
   const to = e.relatedTarget;
   if (to && to.closest && to.closest('.bdnet .bdcol[data-open]')) return;
   hideBdTip(false);
+  bdinspCancel();
+  if (!bdinspPin) hideBdInsp(false);
 });
+/* #298 — the column inspector: the richer reading a DELIBERATE look gets.
+   The #417 glance tip answers a passing hover; the inspector answers a
+   hover that DWELLS (700ms), a keyboard focus (immediate — focus is
+   already deliberate), or a tap (pinned until dismissed). Same seam, same
+   arrival idiom, same data attributes — never a second hover. */
+let bdinspCol = null, bdinspPin = false, bdinspDwell = null;
+let bdinspHideTimer = null;
+const BD_DWELL = 700;
+function bdstampFull(t) {
+  const d = new Date(t * 1000);
+  return d.toLocaleDateString(undefined,
+    { weekday: 'short', day: 'numeric', month: 'short' }) + ' ' +
+    d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+function bdinspHTML(col) {
+  const d = col.dataset;
+  const t1 = +d.t1, now = Date.now() / 1000;
+  const iv = bdstampFull(+d.t0) + ' – ' + (t1 > now ? 'now' : bdstampFull(t1));
+  // coverage the geometry cannot say: a period with no ledger commit
+  // CARRIES the previous level; the current period is still arriving.
+  const cov = [d.covered === '1' ? 'measured'
+                                : 'level carried — no ledger commits'];
+  if (t1 > now) cov.push('period in progress');
+  return `<div class="bdin-iv">${esc(iv)}</div>` +
+    `<div><span class="bdnum">${esc(d.open)}</span> open · ` +
+    `${esc(d.arrived)} arrived · ${esc(d.landed)} landed · ` +
+    `<span class="bdnum">${esc(d.commits)}</span> commit` +
+    `${d.commits === '1' ? '' : 's'}</div>` +
+    `<div class="bdin-cov">${esc(cov.join(' · '))}</div>`;
+}
+function bdinspLay(bd, col, el) {
+  const bdr = bd.getBoundingClientRect();
+  const r = col.getBoundingClientRect();
+  const track = bd.querySelector('.bdnet');
+  const tr = track ? track.getBoundingClientRect() : r;
+  const w = el.offsetWidth, h = el.offsetHeight;
+  // centre on the column, CLAMPED to the panel so an edge column never
+  // sends it off-chart and it never sits on a neighbour
+  const cx = r.left - bdr.left + r.width / 2;
+  el.style.left = Math.max(0, Math.min(cx - w / 2, bdr.width - w)) + 'px';
+  el.style.right = 'auto';
+  el.style.top = Math.max(0, tr.top - bdr.top - h - 4) + 'px';
+}
+function bdinspCancel() {
+  if (bdinspDwell) { clearTimeout(bdinspDwell); bdinspDwell = null; }
+}
+function hideBdInsp(immediate) {
+  const el = document.querySelector('.bd .bdinsp');
+  bdinspCancel();
+  if (!el || el.hidden) { bdinspCol = null; bdinspPin = false; return; }
+  if (bdinspHideTimer) { clearTimeout(bdinspHideTimer); bdinspHideTimer = null; }
+  const finish = () => {
+    el.hidden = true; el.classList.remove('depart', 'pose');
+    el.innerHTML = ''; bdinspCol = null; bdinspPin = false;
+  };
+  if (!!immediate || bdtipReduced()) { finish(); return; }
+  el.classList.remove('pose');
+  el.classList.add('depart');
+  bdinspHideTimer = setTimeout(finish, 450);
+}
+function showBdInsp(col) {
+  const bd = col && col.closest && col.closest('.bd');
+  const el = bd && bd.querySelector('.bdinsp');
+  if (!el || !col.dataset || col.dataset.t0 === undefined) return;
+  bdinspCancel();
+  if (bdinspHideTimer) { clearTimeout(bdinspHideTimer); bdinspHideTimer = null; }
+  const same = bdinspCol === col && !el.hidden;
+  bdinspCol = col;
+  el.innerHTML = bdinspHTML(col);
+  el.hidden = false;               // visible before measuring
+  bdinspLay(bd, col, el);
+  if (same) { el.classList.remove('depart', 'pose'); return; }
+  el.classList.remove('depart');
+  if (bdtipReduced()) { el.classList.remove('pose'); return; }
+  el.classList.add('pose');        // enter-snap, then ease in (#417 idiom)
+  void el.offsetWidth;
+  requestAnimationFrame(() => el.classList.remove('pose'));
+}
+function bdinspSchedule(col) {
+  if (bdinspPin) return;           // a pinned reading is not hover's to move
+  bdinspCancel();
+  bdinspDwell = setTimeout(() => showBdInsp(col), BD_DWELL);
+}
+/* tap selects / dismisses — no preventDefault, so chart scroll is never
+   the inspector's to break. A tap on another column moves the pin; a tap
+   outside the chart lets it go. */
+addEventListener('click', e => {
+  const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
+  if (col) {
+    if (bdinspPin && bdinspCol === col) hideBdInsp(false);
+    else { bdinspPin = true; showBdInsp(col); }
+    return;
+  }
+  if (bdinspPin) hideBdInsp(false);
+});
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && bdinspCol) { hideBdTip(true); hideBdInsp(false); }
+});
+/* a scrolled page moves the column out from under the reading — depart,
+   never drift along stale coordinates. */
+addEventListener('scroll', () => { if (bdinspCol) hideBdInsp(false); },
+  { passive: true, capture: true });
 /* switching a card's mode: the indicator slides, the placeholder follows,
    and the field keeps whatever is typed in it — the text is the point, the
    mode is only where it goes. */
