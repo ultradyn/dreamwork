@@ -1035,8 +1035,8 @@ get wrong:
 - **A deleted task stays in the output** — grooming cannot un-happen an
   arrival. **Pre-cutoff ids are parsed too**: the cutoff governs the
   linter's demands, not history's coverage.
-- **The grammar is imported from `lint.py`** (`ledger_entries`,
-  `ORIGIN_MARK`), not re-copied — a second copy of one rule is how the
+- **The grammar is imported from `ledger_parse.py`** (#352 — `ledger_entries`,
+  `ORIGIN_MARK`, `ENTRY_HEAD`), not re-copied — a second copy of one rule is how the
   priority check drifted. A malformed snapshot fails closed to `unknown`
   for its affected entry and never crashes the walk.
 - **A shallow clone reports `history_complete: false`** with a
