@@ -34,6 +34,17 @@ Two subcommands, both taking the store path the way ``dev/ledger.py`` verbs take
             because ``advance_cursor`` only writes on success.  The proof
             writes the applied-ledger (``--applied``) but never the cursor.
 
+  #531     ``consume --through ORDINAL`` bounds the advance to ORDINAL — the
+            ordinal the coordinator's prior ``pending`` reported as head — so
+            an event landing between that read and this consume stays in
+            ``(cursor, head]`` and is re-listed next tick instead of being
+            advanced past unread (the live race that cost ord=43, the #505
+            answer receipt).  Without ``--through`` consume advances to the
+            live head.  Both edges refuse EX_USAGE: below/at the cursor (a
+            stale ordinal must not rewind or no-op silently) and above the head
+            (cannot advance past what exists).  The #526 proof act runs only
+            over receipts inside the advanced range ``(cursor, through]``.
+
 ATOMICITY SEAM (named, not hidden): the read and the advance are TWO separate
 API calls, not one transaction.  Between them a concurrent writer may append.
 That is SAFE BY CONSTRUCTION: the chain is append-only, so the prefix
@@ -74,7 +85,8 @@ agent consumes the cursor in batched mode").
 
 USAGE
   python3 dev/journal_consume.py pending [--journal PATH]
-  python3 dev/journal_consume.py consume [--journal PATH] [--applied PATH]
+  python3 dev/journal_consume.py consume [--journal PATH] [--applied PATH] \
+                                         [--through ORDINAL]
   python3 dev/journal_consume.py show <receipt-id> [--journal PATH]
 """
 from __future__ import annotations
@@ -270,34 +282,78 @@ def cmd_consume(args, out, err) -> int:
         out.write("consumed 0 event(s)\n")
         return EX_OK
     with open_journal(args.journal) as j:
+        # --- #531: bound the advance to what the prior pending read reported.
+        # `consume` without `--through` advances to the live head (today's
+        # semantics).  `consume --through H` advances at most through H — the
+        # ordinal the coordinator's prior `pending` reported as head — so an
+        # event landing between that `pending` and this `consume` stays in
+        # (cursor, head] and is re-listed next tick instead of being advanced
+        # past unread.  The live failure: ord=43 (#505 answer receipt) committed
+        # between a pending read and consume in one tick; consume advanced to
+        # the NEW head, past 43 blind.
+        through = args.through
+        if through is not None:
+            # Both edges refuse EX_USAGE BEFORE any read, so a stale/bogus
+            # ordinal never silently no-ops or rewinds.  Cursor/head come from
+            # the journal directly (the same row advance_cursor writes/reads).
+            cursor_ordinal = j.cursor(CONSUMER).scanned_through_event_ordinal
+            head_ordinal = j.head_ordinal()
+            if through <= cursor_ordinal:
+                # At-or-below the cursor: a rewind (through < cursor) or a
+                # no-op (through == cursor).  Neither may pass silently.
+                err.write(
+                    f"consume: --through {through} is at or below the cursor "
+                    f"({cursor_ordinal}); a stale ordinal must not rewind or "
+                    f"no-op silently — re-read pending and note its head\n"
+                )
+                return EX_USAGE
+            if through > head_ordinal:
+                # Above the head: cannot advance past what exists.
+                err.write(
+                    f"consume: --through {through} is above the head "
+                    f"({head_ordinal}); cannot advance past what exists — "
+                    f"re-read pending and note its head\n"
+                )
+                return EX_USAGE
         events = j.events_since_cursor(CONSUMER)
         if not events:
             out.write("consumed 0 event(s)\n")
             return EX_OK
-        # --- #526 middle act: route each drained receipt through the proof.
-        # A receipt already applied (its marker is in the ledger) proves APPLIED
+        # Select the drained set + the advance target.  Without --through the
+        # whole read is drained and the target is its high end (today).  With a
+        # valid --through (cursor < through <= head, checked above) the drained
+        # set is (cursor, through] and the target is the event at `through`;
+        # events beyond `through` stay pending (the point of the bound).
+        if through is not None:
+            drained = [ev for ev in events if ev.ordinal <= through]
+            target = next(ev for ev in events if ev.ordinal == through)
+        else:
+            drained = events
+            target = events[-1]
+        # --- #526 middle act: route each DRAINED receipt through the proof.
+        # The proof applies only to receipts INSIDE the advanced range (#531):
+        # a receipt already applied (its marker is in the ledger) proves APPLIED
         # and writes nothing; one not applied writes its marker once and is
         # reported UNAPPLIED.  This loop writes the applied-ledger only — it
         # never touches the cursor, so the read-then-advance contract below is
-        # unchanged.
+        # unchanged.  Events beyond `--through` are neither drained nor proven.
         applied = []
         unapplied = []
-        for ev in events:
+        for ev in drained:
             verdict = _prove_drained(args.applied, ev)
             if verdict is apply.Proof.APPLIED:
                 applied.append(ev)
             else:  # NOT_APPLIED (written + reported) or UNKNOWN (reported, no write)
                 unapplied.append(ev)
-        # --- advance (unchanged): read-then-advance over what was read.
-        # expected + scanned_through come straight from the read above (the
-        # high-end row's event_hash == head_hash() and its ordinal ==
-        # head_ordinal()).  advance_cursor verifies the prefix and refuses
-        # unless expected matches the verified head; on refuse it writes nothing.
-        head = events[-1]
+        # --- advance (read-then-advance over the bounded range): expected +
+        # scanned_through come from the `target` event (the high end of the
+        # advanced range — the whole-chain head without --through, or `through`
+        # with it).  advance_cursor verifies the prefix and refuses unless
+        # expected matches the verified head; on refuse it writes nothing.
         result = j.advance_cursor(
             CONSUMER,
-            expected=head.event_hash,
-            scanned_through=head.ordinal,
+            expected=target.event_hash,
+            scanned_through=target.ordinal,
         )
         if result.kind != "advanced":
             # Verification failed: the journal changed underfoot (an
@@ -309,7 +365,7 @@ def cmd_consume(args, out, err) -> int:
                 f"since the read — cursor unmoved, re-read next tick\n"
             )
             return EX_SOFTWARE
-        out.write(f"consumed {len(events)} event(s)\n")
+        out.write(f"consumed {len(drained)} event(s)\n")
         out.write(f"applied {len(applied)}\n")
         out.write(f"unapplied {len(unapplied)}\n")
         for ev in unapplied:
@@ -405,6 +461,17 @@ def _parser() -> argparse.ArgumentParser:
             "applied-receipts proof ledger path — each drained receipt is "
             "routed through its adapter's reconcile against this file (#526); "
             "default: %(default)s"
+        ),
+    )
+    pc.add_argument(
+        "--through", type=int, default=None, metavar="ORDINAL",
+        help=(
+            "bound the advance to ORDINAL — advance at most through the "
+            "ordinal the prior `pending` read reported as head, so an event "
+            "landing between that read and this consume stays pending (#531). "
+            "Without it, consume advances to the live head (today's semantics). "
+            "Refuses EX_USAGE below/at the cursor (a stale ordinal must not "
+            "rewind or no-op silently) or above the head."
         ),
     )
 

@@ -92,6 +92,54 @@ def _seed(path: Path, bodies: list[bytes], *, route: str = "/answer"):
     return results
 
 
+def _append_one(path: Path, body: bytes, *, route: str = "/answer", idx: int):
+    """Append ONE event to an EXISTING journal via the production receive() path.
+
+    Unlike _seed (which asserts a FRESH/empty journal), this appends to a
+    journal that already holds events — the #531 race setup: an event lands
+    AFTER a pending read, between the read and the consume.  Asserts the head
+    rose by exactly one (derived from head_ordinal() before/after, never
+    assumed) so an append that silently no-op'd fails here, not in the CLI
+    assertions.
+    """
+    with open_journal(path) as j:
+        before_head = j.head_ordinal()
+        r = j.receive(
+            Envelope(
+                client_action_id=_uuid(idx),
+                protocol_version="1",
+                method="POST",
+                route=route,
+                content_type="application/json",
+                body=body,
+            )
+        )
+        assert r.kind == "inserted", f"append did not insert: {r.kind}"
+        after_head = j.head_ordinal()
+        assert after_head == before_head + 1, (
+            f"append must raise head {before_head} -> {before_head + 1}; "
+            f"got {after_head}"
+        )
+        return r
+
+
+def _ord_fields(text: str) -> list[int]:
+    """The ``ord=<n>`` field of each non-empty line, in order.
+
+    Both ``pending`` and ``consume``'s event lines carry ``ord=<n>`` (one tab
+    field); deriving the ordinal list from the line shape (never assuming the
+    value) keeps the assertions honest against a future format drift.
+    """
+    ords = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        for field in line.split("\t"):
+            if field.startswith("ord="):
+                ords.append(int(field[4:]))
+    return ords
+
+
 def _run(cli, argv):
     """Call the CLI's main with captured streams; return (code, out, err)."""
     out = io.StringIO()
@@ -839,4 +887,186 @@ def test_show_multiline_payload_verbatim(tmp_path: Path):
         "the two payload lines must be adjacent real lines, not joined by an "
         f"escaped newline; got {lines!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 11 — #531 consume --through bounds the advance; a late event stays pending
+# ---------------------------------------------------------------------------
+
+def test_consume_through_bounds_advance_leaves_late_event_pending(tmp_path: Path):
+    """#531: ``consume --through H`` advances at most through H, so an event
+    that lands between the coordinator's ``pending`` read and its ``consume``
+    is NOT advanced past unread — it stays in ``(cursor, head]`` for the next
+    tick.  This is the race that cost ord=43 (#505 answer receipt): it
+    committed between a pending read and consume in one tick, consume advanced
+    to the NEW head past 43 blind, and only ``show`` recovered it.
+
+    The head ordinal H comes from the ``pending`` read's LAST line (derived
+    from the ``ord=`` field, never assumed); the late event is appended AFTER
+    that read via the production ``receive()`` path; the cursor position is
+    read from ``j.cursor`` (the real row advance_cursor writes), not faked.
+
+    RED LINE (run): make cmd_consume ignore ``--through`` and advance to
+      ``events[-1]`` (the live head) — i.e. revert the bound-honouring
+      ``drained = [ev ... ordinal <= through]`` / ``target = next(ev ...
+      ordinal == through)`` lines to ``drained = events; target =
+      events[-1]``.  The cursor advances to H+1 (not H), the consumed count
+      rises to H+1 (not H), and the late event leaves ``(cursor, head]`` →
+      the three assertions below all fail.  Production line injected: the
+      ``target``/``drained`` selection honouring ``args.through`` in
+      cmd_consume.
+    """
+    cli = _load_cli()
+    path = tmp_path / "through.sqlite3"
+    applied = tmp_path / "applied.md"
+    # Seed the first batch; the pending read will report its head as H.
+    seeded = _seed(path, [b'{"a":0}', b'{"a":1}', b'{"a":2}'])
+    H = len(seeded)  # the head the pending read reports (derived, not assumed)
+    assert H >= 2, "precondition: a non-trivial first batch so H > cursor"
+
+    # The pending read — H is the LAST reported line's ord (the head it names).
+    code, out, err = _run(cli, ["pending", "--journal", str(path)])
+    assert code == 0, f"pending exited {code} (err={err!r})"
+    pending_ords = _ord_fields(out)
+    assert pending_ords == list(range(1, H + 1)), (
+        f"precondition: pending must report ords 1..{H}; got {pending_ords}")
+    assert pending_ords[-1] == H, "the head H is the last pending line's ord"
+
+    # An event lands AFTER the pending read but BEFORE consume (the race).
+    late = _append_one(path, b'{"late":true}', idx=H)
+    late_ord = H + 1
+    with open_journal(path) as j:
+        assert j.head_ordinal() == late_ord, (
+            f"precondition: the late event raised head to {late_ord}; "
+            f"got {j.head_ordinal()}")
+
+    # consume --through H: advance at most through H, leaving the late event.
+    code, out, err = _run(cli, ["consume", "--through", str(H),
+                                "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, f"consume --through exited {code} (err={err!r})"
+
+    # The bound held: only the H events in (cursor, H] were drained.
+    first_line = out.splitlines()[0] if out.splitlines() else ""
+    assert first_line == f"consumed {H} event(s)", (
+        f"a --through {H} consume drains exactly {H} event(s) (the late one "
+        f"is beyond the bound); first line was {first_line!r}")
+
+    # The cursor stopped at H (NOT H+1): the bound held at the advance too.
+    with open_journal(path) as j:
+        cur = j.cursor(CONSUMER)
+    assert cur.scanned_through_event_ordinal == H, (
+        f"consume --through {H} must stop the cursor at {H}; got "
+        f"{cur.scanned_through_event_ordinal} (the late event was advanced "
+        "past blind — the #531 race)")
+
+    # The late event is STILL pending — the next tick re-lists it.
+    code, out, _ = _run(cli, ["pending", "--journal", str(path)])
+    assert code == 0
+    pending_ords2 = _ord_fields(out)
+    assert late_ord in pending_ords2, (
+        f"the late event (ord={late_ord}) must remain pending after a "
+        f"--through {H} consume; pending ords were {pending_ords2}")
+    assert late.receipt_id in _pending_ids(out), (
+        "the late event's receipt id must be in the next pending read")
+
+
+# ---------------------------------------------------------------------------
+# 12 — #531 edge: --through at/below the cursor refuses EX_USAGE 64
+# ---------------------------------------------------------------------------
+
+def test_consume_through_at_or_below_cursor_refuses_usage(tmp_path: Path):
+    """#531 edge: ``--through`` at or below the cursor refuses EX_USAGE (64) —
+    a stale ordinal must not rewind (below) or no-op silently (at).  Both
+    leave the cursor unmoved and write nothing to stdout.
+
+    The cursor is advanced to N by an ordinary consume first (the precondition
+    is DERIVED from ``j.cursor`` afterward, never assumed), so ``--through N``
+    is the at-cursor no-op and ``--through N-1`` the rewind.
+
+    RED LINE (run): make the bounds check pass through (e.g. delete the
+      ``if through <= cursor_ordinal`` block, or return EX_OK instead of
+      EX_USAGE).  consume proceeds instead of refusing → ``code == EX_USAGE``
+      fails, and stdout is non-empty.  Production line injected: the
+      ``through <= cursor_ordinal`` refusal branch in cmd_consume.
+    """
+    cli = _load_cli()
+    path = tmp_path / "below.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"a":0}', b'{"a":1}', b'{"a":2}'])
+    n = len(seeded)
+    # Advance the cursor to n with an ordinary consume (no --through).
+    code, out, err = _run(cli, ["consume", "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == 0, f"setup consume exited {code} (err={err!r})"
+    with open_journal(path) as j:
+        cur_ord = j.cursor(CONSUMER).scanned_through_event_ordinal
+    assert cur_ord == n, (
+        f"precondition: cursor must sit at {n} after the setup consume; "
+        f"got {cur_ord}")
+
+    # Both a no-op (through == cursor) and a rewind (through < cursor) refuse.
+    for stale in (n, n - 1):
+        code, out, err = _run(cli, ["consume", "--through", str(stale),
+                                    "--journal", str(path),
+                                    "--applied", str(applied)])
+        assert code == cli.EX_USAGE, (
+            f"--through {stale} (<= cursor {n}) must refuse EX_USAGE; "
+            f"got {code} (err={err!r})")
+        assert out == "", (
+            f"a refusal must write nothing to stdout; got {out!r}")
+        assert err.strip() != "", (
+            f"the refusal must explain on stderr; got {err!r}")
+
+    # Cursor unmoved across both refusals.
+    with open_journal(path) as j:
+        after = j.cursor(CONSUMER)
+    assert after.scanned_through_event_ordinal == n, (
+        "a refused --through must leave the cursor unmoved at "
+        f"{n}; got {after.scanned_through_event_ordinal}")
+
+
+# ---------------------------------------------------------------------------
+# 13 — #531 edge: --through above the head refuses EX_USAGE 64
+# ---------------------------------------------------------------------------
+
+def test_consume_through_above_head_refuses_usage(tmp_path: Path):
+    """#531 edge: ``--through`` above the head refuses EX_USAGE (64) — the
+    cursor cannot advance past what exists.  Cursor unmoved, stdout empty.
+
+    The head is derived from ``j.head_ordinal()`` (never assumed), and the
+    ``--through`` value is provably above it.
+
+    RED LINE (run): make the bounds check pass through (e.g. delete the
+      ``if through > head_ordinal`` block).  consume proceeds (or crashes on a
+      missing ordinal) instead of refusing → ``code == EX_USAGE`` fails.
+      Production line injected: the ``through > head_ordinal`` refusal branch
+      in cmd_consume.
+    """
+    cli = _load_cli()
+    path = tmp_path / "above.sqlite3"
+    applied = tmp_path / "applied.md"
+    seeded = _seed(path, [b'{"a":0}', b'{"a":1}'])
+    n = len(seeded)
+    with open_journal(path) as j:
+        head = j.head_ordinal()
+    assert head == n, f"precondition: head must be {n}; got {head}"
+
+    beyond = n + 5
+    assert beyond > head, "precondition: --through must be above the head"
+
+    code, out, err = _run(cli, ["consume", "--through", str(beyond),
+                                "--journal", str(path),
+                                "--applied", str(applied)])
+    assert code == cli.EX_USAGE, (
+        f"--through {beyond} (> head {n}) must refuse EX_USAGE; got {code}")
+    assert out == "", f"a refusal must write nothing to stdout; got {out!r}"
+    assert err.strip() != "", f"the refusal must explain on stderr; got {err!r}"
+
+    # Cursor unmoved on refusal.
+    with open_journal(path) as j:
+        cur = j.cursor(CONSUMER)
+    assert (cur.scanned_through_event_ordinal, cur.revision) == (0, 0), (
+        "a refused --through must leave a fresh cursor unmoved; got "
+        f"ord={cur.scanned_through_event_ordinal} rev={cur.revision}")
 
