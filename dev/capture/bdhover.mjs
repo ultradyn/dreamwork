@@ -240,7 +240,7 @@ for (const idx of [0, lastIdx]) {
   const m = await dwellAndRead(idx);
   notes.push(`clamp col[${idx}]: ${JSON.stringify(m &&
     { left: m.left | 0, right: m.right | 0, bottom: m.bottom | 0,
-      bdL: m.bdL | 0, bdR: m.bdR | 0, trackTop: m.trackTop | 0 }))}`);
+      bdL: m.bdL | 0, bdR: m.bdR | 0, trackTop: m.trackTop | 0 })}`);
   ok(`#298: edge column ${idx} keeps the inspector inside the panel`,
      !!m && m.left >= m.bdL - 1 && m.right <= m.bdR + 1);
   ok(`#298: edge column ${idx} inspector never sits on the columns`,
