@@ -370,3 +370,155 @@ def test_note_writes_no_event_chain_verifies(store, migrate):
     body = store.conn.execute(
         "SELECT body FROM task WHERE id = ?", (tid,)).fetchone()[0]
     assert "a mid-task note" in body
+
+
+# ---------------------------------------------------------------------------
+# record_review_decision — record an artifact's review answer
+# (NOT a task; no task_event chain — questions have no task id)
+#
+# Named production lines whose change must red each test:
+#
+# - record_review_decision's INSERT OR REPLACE INTO review_decision
+#       → test_record_writes_the_decision_row
+# - record_review_decision's `decision not in REVIEW_DECISIONS` validation
+#       → test_record_refuses_a_bad_decision
+# - the conflict gate's cross-question final-decision raise
+#       → test_record_conflicts_on_a_different_title_final_decision
+# - the gate does NOT raise on a same-title overwrite
+#       → test_record_allows_a_same_title_re_decision
+# - the gate's `ex_decision != "pending"` condition (pending is provisional)
+#       → test_record_allows_a_pending_to_decided_transition
+# ---------------------------------------------------------------------------
+
+def test_record_writes_the_decision_row(store):
+    """Production line: the INSERT OR REPLACE into review_decision.
+
+    A first decision lands all five columns and writes NO task_event row (a
+    review decision is not a task — #264's boundary). Break by removing the
+    INSERT — no row lands, so the assertions fail.
+    """
+    n_before = store.conn.execute(
+        "SELECT COUNT(*) FROM review_decision").fetchone()[0]
+    assert n_before == 0, "precondition: review_decision starts empty"
+
+    ledger_write.record_review_decision(
+        store, "art-1", "Is the design sound?", "accepted",
+        actor="coordinator", at="2026-07-29T10:00:00Z")
+
+    row = store.conn.execute(
+        "SELECT artifact, question_title, decision, decided_at, actor "
+        "FROM review_decision WHERE artifact = 'art-1'").fetchone()
+    assert row == (
+        "art-1", "Is the design sound?", "accepted",
+        "2026-07-29T10:00:00Z", "coordinator"), f"row mismatch: {row}"
+    # A review decision must not touch the task_event chain.
+    n_events = store.conn.execute(
+        "SELECT COUNT(*) FROM task_event").fetchone()[0]
+    assert n_events == 0, (
+        f"a review decision wrote {n_events} task_event row(s); it is not a "
+        "task and has no task id")
+
+
+def test_record_refuses_a_bad_decision(store):
+    """Production line: `if decision not in REVIEW_DECISIONS: raise WriteError`.
+
+    A decision outside the closed set is refused. Derive a value NOT in the
+    set at runtime so the check is not tuned to today's literal. Break by
+    accepting any string — no WriteError surfaces.
+    """
+    bad = "maybe"
+    assert bad not in ledger_store.REVIEW_DECISIONS, (
+        "precondition: the bad value must be outside the closed set")
+
+    with pytest.raises(ledger_write.WriteError, match="decision must be one of"):
+        ledger_write.record_review_decision(
+            store, "art-bad", "q", bad, actor="coordinator")
+    n = store.conn.execute(
+        "SELECT COUNT(*) FROM review_decision").fetchone()[0]
+    assert n == 0, "a refused decision must write nothing"
+
+
+def test_record_conflicts_on_a_different_title_final_decision(store):
+    """Production line: the conflict gate's cross-question final-decision raise.
+
+    A decided artifact (non-pending) under one title must refuse a decision
+    under a DIFFERENT title. Assert the precondition (the existing row is
+    decided, titles differ) at runtime. Break by disabling the raise — the
+    INSERT OR REPLACE would silently overwrite and no DecisionConflict fires.
+    """
+    ledger_write.record_review_decision(
+        store, "art-c", "Q-original", "accepted",
+        actor="coordinator", at="2026-07-29T10:00:00Z")
+    # Precondition: existing row is final and titles differ.
+    ex = store.conn.execute(
+        "SELECT question_title, decision FROM review_decision "
+        "WHERE artifact = 'art-c'").fetchone()
+    assert ex == ("Q-original", "accepted"), (
+        f"precondition: need a decided row, got {ex}")
+    assert ex[1] != "pending", "precondition: existing decision must be final"
+    new_title = "Q-different"
+    assert new_title != ex[0], "precondition: titles must differ"
+
+    with pytest.raises(ledger_write.DecisionConflict, match="already decided"):
+        ledger_write.record_review_decision(
+            store, "art-c", new_title, "rejected", actor="coordinator")
+    # The conflict left the original decision intact.
+    row = store.conn.execute(
+        "SELECT question_title, decision FROM review_decision "
+        "WHERE artifact = 'art-c'").fetchone()
+    assert row == ("Q-original", "accepted"), (
+        f"conflict must not overwrite; got {row}")
+
+
+def test_record_allows_a_same_title_re_decision(store):
+    """Production line: the gate does NOT raise on a same-title overwrite.
+
+    Re-deciding the same artifact under the same question is allowed (a mind
+    changed). Break by making the gate refuse ANY existing row — the same-
+    title re-decision raises instead of overwriting.
+    """
+    title = "Q-shared"
+    ledger_write.record_review_decision(
+        store, "art-s", title, "pending",
+        actor="coordinator", at="2026-07-29T10:00:00Z")
+    ex = store.conn.execute(
+        "SELECT question_title FROM review_decision WHERE artifact='art-s'"
+    ).fetchone()
+    assert ex == (title,), "precondition: the existing row shares the title"
+
+    ledger_write.record_review_decision(
+        store, "art-s", title, "accepted",
+        actor="coordinator", at="2026-07-29T11:00:00Z")
+    row = store.conn.execute(
+        "SELECT question_title, decision, decided_at FROM review_decision "
+        "WHERE artifact = 'art-s'").fetchone()
+    assert row == (title, "accepted", "2026-07-29T11:00:00Z"), (
+        f"same-title re-decision must overwrite; got {row}")
+
+
+def test_record_allows_a_pending_to_decided_transition(store):
+    """Production line: `ex_decision != "pending"` in the gate condition.
+
+    A 'pending' row is provisional, so overwriting it with a decision — even
+    under a DIFFERENT title — is allowed. A different title is what targets
+    the pending condition: same-title would pass even if the pending check
+    were broken. Assert the precondition (existing is pending) at runtime.
+    Break by treating pending as final — the transition raises.
+    """
+    ledger_write.record_review_decision(
+        store, "art-p", "Q-pending", "pending",
+        actor="coordinator", at="2026-07-29T10:00:00Z")
+    ex = store.conn.execute(
+        "SELECT question_title, decision FROM review_decision "
+        "WHERE artifact='art-p'").fetchone()
+    assert ex == ("Q-pending", "pending"), (
+        f"precondition: need a pending row, got {ex}")
+
+    ledger_write.record_review_decision(
+        store, "art-p", "Q-decided", "accepted",
+        actor="coordinator", at="2026-07-29T11:00:00Z")
+    row = store.conn.execute(
+        "SELECT question_title, decision FROM review_decision "
+        "WHERE artifact = 'art-p'").fetchone()
+    assert row == ("Q-decided", "accepted"), (
+        f"pending→decided must overwrite; got {row}")
