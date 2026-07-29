@@ -22,6 +22,20 @@ carries a `+` command opener (steer the loop without a chat turn).
 
 ## Standing design decisions
 
+- **The head's version crumb names what it IS (#491).** The dashboard crumb
+  row carries the target's recorded skill version (`.dreamwork/skill-version`,
+  written by orient) immediately beside the freshness age ("updated Ns ago").
+  A bare migration filename in that slot read as "this file changed Ns ago" —
+  the adjacency supplied the meaning, because the crumb named nothing about
+  what its value was. So it says so: a dim `skill` label before the name
+  (`skill 2026-07-26-02-…`), and the neighbour no longer implies an age the
+  value does not carry. The value itself is honest and stays: it is the
+  version this TARGET last ran under, a deliberately different source from the
+  skill tree's latest migration (`skill_identity`, `commit`/`skill_version`),
+  which answers "what is the running tree at" — not "where does this target
+  stand". The two are not collapsed (the `skill_identity` docstring's
+  two-question discipline). The crumb is omitted entirely when there is no
+  recorded version, rather than rendering a bare separator dot.
 - **Stdlib only, self-contained**; no dependencies, no build step.
 - **Loopback by default; trusted LAN only by explicit contract.** The default
   remains `127.0.0.1`. A singular numeric `--bind`, repeatable exact
