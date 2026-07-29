@@ -27,25 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **482**
 
 ## Open
-- **#480** — the deploy snapshot is a single file and cannot import `user_events/` or `ledger_parse.py`, so the next `just deploy` boot-fails and leaves his dashboard down · P1 ·
-  deploy/tooling · origin: **loop** · **found 2026-07-29 by the `#352` lane, which pushed it back rather than
-  touching deploy machinery** — `watch.py` at HEAD imports `user_events.sqlite` (`#263`) at module top and, as of
-  `#352` (`b7fd947`), `ledger_parse` too. `just deploy` snapshots `watch.py` to a single file
-  (`dev/deploy_state.py --resolve-snapshot`) and runs it from `~/.cache/dreamwork/deployed/`, where neither
-  sibling exists — so the process dies on `import user_events.sqlite` at startup
-  · **why it bites hard:** `#431`'s recipe stops the old server BEFORE starting the new one, and `--assert-server`
-  proves the snapshot is a server module (has `main` + `GENERATION`) but NOT that its imports resolve — so the
-  snapshot passes the guard, the old server stops, the new one ImportErrors, and the curl check reports "deploy
-  failed" with his dashboard already dark. It is latent only because no deploy has happened since `#263`'s import
-  landed (the deployed dashboard runs an old snapshot)
-  · **the fix, not yet designed:** ship the sibling modules beside the snapshot (a snapshot dir, not a single
-  file), or make the imports lazy so the single file still boots. `#368`'s split will change this anyway; until
-  then the recipe must handle siblings. Decide which before the next deploy
-  · **verify before the next real deploy:** deploy HEAD to a scratch port and confirm it boots (NOT to 35110),
-  because this class is invisible until the process tries to start
-  · blocked on nothing. Cross-refs in prose above: `user_events/` from `#263`, the `ledger_parse` import from
-  `#352` (`b7fd947`), the stop-before-start recipe `#431`, the symlink resolver `#425`, and `#368`'s split,
-  which changes deploy anyway.
 - **#478** — the cited-sha check declines to run in the full suite, twice, and says so at OK · P2 ·
   verification/lint · origin: **loop** · **found 2026-07-29 09:05 by the full `just test` after tonight's four
   merges** — `test_lint.py::TestCitedShas::test_a_dead_cited_sha_warns` failed with a bare `[]`, and
@@ -3779,6 +3760,27 @@ Next id: **482**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#480** — the deploy snapshot is a single file and cannot import `user_events/` or `ledger_parse.py`, so the next `just deploy` boot-fails and leaves his dashboard down · P1 ·
+  deploy/tooling · origin: **loop** · **found 2026-07-29 by the `#352` lane, which pushed it back rather than
+  touching deploy machinery** — `watch.py` at HEAD imports `user_events.sqlite` (`#263`) at module top and, as of
+  `#352` (`b7fd947`), `ledger_parse` too. `just deploy` snapshots `watch.py` to a single file
+  (`dev/deploy_state.py --resolve-snapshot`) and runs it from `~/.cache/dreamwork/deployed/`, where neither
+  sibling exists — so the process dies on `import user_events.sqlite` at startup
+  · **why it bites hard:** `#431`'s recipe stops the old server BEFORE starting the new one, and `--assert-server`
+  proves the snapshot is a server module (has `main` + `GENERATION`) but NOT that its imports resolve — so the
+  snapshot passes the guard, the old server stops, the new one ImportErrors, and the curl check reports "deploy
+  failed" with his dashboard already dark. It is latent only because no deploy has happened since `#263`'s import
+  landed (the deployed dashboard runs an old snapshot)
+  · **the fix, not yet designed:** ship the sibling modules beside the snapshot (a snapshot dir, not a single
+  file), or make the imports lazy so the single file still boots. `#368`'s split will change this anyway; until
+  then the recipe must handle siblings. Decide which before the next deploy
+  · **verify before the next real deploy:** deploy HEAD to a scratch port and confirm it boots (NOT to 35110),
+  because this class is invisible until the process tries to start
+  · blocked on nothing. Cross-refs in prose above: `user_events/` from `#263`, the `ledger_parse` import from
+  `#352` (`b7fd947`), the stop-before-start recipe `#431`, the symlink resolver `#425`, and `#368`'s split,
+  which changes deploy anyway.
+  · landed ac3311b (merge of wt/480; lane work bc25dee, native subagent). The deploy now ships the TRANSITIVE closure of watch.py's repo-local imports — derived from the resolved snapshot's full-tree AST via the #425 resolver, never hardcoded, so the next sibling import is covered on arrival (at HEAD: ledger_parse.py, lint.py, watch.py itself, user_events/ package). New --ship-siblings and --assert-importable steps PRECEDE --stop-deployed, extending the #425 contract from 'is the server' to 'its imports resolve'. Coordinator independently re-verified end-to-end: closure shipped, scratch deploy of HEAD booted and served HTTP 200, live dashboard on 35110 (pid 1542866) untouched and still serving, scratch server stopped by exact pid, port freed. THE NEXT REAL DEPLOY IS NOW UNBLOCKED — his dashboard is many commits behind and a deploy at the next clean checkpoint catches him up.
+
 - **#481** — `question-sigs.json` is inside `watched_mtime`'s walk, so a fresh target re-renders once for no reason · P3 ·
   dashboard/motion · origin: **loop** · **recommended by the `#479` lane, which measured the mechanism** — `#473`
   writes `.dreamwork/question-sigs.json` from `collect()` on first sight of entries, and `watched_mtime` walks all
