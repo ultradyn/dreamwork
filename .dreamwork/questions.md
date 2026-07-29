@@ -3,6 +3,42 @@
 ## Open
 
 
+- **P2 · 2026-07-30 07:05 — #505: the wholesale-rerender smell — the IGC is done, four calls are yours.**
+  **Sub-decisions:** `Q1`, `Q2`, `Q3`, `Q4`
+  Design: `.dreamwork/docs/plans/render-architecture.md` (design only; no code authorised). Your 03:48
+  report: every data.json poll resets UI state inside question cards (text selection deselects; the chrome
+  survives). The measured inventory (16 reset surfaces, each cited to code) finds the chrome survives
+  because it is ALREADY a keyed diff (`renderChrome`); the reset is the absence of that idiom inside
+  `#view`, rebuilt by one wholesale `innerHTML` swap per tick with ~11 hand-maintained snapshot/restore
+  pairs re-applying state afterwards. An IGC (I1–I5 × G1–G5) refutes your three directions as standalone
+  fixes — ids alone don't survive the swap (the node is destroyed), content-check only skips unchanged
+  ticks (resets on the first real change), React/preact impose a build step + a second render authority
+  against your own single-file architecture — and the survivor is **keyed reconciliation of `#view`
+  (morphdom-idiom) + a content-hash skip**: generalise `renderChrome`'s keyed diff to the data-driven
+  lists, keeping survivor nodes by their existing keys (`data-qid`/`data-aid`/`data-sha`/`data-keep`) so
+  selection/caret/scroll/focus survive as a class — a state nobody has yet thought to snapshot survives
+  because the node that held it was kept. Subsumes #141/#503/#494: their snapshot/restore pairs become
+  dead code; `data-keep` stays as a reconciliation key.
+
+  - **`Q1` — reconciler: vendored morphdom, or hand-rolled?** **`rec: vendored ~2KB morphdom`** —
+    battle-tested diff algorithm, far inside the no-build budget (the page already vendors an SVG-mist
+    pipeline); the keyed-FLIP layer on top stays hand-rolled (it is this page's own gesture, not a
+    generic diff). Alternative if you prefer zero new vendored code: hand-rolled, modelled on
+    `renderChrome`.
+  - **`Q2` — hold the no-build single-file constraint and rule out full vdom?** **`rec: yes.`** The
+    keyed-diff delivers the DOM-diffing you actually asked for without React's build/bundle/second-
+    authority cost. Adopt a vdom only if you want the component model for its own sake, which is a
+    different (larger) decision than this bug.
+  - **`Q3` — scope: `#view` only, or also fold in the review-dock swap?** **`rec: phase 1 = `#view`
+    lists and disclosures; phase 2 (optional) = the review dock`** (its swap is already narrower).
+  - **`Q4` — guard the corpse rule under reconciliation?** **`rec: yes — a guard asserting no ghost
+    element matches a reconciled identity key`** (the `dreamAway` double-count bug stays impossible;
+    ghosts live in `.wrap`, outside the reconciled root, and a regression there re-opens #277's class).
+
+  **If you say nothing:** nothing is built — the design authorises no code, and the recs stand as
+  defaults when the implementation is planned.
+  Accepted answers: `rec` (takes all four) · per-question (`Q1: …`) · free text.
+
 - **P2 · 2026-07-30 06:05 — #510: an 'Orchestrator' option in Posture — three calls, after the IGC you asked for.**
   **Sub-decisions:** `Q1`, `Q2`, `Q3`
   Design: `.dreamwork/docs/plans/orchestrator-posture.md` (design only; no code authorised). Your 04:54
