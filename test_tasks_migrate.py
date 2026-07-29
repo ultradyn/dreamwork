@@ -29,7 +29,12 @@ import lint
 
 REPO = Path(__file__).resolve().parent
 CLI = REPO / "ud-dw-tasks-migrate"
-LIVE_LEDGER = REPO / ".dreamwork" / "tasks.md"
+# Post-cutover (#294) the live Markdown ledger is the FROZEN deprecated file —
+# tasks.md itself is a one-line migration-notice shim with no `## Open` heading
+# and no parseable entries (it raises _Unparseable). The dry-run acceptance
+# check describes the frozen document, so that is the file it must read; the
+# shim cannot be the subject of a parse-and-report test.
+LIVE_LEDGER = REPO / ".dreamwork" / "tasks.md.deprecated"
 
 
 def _load_cli():
@@ -432,7 +437,16 @@ def test_per_entry_digests_cover_every_entry(module):
 # ---------------------------------------------------------------------------
 def test_live_ledger_acceptance(module):
     text = LIVE_LEDGER.read_text()
+    # Precondition: LIVE_LEDGER is the parseable frozen ledger, not the shim.
+    # build_analysis would raise _Unparseable on the shim, but _derived below
+    # runs first and parse_ledger returns EMPTY sets for the shim (no `## Open`),
+    # so `d` would be vacuous — guard the whole check on the section headings
+    # the parse depends on, derived from the file itself.
+    assert "## Open" in text and "## Recently landed" in text, (
+        "LIVE_LEDGER must be the frozen ledger (tasks.md.deprecated), not the "
+        "one-line migration-notice shim — the acceptance check has no subject")
     d = _derived(text)
+    assert d["open"] and d["landed"], "live ledger lost a section — check is vacuous"
     assert d["open"] & d["landed"] == set(), "live ledger's sections overlap"
     out = io.StringIO()
     rc = module.main(["--dry-run", "--ledger", str(LIVE_LEDGER)], out=out)

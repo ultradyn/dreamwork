@@ -394,16 +394,32 @@ def test_verify_history_body_tamper_fails(module, tmp_path):
 # constants (the precondition rule), so the test asserts the STRUCTURE that
 # must hold for any history, not today's numbers.
 # ---------------------------------------------------------------------------
-from test_tasks_migrate_import import LIVE_LEDGER
+# Post-cutover (#294) the parseable ledger is the FROZEN deprecated file, but
+# the git history of the real ledger lives on the tasks.md path (678 commits) —
+# tasks.md.deprecated has exactly ONE commit (the cutover itself), so a history
+# walk from it recovers nothing. History recovery needs BOTH: the frozen text
+# for the current analysis AND the rich git history from the tasks.md path
+# (the snapshots are byte-identical to the deprecated text up to the cutover;
+# the final shim snapshot parses to empty ids and is harmless to the walk).
+LIVE_LEDGER = REPO / ".dreamwork" / "tasks.md.deprecated"
+LIVE_LEDGER_HISTORY = REPO / ".dreamwork" / "tasks.md"
 
 
 def test_live_history_recovers_real_groomed_ids(module, tmp_path):
     text = LIVE_LEDGER.read_text()
+    # Precondition: the frozen ledger is parseable (not the shim), and the
+    # git-history path carries the real multi-commit history the walk needs —
+    # a single-commit history (the deprecated file's own) would recover
+    # nothing, making every assertion below vacuous.
+    assert "## Open" in text, (
+        "LIVE_LEDGER must be the frozen ledger, not the shim")
     a = module.build_analysis(text, ledger_path=str(LIVE_LEDGER))
     groomed = {c["id"] for c in
                a["conflicts"].get("section id without an entry", [])}
     assert groomed, "live ledger lost its groomed ids — test has no anchor"
-    snaps = module.git_snapshots(str(LIVE_LEDGER))
+    snaps = module.git_snapshots(str(LIVE_LEDGER_HISTORY))
+    assert len(snaps) > 1, (
+        "git-history path lost its real history — recovery has nothing to walk")
     rec = module.recover_groomed_history(a, snaps)
     # every groomed id is recovered OR unrecoverable — no third state
     assert set(rec["tasks"]) | set(rec["unrecoverable"]) == groomed
@@ -413,16 +429,19 @@ def test_live_history_recovers_real_groomed_ids(module, tmp_path):
     assert rec["events"], "recovered ids must yield first-sight events"
     assert all(e["actor"] == "migration:git" and e["cause"] == "migration_git"
                for e in rec["events"])
-    # full workflow: verbatim + history, then verify clean (real ledger path —
-    # --verify walks git history from the --ledger path, so it must be in-git)
+    # full workflow: verbatim import (frozen ledger) + history (real git
+    # history), then verify clean. The CLI's --verify walks git from its
+    # --ledger path, but post-cutover that path is split (text on .deprecated,
+    # history on tasks.md), so verify the scratch DB directly with the rich
+    # snapshots — the full history check (groomed-row body-match against the
+    # recovered bytes) runs over the real 678-commit history, not the
+    # deprecated file's single commit (which would skip body-match as vacuous).
     db = _scratch(tmp_path)
     assert module.main(["--import", "--ledger", str(LIVE_LEDGER), "--to", db],
                        out=io.StringIO()) == 0
     module.import_history_into_db(text, a, db, snaps)
-    out = io.StringIO()
-    rc = module.main(["--verify", "--ledger", str(LIVE_LEDGER), "--to", db],
-                     out=out)
-    assert rc == 0, out.getvalue()
+    fails = module.verify_db(text, a, db, snapshots_fn=lambda: snaps)
+    assert not fails, fails
     conn = _ro(db)
     for i in rec["tasks"]:
         assert conn.execute("SELECT 1 FROM task WHERE id = ?", (i,)).fetchone(), \
