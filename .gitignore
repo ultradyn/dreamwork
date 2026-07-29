@@ -18,6 +18,13 @@ __pycache__/
 .dreamwork/user-events.sqlite3
 .dreamwork/user-events.sqlite3-wal
 .dreamwork/user-events.sqlite3-shm
+# #294: the ledger store is machine-local (C1 — the same trust boundary as
+# the journal); cross-clone history is the committed text export (T3), a
+# later deployment choice. The cutover's own backup dir is likewise local.
+.dreamwork/ledger.sqlite3
+.dreamwork/ledger.sqlite3-wal
+.dreamwork/ledger.sqlite3-shm
+.dreamwork/migration-backup/
 # main-dreamer pace for this host (#290) — operational posture, not a
 # portable project default (unlike watch-tint). Migration
 # 2026-07-27-01-run-mode.md tells targets the same.
