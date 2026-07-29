@@ -18,6 +18,11 @@
    a `>` line. Quote line count and known path are DERIVED at runtime so a
    one-line fixture asserted present cannot go vacuous.
 
+   Readiness (#507 class): plants land on disk, then the guard BOUNDED-POLLS
+   /data.json until every planted path is visible in linkable_paths AND
+   /filedata serves the fixture — never asserts a precondition against a
+   stale closed set, and never navigates /file before the bytes are there.
+
    usage: node mdquote.mjs <outdir> <port> */
 import { chromium } from '/home/xertrov/.llm-general/skills/headless-browser-screenshots/node_modules/playwright/index.mjs';
 import { makeReporter } from './report.mjs';
@@ -34,9 +39,73 @@ declare({
   drives: '/file?p= on a planted .md: blockquote renders as .mdquote with ' +
           'zero `>` glyphs; [text](known) consumed; [text](unknown) fully ' +
           'literal; fence wins over `>`; relative targets resolve via base',
-  traceWindow: 'static reads after ~0.8s settle; no motion (quote styling ' +
-               'is static — no state change, no transition)',
+  traceWindow: 'readiness poll of /data.json + /filedata until plants are ' +
+               'visible (bounded ~8s), then static reads after ~0.4s settle; ' +
+               'no motion (quote styling is static — no state change)',
 });
+
+/* Bounded poll: plants must be VISIBLE to the server before any closed-set
+   precondition. collect() walks the tree per /data.json request, but a
+   plant→immediate-fetch race (and a wrong TARGET path) both present as a
+   missing linkable entry — wait, then fail by name if it never appears. */
+async function waitForLinkable(paths, { timeoutMs = 8000, everyMs = 100 } = {}) {
+  const need = [...paths];
+  const t0 = Date.now();
+  let last = null, tries = 0;
+  while (Date.now() - t0 < timeoutMs) {
+    tries++;
+    try {
+      const d = await (await fetch(`${BASE}/data.json`)).json();
+      last = d;
+      const set = new Set(Array.isArray(d.linkable_paths) ? d.linkable_paths : []);
+      if (need.every(p => set.has(p))) {
+        notes.push(`readiness: linkable_paths saw all ${need.length} plants ` +
+                   `after ${tries} tries / ${Date.now() - t0}ms`);
+        return d;
+      }
+    } catch (e) {
+      last = { err: String(e) };
+    }
+    await sleep(everyMs);
+  }
+  const set = new Set(Array.isArray(last?.linkable_paths) ? last.linkable_paths : []);
+  const missing = need.filter(p => !set.has(p));
+  throw new Error(
+    `readiness: planted paths never appeared in data.linkable_paths within ` +
+    `${timeoutMs}ms (${tries} tries). missing=[${missing.join(', ')}] ` +
+    `target=${last?.target || '?'} — server is not serving the plant dir, ` +
+    `or the plant never landed on disk`);
+}
+
+/* Bounded poll: /filedata must serve the planted fixture before /file is
+   navigated. A 404 here is the same race as a missing linkable entry. */
+async function waitForFiledata(rel, { timeoutMs = 8000, everyMs = 100 } = {}) {
+  const t0 = Date.now();
+  let tries = 0, lastStatus = null;
+  while (Date.now() - t0 < timeoutMs) {
+    tries++;
+    try {
+      const res = await fetch(
+        `${BASE}/filedata?p=${encodeURIComponent(rel)}`);
+      lastStatus = res.status;
+      if (res.ok) {
+        const j = await res.json();
+        if (j && typeof j.content === 'string' && j.content.length > 0) {
+          notes.push(`readiness: /filedata served ${rel} ` +
+                     `(${j.content.length}B) after ${tries} tries / ` +
+                     `${Date.now() - t0}ms`);
+          return j;
+        }
+      }
+    } catch (e) {
+      lastStatus = String(e);
+    }
+    await sleep(everyMs);
+  }
+  throw new Error(
+    `readiness: /filedata never served ${rel} within ${timeoutMs}ms ` +
+    `(${tries} tries, last=${lastStatus}) — plant missing or wrong target`);
+}
 
 /* ── plant the fixture ──────────────────────────────────────────────────
    Known path must be a real file in the target so it lands in
@@ -114,12 +183,37 @@ if (existsSync(REPO_DOC)) {
   }
 }
 
+/* ── readiness: plants must be visible to the server before any assert ──
+   Paths the closed set must admit after the plant (known fixture file is
+   always there; the rest are what THIS guard wrote). Poll, don't hope. */
+const PLANTED_LINKABLE = [KNOWN, BRIEF_REL, FIXTURE_PATH];
+
+let d;
+try {
+  d = await waitForLinkable(PLANTED_LINKABLE);
+  await waitForFiledata(FIXTURE_PATH);
+  if (existsSync(join(TARGET, '.dreamwork/docs/plans/render-architecture.md')))
+    await waitForFiledata('.dreamwork/docs/plans/render-architecture.md');
+  ok('readiness: planted paths visible in data.linkable_paths before asserts',
+     true);
+  ok('readiness: /filedata serves the planted fixture before /file navigate',
+     true);
+} catch (e) {
+  notes.push(String(e.message || e));
+  ok('readiness: planted paths visible in data.linkable_paths before asserts',
+     false);
+  ok('readiness: /filedata serves the planted fixture before /file navigate',
+     false);
+  // still finish with named FAILs rather than a crash-sentinel
+  finish();
+  process.exit(1);
+}
+
 const br = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const p = await br.newPage({ viewport: { width: 1100, height: 900 } });
 p.on('pageerror', e => errs.push(String(e)));
 
-/* ── preconditions from live data + fixture source ────────────────────── */
-const d = await (await fetch(`${BASE}/data.json`)).json();
+/* ── preconditions from the readiness-fresh data + fixture source ─────── */
 const linkable = new Set(Array.isArray(d.linkable_paths) ? d.linkable_paths : []);
 ok('precondition: server shipped a non-empty linkable_paths closed set',
    linkable.size > 0);
@@ -131,9 +225,6 @@ ok('precondition: unknown path is absent from the closed set',
    !linkable.has(UNKNOWN));
 
 // derive quote line count from the planted source — never a one-line hope
-const srcQuoteLines = FIXTURE.split('\n').filter(l => /^>\s?/.test(l)
-  && !FIXTURE.split('```')[1]?.includes(l)); // rough: all > lines in source
-// more carefully: count `>` lines outside fences in the fixture we wrote
 let inFence = false, derivedQuoteLines = 0;
 for (const line of FIXTURE.split('\n')) {
   if (/^\s*```/.test(line)) { inFence = !inFence; continue; }
@@ -148,9 +239,21 @@ ok('precondition: derived quote count matches the planted QUOTE_LINES',
 /* ── render via mdB on known input (binds the production functions) ───── */
 await p.goto(`${BASE}/file?p=${encodeURIComponent(FIXTURE_PATH)}`,
              { waitUntil: 'networkidle' });
-// ensureData + first paint; wait until .md is present (file view used to
-// race data===null — buildCurrent now awaits ensureData, but settle still)
-await p.waitForSelector('#filebody .md', { timeout: 5000 }).catch(() => {});
+// readiness already proved /filedata; now wait for the rendered pane (not
+// "not found"). Swallowing a timeout here is what made a 404 look like a
+// missing .md assertion with no cause — fail loud if it never arrives.
+try {
+  await p.waitForSelector('#filebody .md', { timeout: 8000 });
+} catch (e) {
+  const body = await p.evaluate(() =>
+    (document.getElementById('filebody') || document.getElementById('view') ||
+     {}).textContent || '');
+  notes.push('filebody after waitFor .md: ' + JSON.stringify(body.slice(0, 200)));
+  ok('fixture rendered as .md at /file', false);
+  await br.close();
+  finish();
+  process.exit(1);
+}
 await sleep(400);
 
 const rendered = await p.evaluate(({ known, unknown, brief }) => {
@@ -298,11 +401,16 @@ ok('quote has a visible left border (the quiet rule)',
    rendered.quoteStyle.borderLeftStyle !== 'none');
 
 /* ── corpus doc from his screenshot, when planted ─────────────────────── */
-if (existsSync(join(TARGET, '.dreamwork/docs/plans/render-architecture.md'))) {
-  await p.goto(`${BASE}/file?p=${encodeURIComponent(
-    '.dreamwork/docs/plans/render-architecture.md')}`,
+const CORPUS_PATH = '.dreamwork/docs/plans/render-architecture.md';
+if (existsSync(join(TARGET, CORPUS_PATH))) {
+  await p.goto(`${BASE}/file?p=${encodeURIComponent(CORPUS_PATH)}`,
     { waitUntil: 'networkidle' });
-  await sleep(800);
+  try {
+    await p.waitForSelector('#filebody .md', { timeout: 8000 });
+  } catch (e) {
+    notes.push('corpus: #filebody .md never arrived');
+  }
+  await sleep(400);
   const corpus = await p.evaluate(() => {
     const md = document.querySelector('#filebody .md');
     if (!md) return { err: 'no .md' };
@@ -320,11 +428,11 @@ if (existsSync(join(TARGET, '.dreamwork/docs/plans/render-architecture.md'))) {
   });
   notes.push('corpus: ' + JSON.stringify(corpus));
   ok('corpus render-architecture.md: quote block present',
-     corpus.nQuotes >= 1 && corpus.hasResetProse);
+     !corpus.err && corpus.nQuotes >= 1 && corpus.hasResetProse);
   ok('corpus: zero > glyphs inside quotes',
-     corpus.gtInQuotes === 0);
+     !corpus.err && corpus.gtInQuotes === 0);
   ok('corpus: relative brief link consumed (no ](../../docs/briefs/ bleed)',
-     corpus.bleedBrief === false);
+     !corpus.err && corpus.bleedBrief === false);
 }
 
 /* ── visual captures: desktop + 390px mobile ──────────────────────────── */
