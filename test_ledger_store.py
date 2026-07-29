@@ -388,6 +388,11 @@ def test_a_task_row_carries_the_free_text_body(tmp_path):
     """
     store = open_store(tmp_path / "l.sqlite3", seed_next_id=1)
     try:
+        # task_type is a growing lookup (S4): a value must be registered
+        # before a task may carry it — as the importer will do.
+        store.conn.execute(
+            "INSERT INTO task_type(type) VALUES ('implementation')"
+        )
         body = (
             "first note: filed from the ledger\n"
             "  indented update: design narrowed to the flat shape\n"
