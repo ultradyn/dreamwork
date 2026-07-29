@@ -712,7 +712,18 @@ navigates and carries the same dreaming field (see Shader). Views are pure build
 `buildReview`, `buildResearch`); the router swaps them. One `artifactRow`
 factory spells the review/research listing row both surfaces share (#484) —
 link, pip, and the #463 created/modified age pair — so a listing surface is
-a parameter, not a second idiom. `answerRecord` is deliberately not
+a parameter, not a second idiom. **#289** extends that row with the review's
+*decision* when the project is store-mode: a LEFT JOIN to the store's
+`review_decision` table adds `decision`/`question_title` to each row, and
+the row renders a status token — accepted `✔` / rejected `✘` (both dimmed,
+the `done` darkening idiom: a settled verdict steps down the text ramp like
+a folded entry), pending a lit `pending` marker, and **no marker at all**
+when there is no record (`unlinked`). Absence of a record is its own state,
+distinct from `pending` by contract; `data-decision` carries all four so CSS
+and clients can key off it. A row with a decision carries `question_title`
+(NOT NULL in the table), so the token links to `/question?qid=<title>` — the
+question the artifact was raised against. Markdown-mode projects (no store)
+degrade to `unlinked` on every row; the join is a no-op there. `answerRecord` is deliberately not
 `qaCard`: its Open author is the human, it has no human answer/comment controls,
 and Answered records are quiet disclosures. The compact ask form clears only
 after a confirmed `/ask` success; refused/unreachable sends keep the words and

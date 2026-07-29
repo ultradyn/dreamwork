@@ -641,6 +641,22 @@ STYLE = """<style>
      without competing. No left margin: the separator owns the gap. */
   .age.rmod, .age.ageunk, .age.qup { color:var(--dimmer); margin-left:0; }
   .rsep { color:var(--dimmer); }
+  /* #289 — review decision on the listing row. A settled verdict
+     (accepted/rejected) dims like a folded entry: the work is done, so its
+     marker steps down the text ramp. pending is in flight, so its marker
+     stays a step brighter. 'unlinked' (no record) renders NO marker at all
+     — absence of a record is its own state, distinct from pending by
+     contract; data-decision carries all four so CSS/clients can key off it.
+     The marker links to /question when a question_title is recorded (a
+     decision row always is). Emphasis here is luminance, not colour:
+     --ok/--warn are reserved (#351 pane / #136 broken), so the glyph (✔/✘)
+     carries the verdict and the ramp carries 'done'. */
+  .rdecision { margin-left:.6ch; font-size:.7rem; white-space:nowrap; }
+  .rdecision.raccepted, .rdecision.rrejected { color:var(--dim); }
+  .rdecision.rpending { color:var(--muted); }
+  .rqlink { color:inherit; text-decoration:none; }
+  .rqlink:hover { text-decoration:none; }
+  .rqlink:hover .rdecision { color:var(--accent); }
   pre { white-space:pre-wrap; color:var(--muted); margin:.4rem 0 .8rem 1ch;
         border-left:1px solid var(--line); padding-left:1ch; }
   /* #351 — /file's source pane is CODE, and code does not wrap (his ask:
@@ -4022,10 +4038,28 @@ function artifactRow(r, kind) {
           `<span class="rsep"> · </span>` +
           `<span class="age rmod" data-mt="${r.mtime}" data-review-mod="${esc(r.name)}"></span>`;
   }
-  return `<div data-${kind}="${esc(r.name)}">` +
+  /* #289 — review decision from the ledger store (store-mode only). A row
+     WITH a decision carries question_title (NOT NULL by contract), so the
+     marker links to /question?qid=<title> — opening the question that the
+     artifact was raised against. accepted (✔) and rejected (✘) are DONE:
+     the marker dims like a folded entry. pending is in flight, so its
+     marker stays lit. 'unlinked' (no record) renders NO marker — absence of
+     a record is its own state, distinct from 'pending' by contract. */
+  const dec = r.decision;
+  const hasDec = dec === 'accepted' || dec === 'rejected' || dec === 'pending';
+  let status = '';
+  if (hasDec) {
+    const glyph = dec === 'accepted' ? '✔'
+                : dec === 'rejected' ? '✘' : 'pending';
+    const inner = `<span class="rdecision r${dec}">${glyph}</span>`;
+    status = r.question_title
+      ? `<a class="rqlink" href="/question?qid=${encodeURIComponent(r.question_title)}">${inner}</a>`
+      : inner;
+  }
+  return `<div data-${kind}="${esc(r.name)}" data-decision="${dec || 'unlinked'}">` +
     `<a href="/${kind}?p=${encodeURIComponent(r.name)}">${esc(r.name)}</a>` +
     pipBtn('/' + kind + 'raw?p=' + encodeURIComponent(r.name), r.name) +
-    age + `</div>`;
+    age + status + `</div>`;
 }
 /* #484 — research artifacts: the review VIEW idiom (the raw self-contained
    artifact in an iframe for style isolation; the same #reviewwrap/#reviewframe
