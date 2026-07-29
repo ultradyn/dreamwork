@@ -245,6 +245,23 @@ Next id: **492**
   store when `source_of_truth == 'store'`** — and the live cutover runs only once
   the loop can write post-flip. Remaining after inc9: lint #362 swap + status.json
   T2 field deletion (with the cutover), then execute.
+  · **INCREMENT 9 (write verbs) MERGED 2026-07-29 21:26.** Lane `wt/294verbs`
+  (llmp-glm-5-2, 1193s, 92 calls; `932c7011` `701e29aa` `583c9c11` `fdaea74d`
+  `14cc73d5`). `ledger_write.py`: `file_task` (id from seeded AUTOINCREMENT, never
+  caller-chosen; filed event; ONE transaction — crash leaves no partial) and
+  `land_task` (CAS `UPDATE … WHERE state='open'`, note appended to body, chained
+  landed event, one transaction). Chain primitives moved to their natural home in
+  `ledger_store.py` (migrate imports them). `dev/ledger.py`: new `file` subcommand
+  (markdown mode inserts under `## Open` + bumps `Next id`; store mode calls
+  `file_task`), `fold` dispatched (store mode = `land_task`), markdown writes
+  gated by `guard_markdown_write`. 8 lane red-proofs; coordinator independently
+  red-proved the CAS predicate itself (`AND state='open'` dropped — a different
+  line than the lane's rowcount injection — fails exactly
+  `test_land_cas_refuses_a_second_landing`); byte-identical restore; 469 green;
+  lint clean; deploy_state current. **Gap found at this merge gate (coordinator):
+  the loop's THIRD write act — annotating an OPEN entry with progress notes — has
+  no post-cutover tool** (`land_task` notes only at landing). Follow-up
+  `lane-294note` dispatched 21:27 for a `note` verb; cutover still held.
 - **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
   dashboard/loop-config · origin: **human** · **human via watch `add-idea` 2026-07-29 17:10:** *"posture
   config (pace, etc) should have a place for text entry of subagent policy where user can put preferred
