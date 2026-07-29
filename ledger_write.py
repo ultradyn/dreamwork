@@ -28,6 +28,7 @@ import hashlib
 from datetime import datetime, timezone
 
 from ledger_store import (
+    REVIEW_DECISIONS,
     canonical_event_bytes,
     genesis_hash,
     hash_event,
@@ -52,6 +53,12 @@ class TaskNotFound(WriteError):
 
 class BadState(WriteError):
     """The task is not in the state the transition requires (CAS refused)."""
+
+
+class DecisionConflict(WriteError):
+    """A final (non-pending) review decision exists for this artifact under a
+    different question. Refused rather than overwritten — a decided review is
+    not silently reassignable to another question."""
 
 
 def _now_iso() -> str:
@@ -223,6 +230,69 @@ def note_task(store, task_id, note, *, actor="loop") -> None:
             raise TaskNotFound(f"cannot note #{task_id}: no such task")
         conn.execute("COMMIT")
     except TaskNotFound:
+        raise
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+# ---------------------------------------------------------------------------
+# review decision — record an artifact's answer (NOT a task, no event chain)
+# ---------------------------------------------------------------------------
+
+def record_review_decision(store, artifact, question_title, decision, *,
+                            actor, at=None):
+    """Record a review decision for an artifact.
+
+    A review decision is NOT a task: it has no task id and no entry in the
+    ``task_event`` hash chain (#264's boundary — one event per *task*
+    transition). Its identity is ``(artifact, question_title)``: the artifact
+    is the review's PRIMARY KEY, and question_title is the question it answers
+    (questions are not ledger tasks, so their only identity is their title).
+
+    Idiom: one ``BEGIN IMMEDIATE … COMMIT`` transaction (a crash leaves no
+    half-row). Before the upsert a conflict gate reads any existing row:
+    - same question_title, any decision  → re-decide (overwrite, allowed)
+    - different question_title, 'pending' → pending is provisional, overwrite
+    - different question_title, decided   → ``DecisionConflict`` (a final
+      decision is not silently reassignable to another question)
+
+    ``decision`` is validated against ``REVIEW_DECISIONS`` (imported from
+    ledger_store — the one closed set, never redefined here).
+
+    Raises ``WriteError`` on a bad decision; ``DecisionConflict`` on the
+    cross-question final-decision clash. ``actor`` and ``at`` are explicit
+    (actor has no default — a review decision must be attributed).
+    """
+    if decision not in REVIEW_DECISIONS:
+        raise WriteError(
+            f"decision must be one of {REVIEW_DECISIONS}, got {decision!r}")
+    if at is None:
+        at = _now_iso()
+
+    conn = store.conn
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        existing = conn.execute(
+            "SELECT question_title, decision FROM review_decision "
+            "WHERE artifact = ?", (artifact,)).fetchone()
+        if existing is not None:
+            ex_title, ex_decision = existing
+            if ex_title != question_title and ex_decision != "pending":
+                conn.execute("ROLLBACK")
+                raise DecisionConflict(
+                    f"artifact {artifact!r} is already decided "
+                    f"{ex_decision!r} under a different question "
+                    f"({ex_title!r} vs {question_title!r}); a final review "
+                    "decision is not silently reassignable to another question"
+                )
+        conn.execute(
+            "INSERT OR REPLACE INTO review_decision"
+            "(artifact, question_title, decision, decided_at, actor)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (artifact, question_title, decision, at, actor))
+        conn.execute("COMMIT")
+    except DecisionConflict:
         raise
     except Exception:
         conn.execute("ROLLBACK")
