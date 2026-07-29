@@ -86,7 +86,23 @@ before selecting work. If `questions.md` changed since your last look, check
 for new human-authored blocks (`Note (human, via …)`) — fold them first: act
 on the answer, then move the entry to Answered.
 
-**Read `.dreamwork/handoffs.md`'s `## Pending` before selecting work too.** A
+**Discover landings from git first: run `python3 <skill-dir>/dev/ledger.py
+sweep` before selecting work** (#404). It scans commit subjects since the
+most recent fold commit (`--since REF` to override) for id-bearing landings,
+correlates against the open ids, subtracts entries that already cite the
+sha, and prints the remainder **plus how many commits it examined** — a
+sweep that found nothing is distinguishable from one that did not run. It
+is advisory (exit 0 always). This is the primary route because a lane
+cannot land work without committing, and the commit convention puts the id
+in the subject by construction — git knows about every same-tree landing,
+while a hand-off line is an extra act a lane must remember (and `#392a`
+showed what forgetting looks like). Fold what it reports into `## Recently
+landed` citing the sha, or cite the sha in the entry when the open state is
+deliberate.
+
+**Then read `.dreamwork/handoffs.md`'s `## Pending`** — the supplementary
+route, for the case git cannot see: a lane on a different machine or repo,
+or landed work that is not a commit. A
 session that lands work it does not own the ledger for (every session but you)
 appends one line per landing there — the delivery half of the single-writer
 rule, because its report dies in its own session otherwise and the entry sits
