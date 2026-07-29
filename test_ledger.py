@@ -232,3 +232,93 @@ def test_assert_headings_rejects_a_second_mention_only_when_it_is_a_real_heading
         assert "2" in str(e) and "Recently landed" in str(e)
     else:
         assert False, "expected LedgerError for a duplicate heading"
+
+
+# ---------------------------------------------------------------------------
+# sweep (#404) — landings discoverable from git subjects, minus cited shas
+#
+# A lane cannot land work without committing, and this repo's convention puts
+# the id in the subject by construction, so git log is the strictly more
+# reliable landing channel. The sweep correlates id-bearing subjects against
+# the OPEN id set and subtracts ids whose entry already cites the sha — the
+# discovery twin of lint.check_landed_still_open (#323), advisory (exit 0),
+# and over the full verb set because a discovery sweep tolerates weak verbs
+# that a WARN may not.
+# ---------------------------------------------------------------------------
+from ledger_parse import ledger_entries, open_section_text  # noqa: E402
+
+SWEEP_LEDGER = """\
+# Task ledger
+
+Next id: **13**
+
+## Open
+- **#10** — uncited landing · origin: **loop**
+  · the body never names the commit that landed it
+- **#11** — deliberate partial · origin: **loop**
+  · landed in `abc1234`, kept open for the remaining half
+- **#12** — genuinely unstarted · origin: **loop**
+
+## Recently landed
+
+- **#9** — already folded · origin: **loop**
+"""
+
+# (sha, subject) pairs in newest-first order, as `git log --format=%h\x1f%s`
+# yields them. The verbs are the forms measured on this repo's own log.
+SWEEP_COMMITS = [
+    ("fff0001", "docs(#404): unrelated churn, not a landing candidate verb for #10"),
+    ("def5678", "merge(#10,#99): the uncited landing"),
+    ("abc1234", "fix(#11): the deliberate partial"),
+    ("eee0002", "guard(#9): already folded, must not be reported"),
+    ("ddd0003", "no id in this subject at all"),
+]
+
+
+def _sweep_open_body(tid):
+    """Entry body for `tid` via the production helpers the sweep reuses."""
+    for ids, body in ledger_entries(open_section_text(SWEEP_LEDGER)):
+        if tid in ids:
+            return body
+    raise AssertionError(f"#{tid} has no open entry in the fixture")
+
+
+def test_sweep_fixture_preconditions_derived_at_runtime():
+    # The gap the whole sweep rests on must EXIST in the fixture, derived —
+    # never assumed — or the report test below proves nothing.
+    open_ids, landed_ids = watch.parse_ledger(SWEEP_LEDGER)
+    assert "10" in open_ids and "11" in open_ids and "9" not in open_ids
+    assert "9" in landed_ids
+    # #10's landing sha is NOT cited in its entry — this is the gap itself
+    assert "def5678" not in _sweep_open_body(10)
+    # #11's IS — the subtraction case would be hollow without this contrast
+    assert "abc1234" in _sweep_open_body(11)
+    # and the multi-id subject really does carry two ids (the fixture's claim)
+    assert ledger.SWEEP_SUBJECT.match("merge(#10,#99): x").group(1) == "#10,#99"
+
+
+def test_sweep_reports_the_uncited_open_landing_with_its_sha():
+    n, findings = ledger.sweep(SWEEP_LEDGER, SWEEP_COMMITS)
+    by_id = {tid: shas for tid, shas in findings}
+    assert 10 in by_id
+    assert any(sha == "def5678" for sha, _ in by_id[10])
+
+
+def test_sweep_subtracts_entries_that_cite_the_sha():
+    _, findings = ledger.sweep(SWEEP_LEDGER, SWEEP_COMMITS)
+    assert 11 not in {tid for tid, _ in findings}
+
+
+def test_sweep_ignores_landed_ids_and_reports_multi_id_subjects():
+    _, findings = ledger.sweep(SWEEP_LEDGER, SWEEP_COMMITS)
+    by_id = {tid for tid, _ in findings}
+    assert 9 not in by_id        # already under ## Recently landed
+    assert 99 not in by_id       # second id of merge(#10,#99) — not in the ledger
+
+
+def test_sweep_counts_every_commit_examined_even_with_no_findings():
+    # The count is what distinguishes "found nothing" from "did not run".
+    n, findings = ledger.sweep(SWEEP_LEDGER, SWEEP_COMMITS)
+    assert n == len(SWEEP_COMMITS)  # non-matching subjects are examined too
+    n0, findings0 = ledger.sweep(SWEEP_LEDGER, SWEEP_COMMITS[4:])
+    assert n0 == 1 and findings0 == []
