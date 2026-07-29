@@ -829,6 +829,37 @@ STYLE = """<style>
   @media (prefers-reduced-motion: reduce) {
     .bdtip { transition:none; }
   }
+  /* #298 column inspector — the RICHER reading on #417's seam, not a
+     second hover. The glance tip stays one ellipsised line across the
+     head; the inspector is what a DELIBERATE look gets (a hover that
+     dwells, a focus, a tap): the exact interval, the level, the flow,
+     the commits, and the coverage state the chart's geometry cannot say
+     (a level with no ledger commit that period is CARRIED, not measured).
+     It follows the active column — anchored above the level track,
+     horizontally centred on the column and CLAMPED to the track's edges
+     so an edge column never sends it off-chart and it never sits on a
+     neighbour. Floats, so the constant-height premise holds exactly as
+     for .bdtip. Same arrival idiom (pose → ease in, depart → ease out,
+     snap under reduced motion) — a smaller instance of the same gesture,
+     never a second one (transitions.md). Accent is not spent. */
+  .bdinsp { position:absolute; top:0; left:0; z-index:3;
+            pointer-events:none; font-size:.7rem; color:var(--dim);
+            background:color-mix(in srgb, var(--bg) 92%, transparent);
+            border:1px solid var(--line); border-radius:3px;
+            padding:.3rem .5rem; white-space:nowrap; max-width:100%;
+            overflow:hidden; text-overflow:ellipsis;
+            transition:opacity .42s ease, filter .42s ease,
+                       transform .42s cubic-bezier(.32,.1,.2,1); }
+  .bdinsp[hidden] { display:none; }
+  .bdinsp.pose { transition:none !important; opacity:0;
+    filter:blur(6px); transform:translateY(3px); }
+  .bdinsp.depart { opacity:0; filter:blur(6px); transform:translateY(-3px); }
+  .bdinsp .bdnum { color:var(--lit); }
+  .bdin-iv { color:var(--dimmer); font-size:.65rem; margin-bottom:.1rem; }
+  .bdin-cov { color:var(--dimmer); font-size:.65rem; margin-top:.1rem; }
+  @media (prefers-reduced-motion: reduce) {
+    .bdinsp { transition:none; }
+  }
   .bdhalf { flex:1 1 0; display:flex; }
   .bdtop { align-items:flex-end; }
   /* the standing opacity transition is what `.dreamin` needs to ease BACK
