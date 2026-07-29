@@ -1714,6 +1714,19 @@ Next id: **485**
   per the artifact.
   · **next: the import stage** — `dreamwork tasks migrate --dry-run` populating `task` + `related`/`depends`,
   re-seeding only upward, with exact counts/ids/digests/conflicts reported before any cutover.
+  · **INCREMENT 3 (parse-and-report) LANDED — merge of `wt/294import` (lane work `189bc9e3`..`23e3442`, native
+  subagent, 2026-07-29 17:00).** `ud-dw-tasks-migrate --dry-run` (repo-root `ud-dw-*` layout, since no `dreamwork`
+  dispatcher exists — a future one shells to it unchanged). Parses through the production parser only
+  (`watch.parse_ledger`, `ledger_parse`, `lint`'s constants, `ledger_store.derive_next_id`) — no sixth
+  hand-rolled parser. **The live census: 130 open / 247 landed / 377 ids, disjoint, seed verified (485 ==
+  MAX(id)+1), and 21 conflicts, all known legal shapes:** 3 compound bands (`#274 #263 #288`, import as P1 +
+  uncertain per S2) and 18 missing bands (→ P2 by contract). Zero dangling relations, zero duplicates, zero
+  origin violations. The lane caught TWO green red-runs in its own checks and fixed both (a within-section
+  duplicate masked by the open∩landed term; a subset assertion passing on flag-everything). Coordinator
+  independently red-proved the seed-exceeds guard on the merged tree (exactly `test_seed_must_exceed_stray_entry_heads`
+  fails, byte-identical restore, 25 pass) and ran the dry-run live: counts move with folds exactly as expected.
+  · **next: increment 4 — the actual import into a scratch DB + verification** (rows fit the flat schema,
+  digest parity, conflicts resolved as ruled), still no cutover; then cutover (R2 lease, R4 rename + shim).
   · his two clarifying notes answered in the questions thread (15:50, 16:00): an `entry` is not the event log
   (`task_event` is separate either way); the flat model migrates cleanly because `#353` made every entry
   exactly one task; a task row carries the free-text body where notes/updates accumulate, so tasks update
