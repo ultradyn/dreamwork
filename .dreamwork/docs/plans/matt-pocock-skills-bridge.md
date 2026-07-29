@@ -1,7 +1,8 @@
 # ud-dreamwork-matt-pocock-skills — bridge plugin (design spec)
 
-> **Status:** design proposal, **specification only** (lane-287spec, #287).
-> Not yet put to the human. This document is the deliverable; it is not a
+> **Status:** design **settled** (lane-287spec, #287) — the five open calls
+> (OQ1–OQ5, §14) were ruled by the human 2026-07-30 00:20. This document is
+> the deliverable; it is not a
 > plugin, not a Load line, not a setup script, and not an edit to any
 > suite file. **Approval of this document authorises none of those** —
 > it authorises only the design, and each extension seam it names is a
@@ -484,12 +485,26 @@ still lands), and T1–T5 prove the seams the harness would call.
 
 ---
 
-## 14. Open questions — his to rule (not picked here)
+## 14. Open questions — RULED (2026-07-30 00:20, via questions.md)
 
-Each is a genuine fork. A rec is given (his "rec is the default, not the
-setting" rule means a taken rec still leaves him a control), but the
-choice is left open because each turns on his goals, not on a
-clearly-superior answer.
+All five are **settled**. His rulings, recorded on `#287` and folded in
+`questions.md`:
+
+- **OQ1 → local ledger.** He also filed a follow-up (now `#492`, P3,
+  deliberately much later): mirror task state to GitHub — issues for tasks,
+  PR/issue↔task linking, webhook comments into the hub as task events.
+- **OQ2 → rec.** One question per `questions.md` entry, awaited. His stated
+  reason is the design's own: outdated questions are never asked and every
+  question is as informed as it can be.
+- **OQ3 → rec.** Repo-root `CONTEXT.md`, referenced not copied.
+- **OQ4 → an autonomy level on posture.** Autonomous dispatch of suite tools
+  is gated on a posture autonomy axis rather than being a flat no — filed as
+  `#493`. Until that axis exists the default stands: human-invoked only.
+- **OQ5 → probably the same autonomy level.** Self-filing becomes a steer the
+  autonomy level gates (`#493`), not a permanent refusal.
+
+The original five forks, with their recs, are kept below as the record of
+what was ruled on.
 
 **OQ1 — local ledger, or a real tracker mirrored?** Rec: **local ledger**
 (the suite's tracker-doc names the ledger seam; no GitHub). Makes #294
@@ -555,6 +570,7 @@ the scope gate exists precisely because convenient is the case to gate.
 - **Verification.** Five seam checks (T1–T5), each with its red line and
   runtime precondition, plus the stated harness-dispatch ceiling (not
   faked).
-- **Open questions.** Five genuine forks left for him (OQ1–OQ5): local
-  ledger vs real tracker; grill cadence; `CONTEXT.md` home; autonomous
-  tool dispatch; loop-generated specs through the gate.
+- **Open questions — RULED 2026-07-30 (§14).** OQ1 local ledger (+ `#492`
+  much-later GitHub mirroring); OQ2 one question per entry, awaited; OQ3
+  repo-root `CONTEXT.md` referenced; OQ4/OQ5 a posture autonomy axis (`#493`)
+  gates autonomous dispatch and self-filing.

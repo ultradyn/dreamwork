@@ -1,8 +1,13 @@
 # Delivery modes — instant push vs batched queue (#342)
 
-Design only. **Build no mechanism.** No `watch.py` change, no `user_events/`
-change, no `file-formats.md` or `lint.py` edit, no migration. This doc is the
-deliverable; he rules on the open calls, then the loop builds.
+**RULED 2026-07-30 00:23 (via questions.md): Q1 rec — the ambiguous class is
+batched by default (a `do now` still pre-empts); Q2 rec — the posture axis
+`delivery` (`instant`|`batched`) in `.dreamwork/posture`, absent = instant,
+with the most-urgent kinds pre-empting even in batched mode; Q3 rec amended —
+the loop gates urgency, but plugins may *suggest* it.** The ruling settles the
+design; implementation is `#342`'s next increment. What follows is the design
+as ruled on — the "his to rule" framings are kept as the record, with the
+outcomes marked.
 
 ## Authority and what this builds on
 
@@ -71,9 +76,9 @@ dynamically-resolved plugin kinds).
 | `add idea: …` / `add task: …` | `/command` `add-idea` | **batched** | **HIS** | he stated it does not interrupt; it parks a thought the loop picks up when it chooses next |
 | `maintenance` | `/command` `maintenance` | **batched** | **PROPOSAL** | housekeeping is never a preemption; batching it onto the next tick is exactly its shape |
 | plugin commands | `/command` `<plugin>` | **batched** | **PROPOSAL** | default to the least disruptive; a plugin that needs to interrupt opts in per-kind (see open Q3) |
-| his answer to a question (`/answer`) | `/answer` | **instant** | **HIS (the class)** | *"answers… are the genuinely ambiguous class the toggle is for"* — see open Q1; the default this design *proposes* is instant, because an answer unblocks in-flight work, but he rules |
-| his note on a question/review (`/comment`) | `/comment` | **batched** | **HIS (the class)** | same ambiguous class; a follow-up note amends rather than preempts, so batching is the less-disruptive default. He rules |
-| his new question for the dreamer (`/ask`) | `/ask` | **batched** | **PROPOSAL** | his own question is not an interrupt *of him*; the dreamer folds it on the next tick. He rules if he wants it hotter |
+| his answer to a question (`/answer`) | `/answer` | **batched** | **HIS (RULED 2026-07-30)** | the ambiguous class batches as a whole — his Q1 ruling overrides this design's instant proposal; a pending answer is read on the tick, and the ruling prioritises "not overwhelmed" over unblocking latency |
+| his note on a question/review (`/comment`) | `/comment` | **batched** | **HIS (RULED)** | same class, same ruling; a follow-up note amends rather than preempts |
+| his new question for the dreamer (`/ask`) | `/ask` | **batched** | **HIS (RULED)** | same class, same ruling; the dreamer folds it on the next tick |
 
 Two rules run through the whole table and are stated once here:
 
@@ -229,30 +234,38 @@ overwhelmed is addressed by *batching*: in batched mode, a burst of `add idea`s
 arrives as one cursor-bounded read and one batch of adapter replays, not N
 wake-and-act cycles.
 
-## Open calls for him
+## Open calls for him — RULED 2026-07-30 00:23
 
-These are **his to rule**; the design proposes defaults but does not decide them.
+- **Q1 — the ambiguous class (answers / notes on questions / reviews) →
+  RULED: batched by default, the whole class.** His `rec` answered the
+  question as put in `questions.md`, whose rec was batched for the class as a
+  whole — *"they are read on the tick either way, and the class is exactly
+  where 'overwhelmed' comes from"*. This **overrides** this design's proposed
+  `/answer` → instant split: `/answer`, `/comment` and `/ask` all default to
+  batched; a `do now` still pre-empts. The toggle exists *because* this class
+  is judgement — and his judgement is that it batches.
+- **Q2 — where the toggle lives, and what "batched mode" reads as → RULED:
+  rec.** (a) the posture axis `delivery` (`instant`|`batched`) in
+  `.dreamwork/posture`, absent = `instant`; (b) the proposed reading stands —
+  the most-urgent kinds (`do-now`) pre-empt even in batched mode. The sibling
+  `.dreamwork/delivery` file is rejected.
+- **Q3 — plugin commands → RULED: rec, amended.** The **loop gates** a kind's
+  urgency — a plugin cannot mark itself instant. Amendment: **plugins may
+  *suggest*** urgency; the suggestion is input to the loop's gate, never a
+  self-grant.
 
-- **Q1 — the ambiguous class (answers / notes on questions / reviews).** He named
-  this *"the genuinely ambiguous class the toggle is for."* Defaults this design
-  *proposes*: `/answer` → instant (it unblocks in-flight work); `/comment` →
-  batched (it amends, not preempts); `/ask` → batched. He rules, and may split
-  them differently. The toggle exists *because* this class is judgement, not
-  mechanism.
-- **Q2 — where the toggle lives, and what "batched mode" reads as.** (a) posture
-  axis `delivery` (proposed) vs sibling file `.dreamwork/delivery`; (b) does
-  batched mode demote *all* kinds to the queue (proposed: no — the most-urgent
-  kinds pre-empt even in batched mode), or only the batched ones?
-- **Q3 — plugin commands.** Proposed default: batched, with a plugin able to opt
-  a kind into instant per-kind. He rules whether plugins may self-declare
-  urgency or whether the loop gates it.
+## What this design does NOT authorise — SUPERSEDED by the ruling
 
-## What this design does NOT authorise
+**The 2026-07-30 ruling settles Q1–Q3, so the design is no longer
+undecided and its implementation is `#342`'s next increment.** The list below
+is kept as the record of what the *design doc alone* did not authorise before
+the ruling; the implementation increment still lands each item's own red-first
+checks and `file-formats.md`/`lint.py` changes in the same commit as the code,
+per house rule.
 
 Matched to house style (`attention-modes.md`, `user-event-journal-implementation.md`
 §"What this plan does not authorise"): #342 was filed as a DESIGN task, and this
-doc is the deliverable. **It authorises no code.** Specifically it does **not**
-authorise:
+doc was the deliverable. Pre-ruling it authorised **no code.** Specifically:
 
 - **any `watch.py` change** — not the per-kind wake routing, not the posture-axis
   plumbing, not a `delivery` field on the receipt.
@@ -287,15 +300,16 @@ next gate has to decide.
   has got. **The cursor is batched mode's delivery mechanism; the wake line is
   instant mode's.**
 
-- **Policy table** maps each dashboard input to a default, marking his stated
-  defaults **HIS** (`add idea`/`add task` → batched; `do now` → instant) and
-  this design's offers **PROPOSAL** (`do-next`, `maintenance`, plugins,
-  `/ask`). The answers/notes/reviews class is his to rule (Q1).
+- **Policy table** maps each dashboard input to a default. Post-ruling every
+  row is settled: `do now`/`do next` → instant; `add idea`/`add task`,
+  `maintenance`, plugins, `/answer`, `/comment`, `/ask` → batched (the
+  ambiguous class batches as a whole — his Q1 ruling).
 
-- **Toggle representation:** proposed as a fourth posture axis `delivery`
+- **Toggle representation — RULED (Q2):** a fourth posture axis `delivery`
   (`instant` | `batched`) in `.dreamwork/posture`, reusing `POST /posture` and
-  the 10s arm — absent defaults to `instant` (today's behaviour). Sibling-file is
-  the alternative; **shape is his call (Q2).**
+  the 10s arm — absent defaults to `instant` (today's behaviour). The
+  sibling-file alternative is rejected; the most-urgent kinds pre-empt even in
+  batched mode.
 
 - **Batched consumption** = three acts on the tick: read the events in
   `(cursor, head_ordinal()]`, verify + replay through the adapters (proof is
@@ -315,7 +329,8 @@ next gate has to decide.
   the wake becomes an optimisation, not the delivery path. This is his stated
   purpose ("forgetting to process some things") made impossible by construction.
 
-- **Open for him:** Q1 the ambiguous class; Q2 toggle shape + what "batched"
-  reads as; Q3 plugin self-declared urgency. **Does not authorise:** any
-  `watch.py`/`user_events`/`apply.py`/`file-formats.md`/`lint.py` change,
-  migration, or deployment.
+- **Open calls — RULED 2026-07-30:** Q1 the ambiguous class batches (whole
+  class; overrides the `/answer` → instant proposal); Q2 the `delivery`
+  posture axis with urgent kinds pre-empting; Q3 the loop gates urgency,
+  plugins may suggest. Implementation is `#342`'s next increment; the
+  per-surface authorisations land with their own red-first checks.

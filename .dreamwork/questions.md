@@ -3,54 +3,6 @@
 ## Open
 
 
-- **P1 · 2026-07-29 22:31 — #287: the matt-pocock-skills bridge spec is written — five calls are yours.**
-  The spec is at `.dreamwork/docs/plans/matt-pocock-skills-bridge.md` (landed today, written-spec
-  authority only; the suite runs unchanged and the bridge translates at three seams). Each question
-  has a rec in the doc; each is a genuine fork, so they are here rather than picked:
-
-  **`OQ1` — local ledger, or a real GitHub tracker mirrored?** **`rec`: local ledger** — makes the
-  sqlite cutover invisible and needs no remote authority. The fork: the suite's designed-for home is
-  a real tracker; if you want that, `ud-dreamwork-github` already covers the forge side.
-
-  **`OQ2` — grill cadence: one question per entry, awaited, or batched into one multi-part entry?**
-  **`rec`: one per entry, awaited** — preserves the suite's cadence and #254's one-root rule.
-
-  **`OQ3` — where does `CONTEXT.md` live?** **`rec`: repo-root, referenced not copied.** The fork is
-  `.dreamwork/docs/domain/`, which touches repo-root layout.
-
-  **`OQ4` — may the loop dispatch suite tools (`research`/`code-review`/`prototype`) autonomously?**
-  **`rec`: human-invoked only** by default; autonomous dispatch is scope the authority lines grant
-  explicitly, not a default.
-
-  **`OQ5` — may loop-generated `to-spec`/`to-tickets` output file itself as tasks?**
-  **`rec`: no — filing is a human steer** by default.
-
-  **If you say nothing:** nothing is built — the spec authorises specification only.
-
-
-- **P2 · 2026-07-29 22:25 — #342: delivery modes — the three calls the design leaves to you.**
-  The design is at `.dreamwork/docs/plans/delivery-modes.md` (landed today; batched vs instant
-  delivery for dashboard commands, riding #263's journal cursor). It deliberately does not pick
-  these for you:
-
-  **`Q1` — the ambiguous class** (answers to questions, notes/comments on reviews, `/ask`
-  replies): instant or batched by default? You named this *"the genuinely ambiguous class the
-  toggle is for."* **`rec`: batched** — they are read on the tick either way, and the class is
-  exactly where "overwhelmed" comes from; a `do now` still pre-empts.
-
-  **`Q2` — the toggle's shape and reach.** **`rec`: a fourth posture axis `delivery`
-  (`instant`|`batched`) in `.dreamwork/posture`**, absent defaults to `instant` (today), reusing
-  the dashboard's existing POST /posture + 10s arm — and batched mode keeps the most-urgent
-  kinds pre-empting rather than demoting everything. The alternative is a sibling
-  `.dreamwork/delivery` file.
-
-  **`Q3` — may a plugin self-declare a kind's urgency, or does the loop gate it?**
-  **`rec`: the loop gates it** — a plugin that can mark itself instant can wake you (and me) at
-  will, which is the cost the toggle exists to remove.
-
-  **If you say nothing:** nothing is built — the design doc explicitly authorises no mechanism.
-
-
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray
@@ -85,6 +37,83 @@
     primary way we access dreamworkers
 
 ## Answered
+
+- **P1 · 2026-07-29 22:31 — #287: the matt-pocock-skills bridge spec is written — five calls are yours.**
+  → answered (2026-07-30 00:20): **OQ1 local ledger** — and a filed, deliberately-later task
+    for mirroring task state to GitHub (issues for tasks, PR/issue↔task links, webhook comments
+    into the hub as task events). **OQ2 rec** — one question per entry, awaited; his stated
+    reason is the design’s own: outdated questions are never asked and every question is as
+    informed as it can be. **OQ3 rec** — `CONTEXT.md` at repo-root, referenced not copied.
+    **OQ4 an autonomy level on posture** — autonomous dispatch of suite tools is gated on it;
+    task filed. **OQ5 probably the same autonomy level** — self-filing becomes a steer the
+    autonomy level gates rather than a flat no. Recorded on `#287` and in the spec. With the
+    cutover landed and all five calls answered, the bridge specification is settled; his
+    earlier *"wait till after sqlite"* is spent, so planning the implementation is unblocked.
+  The spec is at `.dreamwork/docs/plans/matt-pocock-skills-bridge.md` (landed today, written-spec
+  authority only; the suite runs unchanged and the bridge translates at three seams). Each question
+  has a rec in the doc; each is a genuine fork, so they are here rather than picked:
+
+  **`OQ1` — local ledger, or a real GitHub tracker mirrored?** **`rec`: local ledger** — makes the
+  sqlite cutover invisible and needs no remote authority. The fork: the suite's designed-for home is
+  a real tracker; if you want that, `ud-dreamwork-github` already covers the forge side.
+
+  **`OQ2` — grill cadence: one question per entry, awaited, or batched into one multi-part entry?**
+  **`rec`: one per entry, awaited** — preserves the suite's cadence and #254's one-root rule.
+
+  **`OQ3` — where does `CONTEXT.md` live?** **`rec`: repo-root, referenced not copied.** The fork is
+  `.dreamwork/docs/domain/`, which touches repo-root layout.
+
+  **`OQ4` — may the loop dispatch suite tools (`research`/`code-review`/`prototype`) autonomously?**
+  **`rec`: human-invoked only** by default; autonomous dispatch is scope the authority lines grant
+  explicitly, not a default.
+
+  **`OQ5` — may loop-generated `to-spec`/`to-tickets` output file itself as tasks?**
+  **`rec`: no — filing is a human steer** by default.
+
+  **If you say nothing:** nothing is built — the spec authorises specification only.
+  - **Answer (via watch, 2026-07-30 00:20):** 1. local. in future, we
+    should add a feature for mirroring our task state to github (so
+    there are github issues associated with tasks, PRs and issues can be
+    linked to tasks or vice versa, comments on github sent via webhook
+    to hub which can add as an event in the tasks db for that project,
+    etc). Add a task for this but note in it that it's planned for much
+    later. 2. rec (the reason for 1 q at a time is, I think, so that
+    irrelevant/outdated questions aren't asked and every question is as
+    informed as it can be). 3. rec 4. in this case I think some options
+    would be good, like adding an autonomy level to posture for
+    maintenance (which is probably a good thing for us to do anyway; pls
+    add a task) 5. probably an autonomy level thing.
+
+- **P2 · 2026-07-29 22:25 — #342: delivery modes — the three calls the design leaves to you.**
+  → answered (2026-07-30 00:23): **rec on all three, with one amendment.** Q1 the ambiguous
+    class is **batched** by default — a `do now` still pre-empts. Q2 a fourth posture axis
+    `delivery` (`instant`|`batched`) in `.dreamwork/posture`, absent defaults to `instant`,
+    reusing POST /posture + the 10s arm, batched mode keeping the most-urgent kinds
+    pre-empting. Q3 the loop **gates** a kind’s urgency — amended: **plugins may suggest**
+    urgency, the loop still decides. Recorded on `#342` and in the design; the ruling settles
+    the design, so `#342` is unblocked for implementation.
+  The design is at `.dreamwork/docs/plans/delivery-modes.md` (landed today; batched vs instant
+  delivery for dashboard commands, riding #263's journal cursor). It deliberately does not pick
+  these for you:
+
+  **`Q1` — the ambiguous class** (answers to questions, notes/comments on reviews, `/ask`
+  replies): instant or batched by default? You named this *"the genuinely ambiguous class the
+  toggle is for."* **`rec`: batched** — they are read on the tick either way, and the class is
+  exactly where "overwhelmed" comes from; a `do now` still pre-empts.
+
+  **`Q2` — the toggle's shape and reach.** **`rec`: a fourth posture axis `delivery`
+  (`instant`|`batched`) in `.dreamwork/posture`**, absent defaults to `instant` (today), reusing
+  the dashboard's existing POST /posture + 10s arm — and batched mode keeps the most-urgent
+  kinds pre-empting rather than demoting everything. The alternative is a sibling
+  `.dreamwork/delivery` file.
+
+  **`Q3` — may a plugin self-declare a kind's urgency, or does the loop gate it?**
+  **`rec`: the loop gates it** — a plugin that can mark itself instant can wake you (and me) at
+  will, which is the cost the toggle exists to remove.
+
+  **If you say nothing:** nothing is built — the design doc explicitly authorises no mechanism.
+  - **Answer (via watch, 2026-07-30 00:23):** 1. rec 2. rec 3. rec,
+    though plugins can suggest stuff
 
 - **P1 · 2026-07-29 12:39 — #294: one task table or the landed entry/task split, for the SQLite store?**
   → answered (2026-07-29 15:59): **RULED — flatten (`wt/294`).** His words: *"if you're satisfied then rec:
@@ -2969,24 +2998,4 @@
     half landed in 04968d1 with migration 2026-07-25-11, and the
     rendering half is with the dreamer.
 - **Forge presence: three polarities** → "rec" via watch (2026-07-25
-  08:48), all three recommendations taken, all three acted on the same
-  hour. (a) `ud-dreamwork-github` is loaded for this target; its
-  discovery pass wrote `.dreamwork/docs/github-processes.md` and its
-  settings (watch all open issues/PRs, no authority lines so read-only,
-  auto-progress on) are recorded in DREAMWORK.md. (b) Push policy is now
-  session wrap + on ask, in DREAMWORK.md's Autonomy line. (c) A minimal
-  `README.md` exists; doc-map records SKILL.md as the harness entry
-  point and README.md as the forge one.
-- **ud-dreamwork-github design review** → LGTM (2026-07-25 06:54), v1
-  built the same morning; the 90s poll became ~5min on his follow-up.
-  Detail lives in `docs/plans/ud-dreamwork-github.md` and the plugin's
-  own SKILL.md.
-- **Four early asks, all applied (2026-07-25)** — the alignment-review
-  → resolved (2026-07-25): a summary of four asks that were each applied. It poses nothing, so it has no
-  resolution of its own beyond this line — recorded so the check can tell it apart from a dropped marker.
-  shape (#36), roll.py timing (#37), the dogfood reflection, and Task D's
-  flow diagram. each
-  now lives where it acts (the review routine in SKILL.md, roll.py and
-  its migration, `wrap up` and the maintenance rotation). Task D stays
-  vetoed — a second copy of the selection ladder would drift, and it
-  drifted four times today; revisiting it is task #119.
+  08:48), all three recommendat
