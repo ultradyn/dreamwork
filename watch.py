@@ -1206,6 +1206,36 @@ STYLE = """<style>
   .qfocus:hover { color:var(--accent); }
   .qfocus:focus-visible { color:var(--accent);
     outline:1px solid var(--accent); outline-offset:2px; }
+  /* #454 — the roll-up affordance: the same quiet headline chrome as the
+     focus link it sits beside, as a BUTTON (it acts here; the link goes
+     somewhere). Same rest/hover/focus ramp, and no motion of its own —
+     it is part of the card's HTML and rides the card's arrival. */
+  .qroll { background:none; border:0; padding:0; font:inherit;
+    color:var(--dimmer); font-size:.7rem; white-space:nowrap; cursor:pointer; }
+  .qroll:hover { color:var(--accent); }
+  .qroll:focus-visible { color:var(--accent);
+    outline:1px solid var(--accent); outline-offset:2px; }
+  /* the dock is the reading surface: its card is never rolled, so the
+     affordance the markup shares with the list declines there */
+  .qdock .qroll { display:none; }
+  /* ROLLED — the top of the scroll, never a bare title. The wrapper
+     becomes a box for the first time: #326's display:contents is what an
+     unrolled card needs (no box, margins collapse as if it were not
+     there), but a clamp needs an overflow edge and an edge needs a box.
+     The height is a line COUNT times the rendered line height, measured
+     at runtime and handed over as --rollh (rollHeight) — a pinned pixel
+     constant is #441's failure shape. The bottom edge softens with a CSS
+     mask, the rolled scroll's cut; NEVER an SVG filter — a per-card
+     filter is #449's measured jank and this feature is precisely the
+     many-filtered-elements shape. The compose box leaves with the rest
+     of the body: answering a question means reading it, and reading it
+     means unrolling. The mask fade is ~1.5 lines of the 5.5, so the
+     readable floor stays the 4-5 he asked to judge by. */
+  .qa.rolled .qbody { display:block; max-height:var(--rollh, 6.5em);
+    overflow:hidden;
+    -webkit-mask-image:linear-gradient(to bottom, #000 72%, transparent 99%);
+    mask-image:linear-gradient(to bottom, #000 72%, transparent 99%); }
+  .qa.rolled .qcompose { display:none; }
   /* a send that did not land wears the same colour, because it is the same
      failure seen from the writing end: the channel to him did not work and
      nothing else on the page would have said so */
@@ -2643,6 +2673,25 @@ const qfocusLink = title =>
   ` <a class="qfocus" href="/question?qid=${encodeURIComponent(title)}"` +
   ` title="focus this question — open it on its own page"` +
   ` aria-label="focus this question on its own page">focus</a>`;
+/* #454 — the way to roll an OPEN question up to the top of its scroll:
+   the card clamps to a 5-6 line card rather than vanishing behind a
+   title, because a title alone does not say whether an entry still needs
+   him and the rolled top of the body does. A REAL BUTTON, the same
+   argument the focus link makes three ways: keyboard operation is native,
+   aria-expanded says the disclosure state to AT, and it rides the card's
+   own arrival rather than appearing. Open state ONLY — the styleguide's
+   axis already answers for the other two: awaiting still needs the loop
+   (it does not collapse), and folded IS the collapse (#111). Emitted
+   everywhere the focus link is, including the dock, where CSS declines it
+   (the dock card is the reading surface; it is never rolled) — which is
+   why `.qroll` is listed in dom.mjs's dockHeadline chrome strip (#474's
+   rule: headline chrome is a node, and the node is listed there).
+   Suppressed on the focus page itself, like the focus link. */
+const qrollBtn = title =>
+  (typeof view !== 'undefined' && view && view.name === 'question') ? '' :
+  ` <button type="button" class="qroll" aria-expanded="true"` +
+  ` title="roll this question up to its first lines"` +
+  ` aria-label="roll this question up to its first lines">roll up</button>`;
 const qaInner = (q, key) => {
   const st = qaState(q, key);
   const body = q.body && q.body.trim() ? mdBReview(q.body.trim(), q.title) : '';
@@ -2697,11 +2746,12 @@ const qaInner = (q, key) => {
      simply been hidden. */
   const up = qUpdatedHtml(q);
   const focus = qfocusLink(q.title);
+  const roll = st === 'open' ? qrollBtn(q.title) : '';
   if (st === 'folded')
     return `<details class="qfold"><summary class="qt">${qtHtml(q.title)}${up}` +
       (q.when ? `<span class="qwhen">answered ${esc(q.when)}</span>` : '') +
       `${focus}</summary><div class="qbody">${body}${foot}</div>${compose}</details>`;
-  return `<div class="qbody"><div class="qt">${qtHtml(q.title)}${up}${focus}</div>` +
+  return `<div class="qbody"><div class="qt">${qtHtml(q.title)}${up}${roll}${focus}</div>` +
          `${body}${foot}</div>${compose}`;
 };
 /* Two identities, deliberately. `data-qkey` ADDRESSES the entry in live data
@@ -2778,36 +2828,72 @@ const subsDbName = () => {
   const t = (typeof data !== 'undefined' && data && data.target) || '';
   return t ? 'dw-submissions:' + t : '';
 };
-function subsOpen() {
+/* the ONE IndexedDB helper, generalized rather than duplicated (#454):
+   the open and the transaction are the wedged-store discipline — every
+   failure resolves null, nothing throws at a caller — and each database
+   says only what its upgrade creates. A second copy of this for a second
+   store is how one of them loses the raced-timeout handling. */
+function idbOpen(name, upgrade) {
   return new Promise(res => {
-    const name = subsDbName();
     if (!name || typeof indexedDB === 'undefined' || !indexedDB) return res(null);
     let rq;
     try { rq = indexedDB.open(name, 1); } catch (e) { return res(null); }
-    rq.onupgradeneeded = () => {
-      const db = rq.result;
-      if (!db.objectStoreNames.contains(SUBS_STORE))
-        db.createObjectStore(SUBS_STORE, { keyPath:'id', autoIncrement:true });
-    };
+    rq.onupgradeneeded = () => upgrade(rq.result);
     rq.onsuccess = () => res(rq.result);
     rq.onerror = rq.onblocked = () => res(null);
   });
 }
 /* one transaction, always closed, never throwing at the caller */
-function subsTx(mode, fn) {
-  return subsOpen().then(db => new Promise(res => {
+function idbTx(openFn, store, mode, fn) {
+  return openFn().then(db => new Promise(res => {
     if (!db) return res(null);
     let out = null;
     const done = v => { try { db.close(); } catch (e) {} res(v); };
     try {
-      const tx = db.transaction(SUBS_STORE, mode);
-      const rq = fn(tx.objectStore(SUBS_STORE));
+      const tx = db.transaction(store, mode);
+      const rq = fn(tx.objectStore(store));
       if (rq) rq.onsuccess = () => { out = rq.result; };
       tx.oncomplete = () => done(out);
       tx.onerror = tx.onabort = () => done(null);
     } catch (e) { done(null); }
   })).catch(() => null);
 }
+function subsOpen() {
+  return idbOpen(subsDbName(), db => {
+    if (!db.objectStoreNames.contains(SUBS_STORE))
+      db.createObjectStore(SUBS_STORE, { keyPath:'id', autoIncrement:true });
+  });
+}
+function subsTx(mode, fn) { return idbTx(subsOpen, SUBS_STORE, mode, fn); }
+/* ── persisted UI state (#454) ──────────────────────────────────────────
+   "Persisted to IndexedDB and kept in sync like other ui state." A SEPARATE
+   database from the submissions log, for that log's own reason (a separate
+   database cannot leak by omission): the subs store is an append-only
+   record of what he SENT; this one is keyed state about how the page
+   LOOKS — today the rolled questions. Same wedged-store discipline through
+   the shared helper, and the write is raced the same way: a roll is a
+   gesture, and a gesture never waits on storage.
+   Cross-tab sync is no new mechanism either: the standing 'storage'-event
+   idiom (#290's pending mode) carries the ping; IndexedDB carries the
+   truth a reload reads back. */
+const UI_STORE = 'ui';
+const uiDbName = () => {
+  const t = (typeof data !== 'undefined' && data && data.target) || '';
+  return t ? 'dw-ui:' + t : '';
+};
+function uiOpen() {
+  return idbOpen(uiDbName(), db => {
+    if (!db.objectStoreNames.contains(UI_STORE))
+      db.createObjectStore(UI_STORE, { keyPath:'k' });
+  });
+}
+const uiTx = (mode, fn) => idbTx(uiOpen, UI_STORE, mode, fn);
+const UI_WAIT_MS = 250;
+const uiPut = (k, v) => Promise.race([
+  uiTx('readwrite', st => st.put({ k, v, at: Date.now() })),
+  new Promise(r => setTimeout(() => r(null), UI_WAIT_MS)),
+]);
+const uiAll = () => uiTx('readonly', st => st.getAll());
 /* what KIND of act each endpoint is, in his terms rather than the protocol's.
    An unknown path still records, with the body kept whole — a new POST route
    is logged the day it is added, without anyone remembering this table. */
@@ -6445,6 +6531,10 @@ function setContent(html) {
   syncRunModeFromData();
   // #445: same arm-resume idiom for the three-axis posture control.
   syncPostureFromData();
+  // #454: rolled questions re-roll here, on the same argument as the
+  // drafts below — every render commits through this seam, and the tick's
+  // regroups measure AFTER it, so a kept roll invents no travel.
+  restoreRolls();
   // every navigate and every non-review tick commits through here, so this is
   // the one place that puts a drafted answer back after the box is recreated —
   // the in-memory snapshot does the same for a tick, but only storage survives
@@ -6934,6 +7024,134 @@ function regroupCards(before, toggled, list, restated) {
     if (!seen.has(id)) dreamAway(wrap, was.node, was.rect, 0);
   });
 }
+/* ── #454: rolling an open question up to the top of its scroll ─────────
+   His words: "the size of each collapsed question should be at least like
+   5-6 lines ... more like a card or the top of a rolled up scroll." The
+   floor is the whole design — a one-line collapse is a title list, and a
+   title alone does not say whether an entry still needs him — so it is a
+   line COUNT times the RENDERED line height (lineHeightOf's measured
+   probe), never a pinned pixel constant (#441's split-literal lesson).
+
+   The gesture is the card fold's own (#111/#169): snapshot, toggle,
+   regroup — the height travels, the departing slice ghosts below the new
+   edge, the arriving body eases in. No second way to move a card.
+   `toggled` stays null so nestedToggle reads false and the card-level
+   clone is what ghosts: what leaves IS this card's bottom slice, which is
+   exactly what that clone clipped below the new height says.
+
+   State is the question's title identity (data-qid), persisted to the
+   dw-ui IndexedDB store and pinged across tabs through the standing
+   'storage'-event idiom — "persisted to IndexedDB and kept in sync like
+   other ui state". rolledQids is this page's truth between the two: the
+   click writes all three, the storage event and the boot read keep the
+   set current, and restoreRolls re-applies it inside setContent — the one
+   seam navigate and tick both commit through — so neither a tick nor a
+   route swap can unroll what he rolled, nor hold rolled what another tab
+   unrolled. */
+const ROLL_LINES = 5.5;          // the 5-6 line floor, in RENDERED lines
+const rolledQids = new Set();    // decoded title identities
+function rollHeight(card) {
+  const probe = card.querySelector('.qbody .md p') ||
+                card.querySelector('.qbody .qt') || card;
+  return Math.ceil(lineHeightOf(probe) * ROLL_LINES);
+}
+function setRolled(card, rolling) {
+  card.classList.toggle('rolled', rolling);
+  const btn = card.querySelector('button.qroll');
+  if (btn) {
+    btn.setAttribute('aria-expanded', String(!rolling));
+    btn.textContent = rolling ? 'unroll' : 'roll up';
+  }
+  if (rolling) card.style.setProperty('--rollh', rollHeight(card) + 'px');
+  else card.style.removeProperty('--rollh');
+}
+/* re-apply the truth after ANY render. Landing inside setContent means
+   landing before the tick's regroups MEASURE: a card re-rendered unrolled
+   and re-rolled here has the small rect it had at snapshot, so no travel
+   is invented for a state nothing changed. The dock's card is the reading
+   surface — it is never rolled, and its button is not offered. */
+function restoreRolls() {
+  if (!rolledQids.size && !document.querySelector('.qa.rolled')) return;
+  document.querySelectorAll('.qa[data-qid]').forEach(card => {
+    if (card.closest('.qdock')) return;
+    let title = null;
+    try { title = decodeURIComponent(card.dataset.qid); } catch (e) { return; }
+    const want = rolledQids.has(title);
+    if (want !== card.classList.contains('rolled')) setRolled(card, want);
+  });
+}
+function rollPingKey() {
+  return (data && data.target) ? ('dw:qroll:' + data.target) : null;
+}
+/* the gesture never waits on storage: the click writes this page's set
+   first, then the IndexedDB record a reload reads back (raced, uiPut),
+   then the ping other tabs follow (best-effort). */
+function persistRoll(title, rolling) {
+  uiPut('qroll:' + title, rolling);
+  const k = rollPingKey();
+  if (k) try {
+    localStorage.setItem(k,
+      JSON.stringify({ qid: title, rolled: rolling, at: Date.now() }));
+  } catch (e) {}
+}
+function applyRoll(card, rolling) {
+  if (rmr) { setRolled(card, rolling); return; }
+  const before = snapshotCards(QA_LIST);
+  setRolled(card, rolling);
+  regroupCards(before, null, QA_LIST);
+}
+function toggleRoll(card) {
+  let title = null;
+  try { title = decodeURIComponent(card.dataset.qid); } catch (e) { return; }
+  if (!title) return;
+  const rolling = !card.classList.contains('rolled');
+  if (rolling) rolledQids.add(title); else rolledQids.delete(title);
+  persistRoll(title, rolling);
+  applyRoll(card, rolling);
+}
+addEventListener('click', e => {
+  if (!e.target.closest) return;
+  const btn = e.target.closest('button.qroll');
+  if (!btn) return;
+  const card = btn.closest('.qa[data-qid]');
+  if (!card || card.closest('.qdock')) return;
+  e.preventDefault();
+  toggleRoll(card);
+});
+/* another tab rolled or unrolled: adopt into the set and re-apply through
+   the SAME gesture — a card rolling in the corner of his eye still
+   arrives and departs rather than appearing, because the ping is a state
+   change he can see. */
+window.addEventListener('storage', e => {
+  if (!e.key || e.key !== rollPingKey() || !e.newValue) return;
+  let m = null;
+  try { m = JSON.parse(e.newValue); } catch (er) { return; }
+  if (!m || typeof m.qid !== 'string') return;
+  if (m.rolled) rolledQids.add(m.qid); else rolledQids.delete(m.qid);
+  const card = document.querySelector(
+    '.qa[data-qid="' + encodeURIComponent(m.qid) + '"]');
+  if (card && !card.closest('.qdock') &&
+      !!m.rolled !== card.classList.contains('rolled'))
+    applyRoll(card, !!m.rolled);
+});
+/* boot: the store is the truth a reload reads back. Async on purpose —
+   first paint never waits on IndexedDB (a roll restored a beat late is a
+   restore; a page that waited on storage is the failure the raced write
+   already refuses to risk). ensureData first: the database's name is the
+   project's. */
+async function loadRolls() {
+  await ensureData();
+  const recs = await uiAll();
+  if (!recs) return;
+  recs.forEach(r => {
+    if (r && typeof r.k === 'string' && r.k.indexOf('qroll:') === 0) {
+      const t = r.k.slice(6);
+      if (r.v) rolledQids.add(t); else rolledQids.delete(t);
+    }
+  });
+  restoreRolls();
+}
+loadRolls();
 /* the burndown's bars (#142), on #151's gate and for #151's reason.
 
    A bar is a VALUE re-rendered, not an element that moved, so the opt-in

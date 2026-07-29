@@ -3617,6 +3617,30 @@ class TestAppShell(unittest.TestCase):
         # a live question as gone.
         self.assertIn("d.answered_entries.find", watch.PAGE)
 
+    def test_page_has_qroll_wiring(self):
+        # #454 — an open question card rolls up to the top of the scroll:
+        # a 5-6 line floor derived from the RENDERED line height at runtime
+        # (never a pixel literal — #441's split-literal lesson), persisted
+        # per-question to IndexedDB (the helper the submissions log already
+        # races against a wedge — no second store path), synced across tabs
+        # through the standing localStorage 'storage'-event idiom, and
+        # re-applied through the one render seam (setContent) so a tick or a
+        # route swap cannot unroll it. Guard: dev/capture/qroll.mjs.
+        for token in ('qroll', 'rolled', '--rollh', 'rolledQids',
+                      'restoreRolls', 'dw-ui:'):
+            self.assertIn(token, watch.PAGE)
+        # The affordance is emitted for the OPEN state only: the styleguide's
+        # axis says awaiting still needs the loop and folded already IS the
+        # collapsed treatment (#111), so a roll control on either is a second
+        # collapse gesture on one card.
+        self.assertIn("st === 'open' ? qrollBtn", watch.PAGE)
+        # The floor is a line COUNT times a MEASURED line height, applied as
+        # a custom property — pinning pixels is the #441 failure shape.
+        self.assertIn("setProperty('--rollh'", watch.PAGE)
+        # The gesture is the card fold's own (#111/#169): a roll goes through
+        # the same snapshot + regroup, not a second way to move a card.
+        self.assertIn("regroupCards(before, null, QA_LIST)", watch.PAGE)
+
     def test_page_has_research_route_wiring(self):
         # #484 — /research lists the built research artifacts under
         # .dreamwork/docs/research/ and /research?p=<name> views one through
