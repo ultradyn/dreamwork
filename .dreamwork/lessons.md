@@ -3191,3 +3191,12 @@ this shape and convert opportunistically.)
   *gesture*, or a native `el.open = true` lands it at full height in one frame. Read the two together — the same
   re-render that invalidates a guard's reference invalidates the page's own in-flight animation, and only one of
   those two was ever fixed. Evidence: `#477`.
+- **A "next increment is X" entry that was never folded reads as NOT-done when X landed hours ago — verify
+  the landing in git before dispatching, not just the entry's prose.** I dispatched a lane to build `#294`'s
+  schema + seeded sequence because the `#294` entry said "the next increment is the schema"; it had already
+  landed at `50f4933` (06:07, before my session) and was never folded (0 citations). The lane found it and
+  pivoted to a delta instead of duplicating — the good outcome — but the dispatch was wasted and the delta is
+  now a design fork for the human. This is `#363`/`#404`'s family (a landing nobody folded), biting from the
+  *task* side rather than the hand-off side. The check is one command: `git log --oneline --grep='#294'` and
+  look for the landing commit before believing "next is X". Evidence: the `50f4933` entry/task split vs my
+  lane's flat "1b" (`wt/294`), 2026-07-29.
