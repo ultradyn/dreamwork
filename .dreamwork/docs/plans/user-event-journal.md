@@ -59,9 +59,11 @@ Routes are the exact registered path with a defined query policy (current write
 routes accept no semantic query); content type is a parsed, lower-cased media type
 plus deterministically ordered parameters. Duplicate/ambiguous Content-Length,
 unsupported Transfer-Encoding, multi-valued identity/content headers, unsupported
-method/path/media type, authority failure, interruption, and over-limit body are
+method/path/media type, authority failure, and over-limit body are
 **transport-envelope failures before receipt**. They return the applicable
-4xx/503 and leave the browser attempt durable.
+4xx/503 and leave the browser attempt durable. An interrupted body (fewer bytes
+than promised) is **not** in this set — it proceeds as a partial witness marked
+incomplete; see law 2.
 
 The server recomputes the digest. One receive transaction gives:
 
@@ -74,18 +76,18 @@ The server recomputes the digest. One receive transaction gives:
 Order is load-bearing:
 
 1. Validate authority and the registered transport envelope before body read.
-2. Read one complete bounded body. Interrupted/over-limit bodies remain client
-   attempts; do not claim receipt or drain an unbounded socket. **The server still
-   keeps its own non-authoritative witness of what arrived, explicitly marked
-   incomplete** (amended 2026-07-28, approved by the human at 05:43; proposed in
-   `user-event-journal-implementation.md` §Amendments). Without this, tightening
-   receipt semantics would *reduce* recoverability for every client that has no
-   durable attempt store of its own — the CLI and `curl` paths, which the browser
-   increments do not cover. Today the server witnesses an interrupted body
-   *badly*: `watch.py:8387` reads `min(nbytes, MAX_BODY)` and never compares the
-   result to `nbytes`, so a short read is appended as though complete (#371). A
-   witness marked incomplete is strictly better than that, and refusing to witness
-   at all is strictly worse.
+2. Read one complete bounded body. An over-limit body remains a client
+   attempt; do not claim receipt or drain an unbounded socket. **An
+   interrupted body (fewer bytes than promised) is kept as a partial witness
+   marked incomplete and allowed to proceed** — it claims a receipt like any
+   registered envelope and is processed, with the shortfall recorded
+   (`short`/`got` in submissions.log) so a reader recovering the words knows
+   what arrived is partial (amended per the human's 05:43 ruling on #263 Q2,
+   "keep a partial witness marked incomplete"; the earlier amendment kept the
+   witness but refused the request with a 400, and the ruling removed the
+   refusal). Without this, tightening receipt semantics would *reduce*
+   recoverability for every client that has no durable attempt store of its
+   own — the CLI and `curl` paths, which the browser increments do not cover.
 3. Compute digest and durably commit receipt plus `received` transition.
 4. Best-effort append `submissions.log`; failure records `shadow_failed` health
    but cannot invalidate receipt.
@@ -347,7 +349,8 @@ Cutover is versioned and quiesced; old and new direct writers never overlap:
 
 ## Red-first acceptance fixtures
 
-1. authority/unknown route/bad framing/interrupted/over-limit => no receipt;
+1. authority/unknown route/bad framing/over-limit => no receipt; an interrupted
+   body is the exception — it proceeds as a partial witness marked incomplete;
 2. registered malformed JSON and schema/domain-invalid JSON => `202`, stable
    receipt/status URL, then durable rejected; retry preserves identity/status;
 3. journal fsync failure => no `202`, attempt retained;

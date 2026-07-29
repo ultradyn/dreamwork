@@ -13398,29 +13398,21 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
             want = min(nbytes, MAX_BODY)
             body = self.rfile.read(want)
             truncated = nbytes > MAX_BODY
-            # `truncated` catches a body too LARGE. Nothing caught one that
-            # arrived SHORT (#371) — a connection dropped mid-body reads fewer
-            # bytes than promised and was witnessed as complete. The response
-            # behaviour is deliberately unchanged: whether to refuse or to keep
-            # a partial marked incomplete is Q2 of #263's open ask, and this
-            # only makes the witness truthful, which either answer needs.
+            # `truncated` catches a body too LARGE; `short` catches one that
+            # arrived SMALL (#371) — fewer bytes than promised, a connection
+            # dropped mid-body. They are opposite conditions.
             short = len(body) < want
             self._body = body
-            # E1 envelope (#263 lane E): a body that arrived SHORT is a broken
-            # transport promise, not a complete envelope. Law 2 of
-            # `user-event-journal.md` §Receive and idempotency decides
-            # transport-envelope failures BEFORE receipt: an interrupted body
-            # remains a client attempt and never creates a journal receipt.
-            # `submissions.log` still keeps the partial bytes (marked
-            # incomplete by `short`), so tightening receipt semantics does not
-            # reduce recoverability — the incomplete-witness amendment he
-            # ruled on at 05:43. The witness runs before the 400 (#199), as it
-            # always has.
-            if short:
-                log_submission(target, self.path, body, nbytes, truncated,
-                               short)
-                self.send_error(400)
-                return
+            # #371 policy (his 05:43 ruling on #263 Q2): a body that arrived
+            # SHORT is NOT refused. It is kept as a partial witness marked
+            # incomplete and allowed to proceed through the normal pipeline.
+            # Law 2 of `user-event-journal.md` §Receive and idempotency was
+            # amended to match: an interrupted body claims a receipt like any
+            # registered envelope and is processed, with the shortfall
+            # recorded (`short`/`got`) so a reader recovering the words knows
+            # what arrived is partial. (Earlier the partial bytes were kept
+            # but the request was refused with a 400; the ruling removed the
+            # refusal.) The witness still runs before any refusal (#199).
             # The write-route dispatch is ONE table, derived from itself, so a
             # new route added later is both handled here and covered by E2's
             # "every write route commits a receipt" test (rather than slipping
@@ -13455,7 +13447,7 @@ def make_handler(target, dev=False, authority=None, journal_shadow=True):
                 # never a refusal — the receipt already committed, so the
                 # request was accepted and the response must still be 202.
                 shadow_ok = log_submission(target, self.path, body, nbytes,
-                                           truncated=False, short=False)
+                                           truncated=False, short=short)
                 if not shadow_ok:
                     result = self.journal_result()
                     if result and result.receipt_id:
