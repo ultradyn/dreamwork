@@ -7923,6 +7923,71 @@ class TestHandoffMultiSha(unittest.TestCase):
         self.assertEqual(recs[0]["sha"], sha_a)
 
 
+class TestHandoffFoldCorrelation(unittest.TestCase):
+    """#409: correlate a fold by (id, sha), not id alone.
+
+    A fold citing one sha used to silence EVERY pending under that id, so a
+    second landing under the same id was suppressed by the first one's fold.
+    The fix: a fold that cites a sha a pending landed consumes ONLY that sha;
+    a fold whose cited shas match no pending (a merge commit, not the work
+    sha) falls back to id-only, so a legitimately-folded hand-off cannot
+    resurface — the fold-sha vocabulary is inconsistent by accident, not by
+    contract, and the fallback is what keeps the fix from a regression.
+    """
+
+    def test_a_fold_citing_one_sha_keeps_the_other_landing_visible(self):
+        # The live #401 shape is the fixture: pending twice (audit + fix
+        # halves) and folded once citing the audit sha. Both pending shas and
+        # the fold's cited sha are derived at runtime from the live file — a
+        # literal tuned to today's file is an expiry date (#409).
+        path = os.path.join(".dreamwork", "handoffs.md")
+        self.assertTrue(os.path.exists(path),
+                        "precondition: live handoffs.md must exist (#409)")
+        with open(path) as f:
+            text = f.read()
+        pending, _folded, _mal = watch.parse_handoffs(text)
+        shas = [row.sha for row in pending if row.id == "401"]
+        self.assertEqual(len(shas), 2,
+                         "precondition: #401 lands twice (audit + fix halves)")
+        self.assertNotEqual(shas[0], shas[1],
+                            "precondition: the two #401 landings must differ")
+        fold_line = next((ln for ln in text.splitlines()
+                          if "→ folded" in ln and "**#401**" in ln), "")
+        cited = set(re.findall(r"`([0-9a-f]{7,40})`", fold_line))
+        folded_half = [s for s in shas if s in cited]
+        open_half = [s for s in shas if s not in cited]
+        self.assertEqual(len(folded_half), 1,
+                         "precondition: the fold cites exactly one #401 sha")
+        self.assertEqual(len(open_half), 1)
+        # THE defect: id-only correlation hid BOTH halves, so rec_shas was
+        # empty. Reinstate `if row.id in folded_ids: continue` and this reds.
+        recs = watch.pending_handoff_records(text)
+        rec_shas = {r["sha"] for r in recs if r["id"] == "401"}
+        self.assertIn(open_half[0], rec_shas,
+                      "the unfolded #401 half must stay visible (#409)")
+        self.assertNotIn(folded_half[0], rec_shas,
+                         "the folded #401 half stays consumed")
+
+    def test_a_merge_sha_fold_does_not_resurface_a_consumed_handoff(self):
+        # The fallback the fix depends on. Most folds cite the MERGE commit
+        # (`merged \`X\``), not the work sha a pending landed; a fold whose
+        # cited shas match no pending must fall back to id-only, or the #409
+        # fix resurfaces every legitimately-folded hand-off in the file.
+        sha_work = "a1b2c3d"     # what the pending landed
+        sha_merge = "e5f6a7b"    # the coordinator's merge commit (differs)
+        self.assertNotEqual(sha_work, sha_merge)
+        text = (
+            "# Hand-offs\n\n## Folded\n\n"
+            f"- **#5** → folded (2026-07-29 10:00): merged `{sha_merge}`\n"
+            "\n## Pending\n\n"
+            f"- **#5** · landed `{sha_work}` · 2026-07-29 09:50 · by x — y\n"
+        )
+        recs = watch.pending_handoff_records(text)
+        self.assertEqual([r["id"] for r in recs], [],
+                         "a merge-sha fold matching no pending falls back to "
+                         "id-only — the hand-off stays consumed")
+
+
 class TestSkillIdentity(unittest.TestCase):
     """#426 — the identity signal a running agent reads to tell its own tree moved.
 

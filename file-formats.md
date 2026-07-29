@@ -370,7 +370,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 |---|---|---|---|
 | `.dreamwork/tasks.md` | humans today; the dashboard once #98 lands | One `- **#N**` entry per task; a combined head `- **#N/#M**` is a single entry naming every id in its ids-only bold span, and both ledger readers (`watch.parse_ledger`, `lint.check_ledger_sections`) count every id — so `#7/#8` is two ids in one entry, not one. `Next id: **N**` in the header. Ids are **permanent**, so a duplicate is unrecoverable and `Next id` must exceed every id present. Origin is recorded forward-only from #216 — the section below | `lint.py` |
 | `.dreamwork/status.json` | `watch.py`'s status reader; **`dreamhub.py`** | Valid JSON, and now an interface — see below | `lint.py` |
-| `.dreamwork/handoffs.md` | the coordinator's tick; `watch.py`'s status panel; `lint.py` | Append-only. **Section order is `## Folded` then `## Pending`** so an EOF append lands under Pending (the instruction is true). Id grammar: plain `#N`, sub-id `#Na`, or combined `#N/#M` in the bold head. Pending line: `- **#…** · landed \`<sha>\` [\\\`<sha>\\\`…] · <ts> · by <claimer> — what` — one **or more** backticked shas (#415); a task landing in two commits is the ordinary case. Folded line: `- **#…** → folded (ts): …`. Nothing moves; correlation normalises sub-id/combined to parent digit id(s) against `## Open`. A bolded-id line in the wrong section or with an unrecognised head is malformed (loud), never silent | `lint.py` |
+| `.dreamwork/handoffs.md` | the coordinator's tick; `watch.py`'s status panel; `lint.py` | Append-only. **Section order is `## Folded` then `## Pending`** so an EOF append lands under Pending (the instruction is true). Id grammar: plain `#N`, sub-id `#Na`, or combined `#N/#M` in the bold head. Pending line: `- **#…** · landed \`<sha>\` [\\\`<sha>\\\`…] · <ts> · by <claimer> — what` — one **or more** backticked shas (#415); a task landing in two commits is the ordinary case. Folded line: `- **#…** → folded (ts): …` (the note cites the landing sha in prose — `citing \`sha\`` / `merged \`sha\`` — read by correlation). Nothing moves; correlation is by (id, sha) (#409): a fold citing a sha a Pending landed consumes only that sha; a fold whose cited shas match no Pending falls back to id-only. Sub-id/combined normalise to parent digit id(s) against `## Open`. A bolded-id line in the wrong section or with an unrecognised head is malformed (loud), never silent | `lint.py` |
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
 | `.dreamwork/run-mode` | `watch.py` dashboard + the coordinator/main dreamer on tick and via `watch-events.log` | One line: one name from `watch.py`'s `RUN_MODES` (`lackadaisical`, `hot`, `assisted`). Absent/unknown → `lackadaisical`. Machine-local, **gitignored** — operational posture, not a portable project default. `status.json` may mirror it later but never owns it | `lint.py` |
@@ -623,10 +623,16 @@ A **Pending** entry is one line and must state four things — the task id,
 the **sha** that landed, **who** is claiming it (`by <claimer>`), and a
 one-line `— what landed`. A **Folded** entry is the consumption marker: one
 line naming the id and a `→ folded (ts):` note saying where it landed in the
-ledger. Correlation is by id (exact token for fold consumption; parent
-id(s) for the open-ledger WARN): a Pending entry is **consumed** iff a
-Folded entry names the same token, so a folded hand-off is never flagged
-again. The fold record is appended in the same increment as the ledger move
+ledger. Correlation is by **(id, sha)** (#409): a fold that cites a sha a
+Pending landed — backticked in the note, `citing \`f2c950e\`` — consumes ONLY
+that sha, so a second landing under the same id is not silenced by the first
+one's fold. The fold-sha vocabulary is inconsistent by accident (most folds
+cite the MERGE commit `merged \`cb476a7\``, not the work sha), so the
+fallback is an **id-level** decision: when a fold's cited shas match no
+Pending for that id, correlation falls back to id-only and a
+legitimately-folded hand-off cannot resurface. Parent id(s) are still used
+for the open-ledger WARN. The fold record is appended in the same increment
+as the ledger move
 (the coordinator's only act on this file besides reading), so a hand-off
 marked folded while its task is still under `## Open` is a stale record, not
 a normal state — and `lint.check_handoffs` WARNs on exactly that.
