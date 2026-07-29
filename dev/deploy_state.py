@@ -503,6 +503,150 @@ def stop_deployed(port: int, snap: str, *, signal_num: int = 15,
     return 0
 
 
+# --- #508: the deployed server must BE the process the recipe spawned -------
+#
+# The defect `just deploy` had: it reported `deployed <rev> on :<port>` while
+# the process serving that port was the OLD one. Mechanism (reproduced in a
+# fixture, evidence in the commit message and the #508 brief):
+#   1. The deployed server ran with `--dev`, which implies autoreload
+#      (watch.py: `if args.autoreload or args.dev:` -> `_watch_source_and_restart`).
+#   2. The recipe's `mv $snap.tmp $snap` OVERWRITES the snapshot the old server
+#      is running, so the autoreload thread sees the mtime change and
+#      `os.execv`s the OLD process IN PLACE — same pid, fresh GENERATION,
+#      rebinding the port (the listening socket is close-on-exec, so it
+#      flickers free during the exec then rebinds).
+#   3. `--stop-deployed` can grade that flicker as "port free" and return
+#      success while the old process rebinds; or the old process simply
+#      survives the stop's timing window.
+#   4. The replacement `nohup python3 "$snap" … &` then dies on bind
+#      (EADDRINUSE), invisibly — nothing checks the spawned pid stayed up.
+#   5. The readiness loop (`curl -sf … && echo "deployed …"`) passes against
+#      whatever IS listening — the old, re-exec'd process. Success is printed
+#      and it is a lie.
+#
+# The structural root cause: success was reported on LIVENESS (a curl 200),
+# not IDENTITY (the listener is the process the recipe spawned). A curl 200
+# grades whatever answers, and autoreload's in-place re-exec makes the old
+# process's argv match the new snapshot, so even an argv check alone is not
+# proof — the PID is the load-bearing signal. The fix below makes success
+# TRUE BY CONSTRUCTION: `verify_deployed` returns 0 only when
+# `listening_pid(port) == expect_pid` AND that pid's argv runs the snap.
+
+
+def _pid_alive(pid):
+    """True if `pid` is a running (non-zombie) process. `os.kill(pid, 0)`
+    returns 0 for a zombie and for a not-yet-reaped child, so /proc/status is
+    read directly — the verify step's 'new server died' branch would lie
+    otherwise (a dead-but-unreaped new pid would read alive)."""
+    if pid is None:
+        return False
+    try:
+        with open(f"/proc/{pid}/status") as f:
+            for line in f:
+                if line.startswith("State:"):
+                    return line.split()[1] != "Z"
+    except (FileNotFoundError, PermissionError):
+        return False
+    return False
+
+
+def wait_port_free(port, wait_s=10.0, settle=0.4):
+    """Bounded wait for :port to have NO listener, confirmed to STAY none.
+
+    Used between `--stop-deployed` and the new-server start. A single
+    `listening_pid is None` sample is NOT proof: the autoreload `os.execv`
+    flicker frees the close-on-exec socket for milliseconds before the new
+    image rebinds, and `stop_deployed`'s 50ms poll can land in that window and
+    return success. So a free sample must be confirmed by staying free for
+    `settle` seconds. Returns 0 once it stays free, 1 if still held at the
+    deadline — the recipe refuses to start the new server (which would die on
+    bind, invisibly) and leaves the dashboard running.
+    """
+    deadline = time.time() + wait_s
+    while time.time() < deadline:
+        if listening_pid(port) is None:
+            quiet_to = time.time() + settle
+            stayed_free = True
+            while time.time() < quiet_to:
+                if listening_pid(port) is not None:
+                    stayed_free = False
+                    break
+                time.sleep(0.05)
+            if stayed_free:
+                print(f":{port} is free (held free for {settle}s)")
+                return 0
+        time.sleep(0.1)
+    print(f"deploy refused: :{port} never freed within {wait_s}s — the old "
+          f"process re-exec'd/respawned and is still holding it. The new "
+          f"server was NOT started; his dashboard was left running.",
+          file=sys.stderr)
+    return 1
+
+
+def verify_deployed(port, snap, expect_pid, *, wait_s=15.0):
+    """Prove the listener on :port IS the process the recipe spawned.
+
+    Returns 0 ONLY when `listening_pid(port) == expect_pid` AND that pid's
+    argv runs `snap`. Returns 1 (fail loud) when:
+      - `expect_pid` is no longer alive — the new server died (on bind because
+        the old process still held the port, on boot, any reason). `nohup … &`
+        hides this from the recipe; without this check a curl against the old
+        process would print a false success.
+      - a DIFFERENT pid holds :port — the old process never freed it / re-exec'd
+        in place and rebound. Autoreload's in-place re-exec keeps the SAME pid
+        as before AND its argv matches the new snap, so neither a curl 200 nor
+        an argv check alone can tell it from the real new server; the PID is
+        the load-bearing signal, and a foreign pid is a hard refuse.
+      - nothing comes up on :port within `wait_s`.
+
+    This is the #508 acceptance bar: success is identity, not liveness.
+    """
+    deadline = time.time() + wait_s
+    while time.time() < deadline:
+        holder = listening_pid(port)
+        if holder is None:
+            # Port not up yet — but if the spawned process already exited, the
+            # bind failed (or it crashed on boot). Fail now rather than wait
+            # the full window: nothing is coming.
+            if not _pid_alive(expect_pid):
+                print(f"deploy verify failed: the new server (pid {expect_pid}) "
+                      f"exited without taking :{port} — it most likely died on "
+                      f"bind because the old process still held the port, or "
+                      f"crashed on boot. See serve.log. Refusing to report "
+                      f"deployed.", file=sys.stderr)
+                return 1
+            time.sleep(0.1)
+            continue
+        if holder != expect_pid:
+            argv = process_argv(holder)
+            preview = " ".join(argv)[:160] if argv else "<unreadable>"
+            print(f"deploy verify failed: :{port} is held by pid {holder}, NOT "
+                  f"the new server (pid {expect_pid}). The old process never "
+                  f"freed the port — an autoreload in-place re-exec keeps its "
+                  f"argv identical to the new snap ({preview!r}), so a curl 200 "
+                  f"against it is the false success #508 names. The PID is the "
+                  f"proof and it is a foreign pid. Refusing to report deployed.",
+                  file=sys.stderr)
+            return 1
+        # holder == expect_pid: the listener is the process we spawned.
+        # Confirm its argv is the snap (defense in depth — a pid collision with
+        # a foreign process is astronomically unlikely, but the argv check is
+        # cheap and closes it).
+        if not argv_runs_snap(process_argv(expect_pid), snap):
+            print(f"deploy verify failed: :{port} is held by pid {expect_pid} "
+                  f"but its argv does not run {snap!r}. Refusing to report "
+                  f"deployed.", file=sys.stderr)
+            return 1
+        print(f"deploy verified: :{port} held by pid {expect_pid} running "
+              f"{snap} — the process the recipe spawned (identity, not a "
+              f"curl 200).")
+        return 0
+    print(f"deploy verify failed: nothing came up on :{port} within {wait_s}s "
+          f"(new server pid {expect_pid} alive={_pid_alive(expect_pid)}). "
+          f"Refusing to report deployed.", file=sys.stderr)
+    return 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Report whether the deployed dashboard is current. Also "
@@ -549,16 +693,43 @@ def main() -> int:
              "is --snap (the #431 fix: never pkill -f a pattern that can "
              "match the caller). Exit 0 when nothing was listening or the "
              "server was stopped; exit 1 when the port owner is not our snap.")
+    # #508 — the two verbs that make the deploy success line TRUE BY
+    # CONSTRUCTION. Both run AFTER --stop-deployed (and the new server has
+    # been started for --verify-deployed). A curl 200 is liveness; these are
+    # identity, so a respawned/old process or a new server that died on bind
+    # fails LOUDLY instead of printing a false 'deployed'.
+    actions.add_argument(
+        "--wait-port-free", action="store_true",
+        help="with --port: bounded wait for the port to have NO listener and "
+             "stay none (the autoreload os.execv flicker frees the socket "
+             "briefly before a rebind — a single free sample is not proof). "
+             "Exit 0 once it stays free, 1 if still held at the deadline. Run "
+             "between --stop-deployed and the new-server start.")
+    actions.add_argument(
+        "--verify-deployed", action="store_true",
+        help="with --port, --snap, --expect-pid: prove the listener on --port "
+             "IS --expect-pid (the process the recipe just spawned) and its "
+             "argv runs --snap. Exit 0 only on that identity match; 1 when a "
+             "foreign/respawned pid holds the port or --expect-pid died (the "
+             "new server died on bind). Replaces the curl-liveness readiness "
+             "that printed 'deployed' against the old process.")
     ap.add_argument(
         "--dest", default=None,
         help="with --ship-siblings: directory the sibling modules are "
              "written into (default: the deployed dir, beside the snapshot).")
     ap.add_argument(
         "--port", type=int, default=None,
-        help="with --stop-deployed: the deploy port (from .dreamwork/watch-port).")
+        help="with --stop-deployed/--wait-port-free/--verify-deployed: the "
+             "deploy port (from .dreamwork/watch-port).")
     ap.add_argument(
         "--snap", default=None,
-        help="with --stop-deployed: absolute path of the deployed snapshot.")
+        help="with --stop-deployed/--verify-deployed: absolute path of the "
+             "deployed snapshot.")
+    ap.add_argument(
+        "--expect-pid", type=int, default=None,
+        help="with --verify-deployed: the pid of the new server the recipe "
+             "just spawned ($! after the nohup start). The listener must BE "
+             "this pid for success.")
     args = ap.parse_args()
 
     if args.resolve_snapshot is not None:
@@ -599,6 +770,17 @@ def main() -> int:
             print("--stop-deployed requires --port and --snap", file=sys.stderr)
             return 2
         return stop_deployed(args.port, args.snap)
+    if args.wait_port_free:
+        if args.port is None:
+            print("--wait-port-free requires --port", file=sys.stderr)
+            return 2
+        return wait_port_free(args.port)
+    if args.verify_deployed:
+        if args.port is None or not args.snap or args.expect_pid is None:
+            print("--verify-deployed requires --port, --snap and --expect-pid",
+                  file=sys.stderr)
+            return 2
+        return verify_deployed(args.port, args.snap, args.expect_pid)
 
     st = {"current": False}
     portfile = os.path.join(ROOT, ".dreamwork", "watch-port")

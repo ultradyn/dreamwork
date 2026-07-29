@@ -969,3 +969,452 @@ def test_justfile_deploy_ships_siblings_and_guards_imports_before_stopping():
     assert i_ship < i_stop and i_import < i_stop, (
         "the sibling/import guards must run BEFORE --stop-deployed — a "
         "guard after the stop leaves his dashboard dark on a bad snapshot")
+
+
+# --- #508: deploy success must be IDENTITY, not a curl-200 liveness ----------
+#
+# The defect: `just deploy` printed `deployed <rev> on :<port>` while the port
+# was served by the OLD process. Mechanism (reproduced in a fixture, evidence
+# in the #508 commit): the deployed server ran with --dev (=> autoreload); the
+# recipe's `mv` overwrote the snapshot it watches, so autoreload os.execv'd the
+# OLD process IN PLACE (same pid, port flickered free via close-on-exec then
+# rebind); stop_deployed could grade that flicker as 'free' and succeed while
+# the old process rebind; the new server then died on bind (invisible under
+# `nohup … &`); and the curl-liveness readiness printed 'deployed' against the
+# old process. The fix: `verify_deployed` returns 0 only when the listener IS
+# the pid the recipe spawned — identity, not liveness. Autoreload's in-place
+# re-exec keeps the old argv identical to the new snap, so the PID is the
+# load-bearing signal (proven by test_verify_deployed_pid_check_load_bearing).
+#
+# Production line whose removal fails the fix tests: `verify_deployed` (and the
+# justfile's `--verify-deployed --expect-pid` call). Every fixture binds a
+# PRIVATE ephemeral port (127.0.0.1:0), never :35110 or the 39880-39899 guard
+# range, and never signals any process outside its own fixture.
+
+LISTENER_SRC = textwrap.dedent("""\
+    import socket, sys, time
+    port = int(sys.argv[1])
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(("127.0.0.1", port))
+    s.listen(8)
+    while True:
+        time.sleep(1)
+""")
+
+
+def _ephemeral_port():
+    """A free port on 127.0.0.1, never the live dashboard or a guard range."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        p = s.getsockname()[1]
+    assert p != 35110 and not (39880 <= p <= 39899)
+    return p
+
+
+def _wait_listening(port, pid, timeout=15.0):
+    """Block until `pid` owns the listen on `port`, or timeout. Precondition
+    helper: the tests below assert the fixture server really bound before they
+    exercise the production line, so a green run cannot pass over a server that
+    never started. The timeout is generous (15s) because this host is a shared
+    workstation whose load sits near 30 on 16 cores — a fixture listener's bind
+    is instant once the interpreter starts, but interpreter STARTUP under load
+    is the slow part, and a 5s timeout flakes on it."""
+    deadline = _time.time() + timeout
+    while _time.time() < deadline:
+        if ds.listening_pid(port) == pid:
+            return True
+        _time.sleep(0.05)
+    return False
+
+
+def test_deploy_cycle_verify_identity_after_stop_and_start(tmp_path):
+    """The full cycle the recipe runs: stop the old listener, start a new one,
+    and verify the listener AFTER is the process the recipe spawned (a DIFFERENT
+    pid from before) whose argv is the new snapshot. This is the brief's first
+    acceptance test.
+
+    Production line whose removal fails this test: `verify_deployed`'s success
+    return (the `holder == expect_pid` + argv check + `return 0`). Make
+    verify_deployed return 1 unconditionally and this goes red.
+    """
+    pattern = _unique_snap_name()
+    snap = tmp_path / pattern
+    snap.write_text(LISTENER_SRC)
+    port = _ephemeral_port()
+
+    old = subprocess.Popen([sys.executable, str(snap), str(port)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           start_new_session=True)
+    new = None
+    try:
+        # PRECONDITION (asserted at runtime, not assumed): the old server really
+        # holds the port before the cycle begins.
+        assert _wait_listening(port, old.pid), "old fixture server never bound"
+        before_pid = ds.listening_pid(port)
+        assert before_pid == old.pid
+
+        # stop the old listener (the recipe's --stop-deployed half).
+        assert ds.stop_deployed(port, str(snap), wait_s=3.0) == 0
+        # PRECONDITION: the port really is free now (stop worked) — else the
+        # new server cannot bind and the verify step would test nothing.
+        deadline = _time.time() + 3
+        while _time.time() < deadline and ds.listening_pid(port) is not None:
+            _time.sleep(0.05)
+        assert ds.listening_pid(port) is None, "old listener never released :%s" % port
+
+        # start the NEW server only AFTER the old one released the port (the
+        # recipe's nohup half) — starting it earlier would make it die on bind.
+        new = subprocess.Popen([sys.executable, str(snap), str(port)],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               start_new_session=True)
+        # PRECONDITION: the new server has now taken the port.
+        assert _wait_listening(port, new.pid), "new fixture server never bound"
+
+        rc = ds.verify_deployed(port, str(snap), new.pid)
+        assert rc == 0, "verify must succeed when the spawned process holds the port"
+        after_pid = ds.listening_pid(port)
+        # AFTER: a DIFFERENT pid from BEFORE, and its argv is the new snapshot.
+        assert after_pid == new.pid
+        assert after_pid != before_pid, (
+            "the listener after deploy is the SAME pid as before — the cycle "
+            "did not replace the process (the #508 defect)")
+        assert ds.argv_runs_snap(ds.process_argv(after_pid), str(snap))
+    finally:
+        for p in (old, new):
+            if p is None:
+                continue
+            try:
+                os.kill(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.wait(timeout=3)
+
+
+def test_verify_deployed_refuses_foreign_holder(tmp_path):
+    """The failure mode the brief names: the old process still holds the port
+    (it respawned / re-exec'd in place and survived the stop's timing window),
+    so the new server dies on bind. verify_deployed must REFUSE — never print
+    success — because the listener is NOT the spawned process.
+
+    Asserts the MESSAGE names the foreign holder, not merely rc==1: with a dead
+    spawned pid, disabling the pid-check branch alone still returns 1 via the
+    argv check on the dead pid — so a bare rc assertion would stay green under
+    that sabotage (a hollow red-run). The message flips when the pid-check
+    branch is removed, which is what makes this a real named-line red-proof.
+
+    Production line whose removal fails this test: the `if holder !=
+    expect_pid: return 1` branch (specifically its 'NOT the new server'
+    message). Disable the branch and verify returns 1 via the argv path with a
+    different message — the 'NOT the new server' assertion fails.
+    """
+    pattern = _unique_snap_name()
+    snap = tmp_path / pattern
+    snap.write_text(LISTENER_SRC)
+    port = _ephemeral_port()
+    # OLD holds the port — the residual state after an autoreload in-place
+    # re-exec that survived the stop window.
+    old = subprocess.Popen([sys.executable, str(snap), str(port)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           start_new_session=True)
+    new = None
+    try:
+        # OLD must bind FIRST — then NEW is guaranteed to die on bind. Starting
+        # them back-to-back races the bind (under load NEW can win, leaving OLD
+        # dead and this test waiting for a pid that will never listen).
+        assert _wait_listening(port, old.pid), "old never bound"
+        # NEW tries the same port and dies on bind (EADDRINUSE), invisibly.
+        new = subprocess.Popen([sys.executable, str(snap), str(port)],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               start_new_session=True)
+        # PRECONDITION: the new server really did die on bind (the defect's
+        # invisible half) — without this, verify might be refusing for the
+        # wrong reason. Poll until it exits on EADDRINUSE.
+        deadline = _time.time() + 5
+        while _time.time() < deadline and _alive(new.pid):
+            _time.sleep(0.02)
+        assert not _alive(new.pid), (
+            "precondition failed: new server did not die on bind, so this "
+            "test cannot prove verify refuses a foreign holder")
+        assert ds.listening_pid(port) == old.pid
+
+        import io, contextlib
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = ds.verify_deployed(port, str(snap), new.pid, wait_s=2.0)
+        assert rc == 1, (
+            "verify reported success while a FOREIGN pid (the old process) "
+            "holds the port and the spawned process is dead — that is the "
+            "#508 false-success, not fixed")
+        assert "NOT the new server" in err.getvalue(), (
+            "verify refused but did not name the foreign holder — the "
+            "pid-check branch (whose message says 'NOT the new server') is "
+            "not the path taken; a dead spawned pid with a foreign holder "
+            "must trip that branch:\n" + err.getvalue())
+    finally:
+        for p in (old, new):
+            if p is None:
+                continue
+            try:
+                os.kill(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.wait(timeout=3)
+
+
+def test_verify_deployed_refuses_when_new_server_died(tmp_path):
+    """The new server died and nothing holds the port. verify must refuse (the
+    spawned pid is gone), not wait out the whole window silently.
+
+    Production line whose removal fails this test: the `if not
+    _pid_alive(expect_pid): return 1` branch in verify_deployed. Sabotage by
+    making _pid_alive always True and verify spins to the deadline; the message
+    changes from 'exited without taking' to 'nothing came up', failing the
+    assertion on the message.
+    """
+    snap = tmp_path / _unique_snap_name()
+    snap.write_text("# none\n")
+    port = _ephemeral_port()
+    # a process that already exited — the spawned server that died on boot.
+    dead = subprocess.Popen([sys.executable, "-c", "pass"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    dead.wait(timeout=3)
+    assert not _alive(dead.pid), "precondition: the spawned pid really is dead"
+
+    import io, contextlib
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        rc = ds.verify_deployed(port, str(snap), dead.pid, wait_s=1.5)
+    assert rc == 1, "verify must refuse when the spawned process is dead"
+    assert "exited without taking" in err.getvalue(), (
+        "verify refused via the wrong branch — the dead-pid check that names "
+        "'exited without taking' is not the path taken:\n" + err.getvalue())
+
+
+def test_verify_deployed_pid_check_load_bearing_over_argv(tmp_path):
+    """WHY the PID is the load-bearing signal, not argv: autoreload's in-place
+    os.execv keeps the OLD process's argv IDENTICAL to the new snapshot (it
+    re-execs `python3 $snap …`), so an argv-only check would accept the old
+    process as 'deployed'. This fixture is the exact shape that defeats an
+    argv-only check: the port is held by the OLD process (argv runs the snap),
+    AND the spawned process (expect_pid) is ALSO alive running the snap — but
+    on a DIFFERENT port. Both argvs run the snap; only the PID distinguishes
+    the listener from the spawned process. verify MUST refuse on the pid
+    mismatch alone.
+
+    Production line whose removal fails this test: the `if holder !=
+    expect_pid` pid-equality check. Replace the identity check with an
+    argv-only check on expect_pid (drop the pid compare) and this test goes
+    RED — because expect_pid's argv runs the snap, an argv-only verify returns
+    0 (false success) while the OLD process still serves the deploy port.
+    """
+    pattern = _unique_snap_name()
+    snap = tmp_path / pattern
+    snap.write_text(LISTENER_SRC)
+    port = _ephemeral_port()
+    other_port = _ephemeral_port()
+    assert port != other_port
+    # The OLD process holds the deploy port; argv runs the snap (exactly what
+    # an autoreload in-place re-exec leaves behind).
+    old = subprocess.Popen([sys.executable, str(snap), str(port)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           start_new_session=True)
+    # The spawned process is alive and ALSO runs the snap — but on a different
+    # port, so it is NOT the listener on the deploy port. This is the shape
+    # that makes an argv-only check accept it: both argvs match the snap.
+    spawned = subprocess.Popen([sys.executable, str(snap), str(other_port)],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               start_new_session=True)
+    try:
+        assert _wait_listening(port, old.pid)
+        assert _wait_listening(other_port, spawned.pid)
+        # PRECONDITION (the whole point): BOTH processes' argv run the snap, so
+        # an argv-only identity check cannot tell them apart — only the pid can.
+        assert ds.argv_runs_snap(ds.process_argv(old.pid), str(snap)), (
+            "precondition: the old holder's argv runs the snap")
+        assert ds.argv_runs_snap(ds.process_argv(spawned.pid), str(snap)), (
+            "precondition: the spawned process's argv ALSO runs the snap — "
+            "without both matching, an argv-only check could not be proven "
+            "insufficient here")
+        assert old.pid != spawned.pid
+
+        rc = ds.verify_deployed(port, str(snap), spawned.pid, wait_s=2.0)
+        assert rc == 1, (
+            "verify accepted a deploy port held by a process whose pid is NOT "
+            "the spawned one, even though both argvs run the snap — an "
+            "argv-only check is insufficient (autoreload re-exec makes the old "
+            "argv match the new snap); the PID is load-bearing and this must "
+            "refuse")
+    finally:
+        for p in (old, spawned):
+            try:
+                os.kill(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.wait(timeout=3)
+
+
+def test_wait_port_free_returns_zero_when_free_and_one_when_held(tmp_path):
+    """wait_port_free: 0 when the port is (and stays) free; 1 when held at the
+    deadline. Both halves against real listeners on a private port.
+
+    Production line whose removal fails this test: the `return 1` refuse path
+    in wait_port_free (the held case). Make it always return 0 and the held
+    assertion fails.
+    """
+    port_free = _ephemeral_port()
+    assert ds.wait_port_free(port_free, wait_s=0.6, settle=0.2) == 0, (
+        "a free port must read free")
+
+    snap = tmp_path / _unique_snap_name()
+    snap.write_text(LISTENER_SRC)
+    port_held = _ephemeral_port()
+    holder = subprocess.Popen([sys.executable, str(snap), str(port_held)],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              start_new_session=True)
+    try:
+        assert _wait_listening(port_held, holder.pid)
+        assert ds.wait_port_free(port_held, wait_s=0.8, settle=0.2) == 1, (
+            "a port held for the whole window must be refused — starting the "
+            "new server against it would die on bind, invisibly")
+    finally:
+        try:
+            os.kill(holder.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        holder.wait(timeout=3)
+
+
+def test_wait_port_free_settle_rejects_the_execv_flicker(monkeypatch, tmp_path):
+    """The SETTLE is load-bearing: the autoreload os.execv flicker frees the
+    close-on-exec socket for milliseconds before the new image rebinds, so a
+    single `listening_pid is None` sample is not proof the port is free. This
+    feeds wait_port_free a FLICKERING listener (None briefly, then held again)
+    and asserts it does NOT declare free until the port STAYS none.
+
+    Production line whose removal fails this test: the inner settle loop in
+    wait_port_free (the `while time.time() < quiet_to` confirm). Remove it —
+    return 0 on the first None sample — and this test goes red, because the
+    flicker's brief None windows now read as 'free'.
+
+    The flicker is driven by a controlled `listening_pid` sequence rather than
+    a real rebinding process, because a sub-ms real flicker cannot be sampled
+    deterministically; the production settle LOOP runs for real against that
+    sequence (the sequence is the environment, not a rebuild of the unit).
+    """
+    held_pid = 999999  # a foreign pid that is not the recipe's spawned one
+    # A flicker: a short free window, then held again, then stays held — the
+    # shape of the os.execv close-on-exec gap. settle (0.3s, expressed below
+    # via time as 2 None samples before the rebind) exceeds the free window,
+    # so a correct settle never declares free.
+    seq = [None, None, held_pid, held_pid, held_pid, held_pid, held_pid]
+    state = {"i": 0}
+
+    def fake_listening_pid(port):
+        if state["i"] < len(seq):
+            v = seq[state["i"]]
+            state["i"] += 1
+            return v
+        return held_pid
+
+    monkeypatch.setattr(ds, "listening_pid", fake_listening_pid)
+    monkeypatch.setattr(_time, "sleep", lambda *_a: None)  # keep the loop snappy
+    rc = ds.wait_port_free(0, wait_s=0.5, settle=0.3)
+    assert rc == 1, (
+        "wait_port_free declared the port free during an execv-style flicker "
+        "(a brief None window that did not STAY none) — the settle that guards "
+        "the autoreload rebind gap is not in place")
+
+
+def test_verify_deployed_cli_wire(tmp_path):
+    """CLI verb the recipe calls: --verify-deployed --port --snap --expect-pid.
+
+    Production line: the `if args.verify_deployed` branch in main().
+    """
+    root = Path(__file__).resolve().parent
+    snap = tmp_path / _unique_snap_name()
+    snap.write_text(LISTENER_SRC)
+    port = _ephemeral_port()
+    server = subprocess.Popen([sys.executable, str(snap), str(port)],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              start_new_session=True)
+    try:
+        assert _wait_listening(port, server.pid)
+        r = subprocess.run(
+            [sys.executable, "dev/deploy_state.py", "--verify-deployed",
+             "--port", str(port), "--snap", str(snap),
+             "--expect-pid", str(server.pid)],
+            cwd=str(root), capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        assert "deploy verified" in r.stdout
+        assert str(server.pid) in r.stdout
+    finally:
+        try:
+            os.kill(server.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        server.wait(timeout=3)
+
+
+def test_justfile_deploy_verifies_identity_and_drops_dev_and_curl():
+    """Pin the recipe wiring for #508:
+      - it calls `--verify-deployed ... --expect-pid "$newpid"` (identity, not
+        a curl liveness), and only echoes success AFTER it;
+      - the success line is no longer a bare `curl -sf && echo deployed`;
+      - the deployed server is no longer started with `--dev` (autoreload was
+        the re-exec enabler — see the recipe comment);
+      - it waits for the port to be free before starting.
+
+    Production line: the deploy recipe body in justfile. Remove --verify-deployed
+    (or move the echo before it, or re-add --dev / the curl readiness) and the
+    relevant assertion goes red.
+    """
+    import re
+    root = Path(__file__).resolve().parent
+    text = (root / "justfile").read_text()
+    start = text.index("\ndeploy rev=")
+    rest = text[start + 1:]
+    end = len(rest)
+    for i, line in enumerate(rest.splitlines()[1:], start=1):
+        if line and not line[0].isspace() and not line.startswith("#") and ":" in line:
+            offset = 0
+            for j, l in enumerate(rest.splitlines()):
+                if j == i:
+                    end = offset
+                    break
+                offset += len(l) + 1
+            break
+    recipe = rest[:end]
+    cmd_lines = []
+    for line in recipe.splitlines():
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        cmd_lines.append(stripped)
+    joined = "\n".join(cmd_lines)
+
+    assert "--verify-deployed" in joined, (
+        "deploy recipe does not verify the listener's identity — the #508 "
+        "fix: success must be the spawned pid running the snap, not a curl 200")
+    assert "--expect-pid" in joined and '"$newpid"' in joined, (
+        "deploy recipe does not pass the spawned pid to --verify-deployed")
+    # the echo (success) must come AFTER the verify call.
+    i_verify = joined.index("--verify-deployed")
+    i_echo = joined.index('echo "deployed')
+    assert i_verify < i_echo, (
+        "the success echo must come AFTER --verify-deployed — echoing before "
+        "the identity check restores the false-success defect")
+    # the old curl-liveness readiness is gone from the command lines.
+    assert not re.search(r"curl\s+-sf", joined), (
+        "deploy recipe still uses curl -sf liveness as its readiness check — "
+        "that is the #508 defect (it grades whatever answers, not identity)")
+    # the deployed server is no longer started with --dev (autoreload enabler).
+    for line in cmd_lines:
+        if line.startswith("nohup python3"):
+            assert "--dev" not in line, (
+                "deploy recipe still starts the deployed server with --dev — "
+                "autoreload (implied by --dev) re-execs the old process in "
+                "place on this recipe's own `mv`, the race's enabler:\n" + line)
+    assert "--wait-port-free" in joined, (
+        "deploy recipe does not wait for the port to free before starting — "
+        "the stop/autoreload race can leave the old process holding the port")
