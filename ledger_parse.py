@@ -226,3 +226,81 @@ def store_ids_by_state(dreamwork_dir) -> tuple[list[str], list[str]]:
     finally:
         conn.close()
     return open_ids, landed_ids
+
+
+def store_series_raw(dreamwork_dir) -> dict | None:
+    """The first-sight model from the store's ``task_event`` table.
+
+    The post-cutover projection of ``watch.ledger_series``'s git-walk: the
+    synthetic ``migration:git`` rows carry exactly the first-sight arrival
+    and landing shape the burndown needs (R3 / design M3-A). Returns a dict
+    a consumer feeds into the same bucket builder the markdown walk uses:
+
+    - ``arrived``: ``{str(id): epoch}`` — first arrival (``to_state='open'``).
+    - ``landed``: ``{str(id): epoch}`` — first landing (``to_state='landed'``).
+    - ``first_sight``: ``{str(id): origin}`` — origin at first sight, from
+      the ``task`` table's ``origin`` column (the import parsed it once).
+    - ``latest_open``: ``set[str]`` — ids whose ``task.state`` is ``'open'``.
+    - ``commit_times``: ``[epoch]`` sorted — distinct event timestamps, the
+      store-side analog of the ledger-touching git commits the markdown walk
+      counts per bucket.
+
+    Returns ``None`` when the store is absent or unreadable, so a missing
+    store never breaks a reader (fail-closed toward markdown, same as
+    :func:`source_of_truth`).
+    """
+    db = store_path(dreamwork_dir)
+    if not db.exists():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        arrived_rows = conn.execute(
+            "SELECT task_id, MIN(at) FROM task_event "
+            "WHERE from_state IS NULL AND to_state = 'open' "
+            "GROUP BY task_id").fetchall()
+        landed_rows = conn.execute(
+            "SELECT task_id, MIN(at) FROM task_event "
+            "WHERE to_state = 'landed' "
+            "GROUP BY task_id").fetchall()
+        task_rows = conn.execute(
+            "SELECT id, state, origin FROM task").fetchall()
+        time_rows = conn.execute(
+            "SELECT DISTINCT at FROM task_event ORDER BY at").fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+    def _epoch(iso_at):
+        """Parse an event ``at`` ISO-8601 string to an int epoch."""
+        try:
+            from datetime import datetime
+            return int(datetime.fromisoformat(iso_at).timestamp())
+        except (ValueError, TypeError, OSError):
+            return None
+
+    arrived = {}
+    for tid, at in arrived_rows:
+        e = _epoch(at)
+        if e is not None:
+            arrived[str(tid)] = e
+    landed = {}
+    for tid, at in landed_rows:
+        e = _epoch(at)
+        if e is not None:
+            landed[str(tid)] = e
+    first_sight = {}
+    latest_open = set()
+    for tid, state, origin in task_rows:
+        s = str(tid)
+        first_sight[s] = origin if origin in KNOWN_ORIGINS else "unknown"
+        if state == "open":
+            latest_open.add(s)
+    commit_times = sorted(
+        e for e in (_epoch(r[0]) for r in time_rows) if e is not None)
+    return {"arrived": arrived, "landed": landed,
+            "first_sight": first_sight, "latest_open": latest_open,
+            "commit_times": commit_times}
