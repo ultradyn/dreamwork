@@ -540,70 +540,6 @@ Next id: **491**
   · related: **#381**
 
 
-- **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
-  reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified
-  · **the half that needs no ruling from him is DONE (`d33cc2f`)**: `submissions.log` now
-  records `short: true` and `got: <bytes>` when fewer bytes arrive than were promised, and
-  `file-formats.md` states that `short` and `truncated` are opposite conditions — a cap this
-  server applied versus a promise the client broke — with `lint.py` refusing either half of
-  the pair alone · proved with a real socket (larger `Content-Length` than bytes sent, then
-  `shutdown(SHUT_WR)`), because urllib will not lie about `Content-Length` and a mocked read
-  proves nothing about the read
-  · **what REMAINS is only the policy, and it is his**: whether a short body is refused, or
-  · **NOTE 11:16 — he has never actually been asked this.** It sat in `status.json`'s
-  `awaiting_human` panel, so the dashboard reported it as waiting on him, but there is **no open
-  `questions.md` entry** for `#263` Q2 and therefore no way for him to answer it. Removed from the
-  panel (the panel now mirrors the five real open questions); the block stays recorded here. **To
-  actually unblock this P1, Q2 must be asked** — deliberately not asked yet: five questions are
-  already open and unanswered, and `#263`'s E/H lanes are behind a second gate he has not opened
-  kept as a partial witness marked incomplete and allowed to proceed. That is **Q2 of #263's
-  ask**, filed 2026-07-28 and unanswered · the behaviour is deliberately unchanged until he
-  rules, and the witness is now truthful either way, so his answer is implementable in one
-  increment whichever way it goes
-  · #263's plan places that half at its increment 20 (envelope decided before the body is
-  read) · **blocked on #263 Q2 only** — no longer on `watch.py`, which is free
-  · **UNBLOCKED — his `#263` Q2 was answered at 05:43 and this entry never noticed** (found by
-  `#420`'s census, verified by the coordinator against `questions.md` 2026-07-28 16:08). The answer is
-  explicit: *"**Q2 yes** (amend law 2 to keep a partial witness marked incomplete)"*. So the one thing
-  this waited on has been settled for ten hours, `watch.py` is free, and **this is a startable P1**
-  · **and it is `#419`'s reverse direction, in its most expensive form:** the loop never asked Q2 as
-  its own question — it rode inside another entry — so when it was answered there was nothing pointing
-  back here. A ruling that arrives on a *neighbouring* question is invisible to the entry that needed
-  it. `#419`'s check must therefore key on the *decision*, not on the entry that happened to carry it
-  · **IN PROGRESS 2026-07-28 16:14** — `ccc @grok`, `.worktrees/371`, brief
-  `.dreamwork/docs/briefs/371-short-body-policy.md`, owning `watch.py` and `test_watch.py`. His ruling
-  is the spec: keep the partial witness, mark it incomplete, let it proceed
-  · the brief carries this entry's own hard-won method as a requirement rather than a suggestion: **a
-  mocked read proves nothing about the read**, so the test is a real socket with an oversized
-  `Content-Length` and `shutdown(SHUT_WR)`. And **two** red-proofs, because *keep it* and *mark it* are
-  two claims and one red covers only one
-  · it must **not** add a field to `file-formats.md` — the `#419` lane holds that file — so it reuses
-  the landed `short`/`got` spelling or reports the field it needs
-  · **RETRACTED 2026-07-28 16:22 — the "UNBLOCKED" note above is WRONG and I dispatched a lane on
-  it before catching that.** His *"Q2 yes"* amended the **design**; it did not authorise the
-  **implementation**. `user-event-journal-implementation.md:19` is explicit: *"landed in the design …
-  **Increment 20 implements it — behind the second gate.**"* And increment 20 is
-  **`E1 envelope`** (`:71`) — **lane E**, which his same 05:43 answer withheld: *"E, the HTTP
-  cutover, and H, the mixed-version gate, **stay behind a second gate** until A–D are proved."*
-  Lanes A, B, C and F are done; **D is not**, so the gate is correctly still shut
-  · **so this entry is blocked on the SECOND GATE, not on Q2.** The lane (`ccc @grok`, dispatched
-  16:14) was killed at 16:20 having committed nothing; its 233-line working diff is kept at
-  `scratchpad/371-abandoned.diff` rather than discarded, since it is the same work whenever the gate
-  opens. No commit, no merge, no change to `master`
-  · **the mistake, named exactly, because the repo had already written this distinction down:** this
-  entry's own text says *"the approval covers the CONTRACT, not #263's implementation"* about the
-  01:27 approval, and I made the identical error one question later with the 05:43 one. **"He
-  answered it" and "we may build it" are different facts, and an answer that arrives inside a
-  neighbouring entry carries no authority beyond its own scope.** I read *"Q2 yes"* as a green light
-  because the sentence was affirmative
-  · `#420`'s census was right that the ruling landed and unprocessed, and wrong — as I was — that
-  processing it means implementing it. Processing it means **recording** that the design changed,
-  which is what this note does
-  · **what would actually unblock it, and it is a question rather than work**: prove lane D, then ask
-  him to open the second gate. That ask does not exist, which makes it a `#419` case — a human gate
-  with no question — and the honest count of open questions on his desk is therefore still 3, not 4,
-  until lane D is proved and the ask is worth making
-
 - **#368** — Break the large Python files into a modular, testable codebase · P2 ·
   refactor/architecture · origin: **human** · **human via watch `add-idea` 2026-07-28 02:46**:
   *"after the cli, we should refactor the large python files into a proper modular codebase
@@ -2832,6 +2768,71 @@ Next id: **491**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#371** — `do_POST` witnesses an interrupted body as complete · P1 ·
+  reliability bug · origin: **loop** · found by dreamer-263-plan, coordinator verified
+  · **the half that needs no ruling from him is DONE (`d33cc2f`)**: `submissions.log` now
+  records `short: true` and `got: <bytes>` when fewer bytes arrive than were promised, and
+  `file-formats.md` states that `short` and `truncated` are opposite conditions — a cap this
+  server applied versus a promise the client broke — with `lint.py` refusing either half of
+  the pair alone · proved with a real socket (larger `Content-Length` than bytes sent, then
+  `shutdown(SHUT_WR)`), because urllib will not lie about `Content-Length` and a mocked read
+  proves nothing about the read
+  · **what REMAINS is only the policy, and it is his**: whether a short body is refused, or
+  · **NOTE 11:16 — he has never actually been asked this.** It sat in `status.json`'s
+  `awaiting_human` panel, so the dashboard reported it as waiting on him, but there is **no open
+  `questions.md` entry** for `#263` Q2 and therefore no way for him to answer it. Removed from the
+  panel (the panel now mirrors the five real open questions); the block stays recorded here. **To
+  actually unblock this P1, Q2 must be asked** — deliberately not asked yet: five questions are
+  already open and unanswered, and `#263`'s E/H lanes are behind a second gate he has not opened
+  kept as a partial witness marked incomplete and allowed to proceed. That is **Q2 of #263's
+  ask**, filed 2026-07-28 and unanswered · the behaviour is deliberately unchanged until he
+  rules, and the witness is now truthful either way, so his answer is implementable in one
+  increment whichever way it goes
+  · #263's plan places that half at its increment 20 (envelope decided before the body is
+  read) · **blocked on #263 Q2 only** — no longer on `watch.py`, which is free
+  · **UNBLOCKED — his `#263` Q2 was answered at 05:43 and this entry never noticed** (found by
+  `#420`'s census, verified by the coordinator against `questions.md` 2026-07-28 16:08). The answer is
+  explicit: *"**Q2 yes** (amend law 2 to keep a partial witness marked incomplete)"*. So the one thing
+  this waited on has been settled for ten hours, `watch.py` is free, and **this is a startable P1**
+  · **and it is `#419`'s reverse direction, in its most expensive form:** the loop never asked Q2 as
+  its own question — it rode inside another entry — so when it was answered there was nothing pointing
+  back here. A ruling that arrives on a *neighbouring* question is invisible to the entry that needed
+  it. `#419`'s check must therefore key on the *decision*, not on the entry that happened to carry it
+  · **IN PROGRESS 2026-07-28 16:14** — `ccc @grok`, `.worktrees/371`, brief
+  `.dreamwork/docs/briefs/371-short-body-policy.md`, owning `watch.py` and `test_watch.py`. His ruling
+  is the spec: keep the partial witness, mark it incomplete, let it proceed
+  · the brief carries this entry's own hard-won method as a requirement rather than a suggestion: **a
+  mocked read proves nothing about the read**, so the test is a real socket with an oversized
+  `Content-Length` and `shutdown(SHUT_WR)`. And **two** red-proofs, because *keep it* and *mark it* are
+  two claims and one red covers only one
+  · it must **not** add a field to `file-formats.md` — the `#419` lane holds that file — so it reuses
+  the landed `short`/`got` spelling or reports the field it needs
+  · **RETRACTED 2026-07-28 16:22 — the "UNBLOCKED" note above is WRONG and I dispatched a lane on
+  it before catching that.** His *"Q2 yes"* amended the **design**; it did not authorise the
+  **implementation**. `user-event-journal-implementation.md:19` is explicit: *"landed in the design …
+  **Increment 20 implements it — behind the second gate.**"* And increment 20 is
+  **`E1 envelope`** (`:71`) — **lane E**, which his same 05:43 answer withheld: *"E, the HTTP
+  cutover, and H, the mixed-version gate, **stay behind a second gate** until A–D are proved."*
+  Lanes A, B, C and F are done; **D is not**, so the gate is correctly still shut
+  · **so this entry is blocked on the SECOND GATE, not on Q2.** The lane (`ccc @grok`, dispatched
+  16:14) was killed at 16:20 having committed nothing; its 233-line working diff is kept at
+  `scratchpad/371-abandoned.diff` rather than discarded, since it is the same work whenever the gate
+  opens. No commit, no merge, no change to `master`
+  · **the mistake, named exactly, because the repo had already written this distinction down:** this
+  entry's own text says *"the approval covers the CONTRACT, not #263's implementation"* about the
+  01:27 approval, and I made the identical error one question later with the 05:43 one. **"He
+  answered it" and "we may build it" are different facts, and an answer that arrives inside a
+  neighbouring entry carries no authority beyond its own scope.** I read *"Q2 yes"* as a green light
+  because the sentence was affirmative
+  · `#420`'s census was right that the ruling landed and unprocessed, and wrong — as I was — that
+  processing it means implementing it. Processing it means **recording** that the design changed,
+  which is what this note does
+  · **what would actually unblock it, and it is a question rather than work**: prove lane D, then ask
+  him to open the second gate. That ask does not exist, which makes it a `#419` case — a human gate
+  with no question — and the honest count of open questions on his desk is therefore still 3, not 4,
+  until lane D is proved and the ask is worth making
+  · merged (2ada41b5): the Q2 ruling implemented — an interrupted body is no longer refused (the if-short-400 gate is gone); it proceeds, claims a receipt, and the durable received→rejected path answers 202. Removing the refusal exposed a latent bug: the journal-path log_submission hardcoded short=False (dead while unreachable) — now short=short in both paths. Law 2 amended in user-event-journal.md. Coordinator handled the cross-file consequence the lane named: the superseded refuse-test rewritten to the ratified contract and the implementation doc's increment-20 text amended (b2178e4-equivalent; see git log). Lane red-first with a real socket + 2 red-proofs; coordinator red-proof: re-injecting the refusal gate fails exactly the renamed proceeds test, restored byte-identical. 356 tests green. Lane model: llmp-glm-5-2 (877s, 48 calls).
+
 - **#459** — two typing boxes keep no draft: `#askbox` and the popout `#ptext` · **P2** ·
   dashboard/durability · origin: **loop** (draftcheck lane, verifying `#269`) ·
   · **found while checking what draft durability actually covers** (`6a6ddff`). The review dock, the
