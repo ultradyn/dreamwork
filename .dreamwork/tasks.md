@@ -24,7 +24,7 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **482**
+Next id: **484**
 
 ## Open
 - **#477** — the 2s tick TELEPORTS a section it catches mid-open · P1 · bug/motion · origin: **loop**
@@ -3723,6 +3723,14 @@ Next id: **482**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#483** — dissolveperf does not measure the current feImage mechanism; its reading comment is stale · P3 ·
+  verification/perf · origin: **loop** · **found while independently verifying `#453`'s perf claim** — the
+  committed harness's `baseline` arm measures the current default (now feImage), but its trailing "reading"
+  comment was `#449`'s ("only noFilter recovers frames … Successor: feImage"), now false, and it had no arm to
+  compare feImage against the old turbulence directly · blocked on nothing. (Dispatched and committed as `#483`
+  directly — coordinator slipped and did not file it first.)
+  · landed 324e742 (merge of wt/483; lane work 1c20385, native subagent). dissolveperf now measures the current feImage mechanism as baseline and adds a turbulence arm (MIST_IMPL='turbulence') with precondition evidence (window.__mists proves an arm really switched). CORRECTION to the #453 framing, measured twice: feImage and turbulence read at frame PARITY (~31.5 vs ~31.5, 1%) — because #453 moved BOTH impls to filter the ghost ONLY. So the +40% was feImage vs #449's now-DELETED two-filter route (a 2->1 rasterisation cut no MIST_IMPL can re-select), NOT feImage-vs-turbulence today. The real win is ghost-only filtering; the field-mechanism choice is roughly perf-neutral. Coordinator independently re-ran: feImage 31.8 vs turbulence 31.4 (1%), CSS-only 41.9.
+
 - **#453** — restore the liquify with a moved or layered noise texture instead of two live SVG filters ·
   **P2** · dashboard/motion · origin: **human** · **blocked-on: #449** (which disables the mist) ·
   **human via watch 2026-07-29 00:53:** *"could we generate the flowingness by just having a single texture
