@@ -88,7 +88,8 @@ ORIGIN_VALUES = ("human", "loop", "unknown")
 # callers that already read them here. `open_section_text` is the Open
 # slice two checks below once wrote out by hand.
 from ledger_parse import (ENTRY_HEAD, ENTRY_ID, ORIGIN_MARK, ledger_entries,
-                          open_section_text)
+                          open_section_text, source_of_truth, store_entries,
+                          store_ids_by_state)
 
 # #419: a blocked-on-human claim, same `key: **value**` idiom as origin/related.
 # The marker names a KIND of blocker (a human decision), not a specific question
@@ -887,14 +888,78 @@ def check_priorities(watch, text: str) -> list[str]:
     return bad
 
 
-def check_tasks(dw: Path, rep: Report) -> None:
-    """The ledger. Its ids are permanent, so a collision is unrecoverable."""
+def ledger_view(dw: Path):
+    """``(text, source)`` for every ledger-content check — the #294 dispatch.
+
+    ``source == 'markdown'`` (today, and every target that never cuts over):
+    ``text`` is ``tasks.md`` verbatim and every check runs exactly as it
+    always has. ``source == 'store'`` (the cutover watermark is present):
+    ``text`` is SYNTHESIZED from the store — the import stored each entry's
+    body verbatim, head line included, so the bodies reparse; they are
+    placed under synthesized ``## Open`` / ``## Recently landed`` headings
+    in id order. Every text-consuming check then runs over live store data
+    with no change to its own code, and `watch.parse_ledger` over the
+    synthesized text returns the store's id sets.
+
+    The dispatch fails closed toward Markdown: `source_of_truth` itself
+    answers ``'markdown'`` on a missing or unreadable store, and any error
+    building the projection falls through to the Markdown path — lint must
+    never go blind because the flip machinery had a bad day. In store mode
+    ``tasks.md`` is a one-line #458 shim, so the Markdown path would see an
+    empty ledger; that case means the store projection failed, which is a
+    finding about the store, and the section check's history half (against
+    ``tasks.md.deprecated``) still runs below.
+    """
+    try:
+        if source_of_truth(dw) == "store":
+            entries = store_entries(dw)
+            open_ids, landed_ids = store_ids_by_state(dw)
+            oset, lset = set(open_ids), set(landed_ids)
+            open_bodies = [b for ids, b in entries if str(ids[0]) in oset]
+            landed_bodies = [b for ids, b in entries if str(ids[0]) in lset]
+            text = ("## Open\n\n" + "\n\n".join(open_bodies)
+                    + "\n\n## Recently landed\n\n"
+                    + "\n\n".join(landed_bodies) + "\n")
+            return text, "store"
+    except Exception:
+        pass  # fall through to Markdown — never let the dispatch blind lint
     path = dw / "tasks.md"
     if not path.exists():
+        return None, "markdown"
+    return path.read_text(), "markdown"
+
+
+def check_tasks(dw: Path, rep: Report) -> None:
+    """The ledger. Its ids are permanent, so a collision is unrecoverable."""
+    text, source = ledger_view(dw)
+    if text is None:
         rep.add(WARN, "tasks.md", "absent — required only when the backend is session-scoped")
         return
 
-    text = path.read_text()
+    if source == "store":
+        # The store is the sequence authority (AUTOINCREMENT, seeded and
+        # verified at import; an unseeded store refuses to open). The
+        # duplicate-id and `Next id` header invariants below are Markdown
+        # file invariants — the store enforces them by PRIMARY KEY and by
+        # construction, so lint's job here is to prove the projection
+        # parses, not to re-check what one source cannot violate.
+        ids = [int(x) for m in LEDGER_ID.findall(text)
+               for x in ENTRY_ID.findall(m)]
+        if not ids:
+            rep.add(ERROR, "ledger store",
+                    "store mode but the projection parses to zero ids — "
+                    "the flip machinery is suspect, not the ledger")
+        else:
+            rep.add(OK, "ledger store",
+                    f"{len(ids)} ids projected from the store (sequence "
+                    f"authority: AUTOINCREMENT in the store)")
+        check_task_origins(text, rep)
+        check_ledger_sections(dw, text, source, rep)
+        check_landed_still_open(dw, text, rep)
+        check_self_completed_open(dw, text, rep)
+        return
+
+
     # LEDGER_ID captures an ids-only span (`#7` or `#7/#8`); a combined head
     # names every id in it, so extract each id with ENTRY_ID rather than
     # int() on the span itself, which would choke on the slash (#315).
@@ -918,7 +983,7 @@ def check_tasks(dw: Path, rep: Report) -> None:
             rep.add(OK, "tasks.md", f"{len(ids)} ids, next id {nxt}")
 
     check_task_origins(text, rep)
-    check_ledger_sections(text, rep)
+    check_ledger_sections(dw, text, source, rep)
     check_landed_still_open(dw, text, rep)
     check_self_completed_open(dw, text, rep)
 
@@ -1135,11 +1200,14 @@ def check_landed_asks(dw: Path, watch, rep: Report) -> None:
     The actual cure — one write path that folds the ask when the answer is
     recorded — belongs to #263's event journal; this is only the detector.
     """
-    qpath, tpath = dw / "questions.md", dw / "tasks.md"
-    if watch is None or not qpath.exists() or not tpath.exists():
+    qpath = dw / "questions.md"
+    if watch is None or not qpath.exists():
+        return
+    text, _source = ledger_view(dw)
+    if text is None:
         return
     try:
-        _open_ids, landed = watch.parse_ledger(tpath.read_text())
+        _open_ids, landed = watch.parse_ledger(text)
         asks = watch.parse_open_questions(qpath.read_text())
     except Exception:
         return  # the shape checks above own reporting an unreadable file
@@ -1158,7 +1226,7 @@ def check_landed_asks(dw: Path, watch, rep: Report) -> None:
             )
 
 
-def check_ledger_sections(text: str, rep: Report) -> None:
+def check_ledger_sections(dw: Path, text: str, source: str, rep: Report) -> None:
     """#304: a SECOND, independent reader of where the open section is.
 
     `watch.parse_ledger` finds the sections to tell the dashboard how many
@@ -1174,7 +1242,58 @@ def check_ledger_sections(text: str, rep: Report) -> None:
     Two readers of one file must not diverge; the repo pins LEDGER_ID to
     watch's LEDGER_ENTRY for the same reason, and both are combined-aware
     so a head like `- **#7/#8**` counts BOTH ids in BOTH readers (#315).
+
+    **Store mode (#294):** the cross-check is vacuous over the synthesized
+    projection (one source cannot disagree with itself), so its subject
+    becomes the FROZEN HISTORY — `tasks.md.deprecated`, which the design
+    says is never deleted automatically. The two readers run over THAT
+    file: it must exist, it must parse to a non-empty id set, and the two
+    counts must agree. A hand-edit of the deprecated file desyncs it
+    exactly the way #304's original bug did, and the check stays live.
     """
+    if source == "store":
+        dep = dw / "tasks.md.deprecated"
+        if not dep.exists():
+            rep.add(ERROR, "tasks.md.deprecated",
+                    "absent in store mode — the design's rule is NEVER "
+                    "delete the deprecated ledger automatically; its loss "
+                    "is the history's loss (#294 R4)")
+            return
+        try:
+            import watch
+            dtext = dep.read_text()
+            dopen, dlanded = watch.parse_ledger(dtext)
+        except Exception:
+            rep.add(ERROR, "tasks.md.deprecated",
+                    "unreadable or unparseable in store mode — the frozen "
+                    "history must stay parseable (#294 R4)")
+            return
+        if not dopen and not dlanded:
+            rep.add(ERROR, "tasks.md.deprecated",
+                    "parses to zero ids in store mode — the history file "
+                    "has rotted or been replaced (#294 R4)")
+            return
+        section, mine = None, 0
+        for ln in dtext.splitlines():
+            stripped = ln.strip()
+            if stripped.startswith("## "):
+                section = stripped
+            elif section == "## " + "Open":
+                m = LEDGER_ID.match(ln)
+                if m:
+                    mine += len(ENTRY_ID.findall(m.group(1)))
+        if len(dopen) != mine:
+            rep.add(ERROR, "tasks.md.deprecated",
+                    f"open-id count disagrees on the FROZEN history: this "
+                    f"linter counts {mine}, watch.parse_ledger sees "
+                    f"{len(dopen)} — a hand-edit of the deprecated file "
+                    f"moved a section boundary (#304, history half)")
+        else:
+            rep.add(OK, "tasks.md.deprecated",
+                    f"frozen history intact ({len(dopen)} open / "
+                    f"{len(dlanded)} landed, two readers agree)")
+        return
+
     # Count open IDS, not open LINES: parse_ledger returns an id SET, and a
     # combined head (`- **#7/#8**`) names two ids on one line. Counting lines
     # would make this reader see 1 where parse_ledger sees 2 — the exact
@@ -1338,13 +1457,13 @@ def check_human_blocker(dw: Path, watch, rep: Report) -> None:
     unimportable watch (cannot correlate ⇒ say nothing), exactly as
     `check_landed_asks` degrades.
     """
-    tpath = dw / "tasks.md"
-    if not tpath.exists():
+    text, _source = ledger_view(dw)
+    if text is None:
         return
     # Slice the Open section once, the shared ledger_parse idiom (#352) that
     # check_landed_still_open also uses, so only OPEN entries are governed —
     # a landed entry is not "blocked on him".
-    open_text = open_section_text(tpath.read_text())
+    open_text = open_section_text(text)
     if open_text is None:
         return
 
@@ -1558,6 +1677,13 @@ def check_status_task_ids(dw: Path, rep: Report) -> None:
     False, so the badge never appears and nothing anywhere says why. That is
     the silent-data-loss shape this file calls an ERROR, so it is one.
     """
+    # Store mode (#294 T2): `current_task_ids` and per-agent `task_ids` are
+    # RETIRED fields — the store is the one source for what is in flight.
+    # Their typing is moot; their ABSENCE is the invariant, owned by
+    # check_retired_status_fields_absent below. Skip, or a target mid-cutover
+    # lints red on a field that is about to be deleted.
+    if source_of_truth(dw) == "store":
+        return
     path = dw / "status.json"
     if not path.exists():
         return
@@ -1620,7 +1746,48 @@ def check_status_agrees_with_ledger(dw: Path, watch, rep: Report) -> None:
     cannot simultaneously not know which tasks are current. It is silent when
     the field is absent, because absent means "not adopted" by this file's
     contract, and silent when `agents` is absent for the same reason.
+
+    **Store mode (#294 T2) — this check INVERTS.** The cutover deletes
+    `queue`, `current_task_ids` and per-agent `task_ids` from `status.json`
+    (the store is the one source; the disagreement this WARN measured
+    disappears by construction). A drift check whose compared fields no
+    longer exist would pass vacuously — examining nothing is the hollow-
+    check failure this repo keeps paying for. So in store mode the invariant
+    is the inverse: the three retired fields must stay ABSENT. Same shape as
+    #303's append-only `.status-keys` memo — a field that reappears is a
+    REGRESSION (a second derived truth regrowing), not a drift, so it is an
+    ERROR, never a WARN.
     """
+    if source_of_truth(dw) == "store":
+        path = dw / "status.json"
+        if not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return
+        if not isinstance(data, dict):
+            return
+        regrown = [k for k in ("queue", "current_task_ids") if k in data]
+        agents = data.get("agents")
+        if isinstance(agents, list):
+            for a in agents:
+                if isinstance(a, dict) and "task_ids" in a:
+                    regrown.append(f"agents[{a.get('name', '?')}].task_ids")
+        if regrown:
+            rep.add(
+                ERROR,
+                "status.json",
+                f"retired field(s) reappeared post-cutover: "
+                f"{', '.join(regrown)} — the store is the one source for "
+                f"queue depth and in-flight tasks; a regrown field is a "
+                f"second derived truth (#294 T2 / #362 inverse)",
+            )
+        else:
+            rep.add(OK, "status.json",
+                    "retired fields (queue, current_task_ids, agent task_ids) "
+                    "stay absent — one source, nothing to drift")
+        return
     path = dw / "status.json"
     tasks = dw / "tasks.md"
     if not path.exists() or not tasks.exists():
@@ -3543,11 +3710,11 @@ def check_handoffs(dw: Path, watch, rep: Report) -> None:
         coverage += f", {multi_sha_count} multi-sha hand-off(s) recognised"
     rep.add(OK, "handoffs.md", coverage)
 
-    ledger_path = dw / "tasks.md"
-    if not ledger_path.exists():
+    ledger_text, _source = ledger_view(dw)
+    if ledger_text is None:
         return
     try:
-        open_ids, _landed_ids = watch.parse_ledger(ledger_path.read_text())
+        open_ids, _landed_ids = watch.parse_ledger(ledger_text)
     except Exception:
         return  # a mid-edit ledger is not a hand-off problem
 

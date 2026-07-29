@@ -1188,7 +1188,7 @@ class TestLedgerSectionSplit:
         import watch
         monkeypatch.setattr(watch, "parse_ledger", self._old_parse_ledger)
         rep = lint.Report()
-        lint.check_ledger_sections(self.HAZARD, rep)
+        lint.check_ledger_sections(Path("."), self.HAZARD, "markdown", rep)
         assert ERRORS(rep, "tasks.md"), "a moved section split must go red"
         detail = next(d for _, w, d in rep.rows if w == "tasks.md")
         assert "1" in detail and "2" in detail, \
@@ -1197,7 +1197,7 @@ class TestLedgerSectionSplit:
 
     def test_the_anchored_split_agrees(self):
         rep = lint.Report()
-        lint.check_ledger_sections(self.HAZARD, rep)
+        lint.check_ledger_sections(Path("."), self.HAZARD, "markdown", rep)
         assert not ERRORS(rep, "tasks.md"), \
             "an entry may quote a heading in prose; only a heading LINE counts"
         assert levels(rep, "tasks.md") == [lint.OK]
@@ -1239,7 +1239,7 @@ class TestLedgerSectionSplit:
         assert len(head_ids) == 2 and head_ids[0] != head_ids[1], \
             "fixture head must carry two distinct ids to be the combined case"
         rep = lint.Report()
-        lint.check_ledger_sections(text, rep)
+        lint.check_ledger_sections(Path("."), text, "markdown", rep)
         assert not ERRORS(rep, "tasks.md"), \
             "both readers count both ids of the combined head — no #304 split"
         # And both readers genuinely SEE the combined ids, not just agree on
@@ -5576,3 +5576,110 @@ class TestLessonNearDuplicates:
         rep = run(target(tmp_path))
         assert levels(rep, "lessons.md") == [lint.WARN]
         assert not rep.failed
+
+
+# ---------------------------------------------------------------------------
+# Store mode (#294): after the cutover watermark, lint's ledger checks read
+# the STORE through ledger_view's synthesized projection, the section
+# cross-check guards the frozen history (tasks.md.deprecated), and the #362
+# drift check inverts into the retired-fields-stay-absent invariant.
+#
+# Production line for the class: the ``if source_of_truth(dw) == "store":``
+# dispatch in lint.ledger_view. Break it (``if False:``) and every store-mode
+# test fails — the shim has no `Next id` header and parses to zero ids.
+# ---------------------------------------------------------------------------
+class TestStoreModeLint:
+    FIXTURE = ("# Task ledger\n\nNext id: **12**\n\n## Open\n\n"
+               "- **#10** — a clean open entry · P1 · task · origin: **human**\n\n"
+               "## Recently landed\n\n"
+               "- **#11** — a clean landed entry · P0 · implementation · "
+               "origin: **human** (abc1234)\n")
+
+    def _cut_over(self, tmp_path):
+        """A REAL post-cutover scratch target: watermark, shim, deprecated,
+        populated store — the same artifact the live cutover will produce."""
+        import importlib.machinery, importlib.util, io
+        import ledger_parse
+        repo = Path(__file__).resolve().parent
+        loader = importlib.machinery.SourceFileLoader(
+            "ud_dw_tasks_migrate", str(repo / "ud-dw-tasks-migrate"))
+        spec = importlib.util.spec_from_loader("ud_dw_tasks_migrate", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        td = tmp_path / "dw"
+        td.mkdir()
+        (td / "tasks.md").write_text(self.FIXTURE)
+        mod.perform_cutover(str(td), out=io.StringIO())
+        assert ledger_parse.source_of_truth(td) == "store", \
+            "fixture precondition: the watermark must be present"
+        return td
+
+    def test_the_projection_parses_to_the_store_id_sets(self, tmp_path):
+        import watch
+        td = self._cut_over(tmp_path)
+        text, source = lint.ledger_view(td)
+        assert source == "store"
+        o, l = watch.parse_ledger(text)
+        mo, ml = watch.parse_ledger(self.FIXTURE)
+        assert (o, l) == (mo, ml), \
+            "the store projection must parse to the markdown id sets"
+        assert o, "precondition: the fixture genuinely has open ids"
+
+    def test_check_tasks_names_the_store_and_stays_clean(self, tmp_path):
+        td = self._cut_over(tmp_path)
+        rep = lint.Report()
+        lint.check_tasks(td, rep)
+        assert not ERRORS(rep, "ledger store"), \
+            "a healthy store projection must not go red"
+        assert not ERRORS(rep, "tasks.md"), \
+            "the shim must not be read as the ledger in store mode"
+
+    def test_a_regrown_retired_field_is_an_error(self, tmp_path):
+        import watch
+        td = self._cut_over(tmp_path)
+        (td / "status.json").write_text(json.dumps(
+            {"queue": {"in_progress": 1, "pending": 2}}))
+        rep = lint.Report()
+        lint.check_status_agrees_with_ledger(td, watch, rep)
+        errs = ERRORS(rep, "status.json")
+        assert errs, "a regrown `queue` post-cutover is a second derived truth"
+        detail = next(d for _, w, d in rep.rows
+                      if w == "status.json" and "retired" in d)
+        assert "queue" in detail
+
+    def test_retired_fields_absent_is_ok_not_vacuous(self, tmp_path):
+        import watch
+        td = self._cut_over(tmp_path)
+        (td / "status.json").write_text(json.dumps({"task": "294"}))
+        rep = lint.Report()
+        lint.check_status_agrees_with_ledger(td, watch, rep)
+        assert not ERRORS(rep, "status.json")
+        assert levels(rep, "status.json") == [lint.OK], \
+            "the invariant must REPORT, not pass by silence"
+
+    def test_status_task_ids_skips_in_store_mode(self, tmp_path):
+        td = self._cut_over(tmp_path)
+        # A PRESENT-but-stringly current_task_ids is an ERROR in markdown
+        # mode; in store mode the field is retired and this check is moot
+        # (the absence invariant above owns reporting it).
+        (td / "status.json").write_text(json.dumps(
+            {"current_task_ids": ["#281"]}))
+        rep = lint.Report()
+        lint.check_status_task_ids(td, rep)
+        assert not ERRORS(rep, "status.json"), \
+            "store mode must not lint the TYPE of a retired field"
+
+    def test_missing_deprecated_history_is_an_error(self, tmp_path):
+        td = self._cut_over(tmp_path)
+        (td / "tasks.md.deprecated").unlink()
+        rep = lint.Report()
+        lint.check_ledger_sections(td, "unused", "store", rep)
+        assert ERRORS(rep, "tasks.md.deprecated"), \
+            "the design says never delete it — its absence must go red"
+
+    def test_the_frozen_history_passes_two_readers(self, tmp_path):
+        td = self._cut_over(tmp_path)
+        rep = lint.Report()
+        lint.check_ledger_sections(td, "unused", "store", rep)
+        assert not ERRORS(rep, "tasks.md.deprecated")
+        assert levels(rep, "tasks.md.deprecated") == [lint.OK]

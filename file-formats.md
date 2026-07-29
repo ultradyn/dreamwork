@@ -1379,6 +1379,17 @@ block a tick, so a momentary lag mid-increment is *truthful* and crying red
 on it would punish exactly the honesty the file exists to provide. Drift
 nobody measures is the thing that is not truthful.
 
+**Post-cutover (#294 T2) these three fields are RETIRED, and the check
+inverts.** When the ledger store's cutover watermark is present
+(`ledger_parse.source_of_truth` answers `store`), the store is the one
+source for queue depth and in-flight tasks; `queue`, `current_task_ids` and
+`agents[].task_ids` are deleted from this file at cutover, and the drift
+check above is replaced by the inverse invariant: the retired fields must
+stay **absent**. A field that reappears is a regression — a second derived
+truth regrowing — so it is an **ERROR**, not a WARN. A drift check kept
+running against deleted fields would pass vacuously, examining nothing,
+which is the hollow-check failure shape this file exists to prevent.
+
 It is silent on an absent field (absent means "not adopted", as everywhere
 here), silent when `agents` is absent or empty, and silent when a `queue`
 value is not an integer — that last one belongs to `check_status`, and
