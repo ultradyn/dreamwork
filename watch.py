@@ -4495,11 +4495,11 @@ let view = { name: null, param: null, q: null };
    The /filedata response carries one of those shapes; never the bytes. */
 let fileCache = { param: null, fetched: undefined };
 /* per-page atmosphere: a tiny tint bias the shader lerps toward (~1.5s) */
-const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22 };
+const TINT = { dashboard: 0.0, questions: 0.14, answers: 0.08, file: -0.14, review: 0.22, question: 0.18 };
 /* per-route dissolve signature: each destination swirls from its own
    turbulence seed, so arriving somewhere has a consistent feel (pairs with
    the per-route tint). Distinct small integers give distinct fields. */
-const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61 };
+const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61, question: 67 };
 /* ── the tab title (#153) ─────────────────────────────────────────────────
    The title is the ONLY part of this dashboard that exists while the tab is
    backgrounded, which is most of its life — so it answers the page's whole
@@ -4535,7 +4535,8 @@ const SEED = { dashboard: 7, questions: 23, answers: 29, file: 41, review: 61 };
 const TITLE_ROUTE = { dashboard: () => '', questions: () => 'questions',
                       answers: () => 'answers',
                       file: p => p || 'file',
-                      review: p => 'review ' + (p || '') };
+                      review: p => 'review ' + (p || ''),
+                      question: () => 'question' };
 /* two missed heartbeats (4.75m each) — one late beat is a busy machine, two
    is a loop that stopped. */
 const STALE_TICK_MS = 10 * 60 * 1000;
@@ -5882,6 +5883,13 @@ function routeOf(loc) {
     const sp = new URLSearchParams(loc.search);
     return { name: 'review', param: sp.get('p'), q: sp.get('q') };
   }
+  if (loc.pathname === '/question') {
+    const sp = new URLSearchParams(loc.search);
+    // the key is the question's TITLE identity — the same string data-qid
+    // carries — so it survives everything the loop's churn does short of a
+    // retitle (#452)
+    return { name: 'question', param: sp.get('qid') };
+  }
   return { name: 'dashboard', param: null };
 }
 /* THE ONE PLACE `data` IS REPLACED, and it is a function rather than an
@@ -5944,6 +5952,7 @@ async function buildCurrent() {
     return buildFile(view.param, await fetchFile(view.param), view.mode);
   const d = await ensureData();
   if (view.name === 'review') return buildReview(view.param, view.q, d);
+  if (view.name === 'question') return buildQuestion(view.param, d);
   if (!d) return '<div class="dim">loading…</div>';
   if (view.name === 'questions') return buildQuestions(d);
   if (view.name === 'answers') return buildAnswers(d);
@@ -7341,6 +7350,10 @@ const TITLES = {
      one line down, in the crumb row (`crumbsFor`). */
   file: v => esc(fileBase(v.param || '')),
   review: v => `review<span class="revname">${esc(v.param || '')}</span>`,
+  /* #452: the heading names the SURFACE, not the question — a title can run
+     to a line and a half, and it is rendered in full by the card directly
+     below. When the key resolves nowhere the missing notice says so. */
+  question: () => 'question',
 };
 /* The copy button carries no path of its own, on purpose: it reads
    `view.param`, which is what the router parsed out of the URL and therefore
@@ -7422,6 +7435,11 @@ function crumbsFor(v, d) {
     { k:'home', html:'<a href="/">dashboard</a>' },
     { k:'pip', html: pipBtn('/reviewraw?p=' + encodeURIComponent(v.param || ''),
                             'review: ' + (v.param || '')) }];
+  // #452: the focused page belongs to the questions list — the way back is
+  // the same pair the review dock carries (no artifact to pop out here).
+  if (v.name === 'question') return [
+    { k:'qs', html:'<a href="/questions">&larr; questions</a>' },
+    { k:'home', html:'<a href="/">dashboard</a>' }];
   if (!d) return [];
   return [
     { k:'target', html: esc(d.target) },
@@ -8076,6 +8094,7 @@ async function navigate(name, param, opts) {
         (mode === 'source' ? '&view=source' : '')
     : name === 'review' ? '/review?p=' + encodeURIComponent(param || '') +
         (opts.q ? '&q=' + encodeURIComponent(opts.q) : '')
+    : name === 'question' ? '/question?qid=' + encodeURIComponent(param || '')
     : '/';
   if (opts.push) history.pushState({ name, param, q: opts.q || null }, '', url);
   const html = await buildCurrent();
@@ -8099,7 +8118,8 @@ function isInternal(a) {
   if (a.origin !== location.origin) return false;
   return a.pathname === '/' || a.pathname === '/questions'
       || a.pathname === '/answers'
-      || a.pathname === '/file' || a.pathname === '/review';
+      || a.pathname === '/file' || a.pathname === '/review'
+      || a.pathname === '/question';
 }
 addEventListener('click', e => {
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey ||
