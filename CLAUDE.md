@@ -93,6 +93,12 @@ was fine anyway. And when a test patches, fakes or hand-builds anything,
 name the production line that would have to change for it to fail, then
 change that line and watch. If you cannot name one, there isn't one.
 
+Before an injection, read the slice of `.dreamwork/lessons.md` that
+governs it: `python3 dev/lessons_index.py --act red-proof`. The file is
+3000 lines and nobody re-reads it before acting — the `git checkout` RED-undo
+lesson sat in it for three days and did not prevent its own repeat (#349).
+The slice is a page; the file is not.
+
 ## Conventions
 
 - Commit each increment with **`git commit --only <paths> -m …`**. More

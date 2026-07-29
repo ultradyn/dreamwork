@@ -5460,3 +5460,119 @@ class TestDerivePosture:
     def test_unrecognised_mode_returns_none(self):
         assert lint.derive_posture("nonexistent") is None
 
+
+
+class TestLessonNearDuplicates:
+    """#349's write-time backstop: a NEW lesson whose first sentence
+    near-duplicates an existing one is refused.
+
+    The fixtures' similarity is DERIVED AT RUNTIME, independently of lint's
+    own helpers (inline difflib + token overlap here, not lint._norm_claim)
+    — the check is vacuous the day the fixture pair drifts under the
+    threshold, and a green red-run is a finding, never a relief.
+    """
+
+    CLAIM_A = ("A guard assertion whose subject may not exist must RETURN a "
+               "value, never throw.")
+    # The historical repeat's own rewording (lessons.md:580 vs :622) — the
+    # pair this check exists because of.
+    CLAIM_A_REPEAT = ("A guard assertion whose subject may not exist has to "
+                      "degrade to a reading, never throw.")
+    CLAIM_B = ("Write the timestamp from the clock in the same command that "
+               "writes the file.")
+    CLAIM_DISTINCT = ("Mounting a second instance of a surface is the "
+                      "cheapest audit of the first one.")
+
+    @staticmethod
+    def _lessons(*claims: str) -> str:
+        return "# Lessons\n\n" + "\n".join(
+            f"- **{c}** The evidence that earned it, kept whole.\n"
+            for c in claims)
+
+    @staticmethod
+    def _sim(a: str, b: str) -> tuple[float, float]:
+        import difflib as _d
+        na = re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", a.lower())).strip()
+        nb = re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", b.lower())).strip()
+        stop = set("a an the and or of to in on for with by is are was were "
+                   "be been it its this that not no never must can could "
+                   "should would from at as so if then than when what which "
+                   "who how why your you we our their they them he she his "
+                   "her do does did have has had will just only every each "
+                   "any all one two three".split())
+        ta = {t for t in na.split() if t not in stop and len(t) > 2}
+        tb = {t for t in nb.split() if t not in stop and len(t) > 2}
+        return _d.SequenceMatcher(None, na, nb).ratio(), len(ta & tb) / len(ta | tb)
+
+    def _git(self, repo: Path, *args: str) -> None:
+        subprocess.run(["git", "-C", str(repo), *args],
+                       check=True, capture_output=True)
+
+    def _repo(self, tmp_path: Path, committed: str) -> Path:
+        t = fresh(tmp_path)
+        dw = t / ".dreamwork"
+        dw.mkdir()
+        (dw / "lessons.md").write_text(committed)
+        self._git(t, "-c", "init.defaultBranch=main", "init", "-q")
+        self._git(t, "add", ".dreamwork/lessons.md")
+        self._git(t, "-c", "user.email=t@t", "-c", "user.name=t",
+                  "commit", "-qm", "base")
+        return t
+
+    def test_fixture_preconditions_hold(self):
+        # The check's meaning needs the repeat pair ABOVE threshold and every
+        # other fixture pair BELOW it — derive both at runtime, assert the
+        # gap, or the tests below are tuned literals with an expiry date.
+        r_dup, j_dup = self._sim(self.CLAIM_A, self.CLAIM_A_REPEAT)
+        assert r_dup >= lint.LESSON_DUP_RATIO and j_dup >= lint.LESSON_DUP_JACCARD, \
+            f"fixture repeat drifted under the threshold ({r_dup:.3f}/{j_dup:.3f})"
+        for other in (self.CLAIM_B, self.CLAIM_DISTINCT):
+            for claim in (self.CLAIM_A, self.CLAIM_A_REPEAT):
+                r, j = self._sim(claim, other)
+                assert r < lint.LESSON_DUP_RATIO or j < lint.LESSON_DUP_JACCARD, \
+                    f"control pair trips the rule ({r:.3f}/{j:.3f}) — the check would cry wolf"
+
+    def test_new_near_duplicate_is_an_error(self, tmp_path):
+        t = self._repo(tmp_path, self._lessons(self.CLAIM_A, self.CLAIM_B))
+        with open(t / ".dreamwork" / "lessons.md", "a") as f:
+            f.write(f"- **{self.CLAIM_A_REPEAT}** Rewritten evidence.\n")
+        rep = run(t)
+        assert ERRORS(rep, "lessons.md"), \
+            f"a new lesson re-saying an existing claim must be refused:\n{rep.render()}"
+        detail = next(d for l, w, d in rep.rows
+                      if l == lint.ERROR and w == "lessons.md")
+        assert "≈" in detail, "must name BOTH lines, not just report a count"
+
+    def test_new_distinct_lesson_passes(self, tmp_path):
+        t = self._repo(tmp_path, self._lessons(self.CLAIM_A, self.CLAIM_B))
+        with open(t / ".dreamwork" / "lessons.md", "a") as f:
+            f.write(f"- **{self.CLAIM_DISTINCT}** Fresh evidence.\n")
+        rep = run(t)
+        assert not ERRORS(rep, "lessons.md"), rep.render()
+        assert lint.OK in levels(rep, "lessons.md")
+
+    def test_preexisting_pair_warns_never_errors(self, tmp_path):
+        # Both halves committed (the 580/622 shape): refusal is a write-time
+        # gate, and merging history is his call — WARN names it, forever.
+        t = self._repo(tmp_path, self._lessons(self.CLAIM_A, self.CLAIM_A_REPEAT))
+        rep = run(t)
+        assert not ERRORS(rep, "lessons.md"), rep.render()
+        (warn,) = [d for l, w, d in rep.rows
+                   if l == lint.WARN and w == "lessons.md"]
+        assert "already in HEAD" in warn
+
+    def test_no_git_baseline_degrades_loudly(self, tmp_path):
+        # A fixture with no repo: the check must not fake having compared
+        # against HEAD — the WARN says the refusal is OFF.
+        t = target(tmp_path, **{
+            "lessons.md": self._lessons(self.CLAIM_A, self.CLAIM_A_REPEAT)})
+        rep = run(t)
+        assert not ERRORS(rep, "lessons.md"), rep.render()
+        (warn,) = [d for l, w, d in rep.rows
+                   if l == lint.WARN and w == "lessons.md"]
+        assert "refusal is OFF" in warn
+
+    def test_missing_lessons_is_a_warn_not_an_error(self, tmp_path):
+        rep = run(target(tmp_path))
+        assert levels(rep, "lessons.md") == [lint.WARN]
+        assert not rep.failed

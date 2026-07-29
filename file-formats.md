@@ -379,7 +379,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/plugin-commands.json` | `watch.py`'s composer (#86) | `{"commands": [{kind, label, desc, plugin}]}`. Written **whole** by the loop at plugin resolution, never appended — see below. Machine-local, **gitignored** | `lint.py` |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
 | `.dreamwork/dreams/<date>-<time>-<slug>.md` | the coordinator; grooming | The **filename** is the contract: `2026-07-25-1130-slug.md`. It carries the ordering | `lint.py` (naming) |
-| `.dreamwork/lessons.md` | humans; the loop at init; grooming | **Stated in the file's own header** — a claim you could read alone, then the case that earned it. Craft belongs where the writer already is | prose only |
+| `.dreamwork/lessons.md` | humans; the loop at init; grooming; **`dev/lessons_index.py`** (#349) | **Stated in the file's own header** — a claim you could read alone, then the case that earned it. Craft belongs where the writer already is. What the parsers rely on (#349): an entry is a `- ` bullet whose continuation lines are indented (or blank); its **first sentence** is the leading `**…**` span when present, else the text to the first full stop — the near-dup check compares only that sentence, the index classifies on the whole entry's own words | `dev/lessons_index.py` (read); `lint.py` (near-dup first sentences) |
 | `.dreamwork/watch-events.log` | the coordinator's monitor — **it wakes on a line and acts on it** | One event per line. Human text written into it must not be able to forge a record: collapse newlines before they reach the file | prose only |
 | `DREAMWORK.md` | the loop, the wizard, the scope gate | Section headings are load-bearing — the scope gate and the goal chain both address them by name | prose only |
 | `~/.cache/agent-comms/<target>/coord-inbox.md` | the coordinator's tail monitor | Append-only, one report per line, prefixed `[agent-name]`. Machine-local, never committed | prose only |
@@ -1061,7 +1061,10 @@ it does not have (#150).
   procedural — write, then wake — not a check.
 - **`lessons.md` and `DREAMWORK.md` are prose by intention.** Their value
   is in being written well, and a linter would only ever check the parts
-  that do not matter.
+  that do not matter. (#349 adds the two exceptions, both over lessons.md's
+  first sentences only: `dev/lessons_index.py` reads entries to classify
+  them by act, and `lint.py` refuses a new first sentence that
+  near-duplicates an existing one — neither judges the prose.)
 - **Nothing verifies that a relay was UNDERSTOOD**, only that it was
   written. Every coordination failure this loop has had was of that
   shape, and it is the reason reports say what durable state changed

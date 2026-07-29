@@ -252,6 +252,15 @@ Two kinds, nothing in between:
   cannot do. Survival was never the failing half of *"what it knew, it
   still knows"* — retrieval is.
 
+  Retrieval has a tool (#349): `python3 <skill-dir>/dev/lessons_index.py
+  --act <act>` prints, verbatim, the lessons governing the act you are
+  about to do — `--acts` lists them (`red-proof` before an injection,
+  `parsed-file` before writing a file a tool parses, `worktree-dispatch`
+  before a dispatch). Consult it at the moment of the act, and select a
+  brief's four to six from the slice it prints, not from the top of the
+  file. It never summarises (the evidence half is why the format exists),
+  and it reports what it could not classify rather than missing silently.
+
 Delegation blocks files, not the loop. Record what a dispatched dreamer
 owns (files/dirs) at dispatch; the coordinator stays off those. After
 ~10 minutes of a delegated task running, resume selection over
