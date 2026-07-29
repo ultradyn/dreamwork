@@ -43,6 +43,7 @@ injection can aim at production rather than scaffolding.
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,7 @@ import lint
 from ledger_store import (
     BUSY_TIMEOUT_MS,
     SCHEMA_VERSION,
+    SchemaVersionError,
     SeedError,
     derive_next_id,
     open_store,
@@ -546,3 +548,140 @@ def test_priority_uncertain_bit_and_closed_bands(tmp_path):
             store.conn.commit()
     finally:
         store.close()
+
+
+# ---------------------------------------------------------------------------
+# Schema migration v1→v2 (review_decision: question_id → question_title + actor)
+#
+# Named production lines whose change must red each test:
+#
+# - _migrate_v1_to_v2's DROP + _REVIEW_DECISION_SQL (the table reshaping)
+#       → test_v1_to_v2_migration_reshapes_review_decision_when_empty
+# - _migrate_v1_to_v2's `if count != 0: raise SchemaVersionError` guard
+#       → test_v1_to_v2_migration_refuses_a_non_empty_table
+# ---------------------------------------------------------------------------
+
+# The v1 shape, laid down by a direct sqlite3 connection (NOT open_store) so
+# the production migration is the code under test, not the fixture.
+_V1_REVIEW_DECISION_SQL = """
+CREATE TABLE review_decision (
+    artifact    TEXT PRIMARY KEY,
+    question_id INTEGER NOT NULL,
+    decision    TEXT NOT NULL
+                CHECK (decision IN ('pending','accepted','rejected')),
+    decided_at  TEXT NOT NULL
+);
+"""
+
+
+def _make_v1_store(path, *, with_decision_row=False):
+    """Lay down a schema_version=1 store for migration tests.
+
+    Only meta + the v1 review_decision are needed: open_store's
+    executescript(IF NOT EXISTS) creates every other table, and the
+    migration's behaviour turns entirely on review_decision's shape and row
+    count. A second sqlite3 connection writes the v1 shape directly so the
+    production migration is the thing under test.
+    """
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES ('schema_version', '1')")
+        conn.executescript(_V1_REVIEW_DECISION_SQL)
+        if with_decision_row:
+            conn.execute(
+                "INSERT INTO review_decision"
+                "(artifact, question_id, decision, decided_at)"
+                " VALUES ('art-1', 7, 'accepted', '2026-07-29T00:00:00Z')")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _columns(conn, table):
+    """The column-name set for *table* on *conn*."""
+    return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def test_v1_to_v2_migration_reshapes_review_decision_when_empty(tmp_path):
+    """Production line: _migrate_v1_to_v2's DROP + CREATE (_REVIEW_DECISION_SQL).
+
+    An empty v1 store migrates to v2: question_id is gone, question_title and
+    actor arrive, and schema_version reads 2. Break by making the migration a
+    no-op (drop the DROP+CREATE) — the version bumps to 2 but the table keeps
+    its v1 shape, so the question_title/actor assertions fail.
+    """
+    path = tmp_path / "v1.sqlite3"
+    _make_v1_store(path)  # empty review_decision
+
+    # Precondition: the store genuinely is v1 (question_id present, v2 cols
+    # absent) and the table is empty — the only state the migration may touch.
+    pre = sqlite3.connect(str(path))
+    try:
+        assert _columns(pre, "review_decision") == {
+            "artifact", "question_id", "decision", "decided_at"}, (
+            "precondition: fixture must lay down the v1 shape")
+        n = pre.execute(
+            "SELECT COUNT(*) FROM review_decision").fetchone()[0]
+        assert n == 0, "precondition: v1 table must be empty to migrate"
+    finally:
+        pre.close()
+
+    store = open_store(path, seed_next_id=1)
+    try:
+        cols = _columns(store.conn, "review_decision")
+        assert "question_title" in cols, (
+            f"v2 migration must add question_title; cols={sorted(cols)}")
+        assert "actor" in cols, (
+            f"v2 migration must add actor; cols={sorted(cols)}")
+        assert "question_id" not in cols, (
+            f"v2 migration must drop question_id; cols={sorted(cols)}")
+        version = store.conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+        assert int(version) == SCHEMA_VERSION == 2
+    finally:
+        store.close()
+
+
+def test_v1_to_v2_migration_refuses_a_non_empty_table(tmp_path):
+    """Production line: _migrate_v1_to_v2's `if count != 0: raise`.
+
+    A v1 store WITH a review_decision row cannot migrate: question_id has no
+    referent so no int→title mapping is possible (R5). The migration must
+    refuse loudly. Break by removing the guard — the migration would DROP the
+    row silently and open_store would succeed, so the raises assertion fails.
+
+    Assert the precondition (a row exists) at runtime so the check measures a
+    real refusal, not a fixture that happens to be empty.
+    """
+    path = tmp_path / "v1full.sqlite3"
+    _make_v1_store(path, with_decision_row=True)
+
+    # Precondition: the v1 table carries a row the migration must refuse to drop.
+    pre = sqlite3.connect(str(path))
+    try:
+        n = pre.execute(
+            "SELECT COUNT(*) FROM review_decision").fetchone()[0]
+        assert n == 1, f"precondition: need a v1 row to refuse, got {n}"
+    finally:
+        pre.close()
+
+    with pytest.raises(SchemaVersionError, match="refuse|impossible|question_id"):
+        open_store(path, seed_next_id=1)
+
+    # The refusal left the store at v1: the version UPDATE runs only after a
+    # successful step, and the open BEGIN transaction rolled back on close.
+    post = sqlite3.connect(str(path))
+    try:
+        version = post.execute(
+            "SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+        assert int(version) == 1, (
+            f"refused migration must leave version at 1, got {version}")
+        n = post.execute(
+            "SELECT COUNT(*) FROM review_decision").fetchone()[0]
+        assert n == 1, "the refused migration must not have dropped the row"
+    finally:
+        post.close()
