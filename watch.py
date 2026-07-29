@@ -7389,12 +7389,14 @@ async function cycleBurnStep(back) {
   catch (e) {}
   try {
     const wasBurn = burnKey(data);
+    const bdHover = snapshotBdHover();   // #494: step cycle is also a swap
     setData(await (await fetch(dataJsonUrl())).json());
     const burnBefore = (burnKey(data) !== wasBurn) ? snapshotBars() : null;
     if (view && view.name === 'dashboard') {
       const html = await buildCurrent();
       setLiveContent(html);
       if (burnBefore) regroupBars(burnBefore);
+      restoreBdHover(bdHover);
     }
   } catch (e) {}
 }
@@ -7444,7 +7446,10 @@ function hideBdTip(immediate) {
   tip.classList.add('depart');
   bdtipHideTimer = setTimeout(finish, 450);
 }
-function showBdTip(col) {
+/* settle=true: land fully visible with no pose replay. Used by #494's
+   rearm across the tick re-render — from his POV the tip never left, so
+   re-posing every two seconds would be motion with nothing behind it. */
+function showBdTip(col, settle) {
   const bd = col && col.closest && col.closest('.bd');
   const tip = bd && bd.querySelector('.bdtip');
   if (!tip || !col || !col.dataset || col.dataset.open === undefined) return;
@@ -7452,7 +7457,11 @@ function showBdTip(col) {
   const same = bdtipCol === col && !tip.hidden;
   bdtipCol = col;
   tip.innerHTML = bdtipText(col);
-  if (same) { tip.classList.remove('depart', 'pose'); return; }
+  if (same || settle) {
+    tip.hidden = false;
+    tip.classList.remove('depart', 'pose');
+    return;
+  }
   const rm = bdtipReduced();
   tip.hidden = false;
   tip.classList.remove('depart');
@@ -7466,9 +7475,17 @@ function showBdTip(col) {
 addEventListener('pointerover', e => {
   const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
   if (!col) return;
+  lastBdPtr = { x: e.clientX, y: e.clientY };
   showBdTip(col);
   bdinspSchedule(col);             // #298: a hover that dwells inspects
 });
+/* keep the last pointer position while a hover/pin is live so a tick can
+   rearm against the column still under the hand (#494), not a stale t0
+   that a step-cycle may have retired. */
+addEventListener('pointermove', e => {
+  if (bdtipCol || bdinspCol || bdinspPin)
+    lastBdPtr = { x: e.clientX, y: e.clientY };
+}, { passive: true });
 addEventListener('pointerout', e => {
   const col = e.target.closest && e.target.closest('.bdnet .bdcol[data-open]');
   if (!col) return;
@@ -7584,7 +7601,9 @@ function hideBdInsp(immediate) {
   el.classList.add('depart');
   bdinspHideTimer = setTimeout(finish, 450);
 }
-function showBdInsp(col) {
+/* settle=true: same contract as showBdTip's settle — rearm across a tick
+   without replaying the arrival pose (#494). */
+function showBdInsp(col, settle) {
   const bd = col && col.closest && col.closest('.bd');
   const el = bd && bd.querySelector('.bdinsp');
   if (!el || !col.dataset || col.dataset.t0 === undefined) return;
@@ -7595,12 +7614,101 @@ function showBdInsp(col) {
   el.innerHTML = bdinspHTML(col);
   el.hidden = false;               // visible before measuring
   bdinspLay(bd, col, el);
-  if (same) { el.classList.remove('depart', 'pose'); return; }
+  if (same || settle) { el.classList.remove('depart', 'pose'); return; }
   el.classList.remove('depart');
   if (bdtipReduced()) { el.classList.remove('pose'); return; }
   el.classList.add('pose');        // enter-snap, then ease in (#417 idiom)
   void el.offsetWidth;
   requestAnimationFrame(() => el.classList.remove('pose'));
+}
+/* #494 — carry hover/pin across the live tick's innerHTML swap.
+
+   The dashboard re-renders whenever ANY watched file changes (status.json
+   every few seconds on the 2s /mtime poll). Without a carry, burnPanel
+   recreates .bdtip/.bdinsp as hidden empty nodes and bdtipCol/bdinspCol
+   still reference the detached columns — the tip fades in, then 1–2s later
+   "it all resets" with the mouse unmoved. Detach also fires pointerout,
+   which arms hide timers against the FRESH nodes; restore cancels those
+   and rearms for the column still under the pointer (or the pinned t0).
+
+   Identity is data-t0 (the bucket), never the node. settle=true so a
+   rearm is not a second arrival every two seconds. Departing surfaces are
+   not snapshotted — a leave already under way stays a leave. */
+let lastBdPtr = null;
+function bdColByT0(t0) {
+  if (t0 == null || t0 === '') return null;
+  const want = String(t0);
+  let found = null;
+  document.querySelectorAll('.bdnet .bdcol[data-open]').forEach(c => {
+    if (c.dataset.t0 === want) found = c;
+  });
+  return found;
+}
+function snapshotBdHover() {
+  const tip = document.querySelector('.bd .bdtip');
+  const insp = document.querySelector('.bd .bdinsp');
+  const tipLive = !!(tip && !tip.hidden && !tip.classList.contains('depart')
+                     && bdtipCol);
+  const inspLive = !!(insp && !insp.hidden && !insp.classList.contains('depart')
+                      && bdinspCol);
+  const act = document.activeElement;
+  const focusCol = act && act.matches &&
+    act.matches('.bdnet .bdcol[data-open]') ? act : null;
+  return {
+    tipT0: tipLive ? bdtipCol.dataset.t0 : null,
+    inspT0: (inspLive || bdinspPin) && bdinspCol ? bdinspCol.dataset.t0 : null,
+    pin: !!bdinspPin,
+    focusT0: focusCol ? focusCol.dataset.t0 : null,
+    hadTip: tipLive,
+    hadInsp: inspLive,
+  };
+}
+function restoreBdHover(s) {
+  if (!s || (!s.tipT0 && !s.inspT0 && !s.pin && !s.focusT0)) return;
+  // detach pointerout may have armed hide timers on the new nodes
+  if (bdtipHideTimer) { clearTimeout(bdtipHideTimer); bdtipHideTimer = null; }
+  if (bdinspHideTimer) { clearTimeout(bdinspHideTimer); bdinspHideTimer = null; }
+  bdinspCancel();
+  let under = null;
+  if (lastBdPtr) {
+    try {
+      const el = document.elementFromPoint(lastBdPtr.x, lastBdPtr.y);
+      under = el && el.closest && el.closest('.bdnet .bdcol[data-open]');
+    } catch (e) {}
+  }
+  if (s.focusT0) {
+    const fc = bdColByT0(s.focusT0);
+    if (fc) {
+      const keepPin = s.pin;
+      fc.focus();   // focusin shows tip + insp; settle not needed
+      if (keepPin && s.inspT0) {
+        const pc = bdColByT0(s.inspT0);
+        if (pc) { bdinspPin = true; showBdInsp(pc, true); }
+      }
+      return;
+    }
+  }
+  if (s.pin && s.inspT0) {
+    const pc = bdColByT0(s.inspT0);
+    if (pc) { bdinspPin = true; showBdInsp(pc, true); }
+    if (under) showBdTip(under, true);
+    else if (s.hadTip && s.tipT0) {
+      const tc = bdColByT0(s.tipT0);
+      if (tc) showBdTip(tc, true);
+    }
+    return;
+  }
+  // Unpinned hover: prefer the column under the pointer (real mouse);
+  // fall back to snapshotted t0 (synthetic pointerover has no coords).
+  const col = under || (s.tipT0 && bdColByT0(s.tipT0));
+  if (!col) return;
+  if (s.hadTip || under) showBdTip(col, true);
+  if (s.hadInsp) {
+    const ic = under || (s.inspT0 && bdColByT0(s.inspT0)) || col;
+    if (ic) showBdInsp(ic, true);
+  } else if (s.hadTip || under) {
+    bdinspSchedule(col);           // dwell was mid-flight — restart
+  }
 }
 function bdinspSchedule(col) {
   if (bdinspPin) return;           // a pinned reading is not hover's to move
@@ -8748,6 +8856,10 @@ async function tick() {
       const reviewFrame = snapshotReviewFrame();
       const folds = snapshotFolds();
       const before = snapshotCards();
+      // #494: burndown hover/pin — same carry as card state, keyed by
+      // bucket t0. Snapshot BEFORE the swap; the detach fires pointerout
+      // which would otherwise clear the fresh (hidden) tip/inspector.
+      const bdHover = snapshotBdHover();
       // Exact artifact *created* times can reorder these rows on any data
       // tick (#463). Keep their filename identity and reuse the list FLIP
       // rather than snapping.
@@ -8772,6 +8884,7 @@ async function tick() {
       // wait owns the screen; stale tick work must never overwrite it.
       if (view !== tickView) return setTimeout(tick, 2000);
       setLiveContent(html);
+      restoreBdHover(bdHover);       // #494 before anything that measures
       restoreReviewFrame(reviewFrame);
       // FOLDS FIRST, then the cards inside them (#179). Both must land before
       // the regroups, which MEASURE — a section restored afterwards would be

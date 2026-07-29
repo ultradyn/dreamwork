@@ -59,10 +59,12 @@ process.on('unhandledRejection', e => nameThrow('unhandledRejection', e));
 declare({
   drives: 'one own-server target (a planted git ledger) on an ephemeral ' +
           'port; GET / and /data.json; dispatched pointerover/out, focus, ' +
-          'click and Escape keydown events on level columns; a ' +
-          'reduced-motion context on the same target',
+          'click and Escape keydown events on level columns; a live tick ' +
+          're-render (POST /command + tick()) under a held hover and under ' +
+          'a pinned inspector; a reduced-motion context on the same target',
   traceWindow: '1.6s per inspector arrival capture (700ms dwell + the ' +
-               '.42s ease-in, with margin); 500ms for reduced-motion'
+               '.42s ease-in, with margin); 500ms for reduced-motion; ' +
+               'tick-survival samples immediately after the re-render'
 });
 
 // ── a planted ledger history ──────────────────────────────────────────────
@@ -429,6 +431,143 @@ for (const idx of [0, lastIdx, busyIdx]) {
   await sleep(600);
   ok('#298: a second tap on the same column dismisses it',
      (await p.evaluate(INSP)) === null);
+}
+
+/* ── #494: hover / pin survive the live tick re-render ───────────────────
+   The dashboard re-renders through innerHTML whenever ANY watched file
+   changes (status.json every few seconds — the 2s /mtime poll). Without
+   a carry, .bdtip/.bdinsp are recreated hidden and bdtipCol/bdinspCol
+   point at detached columns: the tip fades in, then 1–2s later "it all
+   resets" with the mouse unmoved. This is the poll, not a hide timer.
+
+   THE PRECONDITION is the mechanism: the column node we hovered must be
+   detached after the tick (a real re-render), and the tip element must
+   be a new node. An end-state-only check that the tip is up would pass
+   if the tick never ran. THE ASSERTION is that tip + inspector stay the
+   active surface for the same column numbers, with no pointer move. */
+{
+  const TIP = `(() => {
+    const el = document.querySelector('.bd .bdtip');
+    if (!el || el.hidden) return null;
+    return { text: (el.textContent || '').trim(),
+             op: parseFloat(getComputedStyle(el).opacity),
+             depart: el.classList.contains('depart') };
+  })()`;
+  const pre = await p.evaluate(`(() => {
+    const col = document.querySelectorAll('.bdnet .bdcol[data-open]')[${busyIdx}];
+    if (!col) return { err: 'no col' };
+    col.dataset.probe494 = '1';
+    col.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+    return { t0: col.dataset.t0, open: col.dataset.open,
+             commits: col.dataset.commits };
+  })()`);
+  await sleep(1100);   // past BD_DWELL + tip ease-in
+  const preTip = await p.evaluate(TIP);
+  const preInsp = await p.evaluate(INSP);
+  notes.push(`#494 pre-tick: tip=${JSON.stringify(preTip)} ` +
+             `insp=${JSON.stringify(preInsp && preInsp.lines)}`);
+  ok('#494 precondition: tip and inspector are both up before the tick',
+     !!pre && !pre.err && !!preTip && !preTip.depart && preTip.op > 0.5 &&
+     !!preInsp && preInsp.op > 0.5);
+  // Real production path: /command appends watch-events.log (watched —
+  // mtime moves), then tick() re-renders. Not a hand-call to setContent.
+  const swap = await p.evaluate(`(async () => {
+    const colBefore = document.querySelector('.bdnet .bdcol[data-probe494="1"]');
+    const tipBefore = document.querySelector('.bd .bdtip');
+    await fetch('/command', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'add-idea', text: '494 hover tick' }) });
+    await tick();
+    // one retry if the mtime race lost the first tick (same shape as
+    // burndown.mjs quiet-tick: force the re-render, do not invent one)
+    if (colBefore && colBefore.isConnected) {
+      await new Promise(r => setTimeout(r, 50));
+      await tick();
+    }
+    const tipAfter = document.querySelector('.bd .bdtip');
+    const insp = document.querySelector('.bd .bdinsp');
+    return {
+      colDetached: !colBefore || !colBefore.isConnected,
+      tipReplaced: !!tipAfter && tipAfter !== tipBefore,
+      tipHidden: !tipAfter || tipAfter.hidden,
+      tipText: tipAfter && !tipAfter.hidden
+        ? (tipAfter.textContent || '').trim() : '',
+      tipDepart: !!(tipAfter && tipAfter.classList.contains('depart')),
+      tipOp: tipAfter && !tipAfter.hidden
+        ? parseFloat(getComputedStyle(tipAfter).opacity) : 0,
+      inspHidden: !insp || insp.hidden,
+      inspDepart: !!(insp && insp.classList.contains('depart')),
+      inspOp: insp && !insp.hidden
+        ? parseFloat(getComputedStyle(insp).opacity) : 0,
+      inspText: insp && !insp.hidden
+        ? (insp.innerText || '').trim() : '',
+    };
+  })()`);
+  notes.push(`#494 hover tick: ${JSON.stringify(swap)}`);
+  ok('#494 precondition: the tick really re-rendered the burndown DOM ' +
+     '(column detached, tip node replaced)',
+     !!swap && swap.colDetached && swap.tipReplaced);
+  const tipMatch = !!swap && !swap.tipHidden && !swap.tipDepart &&
+    swap.tipOp >= 0.9 &&
+    new RegExp('^' + pre.open + ' open · ').test(swap.tipText || '') &&
+    (swap.tipText || '').includes(pre.commits + ' commit');
+  ok('#494: glance tip stays up for the same column after the tick ' +
+     '(mouse unmoved)', tipMatch);
+  const want = buckets[busyIdx];
+  const inspVals = (swap.inspText || '').match(
+    /(\d+) open · (\d+) arrived · (\d+) landed · (\d+) commits?/);
+  ok('#494: inspector stays up with the same column numbers after the tick',
+     !!swap && !swap.inspHidden && !swap.inspDepart && swap.inspOp >= 0.9 &&
+     !!inspVals && +inspVals[1] === want.open &&
+     +inspVals[4] === (want.commits || 0));
+  await leaveAll();
+
+  // pin path: a tapped inspector must also survive the tick (#298 + #494)
+  await p.evaluate(`(() => {
+    const col = document.querySelectorAll('.bdnet .bdcol[data-open]')[${quietIdx}];
+    if (!col) return;
+    col.dataset.probe494pin = '1';
+    col.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  })()`);
+  await sleep(500);
+  const pinPre = await p.evaluate(INSP);
+  ok('#494 pin precondition: inspector is pinned before the tick', !!pinPre);
+  const pinSwap = await p.evaluate(`(async () => {
+    const colBefore = document.querySelector(
+      '.bdnet .bdcol[data-probe494pin="1"]');
+    await fetch('/command', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'add-idea', text: '494 pin tick' }) });
+    await tick();
+    if (colBefore && colBefore.isConnected) {
+      await new Promise(r => setTimeout(r, 50));
+      await tick();
+    }
+    const insp = document.querySelector('.bd .bdinsp');
+    return {
+      colDetached: !colBefore || !colBefore.isConnected,
+      inspHidden: !insp || insp.hidden,
+      inspText: insp && !insp.hidden ? (insp.innerText || '').trim() : '',
+      inspOp: insp && !insp.hidden
+        ? parseFloat(getComputedStyle(insp).opacity) : 0,
+    };
+  })()`);
+  notes.push(`#494 pin tick: ${JSON.stringify(pinSwap)}`);
+  ok('#494 pin precondition: the tick really re-rendered under the pin',
+     !!pinSwap && pinSwap.colDetached);
+  const qWant = buckets[quietIdx];
+  const pinVals = (pinSwap.inspText || '').match(
+    /(\d+) open · (\d+) arrived · (\d+) landed · (\d+) commits?/);
+  ok('#494: a pinned inspector survives the tick re-render',
+     !!pinSwap && !pinSwap.inspHidden && pinSwap.inspOp >= 0.9 &&
+     !!pinVals && +pinVals[1] === qWant.open &&
+     +pinVals[4] === (qWant.commits || 0));
+  // hard clear so later geometry checks do not inherit a live pin
+  await p.evaluate(`(() => {
+    if (typeof hideBdInsp === 'function') hideBdInsp(true);
+    if (typeof hideBdTip === 'function') hideBdTip(true);
+  })()`);
+  await leaveAll();
 }
 
 /* ── mobile screenshot + inside-panel pin (narrow path already covered) ─ */

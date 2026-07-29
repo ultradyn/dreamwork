@@ -1150,7 +1150,7 @@ class TestCollector(unittest.TestCase):
                       'data-covered="${c > 0 ? 1 : 0}"',
                       'function bdinspHTML(col)',
                       'function bdinspLay(bd, col, el)',
-                      'function showBdInsp(col)',
+                      'function showBdInsp(col',
                       'function hideBdInsp(immediate)',
                       "'level carried — no ledger commits'",
                       "'period in progress'",
@@ -1168,6 +1168,16 @@ class TestCollector(unittest.TestCase):
         self.assertIn(".bdinsp { transition:none; }", watch.PAGE)
         self.assertIn(".bdinsp.pose", watch.PAGE)
         self.assertIn(".bdinsp.depart", watch.PAGE)
+        # #494: hover/pin survive the live tick's innerHTML swap — snapshot
+        # before setLiveContent, restore after; settle avoids re-posing.
+        for token in ('function snapshotBdHover',
+                      'function restoreBdHover',
+                      'restoreBdHover(bdHover)',
+                      'showBdTip(col, settle)',
+                      'showBdInsp(col, settle)'):
+            self.assertIn(token, watch.PAGE)
+        # both re-render seams carry the hover (tick + step cycle)
+        self.assertGreaterEqual(watch.PAGE.count('restoreBdHover(bdHover)'), 2)
 
     def test_burndown_step_cycle_control_wiring(self):
         # #487 — the granularity label is a cycle control: affordance,
