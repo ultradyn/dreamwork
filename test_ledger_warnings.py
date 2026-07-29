@@ -159,6 +159,45 @@ def test_footer_never_changes_exit_code(dev_ledger, tmp_path):
         "a verb that succeeded must exit 0 even when the footer has warnings")
 
 
+def test_footer_absent_on_a_failing_verb(dev_ledger, tmp_path):
+    """A failing verb prints NO warning footer — the `if rc == 0:` gate.
+
+    PRODUCTION LINE (red-proof target): the `if rc == 0:` gate in
+    emit_warnings. RED: replace it with `if True:` and the footer rides a
+    FAILED verb's stderr — a warning line after an error reads as the
+    error's own output and trains him to ignore both. (Surfaced as a GREEN
+    red-run at the #357 merge gate: the lane's seven proofs bound the
+    stream, the exit code, the two reuse seams, the zero-suppression, the
+    clean-tree quiet, and the journal count — but nothing failed with this
+    gate removed. A green red-run is a finding; this check is it acted on.)
+    """
+    dw = tmp_path / "dw"
+    dw.mkdir()
+    (dw / "tasks.md").write_text(OPEN_TASKS_LEDGER)
+
+    # Precondition: warnings genuinely exist, so the footer WOULD print if
+    # the gate were open — a clean fixture makes the assertion vacuous.
+    import watch
+    open_ids, _ = watch.parse_ledger((dw / "tasks.md").read_text())
+    assert open_ids, "precondition: warnings must exist for the gate test"
+
+    # Direct: rc != 0 suppresses the footer even with warnings present.
+    buf = io.StringIO()
+    rc = dev_ledger.emit_warnings(str(dw), 65, stream=buf)
+    assert rc == 65, "emit_warnings must return the rc it was handed"
+    assert "warnings:" not in buf.getvalue(), (
+        "a failing verb must not carry the warning footer")
+
+    # End to end: a failing verb through main() prints no footer on stderr.
+    err = io.StringIO()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+        rc = dev_ledger.main(["fold", "99999", "--note", "x",
+                              "--ledger", str(dw / "tasks.md")])
+    assert rc != 0, "precondition: the verb must genuinely fail"
+    assert "warnings:" not in err.getvalue(), (
+        "a failing verb's stderr carries the error, never the footer")
+
+
 # ---------------------------------------------------------------------------
 # Reuse, never rebuild — the footer's open-task count IS store_ids_by_state.
 # ---------------------------------------------------------------------------
