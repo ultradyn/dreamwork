@@ -2529,7 +2529,11 @@ pose→ease-in / depart idiom, same floats-over-the-chart premise.
   never overlap. Laid out in JS (`bdinspLay`); `data-bdslot` records the
   chosen slot. Moving between slots reuses the same pose/depart arrival
   (transitions.md) — a smaller instance of the route change, not a second
-  gesture.
+  gesture. **`.bdinsp` is `box-sizing: border-box`** so `max-width:100%`
+  includes padding and border — content-box let the box grow ~18px past
+  the panel once #498 lengthened the open-period coverage line to the
+  max-width ceiling (measured at 390px: right 392 vs panel 374). Layout
+  also clamps `left` so `left + width` cannot leave the panel.
 - **Dismissal**: pointer-leave (unless pinned), focus-leave, tap the same
   column again, tap outside the chart, **Escape**, or scroll — a scrolled
   page moves the column out from under the reading, so it departs rather
