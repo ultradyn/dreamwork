@@ -7080,6 +7080,18 @@ function setContent(html) {
         }
         if (same) return false;
       }
+      // Human-owned open on data-keep disclosures: builders always emit
+      // closed; open is his. Stamp onto toEl so morphAttrs does not clear
+      // it (absorbs snapshotFolds re-open). Mid-gesture height travels the
+      // same way — a kept node mid-fold must not lose its inline height.
+      if (fromEl.tagName === 'DETAILS' && fromEl.dataset && fromEl.dataset.keep) {
+        if (fromEl.open) toEl.open = true;
+        if (fromEl.style && fromEl.style.height)
+          toEl.style.height = fromEl.style.height;
+      }
+      // Card-internal disclosures (no data-keep) and form values: still
+      // carried by snapshotCardState / snapshotViewInputs until those pairs
+      // are deleted; builders re-emit closed/default.
       if (fromEl.isEqualNode(toEl)) return false;
       return true;
     },
@@ -7283,32 +7295,6 @@ function refocus(ta) {
    `height` IS the tell, and it cannot go stale because `travelCard` clears it
    itself at CARD_MS + 150. The interrupted height is just the old node's rect
    at snapshot time. */
-function snapshotFolds() {
-  const m = new Map();
-  document.querySelectorAll('details[data-keep]').forEach(el =>
-    m.set(el.dataset.keep, {
-      open: el.open,
-      travelling: el.open && el.style.height !== '',
-      height: el.getBoundingClientRect().height,
-    }));
-  return m;
-}
-function restoreFolds(saved) {
-  if (!saved) return;
-  document.querySelectorAll('details[data-keep]').forEach(el => {
-    const was = saved.get(el.dataset.keep);
-    if (!was || !was.open) return;
-    el.open = true;
-    if (!was.travelling || rmr) return;
-    // resume the interrupted open on the node that now exists, through the
-    // SAME two calls the summary's own handler uses — the height travels from
-    // where it got to, the body eases in behind it. Only the height differs
-    // from `now`, so the section does not move: it was never going to.
-    const now = el.getBoundingClientRect();
-    travelCard(el, { left: now.left, top: now.top, height: was.height }, now, false);
-    revealBody(el);
-  });
-}
 function cardGroup(el) {
   for (let n = el.previousElementSibling; n; n = n.previousElementSibling)
     if (n.classList.contains('label')) return n.textContent;
@@ -9516,7 +9502,6 @@ async function tick() {
       const kept = snapshotCardState();
       const askKept = snapshotAskState();
       const reviewFrame = snapshotReviewFrame();
-      const folds = snapshotFolds();
       const before = snapshotCards();
       // #523: focused input/textarea inside #view (id + caret + typed value).
       // Targeted snapshot/restore — not the #505 general reconciliation.
@@ -9559,7 +9544,6 @@ async function tick() {
       // closed <details> does nothing and reports nothing. On the dashboard
       // every card lives inside `.qsec`, which renders closed, so restoring
       // the card first re-filled the box and silently dropped the focus.
-      restoreFolds(folds);
       restoreCardState(kept);
       // #523 after folds/cards so refocus is not swallowed by a closed
       // ancestor; before ask so a card textarea and #askbox keep their

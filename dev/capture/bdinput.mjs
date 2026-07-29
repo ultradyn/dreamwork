@@ -176,7 +176,6 @@ const forceTick = async () => {
     const kept = snapshotCardState();
     const askKept = snapshotAskState();
     const reviewFrame = snapshotReviewFrame();
-    const folds = snapshotFolds();
     const beforeCards = snapshotCards();
     const viewIn = snapshotViewInputs();
     const bdHover = snapshotBdHover();
@@ -203,7 +202,6 @@ const forceTick = async () => {
     setLiveContent(html);
     restoreBdHover(bdHover);
     restoreReviewFrame(reviewFrame);
-    restoreFolds(folds);
     restoreCardState(kept);
     restoreViewInputs(viewIn);   // production line (a)(b) bind
     restoreAskState(askKept);

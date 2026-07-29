@@ -157,7 +157,6 @@ async function forceTickSample() {
     if (typeof lastViewHtml !== 'undefined') lastViewHtml = null;
     const kept = snapshotCardState();
     const askKept = snapshotAskState();
-    const folds = snapshotFolds();
     const beforeCards = snapshotCards();
     const viewIn = snapshotViewInputs();
     const bdHover = typeof snapshotBdHover === 'function' ? snapshotBdHover() : null;
@@ -166,7 +165,6 @@ async function forceTickSample() {
     const html = await buildCurrent();
     setLiveContent(html);
     if (typeof restoreBdHover === 'function') restoreBdHover(bdHover);
-    restoreFolds(folds);
     restoreCardState(kept);
     restoreViewInputs(viewIn);
     restoreAskState(askKept);
