@@ -1202,6 +1202,36 @@ STYLE = """<style>
   .qfocus:hover { color:var(--accent); }
   .qfocus:focus-visible { color:var(--accent);
     outline:1px solid var(--accent); outline-offset:2px; }
+  /* #454 — the roll-up affordance: the same quiet headline chrome as the
+     focus link it sits beside, as a BUTTON (it acts here; the link goes
+     somewhere). Same rest/hover/focus ramp, and no motion of its own —
+     it is part of the card's HTML and rides the card's arrival. */
+  .qroll { background:none; border:0; padding:0; font:inherit;
+    color:var(--dimmer); font-size:.7rem; white-space:nowrap; cursor:pointer; }
+  .qroll:hover { color:var(--accent); }
+  .qroll:focus-visible { color:var(--accent);
+    outline:1px solid var(--accent); outline-offset:2px; }
+  /* the dock is the reading surface: its card is never rolled, so the
+     affordance the markup shares with the list declines there */
+  .qdock .qroll { display:none; }
+  /* ROLLED — the top of the scroll, never a bare title. The wrapper
+     becomes a box for the first time: #326's display:contents is what an
+     unrolled card needs (no box, margins collapse as if it were not
+     there), but a clamp needs an overflow edge and an edge needs a box.
+     The height is a line COUNT times the rendered line height, measured
+     at runtime and handed over as --rollh (rollHeight) — a pinned pixel
+     constant is #441's failure shape. The bottom edge softens with a CSS
+     mask, the rolled scroll's cut; NEVER an SVG filter — a per-card
+     filter is #449's measured jank and this feature is precisely the
+     many-filtered-elements shape. The compose box leaves with the rest
+     of the body: answering a question means reading it, and reading it
+     means unrolling. The mask fade is ~1.5 lines of the 5.5, so the
+     readable floor stays the 4-5 he asked to judge by. */
+  .qa.rolled .qbody { display:block; max-height:var(--rollh, 6.5em);
+    overflow:hidden;
+    -webkit-mask-image:linear-gradient(to bottom, #000 72%, transparent 99%);
+    mask-image:linear-gradient(to bottom, #000 72%, transparent 99%); }
+  .qa.rolled .qcompose { display:none; }
   /* a send that did not land wears the same colour, because it is the same
      failure seen from the writing end: the channel to him did not work and
      nothing else on the page would have said so */
