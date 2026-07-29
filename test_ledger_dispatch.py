@@ -57,6 +57,21 @@ def migrate():
     return _load_migrate()
 
 
+def _load_dev_ledger():
+    """Load dev/ledger.py as a module (it lives in dev/, not the root)."""
+    loader = importlib.machinery.SourceFileLoader(
+        "dev_ledger_dispatch", str(REPO / "dev" / "ledger.py"))
+    spec = importlib.util.spec_from_loader("dev_ledger_dispatch", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture
+def dev_ledger():
+    return _load_dev_ledger()
+
+
 # ---------------------------------------------------------------------------
 # Fixture ledger — two sections, clean ids, a combined head, human+loop origins.
 # ---------------------------------------------------------------------------
@@ -465,3 +480,144 @@ def test_dev_ledger_counts_match(migrate, tmp_path):
         f"open count: store={st_open} markdown={md_open}")
     assert st_landed == md_landed, (
         f"landed count: store={st_landed} markdown={md_landed}")
+
+
+# ---------------------------------------------------------------------------
+# Test 6 — dev/ledger.py fold: store-mode fold flips state, Markdown untouched.
+#
+# Production line: the ``if args.cmd in ("fold", "file") and source_of_truth(
+# dw_dir) == "store"`` dispatch in dev/ledger.py main. Red-proof: remove the
+# fold store branch and fold falls through to the markdown path, which moves
+# text in tasks.md instead of flipping the store state — the markdown-untouched
+# assertion fails.
+# ---------------------------------------------------------------------------
+def test_dev_ledger_fold_store_path_flips_state_markdown_untouched(
+        migrate, dev_ledger, tmp_path):
+    """fold in store mode CASes state open→landed; tasks.md is not touched."""
+    import contextlib
+    dw = tmp_path / "dw"
+    dw.mkdir()
+    (dw / "tasks.md").write_text(LEDGER)
+    db = _setup_store(migrate, dw, LEDGER)
+    _write_watermark(db)
+
+    # Precondition: #10 is open in the store (the fold CAS needs an open task).
+    conn = sqlite3.connect(str(db))
+    state_before = conn.execute(
+        "SELECT state FROM task WHERE id = 10").fetchone()[0]
+    conn.close()
+    assert state_before == "open", (
+        f"precondition: #10 must be open, got {state_before!r}")
+
+    original_md = (dw / "tasks.md").read_text()
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = dev_ledger.main(["fold", "10", "--note", "done deal",
+                              "--ledger", str(dw / "tasks.md")])
+    assert rc == 0
+
+    # The store state flipped; the note landed in the body.
+    conn = sqlite3.connect(str(db))
+    state, body = conn.execute(
+        "SELECT state, body FROM task WHERE id = 10").fetchone()
+    conn.close()
+    assert state == "landed", f"store state should be landed, got {state!r}"
+    assert "done deal" in body, "the fold note must be in the task body"
+
+    # The Markdown file is byte-identical — the store is the source.
+    assert (dw / "tasks.md").read_text() == original_md, (
+        "tasks.md must be untouched in store-mode fold")
+
+
+# ---------------------------------------------------------------------------
+# Test 7 — dev/ledger.py file: store-mode file allocates a new id.
+#
+# Production line: the same store dispatch as test 6, file branch. Red-proof:
+# remove the file store branch and file falls through to the markdown path,
+# which edits tasks.md instead of inserting a store row — the store-row
+# assertion fails.
+# ---------------------------------------------------------------------------
+def test_dev_ledger_file_store_path_allocates_id(migrate, dev_ledger, tmp_path):
+    """file in store mode inserts a task row with the seeded next id."""
+    import contextlib
+    dw = tmp_path / "dw"
+    dw.mkdir()
+    (dw / "tasks.md").write_text(LEDGER)
+    db = _setup_store(migrate, dw, LEDGER)
+    _write_watermark(db)
+
+    # Derive the expected id at runtime: the store's next id before filing.
+    conn = sqlite3.connect(str(db))
+    expected_id = conn.execute(
+        "SELECT seq + 1 FROM sqlite_sequence WHERE name = 'task'").fetchone()[0]
+    n_before = conn.execute("SELECT COUNT(*) FROM task").fetchone()[0]
+    conn.close()
+    assert expected_id is not None, "precondition: the sequence must be seeded"
+
+    original_md = (dw / "tasks.md").read_text()
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = dev_ledger.main(["file", "a freshly filed task",
+                              "--note", "its body", "--priority", "P1",
+                              "--type", "bug", "--origin", "loop",
+                              "--ledger", str(dw / "tasks.md")])
+    assert rc == 0
+
+    # The store gained exactly one row at the expected id.
+    conn = sqlite3.connect(str(db))
+    n_after = conn.execute("SELECT COUNT(*) FROM task").fetchone()[0]
+    row = conn.execute(
+        "SELECT state, title, body, priority FROM task WHERE id = ?",
+        (expected_id,)).fetchone()
+    conn.close()
+    assert n_after == n_before + 1, (
+        f"store should have one new row: {n_before} → {n_after}")
+    assert row is not None, f"no row at the expected id {expected_id}"
+    assert row[0] == "open"
+    assert row[1] == "a freshly filed task"
+    assert "its body" in row[2]
+
+    # The Markdown file is untouched.
+    assert (dw / "tasks.md").read_text() == original_md
+
+
+# ---------------------------------------------------------------------------
+# Test 8 — dev/ledger.py file: markdown-mode file inserts under Open.
+#
+# Production line: ``file_text`` in dev/ledger.py. Red-proof: make file_text
+# return text unchanged and no new entry appears under ## Open, Next id is not
+# bumped.
+# ---------------------------------------------------------------------------
+def test_dev_ledger_file_markdown_path_inserts_and_bumps(dev_ledger, tmp_path):
+    """file in markdown mode inserts under ## Open and bumps Next id."""
+    import contextlib
+    import re
+    dw = tmp_path / "dw"
+    dw.mkdir()
+    (dw / "tasks.md").write_text(LEDGER)
+
+    # No watermark → markdown mode. Precondition: the fixture's Next id.
+    header = re.search(r"Next id: \*\*(\d+)\*\*", LEDGER)
+    assert header is not None, "precondition: fixture must have a Next id header"
+    next_id = int(header.group(1))
+    assert next_id > 1
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = dev_ledger.main(["file", "a markdown-filed task",
+                              "--note", "a note", "--ledger",
+                              str(dw / "tasks.md")])
+    assert rc == 0
+
+    result = (dw / "tasks.md").read_text()
+    # The new entry is under ## Open with the allocated id.
+    assert f"- **#{next_id}** — a markdown-filed task" in result, (
+        f"new entry #{next_id} must be under ## Open")
+    assert "a note" in result, "the note must appear as a continuation"
+    # Next id bumped.
+    new_header = re.search(r"Next id: \*\*(\d+)\*\*", result)
+    assert new_header is not None
+    assert int(new_header.group(1)) == next_id + 1, (
+        f"Next id must bump to {next_id + 1}, got {new_header.group(1)}")
+    # No store was created (markdown mode does not touch the store).
+    assert not (dw / ledger_parse.STORE_FILENAME).exists(), (
+        "markdown-mode file must not create a store")
