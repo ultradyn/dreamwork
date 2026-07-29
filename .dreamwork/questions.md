@@ -29,26 +29,12 @@
     without this? And also, what is 465?
 
 
-- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?**
-  **Open four days, and your `#275` answer today gave half of it an owner** — so this is now smaller.
-
-  **The general half is decided, recorded not asked:** dreamhub is read+write and replaces watch.py, so
-  cross-machine delivery is a dreamhub concern inheriting `#360`'s ssh-rooted auth — not a per-incident ssh
-  call. It is the surface where a wrong write corrupts another loop's record of what you want.
-
-  **`Q1`, the only live question:** an answer of yours from 2026-07-25 (*"defer publishing repo for a bit"*)
-  belongs to the dreamwork loop on **x-game** (`~/src/ez-feedback-pipeline`) and has never reached it. Shall I
-  **append it to that repo's `questions.md` over ssh**, or will you drop it into that dashboard yourself? I
-  have not touched that file — writing into another agent's live state uninvited is what this loop keeps
-  telling dreamers not to do.
-
-  That loop may not still be running after four days, in which case the append is harmless bookkeeping.
-
-  **If you say nothing:** the answer stays undelivered, and the general rule is already recorded, so nothing
-  else blocks.
-  - **Follow-up (loop, 2026-07-25 17:24):** three submissions once attached here were REMOVED — not his
-    words but verbatim guard strings, from a guard that ran against the live target instead of the fixture
-    (fixed in `7be4a22`). **This question has never been answered.**
+- **P2 · 2026-07-25 — how should an answer reach a loop on another machine?** **DEFERRED by him
+  2026-07-29 16:14 — revisit once dreamhub is stable and the primary way we access dreamworkers.** Until
+  then, nothing blocks and nothing is delivered by hand.
+  - **Note (human, via watch, 2026-07-29 16:14):** this should be deferred
+    as an open question that we'll revisit once dreamhub is stable and the
+    primary way we access dreamworkers
 
 ## Answered
 
