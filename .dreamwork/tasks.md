@@ -24,9 +24,26 @@ carries exactly one `origin: **human**`, `origin: **loop**`, or
 value for anything filed before the convention existed. Older entries
 stay unmarked; history is not guessed. Contract: `file-formats.md`.
 
-Next id: **480**
+Next id: **481**
 
 ## Open
+- **#480** — the deploy snapshot is a single file and cannot import `user_events/` or `ledger_parse.py`, so the next `just deploy` boot-fails and leaves his dashboard down · P1 ·
+  deploy/tooling · origin: **loop** · **found 2026-07-29 by the `#352` lane, which pushed it back rather than
+  touching deploy machinery** — `watch.py` at HEAD imports `user_events.sqlite` (`#263`) at module top and, as of
+  `#352` (`b7fd947`), `ledger_parse` too. `just deploy` snapshots `watch.py` to a single file
+  (`dev/deploy_state.py --resolve-snapshot`) and runs it from `~/.cache/dreamwork/deployed/`, where neither
+  sibling exists — so the process dies on `import user_events.sqlite` at startup
+  · **why it bites hard:** `#431`'s recipe stops the old server BEFORE starting the new one, and `--assert-server`
+  proves the snapshot is a server module (has `main` + `GENERATION`) but NOT that its imports resolve — so the
+  snapshot passes the guard, the old server stops, the new one ImportErrors, and the curl check reports "deploy
+  failed" with his dashboard already dark. It is latent only because no deploy has happened since `#263`'s import
+  landed (the deployed dashboard runs an old snapshot)
+  · **the fix, not yet designed:** ship the sibling modules beside the snapshot (a snapshot dir, not a single
+  file), or make the imports lazy so the single file still boots. `#368`'s split will change this anyway; until
+  then the recipe must handle siblings. Decide which before the next deploy
+  · **verify before the next real deploy:** deploy HEAD to a scratch port and confirm it boots (NOT to 35110),
+  because this class is invisible until the process tries to start
+  · blocked on nothing · related: **#263, #352, #425, #368, #431**
 - **#479** — `typing` loses the destination mode across a tick, and it was green two hours ago · P1 ·
   regression/bug · origin: **loop** · **found 2026-07-29 09:12 by the full `just test` that closed `#475`** —
   the ONLY failure in a 60-guard run (59 PASS, 60 of 60 judged), and it was **PASSING** in the 07:40 run, so it
@@ -1606,33 +1623,6 @@ Next id: **480**
   accounted for, the 6 bandless entries deliberately left as his call
 
   · related: **#395, #440**
-- **#352** — Standardize the duplicated ledger parsing before the store migration ·
-  P1 · refactor/prerequisite · origin: **human** · **human via watch 2026-07-28 01:05**,
-  as a follow-up on the #346 ask: *"before we work on this proper we should standardize the
-  current python parsing so we fix the duplicate code issues and such now in case it matters
-  as we migrate and things"* · **his reasoning is the strongest case for doing it now**: a
-  duplicated parser is duplicated work to re-point at cutover, and whichever copy nobody
-  re-points silently becomes a reader of `tasks.md.deprecated`
-  · **already measured, do not re-derive it** (#346's design, §"The invariant #294 says to
-  verify"): `ledger_entries` has **two implementations** — `lint.ledger_entries` and
-  `watch.ledger_entries` (`watch.py:6599`), whose docstring claims it is lint's *"VERBATIM
-  (a test pins the two identical)"*. The logic IS identical; the source is not — watch's copy
-  drops the type annotations and rewrites the docstring, so a source-equality check fails on
-  a pair that behaves the same · **the pin is behavioural and single-fixture**:
-  `test_watch.py:863` asserts equality on ONE hostile input, which is a better pin than
-  source comparison and a weaker one than it reads · **three callers**: `lint.py`,
-  `watch.py`, `task_origins.py`
-  · rec: one module both import, so the pin becomes unnecessary rather than better — a test
-  that two copies agree is a test that should not need to exist · the seam matters more than
-  the tidiness: #346's read surface and #294's cutover both re-point "the reader", and that
-  phrase is only meaningful once there is one
-  · **check what else is duplicated before assuming this is the only pair** — `parse_ledger`,
-  the section-splitting, and the origin-marker parsing are all candidates, and #346's design
-  found this pair only because it went looking for one thing
-  · **blocked on `watch.py`** (`ccc-glm52-336` holds it) for the import change; the extraction
-  and lint's side can be prepared first · when the module lands, delete the "VERBATIM" claim
-  rather than updating it
-
 - **#351** — `/file` should highlight source, run wider, and not wrap lines · P2 ·
   dashboard/readability · origin: **human** · **human via watch `add-idea` 2026-07-28
   01:03**, typed from `/file?p=lint.py` — the page he was reading this session's work on:
@@ -3807,6 +3797,34 @@ Next id: **480**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#352** — Standardize the duplicated ledger parsing before the store migration ·
+  P1 · refactor/prerequisite · origin: **human** · **human via watch 2026-07-28 01:05**,
+  as a follow-up on the #346 ask: *"before we work on this proper we should standardize the
+  current python parsing so we fix the duplicate code issues and such now in case it matters
+  as we migrate and things"* · **his reasoning is the strongest case for doing it now**: a
+  duplicated parser is duplicated work to re-point at cutover, and whichever copy nobody
+  re-points silently becomes a reader of `tasks.md.deprecated`
+  · **already measured, do not re-derive it** (#346's design, §"The invariant #294 says to
+  verify"): `ledger_entries` has **two implementations** — `lint.ledger_entries` and
+  `watch.ledger_entries` (`watch.py:6599`), whose docstring claims it is lint's *"VERBATIM
+  (a test pins the two identical)"*. The logic IS identical; the source is not — watch's copy
+  drops the type annotations and rewrites the docstring, so a source-equality check fails on
+  a pair that behaves the same · **the pin is behavioural and single-fixture**:
+  `test_watch.py:863` asserts equality on ONE hostile input, which is a better pin than
+  source comparison and a weaker one than it reads · **three callers**: `lint.py`,
+  `watch.py`, `task_origins.py`
+  · rec: one module both import, so the pin becomes unnecessary rather than better — a test
+  that two copies agree is a test that should not need to exist · the seam matters more than
+  the tidiness: #346's read surface and #294's cutover both re-point "the reader", and that
+  phrase is only meaningful once there is one
+  · **check what else is duplicated before assuming this is the only pair** — `parse_ledger`,
+  the section-splitting, and the origin-marker parsing are all candidates, and #346's design
+  found this pair only because it went looking for one thing
+  · **blocked on `watch.py`** (`ccc-glm52-336` holds it) for the import change; the extraction
+  and lint's side can be prepared first · when the module lands, delete the "VERBATIM" claim
+  rather than updating it
+  · landed b7fd947 (merge of wt/352; lane work 8536c4d, native subagent). One ledger entry/origin grammar extracted to ledger_parse.py and imported by lint.py, watch.py, task_origins.py and status_sync.py — five duplication sites closed (regexes x3, KNOWN_ORIGINS x2, fail-closed classify x2, the Open-section slice x2 inside lint). VERBATIM claim deleted; moot equality pins replaced with assertIs identity. parse_ledger correctly left in watch (never duplicated). Coordinator-verified on the merged tree: 700 parser tests pass, lint clean, single-definition confirmed by grep. Deploy follow-up filed as #480.
+
 - **#474** — `docktarget` and `noteprop` fail on master and passed at this session's first commit · **P1** ·
   regression/dashboard · origin: **loop** · **found 2026-07-29 06:45 while discharging the guard debt `#471`
   exposed**
