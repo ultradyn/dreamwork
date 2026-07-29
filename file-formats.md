@@ -99,6 +99,21 @@ undated. `lint.check_resolution_marker_outside_title` ERRORs on it, and
 fires on the marker's **position**, never on the wrap: 30 of 65 titles wrap
 legitimately.
 
+**The resolution head goes ABOVE every sub-bullet** — at the head of the
+body, before the first `- **Answer …` / `- **Note …` line (#467). A sub-
+bullet absorbs every following non-bullet line as its own wrapped
+continuation (`_parse_entries` invariant 3; only a blank line or a plain
+`- ` bullet releases it), so a `→ answered (…)` written after a sub-bullet
+is swallowed into that sub-bullet's text and never reaches the body:
+`answered_at()` returns None, the fold looks done, and the #411 WARN names
+a *dropped* marker for one that was written, just in the wrong place.
+Measured 2026-07-29 folding the `#445` answer; moving the marker above the
+answer line fixed it instantly. `lint.check_resolution_marker_after_subbullet`
+ERRORs on it, keyed on the parser's truth — an entry offends
+when `answered_at` sees no marker AND the marker text is found inside an
+absorbed sub-bullet — so a blank-line-released marker, however odd it
+looks, is legal.
+
 ### Title date and optional time (#392b)
 
 The bold title opens with an optional priority (`P1 · ` / `P2 · ` / `P3 · `),
