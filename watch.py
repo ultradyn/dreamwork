@@ -7337,6 +7337,13 @@ addEventListener('click', e => {
   if (!e.target.closest) return;
   const m = EXPAND_SURFACES.find(s => e.target.closest(s.sum));
   if (!m) return;
+  /* #452: a REAL LINK inside the summary (the folded card's focus
+     affordance) is navigation, not a fold — decline it so the router's
+     handler takes it. This handler is registered FIRST, so its
+     preventDefault would otherwise mark the click handled and the
+     router's `e.defaultPrevented` check would skip the navigation: the
+     link read as present but only ever toggled the fold. */
+  if (e.target.closest('a')) return;
   e.preventDefault();
   const det = e.target.closest(m.sum).parentElement;
   const host = det.closest(m.host);

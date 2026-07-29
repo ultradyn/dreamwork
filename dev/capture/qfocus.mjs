@@ -78,6 +78,35 @@ ok('the link key IS the card identity (href qid === data-qid)',
 ok('a folded card is focusable too (a settled entry can be found again)',
    links.some(l => l.state.includes('folded') && l.href));
 
+/* ── a folded card's link is NAVIGATION, not a fold ───────────────────────
+   The link sits INSIDE the <summary>, and the expand handler is registered
+   before the router's: its preventDefault once swallowed the click, so the
+   affordance read as present but only ever toggled the fold. The
+   production line the red-proof names is the link-decline in watch.py's
+   EXPAND_SURFACES handler. */
+{
+  const fenc = encodeURIComponent(foldQ.title);
+  await p.click(`.qa[data-qid="${fenc}"] a.qfocus`);
+  await sleep(1600);
+  const foc = await p.evaluate(() => ({
+    path: location.pathname,
+    qid: new URLSearchParams(location.search).get('qid'),
+    cards: [...document.querySelectorAll('#view .qa')].map(c => ({
+      qid: c.dataset.qid, cls: c.className })),
+  }));
+  notes.push('folded focus: ' + JSON.stringify(foc));
+  ok('clicking a folded card\'s focus link NAVIGATES (never just toggles ' +
+     'the fold) and the settled question is shown, folded, alone',
+     foc.path === '/question' && foc.qid === foldQ.title &&
+     foc.cards.length === 1 && foc.cards[0].qid === fenc &&
+     foc.cards[0].cls.includes('folded'));
+  // the way back is the crumb pair, on the same dissolve
+  await p.click('#meta .crumb a[href="/questions"]');
+  await sleep(1600);
+  ok('the crumb returns to the list',
+     (await p.evaluate(() => location.pathname)) === '/questions');
+}
+
 /* ── the real gesture: click it, arrive on the focused page ─────────────── */
 await p.evaluate(() => {
   window.__qft = [];
