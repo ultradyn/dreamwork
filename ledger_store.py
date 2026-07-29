@@ -26,6 +26,7 @@ Prior art reused from user_events/sqlite.py (not reinvented):
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sqlite3
 from dataclasses import dataclass
@@ -86,6 +87,71 @@ class SeedError(RuntimeError):
 
 class SchemaVersionError(RuntimeError):
     """Store schema_version this process cannot understand. Fail-closed."""
+
+
+# ---------------------------------------------------------------------------
+# Hash-chain primitives for task_event (#264 boundary, #294 inc 9).
+#
+# The task_event table is an append-only transition log whose integrity rests
+# on a hash chain: each row's hash covers the previous row's hash, so a
+# mutation to any row breaks the head. These primitives are the ONE copy of
+# that construction — both the migration script (synthetic migration:git
+# events) and the live write verbs (ledger_write.file_task / land_task) chain
+# through them, and verify_task_event_chain recomputes from genesis over them.
+# They live here because DOMAIN_TAG and SCHEMA_VERSION — the chain's only
+# external inputs — already do.
+# ---------------------------------------------------------------------------
+
+def _length_framed(*parts) -> bytes:
+    """8-byte big-endian length prefix per part (journal contract; matches
+    user_events.digest.length_framed so the framing cannot drift)."""
+    out = bytearray()
+    for part in parts:
+        data = part.encode("utf-8") if isinstance(part, str) else bytes(part)
+        out.extend(len(data).to_bytes(8, "big"))
+        out.extend(data)
+    return bytes(out)
+
+
+def genesis_hash() -> str:
+    """H_0 = SHA-256(journal_id || schema_version) — the task-event chain seed."""
+    return hashlib.sha256(
+        f"ud-dreamwork.task-ledger{SCHEMA_VERSION}".encode()).hexdigest()
+
+
+def canonical_event_bytes(e: dict) -> bytes:
+    """``length_framed(canonical_event)`` — the stable fields, never the hash."""
+    return _length_framed(str(e["task_id"]), e["at"], e["cause"],
+                          e["from_state"] or "", e["to_state"] or "",
+                          e["actor"], e.get("detail") or "")
+
+
+def hash_event(prev_hash: str, canonical: bytes) -> str:
+    """H_i = SHA-256(domain_tag || H_(i-1) || length_framed(canonical_event_i)).
+
+    DOMAIN_TAG is this table's own tag; prev_hash is load-bearing (B3): drop
+    it and an earlier mutation stops moving the head.
+    """
+    return hashlib.sha256(
+        DOMAIN_TAG + prev_hash.encode("ascii") + canonical).hexdigest()
+
+
+def chain_events(events: list) -> list:
+    """Order events deterministically and append prev_hash/hash per the chain.
+
+    Order is ``(at, task_id, rank)`` with first-sight (from_state is None)
+    before landed, so the same history always produces the same chain. Live
+    write verbs append one event at a time (ordinal order); this bulk helper
+    serves the migration import, which chains many events at once.
+    """
+    ordered = sorted(events, key=lambda e: (
+        e["at"], e["task_id"], 0 if e["from_state"] is None else 1))
+    prev, chained = genesis_hash(), []
+    for e in ordered:
+        h = hash_event(prev, canonical_event_bytes(e))
+        chained.append({**e, "prev_hash": prev, "hash": h})
+        prev = h
+    return chained
 
 
 # ---------------------------------------------------------------------------

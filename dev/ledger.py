@@ -58,6 +58,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import watch  # noqa: E402  — the production parser, reused not copied
 from ledger_parse import ledger_entries, open_section_text  # noqa: E402
 from ledger_parse import source_of_truth, store_ids_by_state  # noqa: E402
+from ledger_parse import store_path  # noqa: E402
+import lint  # noqa: E402 — NEXT_ID, the one header reader
+import ledger_store  # noqa: E402 — open the store for write verbs (#294 inc 9)
+import ledger_write  # noqa: E402 — file_task / land_task (#294 inc 9)
 
 LEDGER_DEFAULT = ".dreamwork/tasks.md"
 NOTE_PREFIX = "  · "  # two-space indent, U+00B7, space — the ledger's continuation idiom
@@ -288,6 +292,105 @@ def _write(path, text):
 
 
 # ---------------------------------------------------------------------------
+# write verbs — store (#294 inc 9) + markdown, dispatched on source_of_truth
+# ---------------------------------------------------------------------------
+
+_MIGRATE_MOD = None
+
+
+def _migrate_guard():
+    """Load ud-dw-tasks-migrate (extensionless) for guard_markdown_write.
+
+    The lane-H version gate lives there; calling it (not reimplementing it)
+    keeps one copy of the post-cutover Markdown-write refusal (#263 lane H).
+    """
+    global _MIGRATE_MOD
+    if _MIGRATE_MOD is None:
+        import importlib.util
+        import importlib.machinery
+        cli = Path(__file__).resolve().parent.parent / "ud-dw-tasks-migrate"
+        loader = importlib.machinery.SourceFileLoader(
+            "_ud_dw_tasks_migrate", str(cli))
+        spec = importlib.util.spec_from_loader("_ud_dw_tasks_migrate", loader)
+        _MIGRATE_MOD = importlib.util.module_from_spec(spec)
+        loader.exec_module(_MIGRATE_MOD)
+    return _MIGRATE_MOD
+
+
+def _fold_store(dw_dir, task_id, note):
+    """Store-mode fold: land_task (state CAS open→landed, note appended to body).
+
+    There is no text to move — the state flip IS the fold. The Markdown file
+    is untouched (the store is the single source post-cutover).
+    """
+    store = ledger_store.open_store(store_path(dw_dir))
+    try:
+        ledger_write.land_task(store, task_id, note=note)
+    finally:
+        store.close()
+    sys.stdout.write(f"folded #{task_id} (store: state open→landed)\n")
+
+
+def _file_store(dw_dir, title, body, priority, type, origin):
+    """Store-mode file: file_task (seeded AUTOINCREMENT id, chained filed event)."""
+    store = ledger_store.open_store(store_path(dw_dir))
+    try:
+        new_id = ledger_write.file_task(
+            store, title, body, priority=priority, type=type, origin=origin)
+    finally:
+        store.close()
+    sys.stdout.write(f"filed #{new_id} (store)\n")
+    return new_id
+
+
+def file_text(text, title, note, priority, type, origin):
+    """Markdown-mode file: insert a new entry under ``## Open``, bump ``Next id``.
+
+    Returns the new text (the caller writes it). Raises ``LedgerError`` on any
+    refusal or invariant violation; it never returns a text that fails
+    ``assert_headings``. The entry shape matches the ledger's
+    ``- **#N** — title · P2 · [type ·] origin: **value**`` idiom.
+    """
+    assert_headings(text, "before file")
+
+    header = lint.NEXT_ID.search(text)
+    if header is None:
+        raise LedgerError(
+            "no `Next id: **N**` header — cannot file without the next id")
+    new_id = int(header.group(1))
+
+    # Build the entry head + metadata chain, matching the ledger idiom.
+    fields = [priority or "P2"]
+    if type:
+        fields.append(type)
+    fields.append("origin: **{}**".format(origin or "loop"))
+    head = "- **#{}** — {} · {}".format(new_id, title, " · ".join(fields))
+    if note:
+        head += "\n{}{}".format(NOTE_PREFIX, note)
+
+    lines = text.split("\n")
+    open_idx = _heading_line(lines, watch.LEDGER_SEC_OPEN)
+    # Skip blank line(s) after the heading to find where entries begin, then
+    # insert the new entry at the top of the open section.
+    body_start = open_idx + 1
+    while body_start < len(lines) and lines[body_start].strip() == "":
+        body_start += 1
+    new_lines = (
+        lines[:open_idx + 1]   # up to and including ## Open
+        + ["", head, ""]        # blank, new entry, blank separator
+        + lines[body_start:]    # original open body onwards
+    )
+    new_text = "\n".join(new_lines)
+
+    # Bump the Next id header via the production pattern (one reader).
+    new_text = lint.NEXT_ID.sub(
+        "Next id: **{}**".format(new_id + 1), new_text, count=1)
+
+    assert_headings(new_text, "after file")
+    return new_text
+
+
+# ---------------------------------------------------------------------------
 # sweep — the git half (subprocess stays out of the pure function)
 # ---------------------------------------------------------------------------
 
@@ -361,6 +464,15 @@ def main(argv=None):
     pf.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
     pf.add_argument("--dry-run", action="store_true", help="print the result; do not write")
 
+    pfile = sub.add_parser("file", help="file a new task under ## Open (or the store after cutover)")
+    pfile.add_argument("title", help="the task title (head-line prose)")
+    pfile.add_argument("--note", default=None, help="body / continuation note")
+    pfile.add_argument("--priority", default=None, help="priority band P0-P3 (default P2)")
+    pfile.add_argument("--type", default=None, help="task type (idea/task/bug/...)")
+    pfile.add_argument("--origin", default="loop", help="who filed: human/loop/unknown (default %(default)s)")
+    pfile.add_argument("--ledger", default=LEDGER_DEFAULT, help="path to the ledger (default %(default)s)")
+    pfile.add_argument("--dry-run", action="store_true", help="print the result; do not write")
+
     ps = sub.add_parser(
         "sweep",
         help="open ids git names a landing for that the entry does not cite "
@@ -388,26 +500,43 @@ def main(argv=None):
         return 0
 
     ledger_path = Path(args.ledger)
+    dw_dir = str(ledger_path.parent)
 
-    # #294 inc 7: `counts` is a read consumer — dispatch on source_of_truth.
-    # `fold` is a markdown WRITE tool (moves text blocks); after cutover the
-    # store's write verbs own that, so fold stays a pre-cutover tool and is
-    # documented as such.
-    if args.cmd == "counts":
-        dw_dir = str(ledger_path.parent)
-        if source_of_truth(dw_dir) == "store":
-            open_ids, landed_ids = store_ids_by_state(dw_dir)
-            sys.stdout.write(
-                f"open ids:   {len(open_ids)}   "
-                f"(store_ids_by_state — task.state='open')\n"
-                f"landed ids: {len(landed_ids)}   "
-                f"(store_ids_by_state — task.state='landed')\n")
+    # #294 inc 9: write verbs (fold, file) dispatch on source_of_truth.
+    # Store mode → the store write verbs; markdown mode → today's text path.
+    # `counts` (inc 7) is a read consumer and dispatches below.
+    if args.cmd in ("fold", "file") and source_of_truth(dw_dir) == "store":
+        if args.cmd == "fold":
+            _fold_store(dw_dir, args.id, args.note)
             return 0
+        _file_store(dw_dir, args.title, args.note or args.title,
+                    args.priority, args.type, args.origin)
+        return 0
+
+    if args.cmd == "counts" and source_of_truth(dw_dir) == "store":
+        open_ids, landed_ids = store_ids_by_state(dw_dir)
+        sys.stdout.write(
+            f"open ids:   {len(open_ids)}   "
+            f"(store_ids_by_state — task.state='open')\n"
+            f"landed ids: {len(landed_ids)}   "
+            f"(store_ids_by_state — task.state='landed')\n")
+        return 0
 
     if not ledger_path.exists():
         sys.stderr.write(f"ledger not found: {ledger_path}\n")
         return 2
     text = ledger_path.read_text()
+
+    # Markdown write path — refuse post-cutover via the same gate migrate
+    # uses (defense-in-depth: the dispatch above already routed cut-over
+    # writes to the store; this catches a watermark set between dispatch and
+    # write, and documents that the markdown writer is pre-cutover only).
+    if args.cmd in ("fold", "file"):
+        try:
+            _migrate_guard().guard_markdown_write(dw_dir)
+        except Exception as exc:
+            sys.stderr.write(f"ledger: {exc}\n")
+            return 1
 
     try:
         if args.cmd == "counts":
@@ -422,6 +551,17 @@ def main(argv=None):
                 return 0
             _write(args.ledger, new_text)
             sys.stdout.write(f"folded #{args.id} into {args.ledger}\n")
+            return 0
+        if args.cmd == "file":
+            new_text = file_text(text, args.title, args.note, args.priority,
+                                 args.type, args.origin)
+            if args.dry_run:
+                sys.stdout.write(new_text)
+                if not new_text.endswith("\n"):
+                    sys.stdout.write("\n")
+                return 0
+            _write(args.ledger, new_text)
+            sys.stdout.write(f"filed into {args.ledger}\n")
             return 0
     except LedgerError as e:
         sys.stderr.write(f"ledger: {e}\n")

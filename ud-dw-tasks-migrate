@@ -112,6 +112,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import ledger_parse  # noqa: E402 — the ONE entry/origin grammar (#352)
 import ledger_store  # noqa: E402 — closed sets + verified seed derivation
+from ledger_store import (  # noqa: E402 — the ONE task_event chain construction (#294 inc 9)
+    canonical_event_bytes,
+    chain_events,
+    genesis_hash,
+    hash_event,
+)
 import lint  # noqa: E402 — load_watch(), NEXT_ID, RELATED_MARKER
 import migration_notice  # noqa: E402 — #458 notice the stale-agent shim carries
 from user_events.sqlite import (  # noqa: E402 — #263's lease + version-gate primitives
@@ -990,54 +996,11 @@ def _safe_snapshots(ledger_path: str) -> list:
         return []
 
 
-def _length_framed(*parts) -> bytes:
-    """8-byte big-endian length prefix per part (journal contract; matches
-    user_events.digest.length_framed so the framing cannot drift)."""
-    out = bytearray()
-    for part in parts:
-        data = part.encode("utf-8") if isinstance(part, str) else bytes(part)
-        out.extend(len(data).to_bytes(8, "big"))
-        out.extend(data)
-    return bytes(out)
-
-
-def genesis_hash() -> str:
-    """H_0 = SHA-256(journal_id || schema_version) — the task-event chain seed."""
-    return hashlib.sha256(
-        f"ud-dreamwork.task-ledger{ledger_store.SCHEMA_VERSION}".encode()).hexdigest()
-
-
-def canonical_event_bytes(e: dict) -> bytes:
-    """``length_framed(canonical_event)`` — the stable fields, never the hash."""
-    return _length_framed(str(e["task_id"]), e["at"], e["cause"],
-                          e["from_state"] or "", e["to_state"] or "",
-                          e["actor"], e.get("detail") or "")
-
-
-def hash_event(prev_hash: str, canonical: bytes) -> str:
-    """H_i = SHA-256(domain_tag || H_(i-1) || length_framed(canonical_event_i)).
-
-    DOMAIN_TAG comes from ledger_store (the table's own tag); prev_hash is
-    load-bearing (B3): drop it and an earlier mutation stops moving the head.
-    """
-    return hashlib.sha256(
-        ledger_store.DOMAIN_TAG + prev_hash.encode("ascii") + canonical).hexdigest()
-
-
-def chain_events(events: list) -> list:
-    """Order events deterministically and append prev_hash/hash per the chain.
-
-    Order is ``(at, task_id, rank)`` with first-sight (from_state is None)
-    before landed, so the same history always produces the same chain.
-    """
-    ordered = sorted(events, key=lambda e: (
-        e["at"], e["task_id"], 0 if e["from_state"] is None else 1))
-    prev, chained = genesis_hash(), []
-    for e in ordered:
-        h = hash_event(prev, canonical_event_bytes(e))
-        chained.append({**e, "prev_hash": prev, "hash": h})
-        prev = h
-    return chained
+# The task_event hash-chain primitives (genesis_hash, canonical_event_bytes,
+# hash_event, chain_events) live in ledger_store — the ONE copy, imported at
+# the top of this module. Both the migration (synthetic migration:git events)
+# and the live write verbs (ledger_write.file_task / land_task) chain through
+# them, so a second copy here would be the second truth #264 exists to remove.
 
 
 def _history_event(task_id, epoch, from_state, to_state, sha, kind) -> dict:
