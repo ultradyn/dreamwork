@@ -668,13 +668,20 @@ _TASK_COLUMNS = ("state", "title", "body", "priority", "priority_uncertain",
                  "type", "origin", "blocked_on", "body_digest", "source_line")
 
 
-def verify_db(text: str, a: dict, db_path: str) -> list[str]:
+def verify_db(text: str, a: dict, db_path: str, snapshots_fn=None) -> list[str]:
     """Re-read the scratch DB and assert row-for-row parity with the parse.
 
     Returns the failures, each NAMING the row; empty means parity. Reads
     through its own read-only connection — never the import's — and derives
     expectations from the parse plus the dry-run's reported resolutions, so
     a tampered DB fails here on the DB's contents, not the import's word.
+
+    Post-R3, groomed ids may LEGITIMATELY hold a row (history-imported); the
+    verbatim row-set checks exclude them and ``_verify_history`` owns them: a
+    groomed row must be backed by ``migration:git`` events, the event chain
+    must recompute from genesis, and (when git snapshots are available) each
+    backed row must match the recovered body. A groomed row with NO backing
+    events is fabrication — the pre-R3 rule, still live.
     """
     failures = []
     try:
@@ -691,31 +698,29 @@ def verify_db(text: str, a: dict, db_path: str) -> list[str]:
             if n > 1:
                 failures.append(f"task #{i}: present {n} times, expected once")
         db_ids = set(counts)
-        for i in sorted(set(expected) - db_ids):
+        groomed = {c["id"] for c in
+                   a["conflicts"].get("section id without an entry", [])}
+        verbatim_db = db_ids - groomed  # history-backed groomed rows excluded
+        for i in sorted(set(expected) - verbatim_db):
             failures.append(f"task #{i}: missing from the DB")
-        for i in sorted(db_ids - set(expected)):
+        for i in sorted(verbatim_db - set(expected)):
             failures.append(f"task #{i}: in the DB but not in the parse")
-        states = Counter(r["state"] for r in rows)
+        verbatim_rows = [r for r in rows if r["id"] not in groomed]
+        states = Counter(r["state"] for r in verbatim_rows)
         want_states = Counter(r["state"] for r in expected.values())
         for state in ("open", "landed"):
             if states.get(state, 0) != want_states.get(state, 0):
                 failures.append(f"{state} count {states.get(state, 0)} != "
                                 f"parse {want_states.get(state, 0)}")
-        # A groomed id (no entry head) must have NO row: importing one would
-        # fabricate a body the current ledger does not hold. R3 owns these.
-        for c in a["conflicts"].get("section id without an entry", []):
-            if c["id"] in db_ids:
-                failures.append(f"task #{c['id']}: groomed id has a row — "
-                                "its body is not in the ledger; that row is "
-                                "a fabrication (R3 owns the history import)")
         by_id = {r["id"]: r for r in rows}
-        for i in sorted(set(expected) & db_ids):
+        for i in sorted(set(expected) & verbatim_db):
             row, want = by_id[i], expected[i]
             for col in _TASK_COLUMNS:
                 if row[col] != want[col]:
                     failures.append(
                         f"task #{i}: {col} mismatch — DB has "
                         f"{row[col]!r}, parse expects {want[col]!r}")
+        failures += _verify_history(a, conn, db_ids, snapshots_fn)
         rel = {(r["a"], r["b"]) for r in
                conn.execute("SELECT a, b FROM related")}
         if rel != expected_related(a):
@@ -744,6 +749,61 @@ def verify_db(text: str, a: dict, db_path: str) -> list[str]:
         failures += _verify_reported_resolutions(a, by_id)
     finally:
         conn.close()
+    return failures
+
+
+def _verify_history(a, conn, db_ids, snapshots_fn) -> list:
+    """Post-R3 groomed-id + event-chain consistency (R3, #294 increment 5).
+
+    (1) a groomed id with a row but no ``migration:git`` event is fabrication
+        — the pre-R3 rule, still live (a row the history import did not back
+        is a body invented out of thin air);
+    (2) the ``task_event`` chain recomputes from genesis over every row
+        ordered by ordinal (self-contained — needs no git);
+    (3) when git snapshots are available AND events exist (history imported),
+        each backed row must match the recovered body, and no recoverable id
+        may be missing its row.
+    """
+    failures = []
+    groomed = {c["id"] for c in
+               a["conflicts"].get("section id without an entry", [])}
+    backed = {r["task_id"] for r in conn.execute(
+        "SELECT task_id FROM task_event WHERE actor = 'migration:git'")}
+    for i in sorted(groomed & db_ids):
+        if i not in backed:
+            failures.append(
+                f"task #{i}: groomed id has a row with no migration:git "
+                "event backing it — that row is a fabrication")
+    all_ev = conn.execute(
+        "SELECT * FROM task_event ORDER BY ordinal").fetchall()
+    prev = genesis_hash()
+    for r in all_ev:
+        d = dict(r)
+        if r["prev_hash"] != prev:
+            failures.append(f"task_event ordinal {r['ordinal']}: prev_hash "
+                            f"breaks the chain (expected {prev[:12]}…)")
+        if r["hash"] != hash_event(prev, canonical_event_bytes(d)):
+            failures.append(f"task_event ordinal {r['ordinal']}: hash does "
+                            "not recompute from prev + canonical bytes")
+        prev = r["hash"]
+    if snapshots_fn is not None and all_ev:
+        rec = recover_groomed_history(a, snapshots_fn())
+        want = rec["tasks"]
+        for i in sorted(want):
+            if i not in db_ids:
+                failures.append(f"task #{i}: recoverable groomed id has no "
+                                "row — the history import is incomplete")
+        by_id = {r["id"]: r for r in
+                 conn.execute("SELECT * FROM task").fetchall()}
+        for i in sorted(set(want) & db_ids):
+            row, exp = by_id[i], want[i]
+            for col in _TASK_COLUMNS:
+                if col == "source_line":
+                    continue  # history rows have no current-ledger line
+                if row[col] != exp[col]:
+                    failures.append(f"task #{i}: {col} mismatch — DB has "
+                                    f"{row[col]!r}, history recovers "
+                                    f"{exp[col]!r}")
     return failures
 
 
@@ -999,11 +1059,12 @@ def _run_import_history(text, analysis, db_path, ledger_relpath, out) -> int:
     if result["unrecoverable"]:
         print(f"unrecoverable (no entry body in any commit): "
               f"{', '.join(f'#{i}' for i in result['unrecoverable'])}", file=out)
-    return _run_verify(text, analysis, db_path, out)
+    return _run_verify(text, analysis, db_path, out,
+                       snapshots_fn=lambda s=snapshots: s)
 
 
-def _run_verify(text, analysis, db_path, out) -> int:
-    failures = verify_db(text, analysis, db_path)
+def _run_verify(text, analysis, db_path, out, snapshots_fn=None) -> int:
+    failures = verify_db(text, analysis, db_path, snapshots_fn=snapshots_fn)
     if failures:
         print(f"verification FAILED ({len(failures)}):", file=out)
         for f in failures:
@@ -1050,7 +1111,8 @@ def main(argv=None, out=None) -> int:
     if args.import_history:
         return _run_import_history(text, analysis, args.to, args.ledger, out)
     if args.verify:
-        return _run_verify(text, analysis, args.to, out)
+        return _run_verify(text, analysis, args.to, out,
+                           snapshots_fn=lambda: git_snapshots(args.ledger))
     report = render_report(analysis)
     print(report, file=out)
     if args.report:

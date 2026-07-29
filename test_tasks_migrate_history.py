@@ -155,12 +155,18 @@ def test_chain_prev_hash_term_is_load_bearing(module):
 # .dreamwork/. Tested at the function level with synthetic snapshots.
 # ---------------------------------------------------------------------------
 import sqlite3
-from test_tasks_migrate_import import _scratch
+from test_tasks_migrate_import import _scratch, _import
 
 
 def _hist(module, text, snapshots, db):
     a = module.build_analysis(text, ledger_path="synthetic.md")
     return module.import_history_into_db(text, a, db, snapshots)
+
+
+def _full(module, text, snapshots, db):
+    """The real workflow: verbatim import, then history import."""
+    assert _import(module, text, db) == 0
+    _hist(module, text, snapshots, db)
 
 
 def _ro(db):
@@ -223,4 +229,55 @@ def test_import_history_refuses_dreamwork_target(module, tmp_path):
                                       db, SNAPSHOTS)
     assert getattr(ei.value, "code", None) == 77
     assert not Path(db).exists()
+
+
+# ---------------------------------------------------------------------------
+# Verify-history — post-R3 consistency. A groomed row must be backed by
+# migration:git events (else fabrication); the chain must recompute; backed
+# rows must match the recovered body. Each MUST fail verification naming it.
+# ---------------------------------------------------------------------------
+def _tamper(db, sql, params=()):
+    c = sqlite3.connect(db)
+    c.execute(sql, params)
+    c.commit()
+    c.close()
+
+
+def _verifyf(module, text, db):
+    a = module.build_analysis(text, ledger_path="synthetic.md")
+    return module.verify_db(text, a, db, snapshots_fn=lambda: SNAPSHOTS)
+
+
+def test_verify_clean_history_db_passes(module, tmp_path):
+    db = _scratch(tmp_path)
+    _full(module, CURRENT[2], SNAPSHOTS, db)
+    assert _verifyf(module, CURRENT[2], db) == [], "a clean history import verifies"
+
+
+def test_verify_history_row_without_events_is_fabrication(module, tmp_path):
+    db = _scratch(tmp_path)
+    _full(module, CURRENT[2], SNAPSHOTS, db)
+    # keep #5's row, strip its events -> the pre-R3 fabrication shape
+    _tamper(db, "DELETE FROM task_event WHERE task_id = 5")
+    fails = _verifyf(module, CURRENT[2], db)
+    assert any("#5" in f and "groomed id has a row" in f for f in fails), fails
+
+
+def test_verify_history_chain_tamper_fails(module, tmp_path):
+    db = _scratch(tmp_path)
+    _full(module, CURRENT[2], SNAPSHOTS, db)
+    _tamper(db, "UPDATE task_event SET detail = detail || ' X' "
+                "WHERE ordinal = (SELECT MIN(ordinal) FROM task_event)")
+    fails = _verifyf(module, CURRENT[2], db)
+    assert any("hash does not recompute" in f or "prev_hash breaks" in f
+               for f in fails), fails
+
+
+def test_verify_history_body_tamper_fails(module, tmp_path):
+    db = _scratch(tmp_path)
+    _full(module, CURRENT[2], SNAPSHOTS, db)
+    _tamper(db, "UPDATE task SET body = body || 'x' WHERE id = 5")
+    fails = _verifyf(module, CURRENT[2], db)
+    assert any("#5" in f and "body" in f for f in fails), fails
+
 
