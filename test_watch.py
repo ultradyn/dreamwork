@@ -57,6 +57,61 @@ def make_target(root):
     return root
 
 
+# #509 — a fixture DERIVED FROM the real answered #229 entry's triggering
+# features: a hard-wrapped title, a `-> answered` resolution head inside a
+# long rewrappable prose body, and a note carrying a box-drawing (nested)
+# table plus a code fence. The real entry is the longest in questions.md and
+# was the phantom's trigger. The body is one word-bag re-wrapped at a
+# caller-chosen width, so two builds of the SAME words at DIFFERENT widths
+# exercise the re-wrap the loop performs on every questions.md rewrite.
+_LONG_ENTRY_229_BODY = (
+    "The reviewed artifact is at `.dreamwork/review/topic-chats.html`. "
+    "→ answered (2026-07-26 17:11): Revision directed, not approved. "
+    "Update the artifact against the full architecture review and the "
+    "measured UX review, self-review it against the project goals, then "
+    "open a new proposal for human review. No implementation authority was "
+    "granted. Rec: a compact dashboard chat index plus a dedicated `/chat` "
+    "route; append-only Markdown transcript as primary truth and fresh "
+    "worker input; one run and one editable queued follow-up per chat; a "
+    "deep orchestration module; global cap two; machine-local gitignored "
+    "chats; no MVP cancellation until `cancelled` can be durably finalised; "
+    "manual retention. This is proposal approval only, not authority to "
+    "implement. Answer `Approve A to E as recommended`, or name changes to "
+    "A surface, B privacy, C concurrency, D cancellation, or E retention."
+)
+_LONG_ENTRY_229_NOTE = (
+    "  - **Note (human, via watch, 2026-07-26 16:35):** re the proposal, a "
+    "nested table of pre-build checks and a code fence:\n"
+    "    ┌──────────────────────────────┬──────────────────┐\n"
+    "    │ Check                        │ Why              │\n"
+    "    ├──────────────────────────────┼──────────────────┤\n"
+    "    │ Write the state machine      │ crash points     │\n"
+    "    └──────────────────────────────┴──────────────────┘\n"
+    "    ```\n"
+    "    cap = 2  # per-machine lease, not per-process\n"
+    "    ```\n"
+    "  - **Follow-up (loop, via watch, 2026-07-26 16:48):** all checks "
+    "accepted as proposal-hardening inputs, not approval.\n"
+)
+
+
+def _long_entry_229_md(body, body_width=72):
+    """Build a questions.md whose answered #229 entry wraps `body` (a single
+    word-bag) at `body_width`. Same words, different width => the re-wrap the
+    loop performs on every questions.md rewrite."""
+    import textwrap
+    lines = textwrap.wrap(body, body_width, break_long_words=False,
+                          break_on_hyphens=False)
+    body_block = "\n".join("  " + ln for ln in lines)
+    return (
+        "# Questions for the human\n\n## Open\n\n## Answered\n\n"
+        "- **P1 · 2026-07-26 — #229 threaded topic chats: approve the proposed\n"
+        "  architecture and defaults?**\n"
+        + body_block + "\n\n"
+        + _LONG_ENTRY_229_NOTE
+    )
+
+
 class TestRequestAuthority(unittest.TestCase):
     def test_normalise_host_token(self):
         cases = {
@@ -2170,6 +2225,98 @@ class TestCollector(unittest.TestCase):
                 f.write("\n## still watched\n")
             self.assertGreater(watch.watched_mtime(d), after,
                                "questions.md is no longer watched")
+
+    def test_long_entry_digest_is_rewrap_invariant(self):
+        # #509 — the loop re-wraps a long entry's body lines when it rewrites
+        # questions.md; a line-break-only change (same words, different wrap
+        # column) must NOT flip the per-entry signature. The #229 entry
+        # (longest: nested tables, code fences, ~100 lines) was the phantom.
+        #
+        # PRODUCTION LINE whose change reds this: _entry_content_digest's body
+        # normalisation (_sig_text). Without it the raw body line-structure is
+        # hashed, so a re-wrap flips the digest and track_question_updates
+        # phantom-fires question-updated. (Sabotage _sig_text to `return s`
+        # and this assertion fails; a `return ""` sabotage is a FALSE GREEN —
+        # both forms hash equal for the wrong reason — so the no-op is the
+        # red that proves the test sees the words.)
+        md_b = _long_entry_229_md(_LONG_ENTRY_229_BODY, 72)
+        md_a = _long_entry_229_md(_LONG_ENTRY_229_BODY, 46)
+        eb = [e for e in watch.parse_answered(md_b)
+              if "#229" in (e.get("title") or "")][0]
+        ea = [e for e in watch.parse_answered(md_a)
+              if "#229" in (e.get("title") or "")][0]
+        # PRECONDITION (derived at runtime): the fixture carries the #229
+        # trigger features AND the two builds really differ only in wrap.
+        self.assertIn("┌", md_b)             # nested box-drawing table
+        self.assertIn("```", md_b)           # code fence
+        # resolution head present as words (textwrap may split the line, so
+        # check the word-bag, not answered_at's line-anchored regex)
+        self.assertIn("answered", " ".join(eb["body"].split()))
+        self.assertIn("Revision", " ".join(eb["body"].split()))
+        self.assertGreater(len(eb["body"].split()), 60)  # long, rewrappable
+        self.assertEqual(" ".join(eb["body"].split()),
+                         " ".join(ea["body"].split()),
+                         "precondition: same words at both widths")
+        self.assertNotEqual(eb["body"], ea["body"],
+                            "precondition: the wrap really differs")
+        # the fix: same words => same signature regardless of wrap column
+        self.assertEqual(watch._entry_content_digest(eb),
+                         watch._entry_content_digest(ea),
+                         "a re-wrap of unchanged content flipped the signature")
+
+    def test_long_entry_rewrap_emits_no_phantom_event(self):
+        # #509 acceptance: two consecutive questions.md rewrites that do NOT
+        # change the #229 entry's words (only its body wrap) emit ZERO
+        # question-updated events for it.
+        # PRODUCTION LINE: _entry_content_digest's _sig_text normalisation —
+        # sabotage it to `return s` and the rewrap flips the digest, so
+        # track_question_updates logs a phantom question-updated line.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            qpath = os.path.join(d, ".dreamwork", "questions.md")
+            with open(qpath, "w") as f:
+                f.write(_long_entry_229_md(_LONG_ENTRY_229_BODY, 72))
+            watch.collect(d)  # first sight — no event
+            # rewrite the SAME words at a different wrap (the loop's rewrap)
+            with open(qpath, "w") as f:
+                f.write(_long_entry_229_md(_LONG_ENTRY_229_BODY, 46))
+            watch.collect(d)
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            # no phantom => the log is never created; treat absent as clean
+            events = []
+            if os.path.exists(log):
+                with open(log, encoding="utf-8") as f:
+                    events = [ln for ln in f if "question-updated" in ln]
+            self.assertEqual(
+                events, [],
+                "a re-wrap of unchanged content emitted a phantom event")
+
+    def test_long_entry_real_word_change_emits_one_event(self):
+        # #509 acceptance: the channel keeps its teeth — a REAL word change
+        # to the long entry still emits exactly ONE question-updated event.
+        # PRODUCTION LINE: _entry_content_digest must include the body words —
+        # sabotage _sig_text to `return ""` (constant digest) and the word
+        # change becomes invisible, so zero events fire.
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            qpath = os.path.join(d, ".dreamwork", "questions.md")
+            with open(qpath, "w") as f:
+                f.write(_long_entry_229_md(_LONG_ENTRY_229_BODY, 72))
+            watch.collect(d)  # first sight — no event
+            # a REAL content change (different words), not a rewrap
+            changed = _LONG_ENTRY_229_BODY.replace("Revision directed",
+                                                   "REVISION CHANGED")
+            self.assertNotEqual(changed, _LONG_ENTRY_229_BODY,
+                                "precondition: the word change really applied")
+            with open(qpath, "w") as f:
+                f.write(_long_entry_229_md(changed, 72))
+            watch.collect(d)
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            with open(log, encoding="utf-8") as f:
+                events = [ln for ln in f if "question-updated" in ln]
+            self.assertEqual(len(events), 1,
+                             "a real word change must emit exactly one event")
+            self.assertIn("#229", events[0])
 
     def test_answers_health_fault_is_loud_and_path_specific(self):
         self.assertIn("answers channel unreadable", watch.PAGE)
