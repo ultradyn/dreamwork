@@ -1873,6 +1873,10 @@ STYLE = """<style>
      Active stop takes --accent (live loop control). Reduced motion hides
      the bar, keeps the second-by-second text + same application time. */
   .posture { margin:.55rem 0 .35rem; }
+  /* #488: source chip sits beside the Posture heading, not under the axes. */
+  .posture-head { display:flex; align-items:baseline; gap:.55rem;
+    flex-wrap:wrap; margin:var(--space) 0 .5rem; }
+  .posture-head .label { margin:0; }
   .posture-axes { display:flex; flex-direction:column; gap:.45rem;
     margin:.2rem 0 .1rem; }
   .paxis { min-width:0; }
@@ -1893,7 +1897,8 @@ STYLE = """<style>
     font-variant-numeric:tabular-nums; font-size:.8rem; }
   .psteplabel { color:var(--dim); font-size:.7rem; }
   .pstephint { color:var(--dimmer); font-size:.65rem; margin:.1rem 0 0; }
-  .posture-src { color:var(--dimmer); font-size:.65rem; margin:.2rem 0 0; }
+  .posture-src { color:var(--dimmer); font-size:.65rem; margin:0;
+    text-transform:none; letter-spacing:0; font-weight:400; }
   .posture-src.file { color:var(--dim); }
   .parm { margin:.35rem 0 0; min-height:1.15rem; }
   .pbar { height:3px; background:var(--line); border-radius:2px;
@@ -1907,13 +1912,15 @@ STYLE = """<style>
             font-variant-numeric:tabular-nums; }
   .pmsg { color:var(--warn); font-size:.7rem; margin:.25rem 0 0; }
   .pmsg:empty { display:none; }
-  .pdesc { margin:.28rem 0 .12rem; min-height:0; max-width:100%;
+  /* #488: description shell always reserves layout height. Visibility is
+     opacity only — never display:none / never inserted-removed — so hover
+     cannot reflow the card or anything below it. Empty space is intentional. */
+  .pdesc { margin:.28rem 0 .12rem; min-height:2.6em; max-width:100%;
     font-size:.7rem; color:var(--dim); line-height:1.4;
-    overflow:hidden;
+    overflow:hidden; opacity:0; pointer-events:none;
     transition:opacity .42s ease, filter .42s ease,
                transform .42s cubic-bezier(.32,.1,.2,1); }
-  .pdesc[hidden] { display:none; }
-  .pdesc.open { min-height:2.6em; }
+  .pdesc.open { opacity:1; pointer-events:auto; }
   .pdesc.pose { transition:none !important; opacity:0;
     filter:blur(6px); transform:translateY(4px); }
   .pdesc.depart { opacity:0; filter:blur(7px); transform:translateY(-4px); }
@@ -5811,8 +5818,12 @@ function posturePicker(d) {
   const srcNote = cur.source === 'file'
     ? 'override · .dreamwork/posture'
     : 'derived from run mode · pick a stop to override';
+  // #488: source chip beside the heading; pdesc always in flow (no hidden).
   return `<section class="posture" id="posture" aria-label="posture">` +
-    label('posture') +
+    `<div class="posture-head">` +
+    `<div class="label">posture</div>` +
+    `<div class="posture-src${cur.source === 'file' ? ' file' : ''}"` +
+    ` id="posture-src">${esc(srcNote)}</div></div>` +
     `<div class="posture-axes">` +
     `<div class="paxis" data-axis="pace">` +
     `<div class="paxis-lab" id="pace-lab">pace</div>` +
@@ -5841,10 +5852,8 @@ function posturePicker(d) {
     `${esc(dlgLab)}</span></div>` +
     `<div class="pstephint">target, not a cap · 0 is occasional, not forbidden</div>` +
     `</div></div>` +
-    `<div class="pdesc" id="pdesc" role="tooltip" hidden aria-hidden="true">` +
+    `<div class="pdesc" id="pdesc" role="tooltip" aria-hidden="true">` +
     `<span class="pdesc-text" id="pdesc-text"></span></div>` +
-    `<div class="posture-src${cur.source === 'file' ? ' file' : ''}"` +
-    ` id="posture-src">${esc(srcNote)}</div>` +
     `<div class="parm" id="parm">` +
     `<div class="pbar" id="pbar" hidden aria-hidden="true">` +
     `<div class="pbarfill" id="pbarfill"></div></div>` +
@@ -5873,7 +5882,8 @@ function hidePostDesc(immediate) {
   if (!shell) return;
   if (pdescHideTimer) { clearTimeout(pdescHideTimer); pdescHideTimer = null; }
   if (pdescMorphTimer) { clearTimeout(pdescMorphTimer); pdescMorphTimer = null; }
-  if (!shell.classList.contains('open') && shell.hidden) {
+  // #488: shell stays in flow; idle is opacity:0, never hidden/display:none.
+  if (!shell.classList.contains('open')) {
     pdescKey = null; pdescPendingKey = null; return;
   }
   pdescMorphGen++;
@@ -5882,7 +5892,6 @@ function hidePostDesc(immediate) {
   const finish = () => {
     shell.classList.remove('open', 'pose', 'depart');
     shell.setAttribute('aria-hidden', 'true');
-    shell.hidden = true;
     if (text) { text.textContent = ''; text.classList.remove('out', 'in'); }
     pdescKey = null; pdescPendingKey = null;
   };
@@ -5906,14 +5915,13 @@ function showPostDesc(axis, stop) {
   shell.classList.remove('depart');
   const key = axis + ':' + stop;
   const rm = pdescReduced();
-  const first = !shell.classList.contains('open') || shell.hidden;
+  const first = !shell.classList.contains('open');
   if (first) {
     pdescMorphGen++;
     if (pdescMorphTimer) { clearTimeout(pdescMorphTimer); pdescMorphTimer = null; }
     text.classList.remove('out', 'in');
     text.textContent = body;
     shell.dataset.key = key;
-    shell.hidden = false;
     shell.setAttribute('aria-hidden', 'false');
     shell.classList.add('open');
     if (rm) shell.classList.remove('pose');

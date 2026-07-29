@@ -6929,10 +6929,11 @@ class TestPosture(unittest.TestCase):
         idx = watch.PAGE.index('function posturePicker(')
         end = watch.PAGE.find('/* Shared description for posture', idx)
         body = watch.PAGE[idx:end]
-        # Match the pdesc open tag; it must not carry hidden=.
+        # Match the pdesc open tag; it must not carry the HTML hidden
+        # attribute (aria-hidden is fine — that is a11y, not layout).
         m = re.search(r'<div class="pdesc"[^>]*>', body)
         self.assertIsNotNone(m, 'pdesc shell missing from posturePicker')
-        self.assertNotIn('hidden', m.group(0))
+        self.assertNotRegex(m.group(0), r'(?<!aria-)hidden')
 
 
 class TestDeployAction(unittest.TestCase):
