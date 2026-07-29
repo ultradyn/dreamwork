@@ -11,6 +11,25 @@
   flattening is free only until the import stage (after that it is the two-migrations error). Measured IGC:
   `.dreamwork/review/294-entity-shape.html`. Say "B without the strictness" for the flatten minus its stricter
   `NOT NULL`s and extra columns. A ruling authorises only the schema shape — no import, cutover, CLI, or rename.
+  - **Note (human, via watch, 2026-07-29 15:46):** What is an entry? Like
+    is this the event log or? Can we cleanly migrate our current tasks to
+    sqlite with the recommended model?
+  - **Follow-up (loop, 2026-07-29 15:50):** **An `entry` is not the event log — and neither
+    schema choice touches the event log.** In the landed split (`50f4933`), `entry` is one
+    ledger entry's *text* and `task` is the id-level facts (band, type, origin, state), with a
+    join for the combined entries (`#138/#156` — one body, two permanent ids). The event log
+    is a separate thing entirely: `task_event`, an append-only table of *transitions* (grab,
+    status, priority, complete) from `#264`'s ratified design. Split vs flat changes how a task
+    **at rest** is stored; `task_event` is the same either way.
+    **And yes — the recommended (flat) model migrates cleanly, and `#353` is why.** The
+    normalisation already split every combined entry, so each Markdown entry is now exactly one
+    task: the import is one row per id, no join, nothing to reconstruct or guess. The import
+    stage runs `--dry-run` first — parse every open and landed entry, report exact
+    counts/ids/digests/conflicts, back up, import atomically, verify the DB before cutover,
+    explicit rollback. That stage is the next increment **after** your ruling; the ruling
+    authorises only the schema shape.
+    **Still pending, unchanged:** `Q1` — keep the split (`50f4933`) or flatten (`wt/294`)?
+    **`rec`: flatten.** Say `flatten`, `keep`, or `B without the strictness`.
 
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
