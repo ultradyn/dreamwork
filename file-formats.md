@@ -2115,7 +2115,15 @@ is directed. The `meta` table carries:
   source; present (an ISO-8601 timestamp) means the store is the source.
   Written exactly once at cutover; never removed (rollback re-runs forward
   and writes it again). `ledger_parse.is_cut_over` / `source_of_truth` are
-  the dispatch point a flipped consumer calls.
+  the dispatch point a flipped consumer calls. **Consumer dispatch contract**
+  (#294 inc 7): every ledger reader calls `source_of_truth(dreamwork_dir)` —
+  `'store'` → `store_entries` / `store_ids_by_state` / `store_series_raw`;
+  `'markdown'` → today's text parser, byte-identical. The flip is by DATA
+  (the watermark), not by deploy: the live cutover writes the watermark and
+  every reader switches on its next call, with no code change. A missing or
+  unreadable store answers `'markdown'`, so a broken store never breaks a
+  reader. `lint.py` is the one consumer NOT yet re-pointed (its #362-check
+  retirement is a separate coordinator act at live cutover).
 - `cutover_holder`, `cutover_token`, `cutover_lease_until` — the exclusive
   cutover lease (#263's CAS-on-meta primitive, reused verbatim). While the
   lease is active, a second cutover fails closed (`CutoverBusy`).
