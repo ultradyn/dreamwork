@@ -1592,16 +1592,143 @@ def test_marks_are_focusable_and_announce_the_current_one(template):
 
 
 def test_the_rail_renders_nothing_below_the_cliff(template):
-    """Below the cliff the rail is absent — not a strip (that is increment 2b,
-    his call), not a broken flag. The template hides `.marktab` under a
-    max-width media query, and because the whole flag (label + nav) lives
-    inside `.marktab`, that one rule removes the rail, the strip and the
-    controls at once.
+    """Below the cliff the rail (`.marktab`) is absent — not a broken flag.
+    Increment 2b's strip is a separate surface; this check holds only the rail.
 
     Production line: the `@media(max-width:…) { .marktab{display:none} }` rule.
     Drop it and a narrow viewport renders clipped flags past the page edge."""
     assert _cliff_px(template) is not None, \
         "the cliff no longer hides .marktab — below it the rail would render"
+
+
+# ── the strip below the cliff (#367 increment 2b) ─────────────────────────
+#
+# His ruling 2026-07-28 15:11: option C (the walk) + collapsible index —
+# double chevron on RHS, expands to the labelled list, collapsed by default.
+# transitions.md binds: expand/collapse reuses the page's details-content
+# idiom. Offline-clean (no script): <details> is the control; aria-expanded
+# documents the default-collapsed contract.
+
+
+def _marks_fixture(n, template):
+    """Build n marked sections; return (built_html, labels). Labels are derived
+    at runtime so a fixture edit moves the assertions with it."""
+    fields = ra.parse_source(SOURCE)
+    labels = ["mark label %d of fixture" % (i + 1) for i in range(n)]
+    for i, lab in enumerate(labels):
+        fields["body"] += (
+            '\n<section id="s%d" data-mark="%s"><p>passage %d</p></section>'
+            % (i + 1, lab, i + 1))
+    return ra.render(fields, template=template), labels
+
+
+def test_markstrip_is_injected_only_when_marks_exist(template):
+    """With marks, a `.markstrip` is planted; with none, it is absent — the
+    same no-chrome safety property as the rail.
+
+    Production line: `inject_mark_rail` (or its strip plant) — drop the plant
+    and a marked build has no strip; plant unconditionally and a no-marks
+    build gains chrome.
+    """
+    bare = ra.render(ra.parse_source(SOURCE), template=template)
+    assert "data-mark" not in ra.parse_source(SOURCE)["body"]
+    assert "markstrip" not in bare, \
+        "a no-marks artifact gained markstrip chrome"
+    built, labels = _marks_fixture(3, template)
+    assert len(labels) == 3  # runtime-derived precondition
+    assert 'class="markstrip"' in built or "class='markstrip'" in built, \
+        "a marked artifact has no .markstrip — the strip below the cliff is absent"
+    # Count of list links equals the fixture mark count (not a hardcoded 3).
+    list_links = re.findall(
+        r'class="markstrip-item"[^>]*href="#s\d+"', built)
+    assert len(list_links) == len(labels), (
+        "strip list has %d items but fixture declared %d marks"
+        % (len(list_links), len(labels)))
+
+
+def test_markstrip_is_collapsed_by_default_with_aria_and_chevron(template):
+    """Collapsed by default at walk height; double chevron affordance on the
+    RHS; aria-expanded=false documents the default. Keyboard parity is the
+    native <details>/<summary> control (Enter/Space).
+
+    Production line: `_mark_strip_html` — omit `aria-expanded`, the open
+    attribute, or the chevron and this reddens.
+    """
+    built, labels = _marks_fixture(2, template)
+    assert len(labels) == 2
+    # The strip is a <details> with no open attribute (collapsed default).
+    m = re.search(
+        r'<details\b[^>]*class="[^"]*markstrip-panel[^"]*"[^>]*>', built)
+    assert m, "markstrip is not a <details class=markstrip-panel>"
+    assert " open" not in m.group(0) and not m.group(0).endswith("open>"), \
+        "markstrip details carries open — must be collapsed by default"
+    # aria-expanded=false on the summary (default-collapsed contract).
+    assert re.search(
+        r'<summary\b[^>]*aria-expanded="false"', built), \
+        "markstrip summary lacks aria-expanded=false"
+    # Double chevron affordance (» or ››) present, marked aria-hidden.
+    assert re.search(
+        r'class="markstrip-chev"[^>]*>\s*(»|››|&raquo;)\s*<', built), \
+        "double chevron affordance missing from markstrip summary"
+
+
+def test_markstrip_expand_reuses_details_content_transition(template):
+    """Expand/collapse is a transition (transitions.md): the strip must reuse
+    the page's details::details-content idiom, not invent a second gesture.
+
+    Production line: the template's markstrip CSS — a display:none toggle with
+    no details-content transition fails; the global details rule alone is not
+    enough unless .markstrip-panel is a real <details>.
+    """
+    # Precondition: the page already has the details-content travel idiom.
+    assert "details::details-content" in template, \
+        "template lost the details-content transition the strip must reuse"
+    assert "transition-behavior:allow-discrete" in template
+    # And the strip is that element (a details), not a div-with-JS.
+    built, labels = _marks_fixture(1, template)
+    assert len(labels) == 1
+    assert re.search(r'<details\b[^>]*markstrip-panel', built)
+    # Scoped rules may restyle the panel but must not zero the travel: if the
+    # template names .markstrip-panel::details-content it must still transition.
+    scoped = re.search(
+        r"\.markstrip-panel::details-content\s*\{([^}]+)\}", template)
+    if scoped:
+        assert "transition" in scoped.group(1), \
+            ".markstrip-panel::details-content dropped its transition"
+
+
+def test_markstrip_visible_only_below_the_cliff(template):
+    """Above the cliff the rail shows and the strip is absent; below, the
+    strip shows. Both boundaries are read from the template at runtime.
+
+    Production line: the @media rule that shows .markstrip below the cliff
+    (and hides it by default above). Drop the show rule and the strip is
+    never visible; show it unconditionally and it doubles the rail above.
+    """
+    cliff = _cliff_px(template)
+    assert cliff is not None, "cliff missing — strip boundary has no anchor"
+    # Default (above cliff): .markstrip is display:none (or equivalent hide).
+    rules = css_rules(style_of(template))
+    base = rules.get(("", ".markstrip"), frozenset())
+    assert any("display:none" in d for d in base), (
+        ".markstrip is not hidden by default — it would double the rail "
+        "above the cliff. Declarations: %r" % (base,))
+    # Below the cliff media: .markstrip becomes visible.
+    shown = False
+    for (context, selector), decls in rules.items():
+        if selector != ".markstrip" or not context.startswith("@media"):
+            continue
+        m = re.search(r"max-width\s*:\s*([0-9.]+)\s*px", context)
+        if not m:
+            continue
+        # Same cliff family as the rail (within 1px of the marktab hide).
+        if abs(float(m.group(1)) + 0.02 - cliff) > 1.0:
+            continue
+        if any(re.match(r"display\s*:\s*(block|flex|grid)", d) for d in decls):
+            shown = True
+    assert shown, (
+        "no @media near the cliff (%.0fpx) shows .markstrip — below the "
+        "cliff the strip would stay display:none" % cliff)
 
 
 # ── the carried-over #389 limit: U+200B zero-width space (#367) ───────────
