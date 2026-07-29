@@ -20,6 +20,13 @@ from test_tasks_migrate_import import (
     FIXTURE, _derived, _import, _load_cli, _scratch,
 )
 
+REPO = Path(__file__).resolve().parent
+# Post-cutover (#294) the live Markdown ledger is the FROZEN deprecated file —
+# tasks.md itself is a one-line migration-notice shim that build_analysis
+# refuses (_Unparseable: no `## Open`). The import/verify acceptance checks
+# describe the frozen document, so that is the file they must read.
+LIVE_LEDGER = REPO / ".dreamwork" / "tasks.md.deprecated"
+
 
 @pytest.fixture
 def module():
@@ -295,8 +302,12 @@ def test_import_report_prints_counts_and_seed(module, tmp_path):
 # ---------------------------------------------------------------------------
 def test_live_ledger_import_acceptance(module, tmp_path):
     import sqlite3 as sq
-    from test_tasks_migrate_import import LIVE_LEDGER
     text = LIVE_LEDGER.read_text()
+    # Precondition: the frozen ledger genuinely has its groomed-id shape —
+    # the headless rule is what this acceptance exercises, so assert it has
+    # the two sections and at least one section id with no entry head.
+    assert "## Open" in text, (
+        "LIVE_LEDGER must be the frozen ledger, not the shim")
     d = _derived(text)
     a = module.build_analysis(text, ledger_path=str(LIVE_LEDGER))
     headless = {c["id"] for c in
@@ -340,8 +351,9 @@ def test_live_ledger_import_acceptance(module, tmp_path):
 def test_live_groomed_stub_row_fails_verify(module, tmp_path):
     """A fabricated stub for a groomed id is the exact bug the headless rule
     exists to catch — inject one, verify must refuse it by name."""
-    from test_tasks_migrate_import import LIVE_LEDGER
     text = LIVE_LEDGER.read_text()
+    assert "## Open" in text, (
+        "LIVE_LEDGER must be the frozen ledger, not the shim")
     a = module.build_analysis(text, ledger_path=str(LIVE_LEDGER))
     headless = sorted(c["id"] for c in
                       a["conflicts"].get("section id without an entry", []))
