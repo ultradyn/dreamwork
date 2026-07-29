@@ -3317,10 +3317,20 @@ panel at ~1.5s and hard-clears the line with it (panel close is destruction).
 per-frame lifecycle proof.
 
 **One vocabulary.** `COMMANDS` (top of `watch.py`) is the single source of
-steering kinds — `{kind, label, desc, common}`. The server derives
+steering kinds — `{kind, label, desc, common, sticky}`. The server derives
 `COMMAND_KINDS` from it to validate `POST /command`, the page embeds it as
 `CORE_COMMANDS`, the composer renders its buttons from it, and the popped-out
 form fills its `<option>`s from it. A new kind is one entry and nothing else.
+
+**A landed command does not keep its kind** (#337). `sticky` is the one
+property that decides: after a successful submit the composer decays back to
+the sticky kind, and `add idea` is the only one. A mode that persists
+silently raises the authority of his NEXT message, so the composer settles
+on the least dangerous kind — #257's danger reasoning for `do now`,
+generalised to every steering kind, `maintenance` included. Absent means
+NOT sticky: a plugin kind that says nothing decays too, so a new kind is
+never a third place to remember. The decay rides `setKind` — the
+indicator's existing slide, never a second gesture.
 
 **Plugin-contributed kinds append to that table** (#86), which is why the page
 holds `COMMANDS` as a `let` and nothing downstream may assume a fixed set or a
