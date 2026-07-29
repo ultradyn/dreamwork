@@ -5683,3 +5683,97 @@ class TestStoreModeLint:
         lint.check_ledger_sections(td, "unused", "store", rep)
         assert not ERRORS(rep, "tasks.md.deprecated")
         assert levels(rep, "tasks.md.deprecated") == [lint.OK]
+
+
+class TestReviewDecisionIntegrity:
+    """#289 — the coordinator-owned WARN half of the review_decision store:
+    dangling question_titles and prose-claim conflicts. The fixture is a REAL
+    cut-over target with REAL recorded decisions (ledger_write), never a
+    hand-built dict — a check whose fixture builds the store itself cannot
+    see the writer drift."""
+
+    QGOOD = ("# Questions for the human\n\n## Open\n\n"
+             "- **P1 · 2026-07-29 22:31 — ship the frobnicate?** body\n\n"
+             "## Answered\n\n"
+             "- **P2 · 2026-07-28 — keep the old panel?**\n"
+             "  → answered (2026-07-28): **yes.**\n")
+
+    def _target(self, tmp_path, with_questions=True):
+        td = TestStoreModeLint()._cut_over(tmp_path)
+        (td / "review").mkdir(exist_ok=True)
+        (td / "review" / "alpha.html").write_text("<html>a</html>")
+        (td / "review" / "beta.html").write_text("<html>b</html>")
+        if with_questions:
+            (td / "questions.md").write_text(self.QGOOD)
+        return td
+
+    def _record(self, td, artifact, title, decision):
+        import ledger_store, ledger_write, ledger_parse
+        store = ledger_store.open_store(ledger_parse.store_path(td))
+        try:
+            ledger_write.record_review_decision(
+                store, artifact, title, decision, actor="test")
+        finally:
+            store.close()
+
+    def test_happy_rows_report_examined_not_vacuous(self, tmp_path):
+        td = self._target(tmp_path)
+        self._record(td, "alpha.html", "P1 · 2026-07-29 22:31 — ship the frobnicate?", "accepted")
+        self._record(td, "beta.html", "P2 · 2026-07-28 — keep the old panel?", "pending")
+        rep = lint.Report()
+        lint.check_review_decision_integrity(td, rep)
+        assert not ERRORS(rep, "review_decision")
+        assert not [r for r in rep.rows if r[0] == lint.WARN and r[1] == "review_decision"], \
+            "well-formed rows must not warn"
+        oks = [d for lvl, w, d in rep.rows if w == "review_decision" and lvl == lint.OK]
+        assert oks and "2" in oks[0], \
+            "the OK row must name the rows examined, or coverage can shrink to silence"
+
+    def test_dangling_question_title_warns(self, tmp_path):
+        td = self._target(tmp_path)
+        self._record(td, "alpha.html", "P1 · 2026-07-29 22:31 — ship the frobnicate?", "accepted")
+        self._record(td, "beta.html", "P9 · 1999-01-01 — no such question anywhere", "rejected")
+        # runtime precondition: the fixture genuinely has 2 rows to examine
+        import ledger_parse, sqlite3
+        conn = sqlite3.connect(f"file:{ledger_parse.store_path(td)}?mode=ro", uri=True)
+        assert conn.execute("select count(*) from review_decision").fetchone()[0] == 2
+        conn.close()
+        rep = lint.Report()
+        lint.check_review_decision_integrity(td, rep)
+        warns = [d for lvl, w, d in rep.rows if w == "review_decision" and lvl == lint.WARN]
+        assert any("beta.html" in d and "no such question" in d for d in warns), \
+            f"a dangling question_title must be named: {warns}"
+        assert not any("alpha.html" in d and "dangling" in d for d in warns), \
+            "a resolvable title must not be flagged"
+
+    def test_prose_claim_conflicting_the_store_warns(self, tmp_path):
+        td = self._target(tmp_path)
+        self._record(td, "alpha.html", "P1 · 2026-07-29 22:31 — ship the frobnicate?", "accepted")
+        # the declared V1 prose grammar claiming the OPPOSITE of the store
+        (td / "questions.md").write_text(
+            self.QGOOD + "\n- **P3 · 2026-07-30 — tidy-up.** Review (rejected): alpha.html\n")
+        rep = lint.Report()
+        lint.check_review_decision_integrity(td, rep)
+        warns = [d for lvl, w, d in rep.rows if w == "review_decision" and lvl == lint.WARN]
+        assert any("alpha.html" in d and "rejected" in d and "accepted" in d for d in warns), \
+            f"a prose claim conflicting the store must name both: {warns}"
+
+    def test_prose_claim_agreeing_with_the_store_is_silent(self, tmp_path):
+        td = self._target(tmp_path)
+        self._record(td, "alpha.html", "P1 · 2026-07-29 22:31 — ship the frobnicate?", "rejected")
+        (td / "questions.md").write_text(
+            self.QGOOD + "\n- **P3 · 2026-07-30 — tidy-up.** Review (rejected): alpha.html\n")
+        rep = lint.Report()
+        lint.check_review_decision_integrity(td, rep)
+        warns = [d for lvl, w, d in rep.rows if w == "review_decision" and lvl == lint.WARN]
+        assert not warns, f"agreement is not a conflict: {warns}"
+
+    def test_markdown_mode_reports_moot_not_coverage(self, tmp_path):
+        td = tmp_path / "dw"
+        td.mkdir()
+        (td / "tasks.md").write_text(TestStoreModeLint.FIXTURE)
+        rep = lint.Report()
+        lint.check_review_decision_integrity(td, rep)
+        rows = [(lvl, d) for lvl, w, d in rep.rows if w == "review_decision"]
+        assert rows and not ERRORS(rep, "review_decision"), \
+            "markdown-mode must REPORT the check is moot, not vanish"

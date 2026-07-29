@@ -4183,6 +4183,89 @@ def check_lesson_near_duplicates(dw: Path, rep: Report) -> None:
                 f"{len(claims)} first sentences, none near-duplicate{baseline}")
 
 
+# #289 — the ONLY prose decision-claim grammar this check recognises. It is
+# the declared V1 shape (`Review (accepted): <artifact>`) from the pre-store
+# design, and it is deliberately the whole vocabulary: free-prose verdict
+# detection has been measured wrong in this repo too many times (the
+# keyword-rule failures file-formats.md documents), so an entry merely
+# saying "accepted" near an artifact name is NOT a claim here.
+REVIEW_PROSE_CLAIM = re.compile(
+    r"Review \((pending|accepted|rejected)[^)]*\)\s*:\s*([^\s`]+\.html)")
+
+
+def check_review_decision_integrity(dw: Path, rep: Report) -> None:
+    """#289 — the coordinator-owned WARN half of the `review_decision` store.
+
+    The writer-level gate (`ledger_write.record_review_decision`'s
+    DecisionConflict) stops a *second writer* contradicting a settled row.
+    This check is the ambient half, and it WARNs — never ERRORs — on the two
+    drifts the gate cannot see:
+
+    1. **A dangling `question_title`.** A decision row names the question it
+       belongs to by TITLE (the same identity `data-qid` carries). Titles
+       can be edited after a decision is recorded, and the store does not
+       follow — so a row can point at a question that no longer exists under
+       that title. The known-title set comes from the REAL parsers
+       (`watch.parse_open_questions` / `watch.parse_answered`), never a
+       second copy.
+    2. **A prose claim conflicting the store.** The pre-store V1 grammar
+       (`Review (accepted): <artifact>`) is the only recognised prose
+       decision-claim; where it and the store disagree, the store is the
+       authority by contract and the prose is the drift.
+
+    An artifact with NO row is 'unlinked' — a state, not a finding — and an
+    unrecorded prose claim is deliberately NOT flagged (the grammar was
+    never adopted; nobody was taught to write it, so flagging it would be
+    noise against a vocabulary of one). Both exits REPORT what was examined:
+    a check that examines nothing must not print nothing.
+    """
+    area = "review_decision"
+    if source_of_truth(dw) != "store":
+        rep.add(OK, area,
+                "markdown-mode target — decisions live nowhere structured; "
+                "the check is moot, not passed")
+        return
+    db = dw / "ledger.sqlite3"
+    if not db.exists():
+        rep.add(WARN, area,
+                "store-mode watermark but no ledger.sqlite3 — cannot check "
+                "(this row is the refusal to fake having run)")
+        return
+    rows = watch._review_decisions(dw)  # the ONE production reader
+    qpath = dw / "questions.md"
+    if qpath.exists():
+        qtext = qpath.read_text(encoding="utf-8")
+        titles = {q["title"] for q in watch.parse_open_questions(qtext)}
+        titles |= {q["title"] for q in watch.parse_answered(qtext)}
+    else:
+        qtext, titles = "", None
+    findings = 0
+    for artifact in sorted(rows):
+        decision, title = rows[artifact]
+        if titles is not None and title not in titles:
+            findings += 1
+            rep.add(WARN, area, (
+                f"{artifact}: decision '{decision}' names a question_title "
+                f"no question carries — \"{title}\" is dangling (the title "
+                f"was likely edited after the decision was recorded; the "
+                f"store does not follow title edits)"))
+    if qtext:
+        for m in REVIEW_PROSE_CLAIM.finditer(qtext):
+            claim, artifact = m.group(1), m.group(2)
+            if artifact in rows and rows[artifact][0] != claim:
+                findings += 1
+                rep.add(WARN, area, (
+                    f"{artifact}: prose claims '{claim}' but the store "
+                    f"records '{rows[artifact][0]}' — the store is the "
+                    f"authority (R5); the prose is the drift"))
+    if findings == 0:
+        suffix = "" if titles is not None else \
+            "; questions.md absent — the dangling half could not run"
+        rep.add(OK, area,
+                f"{len(rows)} row(s) examined, none dangling or "
+                f"conflicted{suffix}")
+
+
 def run_checks(dw: Path, watch, rep: Report) -> None:
     """Every check, in one place, because a SECOND copy of this list drifted.
 
@@ -4227,6 +4310,7 @@ def run_checks(dw: Path, watch, rep: Report) -> None:
     check_lane_containment_backstop(dw, rep)
     check_related_markers(dw, watch, rep)
     check_lesson_near_duplicates(dw, rep)
+    check_review_decision_integrity(dw, rep)
     check_status_keys(dw, rep)
     # Takes the skill dir, not `.dreamwork/`: the justfile and the guards are
     # the tool's own, so this only says anything when linting this repo.

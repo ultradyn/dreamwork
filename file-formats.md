@@ -2209,3 +2209,46 @@ the store, and **re-runs the migration forward** under a fresh lease — it
 **never restores a legacy direct writer** (#263's rule). The watermark is
 written again, so the version gate (`guard_markdown_write`) still refuses a
 direct Markdown mutation after rollback.
+
+## `review_decision` — a decision about a review artifact is a store row, not a task (#289, R5)
+
+Part of the SQLite store (`ledger.sqlite3`), schema v2. A row records ONE
+decision about ONE review artifact:
+
+```sql
+review_decision(
+  artifact       TEXT PRIMARY KEY,   -- the artifact path, e.g. .dreamwork/review/<slug>.html
+  question_title TEXT NOT NULL,      -- the question it answers, by TITLE
+  decision       TEXT NOT NULL CHECK(decision IN ('pending','accepted','rejected')),
+  decided_at     TEXT,               -- ISO-8601; NULL while pending
+  actor          TEXT                -- who decided; NULL while pending
+)
+```
+
+The contract points, each of which has already been gotten wrong once:
+
+- **`question_title` is a TITLE, the same identity `data-qid` carries in
+  the rendered page.** It is not an id and the store does not follow title
+  edits: rename a question after a decision is recorded and the row dangles
+  (see the lint check below).
+- **Unlinked ≠ pending.** An artifact with NO row is "unlinked" — a state,
+  rendered as no marker. A row with `decision='pending'` is a linked,
+  undecided artifact, rendered lit. The dashboard JOIN
+  (`watch._review_decisions` LEFT JOIN onto `list_reviews`) preserves the
+  difference; nothing may collapse one into the other.
+- **No backfill.** Pre-store artifacts stay unlinked forever unless somebody
+  decides them. There is no migration that invents decisions.
+- **The writer-level gate is `DecisionConflict`** in
+  `ledger_write.record_review_decision`: re-deciding under the SAME title is
+  fine, pending→decided is the intended transition, and a different title
+  against a non-pending row raises. The gate stops a second writer
+  contradicting a settled row; it cannot see prose.
+- **A decision is not a task and writes no `task_event`** (#264's boundary:
+  the event chain narrates tasks, nothing else).
+
+Checked by `lint.check_review_decision_integrity` (WARN, never ERROR): a
+dangling `question_title`, and a prose claim in the declared V1 grammar
+(`Review (accepted): <artifact>` — the ONLY recognised prose claim shape;
+free-prose verdict scanning is the measured false-positive failure this repo
+distrusts) that conflicts the store. Where prose and store disagree, the
+store is the authority. Both exits report what was examined.
