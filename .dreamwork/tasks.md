@@ -27,18 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **482**
 
 ## Open
-- **#481** — `question-sigs.json` is inside `watched_mtime`'s walk, so a fresh target re-renders once for no reason · P3 ·
-  dashboard/motion · origin: **loop** · **recommended by the `#479` lane, which measured the mechanism** — `#473`
-  writes `.dreamwork/question-sigs.json` from `collect()` on first sight of entries, and `watched_mtime` walks all
-  of `.dreamwork/`, so a fresh fixture or target re-renders ~1.5s after page load with no user action. That
-  spurious re-render is what put `#479`'s mode-drop inside the guard's window. Motion with nothing behind it
-  · **why excluding it is safe:** the sig file is bookkeeping — a digest change can only follow a `questions.md`
-  change, which bumps `watched_mtime` itself. So its mtime carries no signal beyond what the walk already sees,
-  and excluding it loses no real re-render while removing the spurious one. Verify that claim before building
-  · **not the `#479` fix** — restoring the mode across any re-render is the correct primary regardless, because
-  re-renders are a fact of life on a live target. This removes one spurious re-render for every fresh target
-  · wants `watch.py` (`watched_mtime`) · blocked on nothing. Cross-ref in prose: the `question-sigs.json` writer is
-  `#473`, the mode-drop it exposed is `#479`.
 - **#480** — the deploy snapshot is a single file and cannot import `user_events/` or `ledger_parse.py`, so the next `just deploy` boot-fails and leaves his dashboard down · P1 ·
   deploy/tooling · origin: **loop** · **found 2026-07-29 by the `#352` lane, which pushed it back rather than
   touching deploy machinery** — `watch.py` at HEAD imports `user_events.sqlite` (`#263`) at module top and, as of
@@ -3791,6 +3779,20 @@ Next id: **482**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#481** — `question-sigs.json` is inside `watched_mtime`'s walk, so a fresh target re-renders once for no reason · P3 ·
+  dashboard/motion · origin: **loop** · **recommended by the `#479` lane, which measured the mechanism** — `#473`
+  writes `.dreamwork/question-sigs.json` from `collect()` on first sight of entries, and `watched_mtime` walks all
+  of `.dreamwork/`, so a fresh fixture or target re-renders ~1.5s after page load with no user action. That
+  spurious re-render is what put `#479`'s mode-drop inside the guard's window. Motion with nothing behind it
+  · **why excluding it is safe:** the sig file is bookkeeping — a digest change can only follow a `questions.md`
+  change, which bumps `watched_mtime` itself. So its mtime carries no signal beyond what the walk already sees,
+  and excluding it loses no real re-render while removing the spurious one. Verify that claim before building
+  · **not the `#479` fix** — restoring the mode across any re-render is the correct primary regardless, because
+  re-renders are a fact of life on a live target. This removes one spurious re-render for every fresh target
+  · wants `watch.py` (`watched_mtime`) · blocked on nothing. Cross-ref in prose: the `question-sigs.json` writer is
+  `#473`, the mode-drop it exposed is `#479`.
+  · landed 968373d (merge of wt/481; lane work 22145fc, native subagent). question-sigs.json excluded from watched_mtimewalk — but naive exclusion was insufficient, because the sig writer's tmp+os.replace bumps the .dreamwork DIRECTORY mtime, which was #86's deletion signal. The add/remove signal is now the SET of non-ignored entry names per directory, hashed into a sub-second fraction (client only compares for inequality; contract unchanged). Sig file + .tmp twin excluded from both the content-mtime walk and the name set. Safety proven both halves (sig write no longer bumps; questions.md append still does). Deletion regression test added. Coordinator independently red-proved: exclusion reverted, sig test fails (spurious re-render returns), deletion test stays green. The lane also noted watch-events.log's collect()-written 'question-updated' line is the same spurious-render shape, smaller — a candidate follow-up, not built.
+
 - **#479** — `typing` loses the destination mode across a tick, and it was green two hours ago · P1 ·
   regression/bug · origin: **loop** · **found 2026-07-29 09:12 by the full `just test` that closed `#475`** —
   the ONLY failure in a 60-guard run (59 PASS, 60 of 60 judged), and it was **PASSING** in the 07:40 run, so it
