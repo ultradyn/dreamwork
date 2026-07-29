@@ -4077,6 +4077,10 @@ Next id: **492**
   rather than updating it
   · landed b7fd947 (merge of wt/352; lane work 8536c4d, native subagent). One ledger entry/origin grammar extracted to ledger_parse.py and imported by lint.py, watch.py, task_origins.py and status_sync.py — five duplication sites closed (regexes x3, KNOWN_ORIGINS x2, fail-closed classify x2, the Open-section slice x2 inside lint). VERBATIM claim deleted; moot equality pins replaced with assertIs identity. parse_ledger correctly left in watch (never duplicated). Coordinator-verified on the merged tree: 700 parser tests pass, lint clean, single-definition confirmed by grep. Deploy follow-up filed as #480.
 
+  · **verified landed 19:33 (merge 2854ad9-adjacent `ad1d00d`)**: one grammar copy in `ledger_parse.py`,
+  pinned structurally (`assertIs` across all four consumers) + behaviourally (hostile shapes);
+  red-proof on `ledger_parse.py:58` fails the combined-head case; `file-formats.md` provenance
+  drift fixed. **The #294 cutover gate is clear.**
 - **#474** — `docktarget` and `noteprop` fail on master and passed at this session's first commit · **P1** ·
   regression/dashboard · origin: **loop** · **found 2026-07-29 06:45 while discharging the guard debt `#471`
   exposed**
