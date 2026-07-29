@@ -2248,14 +2248,26 @@ POSTURE_STOPS_ASKING = ("ask", "inform", "near-auto", "auto")
 # pre-axis posture file behaves identically. Closed set, fail loud — the same
 # outcome as pace/asking.
 POSTURE_STOPS_DELIVERY = ("instant", "batched")
+# #510 — the orchestration posture axis: does the coordinator implement
+# increments itself, or only dispatch + review? hands-on (default) is today —
+# the coordinator implements inline (it may ALSO delegate, per the delegation
+# number); orchestrator is the coordinator-only mode — every increment is
+# dispatched and the coordinator's role is adjudication/review/ledger only.
+# Absent = hands-on, so a pre-axis posture file behaves identically — the
+# same absent-derives-today property delivery holds. Binary because the
+# differentiating decision is exactly "does the coordinator implement or not";
+# "solo vs fleet" is already delegation's job. Closed set, fail loud — the
+# same outcome as pace/asking/delivery.
+POSTURE_STOPS_ORCHESTRATION = ("hands-on", "orchestrator")
 # Delegation posture labels, shown beside the integer target. The integer is
 # authoritative; the label is a derived display string.
 DELEGATION_POSTURES = ("own", "assist", "delegate")
-# delivery is a RECOGNISED axis (an unknown axis name warns), but it is
-# OPTIONAL — absent is the default (instant), so check_posture never warns on
-# its absence the way it does for pace/asking/delegation. The clean-bill
-# denominator accounts for that (see check_posture).
-POSTURE_AXES = ("pace", "asking", "delegation", "delivery")
+# delivery and orchestration are RECOGNISED axes (an unknown axis name warns),
+# but they are OPTIONAL — absent is the default (instant / hands-on), so
+# check_posture never warns on their absence the way it does for
+# pace/asking/delegation. The clean-bill denominator accounts for that (see
+# check_posture).
+POSTURE_AXES = ("pace", "asking", "delegation", "delivery", "orchestration")
 
 # The conversion of today's run-mode values into the three-axis vocabulary
 # (#445 Q2: "convert the current modes into the new values"). Stated as a
@@ -2445,19 +2457,37 @@ def check_posture(dw: Path, watch, rep: Report) -> None:
                 f"delivery {delivery!r} is not one of "
                 f"{', '.join(POSTURE_STOPS_DELIVERY)} — a closed set fails "
                 f"loud, like pace and asking")
-    # Clean bill only when the three required axes are valid AND delivery (if
-    # present) is valid, carrying the count so coverage can never shrink to
-    # silence beside a finding. Delivery is optional, so it joins the "of N"
-    # denominator only when it is actually set — a pre-axis three-line file
-    # still reads "3 of 3", not "3 of 4" (which would imply delivery is
-    # missing rather than default).
-    if valid == 3 and delivery_ok:
-        denom = 3 + (1 if delivery is not None else 0)
+    # ORCHESTRATION (#510) — an OPTIONAL axis, the same shape delivery takes:
+    # absent is the default (hands-on), so it NEVER warns on absence the way
+    # pace/asking/delegation do (those fall back to a run-mode derivation;
+    # orchestration has no derivation — it is just hands-on). A present
+    # invalid value ERRORs: a closed set fails loud, never a silent fallback
+    # that drops his choice.
+    orchestration = values.get("orchestration")
+    orchestration_ok = (orchestration is None
+                        or orchestration in POSTURE_STOPS_ORCHESTRATION)
+    if orchestration is not None and not orchestration_ok:
+        rep.add(ERROR, "posture",
+                f"orchestration {orchestration!r} is not one of "
+                f"{', '.join(POSTURE_STOPS_ORCHESTRATION)} — a closed set "
+                f"fails loud, like pace and asking")
+    # Clean bill only when the three required axes are valid AND delivery /
+    # orchestration (if present) are valid, carrying the count so coverage
+    # can never shrink to silence beside a finding. Both optional axes join
+    # the "of N" denominator only when they are actually set — a pre-axis
+    # three-line file still reads "3 of 3", not "3 of 5" (which would imply
+    # the optional axes are missing rather than default).
+    if valid == 3 and delivery_ok and orchestration_ok:
+        denom = (3
+                 + (1 if delivery is not None else 0)
+                 + (1 if orchestration is not None else 0))
         row = (f"{denom} of {denom} axes valid · "
                f"pace={pace} asking={asking} "
                f"delegation={dlg} ({dlg_label})")
         if delivery is not None:
             row += f" delivery={delivery}"
+        if orchestration is not None:
+            row += f" orchestration={orchestration}"
         rep.add(OK, "posture", row)
 
 

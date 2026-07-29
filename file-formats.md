@@ -374,7 +374,7 @@ than restructuring it, and prefer appending to an existing skeleton.
 | `.dreamwork/watch-port` | `just deploy`; **`dreamhub.py`** | One line, an integer port. Written once and then persistent: it is the address the human's bookmark points at, so changing it silently strands him | `lint.py` |
 | `.dreamwork/watch-tint` | `watch.py`, in **every** window open on this project | One line: one name from `watch.py`'s `TINTS`. Absent means the default. An unknown name is ignored **silently** — the page falls back and nothing on screen says his choice was dropped | `lint.py` |
 | `.dreamwork/run-mode` | `watch.py` dashboard + the coordinator/main dreamer on tick and via `watch-events.log` | One line: one name from `watch.py`'s `RUN_MODES` (`lackadaisical`, `hot`, `assisted`). Absent/unknown → `lackadaisical`. Machine-local, **gitignored** — operational posture, not a portable project default. `status.json` may mirror it later but never owns it | `lint.py` |
-| `.dreamwork/posture` | the coordinator/main dreamer on tick (#445, #342) | Four-axis override: `pace:`, `asking:`, `delegation:`, `delivery:` — one per line, `#` comments allowed. Absent pace/asking/delegation → derived from run-mode (see § below); absent `delivery` → `instant` (today's behaviour). Closed sets on pace/asking/delivery fail loud; delegation carries a number that steers, never gates | `lint.py` |
+| `.dreamwork/posture` | the coordinator/main dreamer on tick (#445, #342, #510) | Axis override: `pace:`, `asking:`, `delegation:`, `delivery:`, `orchestration:` — one per line, `#` comments allowed. Absent pace/asking/delegation → derived from run-mode (see § below); absent `delivery` → `instant` (today's behaviour); absent `orchestration` → `hands-on` (today's behaviour). Closed sets on pace/asking/delivery/orchestration fail loud; delegation carries a number that steers, never gates | `lint.py` |
 | `.dreamwork/submissions.log` | recovery — the loop, and him, after something failed | One JSON object per line, written as the FIRST act of `do_POST` before any parsing or validation. Append-only, never rewritten. Machine-local, **gitignored** — see below | `lint.py` |
 | `.dreamwork/plugin-commands.json` | `watch.py`'s composer (#86) | `{"commands": [{kind, label, desc, plugin}]}`. Written **whole** by the loop at plugin resolution, never appended — see below. Machine-local, **gitignored** | `lint.py` |
 | `.dreamwork/skill-version` | init's update check | One line naming a real file in `migrations/`. A name that does not exist there makes every migration read as pending | `lint.py` |
@@ -1121,7 +1121,7 @@ hot
 Checked by `lint.py` (`check_run_mode`), reading the closed set from
 `watch.py` so the checker cannot drift from the page.
 
-## `.dreamwork/posture` — the posture axes, overriding run-mode (#445, #342)
+## `.dreamwork/posture` — the posture axes, overriding run-mode (#445, #342, #510)
 
 `run-mode` is a single word, and `#443` measured that it carries **three
 independent decisions in one**: how fast the loop acts (pace), how much it
@@ -1183,8 +1183,9 @@ says aloud that the file no longer matches. **The per-tick re-read is load-
 bearing** (`#426`): it is the only way an on-disk change reaches a running
 loop, and this file inherits the same contract.
 
-**The posture axes** — pace, asking and delivery are closed sets of named
-stops; the delegation axis carries a number whose label is derived for display.
+**The posture axes** — pace, asking, delivery and orchestration are closed
+sets of named stops; the delegation axis carries a number whose label is
+derived for display.
 
 - **`pace`** — how often the loop acts. Three stops: `idle` (idle-friendly,
   no proactive fan-out), `steady` (continuous bounded work), `hot` (urgent /
@@ -1220,15 +1221,29 @@ stops; the delegation axis carries a number whose label is derived for display.
   it: `do-now`/`do-next` pre-empt even in batched mode (a `do-now` that does
   not pre-empt is a `do-now` that lied); everything else wakes only in instant
   mode. Closed set — an unknown value **ERRORs** like pace/asking.
+- **`orchestration`** (`#510`) — *whether the coordinator implements
+  increments itself.* Two stops: `hands-on` (the coordinator implements
+  inline — today; it may *also* delegate, per the delegation number) and
+  `orchestrator` (the coordinator implements **nothing** — every increment
+  is dispatched and the coordinator's role is adjudication/review/ledger
+  only). **Absent → `hands-on`**, so a posture file that predates the axis
+  behaves identically; orchestration is **not derived from run-mode** (a
+  fresh default, not a conversion) and **orthogonal to delegation** — a
+  coordinator can run a fleet of four and still implement inline (hands-on)
+  or not (orchestrator); solo-vs-fleet is delegation's question, not this
+  one. The axis is **inert until a consumer reads it** — the same
+  forward-looking-dial shape delivery held before its consumer. Closed set
+  — an unknown value **ERRORs** like pace/asking/delivery.
 
-**What lint enforces, and deliberately does not.** Pace, asking and delivery
-are closed sets, so an unknown value **ERRORs** — the silent-fallback hazard
-from run-mode / watch-tint, stated as an outcome. Delegation carries a *number*:
-nonsense (a non-integer, or a negative) **WARNs** — steer, not gate — and
-**nothing here ever reads the running fleet size**, because an average is an
-average. Delivery is **optional**: its absence is the `instant` default (not a
-warning), so a three-line pre-axis file still reads clean — it joins the
-clean-bill "of N" count only when it is actually set. The clean-bill row
+**What lint enforces, and deliberately does not.** Pace, asking, delivery
+and orchestration are closed sets, so an unknown value **ERRORs** — the
+silent-fallback hazard from run-mode / watch-tint, stated as an outcome.
+Delegation carries a *number*: nonsense (a non-integer, or a negative)
+**WARNs** — steer, not gate — and **nothing here ever reads the running
+fleet size**, because an average is an average. Delivery and orchestration
+are **optional**: their absence is the default (instant / hands-on, not a
+warning), so a three-line pre-axis file still reads clean — they join the
+clean-bill "of N" count only when they are actually set. The clean-bill row
 carries the count of valid axes so coverage can
 never shrink to silence beside a finding (the rule `#380` codified after a
 check's OK row disappeared for the thing it was written for). The closed sets

@@ -3473,7 +3473,7 @@ class TestSummary(unittest.TestCase):
                           {"ok", "missing", "unreadable", "empty"})
             self.assertEqual(set(s["posture"]),
                              {"pace", "asking", "delegation", "delivery",
-                              "source"})
+                              "orchestration", "source"})
             self.assertEqual(set(s["skill_identity"]),
                              {"commit", "skill_version"})
             self.assertEqual(set(s["burndown_counts"]),
@@ -6868,18 +6868,22 @@ class TestPosture(unittest.TestCase):
 
     def test_posture_line_is_one_line_and_from_safe(self):
         self.assertEqual(
-            watch.posture_line("hot", "ask", 1),
-            "posture via watch: pace=hot asking=ask delegation=1")
+            watch.posture_line("hot", "ask", 1, "hands-on"),
+            "posture via watch: pace=hot asking=ask delegation=1 "
+            "orchestration=hands-on")
         self.assertEqual(
-            watch.posture_line("hot", "ask", 1, "/"),
-            "posture via watch [/]: pace=hot asking=ask delegation=1")
+            watch.posture_line("hot", "ask", 1, "hands-on", "/"),
+            "posture via watch [/]: pace=hot asking=ask delegation=1 "
+            "orchestration=hands-on")
         # free text cannot forge a second events line
         self.assertEqual(
-            watch.posture_line("hot\nforged", "ask", 1, "/"),
-            "posture via watch [/]: pace=hot forged asking=ask delegation=1")
+            watch.posture_line("hot\nforged", "ask", 1, "hands-on", "/"),
+            "posture via watch [/]: pace=hot forged asking=ask delegation=1 "
+            "orchestration=hands-on")
         self.assertEqual(
             watch.posture_line("hot", "ask", 1, "]\nforged"),
-            "posture via watch: pace=hot asking=ask delegation=1")
+            "posture via watch: pace=hot asking=ask delegation=1 "
+            "orchestration=] forged")
 
     def test_collect_exposes_posture(self):
         with tempfile.TemporaryDirectory() as d:
@@ -6903,19 +6907,21 @@ class TestPosture(unittest.TestCase):
                     "pace": "hot", "asking": "inform",
                     "delegation": 1, "from": "/",
                 }), 202)
-            # #342: a POST that omits delivery preserves the axis at its
-            # default (instant) — the file is now four-axis. The omitted
-            # delivery equals the default, so no delivery line fires.
+            # #342/#510: a POST that omits delivery/orchestration preserves
+            # them at their defaults (instant / hands-on), so the file holds
+            # all five axes. The omitted defaults equal the current values,
+            # so neither the delivery line nor an extra posture line fires.
             self.assertEqual(watch.read_posture_file(d), {
                 "pace": "hot", "asking": "inform", "delegation": 1,
-                "delivery": "instant",
+                "delivery": "instant", "orchestration": "hands-on",
             })
             log = os.path.join(d, ".dreamwork", "watch-events.log")
             with open(log, encoding="utf-8") as f:
                 lines = [ln for ln in f if "posture" in ln]
             self.assertEqual(len(lines), 1, lines)
             self.assertIn(
-                "posture via watch [/]: pace=hot asking=inform delegation=1",
+                "posture via watch [/]: pace=hot asking=inform delegation=1 "
+                "orchestration=hands-on",
                 lines[0])
             # the omitted delivery did not change (instant == instant), so no
             # delivery line fires beside the posture line
@@ -7308,6 +7314,231 @@ class TestPosture(unittest.TestCase):
         pdf_i = watch.PAGE.index('function postDescFor(')
         pdf_end = watch.PAGE.index('function hidePostDesc(', pdf_i)
         self.assertIn("axis === 'delivery'", watch.PAGE[pdf_i:pdf_end])
+
+    # ── #510 orchestration posture axis ────────────────────────────────
+    def test_orchestration_vocabulary_is_imported_from_lint_not_restated(self):
+        """Production line: watch.POSTURE_STOPS_ORCHESTRATION is lint's object."""
+        import lint
+        self.assertIs(watch.POSTURE_STOPS_ORCHESTRATION,
+                      lint.POSTURE_STOPS_ORCHESTRATION)
+        self.assertEqual(set(watch.POSTURE_STOPS_ORCHESTRATION),
+                         {"hands-on", "orchestrator"})
+
+    def test_parse_posture_orchestration_absent_is_hands_on(self):
+        """Absent orchestration → hands-on (today); present orchestrator parses.
+
+        Production line: the `orchestration` branch in parse_posture_text.
+        Delete it and an orchestrator file reads as {} (no orchestration key),
+        so resolve falls back to hands-on.
+        """
+        self.assertEqual(
+            watch.parse_posture_text("orchestration: orchestrator"),
+            {"orchestration": "orchestrator"})
+        # garbage value is dropped here (lint ERRORs on hand-edits)
+        self.assertEqual(
+            watch.parse_posture_text("orchestration: turbo"),
+            {})
+
+    def test_resolve_posture_carries_orchestration_default_and_override(self):
+        """Production line: resolve_posture → read_posture_file / ORCHESTRATION_DEFAULT."""
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            r = watch.resolve_posture(d)
+            self.assertEqual(r["orchestration"], "hands-on")
+            self.assertTrue(
+                watch.write_posture(d, "hot", "ask", 0, None, "orchestrator"))
+            r2 = watch.resolve_posture(d)
+            self.assertEqual(r2["orchestration"], "orchestrator")
+            self.assertEqual(r2["source"], "file")
+
+    def test_write_posture_orchestration_is_optional_and_validated(self):
+        """Production line: write_posture orchestration membership guard."""
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".dreamwork"))
+            # omitted → no orchestration line (backward compatible)
+            self.assertTrue(watch.write_posture(d, "hot", "ask", 0))
+            self.assertNotIn("orchestration", watch.read_posture_file(d))
+            # provided → orchestration line lands
+            self.assertTrue(
+                watch.write_posture(d, "hot", "ask", 0, None, "orchestrator"))
+            self.assertEqual(
+                watch.read_posture_file(d)["orchestration"], "orchestrator")
+            # invalid orchestration refused, file untouched at last good state
+            self.assertFalse(
+                watch.write_posture(d, "hot", "ask", 0, None, "turbo"))
+            self.assertEqual(
+                watch.read_posture_file(d)["orchestration"], "orchestrator")
+
+    def test_posture_line_carries_orchestration(self):
+        """Production line: posture_line emits an orchestration= field.
+
+        Orchestration rides the `posture via watch` line (it has no separate
+        consumer line the way delivery does); a dropped field reds here.
+        """
+        self.assertIn(
+            "orchestration=orchestrator",
+            watch.posture_line("hot", "ask", 0, "orchestrator"))
+        # free text cannot forge a second events line
+        self.assertEqual(
+            watch.posture_line("hot", "ask", 0, "hands-on\nforged", "/"),
+            "posture via watch [/]: pace=hot asking=ask delegation=0 "
+            "orchestration=hands-on forged")
+
+    def test_post_orchestration_dual_writes_file_and_one_event_on_change(self):
+        """Production line: _handle_posture orchestration branch + posture_line.
+
+        A real orchestration change writes the file and emits exactly one
+        posture line (orchestration rides the posture line, not its own); an
+        identical re-POST is idempotent (no second line).
+        """
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            # establish a file-backed posture (orchestration defaults to
+            # hands-on, so the file holds pace/asking/delegation only).
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+            }), 202)
+            log = os.path.join(d, ".dreamwork", "watch-events.log")
+            # change ONLY orchestration: the triple is unchanged, so the
+            # posture line fires carrying the new orchestration value.
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "orchestration": "orchestrator", "from": "/",
+            }), 202)
+            self.assertEqual(
+                watch.read_posture_file(d)["orchestration"], "orchestrator")
+            with open(log, encoding="utf-8") as f:
+                plines = [ln for ln in f if "posture via watch" in ln]
+            self.assertEqual(len(plines), 1, plines)
+            self.assertIn("orchestration=orchestrator", plines[0])
+            # no delivery line fired for an orchestration-only change
+            with open(log, encoding="utf-8") as f:
+                self.assertEqual(
+                    [ln for ln in f if "delivery via watch" in ln], [])
+            # idempotent: same orchestration, no second posture line
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "orchestration": "orchestrator",
+            }), 202)
+            with open(log, encoding="utf-8") as f:
+                self.assertEqual(
+                    [ln for ln in f if "posture via watch" in ln].__len__(), 1)
+
+    def test_post_orchestration_preserved_when_omitted(self):
+        """A triple-only POST must not silently reset orchestration.
+
+        Production line: the `if not orchestration: orchestration = current`
+        branch in _handle_posture. Without it, an omitted orchestration
+        defaults to hands-on and an orchestrator file reverts.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "orchestration": "orchestrator",
+            }), 202)
+            # change pace WITHOUT mentioning orchestration — must survive
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "hot", "asking": "ask", "delegation": 0,
+            }), 202)
+            pf = watch.read_posture_file(d)
+            self.assertEqual(pf["pace"], "hot")
+            self.assertEqual(pf["orchestration"], "orchestrator")
+
+    def test_post_orchestration_rejects_unknown(self):
+        """Production line: the orchestration closed-set guard in _handle_posture."""
+        with tempfile.TemporaryDirectory() as d:
+            base = self._serve(make_target(d))
+            self.assertEqual(self._post(base + "/posture", {
+                "pace": "idle", "asking": "ask", "delegation": 0,
+                "orchestration": "turbo",
+            }), 202)  # durable rejected, not a sync 400
+            self.assertFalse(
+                os.path.exists(os.path.join(d, ".dreamwork", "posture")))
+
+    def test_collect_and_summary_expose_orchestration(self):
+        """Production lines: resolve_posture orchestration (collect path) +
+        _summary_posture projection (summary path). Both must carry it —
+        collect reads resolve_posture, summary projects via _summary_posture,
+        and a field dropped from the projection alone leaves collect whole."""
+        with tempfile.TemporaryDirectory() as d:
+            make_target(d)
+            # collect path (resolve_posture)
+            self.assertEqual(
+                watch.collect(d)["posture"]["orchestration"], "hands-on")
+            # summary path (_summary_posture projection)
+            self.assertEqual(
+                watch.summary(d)["posture"]["orchestration"], "hands-on")
+            self.assertTrue(
+                watch.write_posture(d, "hot", "ask", 0, None, "orchestrator"))
+            self.assertEqual(
+                watch.collect(d)["posture"]["orchestration"], "orchestrator")
+            self.assertEqual(
+                watch.summary(d)["posture"]["orchestration"], "orchestrator")
+
+    # ── #510 surface 3: the orchestration dashboard chip ──────────────
+    def test_page_carries_orchestration_vocabulary(self):
+        """The closed set is injected from lint (single source), not restated."""
+        self.assertIn(
+            "const POSTURE_STOPS_ORCHESTRATION = "
+            + json.dumps(list(watch.POSTURE_STOPS_ORCHESTRATION)),
+            watch.PAGE)
+
+    def test_orchestration_chip_reuses_the_posture_picker_idiom(self):
+        """The orchestration chip is a fifth axis row in the posture picker,
+        reusing the EXACT pace/asking/delivery idiom (same class, same picker
+        fn, the shared 10s arm) — authoring a second gesture is the failure
+        transitions.md / CLAUDE.md name.
+
+        Production line: posturePicker builds an orchestration .paxis row
+        whose chips come from POSTURE_STOPS_ORCHESTRATION.map and fire
+        pickPostureAxis.
+        """
+        idx = watch.PAGE.index('function posturePicker(')
+        end = watch.PAGE.find('/* Shared description for posture', idx)
+        self.assertGreater(end, idx)
+        body = watch.PAGE[idx:end]
+        self.assertIn('data-axis="orchestration"', body)
+        self.assertIn('orchestration-lab', body)
+        # driven from the closed set (not a hardcoded two-chip list)
+        self.assertIn('POSTURE_STOPS_ORCHESTRATION.map', body)
+        self.assertIn("pickPostureAxis('orchestration'", body)
+        # same chip class as pace/asking/delivery — no second gesture
+        self.assertIn("class=\"sgbtn pchip", body)
+        # no second arm: orchestration routes through the shared posture arm
+        self.assertNotIn('armOrchestration', watch.PAGE)
+        self.assertNotIn('commitOrchestration', watch.PAGE)
+
+    def test_orchestration_posts_through_the_shared_arm_and_posture_route(self):
+        """Production lines: commitPosture carries orchestration in the POST body
+        and through the shared 10s arm (RUN_ARM_MS, one /posture route).
+
+        Scoped to the JSON.stringify POST body — a bare 'orchestration:' is
+        hollow (the optimistic update and the pending cache carry it too), so
+        the check is sliced to the bytes the POST actually sends.
+        """
+        fi = watch.PAGE.index("fetch('/posture'")
+        si = watch.PAGE.index("body: JSON.stringify({", fi)
+        se = watch.PAGE.index("}),", si)
+        post_body = watch.PAGE[si:se]
+        self.assertIn('pace: draft.pace', post_body)
+        self.assertIn('orchestration: draft.orchestration', post_body)
+        # committedPosture carries orchestration so the chip paints selection
+        cp_i = watch.PAGE.index('function committedPosture(')
+        cp_end = watch.PAGE.index('function delegationLabel(', cp_i)
+        self.assertIn('POSTURE_STOPS_ORCHESTRATION', watch.PAGE[cp_i:cp_end])
+        # no second arm
+        self.assertNotIn('armOrchestration', watch.PAGE)
+
+    def test_orchestration_desc_table_covers_both_stops(self):
+        """Contract copy present for both stops (hover descriptions)."""
+        for stop in watch.POSTURE_STOPS_ORCHESTRATION:
+            self.assertIn(stop, watch.POSTURE_ORCHESTRATION_DESC)
+            self.assertTrue(watch.POSTURE_ORCHESTRATION_DESC[stop].strip())
+        self.assertIn('POSTURE_ORCHESTRATION_DESC', watch.PAGE)
+        pdf_i = watch.PAGE.index('function postDescFor(')
+        pdf_end = watch.PAGE.index('function hidePostDesc(', pdf_i)
+        self.assertIn("axis === 'orchestration'", watch.PAGE[pdf_i:pdf_end])
 
 
 class TestDeliveryWakeRouting(unittest.TestCase):

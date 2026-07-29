@@ -5542,6 +5542,96 @@ class TestPostureFile:
         unknown = [w for w in self._rows(dw, lint.WARN) if "unknown axis" in w]
         assert unknown == [], unknown
 
+    # ── #510 orchestration axis ──────────────────────────────────────────
+    def test_orchestration_closed_set_has_both_stops(self, tmp_path):
+        # PRECONDITION (the hollow-check rule): assert the set's membership
+        # explicitly, not just iterate. If the set were narrowed, iterating
+        # passes over the narrowing.
+        assert set(lint.POSTURE_STOPS_ORCHESTRATION) == {"hands-on", "orchestrator"}, \
+            lint.POSTURE_STOPS_ORCHESTRATION
+        assert "orchestration" in lint.POSTURE_AXES, lint.POSTURE_AXES
+
+    def test_orchestration_both_stops_parse_clean(self, tmp_path):
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        for stop in lint.POSTURE_STOPS_ORCHESTRATION:
+            (dw / "posture").write_text(
+                f"pace: idle\nasking: ask\ndelegation: 0\norchestration: {stop}\n")
+            assert not self._rows(dw, lint.ERROR), \
+                f"orchestration={stop!r} should be valid: {self._rows(dw, lint.ERROR)}"
+
+    def test_unknown_orchestration_errors_loud(self, tmp_path):
+        # THE closed-set red: an unknown orchestration must ERROR, not silently
+        # fall back. Production line that reds it: the `orchestration not in
+        # POSTURE_STOPS_ORCHESTRATION` membership test in check_posture.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text(
+            "pace: idle\nasking: ask\ndelegation: 0\norchestration: turbo\n")
+        errs = self._rows(dw, lint.ERROR)
+        assert len(errs) == 1, errs
+        assert "turbo" in errs[0] and "orchestration" in errs[0], errs[0]
+
+    def test_absent_orchestration_is_silent_not_warned(self, tmp_path):
+        # Orchestration is OPTIONAL — absent is the hands-on default, not a
+        # derivation gap. So a three-line pre-axis file must NOT warn about a
+        # missing orchestration, and its clean bill still reads "3 of 3" (not
+        # "3 of 4" or "3 of 5", which would imply the optional axes are
+        # missing rather than default).
+        # Production line: the `orchestration is None` short-circuit + the
+        # optional denominator in the clean-bill branch.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text("pace: hot\nasking: ask\ndelegation: 0\n")
+        warns = [w for w in self._rows(dw, lint.WARN) if "orchestration" in w]
+        assert warns == [], warns
+        ok = self._rows(dw, lint.OK)
+        assert len(ok) == 1, ok
+        assert "3 of 3" in ok[0], ok[0]
+        assert "orchestration" not in ok[0], ok[0]
+
+    def test_orchestration_present_joins_clean_bill_count(self, tmp_path):
+        # A five-axis file with a valid orchestration reads "4 of 4" (the
+        # three required + orchestration) and names the orchestration value —
+        # so coverage cannot shrink to silence beside a finding, and a reader
+        # sees the axis is set. (Delivery absent here, so denom is 4 not 5.)
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text(
+            "pace: hot\nasking: ask\ndelegation: 0\norchestration: orchestrator\n")
+        ok = self._rows(dw, lint.OK)
+        assert len(ok) == 1, ok
+        assert "4 of 4" in ok[0], ok[0]
+        assert "orchestration=orchestrator" in ok[0], ok[0]
+
+    def test_orchestration_and_delivery_both_present_count_five(self, tmp_path):
+        # Both optional axes present + the three required = 5 of 5. Proves the
+        # clean-bill denominator accounts for BOTH optional axes (not just one
+        # — a literal tuned to one would mask the other). Preconditions
+        # derived at runtime: both optional axes are genuinely in their sets.
+        assert set(lint.POSTURE_STOPS_DELIVERY) == {"instant", "batched"}
+        assert set(lint.POSTURE_STOPS_ORCHESTRATION) == {"hands-on", "orchestrator"}
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text(
+            "pace: hot\nasking: ask\ndelegation: 0\n"
+            "delivery: batched\norchestration: orchestrator\n")
+        ok = self._rows(dw, lint.OK)
+        assert len(ok) == 1, ok
+        assert "5 of 5" in ok[0], ok[0]
+        assert "delivery=batched" in ok[0] and "orchestration=orchestrator" in ok[0], ok[0]
+
+    def test_orchestration_alone_is_valid(self, tmp_path):
+        # A file that overrides ONLY orchestration is legitimate — the other
+        # axes stay derived, orchestration is set. It must not ERROR; the axis
+        # is recognised (no "unknown axis" warn) and valid.
+        dw = tmp_path / ".dreamwork"
+        dw.mkdir()
+        (dw / "posture").write_text("orchestration: orchestrator\n")
+        assert not self._rows(dw, lint.ERROR), self._rows(dw, lint.ERROR)
+        unknown = [w for w in self._rows(dw, lint.WARN) if "unknown axis" in w]
+        assert unknown == [], unknown
+
 
 class TestDerivePosture:
     """The run-mode → three-axis conversion (#445 Q2).
