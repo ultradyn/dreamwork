@@ -71,6 +71,33 @@ MARK_RAIL_TOKENS = (
 )
 TEMPLATE_ONLY |= set(MARK_RAIL_TOKENS)
 
+# #367/2b — the collapsible strip below the cliff. Same shape as the rail
+# tokens: new CSS the hand-rolled reference never carried.
+MARK_STRIP_TOKENS = (
+    ".markstrip",
+    ".markstrip-panel",
+    ".markstrip-panel>summary",
+    ".markstrip-panel>summary::-webkit-details-marker",
+    ".markstrip-panel>summary::before",
+    ".markstrip-panel[open]>summary",
+    ".markstrip-in",
+    ".markstrip-sum",
+    ".markstrip-walk",
+    ".markstrip-idle",
+    ".markstrip-at",
+    ".markstrip-at a",
+    ".markstrip-at a:hover",
+    ".markstrip-pos,.markstrip-count",
+    ".markstrip-chev",
+    ".markstrip-panel[open] .markstrip-chev",
+    ".markstrip-list",
+    ".markstrip-list ol",
+    ".markstrip-list li",
+    ".markstrip-item",
+    ".markstrip-item:hover,.markstrip-item:focus-visible",
+)
+TEMPLATE_ONLY |= set(MARK_STRIP_TOKENS)
+
 # #455 — the if-silent one-sentence slot. New CSS beyond the hand-rolled
 # reference (tasks-page.html has no cost-of-silence line). Grouped so a
 # selector the template gains for #455 is declared here, not invented.
@@ -1632,11 +1659,12 @@ def test_markstrip_is_injected_only_when_marks_exist(template):
     """
     bare = ra.render(ra.parse_source(SOURCE), template=template)
     assert "data-mark" not in ra.parse_source(SOURCE)["body"]
-    assert "markstrip" not in bare, \
+    # CSS may name .markstrip; the plant is an ELEMENT (class= on a tag).
+    assert not re.search(r'<(nav|details)\b[^>]*class="[^"]*markstrip', bare), \
         "a no-marks artifact gained markstrip chrome"
     built, labels = _marks_fixture(3, template)
     assert len(labels) == 3  # runtime-derived precondition
-    assert 'class="markstrip"' in built or "class='markstrip'" in built, \
+    assert re.search(r'<nav\b[^>]*class="markstrip"', built), \
         "a marked artifact has no .markstrip — the strip below the cliff is absent"
     # Count of list links equals the fixture mark count (not a hardcoded 3).
     list_links = re.findall(
