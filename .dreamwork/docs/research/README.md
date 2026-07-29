@@ -53,7 +53,7 @@ When the research itself is generic — true of every target, not just this
 one — the finding goes to the system-wide KB (`~/.llm-general/`) and what
 stays here is what the answer *means for this project*.
 
-## HTML — recommendation recorded, not implemented (#422's other half)
+## HTML — implemented by #484, exactly as recommended here
 
 "HTML when user-facing or benefiting from visual expression" has no builder
 and no surface today: `review_artifact.py` builds and `watch.py` serves
@@ -77,9 +77,15 @@ directory. Options derived from research still ship to him as review
 artifacts through the existing pipeline — that half of his 16:29 message is
 already served.
 
-Until that task lands: research ships as markdown, and any research finding
-that needs visual expression reaches him through the review pipeline as
-options, per the interim rule already in `DREAMWORK.md`.
+Until #484 landed, research shipped as markdown, and any research finding
+that needed visual expression reached him through the review pipeline as
+options, per the interim rule already in `DREAMWORK.md`. Now: sources at
+`src/<slug>.html` in the review-artifact source format, built by the one
+builder to `<slug>.html` beside them, listed and viewed at watch's
+`/research` route (raw at `/researchraw`, bare basenames only — a source in
+`src/` can never be listed or served as a finished page). `window-coords`
+is the first built artifact. Options derived from research still ship as
+review artifacts through the existing pipeline — unchanged.
 
 ## Retention
 

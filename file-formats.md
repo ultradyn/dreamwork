@@ -1817,6 +1817,26 @@ git). The frame's CSS is held to `tasks-page.html` by the fidelity tests and
 staleness by the stamp tests, so nothing the retired check stopped catching was
 unguarded.
 
+## `.dreamwork/docs/research/src/<slug>.html` — a research artifact's source (#484)
+
+Research HTML is built through the **same one builder and the same source
+format** as the review artifact above — a second template pipeline would be
+the five-font-families drift with a new name. The layout is the same trick
+one directory down: sources in `.dreamwork/docs/research/src/`, built to
+`.dreamwork/docs/research/<slug>.html` by
+
+    python3 <skill-dir>/review_artifact.py build .dreamwork/docs/research/src/<slug>.html
+
+`build_path` is generic (any `src/<slug>.html` builds beside its `src/`), so
+no builder change was needed. The differences from a review artifact are all
+in the lifecycle, not the format: a research source declares `no_ask:` and
+`no_if_silent:` (it parks no decision — it is a record), it is listed by
+`/research` rather than the reviews panel, and it is **kept while its
+conclusion holds** rather than archived when a question is answered
+(`.dreamwork/docs/research/README.md` is the contract). The serving half is
+the `/reviewraw` idiom as `/researchraw`: bare `.html` basenames only, so a
+`src/` source can never be served as a finished page.
+
 ## Migration notice — a hot-path banner in a data file (#458)
 
 A migration that changes the *meaning* of a data file a long-running agent

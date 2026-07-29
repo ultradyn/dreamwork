@@ -1,0 +1,54 @@
+<!--dreamwork-review-source
+title: window coordinates · what this project concluded · research
+identity: research artifact · window coordinates
+context: research · commissioned 2026-07-25 · generic half lives in the KB
+status: concluded · kept while the conclusion holds
+headline: screenX measures the viewport — except where it returns 0.
+tag: research · record
+sub: research · 25 July 2026 · what multi-window coordinates mean for this page
+skip: Skip to what matters here
+skip_href: #matters
+no_ask: research record — it proposes nothing; the options it informed already shipped through the review pipeline
+no_if_silent: research record — silence parks nothing; kept while the conclusion holds
+-->
+<!--#lead-->
+<p id="context" class="context">The research itself is <strong>generic browser
+  knowledge</strong> and lives in the system-wide KB, where other projects can find
+  it: <code>~/.llm-general/ui-design/multi-window-screen-coordinates.md</code> —
+  short answer, per-question detail, a what-breaks table, and sources with a
+  verified/unverified split. What stays here is what it <em>means for this
+  page</em> — the part that would be lost if only the general note survived.</p>
+<!--#body-->
+<section aria-labelledby="matters-t">
+  <div class="label" id="matters-t">The three that matter to us</div>
+
+  <p class="read"><strong>1 · <code>screenX</code>/<code>screenY</code> already
+    measure the VIEWPORT</strong>, in CSS pixels. Our anchor point was right, and
+    the chrome-offset problem we expected to solve does not exist.</p>
+
+  <p class="read"><strong>2 · They return 0 on native Wayland</strong>, by
+    protocol, and the mode is undetectable from JS. So <code>#74</code>'s
+    world-space shader anchoring collapses to "every window at the origin" on
+    some configurations — silently, since it looks identical to the feature being
+    off. It works here only because an unrelated CLAUDE.md mitigation puts Brave
+    on XWayland. Filed as <strong>#189</strong>, which also blocks
+    <strong>#187</strong>'s cross-window ripple: that wavefront was to ride a
+    coordinate system that, there, is not present.</p>
+
+  <p class="read"><strong>3 · There is no window-moved event</strong>, so polling
+    is the only option — which suits us, since the page already polls. And a
+    single scale constant is wrong across monitors with different
+    <code>devicePixelRatio</code>.</p>
+</section>
+
+<section aria-labelledby="idea-t">
+  <div class="label" id="idea-t">The idea we would not have had</div>
+  <p class="read"><strong>Drag-to-align.</strong> Where the browser refuses to say
+    where the window is, ask him once: show something to line up across the seam,
+    let him drag, store the offset. It is the only recovery available on Wayland,
+    and it turns an unfixable platform limitation into a ten-second setup that
+    suits this page's character.</p>
+</section>
+<!--#footer-->
+Research record · commissioned 2026-07-25 · offline-clean, no external requests.
+Built through the one template pipeline (#484's proof the research path works end to end).
