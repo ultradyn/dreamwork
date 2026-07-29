@@ -2293,6 +2293,40 @@ class TestCollector(unittest.TestCase):
                 events, [],
                 "a re-wrap of unchanged content emitted a phantom event")
 
+    def test_follow_internal_whitespace_is_digest_invariant(self):
+        # #509 gate finding: the parser's continuation join (watch.py:12430,
+        # `follows[-1].text += " " + s`) already single-spaces a follow
+        # ACROSS lines, which masked the coordinator's call-site sabotage
+        # (follows bypassing _sig_text passed both rewrap tests — a
+        # legitimate defense-in-depth green for LINE-BREAKS). What the
+        # parser does NOT defend is whitespace WITHIN one line (tabs,
+        # double spaces): only _sig_text collapses those, so the call-site
+        # wrapping on follows/answers needs its own binding check.
+        # PRODUCTION LINE whose change reds this: the follows call site in
+        # _entry_content_digest (`{**f, "text": _sig_text(f.get("text"))}`) —
+        # bypass it (the exact gate sabotage) and the two digests differ.
+        base = _long_entry_229_md(_LONG_ENTRY_229_BODY, 72)
+        marker = "all checks accepted as proposal-hardening inputs"
+        assert marker in base, "precondition: the fixture carries the follow"
+        spaced = base.replace(
+            marker, "all  checks\taccepted  as proposal-hardening inputs")
+        assert spaced != base, "precondition: the whitespace really differs"
+        e1 = [e for e in watch.parse_answered(base)
+              if "#229" in (e.get("title") or "")][0]
+        e2 = [e for e in watch.parse_answered(spaced)
+              if "#229" in (e.get("title") or "")][0]
+        assert e1["follows"] and e2["follows"], (
+            "precondition: both builds parse a follow")
+        assert e1["follows"][-1]["text"] != e2["follows"][-1]["text"], (
+            "precondition: the parser keeps the within-line difference — "
+            "if this fails the parser started collapsing whitespace and "
+            "the test is vacuous")
+        self.assertEqual(watch._entry_content_digest(e1),
+                         watch._entry_content_digest(e2),
+                         "within-line whitespace in a follow flipped the "
+                         "signature — the _sig_text call site is not doing "
+                         "its one job")
+
     def test_long_entry_real_word_change_emits_one_event(self):
         # #509 acceptance: the channel keeps its teeth — a REAL word change
         # to the long entry still emits exactly ONE question-updated event.
