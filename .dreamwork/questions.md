@@ -3,6 +3,34 @@
 ## Open
 
 
+- **P2 · 2026-07-30 03:40 — #357 Q6: on the read verbs (`counts`, `sweep`), full warning line every time, or a terse `⚠ N warnings` hint?**
+  **Ask: `rec` (full line), `terse`, or free text.** One decision; a bare `rec` is a complete reply.
+
+  Your throttle sketch was evaluated with the IGC you asked for, and it produced a headline worth
+  stating plainly: **the sketch is refuted, and the refutation is not mine to over-rule.** "Surface
+  warnings early so the dreamworker can plan them in" and "suppress 70–80% of prints on the verbs I
+  run to look" are rivals — a throttle is a delay device pointed at your own stated goal. It also
+  needs memory (last-seen warning, skip-count) a stateless verb process cannot hold without a new
+  state file, and that state can suppress a warning you never saw, forever. Full reasoning:
+  `.dreamwork/docs/plans/cli-warning-layer.md` §IGC.
+
+  What survives is a genuine fork between the two stateless shapes, and it is yours because it is
+  about your reading habits:
+
+  - **`rec`: full line every verb (I1).** A `counts` alone shows WHAT the warnings are, so planning
+    them in needs no second action — your stated goal. Cost: the identical line repeats on
+    consecutive read-verb calls while counts are unchanged, and on `counts` it repeats a number the
+    output just showed. Bounded: on a clean tree it prints nothing at all.
+  - **terse hint on reads (I3).** Read verbs print `⚠ N warnings — lint.py` instead; no identical
+    repeat. Cost: you see THAT warnings exist, not WHAT they are — planning needs a `lint.py` run
+    or the next state-change verb. If fatigue bites later, this is a stateless drop-in, ruleable
+    with no migration — which is why `rec` is the cheaper-to-reverse start.
+
+  **If you say nothing:** the design's rec stands (full line, I1) and the footer ships that way
+  when #357 is implemented; nothing is built by this entry.
+
+
+
 - **P2 · 2026-07-29 04:10 — #465: may I put the lane-containment guard in front of this repo's commits?**
   **What `#465` is** (you asked, and the old wording never said): tonight a subagent edited the main checkout
   instead of its own worktree. Nothing noticed until a verified merge, held half an hour, aborted on the stray

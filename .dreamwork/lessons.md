@@ -3229,3 +3229,11 @@ this shape and convert opportunistically.)
   same work; (2) a lane whose deliverable is a verdict (not a file) should write its report to disk as it
   goes, so a lost handle never means a lost report. Evidence: 2026-07-30 01:10 tick, lane 289viz
   (`019fae61`) reported after being declared dead; its re-dispatch (`019fae7e-9a5a`) killed as redundant.
+
+- **The retired-field check caught the coordinator re-growing `task_ids` from memory of the old shape
+  (2026-07-30).** Writing `status.json` agent entries by hand, I reached for the shape I remembered —
+  with per-agent `task_ids` — and `#294` T2 had retired exactly that field as a second derived truth.
+  `lint.py`'s retired-field check ERRORed on the same tick. Lesson: when hand-writing a machine-parsed
+  file, copy the CURRENT shape from the file itself (or the check's message), never the remembered one —
+  memory of a format predates its rulings. The check doing its job here is the standing proof that
+  retired-field lint is not hollow.
