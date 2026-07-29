@@ -27,18 +27,6 @@ stay unmarked; history is not guessed. Contract: `file-formats.md`.
 Next id: **489**
 
 ## Open
-- **#487** — burndown chart: click-to-cycle granularity, one hover surface, consistent placement · P2 ·
-  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:11:** *"update the
-  burndown chart so that clicking 'daily' cycles between daily/hourly/etc. Also at the same time, there
-  should not be a traditional tooltip while we have the new hover details, and the new hover details
-  should show up in a consistent location on the RHS of the burndown chart if there's room, and above it
-  if not. however, when above it, it should also be above the '123 open, up/down, 67 commits, date' line
-  that appears on hover. They should not overlap."* · three acceptances: (1) the granularity label is a
-  cycle control (daily → hourly → … → daily); (2) the legacy tooltip is gone wherever the new hover
-  details exist — one hover surface, not two; (3) hover details pin to a consistent spot: right of the
-  chart when it fits, above it otherwise — and when above, above the stats line too, never overlapping
-  it · **transitions.md applies**: the details panel's appear/move between RHS and above is a transition,
-  not a teleport · model: grok-4.5 (UI/visual work)
 - **#488** — posture card: 'override · .dreamwork/posture' label beside the heading; hover help text must not reflow · P2 ·
   dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:12:** *"the
   'override · .dreamwork/posture' label should go next to the 'Posture' heading. and the description
@@ -2737,6 +2725,20 @@ Next id: **489**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#487** — burndown chart: click-to-cycle granularity, one hover surface, consistent placement · P2 ·
+  dashboard/watch-ui · origin: **human** · **human via watch `add-idea` 2026-07-29 18:11:** *"update the
+  burndown chart so that clicking 'daily' cycles between daily/hourly/etc. Also at the same time, there
+  should not be a traditional tooltip while we have the new hover details, and the new hover details
+  should show up in a consistent location on the RHS of the burndown chart if there's room, and above it
+  if not. however, when above it, it should also be above the '123 open, up/down, 67 commits, date' line
+  that appears on hover. They should not overlap."* · three acceptances: (1) the granularity label is a
+  cycle control (daily → hourly → … → daily); (2) the legacy tooltip is gone wherever the new hover
+  details exist — one hover surface, not two; (3) hover details pin to a consistent spot: right of the
+  chart when it fits, above it otherwise — and when above, above the stats line too, never overlapping
+  it · **transitions.md applies**: the details panel's appear/move between RHS and above is a transition,
+  not a teleport · model: grok-4.5 (UI/visual work)
+  · merged (2e07febf): burndown interaction rework — step label is a cycle control (hourly → every-four-hours → daily → weekly → every-four-weeks, keyboard-native button, aria-announced, localStorage per target, /data.json?burn_step=); native column title= dropped so the new hover surfaces are the only ones; inspector pins RHS when its measured width fits half the panel else above chart+tip, never overlapping the glance stats line. Lane red-first (4 tests) + 2 red-proofs; coordinator red-proof: forcing hasRoom=true fails exactly bdhover's narrow-viewport above-pin check, restored byte-identical. 336 pytest green, bdhover PASS, lint clean, audit exit 0. Lane model: grok-4.5 (583s, 90 calls).
+
 - **#367** — Tabbed pointers to a review's essentials, with next/prev · P2 ·
   review tooling/UX · origin: **human** · **human via watch `add-idea` 2026-07-28 02:36**,
   typed from `/review?p=task-store-schema.html` — so from inside the problem: *"on reviews, it
