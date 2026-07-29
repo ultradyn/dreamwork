@@ -992,6 +992,18 @@ attribute. Answered disclosures on `/answers` opt in the same way (#238), with
 **before** the regroups, which measure, and **folds run before cards** (#179,
 above).
 
+**#523 — any focused `input`/`textarea` inside `#view` survives the tick.**
+The poll rebuilds `#view` through `innerHTML`, so focus, caret, selection and
+a mid-edit value die with the node. `snapshotViewInputs`/`restoreViewInputs`
+is the targeted snapshot/restore instance of the #505 surface (not the general
+keyed reconciliation — that awaits his ruling and will absorb this pair).
+Identity is the element's stable **`id`** (give one to any new field that
+needs this; the burndown limit input is `#bdlimit-in`). **His typed value
+always wins** over the fresh server markup — never clobber mid-edit text with
+a stale render. Runs after folds/cards so `refocus` is not swallowed by a
+closed ancestor. Card textareas and `#askbox` keep their specialised seams; a
+second restore of the same value is a no-op.
+
 ### The persistent chrome
 
 The heading is not content. It is the page's frame — the same `+` opener, a
@@ -2499,22 +2511,22 @@ affordance (same family as `.gservact`); accent is not spent.
 
 **#499 — column-count limit control, on the same head line.** When the
 served series has **more than 28 elements** (the default — his words),
-the head carries `limit [ N] [⟳]` after the step name — a numerical input
-and a reset. **Presence is vs the DEFAULT (28), not the active limit**:
-with 50 buckets and limit=0 (all) the control stays up so he can dial
-back; with 50 and limit=100 it is still up (limit inactive, rule still
-shows it); with 26 under any limit it is absent. An earlier reading that
-hid the control against the active limit left no in-UI recovery from
-all-mode. **No new row**: the control shares `.bdhead` (flex: numbers
-ellipsis on the left, limit is `flex:none` so it is never clipped off).
-#417's fixed-height premise is unchanged; presence/absence is content on
-an existing line, not a layout growth. Semantics: **`<=0` = all/max**
-(stored as `0`); hard cap **168**; invalid input is refused quietly (the
-panel's voice — no toast). **⟳** restores the default 28 (clears the
-stored pref). Slice is the **most recent** N columns when the active
-limit is finite and below the series length. **State: client-side only,
-per-target `localStorage` key `dw:burn-limit:<target>`.** Chosen over a
-URL param because this panel already keeps its small UI state
+the head carries `limit [−] [ N] [+] [⟳]` after the step name — steppers
+(#524), a numerical input, and a reset. **Presence is vs the DEFAULT (28),
+not the active limit**: with 50 buckets and limit=0 (all) the control stays
+up so he can dial back; with 50 and limit=100 it is still up (limit
+inactive, rule still shows it); with 26 under any limit it is absent. An
+earlier reading that hid the control against the active limit left no
+in-UI recovery from all-mode. **No new row**: the control shares `.bdhead`
+(flex: numbers ellipsis on the left, limit is `flex:none` so it is never
+clipped off). #417's fixed-height premise is unchanged; presence/absence
+is content on an existing line, not a layout growth. Semantics: **`<=0` =
+all/max** (stored as `0`); hard cap **168**; invalid input is refused
+quietly (the panel's voice — no toast). **⟳** restores the default 28
+(clears the stored pref). Slice is the **most recent** N columns when the
+active limit is finite and below the series length. **State: client-side
+only, per-target `localStorage` key `dw:burn-limit:<target>`.** Chosen over
+a URL param because this panel already keeps its small UI state
 (`burn_step`) in localStorage, and that consistency is the tie-breaker;
 no `storage` event fanout (same as `burn_step`) so it never fights the
 posture picker's shared-arm keys. No server state, no new endpoint.
@@ -2522,6 +2534,26 @@ Conditional presence does **not** invent a second arrival idiom: a live
 re-render of this panel commits instantly (transitions.md / #218), and a
 fragment of a fixed line posing in would be the snap among drifts.
 Reduced-motion parity is free. Accent is not spent.
+
+**#524 — [−] / [+] steppers on the limit input.** Real `<button
+class="bdlimit-step">` elements immediately before and after `#bdlimit-in`,
+quiet chrome (same family as ⟳ — muted, lift on hover, focus-visible ring;
+accent is not spent). Click decrements/increments by one, **clamped to the
+input's own min/max** (0..168 — the same path as a typed value).
+**Hold-to-repeat**: pointerdown steps once, then after ~400ms repeats every
+~80ms until pointerup; no motion is authored, so reduced-motion parity is
+free. The hold state is **module-level**, not on the button node — each step
+re-renders the panel through `applyBurnLimit`, and a timer bound to the
+button would die on the first step. A mid-hold data tick must not stop the
+repeat (#523 composition): `pointercancel` from a destroyed node is ignored.
+Keyboard: Enter/Space on a focused stepper steps once (native button
+activation). `dev/capture/bdinput.mjs` owns focus survival, step, hold, and
+hold-across-tick.
+
+**#523 on this field.** The limit input carries `id="bdlimit-in"` so the
+general `#view` input snapshot/restore can find it after a poll swap. Typing
+a period number must not lose focus, caret, or the half-typed value when
+`data.json` arrives — his words, 07:44.
 
 **#298 — the column inspector, a richer reading on the same seam.** The
 glance tip answers a passing hover; the inspector (`.bdinsp`) answers a

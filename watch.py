@@ -865,7 +865,11 @@ STYLE = """<style>
      live re-render of this panel commits instantly (transitions.md /
      #218) and inventing a second arrival idiom for a fragment of a fixed
      line would be the snap among drifts the rule forbids. Reduced-motion
-     parity is free. */
+     parity is free.
+     #524: [-] / [+] steppers flank the input (quiet chrome, real buttons).
+     No motion on the steppers — reduced-motion parity is free. Hold-to-
+     repeat lives in JS (module-level interval) so a mid-hold data tick
+     or re-render does not kill the repeat (#523 composition). */
   .bdlimit { flex:0 0 auto; display:inline-flex; align-items:center;
              gap:.2rem; color:var(--dim); white-space:nowrap; }
   .bdlimit-in {
@@ -874,13 +878,17 @@ STYLE = """<style>
     color:var(--lit); background:transparent;
     border:1px solid var(--line); border-radius:2px;
     padding:0 .15rem; margin:0; text-align:right; vertical-align:middle;
-    -moz-appearance:textfield; appearance:textfield;
   }
-  .bdlimit-in::-webkit-outer-spin-button,
-  .bdlimit-in::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
   .bdlimit-in:hover { border-color:var(--muted); }
   .bdlimit-in:focus { outline:1px solid var(--muted); outline-offset:1px;
     border-color:var(--muted); }
+  .bdlimit-step { background:none; border:none; font:inherit;
+    color:var(--muted); cursor:pointer; padding:0 .18rem; margin:0;
+    line-height:1; border-radius:2px; min-width:1.1em; text-align:center;
+    -webkit-user-select:none; user-select:none; }
+  .bdlimit-step:hover { color:var(--lit); }
+  .bdlimit-step:focus-visible { color:var(--lit);
+    outline:1px solid var(--muted); outline-offset:2px; }
   .bdlimit-reset { background:none; border:none; font:inherit;
     color:var(--muted); cursor:pointer; padding:0 .12rem; margin:0;
     line-height:1; border-radius:2px; }
@@ -3754,11 +3762,24 @@ function burnPanel(d) {
   const stepName = BURN_STEP_NAME[s.step] || 'bucketed';
   const stepAria = `granularity ${stepName} — activate to cycle`;
   const limVal = displayBurnLimitValue();
+  /* #524: [-] input [+] ⟳ — steppers flank the field; id is the #523
+     restore key (any focused input inside #view needs a stable id). */
   const limCtl = showLim
     ? `<span class="bdlimit" data-total="${totalN}" data-limit="${limVal}">` +
-      `limit <input type="number" class="bdlimit-in" inputmode="numeric" ` +
-      `min="0" max="${BURN_LIMIT_CAP}" step="1" value="${limVal}" ` +
+      `limit ` +
+      `<button type="button" class="bdlimit-step" data-dir="-1" ` +
+      `aria-label="decrease column limit">−</button>` +
+      /* type=text not number: Chromium refuses selectionStart/Range on
+         number inputs, so #523 cannot restore caret/selection otherwise.
+         inputmode=numeric keeps the mobile keypad; clamp stays in
+         applyBurnLimit (min/max attrs are advisory for AT). */
+      `<input type="text" id="bdlimit-in" class="bdlimit-in" ` +
+      `inputmode="numeric" pattern="[0-9]*" autocomplete="off" ` +
+      `min="0" max="${BURN_LIMIT_CAP}" ` +
+      `value="${limVal}" ` +
       `aria-label="column limit, 0 for all, max ${BURN_LIMIT_CAP}">` +
+      `<button type="button" class="bdlimit-step" data-dir="1" ` +
+      `aria-label="increase column limit">+</button>` +
       `<button type="button" class="bdlimit-reset" ` +
       `aria-label="reset column limit to ${BURN_LIMIT_DEFAULT}">⟳</button>` +
       `</span>`
@@ -6461,6 +6482,48 @@ function restoreAskState(saved) {
   try { box.setSelectionRange(saved.start, saved.end); } catch (e) {}
   if (saved.focus) refocus(box);
 }
+/* #523 — any focused input/textarea inside #view survives a setContent
+   swap. The tick rebuilds #view through innerHTML, so focus, caret,
+   selection and a mid-edit value die with the node unless carried. This
+   is the targeted snapshot/restore instance of the #505 surface (not the
+   general reconciliation). Identity is the element's `id` (stable across
+   the swap — give one to any new field that needs this). His typed value
+   always wins over the fresh server markup: never clobber mid-edit text
+   with a stale render. Card textareas and #askbox also ride their own
+   seams; a second restore of the same value is a no-op. */
+function snapshotViewInputs() {
+  const root = document.getElementById('view');
+  if (!root) return null;
+  const act = document.activeElement;
+  if (!act || !root.contains(act)) return null;
+  const tag = act.tagName;
+  if (tag !== 'INPUT' && tag !== 'TEXTAREA') return null;
+  if (!act.id) return null;
+  let start = 0, end = 0, dir = 'none';
+  try {
+    const s = act.selectionStart, e = act.selectionEnd;
+    // number inputs report null for selection in Chromium — coerce so a
+    // restore never hands setSelectionRange a null (throws on text too).
+    start = (typeof s === 'number') ? s : (act.value || '').length;
+    end = (typeof e === 'number') ? e : start;
+    dir = act.selectionDirection || 'none';
+  } catch (e) {}
+  return { id: act.id, value: act.value, start, end, dir };
+}
+function restoreViewInputs(saved) {
+  if (!saved || !saved.id) return;
+  const el = document.getElementById(saved.id);
+  if (!el) return;
+  const tag = el.tagName;
+  if (tag !== 'INPUT' && tag !== 'TEXTAREA') return;
+  // Typed text wins: the fresh markup holds the server/default value.
+  if (el.value !== saved.value) el.value = saved.value;
+  const s = (typeof saved.start === 'number') ? saved.start : 0;
+  const e = (typeof saved.end === 'number') ? saved.end : s;
+  try { el.setSelectionRange(s, e, saved.dir || 'none'); }
+  catch (err) {}
+  refocus(el);
+}
 /* #459: bind #askbox to DraftStore (ask:main). Snapshot (#118) carries a
    tick; storage carries a reload. bind is re-entrant-safe: unbind first so a
    tick re-render does not stack input listeners. Restores only into an empty
@@ -7552,6 +7615,7 @@ async function cycleBurnStep(back) {
   try {
     const wasBurn = burnKey(data);
     const bdHover = snapshotBdHover();   // #494: step cycle is also a swap
+    const viewIn = snapshotViewInputs(); // #523: limit input mid-edit
     setData(await (await fetch(dataJsonUrl())).json());
     const burnBefore = (burnKey(data) !== wasBurn) ? snapshotBars() : null;
     if (view && view.name === 'dashboard') {
@@ -7559,6 +7623,7 @@ async function cycleBurnStep(back) {
       setLiveContent(html);
       if (burnBefore) regroupBars(burnBefore);
       restoreBdHover(bdHover);
+      restoreViewInputs(viewIn);
     }
   } catch (e) {}
 }
@@ -7607,13 +7672,20 @@ function displayBurnLimitValue() {
   if (burnLimitPref <= 0) return 0;
   return Math.min(BURN_LIMIT_CAP, Math.floor(burnLimitPref));
 }
+/* Generation so a hold-to-repeat burst cannot paint an older build over a
+   newer pref: each applyBurnLimit bumps the gen; a superseded await drops. */
+let _burnLimitRenderGen = 0;
 async function rerenderBurnLimit() {
   if (!view || view.name !== 'dashboard' || !data) return;
+  const gen = ++_burnLimitRenderGen;
   try {
     const bdHover = snapshotBdHover();
+    const viewIn = snapshotViewInputs(); // #523 across limit re-render
     const html = await buildCurrent();
+    if (gen !== _burnLimitRenderGen) return;   // a newer apply won
     setLiveContent(html);
     restoreBdHover(bdHover);
+    restoreViewInputs(viewIn);
   } catch (e) {}
 }
 function applyBurnLimit(raw) {
@@ -7621,13 +7693,15 @@ function applyBurnLimit(raw) {
      and restores the input's displayed value (no toast idiom).
      <=0 → all/max (stored as 0). >cap → clamp to cap. */
   if (raw === '' || raw == null) {
-    const inp = document.querySelector('.bdlimit-in');
+    const inp = document.getElementById('bdlimit-in')
+      || document.querySelector('.bdlimit-in');
     if (inp) inp.value = String(displayBurnLimitValue());
     return;
   }
   const n = parseInt(String(raw).trim(), 10);
   if (!Number.isFinite(n)) {
-    const inp = document.querySelector('.bdlimit-in');
+    const inp = document.getElementById('bdlimit-in')
+      || document.querySelector('.bdlimit-in');
     if (inp) inp.value = String(displayBurnLimitValue());
     return;
   }
@@ -7645,6 +7719,46 @@ function resetBurnLimit() {
   catch (e) {}
   rerenderBurnLimit();
 }
+/* #524 — one step of the limit, same clamp as applyBurnLimit / the input
+   min/max. Returns whether the value moved (hold-at-bound is a quiet
+   no-op, not an error). */
+function bdStepNudge(dir) {
+  const step = dir < 0 ? -1 : 1;
+  const cur = displayBurnLimitValue();
+  let next = cur + step;
+  if (next < 0) next = 0;
+  if (next > BURN_LIMIT_CAP) next = BURN_LIMIT_CAP;
+  if (next === cur) return false;
+  applyBurnLimit(String(next));
+  return true;
+}
+/* Hold-to-repeat: state is MODULE-LEVEL, not on the button node. Each
+   nudge re-renders the panel (applyBurnLimit → setLiveContent), so a
+   timer bound to the button dies on the first step; the interval must
+   outlive the nodes. First delay ~400ms, then ~80ms — conventional
+   feel, no motion to reduce. A data tick mid-hold must not stop the
+   repeat (#523/#524 composition): pointercancel from a destroyed node
+   is ignored; only a real pointerup ends it. */
+let _bdStepHold = null;   // {dir, delayTimer, repTimer} | null
+let _bdStepSuppressClick = false;
+function bdStepHoldStop() {
+  if (!_bdStepHold) return;
+  if (_bdStepHold.delayTimer) clearTimeout(_bdStepHold.delayTimer);
+  if (_bdStepHold.repTimer) clearInterval(_bdStepHold.repTimer);
+  _bdStepHold = null;
+}
+function bdStepHoldStart(dir) {
+  bdStepHoldStop();
+  _bdStepHold = { dir, delayTimer: null, repTimer: null };
+  bdStepNudge(dir);
+  _bdStepHold.delayTimer = setTimeout(() => {
+    if (!_bdStepHold || _bdStepHold.dir !== dir) return;
+    _bdStepHold.repTimer = setInterval(() => {
+      if (!_bdStepHold) return;
+      bdStepNudge(_bdStepHold.dir);
+    }, 80);
+  }, 400);
+}
 addEventListener('change', e => {
   const inp = e.target && e.target.closest && e.target.closest('.bdlimit-in');
   if (!inp) return;
@@ -7655,7 +7769,36 @@ addEventListener('keydown', e => {
   if (!inp) return;
   if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
 });
+addEventListener('pointerdown', e => {
+  const btn = e.target && e.target.closest && e.target.closest('.bdlimit-step');
+  if (!btn || e.button !== 0) return;
+  const dir = parseInt(btn.getAttribute('data-dir'), 10);
+  if (dir !== 1 && dir !== -1) return;
+  _bdStepSuppressClick = true;   // pointer path owns the first step
+  bdStepHoldStart(dir);
+});
+addEventListener('pointerup', e => {
+  if (!_bdStepHold) return;
+  if (e.button === 0) bdStepHoldStop();
+});
+addEventListener('pointercancel', e => {
+  if (!_bdStepHold) return;
+  // Destroyed-by-swap cancel: the old button is already disconnected.
+  // Keep the hold so a mid-hold data tick / re-render does not stop it.
+  const t = e.target;
+  if (t && t.isConnected === false) return;
+  bdStepHoldStop();
+});
 addEventListener('click', e => {
+  const step = e.target && e.target.closest && e.target.closest('.bdlimit-step');
+  if (step) {
+    e.preventDefault();
+    if (_bdStepSuppressClick) { _bdStepSuppressClick = false; return; }
+    // Keyboard activation (Enter/Space on a focused stepper).
+    const dir = parseInt(step.getAttribute('data-dir'), 10);
+    if (dir === 1 || dir === -1) bdStepNudge(dir);
+    return;
+  }
   const btn = e.target && e.target.closest && e.target.closest('.bdlimit-reset');
   if (!btn) return;
   e.preventDefault();
@@ -9134,6 +9277,9 @@ async function tick() {
       const reviewFrame = snapshotReviewFrame();
       const folds = snapshotFolds();
       const before = snapshotCards();
+      // #523: focused input/textarea inside #view (id + caret + typed value).
+      // Targeted snapshot/restore — not the #505 general reconciliation.
+      const viewIn = snapshotViewInputs();
       // #494: burndown hover/pin — same carry as card state, keyed by
       // bucket t0. Snapshot BEFORE the swap; the detach fires pointerout
       // which would otherwise clear the fresh (hidden) tip/inspector.
@@ -9174,6 +9320,10 @@ async function tick() {
       // the card first re-filled the box and silently dropped the focus.
       restoreFolds(folds);
       restoreCardState(kept);
+      // #523 after folds/cards so refocus is not swallowed by a closed
+      // ancestor; before ask so a card textarea and #askbox keep their
+      // specialised seams when both apply.
+      restoreViewInputs(viewIn);
       // AFTER the restore, never before it (#326). What is above and below the
       // docked question is a fact about its scroll position, and one line
       // earlier that position is still 0 — so syncing there answers for a
