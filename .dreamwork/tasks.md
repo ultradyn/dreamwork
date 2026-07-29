@@ -262,6 +262,24 @@ Next id: **492**
   the loop's THIRD write act — annotating an OPEN entry with progress notes — has
   no post-cutover tool** (`land_task` notes only at landing). Follow-up
   `lane-294note` dispatched 21:27 for a `note` verb; cutover still held.
+  · **INCREMENT 9b (note verb) MERGED 2026-07-29 21:42.** Lane `wt/294note`
+  (llmp-glm-5-2, 733s, 54 calls; `ba710ae` `e188021` `638df3c`). `note_task`
+  appends to `task.body` in ANY state, `TaskNotFound` on a missing id, one
+  transaction, and **no `task_event` row** — a note is not a transition (#264:
+  one event per transition); the body IS the annotation audit trail. `dev/ledger.py
+  note <id> --note …` dispatches like file/fold (markdown mode appends a `  · `
+  continuation under the entry without moving it; `guard_markdown_write` refusal
+  comes free with the dispatch). 5 lane red-proofs; coordinator independently
+  red-proved the append-preserves decision (`body = body || ?` → `body = ?`
+  replace-semantics fails exactly `test_note_appends_to_body_in_any_state` —
+  after a first injection attempt put a `#` comment INSIDE the SQL string and
+  failed three tests on OperationalError: a sabotage that breaks the scaffolding
+  proves nothing; only the valid-SQL run is the proof). 404 green; lint clean.
+  **All write acts now have a post-cutover path: file, fold→land, note.**
+  Remaining before execution, all coordinator: stage the lint.py patch (#362
+  absence-invariant + shim handling for the ledger-content checks), then one
+  coordinated act — status.json T2 field deletion + lint patch + `--cutover` +
+  deploy.
 - **#485** — a free-text subagent policy field in the posture config, persisted at host/worker level · P2 ·
   dashboard/loop-config · origin: **human** · **human via watch `add-idea` 2026-07-29 17:10:** *"posture
   config (pace, etc) should have a place for text entry of subagent policy where user can put preferred
