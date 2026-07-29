@@ -1441,146 +1441,6 @@ Next id: **487**
   · authorises red-first implementation in an isolated worktree plus the visual
   gate; **not deployment**
 
-- **#294** — Migrate the durable task ledger to SQLite and a tool/CLI API · P1 ·
-  storage/tooling migration · origin: **human** · **human via `/answers`
-  2026-07-27 01:17** · build after #264's reviewed concurrency design and the
-  relevant #263 journal boundary: canonical task IDs/status/origin/priority/
-  ownership/dependencies/history live behind commands such as `dreamwork tasks
-  list|get|grab|cycle` rather than direct Markdown mutation; same-target agents
-  use transactional claims/CAS/leases · ship a deliberately readable and
-  user-modifiable migration script that dry-runs, parses every open/landed task,
-  reports exact counts/IDs/digests/conflicts, backs up and imports atomically,
-  verifies the database before cutover, and has explicit rollback · on successful
-  verified cutover, preserve the old ledger as `tasks.md.deprecated` with YAML
-  frontmatter declaring deprecation and pointing to canonical task-access and
-  recovery instructions; never delete it automatically · **human via watch
-  `add-idea` 14:11:** every task grab/status/priority/complete transition must
-  automatically maintain the dashboard's burndown history and live status
-  projection through the canonical transaction/outbox — no agent hand-editing
-  `status.json`, no Git-HEAD lag, and no second derived truth; expose bounded
-  snapshot/time-series APIs with crash-safe replay and prove the chart + status
-  section update after real task commands · mixed-version/writer freeze,
-  replay/idempotency, Git history/provenance import, dashboard consumers,
-  lint/file-formats/doc-map/compaction and failure recovery are acceptance scope ·
-  blocked on #264 design and relevant #263 cutover decisions · **`/tasks` read
-  requirements folded in (human's steer, watch 2026-07-27 21:47: factor them in
-  so we do not pay for two migrations)** — the schema and the CLI's read surface
-  must serve, per entry: id, title, priority band, type, origin marker, owner /
-  blocked-on, dependency ids, open|landed state, and the free-text tail #281
-  renders; plus set-level filtering (open-only with a landed count),
-  sort by priority-then-id AND by user-chosen key, and single-entry fetch by id
-  for `?t=<id>`. The migration re-points #281's entry-level reader and nothing
-  else, which is only true while that reader stays the sole parser — verify that
-  invariant still holds at cutover rather than assuming it
-  · **#289's review-decision record folded in too (his steer, watch 2026-07-27
-  23:11 — the same "do not pay for two migrations" instruction he gave for
-  `/tasks`)**: the schema and CLI must carry, per review artifact, an explicit
-  decision enum (`pending|accepted|rejected`) with a stamp, its association to
-  exactly one owning question, and the absence of a record as a DISTINCT state
-  (`unlinked`, never `pending`) — plus the integrity rule that two questions
-  claiming one artifact with conflicting decisions is an error the store can
-  detect · #289 implements against this after cutover, not before
-  · **NEXT-UP, human via watch `do-next` 2026-07-27 23:33**: *"I think we need to
-  start working on the sqlite db and cli next. it feels like it's becoming a
-  blocker. ask a question of me if you would like to discuss."* · his read is
-  correct and measured: this entry is now the gate on `#287`, `#289`, part of
-  `#281`, `#229`/`#270`'s CLI-only seam, and `#342`'s toggle — five lanes
-  · **THE GATE IS CLEARED — he approved #263 at 01:27 with `"rec"`.** The chain
-  `#294` ← `#264` ← `#263` now rests on #264's design rather than on him, and #264 is marked
-  next-up. The reasoning below is kept because it still holds about what approval covers
-  · **but the thing blocking it was not this task, it was his own answer on #263**,
-  whose design is finished, reviewed and PASS and waits only on E1–E4. The chain is
-  `#294` ← `#264` ← `#263`, so starting here without that answer means designing
-  the schema against an unsettled event model — the exact double-migration he has
-  warned about twice tonight
-  · **the gate is sharper than "unsettled design", and the distinction changes what
-  can start** (checked 2026-07-28 00:26, against the doc rather than from memory):
-  `user-event-journal.md:4` states its own status as *"human approval required; no
-  implementation authority"*, and its `## Approval gate` says approval *"accepts this
-  contract and authorises a separate red-first implementation plan"*. So the design is
-  not missing and not in doubt — it is **unratified**. That is not the same failure as
-  #252's stale blocker, which was a blocker that had already been cleared; this one is
-  real and only he can clear it
-  · **and it gates less than the entry claimed**: the transition half of this task (how
-  a grab/status/priority/complete becomes durable history, journal-vs-outbox, leases and
-  CAS) is squarely #264's gated question, but the **task entity schema and the read-only
-  CLI surface are orthogonal to it** — the columns that carry id, title, priority band,
-  type, origin marker, owner/blocked-on, dependency ids, open|landed and #281's
-  free-text tail are the same set whether transitions arrive from #263's journal or from
-  a task-state outbox, because the read surface is what a materialised view exposes
-  either way. Split out as **#346**, which is startable now; that also shrinks the
-  post-approval half rather than racing it · so the loop's response to the steer is to ask, which
-  he invited: the E1 ask has been **restated in plain terms** as a threaded
-  follow-up (questions.md, 23:36), because the original was written in the loop's
-  vocabulary and that is why it has sat unanswered · it also offers him the
-  parallel-start option explicitly, with its cost named, rather than deciding on
-  his behalf that he cannot have it
-  · **#342 is the same work from the other end**: his batched-delivery idea needs a
-  read cursor, and #263's journal IS that cursor — so E1 unblocks the delivery mode
-  he asked about five minutes earlier, and the two steers should not be built twice
-  · related: **#418, #419**
-
-  · **DESIGN LANDED `3243ed8` + artifact `cb7f4ab`, merged `38e9310` — and `#294` STAYS OPEN, because a design
-  is not a ruling.** `.dreamwork/docs/plans/ledger-sqlite.md` plus `.dreamwork/review/src/294-ledger-sqlite.html`
-  (offline-clean, real `#ask`); **nothing built**, as the brief required
-  · **it established the dependencies rather than assuming them:** `#263`'s contract, `#264`'s boundary (T1–T4)
-  and `#346`'s schema (S1–S4) are approved **as designs**; the one unmet dependency is *implementation* —
-  `#263` lane **H**'s version gate, whose H1 half landed tonight (`7dc8763`). `#352`'s unified parser is a hard
-  prereq to the cutover step
-  · **it owns what `#264` left open:** a staged migrate script, `AUTOINCREMENT` ids seeded **and verified**,
-  first-sight git-history events attributed to `actor=migration:git`, an exclusive cutover lease that consumes
-  lane H, `tasks.md.deprecated` plus a one-line shim carrying a `#458` notice, and journal-aware rollback.
-  **Dual-write shadowing was REFUTED** — it is the second derived truth `#264` exists to remove
-  · **blocked-on: **human** (R1–R4 + C1 on the artifact)** — ask filed 2026-07-29
-  · **ALL FIVE CALLS ANSWERED `rec` 2026-07-29 05:48 via the dashboard.** So the design is ratified and **unblocked on him**: R1 the id sequence lives in the store (`AUTOINCREMENT`, seeded from the current next id and **verified before cutover** — ids are permanent, so a bad import must not be able to reset the sequence); R2 cutover takes an **exclusive lease** and consumes `#263` lane H's version gate, with **dual-write shadowing refuted** because a shadow period means two truths and removing the second derived truth is what `#264` exists for; R3 git history imports as **synthetic first-sight events** attributed `actor=migration:git`, never to him or to the loop, so a reconstructed event is always distinguishable from a witnessed one; R4 `tasks.md` becomes `tasks.md.deprecated` plus a **one-line shim carrying a `#458` migration notice**, so a stale agent reading the old path is told where the ledger went instead of quietly reading a frozen file; C1 v1 stays **machine-local** — no hosted store, no network, the same trust boundary as today. **This answer builds nothing and unblocks nothing downstream of it:** shipping is still gated on `#263` lane H and `#352`, which the ask said plainly and the ruling does not change. Entry stays open as implementation work with the design settled; the next increment is the schema and the seeded-sequence verification, not the cutover.
-  · **INCREMENT 1 LANDED `50f4933` (2026-07-29 06:07, lane `wt/schema`) — schema + seeded AUTOINCREMENT, sound (14
-  `test_ledger_store.py` pass on master).** It was never folded (0 citations), so this entry still read "next is
-  the schema" and a redundant dispatch went out at ~11:40 — the stale-next-text failure again. **The next
-  increment is now the import/parse-and-report stage** (`dreamwork tasks migrate --dry-run`), populating `task`,
-  `related`/`depends`, and re-seeding only upward.
-  · **OPEN DESIGN FORK — split vs flat entity, and it is Max's, asked in `questions.md`.** `50f4933` has an
-  **entry/task SPLIT** (`entry` + `task` + `task_by_entry` join), following `#346`'s ratified design literally.
-  But `#353`'s normalisation split the combined entries, so per this entry's own text `task(id PRIMARY KEY)`
-  needs **no** entry/task split — the join now models what nothing survives. The redundant-dispatch lane built a
-  flat "1b" alternative (one `task` table, `wt/294`, unmerged, red-proved) arguing the split is obsolete. Keep
-  the split (`50f4933`, ratified design) or flatten (`1b`)? Decide before the import stage — migrating into a
-  schema that is then flattened is the two-migrations error.
-  · **RULED 2026-07-29 15:59 (his rec): FLATTEN.** *"if you're satisfied then rec: flatten."* **and the flat
-  implementation commit `5c5e534` is GONE** — it lived in the cleaned lane worktree and was never fetched;
-  only the IGC artifact (`wt/294shape` = `6b872b4b`) survives. So the next increment is **rebuild the flat
-  variant** (one `task` table, no `entry`/`task_by_entry` join, seeded+verified AUTOINCREMENT kept from
-  `50f4933`'s R1 ruling), red-first, then the import stage (`dreamwork tasks migrate --dry-run`).
-  · **INCREMENT 2 (the rebuild) LANDED — merge of `wt/294flat` (lane work `077d9ec1` + `5be7cc11` +
-  `3d3058ac`, native subagent, 2026-07-29 16:26).** One `task` table (state CHECK, title, free-text body,
-  band FK + uncertain bit per S2, type lookup FK per S4, origin closed-or-NULL, blocked_on prose, digest,
-  source_line); `entry`/`task_by_entry` gone; `related`/`depends`/`review_decision`/`task_event`/`task_state`
-  and all seed/verify machinery unchanged. 18 tests (14 intents ported + 4 new incl. `test_the_entry_split_is_gone`
-  deriving the entity set from `sqlite_master` at runtime). Coordinator independently red-proved: re-adding an
-  `entry` table fails exactly that test, byte-identical restore, 18/18. **The lane also caught and repaired a
-  real coordinator defect (`3d3058ac`):** `a2d58f8a` had filed `#484` ABOVE `## Open` (unanchored first-match
-  on a preamble mention), invisible to `parse_ledger` — the seed-verification tests caught it as designed.
-  Strictness upgrades (`NOT NULL` on priority/origin) and an `owner` column deliberately left out, separable
-  per the artifact.
-  · **next: the import stage** — `dreamwork tasks migrate --dry-run` populating `task` + `related`/`depends`,
-  re-seeding only upward, with exact counts/ids/digests/conflicts reported before any cutover.
-  · **INCREMENT 3 (parse-and-report) LANDED — merge of `wt/294import` (lane work `189bc9e3`..`23e3442`, native
-  subagent, 2026-07-29 17:00).** `ud-dw-tasks-migrate --dry-run` (repo-root `ud-dw-*` layout, since no `dreamwork`
-  dispatcher exists — a future one shells to it unchanged). Parses through the production parser only
-  (`watch.parse_ledger`, `ledger_parse`, `lint`'s constants, `ledger_store.derive_next_id`) — no sixth
-  hand-rolled parser. **The live census: 130 open / 247 landed / 377 ids, disjoint, seed verified (485 ==
-  MAX(id)+1), and 21 conflicts, all known legal shapes:** 3 compound bands (`#274 #263 #288`, import as P1 +
-  uncertain per S2) and 18 missing bands (→ P2 by contract). Zero dangling relations, zero duplicates, zero
-  origin violations. The lane caught TWO green red-runs in its own checks and fixed both (a within-section
-  duplicate masked by the open∩landed term; a subset assertion passing on flag-everything). Coordinator
-  independently red-proved the seed-exceeds guard on the merged tree (exactly `test_seed_must_exceed_stray_entry_heads`
-  fails, byte-identical restore, 25 pass) and ran the dry-run live: counts move with folds exactly as expected.
-  · **next: increment 4 — the actual import into a scratch DB + verification** (rows fit the flat schema,
-  digest parity, conflicts resolved as ruled), still no cutover; then cutover (R2 lease, R4 rename + shim).
-  · his two clarifying notes answered in the questions thread (15:50, 16:00): an `entry` is not the event log
-  (`task_event` is separate either way); the flat model migrates cleanly because `#353` made every entry
-  exactly one task; a task row carries the free-text body where notes/updates accumulate, so tasks update
-  many times — prose in the body, state changes in `task_event`, neither frozen.
-
 - **#289** — Show review decision status and open its associated question · P2 ·
   dashboard review-list feature/design · origin: **human** · **human via watch
   2026-07-26 23:22** · exact ask: “webui dashboard: the list of reviews should
@@ -3052,6 +2912,147 @@ Next id: **487**
   · related: **#294, #346, #281, #300**
 
 ## Recently landed
+- **#294** — Migrate the durable task ledger to SQLite and a tool/CLI API · P1 ·
+  storage/tooling migration · origin: **human** · **human via `/answers`
+  2026-07-27 01:17** · build after #264's reviewed concurrency design and the
+  relevant #263 journal boundary: canonical task IDs/status/origin/priority/
+  ownership/dependencies/history live behind commands such as `dreamwork tasks
+  list|get|grab|cycle` rather than direct Markdown mutation; same-target agents
+  use transactional claims/CAS/leases · ship a deliberately readable and
+  user-modifiable migration script that dry-runs, parses every open/landed task,
+  reports exact counts/IDs/digests/conflicts, backs up and imports atomically,
+  verifies the database before cutover, and has explicit rollback · on successful
+  verified cutover, preserve the old ledger as `tasks.md.deprecated` with YAML
+  frontmatter declaring deprecation and pointing to canonical task-access and
+  recovery instructions; never delete it automatically · **human via watch
+  `add-idea` 14:11:** every task grab/status/priority/complete transition must
+  automatically maintain the dashboard's burndown history and live status
+  projection through the canonical transaction/outbox — no agent hand-editing
+  `status.json`, no Git-HEAD lag, and no second derived truth; expose bounded
+  snapshot/time-series APIs with crash-safe replay and prove the chart + status
+  section update after real task commands · mixed-version/writer freeze,
+  replay/idempotency, Git history/provenance import, dashboard consumers,
+  lint/file-formats/doc-map/compaction and failure recovery are acceptance scope ·
+  blocked on #264 design and relevant #263 cutover decisions · **`/tasks` read
+  requirements folded in (human's steer, watch 2026-07-27 21:47: factor them in
+  so we do not pay for two migrations)** — the schema and the CLI's read surface
+  must serve, per entry: id, title, priority band, type, origin marker, owner /
+  blocked-on, dependency ids, open|landed state, and the free-text tail #281
+  renders; plus set-level filtering (open-only with a landed count),
+  sort by priority-then-id AND by user-chosen key, and single-entry fetch by id
+  for `?t=<id>`. The migration re-points #281's entry-level reader and nothing
+  else, which is only true while that reader stays the sole parser — verify that
+  invariant still holds at cutover rather than assuming it
+  · **#289's review-decision record folded in too (his steer, watch 2026-07-27
+  23:11 — the same "do not pay for two migrations" instruction he gave for
+  `/tasks`)**: the schema and CLI must carry, per review artifact, an explicit
+  decision enum (`pending|accepted|rejected`) with a stamp, its association to
+  exactly one owning question, and the absence of a record as a DISTINCT state
+  (`unlinked`, never `pending`) — plus the integrity rule that two questions
+  claiming one artifact with conflicting decisions is an error the store can
+  detect · #289 implements against this after cutover, not before
+  · **NEXT-UP, human via watch `do-next` 2026-07-27 23:33**: *"I think we need to
+  start working on the sqlite db and cli next. it feels like it's becoming a
+  blocker. ask a question of me if you would like to discuss."* · his read is
+  correct and measured: this entry is now the gate on `#287`, `#289`, part of
+  `#281`, `#229`/`#270`'s CLI-only seam, and `#342`'s toggle — five lanes
+  · **THE GATE IS CLEARED — he approved #263 at 01:27 with `"rec"`.** The chain
+  `#294` ← `#264` ← `#263` now rests on #264's design rather than on him, and #264 is marked
+  next-up. The reasoning below is kept because it still holds about what approval covers
+  · **but the thing blocking it was not this task, it was his own answer on #263**,
+  whose design is finished, reviewed and PASS and waits only on E1–E4. The chain is
+  `#294` ← `#264` ← `#263`, so starting here without that answer means designing
+  the schema against an unsettled event model — the exact double-migration he has
+  warned about twice tonight
+  · **the gate is sharper than "unsettled design", and the distinction changes what
+  can start** (checked 2026-07-28 00:26, against the doc rather than from memory):
+  `user-event-journal.md:4` states its own status as *"human approval required; no
+  implementation authority"*, and its `## Approval gate` says approval *"accepts this
+  contract and authorises a separate red-first implementation plan"*. So the design is
+  not missing and not in doubt — it is **unratified**. That is not the same failure as
+  #252's stale blocker, which was a blocker that had already been cleared; this one is
+  real and only he can clear it
+  · **and it gates less than the entry claimed**: the transition half of this task (how
+  a grab/status/priority/complete becomes durable history, journal-vs-outbox, leases and
+  CAS) is squarely #264's gated question, but the **task entity schema and the read-only
+  CLI surface are orthogonal to it** — the columns that carry id, title, priority band,
+  type, origin marker, owner/blocked-on, dependency ids, open|landed and #281's
+  free-text tail are the same set whether transitions arrive from #263's journal or from
+  a task-state outbox, because the read surface is what a materialised view exposes
+  either way. Split out as **#346**, which is startable now; that also shrinks the
+  post-approval half rather than racing it · so the loop's response to the steer is to ask, which
+  he invited: the E1 ask has been **restated in plain terms** as a threaded
+  follow-up (questions.md, 23:36), because the original was written in the loop's
+  vocabulary and that is why it has sat unanswered · it also offers him the
+  parallel-start option explicitly, with its cost named, rather than deciding on
+  his behalf that he cannot have it
+  · **#342 is the same work from the other end**: his batched-delivery idea needs a
+  read cursor, and #263's journal IS that cursor — so E1 unblocks the delivery mode
+  he asked about five minutes earlier, and the two steers should not be built twice
+  · related: **#418, #419**
+
+  · **DESIGN LANDED `3243ed8` + artifact `cb7f4ab`, merged `38e9310` — and `#294` STAYS OPEN, because a design
+  is not a ruling.** `.dreamwork/docs/plans/ledger-sqlite.md` plus `.dreamwork/review/src/294-ledger-sqlite.html`
+  (offline-clean, real `#ask`); **nothing built**, as the brief required
+  · **it established the dependencies rather than assuming them:** `#263`'s contract, `#264`'s boundary (T1–T4)
+  and `#346`'s schema (S1–S4) are approved **as designs**; the one unmet dependency is *implementation* —
+  `#263` lane **H**'s version gate, whose H1 half landed tonight (`7dc8763`). `#352`'s unified parser is a hard
+  prereq to the cutover step
+  · **it owns what `#264` left open:** a staged migrate script, `AUTOINCREMENT` ids seeded **and verified**,
+  first-sight git-history events attributed to `actor=migration:git`, an exclusive cutover lease that consumes
+  lane H, `tasks.md.deprecated` plus a one-line shim carrying a `#458` notice, and journal-aware rollback.
+  **Dual-write shadowing was REFUTED** — it is the second derived truth `#264` exists to remove
+  · **blocked-on: **human** (R1–R4 + C1 on the artifact)** — ask filed 2026-07-29
+  · **ALL FIVE CALLS ANSWERED `rec` 2026-07-29 05:48 via the dashboard.** So the design is ratified and **unblocked on him**: R1 the id sequence lives in the store (`AUTOINCREMENT`, seeded from the current next id and **verified before cutover** — ids are permanent, so a bad import must not be able to reset the sequence); R2 cutover takes an **exclusive lease** and consumes `#263` lane H's version gate, with **dual-write shadowing refuted** because a shadow period means two truths and removing the second derived truth is what `#264` exists for; R3 git history imports as **synthetic first-sight events** attributed `actor=migration:git`, never to him or to the loop, so a reconstructed event is always distinguishable from a witnessed one; R4 `tasks.md` becomes `tasks.md.deprecated` plus a **one-line shim carrying a `#458` migration notice**, so a stale agent reading the old path is told where the ledger went instead of quietly reading a frozen file; C1 v1 stays **machine-local** — no hosted store, no network, the same trust boundary as today. **This answer builds nothing and unblocks nothing downstream of it:** shipping is still gated on `#263` lane H and `#352`, which the ask said plainly and the ruling does not change. Entry stays open as implementation work with the design settled; the next increment is the schema and the seeded-sequence verification, not the cutover.
+  · **INCREMENT 1 LANDED `50f4933` (2026-07-29 06:07, lane `wt/schema`) — schema + seeded AUTOINCREMENT, sound (14
+  `test_ledger_store.py` pass on master).** It was never folded (0 citations), so this entry still read "next is
+  the schema" and a redundant dispatch went out at ~11:40 — the stale-next-text failure again. **The next
+  increment is now the import/parse-and-report stage** (`dreamwork tasks migrate --dry-run`), populating `task`,
+  `related`/`depends`, and re-seeding only upward.
+  · **OPEN DESIGN FORK — split vs flat entity, and it is Max's, asked in `questions.md`.** `50f4933` has an
+  **entry/task SPLIT** (`entry` + `task` + `task_by_entry` join), following `#346`'s ratified design literally.
+  But `#353`'s normalisation split the combined entries, so per this entry's own text `task(id PRIMARY KEY)`
+  needs **no** entry/task split — the join now models what nothing survives. The redundant-dispatch lane built a
+  flat "1b" alternative (one `task` table, `wt/294`, unmerged, red-proved) arguing the split is obsolete. Keep
+  the split (`50f4933`, ratified design) or flatten (`1b`)? Decide before the import stage — migrating into a
+  schema that is then flattened is the two-migrations error.
+  · **RULED 2026-07-29 15:59 (his rec): FLATTEN.** *"if you're satisfied then rec: flatten."* **and the flat
+  implementation commit `5c5e534` is GONE** — it lived in the cleaned lane worktree and was never fetched;
+  only the IGC artifact (`wt/294shape` = `6b872b4b`) survives. So the next increment is **rebuild the flat
+  variant** (one `task` table, no `entry`/`task_by_entry` join, seeded+verified AUTOINCREMENT kept from
+  `50f4933`'s R1 ruling), red-first, then the import stage (`dreamwork tasks migrate --dry-run`).
+  · **INCREMENT 2 (the rebuild) LANDED — merge of `wt/294flat` (lane work `077d9ec1` + `5be7cc11` +
+  `3d3058ac`, native subagent, 2026-07-29 16:26).** One `task` table (state CHECK, title, free-text body,
+  band FK + uncertain bit per S2, type lookup FK per S4, origin closed-or-NULL, blocked_on prose, digest,
+  source_line); `entry`/`task_by_entry` gone; `related`/`depends`/`review_decision`/`task_event`/`task_state`
+  and all seed/verify machinery unchanged. 18 tests (14 intents ported + 4 new incl. `test_the_entry_split_is_gone`
+  deriving the entity set from `sqlite_master` at runtime). Coordinator independently red-proved: re-adding an
+  `entry` table fails exactly that test, byte-identical restore, 18/18. **The lane also caught and repaired a
+  real coordinator defect (`3d3058ac`):** `a2d58f8a` had filed `#484` ABOVE `## Open` (unanchored first-match
+  on a preamble mention), invisible to `parse_ledger` — the seed-verification tests caught it as designed.
+  Strictness upgrades (`NOT NULL` on priority/origin) and an `owner` column deliberately left out, separable
+  per the artifact.
+  · **next: the import stage** — `dreamwork tasks migrate --dry-run` populating `task` + `related`/`depends`,
+  re-seeding only upward, with exact counts/ids/digests/conflicts reported before any cutover.
+  · **INCREMENT 3 (parse-and-report) LANDED — merge of `wt/294import` (lane work `189bc9e3`..`23e3442`, native
+  subagent, 2026-07-29 17:00).** `ud-dw-tasks-migrate --dry-run` (repo-root `ud-dw-*` layout, since no `dreamwork`
+  dispatcher exists — a future one shells to it unchanged). Parses through the production parser only
+  (`watch.parse_ledger`, `ledger_parse`, `lint`'s constants, `ledger_store.derive_next_id`) — no sixth
+  hand-rolled parser. **The live census: 130 open / 247 landed / 377 ids, disjoint, seed verified (485 ==
+  MAX(id)+1), and 21 conflicts, all known legal shapes:** 3 compound bands (`#274 #263 #288`, import as P1 +
+  uncertain per S2) and 18 missing bands (→ P2 by contract). Zero dangling relations, zero duplicates, zero
+  origin violations. The lane caught TWO green red-runs in its own checks and fixed both (a within-section
+  duplicate masked by the open∩landed term; a subset assertion passing on flag-everything). Coordinator
+  independently red-proved the seed-exceeds guard on the merged tree (exactly `test_seed_must_exceed_stray_entry_heads`
+  fails, byte-identical restore, 25 pass) and ran the dry-run live: counts move with folds exactly as expected.
+  · **next: increment 4 — the actual import into a scratch DB + verification** (rows fit the flat schema,
+  digest parity, conflicts resolved as ruled), still no cutover; then cutover (R2 lease, R4 rename + shim).
+  · his two clarifying notes answered in the questions thread (15:50, 16:00): an `entry` is not the event log
+  (`task_event` is separate either way); the flat model migrates cleanly because `#353` made every entry
+  exactly one task; a task row carries the free-text body where notes/updates accumulate, so tasks update
+  many times — prose in the body, state changes in `task_event`, neither frozen.
+  · inc4 merged (340c7fb5): --import/--verify to scratch DB; live acceptance 304 rows (130 open/174 landed at import), seed verified, second import no-ops; 10 lane red-proofs + coordinator red-proof on the groomed-id verify check (revert fails test_live_groomed_stub_row_fails_verify, restored byte-identical). Lane finding: 74 landed ids exist only as bold spans in groomed prose — new dry-run category 'section id without an entry' assigns them to R3 (inc5); verify fails if one gains a row before R3. Also fixed expired count floors in inc3's live acceptance test (seed >= 486 is the monotonic floor). Remaining: inc5 (R3 git-history synthetic events, incl. the 74 groomed ids' bodies), then cutover (R2 lease + R4 rename/shim). Model: inherited (pre-routing-rule dispatch).
+
 - **#486** — an expanded commit with a long subject and no body shows the full subject NOWHERE · P2 ·
   dashboard/git-panel · origin: **human** · **human via watch `do-next` 2026-07-29 17:37:** *"when it's
   just a subject, I end up seeing something like: `59ee5d8b fold #445 + #443: attention axes ratified,
