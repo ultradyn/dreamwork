@@ -1,4 +1,10 @@
-"""Red-first tests for ledger_store (#294 increment 1).
+"""Red-first tests for ledger_store (#294 increment 2 — the FLAT schema).
+
+Increment 1 (`50f4933`) landed an entry/task split. #353 then split every
+combined entry, so every entry IS one task and the join models nothing; the
+human ruled FLATTEN 2026-07-29 15:59 — one `task` table, no `entry` /
+`task_by_entry`. These tests pin the flat shape; the table set is derived
+from sqlite_master at runtime, never a literal tuned to today's schema.
 
 Named production lines whose change must red each test:
 
@@ -21,7 +27,15 @@ Named production lines whose change must red each test:
 - PRAGMA synchronous=FULL execute (NORMAL-then-FULL pin)
       → test_pragmas_match_the_durability_boundary
 - schema tables in _SCHEMA_SQL
-      → test_schema_creates_entity_and_event_tables
+      → test_schema_creates_the_flat_task_and_transition_tables
+- CREATE TABLE entry / INDEX task_by_entry in _SCHEMA_SQL
+      → test_the_entry_split_is_gone
+- flat task column list in _SCHEMA_SQL (state/title/body/band/type/origin/…)
+      → test_task_carries_the_markdown_columns
+- body TEXT NOT NULL on task
+      → test_a_task_row_carries_the_free_text_body
+- related / depends DDL + FK references to task(id)
+      → test_related_and_depends_edges_reference_task_ids
 
 A green red-run is a finding, never a relief. Each test names its line so an
 injection can aim at production rather than scaffolding.
@@ -224,13 +238,10 @@ def test_autoincrement_does_not_reuse_a_deleted_high_water_id(tmp_path):
     """
     store = open_store(tmp_path / "l.sqlite3", seed_next_id=50)
     try:
-        # Parent entry row so the FK holds.
+        # Flat shape: the permanent id and the attributes are one row.
         store.conn.execute(
-            "INSERT INTO entry(entry_id, state, title, body) "
-            "VALUES (1, 'open', 't', 'b')"
-        )
-        store.conn.execute(
-            "INSERT INTO task(id, entry_id) VALUES (50, 1)"
+            "INSERT INTO task(id, state, title, body) "
+            "VALUES (50, 'open', 't', 'b')"
         )
         store.conn.commit()
         assert store.sequence_high_water("task") == 50
@@ -244,7 +255,9 @@ def test_autoincrement_does_not_reuse_a_deleted_high_water_id(tmp_path):
             "sqlite_sequence high-water must survive a delete of the highest row"
         )
 
-        store.conn.execute("INSERT INTO task(entry_id) VALUES (1)")
+        store.conn.execute(
+            "INSERT INTO task(state, title, body) VALUES ('open', 't2', 'b2')"
+        )
         store.conn.commit()
         new_id = store.conn.execute("SELECT id FROM task").fetchone()[0]
         assert new_id == 51, (
@@ -261,7 +274,7 @@ def test_autoincrement_does_not_reuse_a_deleted_high_water_id(tmp_path):
 # Schema + pragmas (user_events house style)
 # ---------------------------------------------------------------------------
 
-def test_schema_creates_entity_and_event_tables(tmp_path):
+def test_schema_creates_the_flat_task_and_transition_tables(tmp_path):
     """Production line: _SCHEMA_SQL CREATE TABLE statements.
 
     Break by dropping task_event or task from the DDL.
@@ -271,7 +284,6 @@ def test_schema_creates_entity_and_event_tables(tmp_path):
         tables = store.tables()
         required = {
             "meta",
-            "entry",
             "task",
             "related",
             "depends",
@@ -281,9 +293,172 @@ def test_schema_creates_entity_and_event_tables(tmp_path):
             "priority_band",
             "task_state_kind",
             "task_cause",
+            "task_type",
         }
         missing = required - tables
         assert not missing, f"schema missing tables: {sorted(missing)}"
+    finally:
+        store.close()
+
+
+def test_the_entry_split_is_gone(tmp_path):
+    """Production line: CREATE TABLE entry / INDEX task_by_entry in _SCHEMA_SQL.
+
+    Break by re-adding the entry table or the task_by_entry index — the
+    flatten ruling (2026-07-29 15:59) removes both. The sets are derived
+    from sqlite_master at runtime: no literal tuned to today's schema.
+    """
+    store = open_store(tmp_path / "l.sqlite3", seed_next_id=1)
+    try:
+        tables = store.tables()
+        # Runtime-derived precondition: the entity candidates we reason about.
+        entity_tables = tables & {"entry", "task"}
+        assert entity_tables == {"task"}, (
+            f"exactly one entity table must exist and it must be task; "
+            f"got {sorted(entity_tables)}"
+        )
+        indexes = {
+            r[0]
+            for r in store.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        }
+        assert "task_by_entry" not in indexes, (
+            f"task_by_entry index survives the flatten: {sorted(indexes)}"
+        )
+        # task must carry no entry_id column — the join key is the split.
+        cols = {
+            r[1] for r in store.conn.execute("PRAGMA table_info(task)").fetchall()
+        }
+        assert "entry_id" not in cols, (
+            f"task still carries the split's join key: {sorted(cols)}"
+        )
+    finally:
+        store.close()
+
+
+def test_task_carries_the_markdown_columns(tmp_path):
+    """Production line: the flat task column list in _SCHEMA_SQL.
+
+    Break by dropping any one of the columns the Markdown entry carries —
+    state, title, body, priority band + uncertain bit (S2), type (S4 lookup
+    FK), origin (closed set), blocked_on prose, body_digest, source_line.
+    """
+    store = open_store(tmp_path / "l.sqlite3", seed_next_id=1)
+    try:
+        rows = store.conn.execute("PRAGMA table_info(task)").fetchall()
+        cols = {r[1] for r in rows}
+        required = {
+            "id",
+            "state",
+            "title",
+            "body",
+            "priority",
+            "priority_uncertain",
+            "type",
+            "origin",
+            "blocked_on",
+            "body_digest",
+            "source_line",
+        }
+        missing = required - cols
+        assert not missing, (
+            f"flat task table missing Markdown columns: {sorted(missing)}"
+        )
+        # Runtime-derived precondition: id is the integer primary key.
+        pk_cols = {r[1] for r in rows if r[5]}
+        assert pk_cols == {"id"}, f"task primary key must be id, got {pk_cols}"
+        ddl = store.conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='task'"
+        ).fetchone()[0]
+        assert "AUTOINCREMENT" in ddl.upper(), (
+            "task.id must keep the seeded AUTOINCREMENT behaviour (R1)"
+        )
+    finally:
+        store.close()
+
+
+def test_a_task_row_carries_the_free_text_body(tmp_path):
+    """Production line: `body TEXT NOT NULL` on the flat task table.
+
+    Break by dropping body from the DDL or making it nullable — notes and
+    updates accumulate in the body across a task's life (his explicit
+    question), so a task row must round-trip multi-line prose verbatim.
+    """
+    store = open_store(tmp_path / "l.sqlite3", seed_next_id=1)
+    try:
+        body = (
+            "first note: filed from the ledger\n"
+            "  indented update: design narrowed to the flat shape\n"
+            "final update: landed, see task_event for the transition"
+        )
+        store.conn.execute(
+            "INSERT INTO task(state, title, body, priority, priority_uncertain,"
+            " type, origin, blocked_on) "
+            "VALUES ('open', 'flat task', ?, 'P2', 0, 'implementation',"
+            " 'loop', 'blocked on nothing yet')",
+            (body,),
+        )
+        store.conn.commit()
+        row = store.conn.execute(
+            "SELECT state, title, body, priority, priority_uncertain,"
+            " type, origin, blocked_on FROM task"
+        ).fetchone()
+        assert row == (
+            "open",
+            "flat task",
+            body,
+            "P2",
+            0,
+            "implementation",
+            "loop",
+            "blocked on nothing yet",
+        ), f"task row must round-trip the free-text body verbatim, got {row!r}"
+        # body is NOT NULL: a task without one is refused.
+        with pytest.raises(Exception):
+            store.conn.execute(
+                "INSERT INTO task(state, title) VALUES ('open', 'no body')"
+            )
+            store.conn.commit()
+    finally:
+        store.close()
+
+
+def test_related_and_depends_edges_reference_task_ids(tmp_path):
+    """Production line: related / depends DDL with REFERENCES task(id).
+
+    Break by pointing either relation at entry(entry_id) — the #346 S1
+    relations (n:n related, directed depends) survive the flatten unchanged
+    and bind permanent task ids directly.
+    """
+    store = open_store(tmp_path / "l.sqlite3", seed_next_id=1)
+    try:
+        for i in (1, 2, 3):
+            store.conn.execute(
+                "INSERT INTO task(id, state, title, body) "
+                "VALUES (?, 'open', ?, 'b')",
+                (i, f"t{i}"),
+            )
+        # related is symmetric, stored once: CHECK (a < b).
+        store.conn.execute("INSERT INTO related(a, b) VALUES (1, 2)")
+        # depends is directed: 3 cannot start until 1 lands.
+        store.conn.execute("INSERT INTO depends(task, needs) VALUES (3, 1)")
+        store.conn.commit()
+        assert store.conn.execute(
+            "SELECT a, b FROM related"
+        ).fetchone() == (1, 2)
+        assert store.conn.execute(
+            "SELECT task, needs FROM depends"
+        ).fetchone() == (3, 1)
+        with pytest.raises(Exception):
+            # Un-normalised symmetric pair must be refused.
+            store.conn.execute("INSERT INTO related(a, b) VALUES (2, 1)")
+            store.conn.commit()
+        with pytest.raises(Exception):
+            # An edge to a task that does not exist must be refused (FK).
+            store.conn.execute("INSERT INTO depends(task, needs) VALUES (1, 999)")
+            store.conn.commit()
     finally:
         store.close()
 
@@ -318,10 +493,11 @@ def test_foreign_keys_pragma_is_on(tmp_path):
     try:
         assert store.read_pragmas()["foreign_keys"] == 1
         # A violating insert must raise, proving the pragma is load-bearing
-        # rather than merely reported.
+        # rather than merely reported: 'P9' is not in priority_band.
         with pytest.raises(Exception):
             store.conn.execute(
-                "INSERT INTO task(id, entry_id) VALUES (1, 999999)"
+                "INSERT INTO task(state, title, body, priority) "
+                "VALUES ('open', 't', 'b', 'P9')"
             )
             store.conn.commit()
     finally:
@@ -349,17 +525,17 @@ def test_priority_uncertain_bit_and_closed_bands(tmp_path):
     store = open_store(tmp_path / "l.sqlite3", seed_next_id=1)
     try:
         store.conn.execute(
-            "INSERT INTO entry(state, title, body, priority, priority_uncertain) "
+            "INSERT INTO task(state, title, body, priority, priority_uncertain) "
             "VALUES ('open', 't', 'b', 'P1', 1)"
         )
         store.conn.commit()
         row = store.conn.execute(
-            "SELECT priority, priority_uncertain FROM entry"
+            "SELECT priority, priority_uncertain FROM task"
         ).fetchone()
         assert row == ("P1", 1)
         with pytest.raises(Exception):
             store.conn.execute(
-                "INSERT INTO entry(state, title, body, priority) "
+                "INSERT INTO task(state, title, body, priority) "
                 "VALUES ('open', 't2', 'b', 'P0/P1')"
             )
             store.conn.commit()
